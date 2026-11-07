@@ -431,6 +431,16 @@ class PayCalculator(
                 val perShift = covered?.id?.let { rules.extraByShift[e.kind.id]?.get(it) }?.takeUnless { it.isLegal }
                 val rule = rules.extraRule(e.kind.id, covered?.id) ?: continue
                 val name = rules.extraName(e.kind.id) + if (perShift != null) " · ${covered!!.name}" else ""
+                // [PAYX-54] 1.38 PC 12.4.1: all inside the day's shift (교육 during 일근): the hours are the shift's, already paid,
+                // so only an amount each time the company adds (교육 수당 1회) goes on; no 최소 인정 시간, no overtime.
+                if (e.minutes <= 0 && e.insideShiftMinutes > 0) {
+                    if (rule.bonus > 0) {
+                        extraTotals.getOrPut(Triple(e.kind.id, perShift?.let { covered!!.id }, false)) { ExtraTotal(rule, name, e.kind.id) }
+                            .apply { amount += rule.bonus; times++ }
+                        parts += DayPart(LineKind.EXTRA, name, rule.bonus, "근무 시간 안이라 시간은 더하지 않고 1회 ${won(rule.bonus)}")
+                    }
+                    continue
+                }
                 if (rule.basis != ExtraBasis.LEGAL) takeOut(em.minutes, rule, shiftPart = false)
                 // [PAYX-21] The day's work before this piece on the clock: the shift, then pieces that start earlier.
                 val before = m.shift.worked + day.extras.withIndex().filter { (j, o) ->

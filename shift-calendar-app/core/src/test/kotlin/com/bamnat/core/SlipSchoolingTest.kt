@@ -32,9 +32,10 @@ class SlipSchoolingTest {
     private val day = ShiftType(11, "주간", "주", 0xFF1E88E5, LocalTime.of(8, 0), LocalTime.of(20, 0), 60, LocalTime.of(12, 0))
     private val off = ShiftType(19, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
     private val school = ExtraKind(50, "교육", "교", 0xFF7048E8, ExtraTiming.AfterShift(480))
+    // [PAYX-54] 교육 on days off: 교육 inside a shift adds no hours (and so no 교육 pay by the hour) since 1.38 PC 12.4.1.
     private fun resolver(withSchool: Boolean) = ScheduleResolver(listOf(day, off),
         WorkPattern.Rotation(LocalDate.of(2026, 9, 1), listOf(11L, 11L, 19L, 19L)),
-        if (withSchool) listOf(7, 21).map { DayEntry(LocalDate.of(2026, 10, it), extras = listOf(ExtraEntry(50, LocalTime.of(9, 0), LocalTime.of(13, 0)))) } else emptyList(),
+        if (withSchool) listOf(9, 25).map { DayEntry(LocalDate.of(2026, 10, it), extras = listOf(ExtraEntry(50, LocalTime.of(9, 0), LocalTime.of(13, 0)))) } else emptyList(),
         ExtraKinds(ExtraKinds.DEFAULTS + school))
     private val profile = WorkForms.apply(WorkForm.FOUR_TEAM, 2_430_000, LocalDate.of(2026, 10, 1))
     private fun days(r: ScheduleResolver) = (1..31).map { r.resolve(oct.atDay(it)) }

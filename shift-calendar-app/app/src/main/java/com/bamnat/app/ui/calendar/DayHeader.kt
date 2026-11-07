@@ -148,6 +148,9 @@ internal fun extraLine(e: ResolvedExtra): String {
     val to = e.to
     return when {
         from == null || to == null -> "${ExtraText.name(e)} · 시각 모름"
+        // [PAYX-54] 1.38 PC 12.4.1: work in the shift's own hours adds none; the times as typed, and why.
+        e.insideShiftMinutes > 0 -> "${ExtraText.name(e)} · ${Fmt.timeRange(e.entry.start ?: from.toLocalTime(), e.entry.end ?: to.toLocalTime())} · " +
+            if (e.minutes <= 0) "근무 시간 안이라 시간은 안 더해요" else "${HoursFormat.korean(e.minutes)} (근무와 겹친 ${HoursFormat.korean(e.insideShiftMinutes)} 뺌)"
         e.entry.hasTimes || e.covered != null -> "${ExtraText.name(e)} · ${Fmt.timeRange(from.toLocalTime(), to.toLocalTime())} · ${HoursFormat.korean(e.minutes)}"
         else -> "${e.kind.name} · ${if (e.kind.timing is com.bamnat.core.model.ExtraTiming.BeforeShift) "근무 전" else "근무 뒤"} " +
             "${HoursFormat.korean(e.minutes)} (${ExtraText.span(from.toLocalTime(), to.toLocalTime())})"
@@ -342,7 +345,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             Text("외 ${day.extras.size - MAX_EXTRA_LINES}건", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
         }
-        if (day.hasExtraWork) {
+        if (day.hasExtraWork && day.extraMinutes > 0) {
             Text(
                 "이 날 합계 ${HoursFormat.korean(day.totalMinutes)}",
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
