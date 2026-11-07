@@ -62,7 +62,7 @@ for (const [name, list] of Object.entries(files)) {
     seen.add(t);
     const stateOk = w.recipe.pieces.some((p) => p.kind === "parts" && p.parts.some((l) => /^(sat|sun|dark|sel)$/.test(l.on ?? "")));
     problems.push(...lint(w.recipe).filter((x) => !(stateOk && x.startsWith("수식"))).map((p) => `${w.from} · ${t}: ${p}`));
-    if (w.problems?.length && w.from.startsWith("themes-")) problems.push(`${w.from} · ${t}: 글자 대비 ${w.problems.join(", ")}`);
+    if (w.problems?.length && /^(themes|fx)-/.test(w.from)) problems.push(`${w.from} · ${t}: 글자 대비 ${w.problems.join(", ")}`);
   }
   // 추천(⭐)은 구간마다 6개 안팎(장터 갈래 권고, 테마는 8): 고른 것이 많으면 유형이 고르게 남도록 띄엄띄엄 남겨요.
   const tops = list.filter((w) => w.showcase);

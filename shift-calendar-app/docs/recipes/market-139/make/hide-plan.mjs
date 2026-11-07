@@ -1,6 +1,6 @@
 // 1.39 [MKW-06] 숨김 목록: 1.36·1.38 장터 작품 가운데 curate.mjs OLD_KEEP에 없는 것을 docs/recipes/market-139-refresh-plan.json에 적어요.
 // 서버의 POST /api/admin/recipes/hide-titles({titles, dry, note})가 받는 모양({"hide":[{title, why}]})이고, 지우지 않고 숨겨요:
-// 이미 받아 쓰는 사람의 작품은 그대로, 장터 목록·검색에서만 빠져요. 실서버는 1.39 출시 날 사용자 확인 뒤 관리자 앱에서.
+// 이미 받아 쓰는 사람의 작품은 그대로, 장터 목록·검색에서만 빠져요. belowApp 53: 1.39 작품을 못 받는 1.38 이하 앱에는 계속 보여요. 실서버는 1.39 출시 날 사용자 확인 뒤 관리자 앱에서.
 //
 //   node docs/recipes/market-139/make/hide-plan.mjs
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -40,7 +40,7 @@ if (missing.length) throw new Error(`curate.mjs OLD_KEEP에 아직 고르지 않
 const keep = new Set(Object.values(OLD_KEEP).flat());
 const unknown = [...keep].filter((t) => !seen.has(t));
 if (unknown.length) throw new Error(`OLD_KEEP에 장터에 없는 제목: ${unknown.join(", ")}`);
-const hide = [...seen.values()].filter((w) => !keep.has(w.title)).map((w) => ({ title: w.title, why: WHY[w.sec] ?? "1.39 작품과 겹쳐요", section: w.sec, from: w.from }));
+const hide = [...seen.values()].filter((w) => !keep.has(w.title)).map((w) => ({ title: w.title, why: WHY[w.sec] ?? "1.39 작품과 겹쳐요", section: w.sec, from: w.from, belowApp: 53 }));
 writeFileSync(OUT, JSON.stringify({ note: "1.39 장터 고르기(MKW-06)", hide }, null, 1) + "\n");
 const by = {};
 for (const w of seen.values()) { by[w.sec] ??= [0, 0]; by[w.sec][keep.has(w.title) ? 0 : 1]++; }
