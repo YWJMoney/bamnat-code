@@ -32,7 +32,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.theme.BamnatMotion
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.theme.Tone
@@ -130,8 +129,14 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
 
 /** The times' column: 48dp, wider as the phone's text grows so 'HH:MM' stays on one line, the same on every row. */
 @Composable
-private fun timeColumn(): androidx.compose.ui.unit.Dp =
-    with(androidx.compose.ui.platform.LocalDensity.current) { maxOf(48.dp, 42.sp.toDp()) }
+private fun timeColumn(): androidx.compose.ui.unit.Dp {
+    // PC 12.4.1 (200%: '08:0', the last digit under the rail): measured from the time's own style, not guessed in sp.
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val style = MaterialTheme.typography.labelMedium.merge(NumberStyle)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val px = remember(style, density.fontScale, density.density) { measurer.measure("00:00", style, softWrap = false, maxLines = 1).size.width }
+    return maxOf(48.dp, with(density) { px.toDp() } + 6.dp)
+}
 
 @Composable
 private fun NowMark() {
