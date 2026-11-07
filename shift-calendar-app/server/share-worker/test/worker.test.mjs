@@ -251,6 +251,10 @@ test("the page shows ticked parts, escaped", async () => {
   const none = renderSchedule(validate({ ...full, days: full.days.map(({ memo, ...d }) => d).filter((d) => d.type) }).schedule,
     new Date(Date.now() + 86400000).toISOString());
   assert.match(none, /근무와 함께 보낸 것: 휴가 종류, 연장·휴무일 근무, 급여/);
+  // 1.38 PC 12.4: a team link's own notes are named for what they are, not '메모'.
+  const team = renderSchedule(validate({ ...full, days: [{ ...full.days[0], memo: "바뀜: 휴→주 · 같이 쉬어요: 가영" }, full.days[1]] }).schedule,
+    new Date(Date.now() + 86400000).toISOString());
+  assert.match(team, /근무와 함께 보낸 것: 연장·휴무일 근무, 바뀐 날 표시, 같이 쉬는 사람, 급여/);
 });
 
 test("Android visitors get a button into the app", async () => {
