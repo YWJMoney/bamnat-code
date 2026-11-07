@@ -414,6 +414,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
                             container.telemetry.event("setup_link", if (draft.step == com.bamnat.core.setup.SetupStep.SUMMARY) "ready" else "times")
                             container.setupDrafts.save(draft)
+                            // 1.38 PC 12.3: the link that started the setup is kept as a 받은 달력 (it is the team's, and follows its next
+                            // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
+                            val id = waitingLink
+                            container.received.open(null)
+                            if (id != null) rootScope.launch { runCatching { container.received.put(id, container.shareApi.read(id)) } }
                         } })
                     return
                 }
