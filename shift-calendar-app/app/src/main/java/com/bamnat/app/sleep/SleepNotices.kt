@@ -48,7 +48,11 @@ class SleepActionReceiver : BroadcastReceiver() {
                         Notifications.cancel(context, Notifications.BEDTIME_ID)
                         Notifications.cancel(context, Notifications.COMMUTE_ID)
                     }
-                    SleepActions.ACTION_AWAKE -> container.sleepRepository.wokeUp()
+                    SleepActions.ACTION_AWAKE -> {
+                        container.sleepRepository.wokeUp()
+                        // 1.39 [SLEEP-06] 깼어요 ends 자는 동안 소리 too, at once.
+                        SleepRecordService.stop(context)
+                    }
                 }
             } finally {
                 pending.finish()
