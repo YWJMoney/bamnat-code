@@ -351,7 +351,9 @@ fun SetupHost(
 /** What the bottom button does on each step; none where tapping an answer moves on by itself. */
 @Composable
 private fun primaryFor(d: SetupDraft, vm: SetupViewModel, onLongShifts: (List<ShiftType>) -> Unit, todayAsk: String? = null): Primary? = when (d.step) {
-    SetupStep.STYLE, SetupStep.BUNDLE -> null
+    // 1.38 PC 12.2 (뒤로 온 근무 가지 화면에 '다음'이 없어 막힘): with an answer already there, '다음' goes on with it; the first time, a
+    // tap on a card answers and moves on by itself.
+    SetupStep.STYLE, SetupStep.BUNDLE -> if (d.canLeave() && d.next() != null) Primary("다음", onClick = vm::next) else null
     SetupStep.COMPANY -> Primary(if (d.source != null) "다음" else "건너뛰고 직접 정할게요", onClick = vm::next)
     SetupStep.TIMES -> Primary(
         // [EASE-07] The order is on this screen too: one yes for both.
