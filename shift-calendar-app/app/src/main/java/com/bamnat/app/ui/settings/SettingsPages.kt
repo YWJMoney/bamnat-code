@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.share.mineLine
 import com.bamnat.app.data.rules
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.alpha
@@ -144,7 +145,13 @@ private fun WorkPage(
                 else -> null
             }
         }
-        NavRow(words.pattern, cycleLine ?: words.patternHint, onOpenPattern)
+        // 1.38 PC 12.4.1 [P3-L-19] A member's month comes by link: where from and up to when first; the cycle only if they set one.
+        val mineCal = vm.received.collectAsStateWithLifecycle().value.firstOrNull { it.mine }
+        if (mineCal != null) {
+            NavRow("받은 근무표", mineCal.mineLine()) { SettingsLinks.go(SettingsGo.RECEIVE) }
+            HorizontalDivider()
+        }
+        NavRow(words.pattern, if (mineCal != null && cycleLine == null) "받은 근무표가 칠해 줘요 · 직접 정할 때만 열어요" else cycleLine ?: words.patternHint, onOpenPattern)
         HorizontalDivider()
         // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not in the line, and the line says how many are put away.
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()

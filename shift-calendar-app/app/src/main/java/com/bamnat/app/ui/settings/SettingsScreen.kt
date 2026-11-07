@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
+import com.bamnat.app.share.mineLine
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -195,6 +196,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+    /** 1.38 PC 12.4.1 [P3-L-19] Received links: the one the user's work comes from changes how 내 근무 is said. */
+    val received: StateFlow<List<com.bamnat.app.share.ReceivedCalendar>> = container.received.calendars
     /** [MON-04] What 프로 is on this phone now. */
     val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
     /** [MON-07] Google says this phone's region has its own ad consent form to open again. */
@@ -829,13 +832,16 @@ private fun SettingsHub(
         com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
-        Shortcuts(onFound, work.workStyle)
+        // 1.38 PC 12.4.1 [P3-L-19] A member whose month comes by link sets no cycle: 받은 근무표, not 근무 주기.
+        val mineCal = vm.received.collectAsStateWithLifecycle().value.firstOrNull { it.mine }
+        Shortcuts(onFound, work.workStyle, received = mineCal != null)
         Spacer(Modifier.size(4.dp))
         // 1.36 PC 재검토: the count of 근무 leaves the kinds put away out ('근무 3가지 · 안 쓰는 종류 3개').
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
         val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
+            GroupRow(p.icon, p.titleFor(work.workStyle), if (p == SettingsPage.WORK && mineCal != null) mineCal.mineLine(short = true)
+                else summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -1012,7 +1018,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
 /** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null) {
+private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null, received: Boolean = false) {
     val entries = remember { SettingsIndex.entries().associateBy { it.title } }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("자주 찾는 것", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1021,15 +1027,20 @@ private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.wo
             for ((title, plain, icon) in SHORTCUTS) {
                 // [J133-71] 1.33: 급여 only for work paid by the hour or month. [J133-77] The rest in the work's own words.
                 if (title == "급여 계산" && style?.usesPayEngine == false) continue
-                val label = shortcutLabel(title, style) ?: plain
+                // 1.38 PC 12.4.1 [P3-L-19] The month comes by link: its chip opens the received links, not 근무 주기.
+                val mineChip = received && title == "근무 주기"
+                val label = if (mineChip) "받은 근무표" else shortcutLabel(title, style) ?: plain
                 if (label.isEmpty()) continue
-                val e = entries[title] ?: continue
+                val e = entries[if (mineChip) RECEIVE_TITLE else title] ?: continue
                 AssistChip(onClick = { onFound(e) }, label = { Text(label) },
                     leadingIcon = { Icon(icon, null, Modifier.size(AssistChipDefaults.IconSize)) })
             }
         }
     }
 }
+
+/** The search entry for the received links ([SettingsGo.RECEIVE]). */
+private const val RECEIVE_TITLE = "동료 근무표 받기"
 
 private val SHORTCUTS = listOf(
     Triple("근무 종류와 시간", "근무 시간", Icons.Outlined.Schedule),
