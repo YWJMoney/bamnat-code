@@ -921,7 +921,7 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         // teammate on an iPhone (no 밤낮 app) puts the days in their own calendar from the page, and it follows each 다시 확정.
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
             "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together,
-            feed = java.time.ZoneId.systemDefault()).apply {
+            feed = com.bamnat.core.time.Today.zone()).apply {
             // Without the phone's 시간대 이름 (the server reads Asia/Seoul), so only the 'on' mark goes. 처리방침 3.12 names it (총괄 몫).
             remove("tz")
             // 1.39 PC (SPREAD 2차): the page speaks to a teammate from the first 확정 (card, preview), not only after a 바뀜.

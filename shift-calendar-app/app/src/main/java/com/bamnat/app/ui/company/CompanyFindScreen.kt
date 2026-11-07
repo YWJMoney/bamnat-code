@@ -776,7 +776,7 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     phases.teams.forEach { (name, step) ->
                         val theirs = phases.team != null && com.bamnat.core.imports.DutyCodes.norm(name) == com.bamnat.core.imports.DutyCodes.norm(phases.team)
-                        androidx.compose.material3.FilterChip(selected = picked == step, onClick = { picked = step },
+                        com.bamnat.app.ui.components.FilterChip(selected = picked == step, onClick = { picked = step },
                             label = { Text(if (theirs) "$name · 보낸 분" else name, style = MaterialTheme.typography.titleSmall) },
                             modifier = Modifier.heightIn(min = 48.dp))
                     }

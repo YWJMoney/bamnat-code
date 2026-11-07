@@ -60,7 +60,7 @@ class PlazaTagSource(private val c: AppContainer) {
         val pattern = PatternTimeline.current(snap.patterns, today)
         val worked = snap.resolver.resolveRange(today.minusDays(PlazaTags.WINDOW_DAYS - 1L), today).count { it.isWorkDay }
         val profile = runCatching { c.calendars.pay(calendar).profile.value }.getOrNull()
-        val at = java.time.LocalDateTime.now(Today.zone())
+        val at = Today.dateTime()
         val yesterday = snap.resolver.resolve(today.minusDays(1))
         val todayDay = snap.resolver.resolve(today)
         // Today's shift, or yesterday's still running past midnight.
