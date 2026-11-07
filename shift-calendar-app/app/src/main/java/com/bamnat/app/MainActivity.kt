@@ -282,11 +282,18 @@ class MainActivity : ComponentActivity() {
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
         // [STAB-11] Taps that change nothing on screen are counted (no place, only that a finger lifted).
         if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) com.bamnat.app.diag.MainStall.tapped()
+        // 1.39 [SETUP-20] 첫 설정 누른 횟수: one finger down, only while a new install has not saved its first setup.
+        if (ev.actionMasked == android.view.MotionEvent.ACTION_DOWN) setupTaps?.tap()
         return super.dispatchTouchEvent(ev)
     }
 
+    /** 1.39 [SETUP-20] Set once the container is there; taps before it (the splash) are not counted. */
+    @Volatile private var setupTaps: com.bamnat.app.diag.SetupTapStats? = null
+
     private fun started(c: AppContainer) {
         startDone = true
+        c.settingsRepository.current.let { s -> c.setupTaps.start(s.setupDone, s.setupLater) }
+        setupTaps = c.setupTaps
         // [LOCK-01] Read before HomeRequests clears whether a screen the app opened is being returned from.
         AppLock.onStart(this, c.settingsRepository.settings.value.appLock, HomeRequests.awaitingResult)
         HomeRequests.onStart()
