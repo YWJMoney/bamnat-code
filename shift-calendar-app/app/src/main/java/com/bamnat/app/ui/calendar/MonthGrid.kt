@@ -831,6 +831,9 @@ private fun DayCell(
                 showHours && day.scheduledMinutes > 0 -> CellFoot(HoursFormat.short(day.scheduledMinutes), scheme.onSurfaceVariant, false, minor = true)
                 else -> null
             }
+            // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
+            val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
+                !(hourly != null && hourlyRange != null) && !(invest != null && invest.trades(date) > 0 && type.isOff)
             Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -853,13 +856,12 @@ private fun DayCell(
                     else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern)
                         .firstOrNull()?.let { CornerMark(it, dot = true) }
                     if (wishOff) Spacer(Modifier.width(8.dp))
-                    // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
-                    val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
-                        !(hourly != null && hourlyRange != null) && !(invest != null && invest.trades(date) > 0 && type.isOff)
-                    if (hasMark) Box((if (plainShift) Modifier else Modifier.weight(1f, fill = false)).padding(start = 1.dp)) {
-                        if (plainShift) ShiftBadge(type = type, text = type!!.label, size = 18.dp, outlined = type.isOff, showIcon = false) else dayMark(18.dp)
+                    if (hasMark && plainShift) Box(Modifier.padding(start = 1.dp)) {
+                        ShiftBadge(type = type, text = type!!.label, size = 18.dp, outlined = type.isOff, showIcon = false)
                     }
                 }
+                // Wider marks (대근 둘, 특근, 연차, 알바 시간…) take their own line under the date instead of being squeezed beside it.
+                if (hasMark && !plainShift) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) { dayMark(18.dp) }
                 CellListLines(items, foot, footerSize, cellMoreColor(), Modifier.weight(1f))
             }
         } else if (custom || cellParts != null) CustomCellBody(

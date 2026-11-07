@@ -202,19 +202,30 @@ fun DayPanel(
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     // 1.38 PC 12차 유형별 빈틈 9: with the day's story up, the head's '메모 · …' token said the same thing again above it.
     var storyUp by remember(date) { mutableStateOf(false) }
-    Column(modifier) {
+    // [BIGTXT-01] 1.39 With a big font on a short screen the day's head alone filled the sheet and its last chips were squeezed: the head
+    // then scrolls with the groups, as one page; otherwise it stays put above them.
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val oneScroll = scrollGroups && conf.fontScale >= 1.5f && conf.screenHeightDp < 760
+    val head: @Composable () -> Unit = {
         DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact, memoToken = !storyUp)
         weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         // [RUL-03] 1.36 단추 on the day screen (스튜디오·받은 테마).
         com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.DAY, date, Modifier.padding(bottom = 4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    }
+    val body: @Composable () -> Unit = {
+        DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
+            onStory = { storyUp = it })
+    }
+    if (oneScroll) Column(modifier.imePadding().verticalScroll(rememberScrollState())) {
+        head()
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding)) { body() }
+    } else Column(modifier) {
+        head()
         Column(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
-        ) {
-            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
-                onStory = { storyUp = it })
-        }
+        ) { body() }
     }
 }
 

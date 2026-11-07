@@ -24,7 +24,12 @@ fun SideOrBelow(
     start: @Composable () -> Unit,
     end: @Composable () -> Unit,
 ) {
-    Layout(contents = listOf(start, end), modifier = modifier) { (s, e), c ->
+    // Each slot as one box: an end of two buttons (a card's own button and its ⋮) stays one piece.
+    val startOne: @Composable () -> Unit = { androidx.compose.foundation.layout.Box { start() } }
+    val endOne: @Composable () -> Unit = {
+        androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) { end() }
+    }
+    Layout(contents = listOf(startOne, endOne), modifier = modifier) { (s, e), c ->
         val startM = s.firstOrNull()
         val endM = e.firstOrNull()
         val maxW = if (c.hasBoundedWidth) c.maxWidth else (startM?.maxIntrinsicWidth(Constraints.Infinity) ?: 0) + (endM?.maxIntrinsicWidth(Constraints.Infinity) ?: 0) + gap.roundToPx()

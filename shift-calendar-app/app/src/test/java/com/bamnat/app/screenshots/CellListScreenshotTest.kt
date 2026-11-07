@@ -70,6 +70,18 @@ class CellListScreenshotTest : ScreenshotBase() {
         settle()
         tapText(today.withDayOfMonth(4).dayOfMonth.toString(), exact = true)
     }
+    @Test fun dayStoryBigFont() = shoot("1402_bigtext_day_story_unfolded_200", UNFOLDED, 2f) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        settle()
+        reveal("하루 이야기", exact = true, across = 0.8f)
+    }
+    @Test fun dayStoryFoldedBigFont() = shoot("1403_bigtext_day_story_folded_200", FOLDED, 2f) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        settle()
+        tapText(today.dayOfMonth.toString(), exact = true)
+        settle()
+        reveal("하루 이야기", exact = true)
+    }
     @Test fun tryOnBigFont() = shoot("1400_bigtext_try_on_folded_200", FOLDED, 2f) {
         val r = BuiltInThemes.of(WorkStyle.FIELD).first()
         content { TryOnScreen(r, WorkStyle.FIELD, onDismiss = {}, onKeep = { true }) { Text("입기") } }
