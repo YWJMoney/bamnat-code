@@ -107,7 +107,10 @@ class PlazaAFAppTest {
             assertTrue(b.join(bDevice, id, "main").joined)
             val inside = b.company(id)
             assertTrue(inside.member)
-            assertTrue(JSONObject(inside.setups.single().text).has("pay"))
+            // 1.39 [PAYP-01][PAYP-03] A 1.39 app still reads no pay on the page; joined, it takes the pay when it puts the way in.
+            assertFalse(JSONObject(inside.setups.single().text).has("pay"))
+            assertTrue(inside.setups.single().payPrivate)
+            assertTrue(JSONObject(b.take(bDevice, id, inside.setups.single().id)!!).has("pay"))
             val room = b.room(bDevice, id)!!
             assertTrue(room.first)
             assertTrue(room.others.isEmpty())
@@ -122,12 +125,11 @@ class PlazaAFAppTest {
             val mine = share.exportForServer().toString()
             val again = b.room(bDevice, id)!!
             val versions = (again.others + listOfNotNull(again.base?.takeIf { !again.mine })).map { RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
-            val card = RoomCards.cards(mine, versions).single { it.key == "rate:night" }
-            assertEquals("야간 50% → 60%로 바꾼 사람 1명", card.text)
-            assertTrue(share.takeOne(versions.first { it.id == card.from }.text, card.key))
-            val now = store.profile.value!!
-            assertEquals(0.6, now.rules.nightPremium!!, 1e-9)
-            assertEquals("the user's own amount stays", 2_500_000L, now.base.on(today).value)
+            // 1.39 [PAYP-01]: the room shows another version's shifts, never its pay, so no pay value goes from one to another;
+            // a way that differs is said by 보완 요청 to its senders.
+            assertTrue(versions.none { JSONObject(it.text).has("pay") })
+            assertTrue(RoomCards.cards(mine, versions).none { it.key == "rate:night" })
+            assertEquals(0.5, store.profile.value!!.rules.nightPremium!!, 1e-9)
 
             // One company per calendar for 30 days, two companies per phone.
             val d = CompanyClient(base)
