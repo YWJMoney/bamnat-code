@@ -418,7 +418,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
                             val id = waitingLink
                             container.received.open(null)
-                            if (id != null) rootScope.launch { runCatching { container.received.put(id, container.shareApi.read(id)) } }
+                            if (id != null) rootScope.launch { runCatching { container.received.put(id, container.shareApi.read(id), mine = true) } }
                         } })
                     return
                 }
