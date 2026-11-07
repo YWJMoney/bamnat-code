@@ -470,6 +470,26 @@ test("[FAM-04] 가족 프로 이용권: a phone not seen for 60 days says so, a 
   assert.deepEqual(u.errors, []);
 });
 
+test("[ADM3-42] 로그인 잠금 풀기: the owner's 내 계정 shows a locked PC and unlocks it from the phone", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  const pc = { "x-admin": "1", origin: ORIGIN, ...from(7) };
+  for (let i = 0; i < 5; i++) await call("POST", "/api/admin/login", { password: "not-the-password" }, pc);
+  assert.equal((await call("POST", "/api/admin/login", { password: PASSWORD }, pc)).status, 429);
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  assert.match(u.text("#main [data-lock-line]"), /잠긴 곳 1곳/);
+  await u.click('#main [data-act="login-unlock"]');
+  assert.match(u.text("dialog"), /로그인 잠금을 풀까요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /잠긴 곳 1곳을 풀었어요/);
+  assert.match(u.text("#main [data-lock-line]"), /지금 잠긴 로그인이 없어요/);
+  assert.ok(!u.$('#main [data-act="login-unlock"]'));
+  assert.equal((await call("POST", "/api/admin/login", { password: PASSWORD }, pc)).status, 200);
+  assert.deepEqual(u.errors, []);
+});
+
 test("[ADMUX-18] 여러 판: 다시 대표로 asks first, then the earlier version is the rule again", async (t) => {
   offline(t);
   const s = server();

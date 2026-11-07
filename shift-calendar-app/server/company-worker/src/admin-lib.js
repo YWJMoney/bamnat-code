@@ -1264,7 +1264,7 @@ export function adminLib() {
    * code still reads as words: its first part (reward_x → 보상) and "처리".
    */
   const ACTION_NAMES = {
-    login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
