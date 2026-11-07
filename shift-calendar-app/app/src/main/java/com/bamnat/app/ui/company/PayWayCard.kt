@@ -124,7 +124,42 @@ class PayWayViewModel(
     }
 
     fun baseAsked() = scope.payWays.askBase(false)
+
+    /** 1.39 [PAYP-05] 보완 요청 is open (처리방침 3.12 in force); before it, 의견 보내기 is 달라요 with where. */
+    val fixOpen: Boolean get() = c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIX_REQUEST)
+
+    /**
+     * 1.39 [PAYP-05] 보완 요청: where the way differs ([fields], no values) and a line, to the version's talk; its senders hear of it.
+     * [done] gets the error or what to say.
+     */
+    fun fix(fields: List<String>, body: String, done: (String?, String?) -> Unit) {
+        val w = way.value ?: return done(null, null)
+        viewModelScope.launch {
+            try {
+                if (fixOpen) {
+                    val lines = fields.map { com.bamnat.app.company.ChangeLine(it, "", "", "") }
+                    c.companyApi.post(scope.store.device, w.companyId, w.setup, body.trim(), null, "fix", lines, null)
+                    c.telemetry.event("pay_way_fix", fields.joinToString(","))
+                    done(null, "보냈어요. 공유한 분이 고치거나 답하면 밤낮 소식으로 알려 드려요")
+                } else {
+                    val why = fields.firstNotNullOfOrNull { FIX_TO_WHY[it] } ?: "pay"
+                    c.companyApi.vote(scope.store.device, w.companyId, w.setup, false, false, why)
+                    scope.payWays.voted(false, why)
+                    if (scope.store.applied.value?.setup == w.setup) scope.store.voted(false)
+                    c.telemetry.event("pay_way_vote", why)
+                    load()
+                    done(null, "알려 주셔서 고마워요. 같은 회사 분들께 ‘달라요’로 보여요")
+                }
+            } catch (e: CompanyException) {
+                done(companyProblem(e), null)
+            }
+        }
+    }
 }
+
+/** 1.39 [PAYP-05] Before 3.12: a 보완 요청's first field as 달라요's where. */
+private val FIX_TO_WHY = mapOf("order" to "order", "shift" to "time", "break" to "time", "hours" to "pay", "overtime" to "pay",
+    "night" to "pay", "holiday" to "pay", "allowance" to "pay", "bonus" to "pay")
 
 /**
  * [PAYF-04] 1.29 묶음 AP (사용자 2026-10-27 "맞아요 달라요 버튼이 해당 급여설정 페이지에서 보여야한다"): while the pay uses a
@@ -136,7 +171,7 @@ class PayWayViewModel(
  * [update] changes the pay (the pay screen's own [com.bamnat.app.ui.pay.PayViewModel.update]).
  */
 @Composable
-fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Unit, modifier: Modifier = Modifier) {
+fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Unit, modifier: Modifier = Modifier, onLeave: () -> Unit = {}) {
     // [CALI-04] The pay screen's calendar ([LocalCompanyCalendar]).
     val calendar = LocalCompanyCalendar.current
     val vm = appViewModel(key = "pay-way-$calendar") { PayWayViewModel(it, calendar) }
@@ -162,6 +197,11 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
     val w = way ?: return
     if (profile == null) return
     TalkSheet(vm.talk)
+    // 1.39 [PAYP-04][PAYP-05] 의견 보내기 (보완 요청) and 직접 만들기, for a way put in from 1.39 (its calculation is not shown).
+    var fixing by rememberSaveable { mutableStateOf(false) }
+    var leaving by rememberSaveable { mutableStateOf(false) }
+    if (fixing) FixRequestSheet(vm, onDismiss = { fixing = false })
+    if (leaving) LeaveSharedDialog(onLeave = { leaving = false; onLeave() }, onDismiss = { leaving = false })
     // [J135-01] (사용자 2026-10-30 "이미 의견을 보냈는데 사라지지 않고 계속 떠있어서 화면을 차지"): once 맞았어요·달라요 is sent, the
     // card folds to one line a moment after the thanks; '펼치기' brings the buttons back (바꾸기·고쳐서 제안하기·토론).
     val voted = w.vote ?: opinion?.mine?.let { it == "ok" }
@@ -171,7 +211,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
         SoftCard(modifier) {
             Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("‘${w.company}’ 급여 방식", style = MaterialTheme.typography.bodyMedium, maxLines = 1,
+                    Text(if (w.shared) "공유받은 ‘${w.company}’ 급여 방식" else "‘${w.company}’ 급여 방식", style = MaterialTheme.typography.bodyMedium, maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     Text(if (voted) "‘맞았어요’라고 알려 주셨어요" else "‘달라요’라고 알려 주셨어요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -184,10 +224,17 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
         }
     } else SoftCard(modifier, highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("‘${w.company}${w.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}’ 급여 방식을 쓰고 있어요",
-                style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-            Text("같은 회사 분들이 맞춘 계산 방식이에요. 명세서와 맞는지 알려 주시면 다음 분은 더 정확하게 받아요.",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (w.shared) {
+                Text(SharedPayWords.TITLE, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                Text("${SharedPayWords.from(w)}이에요. ${SharedPayWords.HIDDEN}", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(SharedPayWords.ASK, style = MaterialTheme.typography.bodyMedium)
+            } else {
+                Text("‘${w.company}${w.dept.takeIf { it.isNotEmpty() }?.let { " · $it" } ?: ""}’ 급여 방식을 쓰고 있어요",
+                    style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                Text("같은 회사 분들이 맞춘 계산 방식이에요. 명세서와 맞는지 알려 주시면 다음 분은 더 정확하게 받아요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             // [PAYF-06] A base only guessed is said here, one tap to put it in. [PAYG-04] 1.30: none at all is the pay's own
             // "기본급만 넣으면 끝나요" in place of the total (BaseNeededCard), not a second line here.
             val known = BaseAsk.known(profile, month)
@@ -198,12 +245,15 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                     TextButton(onClick = { baseOpen = true }) { Text("넣기") }
                 }
             }
-            if (!vm.server) return@Column
+            if (!vm.server) {
+                if (w.shared) OutlinedButton(onClick = { leaving = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 만들기") }
+                return@Column
+            }
             if (voted != null && unfolded) TextButton(onClick = { unfolded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
             VoteButtons(w.vote ?: opinion?.mine?.let { it == "ok" }, onVote = { ok, why ->
                 said = null
                 vm.vote(ok, why) { e ->
-                    said = e ?: if (ok) "고마워요! ${w.company} 분들께 큰 힘이 돼요" else "알려 주셔서 고마워요. 맞는 값으로 고쳐서 제안해 주시면 바로잡혀요"
+                    said = e ?: if (ok) "고마워요! ${w.company} 분들께 큰 힘이 돼요" else if (text != null) "알려 주셔서 고마워요. 맞는 값으로 고쳐서 제안해 주시면 바로잡혀요" else "알려 주셔서 고마워요. ‘의견 보내기’로 어디가 다른지 알려 주시면 공유한 분이 고쳐요"
                     // 달라요: straight on to what it should be, on the company's own values.
                     if (e == null && !ok && text != null) proposing = true
                 }
@@ -211,17 +261,21 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             // Side by side; one under the other when the letters are large (200%), so neither breaks into syllables.
             val large = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+            // 1.39 [PAYP-05]: with the calculation not shown (text null) there is nothing to correct line by line, so 의견 보내기
+            // (보완 요청: where it differs and a line) stands in for 고쳐서 제안하기.
             val propose: @Composable (Modifier) -> Unit = { m ->
                 if (text != null) OutlinedButton(onClick = { sendError = null; proposing = true }, modifier = m.heightIn(min = 48.dp)) { Text("고쳐서 제안하기") }
+                else OutlinedButton(onClick = { fixing = true }, modifier = m.heightIn(min = 48.dp)) { Text("의견 보내기") }
             }
             val talk: @Composable (Modifier) -> Unit = { m -> OutlinedButton(onClick = vm::openTalk, modifier = m.heightIn(min = 48.dp)) { Text("토론 보기") } }
             if (large) {
                 propose(Modifier.fillMaxWidth())
                 talk(Modifier.fillMaxWidth())
             } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                if (text != null) propose(Modifier.weight(1f))
+                propose(Modifier.weight(1f))
                 talk(Modifier.weight(1f))
             }
+            if (w.shared) OutlinedButton(onClick = { leaving = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 만들기") }
         }
     }
     val base = text

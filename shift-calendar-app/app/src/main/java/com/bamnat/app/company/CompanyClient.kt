@@ -91,6 +91,14 @@ data class SharedSetup(
      * too much today). [text] then has the shifts and their order only.
      */
     val payHidden: Boolean = false,
+    /**
+     * 1.39 [PAYP-01] (사용자 2026-11-07 "급여 계산식은 보여지지 않게"): a server from 1.39 never sends a version's pay to this app, member or
+     * not; [payHidden] is then true as well, so every screen treats it as a pay way it does not see, and putting the way in takes the
+     * pay part on its own ([CompanyApi.take]) into the pay, where it is not shown either ([com.bamnat.app.company.PayWay.shared]).
+     */
+    val payPrivate: Boolean = false,
+    /** 1.39 [PAYP-05] 보완 요청 not yet answered by those who sent this version. */
+    val fixes: Int = 0,
     /** [PLAZA-09] 안정: three phones or more on it and nothing else sent or adopted for 30 days. */
     val stable: Boolean = false,
     /** [PLAZA-14] 1.27 AH: its department's 대표 주기; [doubted] when too many said 달라요 for it to lead (AH-D7). */
@@ -610,6 +618,12 @@ interface CompanyApi {
         throw CompanyException("offline")
     /** [PLZ-08] This phone uses (applied) a rule set, or stopped; how many use it comes back. */
     suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = 0
+
+    /**
+     * 1.39 [PAYP-03] The pay part of version [setup] of [company] (a whole company file, named for it), for a phone that joined it and is
+     * putting that way in now; null when the version has none any more. Never shown: it goes into the pay alone.
+     */
+    suspend fun take(device: String, company: String, setup: String): String? = null
     /** [PLAZA-07] The same for one calendar: using a company's setup joins the company for it. */
     suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = use(device, company, setup, on)
     /** [PLZ-08] The name this phone is shown by on the plaza; empty for none. */
@@ -838,6 +852,8 @@ class CompanyClient(
             o.put("change", JSONArray(change.map { JSONObject().put("field", it.field).put("now", it.now.trim()).put("want", it.want.trim()).put("why", it.why.trim()) }))
             proposal?.let { o.put("proposal", it) }
         }
+        // 1.39 [PAYP-05] 보완 요청: where it differs, no values.
+        if (kind == "fix") o.put("change", JSONArray(change.map { JSONObject().put("field", it.field) }))
         request("POST", "/api/posts", o).getString("id")
     }
 
@@ -882,6 +898,14 @@ class CompanyClient(
     }
 
     override suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = use(device, company, setup, on, "")
+
+    override suspend fun take(device: String, company: String, setup: String): String? = serverCall {
+        try {
+            request("POST", "/api/companies/$company/setups/$setup/take", JSONObject().put("device", device)).optStringOrNull("text")
+        } catch (e: CompanyException) {
+            if (e.code == "no_pay" || e.code == "not_found" || e.code == "http_404") null else throw e
+        }
+    }
 
     override suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = serverCall {
         val body = JSONObject().put("device", device).put("company", company).put("setup", setup)
@@ -1213,7 +1237,9 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
             by = s.optJSONArray("by").strings(),
             checkedLong = s.optBoolean("checkedLong"),
             support = s.optInt("support"),
-            payHidden = s.optBoolean("payHidden"),
+            payHidden = s.optBoolean("payHidden") || s.optBoolean("payPrivate"),
+            payPrivate = s.optBoolean("payPrivate"),
+            fixes = s.optInt("fixes"),
             stable = s.optBoolean("stable"),
             lead = s.optBoolean("lead"),
             doubted = s.optBoolean("doubted"),
@@ -1463,6 +1489,8 @@ private fun exchangeOnce(
         conn.readTimeout = 15_000
         conn.setRequestProperty("Accept", "application/json")
         device?.let { conn.setRequestProperty("X-Device", it) }
+        // 1.39 [PAYP-01] This app shows no one's pay way: the server sends none, and the way is taken when it is put in.
+        conn.setRequestProperty(PAY_PRIVATE_HEADER, "1")
         session?.headers(method)?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (body != null) {
@@ -1505,6 +1533,9 @@ private fun exchangeOnce(
 
 /** [SPD-19] How long a connection may take to open. */
 internal const val CONNECT_MS = 6_000
+
+/** 1.39 [PAYP-01] Says the app shows no shared pay way; the server then sends none (it is taken at putting it in). */
+internal const val PAY_PRIVATE_HEADER = "X-Pay-Private"
 
 /** [SPD-27] 1.31 R6: reads what is left of an answer and closes its stream, so the connection can be used again. */
 internal fun drain(conn: HttpURLConnection) {

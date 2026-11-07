@@ -150,6 +150,11 @@ export async function fixedAmountsOpen(env, now = Date.now()) {
   return Boolean(p?.effective) && kstDay(now) >= p.effective;
 }
 
+/** 1.39 [PAYP-05] Whether 보완 요청 is open: plaza.fix_request on by the server's view (off until 처리방침's next version). */
+export async function fixRequestsOpen(env, now = Date.now()) {
+  return serverEval(await flagStore(env), "plaza.fix_request", now).on;
+}
+
 /** [FLAG-33] The calendar with the owner's changes, and versions the owner added. */
 export function mergePolicy(raw) {
   let over = {};

@@ -52,9 +52,20 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     val theirs = remember(schedule) { com.bamnat.app.share.RosterFollower.theirTypes(schedule) }
     val pairs = remember(theirs, mine.shiftTypes) { RosterAdopt.match(theirs, mine.shiftTypes) }
     val days = remember(schedule, month) { schedule.days.filterKeys { YearMonth.from(it) == month }.mapValues { it.value.type } }
-    val changes = remember(days, pairs, mine) { RosterAdopt.changes(days, pairs, mine.shiftTypes, mine.resolver::resolve) }
+    val all = remember(days, pairs, mine) { RosterAdopt.changes(days, pairs, mine.shiftTypes, mine.resolver::resolve) }
+    // 1.39 PC a483ca15 (손으로 바꾼 2일·15일까지 '다른 날'로 세어 넣음): on a link already followed, a day that differs from the copy my
+    // days were last matched to was changed by hand; it is left out unless asked for, as '직접 바꾼 날은 그대로' says.
+    val cal = c.received.calendars.collectAsState().value.firstOrNull { it.id == id }
+    val hand = remember(all, cal?.basis, cal?.mine, cal?.adopted, pairs, mine, month) {
+        val basis = cal?.basis?.takeIf { cal.mine || cal.adopted }?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() }
+            ?: return@remember emptySet<LocalDate>()
+        val was = basis.days.filterKeys { YearMonth.from(it) == month }.mapValues { it.value.type }
+        all.keys intersect RosterAdopt.changes(was, pairs, mine.shiftTypes, mine.resolver::resolve).keys
+    }
+    var withHand by remember(id, month) { mutableStateOf(false) }
+    val changes = if (withHand) all else all.filterKeys { it !in hand }
     var undo by remember(schedule, month) { mutableStateOf<Map<LocalDate, DayEntry?>?>(null) }
-    if (days.isEmpty() || (changes.isEmpty() && undo == null)) return
+    if (days.isEmpty() || (all.isEmpty() && undo == null)) return
     // The pay the user's own setup makes of the month, now and with the link's days (참고, 닫은 달이 아니어도).
     val pay = remember(changes, profile, mine, settings.extraKinds) {
         val p = profile?.named(settings.extraKinds) ?: return@remember null
@@ -67,7 +78,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     }
     val missing = theirs.filter { pairs[it.id] == null && days.values.any { d -> d == it.id } }
     SectionCard(title = "내 달력에 넣기") {
-        if (undo != null && changes.isEmpty()) {
+        if (undo != null && (changes.isEmpty() || all.isEmpty())) {
             Text("${undo!!.size}일 넣었어요. 근무 알람도 이 근무대로 울려요.", style = MaterialTheme.typography.bodyMedium)
             Text(ONCE_NOTE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { val u = undo!!; undo = null; app.launch { u.forEach { (d, e) -> c.scheduleRepository.restoreDay(d, e) } } }) { Text("되돌리기") }
@@ -82,6 +93,12 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
                 style = MaterialTheme.typography.bodyMedium)
             Text("야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고).", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } ?: Text("급여 설정을 하면 이 근무표로 이번 달 월급이 얼마인지도 바로 보여요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (hand.isNotEmpty()) {
+            val handDays = hand.sorted().joinToString(", ") { "${it.dayOfMonth}일" }
+            Text(if (withHand) "직접 바꾼 날($handDays)도 함께 넣어요." else "직접 바꾼 날은 빼고 넣어요: $handDays",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { withHand = !withHand }) { Text(if (withHand) "직접 바꾼 날은 빼기" else "직접 바꾼 날도 넣기") }
+        }
         if (missing.isNotEmpty()) Text("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
             style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
         Text(ONCE_NOTE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -95,7 +112,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
                     c.received.markAdopted(id)
                     com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
                 }
-            }) { Text("${changes.size}일 내 달력에 넣기") }
+            }, enabled = changes.isNotEmpty()) { Text("${changes.size}일 내 달력에 넣기") }
         }
     }
 }

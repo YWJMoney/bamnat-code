@@ -51,6 +51,8 @@ object FlagCatalog {
     const val SLEEP_SOUND = "sleep.sound"
     /** 1.38 [SLEEP-11] 공유한 달력에 '지금 자는 중'. */
     const val SLEEP_SHARE = "sleep.share"
+    /** 1.39 [PAYP-05] 보완 요청 on a company's shared way (글 종류·다른 곳 항목, 올린 분 소식), once 처리방침's next version names it. */
+    const val PLAZA_FIX_REQUEST = "plaza.fix_request"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -117,6 +119,8 @@ object FlagCatalog {
      * yes or 11-29. A row added after 정식 출시 waits for its own version's date again (9항: 7일·30일 전 고지).
      */
     private const val EARLY = PolicyConsent.VERSION
+    /** 1.39 [PAYP-05] The 처리방침 version 1.39 ships with (보완 요청, PRIV-06 등 한 판); its dates come from the 관리자 앱 일정. */
+    const val FIX_REQUEST_POLICY = "3.12"
 
     /** [FLAG-11] 정식 출시 retired: what the switch and the 3.1 hold did together (결정 D84). */
     private val launch: List<Condition> = listOf(
@@ -363,6 +367,20 @@ object FlagCatalog {
         conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
+    /**
+     * 1.39 [PAYP-05] (사용자 2026-11-07 "보완요청을 하면 어떤점이 다른거 같아요를 이야기할수 있게해서 제공한 사용자가 수정"): a new kind of post
+     * and a new line of 밤낮 소식, which 처리방침 1-4항 names only from its next version. Off until the owner turns it on at that
+     * version's date (관리자 앱 › 기능 관리), the rest of 1.39's shared pay changes (가리기·맞아요 순·급여 탭 잠금) need no flag.
+     */
+    val PLAZA_FIX_REQUEST_FLAG = Flag(
+        PLAZA_FIX_REQUEST, "공유 급여 보완 요청",
+        what = "회사 광장의 급여 방식 판에 ‘보완 요청’을 써요. 어디가 다른지(연장·야간·수당 등) 고르고 한 줄 적으면 그 판을 올린 분이 밤낮 소식으로 받아 고치거나 답해요. 다른 분은 ‘나도 그래요’를 눌러요.",
+        whyOff = "새 글 종류와 올린 분께 가는 소식이라 처리방침 3.12(1.39 출시 개정, 1-4항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 단추가 보이지 않고 서버도 받지 않아요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "PAYP-05", note = "1.39 공유 급여 비공개 (사용자 2026-11-07 '1.39 출시 때 자동으로 켜지게')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -376,7 +394,7 @@ object FlagCatalog {
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG) +
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

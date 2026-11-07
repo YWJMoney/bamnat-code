@@ -30,12 +30,18 @@ test("[PLAZA-08] a phone that did not join sees shifts and 급여 방식 있음,
     assert.deepEqual(s.lines.map(([l]) => l), ["근무", "순서 8일", "연장·휴무일 근무"]);
     assert.ok(!JSON.stringify(page).includes("가산"), "no pay words for a non-member");
   }
-  // The sender joined by sending: the pay comes.
+  // The sender joined by sending. 1.39 [PAYP-01]: an app before 1.39 still gets the pay part (its 이 급여 방식 쓰기 puts it in from the
+  // page), never its lines; a 1.39 app (X-Pay-Private) gets neither, only that it is there.
   const mine = (await call("GET", `/api/companies/${c}`, undefined, as(1))).data;
   assert.equal(mine.member, true);
   assert.equal(mine.setups[0].setup.pay.rules.extra[3].unit, "BASE_SHARE");
   assert.equal(mine.setups[0].payHidden, undefined);
-  assert.ok(mine.setups[0].lines.some(([l]) => l === "가산율"));
+  assert.deepEqual(mine.setups[0].lines.map(([l]) => l), ["근무", "순서 8일", "연장·휴무일 근무"]);
+  const now = (await call("GET", `/api/companies/${c}`, undefined, { ...as(1), "x-pay-private": "1" })).data;
+  assert.equal(now.member, true);
+  assert.equal(now.setups[0].setup.pay, undefined);
+  assert.deepEqual([now.setups[0].pay, now.setups[0].payPrivate], [true, true]);
+  assert.ok(!JSON.stringify(now).includes("가산"), "no pay words for a 1.39 app, member or not");
   // Pure helpers.
   assert.equal(shiftsOnly({ a: 1, pay: { x: 1 } }).pay, undefined);
   assert.deepEqual(shiftLines(describe(setup())).map(([l]) => l), ["근무", "순서 8일", "연장·휴무일 근무"]);
@@ -86,7 +92,7 @@ test("[PLAZA-07] a member reading pay too often reads as anyone else for the day
   assert.equal(last.setups[0].setup.pay, undefined);
 });
 
-test("[PLAZA-08] the history and the talk keep their pay lines for members", async () => {
+test("[PLAZA-08][PAYP-01] the history and the talk show pay lines to no one; an older app's member keeps a version's pay part", async () => {
   const { call } = server();
   const first = [];
   for (const n of [1, 2]) first.push(await call("POST", "/api/reports", report(n, { company: "이력상사", verified: n === 1 }), from(n)));
@@ -105,13 +111,15 @@ test("[PLAZA-08] the history and the talk keep their pay lines for members", asy
   assert.deepEqual(outside.versions[0].changes.added.map(([l]) => l), ["근무"]);
   const inside = (await call("GET", `/api/companies/${c}/history?setup=${newer.id}`, undefined, as(1))).data;
   assert.equal(inside.versions[0].body.pay.rules.night, 0.6);
-  assert.ok(inside.versions[0].changes.added.some(([l]) => l === "가산율"));
-  // A proposal: its shift line is for everyone, its pay line for members.
+  assert.deepEqual(inside.versions[0].changes.added.map(([l]) => l), ["근무"]);
+  const later = (await call("GET", `/api/companies/${c}/history?setup=${newer.id}`, undefined, { ...as(1), "x-pay-private": "1" })).data;
+  assert.equal(later.versions[0].body.pay, undefined);
+  // A proposal: its shift line is for everyone, its pay line for no one (1.39).
   const change = [{ field: "shift", now: "주간 07:00~19:00", want: "주간 07:00~18:00" }, { field: "night", now: "야간 50%", want: "야간 60%" }];
   await call("POST", "/api/posts", { device: device(2), company: c, setup: newer.id, body: "야간이 올랐어요", kind: "proposal", change }, from(2));
   const read = (headers) => call("GET", `/api/companies/${c}/setups/${newer.id}/posts`, undefined, headers);
   assert.deepEqual((await read(as(8))).data.posts[0].change.map((l) => l.field), ["shift"]);
-  assert.deepEqual((await read(as(1))).data.posts[0].change.map((l) => l.field), ["shift", "night"]);
+  assert.deepEqual((await read(as(1))).data.posts[0].change.map((l) => l.field), ["shift"]);
 });
 
 test("[PLAZA-09] a company's room is for members: my version, the others with what differs, and 안정", async () => {

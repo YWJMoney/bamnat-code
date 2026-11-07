@@ -79,6 +79,10 @@ class PlazaAITest {
     @Test fun `new posts in a joined room are one line of 광장 소식`() {
         assertEquals("예시상사 정보 광장에 새 글이 3개 올라왔어요.", PlazaNews.line(PlazaNewsItem("room_posts", company = "예시상사", count = 3)))
         assertEquals("참여한 회사 정보 광장에 새 글이 1개 올라왔어요.", PlazaNews.line(PlazaNewsItem("room_posts")))
+        // 1.39 [PAYP-06] 보완 요청 to the way's senders, and its answer to the writer.
+        assertEquals("내가 나눈 예시상사 급여 방식에 보완 요청이 2개 왔어요. 어디가 다른지 보고 고치거나 답해 주세요.",
+            PlazaNews.line(PlazaNewsItem("fix", company = "예시상사", count = 2)))
+        assertEquals("예시상사 급여 방식에 보낸 보완 요청에 답이 왔어요.", PlazaNews.line(PlazaNewsItem("fix_answer", company = "예시상사", count = 1)))
     }
 
     @Test fun `answers to my post in a room are one line of 광장 소식 VIL-09`() {

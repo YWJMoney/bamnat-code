@@ -190,7 +190,9 @@ data class CustomRule(
     }
 
     /** [PHOTO-05] The conditions beyond when it pays, in words: "근속 3년 이상 · 월 100,000원까지 · 2026년 7월부터". */
-    fun limits(): String = buildList {
+    fun limits(): String = limitList().joinToString(" · ")
+
+    private fun limitList(): List<String> = buildList {
         if (minTenureMonths > 0 || maxTenureMonths > 0) add("근속 " + listOfNotNull(
             years(minTenureMonths).takeIf { minTenureMonths > 0 }?.let { "$it 이상" },
             years(maxTenureMonths).takeIf { maxTenureMonths > 0 }?.let { "$it 미만" }).joinToString(" "))
@@ -200,12 +202,18 @@ data class CustomRule(
             from?.let { add("${it.year}년 ${it.monthValue}월부터") }
             until?.let { add("${it.year}년 ${it.monthValue}월까지") }
         }
-    }.joinToString(" · ")
+    }
 
     /** "토요일 근무일: 통상시급의 50%", "매달 50,000원 차감". */
-    fun describe(shiftNames: Map<Long, String> = emptyMap(), extraNames: Map<Long, String> = emptyMap()): String =
-        (if (pay.monthly) "" else whenever.describe(shiftNames, extraNames).let { w -> if (w.isEmpty()) "모든 근무: " else "$w: " }) +
+    fun describe(shiftNames: Map<Long, String> = emptyMap(), extraNames: Map<Long, String> = emptyMap()): String {
+        // 1.39 [PAYX-57] PC a483ca15: a one-month amount (소급분) is not '매달 120,000원 (11월만)' but '2026년 11월 한 번 120,000원'.
+        if (oneMonth && pay is RulePay.Monthly) {
+            val rest = limitList().filterNot { it.endsWith("월만") }.joinToString(" · ")
+            return "${from!!.year}년 ${from.monthValue}월 한 번 ${won(pay.amount)}" + (if (deduct) " 차감" else "") + if (rest.isEmpty()) "" else " ($rest)"
+        }
+        return (if (pay.monthly) "" else whenever.describe(shiftNames, extraNames).let { w -> if (w.isEmpty()) "모든 근무: " else "$w: " }) +
             pay.describe() + (if (deduct) " 차감" else "") + limits().let { if (it.isEmpty()) "" else " ($it)" }
+    }
 
     /**
      * [PAYS-09] The rule in words with no amount in won, for telling the developer the company's way: "토요일: 1회

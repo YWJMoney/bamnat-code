@@ -383,4 +383,14 @@ class TierAppTest {
         assertEquals("자정에 끝나면 그 전날까지", LocalDate.of(2027, 5, 31), lastDay(LocalDate.of(2027, 6, 1).atStartOfDay(zone).toInstant(), zone))
         assertTrue(launchThanksText(LocalDate.of(2027, 5, 31)).contains("2027년 5월 31일까지 프로를 무료로"))
     }
+
+    // 1.39 [FAM-03] A paused family phone hears '잠시 멈췄어요' and keeps hearing it after the app is reopened.
+    @Test fun aPausedFamilyPassIsReadAndKept() {
+        val read = TierClient.readPasses(JSONObject().put("admin", JSONObject.NULL).put("familyPaused", true))
+        assertNull(read.admin)
+        assertTrue(read.familyPaused)
+        assertFalse("an older server says nothing", TierClient.readPasses(JSONObject()).familyPaused)
+        ProStore(context).setPasses(read)
+        assertTrue(ProStore(context).current.passes!!.familyPaused)
+    }
 }

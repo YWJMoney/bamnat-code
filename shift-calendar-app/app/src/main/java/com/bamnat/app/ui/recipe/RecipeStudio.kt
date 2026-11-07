@@ -461,8 +461,10 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         jobs = myJobs, memos = myMemos).takeIf { realOn }
     // [CELL-02] 1.39 My month listed the way my calendar lists it (날짜 칸에 일감·메모를 줄마다), in the theme's look.
     val mySettings by androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings.collectAsStateWithLifecycle()
-    val listed = mine != null && com.bamnat.app.ui.calendar.cellListOn(mySettings.cellList, style == WorkStyle.FIELD, mySettings.memoInCells,
-        com.bamnat.core.recipe.CalendarView(memo = com.bamnat.core.recipe.CalendarView.decode(mySettings.calView).memo), false)
+    // [TRY-05] 1.39 PC a483ca15 (입어 보기엔 메모 줄, 입은 달력은 점): the calendar's own choice, on the 달력 모양 this example draws (a theme
+    // of someone else's keeps my 메모 줄 수, [com.bamnat.core.recipe.keepMyCellContent]).
+    val listed = mine != null && com.bamnat.app.ui.calendar.cellListOn(mySettings.cellList, style, mySettings.memoInCells, view,
+        hasMemos = !myMemos.isNullOrEmpty())
     val rows = if (mine != null && whole) weeksN else 2
     val n = rows * 7
     val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST

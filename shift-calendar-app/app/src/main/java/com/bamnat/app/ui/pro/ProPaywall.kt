@@ -76,34 +76,37 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
     var at by rememberSaveable { mutableIntStateOf(if (ProPaywall.plansFirst) pages.lastIndex else 0) }
     val page = pages[at.coerceIn(0, pages.lastIndex)]
     LaunchedEffect(page) { c.telemetry.event("pro_paywall", "page${page + 1}") }
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("${at + 1} / ${pages.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        when (page) {
-            0 -> {
-                Text("밤낮이 이번 달 드린 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                if (ledger.found > 0) Text("올해 밤낮이 찾아 준 돈 ${won(ledger.found)}", style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary)
-                if (ledger.found > 0) Text("명세서와 맞춰 볼 때 계산이 명세서보다 많았던 차이예요. 회사에 물어볼 근거가 돼요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ledgerLine(ledger).takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-                RewardLedger.perDay(yearly?.priceMicros)?.let { Text("프로는 하루 ${it}원에 전부 열려 있어요.", style = MaterialTheme.typography.bodyMedium) }
-            }
-            1 -> {
-                Text("프로가 더해 주는 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                Text(ProPitch.headline(settings.workStyle), style = MaterialTheme.typography.bodyLarge)
-                ProPitch.five(settings.workStyle).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-                Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            else -> {
-                Text("요금제", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                if (plans.isEmpty()) Text("Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.", style = MaterialTheme.typography.bodyMedium)
-                else PlanRows(c, plans, onMessage = {})
-                Text("어떤 요금제도 미리 골라 두지 않아요. 해지는 언제든 Play 스토어에서 하고, 해지해도 낸 기간까지는 프로예요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
+    // 1.39 [FLOW-25] 닫기 늘 보임: the pages scroll, the buttons under them stay put.
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("${at + 1} / ${pages.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when (page) {
+                0 -> {
+                    Text("밤낮이 이번 달 드린 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    if (ledger.found > 0) Text("올해 밤낮이 찾아 준 돈 ${won(ledger.found)}", style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                    if (ledger.found > 0) Text("명세서와 맞춰 볼 때 계산이 명세서보다 많았던 차이예요. 회사에 물어볼 근거가 돼요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ledgerLine(ledger).takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                    RewardLedger.perDay(yearly?.priceMicros)?.let { Text("프로는 하루 ${it}원에 전부 열려 있어요.", style = MaterialTheme.typography.bodyMedium) }
+                }
+                1 -> {
+                    Text("프로가 더해 주는 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    Text(ProPitch.headline(settings.workStyle), style = MaterialTheme.typography.bodyLarge)
+                    ProPitch.five(settings.workStyle).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                else -> {
+                    Text("요금제", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    if (plans.isEmpty()) Text("Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.", style = MaterialTheme.typography.bodyMedium)
+                    else PlanRows(c, plans, onMessage = {})
+                    Text("어떤 요금제도 미리 골라 두지 않아요. 해지는 언제든 Play 스토어에서 하고, 해지해도 낸 기간까지는 프로예요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
+                }
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,8 +141,9 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 if (lines.isNotEmpty()) Text(lines.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             val trial = plan.trial && plan.yearly
-            if (trial) Text("첫 1개월 무료, 그 뒤 ${plan.priceWords}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.39 [FLOW-25] the free month said as money and a date, before the one big button.
+            if (trial) Text(trialHead(Today.date(), plan.priceWords), style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary)
             Button(onClick = {
                 val activity = context.findActivity()
                 if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")

@@ -56,6 +56,11 @@ class NightLookTest {
         assertEquals("내일 07:00 주간 · 울릴 알람 없음", NightLine.of(now, work, null, alarmsOn = true).text)
         // 가게·현장·투자: no 근무표 words.
         assertEquals("알람 꺼짐", NightLine.of(now, null, null, alarmsOn = false, shifts = false).text)
+        // One day word for the night screen and the 자는 중 notice: an alarm days away is not "내일".
+        assertEquals("오늘", NightLine.day(at(11, 35), at(13)))
+        assertEquals("내일", NightLine.day(at(11, 35), at(13, day = d.plusDays(1))))
+        assertEquals("모레", NightLine.day(at(11, 35), at(13, day = d.plusDays(2))))
+        assertEquals("11/15", NightLine.day(at(11, 35), at(13, day = d.plusDays(6))))
     }
 }
 

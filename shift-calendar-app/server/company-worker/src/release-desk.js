@@ -17,12 +17,13 @@ export const RELEASE_SCHEMA = [
 /** 점검표 단계: key, 이름, 할 일, 저절로 알 수 있으면 auto, 열 곳. 순서가 곧 할 순서예요. */
 export const RELEASE_STEPS = [
   { key: "play", name: "Play 올림", what: "Play Console › 프로덕션에 새 판을 올리고 출시를 시작해요(단계적 출시면 비율도 적어 두기).", to: null },
-  { key: "ship", name: "나간 판 저장", what: "Play에 나간 판을 저장해요. 그래야 앱에 '반영'과 '업데이트하세요' 답이 맞게 나가요.", to: "#/desk?view=release", auto: true },
+  // 1.39 [ADM3-38] 나간 판 저장·묶인 문의 답의 [열기]는 저장 단추가 있는 오늘 › 흐름으로(장부에는 release 보기가 없어요).
+  { key: "ship", name: "나간 판 저장", what: "Play에 나간 판을 저장해요. 그래야 앱에 '반영'과 '업데이트하세요' 답이 맞게 나가요.", to: "#/flow", auto: true },
   { key: "flags", name: "기능 일정 확인", what: "출시 › 기능 관리 › 일정에서 이 판과 함께 켜질 기능과 날짜(처리방침 시행일)를 확인해요.", to: "#/flags?view=timeline" },
   { key: "materials", name: "스튜디오 재료 잠금", what: "출시 › 스튜디오 재료에서 묶음마다 공개·무료·광고를 정해요(아이콘 모두 무료, 배경 3분의 1 무료).", to: "#/materials", auto: true },
   { key: "market", name: "장터 작품 공개", what: "사람과 글 › 마을 장터 › 출시 대기에서 공개를 기다리는 작품을 지금 공개하거나 예약해요.", to: "#/recipes?tab=waiting", auto: true },
   { key: "notice", name: "공지", what: "출시 › 앱 공지에 '업데이트 소식'과 처리방침 개정 알림을 올려요.", to: "#/notices", auto: true },
-  { key: "answers", name: "묶인 문의 답 보내기", what: "고친 판이 나가기를 기다리던 문의에 답이 다 갔는지 봐요(나간 판 저장 때 함께 보내요).", to: "#/desk?view=release", auto: true },
+  { key: "answers", name: "묶인 문의 답 보내기", what: "고친 판이 나가기를 기다리던 문의에 답이 다 갔는지 봐요(나간 판 저장 때 함께 보내요).", to: "#/flow", auto: true },
   { key: "health", name: "24시간 뒤 판 건강", what: "하루 뒤 숫자 › 판 건강에서 문의·문제 신고·서버 오류·비정상 종료가 이전 판보다 나빠지지 않았는지 봐요.", to: "#/health", auto: true },
 ];
 

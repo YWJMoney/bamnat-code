@@ -172,6 +172,18 @@ class PayStore(
             .let { "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute) }
     }
 
+    /**
+     * 1.39 [PAYP-04] 직접 만들기 from someone else's shared way: the setup emptied with no way back to it, and the 7 days of changes made
+     * on it go too, so the calculation the pay screen never showed cannot come back unlocked through '고친 기록'.
+     */
+    suspend fun leaveShared() = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            write(null, keepUndo = false)
+            _undo.value = null
+            writeHistory(emptyList())
+        }
+    }
+
     /** [PAYIN-06] 1.37 B6: the setup emptied to make it again from the start; the old one kept 7 days to bring back. */
     suspend fun restart() = save(null, why = RESTART)
 

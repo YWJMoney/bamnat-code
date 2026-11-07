@@ -61,6 +61,8 @@ class ZFullBackupTest {
         motion = "tn:fade",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
+        // 1.39 [NAV2-01] 아래 칸과 묶음.
+        tabSlots = "calendar;g|잠·쉼|f:SLEEP+f:LEAVE;memos",
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].

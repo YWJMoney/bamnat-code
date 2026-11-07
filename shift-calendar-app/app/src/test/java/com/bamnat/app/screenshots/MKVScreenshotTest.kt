@@ -22,6 +22,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.unit.dp
 import java.io.File
 import java.time.Instant
 
@@ -68,8 +71,10 @@ class MKVScreenshotTest : ScreenshotBase() {
                 when {
                     kind == RecipeClient.SCOPE_THEME -> it.scope == "theme"
                     kind == RecipeClient.SCOPE_LOGIC -> it.scope == "logic"
+                    // 1.39 [MKC-01] 도구 (옛 규칙·단추로 열어도 도구로 가요).
+                    kind != null && kind.startsWith(RecipeClient.SCOPE_TOOL) -> it.scope == "logic" || it.scope == "part"
                     kind != null && kind.startsWith(RecipeClient.SCOPE_TAB) -> it.scope == "tab" &&
-                        kind.removePrefix(RecipeClient.SCOPE_TAB).let { t -> t.isEmpty() || t in it.tabs }
+                        RecipeClient.tabOf(kind).let { t -> t.isEmpty() || t in it.tabs }
                     else -> true
                 }
             }.let { l ->
@@ -116,4 +121,62 @@ class MKVScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun rulesShowTheirNotifications() = market(RecipeClient.SCOPE_LOGIC, "1377_mkv_rules")
+
+    /** 1.39 [MKC-01] 도구: 옛 규칙·단추로 열어도 도구 구간, 종류 칩(부품·자동 규칙·단추)과 화면 칩. */
+    @Test fun toolsHaveTheirKinds() = shoot("1520_mkc_tools", PHONE) {
+        c.recipeApi = Market()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        model.kind(RecipeClient.SCOPE_LOGIC)
+        settle()
+        assertTrue("규칙·단추는 도구로", model.state.value.kind == RecipeClient.SCOPE_TOOL)
+        assertTrue(appears("🧱 부품", exact = true))
+        assertTrue(appears("⚡ 자동 규칙", exact = true))
+        assertTrue("쓰는 화면 칩은 둘째 줄에 펼쳐져 있어요", appears("모든 화면", exact = true))
+    }
+
+    /** 1.39 [MKC-01] 탭별 작품: 탭 칩 아래 꾸미기·기능 칩. */
+    @Test fun tabWorksHaveLookAndFunction() = shoot("1521_mkc_tab_made", PHONE) {
+        c.recipeApi = Market()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        model.kind(RecipeClient.SCOPE_TAB)
+        settle()
+        tapText("🎨 꾸미기", exact = true)
+        settle()
+        assertTrue(model.state.value.kind == RecipeClient.tabKind("", "look"))
+        assertTrue(appears("탭별 작품", exact = true))
+    }
+
+    /** 1.39 [MKC-02][MKC-03] 도구 전후 해 보기: 새 단추를 눌러 보면 무엇을 하는지, 규칙은 상황을 만들어 지금 ↔ 넣으면. */
+    @Test fun aToolIsTriedBeforeItGoesIn() = shoot("1522_mkc_tool_tryout", PHONE) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val logic = com.bamnat.core.formula.Logic(
+            buttons = listOf(com.bamnat.core.formula.LogicButton("커피", "☕", com.bamnat.core.formula.ButtonPlace.MONEY,
+                com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.ADD_MONEY, "커피", 4_500))),
+            rules = listOf(com.bamnat.core.formula.LogicRule("밤 정리", com.bamnat.core.formula.RuleTrigger.DAILY, at = "21:00",
+                act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "오늘 하루 정리해요"))),
+        )
+        val r = Recipe("커피 단추와 밤 정리", styles = WorkStyle.entries.toSet(),
+            pieces = listOf(com.bamnat.core.recipe.Piece(PieceKind.LOGIC, logic.toValues())))
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(16.dp)) { com.bamnat.app.ui.recipe.ToolTryout(r, WorkStyle.SHIFT) }
+        }
+        settle()
+        assertTrue(appears("전후 해 보기", exact = true))
+        tapText("✨ ☕ 커피", exact = true)
+        settle()
+        assertTrue(appears("‘커피’를 누르면 가계부에 지출 ‘커피 4,500원’ 한 줄이 생겨요", exact = false))
+        tapText("21:00 만들어 보기", exact = false)
+        settle()
+        assertTrue(appears("이때 아무 일도 없어요", exact = true))
+        // The result under it, reached by scrolling (a tap on the words does nothing).
+        tapText("‘오늘 하루 정리해요’ 알림이 떠요", exact = false)
+        assertTrue(appears("‘오늘 하루 정리해요’ 알림이 떠요", exact = false))
+    }
 }

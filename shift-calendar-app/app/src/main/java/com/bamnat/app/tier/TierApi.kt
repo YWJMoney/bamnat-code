@@ -46,6 +46,8 @@ data class Passes(
     /** 1.36 841 쓰면 쌓이는 날 (at most 14 a month), and how many start at the launch. */
     val earned: List<EarnedDays> = emptyList(),
     val waitingDays: Int = 0,
+    /** 1.39 [FAM-03] The owner paused this phone's 가족 프로 이용권: free until resumed, which needs no new code. */
+    val familyPaused: Boolean = false,
 )
 
 /**
@@ -185,6 +187,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             sharedUntil = o.optJSONObject("shared")?.optStringOrNull("until")?.let(Instant::parse),
             earned = o.optJSONArray("earned").objects().map { EarnedDays(it.getInt("days"), Instant.parse(it.getString("at")), it.optString("why")) },
             waitingDays = o.optInt("waitingDays"),
+            familyPaused = o.optBoolean("familyPaused"),
         )
 
         fun readShare(o: JSONObject): ProShare = ProShare(

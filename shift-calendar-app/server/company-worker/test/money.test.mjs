@@ -517,8 +517,12 @@ test("[FAM-01] family Pro: the owner's code, approved at once, no limit, cut any
   const paused = (await call("POST", `/api/admin/family/${momId}`, { do: "pause" }, owner)).data;
   assert.equal(paused.phones.find((d) => d.id === momId).paused, true);
   assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin, null);
+  // 1.39 [FAM-03] The paused phone is told so, apart from [admin] (an older app reads any admin as '승인 기다림').
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.familyPaused, true);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(12))).data.familyPaused, undefined, "only the paused phone");
   await call("POST", `/api/admin/family/${momId}`, { do: "resume" }, owner);
   assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.status, "approved");
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.familyPaused, undefined);
   const named = (await call("POST", `/api/admin/family/${momId}`, { do: "name", name: "우리 엄마" }, owner)).data;
   assert.equal(named.phones.find((d) => d.id === momId).name, "우리 엄마");
   assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.name, "가족");

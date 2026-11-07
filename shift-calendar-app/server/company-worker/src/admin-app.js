@@ -1228,7 +1228,7 @@ function adminApp(L, BUILD, M) {
 
   /** 커뮤니티의 보기 칸: 신고·가려짐·모든 글·광장·임금표·쓰기 제한·마을 운영 (1.36 [VIL-21]). */
   function communityTabs() {
-    return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["rates", "임금표"],
+    return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["fix", "보완 요청"], ["rates", "임금표"],
       ["limits", "쓰기 제한"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
   }
 
@@ -1355,6 +1355,7 @@ function adminApp(L, BUILD, M) {
     return `<article class="card${on ? " picked" : ""}">
       <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
+      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}</p>` : ""}
       <blockquote>${esc(p.body)}</blockquote>
       ${Array.isArray(p.poll) && p.poll.length ? `<p class="meta">투표 보기: ${p.poll.map((o) => esc(String(o))).join(" · ")}</p>` : ""}
       ${p.attach ? `<p class="meta">붙인 작품 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(p.attach)}">${esc(p.attach)}</button></p>` : ""}
@@ -2487,8 +2488,8 @@ function adminApp(L, BUILD, M) {
     } catch { return ""; }
   }
 
-  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름).
-  const RECIPE_SECTIONS = { theme: "테마", tab: "탭 하나", part: "부품", logic: "규칙·단추" };
+  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름). 1.39 [MKC-01] 테마 · 탭별 작품 · 도구(부품·규칙·단추).
+  const RECIPE_SECTIONS = { theme: "테마", tab: "탭별 작품", part: "도구 · 부품", logic: "도구 · 규칙·단추" };
   const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
 
   function recipesView() {

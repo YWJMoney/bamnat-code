@@ -139,12 +139,27 @@ class PendingWayTest {
         assertEquals(2_800_000L, BaseAsk.known(p, month))
         assertFalse(BaseAsk.needed(p, month))
         assertEquals(0.5, p.rules.nightPremium!!, 0.0)
-        assertEquals(PayWay("c1", "(주)예시정밀", "생산팀", "s1"), c.payWays.way.value?.copy(vote = null, why = null))
+        // 1.39 [PAYP-04] Put in from 1.39: someone else's shared way, locked on the pay screen.
+        assertEquals(PayWay("c1", "(주)예시정밀", "생산팀", "s1", shared = true), c.payWays.way.value?.copy(vote = null, why = null))
         assertEquals("(주)예시정밀", c.companyStore.draft.value?.company)
         assertNull(main.pendingWays.pending.value)
         assertNull(main.pendingWays.dropped.value)
         assertNull("the company's own hours are not offered back", main.pendingWays.hoursAsk.value)
         waitFor("the server hears it is used") { calls.contains("use:c1:s1:true:main") }
+    }
+
+    /** 1.39 [PAYP-04] 직접 만들기: the setup and its 7 days of changes go, so nothing of the shared way comes back through 고친 기록. */
+    @Test fun leavingASharedWayLeavesNothingOfIt() = runBlocking {
+        val main = c.companyOf(PersonalCalendar.MAIN)
+        val w = way(companyFile())
+        main.pendingWays.offer(w)
+        assertTrue(main.commit(c, w, 2_800_000, null, Today.month()))
+        assertTrue(c.payWays.way.value?.shared == true)
+        c.payStore.leaveShared()
+        c.payWays.use(null)
+        assertNull(c.payStore.profile.value)
+        assertTrue(c.payStore.history.value.isEmpty())
+        assertNull(c.payWays.way.value)
     }
 
     @Test fun otherHoursAreOfferedBackAsAnOpinion() = runBlocking {

@@ -768,7 +768,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             vm.update { it.copy(dayStartMinutes = m) }
         }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
-        TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
+        // [NAV2-03] 1.39 the bar's five places, filled with any screen or a 묶음.
+        TabOrderRow(settings)
         // [CVW-07] 1.35 앱 동작: this section and the day's taps, shared as one piece.
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.APP_FEEL)
     }

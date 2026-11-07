@@ -100,6 +100,31 @@ class Phase3ScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.work.ManageScreen("main", onBack = {}, showAll = true) }
     }
 
+    /** 1.39 [FLOW-23] this month's board: 오늘 출근·빈자리 and the day's kinds by start time, on the 관리 화면 and the board. */
+    private fun seedToday() = runBlocking {
+        val team = seedTeam()
+        val store = app.container.phaseThree
+        val now = YearMonth.from(Today.date())
+        val members = store.boardNow(team.id, now).members
+        val rot = listOf(1L, 1L, 2L, 2L, 3L, 4L, 4L, 4L)
+        val cells = members.flatMapIndexed { i, m -> (1..now.lengthOfMonth()).map { d -> val date = now.atDay(d); (m.id to date) to TeamCell(m.id, date, rot[(d + i) % rot.size]) } }.toMap()
+        store.saveBoard(team.id, TeamBoard(now, members, cells))
+    }
+
+    @Test fun teamTodayManage() = shoot("p3_11_team_today_manage", FOLDED) {
+        seedToday()
+        content { com.bamnat.app.ui.work.ManageScreen("main", onBack = {}, showAll = true) }
+    }
+
+    @Test fun teamTodayBoard() = shoot("p3_12_team_today_board", FOLDED) {
+        seedToday()
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        settle()
+        tapText("지난달", exact = true)
+    }
+
     @Test fun teamPlanSheet() = shoot("p3_7_team_plan", FOLDED) {
         content {
             com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM,

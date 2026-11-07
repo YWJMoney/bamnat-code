@@ -49,6 +49,8 @@ class RosterFollowerTest {
         override suspend fun delete(state: ShareLinkState) = Unit
         override suspend fun read(id: String): ReceivedShare = share ?: throw ShareLinkException("not_found")
         override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id).takeIf { it.etag != etag }
+        var quiet = 0
+        override suspend fun readQuietly(id: String, etag: String?): ReceivedShare? { quiet++; return readIfChanged(id, etag) }
     }
 
     /** The 리더's link: 12/3 and 12/4 with D or N. */
@@ -79,6 +81,18 @@ class RosterFollowerTest {
     }
 
     private suspend fun override(d: LocalDate) = c.scheduleRepository.snapshot.first().entries.firstOrNull { it.date == d }?.override
+
+    /** 1.39 G2: the 6-hourly check is not the member looking, so it asks without setting the 리더's 봤어요; opening the link does. */
+    @Test fun theBackgroundCheckDoesNotCountAsSeen() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        api.share = link("2", "1", "t2")
+        RosterFollower.checkAll(c)
+        assertEquals(1, api.quiet)
+        assertEquals(ShiftOverride.Shift(night), override(day))
+        api.share = link("2", "2", "t3")
+        RosterFollower.refresh(c, id)
+        assertEquals(1, api.quiet)
+    }
 
     @Test fun theLinkTheWorkComesFromGoesInAndCanBeTakenBack() = runBlocking<Unit> {
         c.received.put(id, api.share!!, mine = true)
@@ -166,6 +180,52 @@ class RosterFollowerTest {
         assertEquals(ShiftOverride.Shift(7), RosterFollower.override("s7"))
         assertEquals("o", RosterFollower.code(ShiftOverride.Off))
         assertEquals(ShiftOverride.None, RosterFollower.override(RosterFollower.code(ShiftOverride.None)))
+    }
+
+    /** PC a483ca15: the new copy came in another way first (opening the link again); the next look still puts the change in. */
+    @Test fun aCopyBroughtInAnotherWayIsStillFollowed() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        api.share = link("2", "1", "t2")
+        c.received.put(id, api.share!!) // e.g. ReceivedViewModel.add: the copy moves, my days not yet
+        assertEquals(ShiftOverride.Shift(day1), override(day))
+        assertTrue(RosterFollower.refresh(c, id)) // the server says nothing changed (same tag)
+        assertEquals(ShiftOverride.Shift(night), override(day))
+        assertEquals(FollowNote.DONE, c.received.get(id)!!.note!!.kind)
+        // Once matched, another look does nothing more.
+        RosterFollower.close(c, id)
+        RosterFollower.refresh(c, id)
+        assertNull(c.received.get(id)!!.note)
+    }
+
+    /** The setup filled the days from an older read than the copy it kept: the difference is put in. */
+    @Test fun theSetupsOwnReadIsTheBasis() = runBlocking<Unit> {
+        val filledFrom = api.share!!.schedule
+        c.received.remove(id)
+        api.share = link("2", "1", "t2")
+        c.received.put(id, api.share!!, mine = true, basis = filledFrom)
+        RosterFollower.refresh(c, id)
+        assertEquals(ShiftOverride.Shift(night), override(day))
+    }
+
+    /** PC a483ca15: '직접 바꾼 날이라 그대로 뒀어요 · 직접 바꾼 12/2은 그대로 뒀어요' (twice, and 은). */
+    @Test fun aKeptDayIsSaidOnce() {
+        val cal = c.received.get(id)!!
+        val (_, text) = RosterFollower.words(cal, FollowNote(FollowNote.ASK, Instant.now(), emptyList(), kept = listOf(day.minusDays(1))))
+        assertEquals("직접 바꾼 날이라 그대로 뒀어요: 12/2", text)
+        val (_, done) = RosterFollower.words(cal, FollowNote(FollowNote.DONE, Instant.now(), listOf("12/3 D → N"), kept = listOf(day.plusDays(1))))
+        assertTrue(done, done.contains("직접 바꿔서 그대로 둔 날: 12/4") && !done.contains("은 그대로"))
+    }
+
+    /** Two changes asked one after the other are asked together. */
+    @Test fun anUnansweredAskKeepsItsDays() = runBlocking<Unit> {
+        c.received.markAdopted(id)
+        api.share = link("2", "1", "t2")
+        RosterFollower.refresh(c, id)
+        api.share = link("2", "2", "t3")
+        RosterFollower.refresh(c, id)
+        val note = c.received.get(id)!!.note!!
+        assertEquals(setOf(day, day.plusDays(1)), note.apply.keys)
+        assertEquals(2, note.lines.size)
     }
 
 }

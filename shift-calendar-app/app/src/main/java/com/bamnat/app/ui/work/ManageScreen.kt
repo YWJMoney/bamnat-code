@@ -191,7 +191,10 @@ private fun TeamGlanceCard(team: Team, now: YearMonth, onOpen: () -> Unit, show:
         nm?.state == MonthState.CONFIRMED, nextBoard?.empty ?: 0, painted = b.cells.size)
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
+    val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }
     SectionCard(title = team.name, trailing = { TextButton(onClick = onOpen) { Text("열기") } }) {
+        // 1.39 [FLOW-23] one number first: who is at work today and how many places are empty.
+        if (today != null && members > 0) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else "짜는 중", Modifier.weight(1f),
                 caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", warning = !g.confirmed && members > 0 && g.painted > 0)

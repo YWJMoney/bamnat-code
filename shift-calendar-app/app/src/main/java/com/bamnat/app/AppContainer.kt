@@ -872,13 +872,18 @@ class AppContainer(context: Context) {
         keep("sleeping") {
             var openId: Long? = null
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
-            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming) { log, show, next -> Triple(log, show, next) }
-                .collect { (log, show, next) ->
+            // 1.39 [SLEEP-06] While 자는 동안 소리 measures, its notice is the 자는 중 notice (깼어요 and 측정만 끝 side by side
+            // on one card), so the shade does not stack two of them (PC 1.38 최종 사용성 6).
+            val measuring = com.bamnat.app.sleep.SleepRecordService.recording.map { it != null }.distinctUntilChanged()
+            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming, measuring) { log, show, next, rec -> Triple(log, show, next) to rec }
+                .collect { (t, rec) ->
+                    val (log, show, next) = t
                     val now = Today.dateTime()
                     val open = log.firstOrNull {
                         it.end == null && !it.imported && Duration.between(it.start, now).toMinutes() < SleepDebt.MAX_SLEEP_MINUTES
                     }
                     when {
+                        open != null && show && rec -> SleepingNotice.cancel(appContext)
                         open != null && show ->
                             SleepingNotice.show(appContext, open, next?.let { AlarmScheduler.millisToLocal(it.triggerAtMillis) }, now)
                         openId != null -> {
