@@ -37,6 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -70,7 +74,9 @@ internal fun MarketFlip(
             val pager = rememberPagerState(start.coerceIn(0, items.lastIndex)) { items.size }
             val scope = rememberCoroutineScope()
             androidx.compose.runtime.LaunchedEffect(pager.currentPage) { onAt(pager.currentPage) }
-            Column(Modifier.fillMaxSize().padding(top = 8.dp)) {
+            // PC 4차 c0ca3d9f (장터 5): inside the safe area — the top row clear of the status bar's clock, the hint clear of the gesture bar.
+            com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.background.luminance() > 0.5f)
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 8.dp)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
                     Text("크게 넘겨 보기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))

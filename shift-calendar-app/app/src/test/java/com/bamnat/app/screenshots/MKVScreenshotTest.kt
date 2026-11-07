@@ -17,6 +17,7 @@ import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.work.WorkStyle
 import org.json.JSONArray
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -181,6 +182,33 @@ class MKVScreenshotTest : ScreenshotBase() {
         // The result under it, reached by scrolling (a tap on the words does nothing).
         tapText("‘오늘 하루 정리해요’ 알림이 떠요", exact = false)
         assertTrue(appears("‘오늘 하루 정리해요’ 알림이 떠요", exact = false))
+    }
+
+    /**
+     * PC 4차 c0ca3d9f (장터 1): a rule's line on its page reads with this phone's numbers for the day — '{남은체크}'·'{원(지출)}'·
+     * '{이번주야간}' are never shown as written.
+     */
+    @Test fun aRuleSaysItsBlanksFilled() = shoot("1530_mkd_rule_blanks", PHONE) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val logic = com.bamnat.core.formula.Logic(
+            rules = listOf(com.bamnat.core.formula.LogicRule("밤 점검", com.bamnat.core.formula.RuleTrigger.DAILY, at = "21:00",
+                act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.MEMO_LINE,
+                    "남은 체크 {남은체크}개 · 오늘 쓴 돈 {원(지출)} · 이번 주 야간 {이번주야간}번"))),
+        )
+        val r = Recipe("밤 점검", styles = WorkStyle.entries.toSet(), pieces = listOf(com.bamnat.core.recipe.Piece(PieceKind.LOGIC, logic.toValues())))
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(16.dp)) {
+                com.bamnat.app.ui.recipe.ToolTryout(r, WorkStyle.SHIFT)
+                com.bamnat.app.ui.recipe.ExampleCalendars(r)
+            }
+        }
+        settle()
+        assertTrue(appears("남은 체크 ", exact = false))
+        assertTrue(appears("원 · 이번 주 야간 ", exact = false))
+        assertFalse(shows("{남은체크}", exact = false))
+        assertFalse(shows("{원(지출)}", exact = false))
+        assertFalse(shows("{이번주야간}", exact = false))
     }
 
     /** 1.39 [MKD-04] 값 칸 해 보기: 단추 위젯 '물 한 잔'을 누를 때마다 숫자가 오르고, 목표에 처음 닿으면 그 규칙이 따라 돌아요. 저장 안 됨. */

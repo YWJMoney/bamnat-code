@@ -91,8 +91,8 @@ internal fun ExampleCalendars(r: Recipe) {
         Text("이 규칙·단추를 넣으면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                logic.buttons.forEach { b -> Text("• 단추 ${b.label}: ${b.say()}", style = MaterialTheme.typography.bodySmall) }
-                logic.rules.forEach { x -> Text("• ${x.name}: ${x.say()}", style = MaterialTheme.typography.bodySmall) }
+                logic.buttons.forEach { b -> Text("• 단추 ${b.label}: ${sample(b.say())}", style = MaterialTheme.typography.bodySmall) }
+                logic.rules.forEach { x -> Text("• ${x.name}: ${sample(x.say())}", style = MaterialTheme.typography.bodySmall) }
                 if (logic.writes) Text("⚠ 메모나 가계부를 바꾸는 동작이 있어요. 할 때마다 되돌리기가 나와요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("색과 모양은 바꾸지 않고, 받는 사람의 지금 규칙 뒤에 더해져요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

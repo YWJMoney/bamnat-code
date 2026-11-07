@@ -1062,13 +1062,20 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val entry = nav.currentBackStackEntry
         val destId = entry?.destination?.id
         val real = entry?.let(::filledRoute)
+        // PC 4차 c0ca3d9f (장터 3, 상): the tab the page was opened in (마을 for a 장터 page). A tab moved to while trying keeps that tab's
+        // screens put away with the tried tab on top; 끝내기 brings that tab back and goes down to the page, so 마을 on the bar is 마을
+        // again after (it opened 근무·급여 with 근무·급여 lit, and back went to the page).
+        val owner = nav.currentBackStack.value.asReversed().firstNotNullOfOrNull { e ->
+            e.destination.route?.takeIf { r -> TopLevel.entries.any { it.route == r } }
+        }
         com.bamnat.app.ui.recipe.LiveTryOn.back = back@{
-            val here = nav.currentBackStackEntry?.destination?.id
-            if (destId == null || here == destId) return@back
-            val under = runCatching { nav.getBackStackEntry(destId) }.isSuccess
+            if (destId == null || nav.currentBackStackEntry?.destination?.id == destId) return@back
+            fun under() = runCatching { nav.getBackStackEntry(destId) }.isSuccess
+            if (!under() && owner != null) nav.navigateTopLevel(owner, record = false)
             when {
-                under -> nav.popBackStack(destId, false)
-                real != null && TopLevel.entries.any { it.route == real } -> nav.navigateTopLevel(real)
+                nav.currentBackStackEntry?.destination?.id == destId -> Unit
+                under() -> nav.popBackStack(destId, false)
+                real != null && TopLevel.entries.any { it.route == real } -> nav.navigateTopLevel(real, record = false)
                 real != null -> runCatching { nav.navigate(real) { launchSingleTop = true } }
             }
         }
@@ -1078,7 +1085,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val tourAt = liveTrial?.at ?: 0
     LaunchedEffect(trialOn, tourAt) {
         val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: return@LaunchedEffect
-        TopLevel.entries.firstOrNull { it.route == t.tour.getOrNull(t.at) }?.let { dest -> if (dest.route != route) navigateTop(dest) }
+        // The screen on show now (the trial's first tab was just opened above): not moved twice, which put the page's tab away.
+        val now = nav.currentBackStackEntry?.destination?.route
+        TopLevel.entries.firstOrNull { it.route == t.tour.getOrNull(t.at) }?.let { dest -> if (dest.route != now) navigateTop(dest) }
     }
     // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
     // [TRY-06] One with 기능 waits a little (a photo for a memo, a glance elsewhere) and then puts them back.
