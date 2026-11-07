@@ -1276,7 +1276,10 @@ export function toolsOf(body, scope) {
  */
 export const FX_PARTS = ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "look"];
 /** core FxPro.NEW_LOOKS: 1.39 새 화면 모양 부품 (piece kind, or a prefix ending in "."), [FX-22]. */
-export const FX_NEW_LOOKS = [];
+export const FX_NEW_LOOKS = [
+  // G8 FLOW-21 밤 화면·아침 한 장 (설계도 부품)
+  "night", "night.",
+];
 const fxNewLook = (id) => typeof id === "string" && FX_NEW_LOOKS.some((k) => id === k || (k.endsWith(".") && id.startsWith(k)));
 /** core FxPro.SINCE_APP: the first app (versionCode) that reads them; a work with one is kept from older apps (min_app). */
 export const FX_SINCE_APP = 53;
@@ -1307,7 +1310,7 @@ export function fxPartsOf(body) {
     if (["notify", "memoLine", "newMemo", "valText"].includes(a.do)) { reads(a.arg, true, add); reads(a.text, true, add); }
   };
   for (const p of rec?.pieces ?? []) {
-    if (fxNewLook(p?.kind)) add("look");
+    if (fxNewLook(p?.kind) || (p?.kind === "parts" && (p.parts ?? []).some((x) => fxNewLook(x?.id)))) add("look");
     if (p?.kind !== "logic") continue;
     const bs = p.buttons ?? [];
     const rs = p.rules ?? [];

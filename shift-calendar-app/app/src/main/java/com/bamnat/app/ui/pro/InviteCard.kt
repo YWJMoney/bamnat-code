@@ -131,6 +131,8 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var typed by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    // 1.39 시험 제보: 틀린 코드의 말이 프로 화면 맨 위에만 나와, 누른 단추 근처에서는 아무 일도 없는 것처럼 보였어요.
+    var said by remember { mutableStateOf<String?>(null) }
     val view = state.view
     val terms = state.rules
     LaunchedEffect(view?.code) { runCatching { c.invites.refresh() } }
@@ -164,12 +166,15 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
                         typing = false
                         onMessage(inviteAnswerWords(a))
                     } catch (e: CompanyException) {
-                        onMessage(if (e.code == "code") "초대 코드가 맞지 않아요. 친구에게 다시 확인해 주세요." else serverProblem(e.code))
+                        val w = if (e.code == "code") "초대 코드가 맞지 않아요. 친구에게 다시 확인해 주세요." else serverProblem(e.code)
+                        said = w
+                        onMessage(w)
                     } finally {
                         busy = false
                     }
                 }
             }) { Text("동의하고 보내기") }
+            said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         }
         state.answer?.takeIf { state.reportedCode != null }?.let {
             Text(inviteAnswerWords(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

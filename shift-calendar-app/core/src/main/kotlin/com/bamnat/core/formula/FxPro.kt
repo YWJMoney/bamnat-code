@@ -110,12 +110,19 @@ object FxPro {
      * [FX-22] 1.39에 새로 연 화면 모양 부품: a work's piece kind (or a 설계도 부품 id) that is one of these, or starts with one ending in
      * '.', is [Part.LOOK]. 갈래마다 자기 부품 앞자리를 여기에만 더해요 (서버 recipes.js FX_NEW_LOOKS도 같이).
      */
-    val NEW_LOOKS: List<String> = emptyList()
+    val NEW_LOOKS: List<String> = listOf(
+        // G8 FLOW-21 밤 화면·아침 한 장 (설계도 부품 night·night.date·night.clock·night.line·night.card·night.button·night.morning).
+        "night", "night.",
+    )
 
     fun isNewLook(id: String): Boolean = NEW_LOOKS.any { id == it || (it.endsWith('.') && id.startsWith(it)) }
 
     /** [Part.LOOK] when any of [ids] (piece kinds, 설계도 부품 ids) is a 1.39 새 모양. */
     fun looks(ids: Collection<String>): Set<Part> = if (ids.any(::isNewLook)) setOf(Part.LOOK) else emptySet()
+
+    /** [Part.LOOK] for one piece: its kind, or for 부품 꾸미기 (`parts`) the 설계도 부품 ids its lines dress. */
+    fun looks(kind: String, values: Map<String, Any?>): Set<Part> =
+        looks(listOf(kind) + if (kind == "parts") (values["parts"] as? List<*>).orEmpty().mapNotNull { (it as? Map<*, *>)?.get("id") as? String } else emptyList())
 
     /** Whether [l] needs 프로 to run as made. */
     fun needs(l: Logic): Boolean = uses(l).isNotEmpty()

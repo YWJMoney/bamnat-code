@@ -101,6 +101,8 @@ fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaSco
             SegmentedButton(selected = view == 1, onClick = { view = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("블록") }
             SegmentedButton(selected = view == 2 || (view == 0 && easy == null), onClick = { view = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("수식으로") }
         }
+        // 1.39 [FX-16] 조건 고르개 (무료): 자주 쓰는 조건을 한 번에. 만들어진 수식은 아래 보기에 그대로 보여 배우게 돼요.
+        QuickConds(value, onChange)
         // PC 확인 8d0cddf6 (규칙 창에서 수식 칸 아래 줄이 창 밖이라 안 보였어요): the 받는 칸 values first, above the condition, in every view.
         InputValuesLine(value, scope)
         if (view == 1) {
@@ -164,6 +166,28 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
                     supportingText = name?.let { { Text(it.help) } },
                 )
             }
+        }
+    }
+}
+
+/**
+ * 1.39 [FX-16] 자주 쓰는 조건: 야간인 날·주말·쉬는 날·공휴일, 그리고 작품의 값 칸마다 '목표 못 채움'·'3번 연속'. 누르면 지금 조건을 바꾸고,
+ * 이미 있으면 '그리고'로 이어요.
+ */
+@Composable
+private fun QuickConds(value: String, onChange: (String) -> Unit) {
+    val fx = LocalFxLogic.current
+    val picks = remember(fx.values) {
+        listOf("야간인 날" to "${FormulaName.ROLE.ko} = \"야간\"", "주말" to FormulaName.WEEKEND.ko, "쉬는 날" to FormulaName.OFF.ko,
+            "일하는 날" to "아님 ${FormulaName.OFF.ko}", "공휴일" to FormulaName.HOLIDAY.ko) +
+            fx.values.filter { it.goal != null && it.kind == com.bamnat.core.formula.ValueKind.NUM }.flatMap { v ->
+                val g = com.bamnat.core.formula.Formula.numText(v.goal!!)
+                listOf("${v.name} 목표 못 채움 ✦" to "값(\"${v.name}\") < $g", "${v.name} 3번 연속 ✦" to "연속(\"${v.name}\") >= 3")
+            }
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        picks.forEach { (label, f) ->
+            AssistChip(onClick = { onChange(if (value.isBlank()) f else if (f in value) value else "$value 그리고 $f") }, label = { Text(label) })
         }
     }
 }
@@ -398,7 +422,7 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
 }
 
 /** 1.39 [FX-15] 기다렸다 하기의 고르기. */
-private val AFTER_PICKS = listOf(5, 10, 30, 60, 120, 180)
+private val AFTER_PICKS = listOf(3, 4, 5, 10, 30, 60, 120, 180)
 
 /**
  * 1.39 [FX-11] 동작 줄 ✦: 이어서 할 일 (또는 '아니면' 할 일), 한 줄에 [max]개까지. 각 동작은 위 '무엇을'과 같은 칸으로 고쳐요.
@@ -827,6 +851,8 @@ fun LogicEditor(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // 1.39 [FX-01] 프로 문: what of this work is a 프로 기능 장치, and whether it runs on this phone.
         FxDoor(logic)
+        // 1.39 [FX-20] 예시로 시작 · [FX-18] 일주일 미리 돌려 보기 (둘 다 무료, 만드는 곳에서만).
+        if (!readOnly && !phone) FxStarters(logic, onChange, facts, day)
         if (show != LogicShow.RULES) {
         Text("단추", style = MaterialTheme.typography.titleSmall)
         if (logic.buttons.isEmpty()) Text("하루 화면·메모장·달력에 단추를 놓으면 한 번 눌러 메모 틀을 열거나 가계부에 넣을 수 있어요",
@@ -975,6 +1001,53 @@ fun LogicEditor(
                     of = if (old != null && it.of == old) v.name else it.of) }))
             editValue = null
         }, onDismiss = { editValue = null })
+    }
+}
+
+/**
+ * 1.39 [FX-20] 예시로 시작: 여섯 가지 기능 예시를 눌러 값 칸·단추·규칙을 한꺼번에 넣고, [FX-18] 일주일 미리 돌려 보기로 내 근무표에서 7일
+ * 동안 언제 무엇을 할지(값 칸이 어떻게 바뀔지) 봐요. 아무것도 실제로 하지 않아요.
+ */
+@Composable
+private fun FxStarters(logic: Logic, onChange: (Logic) -> Unit, facts: com.bamnat.core.formula.DayFactsBook?, day: LocalDate) {
+    var week by remember { mutableStateOf(false) }
+    var full by remember { mutableStateOf<String?>(null) }
+    Text("예시로 시작", style = MaterialTheme.typography.labelLarge)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.core.formula.FxExamples.ALL.forEach { e ->
+            AssistChip(onClick = {
+                val next = com.bamnat.core.formula.FxExamples.into(logic, e)
+                if (next == null) full = "자리가 모자라요. 단추 ${Logic.MAX_BUTTONS}개·규칙 ${Logic.MAX_RULES}개·값 칸 ${com.bamnat.core.formula.LogicValue.MAX}개까지예요"
+                else { full = null; onChange(next); LogicRunner.say("‘${e.title}’ 예시를 넣었어요. ${e.say}") }
+            }, label = { Text("${e.emoji} ${e.title}") })
+        }
+    }
+    full?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    if (logic.rules.isNotEmpty() && facts != null) OutlinedButton(onClick = { week = true }) { Text("일주일 미리 돌려 보기") }
+    if (week && facts != null) {
+        val w = remember(logic, facts, day) { com.bamnat.core.formula.LogicWeek.run(logic, facts, day) }
+        AlertDialog(onDismissRequest = { week = false },
+            title = { Text("일주일 미리 돌려 보기") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("내 근무표로 ${day.monthValue}/${day.dayOfMonth}부터 7일을 빨리 돌려 봤어요. 실제로는 아무것도 하지 않아요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (w.lines.isEmpty()) Text("7일 동안 저절로 도는 때가 없어요. 근무 시작·끝, 매일, 몇 분마다 규칙이 돌아요")
+                    w.lines.groupBy { it.date }.forEach { (d, ls) ->
+                        Text("${d.monthValue}/${d.dayOfMonth}(${"월화수목금토일"[d.dayOfWeek.value - 1]})", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                        ls.forEach { l ->
+                            Text("${l.at?.let { "%02d:%02d".format(it.hour, it.minute) } ?: ""} ${l.who}: ${l.what}".trim(), style = MaterialTheme.typography.bodySmall,
+                                color = if (l.ran) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (w.lines.size >= com.bamnat.core.formula.LogicWeek.MAX_LINES) Text("너무 많아 앞의 ${com.bamnat.core.formula.LogicWeek.MAX_LINES}줄만 보여요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                    if (w.values.isNotEmpty()) Text("7일째 값 칸: " + w.values.entries.joinToString(" · ") { "${it.key} ${it.value}" },
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+                    w.waiting.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { week = false }) { Text("닫기") } })
     }
 }
 

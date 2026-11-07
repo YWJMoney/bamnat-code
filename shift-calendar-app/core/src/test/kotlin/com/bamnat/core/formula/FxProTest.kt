@@ -90,6 +90,8 @@ class FxProTest {
 
     @Test fun newLooksArePro() {
         assertTrue(FxPro.looks(listOf("calTheme", "shiftLook")).isEmpty())
+        assertEquals(setOf(FxPro.Part.LOOK), FxPro.looks("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell"), mapOf("id" to "night.clock")))))
+        assertTrue(FxPro.looks("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell"), mapOf("id" to "nightly")))).isEmpty())
     }
 
     @Test fun aFormulaReadingAValueIsPro() {

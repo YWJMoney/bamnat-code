@@ -62,7 +62,7 @@ object FxAccess {
     /** The 프로 기능 장치 a whole work carries in its 규칙·단추 piece (none: free to put in and to send up). */
     fun partsOf(r: com.bamnat.core.recipe.Recipe): Set<FxPro.Part> =
         (r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) } +
-            FxPro.looks(r.pieces.map { it.kind.key })).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
+            r.pieces.flatMap { FxPro.looks(it.kind.key, it.values) }).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
 
     /** What runs of [full] now. */
     fun runnable(c: AppContainer, full: Logic): Logic = if (on(c)) full else FxPro.free(full)

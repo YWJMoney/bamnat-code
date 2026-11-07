@@ -533,27 +533,10 @@ object LogicRunner {
 
     /** 1.39 [FX-15] 몇 분마다: the next time after [after], in its 시간대 or while a shift is on, at most [LogicRule.EVERY_DAY_MAX] a day. */
     private fun nextEvery(r: LogicRule, after: LocalDateTime, facts: DayFactsBook): Pair<LocalDateTime, LocalDate>? {
-        val step = r.min.coerceIn(LogicRule.EVERY_MIN, LogicRule.EVERY_MAX).toLong()
+        // 1.39 [FX-18] the same times the 일주일 미리 돌려 보기 shows (core LogicWeek.everyTimes).
         for (k in -1..14) {
             val day = after.toLocalDate().plusDays(k.toLong())
-            val (from, to) = if (r.inWork) {
-                val v = facts.values(day)
-                if (v[com.bamnat.core.formula.FormulaName.OFF.ko] == true) continue
-                val start = (v[com.bamnat.core.formula.FormulaName.START.ko] as? String)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse) ?: continue
-                val end = (v[com.bamnat.core.formula.FormulaName.END.ko] as? String)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse) ?: continue
-                day.atTime(start) to (if (!end.isAfter(start)) day.plusDays(1).atTime(end) else day.atTime(end))
-            } else {
-                val start = r.at?.let { runCatching { LocalTime.parse(it) }.getOrNull() } ?: LocalTime.MIDNIGHT
-                val end = r.until?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
-                day.atTime(start) to (if (end == null) day.plusDays(1).atStartOfDay() else if (!end.isAfter(start)) day.plusDays(1).atTime(end) else day.atTime(end))
-            }
-            // A shift's first round is one step in (2시간마다 from 09:00 is 11:00, not the start itself).
-            var t = if (r.inWork) from.plusMinutes(step) else from
-            var n = 0
-            while (!t.isAfter(to) && n < LogicRule.EVERY_DAY_MAX) {
-                if (t.isAfter(after) && (r.inWork || t.isBefore(to))) return t to day
-                t = t.plusMinutes(step); n++
-            }
+            com.bamnat.core.formula.LogicWeek.everyTimes(r, day, facts.values(day)).firstOrNull { it.isAfter(after) }?.let { return it to day }
         }
         return null
     }
