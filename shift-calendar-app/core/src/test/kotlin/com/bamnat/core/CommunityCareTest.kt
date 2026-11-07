@@ -73,4 +73,13 @@ class CommunityCareTest {
         org.junit.Assert.assertEquals(r.LINES.take(5), r.lines(true).take(5))
         org.junit.Assert.assertTrue(r.lines(true).none { Regex("\\d+원").containsMatchIn(it) })
     }
+
+    @org.junit.Test
+    fun `badge rest line only when badges are on and not for the first notice`() {
+        val first = CareNote(id = "c1", reason = "auto_first", by = "auto")
+        val warn = CareNote(id = "c2", reason = "abuse", by = "operator")
+        org.junit.Assert.assertFalse(CommunityCare.warningBody(warn).contains("표식"))
+        org.junit.Assert.assertTrue(CommunityCare.warningBody(warn, badgeRest = true).contains(CommunityCare.BADGE_REST_WARN))
+        org.junit.Assert.assertFalse(CommunityCare.warningBody(first, badgeRest = true).contains("표식"))
+    }
 }
