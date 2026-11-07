@@ -300,19 +300,21 @@ fun RecipeListScreen(
                     // [MKX-01] 1.36 두 구간 (사용자 2026-10-31 "장터가 너무 보기 어렵게 … 테마를 주는건지 기능별로 보여지는건지 구간을 나눠서"):
                     // 테마 (모든 것을 종합해 만든 한 벌) and 기능별 탭 (탭 하나를 전문으로, 고른 테마 위에 얹어요), two big halves on top.
                     // [RUL-07] PC D4 (사용성 제안 높): 맨 위를 테마 · 기능별 탭 · 규칙·단추 세 갈래로 (규칙·단추 칩이 탭 줄 끝에 숨어 있었어요).
-                    val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
+                    // 1.39 [MKC-01] 장터 분류 다시 (사용자 2026-11-07 "테마는 말그대로 모든 것을 꾸민 모습이고 각 탭별로 기능이나 디자인 한
+                    // 제작물로 분류를 나눈다. 도구 또한 분류를 나눠서"): 테마 · 탭별 작품 (꾸미기·기능) · 도구 (부품·자동 규칙·단추).
+                    val tools = state.kind.isTool()
                     val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MarketHalf("테마", "앱 전체를 한 벌로", "🎨", selected = !featured && !logicOnly, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_THEME) }
-                        MarketHalf("기능별 탭", "탭 하나만", "🧩", selected = featured, Modifier.weight(1f)) {
+                        MarketHalf("테마", "앱 전체를 한 벌로", "🎨", selected = !featured && !tools, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_THEME) }
+                        MarketHalf("탭별 작품", "탭 하나를 위해", "🗂", selected = featured, Modifier.weight(1f)) {
                             if (!featured) vm.kind(RecipeClient.SCOPE_TAB)
                         }
-                        MarketHalf("규칙·단추", "이럴 때 이렇게", "⚡", selected = logicOnly, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_LOGIC) }
+                        MarketHalf("도구", "하나만 더하기", "🧰", selected = tools, Modifier.weight(1f)) { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) }
                     }
                     Text(when {
-                        logicOnly -> "모양은 그대로 두고 '이럴 때 이렇게' 규칙과 단추만 더해요. 담으면 스튜디오 › 규칙·단추에서 내 규칙 뒤에 얹어요"
-                        featured -> "지금 입은 테마는 그대로 두고, 고른 탭 하나만 바꿔요. 입어 보기에서 내 테마 위에 얹어 봐요"
-                        else -> "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요"
+                        tools -> "입은 테마나 기본 모양은 그대로 두고 부품 하나, 규칙 하나, 단추 하나만 더해요. 눌러서 전후를 직접 해 볼 수 있어요"
+                        featured -> "탭 하나를 위해 만든 꾸미기(모양)와 기능(틀·묶음)이에요. 지금 입은 테마는 그대로 두고 그 탭만 바꿔요"
+                        else -> "달력·가계부·메모·급여까지 모든 화면을 한 벌로 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 탭별 작품으로 바꿀 수 있어요"
                     }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     androidx.compose.material3.OutlinedButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) {
                         Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("스튜디오에서 만들기")
@@ -326,19 +328,45 @@ fun RecipeListScreen(
                 val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * side, maxWidth = c.maxWidth + 2 * side))
                 layout(c.maxWidth, p.height) { p.place(-side, 0) }
             }) {
-                val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
+                val tools = state.kind.isTool()
                 val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
                 androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.solid(), modifier = Modifier.fillMaxWidth()) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.TopCenter) {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
                     val tabChips: @Composable () -> Unit = {
-                        val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
-                        FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
+                        val now = RecipeClient.tabOf(state.kind)
+                        val made = RecipeClient.madeOf(state.kind)
+                        FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.tabKind("", made)) }, label = { Text("모든 탭") })
                         // PC 확인 5c21f3bb 장터 구간 세기: a tab that kind of work has no works for (자영업·투자의 근무·급여, 알람 조각을 받는
-                        // 교대·일근·알바 밖의 알람) is not offered; their 장 시작·영업 준비 알림 are in 규칙·단추.
+                        // 교대·일근·알바 밖의 알람) is not offered; their 장 시작·영업 준비 알림 are in 도구.
                         RecipeClient.MARKET_TABS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
-                            FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.SCOPE_TAB + t) }, label = { Text(marketTabLabel(t, vm.style)) })
+                            FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.tabKind(t, made)) }, label = { Text(marketTabLabel(t, vm.style)) })
+                        }
+                    }
+                    // 1.39 [MKC-01] 탭별 작품: 꾸미기(모양)·기능(틀·묶음·보기 방식). Both kinds in one work show under either.
+                    val madeChips: @Composable () -> Unit = {
+                        val tab = RecipeClient.tabOf(state.kind)
+                        val made = RecipeClient.madeOf(state.kind)
+                        listOf(null to "전체", "look" to "🎨 꾸미기", "func" to "⚙️ 기능").forEach { (m, label) ->
+                            FilterChip(selected = made == m, onClick = { vm.kind(RecipeClient.tabKind(tab, m)) }, label = { Text(label) })
+                        }
+                    }
+                    // 1.39 [MKC-01] 도구: 종류 (부품·자동 규칙·단추), then the screen it works on (a row of its own when not pinned,
+                    // so neither hides at the right edge).
+                    val toolChips: @Composable () -> Unit = {
+                        val tool = RecipeClient.toolOf(state.kind)
+                        val on = RecipeClient.toolOn(state.kind)
+                        (listOf("" to "전체") + RecipeClient.TOOL_KINDS.map { it to toolLabel(it) }).forEach { (t, label) ->
+                            FilterChip(selected = tool == t, onClick = { vm.kind(RecipeClient.toolKind(t, on)) }, label = { Text(label) })
+                        }
+                    }
+                    val screenChips: @Composable () -> Unit = {
+                        val tool = RecipeClient.toolOf(state.kind)
+                        val on = RecipeClient.toolOn(state.kind)
+                        FilterChip(selected = on == null, onClick = { vm.kind(RecipeClient.toolKind(tool, null)) }, label = { Text("모든 화면") })
+                        TOOL_SCREENS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
+                            FilterChip(selected = on == t, onClick = { vm.kind(RecipeClient.toolKind(tool, t)) }, label = { Text(marketTabLabel(t, vm.style).removeSuffix(" 화면·규칙")) })
                         }
                     }
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away. PC c6a6e361 제안 (기능별 탭은
@@ -347,17 +375,32 @@ fun RecipeListScreen(
                     // tab row below goes, so the header never draws without both.
                     if (pinned) {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            FilterChip(selected = !featured && !logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
-                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("🧩 기능별 탭") })
-                            FilterChip(selected = logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("⚡ 규칙·단추") })
+                            FilterChip(selected = !featured && !tools, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
+                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("🗂 탭별 작품") })
+                            FilterChip(selected = tools, onClick = { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) }, label = { Text("🧰 도구") })
                             if (featured) {
                                 androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
                                 tabChips()
+                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
+                                madeChips()
+                            }
+                            if (tools) {
+                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
+                                toolChips()
+                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
+                                screenChips()
                             }
                         }
                     }
                     // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
-                    if (featured && !pinned) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { tabChips() }
+                    if (featured && !pinned) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { tabChips() }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { madeChips() }
+                    }
+                    if (tools && !pinned) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { toolChips() }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { screenChips() }
+                    }
                     // How sorted and whose, under the half chosen.
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         // PC D14 (사용성 낮): 다른 칸 칩은 이 줄 맨 앞에 (따로 줄을 두면 칸을 누를 때·첫 글자에 아래가 두 번 내려갔어요).
@@ -406,9 +449,9 @@ fun RecipeListScreen(
                 // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // PC 제안 1.36 (기능별 탭 › 달력이 비면 무엇이 없는지 말이 없음): that tab's name, and the way to make the first.
-                    val tabNow = state.kind?.takeIf { it.startsWith(RecipeClient.SCOPE_TAB) }?.removePrefix(RecipeClient.SCOPE_TAB)?.takeIf { it.isNotEmpty() }
+                    val tabNow = state.kind?.takeIf { it.startsWith(RecipeClient.SCOPE_TAB) }?.let { RecipeClient.tabOf(it) }?.takeIf { it.isNotEmpty() }
                     if (tabNow != null && state.query.isBlank()) {
-                        Text("${marketTabLabel(tabNow, vm.style)} 탭 작품이 아직 없어요", style = MaterialTheme.typography.bodyMedium,
+                        Text("${marketTabLabel(tabNow, vm.style)} 탭 ${madeLabel(RecipeClient.madeOf(state.kind))?.let { "$it " }.orEmpty()}작품이 아직 없어요", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row { TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }; TextButton(onClick = { vm.load() }) { Text("다시 불러오기") } }
                         return@Column
@@ -420,7 +463,7 @@ fun RecipeListScreen(
                         Text("‘${state.query.trim()}’에 맞는 작품이 ${if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"} 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else "",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         TextButton(onClick = { vm.kind(if (state.kind == RecipeClient.SCOPE_THEME) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME) }) {
-                            Text(if (state.kind == RecipeClient.SCOPE_THEME) "기능별 탭에서 찾기" else "테마에서 찾기")
+                            Text(if (state.kind == RecipeClient.SCOPE_THEME) "탭별 작품에서 찾기" else "테마에서 찾기")
                         }
                         return@Column
                     }
@@ -429,20 +472,20 @@ fun RecipeListScreen(
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // PC 확인 38d63451: the other half's, and a way to make the first one.
                     val inTheme = state.kind == RecipeClient.SCOPE_THEME
-                    if (state.other > 0) Text(if (inTheme) "기능별 탭에는 ${state.other}개 있어요. 달력 같은 탭 하나만 바꾸는 작품이에요"
+                    if (state.other > 0) Text(if (inTheme) "탭별 작품에는 ${state.other}개 있어요. 달력 같은 탭 하나만 바꾸는 작품이에요"
                         else "테마에는 ${state.other}개 있어요. 앱 전체를 한 벌로 바꾸는 작품이에요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                         if (state.other > 0) androidx.compose.material3.FilledTonalButton(onClick = {
                             vm.kind(if (inTheme) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME)
-                        }) { Text(if (inTheme) "기능별 탭 보기" else "테마 보기") }
+                        }) { Text(if (inTheme) "탭별 작품 보기" else "테마 보기") }
                         TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
                         TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
                     }
                 }
             }
             // [HUB-04] Themes are picked by eye: two big pictures a row. [MKV-01] 1.37 (사용자 2026-11-05 "실제로 해당 테마나 기능들의 모습을"):
-            // 기능별 탭 and 규칙·단추 too, each drawn as it really looks, so every 구간 is picked by eye the same way.
+            // 탭별 작품 and 도구 too, each drawn as it really looks, so every 구간 is picked by eye the same way.
             items(state.items.chunked(2), key = { row -> row.first().code }) { row ->
                 Row(Modifier.widthIn(max = 640.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { item -> ThemeTile(item, vm.style, Modifier.weight(1f)) { onOpen(item.code) } }
@@ -475,10 +518,8 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                 }
                 if (item.summary.isNotEmpty()) Text(item.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                // [MKX-01] One tab's: which tab it changes, said once.
-                if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                    Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만 들어가요" else " 탭에만 들어가요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                }
+                // [MKX-01] One tab's: which tab it changes, said once. 1.39 [MKC-01]: and whether it is 꾸미기 or 기능; a 도구 says which.
+                sectionLine(item, style, long = true)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
                 Text(buildString {
                     append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users}")
                     item.kept?.let { append(" · 7일 유지 $it%") }
@@ -495,7 +536,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
  */
 @Composable
 private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Card(modifier.clickable(onClickLabel = if (item.scope == "tab") "작품 보기" else "테마 보기", onClick = onClick)) {
+    Card(modifier.clickable(onClickLabel = when (item.scope) { "tab" -> "작품 보기"; "part", "logic" -> "도구 보기"; else -> "테마 보기" }, onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 MarketShot(item, maxWidth, style, onClick)
@@ -505,9 +546,8 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (item.showcase) Badge("추천")
             }
-            if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만"), style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            sectionLine(item, style, long = false)?.let {
+                Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
             Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
@@ -532,7 +572,7 @@ private fun MarketHalf(title: String, sub: String, emoji: String, selected: Bool
     androidx.compose.material3.Surface(onClick = onClick, color = bg, shape = RoundedCornerShape(16.dp),
         border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier.heightIn(min = 72.dp).semantics { this.selected = selected }) {
-        // Three across a phone (테마 · 기능별 탭 · 규칙·단추): the picture over the words.
+        // Three across a phone (테마 · 탭별 작품 · 도구): the picture over the words.
         Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(emoji, fontSize = 22.sp)
             Text(title, style = MaterialTheme.typography.titleSmall, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1)
@@ -541,7 +581,36 @@ private fun MarketHalf(title: String, sub: String, emoji: String, selected: Bool
     }
 }
 
-/** [MKX-01] A 기능별 탭's name in this kind of work's words (근무·급여, 장부 …). */
+/**
+ * 1.39 [MKC-01] 카드 한 줄: 탭별 작품은 어느 탭에 들어가는지와 꾸미기·기능, 도구는 종류와 쓰는 화면 ("🗂 메모 탭에만 · 꾸미기", "⚡ 자동 규칙 · 가계부").
+ */
+internal fun sectionLine(item: com.bamnat.app.recipe.RecipeItem, style: WorkStyle?, long: Boolean): String? = when (item.scope) {
+    "tab" -> item.tabs.firstOrNull()?.let { t ->
+        "🗂 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만") + (if (long) " 들어가요" else "") +
+            (madeLabel(item.made)?.let { " · $it" } ?: "")
+    }
+    "part", "logic" -> {
+        val kinds = item.tools.ifEmpty { if (item.scope == "part") listOf("part") else emptyList() }
+        val what = if (kinds.isEmpty()) "⚡ 규칙·단추" else kinds.joinToString(" + ") { toolLabel(it) }
+        val on = item.tabs.filter { it in RecipeClient.MARKET_TABS }.map { marketTabLabel(it, style).removeSuffix(" 화면·규칙") }
+        what + (if (on.isEmpty()) "" else " · " + on.joinToString("·"))
+    }
+    else -> null
+}
+
+/** 1.39 [MKC-01] 탭별 작품이 바꾸는 것. */
+internal fun madeLabel(m: String?): String? = when (m) { "look" -> "꾸미기"; "func" -> "기능"; "both" -> "꾸미기+기능"; else -> null }
+
+/** 1.39 [MKC-01] 도구의 종류. */
+internal fun toolLabel(t: String): String = when (t) { "part" -> "🧱 부품"; "rule" -> "⚡ 자동 규칙"; "button" -> "🔘 단추"; else -> "🧰 도구" }
+
+/** 1.39 [MKC-01] 도구가 쓰이는 화면 (위젯은 부품이 없어 빼요). */
+internal val TOOL_SCREENS = listOf("calendar", "memo", "money", "pay", "alarm")
+
+/** 1.39 [MKC-01] Whether this 장터 kind is 도구 (옛 규칙·단추 포함). */
+internal fun String?.isTool(): Boolean = this == RecipeClient.SCOPE_LOGIC || this?.startsWith(RecipeClient.SCOPE_TOOL) == true
+
+/** [MKX-01] A 탭별 작품's tab name in this kind of work's words (근무·급여, 장부 …). */
 internal fun marketTabLabel(tab: String, style: com.bamnat.core.work.WorkStyle?): String = when (tab) {
     "calendar" -> "달력"
     "pay" -> com.bamnat.app.ui.TopLevel.STATS.labelFor(style)
@@ -583,7 +652,7 @@ fun CodeDialog(onCode: (String) -> Unit, onDismiss: () -> Unit) {
 internal fun com.bamnat.app.recipe.RecipeItem.thumb(): com.bamnat.app.recipe.ThemeSwatch? =
     look?.withDays(styles.firstOrNull()) ?: com.bamnat.app.recipe.ThemeSwatch.example(styles.firstOrNull()).takeIf { scope == "theme" || "calendar" in tabs || "app" in tabs }
 
-/** Whether 장터's 기능별 탭 [t] has works for [style] (null: every kind of work). */
+/** Whether 장터's 탭별 작품 [t] has works for [style] (null: every kind of work). */
 internal fun marketTabFits(t: String, style: WorkStyle?): Boolean = when (t) {
     "pay" -> style != WorkStyle.BUSINESS && style != WorkStyle.INVEST
     "alarm" -> style == null || style == WorkStyle.SHIFT || style == WorkStyle.DAY || style == WorkStyle.HOURLY

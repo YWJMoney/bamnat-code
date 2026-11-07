@@ -33,7 +33,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
-/** [MKX-02] A tab's name as the 기능별 탭 chips say it. */
+/** [MKX-02] A tab's name as the 탭별 작품 chips say it. */
 internal fun tabName(tab: String?): String = com.bamnat.core.recipe.LookParts.tabLabel(tab ?: "")
 
 /** [RCP-21] 나눔 판 목록: the recipes for one kind of work, by tab, with search and 코드로 받기. */
@@ -47,10 +47,14 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     val enabled: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_BROWSE)
 
     companion object {
-        /** The market's three halves (테마 · 기능별 탭 · 규칙·단추). */
         const val TYPING_PAUSE_MS = 500L
-        val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_LOGIC)
-        fun halfName(h: String) = when (h) { RecipeClient.SCOPE_LOGIC -> "규칙·단추"; RecipeClient.SCOPE_TAB -> "기능별 탭"; else -> "테마" }
+        /** The market's three halves. 1.39 [MKC-01] (사용자 2026-11-07): 테마 · 탭별 작품 · 도구 (옛 규칙·단추에 부품까지). */
+        val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_TOOL)
+        fun halfName(h: String) = when {
+            h == RecipeClient.SCOPE_LOGIC || h.startsWith(RecipeClient.SCOPE_TOOL) -> "도구"
+            h.startsWith(RecipeClient.SCOPE_TAB) -> "탭별 작품"
+            else -> "테마"
+        }
 
         /** 1.39 [MKP-01] A list as last seen, for the same 구간·칸·찾기 opened again (while the app runs). */
         private class Kept(val items: List<RecipeItem>, val next: Int?, val at: Long)
@@ -98,8 +102,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         typing = viewModelScope.launch { kotlinx.coroutines.delay(TYPING_PAUSE_MS); load() }
     }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
-    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
-    fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }
+    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간. 1.39 [MKC-01]: 규칙·단추 opens 도구 › 자동 규칙·단추 (all tools).
+    fun kind(k: String?) {
+        val to = when (k) { "skin" -> RecipeClient.SCOPE_THEME; RecipeClient.SCOPE_LOGIC -> RecipeClient.SCOPE_TOOL; else -> k }
+        _state.value = _state.value.copy(kind = to); load()
+    }
 
     /** PC D12: a '다른 구간에 N개' chip: that half, in 새로 (where it was counted). */
     fun jump(half: String) { _state.value = _state.value.copy(kind = half, tab = Tab.NEW); load() }
@@ -179,7 +186,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     }
 
     private fun halfOf(kind: String?): String = when {
-        kind == RecipeClient.SCOPE_LOGIC -> RecipeClient.SCOPE_LOGIC
+        kind == RecipeClient.SCOPE_LOGIC || kind?.startsWith(RecipeClient.SCOPE_TOOL) == true -> RecipeClient.SCOPE_TOOL
         kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_TAB
         else -> RecipeClient.SCOPE_THEME
     }
