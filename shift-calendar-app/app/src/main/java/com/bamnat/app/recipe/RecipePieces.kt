@@ -187,7 +187,7 @@ class RecipePieces(private val c: AppContainer) {
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
                 "accent" to s.accentColor.takeIf { it != 0L }, "textStep" to s.textStep.toLong(), "compact" to s.compact, "clock12" to s.clock12,
                 "tap" to s.phoneDayView.name.lowercase(), "hold" to s.longPress, "dayOrder" to s.dayGroupOrder.joinToString(",").ifEmpty { null },
-                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod, "motion" to s.motion.ifEmpty { null })
+                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to (s.statsPeriod == com.bamnat.app.data.StatsPeriod.PAY).takeIf { it }, "motion" to s.motion.ifEmpty { null })
         }
         // [LAY-01] 1.36 꾸밈 층.
         PieceKind.DECOR -> com.bamnat.core.recipe.Decor.decode(from.decor).takeIf { !it.isDefault }?.values()
@@ -866,7 +866,8 @@ class RecipePieces(private val c: AppContainer) {
                 (values["dayOrder"] as? String)?.takeIf { com.bamnat.core.recipe.AppFeel.dayOrderProblem(it) == null }?.let { "dayGroupOrder" to it },
                 (values["flow"] as? Boolean)?.let { "sleepTips" to it.toString() },
                 (values["rest"] as? Boolean)?.let { "restCheck" to it.toString() },
-                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to it.toString() },
+                // 1.39 [PAYX-60] Off in an older recipe was only the default: it leaves the 급여 기간 to the pay.
+                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to (if (it) com.bamnat.app.data.StatsPeriod.PAY else com.bamnat.app.data.StatsPeriod.AUTO).name },
                 (values["motion"] as? String)?.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null }?.let { "motion" to it },
             ).toMap()
             // [FREE-04] What the piece names over the user's own.
@@ -968,7 +969,7 @@ class RecipePieces(private val c: AppContainer) {
         "dayGroupOrder" -> s.dayGroupOrder.joinToString(",")
         "sleepTips" -> s.sleepTips.toString()
         "restCheck" -> s.restCheck.toString()
-        "statsByPayPeriod" -> s.statsByPayPeriod.toString()
+        "statsByPayPeriod" -> s.statsPeriod.name
         "motion" -> s.motion
         "memoLook" -> s.memoLook
         "moneyLook" -> s.moneyLook
@@ -1008,7 +1009,7 @@ class RecipePieces(private val c: AppContainer) {
         "dayGroupOrder" -> s.copy(dayGroupOrder = v.split(',').filter { it.isNotEmpty() })
         "sleepTips" -> s.copy(sleepTips = v == "true")
         "restCheck" -> s.copy(restCheck = v == "true")
-        "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
+        "statsByPayPeriod" -> s.copy(statsPeriod = com.bamnat.app.data.StatsPeriod.read(v.takeIf { it != "true" && it != "false" }, v == "true"))
         "motion" -> s.copy(motion = v.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null } ?: s.motion)
         "memoLook" -> s.copy(memoLook = v)
         "logic" -> s.copy(logic = v)

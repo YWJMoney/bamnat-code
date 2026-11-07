@@ -136,7 +136,11 @@ class WidgetData(
             val overtime = if (settings.workStyle == null || settings.workStyle == WorkStyle.DAY || settings.workStyle == WorkStyle.SHIFT) {
                 com.bamnat.core.work.WorkTypeChecks.capHours(com.bamnat.app.data.WorkTypePrefs.get(context).of(PersonalCalendar.MAIN).overtimeCapHours,
                     container.payStore.profile.value)?.let { cap ->
-                    WidgetFigures.Overtime(WorkHoursCalculator(snapshot.resolver, settings.weekStart).month(YearMonth.from(today)).extraMinutes, cap)
+                    // 1.39 [PAYX-60] Over the same days as 통계 (the 급여 기간 when the pay has one).
+                    val calc = WorkHoursCalculator(snapshot.resolver, settings.weekStart)
+                    val period = container.payStore.profile.value?.period?.takeIf { settings.statsPeriod.byPay(it) }
+                    val used = period?.let { val m = it.monthOf(today); calc.month(m, it.start(m), it.end(m)) } ?: calc.month(YearMonth.from(today))
+                    WidgetFigures.Overtime(used.extraMinutes, cap)
                 }
             } else null
             val shopDays = if (settings.workStyle == WorkStyle.BUSINESS && book != null) {
