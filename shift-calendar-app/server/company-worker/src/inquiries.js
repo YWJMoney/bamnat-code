@@ -230,7 +230,8 @@ export async function ask(request, env) {
   await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
     title: "새 문의",
     body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건`,
-    url: "/admin/#/inquiries",
+    // 1.39 [ADM3-38] Opens 운영 장부 › 오늘 할 것, where a new question lands (1.38 흐름), not the old 문의 list.
+    url: "/admin/#/desk?view=today",
   }, now);
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);

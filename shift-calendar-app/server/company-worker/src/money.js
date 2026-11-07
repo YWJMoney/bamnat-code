@@ -208,6 +208,9 @@ export async function passes(env, dev, now) {
     admin: link ? (link.admin === FAMILY.id ? (link.status === "approved" ? { status: "approved", name: FAMILY.shown, owner: false, family: true, previews: [] } : null)
       : { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id,
         previews: link.status === "approved" ? previewKeys(link.previews) : [] }) : null,
+    // 1.39 [FAM-03] 1.38 최종 PC 제안 4: a paused family phone is told so ('잠시 멈췄어요'), not left with an empty card. Kept out of
+    // [admin] so an older app, which reads any admin as '승인 기다림', still sees no link.
+    ...(link?.admin === FAMILY.id && link.status !== "approved" ? { familyPaused: true } : {}),
     code: Boolean(code),
     // 1.36 [PSH-01] 프로 나눔 1인: the 프로 a buyer gave this phone, until their subscription ends.
     shared: await sharedUntil(env, dev, now),
