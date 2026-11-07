@@ -27,8 +27,8 @@ body{font-family:P,sans-serif;color:#F2ECE1;word-break:keep-all;position:relativ
 .sc{width:100%;height:100%;border-radius:29px;overflow:hidden;background:#fff}.sc img{width:100%;display:block}
 </style></head><body>
 <div class="l"><div class="row">${logo}<div class="name">밤낮</div></div>
-<div class="tag">교대 근무표와 <em>근무 알람</em>,<br>급여·잠까지 한 앱에서</div>
-<div class="sub">로그인 없이 바로 시작해요</div></div>
+<div class="tag">근무표·<em>근무 알람</em>·급여부터<br><em>팀·직원 근무표</em>까지 한 앱에서</div>
+<div class="sub">교대 근무자 · 팀 리더 · 사장님 모두</div></div>
 ${phone(right, 790, 70, 6, 1)}${phone(left, 590, 40, -4, 2)}
 </body></html>`;
 (async () => {

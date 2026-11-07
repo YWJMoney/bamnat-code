@@ -6,6 +6,7 @@ import com.bamnat.app.ui.diag.DiagnosticsViewModel
 import com.bamnat.app.ui.memo.MemoPhotoFiles
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoPhotos
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,6 +46,26 @@ class StoreScreenshotTest : ScreenshotBase() {
         reveal("알람 추가")
     }
 
+    @Test fun payReal() = shoot("store_6e_pay_real", STORE, payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true,
+        adjust = { it.copy(base = com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(java.time.LocalDate.of(2020, 1, 1), 1_900_000L)))) }))
+
+    @Test fun payrollNoSales() = shoot("store_9b_payroll", STORE) {
+        runBlocking { c.moneyRepository.clearSales(today); c.moneyRepository.clearSales(today.minusDays(1)) }
+        content { com.bamnat.app.ui.work.PayrollScreen(roster, java.time.YearMonth.from(today)) {} }
+        settle()
+        // As a boss a month in: 계약서 signed by link, 5명 미만 answered, 김알바 paid.
+        runBlocking {
+            val store = c.phaseThree
+            val place = store.workplaces.first { it.isNotEmpty() }.first()
+            store.staff(place.id).first { it.isNotEmpty() }.forEach { m ->
+                store.updateContract(m.id) { com.bamnat.core.boss.StaffContract.Sent("근로계약서", emptyList(), sentAt = 1L, signedName = m.name, signedAt = 2L) }
+            }
+        }
+        settle()
+        tapText("5명 미만", exact = true)
+        tapText("지급했어요", exact = true)
+    }
+
     @Test fun payResult() = shoot("store_6c_pay_result", STORE, payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true))
 
     @Test fun payTab() = shoot("store_6d_pay_tab", STORE) {
@@ -69,6 +90,38 @@ class StoreScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun sleep() = shoot("store_5_sleep", STORE) {
+        sleep7()
+        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
+    }
+
+    @Config(sdk = [33])
+    @Test fun calendarFlow() = shoot("store_1c_flow", STORE) {
+        tapText("근무 중", prefix = true)
+    }
+
+    @Test fun shiftKinds() = shoot("store_4c_shift_kinds", STORE) {
+        settingsPage("내 근무")
+        tapText("근무 종류와 시간", exact = true)
+    }
+
+    @Test fun sleepLower() = shoot("store_5b_sleep_lower", STORE) {
+        sleep7()
+        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
+        settle()
+        scrollUp(700); scrollUp(700)
+    }
+
+    @Test fun payroll() = shoot("store_9_payroll", STORE) {
+        content { com.bamnat.app.ui.work.PayrollScreen(roster, java.time.YearMonth.from(today)) {} }
+    }
+
+    private val roster = com.bamnat.core.work.StaffRoster(listOf(
+            com.bamnat.core.work.Staff("s1", "김알바", 10_320, shifts = mapOf(java.time.DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(18, 0)), java.time.DayOfWeek.WEDNESDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(18, 0)), java.time.DayOfWeek.FRIDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(18, 0)))),
+            com.bamnat.core.work.Staff("s2", "이주말", 11_000, shifts = mapOf(java.time.DayOfWeek.SATURDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(10, 0), java.time.LocalTime.of(22, 0)), java.time.DayOfWeek.SUNDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(10, 0), java.time.LocalTime.of(22, 0)))),
+            com.bamnat.core.work.Staff("s3", "박야간", 10_500, shifts = mapOf(java.time.DayOfWeek.TUESDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(20, 0), java.time.LocalTime.of(2, 0)), java.time.DayOfWeek.THURSDAY to com.bamnat.core.work.StaffShift(java.time.LocalTime.of(20, 0), java.time.LocalTime.of(2, 0)))),
+        ))
+
+    private fun sleep7() {
         runBlocking {
             val today = today
             // A week around 주간·야간: nights after day shifts, mornings after night shifts.
@@ -82,7 +135,6 @@ class StoreScreenshotTest : ScreenshotBase() {
                 c.sleepRepository.add(start, wake.atTime(th, tm))
             }
         }
-        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
     }
 
     @Test fun pay() = shoot("store_6_pay", STORE) {
