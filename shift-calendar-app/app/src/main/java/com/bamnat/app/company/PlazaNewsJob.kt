@@ -133,12 +133,22 @@ class PlazaNewsJob : JobService() {
                 else -> "밤낮·마을 소식"
             }
             val lines = (text?.lines.orEmpty() + recipeLines).take(MAX_LINES)
+            tell(c, title, lines, target, if (target == NoticeLinks.Target.FIX_TALK) fixTalk(plaza) else null)
+        }
+
+        /**
+         * The one 소식 notice: [lines] added to any still waiting, held through sleep and work. 1.39 [PLZC-41] the 광장 push
+         * ([PlazaPush]) tells through here too, so 답 바로 알림 and the daily 소식 stay one notice in one channel. A waiting line that
+         * starts with [replacing] gives way to the new one (a count that grew).
+         */
+        internal suspend fun tell(c: AppContainer, title: String, lines: List<String>, target: NoticeLinks.Target, payload: String? = null,
+            replacing: String? = null) {
+            if (lines.isEmpty()) return
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             // What waits is the notice as written now (the server's news is read once), added to any still waiting.
             val held = heldOf(prefs)
-            val payload = if (target == NoticeLinks.Target.FIX_TALK) fixTalk(plaza) else null
             val apart = held != null && (held.target != target || held.payload != payload)
-            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines ?: emptyList()) + lines).distinct().take(MAX_LINES),
+            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines?.filterNot { replacing != null && it.startsWith(replacing) } ?: emptyList()) + lines).distinct().take(MAX_LINES),
                 if (apart) NoticeLinks.Target.PLAZA else target, payload.takeIf { !apart })
             keep(prefs, all)
             if (com.bamnat.app.sleep.QuietHold.holdIfAsleep(c.appContext, com.bamnat.app.sleep.QuietHold.Source.VILLAGE, Today.dateTime())) return

@@ -201,6 +201,8 @@ class PlazaHomeViewModel(
             if (_plan.value.room != room) return@launch
             _mine.value = day?.tag?.copy(months = if (c.plazaTags.scope().months) 0 else null)
             _timeLine.value = day?.let { timeLine(it.tag.now, it.offAfterNight, it.dayOff) }
+            // [PLZC-41] the 근무형태 같은 근무 새 질문 알림 watches follows the calendar.
+            com.bamnat.app.company.PlazaPush.syncWatch(c)
         }
     }
 

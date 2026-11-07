@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -98,6 +99,13 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
         value = t?.copy(months = if (s.months) 0 else null)
     }
     var industryOpen by remember { mutableStateOf(false) }
+    // 1.39 [PLZC-41] 광장 알림 두 가지, saved with the rest.
+    var pushAnswers by remember { mutableStateOf(com.bamnat.app.company.PlazaPush.answers(c.appContext)) }
+    var pushSame by remember { mutableStateOf(com.bamnat.app.company.PlazaPush.same(c.appContext)) }
+    val watchRoom = remember { com.bamnat.app.company.PlazaPush.watchRoom(c) }
+    val watchForm by produceState<String?>(null, s.form) {
+        value = if (!s.form) null else watchRoom?.let { runCatching { c.plazaTags.tagFor(it)?.form?.label }.getOrNull() }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("광장에 보이는 내 근무 태그") },
@@ -130,9 +138,29 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                 }
                 Text("유형(교대·알바 등)은 늘 보여요. 회사 정보 광장에는 태그가 붙지 않아요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("알림", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                ScopeRow("내 질문에 답이 오면 바로 알림", pushAnswers) { pushAnswers = it }
+                if (watchRoom != null) {
+                    ScopeRow(watchForm?.let { "나와 같은 근무($it)에 새 질문이 오면 알림" } ?: "나와 같은 근무에 새 질문이 오면 알림",
+                        pushSame && watchForm != null) { if (watchForm != null) pushSame = it }
+                    if (watchForm == null) Text("근무형태가 태그에 보일 때 쓸 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(if (c.settingsRepository.current.plazaNews) "밤낮 소식 알림 하나로 와요. 자는 시간·근무 중에는 모아 두었다 알려요."
+                    else "설정 › 알림 › 밤낮 소식이 꺼져 있어 지금은 오지 않아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = { c.plazaTags.setScope(s); onDismiss() }) { Text("저장") } },
+        confirmButton = { TextButton(onClick = {
+            c.plazaTags.setScope(s)
+            com.bamnat.app.company.PlazaPush.setAnswers(c.appContext, pushAnswers)
+            com.bamnat.app.company.PlazaPush.setSame(c.appContext, pushSame && watchForm != null)
+            c.appScope.launch {
+                runCatching { com.bamnat.app.company.PushPhone.sync(c) }
+                com.bamnat.app.company.PlazaPush.syncWatch(c)
+            }
+            onDismiss()
+        }) { Text("저장") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }

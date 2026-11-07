@@ -2331,3 +2331,4 @@ FX-24,1.39 써 보기 끝 알림이 그 작품의 장터 자세히로,1.39,대�
 FX-25,1.39 넣기 전 충돌 경고 → 이미 있는 규칙·단추와 같은 일을 하면 한 줄로,1.39,대기,에뮬레이터 확인,docs/plans/1.39-FX-기능작품.md 7장
 FX-26,1.39 값 칸 기록 보기와 고치기,1.39,대기,에뮬레이터 확인,docs/plans/1.39-FX-기능작품.md 7장
 NAV2-07,"1.39 펼친 폴드 옆 막대는 7칸까지 (조사 19장, 총괄 11-07 1.39로) → 펼친 화면에서 칸 고치기 창이 '칸 더하기 (n/7)', 6·7번째 칸은 펼친 화면 옆 막대에만 보이고 접으면 '나' 단추 목록에. 접은 화면 아래 막대는 5칸 그대로",1.39,진행 중,,"TabSlots.MAX_WIDE·onBar·offBar·addTo(max), BarSlotsDialog(wide), AppRoot barSlots·나 목록; TabSlotsTest.anUnfoldedRailHoldsSevenAndFoldedTheRestWaitByMe, ADScreenshotTest.sevenPlacesBesideTheRail·sevenPlacesFoldedKeepFive. PC 확인 전"
+PLZC-41,"1.39 광장 답 바로 알림(사용자 결정 12번 11-07 19:21, 처리방침 3.12 ⑥): 내 질문에 남이 답하면 바로, 같은 근무형태 새 질문은 고른 분만. 밤낮 소식 알림 하나로, 내 태그 창에서 끔",1.39,진행 중,에뮬레이터 확인,"6차 묶음(광장 스레드 m9pm2w). 서버 plaza-push.js·fcm.js fcmTellDevices, 앱 company/PlazaPush.kt, PushPhone·PushService"

@@ -643,6 +643,9 @@ interface CompanyApi {
     /** 1.36 [VIL-13] My newest posts and replies in the plazas. */
     suspend fun myPosts(device: String): List<MyPost> = throw CompanyException("offline")
 
+    /** 1.39 [PLZC-41] 같은 근무 새 질문 알림: watch [form] in [room] (교대·일근 광장), or stop with null. */
+    suspend fun plazaWatch(device: String, room: String, form: String?) = Unit
+
     /** 1.39 [CARE-03] 마을을 열 때 한 번: 읽지 않은 안내, 지금 쉬기, 해명 상태. 서버가 모르면 빈 것. */
     suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = com.bamnat.core.plaza.CareStanding()
 
@@ -935,6 +938,12 @@ class CompanyClient(
 
     override suspend fun myPosts(device: String): List<MyPost> = serverCall {
         myPostsOf(exchange("GET", "/api/posts/mine", device = device).json)
+    }
+
+    override suspend fun plazaWatch(device: String, room: String, form: String?) = serverCall {
+        val o = JSONObject().put("device", device).put("room", room).apply { form?.let { put("form", it) } }
+        request(if (form != null) "POST" else "DELETE", "/api/plaza/watch", o, device)
+        Unit
     }
 
     override suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = serverCall {

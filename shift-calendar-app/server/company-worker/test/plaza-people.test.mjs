@@ -141,3 +141,53 @@ test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자
   assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, undefined);
   assert.equal((await read(call, 5, "style-shift")).data.posts.find((p) => p.id === said)?.mark, undefined);
 });
+
+test("[PLZC-41] 광장 답 바로 알림: an answer tells the asker, a 근무형태 question tells its watchers, one word-free message, after 3.12", async (t) => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { fcmForget } = await import("../src/fcm.js");
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const sa = JSON.stringify({ client_email: "push@test.iam.gserviceaccount.com", project_id: "bamnat-test",
+    private_key: privateKey.export({ type: "pkcs8", format: "pem" }) });
+  const sent = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.startsWith("https://oauth2.googleapis.com/")) return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
+    if (u.startsWith("https://fcm.googleapis.com/")) { sent.push(JSON.parse(init.body).message); return new Response("{}", { status: 200 }); }
+    return real(url, init);
+  };
+  t.after(() => { globalThis.fetch = real; fcmForget(); });
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server({ FCM_SERVICE_ACCOUNT: sa });
+  const token = (n) => `fcm-token-for-phone-${n}-0123456789abcdef:APA91b`;
+  for (const n of [1, 2, 3]) await call("POST", "/api/push/phone", { device: device(n), token: token(n) }, from(n));
+  const watch = (n, form) => call("POST", "/api/plaza/watch", { device: device(n), room: "style-shift", form }, from(n));
+  // Before 3.12 nothing: no watching, no message.
+  assert.equal((await watch(2, "FOUR_TEAM")).status, 403);
+  const early = (await write(call, 1, "style-shift", "야간 끝나고 몇 시간 자요?", null, { kind: "question" })).data.id;
+  await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "저는 여섯 시간이요", parent: early }, from(2));
+  assert.equal(sent.length, 0);
+  await policyOn(call);
+  assert.equal((await watch(2, "OFFICE")).data.error, "form", "a 일근 form in 교대 광장");
+  assert.equal((await watch(2, "FOUR_TEAM")).data.ok, true);
+  // A 4조 2교대 question: the watcher hears, the writer and others do not.
+  const q = (await write(call, 1, "style-shift", "4조 2교대 야간 이틀째 어떻게 버텨요?", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" })).data.id;
+  assert.deepEqual(sent.map((m) => [m.token, m.data.kind]), [[token(2), "plaza_question"]]);
+  // Another within 3 hours: not again.
+  await write(call, 3, "style-shift", "4조 2교대 주간 끝나고 운동하세요?", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" });
+  assert.equal(sent.length, 1);
+  // An answer from someone else tells the asker; the asker's own does not.
+  await call("POST", "/api/posts", { device: device(1), company: "style-shift", setup: "room", body: "저도 궁금해서요", parent: q }, from(1));
+  assert.equal(sent.length, 1);
+  await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "낮잠을 두 번 나눠 자요", parent: q }, from(3));
+  assert.deepEqual(sent.slice(1).map((m) => [m.token, m.data.kind]), [[token(1), "plaza_answer"]]);
+  // No words of the post go to Google.
+  assert.ok(!JSON.stringify(sent).includes("낮잠") && !JSON.stringify(sent).includes("4조"));
+  // A talk post's answer is not a question's: nothing.
+  const talk = (await write(call, 1, "style-shift", "오늘 야간 끝!", { s: "SHIFT" })).data.id;
+  t.mock.timers.setTime(NOW + 3600e3);
+  await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "수고하셨어요", parent: talk }, from(3));
+  assert.equal(sent.length, 2);
+  // Stop watching.
+  assert.equal((await call("DELETE", "/api/plaza/watch", { device: device(2), room: "style-shift" }, from(2))).data.ok, true);
+});

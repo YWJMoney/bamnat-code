@@ -93,6 +93,7 @@ import { makerMarks } from "./maker-mark.js";
 import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut } from "./plaza-people.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
+import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
@@ -557,6 +558,8 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/activity" && method === "GET") return activity(request, env);
   // 1.36 [PUSH-01] 문의 답 바로 알리기: the phone's FCM token.
   if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
+  // 1.39 [PLZC-41] 같은 근무 새 질문 알림을 받을 광장.
+  if (path === "/api/plaza/watch" && (method === "POST" || method === "DELETE")) return plazaWatchRoute(request, env, await peopleOn(env));
   // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
   if (path === "/api/growth/miss") { const r = await growthRoute(request, env, path, url); if (r) return r; }
   // 1.38 [EASE-31] 밤낮 Q&A (마을): 관리자가 공개로 고른 자주 쓰는 답.
@@ -836,6 +839,7 @@ const SCHEMA = [
   ...PASSKEY_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
+  ...PLAZA_PUSH_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -2603,6 +2607,8 @@ async function roomPost(request, env, body) {
       parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form)
     VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
   poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null);
+  // 1.39 [PLZC-41] 답이 오면 질문한 분에게, 근무형태가 붙은 질문이면 그 근무를 지켜보는 분에게 바로 (말 없는 알림).
+  if (place.style) await plazaPushAfter(env, { room: place.id, writer: dev, parent, kind, form: tag?.f ?? null, on: await peopleOn(env, now) }, now);
   return json({ id, at: iso(now) }, 201);
 }
 
