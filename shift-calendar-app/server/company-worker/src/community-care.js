@@ -213,6 +213,10 @@ export function carePrune(d, env, now) {
       SELECT device, 'care', NULL, 'ended', NULL, until FROM care_notes WHERE kind = 'opinion' AND told = 0 AND lifted_at IS NULL AND until <= ?`, now),
     d.stmt(env, "UPDATE care_notes SET told = 1 WHERE told = 0 AND kind IN ('opinion', 'community') AND (until <= ? OR lifted_at IS NOT NULL)", now),
     d.stmt(env, "DELETE FROM care_notes WHERE COALESCE(lifted_at, until, at) < ?", now - CARE.keepDays * DAY),
+    // 해명 기록(무엇에 대한 것·결정)은 180일 뒤. 문의 글 자체는 문의대로(180일 동안 새 글이 없으면) 지워져요.
+    d.stmt(env, "DELETE FROM care_appeals WHERE COALESCE(decided_at, at) < ?", now - CARE.keepDays * DAY),
+    // 1.39 [CARE-06] 신고만으로 가려지고 운영자가 30일 안에 확인하지 않은 건(운영 규칙 5항의 확인 기한)은 세지 않고 지워요.
+    d.stmt(env, "DELETE FROM write_strikes WHERE confirmed = 0 AND at < ?", now - 30 * DAY),
   ];
 }
 

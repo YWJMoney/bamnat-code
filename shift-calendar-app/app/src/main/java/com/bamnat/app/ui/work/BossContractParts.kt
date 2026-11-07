@@ -115,7 +115,8 @@ internal fun ContractDialog(place: Workplace, staff: StaffMember, onEditStaff: (
                             scope.launch {
                                 runCatching { BossContractSync.send(app, place, staff) }
                                     .onSuccess { sent = it; fresh = false; note = null; share(BossContractSync.message(place, staff, it)) }
-                                    .onFailure { note = "인터넷이 안 돼 링크를 만들지 못했어요. 연결한 뒤 다시 눌러 주세요." }
+                                    .onFailure { e -> note = (e as? com.bamnat.app.share.ShareLinkException)?.friendly
+                                        ?: "인터넷이 안 돼 링크를 만들지 못했어요. 연결한 뒤 다시 눌러 주세요." }
                                 busy = false
                             }
                         }) { Text("서명 링크 보내기") }

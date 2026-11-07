@@ -722,7 +722,12 @@ class ShareLinkException(
     message: String,
     /** [SHR-13] Why the developer took the link down, when the share server says (410 removed). */
     val removedReason: String? = null,
-) : IOException(message)
+    /** 1.39 [CARE-09] With "contact": phone, link, account or messenger (team links take none of them, against scams). */
+    val why: String? = null,
+) : IOException(message) {
+    /** What to tell the person for a refusal this file knows the words for, or null. */
+    val friendly: String? get() = if (message == "contact") com.bamnat.core.plaza.TeamLinkText.contact(why) else null
+}
 
 class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) : ShareApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
@@ -1062,7 +1067,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 val err = runCatching { JSONObject(text) }.getOrNull()
                 val word = err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code"
                 throw ShareLinkException(if (word == "removed") "not_found" else word,
-                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200))
+                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200),
+                    err?.optString("why")?.takeIf { word == "contact" && it.isNotBlank() })
             }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
