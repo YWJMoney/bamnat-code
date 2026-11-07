@@ -618,7 +618,7 @@ class PayViewModel(
                 is MadeItem.Item -> if (made.item.cadence == Cadence.MONTHLY) 1 else after.itemTimes[made.item.id] ?: 0
                 is MadeItem.Rule -> if (made.rule.pay.monthly) 1 else after.days.count { d -> d.parts.any { it.label == made.rule.name } }
             }
-            ItemEffect(after.total - before.total, times)
+            ItemEffect(after.total - before.total, times, after.afterTax.sumOf { it.amount } - before.afterTax.sumOf { it.amount })
         }
 
     /** [PAYS-07] Keeps an item the user made; a rule made before keeps its place in the list. */

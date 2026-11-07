@@ -90,7 +90,7 @@ class PayAccuracy139Test {
     @Test fun aOneMonthAllowanceIsPaidInItsMonthOnly() {
         val back = monthly("소급분", 120_000).copy(from = nov, until = nov)
         assertTrue(back.oneMonth)
-        assertEquals("매달 120,000원 (2026년 11월만)", back.describe())
+        assertEquals("2026년 11월 한 번 120,000원", back.describe())
         val p = office.copy(customRules = listOf(back))
         assertEquals(pay(office).total + 120_000, pay(p).total)
         assertEquals(pay(office, nov.plusMonths(1)).total, pay(p, nov.plusMonths(1)).total)
