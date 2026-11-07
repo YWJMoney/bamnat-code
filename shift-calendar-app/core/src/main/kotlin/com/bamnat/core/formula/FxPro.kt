@@ -33,6 +33,8 @@ object FxPro {
         HISTORY("history", "값 기록"),
         /** [FX-15] 몇 분마다·기다렸다 하기. */
         TIME("time", "몇 분마다·기다렸다"),
+        /** [FX-21] 1.39 새 언제(근무 알람을 끄면)·새 화면(수면·밤 화면 열기). */
+        REACH("reach", "알람·수면과 잇기"),
         /** [FX-22] 1.39 새 화면 모양 부품 ([NEW_LOOKS]: 수면·할 일 화면, G8 밤 화면·하루 이야기 줄). */
         LOOK("look", "1.39 새 화면 모양"),
         ;
@@ -76,6 +78,7 @@ object FxPro {
         if (r.more.isNotEmpty() || r.otherwise.isNotEmpty()) add(Part.CHAIN)
         if (r.on == RuleTrigger.VALUE) add(Part.VALUE_RULE)
         if (r.on == RuleTrigger.EVERY) add(Part.TIME)
+        if (r.on == RuleTrigger.ALARM_OFF) add(Part.REACH)
         formula(r.cond, this)
     }
 
@@ -84,6 +87,7 @@ object FxPro {
         if (a.verb.pro && !(taste != null && a.arg == taste && (a.verb == LogicVerb.VAL_ADD || a.verb == LogicVerb.VAL_SET))) out += Part.VALUE_ACT
         if (a.then.any { it !in LogicAct.AGAIN }) out += Part.NOTIFY_BUTTONS
         if (a.after != null) out += Part.TIME
+        if (a.verb == LogicVerb.SCREEN && a.arg in LogicVerb.NEW_SCREENS) out += Part.REACH
         if (a.verb == LogicVerb.NOTIFY || a.verb == LogicVerb.MEMO_LINE || a.verb == LogicVerb.NEW_MEMO || a.verb == LogicVerb.VAL_TEXT) {
             text(a.arg, out); text(a.text, out)
         }

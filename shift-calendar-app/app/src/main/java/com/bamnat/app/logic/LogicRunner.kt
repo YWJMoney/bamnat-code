@@ -144,6 +144,9 @@ object LogicRunner {
                 "money" -> NoticeLinks.open(NoticeLinks.Target.MONEY)
                 "pay", "stats" -> NoticeLinks.open(NoticeLinks.Target.PAY)
                 "alarm" -> NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK)
+                // 1.39 [FX-21] 수면 기록, 밤 화면.
+                "sleep" -> NoticeLinks.open(NoticeLinks.Target.SLEEP)
+                "night" -> NoticeLinks.open(NoticeLinks.Target.NIGHT)
             }
             LogicVerb.NEW_MEMO -> {
                 val t = c.memoTemplates.items.value.firstOrNull { it.title == act.arg }
@@ -467,6 +470,16 @@ object LogicRunner {
             title = FormulaText.fill(m.title, scope), body = FormulaText.fill(m.body, scope),
             checklist = m.checklist.map { it.copy(text = FormulaText.fill(it.text, scope)) },
         )
+    }
+
+    /** 1.39 [FX-21] 근무 알람을 끄면 (메모 일정·다시 확인 알람은 빼고): today's values, quietly (알람 화면 위에 말하지 않게). */
+    fun onAlarmOff(c: AppContainer) {
+        if (resting || logic(c).rules.none { it.on == RuleTrigger.ALARM_OFF }) return
+        val date = Today.date()
+        c.appScope.launch {
+            val f = facts(c)
+            due(c, RuleTrigger.ALARM_OFF, date, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, date, f.scope(date), r.name, quiet = true) } }
+        }
     }
 
     /** 가계부에 적으면 (사용자 2026-11-01 "가계부와 연동"): the entry's day. */

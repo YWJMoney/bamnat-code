@@ -52,7 +52,11 @@ class FxButtonWidget : GlanceAppWidget() {
     override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     /** One button as drawn: its id and its line ("🛵 +1건 · 12건"). */
-    internal data class Item(val id: String, val line: String)
+    /**
+     * 1.39 [FX-14] 위젯 꾸밈: a button that counts a 숫자 값 칸 with a 목표 shows how far it is ([progress] 0~1) and, when the widget is tall
+     * enough, its last 7 periods as small bars ([recent], oldest first; the bar of one that reached the goal is full colour).
+     */
+    internal data class Item(val id: String, val line: String, val progress: Float? = null, val recent: List<Double> = emptyList(), val goal: Double? = null)
 
     /** [items] run now; [resting] buttons are kept but wait for 프로; none of either, nothing was made. */
     internal data class Board(val items: List<Item>, val resting: Int)
@@ -87,15 +91,38 @@ class FxButtonWidget : GlanceAppWidget() {
                 Row(GlanceModifier.fillMaxWidth()) {
                     row.forEachIndexed { j, it ->
                         if (j > 0) Spacer(GlanceModifier.width(6.dp))
-                        Box(
-                            GlanceModifier.defaultWeight().height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp)
-                                .padding(horizontal = 10.dp).clickable(actionRunCallback<FxPressAction>(actionParametersOf(FxPressAction.ID to it.id))),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(it.line, style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(13), fontWeight = FontWeight.Medium), maxLines = 1)
+                        Column(GlanceModifier.defaultWeight()) {
+                            Box(
+                                GlanceModifier.fillMaxWidth().height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp)
+                                    .padding(horizontal = 10.dp).clickable(actionRunCallback<FxPressAction>(actionParametersOf(FxPressAction.ID to it.id))),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(it.line, style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(13), fontWeight = FontWeight.Medium), maxLines = 1)
+                            }
+                            // 1.39 [FX-14] 목표 막대, and on a tall widget with one row the last 7 periods.
+                            it.progress?.let { p ->
+                                Spacer(GlanceModifier.height(3.dp))
+                                androidx.glance.appwidget.LinearProgressIndicator(progress = p, modifier = GlanceModifier.fillMaxWidth().height(4.dp),
+                                    color = GlanceTheme.colors.primary, backgroundColor = GlanceTheme.colors.surfaceVariant)
+                            }
+                            if (rows.size == 1 && it.recent.size > 1 && LocalSize.current.height >= 150.dp) Bars(it.recent, it.goal)
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /** 1.39 [FX-14] The last periods as small bars (목표에 닿은 기간은 진하게). */
+    @androidx.compose.runtime.Composable
+    private fun Bars(recent: List<Double>, goal: Double?) {
+        val top = (recent + listOfNotNull(goal)).maxOrNull()?.takeIf { it > 0 } ?: 1.0
+        Spacer(GlanceModifier.height(6.dp))
+        Row(GlanceModifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.Bottom) {
+            recent.forEachIndexed { i, v ->
+                if (i > 0) Spacer(GlanceModifier.width(3.dp))
+                Box(GlanceModifier.defaultWeight().height((v / top * 36).coerceIn(2.0, 36.0).dp).cornerRadius(3.dp)
+                    .background(if (goal != null && v >= goal) GlanceTheme.colors.primary else GlanceTheme.colors.secondaryContainer)) {}
             }
         }
     }
@@ -115,7 +142,14 @@ class FxButtonWidget : GlanceAppWidget() {
             val c = context.appContainer
             val run = FxOutside.buttons(c, ButtonPlace.WIDGET).take(FxOutside.MAX_WIDGET)
             val kept = FxOutside.kept(c, ButtonPlace.WIDGET)
-            Board(run.map { Item(it.id, FxOutside.line(c, it)) }, if (run.isEmpty()) kept.size else 0)
+            Board(run.map { b ->
+                val name = b.act.arg.takeIf { b.act.verb == com.bamnat.core.formula.LogicVerb.VAL_ADD || b.act.verb == com.bamnat.core.formula.LogicVerb.VAL_SET }
+                val def = name?.let { com.bamnat.app.logic.LogicRunner.logic(c, all = true).value(it) }?.takeIf { it.kind == com.bamnat.core.formula.ValueKind.NUM }
+                val goal = def?.goal
+                val now = name?.let { com.bamnat.app.logic.FxValues.now(it) }
+                Item(b.id, FxOutside.line(c, b), if (goal != null && now != null) (now / goal).toFloat().coerceIn(0f, 1f) else null,
+                    if (def != null && def.reset != com.bamnat.core.formula.ValueReset.NEVER) com.bamnat.app.logic.FxValues.recent(c, def.name, 7) else emptyList(), goal)
+            }, if (run.isEmpty()) kept.size else 0)
         }
 
         /** Redraws the 단추 위젯, only when one is on the home screen. */

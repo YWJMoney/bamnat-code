@@ -436,7 +436,9 @@ test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own se
 });
 
 test("[FX-01] 프로 문: 값 칸·값 더하기·값() 수식·밖 단추·알림 단추 are read, listed as 기능 장치 (core FxPro), the rest is free", async () => {
-  assert.deepEqual(FX_PARTS, ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "look"]);
+  assert.deepEqual(FX_PARTS, ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "reach", "look"]);
+  // [FX-21] 근무 알람을 끄면·수면 화면 열기.
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "logic", rules: [{ name: "a", on: "alarmOff", do: "screen", arg: "sleep" }] }] }), ["reach"]);
   const fx = { kind: "logic", values: [{ name: "물 잔", reset: "day", goal: 8, unit: "잔" }],
     buttons: [{ id: "water", label: "물 한 잔", where: "widget", do: "valAdd", arg: "물 잔", by: 1 }, { id: "snz", label: "10분 뒤", where: "day", do: "notify", arg: "다시" }],
     rules: [{ name: "물 알림", on: "daily", at: "15:00", when: "값(\"물 잔\", 0) < 4", do: "notify", arg: "물 {값(\"물 잔\")}잔째", then: ["water"] }] };

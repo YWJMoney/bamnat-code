@@ -401,7 +401,8 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
                 label = { Text(if (act.verb == LogicVerb.CHECK_RESET) "체크 목록 제목(비우면 그날 모든 목록)" else "메모 틀 이름") })
         }
         LogicVerb.SCREEN -> Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) }, label = { Text(label) }) }
+            LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) },
+                label = { Text(label + if (k in LogicVerb.NEW_SCREENS) " ✦" else "") }) }
         }
         LogicVerb.MEMO_LINE -> FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "더할 줄 (예: 야간 {이번주야간}번째 · 이달 지출 {원(이달지출)})")
         // 1.37 PC 4차: 반 폭 칸의 긴 이름표가 두 줄↔한 줄로 바뀌며 칸이 움직여 금액이 이름 칸에 들어갔어요("Trip10000").
@@ -481,7 +482,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, whenFor(r, t, fxValues)) },
-                        label = { Text(t.label + if (t == RuleTrigger.VALUE || t == RuleTrigger.EVERY) " ✦" else "") }) }
+                        label = { Text(t.label + if (t == RuleTrigger.VALUE || t == RuleTrigger.EVERY || t == RuleTrigger.ALARM_OFF) " ✦" else "") }) }
                 }
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
@@ -503,6 +504,9 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                         isError = timeOf(r.at.orEmpty()) == null,
                         supportingText = { if (timeOf(r.at.orEmpty()) == null) Text("시각을 07:00처럼 넣어 주세요") },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                    // 1.39 [FX-21]
+                    RuleTrigger.ALARM_OFF -> Text("근무 알람을 끌 때마다 돌아요(메모 일정 알람은 빼요). 예: 일어나면 물 한 잔 +1, 수면 기록 열기",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     RuleTrigger.HOLD -> Text("화면이나 메모 틀을 여는 규칙이 맞는 날에는 길게 눌러도 빠른 설정 대신 그것이 열려요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // 1.39 [FX-12] 값이 바뀌면: 어느 값 칸, 목표에 처음 닿을 때만.
@@ -804,6 +808,7 @@ internal fun notifyWords(on: RuleTrigger, role: String?): String {
         RuleTrigger.MONEY -> "이달 지출 {원(이달지출)}이에요"
         RuleTrigger.VALUE -> "값이 바뀌었어요"
         RuleTrigger.EVERY -> "잠깐 쉬어 갈 시간이에요"
+        RuleTrigger.ALARM_OFF -> "좋은 아침이에요. 오늘 {근무}예요"
         else -> "{근무} 날이에요"
     }
 }

@@ -214,7 +214,7 @@ const VALUE_KINDS = ["num", "time", "text"];
 const VALUE_RESETS = ["day", "week", "month", "never"];
 // core MemoProps.isLabel, 12 letters (LogicValue.isName).
 const valueName = (s) => (s.length <= 12 && propLabel(s) ? null : "name");
-const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold", "value", "every"];
+const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold", "value", "every", "alarmOff"];
 const logicGuard = (s) => textProblemExcept(s, "amount") ?? (investAdvice(s) ? "invest_advice" : null);
 const logicFormula = (s) => (s === "" ? null : formulaProblem(s) ?? logicGuard(s));
 const logicText = (s) => (s === "" ? null : formulaTextProblem(s) ?? logicGuard(s));
@@ -1275,7 +1275,9 @@ export function toolsOf(body, scope) {
  * 1.39 [FX-01] 프로 문 (core formula/FxPro.uses, the same list in the same order): the 1.39 기능 장치 a work's 규칙·단추 use, each needing 프로
  * to put in and to use. Empty when everything in it is free (모양, 1.38까지의 규칙·단추).
  */
-export const FX_PARTS = ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "look"];
+export const FX_PARTS = ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "reach", "look"];
+/** core LogicVerb.NEW_SCREENS: screens a 화면 열기 reaches from 1.39 on ([FX-21]). */
+const FX_NEW_SCREENS = ["sleep", "night"];
 /** core FxPro.NEW_LOOKS: 1.39 새 화면 모양 부품 (piece kind, or a prefix ending in "."), [FX-22]. */
 export const FX_NEW_LOOKS = [
   // G8 FLOW-21 밤 화면·아침 한 장 (설계도 부품)
@@ -1308,6 +1310,7 @@ export function fxPartsOf(body) {
     if (VALUE_VERBS.includes(a.do) && !(taste && a.arg === taste && (a.do === "valAdd" || a.do === "valSet"))) add("valueAct");
     if ((a.then ?? []).some((t) => !FX_AGAIN.includes(t))) add("notifyButtons");
     if (a.after !== undefined) add("time");
+    if (a.do === "screen" && FX_NEW_SCREENS.includes(a.arg)) add("reach");
     if (["notify", "memoLine", "newMemo", "valText"].includes(a.do)) { reads(a.arg, true, add); reads(a.text, true, add); }
   };
   for (const p of rec?.pieces ?? []) {
@@ -1332,6 +1335,7 @@ export function fxPartsOf(body) {
       if ((r.more ?? []).length || (r.else ?? []).length) add("chain");
       if (r.on === "value") add("valueRule");
       if (r.on === "every") add("time");
+      if (r.on === "alarmOff") add("reach");
       reads(r.when, false, add);
     }
   }

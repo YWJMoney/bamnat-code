@@ -2226,12 +2226,12 @@ FX-13,"1.39 값 칸 기록과 시각·글 값 → 기간마다 62개 지난값 �
 FX-15,"1.39 몇 분마다·기다렸다 하기·다시 알림 → 규칙 '몇 분마다'(30분~4시간, 하루 종일·시간 사이·근무 중, 하루 48번까지), 동작마다 몇 분 뒤에(최대 12시간), 알림 '10분 뒤 다시'·'1시간 뒤 다시'(무료)",1.39,진행 중,에뮬레이터 확인,"core RuleTrigger.EVERY, LogicRule.until·inWork, LogicAct.after·AGAIN; app LogicRunner nextEvery·later·fireNow, FxOutside again, LogicEditor 몇 분마다·기다렸다; server time"
 FX-17,"1.39 서버 프로 확인 → 기능 장치가 있는 작품을 남이 보게 올리거나 새 판으로 올릴 때 서버가 올리는 사람의 프로(이용권)를 확인, 아니면 fx_pro",1.39,진행 중,서버 시험,"server src/money.js hasPro, recipes.js publish·newVersion fx_pro, index.js recipeDeps; test/recipes.test.mjs [FX-17]; app RecipeClient fx_pro 문구"
 FX-22,"1.39 새 화면 모양 부품 프로 판정 한 곳 → FxPro.Part.LOOK·NEW_LOOKS(부품 종류나 앞자리), 서버 FX_NEW_LOOKS. 수면·할 일 화면 모양 조각은 #310·G5 합친 뒤(5차), 밤 화면·하루 이야기는 G8이 앞자리만 더함, 알람 울림·팀 화면은 1.40",1.39,진행 중,에뮬레이터 확인,"core FxPro.NEW_LOOKS·looks, app FxAccess.partsOf, server recipes.js FX_NEW_LOOKS"
-FX-14,1.39 단추 위젯 꾸밈 → 목표 막대·지난 7기간 막대·색,1.39,대기,에뮬레이터 확인,docs/plans/1.39-FX-기능작품.md 7장
+FX-14,"1.39 단추 위젯 꾸밈 → 숫자 값 칸(목표 있음)을 세는 단추 아래 목표 막대, 위젯이 높으면 지난 7기간 막대(목표 닿은 기간은 진하게)",1.39,진행 중,에뮬레이터 확인,app widget/FxButtonWidget Item.progress·recent·Bars
 FX-16,1.39 조건 고르개(무료) → 자주 쓰는 조건을 골라 넣기,1.39,진행 중,에뮬레이터 확인,app logic/LogicEditor QuickConds (조건 칸 위 칩)
 FX-18,1.39 일주일 미리 돌려 보기(무료) → 만든 규칙이 다음 7일 언제 무엇을 할지,1.39,진행 중,에뮬레이터 확인,"core formula/LogicWeek.kt run·everyTimes(LogicWeekTest), app LogicEditor FxStarters 일주일 미리 돌려 보기, LogicRunner.nextEvery가 everyTimes를 씀"
-FX-19,1.39 받는 사람 목표 → 값 칸 목표를 받는 사람이 넣는 칸으로,1.39,대기,에뮬레이터 확인,docs/plans/1.39-FX-기능작품.md 7장
+FX-19,1.39 받는 사람 목표 → 값 칸 목표를 받는 사람이 넣는 칸으로,1.39,진행 중,에뮬레이터 확인,"core PieceCatalog values.goal·rules.min input=true(받는 칸에 묶기), server recipes.js 같은 칸; 만들기 화면 받는 칸 묶기로 PC 확인"
 FX-20,1.39 예시로 시작(무료) → 물 마시기·약·배달 건수 같은 예시 작품,1.39,진행 중,에뮬레이터 확인,"core formula/FxExamples.kt ALL·into(LogicWeekTest), app LogicEditor FxStarters 예시로 시작"
-FX-21,1.39 탭 넓히기 → 급여·알람·수면·할 일 자리와 언제,1.39,대기,에뮬레이터 확인,docs/plans/1.39-FX-기능작품.md 7장
+FX-21,"1.39 탭 넓히기(1.39 몫) → 규칙 언제 '근무 알람을 끄면'(메모 일정·다시 확인 빼고), 화면 열기에 수면·밤 화면. 프로(REACH). 할 일 화면·할 일 만들기·근무표가 바뀌면·잠에서 깨면은 #310·G5 합친 뒤",1.39,진행 중,에뮬레이터 확인,"core RuleTrigger.ALARM_OFF, LogicVerb.SCREENS sleep·night·NEW_SCREENS, FxPro.Part.REACH; app LogicRunner.onAlarmOff·SCREEN, AlarmService 끈 뒤, LogicEditor; server RULE_TRIGGERS alarmOff·FX_NEW_SCREENS·reach"
 FX-23,1.39 작품마다 하루 써 보기 → 그 작품의 장치만 열고 끝나면 요약,1.39,진행 중,에뮬레이터 확인,"core FxTaste.openKeys·FxPro.free(open)(FxProTest aTryOpensOnlyItsWork), app LogicStore.markFrom·fromRule·fromButton, RecipePieces 넣기, FxAccess.runnable"
 FX-24,1.39 써 보기 끝 알림이 그 작품의 장터 자세히로,1.39,진행 중,에뮬레이터 확인,"core FxTaste.lastEnded, app FxAccess.endedCard (문구, 코드), LogicRunner.onOpen 알림 payload, AppRoot PRO → Routes.recipe(code)"
 FX-25,1.39 넣기 전 충돌 경고 → 이미 있는 규칙·단추와 같은 일을 하면 한 줄로,1.39,진행 중,에뮬레이터 확인,"core formula/LogicClash.kt(LogicWeekTest clashesAreSaidBeforePuttingIn), app RecipePieces LOGIC 미리 보기 ⚠ 줄"
