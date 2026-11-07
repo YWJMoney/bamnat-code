@@ -820,7 +820,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     }
     resent?.let { (v, list) ->
         AlertDialog(onDismissRequest = { resent = null }, title = { Text("${v}판으로 다시 확정했어요") }, text = {
-            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. 그보다 옛 판을 쓰는 팀원은 저절로 바뀌지 않으니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
+            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. " +
+                "아이폰 팀원이 링크에서 '캘린더에 넣기'를 해 두었다면 그 캘린더도 몇 시간 안에 따라 바뀌어요. 그 밖의 팀원은 저절로 알지 못하니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { resent = null }) { Text("알겠어요") } },
             dismissButton = { TextButton(onClick = { resent = null; linksFor = list }) { Text("그래도 알리기") } })
     }
@@ -837,6 +838,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         fresh.joinToString("\n") { (m, u) -> "${m.name}: $u" }, "새 링크 보내기") }) { Text("새 링크 ${fresh.size}개만 보내기") }
                 }
                 Text("한 사람씩 보내거나, 모두 한 번에 단톡방에 보낼 수 있어요. 링크마다 그 사람 근무만 보여요.", style = MaterialTheme.typography.bodySmall)
+                // 1.39 [IOS-07] The leader need not ask an iPhone teammate to install anything.
+                Text("아이폰 팀원도 링크로 바로 봐요. 링크의 '아이폰 캘린더에 넣기'를 누르면 근무가 자기 캘린더에 들어가고, 다시 확정하면 따라 바뀌어요. 출근 알람은 안드로이드 밤낮 앱에서만 울려요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n팀 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
                 list.forEach { (m, url) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -913,8 +917,14 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         val together = com.bamnat.core.team.TeamReceive.merge(
             if (team.showTogether) b.offTogether(m.id) { it in off }.mapValues { (_, n) -> "같이 쉬어요: " + n.joinToString(", ") } else emptyMap(),
             changed[m.id].orEmpty())
+        // 1.39 [IOS-01] (사용자 2026-11-07 결정) A member's link always carries its calendar address, whatever the leader's plan: a
+        // teammate on an iPhone (no 밤낮 app) puts the days in their own calendar from the page, and it follows each 다시 확정.
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
-            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together)
+            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together,
+            feed = java.time.ZoneId.systemDefault()).apply {
+            // Without the phone's 시간대 이름 (the server reads Asia/Seoul), so only the 'on' mark goes. 처리방침 3.12 names it (총괄 몫).
+            remove("tz")
+        }
         val id = m.linkId
         val token = m.linkToken
         val st = if (id != null && token != null) runCatching {

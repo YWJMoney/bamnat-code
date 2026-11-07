@@ -82,7 +82,7 @@ export function insightViews(A) {
     // [STAT-04] The share server counts views roughly (approximate), so the numbers say 대략.
     const about = (v) => (sh?.approximate !== false ? `대략 ${v}` : v);
     const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
-        <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
+        <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd>${phonesRows(sh.phones)}</dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.${sh.phones ? " 아이폰 비율은 iOS 앱을 언제 만들지 정하는 기준이에요(팀·사장님 링크 4주 평균 30%가 안)." : ""}</p>`
       : '<p class="meta">공유 서버가 연결되지 않았어요. 관리 › 서버 상태를 봐 주세요.</p>'}</section>`;
     const events = `<details class="card events" data-key="metrics:events"${S.opened.get("metrics:events") ? " open" : ""}><summary><h2>기능별 <span class="meta">${d.events.length}개</span></h2></summary>
       <p class="hint">비율은 최근 28일 안에 한 번이라도 한 휴대폰의 비율이에요.</p>
@@ -90,6 +90,21 @@ export function insightViews(A) {
         <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></details>`;
     return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>` : "")
       + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${remoteCard()}${funnel}${shares}${phase3}</div>${events}`;
+  }
+
+  /**
+   * 1.39 [IOS-06] Who opens the links, by kind of phone (공유 서버 stats.phones, people only, no preview robots): 근무표 링크 and
+   * 팀·사장님 링크 apart, each with its iPhone share. Nothing before the share server counts them.
+   */
+  function phonesRows(p) {
+    if (!p) return "";
+    const row = (label, ios, android, other) => {
+      const all = ios + android + other;
+      const of = (n) => pct(Math.round((n * 100) / all));
+      return `<dt>${label}</dt><dd>${all ? `아이폰 ${of(ios)} · 안드로이드 ${of(android)} · 그 밖 ${of(other)} <small>(${all}번)</small>` : "아직 없어요"}</dd>`;
+    };
+    return row("근무표 링크를 연 휴대폰", p.views_ios, p.views_android, p.views_other)
+      + row("팀·사장님 링크를 연 휴대폰", p.team_ios, p.team_android, p.team_other);
   }
 
   /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
