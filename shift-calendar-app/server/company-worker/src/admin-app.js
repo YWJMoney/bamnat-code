@@ -1289,7 +1289,7 @@ function adminApp(L, BUILD, M) {
     if (!d) return skeleton(1);
     const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
     const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
-    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. 다시 쓴 분은 처음 쓴 뒤 ${d.back}일 안에 또 쓴 비율이에요.</p>
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 오늘 처음 쓴 분은 ${d.back}일 뒤부터 들어가요.</p>
       <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
         <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
       ${d.items.map((x) => {

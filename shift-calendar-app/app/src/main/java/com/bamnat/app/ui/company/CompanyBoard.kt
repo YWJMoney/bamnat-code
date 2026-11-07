@@ -619,11 +619,14 @@ fun TalkSheet(holder: TalkHolder) {
                 // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
                 // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
                 var rulesAsked by remember { mutableStateOf(false) }
+                var sentHere by remember(o.company, o.setup) { mutableStateOf(false) }
                 // [TOWN-12] PC 확인 a6cab3c8: the rules as a card above the box (the window took the words being written and closed
                 // on a tap outside); the 마을 이름 card [TOWN-03] only once they are agreed, so the two never come one after the other.
                 var rulesOk by remember { mutableStateOf(rules.isAgreed) }
                 if (rulesAsked && !rulesOk) PlazaRulesCard(rules, onAgreed = { rulesOk = true }, modifier = Modifier.padding(top = 8.dp))
-                else if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
+                // PC 4차 c0ca3d9f (중, 보낸 뒤 이름 카드가 커서 시트 안 글이 한 줄만 보였어요): once a post went, the card steps aside
+                // for this sheet; it is asked again the next time the box is used.
+                else if (styleRoom && rulesAsked && !sentHere) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
                     modifier = Modifier.padding(top = 8.dp))
                 // 1.39 [PLZC-10] 3-3: what my post will carry, said by the box; 보일 것 고르기 changes it (on this phone).
                 if (tagScope) PlazaTagScopeDialog(holder.container, o.company, onDismiss = { tagScope = false; tagTick++ })
@@ -685,6 +688,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     busy = false; error = e; holder.container.plazaTags.cardOnce = null
                                     // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
                                     if (e == null) {
+                                        sentHere = true
                                         text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null; withCard = false
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
