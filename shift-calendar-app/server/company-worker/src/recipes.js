@@ -147,8 +147,9 @@ export const PART_IDS = [
   "widget", "widget.head", "widget.cell",
   // 1.39 [FLOW-21] 밤 화면·아침 한 장
   "night", "night.date", "night.clock", "night.line", "night.card", "night.button", "night.morning",
+  "widget.task", "widget.task.check", "widget.task.add",
 ];
-const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel", "dark"];
+const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "late", "done", "sel", "dark"];
 const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
   : PART_IDS.includes(id.slice(0, id.lastIndexOf("."))) ? id.slice(0, id.lastIndexOf(".")) : "app");
 const PART_CHILDREN = {};
@@ -1301,6 +1302,26 @@ async function readDevice(d, request, body) {
 
 const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
 
+/**
+ * 1.39 [TASK-07] Parts and states an older app cannot read (its RecipeCodec refuses the whole recipe on a name it does not know), each
+ * with the first versionCode that reads it. A maker's recipe that uses one is listed only to apps that new ([partsMinApp] → min_app).
+ */
+export const PARTS_SINCE = { ids: { "widget.task": 53, "widget.task.check": 53, "widget.task.add": 53 }, states: { late: 53, done: 53 } };
+
+/** 1.39 [TASK-07] The versionCode a recipe's parts lines need ([PARTS_SINCE]), or null when any app reads them. */
+export function partsMinApp(recipe) {
+  let need = 0;
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== "object") return;
+    if (typeof v.id === "string" && PARTS_SINCE.ids[v.id]) need = Math.max(need, PARTS_SINCE.ids[v.id]);
+    if (typeof v.on === "string" && PARTS_SINCE.states[v.on] && typeof v.id === "string" && PART_IDS.includes(v.id)) need = Math.max(need, PARTS_SINCE.states[v.on]);
+    Object.values(v).forEach(walk);
+  };
+  walk(recipe);
+  return need || null;
+}
+
 /** 1.36 [MKS-01] The list's app= (the phone's versionCode), 0 when absent or odd. */
 export function appCodeOf(url) {
   const n = Number(url.searchParams.get("app"));
@@ -1515,9 +1536,9 @@ async function publish(d, env, request) {
   let code = newCode();
   while (await d.one(env, "SELECT 1 AS x FROM recipes WHERE code = ?", code)) code = newCode();
   await d.batch(env, [
-    d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at, maker)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
-    state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev)),
+    d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at, maker, min_app)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
+    state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev), partsMinApp(r)),
     d.stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", dev, await makerId(dev), now),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
   ]);
@@ -1568,8 +1589,8 @@ async function newVersion(d, env, request, code) {
   const rec = clean.recipe;
   await d.batch(env, [
     d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, scope = ?, state = ?, version = ?, hash = ?, body = ?,
-      updated_at = ?, note = '' WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
-    state, v, clean.hash, clean.text, now, code),
+      updated_at = ?, note = '', min_app = MAX(COALESCE(min_app, 0), COALESCE(?, 0)) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
+    state, v, clean.hash, clean.text, now, partsMinApp(rec), code),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", code, v, clean.hash, clean.text, now),
   ]);
   return d.json({ code, version: v, hash: clean.hash, state, scope });

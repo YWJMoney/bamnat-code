@@ -104,8 +104,8 @@ val PRO_PILLARS = listOf(
         listOf("끄기 미션(계산 문제·흔들기), 근무마다 다르게", "끈 뒤 ‘일어났나요?’ 묻고 답이 없으면 한 번 더 울림"),
         setOf(Feature.SURE_ALARM)),
     Pillar("더 넓게, 깔끔하게",
-        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "광고 없음"),
-        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.NO_ADS)),
+        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "할 일 위젯 2개째부터(화면마다, 크기마다)", "광고 없음"),
+        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.MORE_TASK_WIDGETS, Feature.NO_ADS)),
     // [FREE-10] 1.35 꾸미기 혜택 (사용자 2026-10-30 "꾸미기 혜택을 추가해서 프로의 장점을 살리는").
     Pillar("내 마음대로 꾸미기",
         listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이",
@@ -196,6 +196,11 @@ fun ProScreen(onBack: () -> Unit) {
     val plans by c.billing.plans.collectAsStateWithLifecycle()
     val billingState by c.billing.state.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
+    // 1.39 (시험이 찾은 빈틈: 초대 코드가 틀리면 그 말이 화면 맨 위에 떠서 보낸 자리에서는 안 보여요): each message shows under the card
+    // that said it.
+    var messageAt by remember { mutableStateOf("") }
+    val say: (String) -> (String) -> Unit = { at -> { m -> message = m; messageAt = at } }
+    @Composable fun Said(at: String) { if (messageAt == at) message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) } }
     val zone = Today.zone()
     // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
     LaunchedEffect(Unit) { if (c.flags.on(com.bamnat.core.flags.FlagCatalog.BILLING)) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
@@ -218,11 +223,11 @@ fun ProScreen(onBack: () -> Unit) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 StatusCard(gate, pro, zone, settings.workStyle)
                 // 1.36 [PSH-01] 프로 나눔 1인, right under 지금 (PC: 맨 아래에 있어 못 찾았어요).
-                if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = { message = it })
+                if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = say("top"))
                 // 1.36 840 보상 장부: what this phone was given this month, for someone without 프로.
                 if (gate.live && !gate.preview && gate.tier < com.bamnat.app.tier.Tier.PRO) RewardLedgerCard(c, gate, plans)
-                ConsentWaiting(c, pro, onMessage = { message = it })
-                message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                ConsentWaiting(c, pro, onMessage = say("top"))
+                Said("top")
                 // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
                 ProCollectionCard(gate, settings)
 
@@ -269,14 +274,17 @@ fun ProScreen(onBack: () -> Unit) {
                         if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
                     }
                 } else {
-                    PlansCard(c, gate, pro, plans, billingState, onMessage = { message = it })
+                    PlansCard(c, gate, pro, plans, billingState, onMessage = say("plans"))
+                    Said("plans")
                 }
 
                 // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 and 초대 코드 넣기.
-                InviteCard(c, onMessage = { message = it })
+                InviteCard(c, onMessage = say("invite"))
+                Said("invite")
 
                 if (c.tierApi.enabled) {
-                    PassesCard(c, pro, gate, zone, onMessage = { message = it })
+                    PassesCard(c, pro, gate, zone, onMessage = say("passes"))
+                    Said("passes")
                     AdminCard(c, pro)
                 }
                 // 1.36 PC 재검토 (결제 단추가 아래 탭 자리와 겹쳐 잘못 눌려요): the last buttons scroll clear of the bar at the bottom.

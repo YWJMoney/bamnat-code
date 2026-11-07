@@ -369,6 +369,11 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     fun saveEdited(memo: Memo) {
         viewModelScope.launch { repo.save(memo) }
     }
+
+    /** 1.39 [TASK-02] 끝냄 from a card: the stored memo (not a repeating one's copy laid on a day) finished or not on [day]. */
+    fun setDone(memo: Memo, day: LocalDate?, done: Boolean) {
+        viewModelScope.launch { repo.get(memo.id)?.let { repo.save(it.withDone(done, day, Today.millis())) } }
+    }
 }
 
 class MemoTrashViewModel(private val container: AppContainer) : ViewModel() {
@@ -553,6 +558,15 @@ class MemoEditorViewModel(
     fun removeTemplate(id: String) = container.memoTemplates.remove(id)
     fun setColor(index: Int) = update { it.copy(colorIndex = index) }
     fun togglePinned() = update { it.copy(pinned = !it.pinned) }
+
+    /**
+     * 1.39 [TASK-02] The day 끝냄 is about: a repeating memo is finished day by day, on the day it was opened from (today from
+     * elsewhere); one that does not repeat is finished once.
+     */
+    val doneDay: LocalDate get() = openedOn ?: Today.date()
+
+    /** 1.39 [TASK-02] 끝냄 표시 / 끝냄 풀기. */
+    fun setDone(done: Boolean) = update { it.withDone(done, doneDay, Today.millis()) }
     /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. [EASE-22] 근무마다 stays as it is. */
     fun setDate(date: LocalDate?) = update {
         val kind = com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat)
@@ -723,7 +737,9 @@ class MemoEditorViewModel(
     }
 
     fun setItemChecked(index: Int, checked: Boolean) = update { m ->
-        m.copy(checklist = m.checklist.mapIndexed { i, item -> if (i == index) item.copy(checked = checked) else item })
+        val next = m.copy(checklist = m.checklist.mapIndexed { i, item -> if (i == index) item.copy(checked = checked) else item })
+        // 1.39 [TASK-05] A line taken off again means the memo is not finished after all.
+        if (!checked && next.isDoneOn(doneDay)) next.withDone(false, doneDay, Today.millis()) else next
     }
 
     /** Inserts an empty item after [index] and returns its position. */

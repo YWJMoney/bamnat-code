@@ -44,6 +44,9 @@ import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.Alarm
@@ -1130,7 +1133,8 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
         }
     }
     for (memo in memos) {
-        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo })
+        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo },
+            done = memo.isDoneOn(date), onDone = { vm.setMemoDone(memo, date, it) })
     }
     deleting?.let { m ->
         // 1.38 (DB 28판) A repeating memo asks: 이 날만 빼기 or 반복 전부 지우기.
@@ -1155,7 +1159,7 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit, done: Boolean = false, onDone: (Boolean) -> Unit = {}) {
     // A 1.32 [FIX132-05] A long press copies the memo, all of it or a part, without opening it.
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" },
@@ -1166,20 +1170,30 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .background(memoBackground(memo.colorIndex))
             .combinedClickable(onClick = onClick, onLongClick = { copying = true }, onLongClickLabel = "메모 복사")
-            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+            .padding(top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 1.39 [TASK-02] 끝냄 right on the day's list, one tap (할 일 앱처럼 체크), the memo staying where it is, crossed out.
+        IconButton(onClick = { onDone(!done) }) {
+            Icon(
+                if (done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (done) "끝냄 풀기" else "끝냄 표시",
+                tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (memo.isChecklist) {
             Icon(Icons.Filled.Checklist, contentDescription = "체크리스트", Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Column(Modifier.weight(1f)) {
+        val crossed = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+        Column(Modifier.weight(1f).then(if (done) Modifier.alpha(0.6f) else Modifier)) {
             if (memo.title.isNotBlank()) {
-                Text(memo.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(memo.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = crossed)
             }
             val preview = memo.preview
             if (preview.isNotBlank()) {
-                Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (memo.title.isBlank()) crossed else null)
             }
         }
         if (memo.isChecklist && memo.itemCount > 0) {

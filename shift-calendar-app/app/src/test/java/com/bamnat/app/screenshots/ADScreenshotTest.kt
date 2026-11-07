@@ -4,6 +4,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.MainActivity
@@ -344,6 +345,20 @@ class ADScreenshotTest : ScreenshotBase() {
         c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
         settle()
         noCuts("grouped_rail_unfolded")
+    }
+    /** 1.39 3차 PC (펼친 화면: 옆 막대 묶음 칸의 목록이 막대를 덮어요): the list opens beside the rail. */
+    @Test fun groupedRailMenuBeside() = shoot("1039_ad_grouped_rail_menu_unfolded", UNFOLDED) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
+        settle()
+        val tabs = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
+        val railLeft = tabs.minOf { it.boundsInWindow.left }
+        val rail = tabs.filter { it.boundsInWindow.left <= railLeft + 1f }.maxBy { it.boundsInWindow.right }
+        val railRight = rail.positionOnScreen.x + rail.size.width
+        tab(1, wide = true)
+        settle()
+        // The list is a popup of its own, read through the compose rule: every line starts right of the rail, none over it.
+        val lines = listOf("가계부", "받을 돈", "급여").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().positionOnScreen.x }
+        assertTrue("목록이 막대를 덮어요: $lines <= $railRight", lines.all { it >= railRight })
     }
     @Test fun slotEditorWithAGroup() = shoot("1038_ad_slot_editor", PHONE_393) {
         c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }

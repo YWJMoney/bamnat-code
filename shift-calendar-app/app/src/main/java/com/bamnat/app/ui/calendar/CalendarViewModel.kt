@@ -1491,6 +1491,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { memoRepo.delete(memo) }
     }
 
+    /** 1.39 [TASK-02] 끝냄 from the day: the stored memo finished or not on [day] (a repeating one only that day). */
+    fun setMemoDone(memo: Memo, day: LocalDate, done: Boolean) {
+        viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.save(it.withDone(done, day, com.bamnat.core.time.Today.millis())) } }
+    }
+
     /** 1.38 (DB 28판) 이 날만 빼기: [day] comes off repeating [memo]; the undo is offered where deletion's is. */
     fun skipMemoDay(memo: Memo, day: LocalDate) {
         viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.skipDay(it, day) } }

@@ -20,13 +20,20 @@ class FreePromiseRulesTest {
     private fun kt(dir: String) = File(main, dir).walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
 
     @Test fun widgetsHaveNoProLock() {
+        // 1.39 [TASK-07] (사용자 2026-11-07 "무료 프로의 구분은 확실히"): every kind of widget stays free. The one 프로 line is a
+        // second 할 일 위젯 (MORE_TASK_WIDGETS); the first one placed is free for good, and no other widget reads the gate.
         val gated = kt("widget").filter { f ->
             val t = f.readText()
             t.contains("FeatureGate") || t.contains("featureGate") || Regex("""\bFeature\.[A-Z_]+""").containsMatchIn(t)
         }.map { it.name }
-        assertEquals("위젯은 무료예요(프로 잠금 없음)", emptyList<String>(), gated)
+        assertEquals("위젯은 무료예요(프로 잠금은 할 일 위젯 2개째만)", listOf("TaskWidget.kt"), gated)
+        val task = File(main, "widget/TaskWidget.kt").readText()
+        assertEquals("할 일 위젯이 묻는 프로 기능은 '여러 개' 하나", setOf("MORE_TASK_WIDGETS"),
+            Regex("""\bFeature\.([A-Z_]+)""").findAll(task).map { it.groupValues[1] }.toSet())
+        assertTrue("처음 놓은 할 일 위젯은 늘 무료", task.contains("allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) || isFirst") ||
+            Regex("""MORE_TASK_WIDGETS\)\s*\|\|\s*isFirst""").containsMatchIn(task))
         val names = Feature.entries.map { it.name }
-        assertTrue("위젯을 파는 프로 기능 줄이 없어요", names.none { it.contains("WIDGET") })
+        assertEquals("위젯을 파는 프로 기능 줄은 할 일 위젯 여러 개 하나", listOf("MORE_TASK_WIDGETS"), names.filter { it.contains("WIDGET") })
     }
 
     @Test fun theBasicAlarmIsFree() {

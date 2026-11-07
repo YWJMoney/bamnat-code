@@ -161,6 +161,10 @@ fun MemoListScreen(
         onDelete = vm::delete,
         // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for 10 seconds (PC 확인 5ff9ae28: 4–6초 was missed).
         onChange = { before, after, said -> vm.saveEdited(after); undo = UndoBar(said, { vm.saveEdited(before) }, "바꾸기 전으로 돌아왔어요") },
+        onDone = { memo, day, done ->
+            vm.setDone(memo, day, done)
+            undo = UndoBar(if (done) "끝냈어요" else "끝냄을 풀었어요", { vm.setDone(memo, day, !done) }, "바꾸기 전으로 돌아왔어요")
+        },
     )
     androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
 
@@ -392,6 +396,8 @@ internal class CardActions(
      * [TAB-02] 누락 점검 N9: a memo changed in a view (moved to another 보드 칸, a 표 칸 picked) — saved, with [said] and 되돌리기 to [before].
      */
     val onChange: (before: Memo, after: Memo, said: String) -> Unit = { _, _, _ -> },
+    /** 1.39 [TASK-02] 끝냄 표시 / 풀기 on [day] (a repeating memo's day; the memo's own for one that does not repeat). */
+    val onDone: ((memo: Memo, day: java.time.LocalDate?, done: Boolean) -> Unit)? = null,
 )
 
 @Composable
@@ -691,6 +697,9 @@ internal fun MemoCard(
     var menu by remember { mutableStateOf(false) }
     var toLedger by remember { mutableStateOf(false) }
     if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
+    // 1.39 [TASK-02] A repeating memo in the list is finished day by day: today's.
+    val doneDay = if (memo.repeat.isNotEmpty()) Today.date() else memo.date
+    val done = memo.isDoneOn(doneDay)
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
@@ -718,7 +727,8 @@ internal fun MemoCard(
     val ink = if (cardPart.ink != null) Color(cardPart.ink!!.toInt()) else if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
     // PC d0799995 (체크 진행 카드): the part's 투명도 (alpha), so '체크율 >= 100이면 흐리게' lets a finished card step back.
     Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)
-        .then(cardPart.alpha?.let { a -> Modifier.graphicsLayer { alpha = a.coerceIn(0, 100) / 100f } } ?: Modifier)) {
+        .then(cardPart.alpha?.let { a -> Modifier.graphicsLayer { alpha = a.coerceIn(0, 100) / 100f } }
+            ?: if (done) Modifier.graphicsLayer { alpha = DONE_ALPHA } else Modifier)) {
         Surface(
             shape = shape,
             color = cardColor,
@@ -756,11 +766,15 @@ internal fun MemoCard(
                             else -> MaterialTheme.typography.titleSmall
                         }.let { st -> memoFont(look.font)?.let { st.copy(fontFamily = it) } ?: st }
                             .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } }
-                            .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) },
+                            .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) }
+                            .let { st -> if (done) st.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough) else st },
                         maxLines = if (look.layout == "compact") 1 else 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.title")),
                     )
+                    if (done) {
+                        Icon(Icons.Filled.CheckCircle, "끝냄", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
                     if (memo.pinned) {
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
@@ -782,6 +796,13 @@ internal fun MemoCard(
           }
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            actions.onDone?.let { onDone ->
+                DropdownMenuItem(
+                    text = { Text(if (done) "끝냄 풀기" else "끝냄 표시") },
+                    leadingIcon = { Icon(Icons.Filled.CheckCircle, null) },
+                    onClick = { menu = false; onDone(memo, doneDay, !done) },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(if (memo.pinned) "고정 해제" else "맨 위에 고정") },
                 leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
@@ -1052,3 +1073,6 @@ private data class UndoBar(val said: String, val back: (() -> Unit)?, val backSa
 
 /** A body line that is only 꼬리표 ("#집안일 #급함"). */
 private val TAG_LINE = Regex("^(#[\\p{L}\\p{N}_]+\\s*)+$")
+
+/** 1.39 [TASK-02] How far a finished memo's card steps back. */
+private const val DONE_ALPHA = 0.6f

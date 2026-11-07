@@ -78,7 +78,7 @@ import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
-import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
+import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
@@ -103,7 +103,7 @@ import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, 
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
 import { flushWatch, pruneWatch, recordError, recordRequest, runJobs } from "./ops-watch.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
-export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
+export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
   reportBytes: 32 * 1024,

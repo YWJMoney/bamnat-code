@@ -213,6 +213,7 @@ class SettingsFilesBackup(
         val DEVICE_ONLY = mapOf(
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.
             "in_app_update" to "Play 인앱 업데이트를 이 판에서 이미 물어봤는지, 이 휴대폰에 깔린 판의 것",
+            "plaza_tag" to "광장 근무 태그 공개 범위(근무 형태·업종·밤낮 쓴 기간·지금 근무 중)는 이 휴대폰에만, 새 휴대폰에서 한 번 다시 골라요(PLZC-10)",
             "share_forget" to "모두 지우기 때 아직 못 지운 공유 링크(종류:번호), 이 휴대폰이 인터넷이 되면 마저 지움. 지운 뒤 남은 일이라 되살린 폰에 옮기지 않아요",
             // 1.38 [P3-X-08] 신고·지급 '했어요' 표시: 알림 목록이라 복원 뒤엔 지난 일이 길어야 일주일 다시 보여요.
             "boss_filed" to "다가올 신고·지급에서 '했어요'를 누른 것, 이 휴대폰의 것",
@@ -307,6 +308,7 @@ class SettingsFilesBackup(
             "photo_wrong" to "‘사진이 달라요’를 누른 횟수 중 아직 보내지 않은 것(60일), 이 휴대폰에서만",
             // 1.31 [STAT-08][GUIDE-20]: lookup times waiting to be sent, and whether the first week's 시작 단계 card was put away.
             "lookup_stats" to "조회에 걸린 시간 중 아직 보내지 않은 것(처리방침 3.5 시행 뒤, 동의한 경우), 이 휴대폰에서만",
+            "setup_taps" to "1.39 [SETUP-20] 첫 설정을 마칠 때까지 누른 횟수(새로 깐 이 휴대폰의 한 번뿐, 사용 통계로 한 번 보내고 지움), 다른 휴대폰에 옮기면 그 휴대폰의 첫 설정이 아니에요",
             "start_steps" to "첫 주 ‘시작 3단계’ 카드를 그만 보기로 했는지, 이 휴대폰에서만",
             "share_ask_gate" to "나누기 부탁을 거절한 뒤 다시 묻지 않는 날짜, 이 휴대폰에서만 (J133-17)",
             "first_pay_asked" to "광장 판마다 '첫 급여 방식이 되어 주세요'를 이미 보여 준 기록, 이 휴대폰에서만 (J133-94)",

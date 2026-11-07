@@ -25,6 +25,8 @@ object FlagCatalog {
     const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
     /** [STAT-08] 1.31 N4: how long lookups took (정해진 구간 값만), sent with 사용 통계 once 처리방침 3.5 names it. */
     const val STATS_LOOKUP = "stats.lookup"
+    /** 1.39 [SETUP-20]: how many taps first setup took (횟수 구간과 일하는 방식만), sent with 사용 통계 once 처리방침 3.12 names it. */
+    const val STATS_SETUP = "stats.setup"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
@@ -57,6 +59,8 @@ object FlagCatalog {
     const val COMMUNITY_CARE = "community.care"
     /** 1.39 [PLZC-01~16] 광장을 사람 먼저로: 이야기 흐름 첫 화면, 근무 태그(준 블라인드), 나도요, 렌즈 칩, once 처리방침 3.12 names the tag. */
     const val PLAZA_PEOPLE = "plaza.people"
+    /** 1.39 G5-N4 가족 링크에 계획한 잠 시간(켜기 선택), once 처리방침 3.12 names it. */
+    const val SLEEP_PLAN_SHARE = "sleep.plan_share"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -403,6 +407,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
     )
 
+    /**
+     * 1.39 [SETUP-20] (사용자 결정 2026-11-07 '추천대로', 발굴 G6 4-1 '처음 1분을 숫자로'): 설치부터 첫 설정을 저장해 달력이 찰 때까지
+     * 화면을 누른 횟수를, 정해진 구간 값 하나와 고른 일하는 방식만 이미 동의한 사용 통계에 실어요. 무엇을 눌렀는지·시각·휴대폰 구별은
+     * 없어요. 처리방침 3.12(1-9항 사용 통계 항목)의 시행일에 저절로 켜지고, 그 전에는 휴대폰 안에만 둬요.
+     */
+    val STATS_SETUP_FLAG = Flag(
+        STATS_SETUP, "첫 설정 누른 횟수 보내기",
+        what = "사용 통계를 켠 휴대폰이 처음 깔고 첫 설정을 저장할 때까지 화면을 누른 횟수를 정해진 구간 값(5·10·15번…)으로 한 번, 고른 일하는 방식(교대·일근 등)과 함께 보내요. 무엇을 눌렀는지와 시각은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 센 횟수를 휴대폰 안에만 두고, 사용 통계를 끄면 지워요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "SETUP-20", note = "1.39 발굴 G6 4-1 (사용자 결정 2026-11-07 '추천대로')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -418,6 +436,19 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
     )
 
+    /**
+     * 1.39 G5-N4 (사용자 결정 1차 13번, 2026-11-07 "추천대로": 3.12 문장 넣고, 기본은 꺼짐 · 보내는 분이 켬): a family's link may carry the
+     * sleep the app planned around the work, two weeks of from~to and nothing else. 처리방침 names it from 3.12, so it opens on that date.
+     */
+    val SLEEP_PLAN_SHARE_FLAG = Flag(
+        SLEEP_PLAN_SHARE, "계획한 잠 시간 나누기",
+        what = "달력을 공유한 가족이 받은 달력에서 ‘오늘 09:00~16:00 잘 계획이에요’ 한 줄을 봐요. 앱이 근무에 맞춰 계획한 잘 시간(2주치 시작·끝)만 보내고, 실제 잔 기록·소리는 보내지 않아요. 공유 링크마다 보내는 분이 켜야 해요(기본 꺼짐).",
+        whyOff = "공유 서버로 계획한 잠 시간을 새로 보내니 처리방침 3.12의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 공유 창에 줄이 보이지 않아요.",
+        basis = Basis(policy = "3.12 1항", requirement = "SLEEP-11", note = "1.39 G5-N4 (사용자 결정 1차 13번)"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
             switchKey(s), SWITCH_NAMES.getValue(s),
@@ -430,7 +461,7 @@ object FlagCatalog {
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG) +
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }
