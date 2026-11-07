@@ -37,7 +37,9 @@ for (const d of ["market-136", "market-138", "market-138-studio", "market-138-re
 
 const problems = [];
 const seen = new Set();
-for (const f of readdirSync(OUT).filter((x) => x.endsWith(".json"))) unlinkSync(join(OUT, f));
+// 이 도구가 쓰는 파일만 지우고 다시 써요(다른 갈래가 같은 폴더에 둔 night.json 같은 것은 그대로).
+const MINE = /^(theme|tab-(calendar|pay|money|memo|alarm|widget)|part|logic|fx)\.json$/;
+for (const f of readdirSync(OUT).filter((x) => MINE.test(x))) unlinkSync(join(OUT, f));
 let n = 0;
 for (const [name, list] of Object.entries(files)) {
   for (const w of list) {
@@ -57,7 +59,7 @@ for (const [name, list] of Object.entries(files)) {
   writeFileSync(join(OUT, name), JSON.stringify(list.map((w) => ({ recipe: w.recipe, ...(keep.has(w) ? { showcase: true } : {}) })), null, 1) + "\n");
   n += list.length;
 }
-const top = readdirSync(OUT).filter((x) => x.endsWith(".json")).reduce((a, f) => a + JSON.parse(readFileSync(join(OUT, f), "utf8")).filter((w) => w.showcase).length, 0);
+const top = readdirSync(OUT).filter((x) => MINE.test(x)).reduce((a, f) => a + JSON.parse(readFileSync(join(OUT, f), "utf8")).filter((w) => w.showcase).length, 0);
 console.log(`작품 ${n}개(⭐ ${top})를 ${Object.keys(files).length}개 파일에 썼어요: ${Object.entries(files).map(([k, v]) => `${k} ${v.length}`).join(", ")}`);
 for (const p of problems) console.log(`살필 것: ${p}`);
 if (problems.length) process.exitCode = 1;
