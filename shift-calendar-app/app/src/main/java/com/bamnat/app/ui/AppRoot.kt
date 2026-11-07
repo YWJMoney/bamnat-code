@@ -17,7 +17,6 @@ import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.TextButton
@@ -154,6 +153,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
@@ -572,6 +572,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.LOGIC_MEMO -> {
                 val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                 nav.navigate(Routes.memo(0, day)) { launchSingleTop = true }
+                NoticeLinks.consume(target)
+            }
+            // 1.39 [TASK-07] 할 일 위젯: a row opens its memo on its day, ＋ a new one for today.
+            NoticeLinks.Target.MEMO_OPEN -> {
+                val (id, day) = NoticeLinks.payload.value.orEmpty().split('|').let { p ->
+                    (p.getOrNull(0)?.toLongOrNull() ?: 0L) to p.getOrNull(1)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } }
+                nav.navigate(Routes.memo(id, day)) { launchSingleTop = true }
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -1125,7 +1132,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     if (tabEdit.editing) androidx.activity.compose.BackHandler { saveTabs() }
     LaunchedEffect(route, showNav) { if (!showNav || topLevel == null) saveTabs() }
     val flagRowsNav by container.flags.byKey.collectAsStateWithLifecycle()
-    val manageOn = flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    // 1.39 3차 PC (사무직, 팀 없음: '칸 더하기'에 '팀·가게 관리'): only for someone who leads — a team made or a 사업장 set up on this
+    // phone, or a shop's calendar — while its feature is on ([TabPicks.manageShown]).
+    val ledTeams by remember(container) { container.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val ledPlaces by remember(container) { container.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val manageOn = TabPicks.manageShown(
+        flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true,
+        activeStyle, ledTeams, ledPlaces)
     val pickOf: (String) -> TabPick? = { k -> TabPicks.of(k, activeStyle) }
     val slotLabel: (com.bamnat.core.layout.TabSlots.Slot) -> String = { sl ->
         when (sl) {
@@ -1216,7 +1229,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                     androidx.compose.foundation.layout.Box {
                                         WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
                                         look.members?.let { m ->
-                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
+                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null }, beside = true)
                                         }
                                     }
                                 },
@@ -1273,7 +1286,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) }
                                     ?: if (barPaintOnly) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.NavigationBarDefaults.containerColor,
                             ) {
-                                val twoLineRoom = twoLineTabs(shownSlots.map(slotLabel))
                                 shownSlots.forEachIndexed { index, sl ->
                                     val k = com.bamnat.core.layout.TabSlots.key(sl)
                                     androidx.compose.runtime.key(k) {
@@ -1289,7 +1301,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                                     }
                                                 }
                                             },
-                                            label = { TabLabel(look.label, twoLineRoom, if (look.selected) tabOn else tabPart) },
+                                            label = { TabLabel(look.label, if (look.selected) tabOn else tabPart) },
                                             modifier = tabEditModifier(tabEdit, k, index, shownSlots.size, look.label, horizontal = true, tabsShown, tabNames, saveTabs)
                                                 .then(if (look.members != null) Modifier.semantics { contentDescription = look.said } else Modifier),
                                             colors = itemColors,
@@ -2355,46 +2367,23 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
+private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
     val style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.labelMedium)
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
-    // (A11Y-04); then it kept one line with its last word ("급여").
-    // 1.36 (PC 확인: '근무·급여'가 '급여'로만 보여 다른 탭인 줄 알았어요): both words, one above the other. PC 확인 8e9e888a
-    // 사용성 제안 (두 줄 글자가 다른 탭보다 아주 작아요): each line is 0.8 of the others' size, and with [twoLineRoom] (the bar
-    // has such a name) every other name gets the same room under its icon, so all the icons stay in one line.
-    val one = style
-    val parts = text.split('·')
+    // (A11Y-04); then it kept one line with its last word ("급여"), then (1.36) both words one above the other.
+    // 1.39 총괄 사용성 제안 (화면 사진 164, 글자 2배: '근무·급여'가 두 줄로 꺾이고 그 칸만 키가 커서 아이콘이 위로 올라가요): every name is one
+    // line, whole, its letters no bigger than at [TAB_SCALE_MAX] (the bar is as wide as the phone, not the text), and a long one shrinks to fit.
     val density = androidx.compose.ui.platform.LocalDensity.current
-    if (parts.size == 2 && density.fontScale >= TWO_LINE_FROM) {
-        val line = style.copy(fontSize = one.fontSize * TWO_LINE_SIZE, lineHeight = one.fontSize * TWO_LINE_HEIGHT)
-        val each = with(density) { (one.fontSize * TWO_LINE_HEIGHT).toDp() }
-        Column(Modifier.clearAndSetSemantics { contentDescription = text }, horizontalAlignment = Alignment.CenterHorizontally) {
-            parts.forEach {
-                androidx.compose.foundation.layout.Box(Modifier.height(each).wrapContentHeight(unbounded = true), contentAlignment = Alignment.Center) {
-                    FitText(it, line)
-                }
-            }
-        }
-    } else if (twoLineRoom) {
-        val room = with(density) { (one.fontSize * (TWO_LINE_HEIGHT * 2)).toDp() }
-        androidx.compose.foundation.layout.Box(Modifier.heightIn(min = room), contentAlignment = Alignment.Center) { FitText(text, style) }
-    } else {
-        FitText(text, style)
-    }
+    val capped = if (density.fontScale > TAB_SCALE_MAX) style.copy(fontSize = style.fontSize * (TAB_SCALE_MAX / density.fontScale)) else style
+    FitText(text, capped)
 }
 
-/** A two-word tab name takes two lines from this text scale, each [TWO_LINE_SIZE] of the others' size in [TWO_LINE_HEIGHT] of room. */
+/** 1.39: a tab name's letters grow with the phone's text size up to this much, so five names fit the bar on one line. */
+private const val TAB_SCALE_MAX = 1.5f
+
 /** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
 internal const val SCHOOLING_KIND = "교육"
 
-private const val TWO_LINE_FROM = 1.5f
-private const val TWO_LINE_SIZE = 0.8f
-private const val TWO_LINE_HEIGHT = 0.9f
-
-/** True when the bar's tab names at this text scale include a two-line one, so the others keep the same room. */
-@Composable
-private fun twoLineTabs(names: List<String>): Boolean =
-    androidx.compose.ui.platform.LocalDensity.current.fontScale >= TWO_LINE_FROM && names.any { it.split('·').size == 2 }
 
 /** [TYPE-03] 근무 주기 of a calendar; a shop's is its 영업일·정기휴무. */
 private fun NavHostController.openPattern(c: com.bamnat.app.AppContainer, calendar: String) {
@@ -2493,6 +2482,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO_MEMO -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MEMO")
     SettingsGo.STUDIO_STATS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "STATS")
     SettingsGo.STUDIO_MANAGE -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MANAGE")
+    SettingsGo.STUDIO_WIDGET -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "WIDGET")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,

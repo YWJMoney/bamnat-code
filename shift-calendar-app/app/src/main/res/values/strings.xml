@@ -18,6 +18,8 @@
     <string name="tile_money_add">돈 적기</string>
     <string name="widget_money_name">오늘 쓸 돈</string>
     <string name="widget_money_desc">오늘 쓸 수 있는 돈과 오늘 쓴 돈, 누르면 바로 돈 적기</string>
+    <string name="widget_tasks_name">할 일</string>
+    <string name="widget_tasks_desc">오늘·늦은 할 일을 보고 동그라미로 바로 끝내요. 처음 놓은 하나는 무료</string>
     <string name="open_file_label">밤낮으로 열기</string>
     <string name="roster_share_label">한 달 근무 넣기</string>
     <string name="capture_label">밤낮 결제 알림 기록</string>

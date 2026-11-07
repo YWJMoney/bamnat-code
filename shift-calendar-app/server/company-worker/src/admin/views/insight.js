@@ -89,7 +89,7 @@ export function insightViews(A) {
       <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
         <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></details>`;
     return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>` : "")
-      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${remoteCard()}${funnel}${shares}${phase3}</div>${events}`;
+      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${setupTapsCard(d) /* 1.39 SETUP-20 */}${remoteCard()}${funnel}${shares}${phase3}</div>${events}`;
   }
 
   /**
@@ -144,6 +144,25 @@ export function insightViews(A) {
       ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 시작 시간이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}</section>`;
   }
   // AO 1.28 끝
+
+  // 1.39 [SETUP-20] 첫 설정 누른 횟수 (사용자 결정 2026-11-07, '처음 1분'을 숫자로): per app version and kind of work, the middle
+  // value and 9 in 10 phones, from phones with 사용 통계 once 처리방침 3.12 is in force.
+  const SETUP_STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "가게", INVEST: "투자" };
+  const taps = (n) => (n >= 150 ? "100번 넘음" : `${n}번`);
+  function setupTapsCard(d) {
+    const st = d.startup;
+    if (!st) return "";
+    const rows = st.versions.filter((v) => v.setup).map((v) => {
+      const all = Object.values(v.setup).reduce((n, p) => n + p.phones, 0);
+      const parts = Object.entries(SETUP_STYLE_NAMES).filter(([k]) => v.setup[k])
+        .map(([k, name]) => `${name} 가운데 ${taps(v.setup[k].p50)}(90% ${taps(v.setup[k].p90)}) · ${v.setup[k].phones}대`).join(" · ");
+      return `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${esc(parts)}</small></span>
+        <span class="row-side">${all < st.few ? '<span class="pill">데이터 부족</span>' : ""}<span class="meta">${all}대</span></span></div></li>`;
+    }).join("");
+    return `<section class="card" id="setup-taps-card"><h2>첫 설정 누른 횟수</h2>
+      <p class="hint">처음 깔고 첫 설정을 저장해 달력이 찰 때까지 화면을 누른 횟수예요(일하는 방식마다 가운데 값 · 10대 중 9대가 그 안). 처리방침 3.12 시행 뒤, 사용 통계에 동의한 새 휴대폰만 구간 값으로 한 번 보내요. 무엇을 눌렀는지는 오지 않아요. 판마다 줄면 '처음 1분'이 쉬워진 거예요.</p>
+      ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 횟수가 없어요. 처리방침 3.12가 시행되고 1.39 이상을 새로 깐 휴대폰부터 와요.</p>'}</section>`;
+  }
 
   // R131 1.31 [STAT-08] N4 조회 시간: what consenting phones sent once 처리방침 3.5 is in force, per app version.
   function lookupCard(d) {

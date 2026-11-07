@@ -195,6 +195,42 @@ class MigrationTest {
         }
     }
 
+    /** 1.39 [TASK-02] Version 32 memos arrive not finished, and can be finished once (one that does not repeat) or day by day. */
+    @Test
+    fun version32MemosArriveNotFinishedAndCanBeFinished() = runBlocking {
+        val name = "migration-32.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 32)
+        sql.execSQL(
+            "INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, deletedAt, " +
+                "remindAt, remindRing, remindNotify, remindAsked, calendars, repeat, skips) " +
+                "VALUES (1, 20000, '약 먹기', '', '', 0, 0, 0, 1, 2, NULL, NULL, 0, 0, NULL, '', 'D', ''), " +
+                "(2, 20000, '택배', '', '', 0, 0, 0, 1, 2, NULL, NULL, 0, 0, NULL, '', '', '')",
+        )
+        sql.version = 32
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val daily = db.memoDao().get(1)!!.toModel()
+            val once = db.memoDao().get(2)!!.toModel()
+            assertNull(once.doneAtMillis)
+            assertTrue(daily.doneDays.isEmpty())
+            val day = java.time.LocalDate.ofEpochDay(20003)
+            db.memoDao().update(daily.withDone(true, day, 99).toEntity())
+            db.memoDao().update(once.withDone(true, day, 99).toEntity())
+            val d = db.memoDao().get(1)!!.toModel()
+            assertTrue("매일 메모는 그날만 끝냄", d.isDoneOn(day))
+            assertTrue(!d.isDoneOn(day.plusDays(1)))
+            assertEquals(99L, db.memoDao().get(2)!!.toModel().doneAtMillis)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     /** [RECV-01][IMPORT-01] Version 13 data stays as it was; the new tables arrive empty. */
     @Test
     fun version13KeepsEverythingAndAddsOwed() = runBlocking {

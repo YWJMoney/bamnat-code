@@ -205,6 +205,7 @@ class SetupViewModel(
     fun later() {
         c.telemetry.event("setup_later", current.step.name)
         if (again) return cancelAgain()
+        if (calendarId == null) c.setupTaps.end() // 1.39 [SETUP-20] 나중에: install to a full calendar did not happen, nothing goes.
         update { it.copy(later = true) }
         if (calendarId == null) current.style?.let { style -> keepStyle(style) }
     }
@@ -880,6 +881,8 @@ class SetupViewModel(
         c.appScope.launch {
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
+                    // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
+                    if (calendarId == null && !again) c.setupTaps.finish(d.style)
                     // 1.39 [FLOW-03] The month fills over the calendar with its one line ("이번 달 야간 8번 · 첫 알람 내일 06:00").
                     runCatching { fillLine(d) }.getOrNull()?.let { line ->
                         com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN, line))

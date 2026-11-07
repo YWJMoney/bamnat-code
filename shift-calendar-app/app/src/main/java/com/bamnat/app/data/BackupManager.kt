@@ -490,7 +490,9 @@ class BackupManager(
                     .putOpt("calendars", m.calendars.ifEmpty { null })
                     .putOpt("repeat", m.repeat.ifEmpty { null })
                     // 1.38 DB 28판 이 날만 빼기. An older app ignores it and the memo comes back on those days too.
-                    .putOpt("skips", m.skips.ifEmpty { null }),
+                    .putOpt("skips", m.skips.ifEmpty { null })
+                    // 1.39 DB 33판 끝냄. An older app ignores them and the memo is not finished there.
+                    .putOpt("doneAt", m.doneAt).putOpt("doneDays", m.doneDays.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
@@ -950,6 +952,8 @@ class BackupManager(
                 calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
                 repeat = o.optString("repeat"),
                 skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("skips"))),
+                doneAt = if (o.isNull("doneAt") || !o.has("doneAt")) null else o.getLong("doneAt"),
+                doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("doneDays"))),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->

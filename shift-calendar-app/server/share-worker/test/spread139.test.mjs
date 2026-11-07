@@ -47,6 +47,26 @@ test("a family link: the card comes after the month and the 앱에서 보기 sto
   for (const href of page.matchAll(/play\.google\.com[^"]*/g)) assert.ok(!href[0].includes(id), "the link's id never goes to Play");
 });
 
+test("a leader's first 팀원 링크 (no 바뀜 yet) speaks to a teammate, and so does it once expired (PC SPREAD 2차)", async () => {
+  readsForget();
+  const env = { SHARES: kv() };
+  const { id } = await (await call(env, "/api/share", json({ ...sample, ttlDays: 90, team: true }))).json();
+  const page = await (await call(env, `/s/${id}`)).text();
+  assert.match(page, /근무가 바뀌면 내 알람도 저절로/);
+  assert.match(page, /utm_medium%3Dteam/);
+  assert.match(page, /<meta property="og:title" content="확정된 근무표가 왔어요">/);
+  assert.equal((await call(env, "/api/share", json({ ...sample, team: "yes" }))).status, 400);
+  // Expired but still kept: the teammate hears to ask the leader, with the teammate's card.
+  const record = JSON.parse(env.SHARES.map.get(id));
+  env.SHARES.map.set(id, JSON.stringify({ ...record, expiresAt: new Date(Date.now() - 1000).toISOString() }));
+  const gone = await call(env, `/s/${id}`);
+  assert.equal(gone.status, 404);
+  const text = await gone.text();
+  assert.match(text, /리더에게 새 링크를 부탁해 주세요/);
+  assert.match(text, /근무가 바뀌면 내 알람도 저절로/);
+  assert.doesNotMatch(text, /가족 근무를/);
+});
+
 test("a team leader's link speaks to a teammate", async () => {
   readsForget();
   const env = { SHARES: kv() };
@@ -148,8 +168,10 @@ test("an ended link says what to do next and still offers the app, without promi
   const page = await family.text();
   assert.match(page, /보낸 분께 새 링크를 부탁해 주세요/);
   assert.match(page, /class="spread"/);
-  assert.match(page, /가족 근무를 내 달력 옆에서 바로/);
-  assert.match(page, /utm_medium%3Dfamily/);
+  // Cut by the sharer, the link is gone and so is whose it was: a card for anyone who keeps a schedule (PC: was the family one).
+  assert.match(page, /내 근무도 달력과 알람으로/);
+  assert.doesNotMatch(page, /가족 근무를/);
+  assert.match(page, /utm_medium%3Dschedule/);
   assert.doesNotMatch(page, /다시 누르면 앱에서 열려요|그대로 열려요/);
   assert.match(page, new RegExp(`name="back" value="/s/${"a".repeat(20)}"`), "closing comes back here");
   for (const [path, title] of [[`/c/${"b".repeat(22)}`, "내 시급으로"], [`/a/${"b".repeat(22)}`, "확정된 근무가"], [`/v/${"b".repeat(22)}`, "바뀐 근무도"],
@@ -209,7 +231,7 @@ test("every receive page has a preview that names the kind of page and nothing o
   made.swap = `/w/${swap.people[0].key}`;
   const { key } = await (await call(env, "/api/sign", json({ place: "가나다식당", staff: "김하나", title: "근로계약서", days: 7, items: [{ t: "임금", b: "시급 10,320원" }] }))).json();
   made.sign = `/k/${key}`;
-  assert.deepEqual(Object.keys(made).sort(), Object.keys(SPREAD_KINDS).sort(), "every page kind is looked at");
+  assert.deepEqual(Object.keys(made).sort(), Object.keys(OG_TEXT).sort(), "every page kind is looked at");
   for (const [kind, path] of Object.entries(made)) {
     const res = await call(env, path, {}, "kakaotalk-scrap/1.0; +https://devtalk.kakao.com/");
     assert.equal(res.status, 200, path);

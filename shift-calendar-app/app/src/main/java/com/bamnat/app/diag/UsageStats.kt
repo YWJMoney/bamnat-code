@@ -27,6 +27,8 @@ class UsageStats(
     private val startup: StartupStats? = null,
     /** [STAT-08] 1.31 N4: lookup times added when [LookupStats.policyAllows]; null sends none. */
     private val lookups: LookupStats? = null,
+    /** 1.39 [SETUP-20] 첫 설정 누른 횟수 added when [SetupTapStats.policyAllows]; null sends none. */
+    private val setupTaps: SetupTapStats? = null,
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -64,6 +66,7 @@ class UsageStats(
     private fun withStartup(body: JSONObject): JSONObject = body.apply {
         startup?.payload()?.let { put("startup", it) }
         lookups?.payload()?.let { put("lookups", it) } // [STAT-08] 1.31
+        setupTaps?.payload()?.let { put("setup", it) } // 1.39 [SETUP-20]
     }
 
     /** Turning it off forgets everything not sent yet. */
@@ -71,6 +74,7 @@ class UsageStats(
         prefs.edit().clear().apply()
         startup?.clear() // [PERF-16]
         lookups?.clear() // [STAT-08]
+        setupTaps?.clear() // 1.39 [SETUP-20]
     }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
@@ -97,6 +101,7 @@ class UsageStats(
         synchronized(lock) { prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day).apply() }
         startup?.sent() // [PERF-16]
         lookups?.sent() // [STAT-08]
+        setupTaps?.sent() // 1.39 [SETUP-20]
         true
     }
 
