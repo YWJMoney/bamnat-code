@@ -287,7 +287,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         live = { picked, tab ->
                             LiveTryOn.start(liveC, r, own = doc.mine, picked, tab, LiveTryOn.From.Detail(vm.code), s.answers).also { if (it) { tryOn = false; tryAgain = null } }
                         },
-                        startPicked = tryAgain?.picked, startTab = tryAgain?.tab,
+                        startPicked = tryAgain?.picked, startTab = tryAgain?.tab, own = doc.mine,
                         extra = if (others.isEmpty()) null else { {
                             Text("기능 · 모양과 함께 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
                             others.forEach { p ->
