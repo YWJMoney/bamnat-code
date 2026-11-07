@@ -237,9 +237,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 // [TRY-05] Back from trying it on the real app: 입어 보기 again, the same parts ticked and the same tab.
                 val again by LiveTryOn.reopen.collectAsStateWithLifecycle()
+                // [TRY-07] 1.39 발굴: 입기·넣기 pressed on the band comes back to the question of 넣기, the tried parts ticked.
                 LaunchedEffect(again, r) {
-                    if (!hasLooks) return@LaunchedEffect
-                    LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code }?.let { tryAgain = it; tryOn = true }
+                    val back = LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code } ?: return@LaunchedEffect
+                    if (hasLooks) { tryAgain = back; tryOn = true; if (back.wear) { vm.lookParts(back.picked); confirming = true } }
+                    else if (back.wear) confirming = true
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 val liveTry = LocalContext.current.appContainer
