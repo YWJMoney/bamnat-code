@@ -398,6 +398,75 @@ test("[ADM3-37] 오늘 › 할 일: 같은 말로 읽히는 문의는 한 줄, �
   assert.equal(bundle.querySelectorAll(".bundle-list p").length, 2);
   assert.match(bundle.closest("li").querySelector(".kind").textContent, /3건/);
   assert.ok(![...u.$$("#main .rows.inbox > li .row-main a")].some((a) => /진동만 와요/.test(a.textContent)), "not a row of its own too");
+  // 1.39 [ADM3-39] 발굴: one answer to the whole bundle, by choice (off by default).
+  const form = bundle.closest("li").querySelector('form[data-form="quick-reply"]');
+  assert.match(form.textContent, /비슷한 문의 2건에도 같은 답 보내기/);
+  assert.equal(form.elements.all.checked, false);
+  form.elements.text.value = "알람 소리 설정을 다음 판에서 고쳐요";
+  form.elements.all.checked = true;
+  form.requestSubmit(form.querySelector('[data-close="1"]'));
+  await u.settle(60);
+  assert.match(u.text("#toast"), /3건에 답하고 닫았어요/);
+  const owner = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=all", undefined, owner)).data.inquiries;
+  const alarms = list.filter((q) => /알람/.test(JSON.stringify(q)));
+  assert.equal(alarms.length, 3);
+  for (const q of alarms) assert.equal(q.status, "closed");
+  assert.ok(!u.$("#main .rows.inbox details.bundle"), "the bundle left the list");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADM3-40] 큐 모드: 비슷한 문의가 큐에 남아 있으면 같은 답을 함께 보내고 큐에서 빼요", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  for (const [n, text] of [[21, "알람 소리가 안 나요 진동만 와요"], [22, "알람이 소리 없이 안 나요"]]) {
+    await call("POST", "/api/inquiries", { v: 1, device: `test-device-000000${n}`, kind: "bug", text, info: { app: "1.38.0 (52)" } }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/inquiries");
+  await u.click('[data-act="queue-start"]');
+  await u.settle(40);
+  let form = u.$('#main form[data-form="reply"]');
+  for (let i = 0; i < 6 && form && !form.elements.alike; i++) {
+    await u.click('[data-act="queue-skip"]');
+    await u.settle(40);
+    form = u.$('#main form[data-form="reply"]');
+  }
+  assert.ok(form?.elements.alike, "an alarm question in the queue offers its alike ones");
+  assert.match(form.textContent, /큐에 남은 비슷한 문의 2건에도 같은 답/);
+  const total = Number(u.text(".queue-bar b").match(/\/(\d+)/)[1]);
+  form.elements.text.value = "알람 소리 설정을 다음 판에서 고쳐요";
+  form.elements.alike.checked = true;
+  form.requestSubmit(form.querySelector('[data-close="1"]'));
+  await u.settle(60);
+  assert.match(u.text("#toast"), /3건에 답하고 닫았어요/);
+  const owner = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=all", undefined, owner)).data.inquiries;
+  for (const q of list.filter((x) => /알람/.test(JSON.stringify(x)))) assert.equal(q.status, "closed");
+  const bar = u.text(".queue-bar b");
+  if (bar) assert.equal(Number(bar.match(/\/(\d+)/)[1]), total - 2, "the two left the queue");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[FAM-04] 가족 프로 이용권: a phone not seen for 60 days says so, a fresh one is 프로 사용 중", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const owner = await signIn(call);
+  for (const [n, name] of [[31, "엄마"], [32, "옛 휴대폰"]]) {
+    const { code } = (await call("POST", "/api/admin/family/code", { name }, owner)).data;
+    await call("POST", "/api/admin-link", { code }, { "x-device": device(n), ...from(n) });
+  }
+  const old = Date.now() - 90 * 864e5;
+  DB.db.prepare("UPDATE admin_devices SET created_at = ?, seen_at = ? WHERE admin_name = ?").run(old, old, "옛 휴대폰");
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  const rows = [...u.$$("#main .rows li")].filter((li) => /엄마|옛 휴대폰/.test(li.textContent));
+  assert.equal(rows.length, 2);
+  assert.match(rows.find((li) => /엄마/.test(li.textContent)).textContent, /프로 사용 중/);
+  const idle = rows.find((li) => /옛 휴대폰/.test(li.textContent)).textContent;
+  assert.match(idle, /60일 넘게 안 보임/);
+  assert.match(idle, /휴대폰을 바꿨다면 끊고 새 코드를/);
   assert.deepEqual(u.errors, []);
 });
 

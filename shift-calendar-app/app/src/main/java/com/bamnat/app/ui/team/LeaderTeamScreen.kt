@@ -108,10 +108,12 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
     val store = c.phaseThree
     val teams by store.teamList.collectAsStateWithLifecycle(null)
     // 관리 화면 opens one team straight away; its 뒤로 goes back there, not to the team list.
-    var openId by rememberSaveable { mutableStateOf(startTeam) }
+    // 1.39 [READ-31]: a roster shared from 카카오톡·갤러리 and put on a team opens that team with it waiting, as a picked file does.
+    val handed = remember { com.bamnat.app.imports.SharedToManage.takeTeam() }
+    var openId by rememberSaveable { mutableStateOf(handed?.teamId ?: startTeam) }
     var making by rememberSaveable { mutableStateOf(false) }
     // 1.38 가져오기: a team made from a file opens with that file waiting for ① 이름 ② 코드.
-    var madeFrom by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
+    var madeFrom by remember { mutableStateOf(handed?.let { it.grid to it.fromPhoto }) }
     val open = teams?.firstOrNull { it.id == openId }
     // PC 10차(낮음): with two or more teams, 뒤로 from a team goes to the team list first (표 이름 목록), not past it; with one, there is no list to see.
     val several = teams.orEmpty().count { !it.archived } >= 2
@@ -597,6 +599,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         val why = when ((e as? com.bamnat.app.share.ShareLinkException)?.message) {
                             "days" -> "칸이 모두 빈 팀원이 있어 링크를 못 만들었어요. 칠한 뒤 다시 눌러 주세요."
                             "paused", "rate_limited" -> "링크 만들기가 잠시 멈췄어요. 조금 뒤에 다시 눌러 주세요."
+                            "contact" -> (e as com.bamnat.app.share.ShareLinkException).friendly.orEmpty()
                             else -> "링크는 인터넷이 될 때 다시 눌러 주세요."
                         }
                         dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + why
@@ -817,7 +820,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     }
     resent?.let { (v, list) ->
         AlertDialog(onDismissRequest = { resent = null }, title = { Text("${v}판으로 다시 확정했어요") }, text = {
-            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. 그보다 옛 판을 쓰는 팀원은 저절로 바뀌지 않으니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
+            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. " +
+                "아이폰 팀원이 링크에서 '캘린더에 넣기'를 해 두었다면 그 캘린더도 몇 시간 안에 따라 바뀌어요. 그 밖의 팀원은 저절로 알지 못하니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { resent = null }) { Text("알겠어요") } },
             dismissButton = { TextButton(onClick = { resent = null; linksFor = list }) { Text("그래도 알리기") } })
     }
@@ -834,6 +838,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         fresh.joinToString("\n") { (m, u) -> "${m.name}: $u" }, "새 링크 보내기") }) { Text("새 링크 ${fresh.size}개만 보내기") }
                 }
                 Text("한 사람씩 보내거나, 모두 한 번에 단톡방에 보낼 수 있어요. 링크마다 그 사람 근무만 보여요.", style = MaterialTheme.typography.bodySmall)
+                // 1.39 [IOS-07] The leader need not ask an iPhone teammate to install anything.
+                Text("아이폰 팀원도 링크로 바로 봐요. 링크의 '아이폰 캘린더에 넣기'를 누르면 근무가 자기 캘린더에 들어가고, 다시 확정하면 따라 바뀌어요. 출근 알람은 안드로이드 밤낮 앱에서만 울려요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n팀 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
                 list.forEach { (m, url) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -910,8 +917,14 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         val together = com.bamnat.core.team.TeamReceive.merge(
             if (team.showTogether) b.offTogether(m.id) { it in off }.mapValues { (_, n) -> "같이 쉬어요: " + n.joinToString(", ") } else emptyMap(),
             changed[m.id].orEmpty())
+        // 1.39 [IOS-01] (사용자 2026-11-07 결정) A member's link always carries its calendar address, whatever the leader's plan: a
+        // teammate on an iPhone (no 밤낮 app) puts the days in their own calendar from the page, and it follows each 다시 확정.
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
-            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together)
+            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together,
+            feed = java.time.ZoneId.systemDefault()).apply {
+            // Without the phone's 시간대 이름 (the server reads Asia/Seoul), so only the 'on' mark goes. 처리방침 3.12 names it (총괄 몫).
+            remove("tz")
+        }
         val id = m.linkId
         val token = m.linkToken
         val st = if (id != null && token != null) runCatching {
@@ -1183,11 +1196,15 @@ private fun TeamTimesDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) ->
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val mine by c.scheduleRepository.shiftTypes.collectAsStateWithLifecycle(emptyList())
     val work = team.shifts.filter { !it.isOff }
-    val times = remember(team.id) { androidx.compose.runtime.mutableStateMapOf<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>().apply { work.forEach { put(it.id, it.start to it.end) } } }
+    // 1.39 G6 발굴 [SETUP-19] (PC 5c4ad849): the usual times by name already in, so a 3교대 team is one 저장 when they are its own.
+    val suggested = remember(team.id) { com.bamnat.core.team.TeamTimes.suggest(team.shifts) }
+    val times = remember(team.id) { androidx.compose.runtime.mutableStateMapOf<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>().apply {
+        work.forEach { s -> put(s.id, suggested[s.id]?.let { (a, b) -> (s.start ?: a) to (s.end ?: b) } ?: (s.start to s.end)) } } }
     val fromMine = if (settings.setupDone) work.mapNotNull { s -> mine.firstOrNull { it.id == s.id && it.start != null && it.end != null }?.let { s.id to (it.start to it.end) } }.toMap() else emptyMap()
     AlertDialog(onDismissRequest = onDismiss, title = { Text("근무 시간 정하기") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 쉬는 날은 시간이 없어요.", style = MaterialTheme.typography.bodySmall,
+            Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. " + (if (suggested.isNotEmpty()) "흔한 시간으로 채워 두었으니 다른 것만 고쳐요. " else "") +
+                "쉬는 날은 시간이 없어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (fromMine.isNotEmpty()) TextButton(onClick = { times.putAll(fromMine) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 달력 근무 시간 가져오기") }
             work.forEach { s ->

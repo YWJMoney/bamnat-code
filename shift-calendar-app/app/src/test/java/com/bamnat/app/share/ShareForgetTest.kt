@@ -139,6 +139,27 @@ class ShareForgetTest {
         assertNull(c.shareLinks.link.value)
     }
 
+    /** 1.39 발굴 1-1: what was left is cut by itself once online, only that; a link made since stays. */
+    @Test fun whatWasLeftGoesByItselfAndOnlyThat() = runBlocking {
+        seed()
+        api.offline += setOf("L3", "C2", "CalLinkAb3dEfGh5Jk")
+        assertEquals(3, ShareForget.all(c).left)
+        assertEquals(setOf("share:L3", "call:C2", "share:CalLinkAb3dEfGh5Jk"), ShareForget.pending(c))
+        val jobs = app.getSystemService(android.app.job.JobScheduler::class.java)
+        assertNotNull("a job waits for the connection", jobs.allPendingJobs.firstOrNull { it.id == 4408 })
+
+        // Made after 모두 지우기: not the user's ask to cut.
+        c.phaseThree.saveMembers(listOf(TeamMember("m9", "t1", "새사람", linkId = "L9", linkToken = "tok9")))
+        api.offline.clear()
+        api.cut.clear()
+        assertTrue(ShareForget.retry(c))
+        assertEquals(setOf("share:L3", "call:C2", "share:CalLinkAb3dEfGh5Jk"), api.cut.toSet())
+        assertTrue(ShareForget.pending(c).isEmpty())
+        assertEquals("tok9", c.phaseThree.members("t1").first().first { it.id == "m9" }.linkToken)
+        assertNull(c.shareLinks.link.value)
+        assertTrue("nothing waits: the job finds nothing", ShareForget.retry(c))
+    }
+
     @Test fun aPhoneThatMadeNoLinkHearsNothingAboutThem() = runBlocking {
         assertNull(ShareForget.held(c))
         assertEquals(ShareForget.Result(0, 0), ShareForget.all(c))

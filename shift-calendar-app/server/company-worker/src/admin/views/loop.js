@@ -5,7 +5,7 @@
 //   오늘 › 결정함 #/decide: 최고 관리자 확인 문의(Claude 초안)와 요금을 정할 새 기능 [LOOP-09]
 //   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만) [LOOP-10][LOOP-11]
 export function loopViews(A) {
-  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl } = A;
+  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl } = A;
 
   const owner = () => Boolean(S.me?.owner);
   const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
@@ -46,6 +46,34 @@ export function loopViews(A) {
     return `<section class="card">${head("Play 출시 감지", "판이 100% 나가면 1시간 뒤 스스로 '나간 판 저장'", can("devStatus", "edit") && p.ready ? '<button class="btn small" type="button" data-act="loop-play">지금 읽기</button>' : "")}
       <p>${pills}</p>${track}${ships}
       <p class="hint">단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
+  }
+
+  // [LOOP-18] 연결 점검: 실제 Play·GitHub에 처음 붙기 전에 한 화면에서.
+  const CHECK_TONES = { ok: "ok", warn: "warn", bad: "bad" };
+  const CHECK_WORDS = { ok: "됨", warn: "확인", bad: "빠짐" };
+  function checkCard() {
+    const c = S.data.loopCheck;
+    const bad = c ? c.lines.filter((x) => x.state !== "ok").length : 0;
+    const body = c ? `<ul class="rows">${c.lines.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.name)}</b><small>${esc(x.text)}</small>${x.fix ? `<small class="meta">${esc(x.fix)}</small>` : ""}</span>
+        <span class="pill ${CHECK_TONES[x.state] ?? ""}">${esc(CHECK_WORDS[x.state] ?? x.state)}</span></div></li>`).join("")}</ul>
+        <p class="meta">${esc(when(c.at))}에 봄${c.played ? " · Play까지 읽어 봄" : ""}</p>` : skeleton(1);
+    // 모두 되면 접어 둬요(설정을 마친 뒤엔 자주 볼 일이 없어서, 접은 폭에서 Play 출시 감지가 먼저 보이게).
+    if (c && !bad) return fold("check", "연결 점검", "모두 됨", `${body}${can("devStatus", "edit") ? '<div class="actions"><button class="btn small" type="button" data-act="loop-check">Play까지 점검</button></div>' : ""}`);
+    return `<section class="card">${head("연결 점검", c ? (bad ? `확인할 것 ${bad}개` : "모두 됨") : "",
+      can("devStatus", "edit") ? '<button class="btn small" type="button" data-act="loop-check">Play까지 점검</button>' : "")}
+      ${body}<p class="hint">값은 보이지 않고 있는지만 봐요. 'Play까지 점검'은 프로덕션 트랙을 한 번 읽기만 해요(아무것도 바꾸지 않아요).</p></section>`;
+  }
+
+  // [LOOP-22] 판별 고침 성적표.
+  function scoreCard(d) {
+    const rows = d.scores ?? [];
+    if (!rows.length) return "";
+    return fold("scores", "판별 고침 성적표", rows[0].solved == null ? `${rows[0].version} · 아직 답 없음` : `${rows[0].version} 해결 ${rows[0].solved}%`, `
+      <ul class="rows">${rows.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.version)}</b>
+        <small>고친 것 ${r.items} · 묶인 문의 ${r.asks} · 안내 ${r.told} · 나도 겪어요 ${r.meToo}${r.firstHours != null ? ` · 첫 답 평균 ${r.firstHours}시간` : ""}</small>
+        <small>해결됐어요 ${r.yes} · 아직이에요 ${r.no}</small></span>
+        <span class="pill ${r.solved == null ? "" : r.solved >= 80 ? "ok" : r.solved >= 50 ? "warn" : "bad"}">${r.solved == null ? "—" : `${r.solved}%`}</span></div></li>`).join("")}</ul>
+      <p class="hint">해결 비율 = 해결됐어요 ÷ (해결됐어요 + 아직이에요). 아직이에요는 다시 열려 이 판에서 고쳐진 것도 셈해요. 다음 정기 열차에 무엇을 먼저 넣을지 볼 때 써요.</p>`);
   }
 
   function liveCard(d) {
@@ -127,8 +155,8 @@ export function loopViews(A) {
     const d = S.data.loopState;
     if (!d) return skeleton(3);
     const top = `<section class="flow-head"><div><h2>문의 → 개발 → 출시 → 답</h2><p class="meta">Play 출시와 저장소 개발 상태를 서버가 직접 보고, 묶인 문의에 스스로 답해요.</p></div>
-      <div class="flow-state">${d.urgentWaiting ? `<a class="pill bad" href="${href("desk")}">급한 문제 신고 ${d.urgentWaiting}건</a>` : '<span class="pill ok">급한 문제 신고 없음</span>'}</div></section>`;
-    return `${top}<div class="flow-cols">${playCard(d)}${liveCard(d)}${queueCard()}${syncCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
+      <div class="flow-state">${d.urgentWaiting ? `<a class="pill bad" href="${href("decide")}">급한 문제 신고 ${d.urgentWaiting}건</a>` : '<span class="pill ok">급한 문제 신고 없음</span>'}</div></section>`;
+    return `${top}<div class="flow-cols">${checkCard()}${playCard(d)}${liveCard(d)}${scoreCard(d)}${queueCard()}${syncCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
   }
 
   // ---- 오늘 › 결정함 ----
@@ -145,6 +173,11 @@ export function loopViews(A) {
         <small>${x.track ? `${esc(x.track)} · ` : ""}문의 ${x.asks}건${x.ask ? ` · Claude 제안: ${esc(x.askName)}` : ""}${x.later ? " · 더 논의 중" : ""}</small>${x.why ? `<small>${esc(x.why)}</small>` : ""}</span>
         <span class="pill warn">요금 정하기</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : '<p class="hint">요금을 정할 새 기능이 없어요.</p>')
       : '<p class="hint">새 기능의 무료·프로는 최고 관리자가 정해요.</p>';
+    const urgent = d.urgent ?? [];
+    const hurry = urgent.length ? `<section class="card">${head("급함 문의", `답 기다림 ${urgent.length}건`)}
+      <ul class="rows">${urgent.map((x) => `<li><a class="row" href="${href("inquiries", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
+        <small>${x.topic ? `${esc(x.topic)} · ` : ""}${esc(ago(x.at))}</small></span><span class="pill bad">급함</span>${icon(P.chevron)}</a></li>`).join("")}</ul>
+      <p class="hint">알람이 안 울림·앱이 안 열림·데이터 사라짐·결제·수면 긴급 넷을 말하는 문의예요. 조용한 시간에도 폰에 알려요.</p></section>` : "";
     const back = d.back ?? [];
     const halts = d.halts ?? [];
     const again = back.length || halts.length ? `<section class="card">${head("다시 봐야 할 것", `${back.length + halts.length}건`)}
@@ -153,7 +186,7 @@ export function loopViews(A) {
       ${back.length ? `<ul class="rows">${back.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
-    return `${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
+    return `${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
       <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
         <p class="hint">버그 고침·이미 있는 기능 다듬기·알람·달력 기본은 묻지 않고 무료예요. 새 기능만 여기서 정하고, 정하기 전에는 기능 스위치를 켤 수 없어요.</p></section>`;
   }
@@ -190,7 +223,7 @@ export function loopViews(A) {
   // ---- 길·다 왔는지·단추 ----
 
   const loads = {
-    loop: () => [["/loop", "loopState"], ["/loop/queue", "loopQueue"]],
+    loop: () => [["/loop", "loopState"], ["/loop/queue", "loopQueue"], ["/loop/check", "loopCheck"]],
     decide: () => [["/loop/decide", "loopDecide"]],
     tiers: () => [["/loop/tiers", "loopTiers"]],
   };
@@ -204,6 +237,14 @@ export function loopViews(A) {
     "loop-ship-now": ({ v }) => confirmBox(`${v} 안내를 지금 보낼까요?`, "나간 판으로 저장하고 묶인 문의에 업데이트 안내를, 앱에 업데이트 소식 공지를 올려요.", "지금 보내기", async () => {
       if (await act(() => api(`/loop/ship/${v}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
     }, "primary"),
+    "loop-check": async () => {
+      const r = await act(() => api("/loop/check?play=1"));
+      if (!r) return;
+      // 다시 읽지 않고 그 결과 그대로 그려요(다시 읽으면 Play를 읽지 않은 점검으로 덮여요).
+      S.data.loopCheck = r;
+      toast(r.state === "ok" ? "모두 됐어요" : `확인할 것 ${r.lines.filter((x) => x.state !== "ok").length}개`);
+      render({ keepScroll: true });
+    },
     "loop-play": async () => {
       const r = await act(() => api("/loop/play", "POST", {}));
       if (r?.error) toast(`Play를 읽지 못했어요: ${r.error}`);
