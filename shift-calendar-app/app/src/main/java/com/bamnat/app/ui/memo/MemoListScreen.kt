@@ -35,6 +35,8 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.bamnat.app.appContainer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.LocalContentColor
@@ -202,7 +204,7 @@ fun MemoListScreen(
                         singleLine = true,
                         shape = MaterialTheme.shapes.extraLarge,
                     )
-                    MemoPart.FOLD -> Unit
+                    MemoPart.FOLD, MemoPart.WEEK -> Unit
                 }
             }
             PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(Color.Transparent)) {
@@ -220,6 +222,11 @@ fun MemoListScreen(
             // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
             val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
             val memoView = tabViews.memo
+            // 1.39 [FLOW-19] 주 띠: a week of days over the 달력 메모 list (not over its own 달력 보기), a dot for a day with memos;
+            // a day picked shows only its memos, the same day again or '모두 보기' shows them all.
+            androidx.compose.runtime.LaunchedEffect(appSettings.weekStart) { vm.setWeekStart(appSettings.weekStart) }
+            if (state.tab == MemoTab.CALENDAR && state.week.isNotEmpty() && memoView.view != com.bamnat.core.memo.MemoView.CALENDAR &&
+                parts.any { it.part == MemoPart.WEEK && it.shown }) MemoWeekStrip(state, today, vm)
             val shown = remember(state.tab, state.upcoming, state.past, state.general) {
                 if (state.tab == MemoTab.CALENDAR) (state.upcoming + state.past).flatMap { it.memos }.distinctBy { it.id } else state.general
             }
@@ -339,6 +346,8 @@ internal enum class MemoPart(val id: String, val label: String, val what: String
     NOTEBOOKS("notebooks", "공책", "공책을 나눠 쓸 때 위에 고르는 줄"),
     SEARCH("search", "검색 칸", "제목·내용·#태그 찾기"),
     FOLD("fold", "필터는 검색 칸 아이콘으로 접기", "끄면 필터·태그 칩이 늘 펼쳐져 있어요", movable = false),
+    /** 1.39 [FLOW-19] 주 띠 over the 달력 메모 list. */
+    WEEK("week", "주 띠", "달력 메모 위에 한 주 7일, 날을 누르면 그날 메모만", movable = false),
 }
 
 internal fun memoParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(MemoPart.entries.toList()) { it.id }
@@ -468,6 +477,27 @@ private fun SelectionBar(
             }
             onShare?.let { IconButton(onClick = it) { Icon(Icons.Outlined.Groups, "보일 달력 정하기") } }
             IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, "휴지통으로 옮기기") }
+        }
+    }
+}
+
+/** 1.39 [FLOW-19] 주 띠 (DSG-06): ‹ week › with a dot under each day that has memos; the picked day's line under it with 모두 보기. */
+@Composable
+private fun MemoWeekStrip(state: MemoListState, today: LocalDate, vm: MemoListViewModel) = Column(Modifier.padding(horizontal = 4.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { vm.moveWeek(-1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") }
+        com.bamnat.app.ui.components.WeekStrip(
+            days = state.week, selected = state.day ?: LocalDate.MIN, today = today,
+            onPick = vm::pickDay, modifier = Modifier.weight(1f), counts = state.weekCounts, countWord = "메모",
+        )
+        IconButton(onClick = { vm.moveWeek(1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
+    }
+    state.day?.let { d ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val n = state.weekCounts[d] ?: 0
+            Text("${d.monthValue}월 ${d.dayOfMonth}일 메모 ${n}개" + if (n == 0) " · 이날은 메모가 없어요" else "",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            androidx.compose.material3.TextButton(onClick = vm::clearDay) { Text("모두 보기") }
         }
     }
 }

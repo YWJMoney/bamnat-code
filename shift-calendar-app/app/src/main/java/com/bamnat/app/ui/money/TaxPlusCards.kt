@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
@@ -123,7 +124,7 @@ internal fun CardBillCard(book: MoneyBook, today: LocalDate, gate: Gate) {
  * 프로 (돈 통계).
  */
 @Composable
-internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today: LocalDate, gate: Gate) {
+internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today: LocalDate, gate: Gate, onCategory: (String) -> Unit = {}) {
     snapshot ?: return
     val rows by produceState<List<TaxPlus.ShiftSpend>>(emptyList(), book, snapshot, today) {
         value = withContext(Dispatchers.Default) {
@@ -149,9 +150,41 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
                     LinearProgressIndicator(progress = { r.perDay.toFloat() / top }, modifier = Modifier.fillMaxWidth())
                 }
                 Muted("배달·편의점이 늘어나는 날을 알면 미리 장을 보거나 도시락을 챙길 수 있어요.")
+                // 1.39 [FLOW-20] 근무별 돈: which categories go up on which kind of day, as the two chip rows (폰 안 계산, 5번부터). 프로 (돈 통계).
+                ShiftMoneyChipsRows(book, snapshot, today, gate, onCategory)
             }
         }
     }
+}
+
+/**
+ * 1.39 [FLOW-20] 근무별 돈 (흐름·디자인 계획 3-9 혁신): "야간 날 편의점 하루 6,200원 더" in the same two chip rows as 가계부 통계. Worked out on the
+ * phone from the last 90 days; under 5 times nothing is said. A tap opens that category's lines in 내역. 1.39 new, so 프로 (돈 통계).
+ */
+@Composable
+private fun ShiftMoneyChipsRows(book: MoneyBook, snapshot: ScheduleSnapshot, today: LocalDate, gate: Gate, onCategory: (String) -> Unit) {
+    val rows by produceState<com.bamnat.core.money.ShiftMoneyChips.Rows?>(null, book, snapshot, today) {
+        value = withContext(Dispatchers.Default) {
+            runCatching {
+                com.bamnat.core.money.ShiftMoneyChips.of(book.entries, today.minusDays(89), today, TaxPlus.dayLabel(snapshot.resolver::resolve))
+            }.getOrNull()
+        }
+    }
+    val r = rows ?: return
+    if (r.isEmpty) return
+    if (!gate.allows(Feature.MONEY_STATS)) {
+        TextButton(onClick = { if (!com.bamnat.app.ui.pro.tryFeature(Feature.MONEY_STATS)) openPro(Feature.MONEY_STATS) }) {
+            Text("근무마다 늘어나는 분류 ${r.good.size + r.caution.size}가지 보기 (프로)")
+        }
+        return
+    }
+    val word = { v: Long -> Fmt.won(v) }
+    androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+    com.bamnat.app.ui.components.ToneChipRows(
+        "근무에 따라 덜 쓰는 곳", r.good.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hide(c.words(word))) { onCategory(c.category) } },
+        "근무에 따라 더 쓰는 곳", r.caution.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hide(c.words(word))) { onCategory(c.category) } },
+    )
+    com.bamnat.app.ui.components.ToneChipNote("같은 분류를 그 근무 날에 5번 넘게 쓴 것만 견줘요. 계산은 휴대폰 안에서만 해요.")
 }
 
 /** F 1.32 [TAXP-06] 597: this month's sales by how they were paid. Free. */
