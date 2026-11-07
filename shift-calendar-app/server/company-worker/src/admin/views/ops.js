@@ -421,16 +421,26 @@ export function opsViews(A) {
 
   const actions = {
     "passkey-add": async () => {
+      // 1.38 [ADM3-36] PC 13차 (눌러도 말이 없어요): a device with no fingerprint or face unlock is told so at once, and every
+      // way it can fail says why.
+      const platform = await window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.().catch(() => false);
+      if (!platform) {
+        openDialog(`<div class="box"><h2>이 기기는 지문 로그인을 못 해요</h2><p class="hint">이 브라우저에서 지문·얼굴 인식이나 화면 잠금을 쓸 수 없어요. 갤럭시 폴드의 Chrome이나 삼성 인터넷에서 관리자 앱을 열고 다시 눌러 주세요. 비밀번호 로그인은 그대로 쓸 수 있어요.</p>
+          <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`);
+        return;
+      }
       const o = await act(() => api("/me/passkeys/start", "POST", {}));
       if (!o) return;
+      toast("휴대폰 화면의 지문·얼굴 확인을 해 주세요");
       let cred;
       try {
         cred = await navigator.credentials.create({ publicKey: { challenge: b64.dec(o.challenge), rp: { id: o.rpId, name: "밤낮 관리자" },
           user: { id: b64.dec(o.user.id), name: o.user.name, displayName: o.user.displayName }, pubKeyCredParams: [{ type: "public-key", alg: -7 }],
           authenticatorSelection: { userVerification: "required", residentKey: "required" }, attestation: "none", timeout: 60000,
           excludeCredentials: o.exclude.map((id) => ({ type: "public-key", id: b64.dec(id) })) } });
-      } catch {
-        toast("패스키를 만들지 않았어요");
+      } catch (e) {
+        toast(e?.name === "InvalidStateError" ? "이 기기에는 이미 패스키가 있어요" : e?.name === "NotAllowedError" ? "확인을 취소했거나 시간이 지났어요. 다시 눌러 주세요"
+          : "이 기기에서는 패스키를 만들 수 없어요");
         return;
       }
       if (!cred) return;

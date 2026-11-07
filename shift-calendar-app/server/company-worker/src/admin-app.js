@@ -603,6 +603,9 @@ function adminApp(L, BUILD, M) {
     if (path(location.hash) !== path(href(S.route.name, S.route.id))) syncUrl();
   }
 
+  /** 1.38 [ADM3-36] Where each list was left, by screen name (this tab only). */
+  const scrollMemo = {};
+
   function go(name, id) {
     const next = href(name, id);
     if (location.hash === next) load();
@@ -1563,8 +1566,7 @@ function adminApp(L, BUILD, M) {
           <input type="hidden" name="template" value="">
           <div class="chips" role="group" aria-label="자주 쓰는 답">${list.map((t, i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}" title="${esc(t.text.slice(0, 120))}">${i < 9 ? `<span class="kbd">${i + 1}</span> ` : ""}${esc(t.label)}</button>`).join("")}
             <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
-          <p class="saved" id="reply-saved" aria-live="polite"></p>
-          <div class="actions"><span class="count" id="reply-count">0/2000</span>
+          <div class="actions"><span class="count-box"><span class="count" id="reply-count">0/2000</span><span class="saved" id="reply-saved" aria-live="polite"></span></span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
         </form>` : ""}
       </section>
@@ -5329,7 +5331,10 @@ function adminApp(L, BUILD, M) {
       const next = neighbours().next;
       if (close && S.prefs.next && next) return go("inquiries", next);
       render();
-      window.scrollTo(0, document.body.scrollHeight);
+      // 1.38 [ADM3-36] PC 13차: the page used to go to its very end, which on a folded phone is 함께 온 정보 under the talk;
+      // the answer just sent is shown instead.
+      const mine = [...document.querySelectorAll("#main .bubble.admin")].pop();
+      if (mine) mine.scrollIntoView({ block: "center" });
       load({ quiet: true });
     },
     // AN 1.28 [ADMUX-33] 바로 답하기 on 오늘's 할 일: the same answer as on the question, without opening it.
@@ -5790,7 +5795,8 @@ function adminApp(L, BUILD, M) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
         const saved = document.getElementById("reply-saved");
-        if (saved) saved.textContent = t.value ? "적는 중인 답은 이 기기에 저장돼요" : "";
+        // 1.38 [ADM3-36] PC 13차: said beside the count, so the line never pushes 답하기 under the bottom tabs.
+        if (saved) saved.textContent = t.value ? "이 기기에 저장 중" : "";
         pingTyping(Boolean(t.value.trim()));
       }
     }
@@ -6022,7 +6028,8 @@ function adminApp(L, BUILD, M) {
           return ACTIONS.template({ i: a.n - 1 });
         }
         // AN 1.28 [ADMUX-36] (1.38 [ADM3]: 1~5) the numbers are the hubs everywhere else, always the same number; a hub opens on its last tab.
-        const hub = L.HUBS[a.n - 1] && hubs().find((h) => h.key === L.HUBS[a.n - 1].key);
+        // 1.38 [ADM3-36] PC 13차: by the hubs this admin sees, in their order, so 1~3 work for an admin with three hubs.
+        const hub = hubs()[a.n - 1];
         if (!detail && hub) {
           stop();
           go(lastTab[hub.key] && hub.tabs.includes(lastTab[hub.key]) ? lastTab[hub.key] : hub.tabs[0]);
@@ -6098,6 +6105,8 @@ function adminApp(L, BUILD, M) {
     if (moved && before.name === "inquiries" && before.id) pingTyping(false);
     // [ADMUX-10] A sheet or a question box belongs to the screen it was opened on (점검 보고서 중-14).
     if (moved && dialog.open && !S.relogin) dialog.close();
+    // 1.38 [ADM3-36] PC 13차: a list keeps where it was when the admin comes back from another hub or a question.
+    if (moved && !before.id) scrollMemo[before.name] = window.scrollY;
     S.route = next;
     applyParams(next);
     // AN 1.28 [ADMUX-35] An old address shows as the new one.
@@ -6110,7 +6119,7 @@ function adminApp(L, BUILD, M) {
       // 큐 모드 ends once the admin goes somewhere else than a question of the queue.
       if (S.queue && !(next.name === "inquiries" && S.queue.ids.includes(next.id))) S.queue = null;
       render();
-      window.scrollTo(0, 0);
+      window.scrollTo(0, next.id ? 0 : scrollMemo[next.name] ?? 0);
       document.getElementById("title")?.focus({ preventScroll: true });
     }
     load();

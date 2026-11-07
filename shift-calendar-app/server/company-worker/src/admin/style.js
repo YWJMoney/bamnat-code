@@ -299,7 +299,12 @@ padding:.75rem;box-shadow:var(--shadow)}
 @media (min-width:600px){.composer{bottom:1rem}}
 /* [J133-40] 순번 720 (1.32 실사용 테스트, 관리자 휴대폰 화면): on a phone the reply box stays in the page, under the talk, instead of
    floating over the last bubbles; the actions under it are never behind the bottom tabs. */
-@media (max-width:599px){.composer{position:static;margin-bottom:1rem}}
+@media (max-width:599px){.composer{position:static;margin-bottom:1rem}
+  /* 1.38 [ADM3-36] PC 13차 (접은 폴드): 답하기 stays above the bottom tabs while the answer is written, however long it is. */
+  .composer .actions{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));z-index:2;background:var(--surface);
+    margin:.5rem -.75rem -.75rem;padding:.6rem .75rem;border-top:1px solid var(--line);border-radius:0 0 var(--r-lg) var(--r-lg)}}
+.composer .count-box{margin-right:auto;display:grid;gap:.1rem;min-width:0}
+.composer .saved{font-size:.7rem;color:var(--muted);white-space:nowrap}
 .composer textarea{min-height:5.5rem;border:0;padding:.25rem;box-shadow:none;background:none}
 .composer .actions{margin-top:.5rem;align-items:center}
 .composer .count{margin-right:auto;font-size:.75rem;color:var(--muted)}
