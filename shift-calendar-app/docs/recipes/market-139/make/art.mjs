@@ -171,7 +171,20 @@ export function theme(s) {
     { id: "widget.cell", on: "sun", ink: c(p.sun ?? "#D9473D") },
   ];
   for (const [role, col] of Object.entries(s.roleCells ?? {})) lines.push({ id: "cal.cell", on: `role.${role}`, ...col });
-  const parts = { kind: "parts", parts: merge([...lines, ...(s.parts ?? []), ...(s.cells ?? [])]) };
+  // [MKW-06] 고르기(사용자 11-07 21:10·21:35 '기본틀과 확연히 다르게, 설정·입력과 맞물리게'): 렌더에서 테마의 메모·가계부가 기본 목록에
+  // 색만 입힌 것으로 보였어요. 테마는 앱 전체 한 벌이니 내 기록에 따라 바뀌는 마무리를 그 테마 색으로 모든 테마에 더해요(1.36~1.38 수식, 무료):
+  // 마감 칸이 있는 메모는 지출 색 테, 끝낸 메모는 흐리게, 고정 메모는 포인트 색 테, 큰 지출 줄·수입 줄은 그 색 기운, 돈이 들어온 날 머리는 수입 색 테.
+  const outC = p.expense ?? (p.dark ? "#FF8F80" : "#C4402F");
+  const inC = p.income ?? (p.dark ? "#6BD68F" : "#2C8A4B");
+  const finish = s.only || s.finish === false ? [] : [
+    { id: "memo.card", when: '아님 비었나(칸("마감"))', line: "solid", lineW: 2, lineC: c(outC) },
+    { id: "memo.card", when: "체크율 >= 100", alpha: 55 },
+    { id: "memo.card", when: "고정", line: "solid", lineW: 2, lineC: c(p.accent) },
+    { id: "money.row", when: '종류 = "지출" 그리고 금액 >= 100000', fill: c(outC), fillA: 14, r: Math.min(12, r.card) },
+    { id: "money.row", when: '종류 = "수입"', fill: c(inC), fillA: 12, r: Math.min(12, r.card) },
+    { id: "money.day", when: "수입 > 0", line: "solid", lineW: 1.5, lineC: c(inC) },
+  ];
+  const parts = { kind: "parts", parts: merge([...lines, ...finish, ...(s.parts ?? []), ...(s.cells ?? [])]) };
   if (parts.parts.length > 96) throw new Error(`${s.title}: 부품 줄이 ${parts.parts.length}개예요(96까지)`);
 
   // ---- 다른 화면 ----
