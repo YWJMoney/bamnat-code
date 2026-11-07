@@ -41,6 +41,21 @@ class CellMemosTest {
         assertFalse(lines[1].done)
     }
 
+    /** [CELL-07] A schedule is checked against the calendar's shifts at its own time; a memo with no time is not. */
+    @Test fun aScheduleThatRunsIntoAShiftSaysSo() {
+        val night = com.bamnat.core.memo.ShiftMemoTime.Day(day.minusDays(1), "야간", true, java.time.LocalTime.of(19, 0), java.time.LocalTime.of(7, 0))
+        val clashOf = { at: java.time.LocalDateTime -> com.bamnat.core.memo.ShiftClash.of(at, listOf(night))?.text }
+        val memos = listOf(
+            Memo(id = 1, date = day, title = "은행", reminder = MemoReminder(day.atTime(10, 0), ring = false, notify = true)),
+            Memo(id = 2, date = day, title = "저녁 약속", reminder = MemoReminder(day.atTime(18, 0), ring = false, notify = true)),
+            Memo(id = 3, date = day, title = "택배"),
+        )
+        val lines = cellMemos(memos, day, clashOf)
+        assertTrue(lines[0].clash!!.contains("잘 시간"))
+        assertEquals(null, lines[1].clash)
+        assertEquals(null, lines[2].clash)
+    }
+
     @Test fun blankMemosAreLeftOut() {
         assertTrue(cellMemos(listOf(Memo(id = 1, date = day)), day).isEmpty())
     }

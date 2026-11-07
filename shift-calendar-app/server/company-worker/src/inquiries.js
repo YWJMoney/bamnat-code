@@ -1,6 +1,6 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { autoAnswer, compareVersions, version } from "./inbox.js";
+import { SORTING, autoAnswer, compareVersions, grams, likeness, version } from "./inbox.js";
 import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
@@ -8,7 +8,7 @@ import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { LOOP, styleList, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { LOOP, WAITING_SQL, styleList, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -105,6 +105,8 @@ export const INQUIRY_TOPICS = [
 export const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
 
 /** Words that make a problem urgent: an alarm that did not ring, an app that will not open, money paid. */
+// 1.39 수면 긴급 넷(사용자 승인 2026-11-07): 녹음·마이크가 안 꺼짐, 방해 금지가 안 풀림, 소리 클립이 안 지워짐(깨우는 알람은 URGENT에 있음).
+export const SLEEP_URGENT = /(녹음|마이크|측정).{0,8}(계속|안\s*꺼|안\s*멈|켜져)|방해\s*금지.{0,8}(안\s*풀|계속|안\s*꺼)|(소리|녹음).{0,6}(파일|클립).{0,8}(남아|안\s*지워)/;
 export const URGENT = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
 
 /** What the list and a thread show for sorting: topic, its label and how soon it needs an answer. */
@@ -126,7 +128,7 @@ export function triage(kind, text, info) {
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
-  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) || SLEEP_URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
 
@@ -240,12 +242,22 @@ export async function ask(request, env) {
   ]);
   // [ADMIN-19] Admins who asked for it hear of a new question (a bug or a problem counts as urgent); nothing
   // happens without VAPID keys, and a push that fails never fails the question.
-  await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
-    title: "새 문의",
-    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건`,
-    // 1.39 [ADM3-38] Opens 운영 장부 › 오늘 할 것, where a new question lands (1.38 흐름), not the old 문의 list.
-    url: "/admin/#/desk?view=today",
-  }, now);
+  // 1.39 [LOOP-19] 알람이 안 울림·앱이 안 열림·데이터 사라짐·결제·수면 긴급 넷을 말하는 문의는 '급함'으로 따로, 조용한 시간에도
+  // (사고·법적 기능처럼). 알림에는 문의 글을 넣지 않고 무엇에 관한 것인지만. 결정함 맨 위에도 떠요.
+  const tri = triage(body.kind, text, info);
+  // 1.39 G7 발굴 1-4(G10이 받음): 알림만 보고 급한지 알게, 답을 기다리는 수와 2주 안의 같은 문의가 몇 건째인지(글은 넣지 않아요).
+  const piled = await waitingNote(env, id, text, tri.topic);
+  if (tri.urgency === "urgent") {
+    await notifyAdmins(env, "urgent", { title: "급함 문의", body: `${tri.topicName ?? "문의"} · 알람·앱 실행·데이터·결제·수면 중 하나가 안 된다는 문의 1건${piled}`,
+      url: "/admin/#/decide", urgent: true }, now, { ignoreQuiet: true });
+  } else {
+    await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
+      title: "새 문의",
+      body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건${piled}`,
+      // 1.39 [ADM3-38] Opens 운영 장부 › 오늘 할 것, where a new question lands (1.38 흐름), not the old 문의 list.
+      url: "/admin/#/desk?view=today",
+    }, now);
+  }
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
   // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
@@ -253,6 +265,20 @@ export async function ask(request, env) {
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
   return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}), ...(studio ? { studio } : {}) }, 201);
+}
+
+/** 새 문의 알림 뒤에 붙는 말: ' · 답 기다림 N건 · 같은 문의 M건째'. 읽지 못하면 빈 글(알림은 그대로 가요). */
+export async function waitingNote(env, id, text, topic) {
+  try {
+    const rows = await all(env, WAITING_SQL);
+    const waiting = rows.filter((r) => r.last === "user").length;
+    const g = grams(text);
+    const since = Date.now() - 14 * DAY;
+    const same = rows.filter((r) => r.id !== id && r.created_at >= since && r.first && likeness(g, grams(r.first), triage(r.kind, r.first, null).topic === topic && topic !== "etc") >= SORTING.same).length;
+    return `${waiting > 1 ? ` · 답 기다림 ${waiting}건` : ""}${same ? ` · 같은 문의 ${same + 1}건째` : ""}`;
+  } catch {
+    return "";
+  }
 }
 
 /** What the user typed: up to 2000 characters, without an email, phone number or amount. */

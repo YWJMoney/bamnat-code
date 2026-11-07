@@ -95,7 +95,7 @@ import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
-import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy } from "./loop.js";
+import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
@@ -5930,6 +5930,8 @@ async function badges(env, actor, now) {
   const q = Object.fromEntries(Object.entries(FLAG_STORE_SQL).map(([k, sql]) => [k, [sql]]));
   for (const [k, [area, sql]] of Object.entries(BADGE_SQL)) if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql];
   if (can(actor, "ops")) q.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
+  // 1.39 [LOOP-19][LOOP-20] 결정함 숫자의 급함·최고 관리자 확인 문의: 같은 batch로 읽고 말로 가려 세요.
+  if (actor.owner || can(actor, "inquiries")) q.openAsks = [WAITING_SQL];
   const keys = Object.keys(q);
   const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
   const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
@@ -5938,6 +5940,12 @@ async function badges(env, actor, now) {
   for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
   if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
+  // 1.39 [LOOP-19][LOOP-20] 결정함 숫자: 답을 기다리는 급함 문의(문의 권한)와 최고 관리자 확인 문의(최고 관리자). 말로 가려서 JS에서 세요.
+  if (got.openAsks) {
+    const w = waitingFrom(got.openAsks);
+    if (can(actor, "inquiries")) data.decideUrgent = w.urgent.length;
+    if (actor.owner) data.decideAsks = w.owner.length;
+  }
   // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as 1.27 /overview's flagsDue) and the
   // legal flags on for under 24 hours (오늘's top card), for admins who may see 기능 관리.
   Object.assign(data, await flagOverview(env, actor, now, store));

@@ -210,11 +210,12 @@ fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, acce
                             if (shadow > 0f) translate(shadow / 2, shadow / 2) { drawPath(path, Color.Black.times(0.22f * a)) }
                         }
                         // PC 확인 C9 1.36: a 화면 가득 photo still waiting leaves the screen's own ground (the line at the top says why).
-                        // [CELL-05] G1 did the same (DecorWaitingLine says it for the screen); its shadow is left out too.
+                        // [CELL-05]·입혀 보기 1.39 PC 5c4ad849 (입혀 본 달력 '수' 옆 회색 네모): a small photo still waiting (a sticker, 18dp) is left
+                        // out instead of a grey box with no room to say why; [DecorWaitingLine] says it for the screen.
                         if (img == null && (item.full || !roomy)) Unit
                         else if (img == null) {
                             drawPath(path, Color(0xFF9E9E9E).times(0.45f * a))
-                            // PC 확인 C8 1.36 (승인 전 회색 상자가 고장처럼 보여요): says why.
+                            // PC 확인 C8 1.36 (승인 전 회색 상자가 고장처럼 보여요): says why, where there is room for it.
                             run {
                                 val words = measurer.measure(WAITING, TextStyle(fontSize = 11.sp, color = Color(0xFF424242).times(a)),
                                     constraints = Constraints(maxWidth = (at.width - 8f * density).toInt().coerceAtLeast(1)), maxLines = 2)

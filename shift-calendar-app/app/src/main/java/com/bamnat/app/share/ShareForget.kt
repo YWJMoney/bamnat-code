@@ -18,6 +18,7 @@ import java.io.IOException
  * the staff and a signed contract stay on the phone: only the server copy and the address go.
  *
  * A link the server could not be reached for stays, key and all, so pressing again finishes it; [Result.left] counts those.
+ * 1.39 발굴 1-1: and it is tried again by itself once the phone is online ([retry]), only those, so a link made since stays.
  * A link already gone on the server (cut, past its date, taken down) counts as cut ([ShareApi]'s deletes say so).
  */
 object ShareForget {
@@ -25,7 +26,7 @@ object ShareForget {
         /** "공유 링크 3개", for the words after 모두 지우기; null when there was none. */
         val words: String? get() = if (cut > 0) "공유 링크 ${cut}개" else null
         /** Said after the rest when some could not be cut, so the user knows to press again. */
-        val leftWords: String? get() = if (left > 0) "공유 링크 ${left}개는 인터넷이 끊겨 남았어요. 연결한 뒤 다시 누르면 마저 지워요" else null
+        val leftWords: String? get() = if (left > 0) "공유 링크 ${left}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else null
     }
 
     /**
@@ -60,91 +61,136 @@ object ShareForget {
             (if (stays.isEmpty()) "" else ". ${stays.joinToString("·")}는 휴대폰에 그대로예요")
     }
 
-    suspend fun all(c: AppContainer): Result {
+    /**
+     * Cuts what this phone made. [only] (keys as "kind:id") is the retry after a 모두 지우기 that could not reach the server for some:
+     * then only those are tried, and a link made since then stays. What is left is kept to be tried again by itself once the phone is
+     * online ([retry], from [com.bamnat.app.company.OutboxJob]), so the user need not remember to press again.
+     */
+    suspend fun all(c: AppContainer, only: Set<String>? = null): Result {
         if (!c.shareApi.enabled) return Result(0, 0)
         var cut = 0
-        var left = 0
+        val leftKeys = mutableSetOf<String>()
+        fun wanted(key: String) = only == null || key in only
 
         /** One delete: true when the server has it no more. A refusal other than offline also leaves it, to try again. */
-        suspend fun gone(block: suspend () -> Unit): Boolean = try {
+        suspend fun gone(key: String, block: suspend () -> Unit): Boolean = try {
             block()
             cut++
             true
         } catch (e: IOException) {
-            left++
+            leftKeys += key
             false
         } catch (e: ShareLinkException) {
-            left++
+            leftKeys += key
             false
         }
 
         // 모임: this phone's link out of the group first, while its key is still here.
-        c.shareGroup.code.value?.let { code ->
+        c.shareGroup.code.value?.takeIf { wanted("group:$it") }?.let { code ->
             val own = c.shareGroup.ownKey?.let { c.shareLinksOf(it).link.value }
             val out = own == null || runCatching { c.shareApi.groupLeave(code, own) }.isSuccess
-            if (out) c.shareGroup.clear()
+            if (out) c.shareGroup.clear() else leftKeys += "group:$code"
         }
 
         // 달력 공유 링크, every calendar's (SHR-13 모든 링크 끊기).
         // Counted by what is still here after: a refusal other than offline (a key the server does not take) leaves the link too.
-        val calendarLinks = c.shareSync.allLinks().size
-        runCatching { c.shareSync.cutAll() }
-        val calendarLeft = c.shareSync.allLinks().size
-        cut += (calendarLinks - calendarLeft).coerceAtLeast(0)
-        left += calendarLeft
+        if (only == null) {
+            val calendarLinks = c.shareSync.allLinks().size
+            runCatching { c.shareSync.cutAll() }
+            val calendarLeft = calendarLinkIds(c)
+            cut += (calendarLinks - calendarLeft.size).coerceAtLeast(0)
+            calendarLeft.forEach { leftKeys += "share:$it" }
+        } else {
+            val ids = only.filter { it.startsWith("share:") }.map { it.removePrefix("share:") }.toSet()
+            val here = calendarLinkIds(c).filter { it in ids }.toSet()
+            if (here.isNotEmpty()) {
+                val calendarLeft = runCatching { c.shareSync.cutOnly(here) }.getOrDefault(here)
+                cut += here.size - calendarLeft.size
+                calendarLeft.forEach { leftKeys += "share:$it" }
+            }
+        }
 
         // 팀 (리더): each member's 근무 링크, and the team's 받기·결원·바꾸기·전체 보기·피곤해요.
         val store = c.phaseThree
         for (team in store.teamList.first()) {
             for (m in store.members(team.id).first()) {
                 val id = m.linkId ?: continue
+                if (!wanted("share:$id")) continue
                 val token = m.linkToken
-                if (token == null || gone { c.shareApi.delete(ShareLinkState(id, "", token, java.time.Instant.EPOCH, m.name)) }) {
+                if (token == null || gone("share:$id") { c.shareApi.delete(ShareLinkState(id, "", token, java.time.Instant.EPOCH, m.name)) }) {
                     store.saveMembers(listOf(m.copy(linkId = null, linkToken = null)))
                 }
             }
-            team.ask?.let { round ->
+            team.ask?.takeIf { wanted("ask:${it.id}") }?.let { round ->
                 val token = round.token
-                if (token == null || gone { c.shareApi.askDelete(round.id, token) }) {
+                if (token == null || gone("ask:${round.id}") { c.shareApi.askDelete(round.id, token) }) {
                     store.updateTeam(team.id) { t -> if (t.ask?.id == round.id) t.copy(ask = null) else t }
                 }
             }
-            team.swap?.let { round ->
+            team.swap?.takeIf { wanted("swap:${it.id}") }?.let { round ->
                 val token = round.token
-                if (token == null || gone { c.shareApi.swapDelete(round.id, token) }) {
+                if (token == null || gone("swap:${round.id}") { c.shareApi.swapDelete(round.id, token) }) {
                     store.updateTeam(team.id) { t -> if (t.swap?.id == round.id) t.copy(swap = null) else t }
                 }
             }
-            val callsOut = team.calls.filter { call -> call.token?.let { t -> gone { c.shareApi.callDelete(call.id, t) } } ?: true }.map { it.id }.toSet()
+            val callsOut = team.calls.filter { wanted("call:${it.id}") }
+                .filter { call -> call.token?.let { t -> gone("call:${call.id}") { c.shareApi.callDelete(call.id, t) } } ?: true }.map { it.id }.toSet()
             if (callsOut.isNotEmpty()) store.updateTeam(team.id) { t -> t.copy(calls = t.calls.filterNot { it.id in callsOut }) }
-            TeamReceiveSync.board(c.appContext, team.id)?.let { b ->
-                if (gone { c.shareApi.boardDelete(b.id, b.token) }) TeamReceiveSync.forgetBoard(c.appContext, team.id)
+            TeamReceiveSync.board(c.appContext, team.id)?.takeIf { wanted("board:${it.id}") }?.let { b ->
+                if (gone("board:${b.id}") { c.shareApi.boardDelete(b.id, b.token) }) TeamReceiveSync.forgetBoard(c.appContext, team.id)
             }
-            TeamReceiveSync.tiredBox(c.appContext, team.id)?.let { b ->
-                if (gone { c.shareApi.tiredDelete(b.id, b.token) }) TeamReceiveSync.forgetTired(c.appContext, team.id)
+            TeamReceiveSync.tiredBox(c.appContext, team.id)?.takeIf { wanted("tired:${it.id}") }?.let { b ->
+                if (gone("tired:${b.id}") { c.shareApi.tiredDelete(b.id, b.token) }) TeamReceiveSync.forgetTired(c.appContext, team.id)
             }
         }
 
         // 가게 (사장님): 대타 요청, each staff's 출퇴근 링크 and 계약서 서명 링크.
         for (place in store.workplaces.first()) {
-            val callsOut = place.calls.filter { call -> call.token?.let { t -> gone { c.shareApi.callDelete(call.id, t) } } ?: true }.map { it.id }.toSet()
+            val callsOut = place.calls.filter { wanted("call:${it.id}") }
+                .filter { call -> call.token?.let { t -> gone("call:${call.id}") { c.shareApi.callDelete(call.id, t) } } ?: true }.map { it.id }.toSet()
             if (callsOut.isNotEmpty()) store.updateWorkplace(place.id) { p -> p.copy(calls = p.calls.filterNot { it.id in callsOut }) }
         }
         for (s in store.allStaff()) {
             val clock = s.clockId
-            if (clock != null) {
+            if (clock != null && wanted("clock:$clock")) {
                 val token = s.clockToken
-                if (token == null || gone { c.shareApi.clockDelete(clock, token) }) store.forgetClock(s.id)
+                if (token == null || gone("clock:$clock") { c.shareApi.clockDelete(clock, token) }) store.forgetClock(s.id)
             }
             val sent = s.contract ?: continue
             val link = sent.linkId ?: continue
+            if (!wanted("sign:$link")) continue
             val token = sent.token
-            if (token == null || gone { c.shareApi.signDelete(link, token) }) {
+            if (token == null || gone("sign:$link") { c.shareApi.signDelete(link, token) }) {
                 // The contract and its signature stay on the phone (근로기준법 제42조: 3년 보관); only the page goes.
                 store.updateContract(s.id) { cur -> if (cur?.linkId == link) cur.copy(linkId = null, token = null, url = null) else cur }
             }
         }
 
-        return Result(cut, left)
+        keep(c, leftKeys)
+        return Result(cut, leftKeys.size)
+    }
+
+    private fun calendarLinkIds(c: AppContainer): Set<String> =
+        c.shareSync.allLinks().mapNotNull { c.shareLinksOf(it).link.value?.id }.toSet()
+
+    private const val PREFS = "share_forget"
+    private const val LEFT = "left"
+
+    /** The keys ("kind:id") a 모두 지우기 could not reach yet, tried again by themselves once online. */
+    fun pending(c: AppContainer): Set<String> =
+        c.appContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getStringSet(LEFT, null).orEmpty()
+
+    private fun keep(c: AppContainer, left: Set<String>) {
+        c.appContext.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit().apply {
+            if (left.isEmpty()) remove(LEFT) else putStringSet(LEFT, left.toSet())
+        }.apply()
+        if (left.isNotEmpty()) com.bamnat.app.company.OutboxJob.scheduleForget(c.appContext)
+    }
+
+    /** The job's part: what is still waiting, only that. True when nothing is left. */
+    suspend fun retry(c: AppContainer): Boolean {
+        val waiting = pending(c)
+        if (waiting.isEmpty()) return true
+        return all(c, waiting).left == 0
     }
 }

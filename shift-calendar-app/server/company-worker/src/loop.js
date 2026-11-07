@@ -1,8 +1,10 @@
-import { all, audit, batch, deviceHash, deviceId, iso, json, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
+import { all, audit, batch, can, deviceHash, deviceId, iso, json, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
+import { pushReady } from "./push.js";
 import { DAY, HOUR } from "./units.js";
 import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } from "./money.js";
-import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD } from "./inquiries.js";
-import { compareVersions, inboxAnswer, version } from "./inbox.js";
+import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
+import { compareVersions, inboxAnswer, titleFrom, version } from "./inbox.js";
+import { askOwner } from "./ledger.js";
 import { DESK, isOut, markTold, shipNow, shippedVersion, shipText } from "./desk.js";
 import { versionHealth } from "./release-desk.js";
 import { flagStore, serverEval } from "./flags.js";
@@ -435,11 +437,9 @@ export async function devQueue(env, limit = 60) {
       (SELECT COUNT(*) FROM dev_history h WHERE h.item_id = d.id AND h.action = 'fixed_no') AS again,
       (SELECT GROUP_CONCAT(m.text, ' ') FROM dev_links l JOIN inquiry_messages m ON m.inquiry_id = l.inquiry_id AND m.sender = 'user' WHERE l.item_id = d.id) AS words
     FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') LIMIT 400`).catch(() => []);
-  const URGENT_WORDS = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
-  // 수면(사용자 11-07 '수면 문제도 긴급인지 검토'): 녹음·마이크가 안 꺼짐, 방해 금지가 안 풀림, 소리 클립이 안 지워짐은 알람·개인정보와 같은 급함.
-  const SLEEP_URGENT = /(녹음|마이크|측정).{0,8}(계속|안\s*꺼|안\s*멈|켜져)|방해\s*금지.{0,8}(안\s*풀|계속|안\s*꺼)|(소리|녹음).{0,6}(파일|클립).{0,8}(남아|안\s*지워)/;
+  // 급함 말(알람·앱 실행·데이터·결제)과 수면 긴급 넷(사용자 11-07 승인)은 문의 쪽(inquiries.js)과 같은 것을 써요.
   return rows.map((d) => {
-    const urgent = URGENT_WORDS.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
+    const urgent = URGENT.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
     const x = { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status], track: d.track, size: d.size, route: d.route, tier: d.tier,
       handed: Boolean(d.handed_at), asks: d.asks, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at) };
     return { ...x, score: impact(x) };
@@ -649,6 +649,37 @@ export async function tierBoard(env, now) {
 }
 
 /** 결정함: 최고 관리자 확인 문의(Claude 초안과 함께)와 요금을 정할 새 기능. */
+/**
+ * [LOOP-19][LOOP-20] 답을 기다리는 문의(열림, 마지막 말이 사용자) 가운데 급함(알람·앱 실행·데이터·결제·수면 긴급 넷)과
+ * 최고 관리자 확인(환불·법·개인정보·화남·약관·회사 방식). 결정함과 메뉴 숫자(/badges)가 같은 판단을 써요.
+ */
+export const WAITING_SQL = `SELECT i.id, i.kind, i.info, i.created_at,
+    (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
+    (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
+  FROM inquiries i WHERE i.status = 'open' ORDER BY i.created_at DESC LIMIT 300`;
+
+/** [WAITING_SQL]의 줄에서 급함과 최고 관리자 확인을 가려요(메뉴 숫자는 같은 batch로 읽고 여기서 셈). */
+export function waitingFrom(rows) {
+  const waiting = (rows ?? []).filter((r) => r.last === "user");
+  const info = (r) => {
+    try {
+      return JSON.parse(r.info || "{}");
+    } catch {
+      return {};
+    }
+  };
+  const urgent = [];
+  for (const r of waiting) {
+    const t = triage(r.kind, r.first, info(r));
+    if (t.urgency === "urgent") urgent.push({ ...r, topic: t.topicName });
+  }
+  return { urgent, owner: waiting.filter((r) => askOwner(r.kind, r.first)) };
+}
+
+export async function waitingFlags(env) {
+  return waitingFrom(await all(env, WAITING_SQL).catch(() => []));
+}
+
 export async function decideBox(env, actor, now, ledgerQuery) {
   const led = await ledgerQuery(env, actor, now, new URLSearchParams("view=owner")).catch(() => ({ items: [] }));
   const asks = (led.items ?? []).filter((r) => r.type === "inquiry");
@@ -660,7 +691,10 @@ export async function decideBox(env, actor, now, ledgerQuery) {
       JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
       WHERE h.action = 'fixed_no' GROUP BY d.id ORDER BY last DESC LIMIT 20`).catch(() => []);
   const halts = await all(env, "SELECT target, detail, at FROM audit WHERE action = 'loop_halt_advice' AND at > ? ORDER BY at DESC LIMIT 5", now - 7 * DAY).catch(() => []);
+  // [LOOP-19] 급함 문의는 맨 위에(문의 권한이 있는 사람에게만 제목까지).
+  const urgent = can(actor, "inquiries") ? (await waitingFlags(env)).urgent.slice(0, 20) : [];
   return {
+    urgent: urgent.map((r) => ({ id: r.id, title: titleFrom(r.first ?? ""), topic: r.topic ?? null, at: iso(r.created_at) })),
     back: back.map((d) => ({ id: d.id, title: d.title, track: d.track || null, status: d.status, statusName: DEV.statuses[d.status], times: d.n, at: iso(d.last) })),
     halts: halts.map((h) => ({ version: h.target, why: h.detail, at: iso(h.at) })),
     asks: asks.slice(0, 40).map((r) => ({ key: r.key, id: r.id, no: r.no, title: r.summary || r.title, why: r.ownerAsk?.name ?? r.answer?.why ?? "", due: r.due, late: r.late,
@@ -707,6 +741,71 @@ export async function instantOk(env, pile, kind, text) {
 
 // ---- 화면과 길 ----
 
+// ---- [LOOP-18] 연결 점검 ----
+
+/**
+ * 실제 Play·GitHub에 처음 붙기 전에 한 화면에서: 무엇이 됐고 무엇이 빠졌는지 한 줄씩. play가 참이면 Play 트랙을 한 번 읽어 봐요
+ * (편집을 열고 읽고 지움, 확정하지 않음). 값(열쇠·비밀값)은 보이지 않고 있는지만.
+ */
+export async function loopCheck(env, now, { play = false } = {}) {
+  const [sw, train, track, sync, syncKey, opsKey] = await Promise.all([
+    loopSwitches(env), loopTrain(env), readSetting(env, "play_track", {}),
+    one(env, "SELECT * FROM loop_syncs ORDER BY id DESC LIMIT 1").catch(() => null),
+    one(env, "SELECT last_at FROM admin_keys WHERE scope = 'sync' AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 1", now).catch(() => null),
+    one(env, "SELECT last_at FROM admin_keys WHERE scope = 'ops' AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 1", now).catch(() => null),
+  ]);
+  const lines = [];
+  const line = (key, name, state, text, fix = "") => lines.push({ key, name, state, text, ...(fix ? { fix } : {}) });
+  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "서버 비밀값 PLAY_SERVICE_ACCOUNT가 없어요", "사용자 할 일 G10 1장: 서비스 계정에 '앱 정보 보기' 권한");
+  else if (play) {
+    try {
+      const r = await readProduction(env, now);
+      line("play", "Play 출시 읽기", "ok", `방금 읽었어요 · 100% 나간 판 ${r?.done ?? "없음"}${r?.rolling ? ` · 단계적 ${r.rolling.v} ${Math.round((r.rolling.fraction ?? 0) * 100)}%` : ""}`);
+    } catch (e) {
+      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 서비스 계정 권한을 봐요");
+    }
+  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${iso(track.at)} · 100% 나간 판 ${track.done ?? "없음"}`);
+  else line("play", "Play 출시 읽기", "warn", "아직 한 번도 읽지 않았어요", "'Play까지 점검'을 눌러 한 번 읽어 봐요");
+  line("autoShip", "스스로 출시 안내", sw.autoShip ? "ok" : "warn", sw.autoShip ? "켜짐 · 100% 출시를 보면 1시간 보류 뒤 안내" : "꺼짐 · '나간 판 저장'을 사람이 눌러요");
+  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${iso(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
+    syncKey ? "" : "아래 저장소 동기화 › 동기화 열쇠 만들기 → GitHub Secret BAMNAT_SYNC_KEY");
+  if (!sw.sync) line("sync", "저장소 동기화", "warn", "받기가 꺼져 있어요");
+  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "GitHub Secret BAMNAT_SYNC_KEY·Variable BAMNAT_API를 넣고 main에 합치면 와요");
+  else {
+    const r = JSON.parse(sync.result || "{}");
+    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${iso(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
+      r.errors ? "GitHub › Actions › dev-status 로그와 dev-status.jsonl 줄을 봐요" : "");
+  }
+  line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다`);
+  line("update", "인앱 업데이트 기준", sw.urgentMin || sw.flexibleMin ? "ok" : "warn",
+    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 정기 기준 versionCode를 넣어요");
+  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "VAPID 비밀값이 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정");
+  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${iso(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
+    opsKey ? "" : "사용자 할 일 G10 3장");
+  const worst = lines.some((x) => x.state === "bad") ? "bad" : lines.some((x) => x.state === "warn") ? "warn" : "ok";
+  return { at: iso(now), state: worst, lines, played: Boolean(play && playReady(env)) };
+}
+
+// ---- [LOOP-22] 판별 고침 성적표 ----
+
+/** 최근 판마다: 고친 개발사항·묶인 문의·안내한 문의·해결됐어요·아직이에요(다시 열림)·나도 겪어요·첫 답까지 평균 시간. */
+export async function scoreCard(env, most = 6) {
+  const base = await all(env, `SELECT d.released_in AS v, COUNT(DISTINCT d.id) AS items, COUNT(DISTINCT l.inquiry_id) AS asks,
+      COUNT(DISTINCT CASE WHEN l.told_at IS NOT NULL THEN l.inquiry_id END) AS told,
+      COUNT(DISTINCT CASE WHEN i.fixed = 1 THEN i.id END) AS yes,
+      AVG((SELECT MIN(m.at) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') - i.created_at) AS firstMs
+    FROM dev_items d LEFT JOIN dev_links l ON l.item_id = d.id LEFT JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE d.deleted_at IS NULL AND d.status = 'done' AND d.released_in IS NOT NULL AND d.released_in != '' GROUP BY d.released_in`).catch(() => []);
+  const hist = await all(env, `SELECT d.released_in AS v, h.action, COUNT(*) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id
+    WHERE d.deleted_at IS NULL AND d.status = 'done' AND h.action IN ('fixed_no', 'me_too') GROUP BY d.released_in, h.action`).catch(() => []);
+  const count = (v, a) => hist.find((h) => h.v === v && h.action === a)?.n ?? 0;
+  return base.filter((r) => version(r.v)).sort((a, b) => compareVersions(version(b.v), version(a.v))).slice(0, most).map((r) => {
+    const no = count(r.v, "fixed_no");
+    return { version: r.v, items: r.items, asks: r.asks, told: r.told, yes: r.yes, no, meToo: count(r.v, "me_too"),
+      solved: r.yes + no ? Math.round((r.yes / (r.yes + no)) * 100) : null, firstHours: r.firstMs == null ? null : Math.round((r.firstMs / HOUR) * 10) / 10 };
+  });
+}
+
 /** GET /loop: 흐름 화면의 자동 순환 칸. */
 export async function loopState(env, now) {
   const [sw, train, track, ships, syncs, shipped, urgent] = await Promise.all([
@@ -725,7 +824,7 @@ export async function loopState(env, now) {
     syncs: syncs.map((s) => ({ at: iso(s.at), sha: s.sha, version: s.version, pr: s.pr, n: s.n, result: JSON.parse(s.result || "{}") })),
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
-    urgentWaiting: urgent?.n ?? 0, autonomy: await autonomy(env), rewards: await rewardRules(env), routes: LOOP.routes, sizes: LOOP.sizes,
+    urgentWaiting: urgent?.n ?? 0, scores: await scoreCard(env), autonomy: await autonomy(env), rewards: await rewardRules(env), routes: LOOP.routes, sizes: LOOP.sizes,
   };
 }
 
@@ -736,6 +835,7 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
   if (path === "/loop/decide" && method === "GET") return json(await decideBox(env, env.actor, now, ledgerQuery));
   if (path === "/loop/tiers" && method === "GET") return json(await tierBoard(env, now));
   if (path === "/loop/autonomy" && method === "GET") return json(await autonomy(env));
+  if (path === "/loop/check" && method === "GET") return json(await loopCheck(env, now, { play: url.searchParams.get("play") === "1" && !env.actor?.key }));
   let m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/(cancel|now)$/);
   if (m && method === "POST") {
     if (env.actor?.key) return json({ error: "no_permission" }, 403);

@@ -31,6 +31,8 @@ class OutboxJob : JobService() {
             val done = runCatching {
                 when {
                     params.jobId == SHARE_ID -> c.autoShare.flush()
+                    // 1.39 [PRIV-06] 발굴 1-1: what a 모두 지우기 could not reach, only that.
+                    params.jobId == FORGET_ID -> com.bamnat.app.share.ShareForget.retry(c)
                     cal != null -> c.companyOf(cal).takeIf { it.calendarId == cal }?.autoShare?.flush() ?: true
                     else -> send(c)
                 }
@@ -49,6 +51,8 @@ class OutboxJob : JobService() {
         private const val ID = 4403
         /** [PLAZA-07] 결정 D79: the setup shared by itself, once a day at most. */
         private const val SHARE_ID = 4404
+        /** 1.39 [PRIV-06] 모두 지우기에서 인터넷이 끊겨 남은 공유 링크, 연결되면 저절로 마저. */
+        private const val FORGET_ID = 4408
         private const val SHARE_BASE = 4_410_000
         private const val CAL = "cal"
         private val BACKOFF = TimeUnit.MINUTES.toMillis(15)
@@ -87,6 +91,19 @@ class OutboxJob : JobService() {
 
         /** [CALI-02] An added calendar's share job, away from the app's other jobs (4401~4404). */
         internal fun shareId(cal: String): Int = SHARE_BASE + (cal.hashCode() and 0xFFFF)
+
+        /** 1.39 [PRIV-06] 발굴 1-1: the links a 모두 지우기 left, cut once online even with the app closed. */
+        fun scheduleForget(context: Context) {
+            val jobs = context.getSystemService(JobScheduler::class.java) ?: return
+            if (jobs.getPendingJob(FORGET_ID) != null) return
+            jobs.schedule(
+                JobInfo.Builder(FORGET_ID, ComponentName(context, OutboxJob::class.java))
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setBackoffCriteria(BACKOFF, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
+                    .setPersisted(true)
+                    .build(),
+            )
+        }
 
         /** [CALI-07] A calendar that went takes its waiting share with it. */
         fun cancelShare(context: Context, cal: String) {
