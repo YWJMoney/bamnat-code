@@ -253,6 +253,11 @@ class AppContainer(context: Context) {
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
         proof = { slipProof() })
+    /** 1.39 [PLZC-10] 근무 태그: what this phone shows in the plazas and the tag a post carries. */
+    val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
+    init {
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomTag = { room -> plazaTags.json(room) }
+    }
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
     /** 1.36 PC 재검토: kinds of day put away per calendar ('안 쓰는 종류'). */

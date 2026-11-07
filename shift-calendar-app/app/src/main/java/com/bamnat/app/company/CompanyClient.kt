@@ -282,6 +282,12 @@ data class TalkPost(
     val attach: Pair<String, String>? = null,
     /** PC 확인 V27: that recipe's look as the server sent it (lookOf), kept as written; null without one. */
     val attachLook: String? = null,
+    /** 1.39 [PLZC-10] 근무 태그, on a kind of work's plaza once plaza.people is on; null on older posts. */
+    val tag: com.bamnat.core.plaza.PlazaTag? = null,
+    /** 1.39 [PLZC-15] The writer's first post in any kind of work's plaza (첫 글). */
+    val first: Boolean = false,
+    /** 1.39 [PLZC-16] How many of the writer's answers someone else's question picked (도움 n), beside a 마을 이름. */
+    val helped: Int = 0,
 )
 
 /** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
@@ -302,7 +308,15 @@ data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int?
 data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0,
     val leftPosts: Int? = null, val limit: WriteLimit? = null,
     /** 1.36 [VIL-11] 이번 주 이야기 주제 the operator set for a kind of work's plaza. */
-    val topic: String? = null)
+    val topic: String? = null,
+    /** 1.39 [PLZC-03] Older posts are left to read ([CompanyApi.talkBefore]); [older]: this is such a page. */
+    val more: Boolean = false,
+    val older: Boolean = false,
+    /** 1.39 [PLZC-12] The room's head line: today's posts, questions waiting, writers at work lately. */
+    val pulse: Pulse? = null)
+
+/** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza. */
+data class Pulse(val today: Int, val waiting: Int, val working: Int)
 
 /**
  * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
@@ -588,6 +602,8 @@ interface CompanyApi {
         Board(emptyList(), null)
     /** [COMM-06] The talk on one rule set; this install's own posts are marked. */
     suspend fun talk(device: String, company: String, setup: String): Talk = Talk(emptyList())
+    /** 1.39 [PLZC-03] 더 불러오기: a kind of work's plaza ([room]) before [before], a page of top posts with their answers. */
+    suspend fun talkBefore(device: String, room: String, before: java.time.Instant): Talk = Talk(emptyList())
     /** Posts in it; the new post's id comes back. */
     suspend fun post(device: String, company: String, setup: String, body: String): String = throw CompanyException("offline")
     suspend fun deletePost(device: String, id: String) = Unit
@@ -694,6 +710,18 @@ class CompanyClient(
     private val proof: () -> com.bamnat.core.pay.SlipProof? = { null },
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
+
+    /**
+     * 1.39 [PLZC-10] 근무 태그: what a post in a kind of work's plaza ([room] `style-…`) carries, worked out from the calendar
+     * when it is sent; null for none (깃발 plaza.people off, or a company's room). Set by the container.
+     */
+    @Volatile var roomTag: (suspend (room: String) -> JSONObject?)? = null
+
+    private suspend fun JSONObject.tagged(company: String, setup: String): JSONObject = apply {
+        if (setup == com.bamnat.core.plaza.StylePlaza.ROOM && company.startsWith("style-")) {
+            runCatching { roomTag?.invoke(company) }.getOrNull()?.let { put("tag", it) }
+        }
+    }
 
     // AS 1.29 [SRCH-06] A read the screen may stop waiting for (a new letter typed, a time limit) returns at once.
     override suspend fun search(query: String): List<CompanyHit> = readCall {
@@ -858,6 +886,11 @@ class CompanyClient(
             headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
     }
 
+    override suspend fun talkBefore(device: String, room: String, before: java.time.Instant): Talk = serverCall {
+        talkOf(exchange("GET", "/api/companies/$room/setups/room/posts?before=" + URLEncoder.encode(before.toString(), "UTF-8"), device = device,
+            headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
+    }
+
     override suspend fun post(device: String, company: String, setup: String, body: String, parent: String?, kind: String,
         change: List<ChangeLine>, proposal: JSONObject?): String = serverCall {
         val o = JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()).put("kind", kind)
@@ -868,7 +901,7 @@ class CompanyClient(
         }
         // 1.39 [PAYP-05] 보완 요청: where it differs, no values.
         if (kind == "fix") o.put("change", JSONArray(change.map { JSONObject().put("field", it.field) }))
-        request("POST", "/api/posts", o).getString("id")
+        request("POST", "/api/posts", o.tagged(company, setup)).getString("id")
     }
 
     override suspend fun postVote(device: String, id: String, ok: Boolean?): PostVote = serverCall {
@@ -912,12 +945,12 @@ class CompanyClient(
 
     override suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String = serverCall {
         request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
-            .put("kind", "show").put("attach", code)).getString("id")
+            .put("kind", "show").put("attach", code).tagged(company, setup)).getString("id")
     }
 
     override suspend fun postPoll(device: String, company: String, setup: String, body: String, poll: List<String>): String = serverCall {
         request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
-            .put("kind", "question").put("poll", JSONArray(poll.map { it.trim() }))).getString("id")
+            .put("kind", "question").put("poll", JSONArray(poll.map { it.trim() })).tagged(company, setup)).getString("id")
     }
 
     override suspend fun postAnswer(device: String, id: String, reply: String?): String? = serverCall {
@@ -997,8 +1030,8 @@ class CompanyClient(
         if (o.has("myVote") && !o.isNull("myVote")) o.getBoolean("myVote") else null)
 
     override suspend fun post(device: String, company: String, setup: String, body: String): String = serverCall {
-        request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()))
-            .getString("id")
+        request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
+            .tagged(company, setup)).getString("id")
     }
 
     override suspend fun deletePost(device: String, id: String) = serverCall {
@@ -1350,6 +1383,9 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             poll = p.optJSONObject("poll")?.let(::pollOf)?.takeIf { it.options.size >= 2 },
             attach = p.optJSONObject("attach")?.let { a -> a.optString("code").takeIf { it.isNotEmpty() }?.let { it to a.optString("title") } },
             attachLook = p.optJSONObject("attach")?.optJSONObject("look")?.toString(),
+            tag = p.optJSONObject("tag")?.let { t -> com.bamnat.core.plaza.PlazaTag.of { k -> t.opt(k)?.takeIf { it != JSONObject.NULL } } },
+            first = p.optBoolean("first", false),
+            helped = p.optInt("helped", 0).coerceIn(0, 100_000),
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
@@ -1358,6 +1394,9 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
     leftPosts = o.optJSONObject("left")?.takeIf { it.has("posts") }?.optInt("posts"),
     limit = WriteLimit.of(o),
     topic = o.optStringOrNull("topic"),
+    more = o.optBoolean("more"),
+    older = o.optBoolean("older"),
+    pulse = o.optJSONObject("pulse")?.let { Pulse(it.optInt("today"), it.optInt("waiting"), it.optInt("working")) },
 )
 
 internal fun termsOf(o: JSONObject) =

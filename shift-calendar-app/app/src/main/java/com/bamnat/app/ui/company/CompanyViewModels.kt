@@ -606,6 +606,14 @@ class TalkHolder(
         /** [SPD-16] A post on its way, shown as "나 (보내는 중)". */
         const val SENDING = "보내는 중"
     }
+
+    /** 1.39 [PLZC] plaza.people on (처리방침 3.12): a kind of work's room shows 근무 태그 and 나도요. */
+    val people: Boolean get() = c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE)
+
+    /** 1.39 [PLZC-10] The tag my next post in [room] carries (months as 처음 until the server counts), for the write box. */
+    suspend fun myTag(room: String): com.bamnat.core.plaza.PlazaTag? = if (!people) null else runCatching {
+        c.plazaTags.tagFor(room)?.copy(months = if (c.plazaTags.scope().months) 0 else null)
+    }.getOrNull()
     data class Open(
         val company: String, val setup: String, val title: String, val talk: com.bamnat.app.company.Talk? = null, val error: String? = null,
         /** [PLAZA-32][PLAZA-33] 1.27 AI: a company's or a kind of work's room (setup "room"), with its own hint and note. */
