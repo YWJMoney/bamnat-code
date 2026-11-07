@@ -775,6 +775,7 @@ private fun PayResult(
             )
             // 1.39 [PAYX-58] 비과세 shared by kind this month (식대 + 중식대), said under each of those rows.
             val freeParts = remember(profile, month) { com.bamnat.core.pay.TakeHome.nonTaxableParts(profile, month).filter { it.names.size > 1 || it.over } }
+            val firstFree = profile.items.firstOrNull { it.cadence == Cadence.MONTHLY && !it.isFixedOvertime && !it.isPercent }?.id
             profile.items.forEach { item ->
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 if (item.cadence == Cadence.BONUS) {
@@ -805,6 +806,7 @@ private fun PayResult(
                         item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && !item.isPercent
                     },
                     onTaxFree = { on -> vm.updateItem(item.id) { it.copy(taxable = !on) } },
+                    taxFreeLong = item.id == firstFree,
                     taxFreeNote = freeParts.firstOrNull { item.name in it.names }?.let { f ->
                         (if (f.names.size > 1) f.names.joinToString("·") + " 합쳐서 " else "") +
                             "${month.monthValue}월 ${won(f.paid)} 중 ${won(f.amount)}까지 비과세로 어림해요"
@@ -1316,6 +1318,8 @@ private fun ValueRow(
     taxFree: Boolean? = null,
     /** 1.39 [PAYX-58] PC a483ca15 N6: what this row's 비과세 shares its 월 20만 원 with (식대·중식대 합쳐서), when it does. */
     taxFreeNote: String? = null,
+    /** 1.39 발굴 (PC 5c4ad849 '긴 설명이 수당 줄마다 반복돼요'): the long words on the first 비과세 switch only. */
+    taxFreeLong: Boolean = true,
     onTaxFree: ((Boolean) -> Unit)? = null,
     /** [PAYS-01] 금액 모름: left out of the total. */
     unknownAmount: Boolean = false,
@@ -1355,7 +1359,7 @@ private fun ValueRow(
         if (taxFree != null && onTaxFree != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // 1.39 [PAYX-58] PC a483ca15 N6: the limit is per kind, so two 식대 lines share one 20만 원.
-                Text("세금 없는 돈 (비과세: 식대·자가운전보조금 등, 종류마다 월 20만 원까지 · 식대가 둘이면 합쳐서 20만 원)",
+                Text(if (taxFreeLong) "세금 없는 돈 (비과세: 식대·자가운전보조금 등, 종류마다 월 20만 원까지 · 식대가 둘이면 합쳐서 20만 원)" else "세금 없는 돈 (비과세)",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = taxFree, onCheckedChange = onTaxFree, enabled = enabled)
             }
