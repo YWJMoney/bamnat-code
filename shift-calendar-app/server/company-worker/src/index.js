@@ -4987,6 +4987,12 @@ async function signedRoute(request, env, url, path, method, now, session) {
     const r = await passkeyMine(request, env, url, path, method, actor, now);
     if (r) return r;
   }
+  // 1.39 [ADM3-42] 로그인 잠금 보기·풀기: 최고 관리자만, 운영 열쇠(Claude)로는 못 해요(사용자 11-07 '슈퍼관리자만').
+  if (path === "/login-locks" || path === "/login-locks/clear") {
+    if (!actor.owner || actor.key) return json({ error: "no_permission", area: "owner" }, 403);
+    if (method === "GET") return json(await loginLocks(env, now));
+    if (method === "POST" && path === "/login-locks/clear") return json(await loginUnlock(env, now));
+  }
   if (path === "/me/2fa" && method === "GET") return json(await secondView(env, actor));
   if (path === "/me/2fa" && method === "POST") return secondChange(request, env, actor, now);
   // [ADMIN-19] This browser's web push.
@@ -5262,6 +5268,30 @@ async function login(request, env, now) {
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
+}
+
+/**
+ * 1.39 [ADM3-42] 지금 잠긴 로그인: 잠긴 곳(네트워크·관리자 계정) 수, 틀렸지만 아직 안 잠긴 곳 수, 가장 늦게 풀리는 때.
+ * 어디인지는 보여 주지 않아요(네트워크는 원래 짧은 해시로만 남아요).
+ */
+async function loginLocks(env, now) {
+  const rows = await all(env, "SELECT key, count, expires FROM counters WHERE key LIKE 'login|%' AND expires > ?", now);
+  const places = rows.filter((r) => r.key !== "login|all");
+  const locked = places.filter((r) => r.count >= LIMITS.loginFailures);
+  const wide = (rows.find((r) => r.key === "login|all")?.count ?? 0) >= 10 * LIMITS.loginFailures;
+  const until = Math.max(0, ...locked.map((r) => r.expires));
+  return { locked: locked.length, tries: places.length - locked.length, wide, until: until ? iso(until) : null };
+}
+
+/**
+ * 1.39 [ADM3-42] 로그인 잠금을 모두 풀어요(사용자 11-07 22:14 '한없이 기다릴 순 없잖아'). 다른 기기에 최고 관리자로
+ * 로그인해 있을 때 1시간을 기다리지 않게 해요. 틀린 횟수도 함께 0이 되고, 활동 기록에 남아요.
+ */
+async function loginUnlock(env, now) {
+  const before = await loginLocks(env, now);
+  await run(env, "DELETE FROM counters WHERE key LIKE 'login|%'");
+  await audit(env, now, "login_unlock", "", `잠긴 곳 ${before.locked} · 틀린 곳 ${before.tries}${before.wide ? " · 전체 잠금" : ""}`);
+  return { ok: true, ...before };
 }
 
 /**

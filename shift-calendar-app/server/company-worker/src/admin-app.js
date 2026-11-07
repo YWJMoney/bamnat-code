@@ -765,6 +765,8 @@ function adminApp(L, BUILD, M) {
       if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
       // 1.37.1 [FAM-01] 가족 프로 이용권 (최고 관리자만).
       if (name === "account" && S.me?.owner) jobs.push(api("/family").then(keep((d) => { S.data.family = d; })).catch(() => {}));
+      // 1.39 [ADM3-42] 로그인 잠금(최고 관리자만).
+      if (name === "account" && S.me?.owner) jobs.push(api("/login-locks").then(keep((d) => { S.data.loginLocks = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -2359,6 +2361,21 @@ function adminApp(L, BUILD, M) {
   /** 1.39 [FAM-04] 발굴: a family phone not seen for 60 days is likely a phone given up (바꾼 휴대폰), still holding 프로. */
   const familyIdle = (d) => Date.now() - Date.parse(d.seenAt ?? d.createdAt) > 60 * 864e5;
 
+  /**
+   * 1.39 [ADM3-42] 로그인 잠금 풀기(최고 관리자만, 사용자 11-07 22:14·22:37). PC가 잠겨도 휴대폰에 로그인해 있으면
+   * 1시간을 기다리지 않고 여기서 풀어요. 잠긴 곳이 없으면 한 줄만, 있으면 몇 곳·언제 풀리는지와 단추.
+   */
+  function lockLine() {
+    const k = S.data.loginLocks;
+    if (!k) return "";
+    const busy = k.locked || k.tries || k.wide;
+    if (!busy) return '<p class="hint" data-lock-line>지금 잠긴 로그인이 없어요. 다른 곳에서 여러 번 틀려 잠기면 여기서 바로 풀 수 있어요.</p>';
+    const parts = [k.locked ? `잠긴 곳 ${k.locked}곳` : "", k.tries ? `틀린 적 있는 곳 ${k.tries}곳` : "", k.wide ? "여러 곳에서 많이 틀려 전체가 조심 중" : ""].filter(Boolean);
+    return `<div class="note warn" data-lock-line><b>${esc(parts.join(" · "))}</b>${k.until ? `<br>${esc(clock(k.until))}에 저절로 풀려요.` : ""}
+      <br>내가 잠긴 거면 풀어요. 모르는 곳이면 비밀번호를 바꾸는 게 먼저예요.</div>
+      <div class="actions start"><button class="btn primary" data-act="login-unlock">로그인 잠금 풀기</button></div>`;
+  }
+
   function familyCard() {
     const f = S.data.family;
     const phones = f?.phones ?? [];
@@ -3183,7 +3200,8 @@ function adminApp(L, BUILD, M) {
       ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
-          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
+          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
+        ${m.owner ? lockLine() : ""}</section>
       ${pushCard()}
       ${prefsCard()}
       <section class="card"><h2>앱으로 설치</h2>
@@ -4243,7 +4261,7 @@ function adminApp(L, BUILD, M) {
       try {
         if (await V.passkeyAssert()) await enter();
       } catch (e) {
-        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
           : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
           : e.name === "NotAllowedError" || e.name === "AbortError" ? "" : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
         render();
@@ -5380,6 +5398,13 @@ function adminApp(L, BUILD, M) {
       }
       signedOut(true);
     },
+    // 1.39 [ADM3-42] 모든 로그인 잠금과 틀린 횟수를 0으로. 활동 기록에 '로그인 잠금 풀기'로 남아요.
+    "login-unlock": () => confirmBox("로그인 잠금을 풀까요?", "잠긴 곳과 틀린 횟수가 모두 0이 돼요. 바로 다시 로그인할 수 있어요. 내가 모르는 곳에서 틀린 거라면 먼저 비밀번호를 바꿔 주세요.", "풀기", async () => {
+      const r = await act(() => api("/login-locks/clear", "POST"), (d) => (d.locked ? `잠긴 곳 ${d.locked}곳을 풀었어요` : "로그인 잠금을 풀었어요"));
+      if (!r) return;
+      S.data.loginLocks = { locked: 0, tries: 0, wide: false, until: null };
+      render({ keepScroll: true });
+    }, "primary"),
     "logout-all": () => confirmBox("모든 기기에서 로그아웃할까요?", "이 기기를 포함해 이 계정으로 로그인한 모든 기기가 다시 로그인해야 해요.", "로그아웃", async () => {
       await api("/me/logout-all", "POST");
       signedOut(true);
@@ -5452,7 +5477,7 @@ function adminApp(L, BUILD, M) {
         }
         const left = e.data?.left;
         S.error = e.message === "wrong" ? `${S.prefs.loginMode === "owner" ? "비밀번호가" : "메일이나 비밀번호가"} 달라요. ${left}번 더 틀리면 1시간 동안 잠겨요.`
-          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
           : e.message === "pending" ? "최고 관리자의 승인을 기다리고 있어요. 승인되면 로그인할 수 있어요."
           : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
           : e.message === "not_set" ? "최고 관리자 비밀번호가 아직 없어요. 아래 서버 준비를 봐 주세요."

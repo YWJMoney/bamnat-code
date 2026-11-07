@@ -1,4 +1,4 @@
-import { audit, batch, can, json, one, readJson, stmt } from "./index.js";
+import { LIMITS, audit, batch, can, json, one, readJson, stmt } from "./index.js";
 import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
@@ -68,6 +68,8 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
   ops_incident: ["SELECT id, signals FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"],
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
+  // 1.39 [ADM3-42] 지금 잠긴 로그인(네트워크·관리자 계정). 내가 잠겼으면 내 계정에서 풀고, 아니면 누가 맞혀 보는 중일 수 있어요.
+  ops_logins: ["SELECT COUNT(*) AS n FROM counters WHERE key LIKE 'login|%' AND key <> 'login|all' AND count >= ? AND expires > ?", LIMITS.loginFailures, now],
 });
 
 export function opsAlertsFrom(env, got, now = Date.now()) {
@@ -89,6 +91,8 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
   if (got.ops_reviews?.[0]?.n) out.push({ key: `reviews:${got.ops_reviews[0].n}`, kind: "spike", tone: "warn", title: `답 안 한 낮은 별점 리뷰 ${got.ops_reviews[0].n}개`, meta: "별 1~2개", to: "#/reviews" });
+  if (got.ops_logins?.[0]?.n) out.push({ key: `logins:${got.ops_logins[0].n}`, kind: "spike", tone: "warn", title: `로그인 잠긴 곳 ${got.ops_logins[0].n}곳`,
+    meta: "1시간 뒤 저절로 풀려요. 내가 잠긴 거면 내 계정 › 로그인에서 바로 풀어요", to: "#/account" });
   return out;
 }
 
