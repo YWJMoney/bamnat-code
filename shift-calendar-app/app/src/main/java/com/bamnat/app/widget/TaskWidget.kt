@@ -73,13 +73,17 @@ class TaskWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val first = runCatching { load(context, id) }.getOrNull() ?: Shown(emptyList(), true, Today.date())
+        val placedAsLine = runCatching {
+            val widgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
+            android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId)?.provider?.className == TaskLineWidgetReceiver::class.java.name
+        }.getOrDefault(false)
         provideContent {
             val stamp = androidx.glance.currentState(STAMP) ?: 0L
             var shown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(first) }
             androidx.compose.runtime.LaunchedEffect(stamp) { if (stamp != 0L) runCatching { load(context, id) }.getOrNull()?.let { shown = it } }
             WidgetLookTheme {
                 // 1.39 [TASK-31] One row high (할 일 한 줄, or the big one made short): the next to-do and what is left.
-                val short = androidx.glance.LocalSize.current.height < SHORT_BELOW
+                val short = oneRow(androidx.glance.LocalSize.current.height, placedAsLine)
                 WidgetSurface(GlanceModifier) {
                     when {
                         !shown.allowed -> TaskLocked(short)
@@ -127,6 +131,16 @@ class TaskWidget : GlanceAppWidget() {
 
         /** Shorter than this, the widget is one row ([TaskLine]). */
         internal val SHORT_BELOW = 100.dp
+
+        /**
+         * 할 일 한 줄 stays one row up to this height: a 2×1 cell is about 100~110 dp on a Pixel launcher, more than [SHORT_BELOW]
+         * (PC c0ca3d9f: it showed the head and a row, two lines). Made two cells high or more, it opens into the list.
+         */
+        internal val LINE_BELOW = 160.dp
+
+        /** Whether a widget [height] high is drawn as one row; [placedAsLine] for one placed as 할 일 한 줄. */
+        internal fun oneRow(height: androidx.compose.ui.unit.Dp, placedAsLine: Boolean): Boolean =
+            height < if (placedAsLine) LINE_BELOW else SHORT_BELOW
 
         internal val MEMO_ID = ActionParameters.Key<Long>("memo")
         internal val DAY = ActionParameters.Key<String>("day")

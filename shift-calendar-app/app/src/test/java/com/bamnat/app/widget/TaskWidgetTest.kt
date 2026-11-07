@@ -71,6 +71,12 @@ class TaskWidgetTest {
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLine(emptyList()) } }.remoteViews)
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLocked(short = true) } }.remoteViews)
         assertTrue(TaskWidget.SHORT_BELOW > 60.dp && TaskWidget.SHORT_BELOW < 110.dp)
+        // PC c0ca3d9f: a 2×1 cell on a Pixel launcher is about 103 dp. Placed as 할 일 한 줄 it stays one row there; the big one
+        // made that short is one row too, and either opens into the list two cells high.
+        assertTrue(TaskWidget.oneRow(103.dp, placedAsLine = true))
+        assertTrue(!TaskWidget.oneRow(103.dp, placedAsLine = false))
+        assertTrue(TaskWidget.oneRow(80.dp, placedAsLine = false))
+        assertTrue(!TaskWidget.oneRow(200.dp, placedAsLine = true))
         // PC e0f19f47: a launcher drew the "○" letter as a dot. The circle is a picture, at least 18 dp, and no row writes "○" or "✓".
         val line = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(rows) } } }
         val drawn = line.remoteViews.apply(context, android.widget.FrameLayout(context))
