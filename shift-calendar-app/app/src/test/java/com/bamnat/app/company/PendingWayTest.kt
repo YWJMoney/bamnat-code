@@ -197,6 +197,22 @@ class PendingWayTest {
         waitFor("the server hears it for that calendar") { calls.any { it.startsWith("use:c1:s1:true:") && !it.endsWith(":main") } }
     }
 
+    // 1.39 발굴 2-1: '새 판으로 바꾸기' puts the newer version in as the shared way in use, counted, and the older one no longer.
+    @Test fun movingToANewerVersionCountsItAndNotTheOlder() = runBlocking {
+        val main = c.companyOf(PersonalCalendar.MAIN)
+        val text = companyFile()
+        val first = way(text)
+        main.pendingWays.offer(first)
+        assertTrue(main.commit(c, first, 2_500_000, null, today.let { java.time.YearMonth.from(it) }))
+        val newer = PendingWay("c1", "(주)예시정밀", "생산팀", "s2", text, PendingWay.Source.NEWER)
+        main.pendingWays.offer(newer)
+        assertTrue(main.commit(c, newer, 2_500_000, null, java.time.YearMonth.from(today)))
+        assertEquals("s2", c.payWays.way.value?.setup)
+        assertEquals(true, c.payWays.way.value?.shared)
+        waitFor("the newer one counted") { calls.any { it.startsWith("use:c1:s2:true:") } }
+        waitFor("the older one no longer") { calls.any { it.startsWith("use:c1:s1:false:") } }
+    }
+
     private fun <T> assertNotNullOf(v: T?): T { assertNotNull(v); return v!! }
 
     private class Uses(private val calls: MutableList<String>) : CompanyApi {

@@ -215,6 +215,8 @@ internal fun HourlyPayCard(
                 FilterChip(selected = weekFrom == d, onClick = { vm.update { it.copy(holidayWeekStart = d) } }, label = { Text(WEEKDAYS[d.ordinal]) })
             }
         }
+        // 1.39 [PAYX-62] 발굴 G3-M3: 이번 주가 15시간 바로 아래·위면 한 줄, 끄면 다시 켜는 곳을 말해요.
+        WeekHoursNudgeLines(holidayWeeks, settings.weekHoursNudge, vm::weekHoursNudge)
         // [PAYX-35] Week by week: did it earn 주휴, and if not why (근로기준법 제55조, 시행령 제30조: 주 15시간 이상, 개근).
         if (holidayWeeks.isNotEmpty()) {
             Text("이번 달 주마다 주휴", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
@@ -261,6 +263,33 @@ internal fun HourlyPayCard(
 }
 
 private val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
+
+/**
+ * 1.39 [PAYX-62] 발굴 G3-M3: 주 15시간 경계 알림(근로기준법 제18조 제3항, 제55조). '이 알림 끄기'를 누르면 바로 사라지고,
+ * 다시 켜는 곳(설정 › 알림과 잠 › 돈)을 그 자리에서 한 번 말해요.
+ */
+@Composable
+internal fun WeekHoursNudgeLines(weeks: List<com.bamnat.core.pay.HolidayWeek>, on: Boolean, onChange: (Boolean) -> Unit) {
+    var justOff by remember { mutableStateOf(false) }
+    if (!on) {
+        if (justOff) Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("주 15시간 경계 알림을 껐어요. 다시 켜려면 ${com.bamnat.core.pay.WeekHoursNudge.WHERE}에서 켜요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            TextButton(onClick = { justOff = false; onChange(true) }) { Text("되돌리기") }
+        }
+        return
+    }
+    val lines = remember(weeks) { com.bamnat.core.pay.WeekHoursNudge.lines(weeks, Today.date()) }
+    if (lines.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("주휴수당은 한 주 15시간 이상 일하고 결근이 없을 때 받아요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            TextButton(onClick = { justOff = true; onChange(false) }) { Text("이 알림 끄기") }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

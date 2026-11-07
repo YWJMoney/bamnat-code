@@ -347,9 +347,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     }
 
     /** 내 달력에서 미리 보기: what each chosen piece would change here, worked out again when an answer changes. */
-    fun preview() {
-        val r = _state.value.recipe ?: return
-        viewModelScope.launch {
+    fun preview(): kotlinx.coroutines.Job? {
+        val r = _state.value.recipe ?: return null
+        return viewModelScope.launch {
             val answers = RecipeResolve.answers(r, _state.value.answers)
             val lines = r.pieces.associate { p ->
                 p.kind to runCatching { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())

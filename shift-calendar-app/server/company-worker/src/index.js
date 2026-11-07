@@ -89,13 +89,14 @@ import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, con
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
+import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut } from "./plaza-people.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
-import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy } from "./loop.js";
+import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
@@ -926,6 +927,8 @@ const COLUMNS = [
   "ALTER TABLE posts ADD COLUMN poll TEXT",
   // 1.36 [VIL-16] 마을 V16 자랑 카드: a 자랑 post's own public recipe (its code).
   "ALTER TABLE posts ADD COLUMN attach TEXT",
+  // 1.39 [PLZC-10] 근무 태그.
+  ...PEOPLE_COLUMNS,
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -2020,8 +2023,9 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
     all(env, "SELECT grp FROM rules WHERE company_id = ?1 AND withdrawn = 1 UNION SELECT grp FROM reports WHERE company_id = ?1 AND status = 'rejected'", id),
     stableFacts(env, id),
   ]);
-  // 1.39 [PAYP-05] 보완 요청 still open on each version, read beside the second round (not one more).
-  const fixesRead = c && !c.hidden && !c.merged_into ? openFixes(env, id) : null;
+  // 1.39 [PAYP-05] 보완 요청 still open on each version, this phone's own, each version's newer one and when it was last sent,
+  // read beside the second round (not one more).
+  const fixesRead = c && !c.hidden && !c.merged_into ? versionFacts(env, id, who.dev) : null;
   fixesRead?.catch(() => {});
   if (!c || c.hidden) return { status: 404, body: { error: "not_found" } };
   if (c.merged_into) return { status: 200, body: { mergedInto: c.merged_into } };
@@ -2078,12 +2082,24 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   // 1.39 [PAYP-02] (사용자 2026-11-07 "좋아요나 맞아요 많은순으로 위로"): in each department the most 맞아요 first, then the most used.
   sortByOk(setups);
   // 1.39 [PAYP-05] 보완 요청 still open on each version, for its card.
-  const open = await fixesRead;
-  for (const s of setups) if (open.get(s.id)) s.fixes = open.get(s.id);
+  const vf = await fixesRead;
+  const ids = new Set(setups.filter((s) => !s[DOWN] && !s.doubted).map((s) => s.id));
+  for (const s of setups) {
+    if (vf.open.get(s.id)) s.fixes = vf.open.get(s.id);
+    // 1.39 발굴 2-3: what became of this phone's own 보완 요청 on it (open, or answered by one who sent it).
+    if (vf.mine.has(s.id)) s.myFix = vf.mine.get(s.id) ? "answered" : "open";
+    // 1.39 발굴 4-3: when it was last sent (or adopted), for the card's 근거 line.
+    const last = Math.max(vf.last.get(s.id) ?? 0, s.adoptedAt ? Date.parse(s.adoptedAt) : 0);
+    if (last > 0) s.sentAt = iso(last);
+  }
   // BD 1.30 [PLZD-07] What each folded version says against its department's 대표.
   pgChanges(setups, normName);
+  // 1.39 발굴 2-1: for the versions this phone uses, the newer one of the same department one of their senders sent since (on
+  // this page, not doubted or taken down), even when the older one left the page (a sender's pending one is replaced by their
+  // next): the pay screen offers it, as the way in use is not followed by itself (1-4). Only that the same phone sent both.
+  const newer = Object.fromEntries((vf?.used ?? []).map((g) => [g, vf.next.get(g)]).filter(([g, n]) => n && n !== g && ids.has(n) && !vf.used.includes(n)));
   const body = { id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases: aliasRows.map((a) => a.name),
-    setups, member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
+    setups, member: who.member, ...(Object.keys(newer).length ? { newer } : {}), ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
   // SP1 1.30 [SPD-05] The room (as /room answers it) and the room's talk (as /setups/room/posts does), keys an older app never reads.
   if (extra) {
     const [roomR, talkR] = await extra;
@@ -2152,12 +2168,39 @@ export function sortByOk(setups) {
 }
 
 /** [PAYP-05] How many 보완 요청 are open (shown, with no reply yet from one who sent that version) on each version of a company. */
-async function openFixes(env, companyId) {
-  const rows = await all(env, `SELECT p.grp, COUNT(*) AS n FROM posts p WHERE p.company_id = ?1 AND p.kind = 'fix' AND p.status = 'shown'
-      AND p.parent IS NULL AND NOT EXISTS (SELECT 1 FROM posts a JOIN reports r ON r.company_id = a.company_id AND r.grp = a.grp
-        AND r.device = a.device AND r.status IN ('pending', 'adopted', 'replaced') WHERE a.parent = p.id AND a.status = 'shown')
-    GROUP BY p.grp`, companyId);
-  return new Map(rows.map((r) => [r.grp, r.n]));
+const FIX_OPEN = `p.kind = 'fix' AND p.status = 'shown' AND p.parent IS NULL`;
+/** Whether the 보완 요청 [q] (a posts alias) has a shown reply from one who sent its version. */
+const fixAnswered = (q = "p") => `EXISTS (SELECT 1 FROM posts a JOIN reports r ON r.company_id = a.company_id AND r.grp = a.grp
+    AND r.device = a.device AND r.status IN ('pending', 'adopted', 'replaced') WHERE a.parent = ${q}.id AND a.status = 'shown')`;
+const FIX_ANSWERED = fixAnswered();
+
+/**
+ * 1.39 [PAYP-05] and 발굴 2-1·2-3·4-3, for each version of a company in one batch: the open 보완 요청 (no reply yet from one who sent
+ * it), [dev]'s own 보완 요청 (true once answered), the newer version of the same department one of its senders sent since (the
+ * newest), when it was last sent, and the versions [dev] uses. Nothing says who sent what: only that the same phone sent both.
+ */
+async function versionFacts(env, companyId, dev) {
+  const [open, mine, next, last, used] = (await batch(env, [
+    stmt(env, `SELECT p.grp, COUNT(*) AS n FROM posts p WHERE p.company_id = ?1 AND ${FIX_OPEN} AND NOT ${FIX_ANSWERED} GROUP BY p.grp`, companyId),
+    stmt(env, `SELECT p.grp, MAX(CASE WHEN ${FIX_ANSWERED} THEN 1 ELSE 0 END) AS answered FROM posts p
+        WHERE p.company_id = ?1 AND p.device = ?2 AND ${FIX_OPEN} GROUP BY p.grp`, companyId, dev ?? ""),
+    stmt(env, `SELECT o.grp, n.grp AS next, MAX(n.created_at) AS at FROM reports o JOIN reports n ON n.company_id = o.company_id
+        AND n.device = o.device AND n.dept_norm = o.dept_norm AND n.grp != o.grp AND n.created_at > o.created_at
+        AND n.status IN ('pending', 'adopted') AND ${pgShown("n")}
+      WHERE o.company_id = ?1 AND o.status IN ('pending', 'adopted', 'replaced') GROUP BY o.grp, n.grp`, companyId),
+    stmt(env, `SELECT grp, MAX(created_at) AS at FROM reports WHERE company_id = ?1 AND status IN ('pending', 'adopted', 'replaced')
+        AND ${pgShown()} GROUP BY grp`, companyId),
+    stmt(env, "SELECT grp FROM uses WHERE company_id = ?1 AND device = ?2", companyId, dev ?? ""),
+  ])).map((r) => r.results);
+  const newest = new Map();
+  for (const r of next) if (!newest.has(r.grp) || newest.get(r.grp).at < r.at) newest.set(r.grp, r);
+  return {
+    open: new Map(open.map((r) => [r.grp, r.n])),
+    mine: new Map(mine.map((r) => [r.grp, r.answered === 1])),
+    next: new Map([...newest].map(([grp, r]) => [grp, r.next])),
+    last: new Map(last.map((r) => [r.grp, r.at])),
+    used: used.map((r) => r.grp),
+  };
 }
 
 /** [PAYP-03] How many ways one phone may take in a day: enough to try a few versions, not to read every company's. */
@@ -2478,6 +2521,11 @@ const ROOM_LIMITS = { perNetworkDay: 300, shown: 100 };
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
 export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:shift|day|field|shop|hourly|invest))\/setups\/room\/posts$/;
 
+/** 1.39 [PLZC] Whether 광장 사람 먼저 (근무 태그·머리 숫자) is open: plaza.people by the server's view (처리방침 3.12). */
+async function peopleOn(env, now = Date.now()) {
+  return serverEval(await flagStore(env), "plaza.people", now).on;
+}
+
 /** The place of a room: a company (not hidden) or a kind of work's plaza; null when there is none. */
 async function roomPlace(env, id) {
   if (Object.hasOwn(STYLE_ROOMS, id)) return { id, name: STYLE_ROOMS[id], style: true };
@@ -2540,11 +2588,20 @@ async function roomPost(request, env, body) {
     if (!r || r.owner !== dev || r.state !== "visible" || r.scope !== "public") refuse("attach", "attach");
     attach = body.attach;
   }
+  // 1.39 [PLZC-10] 근무 태그: on a kind of work's plaza, once 처리방침 3.12 names it (plaza.people); keys from fixed lists only, and
+  // the months since this server first saw the phone, its own count. Before then, or in a company's room, nothing is kept.
+  let tag = null;
+  if (place.style && given(body.tag) && (await peopleOn(env, now))) {
+    tag = peopleTag(body.tag, place.id, refuse);
+    const seen = tag.wantsMonths ? await one(env, "SELECT first FROM device_seen WHERE device = ?", dev) : null;
+    const m = tag.wantsMonths ? peopleMonths(seen?.first ?? now, now) : null;
+    if (m !== null) tag.m = m;
+  }
   const id = `p${randomId(15)}`;
   await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
-      parent, kind, change, report_id, agree, disagree, poll, attach)
-    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
-  poll ? JSON.stringify(poll) : null, attach);
+      parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
+  poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null);
   return json({ id, at: iso(now) }, 201);
 }
 
@@ -3907,13 +3964,21 @@ async function talkData(request, env, companyId, grp, known = null) {
   }
   const me = device ? (who.dev ?? await deviceHash(device)) : null;
   const member = who.member;
+  // 1.39 [PLZC-03] ?before= (a time the app had): older top posts of a kind of work's plaza, with the answers under them.
+  const beforeRaw = new URL(request.url).searchParams.get("before");
+  const beforeAt = style && beforeRaw ? Date.parse(beforeRaw) : NaN;
+  const before = Number.isFinite(beforeAt) ? beforeAt : null;
   // 1.39 [PAYP-01] A proposal's pay lines to no one (members too); a 보완 요청's lines are where it differs, without values.
   const lines = (change, kind) => (kind === "fix" ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
   const now = Date.now();
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const sealed = authorKey(env).then(async (key) => ({ key, hidden: await hiddenAuthors(key, request.headers.get("x-hide")) }));
   const [rows, sentRows, voteRows, checkedRows, myVoteRows, nickRows, { adoptPoints }, reviewRows, proposalRows, muted, used, { key, hidden }] = await Promise.all([
-    room
+    // 1.39 [PLZC-03] 더 불러오기: a kind of work's plaza read before a time (?before=), a page at a time.
+    room && style && before !== null
+      ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? AND parent IS NULL AND created_at < ?
+          ORDER BY created_at DESC, rowid DESC LIMIT ${PEOPLE_LIMITS.page}) ORDER BY created_at, r`, c.id, grp, before)
+      : room
       ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
           ORDER BY created_at, r`, c.id, grp)
       : all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp),
@@ -3937,6 +4002,17 @@ async function talkData(request, env, companyId, grp, known = null) {
     me ? writeLeft(recipeDeps, env, me, room ? "room" : "post", now) : null,
     sealed,
   ]);
+  // 1.39 [PLZC-03] An older page carries the answers under its posts too.
+  const pageTops = before !== null ? rows.length : 0;
+  if (before !== null && rows.length) {
+    const ids = rows.map((p) => p.id);
+    rows.push(...(await all(env, `SELECT * FROM posts WHERE parent IN (${ids.map(() => "?").join(",")}) ORDER BY created_at, rowid`, ...ids)));
+  }
+  // 1.39 [PLZC] 근무 태그·머리 숫자, on a kind of work's plaza once plaza.people is on.
+  const people = style && (await peopleOn(env, now));
+  const pulse = people && before === null ? await peoplePulse(one, env, c.id, now, grp) : null;
+  // [PLZC-15][PLZC-16] 첫 글 and 도움 n beside a writer's name.
+  const writerFacts = people ? await peopleFacts(all, env, rows.map((p) => p.device)) : null;
   // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers
   // this phone blocked in 장터·프로필 are left out too, as the writers it hid here.
   if (style && me) await addBlockedWriters(env, me, rows, hidden);
@@ -4029,6 +4105,9 @@ async function talkData(request, env, companyId, grp, known = null) {
       kind: p.kind ?? "talk",
       ...(p.kind === "question" && p.answer ? { answer: p.answer } : {}),
       ...(p.poll ? { poll: pollOfRow(p) } : {}),
+      ...(peopleTagOut(p, people) ? { tag: peopleTagOut(p, people) } : {}),
+      ...(writerFacts && !p.parent && writerFacts.first.get(p.device) === p.created_at ? { first: true } : {}),
+      ...(writerFacts && nicks.has(p.device) && writerFacts.helped.get(p.device) ? { helped: writerFacts.helped.get(p.device) } : {}),
       ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach).title,
         ...(cards.get(p.attach).look ? { look: cards.get(p.attach).look } : {}) } } : {}),
       change: p.change ? lines(JSON.parse(p.change), p.kind) : null,
@@ -4056,7 +4135,11 @@ async function talkData(request, env, companyId, grp, known = null) {
   const past = !room && !(live.current || live.pending);
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(topic ? { topic } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}) } };
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(topic ? { topic } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}),
+    // 1.39 [PLZC-03][PLZC-12] Whether older posts are left to read (a full page, or the newest read reached its cap), and the head line.
+    ...(style && (before !== null ? pageTops >= PEOPLE_LIMITS.page : rows.length >= ROOM_LIMITS.shown) ? { more: true } : {}),
+    ...(before !== null ? { older: true } : {}),
+    ...(pulse ? { pulse } : {}) } };
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
@@ -5890,6 +5973,12 @@ const BADGE_SQL = {
   bugsUncopied: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'"],
   // 1.38 [ADM3] 오류·데이터 요청·사고·리뷰·출시 점검표(admin-ops.js).
   ...OPS_BADGE_SQL,
+  // 1.39 [LOOP-09] 결정함 숫자(PC G10 사용성 제안: 접은 폭 위 탭이 많아 결정함까지 밀어 봐야 해서). '아직이에요'로 다시 열린 개발사항,
+  // 7일 안의 출시 멈춤 권장, (최고 관리자만) 요금을 정할 새 기능. decideBox와 같은 조건.
+  decideBack: ["dev", `SELECT COUNT(DISTINCT d.id) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL
+      AND d.status IN ('todo', 'doing') WHERE h.action = 'fixed_no'`],
+  decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > (CAST(strftime('%s', 'now') AS INTEGER) - 7 * 86400) * 1000"],
+  decideTiers: ["owner", "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND size = 'feature' AND status != 'rejected' AND tier IN ('', 'later')"],
 };
 
 // AN 1.28 시작
@@ -5924,6 +6013,8 @@ async function badges(env, actor, now) {
   const q = Object.fromEntries(Object.entries(FLAG_STORE_SQL).map(([k, sql]) => [k, [sql]]));
   for (const [k, [area, sql]] of Object.entries(BADGE_SQL)) if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql];
   if (can(actor, "ops")) q.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
+  // 1.39 [LOOP-19][LOOP-20] 결정함 숫자의 급함·최고 관리자 확인 문의: 같은 batch로 읽고 말로 가려 세요.
+  if (actor.owner || can(actor, "inquiries")) q.openAsks = [WAITING_SQL];
   const keys = Object.keys(q);
   const res = await batch(env, keys.map((k) => stmt(env, ...q[k])));
   const got = Object.fromEntries(keys.map((k, i) => [k, res[i].results]));
@@ -5932,6 +6023,12 @@ async function badges(env, actor, now) {
   for (const k of keys) if (BADGE_SQL[k] && k !== "waiting" && k !== "phones") data[k] = got[k][0].n;
   if (actor.owner) data.admins = { waiting: got.waiting[0].n, phones: got.phones[0].n };
   if (got.opsDone) data.opsLeft = opsItems(kstDay(now).slice(0, 7), got.opsDone[0]?.value).filter((i) => !i.done).length;
+  // 1.39 [LOOP-19][LOOP-20] 결정함 숫자: 답을 기다리는 급함 문의(문의 권한)와 최고 관리자 확인 문의(최고 관리자). 말로 가려서 JS에서 세요.
+  if (got.openAsks) {
+    const w = waitingFrom(got.openAsks);
+    if (can(actor, "inquiries")) data.decideUrgent = w.urgent.length;
+    if (actor.owner) data.decideAsks = w.owner.length;
+  }
   // 1.28 통합 [ADMUX-40][FLAG-28] 출시 › 기능 관리's number (flagsWaiting, the same as 1.27 /overview's flagsDue) and the
   // legal flags on for under 24 hours (오늘's top card), for admins who may see 기능 관리.
   Object.assign(data, await flagOverview(env, actor, now, store));
@@ -6576,7 +6673,16 @@ async function postList(env, url) {
       ? await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') AND (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\')
           ORDER BY p.flags DESC, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
-      : await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+      : status === "fix"
+        // 1.39 발굴 2-4: by version, the one with the most open 보완 요청 first, so a way said to differ by many is seen at once;
+        // each says whether one who sent the version answered it.
+        ? await all(env, `SELECT p.*, c.name, CASE WHEN ${fixAnswered("p")} THEN 1 ELSE 0 END AS answered,
+              (SELECT COUNT(*) FROM posts q WHERE q.company_id = p.company_id AND q.grp = p.grp AND q.kind = 'fix' AND q.status = 'shown'
+                AND q.parent IS NULL AND NOT ${fixAnswered("q")}) AS open_n
+            FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+            WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') AND p.kind = 'fix' AND p.parent IS NULL
+            ORDER BY open_n DESC, p.company_id, p.grp, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
+        : await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
           WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""} ${only}
           ORDER BY p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after);
   // [ADMIN-16] One talk comes whole; the lists come a page at a time.
@@ -6616,6 +6722,8 @@ async function postList(env, url) {
       body: p.body,
       // 1.39 [PAYP-07] A 보완 요청 says where, in words.
       ...(p.kind === "fix" ? { kind: "fix", fix: (() => { try { return JSON.parse(p.change ?? "[]").map((c) => CHANGE_FIELDS[c.field] ?? c.field); } catch { return []; } })() } : {}),
+      // 1.39 발굴 2-4: in the 보완 요청 list, whether one who sent the version answered, and the open ones on the same version.
+      ...(p.answered !== undefined ? { answered: p.answered === 1, open: p.open_n } : {}),
       // PC 확인 5c21f3bb: a question's poll choices too, so a 신고 on it can be judged by what was asked.
       ...(p.poll ? { poll: (() => { try { return JSON.parse(p.poll); } catch { return null; } })() } : {}),
       ...(p.attach ? { attach: p.attach } : {}),
@@ -7353,8 +7461,20 @@ async function digest(request, env, url) {
   });
 }
 
+/** 1.39 발굴 3-5: the fewest other phones on a version for its sender to hear of them once a month. */
+export const THANKS_MIN = 2;
+
+/** 1.39 발굴 3-5: the start of a month (the 1st, 00:00 KST) inside (since, now], or 0: the thanks go out once a month, on its first ask. */
+export function thanksAt(since, now) {
+  const kst = new Date(now + 9 * HOUR);
+  const start = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), 1) - 9 * HOUR;
+  return start > since && start <= now ? start : 0;
+}
+
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms, roomPosts, replies, fixes, fixAnswers] = (await batch(env, [
+  // 1.39 발굴 3-5: once a month (the 1st, KST), to those who sent a pay way others use: how many phones count with it now.
+  const monthStart = thanksAt(since, now);
+  const [changed, adopted, rates, results, rooms, roomPosts, replies, fixes, fixAnswers, newer, thanks] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -7387,6 +7507,20 @@ async function newsItems(env, dev, since, now) {
         JOIN posts a ON a.parent = q.id AND a.status = 'shown' AND a.device != q.device AND a.created_at > ?2
         LEFT JOIN companies c ON c.id = q.company_id
       WHERE q.device = ?1 AND q.kind = 'fix' AND q.parent IS NULL GROUP BY q.company_id, q.grp ORDER BY at DESC LIMIT 10`, dev, since),
+    // 1.39 발굴 2-1: a version this phone uses got a newer one of its department from one who sent it (not yet adopted, so
+    // 'changed' does not say it): the pay screen offers it.
+    stmt(env, `SELECT u.company_id, c.name, u.grp, MAX(n.dept) AS dept, MAX(n.created_at) AS at FROM uses u
+        JOIN reports o ON o.company_id = u.company_id AND o.grp = u.grp AND o.status IN ('pending', 'adopted', 'replaced')
+        JOIN reports n ON n.company_id = o.company_id AND n.device = o.device AND n.dept_norm = o.dept_norm AND n.grp != o.grp
+          AND n.created_at > o.created_at AND n.created_at > ?2 AND n.status IN ('pending', 'adopted') AND ${pgShown("n")}
+        LEFT JOIN companies c ON c.id = u.company_id
+      WHERE u.device = ?1 AND o.device != ?1 AND NOT EXISTS (SELECT 1 FROM uses x WHERE x.device = u.device AND x.company_id = n.company_id AND x.grp = n.grp)
+      GROUP BY u.company_id, u.grp ORDER BY at DESC LIMIT 10`, dev, since),
+    stmt(env, `SELECT r.company_id, c.name, r.grp, MAX(r.dept) AS dept,
+        (SELECT COUNT(*) FROM uses u WHERE u.company_id = r.company_id AND u.grp = r.grp AND u.device != ?1) AS n FROM reports r
+        LEFT JOIN companies c ON c.id = r.company_id
+      WHERE ?2 > 0 AND r.device = ?1 AND r.status IN ('pending', 'adopted') GROUP BY r.company_id, r.grp HAVING n >= ${THANKS_MIN}
+      ORDER BY n DESC LIMIT 3`, dev, monthStart),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -7402,6 +7536,9 @@ async function newsItems(env, dev, since, now) {
     ...replies.map((r) => ({ kind: "replies", company: { id: r.company_id, name: STYLE_ROOMS[r.company_id] ?? r.name ?? "" }, count: r.n, at: iso(r.at) })),
     ...fixes.map((r) => ({ kind: "fix", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", count: r.n, at: iso(r.at) })),
     ...fixAnswers.map((r) => ({ kind: "fix_answer", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, count: r.n, at: iso(r.at) })),
+    ...newer.map((r) => ({ kind: "newer", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", at: iso(r.at) })),
+    ...thanks.map((r) => ({ kind: "thanks", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", count: r.n,
+      at: iso(monthStart) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

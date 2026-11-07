@@ -136,6 +136,28 @@ class ShareSync(
         left
     }
 
+    /**
+     * 1.39 [PRIV-06] 모두 지우기 마저: only the calendar links named by their server ids, the ones a 모두 지우기 could not reach.
+     * A link made since then is not among them and stays. The ids still here come back.
+     */
+    suspend fun cutOnly(ids: Set<String>): Set<String> = lock.withLock {
+        val left = mutableSetOf<String>()
+        for (key in allLinks()) {
+            val store = c.shareLinksOf(key)
+            val link = store.link.value ?: continue
+            if (link.id !in ids) continue
+            try {
+                c.shareApi.delete(link)
+                store.clear()
+            } catch (e: IOException) {
+                left += link.id
+            } catch (e: ShareLinkException) {
+                left += link.id
+            }
+        }
+        left
+    }
+
     /** [SHR-13] Every link with a change the server has not got, sent now; true when none is left. */
     suspend fun sendUnsent(): Boolean {
         var left = false

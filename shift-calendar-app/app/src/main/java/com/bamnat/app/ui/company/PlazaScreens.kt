@@ -92,11 +92,18 @@ const val VERIFIED_PEOPLE = 2
 
 /** [PLZ-08] Who stands behind a rule set: how many sent it, checked it on a pay slip and use it, and the names they chose. */
 @Composable
-fun WhoLine(senders: Int, checked: Int, uses: Int, by: List<String>, checkedLong: Boolean = false) {
+fun WhoLine(
+    senders: Int, checked: Int, uses: Int, by: List<String>, checkedLong: Boolean = false,
+    /** 1.39 발굴 2-5·4-3 (점수 대신 근거): 보완 요청 not yet answered, and when the version was last sent. */
+    fixes: Int = 0,
+    sentAt: java.time.Instant? = null,
+) {
     val parts = listOfNotNull(
         senders.takeIf { it > 0 }?.let { "보낸 분 ${it}명" },
         checked.takeIf { it > 0 }?.let { "명세서 확인 ${it}명" },
         uses.takeIf { it > 0 }?.let { "쓰는 사람 ${it}명" },
+        fixes.takeIf { it > 0 }?.let { "열린 보완 요청 ${it}개" },
+        sentAt?.let { "마지막 보냄 ${evidenceDay(it)}" },
     )
     if (parts.isEmpty() && by.isEmpty() && !checkedLong) return
     Column {
@@ -590,4 +597,11 @@ private fun AddRateDialog(filter: RatesViewModel.Filter, onDismiss: () -> Unit, 
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
+}
+
+/** 1.39 발굴 4-3: "11월 3일", or "2025년 11월 3일" for another year (Korean time). */
+internal fun evidenceDay(at: java.time.Instant): String {
+    val d = at.atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate()
+    val today = com.bamnat.core.time.Today.date()
+    return (if (d.year != today.year) "${d.year}년 " else "") + "${d.monthValue}월 ${d.dayOfMonth}일"
 }

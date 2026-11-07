@@ -68,7 +68,9 @@ test("the clock page: buttons first, the card last; iPhone and PC get no dead en
   assert.match(android, /앱을 받은 뒤에도 이 링크는 그대로 열려요/);
   assert.match(android, /utm_medium%3Dclock%26utm_campaign%3Dboss/);
   const iphone = await (await call(env, `/c/${id}`, {}, IPHONE)).text();
-  assert.match(iphone, /밤낮은 Android 앱이에요. 이 링크는 iPhone에서도 그대로 계속 열려요/);
+  // 1.39 [IOS-03] what 밤낮 is and that the link keeps working, without promising the app's 달력·알람 to an iPhone.
+  assert.match(iphone, /밤낮은 Android 근무 달력 앱이에요/);
+  assert.match(iphone, /이 링크는 iPhone에서도 그대로 계속 열려요/);
   assert.doesNotMatch(iphone, /밤낮 받기/);
   const pc = await (await call(env, `/c/${id}`, {}, PC)).text();
   assert.match(pc, /Play 스토어에서 보기/);

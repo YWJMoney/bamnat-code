@@ -67,7 +67,10 @@ class FirstSetup(
         }
         val saved = schedule.applySetup(marked, today())
         keepCompany(company(), marked, used)
-        settings.update { it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
+        settings.update {
+            it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT,
+                longPress = firstHold(it, style))
+        }
         drafts.clear()
         prefs?.edit()?.putString(DAY_KEY, today().toString())?.putInt(VERSION_KEY, versionCode)?.apply()
         _saved.value = saved
@@ -151,3 +154,13 @@ class FirstSetup(
 
 private const val DAY_KEY = "first_setup_day"
 private const val VERSION_KEY = "first_setup_version"
+
+/**
+ * [CELL-06] 1.39 발굴 (일정 앱에서 온 일근·알바: 날짜를 길게 누르면 바로 한 줄 적기) The 날짜를 길게 누르면 a first setup leaves: 메모 쓰기
+ * for 일근 and 알바, whose days are mostly the same and whose calendar is mostly what they write on it; the quick menu (근무 바꾸기) for
+ * the rest. Only a first setup (no kind of work chosen yet; a setup put off was already in use) and only while the choice is still the app's own: a setup done
+ * again, or one the user changed in 설정 › 달력 보기, keeps what it has.
+ */
+internal fun firstHold(before: AppSettings, style: WorkStyle): String =
+    if (before.workStyle == null && before.longPress == "menu" && style in setOf(WorkStyle.DAY, WorkStyle.HOURLY)) "memo"
+    else before.longPress
