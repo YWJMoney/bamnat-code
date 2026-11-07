@@ -264,8 +264,9 @@ internal fun familyOf(id: String?): FontFamily = when (id) {
 }
 
 /** [LAY-03] A day cell's facts for its decorations. */
-fun decorDay(date: java.time.LocalDate, role: String?, today: Boolean, dim: Boolean = false): DecorDay =
-    DecorDay(date.monthValue, date.dayOfMonth, date.dayOfWeek.value, role, today, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, dim)
+fun decorDay(date: java.time.LocalDate, role: String?, today: Boolean, dim: Boolean = false, work: Set<String> = emptySet()): DecorDay =
+    DecorDay(date.monthValue, date.dayOfMonth, date.dayOfWeek.value, role, today, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, dim,
+        work.filterTo(HashSet()) { it in Decor.WORK_ONS })
 
 /**
  * [LAY-03] A screen's background decorations ([Decor.APP] and "bg." + [screenKey]) as a layer the size of its parent: [over] false

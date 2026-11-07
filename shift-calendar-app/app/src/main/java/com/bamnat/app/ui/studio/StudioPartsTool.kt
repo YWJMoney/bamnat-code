@@ -395,23 +395,28 @@ internal fun statesFor(id: String): List<String> = statesOf(id) + "dark"
 
 private fun statesOf(id: String): List<String> = when {
     // The shift a mark shows comes first there (PC 3차: '야간 근무'가 줄 끝에 있어 밀어야 보여요).
-    id == "cal.cell.mark" -> listOf("role.day", "role.eve", "role.night", "role.long", "role.off", "today", "sat", "sun", "holiday", "dim", "sel")
-    id.startsWith("cal.cell") -> listOf("today", "sat", "sun", "holiday", "dim", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off")
+    // 1.39 [LINK-01] 근무 입력도 상태로: 잔업·특근·대근이 있는 날, 대근, 연차·반차, 직접 바꾼 날 (DayWork.STATES).
+    id == "cal.cell.mark" -> listOf("role.day", "role.eve", "role.night", "role.long", "role.off") + DAY_WORK_STATES + listOf("today", "sat", "sun", "holiday", "dim", "sel")
+    id.startsWith("cal.cell") -> listOf("today", "sat", "sun", "holiday", "dim", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off") + DAY_WORK_STATES
     id == "cal.week.day" -> listOf("sat", "sun")
     id == "app.tab" || id == "app.chip" -> listOf("sel")
     id == "money.amount" || id == "money.row" || id == "pay.row" -> listOf("in", "out")
     // [BLU-10] 위젯 칸 is a day like the calendar's cells; 위젯 머리 turns red on a public holiday.
-    id == "widget.cell" -> listOf("today", "sat", "sun", "holiday", "dim", "role.day", "role.eve", "role.night", "role.long", "role.off")
+    id == "widget.cell" -> listOf("today", "sat", "sun", "holiday", "dim", "role.day", "role.eve", "role.night", "role.long", "role.off") + DAY_WORK_STATES
     id == "widget.head" -> listOf("holiday")
     // 1.39 [TASK-07] 할 일 한 줄은 오늘·늦음·끝냄, 그 동그라미는 늦음·끝냄.
     id == "widget.task" -> listOf("today", "late", "done")
     id == "widget.task.check" -> listOf("late", "done")
     // [TAB-07] 1.36 탭 판 부품.
-    id == "cal.band.slot" || id == "cal.line.row" || id == "money.cal.cell" || id == "memo.cal.cell" -> listOf("today", "sel")
-    id == "cal.weekly.day" -> listOf("today", "sel", "sat", "sun", "dim")
+    // [LINK-01] 1.39 근무 띠·타임라인·주 판의 하루도 달력 칸처럼 근무 종류와 근무 입력(대근·특근·연차·직접 바꾼 날)으로 꾸며요.
+    id == "cal.band.slot" || id == "cal.line.row" -> listOf("today", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off") + DAY_WORK_STATES
+    id == "money.cal.cell" || id == "memo.cal.cell" -> listOf("today", "sel")
+    id == "cal.weekly.day" -> listOf("today", "sel", "sat", "sun", "dim", "role.day", "role.eve", "role.night", "role.long", "role.off") + DAY_WORK_STATES
     id == "cal.year.month" -> listOf("today")
     else -> emptyList()
 }
+
+private val DAY_WORK_STATES = com.bamnat.core.schedule.DayWork.STATES
 
 /** A state's words on [id]: 급여 한 줄's in·out are 더하는·빼는 항목. */
 internal fun stateWord(id: String, st: String?): String = when {
@@ -424,6 +429,8 @@ internal val STATE_WORDS = mapOf<String?, String>(
     "dark" to "어두운 화면", "today" to "오늘", "sat" to "토요일", "sun" to "일요일", "holiday" to "공휴일", "dim" to "다른 달", "sel" to "고른 것",
     "role.day" to "주간 근무", "role.eve" to "오후·저녁 근무", "role.night" to "야간 근무", "role.long" to "24시간·당직", "role.off" to "쉬는 날",
     "role.other" to "그 밖 근무", "in" to "수입", "out" to "지출",
+    // 1.39 [LINK-01] 근무 입력.
+    "leave" to "연차·반차", "extra" to "잔업·특근·대근", "cover" to "대근", "edited" to "직접 바꾼 날",
     // 1.39 [TASK-07] 할 일 위젯.
     "late" to "늦은 할 일", "done" to "끝낸 할 일",
 )

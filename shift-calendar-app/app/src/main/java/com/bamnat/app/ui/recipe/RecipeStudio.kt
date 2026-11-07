@@ -420,7 +420,10 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
     // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
-    val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
+    // [LINK-01] 1.39 On the week start my calendar keeps (월요일 시작이면 예시도 월요일부터), so the studio and 입어 보기 draw my weeks as they are.
+    val settingsNow by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val weekStart = settingsNow.weekStart
+    val first = remember(today, from, weekStart) { (from ?: today).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart)) }
     val real = remember(snap, days, first, weeks, blankOk, jobs, memos) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
@@ -435,15 +438,19 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
             else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, written(r.date), holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
         }
         resolved.map { r ->
-            val t = r.shiftType
-            val role = t?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }
-            val item = t?.let { k -> days.firstOrNull { (it["name"] as? String)?.trim() == k.name.trim() } ?: days.firstOrNull { it["role"] == role } }
+            // [LINK-01] 1.39 The day as the phone's calendar has it (쉬는 날의 대근은 그 근무로, 특근만 있는 날은 특근으로, 연차·직접 바꾼 날도).
+            val w = com.bamnat.core.schedule.DayWork.of(r, s.hasPattern)
+            val covered = r.coveredShift?.takeIf { !r.isWorkDay && !it.isOff }
+            val t = covered ?: r.shiftType
+            val onlyExtra = r.extras.firstOrNull()?.takeIf { !r.isWorkDay && covered == null }
+            val role = w.role?.key
+            val item = if (onlyExtra != null) null else t?.let { k -> days.firstOrNull { (it["name"] as? String)?.trim() == k.name.trim() } ?: days.firstOrNull { it["role"] == role } }
             com.bamnat.app.ui.calendar.SampleDay(
-                ((item?.get("emoji") as? String) ?: item?.get("label")?.toString() ?: t?.label).orEmpty(),
-                (item?.get("color") as? Long) ?: t?.colorArgb?.or(0xFF000000L) ?: 0xFF757575L,
+                ((item?.get("emoji") as? String) ?: item?.get("label")?.toString() ?: onlyExtra?.kind?.mark ?: t?.label).orEmpty(),
+                (item?.get("color") as? Long) ?: (onlyExtra?.kind?.colorArgb ?: t?.colorArgb)?.or(0xFF000000L) ?: 0xFF757575L,
                 memos = written(r.date),
-                hours = r.scheduledMinutes.takeIf { it > 0 }?.let { m -> "${m / 60}h" },
-                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = r.isOff, role = role,
+                hours = w.totalMinutes.takeIf { it > 0 }?.let { m -> "${m / 60}h" },
+                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = w.off, role = role, work = w.states,
             )
         }
     }

@@ -58,8 +58,9 @@
 
 ## 4. 칸 (모두 선택)
 
-**상태 `on`**: `today`(오늘) · `sat` · `sun` · `holiday`(공휴일) · `dim`(다른 달) · `sel`(고른 것) · `role.day` · `role.eve` · `role.night` · `role.long` · `role.off` · `role.other`(근무 종류, `ShiftRole`) · `in`·`out`(수입·지출)
-- 여러 상태가 맞으면 이 차례로 덮어요: 기본 → `role.*` → `in`·`out` → `sat`·`sun` → `holiday` → `dim` → `today` → **`when` 줄(조건부 꾸미기)** → `sel`.
+**상태 `on`**: `today`(오늘) · `sat` · `sun` · `holiday`(공휴일) · `dim`(다른 달) · `sel`(고른 것) · `role.day` · `role.eve` · `role.night` · `role.long` · `role.off` · `role.other`(근무 종류, `ShiftRole`) · `leave`(연차·반차) · `extra`(잔업·특근·대근이 있는 날) · `cover`(대근) · `edited`(직접 바꾼 날) · `in`·`out`(수입·지출)
+- **1.39 [LINK-01] 근무 입력 그대로**: 하루의 근무 종류와 근무 입력 상태는 core `schedule/DayWork` 한 곳에서 정해요. 쉬는 날(휴·비 같은 쉬는 근무 종류)에 넣은 대근은 대신한 근무(야간 대근이면 `role.night`), 특근만 있는 날은 그 특근의 시각으로 정한 근무(`role.day` 등)예요. 종일 연차·결근은 `role.off`. 달력 칸, 근무 띠·타임라인·주 판의 하루, 위젯 칸, 꾸밈 층(`on`), 수식 값이 모두 같은 판단을 써요. 1.38 이하 앱은 새 상태 줄을 버려요(덧붙이기 규칙).
+- 여러 상태가 맞으면 이 차례로 덮어요: 기본 → `role.*` → `leave`·`extra`·`cover`·`edited` → `in`·`out` → `sat`·`sun` → `holiday` → `dim` → `today` → **`when` 줄(조건부 꾸미기)** → `sel`.
 - **`when`(RUL-02)**: 줄에 수식 조건을 달면 그날 값(근무·메모·꼬리표·지출 등, `FormulaName`)으로 맞을 때만 덮어요. 예: `{"id":"cal.cell","when":"근무종류 = \"야간\" 그리고 꼬리표.포함(\"인수인계\")","line":"solid","lineC":"빨강"}`. 같은 줄 열쇠는 (`id`, `on`, `when`). 그날 값이 없는 화면(그날이 아닌 곳)에서는 `when` 줄을 건너뛰어요. 앱은 `blueprint.style(id, states, LocalDayFacts.current?.scope(date))`로 불러요.
 
 **스타일**

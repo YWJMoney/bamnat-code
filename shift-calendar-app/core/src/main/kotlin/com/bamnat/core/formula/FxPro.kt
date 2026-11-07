@@ -37,6 +37,12 @@ object FxPro {
         REACH("reach", "알람·수면과 잇기"),
         /** [FX-22] 1.39 새 화면 모양 부품 ([NEW_LOOKS]: 수면·할 일 화면, G8 밤 화면·하루 이야기 줄). */
         LOOK("look", "1.39 새 화면 모양"),
+        /**
+         * 1.39 [LINK-03] 근무 입력·탭 연동 꾸밈: a part line or decoration on the new day states (대근·잔업·특근·연차·직접 바꾼 날, [LINK_STATES])
+         * and formulas that read the new names ([LINK_NAMES]: 추가근무·대근·남은할일·잠잔시간·근무알람 …). The fix under them (a 대근 on a day
+         * off is a worked day in role.*, 근무시간 counts extra work) is free for all.
+         */
+        LINK("link", "근무 입력·할 일·수면 연동"),
         ;
 
         companion object {
@@ -94,6 +100,7 @@ object FxPro {
     }
 
     private fun formula(src: String, out: MutableSet<Part>) {
+        if (readsLink(src)) out += Part.LINK
         val calls = callsOf(src) ?: return
         if (Fn.VALUE.ko in calls) out += Part.VALUE_READ
         if (calls.any { it in HISTORY_FNS }) out += Part.HISTORY
@@ -101,6 +108,7 @@ object FxPro {
 
     private fun text(src: String, out: MutableSet<Part>) {
         if ('{' !in src) return
+        if (readsLink(src, text = true)) out += Part.LINK
         val calls = FormulaText.parse(src).getOrNull()?.filterIsInstance<FormulaText.Part.Calc>()?.flatMap { it.formula.calls }?.toSet() ?: return
         if (Fn.VALUE.ko in calls) out += Part.VALUE_READ
         if (calls.any { it in HISTORY_FNS }) out += Part.HISTORY
@@ -118,6 +126,53 @@ object FxPro {
         // G8 FLOW-21 밤 화면·아침 한 장 (설계도 부품 night·night.date·night.clock·night.line·night.card·night.button·night.morning).
         "night", "night.",
     )
+
+    /** 1.39 [LINK-03] The day states 1.39 opened ([com.bamnat.core.schedule.DayWork.STATES]). */
+    val LINK_STATES: Set<String> = com.bamnat.core.schedule.DayWork.STATES.toSet()
+
+    /** 1.39 [LINK-03] The formula names 1.39 opened for 근무 입력 and the other tabs. */
+    val LINK_NAMES: Set<String> = listOf(
+        FormulaName.EXTRA, FormulaName.EXTRA_HOURS, FormulaName.SHIFT_HOURS, FormulaName.COVER, FormulaName.EDITED,
+        FormulaName.TASKS_LEFT, FormulaName.TASKS_LATE, FormulaName.SLEPT, FormulaName.ALARM,
+    ).map { it.ko }.toSet()
+
+    /** Does formula [src] (or, with [text], a text's {formulas}) read a [LINK_NAMES] name? */
+    fun readsLink(src: String?, text: Boolean = false): Boolean {
+        val s = src ?: return false
+        if (s.isEmpty()) return false
+        if (!text) return (Formula.parse(s) as? Parsed.Ok)?.formula?.names?.any { it in LINK_NAMES } == true
+        if ('{' !in s) return false
+        return FormulaText.parse(s).getOrNull()?.any { it is FormulaText.Part.Calc && it.formula.names.any { n -> n in LINK_NAMES } } == true
+    }
+
+    /** A part line (설계도 한 줄) that uses what [Part.LINK] opens: a new state, or a `when`/수식 값 reading a new name. */
+    fun isLinkLine(line: Map<String, Any?>): Boolean =
+        (line["on"] as? String) in LINK_STATES || readsLink(line["when"] as? String) ||
+            line.values.any { v ->
+                when (v) {
+                    is com.bamnat.core.recipe.Ref.Formula -> readsLink(v.src)
+                    is Map<*, *> -> readsLink(v["fx"] as? String)
+                    else -> false
+                }
+            }
+
+    /** [Part.LINK] for one piece: 부품 꾸미기 lines and 꾸밈 층 items on the new states or names. */
+    fun links(kind: String, values: Map<String, Any?>): Set<Part> {
+        val hit = when (kind) {
+            "parts" -> (values["parts"] as? List<*>).orEmpty().any { (it as? Map<*, *>)?.let { m -> @Suppress("UNCHECKED_CAST") isLinkLine(m as Map<String, Any?>) } == true }
+            "decor" -> (values["items"] as? List<*>).orEmpty().any { ((it as? Map<*, *>)?.get("on") as? String) in LINK_STATES }
+            else -> false
+        }
+        return if (hit) setOf(Part.LINK) else emptySet()
+    }
+
+    /** What is drawn without 프로: [bp] without its [Part.LINK] lines (kept in settings, back with 프로; 쉬기만, 지우지 않음). */
+    fun restLink(bp: com.bamnat.core.recipe.Blueprint): com.bamnat.core.recipe.Blueprint =
+        if (bp.lines.none(::isLinkLine)) bp else com.bamnat.core.recipe.Blueprint(bp.lines.filterNot(::isLinkLine))
+
+    /** [d] without its decorations on the [LINK_STATES] days. */
+    fun restLink(d: com.bamnat.core.recipe.Decor): com.bamnat.core.recipe.Decor =
+        if (d.items.none { it.on in LINK_STATES }) d else com.bamnat.core.recipe.Decor(d.items.filter { it.on !in LINK_STATES })
 
     fun isNewLook(id: String): Boolean = NEW_LOOKS.any { id == it || (it.endsWith('.') && id.startsWith(it)) }
 

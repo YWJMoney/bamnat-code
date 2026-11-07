@@ -110,6 +110,46 @@ class FxProTest {
         assertTrue(FxPro.looks("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell"), mapOf("id" to "nightly")))).isEmpty())
     }
 
+    @Test fun linkConditionsArePro() {
+        // 1.39 [LINK-03] 대근·연차 날 꾸밈, 할 일·수면 수식은 프로; 옛 role.* 꾸밈과 옛 이름은 그대로 무료.
+        assertTrue(FxPro.links("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell", "on" to "role.night")))).isEmpty())
+        assertEquals(setOf(FxPro.Part.LINK), FxPro.links("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell", "on" to "cover")))))
+        assertEquals(setOf(FxPro.Part.LINK), FxPro.links("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell", "when" to "남은할일 > 0")))))
+        assertEquals(setOf(FxPro.Part.LINK), FxPro.links("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell", "bg" to mapOf("fx" to "만약(대근, \"금\", 없음)"))))))
+        assertTrue(FxPro.links("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell", "when" to "야간")))).isEmpty())
+        assertEquals(setOf(FxPro.Part.LINK), FxPro.links("decor", mapOf("items" to listOf(mapOf("on" to "extra")))))
+        assertTrue(FxPro.links("decor", mapOf("items" to listOf(mapOf("on" to "weekend")))).isEmpty())
+        assertTrue(FxPro.readsLink("잠잔시간 < 6"))
+        assertTrue(FxPro.readsLink("오늘 {추가근무시간}시간", text = true))
+        assertFalse(FxPro.readsLink("근무시간 > 8"))
+    }
+
+    @Test fun linkLinesRestWithoutPro() {
+        val bp = com.bamnat.core.recipe.Blueprint(listOf(
+            mapOf("id" to "cal.cell", "on" to "role.night"),
+            mapOf("id" to "cal.cell", "on" to "cover"),
+            mapOf("id" to "cal.cell", "bg" to com.bamnat.core.recipe.Ref.Formula("만약(잠잔시간 < 6, \"빨강\", 없음)")),
+        ))
+        assertEquals(listOf("role.night"), FxPro.restLink(bp).lines.map { it["on"] })
+        val d = com.bamnat.core.recipe.Decor(listOf(
+            com.bamnat.core.recipe.DecorItem(com.bamnat.core.recipe.DecorKind.EMOJI, "⭐", com.bamnat.core.recipe.Decor.CELL, on = "cover"),
+            com.bamnat.core.recipe.DecorItem(com.bamnat.core.recipe.DecorKind.EMOJI, "🌙", com.bamnat.core.recipe.Decor.CELL, on = "role.night"),
+        ))
+        assertEquals(listOf("role.night"), FxPro.restLink(d).items.map { it.on })
+    }
+
+    @Test fun hiddenNamesReadAsNothing() {
+        val day = LocalDate.of(2026, 11, 7)
+        val shift = DayFactsBook.DayShift("주간", "day", minutes = 9 * 60, extras = listOf("잔업"), extraMinutes = 60)
+        val open = DayFactsBook(day, "교대", { shift })
+        val shut = DayFactsBook(day, "교대", { shift }, hidden = FxPro.LINK_NAMES)
+        assertEquals(true, open.values(day)[FormulaName.EXTRA_HOURS.ko] != null)
+        assertFalse(shut.values(day).containsKey(FormulaName.EXTRA_HOURS.ko))
+        assertNull(shut.scope(day).get(FormulaName.EXTRA_HOURS.ko))
+        // 근무시간 itself still counts the 잔업: the fix is free.
+        assertEquals(open.values(day)[FormulaName.HOURS.ko], shut.values(day)[FormulaName.HOURS.ko])
+    }
+
     @Test fun aFormulaReadingAValueIsPro() {
         assertTrue(FxPro.readsValue("값(\"물 잔\") >= 8"))
         assertFalse(FxPro.readsValue("야간"))
