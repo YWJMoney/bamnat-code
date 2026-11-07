@@ -40,6 +40,9 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
@@ -179,6 +182,14 @@ data class ItemEffect(val amount: Long, val times: Int)
 internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var kind by mutableStateOf(kind)
     var name by mutableStateOf("")
+    /**
+     * [PAYX-53] 1.38 PC 12.4.1: the names already in the pay setup, so an item put in with no name gets a number of its own
+     * ("매달 수당 1", "매달 수당 2") instead of "매달 수당 · 매달" that says nothing in the list.
+     */
+    var taken: Set<String> = emptySet()
+    /** [PAYX-53] The first 추가 with an empty name asks for one (한 줄, 이름 칸으로); the second puts it in numbered. */
+    var nameAsked by mutableStateOf(false)
+    fun defaultTitle(k: ItemKind): String = numberedName(k.defaultName, taken)
     var amount by mutableStateOf<Long?>(null)
     var percent by mutableStateOf("")
     var deductWay by mutableStateOf(DeductWay.MONTHLY)
@@ -278,7 +289,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         val k = kind ?: return null
         val won = amount?.takeIf { it > 0 } ?: if (probe) 1_000L else return null
         val pct = share ?: if (probe) 0.1 else null
-        val title = name.trim().ifEmpty { k.defaultName }
+        val title = name.trim().ifEmpty { defaultTitle(k) }
         fun rule(pay: RulePay, deduct: Boolean = false, whenever: RuleWhen = whenever()) =
             MadeItem.Rule(limited(CustomRule(id, title.take(CustomRule.MAX_NAME), whenever, pay, deduct = deduct, source = source)))
         return when (k) {
@@ -308,7 +319,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     fun madeOrAsked(start: java.time.LocalDate): MadeItem? = made(start) ?: run {
         val k = kind
         if ((k == ItemKind.MONTHLY || k == ItemKind.PER_DAY) && !asRule && !hasLimits && itemWho == ItemShare.PERSONAL && (amount ?: 0) <= 0)
-            MadeItem.Item(item(name.trim().ifEmpty { k.defaultName }, ValueTimeline(), if (k == ItemKind.MONTHLY) Cadence.MONTHLY else Cadence.PER_WORK_DAY))
+            MadeItem.Item(item(name.trim().ifEmpty { defaultTitle(k) }, ValueTimeline(), if (k == ItemKind.MONTHLY) Cadence.MONTHLY else Cadence.PER_WORK_DAY))
         else null
     }
 
@@ -506,6 +517,10 @@ internal fun CustomItemDialog(
             .also { d -> if (editing == null && editingItem == null) d.mine = fromCompany }
     }
     val isEdit = editing != null || editingItem != null
+    draft.taken = remember(profile) {
+        (profile.items.filterNot { it.id == id }.map { it.name } + profile.customRules.filterNot { it.id == id }.map { it.name }).toSet()
+    }
+    val nameFocus = remember { FocusRequester() }
     // 12차 빈틈 3: an 알바's workplace is a 가게, not a 회사.
     val place = remember(calendar) { workplaceWord(runCatching { context.appContainer.scopeOf(calendar).currentSettings().workStyle }.getOrNull()) }
     // A 1.32 [FIX132-03] A new allowance counts in every month, as the old '수당 추가' made it; a change starts this month.
@@ -539,7 +554,15 @@ internal fun CustomItemDialog(
                     if (draft.kind != null) {
                         EffectBar(month, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
                             label = if (isEdit) "저장" else if (oneWindow) "추가" else "만들기",
-                            unknown = made != null && draft.made(start) == null) { made?.let { m -> huge.run(draft.amount) { onSave(m) } } }
+                            unknown = made != null && draft.made(start) == null,
+                            // [PAYX-53] 1.38 PC 12.4.1: a name is asked once, on the first 추가 with none.
+                            askName = if (!isEdit && draft.nameAsked && draft.name.isBlank()) draft.kind?.let { draft.defaultTitle(it) } else null,
+                        ) {
+                            if (!isEdit && draft.name.isBlank() && !draft.nameAsked) {
+                                draft.nameAsked = true
+                                runCatching { nameFocus.requestFocus() }
+                            } else made?.let { m -> huge.run(draft.amount) { onSave(m) } }
+                        }
                     }
                 },
             ) { padding ->
@@ -552,7 +575,7 @@ internal fun CustomItemDialog(
                         if (k == null) KindStep(gap) { picked -> draft.kind = picked; prefill(draft, gap); draft.guessFrom(draft.name) }
                         else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null, fromCompany = fromCompany,
                             kindChips = oneWindow && !isEdit, unknownAmount = allowUnknownAmount,
-                            fixedOt = profile.wageType != com.bamnat.core.pay.WageType.HOURLY)
+                            fixedOt = profile.wageType != com.bamnat.core.pay.WageType.HOURLY, nameFocus = nameFocus)
                         if (full) Text("직접 만든 항목은 ${CustomRule.MAX}개까지예요. 쓰지 않는 항목을 지운 뒤 만들어 주세요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(24.dp))
@@ -635,6 +658,8 @@ internal fun ColumnScope.FormStep(
     unknownAmount: Boolean = false,
     /** [PAYX-50] 고정 연장수당 is asked: not for 시급 (알바), whose overtime is paid by the hour. */
     fixedOt: Boolean = false,
+    /** [PAYX-53] Where 추가 with no name puts the cursor. */
+    nameFocus: FocusRequester? = null,
 ) {
     if (gap != null) GapBanner(gap)
     if (kindChips) {
@@ -663,7 +688,7 @@ internal fun ColumnScope.FormStep(
         placeholder = { Text(kind.namePlaceholder) },
         supportingText = { Text("명세서에 적힌 이름 그대로 쓰면 다음에 맞춰 보기 쉬워요") },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(if (nameFocus != null) Modifier.focusRequester(nameFocus) else Modifier),
     )
 
     // [ITEM-05] 1.30 BC: who sets the amount, 회사 공통 · 사람마다 · %, for an allowance (a rule stays on the phone).
@@ -955,8 +980,12 @@ private fun EffectBar(
     month: YearMonth, draft: ItemDraft, effect: ItemEffect?, timesOnly: Int?, gap: Long?, enabled: Boolean, label: String,
     /** [PAYX-50] Saved with no amount yet (금액 모름). */
     unknown: Boolean = false,
+    /** [PAYX-53] The name it gets when none is typed, said over the button once a name was asked. */
+    askName: String? = null,
     onSave: () -> Unit,
 ) {
+    // [PAYX-53] 1.38 PC 12.4.1: an amount past 1억 (or a month that comes to it) is said here too, not only in the question.
+    val huge = (draft.amount ?: 0) >= HUGE_WON || (effect?.amount?.let { abs(it) } ?: 0) >= HUGE_WON
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val per = draft.kind == ItemKind.PER_SHIFT || draft.kind == ItemKind.PER_DAY || draft.kind == ItemKind.PER_HOUR || draft.kind == ItemKind.PREMIUM ||
@@ -967,7 +996,7 @@ private fun EffectBar(
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + if (per) " · ${effect.times}번" else "",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = if (effect.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = if (effect.amount < 0 || huge) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
                     timesOnly != null && per -> Text(
                         if (timesOnly == 0) "이번 달엔 맞는 근무가 없어요" else "이번 달 ${timesOnly}번 해당돼요. 금액을 넣어 주세요",
@@ -975,6 +1004,13 @@ private fun EffectBar(
                     )
                     unknown -> Text("금액 모름으로 넣어요. 합계에서 빼고 금액을 넣어 달라고 알려 드려요", style = MaterialTheme.typography.titleSmall)
                     else -> Text("금액을 넣으면 바로 계산해요", style = MaterialTheme.typography.titleSmall)
+                }
+                if (huge) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                    Text(
+                        "금액을 확인해 주세요. 1억 원이 넘어요" + if (per && (draft.amount ?: 0) < HUGE_WON) " (한 번 ${won(draft.amount ?: 0)} × ${effect?.times ?: 0}번)" else "",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                    )
                 }
                 if (gap != null && effect != null) {
                     val left = gap - effect.amount
@@ -996,6 +1032,10 @@ private fun EffectBar(
                     }
                 }
             }
+            if (askName != null) Text(
+                "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 비운 채 ‘$label’을 누르면 ‘$askName’(으)로 넣어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+            )
             Button(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(label) }
         }
     }
@@ -1090,3 +1130,7 @@ internal fun waysText(profile: PayProfile, shiftNames: Map<Long, String>, made: 
     }
     return if (lines.isEmpty()) "" else "우리 회사에는 이런 항목이 있어요 (금액은 빼고 적었어요)\n" + lines.joinToString("\n")
 }
+
+/** [PAYX-53] "매달 수당 1", or the next number the setup does not have yet. */
+internal fun numberedName(base: String, taken: Set<String>): String =
+    generateSequence(1) { it + 1 }.map { "$base $it" }.first { it !in taken }
