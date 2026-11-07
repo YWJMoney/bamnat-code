@@ -12,6 +12,10 @@ export const PEOPLE_COLUMNS = [
   // 1.39 [PLZC-10] 근무 태그 (JSON {s, f?, i?, m?, n?}) and its 근무형태 alone, for 나와 같은 근무.
   "ALTER TABLE posts ADD COLUMN tag TEXT",
   "ALTER TABLE posts ADD COLUMN tag_form TEXT",
+  // 1.39 [PLZC-20] 근무 카드: this month so far by the writer's calendar (JSON {d, w, n, s, o}), no dates.
+  "ALTER TABLE posts ADD COLUMN card TEXT",
+  // 1.39 [PLZC-31] 근무형태별 투표 결과: the voter's 근무형태 at the time (none without a tag).
+  "ALTER TABLE poll_votes ADD COLUMN form TEXT",
 ];
 
 /** The kinds of work, as the app's WorkStyle names. */
@@ -113,4 +117,56 @@ export async function peoplePulse(one, env, room, now, grp) {
         AND tag LIKE '%"n":%') AS working`,
   room, grp, midnight, now - PEOPLE_LIMITS.workingHours * HOUR, now - 14 * DAY);
   return { today: r?.today ?? 0, waiting: r?.waiting ?? 0, working: r?.working ?? 0 };
+}
+
+/** 1.39 [PLZC-31] Fewest voters a 근무형태 needs to be shown apart; fewer are put together as 그 밖의 근무 (or left out). */
+export const POLL_SPLIT_MIN = 5;
+
+/**
+ * 1.39 [PLZC-31] 근무형태별 투표 결과 of the polls [ids]: Map id → [{f, counts}] (f null: 그 밖의 근무), only groups of POLL_SPLIT_MIN or
+ * more, and only where at least one 근무형태 stands on its own. Nobody's own vote shows.
+ */
+export async function pollByForm(all, env, ids, options) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const rows = await all(env, `SELECT post_id, form, choice, COUNT(*) AS n FROM poll_votes WHERE post_id IN (${ids.map(() => "?").join(",")})
+    GROUP BY post_id, form, choice`, ...ids);
+  for (const id of ids) {
+    const size = options.get(id) ?? 0;
+    const groups = new Map();
+    for (const r of rows.filter((x) => x.post_id === id && x.choice < size)) {
+      const g = groups.get(r.form ?? "") ?? Array(size).fill(0);
+      g[r.choice] += r.n;
+      groups.set(r.form ?? "", g);
+    }
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    const named = [...groups].filter(([f, c]) => f && sum(c) >= POLL_SPLIT_MIN).sort((a, b) => sum(b[1]) - sum(a[1]));
+    if (!named.length) continue;
+    const rest = Array(size).fill(0);
+    for (const [f, c] of groups) if (!named.some(([g]) => g === f)) c.forEach((n, i) => { rest[i] += n; });
+    out.set(id, [...named.map(([f, counts]) => ({ f, counts })), ...(sum(rest) >= POLL_SPLIT_MIN ? [{ f: null, counts: rest }] : [])]);
+  }
+  return out;
+}
+
+/** 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (the ones that count days at work). */
+export const CARD_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY"];
+
+/**
+ * 1.39 [PLZC-20] 근무 카드: this month so far by the writer's calendar, numbers only. d days of the month gone, w days at work, n of them
+ * nights, s the longest run of days at work, o days off. Anything else is refused.
+ */
+export function peopleCard(raw, room, refuse) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw) || !CARD_STYLES.includes(PEOPLE_ROOM_STYLE[room])) refuse("card");
+  const keys = ["d", "w", "n", "s", "o"];
+  if (Object.keys(raw).some((k) => !keys.includes(k))) refuse("card");
+  const c = {};
+  for (const k of keys) {
+    const v = raw[k];
+    if (!Number.isInteger(v) || v < 0 || v > 31) refuse("card");
+    c[k] = v;
+  }
+  if (c.d < 1 || c.w + c.o > c.d || c.n > c.w || c.s > c.w) refuse("card");
+  return c;
 }

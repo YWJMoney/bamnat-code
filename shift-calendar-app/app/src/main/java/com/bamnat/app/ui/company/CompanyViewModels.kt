@@ -823,7 +823,7 @@ class TalkHolder(
         val o = _open.value ?: return
         scope.launch {
             val error = try {
-                val v = c.companyApi.pollVote(c.companyStore.device, post, choice)
+                val v = c.companyApi.pollVote(c.companyStore.device, post, choice, o.company)
                 val now = _open.value
                 if (now?.setup == o.setup && now.talk != null) {
                     _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map { if (it.id == post) it.copy(poll = v) else it }))
