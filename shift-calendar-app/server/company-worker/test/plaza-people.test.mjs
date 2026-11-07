@@ -103,3 +103,41 @@ test("[PLZC-03] 지난 글 더 보기: posts before a time, a page at a time, wi
   assert.ok(tops.every((p) => Date.parse(p.at) < oldest));
   assert.ok(page.posts.some((p) => p.parent === ids[5]) || !tops.some((p) => p.id === ids[5]), "an answer comes with its post");
 });
+
+test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자 on 장터 cards and 광장 posts, after 3.12, resting while held", async (t) => {
+  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs).
+  const LATER = Date.parse("2026-11-30T03:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: LATER });
+  const { call } = server({ plaza: true });
+  const h = await signIn(call);
+  const recipe = (title) => ({ format: "bamnat-recipe", v: 1, title, summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] }] });
+  const up = async (n, title) => {
+    const r = await call("POST", "/api/recipes", { device: device(n), recipe: recipe(title), scope: "public" }, from(n));
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    await call("POST", `/api/admin/recipes/${r.data.code}/approve`, {}, h);
+    return r.data.code;
+  };
+  const a = await up(1, "올빼미 교대 세트");
+  const b = await up(2, "새벽 감자 세트");
+  const makerOf = async (code) => (await call("GET", `/api/recipes/${code}`)).data.maker;
+  const [ma, mb] = [await makerOf(a), await makerOf(b)];
+  for (let n = 10; n < 40; n++) await call("POST", `/api/recipes/makers/${mb}/follow`, { device: device(n) }, from(n));
+  // Before 3.12: followers (already on the profile), no marks.
+  let card = (await call("GET", `/api/recipes/${b}`)).data;
+  assert.deepEqual([card.followers, card.mark], [30, undefined]);
+  await policyOn(call);
+  await call("POST", "/api/admin/recipes/makers/month", { style: "ALL", makers: [ma] }, h);
+  t.mock.timers.setTime(LATER + 60e3);
+  assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, "month");
+  assert.deepEqual([(await call("GET", `/api/recipes/${b}`)).data.mark, (await call("GET", `/api/recipes/${b}`)).data.followers], ["popular", 30]);
+  // On 광장, beside a 마을 이름.
+  await call("POST", "/api/nick", { device: device(1), nick: "올빼미" }, from(1));
+  const said = (await write(call, 1, "style-shift", "새 세트 올렸어요 써 보세요", { s: "SHIFT" })).data.id;
+  assert.equal((await read(call, 5, "style-shift")).data.posts.find((p) => p.id === said).mark, "month");
+  // Held by the operator: the mark rests.
+  await call("POST", "/api/admin/care/warn", { post: said, reason: "abuse" }, h);
+  await call("POST", "/api/admin/care/hold", { post: said, scope: "opinion", days: 7, reason: "abuse" }, h);
+  assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, undefined);
+  assert.equal((await read(call, 5, "style-shift")).data.posts.find((p) => p.id === said)?.mark, undefined);
+});

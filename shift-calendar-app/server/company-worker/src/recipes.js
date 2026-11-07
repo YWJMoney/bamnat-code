@@ -14,6 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { careGate, careRepeat } from "./community-care.js";
+import { makerMarks, markFields } from "./maker-mark.js";
 import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FORMULA, formulaProblem, formulaTextProblem } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
@@ -1451,9 +1452,12 @@ async function recipeList(d, env, url) {
   // 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): body=1 sends each work's written form and hash with its
   // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
   const withBody = url.searchParams.get("body") === "1";
+  // 1.39 [PLZC-40] 만든 분 표식·팔로워 수(장터 카드의 만든 분 줄).
+  const marks = await makerMarks(d, env, page.map((r) => r.maker), now);
   return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
     // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part.
-    items: await Promise.all(page.map(async (r) => (withBody ? { ...listItem(r, now), ...(await sharedPayOut(r.body, r.hash)) } : listItem(r, now)))),
+    items: await Promise.all(page.map(async (r) => ({ ...listItem(r, now), ...markFields(marks, r.maker),
+      ...(withBody ? await sharedPayOut(r.body, r.hash) : {}) }))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1473,7 +1477,7 @@ async function show(d, env, request, code, url) {
   // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
   if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
-  const out = { ...listItem(r, Date.now()), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
+  const out = { ...listItem(r, Date.now()), ...markFields(await makerMarks(d, env, [r.maker]), r.maker), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
   if (mine) {
     // The maker sees where it stands and every 안좋아요's reason, without who (결정 D107, 처리방침 3.8).
     const reasons = await d.all(env, "SELECT reason, opinion, at FROM recipe_votes WHERE code = ? AND value = -1 AND held = 0 ORDER BY at DESC LIMIT 100", code);
