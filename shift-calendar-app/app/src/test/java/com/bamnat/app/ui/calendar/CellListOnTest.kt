@@ -16,6 +16,15 @@ class CellListOnTest {
         assertFalse(cellListOn("on", jobs = true, memoInCells = true, view = plain, sideways = true, hasMemos = true))
     }
 
+    /** [TRY-05] 입어 보기도 같은 판단: 메모가 있으면 '알아서'도 목록, 현장은 일감으로 목록, '한 줄만'이면 끔. */
+    @Test fun tryOnChoosesAsTheCalendarDoes() {
+        val day = com.bamnat.core.work.WorkStyle.DAY
+        assertFalse(cellListOn("auto", day, memoInCells = false, view = plain))
+        assertTrue(cellListOn("auto", day, memoInCells = false, view = plain, hasMemos = true))
+        assertTrue(cellListOn("auto", com.bamnat.core.work.WorkStyle.FIELD, memoInCells = false, view = plain))
+        assertFalse(cellListOn("off", day, memoInCells = true, view = plain, hasMemos = true))
+    }
+
     @Test fun tallOnlyForAMonthWithLinesWhereListsWereAskedFor() {
         assertTrue(cellListTall("auto", jobs = true, memoInCells = false, view = plain, monthHasLines = true))
         // 현장 달력의 빈 달: 낮은 칸.
