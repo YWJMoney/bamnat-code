@@ -510,7 +510,7 @@ private fun DayGroups(
                             if (rest.isNotEmpty()) RestWarning(rest)
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
-                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
+                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare, style = settings.workStyle,
                                     // 1.39 [FLOW-13] (PC 3차 sik-5): 잠들었어요 here opens the night screen too, as on the sleep screen and the date chip.
                                     onAsleep = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) },
                                     onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
@@ -1343,6 +1343,7 @@ private fun SleepSection(
     targetMinutes: Int,
     health: com.bamnat.app.sleep.HealthSleep.State,
     compare: List<com.bamnat.core.sleep.PlanVsActual.Night> = emptyList(),
+    style: com.bamnat.core.work.WorkStyle? = null,
     onAsleep: () -> Unit,
     onAwake: () -> Unit,
     onWokeAt: (java.time.LocalDateTime) -> Unit,
@@ -1410,7 +1411,7 @@ private fun SleepSection(
             }
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
-                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(야간 뒤·쉬는 날)을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(${com.bamnat.core.sleep.SleepInsights.groupsWord(style)})을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
                 // 1.39 (PC 5c4ad849): the sleep screen's head, word for word ("평균 7시간 10분 · 목표보다 10분 더 잤어요 ·
                 // 7일 중 5일 적음"); this used to add up each short day ("0시간 30분 부족") while that compared the average.
                 else com.bamnat.core.sleep.SleepHead.of(debt, targetMinutes).let { "평균 ${it.value} · ${it.caption}" },

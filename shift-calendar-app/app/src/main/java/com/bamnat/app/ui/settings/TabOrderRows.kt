@@ -93,8 +93,11 @@ internal fun BarSlotsDialog(
     onChange: (List<TabSlots.Slot>) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit,
+    /** 1.39 [NAV2-07] Opened beside the rail (an unfolded phone): two more places, up to [TabSlots.MAX_WIDE]. */
+    wide: Boolean = false,
 ) {
     val slots = TabSlots.resolve(settings.tabSlots, settings.tabOrder, TabPicks.known)
+    val cap = if (wide) TabSlots.MAX_WIDE else TabSlots.MAX
     val haptics = LocalHapticFeedback.current
     var picking by remember { mutableStateOf<PickFor?>(null) }
     // The 묶음 being named, by a screen in it (its place can move as a screen leaves another place).
@@ -124,7 +127,13 @@ internal fun BarSlotsDialog(
                     modifier = Modifier.clip(MaterialTheme.shapes.small).clickable { more = true }.padding(vertical = 6.dp))
                 Spacer(Modifier.height(8.dp))
                 slots.forEachIndexed { i, slot ->
-                    if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    // 1.39 [NAV2-07] The places past five show only beside the rail of an unfolded phone; folded, they wait by 나.
+                    if (i == TabSlots.MAX) Text(
+                        if (wide) "아래 두 칸은 펼친 화면 옆 막대에만 보여요. 접으면 ‘나’ 단추에 있어요." else "아래 칸은 펼친 화면 옆 막대에만 보여요. 지금은 ‘나’ 단추에 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                    )
+                    else if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     SlotLine(
                         index = i, count = slots.size, slot = slot, style = style, isHome = TabSlots.home(slots) in slot.keys,
                         onMove = { by -> change(TabSlots.move(slots, i, i + by)) },
@@ -136,10 +145,10 @@ internal fun BarSlotsDialog(
                         onMoveMember = { from, to -> change(TabSlots.moveMember(slots, i, from, to)) },
                     )
                 }
-                if (slots.size < TabSlots.MAX) {
+                if (slots.size < cap) {
                     TextButton(onClick = { picking = PickFor(slots.size, add = true) }) {
                         Icon(Icons.Outlined.Add, null, Modifier.size(18.dp))
-                        Text(" 칸 더하기 (${slots.size}/${TabSlots.MAX})")
+                        Text(" 칸 더하기 (${slots.size}/$cap)" + if (wide && slots.size >= TabSlots.MAX) " · 펼친 화면만" else "")
                     }
                 }
                 // 1.39 PC NAV2 (150%·200%에서 '처음대로'가 창 밖으로 잘림): in the list, not beside 완료.
@@ -172,7 +181,7 @@ internal fun BarSlotsDialog(
                 picking = null
                 // 1.39 PC NAV2 2차 (기본 이름 '모음'): a new 묶음 starts named for its two screens, which the name box then shows.
                 val name = (at as? TabSlots.One)?.let { TabSlots.cleanName(label(it.key) + "·" + label(k)) } ?: TabSlots.DEFAULT_GROUP_NAME
-                change(if (p.add) TabSlots.addTo(slots, p.index, k, name) else TabSlots.replace(slots, p.index, k))
+                change(if (p.add) TabSlots.addTo(slots, p.index, k, name, max = cap) else TabSlots.replace(slots, p.index, k))
                 // A new 묶음 is named at once, so it does not stay '모음'.
                 if (p.add && at is TabSlots.One) renaming = k
             },

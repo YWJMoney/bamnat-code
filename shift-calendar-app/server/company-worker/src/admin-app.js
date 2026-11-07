@@ -720,7 +720,8 @@ function adminApp(L, BUILD, M) {
         }
         // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
         else if (!id && S.postFilter === "village") {
-          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })));
+          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })),
+            api("/plaza/picks").then(keep((d) => { S.data.picks = d; })), api("/plaza/effect").then(keep((d) => { S.data.plazaEffect = d; })));
         }
         else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
@@ -764,6 +765,8 @@ function adminApp(L, BUILD, M) {
       if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
       // 1.37.1 [FAM-01] 가족 프로 이용권 (최고 관리자만).
       if (name === "account" && S.me?.owner) jobs.push(api("/family").then(keep((d) => { S.data.family = d; })).catch(() => {}));
+      // 1.39 [ADM3-42] 로그인 잠금(최고 관리자만).
+      if (name === "account" && S.me?.owner) jobs.push(api("/login-locks").then(keep((d) => { S.data.loginLocks = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -1274,7 +1277,57 @@ function adminApp(L, BUILD, M) {
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
       ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
-    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit);
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit) + `<hr class="split">` + picksView(edit) + `<hr class="split">` + plazaEffectView();
+  }
+
+  /**
+   * 1.39 [PLZC-33] 광장 효과: per kind of work's plaza, sums only. 처리방침 3.12 (plaza.people) 전후를 하루 글 수로 비교하고,
+   * 1.40 광장 논의(docs/plans/1.40-이후-논의/광장.md)를 이 숫자로 시작해요.
+   */
+  function plazaEffectView() {
+    const d = S.data.plazaEffect;
+    if (!d) return skeleton(1);
+    const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
+    const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 오늘 처음 쓴 분은 ${d.back}일 뒤부터 들어가요.</p>
+      <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
+        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
+      ${d.items.map((x) => {
+        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${n(x.answeredPct, "%")}`],
+          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", n(x.tagged, "%")], ["나도요", x.metoo], ["근무 카드", x.cards],
+          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${n(x.cameBackPct, "%")}`], ["오늘 출근", x.checkinToday]];
+        return `<tr><td class="name">${esc(x.name)}</td>${cells.map(([l, v]) => `<td class="n"><span class="lab">${l} </span>${v}</td>`).join("")}</tr>`;
+      }).join("")}
+      </tbody></table></div>`;
+  }
+
+  const FORM_NAMES = { THREE_SHIFT: "3교대", TWO_SHIFT: "2교대", FOUR_TEAM: "4조 2교대", NURSE: "간호 듀티", ON_CALL: "당직", DAY_ON_DAY_OFF: "격일",
+    PUBLIC: "공무원 교대", OFFICE: "주5일 낮", PART_TIME: "시급 파트타임", DAILY: "일당" };
+  const cut = (t, n) => (t.length > n ? `${t.slice(0, n)}…` : t);
+
+  /**
+   * 1.39 [PLZC-22] 광장 답 모음: per kind of work's plaza, the picks (앱 광장 '선배 답 모음'과 도움말에 보여요) and answers worth picking
+   * (질문한 분이 '도움 됐어요'를 누른 답, 나도요 3+), newest 120일.
+   */
+  function picksView(edit) {
+    const d = S.data.picks;
+    if (!d) return skeleton(1);
+    const card = (x) => `<article class="card">
+      <div class="head"><h3>${esc(x.name)}</h3><span class="pill${x.picks.length ? " ok" : ""}">모음 ${x.picks.length}</span>
+        <span class="pill${x.candidates.length ? " info" : ""}">후보 ${x.candidates.length}</span></div>
+      ${x.picks.length ? `<ul class="plain">${x.picks.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.title)}</b>
+        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
+        : '<p class="meta">아직 고른 답이 없어요</p>'}
+      ${x.candidates.length ? `<h4>넣을 만한 답</h4><ul class="plain">${x.candidates.map((c) => `<li>
+        <p class="meta">Q. ${esc(cut(c.question, 80))}${c.form ? ` · ${esc(FORM_NAMES[c.form] ?? c.form)}` : ""}</p>
+        <p>A. ${esc(cut(c.body, 160))} <span class="meta">${c.chosen ? "질문한 분이 도움 됐어요 · " : ""}나도요 ${c.agree}</span></p>
+        ${edit ? `<div class="actions"><input id="pick-title-${esc(c.answer)}" type="text" maxlength="40" placeholder="모음 제목 (예: 야간 뒤 바로 잠드는 법)">
+          <button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
+    </article>`;
+    return `<h3>광장 답 모음</h3><p class="hint">도움이 된 답을 골라 제목을 붙이면 앱 그 유형 광장 맨 위 ‘📚 선배 답 모음’에 보여요.
+      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
+      <div class="grid">${d.items.map(card).join("")}</div>`;
   }
 
   const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
@@ -2308,6 +2361,21 @@ function adminApp(L, BUILD, M) {
   /** 1.39 [FAM-04] 발굴: a family phone not seen for 60 days is likely a phone given up (바꾼 휴대폰), still holding 프로. */
   const familyIdle = (d) => Date.now() - Date.parse(d.seenAt ?? d.createdAt) > 60 * 864e5;
 
+  /**
+   * 1.39 [ADM3-42] 로그인 잠금 풀기(최고 관리자만, 사용자 11-07 22:14·22:37). PC가 잠겨도 휴대폰에 로그인해 있으면
+   * 1시간을 기다리지 않고 여기서 풀어요. 잠긴 곳이 없으면 한 줄만, 있으면 몇 곳·언제 풀리는지와 단추.
+   */
+  function lockLine() {
+    const k = S.data.loginLocks;
+    if (!k) return "";
+    const busy = k.locked || k.tries || k.wide;
+    if (!busy) return '<p class="hint" data-lock-line>지금 잠긴 로그인이 없어요. 다른 곳에서 여러 번 틀려 잠기면 여기서 바로 풀 수 있어요.</p>';
+    const parts = [k.locked ? `잠긴 곳 ${k.locked}곳` : "", k.tries ? `틀린 적 있는 곳 ${k.tries}곳` : "", k.wide ? "여러 곳에서 많이 틀려 전체가 조심 중" : ""].filter(Boolean);
+    return `<div class="note warn" data-lock-line><b>${esc(parts.join(" · "))}</b>${k.until ? `<br>${esc(clock(k.until))}에 저절로 풀려요.` : ""}
+      <br>내가 잠긴 거면 풀어요. 모르는 곳이면 비밀번호를 바꾸는 게 먼저예요.</div>
+      <div class="actions start"><button class="btn primary" data-act="login-unlock">로그인 잠금 풀기</button></div>`;
+  }
+
   function familyCard() {
     const f = S.data.family;
     const phones = f?.phones ?? [];
@@ -2562,7 +2630,7 @@ function adminApp(L, BUILD, M) {
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -2626,6 +2694,8 @@ function adminApp(L, BUILD, M) {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
+      // 1.39 판 정리
+      retired: "새 판이 나와 장터에서 내린 운영자 작품이에요. 목록·찾기·추천에는 안 나오지만 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 지우지 않아요. 아래에 정리 계획(market-…-refresh-plan.json)을 붙여 넣어 몇 개인지 먼저 보고 숨기거나, 잘못 숨긴 것을 한 번에 되돌려요.",
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
       // [RCX-32]
@@ -2645,7 +2715,7 @@ function adminApp(L, BUILD, M) {
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
         ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림" }[r.hidden] ?? r.hidden)}</small>` : ""}
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
@@ -2656,7 +2726,8 @@ function adminApp(L, BUILD, M) {
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit) : "";
+    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
+      : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
       <textarea name="recipe" rows="8"${tab === "waiting" ? "" : " required"}></textarea>
@@ -2729,6 +2800,44 @@ function adminApp(L, BUILD, M) {
   }
 
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
+  /**
+   * 1.39 판 정리: 계획 파일({"hide":[{title, why}]}, 제목 목록 줄마다, 코드)을 붙여 넣거나 골라 '몇 개인지 보기'(dry) → 숨기기, 또는 되돌리기.
+   * [last] 마지막으로 본 결과(찾은 수·없는 제목)를 보여 줘요.
+   */
+  function recipeRetireView(last) {
+    const said = last ? `<p class="hint" data-retire-said>${esc(last.say)}${last.missing?.length ? ` · 못 찾은 것 ${last.missing.length}개: ${esc(last.missing.slice(0, 20).join(", "))}${last.missing.length > 20 ? " …" : ""}` : ""}</p>` : "";
+    return `<form data-form="recipe-retire" class="card"><h3>판 정리 붙여 넣기</h3>
+      <p class="hint">정리 계획 JSON 전체, 또는 제목(이나 작품 코드)을 한 줄에 하나씩. 운영자 작품만 찾고 사용자 작품은 건드리지 않아요. 한 번에 1,200개까지.</p>
+      <textarea name="plan" rows="6" required></textarea>
+      <label>또는 파일로 <input type="file" name="file" accept=".json,.txt,application/json,text/plain"></label>
+      <label>메모 <input name="note" maxlength="200" placeholder="1.39 장터 정리"></label>
+      <label>옛 앱에는 남기기: 이 앱 판 미만에는 계속 보여요(계획 파일의 belowApp이 먼저) <input name="below" inputmode="numeric" pattern="\\d{1,6}" placeholder="53"></label>
+      <div class="actions"><button class="btn" type="submit" name="go" value="dry">몇 개인지 보기</button>
+        <button class="btn primary" type="submit" name="go" value="hide">숨기기</button>
+        <button class="btn" type="submit" name="go" value="show">되돌리기</button></div>${said}</form>`;
+  }
+
+  /**
+   * The titles and codes in what was pasted (a plan file {hide:[{title, code?, belowApp?}]}, a list of strings, or lines), grouped by
+   * belowApp (작품 갈래: '그 판 미만 앱에는 계속 보임'); [below] is for those that say none.
+   */
+  function retireGroups(text, below) {
+    const groups = new Map();
+    const add = (x, b) => {
+      const t = String(x ?? "").trim();
+      if (!t) return;
+      const k = Number.isInteger(b) && b > 0 ? b : below;
+      if (!groups.has(k)) groups.set(k, { belowApp: k, titles: [], codes: [] });
+      (/^[2-9A-HJ-NP-Z]{8}$/.test(t) ? groups.get(k).codes : groups.get(k).titles).push(t);
+    };
+    let j = null;
+    try { j = JSON.parse(text); } catch { j = null; }
+    const list = Array.isArray(j) ? j : Array.isArray(j?.hide) ? j.hide : null;
+    if (list) for (const x of list) { if (typeof x === "string") add(x); else add(x?.code || x?.title, x?.belowApp); }
+    else for (const line of String(text).split(/\r?\n/)) add(line);
+    return [...groups.values()];
+  }
+
   function recipeReleaseView(d, edit) {
     if (!d) return skeleton(1);
     if (!d.items.length) return `<p class="hint">출시 대기 중인 작품이 없어요.</p>`;
@@ -3101,7 +3210,8 @@ function adminApp(L, BUILD, M) {
       ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
-          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
+          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
+        ${m.owner ? lockLine() : ""}</section>
       ${pushCard()}
       ${prefsCard()}
       <section class="card"><h2>앱으로 설치</h2>
@@ -4161,7 +4271,7 @@ function adminApp(L, BUILD, M) {
       try {
         if (await V.passkeyAssert()) await enter();
       } catch (e) {
-        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
           : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
           : e.name === "NotAllowedError" || e.name === "AbortError" ? "" : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
         render();
@@ -4641,6 +4751,8 @@ function adminApp(L, BUILD, M) {
       S.data.care = null;
       S.data.village = null;
       S.data.contests = null;
+      S.data.picks = null;
+      S.data.plazaEffect = null;
       refilter("posts");
     },
     // 1.39 [CARE-05]
@@ -4727,6 +4839,19 @@ function adminApp(L, BUILD, M) {
           load();
         });
       S.data.contests = null;
+      load();
+    },
+    // 1.39 [PLZC-22] 광장 답 모음 넣기·빼기.
+    "pick-add": async ({ id }) => {
+      const title = document.getElementById(`pick-title-${id}`)?.value?.trim() ?? "";
+      if (!title) return toast("모음 제목을 적어 주세요");
+      await act(() => api("/plaza/picks", "POST", { answer: id, title }), `‘${title}’을 답 모음에 넣었어요. 앱 광장에 보여요`);
+      S.data.picks = null;
+      load();
+    },
+    "pick-remove": async ({ id }) => {
+      await act(() => api(`/plaza/picks/${id}`, "DELETE"), "답 모음에서 뺐어요");
+      S.data.picks = null;
       load();
     },
     "topic-clear": async ({ id }) => {
@@ -5283,6 +5408,13 @@ function adminApp(L, BUILD, M) {
       }
       signedOut(true);
     },
+    // 1.39 [ADM3-42] 모든 로그인 잠금과 틀린 횟수를 0으로. 활동 기록에 '로그인 잠금 풀기'로 남아요.
+    "login-unlock": () => confirmBox("로그인 잠금을 풀까요?", "잠긴 곳과 틀린 횟수가 모두 0이 돼요. 바로 다시 로그인할 수 있어요. 내가 모르는 곳에서 틀린 거라면 먼저 비밀번호를 바꿔 주세요.", "풀기", async () => {
+      const r = await act(() => api("/login-locks/clear", "POST"), (d) => (d.locked ? `잠긴 곳 ${d.locked}곳을 풀었어요` : "로그인 잠금을 풀었어요"));
+      if (!r) return;
+      S.data.loginLocks = { locked: 0, tries: 0, wide: false, until: null };
+      render({ keepScroll: true });
+    }, "primary"),
     "logout-all": () => confirmBox("모든 기기에서 로그아웃할까요?", "이 기기를 포함해 이 계정으로 로그인한 모든 기기가 다시 로그인해야 해요.", "로그아웃", async () => {
       await api("/me/logout-all", "POST");
       signedOut(true);
@@ -5355,7 +5487,7 @@ function adminApp(L, BUILD, M) {
         }
         const left = e.data?.left;
         S.error = e.message === "wrong" ? `${S.prefs.loginMode === "owner" ? "비밀번호가" : "메일이나 비밀번호가"} 달라요. ${left}번 더 틀리면 1시간 동안 잠겨요.`
-          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
           : e.message === "pending" ? "최고 관리자의 승인을 기다리고 있어요. 승인되면 로그인할 수 있어요."
           : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
           : e.message === "not_set" ? "최고 관리자 비밀번호가 아직 없어요. 아래 서버 준비를 봐 주세요."
@@ -5512,6 +5644,44 @@ function adminApp(L, BUILD, M) {
       }
       await act(() => api("/recipes/release", "POST", body), how === "schedule" ? "공개를 예약했어요. 그때 저절로 나와요(한 시간 안)" : "예약을 풀었어요");
       load();
+    },
+    // 1.39 판 정리: 붙여 넣은 계획을 먼저 세어 보고(dry), 숨기기·되돌리기는 몇 개인지 묻고 해요.
+    "recipe-retire": async (form, submitter) => {
+      const go = submitter?.value ?? "dry";
+      const f = new FormData(form);
+      const file = form.querySelector('input[name="file"]')?.files?.[0];
+      const below = Number(f.get("below"));
+      const groups = retireGroups(file ? await file.text() : String(f.get("plan") ?? ""), Number.isInteger(below) && below > 0 ? below : null);
+      const asked = groups.reduce((n, g) => n + g.titles.length + g.codes.length, 0);
+      if (!asked) { toast("정리 계획이나 제목을 붙여 넣어 주세요"); return; }
+      const note = String(f.get("note") ?? "").trim() || "판 정리";
+      const path = go === "show" ? "/recipes/show-titles" : "/recipes/hide-titles";
+      // belowApp마다 한 번씩 보내고 합쳐요.
+      const send = async (dry) => {
+        const sum = { found: 0, done: 0, missing: [] };
+        for (const g of groups) {
+          for (let i = 0; i < Math.max(g.titles.length, g.codes.length); i += 1200) {
+            const r = await api(path, "POST", { titles: g.titles.slice(i, i + 1200), codes: g.codes.slice(i, i + 1200), note, dry, ...(g.belowApp ? { belowApp: g.belowApp } : {}) });
+            sum.found += r.found ?? 0; sum.done += r.hidden ?? r.shown ?? 0; sum.missing.push(...(r.missing ?? []));
+          }
+        }
+        return sum;
+      };
+      // Not through act(): it empties the form, and the pasted plan is needed again for 숨기기.
+      let dry;
+      try { dry = await send(true); } catch (e) { fail(e); return; }
+      const keep = groups.filter((g) => g.belowApp).map((g) => g.belowApp);
+      const old = go === "hide" && keep.length ? ` · 앱 판 ${[...new Set(keep)].join("·")} 미만에는 계속 보여요` : "";
+      const say = (n, what) => `${asked}개 가운데 ${n}개 ${what}${old}`;
+      S.recipeRetire = { say: say(dry.found, go === "show" ? "되돌릴 수 있어요" : go === "hide" ? "숨길 수 있어요" : "찾았어요"), missing: dry.missing };
+      if (go === "dry" || !dry.found) { render({ keepScroll: true }); return; }
+      confirmBox(go === "show" ? `${dry.found}개를 장터에 다시 보일까요?` : `${dry.found}개를 장터에서 내릴까요?`,
+        go === "show" ? "목록·찾기·추천에 다시 나와요." : "목록·찾기·추천에서 빠져요. 지우지 않고, 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 여기서 한 번에 되돌릴 수 있어요." + old,
+        go === "show" ? "되돌리기" : "숨기기", async () => {
+          const r = await act(() => send(false), (x) => go === "show" ? `${x?.done ?? 0}개를 다시 보였어요` : `${x?.done ?? 0}개를 내렸어요`);
+          if (r) S.recipeRetire = { say: say(r.done, go === "show" ? "다시 보였어요" : "내렸어요"), missing: r.missing };
+          S.data.recipes = null; load();
+        }, go === "show" ? "primary" : "danger");
     },
     "recipe-upload": async (form) => {
       const f = new FormData(form);

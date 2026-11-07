@@ -54,7 +54,7 @@ object InAppReview {
     @Volatile private var hushedUntil = 0L
 
     /** An ad was shown or a payment window opened just now. */
-    fun hush(now: Long = System.currentTimeMillis()) { hushedUntil = now + HUSH_MS }
+    fun hush(now: Long = com.bamnat.core.time.Today.millis()) { hushedUntil = now + HUSH_MS }
 
     /** Whether now is a calm moment: no ad or payment a moment ago, no app-stop in the last days ([crashAt] 0 for none). */
     fun calm(now: Long, crashAt: Long, until: Long = hushedUntil): Boolean =

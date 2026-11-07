@@ -250,7 +250,17 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var editor by remember(team.id, month) { mutableStateOf<TeamEditor?>(null) }
     var board by remember(team.id, month) { mutableStateOf<TeamBoard?>(null) }
     LaunchedEffect(startImport) { startImport?.first?.month?.let { if (it != month) monthText = it.toString() } }
-    LaunchedEffect(saved) { val s = saved ?: return@LaunchedEffect; if (editor == null || board?.members != s.members) { editor = TeamEditor(board?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s); board = editor!!.board } }
+    // 1.39 PC e1240d5a: a file or shared photo of another month moves the month while the last month's board is still on its
+    // way in; that board used to land on this month (머리 11월, 칸 12월) and the import, waiting for this month's board, never
+    // opened. Only this month's board is taken, and one of another month already in hand is replaced.
+    LaunchedEffect(saved, month) {
+        val s = saved?.takeIf { it.month == month } ?: return@LaunchedEffect
+        val here = board?.takeIf { it.month == s.month }
+        if (editor == null || here == null || here.members != s.members) {
+            editor = TeamEditor(here?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s)
+            board = editor!!.board
+        }
+    }
     LaunchedEffect(board) { val b = board ?: return@LaunchedEffect; if (b != saved) { delay(400); store.saveBoard(team.id, b) } }
     // 1.38 검토(데이터 보존): leaving within the 400ms wait used to drop the last cells painted; they are written on the way out.
     val lastBoard by androidx.compose.runtime.rememberUpdatedState(board)
@@ -481,6 +491,19 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 val charges = active.count { it.skill == Skill.CHARGE }
                 val lines = remember(signs, charges) { TeamCheck.summary(signs, { Fmt.monthDay(it) }, charges) }
                 var all by remember { mutableStateOf(false) }
+                // 1.39 G2 PC 5066b027: with 신청 open the month is mostly empty, and 31 부족 notes pushed the 신청 card down. While a
+                // round is open they fold to one line until asked for.
+                val asking = round?.open(Today.millis()) == true
+                var shown by remember(round?.id) { mutableStateOf(!asking) }
+                if (!shown) {
+                    val danger = lines.count { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("신청을 받는 중이라 접어 뒀어요" + (if (danger > 0) " · 규칙 ${danger}줄" else ""), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { shown = true }) { Text("펼치기") }
+                    }
+                    return@SectionCard
+                }
                 lines.take(if (all) lines.size else 6).forEach { l ->
                     val danger = l.kind == TeamCheck.Kind.RULE || l.kind == TeamCheck.Kind.WEEK_HOURS
                     Text((if (danger) "⚠ " else "· ") + l.text, style = MaterialTheme.typography.bodySmall,
@@ -921,7 +944,7 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         // teammate on an iPhone (no 밤낮 app) puts the days in their own calendar from the page, and it follows each 다시 확정.
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
             "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together,
-            feed = java.time.ZoneId.systemDefault()).apply {
+            feed = com.bamnat.core.time.Today.zone()).apply {
             // Without the phone's 시간대 이름 (the server reads Asia/Seoul), so only the 'on' mark goes. 처리방침 3.12 names it (총괄 몫).
             remove("tz")
             // 1.39 PC (SPREAD 2차): the page speaks to a teammate from the first 확정 (card, preview), not only after a 바뀜.

@@ -261,6 +261,7 @@ class AppContainer(context: Context) {
     val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
     init {
         (companyApi as? com.bamnat.app.company.CompanyClient)?.roomTag = { room -> plazaTags.json(room) }
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomCard = { room -> plazaTags.cardJson(room) }
     }
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
@@ -793,6 +794,8 @@ class AppContainer(context: Context) {
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
+                // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
+                com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
                 com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
             }
         }

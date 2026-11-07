@@ -137,7 +137,7 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         val compare = if (flags[com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE]?.on != true) null else com.bamnat.core.sleep.PlanVsActual.summary(
             com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, today.minusDays(com.bamnat.core.sleep.PlanVsActual.WINDOW_DAYS - 1), today,
                 s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes))
-        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today, compare, snapshot.resolver)
+        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes, s.workStyle), today, compare, snapshot.resolver)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val health = container.healthSleep.state

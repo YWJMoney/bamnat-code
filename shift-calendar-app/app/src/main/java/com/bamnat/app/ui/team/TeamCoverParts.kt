@@ -99,7 +99,9 @@ internal fun CallCard(
         val taken = call.taken?.let(names::get)
         if (taken != null) {
             Text("${taken.name}님이 들어가요. 표에 넣었어요.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text("확정을 다시 누르면 두 사람 링크도 바뀐 근무로 고쳐져요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.39 G2 PC 5066b027 (상): the small grey line was missed; the leader's next step is said as one, in the warning colour.
+            Text("남은 일: 아래 '다시 확정'을 눌러야 두 사람 링크와 달력·알람에 바뀐 근무가 들어가요.", style = MaterialTheme.typography.bodyMedium,
+                color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
             TextButton(onClick = onEnd) { Text("이 카드 닫기") }
             return@SectionCard
         }

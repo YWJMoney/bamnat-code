@@ -263,6 +263,10 @@ async function route(request, env) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
+  // 1.39 [ADM3-41] 관리자 앱 › 서버 상태가 살아 있는지 보는 곳. 아무것도 읽지 않고 살아 있다고만 답해요.
+  if (path === "/api/health" && (request.method === "GET" || request.method === "HEAD")) {
+    return new Response(request.method === "HEAD" ? null : JSON.stringify({ ok: true }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
   if (path === SPREAD_HIDE && request.method === "POST") return spreadHide(request, url);
   if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
@@ -1298,9 +1302,15 @@ async function callView(env, key, said, status = 200, known = null) {
   const done = record.taken != null;
   const state = done ? (record.taken === p ? `<p class="done">${esc(me)}님이 들어가기로 정해졌어요. 고마워요!</p>` : `<p class="muted">다른 분이 들어가기로 정해졌어요. 답해 줘서 고마워요.</p>`)
     : record.closed ? `<p class="muted">요청이 닫혔어요.</p>`
-    : `<div class="buttons"><form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="yes"><button class="in">들어갈 수 있어요</button></form>` +
-      `<form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="no"><button class="out">어려워요</button></form></div>` +
-      (mine.a ? `<p class="muted">지금 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} (바꿀 수 있어요)</p>` : "");
+    // 1.39 G2 PC 5066b027: after an answer both big buttons stayed alike and read as 'not sent yet'. The picked one keeps its look
+    // with ✓, the other shrinks and fades but can still be pressed to change the answer.
+    : (() => {
+      const pick = (a) => !mine.a ? "" : mine.a === a ? " picked" : " other";
+      const mark = (a) => (mine.a === a ? "✓ " : "");
+      return `<div class="buttons"><form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="yes"><button class="in${pick("yes")}">${mark("yes")}들어갈 수 있어요</button></form>` +
+        `<form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="no"><button class="out${pick("no")}">${mark("no")}어려워요</button></form></div>` +
+        (mine.a ? `<p class="muted">보낸 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} · 다른 쪽을 누르면 바뀌어요</p>` : "");
+    })();
   const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
   const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.team)} · ${esc(me)}님께</p>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}${saidHtml}${state}
 <p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("call")}`;
@@ -2678,7 +2688,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;align-items:center;gap:6px}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
-.buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
+.buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.buttons .other{opacity:.45;min-height:64px;font-size:18px}.buttons .picked{outline:4px solid var(--today);outline-offset:2px}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
 .pick{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;cursor:pointer}.pick.on{background:var(--sat);color:#fff;border-color:var(--sat)}

@@ -199,7 +199,9 @@ internal fun SharedSchedule.showsText(): String? {
         "일정".takeIf { "jobs" in shows },
         "휴가 종류".takeIf { "leaveKinds" in shows && days.values.any { it.leave != null } },
         "연장·휴무일 근무".takeIf { "extras" in shows && days.values.any { it.extras.isNotEmpty() } },
-    ) + memoNames + listOfNotNull(payKind.label.takeIf { "pay" in shows })).takeIf { it.isNotEmpty() }?.joinToString(", ")
+    ) + memoNames + listOfNotNull(payKind.label.takeIf { "pay" in shows },
+        // 1.39 PC c0ca3d9f: the preview said '근무와 휴가만' while the plan line showed on the calendar.
+        "지금 자는 중".takeIf { sleepNow != null }, "계획한 잠 시간".takeIf { sleepPlan.isNotEmpty() })).takeIf { it.isNotEmpty() }?.joinToString(", ")
 }
 
 /**

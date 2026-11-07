@@ -86,8 +86,7 @@ internal fun widgetFont(id: String?): FontFamily? = when (id) {
 }
 
 /** A day's states on a widget, as the calendar names them ([com.bamnat.app.ui.parts.dayStates]): its kind of work, 토·일·공휴일, 다른 달, 오늘. */
-internal fun widgetDayStates(day: com.bamnat.core.schedule.ResolvedDay, today: java.time.LocalDate, inMonth: Boolean = true): Set<String> {
-    val kind = day.shiftType ?: day.coveredShift
-    val role = kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }
-    return com.bamnat.app.ui.parts.dayStates(role, day.date.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.isHoliday(day.date), inMonth, day.date == today, false)
-}
+internal fun widgetDayStates(day: com.bamnat.core.schedule.ResolvedDay, today: java.time.LocalDate, inMonth: Boolean = true, hasPattern: Boolean = true): Set<String> =
+    // [LINK-01] 1.39 The same day as the calendar's cell (쉬는 날의 대근·특근, 연차, 직접 바꾼 날): one place, com.bamnat.core.schedule.DayWork.
+    com.bamnat.app.ui.parts.dayStates(com.bamnat.core.schedule.DayWork.of(day, hasPattern), day.date.dayOfWeek,
+        com.bamnat.core.holiday.KoreanHolidays.isHoliday(day.date), inMonth, day.date == today, false)

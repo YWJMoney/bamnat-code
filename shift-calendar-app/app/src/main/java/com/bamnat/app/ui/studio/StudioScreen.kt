@@ -1424,7 +1424,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
             listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
                 com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1",
                 // 1.39 [TASK-07] 할 일 위젯 (처음 하나는 무료).
-                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2").forEach { (cls, label) ->
+                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2",
+                // 1.39 [TASK-31] 할 일 한 줄 (같은 할 일 위젯, 처음 놓은 하나가 무료).
+                com.bamnat.app.widget.TaskLineWidgetReceiver::class.java to "할 일 한 줄 · 2×1").forEach { (cls, label) ->
                 androidx.compose.material3.AssistChip(onClick = {
                     if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
                 }, label = { Text(label) })
@@ -1531,7 +1533,7 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                     // 1.39 [TASK-07] 할 일 위젯: 머리와 ＋, 늦은·오늘·끝낸 할 일 한 줄씩, 각 줄 앞 동그라미 (부품 widget.task·check·add).
                     WidgetKind.TASKS -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) { Head("할 일 1개 · 늦은 것 1개") }
+                            Box(Modifier.weight(1f)) { Head("할 일 2개 · 늦은 것 1개") }
                             val plus = bp.style("widget.task.add")
                             if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
                                 MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
@@ -1546,11 +1548,17 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             val check = bp.style("widget.task.check", states - "today")
                             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
                                 verticalAlignment = Alignment.CenterVertically) {
-                                com.bamnat.app.ui.parts.PartText(if (done) "✓" else "○", face.over(check),
-                                    MaterialTheme.typography.titleMedium.copy(color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
-                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp),
-                                    Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
-                                        .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp))))
+                                // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
+                                val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
+                                    color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
+                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
+                                Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
+                                        contentDescription = null, tint = circle.color,
+                                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { circle.fontSize.toDp() }.coerceIn(10.dp, 40.dp)))
+                                }
                                 Column(Modifier.weight(1f)) {
                                     com.bamnat.app.ui.parts.PartText(words, face.over(line),
                                         MaterialTheme.typography.bodyMedium.copy(color = if (done) ink.copy(alpha = 0.6f) else ink, fontSize = (14 * scale).sp,

@@ -594,17 +594,15 @@ private fun DayCell(
     val hold = LocalDayHold.current
     val custom = !view.isDefault
     // [FREE-01][FREE-02] 1.35 칸 디자이너: this day's own look by the pattern (N칸·요일·근무), today's own if there is one.
-    val cellLook = remember(view, day.date, day.shiftType, day.coveredShift, isToday) {
-        val kind = day.shiftType ?: day.coveredShift
-        view.lookFor(day.date.toEpochDay(), day.date.dayOfWeek.value,
-            kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }, isToday)
+    // [LINK-01] 1.39 What every 작품 surface reads of this day (쉬는 날의 대근·특근은 일한 날로, 연차·직접 바꾼 날도), worked out once.
+    val dayWork = remember(day, snapshot.hasPattern) { com.bamnat.core.schedule.DayWork.of(day, snapshot.hasPattern) }
+    val cellLook = remember(view, day.date, dayWork, isToday) {
+        view.lookFor(day.date.toEpochDay(), day.date.dayOfWeek.value, dayWork.role?.key, isToday)
     }
     val shape = cellShape(view, cellLook)
     // [LAY-03] 1.36 꾸밈 층: the decorations that stand on this day (its date, kind of work, today, a holiday).
-    val decorDay = remember(day.date, day.shiftType, day.coveredShift, isToday, inMonth) {
-        val kind = day.shiftType ?: day.coveredShift
-        com.bamnat.app.ui.decor.decorDay(day.date, kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key },
-            isToday, dim = !inMonth)
+    val decorDay = remember(day.date, dayWork, isToday, inMonth) {
+        com.bamnat.app.ui.decor.decorDay(day.date, dayWork.role?.key, isToday, dim = !inMonth, work = dayWork.states)
     }
     // [CAL-01] Date 14sp and the line under it 11sp, growing with the font setting only as far as the cell holds.
     val density = LocalDensity.current
@@ -617,12 +615,8 @@ private fun DayCell(
     val orgDay = orgDayName(LocalOrgDayGroup.current, date, holidayName)
     // [BLU-05] 1.36 부품 꾸미기: the cell's states (근무 종류·토·일·공휴일·다른 달·오늘·고름) and its parts, over the looks above.
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val partStates = remember(blueprint, day.shiftType, day.coveredShift, date, holidayName, inMonth, isToday, isSelected) {
-        val kind = day.shiftType ?: day.coveredShift
-        com.bamnat.app.ui.parts.dayStates(
-            kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key },
-            date.dayOfWeek, holidayName != null, inMonth, isToday, isSelected,
-        )
+    val partStates = remember(blueprint, dayWork, date, holidayName, inMonth, isToday, isSelected) {
+        com.bamnat.app.ui.parts.dayStates(dayWork, date.dayOfWeek, holidayName != null, inMonth, isToday, isSelected)
     }
     // [RUL-02] 1.36 조건부 꾸미기: lines with a 수식 read this day's values (근무·메모·꼬리표·지출), only when the blueprint has one.
     val dayFacts = com.bamnat.app.logic.LocalDayFacts.current

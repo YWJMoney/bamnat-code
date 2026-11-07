@@ -699,6 +699,9 @@ internal fun ShareOptions.partNames(kind: MoneyShare = MoneyShare.PAY): List<Str
     "연장·휴무일 근무".takeIf { extras },
     "메모".takeIf { memos },
     kind.label.takeIf { pay },
+    // 1.39 PC c0ca3d9f: the sleep rows were sent but '보내는 것' said 근무 only.
+    "지금 자는 중(잘 때만)".takeIf { sleepNow },
+    "계획한 잠 시간".takeIf { sleepPlan },
 )
 
 /** A figure worked out for the sheet, or [fallback] when the data cannot be read; leaving the sheet still cancels it. */

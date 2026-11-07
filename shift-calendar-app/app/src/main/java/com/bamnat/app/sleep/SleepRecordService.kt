@@ -313,7 +313,7 @@ class SleepRecordService : Service(), SensorEventListener {
         return NotificationCompat.Builder(this, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setGroup(Notifications.SLEEPING_GROUP)
+            .setGroup(Notifications.SLEEPING_REC_GROUP).setGroupSummary(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
             .setOngoing(true)
