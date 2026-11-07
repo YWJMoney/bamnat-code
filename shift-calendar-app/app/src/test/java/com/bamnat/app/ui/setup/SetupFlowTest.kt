@@ -530,4 +530,23 @@ class SetupFlowTest {
         assertEquals(SetupStep.TIMES, d.step)
         assertFalse(d.timesConfirmed)
     }
+
+    /** PC 12.2: back on the bundle's page, the card already picked goes on again. */
+    @Test fun thePickedBundleGoesOnAgainAfterBack() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.SHIFT)
+        vm.next()
+        vm.pickBundle(ShiftBundles.TWO)
+        assertEquals(SetupStep.TIMES, draft.step)
+        vm.back()
+        assertEquals(SetupStep.BUNDLE, draft.step)
+        vm.pickBundle(ShiftBundles.TWO)
+        assertEquals(SetupStep.TIMES, draft.step)
+        vm.back(); vm.back()
+        assertEquals(SetupStep.COMPANY, draft.step)
+        vm.back()
+        assertEquals(SetupStep.STYLE, draft.step)
+        vm.pickStyle(WorkStyle.SHIFT)
+        assertEquals(SetupStep.COMPANY, draft.step)
+    }
 }
