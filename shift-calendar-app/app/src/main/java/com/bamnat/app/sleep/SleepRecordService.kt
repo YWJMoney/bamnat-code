@@ -39,7 +39,11 @@ import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.bamnat.core.sleep.RecordEnd
+import com.bamnat.app.ui.Fmt
 import java.io.File
 import java.io.RandomAccessFile
 import java.time.Duration
@@ -58,7 +62,8 @@ import kotlin.math.sqrt
  * - Clips: spread over the hours, at most 3 an hour and 30 a night, 8 kHz, deleted after 7 days unless kept.
  */
 class SleepRecordService : Service(), SensorEventListener {
-    data class Recording(val startedAt: Long, val events: Int)
+    /** [endsAt]: when it stops by itself ([RecordEnd]), once known. */
+    data class Recording(val startedAt: Long, val events: Int, val endsAt: Long? = null)
 
     @Volatile private var running = false
     private var thread: Thread? = null
@@ -71,11 +76,16 @@ class SleepRecordService : Service(), SensorEventListener {
     @Volatile private var lastMovedAt: Long? = null
     private var lastAccel: FloatArray? = null
     private var wake: android.os.PowerManager.WakeLock? = null
+    @Volatile private var endsAt: Long? = null
+    /** False when it stopped by the clock alone: the user may still be asleep, so the sleep stays open. */
+    @Volatile private var closeSleep = true
+    private var watch: kotlinx.coroutines.Job? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            if (!running) { done(); return START_NOT_STICKY }
             finishNight()
             return START_NOT_STICKY
         }
@@ -97,6 +107,7 @@ class SleepRecordService : Service(), SensorEventListener {
         _recording.value = Recording(startedAt, 0)
         // 잠들었어요 as well: the night is in the log from now; the start moves to when the phone settled.
         appContainer.appScope.launch { appContainer.sleepRepository.fellAsleep() }
+        watch = appContainer.appScope.launch { watchTheMorning() }
         sensors = getSystemService(SensorManager::class.java)?.also { sm ->
             sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let { sm.registerListener(this, it, 3_000_000, 10_000_000) }
         }
@@ -117,7 +128,7 @@ class SleepRecordService : Service(), SensorEventListener {
                 if (audio?.isMusicActive == true && NoiseService.playing.value == null) return@SoundDetector
                 events += e
                 if (e.kind == SoundKind.MOVE || e.kind == SoundKind.TALK) { movedThisMinute = true; lastMovedAt = Today.millis(); SmartWake.check(this, lastMovedAt) }
-                _recording.value = Recording(startedAt, events.count { it.kind != SoundKind.MOVE && it.kind != SoundKind.OTHER })
+                _recording.value = Recording(startedAt, events.count { it.kind != SoundKind.MOVE && it.kind != SoundKind.OTHER }, endsAt)
                 keepClip(e, events, clips, ring, written, rate)
             }
             runCatching {
@@ -159,8 +170,47 @@ class SleepRecordService : Service(), SensorEventListener {
         runCatching { writeWav(file, ring, from, endSample, rate) }.onSuccess { clips[e] = file }
     }
 
+    /**
+     * 1.39 [SLEEP-06] The microphone never runs into the day: it stops when 깼어요 closes the sleep (from any screen or
+     * the notice), and by [RecordEnd] when nothing comes. Turning the alarm off stops it from [AlarmService].
+     */
+    private suspend fun watchTheMorning() {
+        val c = appContainer
+        val start = local(startedAt)
+        val end = runCatching {
+            val s = c.settingsRepository.settings.value
+            val resolver = c.scheduleRepository.snapshot.first().resolver
+            val now = start
+            val alarm = if (s.alarmsEnabled) com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt else null
+            val plan = com.bamnat.core.sleep.SleepSchedule.of(resolver, now.toLocalDate().minusDays(1), now.toLocalDate().plusDays(1),
+                s.alarmsEnabled, s.sleepTargetMinutes)
+            RecordEnd.at(start, alarm, RecordEnd.plannedWake(start, plan.sleeps), s.sleepTargetMinutes)
+        }.getOrElse { start.plusHours(RecordEnd.MAX_HOURS) }
+        val endMillis = end.atZone(Today.zone()).toInstant().toEpochMilli()
+        endsAt = endMillis
+        _recording.value?.let { _recording.value = it.copy(endsAt = endMillis) }
+        ContextCompat.getMainExecutor(this).execute { if (running) runCatching {
+            getSystemService(android.app.NotificationManager::class.java)?.notify(Notifications.SLEEP_RECORD_ID, notice())
+        } }
+        var sawOpen = false
+        while (running) {
+            delay(30_000L)
+            if (!running) return
+            val open = c.sleepRepository.openNow()
+            if (open != null) sawOpen = true
+            val awake = sawOpen && open == null
+            val late = Today.millis() >= endMillis
+            if (awake || late) {
+                closeSleep = awake
+                ContextCompat.getMainExecutor(this).execute { if (running) finishNight() }
+                return
+            }
+        }
+    }
+
     private fun finishNight() {
         running = false
+        watch?.cancel()
         sensors?.unregisterListener(this)
         thread?.let { t -> Thread { t.join(3_000); ContextCompat.getMainExecutor(this).execute { done() } }.start() } ?: done()
     }
@@ -180,11 +230,14 @@ class SleepRecordService : Service(), SensorEventListener {
                 level = e.peakOverRoom, file = clips[e]?.name)
         })
         val onset = synchronized(moved) { SleepOnset.minuteAsleep(moved) }
-        // 깼어요, with the start moved to when the phone settled.
-        val sleep = c.sleepRepository.wokeUp()
+        // 깼어요, with the start moved to when the phone settled. Stopped by the clock alone, the sleep stays open
+        // (the user may still be asleep); 깼어요 already tapped, the sleep it closed is the night's.
+        val sleep = if (closeSleep) c.sleepRepository.wokeUp() ?: c.sleepRepository.recent(1).first().firstOrNull()
+            else c.sleepRepository.openNow()
         if (sleep != null && onset != null && onset > 0) {
             val start = local(startedAt).plusMinutes(onset.toLong())
-            if (sleep.end != null && start.isBefore(sleep.end) && abs(Duration.between(sleep.start, local(startedAt)).toMinutes()) < 5)
+            if ((sleep.end == null || start.isBefore(sleep.end)) && start.isBefore(Today.dateTime()) &&
+                abs(Duration.between(sleep.start, local(startedAt)).toMinutes()) < 5)
                 c.sleepRepository.edit(sleep.id, start, sleep.end)
         }
         val used = if (batteryAtStart >= 0) (batteryAtStart - battery()).coerceAtLeast(0) else -1
@@ -208,6 +261,7 @@ class SleepRecordService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         running = false
+        watch?.cancel()
         wake?.let { if (it.isHeld) it.release() }
         sensors?.unregisterListener(this)
         _recording.value = null
@@ -222,7 +276,8 @@ class SleepRecordService : Service(), SensorEventListener {
         .setSilent(true)
         .setOngoing(true)
         .setContentTitle("자는 동안 소리를 재고 있어요")
-        .setContentText("휴대폰 안에서만 듣고, 아무 데도 보내지 않아요")
+        .setContentText(endsAt?.let { "알람을 끄거나 깼어요를 누르면 끝나요 · 늦어도 ${Fmt.time(local(it).toLocalTime())}" }
+            ?: "휴대폰 안에서만 듣고, 아무 데도 보내지 않아요")
         .setContentIntent(Notifications.open(this, NoticeLinks.Target.SLEEP, 3409))
         .addAction(0, "측정 끝", PendingIntent.getService(this, 3410, Intent(this, SleepRecordService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
