@@ -132,6 +132,8 @@ class AlarmService : Service() {
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
                     // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
+                    // 1.39 [SLEEP-06] The morning alarm off: 자는 동안 소리 stops too, so the microphone does not run into the day.
+                    if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepRecordService.stop(this)
                 }
                 if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()
