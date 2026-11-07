@@ -92,8 +92,11 @@ object TakeHome {
                     else WonCut.cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
                 // 1.39 [PAYX-59] G4 건강보험 보수월액 하한 28만 원 (국민건강보험법 시행령 제32조): a smaller pay pays on 28만 원.
                 val healthBase = if (taxable in 1 until HEALTH_BASE_MIN) HEALTH_BASE_MIN else taxable
-                val health = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
-                if (health > 0 && healthBase != taxable) notes += "건강보험은 보수 하한 ${won(HEALTH_BASE_MIN)}으로 계산했어요(국민건강보험법 시행령 제32조)"
+                val uncapped = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
+                if (uncapped > 0 && healthBase != taxable) notes += "건강보험은 보수 하한 ${won(HEALTH_BASE_MIN)}으로 계산했어요(국민건강보험법 시행령 제32조)"
+                // 1.39 [PAYX-61] 발굴 G3-B7: 보수월액보험료 상한 (근로자 몫은 그 절반).
+                val cap = healthCap(on ?: TABLE_DAY)
+                val health = if (cap != null && uncapped > cap) cap.also { notes += "건강보험은 월 상한 ${won(cap)}까지만 떼요(보건복지부고시 제2025-222호)" } else uncapped
                 val care = WonCut.cut10(health, sh.careRatio)
                 val employment = if (InsuranceLine.EMPLOYMENT in off) 0L else WonCut.cut10(taxable, sh.employment)
                 off.forEach { notes += "${it.label}은 떼지 않아요 (${it.why})" }
@@ -116,6 +119,13 @@ object TakeHome {
     const val HEALTH_BASE_MIN = 280_000L
 
     /**
+     * 1.39 [PAYX-61] 발굴 G3-B7 (공식 대조 G4 상한): one side's (근로자 or 사업주) 건강보험료 at most, a month. 보건복지부고시 제2025-222호 '월별 건강보험료액의
+     * 상한과 하한에 관한 고시'(2025-12-24, 2026년 1월분부터): 직장가입자 보수월액보험료 상한 9,183,480원, 근로자·사업주가 반씩이라 4,591,740원
+     * (국민건강보험공단 고시 원문 대조 2026-11-07). Before 2026 it is not checked here, so none; the next year's 고시 goes in when it is out.
+     */
+    fun healthCap(on: java.time.LocalDate): Long? = if (on.year >= 2026) 9_183_480L / 2 else null
+
+    /**
      * 1.39 [PAYX-56][PAYX-58][PAYX-59] [estimate] with everything the pay setup knows: its tax way, 가족·자녀, the month's 비과세
      * ([nonTaxable], or [free] when the caller worked it out with the month's pay), the 4대보험 the worker is out of and the
      * 공제 쪽 돈 of [afterTax]. Every screen that says 실수령 goes through here so they say the same.
@@ -126,7 +136,14 @@ object TakeHome {
     ): TakeHomeResult = estimate(
         gross, mode, profile.taxFamily, month.atDay(1), profile.taxChildren, free ?: nonTaxable(profile, month),
         off = profile.insuranceOff, afterTax = pay?.afterTax?.map { it.label to it.amount } ?: afterTax(profile, month),
-    )
+    ).let { r ->
+        // 1.39 [PAYX-63] 발굴 G3-B8 (첫 단계): 소급분 is taxed here with the month it is paid in; the year's 연말정산 settles it.
+        val backPay = profile.customRules.any { it.on && !it.deduct && it.oneMonth && it.inPeriod(month) && CustomRule.looksOneMonth(it.name) }
+        if (backPay && mode == TaxMode.INSURANCE_4) r.copy(notes = r.notes + BACK_PAY_NOTE) else r
+    }
+
+    /** 1.39 [PAYX-63] 발굴 G3-B8. */
+    const val BACK_PAY_NOTE = "소급분 세금은 이번 달 급여에 붙여 어림했어요. 실제로는 연말정산 때 맞춰져요"
 
     /** 1.39 [PAYX-56] [forProfile] for a screen that may have no pay setup yet (then 가족 1명, 비과세 [free] or none). */
     fun of(profile: PayProfile?, month: java.time.YearMonth, gross: Long, mode: TaxMode, free: Long? = null): TakeHomeResult =

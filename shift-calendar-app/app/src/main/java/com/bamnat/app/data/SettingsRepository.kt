@@ -240,6 +240,8 @@ data class AppSettings(
     val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
     val payDepositNotice: Boolean = true,
+    /** 1.39 [PAYX-62] 알바 주 15시간 경계 알림: 이번 주가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄. In the backup. */
+    val weekHoursNudge: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
     val calendarOnly: Boolean = false,
     /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. 1.39 [PAYX-60] three ways. */
@@ -532,6 +534,7 @@ class SettingsRepository(context: Context) {
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
+            weekHoursNudge = prefs.getBoolean(K_WEEK_HOURS_NUDGE, d.weekHoursNudge),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             statsPeriod = StatsPeriod.read(prefs.getString(K_STATS_PERIOD_WAY, null), prefs.getBoolean(K_STATS_PERIOD, false)),
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
@@ -670,6 +673,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
+            .putBoolean(K_WEEK_HOURS_NUDGE, s.weekHoursNudge)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putString(K_STATS_PERIOD_WAY, s.statsPeriod.name)
             .putBoolean(K_STATS_PERIOD, s.statsPeriod == StatsPeriod.PAY)
@@ -742,6 +746,7 @@ class SettingsRepository(context: Context) {
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
+        const val K_WEEK_HOURS_NUDGE = "week_hours_nudge"
         const val K_CAL_ONLY = "calendar_only"
         const val K_STATS_PERIOD = "stats_pay_period"
         const val K_STATS_PERIOD_WAY = "stats_period_way"
