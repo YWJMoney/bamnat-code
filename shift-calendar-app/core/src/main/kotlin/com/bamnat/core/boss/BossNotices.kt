@@ -92,7 +92,8 @@ object Durunuri {
         val limit = checked[ledger.month.year]
         val names = people.map { it.staff.name.ifBlank { "이름 없음" } }.let { if (it.size <= 3) it.joinToString(", ") else "${it.size}명" }
         val rule = if (limit != null) "직원 10명 미만 사업장에서 월 보수 ${limit / 10_000}만 원 미만인 새 가입 직원" else "직원 10명 미만 사업장의 새 가입 직원(보수 기준은 그해 공고)"
-        return "두루누리 지원: $rule 은 국민연금·고용보험료의 80%를 최대 36개월 지원받을 수 있어요($names). " +
+        // PC 5066b027: someone with neither 보험 ticked was left out without a word; the list now says who it looked at.
+        return "두루누리 지원: ${rule}은 국민연금·고용보험료의 80%를 최대 36개월 지원받을 수 있어요(국민연금·고용보험을 고른 직원 가운데 $names). " +
             "지난 1년 안에 두 보험에 가입한 적이 없어야 하고, 사장님이 4대사회보험 정보연계센터에서 신청해요. 이 대장의 4대보험은 지원 전 금액이에요."
     }
 }
