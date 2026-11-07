@@ -474,10 +474,12 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
     SectionCard(title = "관리자 연결") {
         when {
             // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
+            // 1.37.1 [FAM-01] 가족 프로 이용권: said as what it is, not as an admin's phone.
+            admin?.approved == true && admin.family -> Text("가족 프로 이용권으로 프로를 무료로 써요. 끝나는 날은 없어요.", style = MaterialTheme.typography.bodyMedium)
             admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
                 if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
             admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
-            else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요.",
+            else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요. 가족 프로 이용권 코드도 여기에 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
@@ -490,6 +492,7 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
                         val state = c.tierApi.link(c.companyStore.device, code)
                         code = ""
                         said = when {
+                            state.approved && state.family -> "연결했어요 · 가족 프로 이용권이에요. 프로를 무료로 써요."
                             state.approved && state.owner -> "연결했어요 · 최고 관리자 코드라 바로 승인됐어요. 프로를 무료로 써요."
                             state.approved -> "연결했어요 · 승인됨. 프로를 무료로 써요."
                             else -> "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
@@ -519,8 +522,9 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
             said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
             if (asking) com.bamnat.app.ui.components.AlertDialog(
                 onDismissRequest = { asking = false },
-                title = { Text("관리자 연결을 끊을까요?") },
-                text = { Text("관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
+                title = { Text(if (admin.family) "가족 프로 이용권을 끊을까요?" else "관리자 연결을 끊을까요?") },
+                text = { Text(if (admin.family) "가족 이용권으로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 쓰려면 새 가족 코드를 받아야 해요."
+                    else "관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
                 confirmButton = {
                     TextButton(onClick = {
                         asking = false

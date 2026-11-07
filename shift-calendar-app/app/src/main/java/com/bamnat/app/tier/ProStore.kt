@@ -226,7 +226,7 @@ class ProStore(context: Context) {
                     .put("waitingDays", p.waitingDays)
                     .put("earned", JSONArray(p.earned.map { JSONObject().put("days", it.days).put("at", it.at.toString()).put("why", it.why) }))
                     .put("admin", p.admin?.let { JSONObject().put("status", it.status).put("name", it.name).put("owner", it.owner)
-                        .put("previews", org.json.JSONArray(it.previews)) } ?: JSONObject.NULL)
+                        .put("previews", org.json.JSONArray(it.previews)).put("family", it.family) } ?: JSONObject.NULL)
             } ?: JSONObject.NULL)
             .put("dayPass", s.dayPass?.toString() ?: JSONObject.NULL)
             .put("trialAnswer", s.trialAnswer ?: JSONObject.NULL).put("trialAnswerAt", s.trialAnswerAt.json())

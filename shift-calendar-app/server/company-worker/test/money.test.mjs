@@ -460,3 +460,72 @@ test("a work plan's 1년 이용권 is checked under its own product", async (t) 
   assert.equal(MONEY.workPlans.team[0].cap, 15);
   assert.equal(MONEY.workPlans.staff.at(-1).monthly, 49900);
 });
+
+// 1.37.1 [FAM-01] 가족 프로 이용권 (사용자 2026-11-07): the owner gives family phones 프로 with no end and cuts it at any time.
+test("[FAM-01] family Pro: the owner's code, approved at once, no limit, cut any time", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-07T00:00:00Z") });
+  const { call } = server();
+  let owner = await signIn(call);
+  const { headers: m } = await member(call, owner);
+  // Only the owner makes family codes and sees the list.
+  assert.equal((await call("POST", "/api/admin/family/code", { name: "엄마" }, m)).status, 403);
+  assert.equal((await call("GET", "/api/admin/family", undefined, m)).status, 403);
+  assert.equal((await call("POST", "/api/admin/family/d0000000000000000", { do: "pause" }, m)).status, 403);
+  assert.equal((await call("POST", "/api/admin/family/code", { name: "  " }, owner)).status, 400);
+  const mom = (await call("POST", "/api/admin/family/code", { name: "엄마" }, owner)).data;
+  assert.match(mom.code, /^\d{6}$/);
+  assert.equal(mom.name, "엄마");
+  assert.equal((await call("GET", "/api/admin/family", undefined, owner)).data.codes.length, 1);
+
+  // The phone puts it in the same '관리자 연결' field: approved at once, no admin approval, no flags.
+  const linked = await call("POST", "/api/admin-link", { code: mom.code }, { ...phone(11), ...from(11) });
+  assert.deepEqual(linked.data, { status: "approved", name: "가족", owner: false, family: true });
+  const p = (await call("GET", "/api/passes", undefined, phone(11))).data.admin;
+  // 1.38 [FAM-02] The nickname stays in the developer app; the phone is told only "가족".
+  assert.deepEqual(p, { status: "approved", name: "가족", owner: false, family: true, previews: [] });
+  // Once only.
+  assert.equal((await call("POST", "/api/admin-link", { code: mom.code }, { ...phone(12), ...from(12) })).status, 404);
+
+  // As many as the owner likes (an admin has two), and they do not show among the admins' phones or the pending badge.
+  for (let n = 12; n < 16; n++) {
+    const c = (await call("POST", "/api/admin/family/code", { name: `가족${n}` }, owner)).data.code;
+    assert.equal((await call("POST", "/api/admin-link", { code: c }, { ...phone(n), ...from(n) })).data.status, "approved");
+  }
+  const list = (await call("GET", "/api/admin/family", undefined, owner)).data;
+  assert.equal(list.phones.length, 5);
+  assert.equal(list.codes.length, 0);
+  assert.equal((await call("GET", "/api/admin/devices", undefined, owner)).data.devices.length, 0);
+  assert.equal((await adminHome(call, owner)).data.admins.phones, 0);
+
+  // No end: still 프로 a year on.
+  t.mock.timers.tick(400 * 24 * 60 * 60 * 1000);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.status, "approved");
+  owner = await signIn(call);
+
+  // A code lasts an hour, and the owner can take one back.
+  const late = (await call("POST", "/api/admin/family/code", { name: "아빠" }, owner)).data.code;
+  t.mock.timers.tick(60 * 60 * 1000 + 1);
+  assert.equal((await call("POST", "/api/admin-link", { code: late }, { ...phone(20), ...from(20) })).data.error, "code");
+  const back = (await call("POST", "/api/admin/family/code", { name: "아빠" }, owner)).data.code;
+  assert.equal((await call("POST", `/api/admin/family/codes/${back}/delete`, {}, owner)).data.codes.length, 0);
+  assert.equal((await call("POST", "/api/admin-link", { code: back }, { ...phone(20), ...from(20) })).data.error, "code");
+
+  // 1.38 [FAM-02] Pause and resume: free while paused, back to 프로 on resume, the same phone; a nickname only the admin app shows.
+  const momId = list.phones.find((d) => d.name === "엄마").id;
+  const paused = (await call("POST", `/api/admin/family/${momId}`, { do: "pause" }, owner)).data;
+  assert.equal(paused.phones.find((d) => d.id === momId).paused, true);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin, null);
+  await call("POST", `/api/admin/family/${momId}`, { do: "resume" }, owner);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.status, "approved");
+  const named = (await call("POST", `/api/admin/family/${momId}`, { do: "name", name: "우리 엄마" }, owner)).data;
+  assert.equal(named.phones.find((d) => d.id === momId).name, "우리 엄마");
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.name, "가족");
+  assert.equal((await call("POST", `/api/admin/family/${momId}`, { do: "name", name: " " }, owner)).status, 400);
+  assert.equal((await call("POST", `/api/admin/family/${momId}`, { do: "x" }, owner)).status, 400);
+
+  // Cut: the phone is free again at its next check, and the list says so.
+  const momPhone = { id: momId };
+  const after = (await call("POST", `/api/admin/devices/${momPhone.id}/remove`, {}, owner)).data;
+  assert.equal(after.phones.length, 4);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin, null);
+});
