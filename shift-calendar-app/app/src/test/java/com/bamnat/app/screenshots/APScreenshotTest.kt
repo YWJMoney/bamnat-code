@@ -170,8 +170,12 @@ class APScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(gone("이 회사 급여 설정을 쓸까요?", exact = true))
         assertTrue(appears("거의 다 됐어요! 내 금액만 넣어요", exact = true))
-        // [PAYG-08] 1.30 BA: the company's 통상시급 hours shown first, open.
-        reveal("회사 규칙 180시간", exact = true)
+        // 1.39 [PAYP-04] (3차 통합 PC): a way put in from 1.39 is the sharer's, its 통상시급 hours and bonus grouped, never shown
+        // (1.30 BA showed "회사 규칙 180시간" open here).
+        reveal(com.bamnat.app.ui.company.SharedPayWords.WAY_TITLE, exact = true)
+        assertTrue(gone("회사 규칙 180시간", exact = true))
+        assertTrue(gone("통상시급 기준 시간:", exact = false))
+        assertTrue(gone("기본급 100%", exact = false))
     }
 
     @Test fun usingItOnAPayAsksTheBase() = shoot("1235_ap_pay_find_base", PHONE_393) {
@@ -186,6 +190,13 @@ class APScreenshotTest : ScreenshotBase() {
         // [PAYG-01] 1.30 BA: nothing in until 이대로 계산 with the 기본급.
         assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         assertNull(c.payWays.way.value)
+        // 1.39 [PAYP-04] (3차 통합 PC "금액 창에 ‘통상시급 180시간’과 ‘상여 2·4·6·8·10·12월 기본급 100%’가 보여요"): only what
+        // the user types; the sharer's hours, common allowances and bonus are one card, without their numbers.
+        assertTrue(appears(com.bamnat.app.ui.company.SharedPayWords.WAY_TITLE, exact = true))
+        assertTrue(gone("회사 규칙 180시간", exact = true))
+        assertTrue(gone("통상시급 기준 시간:", exact = false))
+        assertTrue(gone("기본급 100%", exact = false))
+        assertTrue(gone("회사가 정한 수당 (따로 넣지 않아도 돼요)", exact = true))
         typeInto("월 기본급", "2500000")
         tapText("이대로 계산", exact = true)
         assertEquals("(주)예시정밀", c.payWays.way.value?.company)
@@ -269,6 +280,18 @@ class APScreenshotTest : ScreenshotBase() {
         assertTrue(appears("월 209시간으로 계산해요", exact = true))
         tapText("이대로 계산", exact = true)
         assertEquals(2_090_000L to 209, saved)
+    }
+
+    // ---- 1.39 [PAYP-04] 공유받은 방식의 기본급 고치기: 기본급만, 통상시급 기준 시간은 공유한 분의 것 ----
+    @Test fun aSharedWayAsksTheBaseAlone() = shoot("1239_ap_base_ask_shared", PHONE_393) {
+        var saved: Pair<Long, Int?>? = null
+        content { BaseAskSheet(bare(), Today.month(), onDismiss = {}, locked = true) { b, h -> saved = b to h } }
+        settle()
+        assertTrue(appears(com.bamnat.app.ui.company.SharedPayWords.BASE_ONLY, exact = true))
+        assertTrue(gone("통상시급 기준 시간도 알아요", exact = false))
+        typeInto("월 기본급", "2090000")
+        tapText("이대로 계산", exact = true)
+        assertEquals(2_090_000L to null, saved)
     }
 
     // ---- [PAYF-01] 손으로 만든 급여에도 검색 칸 한 번 ----

@@ -304,16 +304,19 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () -> Unit, onSave: (Long, Int?) -> Unit) {
+fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () -> Unit,
+    /** 1.39 [PAYP-04] The way is someone else's: the 기본급 alone, the 통상시급 hours not shown. */
+    locked: Boolean = false,
+    onSave: (Long, Int?) -> Unit) {
     var base by rememberSaveable { mutableStateOf(BaseAsk.known(profile, month)) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("기본급을 확인해 주세요", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text("회사 방식은 규칙만 가져와요. 금액은 내 명세서대로 넣어야 예상 급여가 맞아요.", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month)
+            Text(if (locked) SharedPayWords.BASE_ONLY else "회사 방식은 규칙만 가져와요. 금액은 내 명세서대로 넣어야 예상 급여가 맞아요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month, hideHours = locked)
             Button(onClick = { base?.let { onSave(it, hours) } }, enabled = (base ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                 Text("이대로 계산")
             }

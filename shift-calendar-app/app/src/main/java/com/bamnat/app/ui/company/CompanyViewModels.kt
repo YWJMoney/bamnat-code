@@ -1267,6 +1267,15 @@ class CompanyPayViewModel(
     /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
     private val applied: AppliedSetup? = scope.store.applied.value
     val canPropose: Boolean get() = applied != null
+    /**
+     * 1.39 [PAYP-04] Whether the pay made here uses a shared way that is locked once in (as [com.bamnat.app.company.PendingWays.keptWith]
+     * marks it): its 통상시급 hours, common allowances and bonus are then grouped as the sharer's, never their numbers.
+     */
+    val sharedWay: Boolean get() {
+        if (text?.let { t -> runCatching { JSONObject(t).has("pay") }.getOrDefault(false) } != true) return false
+        val setup = applied?.setup ?: com.bamnat.app.company.PendingWays.of(scope).pending.value?.setup ?: return false
+        return scope.payWays.way.value.let { it == null || it.setup != setup || it.shared }
+    }
     /** [PLAZA-03] What the user changed before the pay was made, so the screen can say their pay uses it. */
     var edited: Boolean by androidx.compose.runtime.mutableStateOf(false)
         private set
