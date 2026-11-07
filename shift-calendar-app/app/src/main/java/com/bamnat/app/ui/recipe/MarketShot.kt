@@ -501,9 +501,17 @@ private fun RulesPhone(r: Recipe) {
     }
 }
 
-/** A notification's words with its blanks ({이번주야간} …) filled as on an ordinary day. */
-private fun sample(text: String): String = text.replace(Regex("\\{[^}]{1,20}\\}")) { m ->
+/**
+ * A notification's words with its blanks ({이번주야간} …) filled as on an ordinary day. PC 4차 c0ca3d9f (장터 1): with [scope], a blank
+ * this phone can work out for the day is its own value; one it cannot (a 값 칸 it has not counted yet) is the ordinary-day example.
+ */
+internal fun sample(text: String, scope: com.bamnat.core.formula.FormulaScope? = null): String = text.replace(Regex("\\{[^{}]{1,20}\\}")) { m ->
     val name = m.value.trim('{', '}')
+    val own = scope?.let { sc ->
+        (com.bamnat.core.formula.Formula.parse(name) as? com.bamnat.core.formula.Parsed.Ok)?.formula
+            ?.let { f -> runCatching { f.run(sc)?.text }.getOrNull() }?.takeIf { it.isNotBlank() }
+    }
+    if (own != null) return@replace own
     when {
         // PC 확인 edb46c62 LOW: '오늘 매출 3, 목표를 넘었어요' — money blanks are written {원(…)}.
         // PC 확인 f020cead LOW: '큰 지출 38,500원 · 이달 쓴 돈 38,500원' — a month's sum is bigger than one day's.

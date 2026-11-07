@@ -264,7 +264,7 @@ private fun RuleTryout(got: List<LogicRule>, mine: List<LogicRule>, date: LocalD
         Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(r.name, style = MaterialTheme.typography.titleSmall)
-                Text(r.say(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(sample(r.say(), facts.scope(date)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (LogicTryout.timed(r)) {
                     val on = remember(r, days, facts) { LogicTryout.runsOn(r, days, facts) }
                     Text(if (on.isEmpty()) "앞으로 2주 동안은 돌 날이 없어요" else "앞으로 2주 동안 ${on.size}번 돌아요",
