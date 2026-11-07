@@ -74,6 +74,8 @@ import com.bamnat.core.formula.LogicAct
 import com.bamnat.core.formula.LogicButton
 import com.bamnat.core.formula.LogicRule
 import com.bamnat.core.formula.LogicVerb
+import com.bamnat.core.formula.MAX_ELSE
+import com.bamnat.core.formula.MAX_MORE
 import com.bamnat.core.formula.Parsed
 import com.bamnat.core.formula.RuleTrigger
 import com.bamnat.core.formula.pro
@@ -292,16 +294,18 @@ private fun PreviewLine(value: String, scope: FormulaScope) {
 // ---- 무엇을 ----
 
 @Composable
-private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: FormulaScope) {
+private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: FormulaScope, title: String? = "무엇을") {
     val c = LocalContext.current.appContainer
     // 1.39 [FX-03][FX-05] the work being edited: its 값 칸 and buttons.
     val fx = LocalFxLogic.current
-    Text("무엇을", style = MaterialTheme.typography.labelLarge)
+    title?.let { Text(it, style = MaterialTheme.typography.labelLarge) }
     // PC D6 (사용성 중): 8가지가 한눈에 보이게 여러 줄로 (옆으로 밀어야 보이던 쓰기 동작을 못 찾았어요).
     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LogicVerb.entries.forEach { v ->
             FilterChip(selected = act.verb == v, onClick = {
-                    onChange(LogicAct(v, when (v) { LogicVerb.SCREEN -> "memo"; LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> fx.values.firstOrNull()?.name.orEmpty(); else -> "" }, null,
+                    onChange(LogicAct(v, when (v) { LogicVerb.SCREEN -> "memo"; LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> fx.values.firstOrNull { it.kind == com.bamnat.core.formula.ValueKind.NUM }?.name.orEmpty()
+                        LogicVerb.VAL_STAMP -> fx.values.firstOrNull { it.kind == com.bamnat.core.formula.ValueKind.TIME }?.name.orEmpty()
+                        LogicVerb.VAL_TEXT -> fx.values.firstOrNull { it.kind == com.bamnat.core.formula.ValueKind.TEXT }?.name.orEmpty(); else -> "" }, null,
                         by = if (v == LogicVerb.VAL_ADD) 1.0 else null))
                 },
                 // 1.39 [FX-01] ✦ = 프로 기능 장치 (만들기·미리 보기는 무료).
@@ -324,6 +328,15 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
                         label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) })
                 }
             }
+            // 1.39 [FX-15] '10분 뒤 다시'·'1시간 뒤 다시': 무료 (1.38 메모 알림에도 있던 미루기).
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                LogicAct.AGAIN.forEach { (k, m) ->
+                    val on = k in act.then
+                    FilterChip(selected = on, enabled = on || act.then.size < LogicAct.MAX_THEN,
+                        onClick = { onChange(act.copy(then = if (on) act.then - k else act.then + k)) },
+                        label = { Text("${LogicAct.afterWords(m)} 뒤 다시") })
+                }
+            }
         }
         // 1.39 [FX-03] 값 칸: which number, and by how much (or to what).
         LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> {
@@ -340,6 +353,17 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
             }, Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text(if (act.verb == LogicVerb.VAL_ADD) "더할 수 (−1은 하나 빼기)" else "이 수로 정하기 (0이면 처음으로)") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        }
+        // 1.39 [FX-13] 시각·글 값 칸.
+        LogicVerb.VAL_STAMP, LogicVerb.VAL_TEXT -> {
+            val kind = if (act.verb == LogicVerb.VAL_STAMP) com.bamnat.core.formula.ValueKind.TIME else com.bamnat.core.formula.ValueKind.TEXT
+            val values = fx.values.filter { it.kind == kind }
+            if (values.isEmpty()) Text("먼저 아래 ‘값 칸’에서 ${kind.label} 값 칸(예: ${if (kind == com.bamnat.core.formula.ValueKind.TIME) "약 먹은 때" else "오늘 기분"})을 만들어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            else androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                values.forEach { v -> FilterChip(selected = act.arg == v.name, onClick = { onChange(act.copy(arg = v.name)) }, label = { Text(v.name) }) }
+            }
+            if (act.verb == LogicVerb.VAL_TEXT) FormulaField(act.text, { onChange(act.copy(text = it.take(LogicAct.MAX_TEXT))) }, scope, text = true, label = "적을 글 (24자, {수식} 가능)")
         }
         LogicVerb.MEMO_TEMPLATE, LogicVerb.NEW_MEMO, LogicVerb.CHECK_RESET -> {
             val templates by c.memoTemplates.items.collectAsState()
@@ -366,6 +390,35 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
     }
     if (act.verb.writes) Text("⚠ 메모나 가계부를 바꾸는 동작이에요. 할 때마다 바로 되돌리기가 나와요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // 1.39 [FX-15] 기다렸다 하기 ✦: 바로, 또는 몇 분 뒤에 (화면·메모 틀을 여는 동작은 바로만).
+    if (act.verb != LogicVerb.SCREEN && act.verb != LogicVerb.MEMO_TEMPLATE) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = act.after == null, onClick = { onChange(act.copy(after = null)) }, label = { Text("바로") })
+        AFTER_PICKS.forEach { m -> FilterChip(selected = act.after == m, onClick = { onChange(act.copy(after = m)) }, label = { Text("${LogicAct.afterWords(m)} 뒤 ✦") }) }
+    }
+}
+
+/** 1.39 [FX-15] 기다렸다 하기의 고르기. */
+private val AFTER_PICKS = listOf(5, 10, 30, 60, 120, 180)
+
+/**
+ * 1.39 [FX-11] 동작 줄 ✦: 이어서 할 일 (또는 '아니면' 할 일), 한 줄에 [max]개까지. 각 동작은 위 '무엇을'과 같은 칸으로 고쳐요.
+ */
+@Composable
+private fun StepsEditor(title: String, hint: String, steps: List<LogicAct>, max: Int, onChange: (List<LogicAct>) -> Unit, scope: FormulaScope) {
+    Text("$title ✦", style = MaterialTheme.typography.labelLarge)
+    if (steps.isEmpty()) Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    steps.forEachIndexed { i, a ->
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}. ${a.say()}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onChange(steps.filterIndexed { j, _ -> j != i }) }, modifier = Modifier.semantics { contentDescription = "이 동작 빼기" }) { Text("빼기") }
+                }
+                ActEditor(a, { n -> onChange(steps.toMutableList().also { it[i] = n }) }, scope, title = null)
+            }
+        }
+    }
+    if (steps.size < max) TextButton(onClick = { onChange(steps + LogicAct(LogicVerb.NOTIFY, "")) }) { Text(if (steps.isEmpty()) "+ 동작 넣기" else "+ 동작 더하기") }
 }
 
 // ---- 규칙·단추 창 ----
@@ -375,6 +428,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
     /** PC D10: the other rules, so a new one with the same name gets '(2)'; PC D11: one that does the same is asked about once. */
     others: List<LogicRule> = emptyList()) {
     val taken = others.map { it.name }.toSet()
+    val fxValues = LocalFxLogic.current.values
     // 1.38 PC 11차 식당 둘러보기 ('야간'이 가게에 보임): a new rule starts on 야간 for 교대 only, on any work elsewhere.
     val style = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
     val firstRole = if (style == null || style == com.bamnat.core.work.WorkStyle.SHIFT) "night" else null
@@ -385,7 +439,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
     // The red line goes once what it asked for is done.
     LaunchedEffect(r) {
         // Changed after the 같은 규칙 question: asked again only if it is still the same.
-        if (askedSame != null && askedSame != r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).key) askedSame = null
+        if (askedSame != null && askedSame != ruleDone(r).key) askedSame = null
         if (tried != null && askedSame == null) tried = ruleProblem(r)
     }
     // 1.37 PC 4차: 뒤로 가기로 만들던 규칙이 말없이 사라졌어요. 바꾼 게 있으면 먼저 물어요.
@@ -400,7 +454,8 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 OutlinedTextField(r.name, { r = r.copy(name = it.take(20)) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("이름") })
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, whenFor(r, t)) }, label = { Text(t.label) }) }
+                    RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, whenFor(r, t, fxValues)) },
+                        label = { Text(t.label + if (t == RuleTrigger.VALUE || t == RuleTrigger.EVERY) " ✦" else "") }) }
                 }
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
@@ -424,13 +479,51 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                     RuleTrigger.HOLD -> Text("화면이나 메모 틀을 여는 규칙이 맞는 날에는 길게 눌러도 빠른 설정 대신 그것이 열려요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 1.39 [FX-12] 값이 바뀌면: 어느 값 칸, 목표에 처음 닿을 때만.
+                    RuleTrigger.VALUE -> {
+                        if (fxValues.isEmpty()) Text("먼저 아래 ‘값 칸’을 만들어요(예: 물 잔)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            fxValues.forEach { v -> FilterChip(selected = r.of == v.name, onClick = { r = r.copy(of = v.name, goal = r.goal && v.goal != null) }, label = { Text(v.name) }) }
+                        }
+                        val target = fxValues.firstOrNull { it.name == r.of }
+                        if (target?.goal != null) Row(Modifier.fillMaxWidth().toggleable(r.goal, role = Role.Switch) { r = r.copy(goal = it) },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("목표(${target.show(target.goal!!)})에 처음 닿을 때만", Modifier.weight(1f))
+                            Switch(r.goal, null)
+                        }
+                        Text("조건에서 값(\"${r.of ?: "이름"}\")으로 바뀐 값을 읽어요. 규칙이 다시 값을 바꾸면 3번까지만 이어 돌아요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    // 1.39 [FX-15] 몇 분마다: 간격, 그리고 하루 종일 · 시간 사이 · 근무 중.
+                    RuleTrigger.EVERY -> {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(30, 60, 90, 120, 180, 240).forEach { m -> FilterChip(selected = r.min == m, onClick = { r = r.copy(min = m) }, label = { Text("${LogicAct.afterWords(m)}마다") }) }
+                        }
+                        val span = when { r.inWork -> 2; r.at != null || r.until != null -> 1; else -> 0 }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = span == 0, onClick = { r = r.copy(at = null, until = null, inWork = false) }, label = { Text("하루 종일") })
+                            FilterChip(selected = span == 1, onClick = { r = r.copy(at = r.at ?: "09:00", until = r.until ?: "21:00", inWork = false) }, label = { Text("시간 사이") })
+                            FilterChip(selected = span == 2, onClick = { r = r.copy(at = null, until = null, inWork = true) }, label = { Text("근무 중에만") })
+                        }
+                        if (span == 1) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(r.at.orEmpty(), { s -> r = r.copy(at = s.take(5)) }, Modifier.weight(1f), singleLine = true, label = { Text("부터") },
+                                isError = timeOf(r.at.orEmpty()) == null, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                            OutlinedTextField(r.until.orEmpty(), { s -> r = r.copy(until = s.take(5)) }, Modifier.weight(1f), singleLine = true, label = { Text("까지") },
+                                isError = timeOf(r.until.orEmpty()) == null, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                        }
+                        Text("하루 ${LogicRule.EVERY_DAY_MAX}번까지만 돌아요. 물 마시기·스트레칭·순찰 확인처럼 쓰여요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     else -> Unit
                 }
                 Text("조건 (이럴 때만)", style = MaterialTheme.typography.labelLarge)
                 ConditionEditor(r.cond, { r = r.copy(cond = it) }, scope, empty = "조건 없이 언제나")
                 ActEditor(r.act, { r = r.copy(act = it) }, scope)
+                // 1.39 [FX-11] 동작 줄과 '아니면'.
+                StepsEditor("그리고 이어서", "한 번에 여러 일을 해요(예: 알림 + 값 +1 + 메모 한 줄)", r.more, MAX_MORE, { r = r.copy(more = it) }, scope)
+                if (r.cond.isNotEmpty()) StepsEditor("조건이 아니면", "조건이 맞지 않는 날에 할 일(비우면 아무것도 안 해요)", r.otherwise, MAX_ELSE, { r = r.copy(otherwise = it) }, scope)
                 // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로. 1.37 PC 4차: 요약이 위에서 늘면 아래 칸이 밀려 맨 아래로 옮겼어요.
-                Text(r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) ?: r.at else r.at).say(), style = MaterialTheme.typography.bodyMedium,
+                Text(ruleDone(r).say(), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
@@ -442,7 +535,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 TextButton(onClick = {
                     val why = ruleProblem(r)
                     if (why != null) tried = why
-                    else r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).let { done ->
+                    else ruleDone(r).let { done ->
                         val same = others.firstOrNull { it.key == done.key }
                         // PC D14 (사용성 낮): 한 번에 100만 원이 넘게 가계부에 넣는 내 규칙도 한 번 물어요 (매일 쌓이지 않게).
                         val warn = listOfNotNull(same?.let(::sameSay), bigSay(done))
@@ -507,12 +600,24 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     }
                 }
                 ActEditor(b.act, { b = b.copy(act = it) }, scope)
+                // 1.39 [FX-11] 누를 때 조건 따지기, 동작 줄과 '아니면'.
+                StepsEditor("그리고 이어서", "한 번 눌러 여러 일을 해요(예: 값 +1 + 메모 한 줄)", b.more, MAX_MORE, { b = b.copy(more = it) }, scope)
+                Row(Modifier.fillMaxWidth().toggleable(b.cond.isNotEmpty(), role = Role.Switch) {
+                    b = if (it) b.copy(cond = EasyWhen(listOf(EasyCond(FormulaName.ROLE.ko, EasyCond.Op.IS, ""))).toFormula()) else b.copy(cond = "", otherwise = emptyList())
+                }, verticalAlignment = Alignment.CenterVertically) {
+                    Text("누를 때 조건을 따져 다르게 하기 ✦", Modifier.weight(1f))
+                    Switch(b.cond.isNotEmpty(), null)
+                }
+                if (b.cond.isNotEmpty()) {
+                    ConditionEditor(b.cond, { b = b.copy(cond = it) }, scope, empty = "조건을 넣어요")
+                    StepsEditor("조건이 아니면", "조건이 맞지 않을 때 할 일(비우면 아무것도 안 해요)", b.otherwise, MAX_ELSE, { b = b.copy(otherwise = it) }, scope)
+                }
                 Text(b.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
-            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null && !unpicked(b.show)) && (b.act.verb !in MONEY_VERBS || b.act.amount != null) && (b.act.verb != LogicVerb.MEMO_LINE || b.act.arg.isNotBlank()) &&
-                (!b.act.verb.pro || com.bamnat.core.formula.LogicValue.isName(b.act.arg))
+            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null && !unpicked(b.show)) &&
+                (b.cond.isEmpty() || Formula.problem(b.cond) == null && !unpicked(b.cond)) && b.acts.all { actProblem(it) == null }
             TextButton(onClick = { onDone(b) }, enabled = ok) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
@@ -581,13 +686,16 @@ internal fun followWords(old: LogicRule, new: LogicRule): LogicRule {
  * PC D7 (사용성 중): 언제를 바꾸면 그에 맞는 때부터. '근무 끝'은 끝날 때 (시작 규칙의 '1시간 전'이 남지 않게), '근무 시작'으로
  * 돌아오면 처음처럼 1시간 전.
  */
-internal fun whenFor(r: LogicRule, t: RuleTrigger): LogicRule = when {
+internal fun whenFor(r: LogicRule, t: RuleTrigger, values: List<com.bamnat.core.formula.LogicValue> = emptyList()): LogicRule = when {
     t == r.on -> r
     t == RuleTrigger.END -> r.copy(on = t, min = 0)
     t == RuleTrigger.START && r.on == RuleTrigger.END && r.min == 0 -> r.copy(on = t, min = -60)
     t == RuleTrigger.START -> r.copy(on = t)
     // PC D9 (높): '매일'은 보이는 시각이 실제 값이에요 (흐린 21:00인데 요약은 09:00, 저장은 말없이 안 되던 것). 몇 분 전·뒤는 근무 시작·끝에만.
     t == RuleTrigger.DAILY -> r.copy(on = t, at = timeOf(r.at.orEmpty()) ?: "21:00", min = 0)
+    // 1.39 [FX-12][FX-15]
+    t == RuleTrigger.VALUE -> r.copy(on = t, min = 0, of = r.of ?: values.firstOrNull()?.name)
+    t == RuleTrigger.EVERY -> r.copy(on = t, min = 60, at = null, until = null)
     else -> r.copy(on = t, min = 0)
 }
 
@@ -626,12 +734,38 @@ internal fun timeOf(s: String): String? {
 /** PC D9 (높): why 저장 does nothing yet, said in red when pressed (no silent failure). */
 internal fun ruleProblem(r: LogicRule): String? = when {
     r.on == RuleTrigger.DAILY && timeOf(r.at.orEmpty()) == null -> "시각을 07:00처럼 넣어 주세요"
+    r.on == RuleTrigger.VALUE && r.of == null -> "어느 값 칸이 바뀌면 할지 골라 주세요"
+    r.on == RuleTrigger.EVERY && !r.inWork && (r.at != null || r.until != null) && (timeOf(r.at.orEmpty()) == null || timeOf(r.until.orEmpty()) == null) -> "부터·까지 시각을 07:00처럼 넣어 주세요"
     r.cond.isNotEmpty() && Formula.problem(r.cond) != null -> "조건 수식을 고쳐 주세요"
-    r.act.verb in MONEY_VERBS && r.act.amount == null -> "금액을 넣어 주세요"
-    r.act.verb.pro && !com.bamnat.core.formula.LogicValue.isName(r.act.arg) -> "값 칸을 골라 주세요"
-    r.act.verb == LogicVerb.MEMO_LINE && r.act.arg.isBlank() -> "메모에 더할 한 줄을 써 주세요"
+    else -> r.acts.firstNotNullOfOrNull(::actProblem)
+}
+
+/** Why one 동작 cannot be saved yet. */
+internal fun actProblem(a: LogicAct): String? = when {
+    a.verb in MONEY_VERBS && a.amount == null -> "금액을 넣어 주세요"
+    a.verb.pro && !com.bamnat.core.formula.LogicValue.isName(a.arg) -> "값 칸을 골라 주세요"
+    a.verb == LogicVerb.MEMO_LINE && a.arg.isBlank() -> "메모에 더할 한 줄을 써 주세요"
+    a.verb == LogicVerb.NOTIFY && a.arg.isBlank() -> "알림 글을 써 주세요"
+    a.verb == LogicVerb.VAL_TEXT && a.text.isBlank() -> "적을 글을 써 주세요"
     else -> null
 }
+
+/**
+ * The rule as saved: 시각 said as 07:00, and only the 언제 fields its trigger reads (값이 바뀌면 → 값 칸, 몇 분마다 → 사이·근무 중), '아니면'
+ * only with a 조건.
+ */
+internal fun ruleDone(r: LogicRule): LogicRule = r.copy(
+    at = when (r.on) {
+        RuleTrigger.DAILY -> timeOf(r.at.orEmpty()) ?: r.at
+        RuleTrigger.EVERY -> if (r.inWork) null else r.at?.let { timeOf(it) ?: it }
+        else -> r.at
+    },
+    until = if (r.on == RuleTrigger.EVERY && !r.inWork) r.until?.let { timeOf(it) ?: it } else null,
+    inWork = r.on == RuleTrigger.EVERY && r.inWork,
+    of = if (r.on == RuleTrigger.VALUE) r.of else null,
+    goal = r.on == RuleTrigger.VALUE && r.goal,
+    otherwise = if (r.cond.isEmpty()) emptyList() else r.otherwise,
+)
 
 /** [RUL-06] The 알림 글 a new rule starts with, said for its 언제 and 근무: "{근무끝}에 주간 근무가 끝나요". */
 internal fun notifyWords(on: RuleTrigger, role: String?): String {
@@ -642,6 +776,8 @@ internal fun notifyWords(on: RuleTrigger, role: String?): String {
         RuleTrigger.DAILY -> "오늘 {근무} · 확인할 시간이에요"
         RuleTrigger.MEMO -> "메모를 적었어요"
         RuleTrigger.MONEY -> "이달 지출 {원(이달지출)}이에요"
+        RuleTrigger.VALUE -> "값이 바뀌었어요"
+        RuleTrigger.EVERY -> "잠깐 쉬어 갈 시간이에요"
         else -> "{근무} 날이에요"
     }
 }
@@ -832,8 +968,11 @@ fun LogicEditor(
             // A 값 칸 renamed: the buttons and rules that counted it follow.
             val old = logic.values.getOrNull(i)?.name
             fun follow(a: LogicAct) = if (old != null && old != v.name && a.verb.pro && a.arg == old) a.copy(arg = v.name) else a
+            fun follow(l: List<LogicAct>) = l.map(::follow)
             onChange(logic.copy(values = if (i < 0) logic.values + v else logic.values.toMutableList().also { it[i] = v },
-                buttons = logic.buttons.map { it.copy(act = follow(it.act)) }, rules = logic.rules.map { it.copy(act = follow(it.act)) }))
+                buttons = logic.buttons.map { it.copy(act = follow(it.act), more = follow(it.more), otherwise = follow(it.otherwise)) },
+                rules = logic.rules.map { it.copy(act = follow(it.act), more = follow(it.more), otherwise = follow(it.otherwise),
+                    of = if (old != null && it.of == old) v.name else it.of) }))
             editValue = null
         }, onDismiss = { editValue = null })
     }
@@ -897,11 +1036,18 @@ private fun ValueDialog(start: com.bamnat.core.formula.LogicValue?, taken: Set<S
                     OutlinedTextField(v.name, { v = v.copy(name = it.take(12)) }, Modifier.weight(1f), singleLine = true, label = { Text("이름") })
                     OutlinedTextField(v.unit, { v = v.copy(unit = it.take(com.bamnat.core.formula.LogicValue.MAX_UNIT)) }, Modifier.width(88.dp), singleLine = true, label = { Text("단위") })
                 }
+                // 1.39 [FX-13] 숫자·시각·글.
+                Text("무엇을 적나요", style = MaterialTheme.typography.labelLarge)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.formula.ValueKind.entries.forEach { k -> FilterChip(selected = v.kind == k, onClick = {
+                        v = if (k == com.bamnat.core.formula.ValueKind.NUM) v.copy(kind = k) else v.copy(kind = k, goal = null, unit = ""); if (k != com.bamnat.core.formula.ValueKind.NUM) goal = ""
+                    }, label = { Text(k.label + when (k) { com.bamnat.core.formula.ValueKind.TIME -> " (약 먹은 때)"; com.bamnat.core.formula.ValueKind.TEXT -> " (오늘 기분)"; else -> " (물 잔)" }) }) }
+                }
                 Text("처음으로 돌아가기", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     com.bamnat.core.formula.ValueReset.entries.forEach { r -> FilterChip(selected = v.reset == r, onClick = { v = v.copy(reset = r) }, label = { Text(r.label) }) }
                 }
-                OutlinedTextField(goal, { s -> goal = s.filter { it.isDigit() || it == '.' }.take(9); v = v.copy(goal = goal.toDoubleOrNull()?.takeIf { it > 0 }) },
+                if (v.kind == com.bamnat.core.formula.ValueKind.NUM) OutlinedTextField(goal, { s -> goal = s.filter { it.isDigit() || it == '.' }.take(9); v = v.copy(goal = goal.toDoubleOrNull()?.takeIf { it > 0 }) },
                     Modifier.fillMaxWidth(), singleLine = true, label = { Text("목표 (비우면 없음)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 Text(v.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 if (v.name in taken) Text("같은 이름의 값 칸이 이미 있어요", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

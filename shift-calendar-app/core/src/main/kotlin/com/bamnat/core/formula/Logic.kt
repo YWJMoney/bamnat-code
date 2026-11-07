@@ -22,7 +22,7 @@ data class Logic(
     fun value(name: String): LogicValue? = values.firstOrNull { it.name == name }
 
     /** Does anything in it write the user's data (메모 만들기, 가계부 넣기, 체크 다시)? */
-    val writes: Boolean get() = buttons.any { it.act.verb.writes } || rules.any { it.act.verb.writes }
+    val writes: Boolean get() = buttons.any { b -> b.acts.any { it.verb.writes } } || rules.any { r -> r.acts.any { it.verb.writes } }
 
     fun toValues(): Map<String, Any?> = buildMap {
         if (buttons.isNotEmpty()) put("buttons", buttons.map { it.toMap() })
@@ -34,13 +34,15 @@ data class Logic(
      * 1.36 [SEC-12] 보안 점검 M4: these as they come in from someone else's recipe: a 가계부 amount is held to [RECEIVED_MAX_WON]
      * (a prank or a mistake cannot put 1억 원 in each day). The phone's own buttons and rules are never held.
      */
-    fun received(): Logic = Logic(buttons.map { it.copy(act = it.act.held()) }, rules.map { it.copy(act = it.act.held()) }, values)
+    fun received(): Logic = Logic(
+        buttons.map { it.copy(act = it.act.held(), more = it.more.map(LogicAct::held), otherwise = it.otherwise.map(LogicAct::held)) },
+        rules.map { it.copy(act = it.act.held(), more = it.more.map(LogicAct::held), otherwise = it.otherwise.map(LogicAct::held)) }, values)
 
     /** Whether [received] would hold an amount down. */
-    val overReceived: Boolean get() = buttons.any { it.act.held() != it.act } || rules.any { it.act.held() != it.act }
+    val overReceived: Boolean get() = received() != this
 
     /** 1.36 [SEC-12] The rules that write data and run by themselves or by a tap (not a press of a button the user put there). */
-    val writingRules: List<LogicRule> get() = rules.filter { it.act.verb.writes }
+    val writingRules: List<LogicRule> get() = rules.filter { r -> r.acts.any { it.verb.writes } }
 
     /**
      * PC D6: [other]'s rules and buttons that do the same as one of these (same 언제·조건·무엇을, the name aside) and so are kept once
@@ -125,8 +127,12 @@ data class LogicAct(
     val amount: Long? = null,
     /** 1.39 [FX-03] 값 더하기·정하기: by how much (−1 takes one back), or what to set it to. */
     val by: Double? = null,
-    /** 1.39 [FX-05] 알림 단추: the buttons ([LogicButton.id]) an 알림 carries, at most [MAX_THEN]. */
+    /** 1.39 [FX-05] 알림 단추: the buttons ([LogicButton.id]) an 알림 carries, at most [MAX_THEN] ([AGAIN] ids: '10분 뒤 다시'). */
     val then: List<String> = emptyList(),
+    /** 1.39 [FX-15] 기다렸다 하기: done this many minutes later (1~[MAX_AFTER]), or at once. */
+    val after: Int? = null,
+    /** 1.39 [FX-13] 값에 글 적기: the words (with {formulas}), [MAX_TEXT] letters. */
+    val text: String = "",
 ) {
     fun toMap(): Map<String, Any?> = buildMap {
         put("do", verb.key)
@@ -134,7 +140,12 @@ data class LogicAct(
         amount?.let { put("amount", it) }
         by?.let { put("by", it) }
         if (then.isNotEmpty()) put("then", then)
+        after?.let { put("after", it.toLong()) }
+        if (text.isNotEmpty()) put("text", text)
     }
+
+    /** This act right away (a 기다렸다 하기 that came due). */
+    fun now(): LogicAct = copy(after = null)
 
     /** 1.36 [SEC-12] This act with a 가계부 amount held to [Logic.RECEIVED_MAX_WON]. */
     fun held(): LogicAct = if ((verb == LogicVerb.ADD_MONEY || verb == LogicVerb.ADD_INCOME || verb == LogicVerb.ENVELOPE) && (amount ?: 0L) > Logic.RECEIVED_MAX_WON)
@@ -154,21 +165,40 @@ data class LogicAct(
         LogicVerb.SCREEN -> "${LogicVerb.SCREENS[arg] ?: "화면"} 열기"
         LogicVerb.VAL_ADD -> (by ?: 1.0).let { b -> "‘${arg.ifEmpty { "값" }}’에 " + (if (b < 0) "${Formula.numText(-b)} 빼기" else "${Formula.numText(b)} 더하기") }
         LogicVerb.VAL_SET -> "‘${arg.ifEmpty { "값" }}’을 ${Formula.numText(by ?: 0.0)}으로"
-    } + (if (then.isNotEmpty() && verb == LogicVerb.NOTIFY) " (단추 ${then.size}개)" else "")
+        LogicVerb.VAL_STAMP -> "‘${arg.ifEmpty { "값" }}’에 지금 시각 적기"
+        LogicVerb.VAL_TEXT -> "‘${arg.ifEmpty { "값" }}’에 ‘${text.take(12)}’ 적기"
+    } + (if (then.isNotEmpty() && verb == LogicVerb.NOTIFY) " (단추 ${then.size}개)" else "") +
+        (after?.let { " · ${afterWords(it)} 뒤에" } ?: "")
 
     companion object {
         const val MAX_THEN = 2
         const val MAX_BY = 1_000_000.0
+        const val MAX_AFTER = 720
+        const val MAX_TEXT = 24
+        /** 1.39 [FX-15] 알림 단추 '10분 뒤 다시'·'1시간 뒤 다시': ids no button takes ([LogicButton.newId] starts with b). */
+        val AGAIN = linkedMapOf("again10" to 10, "again60" to 60)
+
+        fun afterWords(m: Int): String = when {
+            m % 60 == 0 -> "${m / 60}시간"
+            m > 60 -> "${m / 60}시간 ${m % 60}분"
+            else -> "${m}분"
+        }
+
+        /** The acts of a 동작 줄 ("more", "else"), each as [from] reads it, at most [max]. */
+        @Suppress("UNCHECKED_CAST")
+        fun list(v: Any?, max: Int): List<LogicAct> = (v as? List<Map<String, Any?>>).orEmpty().mapNotNull(::from).take(max)
 
         @Suppress("UNCHECKED_CAST")
         fun from(m: Map<String, Any?>): LogicAct? {
             val verb = LogicVerb.of(m["do"] as? String) ?: return null
             val arg = (m["arg"] as? String).orEmpty()
             if (verb == LogicVerb.SCREEN && arg !in LogicVerb.SCREENS) return null
-            if ((verb == LogicVerb.VAL_ADD || verb == LogicVerb.VAL_SET) && !LogicValue.isName(arg.trim())) return null
+            if (verb.value && !LogicValue.isName(arg.trim())) return null
             val then = (m["then"] as? List<Any?>).orEmpty().mapNotNull { (it as? String)?.takeIf(LogicButton.ID::matches) }.distinct().take(MAX_THEN)
-            return LogicAct(verb, if (verb == LogicVerb.VAL_ADD || verb == LogicVerb.VAL_SET) arg.trim() else arg, (m["amount"] as? Number)?.toLong(),
-                (m["by"] as? Number)?.toDouble()?.coerceIn(-MAX_BY, MAX_BY), if (verb == LogicVerb.NOTIFY) then else emptyList())
+            return LogicAct(verb, if (verb.value) arg.trim() else arg, (m["amount"] as? Number)?.toLong(),
+                (m["by"] as? Number)?.toDouble()?.coerceIn(-MAX_BY, MAX_BY), if (verb == LogicVerb.NOTIFY) then else emptyList(),
+                (m["after"] as? Number)?.toInt()?.takeIf { it in 1..MAX_AFTER },
+                if (verb == LogicVerb.VAL_TEXT) (m["text"] as? String).orEmpty().take(MAX_TEXT) else "")
         }
 
         internal fun won(v: Long) = v.toString().reversed().chunked(3).joinToString(",").reversed() + "원"
@@ -192,7 +222,14 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
     /** 1.39 [FX-03] 값 칸에 더하기 (프로 기능 장치): '+1건', '물 한 잔'. The work's own number, not the user's records. */
     VAL_ADD("valAdd", "값 더하기", false),
     /** 1.39 [FX-03] 값 칸을 정하기 (프로 기능 장치): 0으로 되돌리기, 오늘 목표로. */
-    VAL_SET("valSet", "값 정하기", false);
+    VAL_SET("valSet", "값 정하기", false),
+    /** 1.39 [FX-13] 값 칸에 지금 시각 (프로 기능 장치): '약 먹음', 출근 도장. `지난시간("약")`으로 몇 시간 지났나. */
+    VAL_STAMP("valStamp", "지금 시각 적기", false),
+    /** 1.39 [FX-13] 값 칸에 짧은 글 (프로 기능 장치): '오늘 기분', 마지막 손님. */
+    VAL_TEXT("valText", "글 적기", false);
+
+    /** 1.39 [FX-03][FX-13] Works on a 값 칸 named by its arg. */
+    val value: Boolean get() = this == VAL_ADD || this == VAL_SET || this == VAL_STAMP || this == VAL_TEXT
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -229,7 +266,18 @@ enum class ButtonPlace(val key: String, val label: String) {
 /** A button: [show] is a formula; when it is there and false for the day, the button hides. */
 data class LogicButton(val label: String, val emoji: String? = null, val place: ButtonPlace = ButtonPlace.DAY, val act: LogicAct, val show: String = "",
     /** 누락 점검 N8: what a 꾸밈 항목's `tap` names, [ID] form. Blank: [idOf] the label (예전 단추). */
-    val givenId: String = "") {
+    val givenId: String = "",
+    /** 1.39 [FX-11] 그리고/아니면: when this holds the press does [act] and [more]; when it does not, [otherwise]. Empty: always. */
+    val cond: String = "",
+    /** 1.39 [FX-11] 동작 줄: what follows [act], in order. */
+    val more: List<LogicAct> = emptyList(),
+    /** 1.39 [FX-11] '아니면' 줄. */
+    val otherwise: List<LogicAct> = emptyList()) {
+    /** Every act it may do. */
+    val acts: List<LogicAct> get() = listOf(act) + more + otherwise
+
+    /** What a press does when [cond] [holds]. */
+    fun steps(holds: Boolean): List<LogicAct> = if (holds || cond.isEmpty()) listOf(act) + more else otherwise
     /** The id other places point at (꾸밈 층 `tap`). */
     val id: String get() = givenId.takeIf { ID.matches(it) } ?: idOf(label)
 
@@ -240,17 +288,23 @@ data class LogicButton(val label: String, val emoji: String? = null, val place: 
         put("where", place.key)
         putAll(act.toMap())
         if (show.isNotEmpty()) put("show", show)
+        if (cond.isNotEmpty()) put("if", cond)
+        if (more.isNotEmpty()) put("more", more.map { it.toMap() })
+        if (otherwise.isNotEmpty()) put("else", otherwise.map { it.toMap() })
     }
 
-    fun say(): String = "${place.label}에 ‘${emoji?.let { "$it " }.orEmpty()}$label’ 단추: 누르면 ${act.say()}" +
+    fun say(): String = "${place.label}에 ‘${emoji?.let { "$it " }.orEmpty()}$label’ 단추: 누르면 " +
+        sayChain(cond, listOf(act) + more, otherwise) +
         (if (show.isNotEmpty()) " (${EasyWhen.read(show)?.say() ?: "조건이 맞는 날"}에만 보여요)" else "")
 
     companion object {
         fun from(m: Map<String, Any?>): LogicButton? {
             val label = (m["label"] as? String)?.takeIf { it.isNotBlank() } ?: return null
             val act = LogicAct.from(m) ?: return null
+            val cond = (m["if"] as? String).orEmpty().takeIf { it.isEmpty() || Formula.problem(it) == null } ?: return null
             return LogicButton(label, m["emoji"] as? String, ButtonPlace.of(m["where"] as? String), act, (m["show"] as? String).orEmpty(),
-                (m["id"] as? String)?.takeIf { ID.matches(it) }.orEmpty())
+                (m["id"] as? String)?.takeIf { ID.matches(it) }.orEmpty(), cond,
+                LogicAct.list(m["more"], MAX_MORE), if (cond.isEmpty()) emptyList() else LogicAct.list(m["else"], MAX_ELSE))
         }
 
         /** 영문 소문자·숫자 1~12자 (server recipes.js the same). */
@@ -282,7 +336,11 @@ enum class RuleTrigger(val key: String, val label: String) {
     /** 사용자 2026-11-01 "가계부와 연동도": 가계부에 적으면 (그날 값으로 조건, 예: 이달지출 > 500000이면 알림). */
     MONEY("money", "가계부에 적으면"),
     /** 누락 점검 N8: 날짜를 길게 누르면. 화면·메모 틀을 여는 규칙이 맞으면 빠른 설정 대신 그것을 열어요. */
-    HOLD("hold", "날짜를 길게 누르면");
+    HOLD("hold", "날짜를 길게 누르면"),
+    /** 1.39 [FX-12] 값 칸 [LogicRule.of]가 바뀌면 (프로 기능 장치); [LogicRule.goal]이면 목표에 처음 닿을 때만. */
+    VALUE("value", "값이 바뀌면"),
+    /** 1.39 [FX-15] [LogicRule.min]분마다 (프로 기능 장치), [LogicRule.at]~[LogicRule.until] 사이나 근무 중에만. */
+    EVERY("every", "몇 분마다");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -298,9 +356,28 @@ data class LogicRule(
     val role: String? = null,
     val cond: String = "",
     val act: LogicAct,
+    /** 1.39 [FX-11] 동작 줄: what follows [act] when [cond] holds. */
+    val more: List<LogicAct> = emptyList(),
+    /** 1.39 [FX-11] '아니면': what it does when [cond] does not hold (nothing when empty). */
+    val otherwise: List<LogicAct> = emptyList(),
+    /** 1.39 [FX-12] 값이 바뀌면: the 값 칸's name. */
+    val of: String? = null,
+    /** 1.39 [FX-12] 목표에 처음 닿으면 (once a period). */
+    val goal: Boolean = false,
+    /** 1.39 [FX-15] 몇 분마다: until when (HH:mm), [at] being from when. */
+    val until: String? = null,
+    /** 1.39 [FX-15] 몇 분마다: only while a shift is on. */
+    val inWork: Boolean = false,
 ) {
     /** A stable key for this rule (its on/off switch and run count stay with it across edits of its words). */
-    val key: String get() = "${on.key}|$min|${at.orEmpty()}|${role.orEmpty()}|${cond.hashCode()}|${act.verb.key}|${act.arg.hashCode()}"
+    val key: String get() = "${on.key}|$min|${at.orEmpty()}|${role.orEmpty()}|${cond.hashCode()}|${act.verb.key}|${act.arg.hashCode()}" +
+        (of?.let { "|$it${if (goal) "!" else ""}" } ?: "") + (until?.let { "|$it" } ?: "") + (if (inWork) "|w" else "")
+
+    /** Every act it may do. */
+    val acts: List<LogicAct> get() = listOf(act) + more + otherwise
+
+    /** What it does when [cond] [holds]: its 동작 줄, or its '아니면' (maybe none). */
+    fun steps(holds: Boolean): List<LogicAct> = if (holds) listOf(act) + more else otherwise
 
     fun toMap(): Map<String, Any?> = buildMap {
         put("name", name)
@@ -310,6 +387,12 @@ data class LogicRule(
         role?.let { put("role", it) }
         if (cond.isNotEmpty()) put("when", cond)
         putAll(act.toMap())
+        if (more.isNotEmpty()) put("more", more.map { it.toMap() })
+        if (otherwise.isNotEmpty()) put("else", otherwise.map { it.toMap() })
+        of?.let { put("of", it) }
+        if (goal) put("edge", "goal")
+        until?.let { put("until", it) }
+        if (inWork) put("during", "work")
     }
 
     /** 언제, in words: "야간 근무 시작 3시간 전", "매일 21:00". */
@@ -329,17 +412,25 @@ data class LogicRule(
             RuleTrigger.OPEN -> "하루 처음 앱을 열면"
             RuleTrigger.MONEY -> "가계부에 적으면"
             RuleTrigger.HOLD -> "날짜를 길게 누르면"
+            RuleTrigger.VALUE -> "‘${of.orEmpty()}’" + (if (goal) " 목표에 처음 닿으면" else " 값이 바뀌면")
+            RuleTrigger.EVERY -> (if (inWork) "근무 중 " else if (at != null || until != null) "${at ?: "00:00"}~${until ?: "24:00"} " else "") +
+                "${span(min.coerceAtLeast(EVERY_MIN))}마다"
         }
     }
 
     /** One line before it is turned on (사용성 제안: "이 규칙은 야간 근무 전날 밤 9시에 메모 틀을 열어요"). */
     fun say(): String {
+        if (more.isNotEmpty() || otherwise.isNotEmpty()) return "${sayWhen()}, ${sayChain(cond, listOf(act) + more, otherwise)}"
         val c = if (cond.isEmpty()) "" else (EasyWhen.read(cond)?.say() ?: "조건이 맞으면").let { " " + ifWord(it) }
         return "${sayWhen()},$c ${act.say()}"
     }
 
     companion object {
         val ROLE_WORDS = mapOf("day" to "주간", "eve" to "저녁", "night" to "야간", "long" to "당직", "off" to "쉬는 날", "other" to "기타")
+        /** 1.39 [FX-15] 몇 분마다: 30분~4시간, a day at most [EVERY_DAY_MAX] times. */
+        const val EVERY_MIN = 30
+        const val EVERY_MAX = 240
+        const val EVERY_DAY_MAX = 48
 
         private fun span(m: Int): String = when {
             m % 60 == 0 -> "${m / 60}시간"
@@ -352,17 +443,38 @@ data class LogicRule(
             val act = LogicAct.from(m) ?: return null
             val cond = (m["when"] as? String).orEmpty()
             if (cond.isNotEmpty() && Formula.problem(cond) != null) return null
+            val of = (m["of"] as? String)?.trim()?.takeIf(LogicValue::isName)
+            if (on == RuleTrigger.VALUE && of == null) return null
+            val min = (m["min"] as? Number)?.toInt()?.coerceIn(-720, 720) ?: 0
             return LogicRule(
                 name = (m["name"] as? String).orEmpty().ifBlank { act.say() },
                 on = on,
-                min = (m["min"] as? Number)?.toInt()?.coerceIn(-720, 720) ?: 0,
+                min = if (on == RuleTrigger.EVERY) min.coerceIn(EVERY_MIN, EVERY_MAX) else min,
                 at = m["at"] as? String,
                 role = (m["role"] as? String)?.takeIf { it in ROLE_WORDS },
                 cond = cond,
                 act = act,
+                more = LogicAct.list(m["more"], MAX_MORE),
+                otherwise = if (cond.isEmpty()) emptyList() else LogicAct.list(m["else"], MAX_ELSE),
+                of = if (on == RuleTrigger.VALUE) of else null,
+                goal = on == RuleTrigger.VALUE && m["edge"] == "goal",
+                until = (m["until"] as? String)?.takeIf { on == RuleTrigger.EVERY },
+                inWork = on == RuleTrigger.EVERY && m["during"] == "work",
             )
         }
     }
+}
+
+/** 1.39 [FX-11] 동작 줄 한 묶음 (one more and the 아니면 at most). */
+const val MAX_MORE = 3
+const val MAX_ELSE = 3
+
+/** "야간이면 A 하고 B, 아니면 C" (조건이 없으면 "A 하고 B"). */
+internal fun sayChain(cond: String, acts: List<LogicAct>, otherwise: List<LogicAct>): String {
+    val run = acts.joinToString(" → ") { it.say() }
+    if (cond.isEmpty()) return run
+    val c = ifWord(EasyWhen.read(cond)?.say() ?: "조건이 맞으면")
+    return "$c $run" + (if (otherwise.isEmpty()) "" else ", 아니면 " + otherwise.joinToString(" → ") { it.say() })
 }
 
 /** "근무종류가 야간" → "근무종류가 야간이면", "… 있음" → "… 있으면", "… 맞으면" stays (자연스러운 말로). */

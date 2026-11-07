@@ -42,7 +42,7 @@ object FxOutside {
     /** "물 한 잔 · 6/8잔": a button's label and, when it counts a 값 칸, the number now. */
     fun line(c: AppContainer, b: LogicButton): String = listOfNotNull(
         listOfNotNull(b.emoji, b.label).joinToString(" "),
-        b.act.takeIf { it.verb == LogicVerb.VAL_ADD || it.verb == LogicVerb.VAL_SET }?.let { FxValues.show(c, it.arg) },
+        b.act.takeIf { it.verb.value }?.let { FxValues.show(c, it.arg) },
     ).joinToString(" · ")
 
     /**
@@ -51,7 +51,7 @@ object FxOutside {
      */
     suspend fun press(c: AppContainer, id: String, date: LocalDate = Today.date()): String {
         val all = LogicRunner.logic(c, all = true).button(id) ?: return "이 단추가 작품에서 빠졌어요"
-        if (!FxAccess.on(c) && LogicRunner.logic(c).button(id) == null && com.bamnat.core.formula.FxPro.needs(com.bamnat.core.formula.Logic(listOf(all)))) {
+        if (!FxAccess.on(c) && LogicRunner.logic(c).button(id) == null) {
             LogicStore(c.appContext).log(all.label, LogicRunner.PRO_REST)
             return "프로 기능 장치라 지금은 쉬어요. 앱에서 하루 써 보거나 프로로 켜요"
         }
@@ -61,13 +61,10 @@ object FxOutside {
             LogicStore(c.appContext).log(b.label, "밖에서 눌렀지만 이 날 보이기 조건이 맞지 않아 안 했어요")
             return "‘${b.label}’은 오늘 조건에 맞지 않아요"
         }
-        val r = runCatching { LogicRunner.run(c, b.act, date, f.scope(date), b.label, quiet = true) }
+        val r = runCatching { LogicRunner.pressButton(c, b, date, f.scope(date), quiet = true) }
         if (r.isFailure) { LogicStore(c.appContext).log(b.label, "하다가 멈췄어요"); return "‘${b.label}’을 하다가 멈췄어요" }
         changed(c)
-        return when (b.act.verb) {
-            LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> line(c, b)
-            else -> "‘${b.label}’: ${b.act.say()}"
-        }
+        return if (b.act.verb.value && b.act.after == null) line(c, b) else "‘${b.label}’: ${b.act.say()}"
     }
 
     /** A 값 칸 or the buttons changed: the 단추 위젯 and the tile draw again. */
@@ -110,7 +107,15 @@ class FxPressReceiver : BroadcastReceiver() {
         val done = goAsync()
         c.appScope.launch {
             try {
-                val said = FxOutside.press(c, id, date)
+                // 1.39 [FX-15] '10분 뒤 다시': the same 알림 again later (its words as shown, its buttons).
+                val again = com.bamnat.core.formula.LogicAct.AGAIN[id]
+                val said = if (again != null) {
+                    val title = intent.getStringExtra(TAG).orEmpty()
+                    val then = intent.getStringArrayListExtra(THEN).orEmpty().take(com.bamnat.core.formula.LogicAct.MAX_THEN)
+                    LogicRunner.later(c, com.bamnat.core.formula.LogicAct(LogicVerb.NOTIFY, intent.getStringExtra(TEXT).orEmpty().ifBlank { title },
+                        then = then, after = again), date, title, again = true)
+                    "${com.bamnat.core.formula.LogicAct.afterWords(again)} 뒤에 다시 알려요"
+                } else FxOutside.press(c, id, date)
                 withContext(Dispatchers.Main) { Toast.makeText(context.applicationContext, said, Toast.LENGTH_SHORT).show() }
                 intent.getStringExtra(TAG)?.let { com.bamnat.app.alarm.Notifications.cancel(context, NOTICE_ID, it) }
             } finally { done.finish() }
@@ -121,7 +126,17 @@ class FxPressReceiver : BroadcastReceiver() {
         private const val ID = "id"
         private const val DATE = "date"
         private const val TAG = "tag"
+        private const val TEXT = "text"
+        private const val THEN = "then"
         private const val NOTICE_ID = 7601
+
+        /** 1.39 [FX-15] '10분 뒤 다시' ([id] one of [com.bamnat.core.formula.LogicAct.AGAIN]) on an 알림 titled [tag] saying [text]. */
+        fun again(ctx: Context, id: String, date: LocalDate, tag: String, text: String, then: List<String>, req: Int): PendingIntent = PendingIntent.getBroadcast(
+            ctx, req,
+            Intent(ctx, FxPressReceiver::class.java).setData(android.net.Uri.parse("bamnat-fx://again/$id/$date/${tag.hashCode()}")).putExtra(ID, id)
+                .putExtra(DATE, date.toString()).putExtra(TAG, tag).putExtra(TEXT, text).putStringArrayListExtra(THEN, ArrayList(then)),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
         fun pending(ctx: Context, id: String, date: LocalDate, tag: String, req: Int): PendingIntent = PendingIntent.getBroadcast(
             ctx, req,

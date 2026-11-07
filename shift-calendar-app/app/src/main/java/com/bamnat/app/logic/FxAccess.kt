@@ -61,7 +61,8 @@ object FxAccess {
 
     /** The 프로 기능 장치 a whole work carries in its 규칙·단추 piece (none: free to put in and to send up). */
     fun partsOf(r: com.bamnat.core.recipe.Recipe): Set<FxPro.Part> =
-        r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) }.toSet()
+        (r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) } +
+            FxPro.looks(r.pieces.map { it.kind.key })).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
 
     /** What runs of [full] now. */
     fun runnable(c: AppContainer, full: Logic): Logic = if (on(c)) full else FxPro.free(full)
@@ -129,18 +130,40 @@ object FxValues {
         return ValueBook.now(load(c.appContext)[name], def, Today.date())
     }
 
-    /** "6/8잔" for a button that counts [name], or null. */
-    fun show(c: AppContainer, name: String): String? {
+    /** 1.39 [FX-13] [name] with its past, for 값() on each day and 지난값·연속·값합계·지난시간; null when no work has it. */
+    fun series(name: String): com.bamnat.core.formula.ValueSeries? {
+        val c = app() ?: return null
         val def = LogicRunner.logic(c, all = true).value(name) ?: return null
-        return def.show(ValueBook.now(load(c.appContext)[name], def, Today.date()))
+        return com.bamnat.core.formula.ValueSeries(def, load(c.appContext)[name], Today.date(), Today.dateTime())
     }
 
-    /** Adds [by] (or sets to [to]) and keeps it; the number after, or null when there is no such 값 칸. */
-    internal fun change(c: AppContainer, name: String, by: Double? = null, to: Double? = null): Double? {
+    /** "6/8잔" for a button that counts [name] ("18:30" a 시각, the words of a 글 값 칸), or null. */
+    fun show(c: AppContainer, name: String): String? {
+        val def = LogicRunner.logic(c, all = true).value(name) ?: return null
+        return def.show(load(c.appContext)[name], Today.date())
+    }
+
+    /** The last [n] periods of [name], oldest first (missing ones its start), for the widget's small bars. */
+    fun recent(c: AppContainer, name: String, n: Int): List<Double> {
+        val def = LogicRunner.logic(c, all = true).value(name) ?: return emptyList()
+        val k = load(c.appContext)[name]
+        return (n - 1 downTo 0).map { ValueBook.back(k, def, Today.date(), it) ?: def.start }
+    }
+
+    /**
+     * Adds [by] (or sets to [to], or to now's minutes when [stamp], or [text] for a 글 값 칸) and keeps it; the number after, or null when
+     * there is no such 값 칸.
+     */
+    internal fun change(c: AppContainer, name: String, by: Double? = null, to: Double? = null, stamp: Boolean = false, text: String? = null): Double? {
         val def = LogicRunner.logic(c, all = true).value(name) ?: return null
         val all = load(c.appContext)
         val today = Today.date()
-        val kept = if (to != null) ValueBook.set(def, today, to) else ValueBook.add(all[name], def, today, by ?: 1.0)
+        val kept = when {
+            stamp -> ValueBook.set(def, today, ValueBook.minutes(Today.dateTime()), all[name])
+            text != null -> ValueBook.set(def, today, ValueBook.now(all[name], def, today), all[name], text.take(com.bamnat.core.formula.LogicAct.MAX_TEXT))
+            to != null -> ValueBook.set(def, today, to, all[name])
+            else -> ValueBook.add(all[name], def, today, by ?: 1.0)
+        }
         val next = all + (name to kept)
         c.appContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(ALL, ValueBook.encode(next)).apply()
         _all.value = next
@@ -148,8 +171,9 @@ object FxValues {
     }
 
     /** Puts back [name]'s number as it was (되돌리기). */
-    internal fun restore(c: AppContainer, name: String, v: Double, period: String) {
-        val next = load(c.appContext) + (name to ValueBook.Kept(v, period))
+    internal fun restore(c: AppContainer, name: String, v: Double, period: String, t: String? = null) {
+        val all = load(c.appContext)
+        val next = all + (name to ValueBook.Kept(v, period, t, all[name]?.past.orEmpty()))
         c.appContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(ALL, ValueBook.encode(next)).apply()
         _all.value = next
     }

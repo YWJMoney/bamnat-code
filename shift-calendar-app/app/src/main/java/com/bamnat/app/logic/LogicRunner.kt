@@ -76,8 +76,17 @@ object LogicRunner {
     /** 1.37 PC 4차: the app is on screen (its message line can show 되돌리기), set by [LogicMessageHost]. */
     @Volatile var onScreen: Boolean = false
 
+    /** 1.39 [FX-01] [act] is one of what runs now ([logic]: 1.38 things and the free 맛보기), its 알림 단추 and wait aside. */
+    private fun runsNow(c: AppContainer, act: LogicAct): Boolean {
+        fun k(a: LogicAct) = a.copy(then = emptyList(), after = null)
+        val l = logic(c)
+        val want = k(act)
+        return l.buttons.any { b -> b.acts.any { k(it) == want } } || l.rules.any { r -> r.acts.any { k(it) == want } }
+    }
+
     /** Does [act] for [date]; [who] names the rule or the button (for its count and its line). */
-    suspend fun run(c: AppContainer, act: LogicAct, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false) {
+    suspend fun run(c: AppContainer, act: LogicAct, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0,
+                    trusted: Boolean = false) {
         if (resting) {
             LogicStore(c.appContext).log(who, "안전 모드라 쉬었어요")
             if (!quiet) _message.value = "안전 모드라 규칙과 단추는 쉬어요. ‘평소대로’를 누르면 다시 돌아요"; return
@@ -88,23 +97,41 @@ object LogicRunner {
         // 1.37 PC 5차: 이름을 비운 봉투 규칙은 "‘첫’ 봉투"라고 했어요. 실제로 넣은 봉투 이름으로 말해요.
         var envName: String? = null
         // 1.39 [FX-01] A 기능 장치 act (값 더하기·정하기, 알림 단추) needs 프로 or a running 하루 써 보기 (a press from an old widget too).
-        if (com.bamnat.core.formula.FxPro.needs(Logic(buttons = listOf(com.bamnat.core.formula.LogicButton(who, act = act)))) && !FxAccess.on(c)) {
+        if (!trusted && !FxAccess.on(c) && !runsNow(c, act)) {
             store.log(who, PRO_REST)
             if (!quiet || onScreen) _message.value = "‘$who’은 프로 기능 장치라 지금은 쉬어요. 작품마다 하루 써 볼 수 있어요"
             return
         }
+        // 1.39 [FX-15] 기다렸다 하기: kept and done at its time, the app open or not.
+        act.after?.let { m ->
+            later(c, act, date, who)
+            store.log(who, "${LogicAct.afterWords(m)} 뒤에 ‘${act.now().say()}’를 해요")
+            if (!quiet || onScreen) _message.value = "${LogicAct.afterWords(m)} 뒤에 ${act.now().say()}를 해요"
+            return
+        }
         if (act.verb.pro || act.then.isNotEmpty()) FxAccess.note(c, act.verb)
         var valueAfter: String? = null
+        var changed: Triple<String, Double?, Double>? = null
         when (act.verb) {
-            LogicVerb.NOTIFY -> notify(ctx, who, words.ifBlank { who }, buttons = act.then.mapNotNull { id -> logic(c).button(id) }, date = date)
-            // 1.39 [FX-03] 값 칸: the number before is kept for 되돌리기.
-            LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> {
+            LogicVerb.NOTIFY -> notify(ctx, who, words.ifBlank { who }, buttons = act.then.mapNotNull { id -> logic(c).button(id) }, date = date,
+                again = act.then.filter { it in LogicAct.AGAIN })
+            // 1.39 [FX-03][FX-13] 값 칸: the number (and words) before are kept for 되돌리기; then 값이 바뀌면 rules ([valueChanged]).
+            LogicVerb.VAL_ADD, LogicVerb.VAL_SET, LogicVerb.VAL_STAMP, LogicVerb.VAL_TEXT -> {
                 val before = FxValues.kept(c, act.arg)
-                val after = if (act.verb == LogicVerb.VAL_SET) FxValues.change(c, act.arg, to = act.by ?: 0.0) else FxValues.change(c, act.arg, by = act.by ?: 1.0)
+                val def = logic(c, all = true).value(act.arg)
+                val was = def?.let { com.bamnat.core.formula.ValueBook.now(before, it, Today.date()) }
+                val after = when (act.verb) {
+                    LogicVerb.VAL_SET -> FxValues.change(c, act.arg, to = act.by ?: 0.0)
+                    LogicVerb.VAL_STAMP -> FxValues.change(c, act.arg, stamp = true)
+                    LogicVerb.VAL_TEXT -> FxValues.change(c, act.arg, text = FormulaText.render(act.text, scope))
+                    else -> FxValues.change(c, act.arg, by = act.by ?: 1.0)
+                }
                 if (after == null) { store.log(who, "‘${act.arg}’ 값 칸이 없어 못 했어요"); if (!quiet || onScreen) _message.value = "‘${act.arg}’ 값 칸이 없어요. 스튜디오 › 규칙·단추 › 값 칸에서 만들어요"; return }
-                store.wrote(who, JSONObject().put("val", act.arg).put("v", before?.v ?: Double.NaN).put("p", before?.period.orEmpty()).put("say", act.say()))
+                store.wrote(who, JSONObject().put("val", act.arg).put("v", before?.v ?: Double.NaN).put("p", before?.period.orEmpty())
+                    .put("t", before?.t.orEmpty()).put("say", act.say()))
                 valueAfter = FxValues.show(c, act.arg)
                 FxOutside.changed(c)
+                changed = Triple(act.arg, was, after)
             }
             LogicVerb.MEMO_TEMPLATE -> {
                 LogicLinks.template = act.arg
@@ -184,11 +211,90 @@ object LogicRunner {
                 LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.take(20)}’ 줄을 더했어요"
                 LogicVerb.ENVELOPE -> "‘${envName ?: act.arg}’ 봉투에 ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
-                LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> "‘${act.arg}’ ${valueAfter ?: ""}"
+                LogicVerb.VAL_ADD, LogicVerb.VAL_SET, LogicVerb.VAL_STAMP, LogicVerb.VAL_TEXT -> "‘${act.arg}’ ${valueAfter ?: ""}"
                 else -> act.say()
             }
         }
+        changed?.let { (name, was, now) -> valueChanged(c, name, was, now, date, depth) }
     }
+
+    /**
+     * 1.39 [FX-11] 동작 줄: [acts] one after another (a later one reads what an earlier one counted), a screen or a 메모 틀 opened once.
+     */
+    suspend fun runSteps(c: AppContainer, acts: List<LogicAct>, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0) {
+        var opened = false
+        for (a in acts.take(1 + com.bamnat.core.formula.MAX_MORE)) {
+            val opens = a.after == null && (a.verb == LogicVerb.SCREEN || a.verb == LogicVerb.MEMO_TEMPLATE)
+            if (opens && opened) continue
+            opened = opened || opens
+            run(c, a, date, scope, who, quiet, depth)
+        }
+    }
+
+    /** 1.39 [FX-11] A button pressed: its 조건 picks the 동작 줄 or the '아니면'. */
+    suspend fun pressButton(c: AppContainer, b: com.bamnat.core.formula.LogicButton, date: LocalDate, scope: FormulaScope, quiet: Boolean = false) {
+        val holds = b.cond.isEmpty() || com.bamnat.core.formula.Formula.eval(b.cond, scope)?.truthy == true
+        val steps = b.steps(holds)
+        if (steps.isEmpty()) {
+            LogicStore(c.appContext).log(b.label, "조건(${b.cond.take(30)})이 맞지 않고 ‘아니면’이 없어 안 했어요")
+            if (!quiet || onScreen) _message.value = "‘${b.label}’은 지금 조건에 맞지 않아요"
+            return
+        }
+        runSteps(c, steps, date, scope, b.label, quiet)
+    }
+
+    /**
+     * 1.39 [FX-12] 값 칸 [name] went from [was] to [now]: its 값이 바뀌면 rules run (목표 rules only when it crosses the goal), at most
+     * [CHAIN_MAX] deep so two rules cannot keep each other going.
+     */
+    private suspend fun valueChanged(c: AppContainer, name: String, was: Double?, now: Double, date: LocalDate, depth: Int) {
+        val all = logic(c, all = true)
+        val rules = all.rules.filter { it.on == RuleTrigger.VALUE && it.of == name }
+        if (rules.isEmpty()) return
+        val store = LogicStore(c.appContext)
+        if (depth >= CHAIN_MAX) { rules.forEach { store.log(it.name, "값이 바뀌면 규칙이 ${CHAIN_MAX}번 넘게 이어져 멈췄어요") }; return }
+        val runs = logic(c).rules.associateBy { it.key }
+        val def = all.value(name)
+        val f = runCatching { facts(c) }.getOrNull() ?: return
+        val scope = f.scope(date)
+        for (r in rules) {
+            if (store.isOff(r.key)) continue
+            val run = runs[r.key] ?: run { store.log(r.name, PRO_REST); null } ?: continue
+            if (r.goal) {
+                val goal = def?.goal ?: continue
+                if (!((was ?: Double.NEGATIVE_INFINITY) < goal && now >= goal)) continue
+            }
+            val holds = r.cond.isEmpty() || com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy == true
+            val steps = run.steps(holds)
+            if (steps.isEmpty()) { store.log(r.name, "조건(${r.cond.take(30)})이 맞지 않아 건너뛰었어요"); continue }
+            runCatching { runSteps(c, steps, date, scope, r.name, quiet = true, depth = depth + 1) }
+        }
+    }
+
+    // ---- 1.39 [FX-15] 기다렸다 하기 ----
+
+    /** Keeps [act] to be done [LogicAct.after] minutes from now (at most [LATER_MAX] waiting), and registers the alarm. */
+    internal fun later(c: AppContainer, act: LogicAct, date: LocalDate, who: String, again: Boolean = false) {
+        val m = act.after ?: return
+        val at = Today.millis() + m * 60_000L
+        val o = JSONObject().put("at", at).put("who", who).put("date", date.toString()).put("act", JSONObject(act.toMap())).put("again", again)
+        LogicStore(c.appContext).addLater(o, LATER_MAX)
+        schedule(c)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun actOf(o: JSONObject): LogicAct? = runCatching {
+        fun plain(x: Any?): Any? = when (x) {
+            is JSONObject -> x.keys().asSequence().associateWith { plain(x.get(it)) }
+            is JSONArray -> (0 until x.length()).map { plain(x.get(it)) }
+            JSONObject.NULL -> null
+            else -> x
+        }
+        LogicAct.from(plain(o.getJSONObject("act")) as Map<String, Any?>)
+    }.getOrNull()
+
+    private const val CHAIN_MAX = 3
+    private const val LATER_MAX = 20
 
     /** Takes back the last thing a button or rule wrote; false when there is nothing to take back. */
     suspend fun undo(c: AppContainer): Boolean {
@@ -245,7 +351,7 @@ object LogicRunner {
             // 1.39 [FX-03] 값 칸: back to the number before (none kept before: its start, by forgetting the period).
             o.has("val") -> {
                 val v = o.optDouble("v")
-                FxValues.restore(c, o.getString("val"), if (v.isNaN()) 0.0 else v, if (v.isNaN()) "" else o.optString("p"))
+                FxValues.restore(c, o.getString("val"), if (v.isNaN()) 0.0 else v, if (v.isNaN()) "" else o.optString("p"), o.optString("t").ifEmpty { null })
                 FxOutside.changed(c)
             }
             o.has("envMove") -> c.scopeOf(o.optString("cal", c.calendars.active.value)).money.deleteEnvelopeMove(o.getLong("envMove"))
@@ -261,24 +367,31 @@ object LogicRunner {
         }
     }
 
-    /** The rules for [on] that are switched on and whose 조건 holds on [date]. */
-    fun due(c: AppContainer, on: RuleTrigger, date: LocalDate, facts: DayFactsBook): List<LogicRule> {
+    /**
+     * The rules for [on] that are switched on, each with what it does on [date]: its 동작 줄 when its 조건 holds, its '아니면' when not
+     * (1.39 [FX-11]); one with neither is left out (and said in the log).
+     */
+    fun due(c: AppContainer, on: RuleTrigger, date: LocalDate, facts: DayFactsBook): List<Pair<LogicRule, List<LogicAct>>> {
         val store = LogicStore(c.appContext)
         val scope = facts.scope(date)
         // As it runs now (an 알림 without its 알림 단추 when they rest); the key does not change with them.
         val runs = logic(c).rules.associateBy { it.key }
         // 1.39 [FX-06] '왜 안 됐지': a rule for [on] that does not run says why in the log.
-        return logic(c, all = true).rules.filter { it.on == on }.filter { r ->
+        return logic(c, all = true).rules.filter { it.on == on }.mapNotNull { r ->
+            val run = runs[r.key]
+            val holds = r.cond.isEmpty() || com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy == true
             val why = when {
                 store.isOff(r.key) -> "꺼 둬서 쉬었어요"
-                r.key !in runs -> PRO_REST
-                r.cond.isNotEmpty() && com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy != true -> "${date.monthValue}/${date.dayOfMonth} 조건(${r.cond.take(30)})이 맞지 않아 건너뛰었어요"
+                run == null -> PRO_REST
+                !holds && run.otherwise.isEmpty() -> "${date.monthValue}/${date.dayOfMonth} 조건(${r.cond.take(30)})이 맞지 않아 건너뛰었어요"
                 else -> null
             }
             why?.let { store.log(r.name, it) }
-            why == null
-        }.mapNotNull { runs[it.key] }
+            if (why == null && run != null) run to run.steps(holds) else null
+        }
     }
+
+    private fun opens(acts: List<LogicAct>) = acts.any { it.after == null && (it.verb == LogicVerb.SCREEN || it.verb == LogicVerb.MEMO_TEMPLATE) }
 
     /** 날짜를 누르면: the tap rules that hold run (a screen or 메모 틀 the first only, so one tap opens one thing). */
     fun onTap(c: AppContainer, date: LocalDate, facts: DayFactsBook?) {
@@ -288,11 +401,11 @@ object LogicRunner {
         if (rules.isEmpty()) return
         c.appScope.launch {
             var opened = false
-            for (r in rules) {
-                val opens = r.act.verb == LogicVerb.SCREEN || r.act.verb == LogicVerb.MEMO_TEMPLATE
-                if (opens && opened) continue
-                opened = opened || opens
-                runCatching { run(c, r.act, date, facts.scope(date), r.name) }
+            for ((r, acts) in rules) {
+                val o = opens(acts)
+                if (o && opened) continue
+                opened = opened || o
+                runCatching { runSteps(c, acts, date, facts.scope(date), r.name) }
             }
         }
     }
@@ -306,17 +419,17 @@ object LogicRunner {
         if (resting) return false
         val rules = due(c, RuleTrigger.HOLD, date, facts)
         if (rules.isEmpty()) return false
-        val opens = rules.any { it.act.verb == LogicVerb.SCREEN || it.act.verb == LogicVerb.MEMO_TEMPLATE }
+        val any = rules.any { opens(it.second) }
         c.appScope.launch {
             var opened = false
-            for (r in rules) {
-                val o = r.act.verb == LogicVerb.SCREEN || r.act.verb == LogicVerb.MEMO_TEMPLATE
+            for ((r, acts) in rules) {
+                val o = opens(acts)
                 if (o && opened) continue
                 opened = opened || o
-                runCatching { run(c, r.act, date, facts.scope(date), r.name) }
+                runCatching { runSteps(c, acts, date, facts.scope(date), r.name) }
             }
         }
-        return opens
+        return any
     }
 
     /**
@@ -331,7 +444,7 @@ object LogicRunner {
         c.appScope.launch {
             val f = facts ?: runCatching { facts(c) }.getOrNull() ?: return@launch
             if (!holds(f)) { LogicStore(c.appContext).log(b.label, "이 날 보이기 조건이 맞지 않아 안 눌렀어요"); _message.value = "‘${b.label}’ 단추는 이 날 조건에 맞지 않아요"; return@launch }
-            runCatching { run(c, b.act, date, f.scope(date), b.label) }
+            runCatching { pressButton(c, b, date, f.scope(date)) }
         }
         return true
     }
@@ -342,7 +455,7 @@ object LogicRunner {
         c.appScope.launch {
             val f = facts(c)
             val d = date ?: Today.date()
-            due(c, RuleTrigger.MEMO, d, f).forEach { runCatching { run(c, it.act, d, f.scope(d), it.name, quiet = true) } }
+            due(c, RuleTrigger.MEMO, d, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, d, f.scope(d), r.name, quiet = true) } }
         }
     }
 
@@ -361,7 +474,7 @@ object LogicRunner {
         if (resting || logic(c).rules.none { it.on == RuleTrigger.MONEY }) return
         c.appScope.launch {
             val f = facts(c)
-            due(c, RuleTrigger.MONEY, date, f).forEach { runCatching { run(c, it.act, date, f.scope(date), it.name, quiet = true) } }
+            due(c, RuleTrigger.MONEY, date, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, date, f.scope(date), r.name, quiet = true) } }
         }
     }
 
@@ -385,7 +498,7 @@ object LogicRunner {
         store.lastOpen = today.toString()
         c.appScope.launch {
             val f = facts(c)
-            due(c, RuleTrigger.OPEN, today, f).forEach { runCatching { run(c, it.act, today, f.scope(today), it.name) } }
+            due(c, RuleTrigger.OPEN, today, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, today, f.scope(today), r.name) } }
         }
     }
 
@@ -393,6 +506,7 @@ object LogicRunner {
 
     /** When [r] next comes after [after], looking two weeks ahead; null when it does not come in them. */
     fun nextTime(r: LogicRule, after: LocalDateTime, facts: DayFactsBook): Pair<LocalDateTime, LocalDate>? {
+        if (r.on == RuleTrigger.EVERY) return nextEvery(r, after, facts)
         for (k in -1..14) {
             val day = after.toLocalDate().plusDays(k.toLong())
             val at: LocalDateTime? = when (r.on) {
@@ -417,6 +531,33 @@ object LogicRunner {
         return null
     }
 
+    /** 1.39 [FX-15] 몇 분마다: the next time after [after], in its 시간대 or while a shift is on, at most [LogicRule.EVERY_DAY_MAX] a day. */
+    private fun nextEvery(r: LogicRule, after: LocalDateTime, facts: DayFactsBook): Pair<LocalDateTime, LocalDate>? {
+        val step = r.min.coerceIn(LogicRule.EVERY_MIN, LogicRule.EVERY_MAX).toLong()
+        for (k in -1..14) {
+            val day = after.toLocalDate().plusDays(k.toLong())
+            val (from, to) = if (r.inWork) {
+                val v = facts.values(day)
+                if (v[com.bamnat.core.formula.FormulaName.OFF.ko] == true) continue
+                val start = (v[com.bamnat.core.formula.FormulaName.START.ko] as? String)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse) ?: continue
+                val end = (v[com.bamnat.core.formula.FormulaName.END.ko] as? String)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse) ?: continue
+                day.atTime(start) to (if (!end.isAfter(start)) day.plusDays(1).atTime(end) else day.atTime(end))
+            } else {
+                val start = r.at?.let { runCatching { LocalTime.parse(it) }.getOrNull() } ?: LocalTime.MIDNIGHT
+                val end = r.until?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+                day.atTime(start) to (if (end == null) day.plusDays(1).atStartOfDay() else if (!end.isAfter(start)) day.plusDays(1).atTime(end) else day.atTime(end))
+            }
+            // A shift's first round is one step in (2시간마다 from 09:00 is 11:00, not the start itself).
+            var t = if (r.inWork) from.plusMinutes(step) else from
+            var n = 0
+            while (!t.isAfter(to) && n < LogicRule.EVERY_DAY_MAX) {
+                if (t.isAfter(after) && (r.inWork || t.isBefore(to))) return t to day
+                t = t.plusMinutes(step); n++
+            }
+        }
+        return null
+    }
+
     /** The app started: what came while it was away (phone off, clock moved) is run or said as missed, then the next is registered. */
     fun catchUp(c: AppContainer) {
         c.appScope.launch { runCatching { fire(c) }.onFailure { schedule(c) } }
@@ -434,13 +575,16 @@ object LogicRunner {
             val ctx = c.appContext
             val am = ctx.getSystemService(AlarmManager::class.java) ?: return@launch
             val store = LogicStore(ctx)
-            val timed = logic(c).rules.filter { (it.on == RuleTrigger.DAILY || it.on == RuleTrigger.START || it.on == RuleTrigger.END) && !store.isOff(it.key) }
+            val timed = logic(c).rules.filter { it.on in TIMED && !store.isOff(it.key) }
+            val laters = store.laters().map { it.optLong("at") }
             val op = PendingIntent.getBroadcast(ctx, REQ, Intent(ctx, LogicReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            if (timed.isEmpty()) { am.cancel(op); return@launch }
+            if (timed.isEmpty() && laters.isEmpty()) { am.cancel(op); return@launch }
             val f = runCatching { facts(c) }.getOrNull() ?: return@launch
             val now = Today.dateTime()
+            // 1.39 [FX-15] The first of a 기다렸다 하기 waiting and the timed rules.
+            val soonest = laters.minOrNull()?.let { java.time.Instant.ofEpochMilli(it).atZone(Today.zone()).toLocalDateTime() }
             // Nothing in two weeks (no night shift yet): look again in a day, so a 근무표 filled in later is not missed.
-            val next = timed.mapNotNull { r -> nextTime(r, now, f)?.first }.minOrNull() ?: now.plusDays(1)
+            val next = (timed.mapNotNull { r -> nextTime(r, now, f)?.first } + listOfNotNull(soonest)).minOrNull() ?: now.plusDays(1)
             val at = next.atZone(Today.zone()).toInstant().toEpochMilli()
             // PC 1차 확인: '몇 분 전' 규칙은 근무 알람처럼 제시각에 (an inexact alarm may come an hour late).
             runCatching {
@@ -472,6 +616,22 @@ object LogicRunner {
         // happened yet: it is forgotten, so 07:00 runs when 07:00 comes again (전에는 '놓쳤어요'만 남고 돌지 않았어요).
         if (last != null && last.isAfter(now)) store.forgetAfter(logic(c).rules.map { it.key }, now)
         val since = last?.takeIf { !it.isAfter(now) && it.isAfter(now.minusDays(2)) } ?: now.minusMinutes(2)
+        // 1.39 [FX-15] 기다렸다 하기 that came due: done (too late, said as missed); the rest keep waiting.
+        val nowMs = Today.millis()
+        val (dueLater, waiting) = store.laters().partition { it.optLong("at") <= nowMs + 60_000L }
+        if (dueLater.isNotEmpty()) {
+            store.keepLaters(waiting)
+            for (o in dueLater) {
+                val who = o.optString("who")
+                val act = actOf(o) ?: continue
+                if (o.optLong("at") < nowMs - LATE_MINUTES * 60_000L) { store.log(who, "‘${act.now().say()}’ 시각을 놓쳤어요 (꺼짐·시계 바뀜)"); continue }
+                val day = runCatching { LocalDate.parse(o.optString("date")) }.getOrNull() ?: Today.date()
+                // The gate looks at the act as the rule or button holds it (with its wait); a '다시 알림' was let through when it was asked.
+                val trusted = o.optBoolean("again")
+                if (!trusted && !FxAccess.on(c) && !runsNow(c, act)) { store.log(who, PRO_REST); continue }
+                runCatching { run(c, act.now(), day, f.scope(day), who, quiet = true, trusted = true) }.onFailure { store.log(who, "하다가 멈췄어요") }
+            }
+        }
         val runs = logic(c).rules.associateBy { it.key }
         for (all in logic(c, all = true).rules) {
             val r = runs[all.key] ?: all
@@ -492,10 +652,11 @@ object LogicRunner {
             if (r.key !in runs) { store.result(r.key, at, "프로 기능 장치라 쉬었어요"); store.log(r.name, PRO_REST); continue }
             if (at.isBefore(now.minusMinutes(LATE_MINUTES))) { store.result(r.key, at, LogicStore.MISSED); store.log(r.name, "${at.monthValue}/${at.dayOfMonth} ${"%02d:%02d".format(at.hour, at.minute)} 휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요"); continue }
             val scope = f.scope(day)
-            if (r.cond.isNotEmpty() && com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy != true) {
+            val holds = r.cond.isEmpty() || com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy == true
+            if (!holds && r.otherwise.isEmpty()) {
                 store.result(r.key, at, "조건이 맞지 않아 건너뛰었어요"); store.log(r.name, "${at.monthValue}/${at.dayOfMonth} 조건(${r.cond.take(30)})이 맞지 않아 건너뛰었어요"); continue
             }
-            val ok = runCatching { run(c, r.act, day, scope, r.name, quiet = true) }
+            val ok = runCatching { runSteps(c, r.steps(holds), day, scope, r.name, quiet = true) }
             if (ok.isFailure) store.log(r.name, "하다가 멈췄어요")
             store.result(r.key, at, when {
                 ok.isFailure -> "하다가 멈췄어요"
@@ -511,16 +672,16 @@ object LogicRunner {
     suspend fun runNow(c: AppContainer, r: LogicRule) {
         val f = facts(c)
         val day = Today.date()
-        val ok = runCatching { run(c, r.act, day, f.scope(day), r.name) }
+        val ok = runCatching { runSteps(c, listOf(r.act) + r.more, day, f.scope(day), r.name) }
         LogicStore(c.appContext).result(r.key, Today.dateTime(), if (ok.isSuccess) "놓친 것을 지금 했어요" else "하다가 멈췄어요")
     }
 
-    private val TIMED = setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END)
+    private val TIMED = setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END, RuleTrigger.EVERY)
     internal const val PRO_REST = "프로 기능 장치라 쉬었어요 (하루 써 보기·프로에서 돌아요)"
     private const val LATE_MINUTES = 60L
 
     private fun notify(ctx: Context, title: String, text: String, quietly: Boolean = false,
-        buttons: List<com.bamnat.core.formula.LogicButton> = emptyList(), date: LocalDate = Today.date()) {
+        buttons: List<com.bamnat.core.formula.LogicButton> = emptyList(), date: LocalDate = Today.date(), again: List<String> = emptyList()) {
         // 1.36 [SEC-12] 보안 점검 M5: on the lock screen only "규칙 알림" (the words may hold the 가계부's numbers).
         val public = NotificationCompat.Builder(ctx, Notifications.RULES_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -539,6 +700,8 @@ object LogicRunner {
             .setAutoCancel(true)
             // 1.39 [FX-05] 알림 단추: each presses that button for the day, without opening the app.
             .apply { buttons.forEachIndexed { i, b -> addAction(0, listOfNotNull(b.emoji, b.label).joinToString(" "), FxPressReceiver.pending(ctx, b.id, date, title, REQ + 10 + i)) } }
+            // 1.39 [FX-15] '10분 뒤 다시'·'1시간 뒤 다시' (free: 메모 일정 알림 has them too).
+            .apply { again.forEachIndexed { i, id -> addAction(0, "${LogicAct.afterWords(LogicAct.AGAIN[id] ?: 10)} 뒤 다시", FxPressReceiver.again(ctx, id, date, title, text, buttons.map { it.id } + again, REQ + 20 + i)) } }
             .build()
         Notifications.post(ctx, NOTICE_ID, n, tag = title)
     }
@@ -742,6 +905,17 @@ class LogicStore(context: Context) {
     fun clearLog() = p.edit().remove("log").apply()
 
     data class Line(val at: Long, val who: String, val what: String)
+
+    /** 1.39 [FX-15] 기다렸다 하기 waiting: {at, who, date, act, again}. */
+    fun laters(): List<JSONObject> = runCatching {
+        val a = JSONArray(p.getString("later", "[]"))
+        (0 until a.length()).map { a.getJSONObject(it) }
+    }.getOrDefault(emptyList())
+
+    fun keepLaters(list: List<JSONObject>) = p.edit().putString("later", JSONArray(list).toString()).apply()
+
+    /** Adds [o]; past [max], the soonest are kept. */
+    fun addLater(o: JSONObject, max: Int) = keepLaters((laters() + o).sortedBy { it.optLong("at") }.take(max))
 }
 
 private const val LOG_MAX = 50

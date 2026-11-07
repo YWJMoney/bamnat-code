@@ -126,6 +126,9 @@ fun interface FormulaScope {
     /** 1.39 [FX-03] 값 칸: what a work counted and kept under [name] (`값("물 잔")`); none by default. */
     fun value(name: String): Value? = null
 
+    /** 1.39 [FX-13] 값 칸 [name] with its past (지난값·연속·값합계·지난시간); none by default. */
+    fun series(name: String): ValueSeries? = null
+
     companion object {
         val EMPTY = FormulaScope { null }
         fun of(map: Map<String, Any?>, inputs: Map<String, Any?> = emptyMap()): FormulaScope = object : FormulaScope {
@@ -536,6 +539,18 @@ internal class Eval(val scope: FormulaScope) {
                 val name = eval(args[0], d + 1).text.trim()
                 scope.value(name) ?: (if (args.size > 1) eval(args[1], d + 1) else Value.None)
             }
+            // 1.39 [FX-13] 값 칸의 지난 기록: none when the phone keeps no such 값 칸 (the server, an old work).
+            Fn.PAST, Fn.STREAK, Fn.TOTAL, Fn.MEAN, Fn.SINCE -> {
+                val s = scope.series(eval(args[0], d + 1).text.trim()) ?: return Value.None
+                val k = if (args.size > 1) (eval(args[1], d + 1) as? Value.Num)?.v?.toInt() else null
+                when (n.fn) {
+                    Fn.PAST -> s.back((k ?: 1).coerceIn(0, ValueBook.PAST))?.let { Value.Num(it) } ?: Value.None
+                    Fn.STREAK -> Value.Num(s.streak().toDouble())
+                    Fn.TOTAL -> Value.Num(s.total(k ?: 7))
+                    Fn.MEAN -> (k ?: 7).coerceIn(1, ValueBook.PAST + 1).let { m -> Value.Num(s.total(m) / m) }
+                    else -> s.hoursSince()?.let { Value.Num(it) } ?: Value.None
+                }
+            }
             else -> Value.None
         }
     }
@@ -590,6 +605,12 @@ internal enum class Fn(val ko: String, val en: String, val min: Int, val max: In
     INPUT("칸", "input", 1, 2, true, "받는 사람이 채운 칸의 값(이름으로)", "칸(\"기준 금액\", 50000)"),
     /** 1.39 [FX-03] 값 칸 (프로 기능 장치): what the work counted, by its name; the second value when it has none yet. */
     VALUE("값", "value", 1, 2, true, "작품이 세어 둔 값(값 칸 이름으로)", "값(\"물 잔\", 0)"),
+    /** 1.39 [FX-13] 값 칸의 기록 (프로 기능 장치). */
+    PAST("지난값", "pastValue", 1, 2, true, "값 칸의 지난 기간 값(1: 어제·지난주·지난달)", "지난값(\"물 잔\", 1)"),
+    STREAK("연속", "valueStreak", 1, 1, true, "값 칸이 목표를 채운 기간이 몇 번 이어졌나", "연속(\"물 잔\")"),
+    TOTAL("값합계", "valueSum", 1, 2, true, "값 칸의 최근 몇 기간 합(지금 포함, 기본 7)", "값합계(\"배달\", 7)"),
+    MEAN("값평균", "valueAvg", 1, 2, true, "값 칸의 최근 몇 기간 평균(기본 7)", "값평균(\"배달\", 7)"),
+    SINCE("지난시간", "hoursSince", 1, 1, true, "시각 값 칸에 적은 때부터 몇 시간 지났나", "지난시간(\"약\")"),
     CONTAINS("포함", "contains", 2, 2, help = "글이나 목록에 들어 있나", example = "꼬리표.포함(\"병원\")"),
     STARTS("시작", "startsWith", 2, 2, help = "글이 이것으로 시작하나", example = "근무.시작(\"야\")"),
     ENDS("끝", "endsWith", 2, 2, help = "글이 이것으로 끝나나", example = "메모.끝(\"!\")"),

@@ -59,7 +59,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
                 onClick = {
                     scope.launch {
                         val f = facts ?: LogicRunner.facts(c)
-                        runCatching { LogicRunner.run(c, b.act, date, f.scope(date), b.label) }
+                        runCatching { LogicRunner.pressButton(c, b, date, f.scope(date)) }
                     }
                 },
                 label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) },
