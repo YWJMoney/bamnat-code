@@ -13,7 +13,7 @@
 칸(쓰는 것만): id(d로 시작하는 서버 개발사항 번호) 또는 track(추적 번호, 예 LOOP-17) 하나는 꼭,
 title, status(todo·doing·check·done·rejected), size(fix·polish·feature), route(server·remote·flag·app·hotfix),
 remote("kind@번호"), flag, events, tierAsk(free·pro·pass·trial·later, Claude의 제안일 뿐), tierWhy,
-publicTitle(앱 '지금 알려진 문제'에 보일 쉬운 제목, 60자), known(true·false), test, check, pr,
+publicTitle(앱 '지금 알려진 문제'에 보일 쉬운 제목, 60자), known(true·false), styles(보일 근무 유형 목록, 없으면 모두), test, check, pr,
 news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인 문의에 가는 답), reason(반려 이유).
 요금(tier)은 사용자만 관리자 앱에서 정해요. 이 파일에 tier를 적으면 검사가 막아요.
 """
@@ -28,11 +28,12 @@ STATUS_FILE = ROOT / "ops" / "dev-status.jsonl"
 BUILT_FILE = ROOT / "server" / "company-worker" / "src" / "dev-built.js"
 
 KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "tierAsk", "tierWhy", "publicTitle",
-        "known", "test", "check", "pr", "news", "shipReply", "reason"}
+        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason"}
 STATUS = {"todo", "doing", "check", "done", "rejected"}
 SIZES = {"fix", "polish", "feature"}
 ROUTES = {"server", "remote", "flag", "app", "hotfix"}
 TIERS = {"free", "pro", "pass", "trial", "later"}
+STYLES = {"SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"}
 ID = re.compile(r"^d[A-Za-z0-9]{15}$")
 TRACK = re.compile(r"^[A-Z][A-Z0-9]{0,9}-\d{1,4}$")
 REMOTE = re.compile(r"^[a-z0-9-]{2,30}@\d{1,9}$")
@@ -96,6 +97,8 @@ def check_item(n, x):
         say("events는 소문자 이름 8개까지의 목록이에요")
     if "tierAsk" in x and x["tierAsk"] not in TIERS:
         say("tierAsk는 free·pro·pass·trial·later 중 하나예요")
+    if "styles" in x and not (isinstance(x["styles"], list) and all(v in STYLES for v in x["styles"])):
+        say("styles는 SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST 중에서 고른 목록이에요(빈 목록 = 모두)")
     if "known" in x and not isinstance(x["known"], bool):
         say("known은 true나 false예요")
     if "pr" in x and not (isinstance(x["pr"], int) and x["pr"] > 0):

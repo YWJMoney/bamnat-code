@@ -879,8 +879,13 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 1.39 [LOOP-16] 해결됐나요: after the fixed version reached this phone, two presses say if it worked.
-            if (i.askFixed || i.fixed != 0) FixedAsk(i, busy) { ok -> error = null; vm.fixed(i.id, ok) { why -> error = why } }
-            if (i.answers > 0) RateAnswer(i, busy, onMore = { more ->
+            // PC 1.39 G10 확인: 해결됐나요와 '답이 도움이 됐나요'가 나란히 있으면 헷갈려요. 고친 판 안내를 받은 문의는 해결됐나요만.
+            val fixFlow = i.askFixed || i.fixed != 0
+            if (fixFlow) FixedAsk(i, busy, onMore = { more ->
+                error = null
+                vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
+            }) { ok -> error = null; vm.fixed(i.id, ok) { why -> error = why } }
+            if (i.answers > 0 && !fixFlow) RateAnswer(i, busy, onMore = { more ->
                 error = null
                 vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
             }) { good -> error = null; vm.rate(i.id, good) { why -> error = why } }
@@ -985,13 +990,25 @@ private fun RateAnswer(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {},
  * again for the developer, so a fix that did not work is not lost behind a 반영 mark.
  */
 @Composable
-private fun FixedAsk(i: Inquiry, busy: Boolean, onAnswer: (Boolean) -> Unit) {
+private fun FixedAsk(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {}, onAnswer: (Boolean) -> Unit) {
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when (i.fixed) {
                 1 -> Text("해결됐다고 알려 주셨어요. 고마워요", style = MaterialTheme.typography.bodyMedium)
-                -1 -> Text("아직 그대로라고 알려 주셨어요. 개발자가 다시 살펴보고 여기에 답할게요",
-                    style = MaterialTheme.typography.bodyMedium)
+                -1 -> {
+                    Text("아직 그대로라고 알려 주셨어요. 개발자가 다시 살펴보고 여기에 답할게요",
+                        style = MaterialTheme.typography.bodyMedium)
+                    // PC 1.39 G10 확인 제안: 어떤 상황인지 한 줄을 바로(선택). 한 번 보내면 접혀요.
+                    val told = i.messages.any { !it.fromDeveloper && it.text.startsWith(STILL) }
+                    if (!told) {
+                        var line by rememberSaveable(i.id + "still") { mutableStateOf("") }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(line, { line = it.take(200) }, Modifier.weight(1f), singleLine = true,
+                                placeholder = { Text("어떤 상황인지 한 줄 (예: 잠금 화면에서만 그래요)") })
+                            TextButton(enabled = line.isNotBlank() && !busy, onClick = { onMore("$STILL ${line.trim()}"); line = "" }) { Text("보내기") }
+                        }
+                    }
+                }
                 else -> {
                     Text("고친 업데이트가 이 폰에 들어왔어요. 문제가 해결됐나요?", style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium)
@@ -1004,6 +1021,9 @@ private fun FixedAsk(i: Inquiry, busy: Boolean, onAnswer: (Boolean) -> Unit) {
         }
     }
 }
+
+/** 1.39 [LOOP-16] How the one line after 아직이에요 starts. */
+internal const val STILL = "[아직 그대로]"
 
 /** [INQ-05] How the one line after 아쉬워요 starts, so the admins see what it is. */
 internal const val MISSED = "[아쉬운 점]"
@@ -1216,18 +1236,20 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
  */
 @Composable
 private fun KnownIssues(vm: InquiryViewModel) {
-    val known by vm.known.collectAsStateWithLifecycle()
+    val all by vm.known.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val known = remember(all, style) { all.filter { it.showsFor(style) } }
     LaunchedEffect(Unit) { vm.loadKnown() }
     if (known.isEmpty()) return
-    var all by rememberSaveable { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("지금 알려진 문제", style = MaterialTheme.typography.titleSmall)
             Text("같은 일을 겪으면 ‘나도 겪어요’만 눌러 주세요. 고친 업데이트가 나오면 내 문의로 알려 드려요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            (if (all) known else known.take(3)).forEach { k ->
+            (if (open) known else known.take(3)).forEach { k ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(k.title, style = MaterialTheme.typography.bodyMedium)
@@ -1239,7 +1261,7 @@ private fun KnownIssues(vm: InquiryViewModel) {
                         label = { Text(if (k.mine) "나도 겪어요 ✓" else "나도 겪어요") })
                 }
             }
-            if (known.size > 3) TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "${known.size - 3}개 더 보기") }
+            if (known.size > 3) TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "${known.size - 3}개 더 보기") }
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         }
     }

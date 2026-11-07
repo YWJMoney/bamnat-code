@@ -7,7 +7,7 @@ import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { LOOP, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { LOOP, styleList, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -1225,6 +1225,10 @@ export async function devUpdate(env, row, body, now) {
     const k = body.known === true ? 1 : body.known === false ? -1 : 0;
     if (k !== (row.known ?? 0)) [edit.known, set.known] = [[row.known ?? 0, k], k];
   }
+  if (body.styles !== undefined) {
+    const v = styleList(body.styles);
+    if (v !== (row.styles ?? "")) [edit.styles, set.styles] = [[row.styles ?? "", v], v];
+  }
   for (const [key, names] of [["route", LOOP.routes], ["size", LOOP.sizes]]) {
     if (body[key] === undefined) continue;
     const v = body[key] === null || body[key] === "" ? "" : Object.hasOwn(names, body[key]) ? body[key] : refuse(key, key);
@@ -1391,6 +1395,7 @@ export const devItem = (r) => ({
   route: r.route ?? "",
   size: r.size ?? "",
   track: r.track ?? "",
+  styles: String(r.styles ?? "").split(",").filter(Boolean),
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   createdBy: { id: r.created_by, name: r.created_by_name },

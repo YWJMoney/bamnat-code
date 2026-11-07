@@ -186,7 +186,12 @@ interface InquiryApi {
  * 1.39 [LOOP-17] 지금 알려진 문제 하나: 여럿이 겪는 것만 서버가 보여 줘요. [state] checking(확인 중)·fixing(고치는 중)·fixed(고침, [version]에서),
  * [me] 같은 일을 알린 수, [mine] 이 폰이 '나도 겪어요'를 눌렀는지.
  */
-data class KnownIssue(val id: String, val title: String, val state: String, val version: String?, val me: Int, val mine: Boolean)
+data class KnownIssue(val id: String, val title: String, val state: String, val version: String?, val me: Int, val mine: Boolean,
+    /** Work types (WorkStyle names) it is shown to; empty = everyone. */
+    val styles: Set<String> = emptySet()) {
+    /** PC 1.39 G10: a problem of another kind of work (a rotation's, on a shop's phone) is not shown; one already pressed always is. */
+    fun showsFor(style: com.bamnat.core.work.WorkStyle?): Boolean = mine || styles.isEmpty() || style == null || style.name in styles
+}
 
 /** 1.38 [EASE-31] One 밤낮 Q&A: the question as the developer put it, and the answer for everyone. */
 data class PublicQa(val id: Long, val question: String, val answer: String, val topicName: String)
@@ -248,7 +253,8 @@ class InquiryClient(
         val id = it.optString("id")
         val title = it.optString("title").trim()
         if (id.isEmpty() || title.isEmpty()) null
-        else KnownIssue(id, title, it.optString("state", "checking"), it.optStringOrNull("version"), it.optInt("me"), it.optBoolean("mine"))
+        else KnownIssue(id, title, it.optString("state", "checking"), it.optStringOrNull("version"), it.optInt("me"), it.optBoolean("mine"),
+            it.optJSONArray("styles")?.let { a -> (0 until a.length()).map { n -> a.optString(n) }.filter(String::isNotEmpty).toSet() }.orEmpty())
     }
 
     override suspend fun more(device: String, id: String, text: String): Inquiry = more(device, id, text, newRequestId())

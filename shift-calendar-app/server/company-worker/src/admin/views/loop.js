@@ -145,7 +145,15 @@ export function loopViews(A) {
         <small>${x.track ? `${esc(x.track)} · ` : ""}문의 ${x.asks}건${x.ask ? ` · Claude 제안: ${esc(x.askName)}` : ""}${x.later ? " · 더 논의 중" : ""}</small>${x.why ? `<small>${esc(x.why)}</small>` : ""}</span>
         <span class="pill warn">요금 정하기</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : '<p class="hint">요금을 정할 새 기능이 없어요.</p>')
       : '<p class="hint">새 기능의 무료·프로는 최고 관리자가 정해요.</p>';
-    return `<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
+    const back = d.back ?? [];
+    const halts = d.halts ?? [];
+    const again = back.length || halts.length ? `<section class="card">${head("다시 봐야 할 것", `${back.length + halts.length}건`)}
+      ${halts.length ? `<ul class="rows">${halts.map((h) => `<li><a class="row" href="${href("health")}"><span class="row-main"><b>${esc(h.version)} 출시 멈춤 권장</b>
+        <small>${esc(h.why)} · ${esc(ago(h.at))}</small><small>멈춤은 Play Console › 프로덕션 › 출시 중지에서 직접 해요.</small></span><span class="pill bad">출시</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}
+      ${back.length ? `<ul class="rows">${back.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
+        <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
+        <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
+    return `${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
       <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
         <p class="hint">버그 고침·이미 있는 기능 다듬기·알람·달력 기본은 묻지 않고 무료예요. 새 기능만 여기서 정하고, 정하기 전에는 기능 스위치를 켤 수 없어요.</p></section>`;
   }

@@ -212,10 +212,20 @@ test("[LOOP-06][LOOP-15][LOOP-16] 고친 판으로 연 폰에만 바로 안내�
   const queue = (await call("GET", "/api/admin/loop/queue", undefined, owner)).data.items;
   assert.equal(queue[0].id, d);
   assert.equal(queue[0].again, 1);
+  // 결정함 '다시 봐야 할 것'에도 떠요(PC 확인 1.39 G10).
+  const box = (await call("GET", "/api/admin/loop/decide", undefined, owner)).data;
+  assert.deepEqual(box.back.map((x) => [x.id, x.times, x.status]), [[d, 1, "todo"]]);
   // 남의 문의·안내 전 문의는 못 눌러요.
   assert.equal((await call("POST", `/api/inquiries/${q1}/fixed`, { ok: true }, { "x-device": device(2) })).status, 404);
   const q3 = await ask(call, 3, "질문이 있어요", "question");
   assert.equal((await call("POST", `/api/inquiries/${q3}/fixed`, { ok: true }, { "x-device": device(3) })).data.error, "not_fixed");
+  // 다시 고쳐 1.39.1로 나가면 폰 1에도 다시 안내가 가고 해결됐나요를 다시 물어요.
+  await call("POST", `/api/admin/dev/${d}`, { status: "done", releasedIn: "1.39.1" }, owner);
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.39.1", notify: true }, owner)).data.answered, 1);
+  const again = await thread(call, q1, 1);
+  assert.equal(again.fixed, 0);
+  assert.equal(again.askFixed, true);
+  assert.match(again.messages.at(-1).text, /1\.39\.1/);
   // 폰 2: 해결됐어요.
   assert.equal((await call("POST", `/api/inquiries/${q2}/fixed`, { ok: true }, { "x-device": device(2) })).data.fixed, 1);
 });
@@ -327,6 +337,11 @@ test("[LOOP-17][LOOP-08] 관리자 앱에서도 알려진 문제 제목·보일�
   // 늘 보이기면 한 사람만 겪어도 보여요.
   t.mock.timers.tick(61e3);
   assert.deepEqual((await call("GET", "/api/known", undefined, { "x-device": device(5) })).data.items.map((k) => k.title), ["잠금 화면 알람 소리가 작아요"]);
+  // 보일 근무 유형: 모르는 이름은 버리고, 알려진 문제판이 그대로 내려줘요(앱이 거름).
+  const st = await call("POST", `/api/admin/dev/${d}`, { styles: ["SHIFT", "DAY", "교대"] }, owner);
+  assert.deepEqual(st.data.styles, ["SHIFT", "DAY"]);
+  t.mock.timers.tick(61e3);
+  assert.deepEqual((await call("GET", "/api/known", undefined, { "x-device": device(5) })).data.items[0].styles, ["SHIFT", "DAY"]);
   assert.equal((await call("POST", `/api/admin/dev/${d}`, { route: "rocket" }, owner)).status, 400);
   const off = await call("POST", `/api/admin/dev/${d}`, { known: false, route: null }, owner);
   assert.deepEqual([off.data.known, off.data.route], [-1, ""]);

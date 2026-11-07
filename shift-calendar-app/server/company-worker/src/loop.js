@@ -40,6 +40,8 @@ export const LOOP = {
   tiers: { free: "무료", pro: "프로", pass: "묶음 7일권(광고로 열기)", trial: "처음 며칠 무료 뒤 프로", later: "더 논의" },
   sizes: { fix: "고침", polish: "다듬기", feature: "새 기능" },
   routes: { server: "서버", remote: "원격 자료", flag: "기능 스위치", app: "정기 앱 업데이트", hotfix: "긴급 앱 업데이트" },
+  /** 알려진 문제를 보일 근무 유형(앱 WorkStyle). */
+  styles: { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" },
   piles: { fixed: "이미 고침", known: "개발 목록에 있음", answered: "전에 답한 문의와 같음", faq: "자주 쓰는 답", declined: "반려된 요청", again: "고친 뒤 다시 생김", new: "새 문제" },
   syncItems: 200,
 };
@@ -60,6 +62,8 @@ export const LOOP_SCHEMA = [
 
 export const LOOP_COLUMNS = [
   "ALTER TABLE dev_items ADD COLUMN track TEXT NOT NULL DEFAULT ''",
+  // PC 1.39 G10 확인 제안: 알려진 문제가 보일 근무 유형(빈칸 = 모두). 앱 WorkStyle 이름을 쉼표로.
+  "ALTER TABLE dev_items ADD COLUMN styles TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN size TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN route TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN remote TEXT NOT NULL DEFAULT ''",
@@ -316,7 +320,9 @@ export async function fixedAnswer(request, env, row, now) {
     // 다시 생김: 문의는 다시 기다림, 개발사항은 접수로(다음 바퀴 맨 앞). 판·안내 기록은 그대로 남겨요.
     out.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id,
       "고친 판으로 써 봤는데 아직 해결되지 않았어요. (앱에서 '아직이에요'를 눌렀어요)", now),
-      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id));
+      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
+      // 다시 고친 판이 나가면 이 문의에도 다시 안내가 가고 해결됐나요를 다시 물어요(markTold가 fixed를 되돌려요).
+      stmt(env, "UPDATE dev_links SET told_at = NULL WHERE inquiry_id = ?", row.id));
     for (const d of items.filter((x) => x.status === "done")) {
       out.push(stmt(env, "UPDATE dev_items SET status = 'todo', reason = '', live_at = NULL, handed_at = NULL, updated_at = ? WHERE id = ?", Math.max(now, d.updated_at + 1), d.id),
         devEvent(env, d.id, now, "status", { status: ["done", "todo"], why: "문의한 분이 아직 해결되지 않았다고 알림" }));
@@ -337,7 +343,7 @@ export async function knownList(env, dev, now) {
   let base = knownCache.get(env.DB ?? env);
   if (!base || base.until <= now) {
     const shipped = await shippedVersion(env);
-    const rows = await all(env, `SELECT d.id, d.public_title, d.status, d.released_in, d.live_at, d.known, d.updated_at,
+    const rows = await all(env, `SELECT d.id, d.public_title, d.status, d.released_in, d.live_at, d.known, d.updated_at, d.styles,
         (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks,
         (SELECT COALESCE(SUM(i.same), 0) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS same
       FROM dev_items d WHERE d.deleted_at IS NULL AND d.public_title != '' AND d.known >= 0 AND d.status IN ('todo', 'doing', 'done')
@@ -348,7 +354,8 @@ export async function knownList(env, dev, now) {
       const out = d.status === "done" && (d.live_at || (d.released_in && isOut(d.released_in, shipped)));
       if (out && now - d.updated_at > LOOP.knownFixedDays * DAY) continue;
       const state = d.status === "todo" ? "checking" : d.status === "doing" || !out ? "fixing" : "fixed";
-      items.push({ id: d.id, title: d.public_title, state, version: state === "fixed" ? d.released_in ?? null : null, me: d.asks + d.same });
+      items.push({ id: d.id, title: d.public_title, state, version: state === "fixed" ? d.released_in ?? null : null, me: d.asks + d.same,
+        styles: String(d.styles ?? "").split(",").filter(Boolean) });
       if (items.length >= LOOP.knownMax) break;
     }
     base = { items, until: now + 60 * 1000 };
@@ -472,6 +479,8 @@ export async function syncDev(request, env, now, answer) {
   return json({ ...summary, live: live.live, results });
 }
 
+/** 근무 유형 목록 → "SHIFT,DAY"(모르는 이름은 버려요, 빈칸 = 모두). */
+export const styleList = (v) => [...new Set((Array.isArray(v) ? v : String(v ?? "").split(",")).map((x) => String(x).trim()).filter((x) => Object.hasOwn(LOOP.styles, x)))].join(",");
 const pick = (v, set) => (typeof v === "string" && Object.hasOwn(set, v) ? v : "");
 
 async function syncOne(env, x, { ver, sha, pr }, now, answer) {
@@ -506,6 +515,7 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   if (x.publicTitle !== undefined) put("public_title", x.publicTitle ? inquiryText(x.publicTitle).slice(0, LOOP.knownTitle) : "");
   // 알려진 문제판: true 늘 보임, false 늘 숨김, 없으면 여럿이 겪을 때만.
   if (x.known !== undefined) put("known", x.known === true ? 1 : x.known === false ? -1 : 0);
+  if (x.styles !== undefined) put("styles", styleList(x.styles));
   if (x.test !== undefined) put("test", plainText(x.test, 200, "test"));
   if (x.check !== undefined) put("check_text", plainText(x.check, 1000, "check"));
   const itemPr = Number.isInteger(x.pr) && x.pr > 0 ? x.pr : pr;
@@ -645,7 +655,14 @@ export async function decideBox(env, actor, now, ledgerQuery) {
   const drafts = asks.length ? await all(env, `SELECT * FROM loop_drafts WHERE key IN (${asks.map(() => "?").join(",")})`, ...asks.map((r) => r.key)) : [];
   const byKey = new Map(drafts.map((x) => [x.key, x]));
   const tiers = actor?.owner ? await tierPending(env) : [];
+  // [LOOP-16] '아직이에요'로 다시 열린 개발사항(아직 끝나지 않은 것)과 [LOOP-03] 최근 7일 출시 멈춤 권장(PC 1.39 G10 확인: 결정함에 안 보였음).
+  const back = await all(env, `SELECT d.id, d.title, d.track, d.status, COUNT(*) AS n, MAX(h.at) AS last FROM dev_history h
+      JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
+      WHERE h.action = 'fixed_no' GROUP BY d.id ORDER BY last DESC LIMIT 20`).catch(() => []);
+  const halts = await all(env, "SELECT target, detail, at FROM audit WHERE action = 'loop_halt_advice' AND at > ? ORDER BY at DESC LIMIT 5", now - 7 * DAY).catch(() => []);
   return {
+    back: back.map((d) => ({ id: d.id, title: d.title, track: d.track || null, status: d.status, statusName: DEV.statuses[d.status], times: d.n, at: iso(d.last) })),
+    halts: halts.map((h) => ({ version: h.target, why: h.detail, at: iso(h.at) })),
     asks: asks.slice(0, 40).map((r) => ({ key: r.key, id: r.id, no: r.no, title: r.summary || r.title, why: r.ownerAsk?.name ?? r.answer?.why ?? "", due: r.due, late: r.late,
       draft: byKey.get(r.key) ? { text: byKey.get(r.key).text, why: byKey.get(r.key).why, by: byKey.get(r.key).by, at: iso(byKey.get(r.key).at) } : null })),
     tiers: tiers.map((d) => ({ id: d.id, title: d.title, track: d.track, asks: d.asks, ask: d.tier_ask || null, askName: d.tier_ask ? LOOP.tiers[d.tier_ask] : null, why: d.tier_why,

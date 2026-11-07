@@ -254,6 +254,7 @@ function adminApp(L, BUILD, M) {
   // 1.39 [LOOP-08] 전달 길·크기(서버 loop.js LOOP.routes·sizes와 같은 이름).
   const DEV_ROUTES = { server: "서버", remote: "원격 자료", flag: "기능 스위치", app: "정기 앱 업데이트", hotfix: "긴급 앱 업데이트" };
   const DEV_SIZES = { fix: "고침", polish: "다듬기", feature: "새 기능" };
+  const DEV_STYLES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** [ADMIN-11] What 반려 usually says, one tap each; the admin can still type their own. */
   const REJECT_REASONS = ["이미 있는 기능이에요", "지금 계획과 맞지 않아요", "기술적으로 어려워요", "같은 항목이 있어요", "더 많은 요청을 기다려요"];
   /** [ADMIN-11] The answer to linked questions when an item is 완료 or 반려, ready to send after a read. */
@@ -1818,6 +1819,8 @@ function adminApp(L, BUILD, M) {
         <label for="dev-route">전달 길</label><select id="dev-route" name="route"><option value="">정하지 않음</option>${Object.entries(DEV_ROUTES).map(([k, v]) => `<option value="${k}"${d.route === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <label for="dev-size">크기</label><select id="dev-size" name="size"><option value="">정하지 않음</option>${Object.entries(DEV_SIZES).map(([k, v]) => `<option value="${k}"${d.size === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <label for="dev-public-title">알려진 문제 제목</label><input id="dev-public-title" name="publicTitle" maxlength="60" placeholder="예: 잠금 화면에서 알람 소리가 작아요" value="${esc(d.publicTitle ?? "")}">
+        <fieldset><legend>보일 근무 유형 <small>(고르지 않으면 모두)</small></legend>${Object.entries(DEV_STYLES).map(([k, v]) =>
+          `<label class="chk"><input type="checkbox" name="styles" value="${k}"${(d.styles ?? []).includes(k) ? " checked" : ""}><span>${v}</span></label>`).join("")}</fieldset>
         <label for="dev-known">알려진 문제판에</label><select id="dev-known" name="known">${[["0", "여럿이 겪을 때만 보이기"], ["1", "늘 보이기"], ["-1", "보이지 않기"]].map(([k, v]) =>
           `<option value="${k}"${String(d.known ?? 0) === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
@@ -1846,6 +1849,7 @@ function adminApp(L, BUILD, M) {
       edit: () => [x.title ? `제목: ${L.wordDiff(x.title[0] ?? "", x.title[1] ?? "")}` : "", x.shipReply ? `출시 답을 적었어요<blockquote>${esc(x.shipReply[1] || "(지움)")}</blockquote>` : "",
         x.news ? `공지 한 줄: ${was(x.news[0], x.news[1])}` : "", x.publicTitle ? `알려진 문제 제목: ${was(x.publicTitle[0], x.publicTitle[1])}` : "",
         x.route ? `전달 길: ${was(DEV_ROUTES[x.route[0]] ?? "", DEV_ROUTES[x.route[1]] ?? "")}` : "", x.size ? `크기: ${was(DEV_SIZES[x.size[0]] ?? "", DEV_SIZES[x.size[1]] ?? "")}` : "",
+        x.styles ? `보일 유형: ${was(x.styles[0].split(",").map((k) => DEV_STYLES[k] ?? k).join("·") || "모두", x.styles[1].split(",").map((k) => DEV_STYLES[k] ?? k).join("·") || "모두")}` : "",
         x.known ? `알려진 문제판: ${["보이지 않기", "여럿이 겪을 때만", "늘 보이기"][x.known[1] + 1]}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
       status: () => `처리: ${was(DEV_NAMES[x.status?.[0]], DEV_NAMES[x.status?.[1]])}${x.bulk > 1 ? ` <span class="meta">(${x.bulk}개 한 번에)</span>` : ""}${x.reason ? `<blockquote>${esc(x.reason)}</blockquote>` : ""}`,
       assign: () => `맡은 사람: ${was(x.assignee?.[0], x.assignee?.[1])}`,
@@ -5450,6 +5454,7 @@ function adminApp(L, BUILD, M) {
     "dev-loop": async (form) => {
       const k = form.elements.known.value;
       await devSave({ route: form.elements.route.value, size: form.elements.size.value, publicTitle: form.elements.publicTitle.value.trim(),
+        styles: [...form.querySelectorAll('input[name="styles"]:checked')].map((x) => x.value),
         known: k === "1" ? true : k === "-1" ? false : null, since: S.data.dev.updatedAt }, "전달 길과 알려진 문제를 저장했어요");
     },
     "dev-ship-note": async (form) => {

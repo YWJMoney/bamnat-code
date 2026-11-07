@@ -41,6 +41,10 @@ class DevStatusTest(unittest.TestCase):
         self.assertEqual(errors({**GOOD, "route": "remote", "remote": "cycles@12"}), [])
         self.assertTrue(errors({**GOOD, "route": "flag"}))
 
+    def test_styles_are_work_types(self):
+        self.assertEqual(errors({**GOOD, "styles": ["SHIFT", "DAY"]}), [])
+        self.assertTrue(errors({**GOOD, "styles": ["교대"]}))
+
     def test_duplicates_and_unknown_keys(self):
         self.assertTrue(any("겹쳐요" in e for e in errors(GOOD, GOOD)))
         self.assertTrue(any("모르는 칸" in e for e in errors({**GOOD, "body": "문의 원문"})))

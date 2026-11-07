@@ -120,6 +120,8 @@ export async function markTold(env, item, inquiries, now) {
   for (let i = 0; i < inquiries.length; i += 90) {
     const part = inquiries.slice(i, i + 90);
     await run(env, `UPDATE dev_links SET told_at = ? WHERE item_id = ? AND told_at IS NULL AND inquiry_id IN (${part.map(() => "?").join(", ")})`, now, item, ...part);
+    // 1.39 [LOOP-16] '아직이에요' 뒤 다시 고친 판 안내: 해결됐나요를 다시 물어요.
+    await run(env, `UPDATE inquiries SET fixed = 0, fixed_at = NULL WHERE fixed = -1 AND id IN (${part.map(() => "?").join(", ")})`, ...part).catch(() => null);
   }
 }
 

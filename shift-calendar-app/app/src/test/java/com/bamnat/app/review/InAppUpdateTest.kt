@@ -40,6 +40,14 @@ class InAppUpdateTest {
         assertEquals(53, saved.updateFlexibleMin)
     }
 
+    @Test fun knownIssueShowsOnlyForItsKindsOfWork() {
+        val shift = KnownIssue("d1", "t", "fixing", null, 3, false, setOf("SHIFT"))
+        assertEquals(true, shift.showsFor(com.bamnat.core.work.WorkStyle.SHIFT))
+        assertEquals(false, shift.showsFor(com.bamnat.core.work.WorkStyle.BUSINESS))
+        assertEquals(true, shift.copy(mine = true).showsFor(com.bamnat.core.work.WorkStyle.BUSINESS))
+        assertEquals(true, shift.copy(styles = emptySet()).showsFor(com.bamnat.core.work.WorkStyle.BUSINESS))
+    }
+
     @Test fun knownIssueSaysWhereTheFixStands() {
         assertEquals("1.39.0 버전에서 고쳤어요 · 업데이트해 주세요", knownState(KnownIssue("d1", "t", "fixed", "1.39.0", 3, false)))
         assertEquals("고치는 중이에요 · 4명이 겪어요", knownState(KnownIssue("d1", "t", "fixing", null, 4, true)))
