@@ -19,8 +19,12 @@ object SheetKinds {
     )
     private val ORDER = listOf(ShiftRole.DAY, ShiftRole.EVENING, ShiftRole.NIGHT, ShiftRole.DUTY, ShiftRole.AFTER_DUTY, ShiftRole.OFF)
 
-    /** The kinds the sheet's [raws] (each cell as read) name, or null when they are not such a set or the setup has them already. */
-    fun of(raws: Collection<String>, types: List<ShiftType>): List<BundleShift>? {
+    /**
+     * The kinds the sheet's [raws] (each cell as read) name, or null when they are not such a set or the setup has them already.
+     * [READ-41] 1.38 PC 12.3: a kind the setup has a part for already ([roleOf]: its 데이 06~14) keeps the times picked there;
+     * the sheet's letters say which kinds, not when (a 3교대 picked, then 주·야·비·휴 read, came out 주간 7~19시).
+     */
+    fun of(raws: Collection<String>, types: List<ShiftType>, roleOf: (ShiftType) -> ShiftRole = ShiftRole::guess): List<BundleShift>? {
         val words = raws.map { DutyCodes.norm(it) }.filter { it.isNotEmpty() }
         if (words.size < 8) return null
         val roles = words.mapNotNull { w -> LETTERS[DutyCodes.LOOKALIKE[w] ?: w] }
@@ -38,8 +42,16 @@ object SheetKinds {
             else -> ShiftBundles.TWO
         }
         val pool = (ShiftBundles.byKey(bundle)?.shifts.orEmpty() + ShiftBundles.all.flatMap { it.shifts })
-        return ORDER.filter { it in kinds }.mapNotNull { r -> pool.firstOrNull { it.role == r } }
+        val picked = types.filter { !it.isOff && it.start != null }.groupBy(roleOf).mapValues { it.value.first() }
+        return ORDER.filter { it in kinds }.mapNotNull { r -> pool.firstOrNull { it.role == r } }.map { k ->
+            val mine = picked[k.role] ?: return@map k
+            k.copy(type = k.type.copy(start = mine.start, end = mine.end, breakMinutes = mine.breakMinutes, breakStart = mine.breakStart))
+        }
     }
+
+    /** Whether [kinds] keep times the setup picked ([of] with the same [types]): a card says so instead of "usual times". */
+    fun keepsTimes(kinds: List<BundleShift>, types: List<ShiftType>, roleOf: (ShiftType) -> ShiftRole = ShiftRole::guess): Boolean =
+        kinds.any { k -> !k.role.isOff && types.any { !it.isOff && it.start != null && roleOf(it) == k.role } }
 
     /**
      * [READ-40] The picked [row] in the new kinds. A work day keeps its part (주간 stays 주간) by [oldRole] → [newId]; a cell the

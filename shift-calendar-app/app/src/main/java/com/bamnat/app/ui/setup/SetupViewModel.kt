@@ -732,7 +732,7 @@ class SetupViewModel(
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
         // [READ-36] The sheet's own letters (주·야·비·휴) the setup's kinds do not use: offered as the kinds, once.
-        _sheetKinds.value = com.bamnat.core.imports.SheetKinds.of(r.rows.flatMap { it.raw.values }, current.types)
+        _sheetKinds.value = com.bamnat.core.imports.SheetKinds.of(r.rows.flatMap { it.raw.values }, current.types, ::roleOfType)
         val spill = row.outside.keys.sorted()
         _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" +
             (if (spill.isNotEmpty()) " (${com.bamnat.app.ui.imports.RosterReader.span(spill)} 포함)" else "") +
@@ -756,6 +756,14 @@ class SetupViewModel(
 
     fun keepKinds() { _sheetKinds.value = null }
 
+    /** [READ-41] The part a kind of the setup plays: as picked, else guessed from its times. */
+    private fun roleOfType(t: com.bamnat.core.model.ShiftType): com.bamnat.core.schedule.ShiftRole =
+        current.roles[t.id] ?: com.bamnat.core.schedule.ShiftRole.guess(t)
+
+    /** [READ-41] 1.38 PC 12.3: whether the offered kinds keep the times picked in the setup (데이 06~14 → 주간 06~14). */
+    fun sheetKindsKeepTimes(kinds: List<com.bamnat.core.schedule.BundleShift>): Boolean =
+        com.bamnat.core.imports.SheetKinds.keepsTimes(kinds, current.types, ::roleOfType)
+
     /**
      * [READ-36] 1.38 PC 8차: the setup's kinds become the sheet's own (주간 주 · 야간 야 · 비번 비 · 휴무 휴) and the picked line is
      * read again with them from what each cell said, so 비번 and 휴무 stay apart; days the photo lost are filled from the
@@ -775,7 +783,7 @@ class SetupViewModel(
         _roster.value = r.copy(rows = listOf(again))
         useRosterRow(0)
         _sheetKinds.value = null
-        _message.value = "근무 종류를 ${kinds.joinToString("·") { it.type.name }}로 맞췄어요. 시간은 ‘이전’의 근무 시간에서 바꿀 수 있어요"
+        _message.value = "근무 종류를 ${kinds.joinToString("·") { it.type.name }}로 맞췄어요. 시간은 고른 시간 그대로이고, ‘이전’의 근무 시간에서 바꿀 수 있어요"
     }
 
     /** [SETUP-15] What a code the setup did not know means: its days painted (or given leave), or left as they are (null). */
