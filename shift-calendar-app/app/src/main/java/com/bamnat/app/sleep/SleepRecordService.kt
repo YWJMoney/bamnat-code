@@ -79,6 +79,8 @@ class SleepRecordService : Service(), SensorEventListener {
     @Volatile private var endsAt: Long? = null
     /** When the open sleep began (잠들었어요 may have come before 측정 시작), for the notice's clock. */
     @Volatile private var sleepFrom: Long? = null
+    /** The next alarm as the night screen says it (PC 5c4ad849: the notice had none). */
+    @Volatile private var nextAlarm: LocalDateTime? = null
     /** False when it stopped by the clock alone: the user may still be asleep, so the sleep stays open. */
     @Volatile private var closeSleep = true
     private var watch: kotlinx.coroutines.Job? = null
@@ -184,6 +186,7 @@ class SleepRecordService : Service(), SensorEventListener {
             val resolver = c.scheduleRepository.snapshot.first().resolver
             val now = start
             val alarm = if (s.alarmsEnabled) com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt else null
+            nextAlarm = alarm
             val plan = com.bamnat.core.sleep.SleepSchedule.of(resolver, now.toLocalDate().minusDays(1), now.toLocalDate().plusDays(1),
                 s.alarmsEnabled, s.sleepTargetMinutes)
             RecordEnd.at(start, alarm, RecordEnd.plannedWake(start, plan.sleeps), s.sleepTargetMinutes)
@@ -280,14 +283,20 @@ class SleepRecordService : Service(), SensorEventListener {
      */
     private fun notice(): android.app.Notification {
         val from = sleepFrom ?: startedAt.takeIf { it > 0 } ?: Today.millis()
-        return NotificationCompat.Builder(this, Notifications.DAY_CHANNEL_ID)
+        val now = Today.dateTime()
+        val alarm = nextAlarm?.takeIf { it.isAfter(now) }?.let { "다음 알람 ${com.bamnat.core.sleep.NightLine.day(now, it)} ${Fmt.time(it.toLocalTime())}" }
+        val end = endsAt?.let { "측정은 늦어도 ${Fmt.time(local(it).toLocalTime())}에 저절로 끝나요" }
+        val text = listOfNotNull(alarm, end).joinToString(" · ").ifEmpty { "휴대폰 안에서만 듣고, 아무 데도 보내지 않아요" }
+        return NotificationCompat.Builder(this, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setGroup(Notifications.SLEEPING_GROUP)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
             .setOngoing(true)
             .setContentTitle("${Fmt.time(local(from).toLocalTime())}부터 자는 중 · 소리 재는 중")
-            .setContentText(endsAt?.let { "깨면 깼어요 · 측정은 늦어도 ${Fmt.time(local(it).toLocalTime())}에 저절로 끝나요" }
-                ?: "휴대폰 안에서만 듣고, 아무 데도 보내지 않아요")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setWhen(from)
             .setUsesChronometer(true)
             .setShowWhen(true)

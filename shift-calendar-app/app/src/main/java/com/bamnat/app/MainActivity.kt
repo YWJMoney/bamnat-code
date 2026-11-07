@@ -165,7 +165,8 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
                 com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress,
                 // [FREE-04][FREE-05][FREE-06][FREE-07] 1.35 완전 자유 꾸미기.
-                com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow) },
+                // 1.39 [FLOW-14] 밤 색 covers the screens' own grounds too (PC 5c4ad849: a light studio ground under night ink).
+                com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(screensNow, night) { com.bamnat.core.recipe.ScreenLooks.decode(if (night) null else screensNow) },
                 com.bamnat.app.ui.theme.LocalMemoLook provides androidx.compose.runtime.remember(settings.memoLook) { com.bamnat.core.recipe.MemoLook.decode(settings.memoLook) },
                 com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
                 com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) },

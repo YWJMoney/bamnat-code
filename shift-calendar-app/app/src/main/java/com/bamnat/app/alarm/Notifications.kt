@@ -22,8 +22,14 @@ object Notifications {
     const val FALLBACK_CHANNEL_ID = "shift_alarm_fallback_v1"
     /** A snooze waiting to ring again, and an alarm permission that went missing. */
     const val STATUS_CHANNEL_ID = "alarm_status_v1"
-    /** 하루 브리핑, 잘 준비 and 자는 중: silent. */
+    /** 하루 브리핑 and 잘 준비: silent. */
     const val DAY_CHANNEL_ID = "day_flow_v1"
+    /**
+     * 1.39 [SLEEP-06] 자는 중 (and 소리 재는 중): no sound or buzz either, but not in the folded 무음 group, so 깼어요 and
+     * 측정만 끝 are there without two expands (PC 5c4ad849). Its own group keeps Android from bundling it with others.
+     */
+    const val SLEEPING_CHANNEL_ID = "sleeping_v1"
+    const val SLEEPING_GROUP = "bamnat_sleeping"
     /** When a night ends: the one day notice with a sound. */
     const val COMMUTE_CHANNEL_ID = "commute_v1"
     const val JOB_CHANNEL_ID = "job_reminder_v1"
@@ -142,8 +148,16 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         val day = NotificationChannel(DAY_CHANNEL_ID, "오늘의 흐름", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "하루 브리핑, 잘 준비, 자는 중. 소리 없이 알림창에만 와요"
+            description = "하루 브리핑, 잘 준비. 소리 없이 알림창에만 와요"
             group = GROUP_DAY
+        }
+        val sleeping = NotificationChannel(SLEEPING_CHANNEL_ID, "자는 중", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "잠들었어요를 누른 뒤 깼어요·측정만 끝 단추. 소리·진동 없이 알림창 위쪽에 펼쳐 둬요"
+            group = GROUP_DAY
+            setSound(null, null)
+            enableVibration(false)
+            setShowBadge(false)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         val commute = NotificationChannel(COMMUTE_CHANNEL_ID, "퇴근길 안전", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "야간·당번이 끝날 때 한 번, 졸음운전을 조심하라고 알려요"
@@ -218,7 +232,7 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock, roster))
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock, roster))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }
