@@ -119,7 +119,12 @@ data class RecipeDoc(
 /** [RCP-31] What 안좋아요 said, for the maker: how many of each reason, and the short opinions (never who). */
 data class Reasons(val tally: Map<String, Int>, val opinions: List<Pair<String, String>>)
 
-data class RecipePage(val items: List<RecipeItem>, val next: Int?)
+data class RecipePage(val items: List<RecipeItem>, val next: Int?,
+    /**
+     * 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): each work's written form (hash, body) by
+     * "code@version", sent with the list (`body=1`) so a card is drawn without asking for its work alone; empty from an older server.
+     */
+    val bodies: Map<String, Pair<String, String>> = emptyMap())
 
 /** [RCP-29] What the server said of a recipe sent. */
 data class Sent(val code: String, val version: Int, val hash: String, val state: String, val scope: String)
@@ -377,8 +382,10 @@ class RecipeClient(
                 else -> kind?.takeIf { it in KINDS }?.let { add("kind=$it") }
             }
         }.joinToString("&")
-        val o = call("GET", "/api/recipes?$query")
-        RecipePage(o.optJSONArray("items").objects().map(::item), if (o.isNull("next")) null else o.optInt("next"))
+        val o = call("GET", "/api/recipes?$query&body=1")
+        val rows = o.optJSONArray("items").objects()
+        RecipePage(rows.map(::item), if (o.isNull("next")) null else o.optInt("next"),
+            rows.mapNotNull { r -> r.optStringOrNull("body")?.let { b -> r.optStringOrNull("hash")?.let { h -> "${r.getString("code")}@${r.optInt("version", 1)}" to (h to b) } } }.toMap())
     }
 
     override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc = readCall {
