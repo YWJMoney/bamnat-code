@@ -2,9 +2,11 @@
 //   node tools/materials-seed.mjs --check                          목록과 그림 파일을 맞춰 봐요(크기·이름·중복·id)
 //   node tools/materials-seed.mjs --post http://127.0.0.1:8789     로컬 서버의 출시 대기에 넣어요(ADMIN_PASSWORD는 환경 변수로)
 //   … --post <주소> --open                                          넣고 바로 공개(PC 확인용)
-// 실서버에는 넣지 않아요. 실서버는 사용자가 정한 뒤 관리자 앱에서 해요.
+//   node tools/materials-seed.mjs --files <폴더>                    실서버용 재료 파일(재료-01.json …)을 써요 (1.39 E11)
+// 실서버에는 이 도구로 넣지 않아요. 실서버는 사용자가 정한 뒤 관리자 앱 › 장터 › 출시 대기 › 밤낮 재료 › '재료 파일 올리기'에
+// --files로 만든 파일을 골라 넣어요(관리자 로그인 그대로, 비밀번호를 도구에 주지 않음). 순서: docs/ops-market-seed.md.
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import "../src/index.js"; // 모듈 순서를 서버와 같게(순환 import)
@@ -70,6 +72,18 @@ async function post(base, items, open = false) {
   return ok;
 }
 
+/** The marker the 관리자 앱's '재료 파일 올리기' looks for, so a wrong file is turned away before anything goes up. */
+export const FILE_KIND = "bamnat-materials";
+/** Items per file: a few MB each, so a phone browser reads one at a time without trouble. */
+export const PER_FILE = 50;
+
+/** 1.39 E11: the materials as files for the real server ({kind, part, of, items}), [PER_FILE] each, in ord order per pack. */
+export function files(items, per = PER_FILE) {
+  const out = [];
+  for (let i = 0; i < items.length; i += per) out.push(items.slice(i, i + per));
+  return out.map((chunk, i) => ({ kind: FILE_KIND, part: i + 1, of: out.length, items: chunk }));
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const { items, problems } = load();
@@ -77,6 +91,15 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   console.log(`재료 ${items.length}개 (아이콘 ${icons}, 배경 ${items.length - icons})`);
   for (const p of problems) console.log(`문제: ${p}`);
   if (problems.length) process.exit(1);
+  const fi = args.indexOf("--files");
+  if (fi >= 0) {
+    const dir = args[fi + 1];
+    if (!dir) throw new Error("--files 다음에 폴더를 적어요");
+    mkdirSync(dir, { recursive: true });
+    const list = files(items);
+    list.forEach((f) => writeFileSync(join(dir, `재료-${String(f.part).padStart(2, "0")}.json`), JSON.stringify(f)));
+    console.log(`${dir}에 재료 파일 ${list.length}개를 썼어요(파일마다 ${PER_FILE}개까지)`);
+  }
   const at = args.indexOf("--post");
   if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], items, args.includes("--open"))}개 넣었어요`);
 }

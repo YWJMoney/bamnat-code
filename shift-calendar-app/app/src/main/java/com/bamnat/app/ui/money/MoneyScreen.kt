@@ -811,7 +811,14 @@ fun MoneyScreen(
         MoneyPart.ASKME to { AskLedgerCard(book, today) },
         MoneyPart.ASK to { LedgerAsksCard(book, today, vm) },
         MoneyPart.INSTALL to { InstallmentPlanCard(book, today) },
-        MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate, onCategory = vm::showCategory) },
+        MoneyPart.SHIFTSPEND to {
+            ShiftSpendCard(book, snapshot, today, gate, onCategory = vm::showCategory,
+                challenge = remember(settings.moneyChallenge) { com.bamnat.core.money.Challenges.decode(settings.moneyChallenge) },
+                onChallenge = { k ->
+                    vm.updateSettings { it.copy(moneyChallenge = com.bamnat.core.money.Challenges.encode(com.bamnat.core.money.Challenges.Run(k, today))) }
+                    vm.showPage(MoneyViewModel.Page.SUMMARY)
+                })
+        },
         MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
         MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
     )

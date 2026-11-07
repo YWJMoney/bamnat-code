@@ -124,7 +124,11 @@ internal fun CardBillCard(book: MoneyBook, today: LocalDate, gate: Gate) {
  * 프로 (돈 통계).
  */
 @Composable
-internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today: LocalDate, gate: Gate, onCategory: (String) -> Unit = {}) {
+internal fun ShiftSpendCard(
+    book: MoneyBook, snapshot: ScheduleSnapshot?, today: LocalDate, gate: Gate, onCategory: (String) -> Unit = {},
+    /** 1.39 G8 [LEDH-31] The challenge going now (none offered while one is), and how to start one. */
+    challenge: com.bamnat.core.money.Challenges.Run? = null, onChallenge: ((com.bamnat.core.money.Challenges.Kind) -> Unit)? = null,
+) {
     snapshot ?: return
     val rows by produceState<List<TaxPlus.ShiftSpend>>(emptyList(), book, snapshot, today) {
         value = withContext(Dispatchers.Default) {
@@ -151,7 +155,7 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
                 }
                 Muted("배달·편의점이 늘어나는 날을 알면 미리 장을 보거나 도시락을 챙길 수 있어요.")
                 // 1.39 [FLOW-20] 근무별 돈: which categories go up on which kind of day, as the two chip rows (폰 안 계산, 5번부터). 프로 (돈 통계).
-                ShiftMoneyChipsRows(book, snapshot, today, gate, onCategory)
+                ShiftMoneyChipsRows(book, snapshot, today, gate, onCategory, challenge, onChallenge)
             }
         }
     }
@@ -162,7 +166,10 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
  * phone from the last 90 days; under 5 times nothing is said. A tap opens that category's lines in 내역. 1.39 new, so 프로 (돈 통계).
  */
 @Composable
-private fun ShiftMoneyChipsRows(book: MoneyBook, snapshot: ScheduleSnapshot, today: LocalDate, gate: Gate, onCategory: (String) -> Unit) {
+private fun ShiftMoneyChipsRows(
+    book: MoneyBook, snapshot: ScheduleSnapshot, today: LocalDate, gate: Gate, onCategory: (String) -> Unit,
+    challenge: com.bamnat.core.money.Challenges.Run?, onChallenge: ((com.bamnat.core.money.Challenges.Kind) -> Unit)?,
+) {
     val rows by produceState<com.bamnat.core.money.ShiftMoneyChips.Rows?>(null, book, snapshot, today) {
         value = withContext(Dispatchers.Default) {
             runCatching {
@@ -185,6 +192,17 @@ private fun ShiftMoneyChipsRows(book: MoneyBook, snapshot: ScheduleSnapshot, tod
         "근무에 따라 더 쓰는 곳", r.caution.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hide(c.words(word))) { onCategory(c.category) } },
     )
     com.bamnat.app.ui.components.ToneChipNote("같은 분류를 그 근무 날에 5번 넘게 쓴 것만 견줘요. 계산은 휴대폰 안에서만 해요.")
+    // 1.39 G8 발굴 [LEDH-31] 칩에서 도전으로: the chip says where it goes up, and the matching challenge starts from right here (⋮ 메뉴까지 가지 않게).
+    if (onChallenge != null) {
+        val nightNames = remember(snapshot) {
+            snapshot.shiftTypes.filter { com.bamnat.core.schedule.DutyCheck.isNight(it) }.map { it.name }.toSet() + TaxPlus.AFTER_NIGHT
+        }
+        com.bamnat.core.money.Challenges.suggest(r, challenge, today) { it in nightNames }?.let { k ->
+            TextButton(onClick = { onChallenge(k) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("${k.label} 해 보기 (${k.days}일, 보상 없이 도장만)")
+            }
+        }
+    }
 }
 
 /** F 1.32 [TAXP-06] 597: this month's sales by how they were paid. Free. */
