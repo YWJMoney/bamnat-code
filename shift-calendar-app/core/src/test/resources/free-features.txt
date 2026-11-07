@@ -226,6 +226,7 @@ widget.fieldActions
 widget.lines
 widget.memo
 widget.nextOff
+memo.quickLine
 widget.tasks
 widget.teams
 recipe.browse

@@ -22,6 +22,10 @@
     <string name="tile_fx_button">밤낮 단추</string>
     <string name="widget_money_desc">오늘 쓸 수 있는 돈과 오늘 쓴 돈, 누르면 바로 돈 적기</string>
     <string name="widget_tasks_name">할 일</string>
+    <string name="widget_task_line_name">할 일 한 줄</string>
+    <string name="widget_task_line_desc">다음 할 일과 남은 수를 한 줄로. 할 일 위젯은 크기와 상관없이 처음 놓은 하나가 무료</string>
+    <string name="quick_task_label">밤낮 할 일로 적기</string>
+    <string name="tile_task_add">할 일 적기</string>
     <string name="widget_tasks_desc">오늘·늦은 할 일을 보고 동그라미로 바로 끝내요. 처음 놓은 하나는 무료</string>
     <string name="open_file_label">밤낮으로 열기</string>
     <string name="roster_share_label">한 달 근무 넣기</string>
