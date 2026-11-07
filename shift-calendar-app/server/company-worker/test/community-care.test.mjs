@@ -220,10 +220,14 @@ test("[CARE] 조사 ①③⑧: the 안내 says what, by which rule and if it was
   assert.equal((await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.", 3)).status, 404);
   const sent = await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.");
   assert.equal(sent.status, 201, JSON.stringify(sent.data));
+  // 1.39 발굴: the 경고·쉬기 tab lists 해명 waiting for an answer with the hours left of the promised 48.
+  const waiting = (await call("GET", "/api/admin/care", undefined, h)).data.appeals;
+  assert.deepEqual(waiting.map((a) => [a.inquiry, a.kind, a.hoursLeft]), [[sent.data.inquiry, "post", 48]]);
   const q = (await call("GET", `/api/admin/inquiries/${sent.data.inquiry}`, undefined, h)).data;
   assert.deepEqual([q.appeal.about.kind, q.appeal.about.status, q.appeal.about.body], ["post", "hidden", "다들 일을 너무 못하네요"]);
   assert.match(q.messages[0].text, /^\[다시 보여 주세요\] 가려진 글/);
   await call("POST", `/api/admin/care/appeal/${sent.data.inquiry}`, { result: "accepted" }, h);
+  assert.deepEqual((await call("GET", "/api/admin/care", undefined, h)).data.appeals, []);
   const shown = (await call("GET", "/api/admin/posts?status=all", undefined, h)).data.posts.find((p) => p.id === id);
   assert.equal(shown.status, "shown");
   // A 해명 on the 경고 shows as waiting until the operator decides.
