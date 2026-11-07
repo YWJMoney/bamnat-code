@@ -188,7 +188,7 @@ internal fun ScheduleDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if ((notify || ring) && !notificationsOk) {
-                    Fix("알림이 꺼져 있어서 지금은 알려 드릴 수 없어요.", "알림 허용하기", askNotifications)
+                    Fix("알림이 꺼져 있어요. 저장하면 알림을 켜도록 바로 물어봐요.", "지금 허용하기", askNotifications)
                 } else if (ring && !fullScreenOk) {
                     Fix("‘잠금 화면에 알람 띄우기’가 꺼져 있어서 잠금 화면에서는 알림으로만 울려요.", "허용하기") {
                         if (Build.VERSION.SDK_INT >= 34) SystemSettings.open(
@@ -199,7 +199,12 @@ internal fun ScheduleDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(MemoReminder(at, ring, notify)) }, enabled = ahead && (ring || notify)) { Text("저장") }
+            TextButton(onClick = {
+                // [EASE-23] 1.38: notifications that are off are asked for right here as it saves, not left for the user to find
+                // and turn on first; the schedule is kept either way and rings once they are allowed.
+                if ((notify || ring) && !notificationsOk) askNotifications()
+                onSave(MemoReminder(at, ring, notify))
+            }, enabled = ahead && (ring || notify)) { Text(if ((notify || ring) && !notificationsOk) "알림 켜고 저장" else "저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

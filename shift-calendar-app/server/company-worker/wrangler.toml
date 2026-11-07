@@ -12,10 +12,17 @@ mode = "smart"
 
 # Clears network hashes, spent limits and old questions on time even when nobody sends anything.
 [triggers]
-crons = ["17 * * * *"]
+# 1.38 [DESK-09] */5: 보류가 끝난 Claude 답 보내기만.
+crons = ["17 * * * *", "*/5 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "bamnat-company"
 # Filled in after `npx wrangler d1 create bamnat-company`.
 database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# 1.38 [ADM3-16] 하루 백업(R2, 14일). 버킷을 만든 뒤(`npx wrangler r2 bucket create bamnat-backup`) 아래 세 줄의 # 를 지워요.
+# 대시보드 배포라면 Settings > Bindings > R2 bucket, 이름 BACKUP. 묶지 않아도 서버는 돌고, 서버 상태에 '백업 꺼짐'으로 보여요.
+# [[r2_buckets]]
+# binding = "BACKUP"
+# bucket_name = "bamnat-backup"

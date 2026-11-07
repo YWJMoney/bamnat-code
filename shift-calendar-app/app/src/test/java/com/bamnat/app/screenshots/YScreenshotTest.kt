@@ -115,11 +115,29 @@ class YScreenshotTest : ScreenshotBase() {
         assertTrue(appears("어떤 일을 하고 계신가요?"))
         typeInto("하는 일", "간호샤")
         tapText("간호사 · 교대 근무 · 근무표가 매달 나와요", exact = true)
-        tapText(LATER)
+        // [EASE-05] No page between the job and the setup.
+        assertTrue(gone(LATER))
         val d = c.setupDrafts.draft.value
         assertEquals(WorkStyle.SHIFT, d?.style)
         assertTrue(d!!.rosterMonthly)
     })
+
+    /** 1.38 통합 6차 2eb28e83: in the small hours the order preview names the day it rings (어제), not 오늘. */
+    @Test fun theOrderPreviewNamesTheAskedDay() = shoot("898c_y_order_yesterday", PHONE_393) {
+        val d = com.bamnat.core.model.ShiftType(1, "주간", "주", 0xFF1E88E5, java.time.LocalTime.of(7, 0), java.time.LocalTime.of(19, 0))
+        val asked = java.time.LocalDate.of(2026, 11, 5)
+        content { com.bamnat.app.ui.setup.OrderPreview(listOf(1L, null), mapOf(1L to d), asked, 0, onToday = {}, realToday = asked.plusDays(1)) }
+        assertTrue(appears("어제(", exact = false))
+        assertTrue(gone("오늘은", exact = true))
+        assertTrue(appears("다음 단계에서 어제 근무를 한 번 더 확인해요.", exact = true))
+    }
+
+    /** 1.38 PC 4a5c3828: a shop's 같이 보기 is its 영업일, never 가족·연인과 근무. */
+    @Test fun aShopsTogetherSheetSaysItsDays() = shoot("898b_y_together_shop", PHONE_393) {
+        content { com.bamnat.app.ui.calendar.TogetherSheet(onSend = {}, onTake = null, onDismiss = {}, shop = true) }
+        assertTrue(appears("영업일 같이 보기", exact = true))
+        assertTrue(gone("가족·연인과 근무 같이 보기", exact = true))
+    }
 
     @Test fun anUnknownJobFallsBackToTheCards() = shoot("897_y_job_unknown", FOLDED, firstScreen {
         typeInto("하는 일", "우주비행사아저씨")
@@ -129,9 +147,10 @@ class YScreenshotTest : ScreenshotBase() {
     })
 
     @Test fun aChipPicksTheJob() = shoot("898_y_job_chip", PHONE_393, firstScreen {
+        // [EASE-09] 1.38 PC 994c2328: the chip starts the job at once, with no '이렇게 시작할까요?' card to tap again.
         tapText("편의점 알바", exact = true)
-        tapText("편의점 알바 · 아르바이트 · 시급", exact = true)
-        tapText(LATER)
+        assertTrue(gone("이렇게 시작할까요?"))
+        assertTrue(gone(LATER))
         assertEquals(WorkStyle.HOURLY, c.setupDrafts.draft.value?.style)
     })
 

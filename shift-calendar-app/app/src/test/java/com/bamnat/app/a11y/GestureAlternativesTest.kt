@@ -17,6 +17,8 @@ class GestureAlternativesTest {
     /** File → how the same thing is done without the gesture. */
     private val allowed = mapOf(
         "ShiftTypesScreen.kt" to "끌어서 순서 바꾸기 → 옆의 ‘위로 옮기기·아래로 옮기기’ 버튼",
+        "NightTimeline.kt" to "잠 그래프의 소리 점 누르기 → 아래 '들어 볼 소리' 줄의 듣기 단추, 그래프 설명(contentDescription)",
+        "BarChart.kt" to "막대 누르면 말풍선 → 그래프 전체 값을 읽어 주는 설명(contentDescription)",
         "CalendarScreen.kt" to "주 보기 밀어 넘기기 → 머리의 이전·다음 주 버튼",
         "DayHeader.kt" to "하루 시트 밀어 넘기기 → 머리의 이전·다음 날 버튼",
         "MonthGrid.kt" to "끌어서 여러 날 칠하기(달력·한 달 근무 넣기) → 날짜 칸을 하나씩 눌러 칠하기(칸마다 OnClick), 한 달 근무 넣기는 아래 키패드로 한 칸씩",
@@ -24,6 +26,8 @@ class GestureAlternativesTest {
         "RosterPhotoViews.kt" to "사진 위에서 날짜 줄·내 줄 누르기 → ‘어느 줄(조)이 내 것인가요?’ 버튼 목록, ‘날짜 줄이 없어요’, 한 달 근무 넣기 키패드",
         // [NAV-06] 1.26 AD.
         // [J133-46] 1.33 모든 조 보기.
+        "MemoBoard.kt" to "자유 판 조각 끌기·두 손가락 키우기·돌리기 → 고른 조각 도구 줄의 ‘← 왼쪽·오른쪽 →·↑ 올리기·↓ 내리기·크게·작게·↻ 돌리기’",
+        "MemoPhotoBlocks.kt" to "사진 모서리 끌어 크기 바꾸기·크게 보기 확대 → 고른 사진 도구 줄의 ‘작게·반·크게·꽉’, 크게 보기는 닫기 단추",
         "TeamsScreen.kt" to "날짜 창 밀어 넘기기 → 창 머리의 ‘전날·다음 날’ 버튼",
         // [RCP-09] 1.34 색상환.
         "Pickers.kt" to "색 판·색상 띠 끌기 → 위의 색 버튼 줄, 16진수 칸, 띠와 판의 접근성 조절(올리기·내리기로 색상·밝기)",

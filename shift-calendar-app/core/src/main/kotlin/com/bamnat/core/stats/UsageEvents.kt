@@ -32,6 +32,22 @@ enum class UsageEvent(val key: String) {
     THEME_FREE_SHOW_FAILED("theme_free_show_failed"),
     THEME_FREE_NOT_READY("theme_free_not_ready"),
     THEME_FREE_OTHER("theme_free_other"),
+    // 1.38 Phase 3 분석판 (사용자 2026-11-05 "관리자 앱에도 넣어서 분석할 수 있게"): how often, never which team, shop, name or amount.
+    MANAGE_OPEN("manage_open"),
+    TEAM_MADE("team_made"),
+    TEAM_CONFIRM("team_confirm"),
+    TEAM_LINKS("team_links"),
+    LEDGER_CLOSED("ledger_closed"),
+    SLIP_SENT("slip_sent"),
+    PLAN_VIEW_TEAM("plan_view_team"),
+    PLAN_VIEW_STAFF("plan_view_staff"),
+    PLAN_BUY_TAP("plan_buy_tap"),
+    MANAGE_ERROR("manage_error"),
+    // P3-OPS-07 기능 안내: shown and opened, by no one in particular.
+    MANAGE_HINT_SHOWN("manage_hint_shown"),
+    MANAGE_HINT_OPEN("manage_hint_open"),
+    // 1.38 가져오기: a roster or staff list put in from a file or photo (어느 쪽인지·몇 칸인지는 보내지 않음).
+    MANAGE_IMPORT("manage_import"),
     ;
 
     companion object {

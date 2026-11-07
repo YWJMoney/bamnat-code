@@ -223,7 +223,8 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val c = com.bamnat.core.ops.PolicyConsent
-        assertTrue(c.LAUNCH_EFFECTIVE == java.time.LocalDate.of(2026, 11, 10) && c.LAUNCH_HELD_UNTIL == java.time.LocalDate.of(2026, 11, 24))
+        // 1.38: the app opens on its own day (11-12 by default, 관리자 앱 일정), never before the day the page says (11-10).
+        assertTrue(c.LAUNCH_EFFECTIVE >= java.time.LocalDate.of(2026, 11, 10) && c.LAUNCH_HELD_UNTIL == java.time.LocalDate.of(2026, 11, 24))
         assertTrue(text.contains("처리방침 ${c.LAUNCH_VERSION} · 앱 버전 1.27.0 기준 · 게시일 2026년 10월 27일 · 시행일 2026년 11월 10일"))
         assertTrue(text.contains("원래 알린 날(2026년 11월 24일)까지 결제·광고"))
         assertTrue(text.contains("대표 주기, 맞아요·달라요, 급여 방식 찾기 (선택, 앱 1.27.0부터)"))
@@ -414,7 +415,7 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
-        assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
+        assertTrue(v.effective >= java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
         assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue("3.9 is the newest version line", text.indexOf("처리방침 3.9 ·") < text.indexOf("처리방침 3.8 ·"))
         assertTrue(text.contains("정식 출시 뒤의 개정은 위 기간을 그대로 지킵니다"))
@@ -445,8 +446,12 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.11")!!
-        assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 12, 4))
-        assertTrue(text.contains("처리방침 3.11 · 앱 버전 1.37.0 기준 · 게시일 2026년 11월 4일 · 시행일 2026년 11월 10일"))
+        // 1.38 (사용자 2026-11-07 "처리방침은 오늘 기준으로"): 3.11 is posted and takes effect on 11-07; a phone installed before
+        // waits for its yes or the 30-day notice's end, 12-07.
+        assertEquals(java.time.LocalDate.of(2026, 11, 7), v.posted)
+        assertEquals(java.time.LocalDate.of(2026, 11, 7), v.effective)
+        assertEquals(java.time.LocalDate.of(2026, 12, 7), v.holdEnds)
+        assertTrue(text.contains("처리방침 3.11 ·") && text.contains("게시일 2026년 11월 7일 · 시행일 2026년 11월 7일"))
         assertTrue("3.11 is the newest version line", text.indexOf("처리방침 3.11 ·") < text.indexOf("처리방침 3.10 ·"))
         assertTrue(text.contains("이용자가 ‘내 테마’를 고른 링크만") && text.contains("이용자가 ‘근무 설정’을 고른 링크만"))
         assertTrue(text.contains("공유 서버는 급여 부분이 든 근무 설정을 받지 않음"))

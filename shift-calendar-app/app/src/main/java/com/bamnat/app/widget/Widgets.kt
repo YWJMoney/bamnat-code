@@ -131,7 +131,7 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 @Composable
-private fun WidgetFrame(content: @Composable () -> Unit) {
+internal fun WidgetFrame(content: @Composable () -> Unit) {
     WidgetSurface(GlanceModifier.clickable(actionStartActivity<MainActivity>())) { content() }
 }
 
@@ -146,7 +146,7 @@ private fun emptyText(data: WidgetData): String = when {
 }
 
 @Composable
-private fun TodayContent(data: WidgetData) {
+internal fun TodayContent(data: WidgetData) {
     Column(GlanceModifier.fillMaxSize()) {
         if (data.isEmpty) {
             Text(emptyText(data), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 3)
@@ -371,7 +371,7 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
 }
 
 @Composable
-private fun WeekContent(data: WidgetData) {
+internal fun WeekContent(data: WidgetData) {
     // "이번 주" starts on the user's first day of the week, like the calendar.
     val monday = CalendarGrid.weekStartOf(data.today, data.weekStart)
     // [J133-32] 순번 712 (1.32 실사용 테스트: 기본 4×1에서 근무 칩이 아래로 반쯤 잘렸어요): one cell high, no title and the day on one

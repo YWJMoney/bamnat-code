@@ -95,6 +95,8 @@ class SureAlarmTest {
     @Test fun theLockedRebootCopyKeepsTheMissions() {
         val settings = BootAlarms.RingSettings(snoozeMinutes = 7, mission = AlarmMission.SHAKE,
             shiftMissions = mapOf(3L to AlarmMission.MATH, 8L to AlarmMission.NONE), wakeCheckMinutes = 10)
+        // CI 12차: the app's own first planning also writes this copy; it is over before the test writes its own.
+        AppSettled.alarms(app)
         BootAlarms.save(app, emptyList(), settings)
         assertEquals(settings, BootAlarms.settings(app))
         assertEquals(mapOf(3L to "math", 8L to "none"), decodeShiftMissions(encodeShiftMissions(mapOf(8L to "none", 3L to "math"))))

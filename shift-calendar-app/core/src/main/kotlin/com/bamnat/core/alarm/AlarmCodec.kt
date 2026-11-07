@@ -6,7 +6,7 @@ import java.time.LocalTime
 
 /**
  * Stores alarm lists in one text column: items separated by ';', each "value:1" (on) or
- * "value:0" (off). Shift alarms store minutes before the start, day alarms minutes after midnight.
+ * "value:0" (off). Shift alarms store minutes before the start (below zero after it, [EASE-18]), day alarms minutes after midnight.
  * [DAYW-09] A day alarm on the evening before is stored below zero: −60 is 23:00 the day before.
  * An empty list is written as [NONE] so it is not mistaken for "never saved".
  */
@@ -20,7 +20,7 @@ object AlarmCodec {
     fun decodeSpecs(raw: String?): List<AlarmSpec>? {
         if (raw.isNullOrBlank()) return null
         if (raw == NONE) return emptyList()
-        return items(raw).map { (v, on) -> AlarmSpec(v.coerceIn(0, AlarmPlanner.MAX_OFFSET_MINUTES), on) }
+        return items(raw).map { (v, on) -> AlarmSpec(v.coerceIn(-AlarmPlanner.MAX_OFFSET_MINUTES, AlarmPlanner.MAX_OFFSET_MINUTES), on) }
     }
 
     fun encodeDayAlarms(list: List<DayAlarm>?): String? = when {

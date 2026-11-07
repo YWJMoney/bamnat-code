@@ -114,6 +114,12 @@ val PRO_PILLARS = listOf(
         setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
 )
 
+/**
+ * 1.38 [EASE-33] Beside the ad promise: no account, and the alarm check anyone can run. The store page says the same
+ * (`docs/store-listing.md`); 알람 점검 is in 설정 › 알람.
+ */
+internal const val TRUST_LINE = "로그인·회원가입 없이 바로 써요. 알람이 제시간에 울릴지는 설정 › 알람 › 알람 점검에서 누구나 무료로 확인해요."
+
 /** [MON-04] 무료 vs 프로, row by row. Everything not listed is free. */
 val PRO_COMPARE = listOf(
     Triple("근무표·패턴·빠른 입력·대근·연차", true, true),
@@ -148,10 +154,10 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     return listOfNotNull(
         "결제는 Google Play 계정으로 해요. " + (if (prices.isNotEmpty()) "$prices, " else "") + "월 요금제는 매달, 연 요금제는 매년 같은 날 자동으로 결제돼요.",
         if (plans.any { it.trial }) "1개월 무료 체험은 연 요금제를 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
-            "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤봐요." else null,
+            "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤보고, 답이 없으면 3일 전에 해지 단추와 함께 한 번 더 알려요." else null,
         "해지는 언제든 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 이미 낸 기간이 끝날 때까지 프로를 써요.",
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
-            "Google Play 환불 요청이나 설정 › 문의하기로 접수해요.",
+            "Google Play 환불 요청이나 설정 › 도움말과 문의 › 문의하기로 접수해요.",
         "구독하면 이용약관과 개인정보처리방침에 동의하는 거예요.",
         // 1.36 [MON-12] Who sells it, as the 전자상거래법 asks on the screen that sells.
         com.bamnat.app.ui.settings.SellerInfo.SHORT,
@@ -230,8 +236,10 @@ fun ProScreen(onBack: () -> Unit) {
                     }
                     Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // G 1.32 [WTYP-01] The ad promise, in words.
-                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                    // 1.38 [EASE-33] The other two promises the store page makes, said here too.
+                    // 1.38 PC 확인(e6dc244a) 제안: a promise read before paying, in the body size and the screen's ink.
+                    Text(TRUST_LINE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                 }
 
                 if (!gate.live || gate.preview) {
@@ -466,10 +474,12 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
     SectionCard(title = "관리자 연결") {
         when {
             // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
+            // 1.37.1 [FAM-01] 가족 프로 이용권: said as what it is, not as an admin's phone.
+            admin?.approved == true && admin.family -> Text("가족 프로 이용권으로 프로를 무료로 써요. 끝나는 날은 없어요.", style = MaterialTheme.typography.bodyMedium)
             admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
                 if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
             admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
-            else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요.",
+            else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요. 가족 프로 이용권 코드도 여기에 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
@@ -482,6 +492,7 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
                         val state = c.tierApi.link(c.companyStore.device, code)
                         code = ""
                         said = when {
+                            state.approved && state.family -> "연결했어요 · 가족 프로 이용권이에요. 프로를 무료로 써요."
                             state.approved && state.owner -> "연결했어요 · 최고 관리자 코드라 바로 승인됐어요. 프로를 무료로 써요."
                             state.approved -> "연결했어요 · 승인됨. 프로를 무료로 써요."
                             else -> "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
@@ -511,8 +522,9 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
             said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
             if (asking) com.bamnat.app.ui.components.AlertDialog(
                 onDismissRequest = { asking = false },
-                title = { Text("관리자 연결을 끊을까요?") },
-                text = { Text("관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
+                title = { Text(if (admin.family) "가족 프로 이용권을 끊을까요?" else "관리자 연결을 끊을까요?") },
+                text = { Text(if (admin.family) "가족 이용권으로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 쓰려면 새 가족 코드를 받아야 해요."
+                    else "관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
                 confirmButton = {
                     TextButton(onClick = {
                         asking = false

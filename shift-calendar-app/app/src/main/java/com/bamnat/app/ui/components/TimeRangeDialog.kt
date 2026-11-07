@@ -14,15 +14,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -112,11 +106,10 @@ fun TimeRangeDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-          val scroll = rememberScrollState()
-          // [TIME-03] With large text the chips can sit below the window's edge: a fading edge and an arrow say there
-          // is more below (PC cf5ee1c6).
-          Box {
-            Column(Modifier.verticalScroll(scroll)) {
+          // [TIME-03] With large text the chips can sit below the window's edge: "아래 더 있음" says there is more below
+          // (PC cf5ee1c6), on its own line under the body so it no longer covers the ± buttons (1.37 LOW).
+          ScrollMoreColumn {
+            Column {
                 note?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp))
@@ -127,7 +120,7 @@ fun TimeRangeDialog(
                         partIndex = TimeRangePart.END.ordinal
                     }
                     if (showBreak) {
-                        PartTab("휴게", HoursFormat.korean(breakMin), part == TimeRangePart.BREAK, Modifier.weight(1f)) { partIndex = TimeRangePart.BREAK.ordinal }
+                        PartTab("휴게", HoursFormat.breakText(breakMin), part == TimeRangePart.BREAK, Modifier.weight(1f)) { partIndex = TimeRangePart.BREAK.ordinal }
                     }
                 }
                 Text(
@@ -152,7 +145,7 @@ fun TimeRangeDialog(
                 )
                 if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")
+                        MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간", format = HoursFormat::breakText)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
                             for (m in BREAK_CHOICES) {
                                 FilterChip(selected = breakMin == m, onClick = { breakMin = m }, label = { Text(HoursFormat.korean(m)) })
@@ -198,21 +191,12 @@ fun TimeRangeDialog(
                             // [TIME-03] The end tab offers ends that fit the start (PC 1a8e88f6: a 야간's end tab offered its
                             // own 19:00 start): the usual lengths, then the other times, never the start itself.
                             for ((t, label) in endChoices(range.start, presets, initial.end, if (showBreak) breakMin else 0)) {
-                                AssistChip(onClick = { setTime(t) }, label = { Text(label) })
+                                AssistChip(onClick = { setTime(t) }, label = { Text(label, maxLines = 1, softWrap = false) })
                             }
                         } else {
-                            for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t)) })
+                            for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t), maxLines = 1, softWrap = false) })
                         }
                     }
-                }
-            }
-            if (scroll.canScrollForward) {
-                Box(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, AlertDialogDefaults.containerColor))),
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
           }

@@ -67,7 +67,7 @@ internal fun NotebookBar(state: MemoListState, onPick: (MemoNotebook) -> Unit) {
         Text(
             when (state.notebook) {
                 // [MEMO-01] Each calendar keeps its own memos unless 설정 › 메모 공유 puts calendars together.
-                MemoNotebook.CALENDAR -> "‘${state.activeName}’에 보이는 메모예요. 다른 달력의 메모는 그 달력에서 보여요. 달력끼리 함께 보려면 설정 › 메모 공유에서 묶어요."
+                MemoNotebook.CALENDAR -> "‘${state.activeName}’에 보이는 메모예요. 다른 달력의 메모는 그 달력에서 보여요. 달력끼리 함께 보려면 설정 › 화면과 글자 › 메모 공유에서 묶어요."
                 MemoNotebook.SHARED -> "여러 달력에 함께 보이는 메모예요. 여기서 쓴 메모는 모든 달력에 보여요."
                 MemoNotebook.ALL -> "모든 달력의 메모예요."
             },

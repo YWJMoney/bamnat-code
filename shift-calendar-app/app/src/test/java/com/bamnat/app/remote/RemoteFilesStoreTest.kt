@@ -42,6 +42,9 @@ class RemoteFilesStoreTest {
     private val rates2027 = """{"rates":[{"from":"2027-01-01","version":"2027.2","minimumHourlyWage":10700,"pensionRate":0.10,
         "healthRate":0.0719,"longTermCareRate":0.010}]}"""
 
+    // [P3-ACC] #186: the built-in 2027 장기요양 0.9994% (107,850 × 13.90% → 14,990원), the value without a file.
+    private val BUILT_IN_2027_CARE = 14_990L
+
     private fun store() = RemoteFilesStore(tmp.root, fetcher, 33, listOf(pub))
     private fun care() = TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, on = feb27).deductions.toMap()["장기요양"]
 
@@ -55,7 +58,7 @@ class RemoteFilesStoreTest {
         assertEquals(listOf("rates"), store().refresh(now))
         assertEquals(15_000L, care())
         RateTable.use(null)
-        assertEquals(14_170L, care())
+        assertEquals(BUILT_IN_2027_CARE, care())
         // Next start, offline: the saved file is checked again and laid over the built-in years.
         online = false
         store().applySaved()
@@ -66,10 +69,10 @@ class RemoteFilesStoreTest {
     @Test fun wrongSignatureOrOlderFileChangesNothing() = runBlocking {
         publish("rates", 2027010101, rates2027, signature = sign("other".toByteArray()))
         assertTrue(store().refresh(now).isEmpty())
-        assertEquals(14_170L, care())
+        assertEquals(BUILT_IN_2027_CARE, care())
         publish("rates", RateTable.BUILT_IN_VERSION, rates2027)
         assertTrue(store().refresh(now, force = true).isEmpty())
-        assertEquals(14_170L, care())
+        assertEquals(BUILT_IN_2027_CARE, care())
         assertFalse(java.io.File(tmp.root, "rates.json").exists())
     }
 
@@ -94,7 +97,7 @@ class RemoteFilesStoreTest {
         site["remote/v1/rates.json"] = b
         site["remote/v1/rates.json.sig"] = sign(b).toByteArray()
         assertTrue(store().refresh(now).isEmpty())
-        assertEquals(14_170L, care())
+        assertEquals(BUILT_IN_2027_CARE, care())
     }
 
     /** [REMOTE-08] 1.27: the 2026-10-26 key signs .sig2; the old .sig is only a fallback (결정 D83). */
@@ -129,14 +132,14 @@ class RemoteFilesStoreTest {
         json.writeText(json.readText().replace("0.010", "0.020"))
         RateTable.use(null)
         store().applySaved()
-        assertEquals(14_170L, care())
+        assertEquals(BUILT_IN_2027_CARE, care())
         // A later app that no longer trusts the key: the mark names the old key list, so the check runs and refuses.
         publish("rates", 2027010102, rates2027)
         assertEquals(listOf("rates"), store().refresh(now, force = true))
         RateTable.use(null)
         val other = Base64.getEncoder().encodeToString(ByteArray(32) { 7 })
         RemoteFilesStore(tmp.root, fetcher, 33, listOf(other)).applySaved()
-        assertEquals(14_170L, care())
+        assertEquals(BUILT_IN_2027_CARE, care())
         // Without a mark (files saved by 1.27 and older) the file is checked and the mark written then.
         mark.delete()
         store().applySaved()

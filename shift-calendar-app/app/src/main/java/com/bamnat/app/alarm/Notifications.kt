@@ -53,6 +53,8 @@ object Notifications {
     private const val OLD_PLAZA_CHANNEL_ID = "plaza_news_v1"
     /** 1.36 PC 6ec395bf: 내 문의에 온 답은 조용한 밤낮 소식이 아니라 소리 나는 기본 알림으로 (설정 › 알림에서 따로 끌 수 있어요). */
     const val INQUIRY_CHANNEL_ID = "inquiry_reply_v1"
+    /** 1.38 [P3-B-11] 직원이 출퇴근 링크에서 누른 출근·퇴근 (사장님 휴대폰). */
+    const val CLOCK_CHANNEL_ID = "staff_clock_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -62,6 +64,8 @@ object Notifications {
     /** [TOWN-08] 밤낮 소식 and 오늘 근무 each stay a notification of their own, never bundled together by Android. */
     const val GROUP_NEWS = "bamnat_news"
     const val GROUP_TODAY = "bamnat_today"
+    /** 1.38 '오늘 남은 알람을 껐어요' alone, never bundled with 소식. */
+    const val GROUP_STATUS = "bamnat_status"
 
     const val ALARM_NOTIFICATION_ID = 7001
     /** 1.35 [J135-08] The ringing notice put up again as a new one (an update of the first does not pop up again). */
@@ -72,6 +76,12 @@ object Notifications {
     const val BEDTIME_ID = 7311
     const val COMMUTE_ID = 7312
     const val SLEEPING_ID = 7313
+    /** [SLEEP-01] 자동으로 잡은 잠, 맞나요? */
+    const val SLEEP_AUTO_ID = 7314
+    /** [SLEEP-04] 잠드는 소리, while it plays. */
+    const val NOISE_ID = 7315
+    /** [SLEEP-06] 자는 동안 소리 재는 중. */
+    const val SLEEP_RECORD_ID = 7316
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
@@ -81,6 +91,8 @@ object Notifications {
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */
     const val INQUIRY_ID = 7208
+    /** 1.38 [P3-B-11] One notice per staff member, tagged by their id. */
+    const val CLOCK_ID = 7231
     /** [ALRM-01] 휴대폰 캘린더 permission taken back. */
     const val CALENDAR_PERMISSION_ID = 7206
     /** [ALRM-01] Why an alarm rang late or only as a plain notice. */
@@ -167,7 +179,11 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
         val pro = NotificationChannel(PRO_CHANNEL_ID, "구독 안내", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "1개월 무료 체험이 유료로 바뀌기 7일 전에 계속 쓸지 한 번 여쭤봐요"
+            description = "무료 체험이 유료로 바뀌기 7일 전에 계속 쓸지 여쭤보고, 답이 없으면 3일 전에 한 번 더 알려요"
+            group = GROUP_MONEY
+        }
+        val clock = NotificationChannel(CLOCK_CHANNEL_ID, "직원 출퇴근", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "직원이 출퇴근 링크에서 출근·퇴근을 누르면 알려요(15분쯤마다 확인, 위치는 받지 않아요)"
             group = GROUP_MONEY
         }
         val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -193,7 +209,7 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry))
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }

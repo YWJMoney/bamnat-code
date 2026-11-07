@@ -43,6 +43,20 @@ class GuideTest {
     @Test
     fun whatsNewOpensRealFeatures() {
         for (r in WhatsNew.releases) for (line in r.lines) line.featureId?.let { assertNotNull("${r.versionName}: $it", FeatureRegistry.get(it)) }
+        // 1.38 갈래6: a switch's line opens its feature, which help leaves out until the switch is on.
+        for ((key, line) in WhatsNew.switched) {
+            val f = FeatureRegistry.get(line.featureId!!)
+            assertNotNull(key, f)
+            f!!
+            assertEquals(key, f.flag)
+            val was = FeatureRegistry.flagOn
+            try {
+                FeatureRegistry.flagOn = { false }
+                assertTrue(FeatureRegistry.shown.none { it.id == f.id })
+                FeatureRegistry.flagOn = { it == key }
+                assertTrue(FeatureRegistry.shown.any { it.id == f.id })
+            } finally { FeatureRegistry.flagOn = was }
+        }
         val codes = WhatsNew.releases.map { it.versionCode }
         assertEquals(codes.sortedDescending(), codes)
         assertEquals(codes.size, codes.toSet().size)

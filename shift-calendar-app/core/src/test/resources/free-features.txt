@@ -97,6 +97,9 @@ leave.promotionLog
 lock.today
 memo.lastShift
 memo.repeat
+memo.photo
+memo.paper
+memo.board
 memo.search
 memo.sharing
 memo.shiftRemind
@@ -214,6 +217,7 @@ today.flow
 trash.records
 view.clock12
 view.compact
+view.kani
 view.textSize
 wear.nextShift
 widget.countdown
@@ -257,3 +261,15 @@ money.dayClose
 money.found
 money.whatIf
 money.quickAdd
+share.look
+money.debt
+money.cardPerf
+money.firstFill
+money.shiftPreview
+money.challenge
+sleep.noise
+sleep.morning
+sleep.adapt
+sleep.challenge
+sleep.dnd
+day.story

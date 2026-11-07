@@ -33,12 +33,31 @@ internal data class DayFit(
      * r05: 9 cells on the next day without a yellow mark). 0 for a table seen square on.
      */
     val c: Double = 0.0,
+    /**
+     * [READ-33] 1.38: where the row of days put each day it read (day, x), in order. A roster printed by a program (병동 듀티
+     * 프로그램, 엑셀 자동 맞춤, a PDF) has columns 1~9 narrower than 10~31: no straight line or bend puts them all, and the first
+     * days went into the name (bench p03: 1~4일 lost on every line). With these the columns are where the numbers stand,
+     * straight lines between them.
+     */
+    val knots: List<Pair<Int, Double>> = emptyList(),
 ) {
-    fun x(day: Int): Double = a + b * day + c * day * day
+    fun x(day: Int): Double {
+        if (knots.size < 2) return a + b * day + c * day * day
+        val k = knots.indexOfLast { it.first <= day }.coerceIn(0, knots.size - 2)
+        val (d0, x0) = knots[k]
+        val (d1, x1) = knots[k + 1]
+        return x0 + (x1 - x0) * (day - d0) / (d1 - d0)
+    }
     /** The width of a column at [day]. */
-    fun step(day: Int): Double = (b + c * (2 * day)).coerceAtLeast(b * 0.3)
+    fun step(day: Int): Double = if (knots.size >= 2) (x(day + 1) - x(day)).let { if (day >= knots.last().first) x(day) - x(day - 1) else it }.coerceAtLeast(b * 0.3)
+        else (b + c * (2 * day)).coerceAtLeast(b * 0.3)
     /** The day whose column [x] is in, and how far from its middle in columns, or null outside [first]..[last]. */
     fun day(x: Double): Pair<Int, Double>? {
+        if (knots.size >= 2) {
+            val d = (first - 3..last + 3).minBy { abs(x - x(it)) }
+            if (d < first || d > last) return null
+            return d to abs(x - x(d)) / step(d)
+        }
         val guess = ((x - a) / b).roundToInt()
         val d = if (c == 0.0) guess else (guess - 3..guess + 3).minBy { abs(x - x(it)) }
         if (d < first || d > last) return null
@@ -198,7 +217,26 @@ internal object RosterGeometry {
         if (best.size < min) return null
         val (a, b) = leastSquares(best) ?: return null
         val line = DayFit(a, b, best.minOf { it.first }, best.maxOf { it.first })
-        return bent(line, points) ?: line
+        val curved = bent(line, points) ?: line
+        return knotted(curved, points) ?: curved
+    }
+
+    /**
+     * [READ-33] The row of days as it stands, when its numbers go up left to right one column each and more of them stand
+     * where they are than [line] puts (uneven columns): [DayFit.knots]. Null when the line or the bend already holds them all.
+     */
+    fun knotted(line: DayFit, points: List<Pair<Int, Double>>): DayFit? {
+        val pts = points.distinctBy { it.first }.sortedBy { it.second }
+        if (pts.size < 10) return null
+        if (pts.zipWithNext().any { (p, q) -> q.first <= p.first || q.second - p.second < 1.0 }) return null
+        val span = pts.last().first - pts.first().first + 1
+        if (pts.size * 10 < span * 8) return null
+        val held = pts.count { (d, x) -> abs(x - line.x(d)) <= 0.3 * line.step(d) }
+        if (held >= pts.size) return null
+        // Each column's width from its neighbours: no gap over twice the narrowest (a number from another table).
+        val gaps = pts.zipWithNext().map { (p, q) -> (q.second - p.second) / (q.first - p.first) }
+        if (gaps.max() > gaps.min() * 2.2) return null
+        return line.copy(first = pts.first().first, last = pts.last().first, knots = pts)
     }
 
     /**

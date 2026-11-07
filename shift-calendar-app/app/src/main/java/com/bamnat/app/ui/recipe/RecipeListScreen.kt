@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -290,7 +291,7 @@ fun RecipeListScreen(
             item(key = "top") {
                 Column(Modifier.widthIn(max = 640.dp).padding(top = if (onBack == null) 4.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
+                        label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
                     // PC 확인 1.36 (코드로 찾으면 어느 구간에도 안 나옴): a code typed in the box opens that work, whatever its 구간.
                     com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 })?.let { code ->
@@ -318,11 +319,18 @@ fun RecipeListScreen(
                     }
                 }
             }
-            stickyHeader(key = "chips") { Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+            // 7차 통합 347b7c37 PC 제안 (칩 줄 판이 화면보다 좁아 좌우로 사진이 보여요): the pinned row's ground runs past the list's 16dp side
+            // padding to the screen's edges; its chips stay in the 640dp column.
+            stickyHeader(key = "chips") { Column(Modifier.fillMaxWidth().layout { m, c ->
+                val side = 16.dp.roundToPx()
+                val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * side, maxWidth = c.maxWidth + 2 * side))
+                layout(c.maxWidth, p.height) { p.place(-side, 0) }
+            }) {
                 val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
                 val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
-                androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
-                Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.solid(), modifier = Modifier.fillMaxWidth()) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
                     val tabChips: @Composable () -> Unit = {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
@@ -369,6 +377,7 @@ fun RecipeListScreen(
                     }
                 }
                 }
+                }
                 if (pinned) androidx.compose.material3.HorizontalDivider()
             } }
             if (state.tab == RecipeListViewModel.Tab.GOOD || state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.DATA) item(key = "notes") {
@@ -381,7 +390,17 @@ fun RecipeListScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            state.error?.let { e -> item { Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) } }
+            // 1.38 (장터 그림 LOW, PC 제안): offline with a list already shown, one quiet line says when it was read, with 다시 시도;
+            // with nothing shown, the problem and 다시 시도 (before, a red line and no way to try again but leaving).
+            state.error?.let { e -> item(key = "error") {
+                if (state.items.isNotEmpty() && state.loadedAt > 0L) com.bamnat.app.ui.company.RefreshLine(refreshing = false, stale = true,
+                    onRetry = { vm.load() }, seenAt = java.time.Instant.ofEpochMilli(state.loadedAt).atZone(com.bamnat.core.time.Today.zone())
+                        .toLocalTime().let { "%d:%02d".format(it.hour, it.minute) })
+                else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+                    Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.load() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 시도") }
+                }
+            } }
             if (!state.loading && state.error == null && state.items.isEmpty()) item {
                 // [R136-05] 1.36 (리뷰 R-11, 관리자 개발사항 d8quAdDH7r3QKNMp): an empty list could only be read again by closing the
                 // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).

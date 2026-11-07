@@ -37,6 +37,18 @@ data class AppSettings(
     val showHoursInCells: Boolean = true,
     /** Lunar dates in calendar cells and the day header [FEAT-05]. */
     val showLunar: Boolean = false,
+    /** 1.38 [FLOW-26] 칸이, the app's little calendar-day friend, where it shows (first setup's end, empty screens, the
+     *  morning card, the night screen). 설정 › 화면 › 칸이 보이기 turns it off everywhere. */
+    val showKani: Boolean = true,
+    /** 1.38 [FLOW-08] 내 하루 이야기: the day's shifts, sleep, money and memos on one time line at the top of the day view. */
+    val dayStory: Boolean = true,
+    /**
+     * [CYC-04] 1.38: the 업종 묶음 whose law-named days (소방의 날…) the calendar shows ([com.bamnat.core.plaza.IndustryGroups]);
+     * set when a public cycle of that 업종 is put on the calendar, or picked in 설정 › 달력. Empty: none.
+     */
+    val orgDayGroup: String = "",
+    /** [CYC-04] Off hides those days without forgetting the group. */
+    val orgDaysOn: Boolean = true,
     /** [OPS-20] A happy moment happened (first pattern saved); ask for a review once. */
     val reviewDue: Boolean = false,
     val reviewAsked: Boolean = false,
@@ -49,6 +61,8 @@ data class AppSettings(
     val ringMinutes: Int = 10,
     /** [ALRM-21] 1.35: minutes before an alarm that 곧 알람이 울려요 shows while the phone is in use; 0 off. */
     val alarmSoonMinutes: Int = 5,
+    /** [ALRM-27] 1.38 알람 지킴이: a few hours before an alarm, a notice when something would keep it from ringing. */
+    val alarmGuard: Boolean = true,
     /** Master switch: off silences every alarm without losing any alarm settings. */
     val alarmsEnabled: Boolean = true,
     /** The user ticked "다시 표시하지 않기" on the notice shown when saving a day's alarms. */
@@ -142,6 +156,19 @@ data class AppSettings(
     val commuteMinutes: Int = 60,
     /** [SLP-08] Read sleep sessions from Health Connect; off until the user allows it. */
     val healthSleep: Boolean = false,
+    /** 1.38 [SLEEP-01] Let the phone notice sleep by itself (activity recognition); off until the user turns it on. */
+    val sleepAuto: Boolean = false,
+    /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
+    val noiseMix: String = "",
+    val noiseTimerMinutes: Int = 30,
+    /** 1.38 [DSG-07] 밤 색: the sleep screen turns warm and dark from 22:00 to 06:00 and while a sleep is open. */
+    val sleepNightLook: Boolean = true,
+    /** 1.38 [SLEEP-08] 깨우는 구간 in minutes before the alarm, 0 off (default); listens only while the night is measured. */
+    val smartWakeMinutes: Int = 0,
+    /** 1.38 [SLEEP-09] 헬스 커넥트에 쓰기, off by default. */
+    val healthWrite: Boolean = false,
+    /** 1.38 [SLEEP-12] 자는 동안 방해 금지, off by default (needs 방해 금지 접근). */
+    val sleepDnd: Boolean = false,
     /** [EXTRA-05] The user answered the offer to turn old shift-swap 대근 into 대근 with times. */
     val swapCoversAnswered: Boolean = false,
     /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
@@ -185,6 +212,11 @@ data class AppSettings(
     val workTimeFrom: Long = com.bamnat.core.money.WorkTime.DEFAULT_FROM,
     /** 1.37 [LEDH-09] 퇴근 시각 하루 마감: the 가계부's look 30 minutes after work ends (else 21:00). Off by default. In the backup. */
     val dayCloseNotice: Boolean = false,
+    /** 1.38 [LEDH-24] 근무 전 한 줄 예고: the evening before a work day that spends on something more, at [shiftPreviewHour]. Off by default. In the backup. */
+    val shiftPreviewNotice: Boolean = false,
+    val shiftPreviewHour: Int = com.bamnat.core.money.ShiftPreview.DEFAULT_HOUR,
+    /** 1.38 [LEDH-31] 혼자 하는 챌린지 going on ([com.bamnat.core.money.Challenges.encode]), empty for none. In the backup. */
+    val moneyChallenge: String = "",
     /** 1.37 [LEDH-22] 금액 가리기: amounts show as dots across the app and the widgets. Kept on this phone only (not in the backup). */
     val hideAmounts: Boolean = false,
     /** [LOCK-01] 앱 잠금: the phone's own lock before the app shows, on opening and after a minute away. */
@@ -193,6 +225,8 @@ data class AppSettings(
     val calendarLayout: String = "",
     /** [CUST-01] The same for the 근무·급여 (통계) page. */
     val statsLayout: String = "",
+    /** 1.38 팀·가게 관리 화면의 카드 순서·숨김 (스튜디오 › 팀·가게 관리 › 카드 배치), as [com.bamnat.core.layout.PageLayout]. */
+    val manageLayout: String = "",
     /**
      * [DAY-04] The day view's groups in the user's own order, by key ("work", "memo", ...); empty means the
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
@@ -347,6 +381,10 @@ class SettingsRepository(context: Context) {
             dynamicColor = prefs.getBoolean(K_DYNAMIC, d.dynamicColor),
             showHoursInCells = prefs.getBoolean(K_CELL_HOURS, d.showHoursInCells),
             showLunar = prefs.getBoolean(K_LUNAR, d.showLunar),
+            showKani = prefs.getBoolean(K_KANI, d.showKani),
+            dayStory = prefs.getBoolean(K_DAY_STORY, d.dayStory),
+            orgDayGroup = prefs.getString(K_ORG_GROUP, null) ?: d.orgDayGroup,
+            orgDaysOn = prefs.getBoolean(K_ORG_ON, d.orgDaysOn),
             reviewDue = prefs.getBoolean(K_REVIEW_DUE, false),
             reviewAsked = prefs.getBoolean(K_REVIEW_ASKED, false),
             defaultAlarmSound = prefs.getString(K_SOUND, null),
@@ -355,6 +393,7 @@ class SettingsRepository(context: Context) {
             snoozeMinutes = prefs.getInt(K_SNOOZE, d.snoozeMinutes),
             ringMinutes = prefs.getInt(K_RING, d.ringMinutes),
             alarmSoonMinutes = prefs.getInt(K_ALARM_SOON, d.alarmSoonMinutes),
+            alarmGuard = prefs.getBoolean(K_ALARM_GUARD, d.alarmGuard),
             alarmsEnabled = prefs.getBoolean(K_ALARMS_ON, d.alarmsEnabled),
             hideDayAlarmNotice = prefs.getBoolean(K_HIDE_DAY_NOTICE, d.hideDayAlarmNotice),
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
@@ -389,6 +428,13 @@ class SettingsRepository(context: Context) {
             sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
             commuteMinutes = prefs.getInt(K_COMMUTE, d.commuteMinutes),
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
+            sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
+            noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
+            noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
+            sleepNightLook = prefs.getBoolean(K_SLEEP_NIGHT_LOOK, d.sleepNightLook),
+            smartWakeMinutes = prefs.getInt(K_SMART_WAKE, d.smartWakeMinutes),
+            healthWrite = prefs.getBoolean(K_HEALTH_WRITE, d.healthWrite),
+            sleepDnd = prefs.getBoolean(K_SLEEP_DND, d.sleepDnd),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
             // [CAL-20] PREVIEW of 1.17 and before is now 바로 크게 with the card switch apart; the card starts off.
@@ -411,10 +457,14 @@ class SettingsRepository(context: Context) {
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
+            shiftPreviewNotice = prefs.getBoolean(K_SHIFT_PREVIEW, d.shiftPreviewNotice),
+            shiftPreviewHour = prefs.getInt(K_SHIFT_PREVIEW_HOUR, d.shiftPreviewHour).coerceIn(0, 23),
+            moneyChallenge = prefs.getString(K_MONEY_CHALLENGE, d.moneyChallenge).orEmpty(),
             hideAmounts = prefs.getBoolean(K_HIDE_AMOUNTS, d.hideAmounts),
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
             statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
+            manageLayout = prefs.getString(K_MANAGE_LAYOUT, null) ?: d.manageLayout,
             // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
@@ -466,6 +516,10 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_DYNAMIC, s.dynamicColor)
             .putBoolean(K_CELL_HOURS, s.showHoursInCells)
             .putBoolean(K_LUNAR, s.showLunar)
+            .putBoolean(K_KANI, s.showKani)
+            .putBoolean(K_DAY_STORY, s.dayStory)
+            .putString(K_ORG_GROUP, s.orgDayGroup)
+            .putBoolean(K_ORG_ON, s.orgDaysOn)
             .putBoolean(K_REVIEW_DUE, s.reviewDue)
             .putBoolean(K_REVIEW_ASKED, s.reviewAsked)
             .putString(K_SOUND, s.defaultAlarmSound)
@@ -474,6 +528,7 @@ class SettingsRepository(context: Context) {
             .putInt(K_SNOOZE, s.snoozeMinutes)
             .putInt(K_RING, s.ringMinutes)
             .putInt(K_ALARM_SOON, s.alarmSoonMinutes)
+            .putBoolean(K_ALARM_GUARD, s.alarmGuard)
             .putBoolean(K_ALARMS_ON, s.alarmsEnabled)
             .putBoolean(K_HIDE_DAY_NOTICE, s.hideDayAlarmNotice)
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
@@ -508,6 +563,13 @@ class SettingsRepository(context: Context) {
             .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
             .putInt(K_COMMUTE, s.commuteMinutes)
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
+            .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
+            .putString(K_NOISE_MIX, s.noiseMix)
+            .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
+            .putBoolean(K_SLEEP_NIGHT_LOOK, s.sleepNightLook)
+            .putInt(K_SMART_WAKE, s.smartWakeMinutes)
+            .putBoolean(K_HEALTH_WRITE, s.healthWrite)
+            .putBoolean(K_SLEEP_DND, s.sleepDnd)
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
@@ -528,10 +590,14 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
             .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
+            .putBoolean(K_SHIFT_PREVIEW, s.shiftPreviewNotice)
+            .putInt(K_SHIFT_PREVIEW_HOUR, s.shiftPreviewHour)
+            .putString(K_MONEY_CHALLENGE, s.moneyChallenge)
             .putBoolean(K_HIDE_AMOUNTS, s.hideAmounts)
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
+            .putString(K_MANAGE_LAYOUT, s.manageLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
             .putString(K_TAB_ORDER, s.tabOrder.joinToString(","))
@@ -593,6 +659,7 @@ class SettingsRepository(context: Context) {
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
+        const val K_MANAGE_LAYOUT = "manage_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_PHONE_CALENDARS = "phone_calendars"
         const val K_TAB_ORDER = "tab_order"
@@ -624,6 +691,9 @@ class SettingsRepository(context: Context) {
         const val K_MONEY_CYCLE = "money_pay_cycle"
         const val K_WORK_TIME = "work_time_from"
         const val K_DAY_CLOSE = "day_close_notice"
+        const val K_SHIFT_PREVIEW = "shift_preview_notice"
+        const val K_SHIFT_PREVIEW_HOUR = "shift_preview_hour"
+        const val K_MONEY_CHALLENGE = "money_challenge"
         const val K_HIDE_AMOUNTS = "hide_amounts"
         const val K_MEMO_LAYOUT = "memo_layout"
         const val K_TAB_VIEWS = "tab_views"
@@ -640,6 +710,10 @@ class SettingsRepository(context: Context) {
         const val K_DYNAMIC = "dynamic_color"
         const val K_CELL_HOURS = "cell_hours"
         const val K_LUNAR = "lunar"
+        const val K_KANI = "kani"
+        const val K_DAY_STORY = "day_story"
+        const val K_ORG_GROUP = "org_day_group"
+        const val K_ORG_ON = "org_days_on"
         const val K_REVIEW_DUE = "review_due"
         const val K_REVIEW_ASKED = "review_asked"
         const val K_SOUND = "default_sound"
@@ -648,6 +722,7 @@ class SettingsRepository(context: Context) {
         const val K_SNOOZE = "snooze"
         const val K_RING = "ring_minutes"
         const val K_ALARM_SOON = "alarm_soon_minutes"
+        const val K_ALARM_GUARD = "alarm_guard"
         const val K_ALARMS_ON = "alarms_on"
         const val K_HIDE_DAY_NOTICE = "hide_day_alarm_notice"
         const val K_SHARE_STATS = "share_usage_stats"
@@ -684,6 +759,13 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_TARGET = "sleep_target"
         const val K_COMMUTE = "commute_minutes"
         const val K_HEALTH_SLEEP = "health_sleep"
+        const val K_SLEEP_AUTO = "sleep_auto"
+        const val K_NOISE_MIX = "noise_mix"
+        const val K_NOISE_TIMER = "noise_timer"
+        const val K_SLEEP_NIGHT_LOOK = "sleep_night_look"
+        const val K_SMART_WAKE = "smart_wake"
+        const val K_HEALTH_WRITE = "health_write"
+        const val K_SLEEP_DND = "sleep_dnd"
         const val K_SWAP_COVERS = "swap_covers_answered"
         const val K_REST_COMPARED = "rest_day_compared"
     }

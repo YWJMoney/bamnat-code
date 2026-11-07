@@ -161,7 +161,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     Column(Modifier.weight(1f)) {
                         Text(r.title, style = MaterialTheme.typography.titleLarge)
                         if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium)
-                        Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: "만든 분 이름 없음", "v${doc.item.version}",
+                        Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: if (doc.item.official) "만든 분 밤낮" else "만든 분 이름 없음", "v${doc.item.version}",
                             RecipeDescribe.styles(r)).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         // [RCX-05] The maker's page: their recipes, badges and 팔로우.
@@ -231,7 +231,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
+                    // 7차 통합 347b7c37 PC 제안 (넣은 뒤에도 '입어 보고 고르기'로 남아요): once in, it says so and offers another look.
+                    Text(when { s.applying -> "넣는 중…"; s.appliedAt != null -> (if (doc.item.scope == "tab") "✓ 넣은 작품 · 다시 입어 보기" else "✓ 입은 테마 · 다시 입어 보기"); else -> "입어 보고 고르기" })
                 } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     // PC D15 (사용성 낮): 규칙·단추만 있는 작품은 실제로 들어가는 수로 ('고른 1개'인데 규칙 2개가 들어갔어요).
@@ -267,6 +268,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
+                    val allParts = remember(r) { com.bamnat.core.recipe.LookParts.of(r).size }
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
                         onKeep = { ids -> vm.keep(ids) }, onToStudio = onToStudio,
                         extra = if (others.isEmpty()) null else { {
@@ -295,12 +297,22 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             // its own names (근무 꾸미기·알람 묶음), as the list above shows them, and counted only when there are many.
                             val names = others.filter { it.on }.map { it.kind.label }
                             val rest = if (names.size <= 2) names.joinToString("·") else "함께 넣을 것 ${names.size}개"
-                            Text(when {
-                                n == 0 -> "넣을 것을 골라 주세요"
-                                fn == 0 -> "고른 모양 ${picked.size}개 넣기"
-                                picked.isEmpty() -> "$rest 넣기"
-                                else -> "모양 ${picked.size}개 · $rest 넣기"
-                            })
+                            val detail = when {
+                                n == 0 -> null
+                                fn == 0 -> "고른 모양 ${picked.size}개"
+                                picked.isEmpty() -> rest
+                                else -> "모양 ${picked.size}개 · $rest"
+                            }
+                            // 1.38 PC 스튜디오 확인 (중): '모양 27개 · 앱 동작 넣기'가 어려워요. 다 고른 채면 한마디로, 무엇이 들어가는지는 작게.
+                            val whole = n > 0 && picked.size == allParts && others.all { it.on }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(when {
+                                    n == 0 -> "넣을 것을 골라 주세요"
+                                    whole -> if (doc.item.scope == "tab") "이 작품 그대로 넣기" else "이 테마 입기"
+                                    else -> "$detail 넣기"
+                                })
+                                if (whole && detail != null) Text(detail, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -331,7 +343,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // For anyone else it sits with the 계보; the maker of the original sees it first, above 넣기 (1.35 자유도 점검).
                 s.parentDoc?.takeIf { !it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { } }
                 HorizontalDivider()
-                if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일(11월 10일 예정)부터 열려요", style = MaterialTheme.typography.bodySmall)
+                if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일부터 열려요", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -433,7 +445,7 @@ private fun VoteRow(s: RecipeDetailViewModel.State, vm: RecipeDetailViewModel, o
             Icon(if (v.myVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown, null); Spacer(Modifier.width(6.dp)); Text("안좋아요 ${v.dislikes}")
         }
     }
-    if (!vm.canVote) Text("좋아요·안좋아요는 정식 출시일(11월 10일 예정)부터 누를 수 있어요", style = MaterialTheme.typography.bodySmall,
+    if (!vm.canVote) Text("좋아요·안좋아요는 정식 출시일부터 누를 수 있어요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

@@ -189,7 +189,9 @@ class MigrationAllVersionsTest(private val from: Int) {
                 "breakStartMinute" to null, "minutes" to 120, "coveredShiftTypeId" to null, "needsReview" to 0, "position" to 1),
             "memos" to mapOf("id" to 1, "epochDay" to 20001, "title" to "인수인계", "body" to "본문", "checklist" to "", "isChecklist" to 0,
                 "colorIndex" to 2, "pinned" to 1, "createdAt" to 1, "updatedAt" to 2, "deletedAt" to null, "remindAt" to "2026-11-03T15:00",
-                "remindRing" to 1, "remindNotify" to 0, "remindAsked" to "2026-11-03T15:00", "calendars" to ",*,", "repeat" to "M25"),
+                "remindRing" to 1, "remindNotify" to 0, "remindAsked" to "2026-11-03T15:00", "calendars" to ",*,", "repeat" to "M25",
+                // 1.38 Version 28's 이 날만 빼기; older versions get none.
+                "skips" to "20026,20057"),
             "memos" to mapOf("id" to 2, "epochDay" to null, "title" to "지운 메모", "body" to "", "checklist" to "", "isChecklist" to 0,
                 "colorIndex" to 0, "pinned" to 0, "createdAt" to 3, "updatedAt" to 4, "deletedAt" to 5, "remindAt" to null,
                 "remindRing" to 0, "remindNotify" to 0, "remindAsked" to null, "calendars" to "", "repeat" to ""),
@@ -207,12 +209,17 @@ class MigrationAllVersionsTest(private val from: Int) {
             "category_rules" to mapOf("merchant" to "가나다카페", "category" to "카페"),
             "day_changes" to mapOf("id" to 1, "epochDay" to 20001, "atMillis" to 5, "text" to "야간으로 바꿈"),
             "sleep_logs" to mapOf("id" to 1, "startMillis" to 1000, "endMillis" to 9000),
+            // 1.38 [SLEEP-03][SLEEP-07] (DB 31).
+            "sleep_checks" to mapOf("id" to 1, "startMillis" to 1000, "endMillis" to 9000, "mood" to 4, "tags" to "caffeine", "note" to null, "atMillis" to 9100),
+            "sleep_events" to mapOf("id" to 1, "startMillis" to 3000, "endMillis" to 3500, "kind" to "snore", "level" to 0.4, "file" to null, "keep" to 0),
             "receivables" to mapOf("id" to 1, "who" to "가나다화학", "title" to "잔금", "amount" to 300000, "epochDay" to 20760, "dueEpochDay" to 20790,
                 "kind" to "OTHER", "note" to "", "countAsIncome" to 1, "closedEpochDay" to null, "createdAt" to 1),
             "receivable_payments" to mapOf("id" to 1, "receivableId" to 1, "epochDay" to 20767, "amount" to 100000, "entryId" to null),
             "imported_events" to mapOf("eventKey" to "7@2026-11-03T19:00", "epochDay" to 20760, "memoId" to 1, "importedAt" to 1),
             "money_accounts" to mapOf("id" to 1, "name" to "신한 Deep", "type" to "CREDIT", "last4" to "1234", "payDay" to 14, "closeDay" to null,
-                "payFromId" to null, "opening" to 0, "color" to 0, "sortOrder" to 0, "hidden" to 0, "remind" to 1),
+                "payFromId" to null, "opening" to 0, "color" to 0, "sortOrder" to 0, "hidden" to 0, "remind" to 1,
+                // 1.38 [LEDH-25][LEDH-27] Version 26's columns; older versions get their defaults.
+                "rate" to 0.0, "monthlyPay" to 0L, "perfTiers" to "", "perfSkip" to ""),
             "money_budgets" to mapOf("category" to "식비", "amount" to 300000),
             "money_categories" to mapOf("kind" to "EXPENSE", "name" to "운동", "position" to 0, "hidden" to 0),
             "invest_accounts" to mapOf("id" to 1, "name" to "일반 계좌", "type" to "OTHER", "broker" to "", "feeRate" to 0.00015, "sortOrder" to 0, "hidden" to 0),
@@ -248,6 +255,21 @@ class MigrationAllVersionsTest(private val from: Int) {
             "envelopes" to mapOf("id" to 1, "name" to "여행", "target" to 1200000L, "dueEpochDay" to 20500L, "kind" to 0, "sharePercent" to 10,
                 "emoji" to "✈️", "sortOrder" to 0, "closed" to 0, "createdEpochDay" to 20396L),
             "envelope_moves" to mapOf("id" to 1, "envelopeId" to 1, "epochDay" to 20396L, "amount" to 100000L, "note" to "넣기", "entryId" to null),
+            // 1.38 [P3-01] Version 27's 리더 팀 근무표와 사장님 급여 대장, likewise new (workplaces leave a backup without a password).
+            "team" to mapOf("id" to "t1", "name" to "3병동", "leaderName" to "수간호사", "shifts" to "[]", "need" to "{}", "createdAt" to 1, "archived" to 0),
+            "team_member" to mapOf("id" to "m1", "teamId" to "t1", "name" to "김가나", "role" to "RN", "skill" to "REG", "colorArgb" to null, "sort" to 0,
+                "linkId" to null, "linkToken" to null, "active" to 1),
+            "team_cell" to mapOf("teamId" to "t1", "memberId" to "m1", "epochDay" to 20760L, "shiftId" to 1L, "source" to "MANUAL", "locked" to 0),
+            "team_wish" to mapOf("teamId" to "t1", "memberId" to "m1", "epochDay" to 20763L, "kind" to "OFF", "receivedAt" to 1, "via" to "TEXT"),
+            "team_month" to mapOf("teamId" to "t1", "month" to "2026-11", "state" to "DRAFT", "version" to 0, "confirmedAt" to null, "confirmed" to ""),
+            "workplace" to mapOf("id" to "w1", "name" to "가나다카페", "fivePlus" to 0, "payday" to 10, "legalBreaks" to 1, "weekStart" to 1, "teamId" to null, "createdAt" to 1),
+            "staff" to mapOf("id" to "s1", "workplaceId" to "w1", "name" to "이다라", "form" to "HOUR", "base" to 10320L, "allowances" to "[]", "hiredOn" to 20400L,
+                "leftOn" to null, "birth" to null, "job" to "홀", "insurance" to "{}", "weeklyHolidayPay" to 1, "weekly" to "{}", "memberId" to null, "sort" to 0),
+            "staff_work" to mapOf("staffId" to "s1", "epochDay" to 20760L, "kind" to "LATE", "startMinute" to 600, "endMinute" to 1080),
+            "staff_punch" to mapOf("staffId" to "s1", "at" to 1_793_667_720_000L, "kind" to "IN"),
+            "payroll_month" to mapOf("workplaceId" to "w1", "month" to "2026-10", "state" to "OPEN", "rateVersion" to "2026", "closedAt" to null),
+            "payroll_line" to mapOf("workplaceId" to "w1", "month" to "2026-10", "staffId" to "s1", "gross" to 1_000_000L, "items" to "[]", "method" to "[]",
+                "deduct" to "", "net" to null, "paidAt" to null, "slipSentAt" to null),
         )
 
         /**

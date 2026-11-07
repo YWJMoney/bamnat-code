@@ -147,16 +147,33 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 Text(if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독")
             }
         }
+        // 1.38 [GROW-04] A안: the 1년 이용권 right beside the yearly plan, "한 번 결제 · 자동 결제 없음" first (no 평생권, 1.36 결정).
+        if (plan.yearly) YearPassRow(c, plan, onMessage)
     }
-    // 841 1년 이용권: after the plans, never for someone subscribed (no double payment); buyable again from 30 days before its end.
+    // With no yearly plan from Play the pass still shows, after the plans.
+    if (plans.none { it.yearly }) YearPassRow(c, null, onMessage)
+}
+
+/**
+ * 841 1년 이용권, never for someone subscribed (no double payment); buyable again from 30 days before its end. 1.38 [GROW-04]: beside
+ * the yearly plan, its price set against the yearly plan's when Play gave both in won, for "한 번에 내고 끝" buyers (오늘근무 리뷰 "한 번에
+ * 2만 원이면 산다", 사용자 관찰/공개 정보).
+ */
+@Composable
+private fun YearPassRow(c: AppContainer, yearly: Plan?, onMessage: (String) -> Unit) {
+    val context = LocalContext.current
+    val passOffer by c.billing.pass.collectAsStateWithLifecycle()
+    val proState by c.proStore.state.collectAsStateWithLifecycle()
     val subscribed = proState.sub?.play()?.entitled(Today.instant()) == true
     val p = passOffer
     if (p != null && !subscribed) {
         val until = proState.yearPassUntil
         val canBuy = com.bamnat.core.tier.YearPass.rebuy(until, Today.instant())
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("1년 이용권 ${p.price} · 자동 결제 없음", style = MaterialTheme.typography.titleSmall)
-            Text("한 번 사면 1년 써요. 1년 뒤 그냥 끝나고, 끝나기 7일 전에 한 번 알려 드려요. 다시 사면 이어져요.",
+            Text("1년 이용권 ${p.price}", style = MaterialTheme.typography.titleSmall)
+            Text("한 번 결제 · 자동 결제 없음", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text("한 번 사면 1년 써요. 1년 뒤 그냥 끝나고, 끝나기 7일 전에 한 번 알려 드려요. 다시 사면 이어져요." +
+                if (yearly != null) " 연 구독은 해마다 저절로 이어지고, 이용권은 내가 다시 살 때만 이어져요." else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (until != null && Today.instant() < until) Text(until.atZone(Today.zone()).toLocalDate().let { "지금 이용권은 ${it.year}년 ${it.monthValue}월 ${it.dayOfMonth}일까지예요." },
                 style = MaterialTheme.typography.bodySmall)

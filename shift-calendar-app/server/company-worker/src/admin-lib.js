@@ -227,6 +227,8 @@ export function adminLib() {
     companies: { q: "", sort: "" /* AX 1.30 [ADMX-06] */ },
     metrics: { days: "28", from: "", to: "" },
     inbox: { view: "all" },
+    // 1.38 [DESK-02] 운영 장부.
+    desk: { view: "today", group: "", v: "", q: "" },
     versions: { show: "conflict" },
     audit: { actor: "", kind: "", from: "", to: "" },
     ops: { month: "" },
@@ -235,6 +237,12 @@ export function adminLib() {
     chores: { month: "" },
     // AM 1.28 [ADMUX-21][ADMUX-25] 기능 관리: which state, words, list or timeline.
     flags: { show: "all", q: "", view: "" },
+    // 1.38 [ADM3] 새 화면의 보기와 기간.
+    reviews: { show: "open" },
+    requests: { show: "open" },
+    errors: { show: "open" },
+    health: { days: "14" },
+    money: { days: "28" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -282,16 +290,19 @@ export function adminLib() {
     return p;
   }
 
-  // ---- [ADMUX-30] six hubs (1.28 통합계획 2-2) ----
+  // ---- [ADMUX-30] hubs; 1.38 [ADM3] 6 → 5, 일하는 순서대로 (보고서 5장) ----
 
-  /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
+  /**
+   * The five hubs and their tabs (each tab is a route), in the order they show; 1~5 on a keyboard. 1.38 [ADM3]: 문의와 광장은 '사람과 글'
+   * 하나로(사람이 보낸 것은 한 곳), 분석은 '숫자'(지표·판 건강·돈·오류), 활동 기록·답 목표·채택 규칙은 관리로. 다섯이라 휴대폰 아래 막대에
+   * 모두 들어가 '더 보기'가 없어요. 옛 주소(#/inquiries 등)는 화면 이름이 그대로라 그대로 열려요.
+   */
   const HUBS = [
-    { key: "today", label: "오늘", icon: "home", tabs: ["home", "flow", "work"] },
-    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "growth", "dev", "templates", "sla"] },
-    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
-    { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
-    { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
-    { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "keys", "rewards", "server", "account"] },
+    { key: "today", label: "오늘", icon: "home", tabs: ["home", "desk", "flow", "cockpit", "incident"] },
+    { key: "ask", label: "사람과 글", icon: "inquiries", tabs: ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"] },
+    { key: "release", label: "출시", icon: "release", tabs: ["launch", "flags", "materials", "types", "notices", "chores", "gates"] },
+    { key: "insight", label: "숫자", icon: "metrics", tabs: ["metrics", "health", "money", "errors", "effects"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
   ];
 
   /**
@@ -305,12 +316,12 @@ export function adminLib() {
     // 1.36 [GRW-07] 할 일함: 모든 들어온 일을 상태(새로·보는 중·기다림·끝)와 함께 한 대기열로.
     // 1.37 [ADM2-01] 흐름: 문의에서 출시까지 단계마다 건수·막힘·다음 할 일, 운영 숫자, 나간 판.
     flow: { label: "흐름", area: "inquiries", old: "흐름 관제 파이프라인 단계 막힘 나간 판 출시 운영 장부 Claude 처리해 지표 첫 답 flow desk" },
-    work: { label: "할 일함", old: "할 일함 대기열 누락 기한 넘김 다시 열림 상태 work" },
+    // 1.38 [DESK-02][DESK-03] 운영 장부: 할 일함과 정리함을 하나로. 모든 들어온 일이 한 줄씩(번호·겹침·묶음·단계·답·담당·기한·기록).
+    desk: { label: "운영 장부", old: "운영 장부 체크시트 할 일함 정리함 대기열 누락 기한 넘김 다시 열림 상태 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 붙여 넣기 Claude 차례 최고 관리자 확인 CSV work sort desk ledger" },
     // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
     growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
-    // 1.35 [INBOX-01] 정리함: the same waiting questions, sorted by the server into piles with their answers written.
-    sort: { label: "정리함", area: "inquiries", old: "정리함 문의 정리 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 sort" },
+    // 1.35 [INBOX-01] 정리함은 1.38 [DESK-03]부터 운영 장부 안이에요(옛 주소 #/sort는 장부로).
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
     dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
     templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },
@@ -338,6 +349,17 @@ export function adminLib() {
     // [ADMUX-32] 친구 초대 규칙 moved here from 설정; it is the settings area, so either opens the tab.
     rewards: { label: "보상", area: ["rewards", "settings"], badge: (o, me) => (can(me, "rewards") ? o.owed ?? 0 : 0), strip: "드릴 보상", old: "설정 친구 초대 rewards" },
     server: { label: "서버 상태", owner: true, old: "설정 서버 상태 server" },
+    // 1.38 [ADM3] 새 탭들.
+    cockpit: { label: "Claude 조종석", area: "inquiries", old: "Claude 조종석 보류 답 멈추기 열쇠 한 일 cockpit" },
+    incident: { label: "사고", owner: true, badge: (o) => o.incidentOpen ?? 0, strip: "사고", old: "사고 장애 급증 incident 오류 급증 비정상 종료" },
+    reviews: { label: "스토어 리뷰", area: "inquiries", badge: (o) => o.reviewsWaiting ?? 0, strip: "리뷰 답", old: "스토어 리뷰 Play 리뷰 별점 답 reviews" },
+    requests: { label: "데이터 요청", owner: true, badge: (o) => o.requestsOpen ?? 0, strip: "데이터 요청", old: "데이터 요청 개인정보 열람 삭제 환불 법 신고 기한 requests" },
+    launch: { label: "출시 점검표", area: "ops", badge: (o) => o.releaseOpen ?? 0, count: false, old: "출시 점검표 출시 날 체크리스트 런북 Play 올림 launch release" },
+    materials: { label: "스튜디오 재료", area: "community", old: "스튜디오 재료 잠금 아이콘 배경 무료 광고 materials" },
+    health: { label: "판 건강", area: "metrics", old: "판 건강 판별 비교 비정상 종료 ANR 바꾼 것 health versions crash" },
+    money: { label: "돈", owner: true, old: "돈 매출 구독 해지 이용권 환불 가격표 money revenue" },
+    errors: { label: "오류 묶음", owner: true, badge: (o) => o.errorsNew ?? 0, strip: "새 오류", old: "오류 묶음 서버 오류 500 errors sentry" },
+    backup: { label: "백업", owner: true, old: "백업 되돌리기 Time Travel R2 backup" },
     account: { label: "내 계정·이 기기", old: "설정 이 기기 알림 화면 색 테마 글자 크기 아래 탭 소리 저장한 보기 앱 설치 단축키 비밀번호 로그아웃 account settings" },
   };
 
@@ -410,6 +432,9 @@ export function adminLib() {
   function redirect(route) {
     const p = route.params ?? {};
     if (route.name === "inbox") return { name: "home", id: null, params: { view: p.view ?? "all" } };
+    // 1.38 [DESK-03] 할 일함·정리함은 운영 장부 하나로: 할 일함은 열린 것 모두, 정리함은 답을 기다리는 문의(Claude 차례·문의 종류).
+    if (route.name === "work") return { name: "desk", id: null, params: { view: "open" } };
+    if (route.name === "sort") return { name: "desk", id: null, params: { view: "claude", group: "ask" } };
     if (route.name === "ops") return p.month ? { name: "chores", id: null, params: { month: p.month } } : { name: "flags", id: null, params: {} };
     return route;
   }
@@ -599,7 +624,7 @@ export function adminLib() {
    * hub, g s the list of where 설정 went); f, n, p and u are new.
    */
   const GO = { b: "home", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "flags", m: "metrics",
-    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account", k: "work", e: "growth" };
+    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account", k: "desk", e: "growth" };
 
   /**
    * What a key press means, or null: [key] as KeyboardEvent.key, [mods] {ctrl, meta, alt, shift},
@@ -631,7 +656,7 @@ export function adminLib() {
   /** The list of keys for the ? screen, as [keys, what]. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["1~6", "허브: 오늘·문의·광장·출시·분석·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["Esc · Backspace", "뒤로"], ["1~5", "허브: 오늘·사람과 글·출시·숫자·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
     ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
     ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "할 일함·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
@@ -1183,6 +1208,30 @@ export function adminLib() {
   }
   // ---- AT 1.29 끝 ----
 
+  // ---- 1.38 [ADM3-07] 활동 기록의 되돌리기 ----
+
+  /**
+   * 되돌릴 수 있는 일이면 그것을 되돌리는 화면({label, to}), 아니면 null. 되돌리기는 그 화면의 단추로 해요(이유·확인을 다시 거치게):
+   * 기능 강제·조건·판 범위, 공지, 채택·답 목표·초대 설정, 가격표, 오류 상태, 출시 점검표 단계, 데이터 요청, 개발사항 상태, 문의 닫기.
+   */
+  function undoPlace(action, target) {
+    const t = String(target ?? "");
+    const enc = encodeURIComponent;
+    if (/^flag_(force_on|force_off|conditions|range|clear)$/.test(action) && t) return { label: "기능 화면에서 되돌리기", to: `#/flags/${enc(t)}` };
+    if (/^(switch_on|switch_off|flag_policy)$/.test(action)) return { label: "기능 관리에서 되돌리기", to: "#/flags" };
+    if (/^notice_(add|edit|remove)$/.test(action)) return { label: "공지에서 되돌리기", to: "#/notices" };
+    if (action === "settings") return { label: "채택 규칙에서 되돌리기", to: "#/adopt" };
+    if (action === "sla") return { label: "답 목표에서 되돌리기", to: "#/sla" };
+    if (action === "invite_settings") return { label: "보상에서 되돌리기", to: "#/rewards" };
+    if (action === "price_table") return { label: "가격표에서 되돌리기", to: "#/money" };
+    if (action === "error_state") return { label: "오류 묶음에서 되돌리기", to: "#/errors" };
+    if (action === "release_step" && /^\d+\.\d+\.\d+$/.test(t)) return { label: "점검표에서 되돌리기", to: `#/launch/${t}` };
+    if (action === "data_request_close") return { label: "데이터 요청에서 다시 열기", to: "#/requests?show=done" };
+    if (/^dev_(status|delete)$/.test(action) && /^d[A-Za-z0-9]{15}$/.test(t)) return { label: "개발사항에서 되돌리기", to: `#/dev/${t}` };
+    if (/^inquiry_(status|close)$/.test(action) && /^[A-Za-z0-9]{22}$/.test(t)) return { label: "문의에서 다시 열기", to: `#/inquiries/${t}` };
+    return null;
+  }
+
   // ---- AX 1.30 시작 ----
 
   /**
@@ -1204,7 +1253,7 @@ export function adminLib() {
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
     launch_on: "정식 출시 켬(결제·광고)", launch_off: "정식 출시 끔", launch_settings: "정식 출시 설정 바꿈",
-    device_link: "관리자 휴대폰 연결", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음", device_previews: "관리자 휴대폰 미리 보기",
+    device_link: "관리자 휴대폰 연결", family_code: "가족 코드 만듦", family_link: "가족 휴대폰 연결", family_remove: "가족 휴대폰 끊음", family_pause: "가족 휴대폰 정지", family_resume: "가족 휴대폰 다시 켬", family_name: "가족 닉네임 바꿈", device_approve: "관리자 휴대폰 승인", device_remove: "관리자 휴대폰 끊음", device_previews: "관리자 휴대폰 미리 보기",
     pass_move: "이용권을 새 휴대폰으로 옮김", trial_stop: "동의 없는 무료 체험의 다음 결제 멈춤",
     purchase_rebind: "구매를 새 휴대폰에 다시 이음", purchase_rebind_refused: "구매 다시 잇기 거절",
     notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
@@ -1294,11 +1343,58 @@ export function adminLib() {
   }
   // ---- AX 1.30 끝 ----
 
+  // ---- 1.38 [CYC-03] 근무표 제보 → 공개 근무주기 표 한 줄 ----
+
+  /**
+   * [CYC-03] A 제보 group of 검토 (its company, 부서 and the setup in words, describe()) as one line of
+   * tools/data/company-cycles.csv: the order in codes after "순서:" (D 주간 · E 오후 · N 야간 · X 당번 · B 비번 · O 쉼), the
+   * shifts' times, the 근무형태 worked out from the order (조 = 주기 일수 × 교대 수 ÷ 근무 일수), and 신뢰도 '밤낮 제보'. 업종
+   * is left for the admin to fill in. No name, no pay: only what the 근무·순서 lines say. Null when the setup has no order.
+   */
+  function cycleCsvRow(g, now = new Date()) {
+    const line = (label) => (g.lines ?? []).find(([l]) => l === label || l.startsWith(label + " "))?.[1] ?? "";
+    const shifts = line("근무").split(" · ").map((t) => {
+      const m = t.match(/^(.+?)(?:\(쉬는 날\)| (\d{1,2}:\d{2})~(\d{1,2}:\d{2}))/);
+      return m ? { name: m[1].trim(), off: !m[2], start: m[2], end: m[3] } : { name: t.trim(), off: true };
+    });
+    const steps = line("순서").replace(/빈 날/g, "빈날").split(" ").filter(Boolean);
+    if (!steps.length) return null;
+    const byName = (n) => shifts.find((s) => s.name === n);
+    const codeOf = (n) => {
+      const s = byName(n);
+      if (n === "빈날" || !s || s.off) return /^비/.test(n) ? "B" : "O";
+      const span = s.start && s.end ? ((+s.end.slice(0, 2) * 60 + +s.end.slice(-2)) - (+s.start.slice(0, 2) * 60 + +s.start.slice(-2)) + 1440) % 1440 : 0;
+      if (/^당/.test(n) || (s.start && (span === 0 || span >= 1200))) return "X";
+      if (/^(주|데이|오전|D)/i.test(n)) return "D";
+      if (/^(오후|이브|E)/i.test(n)) return "E";
+      if (/^(야|나이트|N)/i.test(n)) return "N";
+      const h = +(s.start ?? "09").slice(0, 2);
+      return h >= 4 && h <= 11 ? "D" : h >= 12 && h <= 17 ? "E" : "N";
+    };
+    const codes = steps.map(codeOf).join("");
+    const kinds = [...new Set(codes.replace(/[BO]/g, ""))];
+    const work = codes.replace(/[BO]/g, "").length;
+    const teams = work ? (codes.length * kinds.length) / work : 0;
+    const shiftsPerDay = kinds.includes("X") ? 1 : kinds.length;
+    const form = Number.isInteger(teams) && teams >= 2 && teams <= 6 ? (kinds.includes("X") && teams === 2 ? "격일제" : `${teams}조${shiftsPerDay}교대`) : "그 밖의 교대";
+    const label = { D: "주", E: "오후", N: "야", X: "당" };
+    const time = kinds.map((k) => {
+      const s = shifts.find((x) => !x.off && codeOf(x.name) === k);
+      return s?.start ? `${label[k]} ${s.start}-${s.end}` : "";
+    }).filter(Boolean).join(" / ");
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const site = g.dept || "현장";
+    const company = g.company?.name ?? "";
+    const cell = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return [`${company} [${site}] · (업종)`, company, "(업종)", site, form, `순서:${codes}`, time, `${ym} 밤낮 제보`, "밤낮 제보 (관리자 확인)", "", "", ""]
+      .map(cell).join(",");
+  }
+
   return {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
-    paletteFilter, sequencer, appVersion,
+    paletteFilter, sequencer, appVersion, undoPlace,
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
     evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
@@ -1306,5 +1402,7 @@ export function adminLib() {
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,
     // AX 1.30 [ADMX-01][ADMX-02][ADMX-03][ADMX-07]
     ACTION_NAMES, actionName, change, spark, tokenHtml, compareRows, trendTone,
+    // 1.38 [CYC-03]
+    cycleCsvRow,
   };
 }

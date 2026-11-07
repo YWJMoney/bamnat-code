@@ -130,7 +130,9 @@ private fun PayTaxLines(view: TakeHomeView?, onTaxWay: (com.bamnat.core.pay.TaxM
     TaxLine("세후 예상 (실수령)", Fmt.won(f.net), strong = true)
     TaxLine("  떼는 돈 (세금·4대 보험)", Fmt.won(f.deducted), muted = true)
     view.lastActual?.let { a ->
-        TaxLine("${a.payMonth.monthValue}월 실제 실수령 (${a.source.label})", Fmt.won(a.net))
+        // 1.38 (1.37 PC 확인: 수입 내역의 '받은 급여 · ○원 더 들어왔어요'와 이 줄이 같은 말을 했어요): the month's own pay is compared
+        // in 수입 내역 only; here a record stands just as what the 세후 예상 was fitted to.
+        if (a.payMonth != view.month) TaxLine("  맞춘 기준: ${a.payMonth.monthValue}월 실제 실수령 (${a.source.label})", Fmt.won(a.net), muted = true)
     }
     Muted(view.fit.words + if (view.fit.guessedMode) " · 기록을 보고 떼는 방식을 짐작했어요" else "")
 }

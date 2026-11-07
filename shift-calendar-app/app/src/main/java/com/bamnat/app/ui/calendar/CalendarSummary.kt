@@ -306,7 +306,22 @@ internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapshot, onDismiss: () -> Unit) {
+internal fun CalendarLegendSheet(
+    focus: CalendarFocus,
+    snapshot: ScheduleSnapshot,
+    onDismiss: () -> Unit,
+    /** [EASE-04] A 월급날 is entered, so the cells show '급여'. */
+    payDayOn: Boolean = false,
+    /** [EASE-04] The 업종 whose 기념일 the cells show, or null when off or none. */
+    orgGroup: String? = null,
+    /** [EASE-04] This calendar counts pay at all (not 현장·자영업·투자), so the 급여일 row or where to turn it on is said. */
+    payShown: Boolean = false,
+    /**
+     * 1.38 통합 10차 (급여를 안 넣었으면 '월급날 넣기'가 회사 급여 방식 찾기로 가서 월급날 칸이 없어요): the pay is set, so its
+     * 월급날 can be put in on its own; without it the pay setup comes first and says so.
+     */
+    hasPay: Boolean = true,
+) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -325,7 +340,20 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                 Box(Modifier.size(width = 30.dp, height = 24.dp).clip(RoundedCornerShape(6.dp)).background(scheme.primary.copy(alpha = 0.08f))
                     .border(2.dp, scheme.primary, RoundedCornerShape(6.dp)))
             }
-            LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
+            LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름 · 쉬는 날이에요") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
+            // [EASE-04] 1.38 (통합 7차): 업종 기념일 next to 공휴일, so the two are told apart; where to turn it on when off.
+            val orgDays = com.bamnat.core.plaza.IndustryGroups.byKey(orgGroup)?.days.orEmpty()
+            if (orgDays.isNotEmpty()) {
+                LegendRow("업종 기념일", "날짜 밑 강조색 글자 · ${orgDays.first().name}처럼 업종의 날이고, 공휴일과 달리 쉬는 날은 아니에요") {
+                    Text(orgDays.first().name, color = scheme.primary, fontSize = 10.sp, maxLines = 1)
+                }
+            } else if (focus == CalendarFocus.SHIFTS) {
+                // 1.38 통합 8차 (안내의 경로와 실제 자리가 달라요): the place opens from here, no path to follow.
+                LegendRow("업종 기념일", "꺼져 있어요 · 켜면 소방의 날 같은 날이 날짜 밑에 강조색 글자로 보여요",
+                    action = "켜러 가기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR, "우리 업종 기념일") }) {
+                    Text("기념일", color = scheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1)
+                }
+            }
             when (focus) {
                 CalendarFocus.SHIFTS -> {
                     val types = snapshot.shiftTypes.take(6)
@@ -341,6 +369,25 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                         LegendRow("추가 근무", "잔업·특근·대근은 모서리 표시, 시간은 +2h처럼") { ExtraKindMark(k, size = 18.dp) }
                     }
                     LegendRow("부업 일감", "가계부 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
+                    // [EASE-04] 1.38: every mark the cells can show is said here (오늘근무 분석: 뜻 모를 표시가 없게).
+                    LegendRow("시간 글자", "8h는 그날 근무 시간(설정에서 켜요), 주황 +2h는 추가 근무") {
+                        Text("+2h", color = cal.holidayWork, fontWeight = FontWeight.Bold, style = NumberStyle)
+                    }
+                    LegendRow("출퇴근 기록", "모서리 표시: 지각·조퇴는 주황, 결근은 빨강") { AttendanceMark(com.bamnat.core.model.Attendance.ABSENT) }
+                    if (payShown) {
+                        LegendRow("급여일", when {
+                            payDayOn -> "왼쪽 위 '급여' 글자: 월급이 들어오는 날"
+                            hasPay -> "월급날을 아직 넣지 않았어요 · 넣으면 그날 칸에 '급여'가 붙어요"
+                            else -> "급여를 설정하면 월급날도 넣을 수 있어요 · 그날 칸에 '급여'가 붙어요"
+                        }, action = when {
+                            payDayOn -> null
+                            hasPay -> "월급날 넣기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.PAY_PERIOD) }
+                            else -> "급여 설정하기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.PAY) }
+                        }) {
+                            CardDueMark(text = "급여")
+                        }
+                    }
+                    LegendRow("주휴 ✓", "알바: 주 15시간 이상, 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
                     }
@@ -376,7 +423,9 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                 LegendRow("알람 끔", "이 날은 알람이 울리지 않아요") { Icon(Icons.Filled.AlarmOff, null, tint = cal.alarmOff, modifier = Modifier.size(18.dp)) }
                 LegendRow("직접 바꿈", "패턴과 다르게 바꾼 날") { Box(Modifier.size(7.dp).clip(CircleShape).background(cal.changed)) }
             }
-            LegendRow("메모", "메모가 있는 날") { ColorDot(cal.memoDot, size = 7.dp) }
+            LegendRow("메모", "메모가 있는 날 · 설정에서 켜면 칸 아래에 메모 첫 글자") { ColorDot(cal.memoDot, size = 7.dp) }
+            LegendRow("쓴 돈", "칸 아래 빨간 숫자: 그날 가계부에 적은 지출 (켜 둔 경우)") { Text("3만", color = cal.expense, fontWeight = FontWeight.Bold, style = NumberStyle) }
+            LegendRow("음력", "날짜 밑 작은 글자 (켜 둔 경우)") { Text("9.15", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
             Text(
                 when {
                     focus == CalendarFocus.JOBS && !shifts -> "날짜를 길게 누르면 그날 일감이나 메모를 바로 적을 수 있어요. 목록으로 보면 한 달 일감이 차례로 보여요."
@@ -390,16 +439,20 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
 }
 
 @Composable
-private fun LegendRow(title: String, text: String, mark: @Composable () -> Unit) {
+private fun LegendRow(title: String, text: String, action: Pair<String, () -> Unit>? = null, mark: @Composable () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics(mergeDescendants = true) {},
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).then(if (action == null) Modifier.semantics(mergeDescendants = true) {} else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(52.dp), contentAlignment = Alignment.Center) { mark() }
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // 1.38 통합 8차: a mark that is off opens the place it is turned on, in one tap.
+        action?.let { (label, go) ->
+            androidx.compose.material3.TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
         }
     }
 }

@@ -263,9 +263,10 @@ class TakeHomeYearTest {
         org.junit.Assert.assertEquals(90_000L, pension(2_000_000, java.time.LocalDate.of(2025, 5, 1)))
     }
 
-    @Test fun careKeepsTheLastKnownShareUntilFixed() {
+    // [P3-ACC] 2027 장기요양 is now fixed (0.9994%, 2026-10-30): 107,850 × 13.90% = 14,991 → 14,990원.
+    @Test fun careUsesThe2027DecidedRate() {
         val d = com.bamnat.core.pay.TakeHome.estimate(3_000_000, com.bamnat.core.pay.TaxMode.INSURANCE_4, on = java.time.LocalDate.of(2027, 2, 1)).deductions.toMap()
         org.junit.Assert.assertEquals(107_850L, d["건강보험"])
-        org.junit.Assert.assertEquals(14_170L, d["장기요양"])
+        org.junit.Assert.assertEquals(14_990L, d["장기요양"])
     }
 }

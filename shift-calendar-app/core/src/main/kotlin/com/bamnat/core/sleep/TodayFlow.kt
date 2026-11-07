@@ -36,7 +36,7 @@ object TodayFlow {
         NEXT,
     }
 
-    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON }
+    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP }
 
     enum class Part { WORK, SLEEP, NAP }
 
@@ -66,6 +66,8 @@ object TodayFlow {
         val line: String?,
         /** When the card may read differently next, so the widget can be redrawn then. */
         val changesAt: LocalDateTime,
+        /** 1.38 [SLEEP-23] For [Action.NAP], when the nap ends (its wake). */
+        val napUntil: LocalDateTime? = null,
     )
 
     const val SPAN_HOURS = 24L
@@ -90,6 +92,7 @@ object TodayFlow {
         /** The detail already says the rest is short, so the rest sign need not. */
         val saysShort: Boolean = false,
         val compact: Boolean = false,
+        val napUntil: LocalDateTime? = null,
     )
 
     fun of(
@@ -105,11 +108,23 @@ object TodayFlow {
         rules: com.bamnat.core.schedule.RestRules? = null,
         /** [SLP-16] How long the user's own sleeps after night work have been, from [SleepInsights.afterNightAverage]. */
         afterNightMinutes: Long? = null,
+        /**
+         * 1.37 PC LOW (일근으로 바꾼 첫날 '잘 시간' 카드가 교대 시절 야간 기록 때문에 경고): the day the kind of work last changed.
+         * The work before it was another job's, so neither the sleep after it nor the rest between counts.
+         */
+        since: LocalDate? = null,
     ): Card {
         val today = now.toLocalDate()
         val end = now.plusHours(SPAN_HOURS)
         val t = Words(today)
-        val plan = SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(2), alarmsOn, targetMinutes, commuteMinutes)
+        val plan = if (since == null || !since.isAfter(today.minusDays(1))) {
+            SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(2), alarmsOn, targetMinutes, commuteMinutes)
+        } else {
+            // Changed today: the plan starts on the day itself, with nothing of the night before.
+            val dates = generateSequence(minOf(since, today)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(3)) }.toList()
+            SleepSchedule.of(dates.map(resolver::resolve), if (alarmsOn) dates.flatMap { AlarmPlanner.alarmsOn(resolver, it) } else emptyList(),
+                targetMinutes, commuteMinutes)
+        }
         val work = plan.work
         val next = work.firstOrNull { it.from.isAfter(now) }
             ?: (4L..LOOKAHEAD_DAYS).firstNotNullOfOrNull { SleepSchedule.work(resolver.resolve(today.plusDays(it))).firstOrNull() }
@@ -209,7 +224,7 @@ object TodayFlow {
             }
             plan.naps.firstOrNull { n -> !now.isBefore(n.from.minusMinutes(PROMPT_MINUTES)) && now.isBefore(n.to) && !slept(n.from, n.to) }?.let { n ->
                 return@run Pick(State.NAP, "${t.hm(n.from)} 낮잠 ${n.minutes}분", "첫 야간 전 낮잠 시간이에요 · ${t.hm(n.to)}엔 일어나요",
-                    line = "낮잠 ${t.span(n.from, n.to)}")
+                    action = Action.NAP, actionDate = n.to.toLocalDate(), line = "낮잠 ${t.span(n.from, n.to)}", napUntil = n.to)
             }
             val wokeAt = woke?.end
             val sleptMinutes = woke?.minutes ?: 0
@@ -255,9 +270,10 @@ object TodayFlow {
 
         val restSign = if (!restCheck) null else {
             val nextDate = next?.date?.takeIf { !it.isAfter(today.plusDays(1)) }
-            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { resolver.resolve(today.plusDays(it)) }, strictRest)
+            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { today.plusDays(it) }
+                .filter { since == null || !it.isBefore(since) }.map(resolver::resolve), strictRest)
             else RestCheck.check(generateSequence(RestCheck.lookbackFrom(today, rules)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(2)) }
-                .map(resolver::resolve).toList(), rules))
+                .filter { since == null || !it.isBefore(since) }.map(resolver::resolve).toList(), rules))
                 .filter { it.date == today || it.date == nextDate }
                 .firstOrNull { !(pick.saysShort && (it.kind == RestCheck.Kind.SHORT_REST || it.kind == RestCheck.Kind.AFTER_NIGHT)) }
                 ?.let { (if (it.date == today) "" else "${t.day(it.date)}· ") + it.text }
@@ -308,7 +324,39 @@ object TodayFlow {
             compact = pick.compact,
             line = pick.line,
             changesAt = changesAt,
+            napUntil = pick.napUntil,
         )
+    }
+
+    /**
+     * 1.38 [FLOW-06] (흐름·디자인 계획 3-3): the card's one number, the time left to what comes next: "퇴근까지" during work,
+     * "알람까지" asleep, else the next work, sleep or nap on the strip ("출근까지 2시간 10분", "잘 시간까지 40분"). None for
+     * a warning (an alarm turned off, a missed wake tap), which leads with its own words, or when nothing comes in 24 hours.
+     */
+    data class Countdown(val label: String, val minutes: Long) {
+        /** "2시간 10분", "2시간", "40분", or "곧" under a minute. */
+        val time: String get() = when {
+            minutes < 1 -> "곧"
+            minutes < 60 -> "${minutes}분"
+            minutes % 60 == 0L -> "${minutes / 60}시간"
+            else -> "${minutes / 60}시간 ${minutes % 60}분"
+        }
+    }
+
+    fun countdown(card: Card): Countdown? {
+        val now = card.from
+        fun left(t: LocalDateTime) = java.time.Duration.between(now, t).toMinutes()
+        return when (card.state) {
+            State.ALARM_OFF, State.FORGOT_WAKE -> null
+            State.SLEEPING -> card.alarms.firstOrNull()?.let { Countdown("알람까지", left(it)) }
+            else -> {
+                val working = card.segments.firstOrNull { it.part == Part.WORK && !it.from.isAfter(now) && it.to.isBefore(card.to) }
+                if (working != null) Countdown("퇴근까지", left(working.to))
+                else card.segments.firstOrNull { it.from.isAfter(now) }?.let { n ->
+                    Countdown(when (n.part) { Part.WORK -> "출근까지"; Part.SLEEP -> "잘 시간까지"; Part.NAP -> "낮잠까지" }, left(n.from))
+                }
+            }
+        }?.takeIf { it.minutes >= 0 }
     }
 
     /** Times and days as the card says them. */

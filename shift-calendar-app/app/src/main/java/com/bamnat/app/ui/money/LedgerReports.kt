@@ -121,9 +121,9 @@ fun LedgerReportsPane(
             gate.canTry(Feature.MONEY_STATS) -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 돈을 적은 뒤 처음 열면 그날부터 7일 무료라, 기록이 없는 지금은 아껴 둬요."
             else -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 광고 한 편으로 7일 열 수도 있어요."
         }
-        if (lead == null) LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+        if (lead == null) LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.", kani = com.bamnat.app.ui.components.KaniMood.Point)
         else Column {
-            LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+            LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.", kani = com.bamnat.app.ui.components.KaniMood.Point)
             Text(lead, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
         }

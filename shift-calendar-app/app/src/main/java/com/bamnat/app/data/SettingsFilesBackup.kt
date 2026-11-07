@@ -176,6 +176,7 @@ class SettingsFilesBackup(
             Part("calendar_start"),
             Part("leave_hire"), // [LEAVE-14]
             Part("pro_trials"), // [MON-13]
+            Part("work_plans"), // 1.38 팀 요금제: 무료로 쓴 첫 확정 달 (팀을 지워도, 새로 깔아도 남게)
             Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
             Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays", "folders", "placed")),
         )
@@ -188,6 +189,9 @@ class SettingsFilesBackup(
             "hideAmounts" to "금액 가리기는 이 휴대폰을 남에게 보일 때 쓰는 것",
             "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
             "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",
+            "sleepAuto" to "잠 자동으로 잡기(활동 인식 권한)는 새 휴대폰에서 다시 켜요",
+            "sleepDnd" to "방해 금지 접근은 새 휴대폰에서 다시 허용해요",
+            "healthWrite" to "헬스 커넥트 쓰기 허용은 새 휴대폰에서 다시 물어요",
             "previewTier" to "개발용 등급 미리 보기",
             "swapCoversAnswered" to "옛 대근 고치기 질문, 복원한 기록에는 다시 물어요",
             "reviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
@@ -207,6 +211,14 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 1.38 [P3-X-08] 신고·지급 '했어요' 표시: 알림 목록이라 복원 뒤엔 지난 일이 길어야 일주일 다시 보여요.
+            "boss_filed" to "다가올 신고·지급에서 '했어요'를 누른 것, 이 휴대폰의 것",
+            // 1.38 [P3-L-15] 병동 전체 표 링크와 고치는 열쇠: 복원 뒤엔 리더가 한 번 눌러 새로 만들어요(옛 주소는 그 달 끝 60일 뒤 저절로 지워져요).
+            "team_board_links" to "병동 전체 표 링크와 그 고치는 열쇠, 이 휴대폰의 것",
+            // 1.38 [STM-06] 밤낮 재료: 광고로 연 묶음(30일)과 재료 표시, 이 휴대폰에서 본 광고의 것.
+            "studio_materials" to "광고로 30일 연 재료 묶음과 재료 표시, 이 휴대폰의 것",
+            // 1.38 [EASE-29] 홈 화면 위젯 목록에 내 근무 그림을 올린 날: 이 휴대폰의 런처 일이라 옮기지 않아요.
+            "widget_previews" to "홈 화면 위젯 목록에 내 근무 그림을 올린 날(하루 한 번), 이 휴대폰의 것",
             // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.
             "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
@@ -248,12 +260,19 @@ class SettingsFilesBackup(
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
+            "alarm_guard" to "알람 지킴이가 오늘 알린 문제(하루 한 번 알리기 위한 표시)일 뿐이에요", // [ALRM-27]
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             // [ALRM-21] 1.35.
             "alarm_soon" to "‘이번 알람 끄기’는 이 휴대폰에 곧 울릴 알람 하나의 것",
             "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
             "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
+            // 1.38 [SLEEP-01] 휴대폰이 본 잠 조각·끈 알람·믿음 횟수는 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요.
+            "sleep_dnd" to "밤낮이 켠 방해 금지 표시는 이 휴대폰의 것",
+            "sleep_auto" to "자동으로 잡은 잠 조각은 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요",
+            "sleep_record" to "지난밤 측정 요약(배터리 사용량)은 이 휴대폰의 것, 소리 사건은 수면 기록으로 가요",
+            "sleep_challenge" to "회복 도전 시작일은 이 휴대폰의 것, 새 휴대폰에서 다시 시작해요",
+            "smart_wake" to "깨우는 구간에서 일찍 울린 알람 표시는 이 휴대폰에서 울린 것",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",
             "calendar_import:chosen" to "고른 휴대폰 캘린더 번호는 이 휴대폰의 것",
             "launch_config" to "회사 서버가 알려 주는 출시 설정, 새 휴대폰이 다시 받아요",
@@ -293,6 +312,10 @@ class SettingsFilesBackup(
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
             "recipe_remix_seen" to "내 판마다 고쳐 만든 판을 이 휴대폰에서 본 수, 새로 생긴 것만 점으로 알리려고 (LIN-04)",
             "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",
+            // 1.38 갈래8 [LEDH-24][LEDH-29][LEDH-14]: what this phone already showed or took in (the switches are in settings).
+            "bamnat_money_first_fill" to "가계부 ‘첫날 채우기’ 카드를 넘긴 것, 이 휴대폰에서 본 만큼",
+            "bamnat_shift_preview" to "근무 전 한 줄 예고를 마지막으로 알린 날, 같은 날 두 번 알리지 않으려고",
+            "bamnat_watch_money" to "워치에서 적은 돈 최근 50건의 번호, 같은 것을 두 번 적지 않으려고",
         )
     }
 }

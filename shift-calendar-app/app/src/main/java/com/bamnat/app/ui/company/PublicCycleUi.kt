@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -78,11 +79,21 @@ internal fun span(start: LocalTime, end: LocalTime): String {
     return "${t(start)}~${t(end)}"
 }
 
-/** "주간 07~19 · 야간 19~07" with "(흔한 시간)" when the source gave only a length. */
+/**
+ * "주간 07~19 · 야간 19~07" with "(흔한 시간)" when the source gave only a length. When it gave some shifts' hours and not
+ * the others' (상대지구대: 야간 17~08 only), the source's come first and only the rest say they are filled in
+ * (012815b6 PC 1차: "주간 07~19·야간 17~08 (흔한 시간)" read as if the 야간 were made up too).
+ */
 internal fun shiftsLine(c: PublicCycle, codes: String = c.codes): String {
     val shifts = if (codes.isEmpty()) c.shifts else c.shiftsFor(codes)
     if (shifts.isEmpty()) return "근무 시간은 공개 자료에 없어요"
-    return shifts.joinToString(" · ") { "${it.name} ${span(it.start, it.end)}" } + if (shifts.any { it.usual }) " (흔한 시간)" else ""
+    fun line(list: List<com.bamnat.core.plaza.CycleShift>) = list.joinToString(" · ") { "${it.name} ${span(it.start, it.end)}" }
+    val (filled, given) = shifts.partition { it.usual }
+    return when {
+        filled.isEmpty() -> line(given)
+        given.isEmpty() -> line(filled) + " (흔한 시간)"
+        else -> line(given) + " · " + line(filled) + " (" + filled.joinToString("·") { it.name } + ": 출처에 없어 채운 시간)"
+    }
 }
 
 /**
@@ -98,6 +109,10 @@ fun PublicSourceLine(c: PublicCycle, modifier: Modifier = Modifier, link: Boolea
         StatusChip(PublicCycles.BADGE, Tone.QUIET)
         StatusChip("신뢰도 ${c.trustLine}", if (c.weak) Tone.WAIT else Tone.QUIET)
         if (c.asOf.isNotEmpty()) Text("시점 ${c.asOf}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [CYC-10] 1.38: an old source says so, so no one takes a 2004 article for today's way.
+        PublicCycles.yearsOld(c, com.bamnat.core.time.Today.date())?.takeIf { it >= OLD_YEARS }?.let { y ->
+            StatusChip("${y}년 전 자료 · 지금과 다를 수 있어요", Tone.WAIT)
+        }
         if (link && c.source.isNotEmpty()) {
             TextButton(onClick = { runCatching { uri.openUri(c.source) } }, modifier = Modifier.heightIn(min = 48.dp)) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
@@ -107,6 +122,26 @@ fun PublicSourceLine(c: PublicCycle, modifier: Modifier = Modifier, link: Boolea
         }
     }
 }
+
+/**
+ * 012815b6 PC 1차 ("창을 아래로 쓸면 친 글자와 고른 칩이 사라져요"): what was being looked for in the public rows, kept while
+ * the app runs, so a search closed by mistake opens where it was. The name lives in [CompanyFindViewModel]'s query.
+ */
+internal object PublicBrowse {
+    var form: String? = null
+    var group: String? = null
+    var query: String = ""
+    var at: Long = 0L
+
+    /** The name typed last, if the search was left a short while ago. */
+    fun recentQuery(now: Long = com.bamnat.core.time.Today.millis()): String = if (now - at <= KEEP_MS) query else ""
+    fun keep(q: String, now: Long = com.bamnat.core.time.Today.millis()) { query = q; at = now }
+    fun reset() { form = null; group = null; query = ""; at = 0L }
+    private const val KEEP_MS = 10 * 60 * 1000L
+}
+
+/** [CYC-10] A source this many years old or more is marked as old. */
+private const val OLD_YEARS = 5
 
 /** [SPAT-02] One public row in a list: company · 사업장, the form and order, the shifts, and where it comes from. */
 @Composable
@@ -153,25 +188,59 @@ fun PublicCycleSection(
     limit: Int = 8,
     browse: Boolean = false,
     title: Boolean = true,
+    /** [CYC-09] '우리 회사 근무표 올리기' at the end of the list. */
+    upload: Boolean = true,
 ) {
-    var form by rememberSaveable { mutableStateOf<String?>(null) }
-    var industry by rememberSaveable { mutableStateOf<String?>(null) }
+    // [CYC-09] 1.38: an 업종 묶음 (소방, 병원·요양…) in place of the 70 raw 업종 words. 012815b6 PC 1차: the chip picked stays
+    // when the search is closed and opened again ([PublicBrowse]), as the name typed does.
+    var form by rememberSaveable { mutableStateOf(PublicBrowse.form) }
+    var group by rememberSaveable { mutableStateOf(PublicBrowse.group) }
+    LaunchedEffect(form, group) { PublicBrowse.form = form; PublicBrowse.group = group }
+    // 012815b6 PC 1차: with a chip picked the 25 chips fold to that one, so its rows come right under it.
+    var allChips by rememberSaveable { mutableStateOf(false) }
+    val folded = !allChips && (form != null || group != null)
     var more by rememberSaveable(query) { mutableStateOf(false) }
     var open by remember { mutableStateOf<PublicCycle?>(null) }
-    val hits = remember(query, form, industry) { PublicCycles.search(query, industry, form) }
+    var uploading by rememberSaveable { mutableStateOf(false) }
+    // 1.38 통합 8차: the sheet opened by '우리 회사 근무표 올리기' puts the table up first; the user's calendar only when asked.
+    var uploaded by remember { mutableStateOf(false) }
+    val hits = remember(query, form, group) { PublicCycles.search(query, form = form, group = group) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (browse && query.trim().length < 2) {
             Text("근무형태로 찾기", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                PublicCycles.forms.take(6).forEach { (key, name) ->
-                    FilterChip(selected = form == key, onClick = { form = if (form == key) null else key; industry = null }, label = { Text(name) })
+            // [CYC-10] 1.38 순서로 찾기.
+            Text("회사 이름 대신 ‘주야비휴’, ‘당비비’처럼 근무 순서를 써도 찾아요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val groups = remember { com.bamnat.core.plaza.IndustryGroups.counts(PublicCycles.all) }
+            val pickForm = { key: String -> form = if (form == key) null else key; group = null; allChips = false }
+            val pickGroup = { key: String -> group = if (group == key) null else key; form = null; allChips = false }
+            if (folded) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically) {
+                    PublicCycles.forms.firstOrNull { it.first == form }?.let { (key, name) ->
+                        FilterChip(selected = true, onClick = { pickForm(key) }, label = { Text(name) })
+                    }
+                    groups.firstOrNull { it.first.key == group }?.let { (g, n) ->
+                        FilterChip(selected = true, onClick = { pickGroup(g.key) }, label = { Text("${g.name} $n") })
+                    }
+                    TextButton(onClick = { allChips = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 근무형태·업종 보기") }
+                }
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    PublicCycles.forms.take(6).forEach { (key, name) ->
+                        FilterChip(selected = form == key, onClick = { pickForm(key) }, label = { Text(name) })
+                    }
+                }
+                Text("업종으로 찾기", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    groups.forEach { (g, n) ->
+                        FilterChip(selected = group == g.key, onClick = { pickGroup(g.key) }, label = { Text("${g.name} $n") })
+                    }
                 }
             }
-            Text("업종으로 찾기", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                PublicCycles.industries.take(8).forEach { i ->
-                    FilterChip(selected = industry == i, onClick = { industry = if (industry == i) null else i; form = null }, label = { Text(i) })
-                }
+            // [CYC-09] One line on how the picked 업종's work usually goes.
+            com.bamnat.core.plaza.IndustryGroups.byKey(group)?.let { g ->
+                Text(g.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (hits.isNotEmpty()) {
@@ -188,10 +257,25 @@ fun PublicCycleSection(
             shown.forEach { c -> PublicCycleCard(c, onClick = { open = c }) }
             if (hits.size > shown.size) TextButton(onClick = { more = true }) { Text("공개 자료 ${hits.size - shown.size}곳 더 보기") }
         }
+        // [CYC-09][CYC-03] 1.38: always at the end of the list, the way to add one's own company when it is not here (or wrong).
+        if (upload && (browse || hits.isNotEmpty())) {
+            OutlinedButton(onClick = { uploading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("우리 회사 근무표 올리기")
+            }
+        }
+    }
+    if (uploading) {
+        UploadCycleDialog(query.trim(), onDismiss = { uploading = false }) { name, formKey ->
+            uploading = false
+            uploaded = true
+            open = PublicCycles.provided(name, formKey)
+        }
     }
     open?.let { c ->
-        PublicApplySheet(c, onDismiss = { open = null }, onPay = { open = null; onPay() }, onShare = { open = null; onShare() },
-            pick = onPick?.let { p -> { codes: String -> open = null; p(c, codes) } })
+        PublicApplySheet(c, onDismiss = { open = null; uploaded = false }, onPay = { open = null; onPay() }, onShare = { open = null; onShare() },
+            pick = onPick?.let { p -> { codes: String -> open = null; p(c, codes) } }, uploadOnly = uploaded)
     }
 }
 
@@ -248,9 +332,16 @@ fun PublicApplySheet(
     pick: ((String) -> Unit)? = null,
     /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). [CALI-03] Else the screen's calendar. */
     calendar: String = LocalCompanyCalendar.current,
+    /**
+     * 1.38 통합 8차 [CYC-03] (올리기로 들어왔는데 마지막 단추가 '달력에 넣기'이고 오늘 며칠째인지도 물어요): opened by '우리 회사 근무표
+     * 올리기', the table is put up and the user's own calendar stays as it is; '내 달력에도 넣기' is the way to put it in too.
+     */
+    uploadOnly: Boolean = false,
 ) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
+    var alsoMine by rememberSaveable(cycle.id, cycle.company) { mutableStateOf(false) }
+    val upOnly = uploadOnly && pick == null && !alsoMine
     val candidates = remember(cycle) { CycleOrders.candidates(cycle) }
     var codes by rememberSaveable(cycle.id, cycle.company) { mutableStateOf(if (cycle.orderState == OrderState.NONE) "" else cycle.codes) }
     var editing by rememberSaveable(cycle.id) { mutableStateOf(false) }
@@ -259,7 +350,7 @@ fun PublicApplySheet(
     var done by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val weekly = cycle.weekly || (cycle.formKey in CycleOrders.WEEKLY_FORMS && codes.length == 7)
-    val needsToday = !weekly && codes.isNotEmpty() && pick == null
+    val needsToday = !weekly && codes.isNotEmpty() && pick == null && !upOnly
     val ready = (codes.any { it in PublicCycle.WORK } || cycle.roster) && (!needsToday || today != null)
 
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -310,11 +401,26 @@ fun PublicApplySheet(
                 }
                 if (codes.isNotEmpty() && weekly) Text("월요일부터 이 요일대로 넣어요.", style = MaterialTheme.typography.bodySmall)
             }
-            Text(if (pick != null) "시간은 다음 화면에서 고칠 수 있어요. 급여 금액은 넣지도 가져오지도 않아요."
-                else "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요. 급여 금액은 넣지도 가져오지도 않아요.",
+            Text(when {
+                    pick != null -> "시간은 다음 화면에서 고칠 수 있어요. 급여 금액은 넣지도 가져오지도 않아요."
+                    upOnly -> "근무 이름·시간·순서만 올려요. 내 달력은 그대로예요. 회사 찾기에서 같은 회사 분께 바로 보이고, 공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요."
+                    else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요. 급여 금액은 넣지도 가져오지도 않아요."
+                },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (!done) {
+        if (!done && upOnly) {
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            Button(
+                onClick = {
+                    val sent = c.leadShare.upload(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty()))
+                    if (sent) onDismiss() else error = "지금은 올릴 수 없어요. 인터넷에 연결된 뒤 다시 눌러 주세요"
+                },
+                enabled = ready,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) { Text("올리기만 할게요 (내 달력은 그대로)") }
+            TextButton(onClick = { alsoMine = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 달력에도 넣기") }
+            if (!ready) Text("순서를 먼저 골라 주세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (!done) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             Button(
                 onClick = {
@@ -325,8 +431,12 @@ fun PublicApplySheet(
                             runCatching { PublicCycleFiles.apply(c, cycle, codes, if (needsToday) today else null, calendar) }
                                 .onSuccess {
                                     done = true
+                                    // [CYC-04] 1.38 업종 기념일.
+                                    com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
                                     // [PLAZA-14] 1.27 AH: once, "이 정보를 다른 사람이 사용해도 될까요?" (AH-D6).
-                                    c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar))
+                                    val pickNow = com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty())
+                                    // 1.38 통합 8차: came to put it up, so asked even after a no to another share ask.
+                                    if (uploadOnly) c.leadShare.upload(pickNow) else c.leadShare.offer(pickNow)
                                 }
                                 .onFailure { error = "달력에 넣지 못했어요. 한 번 더 눌러 주세요" }
                             busy = false
@@ -583,4 +693,38 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: Strin
     }
     TextButton(onClick = { declined = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("아니요, 근무주기만") }
     return true
+}
+
+/**
+ * [CYC-03][CYC-09] 1.38 우리 회사 근무표 올리기: the company's name and its 근무형태, then the same sheet as a public row (order
+ * picked or made day by day, today in the cycle). Once it is on the calendar the plaza asks once whether others may use it
+ * ([com.bamnat.app.company.LeadShare]: only shifts, times and order, no name or pay); a yes reaches the admin app's 검토
+ * (제보), where a checked one can become a row of the public table ("공개 표 줄 만들기").
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (name: String, formKey: String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf(initial) }
+    var form by rememberSaveable { mutableStateOf<String?>(null) }
+    val ok = PublicCycles.norm(name).length >= 2 && form != null
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("우리 회사 근무표 올리기") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("근무 순서와 시간만 넣어요. 이름·급여는 보내지 않고, 다른 분이 써도 되는지는 달력에 넣은 뒤 한 번 물어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.material3.OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·기관 이름") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                Text("어떤 근무형태예요?", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    PublicCycles.PROVIDE_FORMS.forEach { key ->
+                        FilterChip(selected = form == key, onClick = { form = key }, label = { Text(PublicCycles.formName(key)) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { form?.let { onNext(name.trim(), it) } }, enabled = ok) { Text("순서 넣기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }

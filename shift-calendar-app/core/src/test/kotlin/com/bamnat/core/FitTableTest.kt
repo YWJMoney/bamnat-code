@@ -46,7 +46,7 @@ class FitTableTest {
         )
         for ((style, parts) in expected) assertEquals("$style", parts, FitTable.shown(FitSurface.CALENDAR_PARTS, style).joinToString(","))
         val tools = mapOf(
-            WorkStyle.SHIFT to "edit,teams,typeMonth,share,year,receive,pattern,newCalendar,customize,viewSettings,help",
+            WorkStyle.SHIFT to "edit,teams,push,leaderTeams,typeMonth,share,year,receive,pattern,newCalendar,customize,viewSettings,help", // [EASE-25] push, 1.38 leaderTeams (shown only with team.leader on)
             WorkStyle.DAY to "edit,share,year,receive,pattern,newCalendar,customize,viewSettings,help",
             WorkStyle.HOURLY to "edit,typeMonth,share,year,receive,newCalendar,customize,viewSettings,help",
             // [FIT-05] 1.36: 가족·연인 근무표는 투자·가게 달력도 받아요.

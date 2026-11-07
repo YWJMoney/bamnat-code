@@ -31,6 +31,8 @@ object WidgetRefresher {
                 MoneyWidget::class.java)
                 .any { manager.getGlanceIds(it).isNotEmpty() }
         }.getOrDefault(true)
+        // 1.38 [EASE-29] The widget list shows the user's own widgets (Android 15+, once a day), placed or not.
+        runCatching { WidgetPreviews.publish(app) }
         if (!placed) {
             if (notice) scheduleNext(app, null)
             return

@@ -141,7 +141,8 @@ internal fun CellSheet(start: CellStart, host: RuleSheetHost, onDismiss: () -> U
                     if (p != null) PremiumForm(p) { premium = it }
                     else d?.kind?.let { k ->
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            FormStep(d, k, host.snapshot, gap = null, onChangeKind = null, fromCompany = host.companyWay ?: false, kindChips = true)
+                            FormStep(d, k, host.snapshot, gap = null, onChangeKind = null, fromCompany = host.companyWay ?: false, kindChips = true,
+                                fixedOt = host.profile.wageType != com.bamnat.core.pay.WageType.HOURLY)
                         }
                     }
                 }

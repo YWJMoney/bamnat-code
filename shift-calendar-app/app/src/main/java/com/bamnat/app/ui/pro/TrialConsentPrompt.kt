@@ -48,7 +48,7 @@ fun trialPrice(sub: SubRecord, plans: List<Plan>): String =
 fun TrialConsentPrompt(c: AppContainer) {
     val pro by c.proStore.state.collectAsStateWithLifecycle()
     var closed by rememberSaveable { mutableStateOf(false) }
-    val sub = pro.sub ?: return
+    val sub = pro.askSub ?: return
     val zone = Today.zone()
     val end = sub.trialEnd(zone)
     val stage = TrialConsent.stage(sub.play(), end, pro.consentAt, Today.instant())
@@ -57,18 +57,24 @@ fun TrialConsentPrompt(c: AppContainer) {
     val plans = rememberPlans()
     val context = LocalContext.current
     val day = end.atZone(zone).toLocalDate()
-    val price = trialPrice(sub, plans)
+    val work by c.billing.work.collectAsStateWithLifecycle()
+    val kind = com.bamnat.core.tier.WorkPlanKind.ofProduct(sub.product)
+    val price = if (kind == null) trialPrice(sub, plans) else {
+        val cap = c.remoteConfig.current.workPlans.capOf(kind, sub.basePlan)
+        work.firstOrNull { it.kind == kind && it.cap == cap && it.way == com.bamnat.app.billing.WorkOffer.Way.YEARLY }?.let { "연 ${it.price}" }
+            ?: c.remoteConfig.current.workPlans.bands(kind).firstOrNull { it.cap == cap }?.let { "연 %,d원".format(it.yearly) } ?: "연 요금"
+    }
     val text = trialConsentText(day, price)
     val answer: (String) -> Unit = { a ->
         val now = Today.instant()
         // [SRV-07] Queued first, then sent: without a connection it goes at the next sync instead of being lost.
-        c.proStore.answer(a, now, com.bamnat.app.tier.PendingConsent(a, now, ProductIds.PRO, price, end, text))
+        c.proStore.answer(a, now, com.bamnat.app.tier.PendingConsent(a, now, sub.product, price, end, text))
         c.appScope.launch { c.sendConsent() }
         closed = true
     }
     AlertDialog(
         onDismissRequest = { closed = true },
-        title = { Text(if (stage == TrialConsent.Stage.LAST_DAY) "내일 체험이 끝나요" else "무료 체험이 곧 끝나요") },
+        title = { Text((kind?.let { "${it.title} " } ?: "") + if (stage == TrialConsent.Stage.LAST_DAY) "내일 체험이 끝나요" else "무료 체험이 곧 끝나요") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(text, style = MaterialTheme.typography.bodyMedium)
@@ -81,7 +87,7 @@ fun TrialConsentPrompt(c: AppContainer) {
             TextButton(onClick = {
                 answer("cancel")
                 runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ProductIds.manageUrl(context.packageName)))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(ProductIds.manageUrl(context.packageName, sub.product)))
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
             }) { Text("해지할래요") }

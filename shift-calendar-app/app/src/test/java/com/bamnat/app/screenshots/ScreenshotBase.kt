@@ -106,6 +106,8 @@ abstract class ScreenshotBase {
     fun seed() = runBlocking<Unit> {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        // A search one shot left open must not open the next shot's 회사 찾기 with its name and chips.
+        com.bamnat.app.ui.company.PublicBrowse.reset()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -830,8 +832,9 @@ abstract class ScreenshotBase {
         { it.copy(period = com.bamnat.core.pay.PayPeriod(endDay = 20, payDay = 25), rules = it.rules.copy(holidayByShiftStart = true)) }
     /** 4조 2교대 from its template, the user's own 주주휴휴야야휴휴, today the second night. */
     internal fun Screen.setupToToday() {
-        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("네, 시간이 맞아요")
-        tapText("4조 2교대 8일 (주휴야휴)"); tapText("다음", exact = true)
+        // [EASE-07] The order is picked on the times' screen (the template's usual one is in already).
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("순서가 달라요 · 다른 순서 고르기")
+        tapText("4조 2교대 8일 (주휴야휴)"); tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
     }
 
@@ -1290,12 +1293,13 @@ abstract class ScreenshotBase {
         // As the app opens it: with the way to 회사 설정 보내기.
         payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onShareWay = {}) }.invoke(this)
         // 1.27 AJ: two cards under the total ('이것만 넣으면', '명세서와 맞춰 보기') put it further down.
-        tapText("우리 회사 항목 만들기", exact = true, scrolls = 14)
-        tapText("빠지는 돈 (차감)", exact = true)
+        // [PAYX-50] 1.38: '수당 추가' is the one window, its kinds as chips.
+        tapText("수당 추가", exact = true, scrolls = 14)
+        tapText("빠지는 돈", exact = true)
         typeInto("이름 (선택)", "기숙사비")
         typeInto("한 달 금액", "50000")
         repeat(2) { settle() }
-        tapText("만들기", exact = true)
+        tapText("추가", exact = true)
         reveal("만들었어요", exact = false)
     }
 

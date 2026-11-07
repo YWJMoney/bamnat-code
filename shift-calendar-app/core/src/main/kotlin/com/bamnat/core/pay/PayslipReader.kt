@@ -86,6 +86,22 @@ data class PayslipRead(
             return abs(g - earningsSum) <= PayslipMatch.tolerance(g)
         }
 
+    /**
+     * [READ-38] 1.38 PC 10차 (사용성): what the lines read fall short of the totals the payslip states, 지급 and 공제, so the
+     * missing line can be added with its amount already in. Null on a side that adds up, states no total, or reads more
+     * than it states (a line read twice is not a gap).
+     */
+    val missingEarning: Long?
+        get() = statedGross?.let { g -> (g - earningsSum).takeIf { earnings.isNotEmpty() && it > PayslipMatch.tolerance(g) } }
+
+    val missingDeduction: Long?
+        get() {
+            val stated = lines.firstOrNull { it.role == SlipRole.DEDUCTION_TOTAL && it.amount != null }?.amount ?: return null
+            val items = lines.filter { it.role == SlipRole.DEDUCTION && it.amount != null }
+            if (items.isEmpty()) return null
+            return (stated - items.sumOf { it.amount!! }).takeIf { it > PayslipMatch.tolerance(stated) }
+        }
+
     /** [READ-07] 공제 합계: as stated, else the deductions added up. */
     val deducted: Long?
         get() = lines.firstOrNull { it.role == SlipRole.DEDUCTION_TOTAL && it.amount != null }?.amount

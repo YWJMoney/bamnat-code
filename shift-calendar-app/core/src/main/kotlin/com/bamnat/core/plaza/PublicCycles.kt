@@ -18,7 +18,15 @@ enum class CycleTrust(val label: String, val note: String) {
     LABOR("노무사이트", "노무 사이트의 교대 코드표예요"),
     COMMUNITY("커뮤니티", "한 사람의 답변이라 확인 중으로만 봐요"),
     UNION("노조 게시판", "노조 게시판 글이에요"),
+    /** [CYC-03] 1.38: a 밤낮 user sent their own roster (이름 없이) and the admin app checked it before it joined the table. */
+    REPORT("밤낮 제보", "밤낮 사용자가 보낸 근무표를 관리자가 확인했어요"),
 }
+
+/**
+ * [CYC-06] 1.38 (갈래 4와 맞춘 칸): one team of a row (1조·A조…), in the order the teams follow each other through the cycle,
+ * and [anchor], the day it is on the order's first day, only when a public source says it.
+ */
+data class CycleTeam(val name: String, val anchor: java.time.LocalDate? = null)
 
 /**
  * [SPAT-01] How sure the order is: [EXACT] the source spells it, [USUAL] the source gives a count (6근2휴, 2근2휴) and
@@ -88,7 +96,12 @@ data class PublicCycle(
     val weekly: Boolean,
     val roster: Boolean,
     val shifts: List<CycleShift>,
+    /** [CYC-06] The teams in the order they follow each other through the cycle (1조·2조…); empty when unknown. */
+    val teams: List<CycleTeam> = emptyList(),
 ) {
+    /** [CYC-07] The 업종 묶음 this row is listed under. */
+    val group: IndustryGroups.Group get() = IndustryGroups.of(industry)
+
     val hasOrder: Boolean get() = codes.isNotEmpty()
 
     val formName: String get() = PublicCycles.formName(formKey)
@@ -210,8 +223,41 @@ object PublicCycles {
             orderState = when (o.strOr("orderState", "none")) { "exact" -> OrderState.EXACT; "usual" -> OrderState.USUAL; else -> OrderState.NONE }
                 .let { if (codes.isEmpty()) OrderState.NONE else it },
             weekly = o.boolOr("weekly", false), roster = o.boolOr("roster", false), shifts = shifts,
+            teams = o.objs("teams").map { t ->
+                CycleTeam(t.str("name"), runCatching { java.time.LocalDate.parse(t.strOr("anchor", "")) }.getOrNull())
+            },
         )
     }
+
+    /** [CYC-10] The order said in its letters (주·오·야·당·비·휴, 2 to 62 of them) as codes, else null. */
+    fun orderCodes(query: String): String? {
+        val t = query.filter { !it.isWhitespace() && it != '·' && it != '-' }
+        if (t.length !in 2..CycleOrders.MAX || t.any { it !in SPOKEN }) return null
+        // A word with only one kind (휴휴) or no work is not an order anyone searches for.
+        if (t.none { it in "주오야당" }) return null
+        return t.map { SPOKEN.getValue(it) }.joinToString("")
+    }
+
+    private val SPOKEN = mapOf('주' to 'D', '오' to 'E', '야' to 'N', '당' to 'X', '비' to 'B', '휴' to 'O')
+
+    /**
+     * [codes] is [want] started on another day (주야비휴 = 야비휴주). A 비번 comes only right after a 당번·야간, so a 비 after
+     * a 비 is a day off as said: "당비비" (what 소방 says) is the table's 당·비·휴, and "당비비비" its 당·비·휴·휴.
+     */
+    fun sameRotation(codes: String, want: String): Boolean {
+        if (codes.length != want.length) return false
+        val a = offAfterOff(codes)
+        val b = offAfterOff(want)
+        return b in a + a
+    }
+
+    /** Each B whose day before (round the cycle) is also a B reads as O. */
+    private fun offAfterOff(codes: String): String =
+        String(CharArray(codes.length) { i -> if (codes[i] == 'B' && codes[(i - 1 + codes.length) % codes.length] == 'B') 'O' else codes[i] })
+
+    /** [CYC-10] How old the row's 시점 is in years by [today], when it says a year; null otherwise. */
+    fun yearsOld(c: PublicCycle, today: java.time.LocalDate): Int? =
+        Regex("""(19|20)\d{2}""").find(c.asOf)?.value?.toInt()?.let { today.year - it }
 
     /** Lower case without spaces, (주)·주식회사 and marks, so "S-OIL 온산", "에스오일" stay what they are but "(주) 예시" finds 예시. */
     fun norm(s: String): String = s.lowercase().replace("주식회사", "").replace("(주)", "").replace("㈜", "")
@@ -222,13 +268,19 @@ object PublicCycles {
      * [industry] and [form] when given. Best first: a name that starts with the query, then one that has it, then the rest.
      * Two letters at least, as the company server asks; with only a chip picked, every row of it.
      */
-    fun search(query: String, industry: String? = null, form: String? = null, rows: List<PublicCycle> = all): List<PublicCycle> {
+    fun search(query: String, industry: String? = null, form: String? = null, rows: List<PublicCycle> = all, group: String? = null): List<PublicCycle> {
         val q = query.trim()
         // AS 1.29 [SRCH-12] The rows' words from the file's index (made once), not worked out again for every letter typed.
         val b = book
         val entries = if (rows === b.cycles) b.indexLazy.value else rows.map(::Entry)
-        val pool = entries.filter { (industry == null || it.c.industry == industry) && (form == null || it.c.formKey == form) }
-        if (norm(q).length < 2) return if (industry != null || form != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
+        // [CYC-09] 1.38: or within an 업종 묶음 ([IndustryGroups]).
+        val pool = entries.filter {
+            (industry == null || it.c.industry == industry) && (form == null || it.c.formKey == form) && (group == null || it.c.group.key == group)
+        }
+        if (norm(q).length < 2) return if (industry != null || form != null || group != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
+        // [CYC-10] 1.38 순서로 찾기: "주야비휴", "당비비" typed as the order is said finds the rows with that very rotation
+        // (any day first), so someone who knows only their order, not the company's name, still lands on it.
+        orderCodes(q)?.let { want -> return pool.filter { sameRotation(it.c.codes, want) }.sortedBy { it.name }.map { it.c } }
         // "4조 2교대" is one thing when some row has it as one; "포스코 광양" two that must both be there.
         val whole = norm(q)
         val words = if (pool.any { e -> e.fields.any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
@@ -269,12 +321,7 @@ object PublicCycles {
      */
     fun provided(company: String, formKey: String): PublicCycle {
         val three = formKey in PublicCycle.THREE_FORMS
-        val codes = when (formKey) {
-            "3조1교대", "격일제" -> listOf('X')
-            "주간연속2교대" -> listOf('D', 'E')
-            "고정" -> listOf('D')
-            else -> if (three) listOf('D', 'E', 'N') else listOf('D', 'N')
-        }
+        val codes = usualWork(formKey).toList()
         return PublicCycle(
             id = "", display = company, company = company, industry = "", site = "", form = formName(formKey), formKey = formKey,
             orderText = "", timeText = "", asOf = "", trustText = "", trust = emptySet(), linkCheck = false, partner = false, source = "",
@@ -282,6 +329,17 @@ object PublicCycles {
         )
     }
 
+    /**
+     * The kinds of work a form usually has ('D''E''N' for 3교대, 'X' for 당번 forms), for a row or a first provider with no
+     * shift of its own. 1.38 통합 11차 (간호사: 경인의료재활센터병원 · 3교대를 고르면 근무가 '휴무'뿐이라 넘어가지 못해요).
+     */
+    fun usualWork(formKey: String): String = when (formKey) {
+        "3조1교대", "4조1교대", "격일제" -> "X"
+        "주간연속2교대" -> "DE"
+        "고정" -> "D"
+        else -> if (formKey in PublicCycle.THREE_FORMS) "DEN" else "DN"
+    }
+
     /** The forms a first provider picks from, in the order people most often work them. */
-    val PROVIDE_FORMS: List<String> = listOf("4조2교대", "3조2교대", "4조3교대", "3조3교대", "5조3교대", "2조2교대", "3조1교대", "격일제", "주간연속2교대", "고정")
+    val PROVIDE_FORMS: List<String> = listOf("4조2교대", "3조2교대", "4조3교대", "3조3교대", "5조3교대", "2조2교대", "3조1교대", "4조1교대", "격일제", "주간연속2교대", "고정")
 }

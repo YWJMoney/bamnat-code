@@ -117,7 +117,7 @@ import kotlinx.coroutines.launch
 internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
     "not_found" -> "볼 수 없는 프로필이에요"
     "nick_length" -> "이름은 2~12자로 정해 주세요"
-    "taken" -> "이미 다른 분이 쓰는 이름이에요"
+    "taken" -> com.bamnat.app.ui.village.VillageName.TAKEN
     "nick" -> "쓸 수 없는 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as com.bamnat.app.company.CompanyException).retryAfter ?: 86_400).let { w ->
         "오늘은 여기까지 할 수 있어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 해 주세요"
@@ -684,7 +684,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
                 if (p.following) OutlinedButton(onClick = onFollowMenu, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (p.quiet) "팔로잉 ✓ · 알림 꺼짐" else "팔로잉 ✓")
                 } else Button(onClick = { vm.follow(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("팔로우") }
-            } else Text("팔로우는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
+            } else Text("팔로우는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -939,7 +939,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                 } else TextButton(onClick = onPro) { Text("프로 꾸미기 알아보기") }
                 if (p.coverPending != null) Text("올린 그림은 운영자가 본 뒤 다른 분께 보여요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!vm.canWrite) Text("소개는 정식 출시일(11월 10일 예정)부터 저장돼요", style = MaterialTheme.typography.bodySmall)
+                if (!vm.canWrite) Text("소개는 정식 출시일부터 저장돼요", style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {

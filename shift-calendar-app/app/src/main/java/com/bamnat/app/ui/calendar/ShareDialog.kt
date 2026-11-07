@@ -153,9 +153,13 @@ fun ShareDialog(
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
     // 1.37 [SHR-31][SHR-32] 내 테마·근무 설정 in the link from 처리방침 3.11's date; before, the rows say the date once it is set.
     val lookOpen = remember { ShareContent.lookInLink(container) }
+    // 1.38 [SLEEP-11] 지금 자는 중, for the main calendar's link while `sleep.share` is on.
+    val sleepOpen = remember(calendarId) { calendarId == com.bamnat.app.data.PersonalCalendar.MAIN && ShareContent.sleepInLink(container) }
     val kitFits = remember(style) { com.bamnat.core.recipe.ShareKit.kitFits(style) }
     val lookFrom = remember {
-        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+        // 1.38: 3.11's date is not set until 1.38's release (a far placeholder), so no date is said until the owner sets it.
+        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective
+            ?.takeIf { it < com.bamnat.core.time.Today.date().plusYears(1) }?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
     }
     val setupFrom = remember {
         container.remoteConfig.config.value.calendar.of(com.bamnat.core.ops.PolicyConsent.VERSION)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "정식 출시일"
@@ -173,6 +177,7 @@ fun ShareDialog(
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
             setup = options.setup && setupOpen && employee && companyWork,
             look = options.look && lookOpen, kit = options.kit && lookOpen && kitFits,
+            sleepNow = options.sleepNow && sleepOpen,
         )
     }
     // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
@@ -380,6 +385,9 @@ fun ShareDialog(
                             else "${lookFrom}부터 링크에 함께 담을 수 있어요",
                             options.kit && lookOpen, enabled = lookOpen) { options = options.copy(kit = it) }
                     }
+                    if (sleepOpen) PartRow("지금 자는 중",
+                        "자는 동안만 ‘몇 시부터 자는 중 · 몇 시에 일어나요’ 한 줄. 잠 기록·소리는 보내지 않아요. 받는 분 앱에서만 보여요",
+                        options.sleepNow) { options = options.copy(sleepNow = it) }
                 }
             }
             val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current

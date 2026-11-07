@@ -7,11 +7,16 @@ package com.bamnat.core.model
  */
 object AlarmShift {
     const val MAX_BEFORE = 12 * 60
+    const val MAX_AFTER = 24 * 60 - 1
 
     fun move(type: ShiftType, minutes: Int): ShiftType {
         if (type.isOff || type.alarms.isEmpty() || minutes == 0) return type
         val moved = type.alarms
-            .map { it.copy(offsetMinutes = (it.offsetMinutes + minutes).coerceIn(0, MAX_BEFORE)) }
+            .map {
+                // [EASE-18] An alarm after the start (다음날 낮잠) moves too, and stays after the start.
+                if (it.offsetMinutes < 0) it.copy(offsetMinutes = (it.offsetMinutes + minutes).coerceIn(-MAX_AFTER, -1))
+                else it.copy(offsetMinutes = (it.offsetMinutes + minutes).coerceIn(0, MAX_BEFORE))
+            }
             .distinctBy { it.offsetMinutes }
         return type.copy(alarms = moved)
     }

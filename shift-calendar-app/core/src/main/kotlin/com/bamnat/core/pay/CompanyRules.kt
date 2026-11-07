@@ -140,6 +140,13 @@ data class ExtraRule(
      * 8-hour shift are all in the 150% block.
      */
     val tiersFromDayStart: Boolean = false,
+    /**
+     * 1.38 [PAYX-49] 이 일만의 시수 (월 소정근로시간으로 나누는 시간): the 통상시급 of this work is 통상임금 ÷ this many hours, not the
+     * profile's. 사용자 2026-11-06: "휴일·연장은 180시수인데 교육은 243시수라 일반 연장보다 적게 받는 경우" — the company pays 교육 on
+     * a larger divisor. Monthly pay only (시급·일급 have no divisor); null uses the profile's. The app cannot tell this from the
+     * payslip alone, so the user sets it.
+     */
+    val monthlyHours: Int? = null,
 ) {
     /** By law with nothing on top: the same as having no rule. */
     val isLegal: Boolean get() = basis == ExtraBasis.LEGAL && bonus <= 0
@@ -184,6 +191,12 @@ data class ExtraRule(
         val DEFAULT_DAY_TIERS = listOf(Tier(480, 0.0), Tier(240, 0.5))
         val DEFAULT_NIGHT_TIERS = listOf(Tier(240, 0.5), Tier(240, 0.75), Tier(240, 1.0))
 
+        /** [PAYX-49] The 시수 a kind may have: as the pay screen's 월 소정근로시간 (PayExplain 100~260), with room for 300. */
+        val HOURS_RANGE = 100..300
+
+        /** [PAYX-49] The 시수 companies use, for chips: 180 (연장·휴일 단가), 209 (주 40시간), 226·243 (토요일 유급). */
+        val HOURS_CHOICES = listOf(180, 209, 226, 243)
+
         /**
          * [EXTRA-08] The ticks that say what the law pays, to start the company's own way from:
          * 연장, 야간 and 휴일 at the premiums in force ([overtime], [night], [holiday]; 0 under 5
@@ -214,21 +227,33 @@ data class ExtraRule(
     /** The base part in words, e.g. "1회 기본급의 10% (8시간까지)". */
     fun describeBase(): String = when (basis) {
         ExtraBasis.LEGAL -> basis.label
-        ExtraBasis.HOURLY_RATE -> "통상시급 × ${PayCalculator.pct(multiplier)}"
+        ExtraBasis.HOURLY_RATE -> "통상시급${hoursText()} × ${PayCalculator.pct(multiplier)}"
         ExtraBasis.FIXED_PER_TIME -> "1회 ${won(amount)}"
         ExtraBasis.PERCENT_OF_BASE -> "1회 기본급의 ${percent(percentOfBase)}"
         ExtraBasis.FIXED_PER_HOUR -> "시간당 ${won(amount)}"
-        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}" + if (tiersFromDayStart) " (그날 첫 근무부터)" else ""
+        ExtraBasis.TIERED -> "주간 ${describeTiers(false)} · 야간 ${describeTiers(true)}" + (if (tiersFromDayStart) " (그날 첫 근무부터)" else "") + hoursText()
         ExtraBasis.UNIT -> describeUnit()
     } + (if (perTime && coverMinutes != null) " (${PayCalculator.hours(coverMinutes)}까지)" else "")
 
     /** [EXTRA-08] "8시간에 기본급의 10%", "통상시급", "1회 80,000원 (8시간까지)". */
     fun describeUnit(): String = when (unit) {
-        PayUnit.ORDINARY -> "통상시급"
+        PayUnit.ORDINARY -> "통상시급" + hoursText()
         PayUnit.BASE_SHARE -> "${PayCalculator.hours(unitMinutes)}에 기본급의 ${percent(percentOfBase)}"
         PayUnit.PER_HOUR -> "시간당 ${won(amount)}"
-        PayUnit.PER_TIME -> "1회 ${won(amount)}" + (coverMinutes?.let { " (${PayCalculator.hours(it)}까지)" } ?: "")
+        PayUnit.PER_TIME -> "1회 ${won(amount)}" + (coverMinutes?.let { " (${PayCalculator.hours(it)}까지)" } ?: "") +
+            (if (monthlyHours != null) ", 통상시급${hoursText()}" else "")
     }
+
+    /** [PAYX-49] Whether this rule's own 시수 changes anything: something in it is paid on 통상시급. */
+    val usesHourly: Boolean get() = when (basis) {
+        ExtraBasis.HOURLY_RATE, ExtraBasis.TIERED -> true
+        ExtraBasis.UNIT -> unit == PayUnit.ORDINARY || unit == PayUnit.PER_TIME
+        ExtraBasis.FIXED_PER_TIME, ExtraBasis.PERCENT_OF_BASE -> legalPremiums || coverMinutes != null
+        ExtraBasis.LEGAL, ExtraBasis.FIXED_PER_HOUR -> legalPremiums
+    }
+
+    /** [PAYX-49] " (243시간 기준)" when this work has a 시수 of its own. */
+    fun hoursText(): String = monthlyHours?.let { " (${it}시간 기준)" }.orEmpty()
 
     fun describe(): String = describeBase() +
         (if (basis == ExtraBasis.UNIT) ticked.joinToString("") { " + ${it.name.removeSuffix(" 가산")} ${percent(it.rate)}" } else "") +

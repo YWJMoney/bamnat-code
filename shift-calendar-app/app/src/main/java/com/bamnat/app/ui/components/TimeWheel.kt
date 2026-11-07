@@ -122,12 +122,13 @@ fun TimePickerDialog(
                         }
                     }
                 }
+                // PC 267560dd (큰 글자): '08:00' was cut; room under the chips as in 날짜 시간 바꾸기, and the label never wraps.
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     for (t in presets) {
-                        AssistChip(onClick = { set(t) }, label = { Text("%02d:%02d".format(t.hour, t.minute)) })
+                        AssistChip(onClick = { set(t) }, label = { Text("%02d:%02d".format(t.hour, t.minute), maxLines = 1, softWrap = false) })
                     }
                 }
             }
@@ -289,20 +290,38 @@ internal fun wheelFlingRows(velocityDpPerSecond: Float): Int {
 @Composable
 private fun rememberWheelFling(state: LazyListState, cyclic: Boolean, count: Int): FlingBehavior {
     val density = LocalDensity.current
-    return remember(state, cyclic, count, density) { WheelFling(state, density, if (cyclic) count * LOOPS - 1 else count - 1) }
+    val fling = remember(state, cyclic, count, density) { WheelFling(state, density, if (cyclic) count * LOOPS - 1 else count - 1) }
+    // 1.37 LOW (시간 바퀴): where the finger took hold, so a long swipe does not get a flick's rows on top.
+    LaunchedEffect(state, fling) {
+        state.interactionSource.interactions.collect { if (it is androidx.compose.foundation.interaction.DragInteraction.Start) fling.dragFrom = state.firstVisibleItemIndex }
+    }
+    return fling
 }
+
+/**
+ * 1.37 LOW (시간 바퀴, PC 5bbd5265 "길게 쓸면 4~6칸"): rows a flick adds after a drag that already moved [draggedRows]. The
+ * finger's own way is kept as it is; a drag of two rows or more ends where the finger let go, so a long swipe no longer
+ * runs two rows further.
+ */
+internal fun wheelFlingRowsAfterDrag(velocityDpPerSecond: Float, draggedRows: Int): Int =
+    if (kotlin.math.abs(draggedRows) >= 2) 0 else wheelFlingRows(velocityDpPerSecond)
 
 private class WheelFling(
     private val state: LazyListState,
     private val density: Density,
     private val last: Int,
 ) : FlingBehavior {
+    /** The first row in view when the latest drag began, -1 before any. */
+    var dragFrom = -1
+
     override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
         val info = state.layoutInfo
         val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
         val nearest = info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - center) } ?: return 0f
         val rowPx = with(density) { WHEEL_ROW_HEIGHT.toPx() }
-        val target = (nearest.index + wheelFlingRows(with(density) { initialVelocity.toDp().value })).coerceIn(0, last)
+        val dragged = if (dragFrom < 0) 0 else state.firstVisibleItemIndex - dragFrom
+        dragFrom = -1
+        val target = (nearest.index + wheelFlingRowsAfterDrag(with(density) { initialVelocity.toDp().value }, dragged)).coerceIn(0, last)
         // Positive scrolls toward later rows, the same sign as the velocity.
         val distance = (nearest.offset + nearest.size / 2 - center) + (target - nearest.index) * rowPx
         if (kotlin.math.abs(distance) < 0.5f) return 0f

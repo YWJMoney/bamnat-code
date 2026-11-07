@@ -57,6 +57,27 @@ export function insightViews(A) {
         <dt>지금 체험 중(서버 확인)</dt><dd>${f.trials}</dd><dt>지금 유료 구독(서버 확인)</dt><dd>${f.paid}${f.paid ? ` <span class="meta">연간 ${f.yearly ?? 0} · 월간 ${f.paid - (f.yearly ?? 0)}</span>` : ""}</dd><dt>자동 갱신 끈 구독</dt><dd>${f.ending}</dd>
         <dt>1년 이용권(쓰는 중)</dt><dd>${f.passes ?? 0}${f.passesBought ? ` <span class="meta">이 기간 ${f.passesBought}개 삼</span>` : ""}</dd></dl>
       <p class="hint">위 셋은 사용 통계, 아래는 Play 구매 확인으로 센 숫자라 서로 다를 수 있어요. 상품 비중 목표는 연간 60% · 이용권 25% · 월간 15% 안팎이에요. 이용권이 연간을 잠식하면 이용권 가격을 올려요.</p></section>`;
+    // 1.38 Phase 3 분석판: 팀·직원 요금제 by band and how the 팀·가게 features are used (동의한 휴대폰의 하루 횟수만).
+    const p3 = d.phase3;
+    const rate = (a, b) => (b ? `${Math.round((a / b) * 1000) / 10}%` : "–");
+    const phase3 = p3 ? `<section class="card wide"><h2>팀·가게 (Phase 3)</h2>
+      <div class="tiles core">
+        <div class="tile kpi"><span class="k">팀 근무표 확정</span><span class="v">${p3.team.confirms}</span><span class="d">${p3.team.confirmPhones}대 · 팀 만들기 ${p3.team.made} · 링크 ${p3.team.links}</span></div>
+        <div class="tile kpi"><span class="k">급여 대장 닫기</span><span class="v">${p3.shop.closed}</span><span class="d">${p3.shop.closePhones}대 · 명세서 ${p3.shop.slips}</span></div>
+        <div class="tile kpi"><span class="k">팀 무료→유료</span><span class="v">${rate(p3.team.paid, p3.team.confirmPhones)}</span><span class="d">유료 ${p3.team.paid} / 확정한 휴대폰 ${p3.team.confirmPhones}</span></div>
+        <div class="tile kpi"><span class="k">가게 무료→유료</span><span class="v">${rate(p3.shop.paid, p3.shop.closePhones)}</span><span class="d">유료 ${p3.shop.paid} / 대장 닫은 휴대폰 ${p3.shop.closePhones}</span></div>
+      </div>
+      <h3>요금제 구간</h3>${p3.bands.length ? `<div class="table-wrap"><table class="list nums"><thead><tr>${["구간", "월간", "연간", "체험 중", "이용권", "갱신 끔", "이 기간 시작", "이 기간 끝남"].map((h) => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody>
+        ${p3.bands.map((b) => {
+          const td = (lab, v) => `<td><span class="lab">${lab} </span>${v}</td>`;
+          return `<tr><td class="name">${esc(b.who)} ${b.cap ? `${b.cap}명` : "구간 모름"}</td>${td("월간", b.monthly)}${td("연간", b.yearly)}${td("체험 중", b.trials)}`
+            + `${td("이용권", `${b.passes}${b.passesBought ? ` <small>+${b.passesBought}</small>` : ""}`)}${td("갱신 끔", b.ending)}${td("시작", b.started)}${td("끝남", b.stopped)}</tr>`;
+        }).join("")}</tbody></table></div>`
+        : '<p class="meta">아직 팀·직원 요금제 구매가 없어요.</p>'}
+      <h3>기능 안내 → 결제</h3><dl class="kv"><dt>팀·가게 관리 열기</dt><dd>${p3.funnel.manage}</dd><dt>기능 안내 보임 → 누름</dt><dd>${p3.funnel.hintShown} → ${p3.funnel.hintOpen} (${rate(p3.funnel.hintOpen, p3.funnel.hintShown)})</dd>
+        <dt>요금제 창 → 결제 누름</dt><dd>${p3.funnel.planView} → ${p3.funnel.buyTap} (${rate(p3.funnel.buyTap, p3.funnel.planView)})</dd><dt>이 기간 새 구독·이용권</dt><dd>${p3.funnel.started}</dd><dt>파일·사진 가져오기</dt><dd>${p3.funnel.imports ?? 0}회 · ${p3.funnel.importPhones ?? 0}대</dd>
+        <dt>팀·가게 화면 오류</dt><dd>${p3.errors}</dd></dl>
+      <p class="hint">휴대폰 수는 날마다 센 합이에요(같은 휴대폰이 이틀이면 2). 구간·구독은 Play 구매 확인, 나머지는 사용 통계에 동의한 휴대폰의 하루 횟수라 서로 다를 수 있어요. 팀·가게 이름, 사람 이름, 금액은 받지 않아요.</p></section>` : "";
     const sh = d.shares;
     // [STAT-04] The share server counts views roughly (approximate), so the numbers say 대략.
     const about = (v) => (sh?.approximate !== false ? `대략 ${v}` : v);
@@ -68,7 +89,7 @@ export function insightViews(A) {
       <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
         <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></details>`;
     return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>` : "")
-      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${remoteCard()}${funnel}${shares}</div>${events}`;
+      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${remoteCard()}${funnel}${shares}${phase3}</div>${events}`;
   }
 
   /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
@@ -86,7 +107,7 @@ export function insightViews(A) {
   function gatesView() {
     const d = S.data.gates;
     if (!d) return skeleton(2);
-    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">분석 › 지표</a>로 가요.</p>
+    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">숫자 › 지표</a>로 가요.</p>
       <div class="grid two">${gatesCard(d)}${remoteCard()}</div>`;
   }
 

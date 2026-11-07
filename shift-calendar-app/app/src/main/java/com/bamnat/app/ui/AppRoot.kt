@@ -127,7 +127,6 @@ import com.bamnat.app.ui.setup.SetupHost
 import com.bamnat.app.ui.onboarding.ConsentPages
 import com.bamnat.app.ui.onboarding.NewConsentPrompt
 import com.bamnat.app.ui.setup.SetupViewModel
-import com.bamnat.app.ui.setup.SetupPaySheet
 import com.bamnat.app.ui.company.CompanyBoardScreen
 import com.bamnat.app.ui.company.CompanyBoardViewModel
 import com.bamnat.app.ui.company.CompanyDetailScreen
@@ -221,8 +220,10 @@ private object Routes {
     const val LEAVE = "leave?calendar={calendar}"
     fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
     /** [MCAL-06] How extra work is paid, in one calendar's pay; without one, the main calendar's. */
-    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}"
-    fun extraKinds(calendar: String = PersonalCalendar.MAIN) = "extra_kinds?calendar=$calendar"
+    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}&start={start}"
+    /** [PAYX-51] [start]: a kind to open at once by its name (교육), made from its ready kind when there is none. */
+    fun extraKinds(calendar: String = PersonalCalendar.MAIN, start: String? = null) =
+        "extra_kinds?calendar=$calendar" + (start?.let { "&start=" + android.net.Uri.encode(it) } ?: "")
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}&notebook={notebook}"
 
     /** [notebook]: opened from the memo tab, so a new memo goes into the notebook shown there. */
@@ -294,6 +295,10 @@ private object Routes {
     fun dutyRoster(month: java.time.YearMonth) = "duty_roster_month/$month"
     const val HEALTH_REPORT = "health_report"
     const val TEAMS = "teams"
+    /** 1.38 [P3-02] 리더 팀 근무표 (team.leader). */
+    const val LEADER_TEAMS = "leaderTeams"
+    /** 1.38 관리 화면 (팀·가게 관리), apart from the personal screens. */
+    const val MANAGE = "manage"
     const val YEAR = "year"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
@@ -379,15 +384,42 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
                     val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
+                    // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
+                    // matching start (매달 나오는 근무표) in one tap.
+                    val waitingLink by container.received.opening.collectAsStateWithLifecycle()
+                    val waitingSchedule by produceState<com.bamnat.app.share.SharedSchedule?>(null, waitingLink) {
+                        value = waitingLink?.let { id -> runCatching { com.bamnat.app.share.SharedSchedule.parse(container.shareApi.read(id).schedule) }.getOrNull() }
+                    }
+                    val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
+                    // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
+                    val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
                     // [SETUP-17] A backup, a company file or looking around first: the features pages come after the setup (as on a
                     // new phone that answers), not as '새로 생긴 기능이 있어요' over the calendar (1.37 PC 270fc15e).
                     val skip: (String) -> Unit = { k -> sizeSeen(); container.consentStore.afterSetup = true; firstStyleKey = k }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
+                    // [EASE-05] 1.38: no '밤낮을 제대로 쓰는 설정' page and no phone questions in the first setup (오늘근무 분석: 권한 창 0번);
+                    // that kind of work's notices are on quietly, and each permission is asked where it is first needed.
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = {
+                        sizeSeen()
+                        com.bamnat.app.ui.onboarding.QuietStart.apply(container, it.style)
+                        firstStyleKey = it.key
+                    }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
-                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
+                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
+                        linkWaiting = waitingLink != null, linkTitle = waitingTitle,
+                        onLinkStart = linkDraft?.let { draft -> {
+                            sizeSeen()
+                            com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
+                            container.telemetry.event("setup_link", if (draft.step == com.bamnat.core.setup.SetupStep.SUMMARY) "ready" else "times")
+                            container.setupDrafts.save(draft)
+                            // 1.38 PC 12.3: the link that started the setup is kept as a 받은 달력 (it is the team's, and follows its next
+                            // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
+                            val id = waitingLink
+                            container.received.open(null)
+                            if (id != null) rootScope.launch { runCatching { container.received.put(id, container.shareApi.read(id), mine = true) } }
+                        } })
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone
@@ -417,9 +449,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             return
         }
         false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {
-            // 1.36 W4: the recommended features and the phone's questions, once the calendar is set up.
-            ConsentPages(container, onDone = { container.consentStore.afterSetup = false }, style = settingsNow.workStyle)
-            return
+            // 1.36 W4: the recommended features once the calendar is set up. [EASE-05] 1.38: quietly, for the kind of work the
+            // backup or the company file brought; never a page over the first calendar (EASE-03).
+            LaunchedEffect(Unit) {
+                com.bamnat.app.ui.onboarding.QuietStart.apply(container, settingsNow.workStyle, keepRestored = true)
+                container.consentStore.afterSetup = false
+            }
         }
     }
 
@@ -493,6 +528,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MANAGE -> { nav.navigate(Routes.MANAGE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INV-08] An investor notice opens its calendar's 투자 tab, which opens the trade itself.
             NoticeLinks.Target.INVEST, NoticeLinks.Target.INVEST_TRADE -> {
                 // [MCAL-03] No calendar named is the main one; its 투자 tab takes the notice only once it is shown.
@@ -517,7 +553,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SLEEP -> {
+                // 1.38 [SLEEP-05] The bedtime notice's 측정 시작: the app is in front now, so the microphone may start.
+                if (NoticeLinks.payload.value == com.bamnat.app.sleep.SleepRecordService.FROM_NOTICE &&
+                    com.bamnat.app.sleep.SleepRecordService.allowed(nav.context)) com.bamnat.app.sleep.SleepRecordService.start(nav.context)
+                nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -632,7 +673,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {
-            is SettingsLink.Page, SettingsLink.Search -> {
+            is SettingsLink.Page, SettingsLink.Search, SettingsLink.Home -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.SETTINGS.route -> Unit
@@ -646,19 +687,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 if (link.go == SettingsGo.PATTERN) nav.openPattern(container, companyCalendarOf(container, null))
                 else link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
             }
-        }
-    }
-    // [J133-77] A 자영업 calendar just set up opens on its 영업일·정기휴무, once the setup screen is gone.
-    LaunchedEffect(Unit) {
-        container.pendingShopDays.collect { id ->
-            if (id == null) return@collect
-            // The kind of work is saved a moment after the setup closes: wait for it, a few seconds at most.
-            val saved = kotlinx.coroutines.withTimeoutOrNull(3_000) {
-                while (container.calendars.styleOf(id, container.settingsRepository.current.workStyle) != WorkStyle.BUSINESS) kotlinx.coroutines.delay(100)
-                true
-            }
-            container.pendingShopDays.value = null
-            if (saved == true) { kotlinx.coroutines.delay(300); nav.openPattern(container, id) }
         }
     }
     // [GUIDE-01] The checklist, a tip, the help search or 기능 켜고 끄기 opens a feature where it lives,
@@ -712,7 +740,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
         // [J133-53] A phone with no setup yet (reinstalled, data cleared) has nothing new to compare against.
         val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || !container.settingsRepository.current.setupDone
-        mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
+        val store = com.bamnat.app.data.GuideStore.get(ctx)
+        val updates = store.whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh)
+        // 1.38 갈래6: what a server switch turned on since (공유 테마, 정식 출시일), told once, on top of an update's lines if any.
+        val switched = store.switchedNew({ container.flags.on(it) }, fresh)
+        mutableStateOf(when {
+            switched.isEmpty() -> updates
+            updates.isEmpty() -> listOf(com.bamnat.core.guide.WhatsNew.Release(com.bamnat.app.BuildConfig.VERSION_CODE, "밤낮", switched))
+            else -> listOf(updates.first().copy(lines = switched + updates.first().lines)) + updates.drop(1)
+        })
     }
     // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
     val recommendOff = remember {
@@ -729,9 +765,20 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         NoticeLinks.consume(NoticeLinks.Target.WHATS_NEW)
         whatsNew.value = com.bamnat.core.guide.WhatsNew.releases.filter { it.versionCode <= com.bamnat.app.BuildConfig.VERSION_CODE }.take(1)
     }
+    // 1.38 [EASE-32] The user's own questions this version fixed, read once the update notice is up (never before: no
+    // call for a phone that never asked).
+    val fixedForMe by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), whatsNew.value.isNotEmpty()) {
+        if (whatsNew.value.isEmpty() || !container.inquiryStore.asked) return@produceState
+        value = runCatching {
+            container.inquiryStore.fixedNow(container.inquiryApi.mine(container.companyStore.device), com.bamnat.app.BuildConfig.VERSION_NAME)
+        }.getOrDefault(emptyList())
+    }
     if (whatsNew.value.isNotEmpty()) {
         val closeNew = {
+            container.inquiryStore.markThanked(fixedForMe.map { it.first })
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            com.bamnat.app.data.GuideStore.get(container.appContext).switchedSeen(
+                com.bamnat.core.guide.WhatsNew.switched.filter { (_, line) -> whatsNew.value.any { line in it.lines } }.map { it.first })
             if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
         }
@@ -742,6 +789,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
             onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
             onDismiss = closeNew,
+            thanks = fixedForMe.map { it.second },
+            onOpenAsks = { closeNew(); SettingsLinks.go(SettingsGo.INQUIRY) },
         )
     } else {
         // [MON-06][MON-10] One at a time, after what the update brought.
@@ -827,6 +876,23 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // 1.38 이 날만 빼기: undo for a day taken off a repeating memo, wherever it was taken off.
+    val lastSkipped by container.memoRepository.lastSkipped.collectAsStateWithLifecycle()
+    LaunchedEffect(lastSkipped) {
+        val skipped = lastSkipped ?: return@LaunchedEffect
+        val title = skipped.memo.title.ifBlank { skipped.memo.preview }.take(20)
+        val result = snackbar.showSnackbar(
+            message = (if (title.isBlank()) "메모를" else "‘$title’ 메모를") + " ${Fmt.monthDay(skipped.day)}에서만 뺐어요",
+            actionLabel = "되돌리기",
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            container.appScope.launch { container.memoRepository.undoSkip() }
+        } else {
+            container.memoRepository.consumeLastSkipped()
+        }
+    }
+
     // [RUL-03][RUL-04] 1.36 what a button or rule did, with 되돌리기 when it wrote.
     com.bamnat.app.logic.LogicMessageHost(container, snackbar)
     // [DRW-03] 1.37 넣었어요 · 되돌리기: a theme put on or off, a tab taken off, a rule switched on.
@@ -869,12 +935,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
             snackbar.currentSnackbarData?.dismiss()
-            val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            val r = snackbar.showSnackbar("${d.message} · 설정 › 내 근무 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
             if (r == SnackbarResult.ActionPerformed) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
         }
     }
 
-    val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
+    // 1.38 PC 확인(e6dc244a): the 설정 tab always opens on the first screen of settings (the link brings the tab up).
+    val navigateTop: (TopLevel) -> Unit = { dest -> if (dest == TopLevel.SETTINGS) SettingsLinks.home() else nav.navigateTopLevel(dest.route) }
     // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
     val startTab = rememberSaveable { home.route }
 
@@ -1024,7 +1091,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         if (showNav && topLevel != null) ShiftLookBand()
                         if (showNav && topLevel == TopLevel.CALENDAR) LookUndoBand()
                         RingingBanner()
-                        AlarmNoticeAsk()
+                        // 1.38 PC 9차 (EASE-03 '끼어드는 창 0'): the window asking to allow notifications is gone; the calendar's red alarm
+                        // line says it ("알림이 꺼져 있어 알람이 소리만 나요 · 허용") wherever an alarm comes within a week.
                         AppNavHost(
                             nav = nav,
                             container = container,
@@ -1077,20 +1145,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
         } else if (leadAsking == null) {
-            // [PAYF-02][PAYF-05] 1.29 AP: the company named in the setup is asked for while the user reads this, so the pay's
-            // first question lists its pay way at once.
+            // [EASE-03] 1.38 (오늘근무 분석: 첫 달력에 끼어드는 창 0개): no '예상 급여도 볼까요?' sheet over the first calendar. The pay
+            // is set up when the 급여 tab is first opened, where the company's pay that came with the setup waits (CompanyPayWaiting);
+            // the company named is still read ahead so that screen lists its pay way at once.
             val prefetch = rememberCoroutineScope()
             LaunchedEffect(saved) {
                 com.bamnat.app.ui.company.PayFindSearch.prefetch(container, prefetch, container.companyOf(PersonalCalendar.MAIN).find.known())
+                container.firstSetup.consumeSaved()
             }
-            SetupPaySheet(
-                companyPay = container.companyOf(PersonalCalendar.MAIN).store.pendingPay != null,
-                onNow = {
-                    container.firstSetup.consumeSaved()
-                    nav.navigate(Routes.pay()) { launchSingleTop = true }
-                },
-                onLater = { container.firstSetup.consumeSaved() },
-            )
         }
     }
 }
@@ -1183,7 +1245,7 @@ private fun AppNavHost(
                 // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
                 wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
-                onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
+                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
                 // [MCAL-01] The calendar on screen is the one these edit.
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
@@ -1212,19 +1274,10 @@ private fun AppNavHost(
             val id = entry.arguments?.getString("id").orEmpty()
             val vm = appViewModel(key = "calendar_setup_$id") { SetupViewModel(it, calendarId = id) }
             val done by vm.done.collectAsStateWithLifecycle()
-            val profile by remember(id) { container.calendars.pay(id).profile }.collectAsStateWithLifecycle()
-            // [MCAL-06] As after the first setup: work paid by the hour or month is offered its pay next.
-            val asksPay = done && container.calendars.get(id)?.let { it.ready && it.style?.usesPayEngine == true } == true &&
-                profile == null
-            LaunchedEffect(done) { if (done && !asksPay) nav.popFrom(Routes.CALENDAR_SETUP) }
+            // [MCAL-06] [EASE-03] 1.38: as after the first setup, no pay sheet once it is saved: that calendar's 급여 tab asks, with
+            // the company's pay that came with it (CompanyPayWaiting).
+            LaunchedEffect(done) { if (done) nav.popFrom(Routes.CALENDAR_SETUP) }
             SetupHost(vm)
-            if (asksPay) SetupPaySheet(
-                // [CALI-05] 1.30 BB: a coworkers' setup that came with its pay, for this calendar.
-                companyPay = remember(id) { container.companyOf(id).store.pendingPay != null },
-                onNow = { nav.navigate(Routes.pay(id)) { popUpTo(Routes.CALENDAR_SETUP) { inclusive = true }; launchSingleTop = true } },
-                onLater = { nav.popFrom(Routes.CALENDAR_SETUP) },
-                calendar = id, // [PAYG-07]
-            )
         }
         composable(Routes.CALENDARS) {
             val vm = appViewModel { CalendarsViewModel(it) }
@@ -1278,6 +1331,7 @@ private fun AppNavHost(
             val current = if (isMain) settings.workStyle else cal?.style ?: settings.workStyle
             // [UNDO-01] A calendar with records is asked first whether they stay; the answer can be taken back for 7 days.
             var asking by remember { mutableStateOf<Pair<WorkStyle, com.bamnat.app.data.RecordsTrash.Records>?>(null) }
+            var foldNames by remember { mutableStateOf<String?>(null) }
             var styleBusy by remember { mutableStateOf(false) }
             // clear: null when nothing is changed from a kind of work (the first one, or the same again).
             val apply: (WorkStyle, Boolean?) -> Unit = apply@{ style, clear ->
@@ -1289,7 +1343,7 @@ private fun AppNavHost(
                 // What it already has is kept, so switching back and forth never asks twice.
                 // [SETUP-16] 1.37 PC 122d18a0 (목록을 스크롤한 직후 '현장·프리랜서'를 누르면 형태만 바뀌고 화면이 그대로, '접어 둘까요?'도
                 // 없음): the change runs to its end on the app's own scope, so nothing on screen going away halfway cuts it; one at a time.
-                if (styleBusy) return@apply
+                if (styleBusy) { com.bamnat.app.ui.shifts.TypeFoldAsk.preanswer.value = null; return@apply }
                 styleBusy = true
                 container.appScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
                   try {
@@ -1317,6 +1371,7 @@ private fun AppNavHost(
                         calendar, style, clear,
                         when {
                             clear -> "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요"
+                            opens && style == WorkStyle.HOURLY -> "${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요 · 시급은 ‘출근·시급’ 탭에서 넣어요"
                             opens -> "${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요"
                             else -> style.changedMessage()
                         },
@@ -1344,7 +1399,12 @@ private fun AppNavHost(
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
                         style == WorkStyle.SHIFT && patternsNow.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
                         style == WorkStyle.DAY && patternsNow.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
-                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar), Routes.PAY)
+                        // 1.37 PC MED-2 사용성 제안 (알바로 바꾸자마자 급여 화면으로 넘어감): back where the change was made, its 되돌리기 in view;
+                        // the wage is the 출근·시급 tab's own first card, said in the change's line.
+                        style == WorkStyle.HOURLY && !pay -> {
+                            nav.popFrom(Routes.WORK_STYLE)
+                            if (clear == null) snackbar.showSnackbar("${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요 · 시급은 ‘출근·시급’ 탭에서 넣어요")
+                        }
                         // [TYPE-03] A shop sets its hours and regular days off next.
                         style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar), Routes.SHOP_DAYS)
                         else -> {
@@ -1361,7 +1421,12 @@ private fun AppNavHost(
                 if (current == null || style == current) apply(style, null)
                 else scope.launch {
                     val records = container.recordsTrash.records(calendar)
-                    if (records.isEmpty) apply(style, false) else asking = style to records
+                    if (records.isEmpty) apply(style, false)
+                    else {
+                        foldNames = com.bamnat.app.ui.shifts.TypeFoldAsk.foldable(container, calendar, current, style)
+                            .takeIf { it.isNotEmpty() }?.joinToString("·") { it.name }
+                        asking = style to records
+                    }
                 }
             })
             asking?.let { (style, records) ->
@@ -1370,9 +1435,10 @@ private fun AppNavHost(
                     from = current ?: style,
                     to = style,
                     records = records,
-                    onKeep = { asking = null; apply(style, false) },
-                    onClear = { asking = null; apply(style, true) },
+                    onKeep = { f -> asking = null; if (foldNames != null) com.bamnat.app.ui.shifts.TypeFoldAsk.preanswer.value = f; apply(style, false) },
+                    onClear = { f -> asking = null; if (foldNames != null) com.bamnat.app.ui.shifts.TypeFoldAsk.preanswer.value = f; apply(style, true) },
                     onDismiss = { asking = null },
+                    foldNames = foldNames,
                 )
             }
         }
@@ -1513,9 +1579,17 @@ private fun AppNavHost(
                     if (nudges.invite.value != null) inviting = true
                 }
             }
+            // 1.38 PC 12.4.1 빈틈 6 (설정 끝 길잡이 창 밑 '내 급여 값'에 같은 권유 카드가 또): the company's invitation (its sheet, or its
+            // card here on a later visit) is the one ask; the pay setup's own card does not ask the same again.
+            val inviteNow by nudges.invite.collectAsStateWithLifecycle()
+            val payMoment by vm.shareMoment.collectAsStateWithLifecycle()
+            LaunchedEffect(inviteNow != null, payMoment) {
+                if (inviteNow != null && (payMoment == com.bamnat.app.ui.company.ShareMoment.PAY || payMoment == com.bamnat.app.ui.company.ShareMoment.PAYSLIP)) vm.shareShown()
+            }
             CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
+                onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
                 top = {
@@ -1524,7 +1598,7 @@ private fun AppNavHost(
                         container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle),
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                        onFix = { nav.fixCompanySetup(it, calendar) })
+                        onFix = { nav.fixCompanySetup(it, calendar) }, hideInvite = inviting)
                     if (companyPay) {
                         // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
                         com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -1919,8 +1993,19 @@ private fun AppNavHost(
             val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
             // [CREW-04] Opened from a day's 대근 찾기, the finder starts on that day.
             val startDay = remember { NoticeLinks.payload.value?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } }
+            val flagRows by container.flags.byKey.collectAsStateWithLifecycle()
+            val leader = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
             com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
-                onOpenPattern = { nav.openPattern(container, calendar) }, startDay = startDay)
+                onOpenPattern = { nav.openPattern(container, calendar) }, startDay = startDay,
+                onOpenLeader = if (leader) ({ nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true } }) else null)
+        }
+        composable(Routes.LEADER_TEAMS) {
+            val calendar = remember { container.calendars.active.value }
+            com.bamnat.app.ui.team.LeaderTeamScreen(calendar, onBack = { nav.popFrom(Routes.LEADER_TEAMS) })
+        }
+        composable(Routes.MANAGE) {
+            val calendar = remember { container.calendars.active.value }
+            com.bamnat.app.ui.work.ManageScreen(calendar, onBack = { nav.popFrom(Routes.MANAGE) })
         }
         composable(Routes.YEAR) {
             val calendar = remember { container.calendars.active.value }
@@ -1954,10 +2039,13 @@ private fun AppNavHost(
         composable(Routes.RECOMMENDED) {
             com.bamnat.app.ui.onboarding.RecommendedScreen(container, firstStart = false, onDone = { nav.popFrom(Routes.RECOMMENDED) })
         }
-        composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.EXTRA_KINDS, arguments = listOf(
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("start") { type = NavType.StringType; nullable = true; defaultValue = null },
+        )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
-            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
+            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) }, start = entry.arguments?.getString("start"),
                 // Back to the pay screen when it opened this one, so the stack does not grow.
                 onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
         }
@@ -1974,7 +2062,8 @@ private fun AppNavHost(
         )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
-            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L)
+            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L,
+                onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } })
         }
         composable(
             Routes.PATTERN,
@@ -2065,6 +2154,9 @@ private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamna
 }
 
 /** A two-word tab name takes two lines from this text scale, each [TWO_LINE_SIZE] of the others' size in [TWO_LINE_HEIGHT] of room. */
+/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
+internal const val SCHOOLING_KIND = "교육"
+
 private const val TWO_LINE_FROM = 1.5f
 private const val TWO_LINE_SIZE = 0.8f
 private const val TWO_LINE_HEIGHT = 0.9f
@@ -2130,6 +2222,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.DUTY_ROSTER -> screen(Routes.DUTY_ROSTER)
         Place.HEALTH_REPORT -> screen(Routes.HEALTH_REPORT)
         Place.TEAMS -> screen(Routes.TEAMS)
+        Place.LEADER_TEAMS -> screen(Routes.LEADER_TEAMS)
         Place.YEAR -> screen(Routes.YEAR)
         Place.ATTENDANCE_IMPORT -> screen(Routes.ATTENDANCE_IMPORT)
         Place.COMMUTE -> screen(Routes.COMMUTE)
@@ -2172,6 +2265,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL
+    SettingsGo.MANAGE -> Routes.MANAGE
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
     SettingsGo.STUDIO_RULES -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "RULES")
@@ -2184,59 +2278,11 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO_MONEY -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MONEY")
     SettingsGo.STUDIO_MEMO -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MEMO")
     SettingsGo.STUDIO_STATS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "STATS")
+    SettingsGo.STUDIO_MANAGE -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MANAGE")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
-}
-
-/**
- * [ALRM-25] 1.36 빌드 8 (F-106: 알림을 끈 폰은 알람이 소리만 나고 화면이 안 떠요, Android가 막아요): with a shift alarm on and
- * notifications off, the app asks once (and again a week after 나중에), saying why; 알람 설정 keeps its red line.
- */
-@Composable
-private fun AlarmNoticeAsk() {
-    val context = LocalContext.current
-    val c = context.appContainer
-    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle(c.settingsRepository.current)
-    var canPost by remember { mutableStateOf(com.bamnat.app.alarm.Notifications.canPost(context)) }
-    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-        canPost = com.bamnat.app.alarm.Notifications.canPost(context)
-    }
-    val prefs = remember { context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE) }
-    var later by remember { mutableStateOf(prefs.getLong("alarm_notice_later", 0L)) }
-    // 빌드 10 (허용했다가 설정에서 다시 끄면 창이 안 떠요): '나중에' waits a week only until notifications are allowed; once they are,
-    // turning them off again asks on the next open.
-    androidx.compose.runtime.LaunchedEffect(canPost) {
-        if (canPost && later != 0L) { later = 0L; prefs.edit().remove("alarm_notice_later").apply() }
-    }
-    // 빌드 9·10 (투자 폰, 알람을 켜지 않은 알바 폰에도 '근무 알람이 울려도…' 창): only when an alarm is really set to ring.
-    val upcoming by c.alarmScheduler.upcoming.collectAsStateWithLifecycle()
-    val alarmsOn = settings.alarmsEnabled && upcoming != null
-    // 빌드 10 S11 (첫 설정 끝 '예상 급여도 볼까요?' 시트와 겹쳐요): one at a time, after the first setup's own sheets.
-    val setupSheet by c.firstSetup.saved.collectAsStateWithLifecycle()
-    val leadAsking by c.leadShare.step.collectAsStateWithLifecycle()
-    if (setupSheet != null || leadAsking != null) return
-    // 1.36 PC C3: not on the day of the first setup; the calendar's own line about it is there meanwhile.
-    if (c.firstSetup.quietToday()) return
-    // 1.36 U21: not while the user is painting days or making a look; once they are done.
-    val busy by com.bamnat.app.ui.components.HandsBusy.busy.collectAsStateWithLifecycle()
-    if (busy) return
-    if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
-    // 1.36 PC Z9 (앱을 다시 열 때마다 알림 허용 창이 또 떠요): the app left with the window up (홈, 다른 앱) never reached 나중에, so
-    // the next open asked again. Having been shown counts: not again for a day however it was left (read once, so this window stays).
-    val shownAt = remember { prefs.getLong("alarm_notice_shown", 0L) }
-    if (com.bamnat.core.time.Today.millis() - shownAt < 86_400_000L) return
-    androidx.compose.runtime.LaunchedEffect(Unit) { prefs.edit().putLong("alarm_notice_shown", com.bamnat.core.time.Today.millis()).apply() }
-    val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
-    fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }
-    AlertDialog(
-        onDismissRequest = ::putOff,
-        title = { Text("알람 화면을 띄우려면 알림 허용이 필요해요") },
-        text = { Text("알림이 꺼져 있으면 근무 알람이 울려도 화면이 뜨지 않고 소리만 나요. 잠금 화면에서 바로 끄고 다시 울림을 누르려면 알림을 허용해 주세요.") },
-        confirmButton = { TextButton(onClick = { putOff(); ask() }) { Text("허용하기") } },
-        dismissButton = { TextButton(onClick = ::putOff) { Text("나중에") } },
-    )
 }
 
 /**
@@ -2321,6 +2367,8 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         // [TOWN-02] 1.37: answers to my posts in any plaza, first thing in 마을 › 광장 (the room on screen says its own).
         if (inHub) com.bamnat.app.ui.village.NewAnswersLine(container, except = plan.room.takeIf { container.companyApi.enabled },
             onOpen = { nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true } })
+        // 1.38 [EASE-31] 밤낮 Q&A: the developer's answers to what is asked often.
+        if (inHub) com.bamnat.app.ui.village.PublicQaLine(container, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).

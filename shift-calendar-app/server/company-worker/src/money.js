@@ -12,6 +12,24 @@ export const MONEY = {
   adQuietDays: 3,
   // [MON-06] Days before a trial ends that the app asks for consent (결정 D17: day 23 of 30).
   trialAskDays: 7,
+  // 1.38 Phase 3 요금 (사용자 2026-11-05 20:22, 계획 8장): 팀·직원 요금제 bands with the prices the app shows before Play says its own
+  // (Play Console is the real price), and the free taste. The app has the same defaults and keeps them on an odd answer.
+  workPlans: {
+    team: [
+      { cap: 15, monthly: 7900, yearly: 47000, pass: 54000 },
+      { cap: 30, monthly: 9900, yearly: 59000, pass: 68000 },
+      { cap: 50, monthly: 14900, yearly: 89000, pass: 102000 },
+      { cap: 100, monthly: 19900, yearly: 119000, pass: 137000 },
+    ],
+    staff: [
+      { cap: 5, monthly: 9900, yearly: 59000, pass: 68000 },
+      { cap: 10, monthly: 14900, yearly: 89000, pass: 102000 },
+      { cap: 20, monthly: 24900, yearly: 149000, pass: 171000 },
+      { cap: 50, monthly: 49900, yearly: 299000, pass: 344000 },
+    ],
+    freeStaff: 3,
+    freeTeamMonths: 1,
+  },
   // [MON-09] A code from the developer app ties a phone to an admin for ten minutes, once; two phones each.
   linkMs: 10 * 60 * 1000,
   linkCodesPerHour: 10,
@@ -21,6 +39,9 @@ export const MONEY = {
   // 30 in a million, and the owner sees it in the log (link_guess) and makes a new code.
   linkWrongPerWindow: 30,
   phonesPerAdmin: 2,
+  // 1.37.1 [FAM-01] 가족 프로 이용권: a code the owner makes for a family member's phone, good for an hour, once.
+  familyCodeMs: 60 * 60 * 1000,
+  familyCodesPerHour: 20,
   // [MON-08] A recovery code moves passes to a new phone once.
   codesPerDay: 10,
   claimsPerHour: 10,
@@ -66,6 +87,7 @@ export async function config(env) {
   return {
     v: 1, billingLive: s.billingLive, launchedAt: launchedAt ? iso(launchedAt) : null, thanksMonths: s.thanksMonths,
     freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
+    workPlans: MONEY.workPlans,
     // [SRV-04] 공지 running now (the app picks the ones for its version) and what is switched off.
     notices: notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: s.off,
     flags: configFlags(s.store, now), policy: configPolicy(s.store), serverTime: iso(now),
@@ -182,8 +204,10 @@ export async function passes(env, dev, now) {
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
     // S 1.32 [SECX-01] previews: the flags the developer app turned on for this phone only (approved phones only).
     // The phone shows nothing about flags itself any more; the 기능 상태 card and its switches are gone.
-    admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id,
-      previews: link.status === "approved" ? previewKeys(link.previews) : [] } : null,
+    // 1.38 [FAM-02] A paused family phone is a free phone until the owner resumes it; the nickname never leaves the developer app.
+    admin: link ? (link.admin === FAMILY.id ? (link.status === "approved" ? { status: "approved", name: FAMILY.shown, owner: false, family: true, previews: [] } : null)
+      : { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id,
+        previews: link.status === "approved" ? previewKeys(link.previews) : [] }) : null,
     code: Boolean(code),
     // 1.36 [PSH-01] 프로 나눔 1인: the 프로 a buyer gave this phone, until their subscription ends.
     shared: await sharedUntil(env, dev, now),
@@ -203,9 +227,11 @@ export async function boughtUntil(env, dev, now) {
   const row = await one(env, `SELECT MAX(expiry) AS until FROM subs WHERE device = ? AND trial = 0
     AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ?`, dev, now);
   // 1.36 841: a 1년 이용권 is bought 프로 too (프로 나눔 1인). Passes stack: each adds a year from its purchase or the end before.
-  const passes = await all(env, "SELECT purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
-  let passEnd = null;
-  for (const p of passes) passEnd = Math.max(passEnd ?? p.purchased_at, p.purchased_at) + 365 * DAY;
+  // 1.38: a 팀·직원 이용권 holds 프로 too, but each product stacks on its own (a team pass does not lengthen the 프로 one).
+  const passes = await all(env, "SELECT product, purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
+  const ends = new Map();
+  for (const p of passes) ends.set(p.product, Math.max(ends.get(p.product) ?? p.purchased_at, p.purchased_at) + 365 * DAY);
+  const passEnd = ends.size ? Math.max(...ends.values()) : null;
   const best = Math.max(row?.until ?? 0, passEnd && passEnd > now ? passEnd : 0);
   return best || null;
 }
@@ -693,26 +719,29 @@ export async function linkPhone(request, env, dev, now) {
     return json({ error: "code", field: "code" }, 404);
   }
   const owner = row.admin === OWNER.id;
-  if (!owner && !(await one(env, "SELECT 1 FROM admins WHERE id = ? AND status = 'active'", row.admin))) {
+  // 1.37.1 [FAM-01] 가족 프로 이용권: approved at once, no limit on how many, until the owner cuts it.
+  const family = row.admin === FAMILY.id;
+  if (!owner && !family && !(await one(env, "SELECT 1 FROM admins WHERE id = ? AND status = 'active'", row.admin))) {
     await run(env, "DELETE FROM link_codes WHERE code = ?", body.code);
     return json({ error: "code", field: "code" }, 404);
   }
   const others = await one(env, "SELECT COUNT(*) AS n FROM admin_devices WHERE admin = ? AND device != ?", row.admin, dev);
-  if (others.n >= MONEY.phonesPerAdmin) return json({ error: "too_many", field: "code" }, 409);
-  const status = owner ? "approved" : "pending";
+  if (!family && others.n >= MONEY.phonesPerAdmin) return json({ error: "too_many", field: "code" }, 409);
+  const status = owner || family ? "approved" : "pending";
   await batch(env, [
     stmt(env, "DELETE FROM link_codes WHERE code = ?", body.code),
     stmt(env, "DELETE FROM admin_devices WHERE device = ?", dev),
     stmt(env, `INSERT INTO admin_devices (id, device, admin, admin_name, status, created_at, approved_at, seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, `d${randomId(15)}`, dev, row.admin, row.admin_name, status, now, owner ? now : null, now),
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, `d${randomId(15)}`, dev, row.admin, row.admin_name, status, now, owner || family ? now : null, now),
   ]);
-  await audit(env, now, "device_link", row.admin_name, status);
+  await audit(env, now, family ? "family_link" : "device_link", row.admin_name, status);
+  if (family) return json({ status, name: FAMILY.shown, owner: false, family: true }, 201);
   // PC 확인 7525ccff: the phone says why it was approved at once (the owner's own code), as /api/passes does with admin.owner.
   return json({ status, name: row.admin_name, owner }, 201);
 }
 
 export async function phoneList(env) {
-  const rows = await all(env, "SELECT id, admin, admin_name, status, created_at, approved_at, seen_at FROM admin_devices ORDER BY created_at DESC");
+  const rows = await all(env, "SELECT id, admin, admin_name, status, created_at, approved_at, seen_at FROM admin_devices WHERE admin != ? ORDER BY created_at DESC", FAMILY.id);
   return {
     devices: rows.map((d) => ({
       id: d.id, admin: d.admin, adminName: d.admin_name, status: d.status, createdAt: iso(d.created_at),
@@ -732,7 +761,7 @@ export function previewKeys(text) {
 /** S 1.32 [SECX-01] The phones this admin may set 미리 보기 on: every phone for the owner, else only their own. */
 export async function myPhones(env, actor) {
   const rows = actor.owner
-    ? await all(env, "SELECT id, admin, admin_name, status, previews, seen_at FROM admin_devices ORDER BY created_at DESC")
+    ? await all(env, "SELECT id, admin, admin_name, status, previews, seen_at FROM admin_devices WHERE admin != ? ORDER BY created_at DESC", FAMILY.id)
     : await all(env, "SELECT id, admin, admin_name, status, previews, seen_at FROM admin_devices WHERE admin = ? ORDER BY created_at DESC", actor.id);
   const edit = actor.owner || (actor.perms?.flags === "edit");
   return {
@@ -765,8 +794,76 @@ export async function setPhone(env, id, action, now) {
   if (!d) return json({ error: "not_found" }, 404);
   if (action === "approve") await run(env, "UPDATE admin_devices SET status = 'approved', approved_at = ? WHERE id = ?", now, id);
   else await run(env, "DELETE FROM admin_devices WHERE id = ?", id);
-  await audit(env, now, action === "approve" ? "device_approve" : "device_remove", d.admin_name);
-  return json(await phoneList(env));
+  await audit(env, now, d.admin === FAMILY.id ? "family_remove" : action === "approve" ? "device_approve" : "device_remove", d.admin_name);
+  return json(d.admin === FAMILY.id ? await familyList(env, now) : await phoneList(env));
+}
+
+// ---- 1.37.1 [FAM-01] 가족 프로 이용권 (사용자 2026-11-07) ----
+// The owner gives 프로 to family phones for free, with no end date, and can cut any of them at any time. It rides the admin
+// phone link (link_codes and admin_devices under the made-up admin id 'family'), so the phone needs no new version: the code
+// goes in 설정 › 프로 › '관리자 연결' as an admin's does. A family phone is approved at once and sees no 미리 보기 flags.
+
+// 1.38 [FAM-02] (사용자 2026-11-07): the owner pauses and resumes a family phone, and names it with a nickname only the
+// developer app shows; the phone is told only "가족".
+export const FAMILY = { id: "family", nameMax: 20, shown: "가족" };
+
+const familyNick = (v) => String(v ?? "").replace(/[\u0000-\u001f<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, FAMILY.nameMax);
+
+/** The owner makes a one-hour code for one family member's phone. */
+export async function familyCode(request, env, now) {
+  const body = await readJson(request, 1024);
+  const name = familyNick(body.name);
+  if (!name) refuse("name", "name");
+  { const limitHit = await overLimit(env, now, [["device", "familycode", MONEY.familyCodesPerHour, HOUR]]); if (limitHit) return limitHit; }
+  let code;
+  for (let i = 0; i < 5 && !code; i++) {
+    const c = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+    if (!(await one(env, "SELECT 1 FROM link_codes WHERE code = ? AND expires > ?", c, now))) code = c;
+  }
+  if (!code) return json({ error: "busy" }, 503);
+  await batch(env, [
+    stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
+    stmt(env, "INSERT INTO link_codes (code, admin, admin_name, expires) VALUES (?, ?, ?, ?)", code, FAMILY.id, name, now + MONEY.familyCodeMs),
+  ]);
+  await audit(env, now, "family_code", name);
+  return json({ code, name, expiresAt: iso(now + MONEY.familyCodeMs) }, 201);
+}
+
+/** The family phones (프로 until cut) and the codes not used yet. */
+export async function familyList(env, now) {
+  const [phones, codes] = await Promise.all([
+    all(env, "SELECT id, admin_name, status, created_at, approved_at, seen_at FROM admin_devices WHERE admin = ? ORDER BY created_at DESC", FAMILY.id),
+    all(env, "SELECT code, admin_name, expires FROM link_codes WHERE admin = ? AND expires > ? ORDER BY expires DESC", FAMILY.id, now),
+  ]);
+  return {
+    phones: phones.map((d) => ({ id: d.id, name: d.admin_name, paused: d.status !== "approved", createdAt: iso(d.created_at),
+      since: d.approved_at ? iso(d.approved_at) : null, seenAt: d.seen_at ? iso(d.seen_at) : null })),
+    codes: codes.map((c) => ({ code: c.code, name: c.admin_name, expiresAt: iso(c.expires) })),
+  };
+}
+
+/** 1.38 [FAM-02] The owner pauses or resumes a family phone, or gives it a new nickname (POST /family/<id> {do, name}). */
+export async function familySet(request, env, id, now) {
+  const body = await readJson(request, 1024);
+  const d = await one(env, "SELECT * FROM admin_devices WHERE id = ? AND admin = ?", id, FAMILY.id);
+  if (!d) return json({ error: "not_found" }, 404);
+  if (body.do === "pause" || body.do === "resume") {
+    const status = body.do === "pause" ? "paused" : "approved";
+    await run(env, "UPDATE admin_devices SET status = ?, approved_at = ? WHERE id = ?", status, status === "approved" ? now : d.approved_at, id);
+    await audit(env, now, body.do === "pause" ? "family_pause" : "family_resume", d.admin_name);
+  } else if (body.do === "name") {
+    const name = familyNick(body.name);
+    if (!name) refuse("name", "name");
+    await run(env, "UPDATE admin_devices SET admin_name = ? WHERE id = ?", name, id);
+    await audit(env, now, "family_name", d.admin_name, name);
+  } else refuse("do", "do");
+  return json(await familyList(env, now));
+}
+
+/** The owner takes back a code not used yet. */
+export async function familyCodeDelete(env, code, now) {
+  await run(env, "DELETE FROM link_codes WHERE code = ? AND admin = ?", code, FAMILY.id);
+  return json(await familyList(env, now));
 }
 
 // ---- 구매 확인과 체험 전환 동의 [MON-03][MON-06] ----
@@ -867,7 +964,7 @@ export async function purchase(request, env, dev, now) {
   if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
   if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
   if (!playReady(env)) return json({ verified: false });
-  if (body.product === PASS_PRODUCT) return yearPass(env, dev, body.token, now);
+  if (body.product === PASS_PRODUCT || WORK_PASS.test(body.product)) return yearPass(env, dev, body.token, now, body.product);
   const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
   const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
   // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
@@ -888,13 +985,15 @@ export async function purchase(request, env, dev, now) {
   hash, dev, body.token, body.product, s.basePlan, s.state, s.expiry, s.trial ? 1 : 0, s.autoRenew ? 1 : 0, now, now);
   const row = await one(env, "SELECT consent_at, stopped_at FROM subs WHERE hash = ?", hash);
   return json({
-    verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
+    verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew, basePlan: s.basePlan || null,
     acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
   });
 }
 
 /** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
 export const PASS_PRODUCT = "bamnat_pro_pass_1y";
+/** 1.38 Phase 3 요금: a 팀·직원 요금제 band's 1년 이용권 (bamnat_team_pass_15, bamnat_staff_pass_5 …), checked the same way. */
+export const WORK_PASS = /^bamnat_(team|staff)_pass_[0-9]{1,4}$/;
 const PASS_DAYS = 365;
 
 /** products.get read the way the app needs it: purchaseState 0 bought, 1 cancelled (refunded), 2 pending. */
@@ -912,21 +1011,21 @@ export function readPass(p) {
  * 1.36 841: the 1년 이용권 as Play says, kept by its token's hash with the phone that showed it (the same rule as a subscription:
  * a token tied to another phone that still checks in stays there). The app stacks the year itself; a refund says EXPIRED.
  */
-async function yearPass(env, dev, token, now) {
-  const p = readPass(await playCall(env, "GET", `/purchases/products/${PASS_PRODUCT}/tokens/${encodeURIComponent(token)}`));
+async function yearPass(env, dev, token, now, product = PASS_PRODUCT) {
+  const p = readPass(await playCall(env, "GET", `/purchases/products/${product}/tokens/${encodeURIComponent(token)}`));
   const hash = (await sha256(`pass|${token}`)).slice(0, 40);
   const bound = await one(env, "SELECT device, checked_at FROM year_passes WHERE hash = ?", hash);
   if (bound && bound.device !== dev) {
     if (now - bound.checked_at < REBIND_AFTER) {
-      await audit(env, now, "purchase_rebind_refused", PASS_PRODUCT, hash.slice(0, 8));
+      await audit(env, now, "purchase_rebind_refused", product, hash.slice(0, 8));
       return json({ verified: false });
     }
-    await audit(env, now, "purchase_rebind", PASS_PRODUCT, hash.slice(0, 8));
+    await audit(env, now, "purchase_rebind", product, hash.slice(0, 8));
   }
   if (!p.purchasedAt) return json({ verified: false });
-  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at`,
-  hash, dev, p.orderId, p.state, p.purchasedAt, now, now);
+  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at, product = excluded.product`,
+  hash, dev, p.orderId, p.state, p.purchasedAt, now, now, product);
   return json({ verified: true, state: p.state, purchasedAt: iso(p.purchasedAt), expiry: iso(p.purchasedAt + PASS_DAYS * DAY),
     trial: false, autoRenew: false, acknowledged: p.acknowledged });
 }

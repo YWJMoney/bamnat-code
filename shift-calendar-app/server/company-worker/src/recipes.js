@@ -137,6 +137,8 @@ export const PART_IDS = [
   // [TAB-01][TAB-02] 메모 속성·보드·표
   "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
   "memo.cal", "memo.cal.cell",
+  // [MPH-06] 1.38 메모 쓰기 화면: 종이, 종이 줄, 메모 사진
+  "memo.page", "memo.page.rule", "memo.photo",
   "money.head", "money.day", "money.row", "money.amount",
   // [TAB-06] 가계부 판
   "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
@@ -1261,6 +1263,16 @@ export function withNewMakers(list, isNew, block = 10) {
   return out;
 }
 
+/** 1.38 장터 검색: a kind of work's everyday names → its style key. */
+export const STYLE_WORDS = { 교대: "SHIFT", 교대근무: "SHIFT", 일근: "DAY", 일근직: "DAY", 알바: "HOURLY", 아르바이트: "HOURLY",
+  현장: "FIELD", 자영업: "BUSINESS", 가게: "BUSINESS", 사장님: "BUSINESS", 투자: "INVEST" };
+
+/** A search box's words: split on spaces, empty ones dropped, at most 4 (a whole sentence would be 30 LIKEs). */
+export function searchWords(q) {
+  const words = String(q ?? "").trim().split(/\s+/).filter(Boolean);
+  return words.length ? words.slice(0, 4) : [];
+}
+
 async function recipeList(d, env, url) {
   const style = url.searchParams.get("style");
   const sort = SORTS.includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "hot";
@@ -1281,9 +1293,15 @@ async function recipeList(d, env, url) {
   // [RCX-32] 보여주기: the operator's showcases, newest first.
   if (sort === "showcase") where.push("r.showcase = 1");
   if (q) {
-    where.push("(r.title LIKE ? OR r.summary LIKE ? OR r.cover LIKE ? OR r.title_skel LIKE ?)");
-    const like = `%${q.replace(/[%_]/g, "")}%`;
-    args.push(like, like, like, `%${nameSkeleton(q)}%`);
+    // 1.38 (장터 그림 LOW, PC 확인: '교대 가계부'가 안 나와요): each word on its own (all must match, at most 4), and a kind of work's
+    // name also finds the works made for that kind of work, so '교대 가계부' is a 가계부 for 교대 and not the one phrase.
+    for (const w of searchWords(q)) {
+      const like = `%${w.replace(/[%_]/g, "")}%`;
+      const st = STYLE_WORDS[w];
+      where.push(`(r.title LIKE ? OR r.summary LIKE ? OR r.cover LIKE ? OR r.title_skel LIKE ?${st ? " OR (',' || r.styles || ',') LIKE ?" : ""})`);
+      args.push(like, like, like, `%${nameSkeleton(w)}%`);
+      if (st) args.push(`%,${st},%`);
+    }
   }
   // 좋은 순 and 요즘 뜨는 are worked out here from the counts (a few hundred rows a plaza); 새로 is by time.
   const rows0 = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}
@@ -1883,6 +1901,29 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     }
     const n = await releaseWaiting(d, env, now, where, args, actorName);
     return d.json({ released: n });
+  }
+  // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목으로 한 번에 숨겨요(지우지 않음, 하나씩 '보이기'로 되돌려요). dry: 몇 개인지만.
+  if (path === "/recipes/hide-titles" && method === "POST") {
+    const body = await d.readJson(request, 64 * 1024);
+    const titles = Array.isArray(body?.titles) ? body.titles.filter((t) => typeof t === "string" && t.trim()).slice(0, 300) : [];
+    if (titles.length === 0) return d.json({ error: "titles" }, 400);
+    const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    const skels = [...new Set(titles.map(nameSkeleton))];
+    const found = [];
+    for (let i = 0; i < skels.length; i += 90) {
+      const part = skels.slice(i, i + 90);
+      found.push(...await d.all(env, `SELECT code, title, state FROM recipes WHERE owner = 'operator' AND state IN ('visible', 'waiting')
+        AND title_skel IN (${part.map(() => "?").join(",")})`, ...part));
+    }
+    const known = new Set(found.map((r) => nameSkeleton(r.title)));
+    const missing = titles.filter((t) => !known.has(nameSkeleton(t)));
+    if (body.dry !== true && found.length) {
+      await d.batch(env, found.flatMap((r) => [
+        d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, r.code),
+        act(r.code, "hide", note || "판 정리"),
+      ]));
+    }
+    return d.json({ hidden: body.dry === true ? 0 : found.length, found: found.length, missing });
   }
   const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {

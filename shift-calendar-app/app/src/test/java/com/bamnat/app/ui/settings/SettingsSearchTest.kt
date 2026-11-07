@@ -33,6 +33,12 @@ class SettingsSearchTest {
         assertEquals("워치·휴대폰 수면 기록 함께 보기", first("갤럭시 워치"))
     }
 
+    /** 1.38 통합 8차 (설정 찾기 '월급날'이 월급날 없는 급여 계산 설정으로 가요): the 월급날 words go to the 월급날 itself. */
+    @Test fun paydayWordsGoToThePayday() {
+        for (q in listOf("월급날", "급여일", "월급 들어오는 날")) assertEquals(q, "월급날·정산 기간", first(q))
+        assertEquals("우리 업종 기념일", first("소방의 날"))
+    }
+
     /** [MAT-05] PC 확인 4·5차: 글꼴 finds the studio's three fonts, 앱 전체 first. */
     @Test fun fontFindsTheStudiosFonts() {
         val titles = SettingsIndex.search("글꼴").map { it.title }
@@ -214,5 +220,17 @@ class SettingsSearchTest {
         assertEquals("flagState", HelpFaq.search("결제는 언제 생겨요").first().id)
         assertEquals(null, topic.action)
         assertFalse(topic.answer.contains("알람 점검"))
+    }
+
+    /** 1.38 PC 12.5 빈틈 2: a result reads as its row does on that kind of work's page, and the old name still finds it. */
+    @Test fun lockScreenRowReadsInTheWordsOfTheWork() {
+        fun title(style: com.bamnat.core.work.WorkStyle?) =
+            SettingsIndex.entries(style = style).map { it.title }.first { it.startsWith("잠금 화면 오늘") }
+        org.junit.Assert.assertEquals("잠금 화면 오늘 근무", title(com.bamnat.core.work.WorkStyle.SHIFT))
+        org.junit.Assert.assertEquals("잠금 화면 오늘 영업", title(com.bamnat.core.work.WorkStyle.BUSINESS))
+        org.junit.Assert.assertEquals("잠금 화면 오늘 일정", title(com.bamnat.core.work.WorkStyle.INVEST))
+        val invest = SettingsIndex.entries(style = com.bamnat.core.work.WorkStyle.INVEST)
+        org.junit.Assert.assertTrue(invest.any { it.title == "모든 투자 알람 한 번에 옮기기" && "잠금 화면 오늘 근무" !in it.keywords })
+        org.junit.Assert.assertTrue(invest.any { it.title == "잠금 화면 오늘 일정" && "잠금 화면 오늘 근무" in it.keywords })
     }
 }

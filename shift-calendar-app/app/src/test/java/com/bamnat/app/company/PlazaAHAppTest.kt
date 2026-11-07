@@ -142,6 +142,25 @@ class PlazaAHAppTest {
         }
     }
 
+    /** [EASE-03] 1.38 PC 994c2328: the first setup asks on its summary (one box, never ticked), not in a window after 저장. */
+    @Test fun theSetupSharesOnlyWhenItsBoxIsTicked() = runBlocking {
+        val (fileA, _) = twoOrders()
+        withServer { base ->
+            c.companyApi = CompanyClient(base, device = { c.companyStore.device })
+            assertTrue(c.leadShare.canAsk("요약상사"))
+            // Not ticked: nothing sent, no window, and the plaza's own answer is still open.
+            c.leadShare.afterSetup(LeadShare.Pick("요약상사", fileA), ticked = false)
+            assertNull(c.leadShare.step.value)
+            assertNull(c.companyStore.autoShare.value)
+            assertTrue(c.companyApi.search("요약상사").isEmpty())
+            // Ticked: shared as the window's yes was, and the box is not shown again.
+            c.leadShare.afterSetup(LeadShare.Pick("요약상사", fileA), ticked = true)
+            assertEquals("요약상사", (step() as LeadShare.Step.Made).name)
+            assertEquals(true, c.companyStore.autoShare.value)
+            assertFalse(c.leadShare.canAsk("다른상사"))
+        }
+    }
+
     @Test fun noKeepsItOnThisCalendarAndAskingTwiceIsNot() = runBlocking {
         val (fileA, _) = twoOrders()
         withServer { base ->

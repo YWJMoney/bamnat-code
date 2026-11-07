@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Payments
@@ -196,6 +197,11 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
 
     var occupation by mutableStateOf(initial?.occupation)
     val rows = mutableStateListOf<ItemRow>()
+    /**
+     * [PAYX-50] What the one '수당 추가' window made here that is not a plain allowance row: a 기본급의 % 수당, or a rule of the
+     * company's own (정한 근무마다, 시간당, 빠지는 돈). Kept as made, on top of the rules the setup opened with.
+     */
+    val made = mutableStateListOf<MadeItem>()
     val keptBonuses = initial?.items?.filter { it.cadence == Cadence.BONUS && !it.id.startsWith("annual-") }.orEmpty()
     var bonusAnnual by mutableStateOf<Int?>(null)
     var bonusMonths by mutableStateOf(setOf(2, 4, 6, 8, 10, 12))
@@ -239,10 +245,21 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
         }
     }
 
-    fun addRow(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, fixedOvertimeMinutes: Int) {
-        rows += ItemRow("custom-" + System.currentTimeMillis(), name.trim().ifEmpty { "수당" }, cadence, ordinary, "", 0, true, amount,  // real clock: an id, not a time
-            fixedOvertimeMinutes = fixedOvertimeMinutes)
+    /** [PAYX-50] What '수당 추가' made: a plain allowance is a row like the others (its amount changed there), the rest kept as made. */
+    fun add(m: MadeItem) {
+        if (m is MadeItem.Item && !m.item.isPercent) {
+            val i = m.item
+            rows.removeAll { it.id == i.id }
+            rows += ItemRow(i.id, i.name, i.cadence, i.ordinary, "", 0, true, i.amount.entries.lastOrNull()?.value, original = i,
+                fixedOvertimeMinutes = i.fixedOvertimeMinutes)
+        } else {
+            made.removeAll { ids(it) == ids(m) }
+            made += m
+        }
     }
+
+    private fun ids(m: MadeItem) = when (m) { is MadeItem.Item -> m.item.id; is MadeItem.Rule -> m.rule.id }
+
 
     /**
      * [PAYS-04][PAYS-05] Fills the pay and allowances from a payslip read from a photo or text, and returns what it
@@ -342,7 +359,8 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 PayItem(bonusId, "정기상여", ValueTimeline(listOf(DatedValue(from, 0))), Cadence.BONUS,
                     ordinary = bonusOrdinary, months = bonusMonths, percentOfBase = a / 100.0 / bonusMonths.size)
             },
-        ) + annualItems(annual, from)
+        ) + annualItems(annual, from) + made.filterIsInstance<MadeItem.Item>().map { it.item }
+        val madeRules = made.filterIsInstance<MadeItem.Rule>().map { it.rule }
         val ids = items.map { it.id }.toSet()
         // What the setup decides leaves the 확인 필요 set; anything else in it (휴일 급여 방식, keys of a newer version) stays.
         val kept = initial?.estimatedFields.orEmpty().filterNot { key ->
@@ -375,6 +393,8 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 restDayWork = restDayWork, breakPay = breakPay,
             ),
             estimatedFields = marks,
+            customRules = (initial?.customRules.orEmpty().filterNot { r -> madeRules.any { it.id == r.id } } + madeRules)
+                .take(com.bamnat.core.pay.CustomRule.MAX),
         ).let { if (initial == null) PayPresets.firstSetup(it) else it } // [JOB-01]
     }
 
@@ -435,6 +455,8 @@ fun PayWizard(
     companyFind: Boolean = false,
     /** 1.36 PC X4: bumped by the screen's ← and back; with something changed it asks before leaving. */
     leaveAsk: Int = 0,
+    /** [PAYX-50] What an item made in '수당 추가' does to the month; null shows no amount there. */
+    effectOf: (suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?)? = null,
 ) {
     val today = remember { Today.date() }
     val s = remember {
@@ -583,7 +605,7 @@ fun PayWizard(
                             }
                         }
                         key == AMOUNT -> AmountStep(s, today, slipNote)
-                        key == ITEMS -> ItemsStep(s)
+                        key == ITEMS -> ItemsStep(s, snapshot, effectOf)
                         key == SUMMARY -> SummaryStep(s, draft, questions, range, snapshot) { go(it) }
                         else -> questions.firstOrNull { it.key == key }?.let { q ->
                             QuestionStep(q, s, snapshot, rosterHours, stake = stake?.takeIf { it.key == q.key }, showStake = preview != null && s.amountReady,
@@ -731,8 +753,9 @@ private fun WageStep(s: PaySetupState, onSlip: () -> Unit, onPick: (Wage) -> Uni
     }
     StepTitle("급여를 어떻게 받나요?", "계약서나 급여명세서에 적힌 대로 골라 주세요. 나중에 언제든 바꿀 수 있어요.")
     Wage.entries.forEach { w -> ChoiceCard(w.title, w.subtitle, s.wageChosen && s.wage == w) { onPick(w) } }
-    // Out of scope, said plainly [PAY-07].
-    Text("공무원·소방·경찰 수당은 아직 계산하지 않아요.", style = MaterialTheme.typography.bodySmall,
+    // [PAY-07] 1.38 통합 11차 (마법사는 '공무원 수당 규정으로 받아요', 여기는 '아직 계산하지 않아요'): 공무원 pay is counted since
+    // [JOB-01]; this page says where it is picked.
+    Text("공무원·경찰·소방도 계산해요. 수당 장의 직군에서 고르면 공무원 수당 규정을 따라요.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
@@ -823,7 +846,9 @@ private fun AnnualFields(s: PaySetupState) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ItemsStep(s: PaySetupState) {
+private fun ItemsStep(
+    s: PaySetupState, snapshot: ScheduleSnapshot?, effectOf: (suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?)?,
+) {
     var adding by remember { mutableStateOf(false) }
     StepTitle("받는 수당이 있나요?", "직군을 고르면 자주 받는 수당을 채워 드려요. 금액을 모르면 ‘금액 모름’으로 두세요. 합계에서 빼고 따로 알려 드려요.")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -837,9 +862,12 @@ private fun ItemsStep(s: PaySetupState) {
     PayPresets.of(s.occupation ?: Occupation.CUSTOM).note
         .takeIf { it.isNotEmpty() && s.occupation != Occupation.PART_TIME && s.occupation != Occupation.SECURITY }?.let { Hint(it) }
     s.rows.forEach { row -> ItemRowEditor(row) }
-    com.bamnat.app.ui.components.AddButton("다른 수당 넣기", onClick = { adding = true })
+    // [PAYX-50] What '수당 추가' made that is not a row: 기본급의 %, 근무마다·시간당, 빠지는 돈.
+    val shiftNames = remember(snapshot) { snapshot?.shiftTypes.orEmpty().associate { it.id to it.name } }
+    s.made.toList().forEach { m -> MadeRow(m, shiftNames) { s.made.remove(m) } }
+    com.bamnat.app.ui.components.AddButton("수당 추가", onClick = { adding = true })
     // [SETUP-03][PAYS-07] Nothing here has to be complete: the rest of the company's way has its own place later.
-    Hint("빠진 수당이 있어도 괜찮아요. 기숙사비 같은 차감이나 회사만의 수당은 설정을 마친 뒤 ‘우리 회사 항목 만들기’로 언제든 넣어요.")
+    Hint("매달·일한 날마다·정한 근무마다·시간당 수당과 기숙사비 같은 빠지는 돈까지 ‘수당 추가’ 한 곳에서 넣어요. 빠진 게 있어도 괜찮아요. 급여 화면의 ‘수당 추가’로 언제든 더해요.")
     if (s.wage == Wage.ANNUAL) {
         s.annualPay()?.let { a ->
             listOfNotNull(
@@ -854,9 +882,37 @@ private fun ItemsStep(s: PaySetupState) {
             onAnnual = { s.bonusAnnual = it }, onMonths = { s.bonusMonths = it }, onOrdinary = { s.bonusOrdinary = it },
         )
     }
-    if (adding) AddItemDialog(onDismiss = { adding = false }, allowUnknownAmount = true) { name, amount, cadence, ordinary, fixedOt ->
-        s.addRow(name, amount, cadence, ordinary, fixedOt)
-        adding = false
+    // [PAYX-50] 1.38: the same one window as the pay screen's '수당 추가', its kinds as chips.
+    if (adding) CustomItemDialog(
+        profile = s.raw(), snapshot = snapshot ?: EMPTY_SNAPSHOT, month = s.thisMonth,
+        onDismiss = { adding = false },
+        onSave = { m -> s.add(m); adding = false },
+        oneWindow = true, allowUnknownAmount = true,
+        effectOf = effectOf?.takeIf { snapshot != null } ?: NO_EFFECT,
+    )
+}
+
+private val NO_EFFECT: suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect? = { _, _, _, _ -> null }
+
+/** [PAYX-50] A setup with no calendar yet: no shifts to choose from, nothing to count. */
+private val EMPTY_SNAPSHOT = ScheduleSnapshot(emptyList(), emptyList<com.bamnat.core.model.WorkPattern>(), emptyList())
+
+/** [PAYX-50] One item made in '수당 추가' that is not an allowance row, with the way to take it out. */
+@Composable
+private fun MadeRow(m: MadeItem, shiftNames: Map<Long, String>, onRemove: () -> Unit) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(m.name, style = MaterialTheme.typography.bodyLarge)
+                Text(when (m) {
+                    is MadeItem.Rule -> m.rule.describe(shiftNames)
+                    is MadeItem.Item -> "매달 ${m.item.percentOf.label}의 ${com.bamnat.core.pay.ExtraRule.percent(m.item.percent ?: 0.0)}"
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.IconButton(onClick = onRemove) {
+                Icon(Icons.Filled.Close, "‘${m.name}’ 빼기")
+            }
+        }
     }
 }
 

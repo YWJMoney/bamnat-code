@@ -385,6 +385,8 @@ object PayCodec {
             .put("from", w.from?.toString() ?: JSONObject.NULL).put("to", w.to?.toString() ?: JSONObject.NULL)
             .put("over", w.overMinutes).put("min", w.minMinutes)
             .put("pay", pay)
+            // [PAYX-52] A version before 1.38 reads the usual amount for every month.
+            .also { o -> if (r.byMonth.isNotEmpty()) o.put("byMonth", JSONObject().apply { r.byMonth.forEach { (m, v) -> put(m.toString(), v) } }) }
     }
 
     /** A rule this version cannot read (a newer kind of pay) is dropped rather than failing the file. */
@@ -429,6 +431,10 @@ object PayCodec {
             capPerMonth = limits?.optLong("cap", 0)?.coerceAtLeast(0) ?: 0,
             maxTimes = limits?.optInt("times", 0)?.coerceIn(0, 31) ?: 0,
             from = month("since"), until = month("until"),
+            byMonth = o.optJSONObject("byMonth")?.let { b ->
+                b.keys().asSequence().mapNotNull { k -> runCatching { java.time.YearMonth.parse(k) to b.getLong(k).coerceAtLeast(0) }.getOrNull() }
+                    .toMap()
+            }.orEmpty().takeIf { pay is RulePay.Monthly }.orEmpty(),
         )
     }.getOrNull()
 
@@ -564,6 +570,8 @@ object PayCodec {
         .put("unit", e.unit.name).put("unitMin", e.unitMinutes).put("adds", premiums(e.premiums))
         // [PAYX-21] Left out when off so older files stay the same.
         .apply { if (e.tiersFromDayStart) put("tiersFromDay", true) }
+        // 1.38 [PAYX-49] 이 일만의 시수, left out when it follows the profile's.
+        .apply { e.monthlyHours?.let { put("hours", it) } }
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
         // A basis this version does not know (a newer file) is paid by law rather than guessed.
@@ -582,6 +590,7 @@ object PayCodec {
         unitMinutes = e.optInt("unitMin", 8 * 60).coerceIn(30, 24 * 60),
         premiums = e.optJSONArray("adds")?.let(::premiums).orEmpty(),
         tiersFromDayStart = e.optBoolean("tiersFromDay", false),
+        monthlyHours = e.optInt("hours", 0).takeIf { it in ExtraRule.HOURS_RANGE },
     )
 
     private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)

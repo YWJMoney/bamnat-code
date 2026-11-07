@@ -243,7 +243,7 @@ class ScheduleRepository(
             label = type.label.trim().take(MAX_LABEL_LENGTH).ifEmpty { type.name.trim().take(1).ifEmpty { "근" } },
             breakMinutes = type.breakMinutes.coerceIn(0, 12 * 60),
             alarms = type.alarms
-                .map { it.copy(offsetMinutes = it.offsetMinutes.coerceIn(0, 24 * 60)) }
+                .map { it.copy(offsetMinutes = it.offsetMinutes.coerceIn(-24 * 60, 24 * 60)) } // [EASE-18] below zero: 다음날
                 .distinctBy { it.offsetMinutes }
                 .sortedByDescending { it.offsetMinutes }
                 .take(MAX_ALARMS),

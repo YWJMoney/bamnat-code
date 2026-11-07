@@ -69,6 +69,24 @@ object PatternTimeline {
         rotation.copy(anchorDate = date.minusDays(Math.floorMod(step, rotation.steps.size).toLong()))
 
     /**
+     * [EASE-25] 1.38 "오늘부터 하루 밀기" (오늘근무 분석 P7, 사용자 관찰): the step [date] gets when the order from [date] on is pushed
+     * [days] later (negative: pulled earlier). Pushed by one, [date] repeats the day before's step and its own step falls on
+     * the next day; applied with [realign], so every day before [date] stays.
+     */
+    fun pushedStep(rotation: WorkPattern.Rotation, date: LocalDate, days: Int): Int =
+        Math.floorMod(rotation.stepIndexOn(date) - days, rotation.steps.size)
+
+    /**
+     * [EASE-25] How many days [step] on [date] moves the order from where [rotation] has it: 1 for a day later, -1 for a day
+     * earlier, 0 for unchanged; the shortest way round (a 4-day order 3 later is 1 earlier).
+     */
+    fun pushOf(rotation: WorkPattern.Rotation, date: LocalDate, step: Int): Int {
+        val n = rotation.steps.size
+        val d = Math.floorMod(rotation.stepIndexOn(date) - step, n)
+        return if (d * 2 > n) d - n else d
+    }
+
+    /**
      * [SCHED-03] The days from [date] on that the user set by hand ([ShiftOverride] other than none). After a
      * realign they usually were the workaround for the order being off, so the sheet offers to clear them.
      */

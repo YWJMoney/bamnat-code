@@ -48,6 +48,51 @@ object TypeFoldAsk {
     val asking = MutableStateFlow<Ask?>(null)
 
     /**
+     * 1.38 사용자 2026-11-06 ("가게 영업이나 사장님 등 교대 근무를 하지 않는 유형에 주야 같은 부분이 보여지고 있는데 … 특별히 따로 만들지
+     * 않는 이상 기본값으로는 보여지지 않아야"): work without 교대 (일근·알바·현장·자영업·투자) has no 주간·오후·야간. The ones every
+     * calendar starts with ([com.bamnat.app.data.DefaultShiftTypes]) and the other kinds of work's own (일근, 오전 알바 …), less this
+     * kind of work's own, are put away ('안 쓰는 종류') while nothing uses them, so no chip, keypad, 칠하기 줄, 대근 도장 or 근무 순서
+     * offers them. Nothing is deleted: 근무 종류와 시간 › 안 쓰는 종류 › 다시 쓰기 brings one back, and a kind the user makes is never
+     * touched. Once per calendar and kind of work.
+     */
+    fun quietStyle(style: WorkStyle?): Boolean = style != null && style != WorkStyle.SHIFT
+
+    /** The names of the 교대·일근·알바 kinds; [quietKinds] keeps the calendar's own kind of work's. */
+    val shiftKindNames: Set<String> by lazy {
+        com.bamnat.app.data.DefaultShiftTypes.all().filter { !it.isOff }.map { it.name }.toSet() +
+            com.bamnat.app.data.FoldedTypes.startNames(WorkStyle.SHIFT) + com.bamnat.app.data.FoldedTypes.startNames(WorkStyle.DAY) +
+            com.bamnat.app.data.FoldedTypes.startNames(WorkStyle.HOURLY)
+    }
+
+    /** The kinds of [types] a [quietStyle] calendar puts away: 교대·일근·알바 ones that no day and no 근무 순서 uses ([used]). */
+    fun quietKinds(style: WorkStyle, types: List<ShiftType>, folded: Set<Long>, used: (Long) -> Boolean): List<Long> {
+        val names = shiftKindNames - com.bamnat.app.data.FoldedTypes.startNames(style)
+        return types.filter { !it.isOff && it.name in names && it.id !in folded && !used(it.id) }.map { it.id }
+    }
+
+    /** The kinds the 근무 순서 going on after [today] uses (one ended by 접어 두기 is not going). */
+    fun goingKinds(patterns: List<com.bamnat.core.model.WorkPattern>, today: java.time.LocalDate): Set<Long> =
+        patterns.filter { it.endDate?.isAfter(today) != false }.flatMap { p ->
+            when (p) {
+                is com.bamnat.core.model.WorkPattern.Rotation -> p.steps
+                is com.bamnat.core.model.WorkPattern.Weekly -> p.steps
+            }
+        }.filterNotNull().toSet()
+
+    /** Puts [calendar]'s unused 교대 kinds away for [style], once ([quietStyle]). */
+    suspend fun quietShiftKinds(c: AppContainer, calendar: String, style: WorkStyle?) {
+        if (style == null || !quietStyle(style) || c.foldedTypes.quieted(calendar, style)) return
+        val repo = c.calendars.repository(calendar)
+        val types = repo.shiftTypes.first()
+        // Not seeded yet (the very first start): asked again when they are.
+        if (types.isEmpty()) return
+        val usage = types.associate { it.id to repo.shiftTypeUse(it.id) }
+        val ids = quietKinds(style, types, c.foldedTypes.of(calendar)) { id -> usage[id]?.let { it.days > 0 || it.inPattern } ?: true }
+        if (ids.isNotEmpty()) c.foldedTypes.fold(calendar, ids)
+        c.foldedTypes.markQuiet(calendar, style)
+    }
+
+    /**
      * Said after 접어 두기, with 되돌리기 (the AppRoot snackbar shows it). [patterns]: the repeating schedule as it was, when 접어 두기
      * also stopped it ([stopsCycle]); 되돌리기 puts it back ([undo]).
      */
@@ -145,8 +190,41 @@ object TypeFoldAsk {
 
     val done = MutableStateFlow<Done?>(null)
 
+    /**
+     * 1.37 PC MED-2 사용성 제안 (유형 바꾸기 확인 창이 두 번: 기록 유지 → 접어 둘까요): the records question already answered whether
+     * to put the old 근무 away ([foldable] named them there), so [after] does it without a second dialog. Read once.
+     */
+    val preanswer = MutableStateFlow<Boolean?>(null)
+
+    /** The old kind of work's 근무 that [after] would offer to put away, for the records question to name. */
+    suspend fun foldable(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle): List<ShiftType> {
+        if (from == null || from == to) return emptyList()
+        val old = com.bamnat.app.data.FoldedTypes.startNames(from) - com.bamnat.app.data.FoldedTypes.startNames(to)
+        if (old.isEmpty()) return emptyList()
+        val folded = c.foldedTypes.of(calendar)
+        return c.calendars.repository(calendar).shiftTypes.first().filter { !it.isOff && it.name in old && it.id !in folded }
+    }
+
+    /** 접어 두기 of [a]: the 근무 put away, the old schedule stopped when [stops], the new work's own 근무 put in; said in [done]. */
+    fun fold(c: AppContainer, a: Ask, patterns: List<com.bamnat.core.model.WorkPattern>) {
+        val ids = a.types.map { it.id }
+        c.foldedTypes.fold(a.calendar, ids)
+        val was = patterns.takeIf { stops(a, it, com.bamnat.core.time.Today.date()) }
+        if (was != null) c.appScope.launch { stopCycle(c, a.calendar, was, a.from) }
+        if (a.adds.isNotEmpty()) c.appScope.launch {
+            val repo = c.calendars.repository(a.calendar)
+            val have = repo.shiftTypes.first()
+            val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
+            a.adds.filter { t -> have.none { it.name == t.name } }.forEachIndexed { i, t -> repo.saveShiftType(t.copy(id = 0, sortOrder = next + i)) }
+        }
+        // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
+        done.value = Done(a.calendar, ids, "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was, a.from)
+    }
+
     /** Asks when the change from [from] to [to] left kinds of day the old one started with. */
     suspend fun after(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
+        val pre = preanswer.value
+        preanswer.value = null
         if (from == to) return
         val resumed = runCatching { resume(c, calendar, from, to) }.getOrDefault(false)
         val types = c.calendars.repository(calendar).shiftTypes.first()
@@ -161,7 +239,12 @@ object TypeFoldAsk {
         if (left.isEmpty()) return
         val rest = types.filter { !it.isOff && it.id !in folded && it !in left }
         val adds = if (rest.isNotEmpty()) emptyList() else startTypes(to).filter { t -> types.none { it.name == t.name } }
-        asking.value = Ask(calendar, left, from, to, adds, empty = rest.isEmpty() && adds.isEmpty(), resumed = resumed)
+        val ask = Ask(calendar, left, from, to, adds, empty = rest.isEmpty() && adds.isEmpty(), resumed = resumed)
+        when (pre) {
+            null -> asking.value = ask
+            true -> fold(c, ask, c.calendars.repository(calendar).patterns.first())
+            false -> Unit
+        }
     }
 }
 
@@ -187,19 +270,7 @@ fun TypeFoldHost(c: AppContainer) {
         },
         confirmButton = {
             TextButton(onClick = {
-                val ids = a.types.map { it.id }
-                c.foldedTypes.fold(a.calendar, ids)
-                val was = patterns.takeIf { stops }
-                if (was != null) c.appScope.launch { TypeFoldAsk.stopCycle(c, a.calendar, was, a.from) }
-                if (a.adds.isNotEmpty()) c.appScope.launch {
-                    val repo = c.calendars.repository(a.calendar)
-                    val have = repo.shiftTypes.first()
-                    val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
-                    a.adds.filter { t -> have.none { it.name == t.name } }.forEachIndexed { i, t -> repo.saveShiftType(t.copy(id = 0, sortOrder = next + i)) }
-                }
-                // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
-                TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids,
-                    "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was, a.from)
+                TypeFoldAsk.fold(c, a, patterns)
                 TypeFoldAsk.asking.value = null
             }) { Text("접어 두기") }
         },
@@ -216,10 +287,24 @@ fun foldedHere(): Set<Long> {
 }
 
 /** 1.36 PC 재검토 (현장은 제목만 '일정'이고 안은 '근무'): what a kind of day is called in [style]'s own words. */
-fun dayKindNoun(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정" else "근무"
+// 1.38 PC 11차 식당 둘러보기 ('근무 추가'): a shop's kinds of day are 영업·단축영업.
+fun dayKindNoun(style: WorkStyle?): String = when (style) { WorkStyle.FIELD -> "일정"; WorkStyle.BUSINESS -> "영업"; else -> "근무" }
+
+/**
+ * 1.38 PC 12.1 (식당 설정에 '근무 알람'·'잠금 화면 오늘 근무'): what an alarm or the lock-screen line is for, in this kind of work's
+ * words. 일근·알바 keep 근무; an investor's alarms are 투자 알람 (설정 › 투자 알람).
+ */
+fun alarmNoun(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD -> "일정"; WorkStyle.BUSINESS -> "영업"; WorkStyle.INVEST -> "투자"; else -> "근무"
+}
+
+/** What the lock-screen line shows: 오늘 영업 for a shop, 오늘 일정 for 현장·투자, else 오늘 근무. */
+fun lockNoun(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD, WorkStyle.INVEST -> "일정"; WorkStyle.BUSINESS -> "영업"; else -> "근무"
+}
 
 /** "일정이" / "근무가". */
-fun dayKindSubject(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정이" else "근무가"
+fun dayKindSubject(style: WorkStyle?): String = when (style) { WorkStyle.FIELD -> "일정이"; WorkStyle.BUSINESS -> "영업이"; else -> "근무가" }
 
 /** Where the kinds of day are set, as the settings row says it ("설정 › 일정 종류"). */
 fun dayKindsPlace(style: WorkStyle?): String = "설정 › " + style.words().types

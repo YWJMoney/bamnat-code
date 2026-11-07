@@ -81,6 +81,11 @@ import com.bamnat.app.data.AppSettings
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.sleep.SleepAutoWatch
+import com.bamnat.app.sleep.SleepRecordService
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.theme.LocalCalendarColors
@@ -112,7 +117,9 @@ import com.bamnat.core.time.Today
 class SleepViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
 
-    data class State(val log: List<SleepEntry>, val report: SleepInsights.Report, val today: LocalDate)
+    /** 1.38 [HLTH-01] [compare]: the last 4 weeks of 계획 대 실제, null while `health.compare` is off (Phase 3, 꺼진 채). */
+    data class State(val log: List<SleepEntry>, val report: SleepInsights.Report, val today: LocalDate,
+        val compare: com.bamnat.core.sleep.PlanVsActual.Summary? = null)
 
     val state: StateFlow<State?> = combine(
         container.sleepRepository.recent(days = SleepInsights.WINDOW_DAYS + SleepDebt.WINDOW_DAYS),
@@ -120,18 +127,179 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         // [SRCH-13] 1.29 AS: the shared reading (live), not a whole-history read of its own.
         container.scheduleRepository.live,
         settings,
-    ) { manual, measured, snapshot, s ->
+        container.flags.byKey,
+    ) { manual, measured, snapshot, s, flags ->
         val log = SleepMerge.merge(manual, measured)
         val today = Today.date()
-        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today)
+        val compare = if (flags[com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE]?.on != true) null else com.bamnat.core.sleep.PlanVsActual.summary(
+            com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, today.minusDays(com.bamnat.core.sleep.PlanVsActual.WINDOW_DAYS - 1), today,
+                s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes))
+        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today, compare)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val health = container.healthSleep.state
 
+    /** 1.38 [SLEEP-01][SLEEP-03] The top of the screen: what the phone caught, and how the user woke. */
+    data class Morning(val offers: List<com.bamnat.core.sleep.SleepAuto.Segment>, val sleep: SleepEntry?,
+        val check: com.bamnat.core.sleep.SleepCheck?, val autoShown: Boolean, val autoOn: Boolean)
+
+    /** Bumped when an answer lives outside the database (아니에요 on a caught sleep). */
+    private val autoTick = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    val morning: StateFlow<Morning?> = combine(
+        container.sleepRepository.recent(days = 3),
+        container.healthSleep.sleeps,
+        container.sleepRepository.checks(days = 3),
+        combine(settings, container.flags.byKey) { s, f -> s.sleepAuto to (f[com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO]?.on == true) },
+        autoTick,
+    ) { manual, measured, checks, (autoOn, autoFlag), _ ->
+        val log = SleepMerge.merge(manual, measured)
+        val now = Today.dateTime()
+        val offers = if (autoOn && autoFlag) SleepAutoWatch.candidates(container.appContext, manual + measured, now) else emptyList()
+        val sleep = com.bamnat.core.sleep.SleepMorning.latest(log, now)
+        Morning(offers, sleep, sleep?.let { com.bamnat.core.sleep.SleepMorning.checkFor(it, checks) }, autoFlag, autoOn)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 1.38 [SLEEP-06][SLEEP-07] The last measured night and its sounds; null while `sleep.sound` is off. */
+    data class Night(val last: SleepRecordService.Companion.LastNight?, val events: List<com.bamnat.app.data.db.SleepEventEntity>,
+        val work: List<TimelineSpan> = emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val night: StateFlow<Night?> = combine(com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey) { rec, f ->
+        rec to (f[com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND]?.on == true)
+    }.flatMapLatest { (_, on) ->
+        if (!on) kotlinx.coroutines.flow.flowOf(null)
+        else {
+            val last = SleepRecordService.lastNight(container.appContext)
+            if (last == null) kotlinx.coroutines.flow.flowOf(Night(null, emptyList()))
+            else container.sleepRepository.events(last.start, last.end.plusMinutes(1)).map { ev ->
+                // [SLEEP-21] The work around that night, on the same axis.
+                val resolver = container.scheduleRepository.snapshot.first().resolver
+                val work = (last.start.toLocalDate().minusDays(1)..last.end.toLocalDate()).let { r ->
+                    generateSequence(r.start) { it.plusDays(1) }.takeWhile { !it.isAfter(r.endInclusive) }.toList()
+                }.flatMap { com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(it)) }
+                    .map { TimelineSpan(it.from, it.to, work = true, color = it.colorArgb?.let { c -> androidx.compose.ui.graphics.Color(c.toInt()) }) }
+                Night(last, ev, work)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 1.38 [SLEEP-10][SLEEP-13][SLEEP-20] 적응 한 줄, 원인 찾기, 회복 도전. */
+    data class Extras(val adapt: com.bamnat.core.sleep.ShiftAdapt.Step?, val causes: List<com.bamnat.core.sleep.SleepCauses.Finding>,
+        val challenge: com.bamnat.core.sleep.RecoveryChallenge.Progress?)
+
+    private val challengeStart = kotlinx.coroutines.flow.MutableStateFlow(SleepChallengeStore.start(container.appContext))
+
+    val extras: StateFlow<Extras?> = combine(
+        container.scheduleRepository.live, container.sleepRepository.checks(days = 90), state, challengeStart,
+    ) { snapshot, checks, st, start ->
+        val today = Today.date()
+        val work = (-4L..com.bamnat.core.sleep.ShiftAdapt.LEAD_DAYS.toLong() + 1).flatMap { com.bamnat.core.sleep.SleepSchedule.work(snapshot.resolver.resolve(today.plusDays(it))) }
+        val challenge = start?.let { from ->
+            val s = settings.value
+            com.bamnat.core.sleep.RecoveryChallenge.progress(from, com.bamnat.core.sleep.PlanVsActual.nights(st?.log.orEmpty(), snapshot.resolver,
+                from, today, s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes), today)
+        }
+        Extras(com.bamnat.core.sleep.ShiftAdapt.stepFor(today, work), com.bamnat.core.sleep.SleepCauses.find(checks), challenge)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 1.38 [SLEEP-22] 바꾼 것 전후: the day the user marked and what they changed, with the 7 days on each side. */
+    data class Mark(val day: LocalDate, val what: String, val result: com.bamnat.core.sleep.BeforeAfter.Result?)
+
+    private val markDay = kotlinx.coroutines.flow.MutableStateFlow(SleepChallengeStore.mark(container.appContext))
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val mark: StateFlow<Mark?> = markDay.flatMapLatest { m ->
+        if (m == null) kotlinx.coroutines.flow.flowOf(null)
+        else {
+            val (day, what) = m
+            val from = day.minusDays(com.bamnat.core.sleep.BeforeAfter.DAYS + 1).atStartOfDay()
+            val to = day.plusDays(com.bamnat.core.sleep.BeforeAfter.DAYS + 1).atStartOfDay()
+            combine(container.sleepRepository.events(from, to), container.sleepRepository.checks(days = 120), state) { events, checks, st ->
+                val zone = Today.zone()
+                fun local(ms: Long) = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), zone)
+                // A measured night is a sleep with sounds heard in it; its snoring by the morning it ended.
+                val snore = st?.log.orEmpty().filter { it.end != null && !it.end!!.isBefore(from) && it.start.isBefore(to) }.mapNotNull { e ->
+                    val inside = events.filter { ev -> local(ev.startMillis).let { t -> !t.isBefore(e.start) && t.isBefore(e.end) } }
+                    if (inside.isEmpty()) null
+                    else e.end!!.toLocalDate() to com.bamnat.core.sleep.SoundSummary.of(inside.map { ev ->
+                        com.bamnat.core.sleep.SoundEvent(ev.startMillis, ev.endMillis, com.bamnat.core.sleep.SoundKind.of(ev.kind), ev.level)
+                    }).snoreMinutes
+                }.toMap()
+                val mood = checks.mapNotNull { c -> c.mood?.let { c.end.toLocalDate() to it.value } }.toMap()
+                Mark(day, what, com.bamnat.core.sleep.BeforeAfter.compare(day, snore, mood))
+            }
+        }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun markChange(what: String) {
+        val day = Today.date()
+        SleepChallengeStore.setMark(container.appContext, day, what)
+        markDay.value = day to what
+    }
+    fun clearMark() { SleepChallengeStore.setMark(container.appContext, null, null); markDay.value = null }
+
+    fun startChallenge() { challengeStart.value = SleepChallengeStore.begin(container.appContext, Today.date()) }
+    fun stopChallenge() { SleepChallengeStore.end(container.appContext); challengeStart.value = null }
+
+    fun keepClip(e: com.bamnat.app.data.db.SleepEventEntity, keep: Boolean) {
+        container.appScope.launch { container.sleepRepository.keepClip(e.id, keep) }
+    }
+
+    fun acceptAuto(s: com.bamnat.core.sleep.SleepAuto.Segment, start: LocalDateTime = s.start, end: LocalDateTime = s.end) {
+        container.appScope.launch {
+            val fixed = start != s.start || end != s.end
+            if (fixed) {
+                // Into the log as the user's own times; the caught piece is not offered again, and trust starts over.
+                container.sleepRepository.add(start, end)
+                SleepAutoWatch.decline(container.appContext, s)
+            } else SleepAutoWatch.accept(container.appContext, s)
+            autoTick.value++
+            _messages.emit(UndoMessage("${SleepInsights.hours(Duration.between(start, end).toMinutes())} 잠을 넣었어요"))
+        }
+    }
+
+    fun declineAuto(s: com.bamnat.core.sleep.SleepAuto.Segment) {
+        SleepAutoWatch.decline(container.appContext, s)
+        autoTick.value++
+    }
+
+    fun saveSound(mix: com.bamnat.core.sleep.NoiseMix, minutes: Int) {
+        container.settingsRepository.update { it.copy(noiseMix = mix.encode(), noiseTimerMinutes = minutes) }
+    }
+
+    fun setSmartWake(minutes: Int) {
+        container.settingsRepository.update { it.copy(smartWakeMinutes = minutes) }
+        // The window follows the next alarm: plan it again now.
+        container.appScope.launch { container.rescheduleAlarms() }
+    }
+
+    fun setNightLook(on: Boolean) = container.settingsRepository.update { it.copy(sleepNightLook = on) }
+
+    fun setAuto(on: Boolean) {
+        // The notices job follows the setting and subscribes or lets go (SleepAutoWatch.sync).
+        container.settingsRepository.update { it.copy(sleepAuto = on) }
+    }
+
+    fun answer(sleep: SleepEntry, check: com.bamnat.core.sleep.SleepCheck?, mood: com.bamnat.core.sleep.SleepMood?,
+        tags: Set<com.bamnat.core.sleep.SleepTag>) {
+        container.appScope.launch { container.sleepRepository.answer(sleep, mood, tags, check?.note, check) }
+    }
+
+    fun unanswer(check: com.bamnat.core.sleep.SleepCheck) {
+        container.appScope.launch { container.sleepRepository.unanswer(check.id) }
+    }
+
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
-    fun refreshHealth() { viewModelScope.launch { container.healthSleep.refresh(settings.value.healthSleep) } }
+    fun refreshHealth() {
+        viewModelScope.launch {
+            container.healthSleep.refresh(settings.value.healthSleep)
+            // 1.38 [SLEEP-09] 헬스 커넥트에 쓰기: the last 30 days of the app's own sleeps; the same sleep replaces itself.
+            if (settings.value.healthWrite) container.healthSleep.write(container.sleepRepository.recent(days = 30).first())
+        }
+    }
 
     fun add(start: LocalDateTime, end: LocalDateTime) {
         container.appScope.launch {
@@ -186,9 +354,26 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val state by vm.state.collectAsStateWithLifecycle()
+    // 1.38 [DSG-07] Warm and dark at night and while asleep, so opening the screen in bed does not glare.
+    val sleeping = state?.log?.any { it.end == null && !it.imported } == true
+    com.bamnat.app.ui.theme.NightSurface(com.bamnat.app.ui.theme.rememberNightMode(settings.sleepNightLook, sleeping)) {
+        SleepScreenBody(vm, wide, onBack)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
+    val morning by vm.morning.collectAsStateWithLifecycle()
+    val night by vm.night.collectAsStateWithLifecycle()
+    val extras by vm.extras.collectAsStateWithLifecycle()
+    val mark by vm.mark.collectAsStateWithLifecycle()
+    var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
@@ -225,15 +410,46 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
         val s = state ?: return@Scaffold
         val r = s.report
         val summary: @Composable ColumnScope.() -> Unit = {
+            morning?.let { m ->
+                // [SLEEP-01] Newest first: the one the user just woke from.
+                m.offers.lastOrNull()?.let { o ->
+                    AutoOfferCard(o, onYes = { vm.acceptAuto(o) }, onFix = { fixing = o }, onNo = { vm.declineAuto(o) })
+                }
+                // [SLEEP-03] 아침 한 장, once there is no caught sleep left to settle.
+                if (m.offers.isEmpty()) m.sleep?.let { sl ->
+                    MorningCard(sl, m.check, onAnswer = { mood, tags -> vm.answer(sl, m.check, mood, tags) },
+                        onUndo = { m.check?.let(vm::unanswer) })
+                }
+            }
             NowCard(s.log.firstOrNull { it.end == null && !it.imported }, onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
-            if (r.loggedDays < 7) HowItWorks()
+            // 1.38 [SLEEP-04] 잠드는 소리, next to 잠들었어요.
+            SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
+            // 1.38 [SLEEP-06][SLEEP-07] 자는 동안 소리, once `sleep.sound` is open.
+            night?.let { n -> SleepNightCard(n.last, n.events, vm::keepClip, settings.smartWakeMinutes, vm::setSmartWake, n.work) }
+            // Design: an empty sleep screen points at where to start.
+            if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
+                "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",
+                com.bamnat.app.ui.components.KaniMood.Point)
+            else if (r.loggedDays < 7) HowItWorks(settings.workStyle)
             WeekTiles(r, target)
+            // 1.38 [SLEEP-10][SLEEP-13][SLEEP-20]
+            extras?.adapt?.let { AdaptCard(it) }
             if (r.findings.isNotEmpty()) Findings(r.findings)
+            extras?.let { CausesCard(it.causes) }
             Groups(r, target)
+            s.compare?.let { PlanCompare(it) }
+            extras?.let { e -> ChallengeCard(e.challenge, vm::startChallenge, vm::stopChallenge) }
+            // 1.38 [SLEEP-22] 바꾼 것 전후 비교.
+            if (s.log.isNotEmpty()) BeforeAfterCard(mark, vm::markChange, vm::clearMark)
         }
         val history: @Composable ColumnScope.() -> Unit = {
             Bars(s.log, s.today, target)
             Records(s.log, r, s.today) { e -> if (!e.imported) editing = e }
+            morning?.takeIf { it.autoShown }?.let { m -> SectionCard(title = null) { SleepAutoSwitch(m.autoOn, vm::setAuto) } }
+            SectionCard(title = null) {
+                com.bamnat.app.ui.settings.SwitchRow("밤에는 어두운 색", "밤 10시~아침 6시와 자는 중에는 이 화면을 눈부시지 않은 어두운 색으로 보여 줘요",
+                    settings.sleepNightLook) { on -> vm.setNightLook(on) }
+            }
             healthNote(health)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -259,11 +475,41 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
             if (end != null) vm.add(start, end)
         }
     }
+    fixing?.let { o ->
+        SleepEditDialog(SleepEntry(0, o.start, o.end), onDismiss = { fixing = null }, onDelete = null) { start, end ->
+            fixing = null
+            if (end != null) vm.acceptAuto(o, start, end)
+        }
+    }
     editing?.let { e ->
         SleepEditDialog(e, onDismiss = { editing = null }, onDelete = { vm.delete(e); editing = null }) { start, end ->
             editing = null
             vm.edit(e, start, end)
         }
+    }
+}
+
+/**
+ * 1.38 [HLTH-01][P3-04] 계획 대 실제 (Phase 3 M23): the last 4 weeks' planned sleeps against what was recorded, newest first.
+ * "견주기" only: no 예측, no 진단 (설계 2-3 위험). Shown while `health.compare` is on.
+ */
+@Composable
+private fun PlanCompare(sum: com.bamnat.core.sleep.PlanVsActual.Summary) {
+    SectionCard(title = "근무에 맞춘 계획과 실제 잠") {
+        Text(sum.headline ?: "계획한 잠을 ${com.bamnat.core.sleep.PlanVsActual.MIN_FOR_SUMMARY}번 넘게 기록하면 4주 평균을 보여 줘요",
+            style = MaterialTheme.typography.titleSmall)
+        sum.afterNightDiff?.takeIf { sum.enough }?.let { d ->
+            Text(if (d < 0) "야간 뒤 잠은 계획보다 평균 ${SleepInsights.hours(-d)} 적어요" else "야간 뒤 잠은 계획만큼이에요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        val recent = sum.nights.filter { it.verdict != com.bamnat.core.sleep.PlanVsActual.Verdict.NO_RECORD }.sortedByDescending { it.planFrom }.take(6)
+        for (n in recent) {
+            Text("${Fmt.monthDay(n.date)} ${n.kind.label} · ${n.verdict.label}", style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 6.dp))
+            Text(n.line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("근무와 알람으로 잡은 계획 잠과 워치·휴대폰이 잰 잠(또는 적은 잠)을 휴대폰 안에서 견줘요. 저장하거나 보내지 않아요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
@@ -292,12 +538,19 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
 
 /** [SLP-16] What the taps are for, said where the user first wonders. */
 @Composable
-private fun HowItWorks() {
+private fun HowItWorks(style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {
         listOf(
-            "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
+            // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 card to press in.
+            if (style?.usesPayEngine == false) "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 오늘 날짜와 자는 중 알림에 버튼이 있어요."
+            else "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
             "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 알림과 잠에서 헬스 커넥트를 켜면 함께 세요.",
-            "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요.",
+            // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): 야간 뒤 is said to 교대 only.
+            when (style) {
+                null, com.bamnat.core.work.WorkStyle.SHIFT -> "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요."
+                com.bamnat.core.work.WorkStyle.INVEST -> "기록이 쌓이면 평일과 쉬는 날 평균을 따로 보여 줘요."
+                else -> "기록이 쌓이면 일하는 날과 쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요."
+            },
         ).forEachIndexed { i, line ->
             Row(Modifier.padding(vertical = 3.dp)) {
                 Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
@@ -374,6 +627,11 @@ private fun Groups(r: SleepInsights.Report, target: Int) {
             Text("짧은 낮잠 ${r.naps}번은 평균에서 뺐어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 1.38 [SLEEP-02] Sleeps a few hours apart with no work between are one rest, not two short nights.
+        if (r.splitRests > 0) {
+            Text("나눠 잔 ${r.splitRests}번은 근무 사이 한 번의 쉼으로 합쳐 셌어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -384,36 +642,22 @@ private fun Bars(log: List<SleepEntry>, today: LocalDate, target: Int) {
     val byDay = log.filter { (it.minutes ?: 0) in 1..SleepDebt.MAX_SLEEP_MINUTES }.groupBy { it.wakeDate }
         .mapValues { (_, l) -> l.sumOf { it.minutes!! } }
     val values = days.map { byDay[it] ?: 0L }
-    val max = maxOf(values.maxOrNull() ?: 0, target.toLong() + 60).coerceAtLeast(1)
-    val primary = MaterialTheme.colorScheme.primary
-    val short = LocalCalendarColors.current.warning
-    val line = MaterialTheme.colorScheme.outline
-    val empty = MaterialTheme.colorScheme.surfaceContainerHigh
-    val described = days.zip(values).filter { it.second > 0 }
-        .joinToString(", ") { (d, v) -> "${Fmt.shortDate(d)} ${SleepInsights.hours(v)}" }
+    // 1.38 [DSG-04] 그래프 규칙: one colour, the longest (잘 잠) and the shortest (부족) only, the target dashed.
+    val bars = days.zip(values).map { (d, v) ->
+        com.bamnat.app.ui.components.ChartBar(
+            label = if (d == today) "오늘" else Fmt.shortDate(d), value = v.toDouble(),
+            tone = when {
+                v <= 0 -> com.bamnat.app.ui.theme.Tone.Plain
+                v < target - SleepInsights.SHORT_MINUTES -> com.bamnat.app.ui.theme.Tone.Caution
+                v >= target -> com.bamnat.app.ui.theme.Tone.Good
+                else -> com.bamnat.app.ui.theme.Tone.Plain
+            },
+            text = if (v <= 0) "기록 없음" else SleepInsights.hours(v),
+        )
+    }
     SectionCard(title = "최근 2주") {
-        Canvas(Modifier.fillMaxWidth().height(120.dp).semantics { contentDescription = "최근 2주 수면: " + described.ifEmpty { "기록 없음" } }) {
-            val gap = 6.dp.toPx()
-            val w = (size.width - gap * (days.size - 1)) / days.size
-            values.forEachIndexed { i, v ->
-                val h = if (v == 0L) 4.dp.toPx() else size.height * v / max
-                drawRoundRect(
-                    color = if (v == 0L) empty else if (v < target - SleepInsights.SHORT_MINUTES) short else primary,
-                    topLeft = Offset(i * (w + gap), size.height - h), size = Size(w, h), cornerRadius = CornerRadius(4.dp.toPx()),
-                )
-            }
-            val y = size.height - size.height * target / max
-            drawLine(line, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Text(Fmt.shortDate(days.first()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f))
-            Text("점선 목표 ${SleepInsights.hours(target.toLong())}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text("오늘", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        com.bamnat.app.ui.components.BarChart(bars,
+            com.bamnat.app.ui.components.Baseline(target.toDouble(), "점선 목표 ${SleepInsights.hours(target.toLong())}"))
     }
 }
 
@@ -467,6 +711,7 @@ private fun healthNote(state: com.bamnat.app.sleep.HealthSleep.State): String? =
  * [SLP-16] A sleep written or corrected by hand: the night it ended on, when it began and ended.
  * The end may be the next day of the start; an open sleep ([initial] with no end) may stay open.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SleepEditDialog(
     initial: SleepEntry?,
@@ -480,7 +725,21 @@ private fun SleepEditDialog(
     var end by rememberSaveable { mutableStateOf((initial?.end?.toLocalTime() ?: LocalTime.of(7, 0)).toString()) }
     var open by rememberSaveable { mutableStateOf(initial != null && initial.end == null) }
     var picking by remember { mutableStateOf<String?>(null) }
+    var pickDay by remember { mutableStateOf(false) }
     val wakeDate = LocalDate.parse(wake)
+    if (pickDay) {
+        val last = now.toLocalDate()
+        val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = wakeDate.toEpochDay() * 86_400_000L,
+            selectableDates = remember(last) {
+                object : androidx.compose.material3.SelectableDates {
+                    override fun isSelectableDate(utcTimeMillis: Long) = !LocalDate.ofEpochDay(utcTimeMillis / 86_400_000L).isAfter(last)
+                    override fun isSelectableYear(year: Int) = year <= last.year
+                }
+            })
+        com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = { pickDay = false }, confirmButton = {
+            TextButton(onClick = { state.selectedDateMillis?.let { wake = LocalDate.ofEpochDay(it / 86_400_000L).toString() }; pickDay = false }) { Text("고르기") }
+        }, dismissButton = { TextButton(onClick = { pickDay = false }) { Text("닫기") } }) { androidx.compose.material3.DatePicker(state) }
+    }
     val endTime = LocalTime.parse(end)
     val startTime = LocalTime.parse(start)
     // A start later in the day than the end began the evening before.
@@ -501,7 +760,9 @@ private fun SleepEditDialog(
                         FilterChip(selected = wakeDate == d, onClick = { wake = d.toString() },
                             label = { Text(when (d) { today -> "오늘"; today.minusDays(1) -> "어제"; else -> Fmt.shortDate(d) }) })
                     }
-                    if (wakeDate.isBefore(now.toLocalDate().minusDays(2))) FilterChip(selected = true, onClick = {}, label = { Text(Fmt.shortDate(wakeDate)) })
+                    // 1.38 PC 9차: any earlier day too (지난주 기록을 나중에 넣을 때).
+                    FilterChip(selected = wakeDate.isBefore(now.toLocalDate().minusDays(2)), onClick = { pickDay = true },
+                        label = { Text(if (wakeDate.isBefore(now.toLocalDate().minusDays(2))) Fmt.shortDate(wakeDate) else "다른 날") })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { picking = "start" }, modifier = Modifier.weight(1f)) {
@@ -540,4 +801,20 @@ private fun SleepEditDialog(
         "start" -> TimePickerDialog("잠든 시각", startTime, onDismiss = { picking = null }) { start = it.toString(); picking = null }
         "end" -> TimePickerDialog("깬 시각", endTime, onDismiss = { picking = null }) { end = it.toString(); open = false; picking = null }
     }
+}
+
+/** 1.38 [SLEEP-20] When the user began 회복 도전, and [SLEEP-22] the day they marked a change, on this phone. */
+internal object SleepChallengeStore {
+    private const val PREFS = "sleep_challenge"
+    private const val K_START = "start"
+    private fun prefs(c: android.content.Context) = c.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+    fun start(c: android.content.Context): LocalDate? = prefs(c).getString(K_START, null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    fun begin(c: android.content.Context, day: LocalDate): LocalDate { prefs(c).edit().putString(K_START, day.toString()).apply(); return day }
+    fun end(c: android.content.Context) = prefs(c).edit().remove(K_START).apply()
+    fun mark(c: android.content.Context): Pair<LocalDate, String>? {
+        val day = prefs(c).getString("mark_day", null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+        return day to prefs(c).getString("mark_what", null).orEmpty()
+    }
+    fun setMark(c: android.content.Context, day: LocalDate?, what: String?) =
+        prefs(c).edit().apply { if (day == null) remove("mark_day").remove("mark_what") else putString("mark_day", day.toString()).putString("mark_what", what) }.apply()
 }

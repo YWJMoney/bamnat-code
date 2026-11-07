@@ -97,13 +97,29 @@ async function seed() {
     const day = kst(Date.now() - i * 864e5);
     const phones = 30 + ((i * 7) % 23) + (i < 29 ? 8 : 0);
     const newer = i < 10 ? Math.round(phones * 0.7) : 0;
-    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
-    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
+    await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
+    await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
     for (const [event, share] of [["open", 0.9], ["pay_view", 0.35], ["share_made", 0.08], ["plaza_apply", 0.05], ["inquiry", 0.02], ["backup", 0.1]]) {
       const n = Math.max(1, Math.round(phones * share));
-      await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
+      await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
     }
   }
+  // 1.38 Phase 3 분석판: a few days of 팀·가게 events and made-up 팀·직원 요금제 purchases, so the card has something on it.
+  for (let i = 1; i <= 20; i++) {
+    const day = kst(Date.now() - i * 864e5);
+    for (const [event, n] of [["manage_open", 6], ["team_made", i % 4 === 0 ? 1 : 0], ["team_confirm", i % 3 === 0 ? 2 : 0], ["team_links", i % 3 === 0 ? 2 : 0],
+      ["ledger_closed", i % 7 === 0 ? 1 : 0], ["slip_sent", i % 7 === 0 ? 3 : 0], ["plan_view_team", 2], ["plan_view_staff", 1], ["plan_buy_tap", i % 2],
+      ["manage_hint_shown", 5], ["manage_hint_open", 1]]) {
+      if (n) await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.38.0', ?, ?, ?, ?)", day, event, n, n, n);
+    }
+  }
+  for (const [i, product, plan, trial, renew] of [[1, "bamnat_team", "c15-yearly", 1, 1], [2, "bamnat_team", "c15-monthly", 0, 1], [3, "bamnat_team", "c30-yearly", 0, 1],
+    [4, "bamnat_team", "c50-monthly", 0, 0], [5, "bamnat_staff", "c5-yearly", 0, 1], [6, "bamnat_staff", "c10-monthly", 0, 1]]) {
+    await run(`INSERT OR IGNORE INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
+      VALUES (?, ?, 'seed', ?, ?, 'ACTIVE', ?, ?, ?, ?, ?)`, `seed-sub-${i}`, `seed-device-s${i}`, product, plan, Date.now() + 20 * 864e5, trial, renew, Date.now() - i * 2 * 864e5, Date.now());
+  }
+  await run(`INSERT OR IGNORE INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product)
+    VALUES ('seed-pass-1', 'seed-device-p1', '', 'ACTIVE', ?, ?, ?, 'bamnat_team_pass_15')`, Date.now() - 5 * 864e5, Date.now(), Date.now());
   if (login.ok) await seedVersions(login.headers.get("set-cookie").split(";")[0], a);
   // [ADMUX-14] Four weeks of questions with their first answers and the askers' word, and the plaza spread over them.
   const kinds = ["bug", "question", "idea", "bug", "other"];
@@ -112,8 +128,10 @@ async function seed() {
     const id = `seedQ${String(i).padStart(17, "0")}`;
     const kind = kinds[i % kinds.length];
     const app = i < 8 ? "1.24.0 (35)" : "1.23.0 (34)";
-    await run(`INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
+    // A second --seed on a kept database (--db): the made-up rows are there already, so they are kept, not added twice.
+    const made = await run(`INSERT OR IGNORE INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
       id, `seed-device-q${i}`, kind, JSON.stringify({ app }), at, at, i % 4 === 0 ? -1 : i % 3 === 0 ? null : 1);
+    if (!made.meta?.changes) continue;
     await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, `지난 문의 ${i + 1}`, at);
     await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', '확인했어요', 'owner', ?)", id, at + ((i * 97) % 600 + 20) * 60e3);
   }
@@ -123,7 +141,7 @@ async function seed() {
     await run("INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", a.company.id, a.setup, `seed-device-u${i}`, Date.now() - (i % 25 + 1) * 864e5);
   }
   // [ADMUX-16] A few requests the server could not answer.
-  for (const i of [3, 11, 12]) await run("INSERT INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
+  for (const i of [3, 11, 12]) await run("INSERT OR IGNORE INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
   await seedRecipes(run);
   console.log("seeded: 5 market works without days (알바 2·현장·가게·교대), 3 자랑 글 with a card, 이달의 주제 for 알바·가게·교대, 예시정밀 v1·v2 and a third version waiting, 2 waiting elsewhere, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 26 questions, 56 days of usage");
 }
@@ -229,7 +247,18 @@ async function seedAdmins(cookie) {
   await asOwner("/invites", { email: "seojin@example.com", perms: reviewer, note: "문의 답변" });
 }
 
-if (args.includes("--seed")) await seed();
+// 1.38 [ADM3-36] PC 13차: --seed on a --db file that already has the examples does not add them again.
+async function seeded() {
+  try {
+    return Boolean((await env.DB.prepare("SELECT COUNT(*) AS n FROM reports").first())?.n);
+  } catch {
+    return false;
+  }
+}
+if (args.includes("--seed")) {
+  if (await seeded()) console.log("--seed: this --db file already has the examples, so none are added.");
+  else await seed();
+}
 
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.
@@ -251,7 +280,9 @@ http.createServer(async (req, res) => {
   // 1.36 [GRW-02][GRW-03][GRW-05] POST /__test/tick: the hourly work now (스튜디오 요구 묶음 → 장터, 승격 사다리), so a phone test needn't wait.
   if (testClock && req.method === "POST" && req.url.startsWith("/__test/tick")) {
     const waits = [];
-    await worker.scheduled({ cron: "17 * * * *", scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
+    // 1.38 [ADM3-05] ?cron=5 runs the five-minute work instead (보류가 끝난 Claude 답 보내기).
+    const cron = new URL(req.url, "http://x").searchParams.get("cron") === "5" ? "*/5 * * * *" : "17 * * * *";
+    await worker.scheduled({ cron, scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
     await Promise.all(waits);
     res.writeHead(204);
     res.end();

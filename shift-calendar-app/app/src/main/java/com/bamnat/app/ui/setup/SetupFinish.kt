@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +60,15 @@ import com.bamnat.app.ui.company.PendingDone
 @Composable
 internal fun AlarmStep(vm: SetupViewModel, d: SetupDraft) {
     StepHeader("출근 몇 분 전에 깨워 드릴까요?", "근무가 있는 날에만 울려요. 쉬는 날은 조용해요.")
+    AlarmPart(vm, d)
+}
+
+/**
+ * [EASE-07] 1.38: the alarm on the last screen, already at 출근 1시간 전, instead of a screen of its own (one tap less). The same
+ * choices; [compact] leaves the per-shift lines out until '근무마다 다르게' is on.
+ */
+@Composable
+internal fun AlarmPart(vm: SetupViewModel, d: SetupDraft, compact: Boolean = false) {
     val perShift = d.alarmByType.isNotEmpty()
     if (!perShift) AlarmChoices(d.alarmMinutes, "알람", onPick = vm::setAlarm)
     if (d.workTypes.size > 1) {
@@ -75,7 +85,7 @@ internal fun AlarmStep(vm: SetupViewModel, d: SetupDraft) {
             Switch(checked = perShift, onCheckedChange = null)
         }
     }
-    d.workTypes.forEach { t ->
+    if (!compact || perShift) d.workTypes.forEach { t ->
         val minutes = d.alarmFor(t)
         Surface(
             shape = MaterialTheme.shapes.large,
@@ -156,12 +166,20 @@ private fun ringLine(t: ShiftType, minutes: Int?): String {
 
 @Composable
 internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
-    StepHeader("이대로 저장할까요?", "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
+    // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
+    if (d.linkTitle.isNotBlank()) StepHeader("‘${d.linkTitle}’ 근무표로 시작할까요?", "받은 근무표의 근무 이름과 시간, 근무한 날을 그대로 넣었어요. 이름이 맞으면 아래 단추 하나로 시작해요.")
+    else StepHeader("이대로 저장할까요?", "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
-    SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
+    if (d.linkTitle.isNotBlank()) SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
+        onFix = { vm.fix(SetupStep.TIMES) })
+    else SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
     val source = d.source
     if ((source != null || d.companyName.isNotBlank()) && SetupStep.COMPANY in d.steps) {
-        SummaryCard("회사", companyLine(d, source), onFix = { vm.fix(SetupStep.COMPANY) })
+        // 1.38 통합 7차 347b7c37 (직접 만든 순서에도 '3조 2교대로 시작'): an order of the user's own is said so.
+        val own = remember(d.source, d.rotation) { d.rotation.isNotEmpty() && vm.sourceOrder(d)?.let { it != d.rotation } == true }
+        // 1.38 통합 7차 (회사를 고르지 않았는데 '병원 간호 3교대로 시작'): with no company the card is the order's own.
+        val noCompany = d.companyName.isBlank() && source?.kind == SetupSource.Kind.TEMPLATE
+        SummaryCard(if (noCompany) "근무 순서" else "회사", companyLine(d, source, own), onFix = { vm.fix(SetupStep.COMPANY) })
     }
     SummaryCard(
         "근무 시간",
@@ -182,22 +200,52 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         d.style == WorkStyle.HOURLY && d.noFixedDays -> SummaryCard("요일", "그때그때 달라요. 일한 날 달력에 적어요", onFix = { vm.fix(SetupStep.ORDER) })
         else -> SummaryCard("요일", weekLine(d) + if (d.holidaysOff) " · 공휴일 쉼" else " · 공휴일에도 일함", onFix = { vm.fix(SetupStep.ORDER) })
     }
+    // 1.38 통합 11차 (알바 월수금 13~18시: 쉬는 시간 30분이 붙어 주 13시간 30분 → 주휴 없음, 요약에는 작게만): the 15-hour line
+    // of 주휴수당 is said plainly when the week's hours make or miss it, and when the break alone decides it.
+    weeklyHolidayNote(d)?.let { SummaryCard("주휴수당", it, onFix = { vm.fix(SetupStep.TIMES) }) }
     if (d.usesRotation) {
         val date = vm.questionDate(d)
         todaySentence(d, date, vm.today)?.let { SummaryCard("오늘", it, onFix = { vm.fix(SetupStep.TODAY) }) }
     }
+    // [EASE-07] 1.38: the alarm is chosen here (already 출근 1시간 전), not on a screen of its own.
     val first = remember(d) { vm.firstAlarm(d) }
-    SummaryCard(
-        "알람",
-        buildString {
-            append(alarmLine(d))
-            first?.let { a ->
-                append("\n첫 알람: ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
-                if (a.shiftName.isNotEmpty()) append(" · ${a.shiftName}")
-            }
-        },
-        onFix = { vm.fix(SetupStep.ALARM) },
-    )
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("근무 알람 · 출근 몇 분 전에 깨울까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AlarmPart(vm, d, compact = true)
+            Text(
+                buildString {
+                    append(alarmLine(d))
+                    first?.let { a ->
+                        append(" · 첫 알람 ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
+                        if (a.shiftName.isNotEmpty()) append(" ${a.shiftName}")
+                    }
+                },
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+    // [EASE-03] 1.38 PC 994c2328: sharing a public cycle with the same company is one box here, never ticked beforehand,
+    // instead of a window that came up over the new calendar after 저장.
+    d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
+        val c = LocalContext.current.appContainer
+        if (remember(s.name) { c.leadShare.canAsk(s.name) }) {
+            val on by vm.shareCycle.collectAsStateWithLifecycle()
+            ShareCycleLine(s.name, on, upload = s.id.isNullOrEmpty()) { vm.shareCycle.value = it }
+        }
+    }
+    // [EASE-05][ONBOARD-05] 1.38: the first-start page is gone, so its one yes that goes to a server is here, on the first setup only,
+    // never ticked beforehand (D42); 설정 › 개인정보·앱 정보 changes it later.
+    if (vm.calendarId == null && !vm.again) {
+        val c = LocalContext.current.appContainer
+        val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+        com.bamnat.app.ui.onboarding.StatsLine(settings.shareUsageStats) { c.setUsageStats(it) }
+    }
 }
 
 @Composable
@@ -220,11 +268,15 @@ private fun SummaryCard(title: String, text: String, onFix: () -> Unit, extra: (
     }
 }
 
-private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList {
+private fun companyLine(d: SetupDraft, source: SetupSource?, ownOrder: Boolean = false): String = buildList {
     // [J133-26] Said once: the name is the company picked, so its line says it already.
     if (d.companyName.isNotBlank() && (source == null || source.kind == SetupSource.Kind.TEMPLATE || source.name.trim() != d.companyName.trim())) add(d.companyName.trim())
     when (source?.kind) {
-        SetupSource.Kind.TEMPLATE -> add("${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
+        SetupSource.Kind.TEMPLATE -> add(when {
+            ownOrder -> "내가 만든 순서 (근무 시간은 ${source.name} 업종 일반형)"
+            d.companyName.isBlank() -> "${source.name} (업종 일반형)"
+            else -> "${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)"
+        })
         SetupSource.Kind.SERVER -> add("같은 회사 설정: ${source.name}${source.dept.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}")
         SetupSource.Kind.FILE -> add("동료가 보낸 설정" + source.name.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
         SetupSource.Kind.PUBLIC -> add(
@@ -236,6 +288,26 @@ private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList
 }.joinToString("\n")
 
 /** "월·화·수·목·금 주간" or "월 오전 알바 · 수 저녁 알바". */
+/**
+ * 시급 알바의 주휴수당 (근로기준법 제55조·제18조 제3항, 1주 소정근로 15시간 이상): the week's hours from the days set, said against the
+ * 15 hours, and the break named when it alone takes the week under. Null for other kinds of work or no fixed days.
+ */
+internal fun weeklyHolidayNote(d: SetupDraft): String? {
+    if (d.style != WorkStyle.HOURLY || d.noFixedDays) return null
+    val days = d.weekly.mapNotNull { id -> id?.takeIf { !d.isOff(it) }?.let(d::type) }
+    if (days.isEmpty()) return null
+    val work = days.sumOf { it.workMinutes }
+    val withBreaks = days.sumOf { it.workMinutes + it.breakMinutes }
+    val line = 15 * 60
+    val hours = HoursFormat.korean(work)
+    return when {
+        work >= line -> "주 $hours 일해요 · 주 15시간 이상이라 주휴수당을 받아요"
+        withBreaks >= line -> "쉬는 시간을 빼면 주 ${hours}이라 주휴수당 기준(주 15시간)에 ${HoursFormat.korean(line - work)} 모자라요. " +
+            "쉬는 시간 없이 일하면 ‘고치기’에서 쉬는 시간을 0분으로 바꿔 주세요"
+        else -> "주 ${hours}이라 주휴수당 기준(주 15시간)에 ${HoursFormat.korean(line - work)} 모자라요"
+    }
+}
+
 private fun weekLine(d: SetupDraft): String {
     val days = java.time.DayOfWeek.entries.mapIndexedNotNull { i, day ->
         d.weekly.getOrNull(i)?.takeIf { !d.isOff(it) }?.let { day to d.type(it)!! }
@@ -311,6 +383,55 @@ fun SetupPaySheet(
             )
             Button(onClick = onNow, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("지금 할게요") }
             TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("나중에") }
+        }
+    }
+}
+
+/**
+ * [EASE-03] 1.38: the company's pay that came with the first setup (PAYG-07), offered where the pay is set up, on the pay tab the
+ * first time, instead of a sheet over the first calendar. Nothing when there is none. '쓰지 않을게요' forgets it.
+ */
+@Composable
+fun CompanyPayWaiting(calendar: String, modifier: Modifier = Modifier) {
+    val c = LocalContext.current.appContainer
+    val company = remember(calendar) { c.companyOf(calendar) }
+    var gone by remember { mutableStateOf(false) }
+    val way = remember(company, gone) {
+        val text = company.store.pendingPay
+        val a = company.store.applied.value
+        if (gone || text == null || a == null) null else PendingWay(a.companyId, a.company, a.dept, a.setup, text, PendingWay.Source.FIRST_SETUP)
+    } ?: return
+    androidx.compose.runtime.LaunchedEffect(way) { company.pendingWays.offer(way) }
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PendingDone(c, company, way, onDone = { gone = true }, onSaved = null,
+                intro = "근무 설정에서 고른 ‘${way.title}’의 급여 계산도 들어 있어요. 쓸까요?",
+                onSkip = {
+                    company.store.pendingPay = null
+                    company.payWays.use(null)
+                    gone = true
+                })
+        }
+    }
+}
+
+/** [EASE-03] The summary's one box for sharing the picked public cycle with others at [company]. */
+@Composable
+private fun ShareCycleLine(company: String, on: Boolean, upload: Boolean = false, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .toggleable(value = on, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = onChange).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
+        Column(Modifier.weight(1f)) {
+            Text(if (upload) "‘$company’ 근무표 올리기 · 같은 회사 분이 바로 써요" else "‘$company’ 다른 분들도 이 근무주기를 쓰게 나누기 (선택)",
+                style = MaterialTheme.typography.bodyLarge)
+            if (upload) Text("체크하면 저장할 때 올라가요. 공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

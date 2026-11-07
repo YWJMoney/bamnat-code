@@ -5,6 +5,7 @@
 //   node tools/market-seed.mjs                      check and write the file
 //   node tools/market-seed.mjs --check              check only (exit 1 on a refused work or a section short of its goal)
 //   node tools/market-seed.mjs --post http://127.0.0.1:8788   also put them in a LOCAL server's 출시 대기 (ADMIN_PASSWORD from the env)
+//   node tools/market-seed.mjs --set 138s --post <url> --open   … and release that batch at once (PC 확인용)
 //
 // Works are JSON files: one recipe, or an array of recipes / {recipe, showcase?} entries. Never posts to the real server: that is the
 // operator's paste in the 관리자 앱, after the user's last say-so (CLAUDE.md 3-1).
@@ -28,6 +29,22 @@ export const MIN_APP = 49;
 export const GOALS = { theme: 68, "tab:calendar": 20, "tab:pay": 20, "tab:money": 20, "tab:memo": 20, "tab:alarm": 20, "tab:widget": 20, part: 20, logic: 20 };
 
 /** The 장터 구간 a written recipe falls in: the server's own sectionOf when it has one (갈래 F), else 테마 / 기능별 탭. */
+/**
+ * 1.38 [LEDH-18] 판마다 따로 내는 작품 묶음: `--set 138` reads docs/recipes/market-138/ (장터 첫 가계부 틀 넷) and holds them for
+ * 1.38 apps (versionCode 52), as their own batch to release with 1.38.
+ */
+export const SETS = {
+  136: { dir: DIR, out: OUT, batch: BATCH, minApp: MIN_APP, goals: GOALS },
+  138: { dir: join(ROOT, "market-138"), out: join(ROOT, "market-138.json"), batch: "1.38 가계부 틀", minApp: 52, goals: { "tab:money": 4 } },
+  // 1.38 [STM-07] 스튜디오 재료(밤낮 색 아이콘·배경)로 만든 테마 100·기능별 300 (docs/recipes/market-138-studio/make).
+  "138s": { dir: join(ROOT, "market-138-studio"), out: join(ROOT, "market-138-studio.json"), batch: "1.38 스튜디오 작품", minApp: 52,
+    goals: { theme: 100, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 40, "tab:widget": 35, "tab:alarm": 25, part: 30, logic: 20 } },
+  // 1.38 [STM-09] 1.36 '다듬기' 작품에 밤낮 배경·아이콘을 얹은 같은 제목 새 판(make/refresh.mjs). 1.36 앱도 읽으니 minApp 없이,
+  // 이미 장터에 있는 판은 넣는 즉시 바뀌어요: 1.38 출시 날 사용자 확인 뒤 넣어요.
+  "138r": { dir: join(ROOT, "market-138-refresh"), out: join(ROOT, "market-138-refresh.json"), batch: "1.38 옛 작품 새 판", minApp: null,
+    goals: { theme: 49, "tab:calendar": 22, "tab:memo": 11, "tab:money": 1, "tab:pay": 22, "tab:widget": 2 } },
+};
+
 export function sectionKey(text) {
   if (typeof recipes.sectionOf === "function") {
     const s = recipes.sectionOf(text);
@@ -50,10 +67,10 @@ export function readWorks(dir = DIR) {
   return out;
 }
 
-export async function build(works) {
+export async function build(works, set = SETS[136]) {
   const refused = [];
   const entries = [];
-  const count = Object.fromEntries(Object.keys(GOALS).map((k) => [k, 0]));
+  const count = Object.fromEntries(Object.keys(set.goals).map((k) => [k, 0]));
   const names = new Set();
   for (const w of works) {
     try {
@@ -62,24 +79,37 @@ export async function build(works) {
       names.add(c.recipe.title);
       const key = sectionKey(c.text);
       count[key] = (count[key] ?? 0) + 1;
-      entries.push({ recipe: JSON.parse(c.text), hold: true, replace: true, batch: BATCH, minApp: MIN_APP, ...(w.showcase ? { showcase: true } : {}) });
+      entries.push({ recipe: JSON.parse(c.text), hold: true, replace: true, batch: set.batch, ...(set.minApp ? { minApp: set.minApp } : {}), ...(w.showcase ? { showcase: true } : {}) });
     } catch (e) {
       if (!(e instanceof RecipeError)) throw e;
       refused.push(`${w.file} · ${w.recipe?.title ?? "?"}: ${e.code} ${e.path}`);
     }
   }
-  const short = Object.entries(GOALS).filter(([k, n]) => (count[k] ?? 0) < n).map(([k, n]) => `${k} ${count[k] ?? 0}/${n}`);
+  const short = Object.entries(set.goals).filter(([k, n]) => (count[k] ?? 0) < n).map(([k, n]) => `${k} ${count[k] ?? 0}/${n}`);
   return { entries, refused, count, short };
 }
 
-async function post(base, entries) {
+async function login(base) {
   const pw = process.env.ADMIN_PASSWORD;
   if (!pw) throw new Error("ADMIN_PASSWORD 가 없어요");
   if (!/^http:\/\/(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?$/.test(base)) throw new Error("로컬 서버에만 넣어요");
-  const login = await fetch(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base },
+  const r = await fetch(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base },
     body: JSON.stringify({ password: pw }) });
-  if (login.status !== 200) throw new Error(`login ${login.status}`);
-  const cookie = login.headers.get("set-cookie").split(";")[0];
+  if (r.status !== 200) throw new Error(`login ${r.status}`);
+  return r.headers.get("set-cookie").split(";")[0];
+}
+
+/** 1.38 [STM-09] 정리 목록(market-138-refresh-plan.json)의 내림 작품을 로컬 서버에서 숨겨요. */
+async function hide(base, dry) {
+  const cookie = await login(base);
+  const titles = JSON.parse(readFileSync(join(ROOT, "market-138-refresh-plan.json"), "utf8")).hide.map((x) => x.title);
+  const r = await fetch(`${base}/api/admin/recipes/hide-titles`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
+    body: JSON.stringify({ titles, dry, note: "1.38 장터 정리" }) });
+  return `${r.status} ${await r.text()}`;
+}
+
+async function post(base, entries, open = null) {
+  const cookie = await login(base);
   let ok = 0;
   for (const e of entries) {
     const r = await fetch(`${base}/api/admin/recipes`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
@@ -87,20 +117,33 @@ async function post(base, entries) {
     if (r.status < 300) ok++;
     else console.log(`못 넣음 ${e.recipe.title}: ${r.status} ${await r.text()}`);
   }
+  // --open: PC 확인용으로 이 묶음을 바로 장터에(실서버에서는 출시 날 관리자 앱 › 출시 대기에서).
+  if (open) {
+    const r = await fetch(`${base}/api/admin/recipes/release`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
+      body: JSON.stringify({ batch: open }) });
+    console.log(`장터에 내기(${open}): ${r.status} ${await r.text()}`);
+  }
   return ok;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
-  const { entries, refused, count, short } = await build(readWorks());
+  // node tools/market-seed.mjs --hide http://127.0.0.1:8789 [--dry]   1.38 정리 목록의 내림 171개 숨기기(로컬)
+  if (args.includes("--hide")) {
+    console.log(`숨기기: ${await hide(args[args.indexOf("--hide") + 1], args.includes("--dry"))}`);
+    process.exit(0);
+  }
+  const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
+  if (!set) throw new Error("--set 은 136, 138, 138s, 138r 중 하나예요");
+  const { entries, refused, count, short } = await build(readWorks(set.dir), set);
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const r of refused) console.log(`거절: ${r}`);
   if (short.length) console.log(`목표 모자람: ${short.join(", ")}`);
   if (!args.includes("--check")) {
-    writeFileSync(OUT, JSON.stringify(entries, null, 1) + "\n");
-    console.log(`썼어요: ${OUT}`);
+    writeFileSync(set.out, JSON.stringify(entries, null, 1) + "\n");
+    console.log(`썼어요: ${set.out}`);
   }
   const at = args.indexOf("--post");
-  if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], entries)}개 넣었어요`);
+  if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], entries, args.includes("--open") ? set.batch : null)}개 넣었어요`);
   if (refused.length || (args.includes("--check") && short.length)) process.exit(1);
 }

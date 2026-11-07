@@ -16,13 +16,14 @@ import kotlinx.coroutines.launch
 
 /**
  * [MON-07] The AdMob ad unit id from gradle.properties (bamnat.admobRewarded; a public value the owner gives). Blank in a
- * release build means no ads at all; a debug build uses Google's own test unit. 1.36 838 (사용자 2026-10-31 "띠 광고는
+ * release build means no ads at all. A debug build always uses Google's own test unit, even when gradle.properties holds the
+ * real one (1.38 출시 점검 E1: a debug build on a test phone must never ask for or click a real ad, AdMob 무효 트래픽). 1.36 838 (사용자 2026-10-31 "띠 광고는
  * 없애는게 좋을거 같아"): there is no banner; the only ad is the rewarded one the user chooses.
  */
 object AdIds {
     private const val TEST_REWARDED = "ca-app-pub-3940256099942544/5224354917"
 
-    val rewarded: String = BuildConfig.ADMOB_REWARDED.ifBlank { if (BuildConfig.DEBUG) TEST_REWARDED else "" }
+    val rewarded: String = if (BuildConfig.DEBUG) TEST_REWARDED else BuildConfig.ADMOB_REWARDED
     val configured: Boolean get() = rewarded.isNotBlank()
 }
 

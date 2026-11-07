@@ -160,7 +160,11 @@ class PayViewModel(
         // [CALI-04] 1.30 BB: the calendar's own company (1.29: the main calendar's only).
         val company = container.companyOf(calendarId)
         val asked = company.autoShare.saved()
-        if (invite && !asked && company.store.applied.value == null && company.payWays.way.value == null &&
+        // 12차 빈틈 3 (PC 12차): not for an 알바 that only put in its 시급, which is nothing to share yet. Its ask waits for
+        // something made (MADE) or checked (명세서와 맞음).
+        val onlyWage = settings.value.workStyle == com.bamnat.core.work.WorkStyle.HOURLY && !fromSlip &&
+            profile.items.isEmpty() && profile.customRules.isEmpty()
+        if (invite && !asked && !onlyWage && company.store.applied.value == null && company.payWays.way.value == null &&
             com.bamnat.app.company.ShareAskGate.open(container.appContext)) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [J133-85] The calendar uses a company's shifts from the 광장 and that version has no pay way: the first one, offered.
@@ -381,17 +385,6 @@ class PayViewModel(
     fun setRaise(target: ValueTarget, rule: RaiseRule?) =
         update { it.withTimeline(target, timelineOf(it, target).copy(raise = rule)) }
 
-    /** [PAYS-01] With no [amount] the allowance is 금액 모름: left out of the total and listed until it is known. */
-    fun addItem(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
-        val id = "item-" + System.currentTimeMillis()  // real clock: an id, not a time
-        // A 1.32 [FIX132-03] A new allowance counts in every month (1.31 started it this month, so earlier months lacked it).
-        val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(com.bamnat.core.pay.BulkEditPlanner.EARLIEST, amount)))
-        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
-            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes,
-            taxable = !(cadence == Cadence.MONTHLY && fixedOvertimeMinutes == 0 && com.bamnat.core.pay.TakeHome.looksNonTaxable(name))),
-            estimatedFields = if (amount == null) p.estimatedFields + Unknowns.item(id) else p.estimatedFields)
-    }
-
     /** [PAYS-01] The amount of an allowance that was 금액 모름, from [month]'s pay period on. */
     fun setItemAmount(id: String, amount: Long, month: YearMonth) = update { p ->
         val from = p.period.start(month)
@@ -611,13 +604,27 @@ class PayViewModel(
     /** [PAYS-07] Keeps an item the user made; a rule made before keeps its place in the list. */
     internal fun saveMade(made: MadeItem) = update { p ->
         when (made) {
-            is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item)
+            // [PAYX-50] An allowance put in as 금액 모름 is listed to be asked, as the old '수당 추가' did; one with an amount is not.
+            is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item,
+                estimatedFields = if (made.item.amount.entries.isEmpty() && !made.item.isPercent) p.estimatedFields + Unknowns.item(made.item.id)
+                else p.estimatedFields - Unknowns.item(made.item.id))
             is MadeItem.Rule -> {
                 val i = p.customRules.indexOfFirst { it.id == made.rule.id }
                 p.copy(customRules = if (i >= 0) p.customRules.toMutableList().also { it[i] = made.rule }
                 else (p.customRules + made.rule).take(com.bamnat.core.pay.CustomRule.MAX))
             }
         }
+    }
+
+    /**
+     * [PAYX-52] A 매달 rule's own amount for [month] (사택관리비 이번 달 83,000원); the usual amount again takes the month's own away.
+     */
+    fun setRuleMonth(id: String, month: YearMonth, amount: Long) = update { p ->
+        p.copy(customRules = p.customRules.map { r ->
+            val usual = (r.pay as? com.bamnat.core.pay.RulePay.Monthly)?.amount
+            if (r.id != id || usual == null) r
+            else r.copy(byMonth = if (amount == usual) r.byMonth - month else r.byMonth + (month to amount))
+        })
     }
 
     fun setCustomRuleOn(id: String, on: Boolean) = update { p -> p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(on = on) else it }) }

@@ -64,13 +64,16 @@ class StudioCanvasTest {
     @Test fun theSummaryCanGoUnderTheMonthAndBack() {
         val cards = pageCards(TabOrder.CALENDAR, WorkStyle.SHIFT)
         val d = AppSettings(workStyle = WorkStyle.SHIFT)
-        assertEquals(true, cards.above(d, CalendarPart.SUMMARY.id))
-        val under = cards.across!!(d, CalendarPart.SUMMARY.id)
-        assertNotEquals(d, under)
-        assertFalse(calendarAbove(under.calendarParts().map { it.part })(CalendarPart.SUMMARY))
-        val up = cards.across!!(under, CalendarPart.SUMMARY.id)
-        assertTrue(calendarAbove(up.calendarParts().map { it.part })(CalendarPart.SUMMARY))
-        // PC 확인 1.37 A1: down and back up leaves 하루 카드 (a card with its own switch) as the line had it.
+        // [EASE-01] 1.38: the month comes first; 이번 달 요약 starts under it and goes up and back down.
+        assertEquals(false, cards.above(d, CalendarPart.SUMMARY.id))
+        val over = cards.across!!(d, CalendarPart.SUMMARY.id)
+        assertNotEquals(d, over)
+        assertTrue(calendarAbove(over.calendarParts().map { it.part })(CalendarPart.SUMMARY))
+        val back = cards.across!!(over, CalendarPart.SUMMARY.id)
+        assertFalse(calendarAbove(back.calendarParts().map { it.part })(CalendarPart.SUMMARY))
+        val under = over
+        val up = back
+        // PC 확인 1.37 A1: across and back leaves 하루 카드 (a card with its own switch) as the line had it.
         val dayShown = { x: AppSettings -> com.bamnat.app.ui.studio.StudioEdit.cardShown(x.calendarLayout, CalendarPart.entries.map { it.id }, CalendarPart.DAY_CARD.id) }
         assertTrue(dayShown(d))
         assertTrue(dayShown(under))
@@ -82,6 +85,13 @@ class StudioCanvasTest {
         val gone = cards.show(d, CalendarPart.COUNTS.id, false)
         assertTrue(CalendarPart.COUNTS.id in cards.hidden(gone))
         assertFalse(CalendarPart.COUNTS.id in cards.hidden(cards.show(gone, CalendarPart.COUNTS.id, true)))
+    }
+
+    /** 1.38 통합 12차: 오늘의 흐름 is over the month in the month-first line (one line until opened); the summary stays under it. */
+    @Test fun todaysFlowIsOverTheMonthByDefault() {
+        val above = calendarAbove(AppSettings().calendarParts().map { it.part })
+        assertTrue(above(CalendarPart.TODAY_FLOW))
+        assertFalse(above(CalendarPart.SUMMARY))
     }
 
     @Test fun zoomStepsAreTheUsualOnes() {

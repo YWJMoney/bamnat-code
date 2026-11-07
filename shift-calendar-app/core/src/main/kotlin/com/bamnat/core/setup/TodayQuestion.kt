@@ -26,6 +26,17 @@ object TodayQuestion {
         return if (minute < until) now.toLocalDate().minusDays(1) else now.toLocalDate()
     }
 
+    /**
+     * 1.38 통합 8차 (09:41 소방 당번인데 '지금은 새벽이라'): the overnight shift that makes [questionDate] yesterday, the one
+     * ending latest; null when the question is about today.
+     */
+    fun becauseOf(now: LocalDateTime, types: Collection<ShiftType>): ShiftType? {
+        val minute = now.hour * 60 + now.minute
+        return types.filter { it.hasTimes && WorkTime.isOvernight(it.start!!, it.end!!) }
+            .filter { minute < minOf(it.end!!.hour * 60 + it.end.minute + AFTER_END_MINUTES, NOON_MINUTES) }
+            .maxByOrNull { it.end!!.hour * 60 + it.end.minute }
+    }
+
     /** The shifts to choose from, each once, in the order the rotation first has them. */
     fun choices(steps: List<Long?>): List<Long?> = steps.distinct()
 

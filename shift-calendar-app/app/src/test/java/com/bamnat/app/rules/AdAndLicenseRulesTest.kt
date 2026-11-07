@@ -30,8 +30,16 @@ class AdAndLicenseRulesTest {
         assertFalse("띠 광고 자리는 없어요", File(main, "java/com/bamnat/app/ui/components/AdSlot.kt").exists())
         assertFalse(sources.any { Regex("""AdSlot\(""").containsMatchIn(it.readText()) })
         assertFalse(File("build.gradle.kts").readText().contains("ADMOB_BANNER"))
+        assertFalse("1.38 E6: 띠 광고 단위 값도 남기지 않아요", File("../gradle.properties").readText().contains("admobBanner"))
         val alarmScreens = File(main, "java/com/bamnat/app/alarm").walkTopDown().filter { it.isFile }
         assertTrue("알람 화면에는 광고가 없어요", alarmScreens.none { it.readText().contains("com.google.android.gms.ads") })
+    }
+
+    /** 1.38 출시 점검 E1: a debug build asks only for Google's test unit, whatever gradle.properties holds (AdMob 무효 트래픽). */
+    @Test fun aDebugBuildUsesTheTestUnit() {
+        assertEquals(com.bamnat.app.BuildConfig.DEBUG, com.bamnat.app.ads.AdIds.rewarded == "ca-app-pub-3940256099942544/5224354917")
+        val ads = File(main, "java/com/bamnat/app/ads/Ads.kt").readText()
+        assertTrue(ads.contains("if (BuildConfig.DEBUG) TEST_REWARDED else BuildConfig.ADMOB_REWARDED"))
     }
 
     @Test fun theAdsSdkIsOnlyInItsOwnPlaces() {
@@ -66,9 +74,9 @@ class AdAndLicenseRulesTest {
         assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(true, true, installed, installed.plusSeconds(86_400L * 30)))
         // The SDK's own measurement waits for MobileAds.initialize, so nothing goes before the switch.
         assertTrue(File(main, "AndroidManifest.xml").readText().contains("com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"))
-        // Google's test units are for debug builds only; a release without ids has no ads at all.
+        // Google's test units are for debug builds only (always, 1.38 E1); a release without ids has no ads at all.
         val ids = read("ads/Ads.kt")
-        assertTrue(ids.contains("ifBlank { if (BuildConfig.DEBUG) TEST_REWARDED else \"\" }"))
+        assertTrue(ids.contains("if (BuildConfig.DEBUG) TEST_REWARDED else BuildConfig.ADMOB_REWARDED"))
         // Such a release leaves out the advertising ID permissions the SDK brings (no 광고 ID declaration needed).
         val noAdId = File("src/noAdId/AndroidManifest.xml").readText()
         for (p in listOf("com.google.android.gms.permission.AD_ID", "android.permission.ACCESS_ADSERVICES_AD_ID")) {

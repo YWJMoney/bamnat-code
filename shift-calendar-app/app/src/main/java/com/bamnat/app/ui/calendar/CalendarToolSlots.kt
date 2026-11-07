@@ -11,6 +11,10 @@ internal object CalendarToolSlots {
     const val EDIT = "edit"
     const val TEAMS = "teams"
     const val TYPE_MONTH = "typeMonth"
+    /** [EASE-25] 오늘부터 하루 밀기 (and 순서 다시 맞추기, the same window). */
+    const val PUSH = "push"
+    /** 1.38 PC 11차: 내가 짜는 팀 근무표 (team.leader), not behind 모든 조, which a 매달 근무표 calendar cannot open. */
+    const val LEADER = "leaderTeams"
     const val SHARE = "share"
     const val YEAR = "year"
     const val RECEIVE = "receive"
@@ -26,14 +30,24 @@ internal object CalendarToolSlots {
         val received = "받은 달력을 보는 중".takeIf { fit.viewingReceived }
         return buildList {
             add(Slot(EDIT, "달력 고치기", enabled = received == null, note = received))
-            if (fit.teams) add(Slot(TEAMS, "모든 조 보기", enabled = fit.teamsReady && received == null,
-                note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.teamsReady }))
+            // [EASE-04] 1.38 (통합 7차): a calendar with no order (매달 근무표) starts with what it can use now; the two
+            // tools that need an order wait after 근무 주기 설정, where the order is made.
+            val orderTools = buildList {
+                if (fit.teams) add(Slot(TEAMS, "모든 조 보기", enabled = fit.teamsReady && received == null,
+                    note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.teamsReady }))
+                // [EASE-25] 1.38: a shift worker's order slipped by a day, put right from the tools as well as a day's long press.
+                if (fit.teams) add(Slot(PUSH, "오늘부터 하루 밀기", enabled = fit.pushReady && received == null,
+                    note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.pushReady }))
+            }
+            if (fit.teamsReady) addAll(orderTools)
             add(Slot(TYPE_MONTH, "이번 달 전부 넣기", enabled = received == null && fit.hasShiftTypes,
                 note = received ?: "근무 종류를 먼저 만들어요".takeIf { !fit.hasShiftTypes }))
+            if (fit.leader) add(Slot(LEADER, "내 팀 근무표 짜기"))
             add(Slot(SHARE, "근무표 공유"))
             add(Slot(YEAR, "1년 달력"))
             if (fit.receive) add(Slot(RECEIVE, "동료 근무표 받기"))
             add(Slot(PATTERN, "근무 주기 설정"))
+            if (!fit.teamsReady) addAll(orderTools)
             add(Slot(ADD, "새 달력 만들기"))
             add(Slot(CUSTOMIZE, "카드 배치", enabled = received == null, note = received))
             add(Slot(VIEW_SETTINGS, "달력 보기 설정", away = true))
@@ -49,4 +63,8 @@ internal data class ToolFit(
     val viewingReceived: Boolean = false,
     val hasShiftTypes: Boolean = true,
     val teamsReady: Boolean = true,
+    /** [EASE-25] Today is under a rotating order, which a day can be pushed in. */
+    val pushReady: Boolean = true,
+    /** 1.38 [P3-02] `team.leader` is on: 내 팀 근무표 짜기 is a tool of its own. */
+    val leader: Boolean = false,
 )

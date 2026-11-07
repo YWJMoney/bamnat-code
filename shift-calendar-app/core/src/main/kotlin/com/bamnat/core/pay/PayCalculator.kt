@@ -119,7 +119,10 @@ class PayCalculator(
 ) {
     private val rateTable: List<Rates> get() = fixedRates ?: RateTable.current
 
-    private class ExtraTotal(val rule: ExtraRule, val label: String, val kind: Long, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0)
+    private class ExtraTotal(val rule: ExtraRule, val label: String, val kind: Long, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0) {
+        /** [PAYX-55] The way the one time was worked out, with its numbers; a month of several times says the rule. */
+        var one: String? = null
+    }
 
     /** The premiums in force: the company's when it set one, else the law's (none under 5 employees). */
     private class Premiums(val overtime: Double, val night: Double, val holidayWithin8h: Double, val holidayOver8h: Double, val holidayBase: Double)
@@ -220,7 +223,8 @@ class PayCalculator(
         val base = profile.base.on(month)
         // [PAYX-24] A month joined or left part way: 재직 일수 (or 소정근로일) over the period's, by the company's rule.
         val proration: Pair<Int, Int>? = run {
-            val partial = profile.hireDate?.isAfter(periodStart) == true || profile.leaveDate?.isBefore(periodEnd) == true
+            val partial = profile.hireDate?.isAfter(periodStart) == true || profile.leaveDate?.isBefore(periodEnd) == true ||
+                profile.unpaidDays.any(::inPeriod)
             if (!partial || monthDays.isEmpty()) return@run null
             val employedDays = monthDays.filter { profile.employed(it.date) }
             fun work(d: ResolvedDay) = d.isWorkDay || d.leave != null
@@ -273,6 +277,15 @@ class PayCalculator(
         val baseLabel = when (profile.wageType) {
             WageType.MONTHLY -> "기본급"
             WageType.HOURLY, WageType.DAILY -> "시급 × ${profile.monthlyHours}시간"
+        }
+
+        // 1.38 [PAYX-49] A kind of work with a 시수 of its own (교육 243시간 while 연장 is 180): 통상임금 ÷ that many hours. A 통상시급
+        // set from the payslip stands for 통상임금 ÷ the profile's hours, so it is turned back into the month first.
+        val ordinaryForHours: Double? = setHourly?.let { it * profile.monthlyHours.coerceAtLeast(1) }
+            ?: ordinary.total.toDouble().takeIf { profile.wageType == WageType.MONTHLY }
+        fun hourlyFor(rule: ExtraRule): Long {
+            val h = rule.monthlyHours?.takeIf { it > 0 } ?: return hourly
+            return ordinaryForHours?.let { (it / h).roundToLong() } ?: hourly
         }
 
         fun legal(p: Double) = if (premiums) p else 0.0
@@ -376,9 +389,9 @@ class PayCalculator(
                 if (rule.ownsNight) n -= w.night
             }
             fun pay(key: Triple<Long, Long?, Boolean>, name: String, rule: ExtraRule, w: WorkMinutes, piece: PieceAt) {
-                val r = applyRule(rule, w, piece, hourly, monthlyBase, baseLabel, pr, law, rates)
+                val r = applyRule(rule, w, piece, hourlyFor(rule), monthlyBase, baseLabel, pr, law, rates)
                 extraTotals.getOrPut(key) { ExtraTotal(rule, name, key.first) }.apply {
-                    amount += r.amount; this.minutes += r.credited; times++; legal += r.legal
+                    amount += r.amount; this.minutes += r.credited; times++; legal += r.legal; one = r.formula
                 }
                 parts += DayPart(LineKind.EXTRA, name, r.amount, r.formula)
             }
@@ -421,6 +434,16 @@ class PayCalculator(
                 val perShift = covered?.id?.let { rules.extraByShift[e.kind.id]?.get(it) }?.takeUnless { it.isLegal }
                 val rule = rules.extraRule(e.kind.id, covered?.id) ?: continue
                 val name = rules.extraName(e.kind.id) + if (perShift != null) " · ${covered!!.name}" else ""
+                // [PAYX-54] 1.38 PC 12.4.1: all inside the day's shift (교육 during 일근): the hours are the shift's, already paid,
+                // so only an amount each time the company adds (교육 수당 1회) goes on; no 최소 인정 시간, no overtime.
+                if (e.minutes <= 0 && e.insideShiftMinutes > 0) {
+                    if (rule.bonus > 0) {
+                        extraTotals.getOrPut(Triple(e.kind.id, perShift?.let { covered!!.id }, false)) { ExtraTotal(rule, name, e.kind.id) }
+                            .apply { amount += rule.bonus; times++; one = "근무 시간 안이라 시간은 더하지 않고 1회 ${won(rule.bonus)}" }
+                        parts += DayPart(LineKind.EXTRA, name, rule.bonus, "근무 시간 안이라 시간은 더하지 않고 1회 ${won(rule.bonus)}")
+                    }
+                    continue
+                }
                 if (rule.basis != ExtraBasis.LEGAL) takeOut(em.minutes, rule, shiftPart = false)
                 // [PAYX-21] The day's work before this piece on the clock: the shift, then pieces that start earlier.
                 val before = m.shift.worked + day.extras.withIndex().filter { (j, o) ->
@@ -666,11 +689,15 @@ class PayCalculator(
             val rule = t.rule
             lines += PayLine(
                 LineKind.EXTRA, "${t.label} (회사 규칙)", t.amount,
-                formula = "${rule.describe()}: ${t.times}회" + (if (t.minutes > 0) ", ${hours(t.minutes)}" else ""),
+                // [PAYX-55] 1.38 PC 12.5: the numbers it was paid on ("4시간 × 9,877원(÷243시간) = … + 연장 가산 4시간 × 50% = …"),
+                // not the rule's words alone.
+                formula = t.one?.takeIf { t.times == 1 && it.isNotBlank() }
+                    ?: ("${rule.describe()}: ${t.times}회" + (if (t.minutes > 0) ", ${hours(t.minutes)}" else "")),
                 minutes = t.minutes,
-                hourly = if (rule.basis == ExtraBasis.HOURLY_RATE) hourly else 0,
+                hourly = if (rule.basis == ExtraBasis.HOURLY_RATE || rule.basis == ExtraBasis.UNIT && rule.usesHourly) hourlyFor(rule) else 0,
                 multiplier = if (rule.basis == ExtraBasis.HOURLY_RATE) rule.multiplier else 0.0,
-                basis = "달력에 ‘${rules.extraName(t.kind)}’로 넣은 근무",
+                basis = "달력에 ‘${rules.extraName(t.kind)}’로 넣은 근무" + (rule.monthlyHours?.takeIf { profile.wageType == WageType.MONTHLY && rule.usesHourly }
+                    ?.let { " · 통상시급은 통상임금 ÷ ${it}시간 ${won(hourlyFor(rule))} (회사 규칙, 다른 근무는 ${profile.monthlyHours}시간)" }.orEmpty()),
                 estimated = baseEstimated && (rule.basis == ExtraBasis.HOURLY_RATE || rule.basis == ExtraBasis.LEGAL || rule.legalPremiums ||
                     rule.basis == ExtraBasis.UNIT && (rule.unit != PayUnit.PER_HOUR && rule.unit != PayUnit.PER_TIME || rule.ticked.isNotEmpty())),
             )
@@ -722,7 +749,9 @@ class PayCalculator(
             if (!rule.on || !rule.pay.monthly) continue
             if (!rule.inPeriod(month) || rule.tenureOk(month, profile.hireDate) != true) continue
             val (whole, formula) = when (val pay = rule.pay) {
-                is RulePay.Monthly -> pay.amount to "매달 ${won(pay.amount)}"
+                // [PAYX-52] A month with its own amount (사택관리비 이번 달 83,000원) says so.
+                is RulePay.Monthly -> rule.byMonth[month]?.let { it to "${month.monthValue}월 금액 ${won(it)} (보통 ${won(pay.amount)})" }
+                    ?: (pay.amount to "매달 ${won(pay.amount)}")
                 is RulePay.OfBaseMonthly -> (monthlyBase * pay.share).roundToLong() to
                     "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)}"
                 // [PHOTO-05] 통상임금 월액: 기본급 and the monthly allowances that count (bonuses left out, they follow it).
@@ -1077,7 +1106,7 @@ class PayCalculator(
         }
         fun money(min: Int, rate: Double) = (min / 60.0 * unitHourly * rate).roundToLong()
         val unitText = when (rule.unit) {
-            PayUnit.ORDINARY, PayUnit.PER_TIME -> won(hourly)
+            PayUnit.ORDINARY, PayUnit.PER_TIME -> won(hourly) + rule.monthlyHours?.let { "(÷${it}시간)" }.orEmpty()
             PayUnit.BASE_SHARE -> "${won(unitHourly.roundToLong())}($baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(rule.percentOfBase)} ÷ ${hours(rule.unitMinutes)})"
             PayUnit.PER_HOUR -> won(rule.amount)
         }
@@ -1258,7 +1287,8 @@ class PayCalculator(
     }
 
     private fun MonthPay.withHourlyNote(formula: String) =
-        copy(lines = lines.map { if (it.hourly > 0) it.copy(formula = "${it.formula} · 통상시급 = $formula") else it })
+        // [PAYX-55] Only lines on this 통상시급: one on its own 시수 (교육 ÷ 243) says its own in its basis.
+        copy(lines = lines.map { if (it.hourly > 0 && it.hourly == ordinaryHourly) it.copy(formula = "${it.formula} · 통상시급 = $formula") else it })
 
     private fun line(
         kind: LineKind, label: String, minutes: Int, hourly: Long, multiplier: Double,
@@ -1307,6 +1337,16 @@ class PayCalculator(
     }
 
     companion object {
+        /**
+         * 1.38 [PAYX-49] The month's 통상임금 a kind with its own 시수 is divided by ([ExtraRule.monthlyHours]), the engine's own: a
+         * 통상시급 set from the payslip × the profile's hours, else [ordinaryWage]. Null for 시급·일급, which have no 시수.
+         */
+        fun ordinaryForHours(profile: PayProfile, month: YearMonth): Double? {
+            if (profile.wageType != WageType.MONTHLY) return null
+            return profile.ordinaryHourly?.takeIf { it > 0 }?.let { it * profile.monthlyHours.coerceAtLeast(1) }
+                ?: ordinaryWage(profile, month).total.toDouble()
+        }
+
         /**
          * [PAY-05][PAYS-02] The 통상임금 of [month] for monthly pay: 기본급, the monthly allowances that count and
          * the monthly share of regular bonuses. Bonuses count at a year's payments ÷ 12 (시행령 제6조 제2항 제5호)

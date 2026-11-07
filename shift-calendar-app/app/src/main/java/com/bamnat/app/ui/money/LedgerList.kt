@@ -205,7 +205,18 @@ fun LedgerListPane(
     val pickBoard: (com.bamnat.core.money.LedgerBoard) -> Unit = { b ->
         container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(money = b).encode()) }
     }
-    var pickedDay by remember(month) { mutableStateOf<LocalDate?>(null) }
+    // 1.38 PC 7차: 기간이 이 달보다 길면 달력은 그 안의 달을 따로 넘겨요(처음엔 보고 있던 달).
+    var calMonth by remember(month, view.period) { mutableStateOf(month) }
+    val calWithin: ClosedRange<YearMonth>? = remember(view.period, month, shown) {
+        if (view.period == LedgerPeriod.MONTH) null else {
+            val (from, to) = view.period.range(month)
+            val dates = shown.map { it.date }
+            val start = (from ?: dates.minOrNull())?.let(YearMonth::from) ?: month
+            val end = (to ?: dates.maxOrNull())?.let(YearMonth::from) ?: month
+            minOf(start, month)..maxOf(end, month)
+        }
+    }
+    var pickedDay by remember(month, calMonth) { mutableStateOf<LocalDate?>(null) }
     var tableSort by remember { mutableStateOf("date" to true) }
     val list: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier) {
@@ -233,7 +244,8 @@ fun LedgerListPane(
                 if ((shown.isNotEmpty() || board == com.bamnat.core.money.LedgerBoard.CAL) && board != com.bamnat.core.money.LedgerBoard.LIST) item(key = "board-${board.key}") {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         when (board) {
-                            com.bamnat.core.money.LedgerBoard.CAL -> LedgerMonthGrid(month, shown, pickedDay) { pickedDay = if (pickedDay == it) null else it }
+                            com.bamnat.core.money.LedgerBoard.CAL -> LedgerMonthGrid(if (calWithin == null) month else calMonth, shown, pickedDay,
+                                { pickedDay = if (pickedDay == it) null else it }, calWithin, { calMonth = it })
                             com.bamnat.core.money.LedgerBoard.BOARD -> LedgerCategoryBoard(shown, actions::open)
                             com.bamnat.core.money.LedgerBoard.TABLE -> LedgerTable(shown, tableSort, { tableSort = it }, actions::open)
                             com.bamnat.core.money.LedgerBoard.LIST -> Unit
@@ -244,7 +256,8 @@ fun LedgerListPane(
                     item(key = "empty") {
                         when {
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd)
+                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd,
+                                kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })
                             else -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "이 기간에 적은 돈이 없어요",
@@ -336,7 +349,7 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
             singleLine = true,
             placeholder = { Text("기록 찾기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingText = null,
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
             trailingIcon = {
                 if (view.filter.query.isNotEmpty()) IconButton(onClick = { onView(view.copy(filter = view.filter.copy(query = ""))) }) {
                     Icon(Icons.Filled.Close, "찾는 말 지우기")
@@ -474,7 +487,7 @@ private fun DayHeader(date: LocalDate, expense: Long, income: Long) {
     val dayShape = day.shape(androidx.compose.foundation.shape.RoundedCornerShape(0.dp))
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, paint = null, pad = null, padX = null, padY = null), dayShape))
-            .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, dayShape)
+            .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface), dayShape)
             .then(day.paint?.let { Modifier.fillWith(it, dayShape) } ?: Modifier)
             .padding(horizontal = (day.padH ?: 16).dp, vertical = (day.padV ?: if (look.dayHead == "big") 10 else 8).dp)
             .semantics(mergeDescendants = true) { heading() },
@@ -595,7 +608,7 @@ private fun LedgerRow(
         ).joinToString(" · ")
         val said = listOf(e.title, signedWon(e).replace("-", "마이너스 "), caption).joinToString(", ")
         Surface(
-            color = if (selected) com.bamnat.app.ui.components.Selection.container else MaterialTheme.colorScheme.surface,
+            color = if (selected) com.bamnat.app.ui.components.Selection.container else com.bamnat.app.ui.theme.PhotoGround.row(MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth()
                 .combinedClickable(
                     onClick = { if (selecting) onToggle() else actions.open(e) },

@@ -291,6 +291,7 @@ a.tile:hover{border-color:var(--accent)}
 .bubble{max-width:min(85%,36rem);padding:.65rem .85rem;border-radius:1.1rem;white-space:pre-wrap;font-size:.94rem;line-height:1.55}
 .bubble.user{align-self:flex-start;background:var(--soft);border-bottom-left-radius:.35rem}
 .bubble.admin{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:.35rem}
+.bubble.admin.held{opacity:.7;outline:2px dashed var(--accent);outline-offset:2px}
 .bubble-meta{font-size:.72rem;color:var(--muted);margin:-.3rem .35rem 0}
 .bubble-meta.admin{align-self:flex-end}
 .composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
@@ -298,7 +299,12 @@ padding:.75rem;box-shadow:var(--shadow)}
 @media (min-width:600px){.composer{bottom:1rem}}
 /* [J133-40] 순번 720 (1.32 실사용 테스트, 관리자 휴대폰 화면): on a phone the reply box stays in the page, under the talk, instead of
    floating over the last bubbles; the actions under it are never behind the bottom tabs. */
-@media (max-width:599px){.composer{position:static;margin-bottom:1rem}}
+@media (max-width:599px){.composer{position:static;margin-bottom:1rem}
+  /* 1.38 [ADM3-36] PC 13차 (접은 폴드): 답하기 stays above the bottom tabs while the answer is written, however long it is. */
+  .composer .actions{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));z-index:2;background:var(--surface);
+    margin:.5rem -.75rem -.75rem;padding:.6rem .75rem;border-top:1px solid var(--line);border-radius:0 0 var(--r-lg) var(--r-lg)}}
+.composer .count-box{margin-right:auto;display:grid;gap:.1rem;min-width:0}
+.composer .saved{font-size:.7rem;color:var(--muted);white-space:nowrap}
 .composer textarea{min-height:5.5rem;border:0;padding:.25rem;box-shadow:none;background:none}
 .composer .actions{margin-top:.5rem;align-items:center}
 .composer .count{margin-right:auto;font-size:.75rem;color:var(--muted)}
@@ -659,6 +665,7 @@ table.list td small{color:var(--muted);font-size:.75rem}
 table.list tr.picked td{background:var(--accent-soft)}
 @media (hover:hover) and (min-width:600px){table.list tbody tr:hover td{background:var(--hover)}}
 @media (min-width:600px){table.list thead th:not(:first-child){text-align:right}table.list thead th.pickcol+th{text-align:left}}
+@media (min-width:600px){table.list.nums td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}}
 @media (min-width:600px){table.list .lab{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 @media (max-width:599.98px){
   .table-wrap:has(table.list){border:0;overflow:visible}
@@ -901,4 +908,189 @@ dialog h3{font-size:.95rem;margin:1rem 0 .4rem}
 ul.mini li.batch{font-weight:600}
 .handoff-log ul.mini{margin-top:.4rem}
 form[data-form="dev-ship-note"] textarea{min-height:5rem}
+/* 1.38 [DESK-02][DESK-03] 운영 장부: 휴대폰은 카드 한 장(번호·요약 위, 단계·담당·기한 아래), 태블릿은 다섯 칸, 컴퓨터는 열 칸 표. */
+.ledger-view .lg-tiles{grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
+.lg-tools>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
+.lg-tools .sort-top{margin-top:.75rem}
+.lg-card .segmented{margin-bottom:.5rem}
+.lg-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.5rem 0}
+.lg-bar input[type=search]{flex:1 1 14rem;min-width:0}
+.lg-bar select{flex:0 0 auto;max-width:9rem}
+.lg-hint{display:flex;flex-wrap:wrap;gap:.25rem .75rem;justify-content:space-between}
+.lg-hint .meta{display:none}
+.rows.ledger{margin:0}
+.rows.ledger>li>details>summary{list-style:none}
+.rows.ledger>li>details>summary::-webkit-details-marker{display:none}
+.lg-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"no sum due" "st st who";gap:.35rem .6rem;align-items:center;min-height:3.5rem;padding:.65rem .85rem}
+.lg-row>span{min-width:0}
+.rows.ledger .lg-row{position:relative;padding-right:1.4rem}
+.rows.ledger .lg-row::after{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);font-size:.75rem;color:var(--muted)}
+.lg-row .c-no{grid-area:no;font-variant-numeric:tabular-nums;font-size:.8rem;color:var(--muted)}
+.lg-row .c-sum{grid-area:sum;display:flex;flex-wrap:wrap;gap:.2rem .35rem;align-items:center}
+.lg-row .c-sum>b{flex:1 1 100%;font-size:.95rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-row .c-sum .sub{flex:1 1 100%;color:var(--muted);font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-row .c-sum .pill{font-size:.7rem}
+.lg-row .c-st{grid-area:st}
+.lg-row .c-who{grid-area:who;justify-self:end}
+.lg-row .c-due{grid-area:due;justify-self:end}
+.lg-row .c-in,.lg-row .c-ov,.lg-row .c-bu,.lg-row .c-an,.lg-row .c-log{display:none}
+.lg-row small{font-size:.75rem;color:var(--muted)}
+.lg-row .kind{font-size:.75rem;font-weight:700}
+.lg-row .who-claude,.feed .who-claude{color:var(--accent);font-weight:700}
+.lg-pick{grid-area:no;display:flex;align-items:center}
+.lg-table.picking .lg-row{grid-template-columns:auto auto minmax(0,1fr) auto;grid-template-areas:"pk no sum due" "pk st st who"}
+.lg-table.picking .lg-row .lg-pick{grid-area:pk}
+.lg-line.late .lg-row{box-shadow:inset 3px 0 0 var(--bad)}
+.lg-line.shut .lg-row .c-sum>b{color:var(--muted);font-weight:600}
+.lg-line details[open]>.lg-row{background:var(--hover)}
+.lg-detail{padding:.25rem .85rem .9rem;display:grid;gap:.5rem;border-top:1px dashed var(--line)}
+.lg-detail .lg-text{margin:.5rem 0 0;padding:.5rem .75rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
+.lg-detail .meta,.lg-detail p{margin:0}
+.lg-detail .lg-block ol.mini{margin:.25rem 0 0;padding-left:1.25rem}
+.lg-detail .lg-block small{display:block;color:var(--muted)}
+.lg-detail .lg-sort{display:grid;gap:.4rem;padding:.6rem .75rem;border:1px solid var(--line);border-radius:var(--r-sm)}
+.lg-detail .lg-sort textarea{width:100%}
+.lg-head{display:none}
+@media (min-width:600px){
+  .lg-hint .meta{display:inline}
+  .lg-head{display:grid;padding:.45rem .85rem;font-size:.75rem;font-weight:700;color:var(--muted);background:var(--soft);border:1px solid var(--line);border-bottom:0;border-radius:var(--r-lg) var(--r-lg) 0 0}
+  .lg-table .rows.ledger{border-radius:0 0 var(--r-lg) var(--r-lg)}
+  .lg-head,.lg-row{grid-template-columns:4.2rem minmax(0,1fr) 7.5rem 6.5rem 6rem;grid-template-areas:none;gap:.5rem}
+  .lg-head>span,.lg-row>span,.lg-row .c-no,.lg-row .c-sum,.lg-row .c-st,.lg-row .c-who,.lg-row .c-due,.lg-row .lg-pick{grid-area:auto}
+  .lg-head .c-in,.lg-head .c-ov,.lg-head .c-bu,.lg-head .c-an,.lg-head .c-log{display:none}
+  .lg-row .c-who,.lg-row .c-due{justify-self:start}
+  .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem minmax(0,1fr) 7.5rem 6.5rem 6rem;grid-template-areas:none}
+}
+@media (min-width:1024px){
+  .lg-head,.lg-row{grid-template-columns:4.2rem 5.5rem minmax(11rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+  .lg-head .c-in,.lg-head .c-bu,.lg-head .c-an,.lg-head .c-log,.lg-row .c-in,.lg-row .c-bu,.lg-row .c-an,.lg-row .c-log{display:block}
+  .lg-row .c-log small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem 5.5rem minmax(11rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+}
+@media (min-width:1300px){
+  .lg-head,.lg-row{grid-template-columns:4.2rem 5.5rem minmax(11rem,1.6fr) minmax(7rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+  .lg-head .c-ov,.lg-row .c-ov{display:block}
+  .lg-row .c-ov small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem 5.5rem minmax(11rem,1.6fr) minmax(7rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+}
+
+/* ---- 1.38 [ADM3] 새 화면들과 갤럭시 폴드(접은 화면 ~344–412px, 편 화면 ~690–884px)·데스크톱 ---- */
+.alert-list li>span{flex:1;min-width:0;padding:.5rem 0}
+.banner.bad{background:var(--bad-bg);color:var(--bad)}
+.incident-band{justify-content:flex-start;text-align:left;text-decoration:none;gap:.5rem}
+.incident-band svg{flex:none;width:1.15rem;height:1.15rem}
+.incident-band span{flex:1;min-width:0}
+.incident-open{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.day-bars circle.mark{fill:var(--gold);stroke:var(--surface);stroke-width:1.5}
+.key.mark{background:var(--gold);border-radius:50%}
+.table-wrap{overflow-x:auto;margin:.25rem 0 .5rem;-webkit-overflow-scrolling:touch}
+.grid-table{width:100%;border-collapse:collapse;font-size:.86rem;font-variant-numeric:tabular-nums}
+.grid-table th,.grid-table td{padding:.45rem .55rem;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.grid-table th:first-child,.grid-table td:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
+.grid-table thead th{font-size:.75rem;color:var(--muted);font-weight:800}
+.grid-table tr.bad th,.grid-table tr.bad td{color:var(--bad)}
+.grid-table input{width:6.5rem;min-height:2.5rem;text-align:right}
+.stars{color:var(--gold);letter-spacing:.05em;font-size:1rem}
+.stars .off{color:var(--line-strong)}
+.review-list{display:grid;gap:.75rem}
+.review-list>li{list-style:none}
+.review-card{margin:0}
+.review-card.low{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+.review-card>p{margin:.35rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.review-card .bubble{display:block;max-width:none}
+.review-card textarea{width:100%}
+.launch-steps{list-style:none;margin:.5rem 0 0;padding:0;display:grid;gap:.25rem}
+.launch-steps>li{display:flex;align-items:flex-start;gap:.75rem;padding:.75rem .5rem;border-radius:var(--r-sm)}
+.launch-steps>li+li{border-top:1px solid var(--line)}
+.launch-steps>li.next{background:var(--accent-soft)}
+.launch-steps>li.done .step-no{background:var(--ok-bg);color:var(--ok)}
+.launch-steps>li.done b,.launch-steps>li.skipped b{color:var(--muted)}
+.launch-steps .step-main{flex:1;min-width:0}
+.launch-steps .step-main p{margin:.2rem 0 0;font-size:.86rem}
+.launch-steps .actions{margin-top:.5rem}
+.chip.on{background:var(--accent-soft);color:var(--accent)}
+a.chip{text-decoration:none;color:inherit;padding:.4rem .8rem}
+.person h3{font-size:.86rem;margin:.75rem 0 .25rem}
+.person .lines{margin:.5rem 0}
+.person .chips{margin:.35rem 0}
+.person .rows .row{padding:.5rem .25rem}
+.person.skeleton{min-height:12rem}
+.held-row{flex-wrap:wrap}
+.held-row .row-main b{white-space:pre-wrap;font-weight:600}
+.err-group{border-radius:var(--r-sm)}
+.err-group>summary{list-style:none;cursor:pointer}
+.err-group>summary::-webkit-details-marker{display:none}
+.err-group .row-side{display:flex;align-items:center;gap:.5rem}
+.err-sample{margin:.25rem .5rem .5rem;padding:.6rem .75rem;background:var(--soft);border-radius:var(--r-sm);font-size:.78rem;white-space:pre-wrap;overflow-wrap:anywhere;max-height:14rem;overflow:auto}
+.story summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline}
+.timeline{list-style:none;margin:.75rem 0 0;padding:0 0 0 .5rem;border-left:2px solid var(--line);display:grid;gap:.6rem}
+.timeline li{display:flex;align-items:flex-start;gap:.6rem;padding-left:.5rem}
+.timeline li>span:nth-child(2){flex:1;min-width:0;display:grid}
+.timeline small{color:var(--muted);font-size:.78rem}
+.timeline .ev-ship .pill{background:var(--gold-soft);color:var(--gold)}
+.timeline .ev-ask .pill{background:var(--info-bg);color:var(--info)}
+.undo-link{font-size:.8rem;font-weight:800;margin-left:.35rem;white-space:nowrap}
+.rollout-pick{margin:.25rem 0 .75rem}
+.rollout-pick .chips{margin:.35rem 0 0}
+.rows.wrap .row-main b,.person .rows .row-main b,.held-row .row-main b{white-space:normal;overflow:visible;text-overflow:clip}
+details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
+
+@media (max-width:719.98px){.flow-cols{grid-template-columns:minmax(0,1fr)}}
+.tabs{overflow:hidden}
+/* 접은 화면(좁은 폰): 아래 탭 다섯 칸이 잘리지 않게, 숫자 칸 두 줄, 표는 옆으로 밀어 보기 */
+@media (max-width:420px){
+  .tab .nav-label{font-size:.68rem;letter-spacing:-.02em}
+  .tab svg{padding:.22rem min(.8rem,2.4vw)}
+  .main{padding-left:.75rem;padding-right:.75rem}
+  .filterbar,.pile-strip,.timebar{margin-left:-.75rem;margin-right:-.75rem;padding-left:.75rem;padding-right:.75rem}
+  .card{padding:.85rem .85rem}
+  .card-head{flex-wrap:wrap;gap:.35rem .5rem}
+  .launch-steps>li{gap:.55rem;padding:.65rem .25rem}
+  .held-row .row-side{width:100%;justify-content:flex-end}
+  .segmented{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+  .segmented::-webkit-scrollbar{display:none}
+  .grid-table input{width:5.25rem}
+}
+/* 편 화면(폴드 안쪽 가로 ~840–1023px): 문의 목록과 열린 문의를 나란히(두 칸), 오른쪽 칸 아래로 사람 패널. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
+@media (min-width:720px) and (max-width:1023.98px){
+  .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  .tiles.core{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media (min-width:840px) and (max-width:1023.98px){
+  .split{display:grid;grid-template-columns:minmax(13rem,15rem) minmax(0,1fr);gap:.85rem;align-items:start}
+  .split>.pane-list .row{flex-wrap:wrap;gap:.25rem .5rem}
+  .split>.pane-list .row-side{width:100%;justify-content:flex-start}
+  .split>.pane-list .row>svg{display:none}
+  .split>.pane-list{display:block;position:sticky;top:4.25rem;max-height:calc(100dvh - 5.5rem);overflow:auto;border-radius:var(--r-lg)}
+  .split>.pane-list .rows{margin:0}
+  .split .row[aria-current=true]{background:var(--accent-soft)}
+  .split .cols{display:block}
+}
+/* 데스크톱: 세 칸(메뉴 · 목록 · 열린 것), 넓으면 사람 패널이 오른쪽에 붙어 있어요. */
+@media (min-width:1440px){
+  .split .cols{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr)}
+  .cols>aside{position:sticky;top:4.75rem;max-height:calc(100dvh - 6rem);overflow:auto}
+}
+
+/* 1.38 [ADM3-02] 휴대폰 장부 머리 접기: 숫자 칸은 아래 보기 칸과 같은 숫자라 숨기고, 보기·종류는 옆으로 미는 한 줄, 찾기 줄도 한 줄. 첫 화면에 줄이 3개 넘게 보여요. */
+@media (max-width:599.98px){
+  .ledger-view .lg-tiles{display:none}
+  .ledger-view .segmented.wrap,.lg-card>nav.chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-.25rem;margin-right:-.25rem;padding:0 .25rem}
+  .ledger-view .segmented.wrap::-webkit-scrollbar,.lg-card>nav.chips::-webkit-scrollbar{display:none}
+  .ledger-view .segmented.wrap .seg,.lg-card>nav.chips .chip{flex:0 0 auto;white-space:nowrap}
+  .lg-card>nav.chips{margin-bottom:.5rem}
+  .lg-bar{flex-wrap:wrap}.lg-bar input[type=search]{flex-basis:100%}
+  .lg-bar input[type=search]{flex:1 1 auto}
+  .lg-bar select{max-width:5.5rem}
+  .lg-bar .btn{padding-left:.55rem;padding-right:.55rem;white-space:nowrap}
+  .lg-hint{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin:.25rem 0 .5rem}
+}
+.stage-strip{display:flex;align-items:center;gap:.3rem;overflow-x:auto;scrollbar-width:none;margin:0 0 .75rem;padding:.15rem 0}
+.stage-strip::-webkit-scrollbar{display:none}
+.stage-strip a{flex:0 0 auto;display:inline-flex;align-items:baseline;gap:.35rem;padding:.35rem .7rem;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:inherit;text-decoration:none;font-size:.8rem;font-weight:700}
+.stage-strip a b{font-size:.92rem}
+.stage-strip a.zero{color:var(--faint)}
+.stage-strip a.next{border-color:var(--accent);background:var(--accent-soft)}
+.stage-strip a.stuck{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));color:var(--bad)}
+.stage-strip .sep{color:var(--faint);flex:none}
 `;

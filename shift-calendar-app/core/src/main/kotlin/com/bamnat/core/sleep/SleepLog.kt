@@ -8,7 +8,11 @@ import java.time.LocalDateTime
  * [SLP-06] One sleep the user logged with two taps: fell asleep, woke up.
  * [SLP-08] Or one read from Health Connect (a watch or the phone measured it): [imported], read only.
  */
-data class SleepEntry(val id: Long = 0, val start: LocalDateTime, val end: LocalDateTime?, val imported: Boolean = false) {
+data class SleepEntry(
+    val id: Long = 0, val start: LocalDateTime, val end: LocalDateTime?, val imported: Boolean = false,
+    /** 1.38 [SLEEP-01] Noticed by the phone and kept by the user (or trusted to go in): marked 자동, still the user's to fix. */
+    val auto: Boolean = false,
+) {
     val minutes: Long? get() = end?.let { Duration.between(start, it).toMinutes().coerceAtLeast(0) }
     /** A sleep belongs to the day the user woke up on. */
     val wakeDate: LocalDate? get() = end?.toLocalDate()

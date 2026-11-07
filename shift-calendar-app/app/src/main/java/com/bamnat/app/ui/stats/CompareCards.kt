@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.heightIn
 import com.bamnat.core.work.words
@@ -110,11 +111,13 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
             }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
     }
+    // Read as state (lint StateFlowValueCalledInComposition): the title follows a change of the kind of work.
+    val settingsNow by vm.settings.collectAsStateWithLifecycle()
     val y = year ?: return
     val now = Today.month()
     ProLock(Feature.WORK_COMPARE, gate) {
         // PC 02d6dabf: named as the tab it sits on (알바 '출근·시급').
-        SectionCard(title = "${y.year}년 ${vm.settings.value.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
+        SectionCard(title = "${y.year}년 ${settingsNow.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
             y.months.forEach { s ->
                 val ahead = s.month.isAfter(now)
                 val color = if (ahead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface

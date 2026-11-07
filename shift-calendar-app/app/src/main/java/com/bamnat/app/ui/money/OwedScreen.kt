@@ -579,7 +579,7 @@ private fun Controls(
         AnimatedVisibility(searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             OutlinedTextField(
                 value = query, onValueChange = { onQuery(it.take(30)) }, singleLine = true,
-                leadingIcon = { Icon(Icons.Filled.Search, null) },
+                leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "지우기") } },
                 placeholder = { Text("이름, 무슨 돈, 메모로 찾기") }, modifier = Modifier.fillMaxWidth(),
             )

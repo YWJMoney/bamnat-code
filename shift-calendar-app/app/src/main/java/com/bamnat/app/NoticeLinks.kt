@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 object NoticeLinks {
     enum class Target {
+        /** 1.38 [P3-B-11] 팀·가게 관리, from a staff member's 출퇴근 notice. */
+        MANAGE,
         /** The calendar on today, with 오늘의 흐름 at the top. */
         TODAY,
         MONEY,

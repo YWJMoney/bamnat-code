@@ -1217,7 +1217,7 @@ private fun HelpHome(
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "기능과 도움말 찾기" },
             // [GUIDE-07] Features, answers and settings by name or other words.
             placeholder = { com.bamnat.app.ui.HintText("무엇을 찾으세요? (예: 주휴, 백업, 알람)", "무엇을 찾으세요?") },
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
             trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
             singleLine = true,
             shape = MaterialTheme.shapes.extraLarge,

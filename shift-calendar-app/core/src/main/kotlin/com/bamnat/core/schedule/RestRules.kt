@@ -26,10 +26,19 @@ data class RestRules(
      * rotating roster's sign; work booked day by day has no order to turn. Not saved; [forStyle] sets it.
      */
     val rotationOrder: Boolean = true,
+    /**
+     * 1.37 PC MED (알바 쉬는 시간 경고): two jobs on one day (오전 카페 · 저녁 편의점) are not a short rest between shifts; the
+     * 11 hours are between one working day and the next. Not saved; [forStyle] sets it.
+     */
+    val sameDayRest: Boolean = true,
 ) {
     /** These rules for a calendar of [style]: only 교대·주기 근무 is told about the order of its shifts. */
     fun forStyle(style: com.bamnat.core.work.WorkStyle?): RestRules =
-        if (style == null || style == com.bamnat.core.work.WorkStyle.SHIFT) this else copy(rotationOrder = false)
+        when (style) {
+            null, com.bamnat.core.work.WorkStyle.SHIFT -> this
+            com.bamnat.core.work.WorkStyle.HOURLY -> copy(rotationOrder = false, sameDayRest = false)
+            else -> copy(rotationOrder = false)
+        }
 
     /** One line for the settings file, e.g. "on=1;rest=11;offs=2;nights=3;run=6;month=15". */
     fun encode(): String = "on=${if (on) 1 else 0};rest=$minRestHours;offs=$offsAfterNights;nights=$maxNightsInRow;run=$maxWorkDaysInRow;month=$maxNightsPerMonth"
@@ -41,7 +50,7 @@ data class RestRules(
     fun note(limit: String): String = preset?.let { "$limit 알려요 · ${it.label}" } ?: "$limit 알려요"
 
     /** Which preset these values are, or null when the user changed them one by one. */
-    val preset: Preset? get() = Preset.entries.firstOrNull { it.rules == copy(on = true, rotationOrder = true) }
+    val preset: Preset? get() = Preset.entries.firstOrNull { it.rules == copy(on = true, rotationOrder = true, sameDayRest = true) }
 
     enum class Preset(val label: String, val note: String, val rules: RestRules) {
         BASIC("기본", "휴식 11시간 · 나이트 뒤 쉬는 날 2일 · 연속 나이트 3일 · 7일 연속 근무 · 한 달 나이트 15일", RestRules()),

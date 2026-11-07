@@ -216,7 +216,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             Text(style.words().statsTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 1,
                 modifier = Modifier.semantics { heading() })
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(com.bamnat.app.ui.theme.PhotoGround.head(), verticalAlignment = Alignment.CenterVertically) {
             // [TYPE-01] The tab's own words: 출근·시급, 일감·수입, 매출·영업.
             if (narrow) Spacer(Modifier.weight(1f)) else Text(
                 style.words().statsTitle,

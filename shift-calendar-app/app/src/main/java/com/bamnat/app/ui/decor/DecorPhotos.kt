@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.decor
 
+import kotlinx.coroutines.async
 import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
@@ -47,10 +48,18 @@ object DecorPhotos {
     fun averageOf(id: String): androidx.compose.ui.graphics.Color? = avg[id]
 
     suspend fun load(c: AppContainer, ids: Collection<String>) {
+        // 1.38 PC 스튜디오 확인 (입은 뒤 카드 그림이 처음 몇 초 비어 있어요): 휴대폰에 없는 그림은 한 장씩이 아니라 여섯 장씩 함께 받아요.
+        val missing = ids.filter { !shown.containsKey(it) && !LookImages.file(c.appContext, it).isFile && ask(it) }
+        val got = HashSet<String>()
+        kotlinx.coroutines.coroutineScope {
+            missing.chunked(6).forEach { part ->
+                part.map { id -> async { if (LookImages.fetch(c, id)) synchronized(got) { got += id } } }.forEach { it.await() }
+            }
+        }
         for (id in ids) {
             if (shown.containsKey(id)) continue
             var bmp = LookImages.bitmap(c.appContext, id)
-            if (bmp == null && ask(id) && LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
+            if (bmp == null && id !in missing && ask(id) && LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
             // PC 확인 C11 1.36 (얹은 탭은 승인 전 맨 위 줄이 안 나와요): a photo still not on the phone is waiting, also when it was
             // asked for a moment ago elsewhere (얹기 asks first, so the calendar's own ask was held back and marked nothing).
             if (bmp == null) waiting[id] = Unit else waiting.remove(id)

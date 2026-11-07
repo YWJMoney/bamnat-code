@@ -82,7 +82,9 @@ internal fun AppSettings.calendarParts(): List<PageLayout.Placed<CalendarPart>> 
 private fun AppSettings.lineParts(): List<PageLayout.Placed<CalendarPart>> {
     val layout = PageLayout.decode(calendarLayout)
     // [CVW-06] An order from before 1.35 has no month: it goes where the parts above end, never shown as new.
-    val placed = layout.arrange(CalendarPart.entries.toList()) { it.id }.let { list ->
+    // [EASE-01] 1.38 (오늘근무 분석: 열자마자 5주가 다 보이게): with no order of the user's own the month comes first and the cards go
+    // under it; an order the user made (카드 배치) stays as it is.
+    val placed = layout.arrange(if (layout.order.isEmpty()) CALENDAR_FIRST else CalendarPart.entries.toList()) { it.id }.let { list ->
         if (layout.order.isEmpty() || CalendarPart.MONTH.id in layout.order) list
         else list.filter { it.part != CalendarPart.MONTH }.let { rest ->
             val at = rest.indexOfLast { it.part.above } + 1
@@ -91,6 +93,17 @@ private fun AppSettings.lineParts(): List<PageLayout.Placed<CalendarPart>> {
     }
     return placed.map { p -> if (p.part == CalendarPart.MONTH) p.copy(shown = true, isNew = false) else p }
 }
+
+/**
+ * [EASE-01] 1.38: the parts when the user has not placed them: the fixed lines (질문 카드, 밤낮이 한 일) still over the month, then
+ * the month, then the day and today's cards and the month's numbers under it.
+ * 1.38 통합 12차 사용성 제안 (새로 깐 폰에서 오늘의 흐름이 달력 아래라 '카드가 사라졌다'로 읽혀요): 오늘의 흐름 is looked at every day, so
+ * it stays over the month as one line ([TodayFlowSection] starts it folded here) and opens on a tap; the month still fits.
+ */
+internal val CALENDAR_FIRST: List<CalendarPart> = listOf(
+    CalendarPart.ASK, CalendarPart.JOURNAL, CalendarPart.TODAY_FLOW, CalendarPart.MONTH, CalendarPart.DAY_CARD, CalendarPart.TODAY_WORK,
+    CalendarPart.SUMMARY, CalendarPart.COUNTS, CalendarPart.HOURS, CalendarPart.REST, CalendarPart.MEMOS,
+)
 
 /** [FIT-01] Whether [part] belongs on this calendar: it suits its kind of work, or the user added it ([added]). */
 internal fun AppSettings.partFits(part: CalendarPart, added: Set<String>): Boolean =
@@ -124,9 +137,24 @@ internal fun AppSettings.withPartMoved(part: CalendarPart, by: Int, seen: (Calen
     var to = from + by
     while (to in movable.indices && !seen(movable[to].part) && movable[to].part != CalendarPart.MONTH) to += by
     if (from < 0 || to !in movable.indices) return this
-    movable[from] = movable[to].also { movable[to] = movable[from] }
+    // 1.38: taken out and put in at [to], not swapped, so a card stepped over (one that does not suit this calendar) keeps its place
+    // among the others (오늘의 흐름 and 오늘 일감 swapped when 요약 went up past both).
+    movable.add(to, movable.removeAt(from))
     val fixed = placed.filterNot { it.part.movable }
     return copy(calendarLayout = PageLayout.of(fixed + movable) { it.id }.encode())
+}
+
+/**
+ * [EASE-01] 1.38: [part] back on the side the month-first line ([CALENDAR_FIRST]) has it, at its place there among the others, so a card
+ * moved across and back is the line it was (PC 확인 1.37 A2 'no change' again).
+ */
+internal fun AppSettings.withPartHome(part: CalendarPart): AppSettings {
+    val placed = lineParts()
+    val me = placed.firstOrNull { it.part == part } ?: return this
+    val rest = placed.filter { it.part != part }
+    val before = CALENDAR_FIRST.takeWhile { it != part }.toSet()
+    val at = rest.indexOfLast { it.part in before } + 1
+    return copy(calendarLayout = PageLayout.of(rest.take(at) + me + rest.drop(at)) { it.id }.encode())
 }
 
 internal fun calendarEditGroups(

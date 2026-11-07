@@ -282,6 +282,8 @@ fun MonthGrid(
     cutDays: Set<LocalDate> = emptySet(),
     /** 1.32 [WTYP-11] 희망 오프 days: a small ♡ at the top right. */
     wishDays: Set<LocalDate> = emptySet(),
+    /** [EASE-04] 1.38 월급날 (근무·급여 › 규칙): a small '급여' at the top left. */
+    payDays: Set<LocalDate> = emptySet(),
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -407,6 +409,7 @@ fun MonthGrid(
                         wishOff = date in wishDays,
                         fieldJobs = cells.field[date],
                         cardDue = date in cardDue,
+                        payDay = date in payDays,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
                         hourly = hourly,
@@ -548,6 +551,8 @@ private fun DayCell(
     fieldJobs: List<com.bamnat.core.money.Job>? = null,
     /** [SHOP-02] A card deposit is expected this day. */
     cardDue: Boolean = false,
+    /** [EASE-04] 1.38 The month's pay arrives this day. */
+    payDay: Boolean = false,
     hourly: HourlyCells? = null,
     holidayWeekDone: Boolean = false,
     /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
@@ -587,6 +592,8 @@ private fun DayCell(
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
+    // [CYC-04] 1.38: the day the law names for the user's work (소방의 날…), not red and never over a red day.
+    val orgDay = orgDayName(LocalOrgDayGroup.current, date, holidayName)
     // [BLU-05] 1.36 부품 꾸미기: the cell's states (근무 종류·토·일·공휴일·다른 달·오늘·고름) and its parts, over the looks above.
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     val partStates = remember(blueprint, day.shiftType, day.coveredShift, date, holidayName, inMonth, isToday, isSelected) {
@@ -635,6 +642,7 @@ private fun DayCell(
         append(Fmt.dayTitle(date))
         if (isToday) append(", 오늘")
         holidayName?.let { append(", ").append(it) }
+        orgDay?.let { append(", ").append(it) }
         // [CAL-05] A field or shop day without work is not a day off: it says what the day has, or that it is empty.
         val shiftWords = when {
             day.isWorkDay -> (type?.name ?: "근무") + " " + HoursFormat.korean(day.scheduledMinutes)
@@ -649,13 +657,14 @@ private fun DayCell(
             append(", ").append(ExtraText.name(e))
             if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
         }
-        if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) append(", 직접 바꿈")
+        if (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes) append(", 직접 바꿈")
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         if (hasMemo) append(", 메모 있음")
         fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
         fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
         if (cardDue) append(", 카드 입금 예정")
+        if (payDay) append(", 급여일")
         span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
         money?.let { m ->
             if (m.jobs > 0 && (span == null || m.jobs > 1)) append(", 일감 ${m.jobs}건")
@@ -753,9 +762,16 @@ private fun DayCell(
                 LeaveMark(fullLeave, size = size)
             } else if (covered != null && day.isWorkDay && type != null) {
                 // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
-                    ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                // 1.38 R 760 (달력이 먼저 오며 320dp에서 보이게 된 칸: 두 칩이 칸보다 넓어 '야'가 눌림): where two do not fit, the covered
+                // shift's badge with the day's own shift as a dot of its colour beside it (both are read out with the day).
+                BoxWithConstraints {
+                    if (maxWidth >= size * 0.82f * 2 + 22.dp) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        ColorDot(type.colorArgb.asColor(), size = 6.dp)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    }
                 }
             } else if (covered != null) {
                 // [EXTRA-01] A 대근 on a day off: the covered shift's badge.
@@ -779,7 +795,7 @@ private fun DayCell(
             parts = cellParts,
             view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null } ?: cellFillGround(cellLook), date = date, isToday = isToday, numberColor = numberColor, weekendLine = weekendLine, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
-            marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
+            marks = remember(day, jobs, snapshot.hasPattern) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
                 ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
             dayMark = dayMark,
@@ -816,7 +832,7 @@ private fun DayCell(
                 // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
                 // is still read out and shown under the calendar.
                 val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null
-                val marks = remember(day, jobCorner) { cornerMarks(day, jobCorner) }
+                val marks = remember(day, jobCorner, snapshot.hasPattern) { cornerMarks(day, jobCorner, snapshot.hasPattern) }
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
                 val topStart = if (alarmOff) null else marks.getOrNull(1)
@@ -829,6 +845,7 @@ private fun DayCell(
                 topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it, dots) } }
                 if (invest?.hasEvent(date) == true && topStart == null && !alarmOff) com.bamnat.app.ui.invest.InvestEventDot(Modifier.align(Alignment.TopStart))
                 else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
+                else if (payDay && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart), "급여")
                 else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
             }
             dayMark(22.dp)
@@ -863,6 +880,10 @@ private fun DayCell(
                 if (holidayName != null && memoText == null) {
                     // [CAL-52] Hangul stands taller than the digits beside it: a little smaller, it fits the same line.
                     HolidayLabel(holidayName, footerSize * HOLIDAY_SCALE, cal.sunday, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
+                } else if (orgDay != null && memoText == null && investText == null && unitsText == null && moneyText == null &&
+                    spendText == null && extraMinutes <= 0) {
+                    // [CYC-04] Where the line would only say hours or the lunar date: the day's name, in the plain accent colour.
+                    HolidayLabel(orgDay, footerSize * HOLIDAY_SCALE, scheme.primary, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
                 } else Text(
                     footer,
                     fontSize = footerSize,
@@ -935,7 +956,7 @@ private fun DayCell(
             // [SCHED-03] I 리뷰 I5: the order drifted (a team moved a day) — restart it from here.
             if (usesShifts && snapshot.resolver.patternOn(date) is WorkPattern.Rotation) {
                 DropdownMenuItem(
-                    text = { Text("이 날부터 순서 다시 맞추기") },
+                    text = { Text("이 날부터 하루 밀기·순서 맞추기") }, // [EASE-25]
                     leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
@@ -1045,7 +1066,7 @@ internal sealed interface Corner {
 }
 
 /** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
-private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = buildList {
+private fun cornerMarks(day: ResolvedDay, job: Boolean? = null, pattern: Boolean = true): List<Corner> = buildList {
     day.entry?.attendance?.let { add(Corner.Attend(it)) }
     job?.let { add(Corner.Job(it)) }
     // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
@@ -1053,7 +1074,8 @@ private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = 
     val kindIsBadge = !day.isWorkDay && day.coveredShift == null && kinds.isNotEmpty() && day.leave == null
     (if (kindIsBadge) kinds.drop(1) else kinds).forEach { add(Corner.Kind(it)) }
     day.leave?.takeIf { !it.isFullDay }?.let { add(Corner.PartLeave(it)) }
-    if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(Corner.Changed)
+    // [READ-37] 1.38 PC: without an order (매달 근무표) every day is put in by hand or from a photo: no dot on each one.
+    if (day.source == DaySource.OVERRIDE && pattern || day.hasCustomTimes) add(Corner.Changed)
 }
 
 @Composable

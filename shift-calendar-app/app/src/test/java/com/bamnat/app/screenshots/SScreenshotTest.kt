@@ -64,15 +64,16 @@ class SScreenshotTest : ScreenshotBase() {
     })
     @Test fun firstStyleLandscape() = shoot("783_s_first_style_landscape", PHONE_LANDSCAPE, firstScreen())
 
+    // [EASE-05] 1.38: no "밤낮을 제대로 쓰는 설정" page and no permission dialog between the kind of work and the setup; the kind's
+    // usual notices are on quietly (each permission is asked where it is first used).
     @Test fun dayWorkGetsDayNotices() = shoot("784_s_recommended_day", FOLDED, firstScreen {
         tapText("평일 근무", exact = true)
-        assertTrue(appears("평일 근무에 맞춰 골라 두었어요."))
-        assertTrue("no night notice to switch", gone(RecommendedFeature.COMMUTE.title, exact = true))
-        reveal("꺼 두었어요")
+        assertTrue(appears("어느 회사에서 일하세요?"))
+        assertTrue("no recommended page", gone(LATER))
+        assertEquals(setOf(RecommendedFeature.BEDTIME, RecommendedFeature.TODAY_SHIFT), RecommendedSettings.on(c.settingsRepository.current))
     })
     @Test fun dayWorkThenTheSetupGoesOn() = shoot("785_s_day_then_setup", FOLDED, firstScreen {
         tapText("평일 근무", exact = true)
-        tapText(LATER)
         // The work told once is not asked again: the setup starts on its next question.
         assertEquals(WorkStyle.DAY, c.setupDrafts.draft.value?.style)
         assertTrue(gone("어떻게 일하세요?"))
@@ -80,18 +81,17 @@ class SScreenshotTest : ScreenshotBase() {
     })
     @Test fun hourlyWorkGetsDayNotices() = shoot("786_s_recommended_hourly_dark", FOLDED_NIGHT, firstScreen {
         tapText("아르바이트 · 시급", exact = true)
-        tapText(LATER)
         assertEquals(WorkStyle.HOURLY, c.setupDrafts.draft.value?.style)
         assertEquals(setOf(RecommendedFeature.BEDTIME, RecommendedFeature.TODAY_SHIFT), RecommendedSettings.on(c.settingsRepository.current))
     })
     @Test fun fieldWorkGetsNoShiftNotices() = shoot("787_s_recommended_field", FOLDED, firstScreen {
         tapText("현장 · 프리랜서", exact = true)
-        assertTrue(appears("입금 약속일과 미수 알림", exact = false))
-        assertTrue("no shift notice to switch", gone(RecommendedFeature.BRIEFING.title, exact = true))
+        settle()
+        assertTrue("no recommended page", gone(LATER))
+        assertTrue("no shift notice switched on", RecommendedFeature.BRIEFING !in RecommendedSettings.on(c.settingsRepository.current))
     })
     @Test fun fieldWorkStartsAtOnce() = shoot("788_s_field_started", FOLDED, firstScreen {
         tapText("현장 · 프리랜서", exact = true)
-        tapText(LATER)
         settle()
         assertEquals(WorkStyle.FIELD, c.settingsRepository.current.workStyle)
         assertTrue(RecommendedSettings.on(c.settingsRepository.current).isEmpty())
@@ -100,7 +100,6 @@ class SScreenshotTest : ScreenshotBase() {
         for ((title, style) in listOf("자영업" to WorkStyle.BUSINESS, "투자 · 주식·코인" to WorkStyle.INVEST)) {
             shoot("789_s_started_${style.name.lowercase()}", FOLDED, firstScreen {
                 tapText(title, exact = true)
-                tapText(LATER)
                 settle()
                 assertEquals(style, c.settingsRepository.current.workStyle)
             })
@@ -108,7 +107,6 @@ class SScreenshotTest : ScreenshotBase() {
     }
     @Test fun monthlyRosterKeepsTheRoster() = shoot("790_s_roster_then_setup", FOLDED, firstScreen {
         tapText("교대 근무 · 근무표가 매달 나와요", exact = true)
-        tapText(LATER)
         val d = c.setupDrafts.draft.value
         assertEquals(WorkStyle.SHIFT, d?.style)
         assertTrue(d!!.rosterMonthly)
@@ -117,7 +115,8 @@ class SScreenshotTest : ScreenshotBase() {
     @Test fun backFromRecommendedAsksAgain() = shoot("791_s_back_to_first_style", FOLDED, firstScreen {
         tapText("평일 근무", exact = true)
         back()
-        assertTrue(appears("어떤 일을 하고 계신가요?"))
+        // Back from the setup's first question: the kind of work is asked again.
+        assertTrue(appears("어떤 일을 하고 계신가요?") || shows("어떻게 일하세요?"))
     })
 
     // ---- 358/359 [COMM-12][COMM-13][COMM-14] ----

@@ -718,9 +718,9 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
 
 /** A page's parts in order: up and down for the movable ones, shown or hidden for each, and 처음대로. */
 @Composable
-internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, onChange: (String?) -> Unit) {
+internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, note: String? = null, onChange: (String?) -> Unit) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }
-    StudioCard(title, if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
+    StudioCard(title, note ?: if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
         onReset = line?.let { { onChange(null) } }) {
         placed.forEachIndexed { i, p ->
             val (id, label, movable) = p.part
@@ -948,7 +948,10 @@ internal object StudioStarters {
         // [RUL-06] 1.36 수식·규칙·버튼: one button that opens today's memo with a template, and one rule for night work days.
         PieceKind.LOGIC -> mapOf(
             "buttons" to listOf(mapOf("label" to "오늘 기록", "emoji" to "📝", "where" to "day", "do" to "memoTpl", "arg" to "{근무} 인수인계\n- ")),
-            "rules" to listOf(mapOf("name" to "야간 전 알림", "on" to "start", "min" to -60L, "role" to "night", "do" to "notify", "arg" to "{근무} 한 시간 전이에요")),
+            // 1.38 PC 11차 식당 둘러보기: 야간 for 교대 only; other work gets a rule on any work day.
+            "rules" to listOf(if (style == null || style == WorkStyle.SHIFT)
+                mapOf("name" to "야간 전 알림", "on" to "start", "min" to -60L, "role" to "night", "do" to "notify", "arg" to "{근무} 한 시간 전이에요")
+            else mapOf("name" to "시작 전 알림", "on" to "start", "min" to -60L, "do" to "notify", "arg" to "{근무} 한 시간 전이에요")),
         )
         PieceKind.ALARMS -> mapOf("byRole" to listOf(mapOf("role" to "day", "before" to listOf(60L))), "snooze" to 5L)
         PieceKind.MEMO_TEMPLATES -> mapOf("items" to listOf(mapOf("title" to "하루 기록", "emoji" to "📝",

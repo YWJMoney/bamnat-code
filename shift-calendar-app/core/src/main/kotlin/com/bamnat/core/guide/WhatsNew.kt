@@ -10,8 +10,35 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.38.0 (docs/plans/1.38-개발계획.md). 갈래마다 줄을 고치면 부딪히니 통합 브랜치에서만 더해요(갈래 0).
+        Release(52, "1.38.0", listOf(
+            // [EASE-17][EASE-20][EASE-21]
+            // [ALRM-26][ALRM-27]
+            Line("알람 화면 맨 위에서 다음 알람 몇 개를 보고 이번만 끌 수 있어요. 알람이 막혀 있으면 울리기 3시간 전에 알려 줘요", "alarm.check"),
+            // [LEDH-25][LEDH-27] (갈래8 제안)
+            Line("가계부에 대출·빌린 돈을 적으면 다 갚는 달과 더 갚을 때 줄어드는 이자를, 카드에 실적 구간을 적으면 얼마 더 쓰면 되는지 보여 줘요", "money.debt"),
+            // [LEDH-14]
+            Line("워치에서 금액과 분류만 눌러 돈을 적어요", "money.quickAdd"),
+            // [MPH-01][MPH-05][MPH-07]
+            Line("메모에 사진을 넣고 크기·자리를 바꾸고, 줄 노트 종이와 자유 판으로 꾸며요", "memo.photo"),
+            // [FLOW-06][FLOW-07][FLOW-26] 갈래0 흐름·디자인
+            Line("오늘의 흐름이 ‘출근까지 2시간 10분’처럼 남은 시간부터 말하고, 근무 중·잘 시간·쉬는 날마다 색이 바뀌어요", "today.flow"),
+            Line("달력 칸 친구 칸이가 빈 화면에서 시작할 곳을 알려 줘요. 설정 › 화면과 글자에서 끌 수 있어요", "view.kani"),
+            // [FLOW-08]
+            Line("날짜를 열면 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 야간 근무는 어제부터 한 줄로 보여요", "day.story"),
+            // [EASE-34] (#244)
+            Line("교대가 없는 근무에서는 주간·야간 같은 교대 종류가 처음부터 접혀 있어요. 필요하면 근무 종류와 시간에서 다시 써요"),
+            // [PAYX-49] (#245)
+            Line("교육처럼 시수가 다른 근무는 종류마다 시수를 따로 정해요"),
+            // [SLEEP-03][SLEEP-04][SLEEP-10][SLEEP-12][SLEEP-20] 수면 갈래
+            Line("잠드는 소리: 빗소리·파도·소음을 섞어 틀고 정한 시간에 서서히 꺼져요", "sleep.noise"),
+            Line("아침 한 장: 깬 뒤 기분을 한 번 누르면, 내 기록에서 피곤한 까닭을 찾아 줘요", "sleep.morning"),
+            Line("근무 바뀜 적응: 나이트로 바뀌기 3일 전부터 잘 시간을 조금씩 옮겨요", "sleep.adapt"),
+            Line("근무 맞춤 회복 도전: 근무마다 계획한 잠을 지킨 날을 모아요", "sleep.challenge"),
+            Line("자는 동안 방해 금지: 근무 알람은 그대로, 나머지는 조용히", "sleep.dnd"),
+        )),
         // 1.37.0 (docs/plans/1.37-인계.md, 통합 PR: 묶음 A·B·C·D·H, 장터 카드, 시간 바퀴, 첫 설정 미루기). 공유 테마(SHR-31·32)는
-        // 처리방침 3.11이 켜지는 11월 10일 뒤에 따로 알려요.
+        // 처리방침 3.11이 시행되는 1.38 배포 뒤에 따로 알려요.
         Release(51, "1.37.0", listOf(
             // [CNV-01..14]
             Line("스튜디오에서 판을 크게 보고, 바꿀 곳을 누르면 그 부분 메뉴가 바로 열려요. 카드도 끌어서 옮겨요", "recipe.studio"),
@@ -299,6 +326,20 @@ object WhatsNew {
     )
 
     /** The releases after [seenCode] up to [currentCode], newest first; none for a fresh install (seenCode 0). */
+    /**
+     * 1.38 갈래6 (공유 남은 일: 새로 생긴 것 줄, 정식 출시일에 켤 때): what a server switch brings when it turns on, told once then and
+     * not at the update (the feature was not there yet). Keyed by the switch ([com.bamnat.core.flags.FlagCatalog]).
+     */
+    val switched: List<Pair<String, Line>> = listOf(
+        // 1.37 [SHR-31][SHR-32] from the launch date (사용자 2026-11-05: 11월 12일 또는 사용자가 정한 날).
+        "share.look" to Line("근무표 링크에 내 테마와 근무 설정도 함께 담아 보내요. 받은 분은 입어 보고 마음에 드는 것만 골라 넣어요", "share.look"),
+        // 1.38 수면 갈래 [SLEEP-01][SLEEP-06][SLEEP-08][SLEEP-11], on from 정식 출시일.
+        "sleep.auto" to Line("잠 자동으로 잡기: 안 눌러도 아침에 ‘이 잠 맞나요?’로 물어요", "sleep.auto"),
+        "sleep.sound" to Line("자는 동안 소리 재기: 코골이·잠꼬대를 휴대폰 안에서만 재고 아침에 들어 봐요", "sleep.sound"),
+        "sleep.sound" to Line("깨우는 구간: 재는 동안 얕은 잠일 때 조금 일찍 깨워요", "sleep.smartWake"),
+        "sleep.share" to Line("지금 자는 중: 근무표 링크를 받은 가족에게 자는 중인지 한 줄로 보여 줘요", "sleep.shareNow"),
+    )
+
     fun since(seenCode: Int, currentCode: Int): List<Release> =
         if (seenCode <= 0) emptyList() else releases.filter { it.versionCode in (seenCode + 1)..currentCode }.sortedByDescending { it.versionCode }
 }

@@ -187,7 +187,7 @@ fun MemoListScreen(
                         onValueChange = vm::setQuery,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                         placeholder = { Text("제목, 내용, #태그 검색") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
                         trailingIcon = {
                             Row {
                                 if (state.query.isNotEmpty()) {
@@ -205,7 +205,7 @@ fun MemoListScreen(
                     MemoPart.FOLD -> Unit
                 }
             }
-            PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = Color.Transparent) {
+            PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(Color.Transparent)) {
                 for (tab in MemoTab.entries) {
                     val count = if (tab == MemoTab.CALENDAR) state.calendarCount else state.generalCount
                     Tab(
@@ -275,8 +275,8 @@ fun MemoListScreen(
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering, style = style)
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
                 memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { sort -> sortTo(sort)}, actions, templateChoices, state.selection, state.selecting)
-                memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
-                memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
+                memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection, state.shiftOn)
+                memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions, state.shiftOn, state.shiftsOf)
                 !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
                 state.tab == MemoTab.CALENDAR -> CalendarMemoList(state, today, actions)
                 else -> GeneralMemoGrid(state, actions)
@@ -786,10 +786,13 @@ private val LocalMemoCardLook = androidx.compose.runtime.staticCompositionLocalO
 
 @Composable
 private fun MemoContent(memo: Memo, query: String) {
-    // The title row already shows the preview line when there is no title.
+    // [MPH-04] 1.38 A memo's photos as small pictures on its card.
+    val photos = remember(memo.body) { memo.photos }
+    if (photos.isNotEmpty()) MemoPhotoStrip(photos)
+    // The title row already shows the preview line when there is no title; with photos the lines after it show under them.
     if (memo.isChecklist) {
         // [J135-07] A template's answers kept above the list.
-        if (memo.body.isNotBlank()) Text(highlighted(memo.body, query), style = MaterialTheme.typography.bodySmall,
+        if (memo.text.isNotBlank()) Text(highlighted(memo.text, query), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         val items = memo.checklist.filter { it.text.isNotBlank() }
         val cardLook = LocalMemoCardLook.current
@@ -817,12 +820,16 @@ private fun MemoContent(memo: Memo, query: String) {
             Text("외 ${items.size - shown}개", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
-    } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
+    } else if (memo.text.isNotBlank() && (memo.title.isNotBlank() || photos.isNotEmpty())) {
         // PC 확인 d5678f31: a "칸: 값" line shown as a pill under the card (PropPills, the first 3) is not written again in the text.
-        val body = remember(memo.body) {
+        val body = remember(memo.body, memo.title) {
             val pills = com.bamnat.core.memo.MemoProps.of(memo).take(3).map { it.label }.toSet()
             // PC 확인 c9a89b20: a line of 꼬리표 alone is shown by the tag chips, not again in the text.
-            memo.body.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills || TAG_LINE.matches(it.trim()) }.joinToString("\n").trim()
+            val lines = memo.text.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills || TAG_LINE.matches(it.trim()) }
+            // [MPH-04] (PC 확인 3dd61e00) A memo without a title but with photos: its first line is the title row, the words after it
+            // go under the photos, so the card shows what was written and not only pictures.
+            val rest = if (memo.title.isBlank()) lines.dropWhile { it.isBlank() }.drop(1) else lines
+            rest.joinToString("\n").trim()
         }
         if (body.isEmpty()) return
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds remote/v1/cycles.json from tools/data/company-cycles.csv [SPAT-01].
 
-The CSV is the public-source research (research/shift-patterns/회사별-교대주기.csv in the project files, 148 rows; [CYC-01] 1.38 added 6 checked rows, 154):
+The CSV is the public-source research (research/shift-patterns/회사별-교대주기.csv in the project files, 148 rows; [CYC-01] 1.38 added 6 checked rows, 154; [CYC-05] 7 more, 161):
 표시 이름, 회사·기관, 업종, 사업장·직무, 근무형태, 순서(한 주기), 시간, 시점, 신뢰도, 출처. Only public facts with
 their source links; nothing about a person.
 
@@ -31,8 +31,8 @@ import sys
 APP = pathlib.Path(__file__).resolve().parent.parent
 SRC = APP / "tools" / "data" / "company-cycles.csv"
 OUT = APP.parent / "remote" / "v1" / "cycles.json"
-VERSION = 2026110501
-ISSUED = "2026-11-05"
+VERSION = 2026110602
+ISSUED = "2026-11-06"
 MIN_APP = 37
 
 FORMS = [
@@ -44,6 +44,7 @@ FORMS = [
     ("3조3교대", "3조 3교대"),
     ("3조2교대", "3조 2교대"),
     ("3조1교대", "3조 1교대"),
+    ("4조1교대", "4조 1교대"),
     ("2조2교대", "2조 2교대"),
     ("격일제", "격일제"),
     ("4부제", "4부제"),
@@ -61,7 +62,7 @@ def form_key(form):
         return "2교대"
     if "주간연속2교대" in f:
         return "주간연속2교대"
-    for key in ["6조3교대", "5조3교대", "4조3교대", "4조2교대", "3조3교대", "3조2교대", "3조1교대", "2조2교대"]:
+    for key in ["6조3교대", "5조3교대", "4조3교대", "4조2교대", "4조1교대", "3조3교대", "3조2교대", "3조1교대", "2조2교대"]:
         if f.startswith(key) or (key in f and not re.match(r"^\d조\d교대", f)):
             return key
     if "격일" in f:
@@ -88,6 +89,12 @@ def order_of(row, key):
     o = row["order"].replace(" ", "")
     t = row["time"]
     exact, usual, none = "exact", "usual", "none"
+    if o.startswith("순서:"):
+        # [CYC-03] A row from a 밤낮 user's report, checked in the admin app: the order in codes as the admin app wrote it.
+        codes = o[len("순서:"):]
+        if codes and all(c in "DENXBO" for c in codes):
+            return codes, exact, False, False
+        return "", none, False, False
     if not o or o.startswith("공개순서없음") or o.startswith("확인필요") or "투표부결" in o or "순서확인필요" in o:
         return "", none, False, False
     if o.startswith("코드") or "(D·E·N+" in o or "D·A·N순환" in o or "데이·애프터·나이트" in o:
@@ -148,6 +155,9 @@ def order_of(row, key):
         return "DDDDDOONBNBNBNBNBNBNB", usual, False, False
     if "2근2휴" in o or o.startswith("2일주기패턴"):
         return "DDOONNOO", usual, False, False
+    if o.startswith("7근1휴"):
+        # [CYC-05] 택시 8부제: 이레 일하고 하루 쉼.
+        return "DDDDDDDO", exact, False, False
     if o.startswith("월~금"):
         return "DDDDDOO", exact, True, False
     if o == "주5일" and key == "고정":
@@ -191,6 +201,9 @@ def code_for(prefix, start, end, n, used):
     span = (int(end[:2]) * 60 + int(end[3:]) - sh * 60 - int(start[3:])) % (24 * 60)
     if span == 0 or span >= 20 * 60:
         c = "X"
+    elif n == 1 and prefix.strip() in PREFIX:
+        # [CYC-05] One labeled range (야간 17:00-익일 08:00): the label says which work it is.
+        c = PREFIX[prefix.strip()]
     elif n == 2:
         c = "D" if 4 <= sh <= 11 else "N"
     elif 4 <= sh <= 11:
@@ -232,6 +245,11 @@ def shifts_of(row, codes):
     m = re.search(r"(\d{2}):(\d{2})\s*교대", t)
     if m:
         usual["X"] = (m.group(1) + ":" + m.group(2), m.group(1) + ":" + m.group(2))
+    # A 2교대 source that gives one shift's hours (야간 17:00-익일 08:00) leaves the other the rest of the day (주간 08-17),
+    # not the usual 07-19 that would cross it.
+    if sorted(work) == ["D", "N"] and len(out) == 1:
+        (k, (s, e, _)), = out.items()
+        out["N" if k == "D" else "D"] = (e, s, True)
     for c in work:
         if c not in out:
             s, e = usual[c]
@@ -252,21 +270,45 @@ def shifts_of(row, codes):
 
 def trust_of(raw):
     kinds = []
-    for word, key in (("노조 게시판", "UNION"), ("노무사이트", "LABOR"), ("커뮤니티", "COMMUNITY"), ("기사", "ARTICLE"), ("공고", "NOTICE")):
+    for word, key in (("제보", "REPORT"), ("노조 게시판", "UNION"), ("노무사이트", "LABOR"), ("커뮤니티", "COMMUNITY"), ("기사", "ARTICLE"), ("공고", "NOTICE")):
         if word in raw:
             kinds.append(key)
     return kinds
+
+
+HEAD = ["표시 이름", "회사·기관", "업종", "사업장·직무", "근무형태", "순서(한 주기)", "시간", "시점", "신뢰도", "출처", "조 이름", "조 기준일"]
+
+
+def teams_of(names, anchors, i):
+    """[CYC-06] 1.38 (갈래 4와 맞춘 칸): 조 이름 "1조|2조|3조|4조" (공개 자료에 있을 때만, 주기를 따라가는 순서) and 조 기준일
+    "1조=2026-01-05|2조=2026-01-07", the day that team is on the order's first day (only what a public source says; with
+    the first team's day alone the app moves the rest by 주기 ÷ 조 수). Out as teams: [{name, anchor?}]; empty columns leave
+    it out of the file, and older apps skip the field."""
+    teams = [t.strip() for t in names.split("|") if t.strip()]
+    if len(set(teams)) != len(teams):
+        raise SystemExit("row %d: 조 이름 '%s' has a team twice" % (i, names))
+    at = {}
+    for part in [p.strip() for p in anchors.split("|") if p.strip()]:
+        m = re.match(r"^(\S+?)=(\d{4}-\d{2}-\d{2})$", part)
+        if not m or m.group(1) not in teams:
+            raise SystemExit("row %d: 조 기준일 '%s' is not '조이름=YYYY-MM-DD' of a listed team" % (i, part))
+        at[m.group(1)] = m.group(2)
+    return [dict(name=t, **({"anchor": at[t]} if t in at else {})) for t in teams]
 
 
 def build():
     with open(SRC, encoding="utf-8") as f:
         rows = list(csv.reader(f))
     head, body = rows[0], rows[1:]
-    assert head == ["표시 이름", "회사·기관", "업종", "사업장·직무", "근무형태", "순서(한 주기)", "시간", "시점", "신뢰도", "출처"], head
+    assert head == HEAD, head
     cycles = []
     for i, r in enumerate(body, 1):
+        r = r + [""] * (len(HEAD) - len(r))
         row = dict(display=r[0], company=r[1], industry=r[2], site=r[3], form=r[4], order=r[5], time=r[6], asOf=r[7],
                    trust=r[8], source=r[9])
+        teams = teams_of(r[10], r[11], i)
+        if "(업종)" in r[2] or "(업종)" in r[0]:
+            raise SystemExit("row %d: 관리자 앱이 복사한 줄의 (업종)을 채워 주세요" % i)
         row["formKey"] = form_key(row["form"])
         codes, state, weekly, roster = order_of(row, row["formKey"])
         shifts = shifts_of(row, codes)
@@ -283,6 +325,7 @@ def build():
             "weekly": weekly,
             "roster": roster,
             "shifts": shifts,
+            **({"teams": teams} if teams else {}),
         })
     return {
         "format": 1,
@@ -290,7 +333,7 @@ def build():
         "version": VERSION,
         "issued": ISSUED,
         "minApp": MIN_APP,
-        "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 더함. 사실(근무형태·순서·시간)과 출처 링크만",
+        "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 · 2026-11-06 더함. 사실(근무형태·순서·시간)과 출처 링크만",
         "data": {"forms": [{"key": k, "name": n} for k, n in FORMS], "cycles": cycles},
     }
 

@@ -14,11 +14,21 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <!-- [SLEEP-04] 잠드는 소리: made on the phone as it plays, on the media stream, started by the user. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- [SLEEP-06] 정밀 측정 only, off until the user taps 측정 시작 and allows the microphone: sounds are sorted on the phone,
+         short clips stay on the phone for 7 days, nothing is sent. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- [SLEEP-12] 자는 동안 방해 금지 only, off by default: the user grants 방해 금지 접근 in the phone's settings. -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- [ALRM-15] 1.31 R9: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. 알람 점검 opens the phone's own list of apps (no permission),
          so Play's review has no permission to ask about; exact alarms already ring through Doze. -->
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <!-- [SLEEP-09] 1.38, off by default: 밤낮's own sleeps written to Health Connect when the user turns it on. -->
+    <uses-permission android:name="android.permission.health.WRITE_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): asked only when the user turns it on. -->
@@ -31,6 +41,9 @@
     <!-- [LOCK-01] 앱 잠금 only, off by default: the phone's own fingerprint/face/PIN prompt. The app never
          sees the fingerprint or face; Android only says whether it matched. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- [SLEEP-01] 잠 자동으로 잡기 only, off by default and asked when the user turns it on: Play services says when the
+         phone lay still in the dark (no microphone). The pieces stay on the phone. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -123,6 +136,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="text/plain" />
+                <!-- [READ-30] 1.38: a roster file from 카카오톡·메일 (PDF, 엑셀, CSV), read on the phone. -->
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
             </intent-filter>
             <intent-filter android:label="@string/open_file_label">
                 <action android:name="android.intent.action.VIEW" />
@@ -219,6 +239,11 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 1.38 [LEDH-24] 근무 전 한 줄 예고. -->
+        <receiver
+            android:name=".money.ShiftPreviewReceiver"
+            android:exported="false" />
+
         <!-- 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림. -->
         <receiver
             android:name=".money.DayCloseReceiver"
@@ -260,6 +285,31 @@
         <!-- [SLP-15] 잠들었어요·깼어요 on a notice, usable from the lock screen. -->
         <receiver
             android:name=".sleep.SleepActionReceiver"
+            android:exported="false" />
+
+        <!-- [SLEEP-04] 잠드는 소리 (no files; the timer fades it out). -->
+        <service
+            android:name=".sleep.NoiseService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- [SLEEP-08] 깨우는 구간's start: listens through the measuring; the alarm itself is AlarmReceiver's. -->
+        <receiver
+            android:name=".sleep.SmartWakeReceiver"
+            android:exported="false" />
+
+        <!-- [SLEEP-06] 정밀 측정, started by the user's tap. -->
+        <service
+            android:name=".sleep.SleepRecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- [SLEEP-01] Sleep pieces from Play services (it holds the PendingIntent), and 맞아요·아니에요 on the notice. -->
+        <receiver
+            android:name=".sleep.SleepSegmentReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".sleep.SleepAutoActionReceiver"
             android:exported="false" />
 
         <!-- [SLP-15] Money and 연차 notices held while the user sleeps come 30 minutes after waking. -->
@@ -320,6 +370,12 @@
         <!-- [COMM-10] 광장 소식 once a day: only the system's job scheduler binds it. -->
         <service
             android:name=".company.PlazaNewsJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- 1.38 [P3-B-11] 직원 출퇴근 링크를 보는 일: only the system's job scheduler binds it. -->
+        <service
+            android:name=".boss.StaffClockJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

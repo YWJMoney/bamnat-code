@@ -77,8 +77,7 @@ export function todayViews(A) {
     return `${top}<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
         <p>${o.doneToday ? `오늘 ${o.doneToday}건 처리했어요. ` : ""}${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p></div>
       ${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
-      ${can("inquiries") && o.inquiries > 1 ? `<a class="sort-nudge" href="${href("sort")}">${icon(P.inquiries)}<span><b>정리함</b> 답 대기 ${o.inquiries}건을 이미 고침·개발 목록·새 문제로 나눠 두었어요. 한 번에 처리해요</span>${icon(P.chevron)}</a>` : ""}
-      <a class="sort-nudge" href="${href("work")}">${icon(P.check)}<span><b>할 일함</b> 문의·스튜디오 요구·신고·사진·후보를 상태(새로·보는 중·기다림·끝)와 함께 한 곳에서 빠짐없이 처리해요</span>${icon(P.chevron)}</a>
+      <a class="sort-nudge" href="#/desk">${icon(P.check)}<span><b>운영 장부</b> 문의·개발사항·스튜디오 요구·신고·사진을 한 줄씩. ${can("inquiries") && o.inquiries ? `답 대기 ${o.inquiries}건은 겹침과 보낼 답까지 적어 두었어요. ` : ""}오늘 할 것부터 빠짐없이 처리해요</span>${icon(P.chevron)}</a>
       ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
       <div class="home-grid"><div class="home-main">${alertsCard(t.alerts)}${todoCard(t.todo)}</div>
         <div class="home-side">${more}${people}

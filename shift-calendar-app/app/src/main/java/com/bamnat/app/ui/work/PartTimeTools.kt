@@ -481,7 +481,7 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
         SectionCard(title = "날짜") {
             DateField("마지막으로 일한 날", lastWork, { if (it != null) lastWork = it }, clearable = false)
             DateField("회사에 다닌 마지막 날 (사직서에 적은 날)", lastEmployed, { if (it != null) employedPick = it }, clearable = false)
-            if (profile?.hireDate == null) DateField("입사일", hire, { hire = it })
+            if (profile?.hireDate == null) DateField("입사일", hire, { hire = it }, years = true)
             else Hint("입사일 ${Fmt.fullDate(profile.hireDate!!)} (급여 설정)")
             Hint("최근 4주 평균 한 주 ${weekly}시간 · 시급 ${Fmt.won(wage)}으로 셌어요.")
         }

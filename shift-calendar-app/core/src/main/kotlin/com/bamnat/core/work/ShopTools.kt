@@ -136,11 +136,12 @@ object LaborCost {
      */
     fun employerInsurance(pay: Long, on: java.time.LocalDate? = null): Long {
         val sh = on?.let { com.bamnat.core.pay.TakeHome.sharesOn(it) }
-        val health = (pay * (sh?.health ?: HEALTH)).toLong() / 10 * 10
-        val pension = sh?.let { (pay / 1_000 * 1_000).coerceIn(it.baseMin, it.baseMax) * it.pension } ?: (pay * PENSION)
-        val employment = sh?.let { it.employment + STABILITY } ?: EMPLOYMENT
-        return pension.toLong() / 10 * 10 + health + (health * (sh?.careOfHealth ?: CARE_OF_HEALTH)).toLong() / 10 * 10 +
-            (pay * employment).toLong() / 10 * 10
+        // [P3-ACC] Exact won × rate (WonCut): a Double product just under a round amount lost 10원.
+        val cut = com.bamnat.core.pay.WonCut
+        val health = cut.cut10(pay, sh?.health ?: HEALTH)
+        val pension = sh?.let { cut.cut10((pay / 1_000 * 1_000).coerceIn(it.baseMin, it.baseMax), it.pension) } ?: cut.cut10(pay, PENSION)
+        val employment = sh?.let { cut.exact(it.employment).add(cut.exact(STABILITY)).toDouble() } ?: EMPLOYMENT
+        return pension + health + cut.cut10(health, sh?.careRatio ?: com.bamnat.core.pay.WonCut.Ratio.of(CARE_OF_HEALTH)) + cut.cut10(pay, employment)
     }
 
     /** 고용안정·직업능력개발사업 보험료율, 상시근로자 150명 미만 (사업주만 냄). */

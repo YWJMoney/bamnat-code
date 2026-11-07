@@ -37,10 +37,14 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
+import com.bamnat.app.share.mineLine
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -136,6 +140,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -190,6 +196,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+    /** 1.38 PC 12.4.1 [P3-L-19] Received links: the one the user's work comes from changes how 내 근무 is said. */
+    val received: StateFlow<List<com.bamnat.app.share.ReceivedCalendar>> = container.received.calendars
     /** [MON-04] What 프로 is on this phone now. */
     val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
     /** [MON-07] Google says this phone's region has its own ad consent form to open again. */
@@ -225,6 +233,39 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val workSettings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, container.calendars.activeCalendar) { s, cal ->
         com.bamnat.app.data.CalendarScope.run { s.forCalendar(cal) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current)
+    /**
+     * [EASE-27] 1.38 내 규칙 한눈에: the calendar picked's order, alarms, pay rules it made and the 이럴 때 이렇게 rules, each as a
+     * "만약 ○○이면 → △△" card.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val ruleCards: StateFlow<List<com.bamnat.core.guide.RuleCards.Card>> = kotlinx.coroutines.flow.combine(
+        container.calendars.active.flatMapLatest { id ->
+            kotlinx.coroutines.flow.combine(
+                // 1.38 PC 11차: with the kinds put away here, which get no alarm card.
+                kotlinx.coroutines.flow.combine(container.calendars.repository(id).live, container.foldedTypes.state) { live, f -> live to f[id].orEmpty() },
+                container.calendars.pay(id).profile,
+                // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
+                container.memoRepository.memosFor(id).map { list ->
+                    list.filter { m ->
+                        m.repeat.isNotEmpty() && (com.bamnat.core.memo.MemoRepeat.shiftIdOf(m.repeat) == null ||
+                            com.bamnat.app.data.MemoRepository.calendarOf(m, id) == id)
+                    }
+                },
+            ) { s, p, m -> Triple(s, p, m) }
+        },
+        container.settingsRepository.settings,
+    ) { (s, p, m), st ->
+        com.bamnat.core.guide.RuleCards.of(s.first.patterns, s.first.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
+            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m, hidden = s.second,
+            ringingOnly = com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(st.workStyle),
+            workDayLine = when (st.workStyle) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업하는 날이에요"
+                com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "출근하는 날이에요"
+                com.bamnat.core.work.WorkStyle.FIELD -> "일하는 날이에요"
+                else -> "근무하는 날이에요"
+            })
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
@@ -601,6 +642,11 @@ fun SettingsScreen(
             page = null; focus = null
             searchAsked++
         }
+        if (link == SettingsLink.Home) {
+            SettingsLinks.consume(link!!)
+            page = null; focus = null; query = ""
+            hubScroll.scrollTo(0)
+        }
     }
     LaunchedEffect(searchAsked) { if (searchAsked > 0) { kotlinx.coroutines.delay(150); runCatching { searchFocus.requestFocus() } } }
     LaunchedEffect(link) {
@@ -774,7 +820,9 @@ private fun SettingsHub(
             // [J133-71] 1.33: what the calendar's kind of work has, so 알바 finds no 회사 찾기.
             val companyWork = context.appContainer.companyFits(com.bamnat.app.ui.company.companyCalendarOf(context.appContainer, null))
             val style = work.workStyle
-            val entries = remember(onOpenBoard != null, companyWork, style) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style) }
+            val entries = remember(onOpenBoard != null, companyWork, style) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
+                sleepAuto = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false),
+                sleepSound = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)) }
             SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick)
             return@Column
         }
@@ -784,13 +832,16 @@ private fun SettingsHub(
         com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
-        Shortcuts(onFound, work.workStyle)
+        // 1.38 PC 12.4.1 [P3-L-19] A member whose month comes by link sets no cycle: 받은 근무표, not 근무 주기.
+        val mineCal = vm.received.collectAsStateWithLifecycle().value.firstOrNull { it.mine }
+        Shortcuts(onFound, work.workStyle, received = mineCal != null)
         Spacer(Modifier.size(4.dp))
         // 1.36 PC 재검토: the count of 근무 leaves the kinds put away out ('근무 3가지 · 안 쓰는 종류 3개').
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
         val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
+            GroupRow(p.icon, p.titleFor(work.workStyle), if (p == SettingsPage.WORK && mineCal != null) mineCal.mineLine(short = true)
+                else summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -808,6 +859,12 @@ private fun SettingsHub(
         // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
+        // 1.38 관리 화면: 리더·사장님 일은 개인 화면과 따로 한곳에.
+        val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
+        val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
+        val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+        if (leaderOn || bossOn) GroupRow(Icons.Outlined.Groups, "팀·가게 관리",
+            listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
@@ -874,7 +931,7 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusR
         // TalkBack names the field once the example has gone.
         modifier = Modifier.fillMaxWidth().let { m -> focusRequester?.let { m.focusRequester(it) } ?: m }.semantics { contentDescription = "설정 찾기" },
         placeholder = { com.bamnat.app.ui.HintText("설정 찾기 (예: 알람 소리, 백업)", "설정 찾기") },
-        leadingIcon = { Icon(Icons.Filled.Search, null) },
+        leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
         trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
         singleLine = true,
         shape = MaterialTheme.shapes.extraLarge,
@@ -937,7 +994,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     // [J133-79] Only what this calendar's kind of work has: a shop typing 근태 is not shown the 일근 근태 엑셀.
     val features = remember(query, hiddenKinds, screenStyle) {
         com.bamnat.app.ui.guide.FeatureSearch.search(query, style = screenStyle, limit = 3, hidden = hiddenKinds,
-            features = com.bamnat.core.guide.FeatureRegistry.all.filter { screenStyle == null || it.fits(screenStyle) })
+            features = com.bamnat.core.guide.FeatureRegistry.shown.filter { screenStyle == null || it.fits(screenStyle) })
     }
     if (features.isNotEmpty()) {
         Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -961,7 +1018,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
 /** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null) {
+private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null, received: Boolean = false) {
     val entries = remember { SettingsIndex.entries().associateBy { it.title } }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("자주 찾는 것", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -970,15 +1027,20 @@ private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.wo
             for ((title, plain, icon) in SHORTCUTS) {
                 // [J133-71] 1.33: 급여 only for work paid by the hour or month. [J133-77] The rest in the work's own words.
                 if (title == "급여 계산" && style?.usesPayEngine == false) continue
-                val label = shortcutLabel(title, style) ?: plain
+                // 1.38 PC 12.4.1 [P3-L-19] The month comes by link: its chip opens the received links, not 근무 주기.
+                val mineChip = received && title == "근무 주기"
+                val label = if (mineChip) "받은 근무표" else shortcutLabel(title, style) ?: plain
                 if (label.isEmpty()) continue
-                val e = entries[title] ?: continue
+                val e = entries[if (mineChip) RECEIVE_TITLE else title] ?: continue
                 AssistChip(onClick = { onFound(e) }, label = { Text(label) },
                     leadingIcon = { Icon(icon, null, Modifier.size(AssistChipDefaults.IconSize)) })
             }
         }
     }
 }
+
+/** The search entry for the received links ([SettingsGo.RECEIVE]). */
+private const val RECEIVE_TITLE = "동료 근무표 받기"
 
 private val SHORTCUTS = listOf(
     Triple("근무 종류와 시간", "근무 시간", Icons.Outlined.Schedule),
@@ -987,6 +1049,8 @@ private val SHORTCUTS = listOf(
     Triple("근무표 공유", "근무표 공유", Icons.Outlined.Share),
     Triple("알람음", "알람 소리", Icons.Outlined.MusicNote),
     Triple("백업 저장", "백업", Icons.Outlined.SettingsBackupRestore),
+    // 1.38 PC 5차: 위젯 미리보기는 '화면과 글자' 안에만 있어 첫 화면에서 찾을 수 없었어요. 미리보기 바로 아래 줄로 가요.
+    Triple("위젯에 메모 보이기", "위젯", Icons.Outlined.Widgets),
     // [RUL-06] 1.36 PC 1차 확인: 규칙은 설정 › 알람 맨 아래에만 있어 찾기 어려웠어요.
     Triple(com.bamnat.app.logic.LOGIC_ROW, "규칙·단추", Icons.Outlined.Rule),
 )
@@ -1039,7 +1103,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
             (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "마감 뒤" else "퇴근길").takeIf { s.commuteNotice && style != com.bamnat.core.work.WorkStyle.INVEST },
             "잘 준비".takeIf { s.bedtimeNotice },
             "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice && style?.usesCompany != false },
-        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
+        ).ifEmpty { listOf("${com.bamnat.app.ui.shifts.alarmNoun(style)} 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
     ).joinToString(" · ")
     // [J133-71] 1.33: 회사 설정 only where the work has a company; 연차 not for 알바's few hours a week.
     SettingsPage.PAY -> when {
@@ -1059,6 +1123,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
             }
             else -> "비움"
         },
+        "위젯",
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "처리방침 · 권한 확인 · 앱 잠금 · 약관 · 밤낮 ${BuildConfig.VERSION_NAME}"
@@ -1150,8 +1215,9 @@ private fun AlarmReadyCard(
                     val owner = if (active == com.bamnat.app.data.PersonalCalendar.MAIN) "" else
                         context.appContainer.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.name?.let { "$it " }.orEmpty()
                     val line = when {
-                        !settings.alarmsEnabled -> "근무 알람도 이 날 알람도 울리지 않아요"
-                        next == null -> "근무 종류에서 근무 전 알람을 켜면 울려요"
+                        !settings.alarmsEnabled -> "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람도 이 날 알람도 울리지 않아요"
+                        next == null -> if (com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)) (if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) "투자 알람에서 알람을 켜면 울려요" else "${settings.workStyle.words().types}에서 시작 전 알람을 켜면 울려요")
+                            else "근무 종류에서 근무 전 알람을 켜면 울려요"
                         else -> AlarmScheduler.millisToLocal(next.triggerAtMillis).let { at ->
                             "다음 알람 ${Fmt.dayTitle(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · " + owner + next.plan.shiftName.ifBlank { "이 날 알람" }
                         }
@@ -1250,8 +1316,38 @@ internal object BackupPlace {
     private const val PREFS = "backup_place"
     private const val KEY = "last"
 
-    fun remember(context: Context, uri: Uri) {
+    private const val RECENT = "recent"
+    private const val KEEP = 3
+
+    /** 1.38 PC 확인(c00dc792) 제안: a backup this app saved, offered first in 파일 불러오기 (the picker opened on a grid of downloads). */
+    data class Recent(val uri: Uri, val name: String, val at: java.time.LocalDateTime)
+
+    fun remember(context: Context, uri: Uri, name: String? = null) {
         runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, uri.toString()).apply() }
+        if (name == null) return
+        // The file stays readable after the app restarts only with a kept grant; the oldest past [KEEP] gives its grant back.
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val list = (listOf(Recent(uri, name, Today.dateTime().withSecond(0).withNano(0))) + stored(context).filter { it.uri != uri })
+        list.drop(KEEP).forEach { old ->
+            runCatching { context.contentResolver.releasePersistableUriPermission(old.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        }
+        val json = org.json.JSONArray()
+        list.take(KEEP).forEach { r -> json.put(org.json.JSONObject().put("u", r.uri.toString()).put("n", r.name).put("t", r.at.toString())) }
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(RECENT, json.toString()).apply() }
+    }
+
+    private fun stored(context: Context): List<Recent> = runCatching {
+        val a = org.json.JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(RECENT, null) ?: return emptyList())
+        (0 until a.length()).mapNotNull { i ->
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            runCatching { Recent(Uri.parse(o.getString("u")), o.getString("n"), java.time.LocalDateTime.parse(o.getString("t"))) }.getOrNull()
+        }
+    }.getOrDefault(emptyList())
+
+    /** The backups saved here that can still be read (the grant kept), newest first. */
+    fun recent(context: Context): List<Recent> {
+        val granted = runCatching { context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri }.toSet() }.getOrDefault(emptySet())
+        return stored(context).filter { it.uri in granted }
     }
 
     fun last(context: Context): Uri? =
@@ -1268,9 +1364,10 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
+    var exportName by rememberSaveable { mutableStateOf<String?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
         if (uri != null) {
-            BackupPlace.remember(context, uri)
+            BackupPlace.remember(context, uri, exportName)
             vm.exportTo(context, uri, sealedExport)
         }
     }
@@ -1291,7 +1388,10 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
                 askingPassword = false
                 vm.prepareExport(password)
                 sealedExport = password != null
-                exportLauncher.launch("밤낮-백업-${Today.date()}.${BackupManager.EXTENSION}")
+                // 1.38 PC 확인(e6dc244a) 제안: two backups on one day get names of their own (밤낮-백업-2026-11-05-1930).
+                val name = "밤낮-백업-${Today.date()}-${Today.time().let { "%02d%02d".format(it.hour, it.minute) }}.${BackupManager.EXTENSION}"
+                exportName = name
+                exportLauncher.launch(name)
             },
         )
     }
@@ -1327,6 +1427,14 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     }
     val locked by vm.locked.collectAsStateWithLifecycle()
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelUnlock) }
+    val pickAny = { openLauncher.launch(arrayOf(BackupManager.MIME_TYPE, com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
+    var recentBackups by remember { mutableStateOf<List<BackupPlace.Recent>>(emptyList()) }
+    if (recentBackups.isNotEmpty()) {
+        RecentBackupsDialog(recentBackups,
+            onPick = { r -> recentBackups = emptyList(); vm.readFile(context, r.uri) },
+            onOther = { recentBackups = emptyList(); pickAny() },
+            onDismiss = { recentBackups = emptyList() })
+    }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
         ConfirmDialog(
@@ -1338,14 +1446,38 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
             onConfirm = vm::confirmRestore,
         )
     }
-    return remember(exportLauncher, icsLauncher, openLauncher) {
+    return remember(exportLauncher, icsLauncher, openLauncher, context) {
         SettingsFiles(
             saveBackup = { askingPassword = true },
-            openFile = { openLauncher.launch(arrayOf(BackupManager.MIME_TYPE, com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) },
+            // 1.38 PC 확인(c00dc792) 제안: the backups saved here come first; the picker is one tap further.
+            openFile = { BackupPlace.recent(context).let { if (it.isEmpty()) pickAny() else recentBackups = it } },
             exportIcs = { icsLauncher.launch("밤낮-근무-${Today.date()}.ics") },
             shareCompany = { sharingCompany = true },
         )
     }
+}
+
+/** 1.38: 파일 불러오기 with the backups this phone saved (newest first) and 다른 파일 고르기 for anything else. */
+@Composable
+private fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupPlace.Recent) -> Unit, onOther: () -> Unit, onDismiss: () -> Unit) {
+    val at = java.time.format.DateTimeFormatter.ofPattern("M월 d일 a h:mm", java.util.Locale.KOREAN)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("어떤 파일을 불러올까요?") },
+        text = {
+            Column {
+                Text("이 휴대폰에서 만든 백업이에요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                list.forEach { r ->
+                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onPick(r) }.padding(vertical = 10.dp)) {
+                        Text(r.at.format(at) + " 백업", style = MaterialTheme.typography.bodyLarge)
+                        Text(r.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onOther) { Text("다른 파일 고르기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 /** [SET-01] Everything a restore replaces, and that the data before it is kept. */
@@ -1360,6 +1492,9 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.calendars > 0) add("추가한 달력 ${s.calendars}개")
         // [BACK-01] Receipt and contract photos.
         if (s.photos > 0) add("사진 ${s.photos}장(${com.bamnat.app.ui.settings.photoMegabytes(s.photoBytes)})")
+        // 1.38 PC 9차: 팀·사업장 too.
+        if (s.teams > 0) add("팀 근무표 ${s.teams}개(팀원 ${s.teamMembers}명)")
+        if (s.places > 0) add("사업장 ${s.places}곳(직원 ${s.staff}명)")
     }
     val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
     return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +

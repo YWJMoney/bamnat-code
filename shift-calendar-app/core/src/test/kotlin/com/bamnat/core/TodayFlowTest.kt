@@ -17,6 +17,7 @@ import com.bamnat.core.sleep.TodayFlow.State
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -52,7 +53,9 @@ class TodayFlowTest {
         assertEquals("오늘 · 야간 19:00–07:00", card.caption)
         assertEquals("15:00 낮잠 90분", card.headline)
         assertEquals("첫 야간 전 낮잠 시간이에요 · 16:30엔 일어나요", card.detail)
-        assertNull(card.action)
+        // 1.38 [SLEEP-23] 낮잠 자기, waking at the nap's end.
+        assertEquals(TodayFlow.Action.NAP, card.action)
+        assertEquals(at(3, 16, 30), card.napUntil)
         assertEquals("낮잠 15:00–16:30", card.line)
         // The strip: nap, the alarm, the night, and the sleep after it up to the strip's end.
         assertEquals(listOf(Part.NAP, Part.WORK, Part.SLEEP), card.segments.map { it.part })
@@ -101,6 +104,16 @@ class TodayFlowTest {
         assertEquals(State.SLEEP_TIME, home.state)
         assertEquals("08:00–15:00 잘 시간", home.headline)
         assertEquals("19:00 야간 · 알람 17:30", home.detail)
+    }
+
+    @Test
+    fun `the work before the kind of work changed is another job's`() {
+        // 1.37 PC LOW: 교대 → 일근 today; last night's 야간 was the old job, so no sleep after it and no rest sign from it.
+        val card = TodayFlow.of(at(4, 7, 20), resolver(), true, since = LocalDate.of(2026, 11, 4))
+        assertNotEquals(State.AFTER_SHIFT, card.state)
+        assertNull(card.rest)
+        // A change before yesterday leaves today's flow as it was.
+        assertEquals(State.AFTER_SHIFT, TodayFlow.of(at(4, 7, 20), resolver(), true, since = LocalDate.of(2026, 11, 1)).state)
     }
 
     @Test
@@ -214,5 +227,24 @@ class TodayFlowTest {
         // Without alarms it falls back to 90 minutes before the start.
         val without = SleepPlan.tips(SleepSchedule.of(r, start, start, alarmsOn = false), start)
         assertEquals(at(3, 0, 30), without.single { it.kind == SleepPlan.Kind.BEDTIME }.at)
+    }
+
+    /** 1.38 [FLOW-06] The card's one number: time left to what comes next, none for a warning. */
+    @Test
+    fun `the card leads with the time left to what comes next`() {
+        // 11/3 10:00: the nap at 15:00 is the next thing on the strip.
+        assertEquals(TodayFlow.Countdown("낮잠까지", 300), TodayFlow.countdown(flow(at(3, 10))))
+        // 11/3 18:00: the night at 19:00.
+        val leaving = TodayFlow.countdown(flow(at(3, 18)))!!
+        assertEquals("출근까지", leaving.label)
+        assertEquals("1시간", leaving.time)
+        // During the night, the end of it.
+        assertEquals(TodayFlow.Countdown("퇴근까지", 360), TodayFlow.countdown(flow(at(4, 1))))
+        assertEquals("6시간", TodayFlow.Countdown("퇴근까지", 360).time)
+        assertEquals("2시간 10분", TodayFlow.Countdown("출근까지", 130).time)
+        assertEquals("곧", TodayFlow.Countdown("출근까지", 0).time)
+        // An alarm turned off leads with its warning, not a number.
+        val off = flow(at(3, 10), alarmsOn = false)
+        if (off.state == State.ALARM_OFF) assertNull(TodayFlow.countdown(off))
     }
 }

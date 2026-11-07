@@ -328,6 +328,8 @@ interface RecipeApi {
     suspend fun image(device: String, webp: ByteArray): String = throw CompanyException("offline")
     /** The address of a cover picture, for the image loader (the maker sees a waiting one with its device header). */
     fun imageUrl(id: String): String? = null
+    /** 1.38 [STM-06] 밤낮 재료: 운영자가 그린 색 아이콘·배경 중 이 판이 쓸 수 있는 공개된 것. */
+    suspend fun materials(): List<StudioMaterial> = emptyList()
     /** [MAT-06] 1.36 내 글꼴 나누기: an open font (its maker lets others use it, as the user said); the server's id (the phone's). */
     suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray, fallback: String? = null): FontSent = throw CompanyException("offline")
     /** [MAT-06] A shared font's name and its file, or null when the server does not have it (or took it down). */
@@ -672,6 +674,10 @@ class RecipeClient(
         call("POST", "/api/recipes/fonts/$id/report", JSONObject().put("device", device).put("why", why)); Unit
     }
 
+    override suspend fun materials(): List<StudioMaterial> = readCall {
+        call("GET", "/api/recipes/materials?app=${BuildConfig.VERSION_CODE}").optJSONArray("items").objects().mapNotNull(StudioMaterial::parse)
+    }
+
     override fun imageUrl(id: String): String? = if (enabled && com.bamnat.core.recipe.Cover.IMAGE.matches(id)) "$baseUrl/api/recipes/images/$id" else null
 
     companion object {
@@ -730,7 +736,7 @@ class RecipeClient(
                 "offline" -> "인터넷에 연결되지 않았어요"
                 // 1.36 [SEC-10] The font's own words say a foundry that sells fonts made it.
                 "sold" -> "이 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. OFL 같은 공개 글꼴만 함께 보낼 수 있어요"
-                "not_yet" -> "정식 출시일(11월 10일 예정)부터 쓸 수 있어요"
+                "not_yet" -> "정식 출시일부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
                 "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
                 "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as CompanyException).retryAfter ?: 86_400).let { w ->

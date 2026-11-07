@@ -17,6 +17,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -98,7 +101,10 @@ fun DatePickerDialog(
         tonalElevation = tonalElevation,
         colors = colors,
         properties = properties,
-    ) { CompositionLocalProvider(LocalDensity provides d) { content() } }
+    ) {
+        // 1.38 PC 11차: Material's dialog puts content in a Box, so a row above the picker (YearJump) was drawn under it.
+        CompositionLocalProvider(LocalDensity provides d) { androidx.compose.foundation.layout.Column { content() } }
+    }
 }
 
 @Composable
@@ -121,5 +127,28 @@ fun DropdownMenu(
     val d = LocalDensity.current
     androidx.compose.material3.DropdownMenu(expanded, onDismissRequest, modifier, offset, scrollState ?: rememberScrollState(), properties) {
         CompositionLocalProvider(LocalDensity provides d) { content() }
+    }
+}
+
+/**
+ * 1.38 PC 10차 (53): 입사일처럼 지난 해를 고를 때 달을 몇십 번 넘기지 않게, 올해·1년 전…을 한 번에 펼쳐요.
+ * It moves only what the picker shows (the same month in that year); the day is still picked on the calendar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun YearJump(state: androidx.compose.material3.DatePickerState, back: Int = 5) {
+    val now = com.bamnat.core.time.Today.date()
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        (0..back).forEach { y ->
+            val shown = java.time.LocalDate.ofEpochDay(state.displayedMonthMillis / 86_400_000L).year
+            val year = now.year - y
+            FilterChip(selected = shown == year, onClick = {
+                val month = java.time.LocalDate.ofEpochDay(state.displayedMonthMillis / 86_400_000L).withYear(year).withDayOfMonth(1)
+                state.displayedMonthMillis = month.toEpochDay() * 86_400_000L
+            }, label = { androidx.compose.material3.Text(if (y == 0) "올해" else "${y}년 전 ($year)") })
+        }
     }
 }

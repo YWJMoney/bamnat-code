@@ -28,6 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusEvent
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
@@ -48,6 +51,21 @@ private const val MAX_DIGITS = 10
 private const val MAX_JOB_DAYS = 60
 
 /** Whole won typed as digits and shown with thousands separators [LEDG-01]. */
+/**
+ * 1.38 PC 확인 (대출 더하기 칸 넷이 자판에 가려 다음 칸이 안 보임): when this field takes focus, it is scrolled above the keyboard
+ * once the keyboard has come up. For fields in a scrolling sheet.
+ */
+@Composable
+fun Modifier.aboveKeyboard(): Modifier {
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return this.then(Modifier.bringIntoViewRequester(bring).onFocusEvent { f ->
+        if (f.isFocused) scope.launch { kotlinx.coroutines.delay(KEYBOARD_SETTLE_MS); bring.bringIntoView() }
+    })
+}
+
+private const val KEYBOARD_SETTLE_MS = 350L
+
 @Composable
 fun AmountField(
     label: String,
@@ -60,10 +78,18 @@ fun AmountField(
     allowZero: Boolean = false,
     enabled: Boolean = true,
 ) {
+    // 1.38 PC 8차: a String value lost the cursor (맨 앞으로) whenever the screen put other digits in (지우면 기본값이 돌아올 때),
+    // and typing went in front of them (12000 → 1,200,010,320). The field keeps its own cursor; digits from outside put it at the end.
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))) }
+    val shown = if (field.text == digits) field else androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))
     OutlinedTextField(
         enabled = enabled,
-        value = digits,
-        onValueChange = { v -> onChange(amountInput(v, allowZero)) },
+        value = shown,
+        onValueChange = { v ->
+            val kept = amountInput(v.text, allowZero)
+            field = if (kept == v.text) v else androidx.compose.ui.text.input.TextFieldValue(kept, androidx.compose.ui.text.TextRange(kept.length))
+            onChange(kept)
+        },
         label = { Text(label) },
         textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
         suffix = { Text("원") },

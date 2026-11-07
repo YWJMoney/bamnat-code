@@ -617,13 +617,33 @@ fun ReceivedCalendarView(
     }
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
+            schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) }?.let { line ->
+                Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 4.dp))
+            }
             ReceivedDayCard(selected, today, cal, schedule, mine.resolver.resolve(selected).takeIf { canCompare }, restTogether(selected))
             schedule.pay.firstOrNull { it.month == month }?.let { PayCard(cal, it, schedule.payKind) }
+            // 1.38 [P3-X-03]: the link's month as the user's own days, with what their pay setup makes of it.
+            if (canCompare && schedule.covers(month) && schedule.usesShifts()) AdoptRosterCard(schedule, month, mine)
             val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
             if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
+            // 1.38 갈래6 (공유 남은 일: 받은 달력에서 테마 다시 입어 보기): the 테마·근무 설정 a link brought were offered only once,
+            // before keeping it. Kept, one quiet line opens the same card again (입어 보기 still changes nothing until 입기).
+            if (schedule.look != null || schedule.kit != null) {
+                var again by rememberSaveable(cal.id) { mutableStateOf(false) }
+                if (again) SharedLookCards(schedule, cal.id)
+                else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (schedule.look != null) "함께 온 테마${if (schedule.kit != null) "·근무 설정" else ""}" else "함께 온 근무 설정",
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { again = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (schedule.look != null) "다시 입어 보기" else "다시 보기")
+                    }
+                }
+            }
             ReportLink(vm, cal.id)
         }
     }
@@ -1020,5 +1040,17 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
             Text("내 근무표 점검 기준으로 본 참고예요. 받은 근무표는 바뀌지 않고, 상대에게 알리지도 않아요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
+    }
+}
+
+/** 1.38 [SLEEP-11] "22:10부터 자는 중 · 6:30에 일어나요"; null once it is stale ([com.bamnat.app.share.SleepNow.shownAt]). */
+internal fun sleepNowLine(sn: com.bamnat.app.share.SleepNow, now: Long): String? {
+    if (!sn.shownAt(now)) return null
+    fun t(ms: Long) = com.bamnat.app.ui.Fmt.time(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), com.bamnat.core.time.Today.zone()).toLocalTime())
+    val wake = sn.wakeAt
+    return when {
+        wake == null -> "${t(sn.since)}부터 자는 중이에요"
+        now < wake -> "${t(sn.since)}부터 자는 중 · ${t(wake)}에 일어나요"
+        else -> "${t(sn.since)}부터 자는 중이었어요 · ${t(wake)} 알람이 지났어요"
     }
 }

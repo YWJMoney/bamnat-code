@@ -49,7 +49,7 @@ test("[FLAG-34] the server's flag book is core's: same rows, words, conditions, 
   assert.equal(FLAG_CATALOG, CORE_FLAGS, "index.js serves the generated book itself");
   for (const f of CORE_FLAGS) {
     assert.deepEqual(L.checkConditions(f.conditions).list, f.conditions, `${f.key}: conditions as the editor writes them back`);
-    assert.ok(["money", "type", "law", "server", "stats"].includes(f.group), `${f.key} group`);
+    assert.ok(["money", "type", "law", "server", "stats", "phase3"].includes(f.group), `${f.key} group`);
   }
   // The developer app's evaluator names conditions the way the phone's 진단 screen does.
   assert.deepEqual(L.CONSENT_NAMES, CORE_NAMES.consent);
@@ -195,14 +195,14 @@ test("[FLAG-36] an override's app range: kept, checked, sent, evaluated for a pr
 });
 
 test("[FLAG-37] D101: a legal flag's day-before news reaches an admin inside quiet hours; other news waits", async (t) => {
-  const eve = Date.parse("2026-11-09T14:00:00Z"); // 11월 9일 23시(한국), 방해 금지 22~7시
+  const eve = Date.parse("2026-11-11T14:00:00Z"); // 11월 11일 23시(한국, 1.38 정식 출시일 11-12 전날), 방해 금지 22~7시
   t.mock.timers.enable({ apis: ["Date"], now: eve });
   const keys = await vapidKeys();
   const { call, env } = server(keys);
   const owner = await signIn(call);
-  // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
+  // [PRIV-05] 3.9 shares 11-12 with 3.1: move it later here so only 결제·광고 speak.
   await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
-  // 1.37 3.11 (share.look) also starts on 11-10: move it later too.
+  // 1.37 3.11 (share.look) also starts on 11-12: move it later too.
   await call("POST", "/api/admin/policy", { version: "3.11", posted: "2026-11-04", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   await call("POST", "/api/admin/me/push", { subscription: subscription(1), kinds: ["flags", "inquiry"], quiet: { from: 22, to: 7 } }, owner);
   const sent = [];

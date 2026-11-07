@@ -16,6 +16,9 @@ import { insightViews } from "./admin/views/insight.js";
 import { workViews } from "./admin/views/work.js";
 // 1.37 [ADM2-01][ADM2-03] 흐름(관제)과 Claude 운영 열쇠.
 import { flowViews } from "./admin/views/flow.js";
+import { ledgerViews } from "./admin/views/ledger.js";
+// 1.38 [ADM3] 사고·Claude 조종석·스토어 리뷰·데이터 요청·백업·출시 점검표·판 건강·돈·오류 묶음·서버 상태 판·사람 옆 패널·개발 이야기.
+import { opsViews } from "./admin/views/ops.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -72,7 +75,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews}, ops: ${opsViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -296,7 +299,8 @@ function adminApp(L, BUILD, M) {
   // ---- [ADMUX-03] this device's choices, kept in the browser only ----
 
   const PREF_KEY = "bamnat-admin-prefs";
-  const PREFS = { theme: "system", size: "normal", tabs: [], sound: false, next: true, views: [], loginMode: "account", v: 2 };
+  // 1.38 [ADM3-01] 1인 관리자라 로그인 첫 칸은 최고 관리자예요(초대받은 관리자는 한 번 고르면 이 기기가 기억해요).
+  const PREFS = { theme: "system", size: "normal", tabs: [], sound: false, next: true, views: [], loginMode: "owner", v: 2 };
   function readPrefs() {
     try {
       const v = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}");
@@ -368,6 +372,7 @@ function adminApp(L, BUILD, M) {
     metricFrom: "", metricTo: "", inboxView: "all", versionShow: "conflict", postPick: null, ratePick: null,
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
+    deskView: "today", deskGroup: "", deskV: "", deskQuery: "", ledgerPick: null,
     inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
     // [ADMIN-16] 문의 찾기·정렬, 여러 개 고르기. [ADMIN-17] 활동 기록 거르기. 토론·보상 찾기.
     inquiryQuery: "", inquirySort: "default", inquiryPick: null, postQuery: "", rewardQuery: "",
@@ -397,6 +402,8 @@ function adminApp(L, BUILD, M) {
   const can = (area, level = "view") => L.can(S.me, area, level);
   const visible = (n) => (n.owner ? S.me?.owner : n.area ? can(n.area) : true);
   const wide = () => matchMedia("(min-width:1024px)").matches;
+  // 1.38 [ADM3] 두 칸(목록 옆에 열린 것)은 갤럭시 폴드를 가로로 편 화면(~840px)부터.
+  const twoPane = () => matchMedia("(min-width:840px)").matches;
   /** [ADMUX-02] A screen's address; a list keeps the filters it has now, so 뒤로 lands where the admin was. */
   const href = (name, id) => L.routeHash(name, id ?? null, id ? {} : paramsOf(name));
   const routeKey = () => `${S.route.name}/${S.route.id ?? ""}`;
@@ -431,6 +438,14 @@ function adminApp(L, BUILD, M) {
     home: { view: "inboxView" },
     versions: { show: "versionShow" },
     flags: { show: "flagShow", q: "flagQuery", view: "flagView" },
+    // 1.38 [DESK-02] 운영 장부의 보기·종류·판·찾기.
+    desk: { view: "deskView", group: "deskGroup", v: "deskV", q: "deskQuery" },
+    // 1.38 [ADM3] 스토어 리뷰·데이터 요청·오류 묶음의 보기, 판 건강·돈의 기간.
+    reviews: { show: "reviewsShow" },
+    requests: { show: "requestsShow" },
+    errors: { show: "errorsShow" },
+    health: { days: "healthDays" },
+    money: { days: "moneyDays" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -588,6 +603,9 @@ function adminApp(L, BUILD, M) {
     if (path(location.hash) !== path(href(S.route.name, S.route.id))) syncUrl();
   }
 
+  /** 1.38 [ADM3-36] Where each list was left, by screen name (this tab only). */
+  const scrollMemo = {};
+
   function go(name, id) {
     const next = href(name, id);
     if (location.hash === next) load();
@@ -657,7 +675,12 @@ function adminApp(L, BUILD, M) {
       if (name === "flow") jobs.push(api("/flow").then(keep((d) => { S.data.flow = d; })));
       if (name === "keys") jobs.push(api("/keys").then(keep((d) => { S.data.keys = d; })));
       // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
-      if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
+      // 1.38 [DESK-02][DESK-03] 운영 장부: 보기·종류·판·찾기로 거른 줄, 그리고 정리함에 있던 넘길 글(넘기기 칸).
+      if (name === "desk") {
+        const p = new URLSearchParams({ view: S.deskView || "today", ...(S.deskGroup ? { group: S.deskGroup } : {}), ...(S.deskV ? { v: S.deskV } : {}), ...(S.deskQuery ? { q: S.deskQuery } : {}) });
+        jobs.push(api(`/ledger?${p}`).then(keep((d) => { S.data.ledger = d; S.data.sort = { auto: d.auto ?? { fixed: false, known: false } }; })));
+        if (can("inquiries")) jobs.push(api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
+      }
       // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
       if (name === "growth") {
         const t = S.growthTab ?? "needs";
@@ -668,11 +691,10 @@ function adminApp(L, BUILD, M) {
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
-      if (name === "inquiries" && (!id || wide())) jobs.push(loadInquiries(n));
+      if (name === "inquiries" && (!id || twoPane())) jobs.push(loadInquiries(n));
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
       // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
-      if (name === "sort") jobs.push(api("/inquiries/sort").then(keep((d) => { S.data.sort = d; })), api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
@@ -719,12 +741,16 @@ function adminApp(L, BUILD, M) {
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         // 1.36 [MKS-01] 출시 대기 묶음.
         if (t === "waiting") jobs.push(api("/recipes/release").then(keep((d) => { S.data.recipeRelease = d; })).catch(() => {}));
+        // 1.38 [STM-10] 밤낮 재료(스튜디오 색 아이콘·배경) 묶음도 출시 대기에서.
+        if (t === "waiting") jobs.push(api("/recipes/materials").then(keep((d) => { S.data.materials = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
       }
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
       // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
       if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
+      // 1.37.1 [FAM-01] 가족 프로 이용권 (최고 관리자만).
+      if (name === "account" && S.me?.owner) jobs.push(api("/family").then(keep((d) => { S.data.family = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -736,6 +762,21 @@ function adminApp(L, BUILD, M) {
       if (name === "types") jobs.push(api("/types").then(keep((d) => { S.data.types = d; })));
       // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과: each flag's share of phones and problems before and after it turned on.
       if (name === "effects") jobs.push(api("/effects").then(keep((d) => { S.data.effects = d; })));
+      // 1.38 [ADM3] 새 화면들이 읽을 길(ops.js opsLoads). 관리 › 서버 상태는 /server 옆에 /watch/health도.
+      for (const [path, k] of V.opsLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
+      // [ADM3-11] 문의 하나를 열면 그 휴대폰(사람 옆 패널), [ADM3-34] 개발사항 하나를 열면 이야기: 화면을 기다리게 하지 않아요.
+      if (name === "inquiries" && id && can("inquiries") && S.data.person?.for !== id) {
+        S.data.person = { for: id, loading: true };
+        api(`/person?inquiry=${encodeURIComponent(id)}`).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
+          .then(() => { if (S.route.name === "inquiries" && S.route.id === id) render({ keepScroll: true }); });
+      }
+      // 1.38 [ADM3-10] 장부 맨 위 단계 막대(흐름 한 줄).
+      if (name === "desk" && can("inquiries")) {
+        api("/flow").then(keep((d) => { S.data.flowStrip = d; if (S.route.name === "desk") render({ keepScroll: true }); })).catch(() => {});
+      }
+      if (name === "dev" && id && can("dev") && S.data.story?.id !== id) {
+        api(`/story/${encodeURIComponent(id)}`).then(keep((d) => { S.data.story = d; if (S.route.name === "dev" && S.route.id === id) render({ keepScroll: true }); })).catch(() => {});
+      }
       const results = await Promise.allSettled(jobs);
       const failed = results.find((r) => r.status === "rejected" && !r.reason?.quiet);
       if (seq.current("load", n)) {
@@ -920,7 +961,8 @@ function adminApp(L, BUILD, M) {
     if (!banners) return;
     banners.innerHTML = `${S.online ? "" : '<div class="offline" role="status">인터넷 연결이 끊겼어요. 다시 연결되면 저절로 새로 고쳐요.</div>'}
       ${S.stale ? '<div class="banner warn" role="status">연결이 끊겨 이 기기에 저장된 내용을 보여요. 바꾸는 일은 연결된 뒤에 해 주세요.</div>' : ""}
-      ${S.newBuild ? '<div class="banner" role="status">관리자 앱이 새로 나왔어요.<button class="btn small" data-act="reload">새로 열기</button></div>' : ""}`;
+      ${S.newBuild ? '<div class="banner" role="status">관리자 앱이 새로 나왔어요.<button class="btn small" data-act="reload">새로 열기</button></div>' : ""}
+      ${V.incidentBanner?.() ?? ""}`;
   }
 
   /**
@@ -1060,15 +1102,14 @@ function adminApp(L, BUILD, M) {
    */
   const VIEWS = {
     home: () => V.homeView(),
-    // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
-    work: () => V.workView(),
+    // 1.38 [DESK-02][DESK-03] 운영 장부(정리함·할 일함을 하나로), [GRW-04] 스튜디오 요구.
+    desk: () => V.stageStrip() + V.ledgerView(),
     // 1.37 [ADM2-01] 흐름, [ADM2-03] 운영 열쇠.
     flow: () => V.flowView(),
     keys: () => V.keysView(),
     growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
-    sort: () => sortView(),
     templates: () => templatesView(),
     sla: () => slaView(),
     review: () => V.reviewView(),
@@ -1092,6 +1133,17 @@ function adminApp(L, BUILD, M) {
     account: () => accountView(),
     settings: () => movedView(),
     more: () => moreView(),
+    // 1.38 [ADM3] 새 화면들(src/admin/views/ops.js).
+    incident: () => V.opsViews.incident(),
+    cockpit: () => V.opsViews.cockpit(),
+    reviews: () => V.opsViews.reviews(),
+    requests: () => V.opsViews.requests(),
+    backup: () => V.opsViews.backup(),
+    launch: () => V.opsViews.launch(),
+    health: () => V.opsViews.health(),
+    money: () => V.opsViews.money(),
+    errors: () => V.opsViews.errors(),
+    materials: () => V.materialsTab(materialsView),
   };
 
   function view() {
@@ -1108,8 +1160,9 @@ function adminApp(L, BUILD, M) {
   function hasData() {
     const { name, id } = S.route;
     const d = S.data;
+    if (V.opsHas[name]) return Boolean(V.opsHas[name]());
     return Boolean({
-      home: d.today, work: d.work, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, desk: d.ledger, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -1461,6 +1514,10 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
     if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
+    // 1.38 [DESK-09] Claude 답 10분 보류.
+    if (e.action === "inquiry_reply_held") return `${by}가 답을 썼어요(${e.detail || "10분 보류"} 뒤 보내요)`;
+    if (e.action === "inquiry_reply_sent") return `보류한 ${by} 답이 보내졌어요`;
+    if (e.action === "inquiry_reply_cancel") return `${by} 답을 보내기 전에 취소했어요`;
     return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
   }
 
@@ -1469,7 +1526,7 @@ function adminApp(L, BUILD, M) {
     const detail = !q || q.id !== S.route.id ? skeleton(2) : inquiryDetail(q);
     // [ADMIN-16] On a wide screen the list stays beside the open question.
     const list = S.data.inquiries?.inquiries;
-    if (!wide() || !list?.length) return detail;
+    if (!twoPane() || !list?.length) return detail;
     return `<div class="split"><nav class="pane-list card" aria-label="문의 목록"><ul class="rows">${list.map((x) => inquiryRow(x, { compact: true })).join("")}</ul>
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
@@ -1496,7 +1553,9 @@ function adminApp(L, BUILD, M) {
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
-          <div class="thread">${thread}</div>
+          <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
+            <span class="bubble-meta admin">${esc(h.by)} · <b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
+            <button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
@@ -1507,12 +1566,12 @@ function adminApp(L, BUILD, M) {
           <input type="hidden" name="template" value="">
           <div class="chips" role="group" aria-label="자주 쓰는 답">${list.map((t, i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}" title="${esc(t.text.slice(0, 120))}">${i < 9 ? `<span class="kbd">${i + 1}</span> ` : ""}${esc(t.label)}</button>`).join("")}
             <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
-          <p class="saved" id="reply-saved" aria-live="polite"></p>
-          <div class="actions"><span class="count" id="reply-count">0/2000</span>
+          <div class="actions"><span class="count-box"><span class="count" id="reply-count">0/2000</span><span class="saved" id="reply-saved" aria-live="polite"></span></span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
         </form>` : ""}
       </section>
       <aside>
+        ${V.personPanel()}
         ${editable ? `<section class="card"><h2>상태</h2>
           <p class="meta">${q.assignee ? (q.assignee.id === S.me.id ? "내가 맡았어요." : `${esc(q.assignee.name)}님이 맡았어요.`) : "아직 아무도 맡지 않았어요. 답하면 내가 맡아요."}</p>
           <div class="actions start">${q.assignee?.id === S.me.id ? '<button class="btn" data-act="inquiry-assign" data-to="">맡기 취소</button>'
@@ -1627,86 +1686,12 @@ function adminApp(L, BUILD, M) {
 
   // ---- 개발사항 [ADMIN-10][ADMIN-11] ----
 
-  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계") ----
+  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계"), 1.38 [DESK-03]부터 운영 장부 안 ----
   // Every waiting question already sorted by the server into what it is (이미 고침, 개발 목록에 있음, 전에 답한 것과 같음, 자주
   // 쓰는 답, 새 문제 …) with its answer written; one tap does a card, one tap does a whole pile. Above it, 자동 대응 (owner)
   // and Claude에게 넘기기: the 개발사항 not handed over yet as one text, and 개발 결과 붙여 넣기 for what comes back.
 
-  const PILE_HELP = {
-    fixed: ["이미 고친 문제예요", "고친 버전보다 오래된 앱에서 온 문의예요. 업데이트 안내로 답해요."],
-    known: ["개발 목록에 있는 내용이에요", "같은 개발사항에 묶고, 진행 중이라고 답해요. 고치면 한 번에 알려요."],
-    again: ["고친 뒤 다시 생겼어요", "고친 버전 이후의 앱에서 온 문의예요. 개발사항을 다시 접수해요."],
-    declined: ["반려한 요청과 같아요", "반려 이유로 답해요."],
-    answered: ["전에 답한 문의와 같아요", "그때 보낸 답을 다시 보내요. 고쳐서 보내도 돼요."],
-    faq: ["자주 쓰는 답으로 충분해요", "저장해 둔 답을 보내요."],
-    new: ["새 문제·개선이에요", "비슷한 문의끼리 묶었어요. 개발사항으로 넘기면 다음 개발에 들어가요."],
-  };
-  const PILE_DO = { fixed: "답 보내기", known: "묶고 답하기", again: "다시 접수하고 답하기", declined: "답 보내기", answered: "이 답 보내기", faq: "이 답 보내기", new: "개발사항으로 넘기기" };
-  const PILE_TONE = { fixed: "good", known: "info", again: "bad", declined: "", answered: "info", faq: "info", new: "warn" };
-
-  function sortView() {
-    const d = S.data.sort;
-    if (!d) return skeleton(3);
-    const owner = S.me?.owner;
-    const order = ["new", "again", "fixed", "known", "answered", "faq", "declined"];
-    const strip = `<div class="pile-strip" role="list">${order.map((k) => d.counts[k] ? `<a role="listitem" class="pile-card ${PILE_TONE[k]}" href="#pile-${k}" data-act="sort-jump" data-key="${k}">
-        <span class="pile-n">${d.counts[k]}</span><span class="pile-name">${esc(d.names[k])}</span></a>`
-      : `<span role="listitem" class="pile-card zero"><span class="pile-n">0</span><span class="pile-name">${esc(d.names[k])}</span></span>`).join("")}</div>`;
-    const auto = `<div class="card auto-card"><div class="auto-head"><b>자동 대응</b>
-        <small>${owner ? "켜 두면 문의가 들어오는 순간 서버가 묶고 답해요. 답에는 ‘자동 정리’가 이름으로 붙어요." : "최고 관리자가 켜고 꺼요."}</small></div>
-      ${["fixed", "known"].map((k) => `<label class="switch"><input type="checkbox" data-act="sort-auto" data-key="${k}"${d.auto[k] ? " checked" : ""}${owner ? "" : " disabled"}>
-        <span class="track" aria-hidden="true"></span><span>${esc(d.names[k])}</span></label>`).join("")}</div>`;
-    const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
-      : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
-    // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
-    const n = (S.data.handoff?.items?.length ?? 0) + (S.data.handoff?.asks ?? 0);
-    const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
-        <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
-    return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
-      ${strip.replace("</div>", `${go}</div>`)}<div class="sort-top" id="sort-tools">${auto}${handoffCard()}</div>${body}</div>`;
-  }
-
-  function pileSection(k, items) {
-    const [title, help] = PILE_HELP[k];
-    const all = k === "new" || items.length < 2 ? "" : `<button class="btn small primary" data-act="sort-pile" data-key="${k}">${items.length}건 모두 ${esc(PILE_DO[k])}</button>`;
-    return `<section class="pile" id="pile-${k}" aria-labelledby="pile-${k}-h"><div class="pile-head"><div><h3 id="pile-${k}-h">${esc(title)} <span class="pill ${PILE_TONE[k]}">${k === "new" ? items.reduce((n, g) => n + g.group.length, 0) : items.length}</span></h3>
-        <small>${esc(help)}</small></div>${all}</div><ul class="rows">${items.map((x) => sortCard(k, x)).join("")}</ul></section>`;
-  }
-
-  function sortCard(k, x) {
-    const m = x.match;
-    const meta = [esc(KIND_NAMES[x.kind] ?? x.kind), esc(x.topicName ?? ""), x.app ? `앱 ${esc(String(x.app).split(" ")[0])}` : "", esc(ago(x.at)), x.same ? `나도 그래요 ${x.same}` : ""]
-      .filter(Boolean).join(" · ");
-    const matched = m ? `<small class="match">≈ ${m.type === "dev" ? `<a href="${href("dev", m.id)}">개발사항 ‘${esc(m.title)}’</a> · ${esc(DEV_NAMES[m.status] ?? "")}${m.releasedIn ? ` ${esc(m.releasedIn)}` : ""}`
-      : m.type === "inquiry" ? `<a href="${href("inquiries", m.id)}">전에 답한 문의 ‘${esc(m.title)}’</a>` : `자주 쓰는 답 ‘${esc(m.title)}’`} · 비슷함 ${Math.round(m.score * 100)}%</small>` : "";
-    const others = k === "new" && x.others?.length ? `<details><summary>같은 내용 ${x.others.length}건 더</summary><ul class="mini">${x.others.map((o) =>
-      `<li><a href="${href("inquiries", o.id)}">${esc(o.preview)}</a> <small>${esc(o.app ? String(o.app).split(" ")[0] : "")}</small></li>`).join("")}</ul></details>` : "";
-    const title = k === "new" ? `<label class="sort-field"><span>개발사항 제목</span><input id="sort-title-${x.id}" value="${esc(x.title)}" maxlength="100"></label>` : "";
-    const reply = `<label class="sort-field"><span>${k === "new" ? "함께 보낼 답 (비우면 답 없이 넘겨요)" : "보낼 답"}</span><textarea id="sort-reply-${x.id}" rows="3">${esc(x.reply ?? "")}</textarea></label>`;
-    return `<li class="sort-card"><div class="sort-ask"><b><a href="${href("inquiries", x.id)}">${esc(x.preview)}</a></b><small>${meta}</small>${matched}${others}</div>
-      <div class="sort-answer">${title}${reply}
-      <div class="actions"><button class="btn small primary" data-act="sort-do" data-key="${k}" data-id="${x.id}">${esc(k === "new" && x.group.length > 1 ? `${x.group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
-        ${k === "new" ? `<button class="btn small" data-act="sort-reply-only" data-id="${x.id}">답만 보내기</button>` : ""}
-        <button class="btn small ghost" data-act="sort-skip" data-id="${x.id}">빼 두기</button></div></div></li>`;
-  }
-
-  /** The action of one card as the server takes it (sortApply). */
-  function sortAction(k, x) {
-    const text = document.getElementById(`sort-reply-${x.id}`)?.value?.trim() ?? x.reply;
-    if (k === "new") {
-      const title = document.getElementById(`sort-title-${x.id}`)?.value?.trim() || x.title;
-      return { do: "dev", ids: x.group, title, body: [x.preview, ...(x.others ?? []).map((o) => o.preview)].map((t) => `- ${t}`).join("\n").slice(0, 4000), ...(text ? { text } : {}) };
-    }
-    if (k === "known") return { do: "reply", id: x.id, item: x.match.id, text };
-    if (k === "again") return { do: "reopen", id: x.id, item: x.match.id, text };
-    return { do: "reply", id: x.id, text };
-  }
-
-  async function sortApply(actions, done) {
-    const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (r) => [r.replied && `답 ${r.replied}건`, r.linked && `묶음 ${r.linked}건`,
-      r.created?.length && `개발사항 ${r.created.length}개`, r.reopened && `다시 접수 ${r.reopened}개`, r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || done);
-    if (r) { S.data.sort = null; S.data.handoff = null; render({ keepScroll: true }); load(); }
-  }
+  // 1.38 [DESK-03] 정리함의 일곱 묶음과 카드는 운영 장부(src/admin/views/ledger.js)의 줄로 들어갔어요. 여기엔 넘기기·결과 붙여 넣기 칸만 남아요.
 
   /** [INBOX-05][INBOX-06] Claude에게 넘기기 and 개발 결과 붙여 넣기. */
   function handoffCard() {
@@ -1802,6 +1787,7 @@ function adminApp(L, BUILD, M) {
             <button class="btn" data-act="dev-assign" data-to="${mine ? "" : "me"}">${mine ? "맡기 취소" : d.assignee ? "내가 넘겨받기" : "내가 맡기"}</button>
             <button class="btn" data-act="dev-edit">고치기</button>` : ""}
             <button class="btn" data-act="dev-copy-one">${icon(P.copy)}복사</button>`}</div></div>
+      ${V.storyCard()}
       ${status ? `<section class="card"><h2>처리</h2><p class="hint">누르면 바로 바뀌고 기록에 남아요. 반려는 이유를 함께 남겨요.</p>
         <div class="chips" role="group" aria-label="처리 상태">${Object.keys(DEV_NAMES).map((k) =>
           `<button type="button" class="chip pick" data-act="dev-status-set" data-status="${k}" aria-pressed="${d.status === k}">${DEV_NAMES[k]}</button>`).join("")}</div>
@@ -1908,6 +1894,8 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="tpl-topic">주제(이 주제의 문의에서 먼저 보여요)</label><div class="field"><select id="tpl-topic" name="topic"><option value="">모든 문의</option>
         ${Object.entries(names).map(([k, label]) => `<option value="${k}"${topic === k ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></div></div>
       <div class="fieldset"><label for="tpl-text">내용</label><textarea id="tpl-text" name="text" maxlength="2000" required>${esc(typed)}</textarea></div>
+      <div class="fieldset"><label for="tpl-q">마을 밤낮 Q&A에 공개할 묻는 말(비우면 공개 안 함)</label><input id="tpl-q" name="publicQ" maxlength="80" placeholder="예: 위젯 날짜가 안 바뀌어요" value="${esc(t?.publicQ ?? "")}">
+        <small class="hint">적으면 이 답이 앱 마을 › 광장 위 '밤낮 Q&A'에 누구나 보게 올라가요. {앱버전}은 '최신 버전'으로 바뀌어요. 한 사람에게만 맞는 말은 빼 주세요.</small></div>
       <div class="actions"><button class="btn" type="button" data-act="${t ? "templates" : "close"}">${t ? "목록으로" : "닫기"}</button><button class="btn primary" type="submit">${t ? "저장" : "넣기"}</button></div></form>`, "wide");
   }
 
@@ -2163,6 +2151,31 @@ function adminApp(L, BUILD, M) {
   }
 
   /**
+   * 1.37.1 [FAM-01] 가족 프로 이용권: the owner gives 프로 to family phones with no end, and cuts any of them at any time.
+   * The code goes in the same place as an admin's (밤낮 앱 › 설정 › 프로 › '관리자 연결'), so no app update is needed.
+   */
+  function familyCard() {
+    const f = S.data.family;
+    const phones = f?.phones ?? [];
+    const codes = f?.codes ?? [];
+    const on = phones.filter((d) => !d.paused).length;
+    return `<section class="card"><div class="card-head"><h2>가족 프로 이용권</h2>${phones.length ? `<span class="pill ok">${on}대 사용 중</span>` : ""}</div>
+      <p class="hint">가족 휴대폰에 프로를 끝나는 날 없이 무료로 줘요. 닉네임을 적고 코드를 만들어 보내면, 가족이 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 1시간 안에 넣어요. 승인 없이 바로 열려요. 정지하면 다시 켤 때까지 무료가 되고, 끊으면 새 코드가 있어야 해요. 닉네임은 이 화면에만 보이고 그 휴대폰에는 '가족'으로만 보여요. 몇 대든 줄 수 있어요.</p>
+      <form class="inline-form" data-form="family-code"><div class="fieldset"><label for="family-name">닉네임(관리자 앱에서만 보여요)</label>
+        <input id="family-name" name="name" maxlength="20" required placeholder="예: 엄마" autocomplete="off"></div>
+        <div class="actions start"><button class="btn primary" type="submit">가족 코드 만들기</button></div></form>
+      ${codes.length ? `<h3 class="section">아직 안 넣은 코드</h3><ul class="rows">${codes.map((c) => `<li class="item"><div class="row-main"><b>${esc(c.name)} · ${esc(c.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</b>
+        <small>${esc(clock(c.expiresAt))}까지</small></div><div class="actions"><button class="btn small" data-act="family-code-delete" data-id="${esc(c.code)}">취소</button></div></li>`).join("")}</ul>` : ""}
+      ${phones.length ? `<h3 class="section">가족 휴대폰</h3><ul class="rows">${phones.map((d) => `<li class="item"><div class="row-main"><b>${esc(d.name)}</b>
+        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
+        ${d.paused ? '<span class="pill warn">정지</span>' : '<span class="pill ok">프로 사용 중</span>'}
+        <div class="actions"><button class="btn small" data-act="family-set" data-id="${d.id}" data-key="${d.paused ? "resume" : "pause"}" data-name="${esc(d.name)}">${d.paused ? "다시 켜기" : "정지"}</button>
+          <button class="btn small" data-act="family-rename" data-id="${d.id}" data-name="${esc(d.name)}">닉네임</button>
+          <button class="btn small danger" data-act="family-remove" data-id="${d.id}" data-name="${esc(d.name)}">끊기</button></div></li>`).join("")}</ul>`
+        : f ? '<p class="hint">아직 연결된 가족 휴대폰이 없어요.</p>' : ""}</section>`;
+  }
+
+  /**
    * S 1.32 [SECX-01] 휴대폰 미리 보기: which flags an approved admin phone sees before everyone. Only here, by role
    * (the owner for any phone, 기능 관리 바꾸기 for one's own); the phone app shows and changes nothing about flags.
    */
@@ -2279,8 +2292,10 @@ function adminApp(L, BUILD, M) {
         : e.target ? ` <span class="meta">${esc(e.target)}</span>` : "";
       const who = e.actorId ? `<button class="who link" data-act="audit-who" data-id="${esc(e.actorId)}" title="이 사람이 한 일만 보기">${esc(e.actor || "관리자")}</button>`
         : `<span class="who">${esc(e.actor || "앱 사용자·시스템")}</span>`;
+      // 1.38 [ADM3-07] 되돌릴 수 있는 일은 그 화면으로 한 번에.
+      const undo = L.undoPlace(e.action, e.target);
       out.push(`<li><span class="when">${esc(clock(e.at))}</span><span><b>${esc(ACTION_NAMES[e.action] ?? e.action)}</b>${about}
-        ${e.detail ? `<span class="meta">${esc(e.detail)}</span>` : ""}</span>${who}</li>`);
+        ${e.detail ? `<span class="meta">${esc(e.detail)}</span>` : ""}${undo ? ` <a class="undo-link" href="${esc(undo.to)}">${esc(undo.label)}</a>` : ""}</span>${who}</li>`);
     }
     out.push("</ul></section>");
     return `${filters}<p class="hint">누가 언제 무엇을 했는지 남아요. 이름을 누르면 그 사람이 한 일만 보여요. 1년 지난 기록은 지워져요.</p>${out.join("")}
@@ -2487,7 +2502,7 @@ function adminApp(L, BUILD, M) {
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) : "";
+    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
       <textarea name="recipe" rows="8" required></textarea>
@@ -2518,6 +2533,33 @@ function adminApp(L, BUILD, M) {
       <label>이 앱 판부터 보이기 (versionCode, 비우면 모든 앱) <input name="minApp" inputmode="numeric" pattern="[0-9]*" maxlength="6"></label>
       <label class="switch"><input type="checkbox" name="replace"${on ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>같은 이름의 운영자 작품은 새 판으로 고치기 (다시 넣어도 두 개가 되지 않아요)</span></label>
       <p class="hint">파일 안의 항목에 hold·batch·minApp·replace가 있으면 그것이 먼저예요.</p></fieldset>`;
+  }
+
+  /** 1.38 [STM-10] 밤낮 재료 묶음: 몇 개·공개 상태·무료 수, 공개·숨기기, 무료·광고 나누기(광고로 연 묶음은 30일, 프로는 모두). */
+  function materialsView(d, edit) {
+    if (!d) return "";
+    if (!d.items.length) return `<h3>밤낮 재료</h3><p class="hint">넣은 재료가 없어요. tools/materials-seed.mjs로 넣어요.</p>`;
+    const packs = new Map();
+    for (const m of d.items) {
+      const p = packs.get(m.pack) ?? { kind: m.kind, n: 0, ok: 0, waiting: 0, hidden: 0, free: 0 };
+      p.n++; p[m.state] = (p[m.state] ?? 0) + 1; if (m.free) p.free++;
+      packs.set(m.pack, p);
+    }
+    const c = d.counts ?? {};
+    const freeOf = (p) => (p.free === p.n ? "all" : p.free === 0 ? "none" : "third");
+    const row = ([name, p]) => `<li><form data-form="material-free" data-key="${esc(name)}" class="row"><span class="row-main"><b>${esc(name)}</b>
+        <small>${p.n}개 · 공개 ${p.ok}${p.waiting ? ` · 대기 ${p.waiting}` : ""}${p.hidden ? ` · 숨김 ${p.hidden}` : ""} · 무료 ${p.free}</small></span>
+        ${edit ? `<span class="row-side inline"><select name="mode" aria-label="${esc(name)} 무료·광고">${[["all", "모두 무료"], ["third", "3분의 1 무료"], ["none", "모두 광고·프로"]]
+          .map(([k, l]) => `<option value="${k}"${freeOf(p) === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+          <button class="btn small" type="submit">바꾸기</button>
+          ${p.ok < p.n ? `<button class="btn small primary" type="button" data-act="material-state" data-id="${esc(name)}" data-key="ok">공개</button>`
+            : `<button class="btn small" type="button" data-act="material-state" data-id="${esc(name)}" data-key="hidden">숨기기</button>`}</span>` : ""}</form></li>`;
+    const group = (kind, label) => {
+      const list = [...packs].filter(([, p]) => p.kind === kind);
+      return list.length ? `<details data-key="materials-${kind}"><summary>${label} ${list.length}묶음 · ${list.reduce((n, [, p]) => n + p.n, 0)}개</summary><ul class="rows">${list.map(row).join("")}</ul></details>` : "";
+    };
+    return `<h3>밤낮 재료</h3><p class="hint">공개 ${c.ok ?? 0} · 대기 ${c.waiting ?? 0} · 숨김 ${c.hidden ?? 0}. 스튜디오 › 꾸밈 › 넣기의 ‘밤낮 재료’ 칸이에요. 무료가 아닌 재료는 광고 한 편으로 그 묶음을 30일 열거나 프로로 모두 써요.</p>
+      ${group("icon", "색 아이콘")}${group("bg", "배경")}`;
   }
 
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
@@ -2730,10 +2772,12 @@ function adminApp(L, BUILD, M) {
     if (!list) return skeleton(2);
     const names = S.topicNames ?? {};
     const edit = can("inquiries", "edit");
-    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.</p>
+    const shown = list.filter((x) => x.publicQ).length;
+    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.
+        '묻는 말'을 적은 답은 앱 마을의 밤낮 Q&A에 공개돼요(지금 ${shown}개).</p>
         ${edit ? `<button class="btn primary" data-act="templates">${icon(P.plus)}새 답</button>` : ""}</div>
-      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}</b>
-        <small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
+      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}${x.publicQ ? ' <span class="pill ok">마을 공개</span>' : ""}</b>
+        ${x.publicQ ? `<small>묻는 말: ${esc(x.publicQ)}</small>` : ""}<small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
         <div class="actions"><button type="button" class="btn small" data-act="template-copy" data-id="${x.id}">${icon(P.copy)}복사</button>
         ${edit ? `<button type="button" class="btn small" data-act="template-edit" data-id="${x.id}">고치기</button>
         <button type="button" class="btn small danger" data-act="template-remove" data-id="${x.id}">지우기</button>` : ""}</div></li>`).join("")}</ul>`
@@ -2773,7 +2817,9 @@ function adminApp(L, BUILD, M) {
 
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
+    // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
+    const watch = Boolean(S.me?.owner && S.data.watch);
+    return `${V.watchBoard()}<section class="card"><h2>${watch ? "무결성·회사 수" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}
         <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
   }
 
@@ -2783,9 +2829,9 @@ function adminApp(L, BUILD, M) {
    */
   function movedView() {
     const rows = [
-      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "광장 › 채택 규칙"],
+      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "관리 › 채택 규칙"],
       ["rewards", "친구 초대 보상 규칙", "관리 › 보상"],
-      ["sla", "문의 답 목표", "문의 › 답 목표"],
+      ["sla", "문의 답 목표", "관리 › 답 목표"],
       ["account", "이 기기(화면 색·글자 크기·아래 탭·소리)·이 기기 알림·앱으로 설치·단축키", "관리 › 내 계정·이 기기"],
       ["server", "서버 상태", "관리 › 서버 상태"],
       ["flags", "기능 스위치·정식 출시(결제·광고 조건과 정식 출시일)", "출시 › 기능 관리"],
@@ -2841,7 +2887,8 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="pref-theme">화면 색</label><div class="field"><select id="pref-theme" data-change="pref-theme">${opt("system", "기기 설정을 따라요", p.theme)}${opt("light", "밝게", p.theme)}${opt("dark", "어둡게", p.theme)}</select></div></div>
       <div class="fieldset"><label for="pref-size">글자 크기</label><div class="field"><select id="pref-size" data-change="pref-size">${opt("small", "작게", p.size)}${opt("normal", "보통", p.size)}${opt("large", "크게", p.size)}${opt("xlarge", "아주 크게", p.size) /* AT 1.29 */}</select></div></div>
       ${bottom.more ? `<p class="label">휴대폰 아래 탭(오늘 말고 3개까지, 나머지는 더 보기)</p>
-      <div class="chips" role="group" aria-label="아래 탭">${items.map((h) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${h.key}"${bottom.tabs.includes(h.key) ? " checked" : ""}> ${esc(h.label)}</label>`).join("")}</div>` : ""}
+      <div class="chips" role="group" aria-label="아래 탭">${items.map((h) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${h.key}"${bottom.tabs.includes(h.key) ? " checked" : ""}> ${esc(h.label)}</label>`).join("")}</div>`
+        : `<p class="label">휴대폰 아래 탭</p><p class="hint">허브 ${list.length}개가 모두 아래 탭에 있어요. 모든 탭을 한 번에 보려면 맨 위 메뉴(더 보기)를 눌러요.</p>`}
       <label class="switch"><input type="checkbox" data-change="pref-sound"${p.sound ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>새 문의가 오면 작은 소리</span></label>
       <label class="switch"><input type="checkbox" data-change="pref-next"${p.next ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>문의를 닫으면 다음 문의 열기</span></label>
       <p class="label">저장한 보기</p>
@@ -2866,6 +2913,7 @@ function adminApp(L, BUILD, M) {
         ${m.owner ? '<p class="hint">Cloudflare의 ADMIN_PASSWORD로 로그인했어요. 모든 화면을 쓰고 관리자를 초대·승인해요.</p>'
           : `<dl class="kv"><dt>메일</dt><dd>${esc(m.email)}</dd></dl><p class="label">권한</p><div class="perm-sum">${permPills(m.perms, m.areas ?? {})}</div>`}
       </section>
+      ${V.passkeyCard()}
       ${can("audit") ? `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p>
         <div class="actions start"><a class="btn" href="${L.routeHash("audit", null, { actor: "me" })}">내 활동 기록 보기</a></div></section>`
         : `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p></section>`}
@@ -2880,6 +2928,7 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
         <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
         <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
+      ${m.owner ? familyCard() : ""}
       ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
@@ -2930,7 +2979,8 @@ function adminApp(L, BUILD, M) {
     const list = hubs();
     const bottom = L.bottomHubs(list, S.prefs.tabs, "more");
     const o = S.overview ?? {};
-    const rest = list.filter((h) => !bottom.tabs.includes(h.key));
+    // 1.38 [ADM3] 허브가 다섯이면 모두 아래 막대에 있어서, #/more는 모든 탭을 한 번에 보는 메뉴예요.
+    const rest = bottom.more ? list.filter((h) => !bottom.tabs.includes(h.key)) : list;
     return `${rest.map((h) => `<h2 class="section">${icon(P[h.icon])}${esc(h.label)}${L.hubBadge(h, o, S.me) ? `<span class="count">${L.hubBadge(h, o, S.me)}</span>` : ""}</h2>
       <ul class="rows">${h.tabs.map((t) => `<li><a class="row" href="${href(t)}"><span class="row-main"><b>${esc(tabName(t))}</b></span>
         ${L.tabBadge(t, o, S.me) ? `<i class="badge">${L.tabBadge(t, o, S.me)}</i>` : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>`).join("")}
@@ -2956,6 +3006,7 @@ function adminApp(L, BUILD, M) {
         <p class="error" role="alert">${esc(S.error)}</p>
         <button class="btn primary wide" type="submit"${usable ? "" : " disabled"}>로그인</button>
         ${S.needCode ? '<button class="btn ghost wide" type="button" data-act="login-restart">비밀번호부터 다시</button>' : ""}
+        ${!S.needCode && V.passkeyOk() ? '<button class="btn wide" type="button" data-act="passkey-login">지문·얼굴(패스키)로 들어오기</button>' : ""}
       </form>
       ${owner ? "" : '<p class="alt">계정은 최고 관리자가 보낸 초대 링크로만 만들 수 있어요.</p>'}
       ${owner && h && !(h.database && h.password && h.salt) ? `<section class="card"><h2>서버 준비</h2>${healthList()}</section>` : ""}
@@ -3167,7 +3218,7 @@ function adminApp(L, BUILD, M) {
   }
 
   function openShortcuts() {
-    // AN 1.28 [ADMUX-36] 1~6 are the hubs, always the same number whatever the admin sees.
+    // AN 1.28 [ADMUX-36] (1.38 [ADM3]: 1~5) the numbers are the hubs, always the same number whatever the admin sees.
     const shown = new Set(hubs().map((h) => h.key));
     openDialog(`<div class="box"><h2>단축키</h2>
       <div class="keys">${L.KEYS.map(([k, what]) => `<span class="kbd">${esc(k)}</span><span>${esc(what)}</span>`).join("")}
@@ -3500,7 +3551,7 @@ function adminApp(L, BUILD, M) {
 
   const FLAG_STATE = { forced_off: ["bad", "강제로 끔"], forced_on: ["info", "강제로 켬"], on: ["ok", "켜짐"], waiting: ["warn", "대기"], off: ["", "꺼짐"] };
   const FLAG_SHOW = [["all", "전체"], ["waiting", "대기"], ["on", "켜짐"], ["forced_off", "강제로 끔"], ["cleanup", "정리 대상"]];
-  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능" };
+  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능", phase3: "Phase 3(출시일에 함께 켜짐 · 날짜는 일정에서)" };
   /** 1.22's 기능 스위치 by their flag (운영 screen's card links each to its flag). */
   const SWITCH_FLAGS = { PLAZA_WRITE: "plaza.write", COMPANY_REPORT: "company.report", INQUIRY_PHOTOS: "inquiry.photos", SHARE_CREATE: "share.create",
     USAGE_STATS: "usage.stats", PLAZA_NEWS: "plaza.news" };
@@ -3790,7 +3841,10 @@ function adminApp(L, BUILD, M) {
     openDialog(`<form data-form="flag-cond" data-key="${esc(key)}"><h2>${esc(r.name)}의 켜지는 조건</h2>
       <p>한 줄에 조건 하나, 모두 채우면 켜져요. 'or'로 이으면 그중 하나면 돼요. 저장하면 휴대폰은 앱에 든 조건 대신 이 조건을 써요.</p>
       <div class="fieldset"><label for="flag-cond">조건</label><textarea id="flag-cond" name="conditions" spellcheck="false" aria-describedby="flag-cond-out">${esc(text)}</textarea>
-        <span class="help">예: date >= 2026-11-10 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
+        <span class="help">예: date >= 2026-11-12 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
+      <div class="rollout-pick"><p class="label">단계 출시 (1.38 [ADM3-17])</p><p class="hint">휴대폰 몇 %에 먼저 켤지 누르면 조건에 한 줄로 들어가요(같은 휴대폰은 늘 같은 쪽). 문제 신고가 늘면 숫자 › 판 건강과 사고 화면이 먼저 알려 줘요.</p>
+        <div class="chips" role="group" aria-label="단계 출시 비율">${[1, 10, 25, 50, 100].map((n) => `<button type="button" class="chip pick" data-act="flag-rollout" data-key="${n}">${n === 100 ? "모두(비율 빼기)" : `${n}%`}</button>`).join("")}
+        <button type="button" class="chip pick" data-act="flag-minapp">이 앱 판 이상만</button></div></div>
       <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
       <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
       <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}
@@ -3909,6 +3963,37 @@ function adminApp(L, BUILD, M) {
       }, "primary");
     },
     "flag-cond": ({ key }) => openFlagConditions(key),
+    // 1.38 [ADM3-01] 패스키로 들어오기.
+    "passkey-login": async () => {
+      S.error = "";
+      try {
+        if (await V.passkeyAssert()) await enter();
+      } catch (e) {
+        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+          : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
+          : e.name === "NotAllowedError" || e.name === "AbortError" ? "" : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
+        render();
+      }
+    },
+    // 1.38 [ADM3-17] 단계 출시: 'rollout N%' 한 줄을 넣거나 바꾸고(100이면 빼요), '이 앱 판 이상만'은 'app >= 번호' 한 줄.
+    "flag-rollout": ({ key }) => {
+      const box = document.getElementById("flag-cond");
+      if (!box) return;
+      const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:rollout|비율)\s+\d+/i.test(l));
+      if (Number(key) < 100) lines.push(`rollout ${Number(key)}%`);
+      box.value = lines.join("\n");
+      flagInput(box);
+    },
+    "flag-minapp": () => {
+      const box = document.getElementById("flag-cond");
+      const n = window.prompt("이 앱 판 번호(versionCode)부터 켜요. 예: 52", "");
+      if (!box || n === null) return;
+      if (!/^\d{1,6}$/.test(n.trim())) return toast("숫자만 적어 주세요");
+      const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:app|앱)\s*>=\s*\d+/i.test(l));
+      lines.push(`app >= ${n.trim()}`);
+      box.value = lines.join("\n");
+      flagInput(box);
+    },
     "flag-range": ({ key }) => openFlagRange(key),
     "flag-check": ({ name, done }) => {
       const label = S.data.flag?.manualNames?.[name] ?? name;
@@ -4026,30 +4111,23 @@ function adminApp(L, BUILD, M) {
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
-    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함.
-    "sort-do": ({ key, id }) => {
-      const x = S.data.sort?.piles[key]?.find((i) => i.id === id);
-      if (x) sortApply([sortAction(key, x)], "처리했어요");
-    },
-    "sort-reply-only": ({ id }) => {
-      const x = S.data.sort?.piles.new.find((i) => i.id === id);
-      const text = document.getElementById(`sort-reply-${id}`)?.value?.trim();
-      if (!x || !text) return toast("보낼 답을 적어 주세요");
-      sortApply([{ do: "reply", id, text }], "답했어요");
+    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
+    // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
+    "held-cancel": ({ id }) => confirmBox("이 답을 보내지 않을까요?", "보낸 분께 가지 않고, 기록에 취소로 남아요.", "보내지 않기", async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    }),
+    "held-edit": async ({ id }) => {
+      const h = (S.data.inquiry?.held ?? []).find((x) => String(x.id) === String(id));
+      if (!h) return;
+      const text = window.prompt("보낼 답을 고쳐요 (보내는 때는 그대로예요)", h.text);
+      if (text === null || !text.trim() || text.trim() === h.text) return;
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { text }), "고쳤어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     },
     // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
     // 1.35 [ADMHE-01] A phone's list toolbar: search and 큐 모드 in one line, the rest behind 정렬·더.
     "tools-toggle": () => { S.toolsOpen = !S.toolsOpen; render({ keepScroll: true }); },
-    "sort-jump": ({ key }) => document.getElementById(key === "tools" ? "sort-tools" : `pile-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    "sort-skip": ({ id }) => sortApply([{ do: "skip", id }], "정리함에서 뺐어요"),
-    "sort-pile": ({ key }) => {
-      const items = S.data.sort?.piles[key] ?? [];
-      if (!items.length) return;
-      // Read the cards now: what the admin changed in them is what goes, not what the server first wrote.
-      const actions = items.map((x) => sortAction(key, x));
-      confirmBox(`${items.length}건 모두 ${PILE_DO[key]}`, "카드마다 적힌 답이 그대로 가요. 보낸 답은 되돌릴 수 없어요.", PILE_DO[key],
-        () => sortApply(actions, "처리했어요"), "primary");
-    },
     "sort-auto": async ({ key }, el) => {
       // The click is default-prevented, so the box springs back: the state is drawn again from the answer.
       const on = el.checked;
@@ -4326,7 +4404,11 @@ function adminApp(L, BUILD, M) {
       if (d) S.data.push = d;
       render({ keepScroll: true });
     },
-    "template-edit": ({ id }) => openTemplates(id),
+    "template-edit": async ({ id }) => {
+      // 1.38 [EASE-31] 정리함 '자주 쓰는 답으로 충분' 카드에서도 열려요: 목록을 아직 안 읽었으면 먼저 읽어요.
+      if (!(S.templates ?? []).some((x) => String(x.id) === String(id))) await loadTemplates();
+      openTemplates(id);
+    },
     "login-mode": ({ key }) => {
       // [ADMUX-03] The sign-in screen opens on the way chosen last time.
       S.prefs.loginMode = key;
@@ -4660,6 +4742,30 @@ function adminApp(L, BUILD, M) {
       document.getElementById("second-on-code")?.focus();
     },
     "phone-previews": ({ id }) => openPreviews(id),
+    "copy-family": ({ id }) => navigator.clipboard?.writeText(id).then(() => toast("복사했어요"), () => toast("복사하지 못했어요")),
+    // 1.37.1 [FAM-01]
+    "family-remove": ({ id, name }) => confirmBox(`${name} 휴대폰의 프로를 끊을까요?`, "그 휴대폰은 다음 확인 때부터 무료가 돼요. 다시 주려면 새 가족 코드를 만들어요.", "끊기", async () => {
+      const d = await act(() => api(`/devices/${id}/remove`, "POST", {}), "끊었어요");
+      if (d) { S.data.family = d; render({ keepScroll: true }); }
+    }),
+    "family-set": ({ id, key, name }) => {
+      const go = async () => {
+        const d = await act(() => api(`/family/${id}`, "POST", { do: key }), key === "pause" ? "정지했어요" : "다시 켰어요. 다음 확인 때부터 프로예요");
+        if (d) { S.data.family = d; render({ keepScroll: true }); }
+      };
+      if (key === "pause") confirmBox(`${name} 휴대폰을 정지할까요?`, "다음 확인 때부터 무료가 되고, 다시 켜기를 누르면 같은 휴대폰이 바로 프로로 돌아와요.", "정지", go);
+      else go();
+    },
+    "family-rename": ({ id, name }) => {
+      openDialog(`<form class="box" data-form="family-rename" data-id="${esc(id)}"><h2>닉네임 바꾸기</h2>
+        <div class="fieldset"><label for="family-nick">닉네임(관리자 앱에서만 보여요)</label><input id="family-nick" name="name" maxlength="20" required value="${esc(name)}" autocomplete="off"></div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">바꾸기</button></div></form>`);
+      document.getElementById("family-nick")?.focus();
+    },
+    "family-code-delete": async ({ id }) => {
+      const d = await act(() => api(`/family/codes/${id}/delete`, "POST", {}), "코드를 취소했어요");
+      if (d) { S.data.family = d; render({ keepScroll: true }); }
+    },
     "link-code": async () => {
       const r = await act(() => api("/me/link-code", "POST", {}));
       if (!r) return;
@@ -4865,6 +4971,11 @@ function adminApp(L, BUILD, M) {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
       load();
     }),
+    // 1.38 [STM-10] 밤낮 재료 묶음: 공개·숨기기, 무료·광고 나누기.
+    "material-state": async ({ id, key }) => {
+      await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`);
+      load();
+    },
     "recipe-do": async ({ id, key }) => {
       await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
       load();
@@ -5088,6 +5199,12 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCX-08]
+    // 1.38 [STM-10] 밤낮 재료 묶음의 무료·광고 나누기.
+    "material-free": async (form) => {
+      const mode = String(new FormData(form).get("mode") ?? "");
+      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`);
+      load();
+    },
     "recipe-picks": async (form) => {
       const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
@@ -5214,7 +5331,10 @@ function adminApp(L, BUILD, M) {
       const next = neighbours().next;
       if (close && S.prefs.next && next) return go("inquiries", next);
       render();
-      window.scrollTo(0, document.body.scrollHeight);
+      // 1.38 [ADM3-36] PC 13차: the page used to go to its very end, which on a folded phone is 함께 온 정보 under the talk;
+      // the answer just sent is shown instead.
+      const mine = [...document.querySelectorAll("#main .bubble.admin")].pop();
+      if (mine) mine.scrollIntoView({ block: "center" });
       load({ quiet: true });
     },
     // AN 1.28 [ADMUX-33] 바로 답하기 on 오늘's 할 일: the same answer as on the question, without opening it.
@@ -5235,7 +5355,7 @@ function adminApp(L, BUILD, M) {
     },
     "template-add": async (form) => {
       const id = form.dataset.id;
-      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value };
+      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: form.elements.publicQ?.value ?? "" };
       const r = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", body), id ? "고쳤어요" : "넣었어요. 답 칸 아래에서 바로 써요");
       if (!r) return;
       S.templates = r.templates;
@@ -5353,6 +5473,22 @@ function adminApp(L, BUILD, M) {
         render({ keepScroll: true });
         load({ quiet: true });
       }
+    },
+    "family-rename": async (form) => {
+      const d = await act(() => api(`/family/${form.dataset.id}`, "POST", { do: "name", name: form.elements.name.value }), "닉네임을 바꿨어요");
+      if (!d) return;
+      dialog.close();
+      S.data.family = d;
+      render({ keepScroll: true });
+    },
+    "family-code": async (form) => {
+      const r = await act(() => api("/family/code", "POST", { name: form.elements.name.value }));
+      if (!r) return;
+      form.reset();
+      openDialog(`<div class="box"><h2>${esc(r.name)} 가족 코드</h2><p class="code-big" aria-label="가족 코드">${esc(r.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
+        <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣으면 바로 프로가 열려요.</p>
+        <div class="actions"><button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
+      load({ quiet: true });
     },
     password: async (form) => {
       const r = await act(() => api("/me/password", "POST", { current: form.elements.current.value, next: form.elements.next.value }), "비밀번호를 바꿨어요");
@@ -5594,6 +5730,8 @@ function adminApp(L, BUILD, M) {
     rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
     // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
     flags: () => ["flagQuery", "flags", async () => {}],
+    // 1.38 [DESK-02] 운영 장부: 번호·글·개발사항으로.
+    desk: () => ["deskQuery", "ledger", () => load({ quiet: true })],
   };
 
   /**
@@ -5602,12 +5740,15 @@ function adminApp(L, BUILD, M) {
    */
   const A = {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
-    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
+    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A), ...M.flow(A) };
-  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions, ...M.flow(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms, ...M.flow(A).forms } });
+  const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A)];
+  const V = Object.assign({}, ...groups);
+  Object.assign(V, { actions: Object.assign({}, ...groups.map((g) => g.actions ?? {})), forms: Object.assign({}, ...groups.map((g) => g.forms ?? {})) });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
+  // 1.38 [DESK-02] 장부의 판 고르기(select)는 바꿀 때만.
+  CHANGES["ledger-v"] = (t) => V.actions["ledger-v"]({}, t);
 
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
@@ -5654,7 +5795,8 @@ function adminApp(L, BUILD, M) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
         const saved = document.getElementById("reply-saved");
-        if (saved) saved.textContent = t.value ? "적는 중인 답은 이 기기에 저장돼요" : "";
+        // 1.38 [ADM3-36] PC 13차: said beside the count, so the line never pushes 답하기 under the bottom tabs.
+        if (saved) saved.textContent = t.value ? "이 기기에 저장 중" : "";
         pingTyping(Boolean(t.value.trim()));
       }
     }
@@ -5854,7 +5996,7 @@ function adminApp(L, BUILD, M) {
         if (detail) return document.getElementById("reply")?.focus();
         return load();
       case "close":
-        if (S.route.name === "work" && V.workKey("done")) return stop();
+        if (S.route.name === "desk" && V.ledgerKey("done")) return stop();
         if (detail && editInq && S.data.inquiry?.status !== "closed") return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
       case "reject":
@@ -5863,17 +6005,17 @@ function adminApp(L, BUILD, M) {
         return;
       // 1.36 [GRW-07] w 기다림, h 기록 (할 일함).
       case "wait":
-        if (S.route.name === "work" && V.workKey("wait")) stop();
+        if (S.route.name === "desk" && V.ledgerKey("wait")) stop();
         return;
       case "history":
-        if (S.route.name === "work" && V.workKey("log")) stop();
+        if (S.route.name === "desk" && V.ledgerKey("log")) stop();
         return;
       // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
       case "next":
         stop();
         return nextWaiting();
       case "skip":
-        if (S.route.name === "work" && V.workKey("seeing")) return stop();
+        if (S.route.name === "desk" && V.ledgerKey("seeing")) return stop();
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);
         return;
@@ -5885,8 +6027,9 @@ function adminApp(L, BUILD, M) {
           stop();
           return ACTIONS.template({ i: a.n - 1 });
         }
-        // AN 1.28 [ADMUX-36] 1~6 are the hubs everywhere else, always the same number; a hub opens on its last tab.
-        const hub = L.HUBS[a.n - 1] && hubs().find((h) => h.key === L.HUBS[a.n - 1].key);
+        // AN 1.28 [ADMUX-36] (1.38 [ADM3]: 1~5) the numbers are the hubs everywhere else, always the same number; a hub opens on its last tab.
+        // 1.38 [ADM3-36] PC 13차: by the hubs this admin sees, in their order, so 1~3 work for an admin with three hubs.
+        const hub = hubs()[a.n - 1];
         if (!detail && hub) {
           stop();
           go(lastTab[hub.key] && hub.tabs.includes(lastTab[hub.key]) ? lastTab[hub.key] : hub.tabs[0]);
@@ -5962,6 +6105,8 @@ function adminApp(L, BUILD, M) {
     if (moved && before.name === "inquiries" && before.id) pingTyping(false);
     // [ADMUX-10] A sheet or a question box belongs to the screen it was opened on (점검 보고서 중-14).
     if (moved && dialog.open && !S.relogin) dialog.close();
+    // 1.38 [ADM3-36] PC 13차: a list keeps where it was when the admin comes back from another hub or a question.
+    if (moved && !before.id) scrollMemo[before.name] = window.scrollY;
     S.route = next;
     applyParams(next);
     // AN 1.28 [ADMUX-35] An old address shows as the new one.
@@ -5974,7 +6119,7 @@ function adminApp(L, BUILD, M) {
       // 큐 모드 ends once the admin goes somewhere else than a question of the queue.
       if (S.queue && !(next.name === "inquiries" && S.queue.ids.includes(next.id))) S.queue = null;
       render();
-      window.scrollTo(0, 0);
+      window.scrollTo(0, next.id ? 0 : scrollMemo[next.name] ?? 0);
       document.getElementById("title")?.focus({ preventScroll: true });
     }
     load();

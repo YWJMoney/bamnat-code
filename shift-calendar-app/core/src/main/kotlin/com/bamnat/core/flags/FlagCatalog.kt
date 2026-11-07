@@ -39,6 +39,18 @@ object FlagCatalog {
     const val RECIPE_VOTE = "recipe.vote"
     /** 1.34 [RCP-37] Writing in a recipe's talk, and (1.35) 요청 판·구독, once 3.8 names it. */
     const val RECIPE_TALK = "recipe.talk"
+    /** 1.38 [P3-01][TEAM-09] Phase 3 M24 L1 리더 팀 근무표 (설계 1-2), shipped off. */
+    const val TEAM_LEADER = "team.leader"
+    /** 1.38 [P3-01][BOSS-01] Phase 3 M25 B1 사장님 급여 대장, shipped off. */
+    const val BOSS_PAYROLL = "boss.payroll"
+    /** 1.38 [P3-01][HLTH-01] Phase 3 M23 계획 대 실제 잠, shipped off. */
+    const val HEALTH_COMPARE = "health.compare"
+    /** 1.38 [SLEEP-01][SLEEP-12] 잠 자동으로 잡기(활동 인식)와 잘 시간 방해 금지. */
+    const val SLEEP_AUTO = "sleep.auto"
+    /** 1.38 [SLEEP-06][SLEEP-07] 밤 소리 측정과 클립(마이크, 휴대폰 안에서만). */
+    const val SLEEP_SOUND = "sleep.sound"
+    /** 1.38 [SLEEP-11] 공유한 달력에 '지금 자는 중'. */
+    const val SLEEP_SHARE = "sleep.share"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -238,7 +250,7 @@ object FlagCatalog {
     val SHARE_LOOK_FLAG = Flag(
         SHARE_LOOK, "링크에 테마·근무 설정 담기",
         what = "근무표 링크를 만들 때 ‘내 테마’와 ‘근무 설정’을 고르면 링크에 함께 담아요. 테마는 달력·메모·가계부의 모양(사진은 빼요), 근무 설정은 근무 이름·색·글자, 근무 전 알람 시각, 근무 주기예요. 급여 규칙·기본급·금액·메모·사진은 담지 않아요. 받는 분은 밤낮 앱에서 입어 보고 고른 것만 넣어요.",
-        whyOff = "정식 출시일(처리방침 3.11의 시행일)부터 저절로 켜져요. 3.11 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 12-04부터예요. 그 전에는 공유 창에 날짜만 알려 주고 링크에는 담지 않아요.",
+        whyOff = "처리방침 3.11의 시행일(2026-11-07)부터 저절로 켜져요. 3.11 게시 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 30일 고지가 끝나는 12-07부터예요. 그 전에는 공유 창에 그날을 알려 주고 링크에는 담지 않아요.",
         basis = Basis(policy = "3.11 1항", requirement = "SHR-31", note = "1.37 묶음 E 달력 공유에 테마·설정"),
         conditions = listOf(Condition.Date(policy = SHARE_LOOK_POLICY), Condition.Policy(SHARE_LOOK_POLICY)),
         default = false, risk = Risk.LEGAL, since = "1.37.0", group = FlagGroup.LAW,
@@ -283,6 +295,74 @@ object FlagCatalog {
         "RCP-35",
     )
 
+    /**
+     * 1.38 [P3-01] Phase 3 (사용자 2026-11-05 "1.38에서 개발 시작", 결정 P3-D1 B: 꺼진 채 개발, 켜는 건 관문 뒤). Each row waits for a fact
+     * only the developer confirms in the admin app (파일럿 시작, 워치 수면 확인); until then only an admin phone given 미리 보기 sees it.
+     * None sends anything new to a server (설계 1-1 원칙 1): 팀 표·직원 정보·잠은 휴대폰 안, a member's link is today's 근무표 링크.
+     */
+    /**
+     * 1.38 Phase 3 (사용자 2026-11-05 C안 "모든 기능을 해당 일에 푸는 거야, 내가 따로 지정하면 그날에"): every Phase 3 row opens on
+     * the effective day of 처리방침 [PHASE3_POLICY] as the server's calendar has it, so moving that day in the admin app moves them all.
+     * 3.11 names what they send (팀원·직원 이름, 신청·출퇴근 링크, 지금 자는 중), so a phone installed before 3.11 was posted waits for
+     * its yes on the calendar card or the end of the 30-day notice (12-07), like `share.look`; force-off in the admin app still rests one.
+     */
+    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PHASE3_POLICY), Condition.Policy(PHASE3_POLICY))
+
+    /**
+     * 1.38 출시 점검 E2 (사용자 2026-11-07, 1.38 마무리): the 처리방침 판 whose 시행일 opens the Phase 3 and 수면 rows: 3.11, the one
+     * 판 that names them (게시·시행 2026-11-07). Moving 3.11's 시행일 in the admin app's 처리방침 일정 moves all six rows with it.
+     */
+    const val PHASE3_POLICY: String = PolicyConsent.SHARE_LOOK_VERSION
+
+    val TEAM_LEADER_FLAG = Flag(
+        TEAM_LEADER, "리더 팀 근무표",
+        what = "달력 › 도구 › ‘내 팀 근무표 짜기’(모든 조 위 막대에도 있어요)에서 팀을 만들고 팀원×날짜 표를 칠해요(단톡방 명단 붙여 넣기·지난달 이어 칠하기·맞바꾸기·바로 검사·희망 휴무·빈칸 자동 채우기). 확정하면 팀원마다 그 사람 근무만 담은 근무표 링크를 만들어요. 팀 표는 리더 휴대폰에만 있어요.",
+        whyOff = "정식 출시일(처리방침 3.1 시행일, 관리자 앱 처리방침 날짜로 옮겨요)에 다른 기능과 함께 켜져요(사용자 2026-11-05 C안). 그 전에는 미리 보기를 받은 관리자 휴대폰에만 보여요.",
+        basis = Basis(decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
+    val BOSS_PAYROLL_FLAG = Flag(
+        BOSS_PAYROLL, "사장님 급여 대장",
+        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있어요.",
+        whyOff = "정식 출시일(처리방침 3.1 시행일)에 자영업 달력에서 켜져요(사용자 2026-11-05 C안). 그 전에는 지금 ‘직원 인건비’ 그대로예요.",
+        basis = Basis(decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
+        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, since = "1.38.0",
+        group = FlagGroup.PHASE3,
+    )
+
+    val HEALTH_COMPARE_FLAG = Flag(
+        HEALTH_COMPARE, "계획 대 실제 잠",
+        what = "날짜 화면 수면 칸과 수면 기록 화면에 근무에 맞춘 계획 잠과 실제로 잔 잠(워치·휴대폰이 잰 것, 직접 적은 것)을 나란히 보여 줘요. 휴대폰 안에서 그때그때 계산하고 저장하거나 보내지 않아요.",
+        whyOff = "정식 출시일(처리방침 3.1 시행일)에 켜져요(사용자 2026-11-05 C안). 워치 수면이 헬스 커넥트로 오지 않는 휴대폰은 직접 적은 잠과 휴대폰이 잰 잠으로 견줘요.",
+        basis = Basis(requirement = "HLTH-01", note = "Phase 3 M23(순번 510, SLP-08)"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
+    val SLEEP_AUTO_FLAG = Flag(
+        SLEEP_AUTO, "잠 자동으로 잡기",
+        what = "설정 › 알림과 잠에서 켜면 휴대폰이 빛과 움직임으로 알아챈 잠(Google Play 서비스 수면 감지)을 아침에 ‘맞나요?’로 물어 수면 기록에 넣어요. 잘 시간 방해 금지도 여기에 묶여요. 휴대폰 안에서만 쓰고 보내지 않아요.",
+        whyOff = "활동 인식 권한과 방해 금지 접근을 새로 쓰니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
+        basis = Basis(requirement = "SLEEP-01", note = "1.38 수면 도약 S1·S3"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
+    val SLEEP_SOUND_FLAG = Flag(
+        SLEEP_SOUND, "밤 소리 측정",
+        what = "밤 화면에서 ‘측정 시작’을 누르면 마이크로 코골이·잠꼬대·이갈이·기침을 휴대폰 안에서 알아채 짧은 소리만 남겨요(기본 7일 뒤 지움). 소리와 기록은 휴대폰 밖으로 나가지 않아요.",
+        whyOff = "마이크 사용을 처리방침 새 판에 적고 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
+        basis = Basis(requirement = "SLEEP-06", note = "1.38 수면 도약 S2"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
+    val SLEEP_SHARE_FLAG = Flag(
+        SLEEP_SHARE, "지금 자는 중 나누기",
+        what = "달력을 공유한 사람에게 ‘지금 자는 중 · 14:10쯤 깸’ 한 줄을 보여 줘요. 공유 링크마다 켜고 끌 수 있어요.",
+        whyOff = "공유 서버로 잠 상태(자는 중·깰 시각)를 새로 보내니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
+        basis = Basis(requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -295,7 +375,8 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

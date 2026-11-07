@@ -26,10 +26,19 @@ import java.time.LocalTime
 class AlarmFgsTypeTest {
     private val context: Application = ApplicationProvider.getApplicationContext()
 
+    /**
+     * The alarm never plays as media. 1.38 [SLEEP-04]: media playback is asked for only by 잠드는 소리 (NoiseService), which
+     * the user starts; [SLEEP-06] the microphone type only by 정밀 측정. Both need the Play Console foreground-service answer.
+     */
     @Test fun theManifestAsksForNoMediaPlayback() {
         val requested = context.packageManager
             .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty().toList()
-        assertFalse(requested.contains("android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"))
+        val services = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SERVICES).services.orEmpty()
+        assertEquals(listOf("com.bamnat.app.sleep.NoiseService"),
+            services.filter { it.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK != 0 }.map { it.name })
+        assertEquals(listOf("com.bamnat.app.sleep.SleepRecordService"),
+            services.filter { it.foregroundServiceType and ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE != 0 }.map { it.name })
+        assertTrue(requested.contains("android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"))
         assertTrue(requested.contains(Manifest.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED))
         assertTrue(requested.contains(Manifest.permission.USE_EXACT_ALARM))
         val info = context.packageManager.getServiceInfo(ComponentName(context, AlarmService::class.java), 0)

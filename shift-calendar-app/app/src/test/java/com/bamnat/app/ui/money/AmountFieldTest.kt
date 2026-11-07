@@ -31,4 +31,16 @@ class AmountFieldTest {
         assertEquals("", amountInput("", allowZero = true))
         assertEquals("1200", amountInput("01,200", allowZero = true))
     }
+
+    /** 1.38 PC 8차: 시급 1,200,010,320원 is told at once; real wages are not. */
+    @Test
+    fun oddWagesAreTold() {
+        val min = 10_320L
+        assertEquals(null, com.bamnat.app.ui.work.oddWage(com.bamnat.core.boss.WageForm.HOUR, 12_000, min))
+        assertEquals(null, com.bamnat.app.ui.work.oddWage(com.bamnat.core.boss.WageForm.HOUR, 103_200, min))
+        assert(com.bamnat.app.ui.work.oddWage(com.bamnat.core.boss.WageForm.HOUR, 1_200_010_320, min)!!.startsWith("시급 1,200,010,320원이 맞나요"))
+        assertEquals(null, com.bamnat.app.ui.work.oddWage(com.bamnat.core.boss.WageForm.DAY, 150_000, min))
+        assertEquals(null, com.bamnat.app.ui.work.oddWage(com.bamnat.core.boss.WageForm.MONTH, 3_000_000, min))
+        assert(com.bamnat.app.ui.work.oddWage(com.bamnat.core.boss.WageForm.MONTH, 300_000_000, min) != null)
+    }
 }

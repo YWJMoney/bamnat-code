@@ -238,7 +238,7 @@ test("without 휴가 종류 ticked a leave keeps only how much of the day it tak
 });
 
 test("the page shows ticked parts, escaped", async () => {
-  const html = renderSchedule(validate({ ...full, days: [{ date: "2026-11-01", type: 1, memo: "<img src=x>" }, ...full.days.slice(1)] }).schedule,
+  const html = renderSchedule(validate({ ...full, days: [{ ...full.days[0], memo: "<img src=x>" }, ...full.days.slice(1)] }).schedule,
     new Date(Date.now() + 86400000).toISOString());
   assert.match(html, /근무와 함께 보낸 것: 휴가 종류, 연장·휴무일 근무, 메모, 급여/);
   assert.match(html, /병가/);
@@ -247,6 +247,14 @@ test("the page shows ticked parts, escaped", async () => {
   assert.ok(!html.includes("<img"));
   assert.match(html, /&lt;img src=x&gt;/);
   assert.ok(!html.includes("intent://"), "no app button unless asked");
+  // 1.38 PC 11차: memos ticked but none in the month is not listed as sent.
+  const none = renderSchedule(validate({ ...full, days: full.days.map(({ memo, ...d }) => d).filter((d) => d.type) }).schedule,
+    new Date(Date.now() + 86400000).toISOString());
+  assert.match(none, /근무와 함께 보낸 것: 휴가 종류, 연장·휴무일 근무, 급여/);
+  // 1.38 PC 12.4: a team link's own notes are named for what they are, not '메모'.
+  const team = renderSchedule(validate({ ...full, days: [{ ...full.days[0], memo: "바뀜: 휴→주 · 같이 쉬어요: 가영" }, full.days[1]] }).schedule,
+    new Date(Date.now() + 86400000).toISOString());
+  assert.match(team, /근무와 함께 보낸 것: 연장·휴무일 근무, 바뀐 날 표시, 같이 쉬는 사람, 급여/);
 });
 
 test("Android visitors get a button into the app", async () => {
@@ -644,6 +652,27 @@ test("[SHR-31][SHR-32] 1.37: a link may carry the sharer's 테마 and 근무 설
   assert.equal(got.schedule.look, look);
   assert.equal(got.schedule.kit, kit);
   assert.equal(validate(sample).schedule.look, undefined);
+});
+
+test("1.38 [SLEEP-11] a link may say 지금 자는 중 with two times only, and the page never shows it", async () => {
+  const since = Date.UTC(2026, 10, 6, 14, 0);
+  const wakeAt = since + 7 * 3600 * 1000;
+  const ok = validate({ ...sample, sleepNow: { since, wakeAt } });
+  assert.deepEqual(ok.schedule.sleepNow, { since, wakeAt });
+  assert.deepEqual(validate({ ...sample, sleepNow: { since } }).schedule.sleepNow, { since });
+  // Nothing rides along, and the times make sense.
+  assert.equal(validate({ ...sample, sleepNow: { since, wakeAt, where: "home" } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: { since: "x" } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since - 1 } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since + 21 * 3600 * 1000 } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: [since] }).error, "sleep_now");
+  const html = renderSchedule(ok.schedule, new Date(Date.now() + 86400000).toISOString());
+  assert.ok(!/자는 중/.test(html));
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, sleepNow: { since, wakeAt } })).json();
+  const got = await (await call(env, "GET", `/api/share/${made.id}`)).json();
+  assert.deepEqual(got.schedule.sleepNow, { since, wakeAt });
+  assert.equal(validate(sample).schedule.sleepNow, undefined);
 });
 
 test("app-ads.txt names the AdMob publisher and robots.txt lets crawlers read only it", async () => {

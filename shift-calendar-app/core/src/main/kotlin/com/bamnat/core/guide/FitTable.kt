@@ -67,6 +67,8 @@ object FitTable {
         // 달력 도구 (the tool sheet).
         tool("edit"),
         tool("teams", feature = "shift.teams"),
+        tool("push", setOf(SHIFT)), // [EASE-25]
+        tool("leaderTeams", feature = "team.leader"), // 1.38 PC 11차
         tool("typeMonth", setOf(SHIFT, HOURLY)),
         tool("share"),
         tool("year"),

@@ -79,17 +79,30 @@ object Fmt {
     /** "1,250,000원" */
     fun won(amount: Long): String = if (masked) MASK + "원" else wonFormat.format(amount) + "원"
 
-    /** Amounts for a calendar cell: "125만", "8천", "500" [WORK-02]. */
+    /**
+     * Amounts for a calendar cell: "125만", "12.5만", "1.25만", "1.2만", "8.5천", "500" [WORK-02]. Cut down, never up.
+     * 1.38 PC 7차 (12,000과 12,500이 모두 '1만'): under 100만 the 만 keeps its decimals (two under 10만, one up to 100만), and 천 one,
+     * with trailing zeros dropped, so amounts that differ read differently.
+     */
     fun wonShort(amount: Long): String {
         if (masked) return "•••"
         val a = kotlin.math.abs(amount)
         val sign = if (amount < 0) "-" else ""
         return sign + when {
             a >= 100_000_000 -> "%.1f억".format(a / 100_000_000.0).replace(".0억", "억")
-            a >= 10_000 -> "${a / 10_000}만"
-            a >= 1_000 -> "${a / 1_000}천"
+            a >= 1_000_000 -> "${a / 10_000}만"
+            a >= 100_000 -> cut(a, 1_000, 10, "만")
+            a >= 10_000 -> cut(a, 100, 100, "만")
+            a >= 1_000 -> cut(a, 100, 10, "천")
             else -> a.toString()
         }
+    }
+
+    /** [a] counted in [step]s, [per] of them to the unit: whole part, then the decimals without trailing zeros. */
+    private fun cut(a: Long, step: Long, per: Long, unit: String): String {
+        val n = a / step
+        val frac = (n % per).toString().padStart(per.toString().length - 1, '0').trimEnd('0')
+        return "${n / per}" + (if (frac.isEmpty()) "" else ".$frac") + unit
     }
 
     /** "10월 17일" */
@@ -129,8 +142,13 @@ object Fmt {
         }
     }
 
+    /** "시작 30분 전", "시작 7시간 뒤", "시작 시각": [offset] always said from the start. */
+    fun startOffset(minutes: Int): String = offset(minutes).let { if (it.startsWith("시작")) it else "시작 $it" }
+
     fun offset(minutes: Int): String = when {
         minutes == 0 -> "시작 시각"
+        // [EASE-18] An alarm after the start: "시작 7시간 뒤".
+        minutes < 0 -> "시작 " + offset(-minutes).removeSuffix(" 전") + " 뒤"
         minutes % 60 == 0 -> "${minutes / 60}시간 전"
         minutes > 60 -> "${minutes / 60}시간 ${minutes % 60}분 전"
         else -> "${minutes}분 전"

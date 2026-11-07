@@ -110,7 +110,8 @@ object FeatureSwitches {
         "money.asks", "money.installPlan", "money.heat", "backup.nudge", "day.leaveTime",
         "recipe.browse", // [RCP-38] 1.34 설정 › 나눔 판의 스위치
         "recipe.update", "recipe.maker", "recipe.request", // [RCX-20] 1.35 새 판 알림·팔로우·답 알림·요청 판 보이기
-        "money.ahead", "money.story", "money.envelopes", "money.payCycle", "money.workTime", "money.dayClose", "money.found") // 1.37 [LEDH-01][LEDH-06][LEDH-07]
+        "money.ahead", "money.story", "money.envelopes", "money.payCycle", "money.workTime", "money.dayClose", "money.found", // 1.37 [LEDH-01][LEDH-06][LEDH-07]
+        "money.shiftPreview") // 1.38 [LEDH-24]
 
     /** 1.32 [WTYP-08] The 가계부 card each of these features is ([com.bamnat.app.ui.money.MoneyPart]). */
     private val MONEY_CARDS = mapOf("money.cardBill" to "cardbill", "money.shiftSpend" to "shiftspend",
@@ -148,6 +149,7 @@ object FeatureSwitches {
             "backup.nudge" -> c.settingsRepository.current.backupNudge
             "day.leaveTime" -> c.settingsRepository.current.leaveTimeNotice
             "money.dayClose" -> c.settingsRepository.current.dayCloseNotice
+            "money.shiftPreview" -> c.settingsRepository.current.shiftPreviewNotice
             "recipe.browse" -> c.recipes.on.value
             "recipe.update" -> c.recipes.newVersionNews()
             "recipe.maker" -> c.recipes.followNews()
@@ -192,6 +194,7 @@ object FeatureSwitches {
                 "backup.nudge" -> c.settingsRepository.update { it.copy(backupNudge = on) }
                 "day.leaveTime" -> c.settingsRepository.update { it.copy(leaveTimeNotice = on) }
                 "money.dayClose" -> c.settingsRepository.update { it.copy(dayCloseNotice = on) }
+                "money.shiftPreview" -> c.settingsRepository.update { it.copy(shiftPreviewNotice = on) }
                 "recipe.browse" -> c.recipes.setOn(on)
                 "recipe.update" -> c.recipes.setNewVersionNews(on)
                 "recipe.maker" -> c.recipes.setFollowNews(on)

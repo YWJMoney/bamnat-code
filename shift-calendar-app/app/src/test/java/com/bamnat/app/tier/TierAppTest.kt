@@ -122,7 +122,6 @@ class TierAppTest {
                 "THEME_WARDROBE" to Tier.PRO,
                 // [PRF-12] 1.36.
                 "CREATOR_PRO" to Tier.PRO,
-                "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },
         )
@@ -170,7 +169,41 @@ class TierAppTest {
         assertEquals(Tier.PRO, g.tier)
         assertEquals(ProReason.TRIAL, g.access.reason)
         assertTrue(g.allows(Feature.NO_ADS))
-        assertTrue("리더 기능은 Phase 3", g.locked(Feature.TEAM_ROSTER))
+    }
+
+    // 1.38 Phase 3 요금 (사용자 2026-11-05 20:22): 팀·직원 요금제 are bands beside 프로, and each includes 프로.
+    @Test fun aTeamPlanHoldsItsBandAndIncludesPro() {
+        val start = now.minusSeconds(86_400 * 3)
+        val team = SubRecord(product = "bamnat_team", basePlan = "c30-yearly", state = PlaySub.State.ACTIVE, expiry = start.plusSeconds(86_400L * 365),
+            trial = false, autoRenew = true, purchasedAt = start, verified = true, checkedAt = start)
+        val g = gate(LaunchConfig(billingLive = true), edit = { setWork("bamnat_team", team) })
+        assertEquals(30, g.hold(com.bamnat.core.tier.WorkPlanKind.TEAM)?.cap)
+        assertEquals(null, g.hold(com.bamnat.core.tier.WorkPlanKind.STAFF))
+        assertEquals(ProReason.WORK_PLAN, g.access.reason)
+        assertTrue(g.allows(Feature.NO_ADS))
+        val nov = java.time.YearMonth.of(2026, 11)
+        assertTrue(g.teamConfirm(setOf(nov), nov.plusMonths(1), 30).allowed)
+        assertEquals(com.bamnat.core.tier.WorkPlanRules.Verdict.BIGGER, g.teamConfirm(setOf(nov), nov.plusMonths(1), 31).verdict)
+        // No staff plan: the fourth asks.
+        assertEquals(com.bamnat.core.tier.WorkPlanRules.Verdict.PLAN, g.staff(4).verdict)
+    }
+
+    @Test fun aWorkPassHoldsItsBandForAYearAndThenNot() {
+        val g = gate(LaunchConfig(billingLive = true), edit = { addWorkPass("GPA.1", "bamnat_staff_pass_10", now.minusSeconds(86_400 * 10)) })
+        assertEquals(10, g.hold(com.bamnat.core.tier.WorkPlanKind.STAFF)?.cap)
+        assertTrue(g.staff(10).allowed)
+        val old = gate(LaunchConfig(billingLive = true), edit = { removeWorkPass("GPA.1"); addWorkPass("GPA.2", "bamnat_staff_pass_10", now.minusSeconds(86_400 * 400)) })
+        assertEquals(null, old.hold(com.bamnat.core.tier.WorkPlanKind.STAFF))
+    }
+
+    @Test fun theServersTableIsReadAndAnOddOneKeepsTheApps() {
+        val o = org.json.JSONObject(LaunchConfig.workPlansJson(com.bamnat.core.tier.WorkPlanTable.DEFAULT).toString())
+        assertEquals(com.bamnat.core.tier.WorkPlanTable.DEFAULT, LaunchConfig.workPlansOf(o))
+        val odd = org.json.JSONObject().put("team", org.json.JSONArray().put(org.json.JSONObject().put("cap", 0).put("monthly", 1).put("yearly", 1).put("pass", 1)))
+            .put("freeStaff", 5)
+        val read = LaunchConfig.workPlansOf(odd)
+        assertEquals(com.bamnat.core.tier.WorkPlanTable.DEFAULT_TEAM, read.team)
+        assertEquals(5, read.freeStaff)
     }
 
     @Test fun theDayPassLastsTillMidnight() {
@@ -307,6 +340,13 @@ class TierAppTest {
         TrialNotice.reschedule(context, ProState(sub = sub, trialAnswer = "keep", trialAnswerAt = Instant.parse("2027-03-26T00:00:00Z")), zone,
             Instant.parse("2027-03-26T01:00:00Z"))
         assertNull("답했으면 알림은 지워요", shadowOf(am).nextScheduledAlarm)
+        // 1.38: the 7-day notice gone out and still no answer → one more, 3 days before, with 구독 관리·해지.
+        TrialNotice.reschedule(context, ProState(sub = sub, trialNoticeFor = sub.purchasedAt), zone, Instant.parse("2027-03-26T01:00:00Z"))
+        assertEquals(end.minus(TrialNotice.FINAL_BEFORE).toEpochMilli(), shadowOf(am).nextScheduledAlarm!!.triggerAtTime)
+        TrialNotice.reschedule(context, ProState(sub = sub, trialNoticeFor = sub.purchasedAt, trialFinalFor = sub.purchasedAt), zone, Instant.parse("2027-03-26T01:00:00Z"))
+        assertNull("두 번까지만", shadowOf(am).nextScheduledAlarm)
+        assertEquals("팀 요금제", TrialNotice.nameOf("bamnat_team"))
+        assertEquals("밤낮 프로", TrialNotice.nameOf("bamnat_pro"))
     }
 
     @Test fun theTrialQuestionSaysTheDayAndThePrice() {
@@ -328,7 +368,7 @@ class TierAppTest {
         val all = lines.joinToString("\n")
         assertTrue(all, all.contains("월 4,990원, 연 39,000원"))
         assertTrue("체험이 끝나는 날과 그 뒤 결제", all.contains("4월 10일부터 고른 요금제의 금액이 결제돼요"))
-        assertTrue("7일 전에 따로 물어요", all.contains("끝나기 7일 전에 계속 쓸지 따로 여쭤봐요"))
+        assertTrue("7일 전에 따로 물어요", all.contains("끝나기 7일 전에 계속 쓸지 따로 여쭤보고")); assertTrue("3일 전 한 번 더", all.contains("3일 전에 해지 단추와 함께"))
         assertTrue("해지 방법", all.contains("Play 스토어 › 결제 및 정기 결제"))
         assertTrue("청약철회와 그 제한", all.contains("7일 안에는 청약철회") && all.contains("전자상거래법 제17조 제2항"))
         assertTrue("약관 동의", all.contains("이용약관과 개인정보처리방침"))

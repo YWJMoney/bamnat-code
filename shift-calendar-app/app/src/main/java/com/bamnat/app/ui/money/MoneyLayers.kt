@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.money
 
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -139,5 +141,53 @@ internal fun AskLedgerCard(book: com.bamnat.core.money.MoneyBook, today: java.ti
             Text(com.bamnat.app.ui.Fmt.hide(answer), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 6.dp))
         } else Text("궁금한 걸 누르면 적은 기록으로 바로 답해요. 휴대폰 안에서만 셈해요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 1.38 [LEDH-31] 혼자 하는 챌린지: the run going on as a row of stamps (지킴 ●, 놓침 ×, 아직 ○), its streak, and 그만두기. With [picking]
+ * the four to choose from (야간 도시락 only with a roster). No reward (결정 6).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun ChallengeCard(
+    run: com.bamnat.core.money.Challenges.Run?, book: com.bamnat.core.money.MoneyBook, moves: List<com.bamnat.core.money.EnvelopeMove>,
+    today: java.time.LocalDate, isNight: ((java.time.LocalDate) -> Boolean)?, picking: Boolean,
+    onStart: (com.bamnat.core.money.Challenges.Kind) -> Unit, onStop: () -> Unit, onClosePicker: () -> Unit,
+) {
+    val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
+    if (picking) {
+        com.bamnat.app.ui.components.SectionCard(title = "도전 고르기") {
+            Text("하루마다 도장을 찍어요. 보상은 없고, 휴대폰 안에서만 세요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.bamnat.core.money.Challenges.Kind.entries.filter { it != com.bamnat.core.money.Challenges.Kind.NIGHT_LUNCHBOX || isNight != null }.forEach { k ->
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().clickable { onStart(k) }.padding(vertical = 8.dp)) {
+                    Text(k.label, style = MaterialTheme.typography.titleSmall)
+                    Text(k.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            androidx.compose.material3.TextButton(onClick = onClosePicker) { Text("닫기") }
+        }
+        return
+    }
+    run ?: return
+    val s = androidx.compose.runtime.remember(run, book, moves, today) {
+        com.bamnat.core.money.Challenges.status(run, book.entries, moves, today) { d -> isNight?.invoke(d) == true }
+    }
+    com.bamnat.app.ui.components.SectionCard(title = run.kind.label) {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
+            modifier = Modifier.semantics { contentDescription = "도장 ${s.kept}개, ${s.counted}일 중" }) {
+            s.stamps.forEach { st ->
+                val (mark, color) = when (st) {
+                    com.bamnat.core.money.Challenges.Stamp.KEPT -> "●" to cal.income
+                    com.bamnat.core.money.Challenges.Stamp.MISSED -> "×" to cal.expense
+                    com.bamnat.core.money.Challenges.Stamp.LATER -> "○" to MaterialTheme.colorScheme.outline
+                    com.bamnat.core.money.Challenges.Stamp.NOT_COUNTED -> "·" to MaterialTheme.colorScheme.outlineVariant
+                }
+                Text(mark, color = color, style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        Text(com.bamnat.core.money.Challenges.words(s), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+        androidx.compose.material3.TextButton(onClick = onStop) { Text(if (s.done) "닫기" else "그만두기") }
     }
 }

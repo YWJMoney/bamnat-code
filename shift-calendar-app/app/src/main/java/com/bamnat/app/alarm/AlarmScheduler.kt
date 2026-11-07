@@ -32,6 +32,8 @@ class AlarmScheduler(
     private val telemetry: Telemetry,
     /** [ALRM-21] Minutes before an alarm for 곧 알람이 울려요; 0 off. */
     private val soonMinutes: () -> Int = { 0 },
+    /** [ALRM-27] 알람 지킴이 on. */
+    private val guard: () -> Boolean = { false },
     /** The ringing settings, copied with the alarms for a locked boot [REL-10]. */
     private val ringSettings: () -> BootAlarms.RingSettings = { BootAlarms.RingSettings() },
 ) {
@@ -40,10 +42,17 @@ class AlarmScheduler(
 
     private val _upcoming = MutableStateFlow<UpcomingAlarm?>(null)
     val upcoming: StateFlow<UpcomingAlarm?> = _upcoming.asStateFlow()
+    private val _ahead = MutableStateFlow<List<RingRequest>>(emptyList())
+    /** [ALRM-26] The next [AHEAD_SHOWN] alarms, with any turned off ahead among them. */
+    val ahead: StateFlow<List<RingRequest>> = _ahead.asStateFlow()
 
     private val _snoozeAt = MutableStateFlow(prefs.getLong(K_SNOOZE_AT, 0L).takeIf { it > Today.millis() })
     /** When a pending snooze will ring again, or null. */
     val snoozeAt: StateFlow<Long?> = _snoozeAt.asStateFlow()
+
+    /** How many plannings have finished; tests wait for the app's own first one before planning theirs (CI 12차). */
+    @Volatile var plannings = 0
+        private set
 
     fun canScheduleExact(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
@@ -61,16 +70,28 @@ class AlarmScheduler(
      */
     @Synchronized
     fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = Today.dateTime()) {
+        try { plan(calendars, enabled, after) } finally { plannings++ }
+    }
+
+    private fun plan(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
         // [ALRM-09] 오늘 남은 알람 모두 끄기: the next alarm is the first one after it.
         // [ALRM-21] An alarm turned off ahead with 이번 알람 끄기: the one after it.
-        val from = AlarmSoon.planFrom(context, AlarmsOff.planFrom(context, planFrom(after)))
-        val plan = if (enabled) nextOf(calendars, from) else null
+        val from = AlarmsOff.planFrom(context, planFrom(after))
+        val skips = AlarmSoon.skippedAll(context).toSet()
+        val plan = if (enabled) nextKept(calendars, from, skips) else null
         val operation = shiftAlarmIntent(plan)
-        saveBootCopy(if (enabled) planAhead(calendars, from) else emptyList())
+        val ahead = if (enabled) planAhead(calendars, from, AHEAD_SHOWN + skips.size) else emptyList()
+        saveBootCopy(ahead.filter { it.triggerAtMillis !in skips })
+        // [ALRM-26] The next few, skipped ones too, for the card on top of 설정 › 알람.
+        _ahead.value = shownAhead(ahead, skips)
         if (plan == null) {
+            if (!enabled) _ahead.value = emptyList()
+            com.bamnat.app.sleep.SmartWake.arm(context, null) // 1.38 [SLEEP-08]
             AlarmSoon.schedule(context, null, null, 0)
+            AlarmGuard.schedule(context, null)
+            AlarmGuard.scheduleBack(context, null, null)
             prefs.edit().remove(K_PENDING).apply()
             alarmManager.cancel(operation)
             if (_upcoming.value != null) telemetry.event(DiagEvents.ALARM_CLEARED, if (enabled) "none_ahead" else "switched_off")
@@ -80,7 +101,13 @@ class AlarmScheduler(
         val triggerAt = plan.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()
         val exact = setAlarm(triggerAt, operation)
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
+        // 1.38 [SLEEP-08] 깨우는 구간: a separate listening alarm before this one (off by default); the alarm above stays.
+        com.bamnat.app.sleep.SmartWake.arm(context, RingRequest.from(plan, triggerAt))
         AlarmSoon.schedule(context, triggerAt, soonText(plan), soonMinutes())
+        AlarmGuard.schedule(context, if (guard()) triggerAt else null)
+        // [ALRM-29] The first alarm after a break (no alarm in any calendar for two days) is said the evening before.
+        val back = guard() && calendars.all { (_, s) -> com.bamnat.core.alarm.AlarmPlanner.afterBreak(s.resolver, plan.triggerAt) }
+        AlarmGuard.scheduleBack(context, if (back) triggerAt else null, backText(plan))
         val previous = _upcoming.value
         // The schedule is re-planned on every edit; only a different alarm is worth a log line.
         if (previous == null || previous.triggerAtMillis != triggerAt || previous.exact != exact) {
@@ -105,7 +132,7 @@ class AlarmScheduler(
     fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = Today.dateTime()): Boolean {
         // An alarm that just rang is being planned past; until that is done nothing is missing.
         if (Today.millis() - firedAtMillis < SETTLE_MILLIS) return false
-        val expected = if (enabled) nextOf(calendars, AlarmSoon.planFrom(context, AlarmsOff.planFrom(context, planFrom(now)))) else null
+        val expected = if (enabled) nextKept(calendars, AlarmsOff.planFrom(context, planFrom(now)), AlarmSoon.skippedAll(context).toSet()) else null
         val held = systemHolds()
         val pending = prefs.getLong(K_PENDING, 0L)
         val problem = when {
@@ -120,6 +147,10 @@ class AlarmScheduler(
     }
 
     /** [ALRM-21] What 곧 알람이 울려요 says the alarm is for. */
+    /** [ALRM-29] "05:30 주간 근무 알람", "07:00 알람". */
+    private fun backText(plan: PlannedAlarm): String =
+        com.bamnat.app.ui.Fmt.time(plan.triggerAt.toLocalTime()) + if (plan.shiftName.isNotBlank()) " ${plan.shiftName} 근무 알람" else " 알람"
+
     private fun soonText(plan: PlannedAlarm): String = when {
         plan.shiftName.isNotBlank() -> "${plan.shiftName} 근무 알람이에요. 이번 알람을 끌까요?"
         else -> "이 날 알람이에요. 이번 알람을 끌까요?"
@@ -183,10 +214,21 @@ class AlarmScheduler(
     private var lastAhead: List<RingRequest> = emptyList()
 
     /** The next [BootAlarms.AHEAD] alarms, so a locked phone can ring several in a row. */
-    private fun planAhead(calendars: List<Pair<String?, ScheduleSnapshot>>, after: LocalDateTime): List<RingRequest> {
+    /** [ALRM-26] The first alarm after [from] that was not turned off ahead ([skips], epoch ms). */
+    private fun nextKept(calendars: List<Pair<String?, ScheduleSnapshot>>, from: LocalDateTime, skips: Set<Long>): PlannedAlarm? {
+        var at = from
+        repeat(skips.size + 1) {
+            val p = nextOf(calendars, at) ?: return null
+            if (p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli() !in skips) return p
+            at = p.triggerAt
+        }
+        return nextOf(calendars, at)
+    }
+
+    private fun planAhead(calendars: List<Pair<String?, ScheduleSnapshot>>, after: LocalDateTime, count: Int = BootAlarms.AHEAD): List<RingRequest> {
         val out = ArrayList<RingRequest>()
         var from = after
-        while (out.size < BootAlarms.AHEAD) {
+        while (out.size < maxOf(count, BootAlarms.AHEAD)) {
             val p = nextOf(calendars, from) ?: break
             out += RingRequest.from(p, p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
             from = p.triggerAt
@@ -314,6 +356,15 @@ class AlarmScheduler(
         private const val REQ_TEST = 1004
         private const val K_TEST_AT = "test_at"
         const val TEST_NAME = "밤낮 시험 알람"
+
+        /** [ALRM-26] How many alarms still to ring the card lists. */
+        const val AHEAD_SHOWN = 3
+
+        /** [ALRM-26] The alarms up to the [AHEAD_SHOWN]th that still rings, with those turned off ([skips]) in between. */
+        internal fun shownAhead(ahead: List<RingRequest>, skips: Set<Long>): List<RingRequest> {
+            var kept = 0
+            return ahead.takeWhile { r -> (kept < AHEAD_SHOWN).also { if (it && r.triggerAtMillis !in skips) kept++ } }
+        }
         private const val K_SNOOZE_AT = "snooze_at"
         private const val K_SNOOZE_PAYLOAD = "snooze_payload"
         private const val K_LAST_EXACT = "last_exact"

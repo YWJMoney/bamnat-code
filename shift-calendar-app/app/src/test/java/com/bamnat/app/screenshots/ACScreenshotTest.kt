@@ -54,10 +54,10 @@ class ACScreenshotTest : ScreenshotBase() {
 
     /** Today is the second night of 주주휴휴야야휴휴, then the rest of the first setup as it stands. */
     private fun Screen.finishSetup() {
-        tapText("네, 시간이 맞아요")
-        tapText("다음", exact = true)
+        // [EASE-07] Times and order on one screen; the alarm is a card on the summary.
+        tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
-        tapText("회사 근무표와 같아요"); tapText("다음", exact = true)
+        tapText("회사 근무표와 같아요")
         tapText("저장하고 달력 보기")
     }
 
@@ -91,8 +91,8 @@ class ACScreenshotTest : ScreenshotBase() {
         tapText("4조 2교대 · 주주휴휴야야휴휴")
         assertTrue(appears("이 순서가 맞나요?", exact = true))
         tapText("이 순서로 설정 이어가기")
-        // On to the times: the row's shifts are in the draft.
-        assertTrue(appears("근무 시간이 맞나요?", exact = true))
+        // On to the times: the row's shifts and its order on one screen [EASE-07].
+        assertTrue(appears("근무 순서와 시간이 맞나요?", exact = true))
         finishSetup()
         val p = pattern()
         assertEquals(8, p.steps.size)
@@ -256,6 +256,23 @@ class ACScreenshotTest : ScreenshotBase() {
         }
         settle()
         tapText("주야비휴")
+    }
+    /**
+     * 1.38 통합 8차 [CYC-03] (올리기로 들어왔는데 마지막 단추가 '달력에 넣기'이고 오늘 며칠째인지도 물어요): from '우리 회사 근무표
+     * 올리기' the sheet puts the table up and leaves the calendar as it is; '내 달력에도 넣기' brings back the calendar's way.
+     */
+    @Test fun anUploadLeavesTheCalendarAsItIs() = shoot("1012b_ac_upload_only", PHONE_393) {
+        content {
+            com.bamnat.app.ui.company.PublicApplySheet(PublicCycles.provided("시험제조", "4조2교대"), onDismiss = {}, onPay = {}, onShare = {}, uploadOnly = true)
+        }
+        settle()
+        assertTrue(appears("올리기만 할게요 (내 달력은 그대로)", exact = true))
+        assertTrue(gone("달력에 넣기", exact = true))
+        tapText("주주휴휴야야휴휴", exact = false)
+        reveal("내 달력은 그대로예요")
+        assertTrue("no 'which day is today' while only putting it up", gone("오늘이 몇 번째 날인지 골라 주세요", exact = true))
+        tapText("내 달력에도 넣기", exact = true)
+        assertTrue(appears("달력에 넣기", exact = true))
     }
     @Test fun sheetDark() = shoot("1012_ac_sheet_dark", PHONE_393_NIGHT) {
         content { com.bamnat.app.ui.company.PublicApplySheet(gsEps, onDismiss = {}, onPay = {}, onShare = {}) }

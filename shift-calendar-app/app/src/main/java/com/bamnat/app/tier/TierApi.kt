@@ -22,7 +22,9 @@ data class EarnedDays(val days: Int, val at: Instant, val why: String)
  * [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved".
  * [FLAG-13] 1.28: [owner] when the link code was made by the owner (최고 관리자); such a phone sees hidden kinds of work.
  */
-data class AdminState(val status: String, val name: String, val owner: Boolean = false, val previews: List<String> = emptyList()) {
+/** 1.37.1 [FAM-01] [family]: a 가족 프로 이용권 the owner gave this phone (no end, until the owner cuts it), not an admin's phone. */
+data class AdminState(val status: String, val name: String, val owner: Boolean = false, val previews: List<String> = emptyList(),
+    val family: Boolean = false) {
     val approved: Boolean get() = status == "approved"
 }
 
@@ -69,6 +71,8 @@ data class ServerSub(
     val autoRenew: Boolean = false,
     val consentAt: Instant? = null,
     val stoppedAt: Instant? = null,
+    /** 1.38 Phase 3 요금: the base plan Play says (the band of a 팀·직원 요금제). */
+    val basePlan: String? = null,
 )
 
 /**
@@ -122,7 +126,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
 
     override suspend fun link(device: String, code: String): AdminState = serverCall {
         val o = request("POST", "/api/admin-link", JSONObject().put("code", code.trim()), device)
-        AdminState(o.getString("status"), o.optString("name"), o.optBoolean("owner"))
+        AdminState(o.getString("status"), o.optString("name"), o.optBoolean("owner"), family = o.optBoolean("family"))
     }
 
     override suspend fun unlink(device: String) = serverCall {
@@ -141,6 +145,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             autoRenew = o.optBoolean("autoRenew"),
             consentAt = o.optStringOrNull("consentAt")?.let(Instant::parse),
             stoppedAt = o.optStringOrNull("stoppedAt")?.let(Instant::parse),
+            basePlan = o.optStringOrNull("basePlan"),
         )
     }
 
@@ -172,7 +177,8 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             // S 1.32 [SECX-01] previews: set in the developer app for this phone only.
             admin = o.optJSONObject("admin")?.let { a ->
                 AdminState(a.getString("status"), a.optString("name"), a.optBoolean("owner"),
-                    a.optJSONArray("previews")?.let { arr -> List(arr.length()) { arr.optString(it) }.filter { it.isNotBlank() } }.orEmpty())
+                    a.optJSONArray("previews")?.let { arr -> List(arr.length()) { arr.optString(it) }.filter { it.isNotBlank() } }.orEmpty(),
+                    family = a.optBoolean("family"))
             },
             hasCode = o.optBoolean("code"),
             checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Today.instant(),

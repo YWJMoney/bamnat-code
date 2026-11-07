@@ -11,6 +11,10 @@
         <include domain="file" path="." />
         <exclude domain="file" path="diag/" />
         <exclude domain="file" path="receipts/" />
+        <!-- [SLEEP-07] 1.38 잠 소리 클립은 이 휴대폰에만(7일 뒤 지움), 클라우드로 올리지 않아요. -->
+        <exclude domain="file" path="sleep_clips/" />
+        <!-- [MPH-03] 1.38 메모 사진도 영수증처럼 클라우드 백업에서 빼요(25MB 한도). 밤낮 백업 파일(사진도 백업)과 폰 옮기기에는 들어가요. -->
+        <exclude domain="file" path="memo-photos/" />
         <!-- [MAT-05] 1.36 받은 공개 글꼴은 다시 받으면 돼요(본명조 14MB, 자동 백업 25MB 한도를 아껴요). -->
         <exclude domain="file" path="fonts/open/" />
     </cloud-backup>
@@ -19,5 +23,6 @@
         <include domain="sharedpref" path="settings.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="diag/" />
+        <exclude domain="file" path="sleep_clips/" />
     </device-transfer>
 </data-extraction-rules>

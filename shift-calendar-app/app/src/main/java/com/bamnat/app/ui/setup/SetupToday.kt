@@ -3,6 +3,7 @@ package com.bamnat.app.ui.setup
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -57,7 +58,13 @@ internal fun stepOn(d: SetupDraft, date: LocalDate): Int? {
     return Math.floorMod(ChronoUnit.DAYS.between(anchor, date), d.rotation.size.toLong()).toInt()
 }
 
-/** "오늘(10/18)은 야간 둘째 날이에요. 내일부터 휴무 4일이에요." */
+/** "내일(10/19)": a near day with its date; a far one says its date already. */
+private fun dated(date: LocalDate, today: LocalDate): String {
+    val word = relativeDay(date, today)
+    return if (word.contains('/')) word else "$word(${Fmt.shortDate(date)})"
+}
+
+/** "오늘(10/18)은 야간 둘째 날이에요. 내일(10/19)부터 휴무 4일이에요." */
 internal fun todaySentence(d: SetupDraft, date: LocalDate, today: LocalDate): String? {
     val step = stepOn(d, date) ?: return null
     val steps = d.rotation
@@ -71,9 +78,16 @@ internal fun todaySentence(d: SetupDraft, date: LocalDate, today: LocalDate): St
     val (inDays, next) = change
     val nextName = nameOf(steps[next], types)
     val nextLen = TodayQuestion.runPosition(steps, next).second
-    val from = relativeDay(date.plusDays(inDays.toLong()), today)
+    // 1.38 통합 7차 347b7c37 ('내일부터 야간 2일'에 날짜가 없어요; 새벽엔 오늘 근무도): each day with its date, and in the small
+    // hours, when the question is about 어제, today's own shift said too unless the change is today.
+    val changeOn = date.plusDays(inDays.toLong())
+    val from = dated(changeOn, today)
     val second = if (nextLen > 1) "${from}부터 $nextName ${nextLen}일이에요." else "$from${Fmt.eun(from)} $nextName${Fmt.ieyo(nextName)}."
-    return "$first $second"
+    val todayLine = if (date != today && changeOn != today && today.isAfter(date)) stepOn(d, today)?.let { s ->
+        val n = nameOf(steps[s], types)
+        "오늘(${Fmt.shortDate(today)})은 $n${Fmt.ieyo(n)}."
+    } else null
+    return listOfNotNull(first, todayLine, second).joinToString(" ")
 }
 
 /** A chosen answer, so a plain day off (null) can be told from no answer yet. */
@@ -92,9 +106,10 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     val day = relativeDay(date, today)
     StepHeader(
         "$day(${Fmt.shortDate(date)}) 무슨 근무${if (date == today) "예요" else "였어요"}?",
-        "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날이었으면 휴무를 고르면 돼요.",
+        // 1.38 통합 7차: '오늘로 답할게요' asks about today, so 쉬는 날'이면'.
+        "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날${if (date == today) "이면" else "이었으면"} 휴무를 고르면 돼요.",
     )
-    if (early) EarlyHoursNote(todayBased, today, onToday = { vm.answerForToday(!todayBased) })
+    if (early) EarlyHoursNote(todayBased, today, earlyNote(vm.earlyBecause(d), vm.hourNow(), today), onToday = { vm.answerForToday(!todayBased) })
 
     val source = d.source
     // [SETUP-14] These answers survive folding and unfolding.
@@ -107,7 +122,19 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
                 vm.clearToday()
             })
     } else {
-        TodayPicker(d, date, today, onAnswer = { step -> vm.answerToday(date, step) }, onClear = vm::clearToday)
+        // [CYC-06] 1.38: a public row that names its teams and their days asks "몇 조예요?" first; the order must be the row's own.
+        val teams = remember(source, d.rotation) {
+            source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.id?.let(com.bamnat.core.plaza.PublicCycles::byId)
+                ?.takeIf { vm.sourceOrder(d) == d.rotation }
+                ?.let { com.bamnat.core.setup.TeamAnchors.pickable(it.teams, d.rotation.size) }.orEmpty()
+        }
+        var teamUnknown by rememberSaveable(source?.id) { mutableStateOf(false) }
+        if (teams.isNotEmpty() && !teamUnknown) {
+            TeamPick(teams, d.anchor, onPick = vm::answerAnchor, onUnknown = { teamUnknown = true; vm.clearToday() })
+        } else {
+            TodayPicker(d, date, today, onAnswer = { step -> vm.answerToday(date, step) }, onClear = vm::clearToday,
+                onAsking = vm::todayAsking)
+        }
     }
     // [SETUP-14] A way out for someone who cannot tell (a roster that does not repeat, or a new job): paint the
     // month on the calendar instead, keeping the shifts already set up (I 리뷰 I14).
@@ -147,15 +174,29 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     }
 }
 
+/**
+ * 1.38 통합 8차 (09:41에 소방 당번으로 첫 설정하면 '지금은 새벽이라'): why the question is yesterday's, said by the shift, and
+ * '새벽' only in the small hours.
+ */
+internal fun earlyNote(because: Pair<com.bamnat.core.model.ShiftType, Boolean>?, hour: Int, today: LocalDate): String {
+    val yesterday = "어제(${Fmt.shortDate(today.minusDays(1))})"
+    val t = because?.first
+    if (t == null || hour < SMALL_HOURS_END) return "지금은 새벽이라, 어젯밤 시작한 근무는 $yesterday 근무로 쳐요."
+    val still = if (because.second) "아직 이어지고 있어요" else "막 끝났어요"
+    return "밤을 넘기는 근무는 시작한 날로 쳐요. $yesterday ${t.start}에 시작한 ${t.name}${Fmt.iga(t.name)} $still."
+}
+
+private const val SMALL_HOURS_END = 6
+
 /** [SETUP-01] In the small hours a night shift that began last night is yesterday's work. */
 @Composable
-private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, onToday: () -> Unit) {
+private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, earlyText: String, onToday: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Bedtime, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
             Text(
                 if (todayBased) "오늘(${Fmt.shortDate(today)}) 기준으로 묻고 있어요."
-                else "지금은 새벽이라, 어젯밤 시작한 근무는 어제(${Fmt.shortDate(today.minusDays(1))}) 근무로 쳐요.",
+                else earlyText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.padding(start = 10.dp).weight(1f),
@@ -163,6 +204,22 @@ private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, onToday: () ->
             TextButton(onClick = onToday) { Text(if (todayBased) "어제로 묻기" else "오늘로 답할게요") }
         }
     }
+}
+
+/** [CYC-06] "몇 조예요?": the teams of a public row, each with the day it starts the cycle; or today's shift instead. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TeamPick(teams: List<Pair<String, LocalDate>>, anchor: LocalDate?, onPick: (LocalDate) -> Unit, onUnknown: () -> Unit) {
+    FollowTitle("몇 조예요?")
+    Text("공개 자료에 조마다 시작하는 날이 있어요. 조를 고르면 오늘 근무를 따로 묻지 않아요.", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        teams.forEach { (name, day) ->
+            FilterChip(selected = anchor == day, onClick = { onPick(day) }, label = { Text(name, style = MaterialTheme.typography.titleSmall) },
+                modifier = Modifier.heightIn(min = 48.dp))
+        }
+    }
+    TextButton(onClick = onUnknown) { Text("조를 몰라요 · 오늘 근무로 답할게요") }
 }
 
 /** [SETUP-02] A coworker's file says which 조 its order is: the same 조 lines up as it is. */
@@ -207,7 +264,9 @@ private fun TeamQuestion(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnswer: (Int) -> Unit, onClear: () -> Unit) {
+private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnswer: (Int) -> Unit, onClear: () -> Unit,
+                        /** [EASE-08] What the bottom button waits for while a second question is open; null once answered. */
+                        onAsking: (String?) -> Unit = {}) {
     val steps = d.rotation
     val types = remember(d.types) { d.types.associateBy { it.id } }
     val answered = stepOn(d, date)
@@ -228,9 +287,22 @@ private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnsw
             }
         }
     }
-    val pick = picked ?: return
-    val follow = remember(steps, pick) { TodayQuestion.followUp(steps, pick.id, d::isOff) } ?: return
+    val pick = picked
+    val follow = remember(steps, pick) { pick?.let { TodayQuestion.followUp(steps, it.id, d::isOff) } }
+    // [EASE-08] 1.38 (오늘근무 분석: 야간을 고르면 '며칠째' 질문이 화면 밖에 생겨 다음 단추가 왜 흐린지 몰라 헛누름): the question
+    // scrolls into sight and the button says what it waits for.
+    val waiting = if (pick != null && follow != null && answered == null) when (follow) {
+        is FollowUp.RunDay -> "${nameOf(pick.id, types)} 며칠째인지 위에서 골라 주세요"
+        is FollowUp.NextWork -> "다음 출근이 언제인지 위에서 골라 주세요"
+        is FollowUp.Upcoming -> "다음 날부터 어떻게 되는지 위에서 골라 주세요"
+    } else null
+    androidx.compose.runtime.LaunchedEffect(waiting) { onAsking(waiting) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onAsking(null) } }
+    if (pick == null || follow == null) return
     val name = nameOf(pick.id, types)
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    androidx.compose.runtime.LaunchedEffect(follow) { kotlinx.coroutines.delay(120); runCatching { bring.bringIntoView() } }
+    Column(Modifier.bringIntoViewRequester(bring), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     when (follow) {
         is FollowUp.RunDay -> {
             FollowTitle("$name 며칠째${if (date == today) "예요" else "였어요"}?")
@@ -268,6 +340,7 @@ private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnsw
                 )
             }
         }
+    }
     }
 }
 

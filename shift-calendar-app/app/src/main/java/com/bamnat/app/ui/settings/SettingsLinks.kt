@@ -45,6 +45,10 @@ enum class SettingsGo {
     STUDIO_MOTION, STUDIO_PARTS,
     /** [CNV-08] 1.37 각 탭의 카드 배치 → 스튜디오의 그 화면 (한 곳에서 고쳐요). */
     STUDIO_CALENDAR, STUDIO_MONEY, STUDIO_MEMO, STUDIO_STATS,
+    /** 1.38 스튜디오 › 팀·가게 관리. */
+    STUDIO_MANAGE,
+    /** 1.38 관리 화면: 팀 근무표·급여 대장·명세서를 한곳에 (리더·사장님). */
+    MANAGE,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */
@@ -53,6 +57,9 @@ sealed interface SettingsLink {
     data class Go(val go: SettingsGo) : SettingsLink
     /** U 1.32 [UX132-04] 🔍 on any tab: settings opens on its search, the field ready to type. */
     data object Search : SettingsLink
+    /** 1.38 PC 확인(e6dc244a, 1.36.1 LOW): the 설정 tab tapped, again or from another tab, opens the first screen of settings,
+     *  not the group (화면과 글자 …) left open there. */
+    data object Home : SettingsLink
 }
 
 /**
@@ -70,6 +77,11 @@ object SettingsLinks {
 
     fun search() {
         _target.value = SettingsLink.Search
+    }
+
+    /** The 설정 tab tapped: the first screen of settings, scrolled to the top. */
+    fun home() {
+        _target.value = SettingsLink.Home
     }
 
     fun go(go: SettingsGo) {
