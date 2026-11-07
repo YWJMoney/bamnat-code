@@ -430,6 +430,8 @@ fun TalkSheet(holder: TalkHolder) {
     // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).
     // [J133-99] 빌드 9 확인 ("X·끌어내리기는 묻는데 뒤로 키는 묻지 않고 닫혀요"): read through one held value, so the sheet's state
     // and its back are made once and see the words as they are now (a plain value made a new sheet state at every letter).
+    // 1.39 발굴 2-2: whether a 보완 요청 may open this phone's own pay (read once per talk).
+    val canFix = remember(o.company, o.setup) { holder.canFixOwnPay() }
     val typedNow = androidx.compose.runtime.rememberUpdatedState(text.isNotBlank() || (kind == "proposal" && change != listOf(blankChange())))
     var leaving by remember { mutableStateOf(false) }
     val talkScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -514,7 +516,8 @@ fun TalkSheet(holder: TalkHolder) {
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                 company = o.company, setup = o.setup, roomName = if (o.room) o.title else null, meToo = people,
                                 onRedo = if (talk.past || o.room) null else ({ redoing = p }),
-                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }))
+                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }),
+                                onFixAt = if (o.room || p.kind != "fix" || !canFix) null else holder::openFix)
                             // 1.36 [VIL-09] The reply that helped comes first, marked; the question's writer can pick one.
                             talk.posts.filter { it.parent == p.id }.sortedByDescending { it.id == p.answer }.forEach { r ->
                                 Row {
@@ -762,6 +765,8 @@ private fun PostRow(
     roomName: String? = null,
     /** 1.39 [PLZC-04][PLZC-10] A kind of work's room with plaza.people on: the writer's 근무 태그, and 나도요 for 공감·비공감. */
     meToo: Boolean = false,
+    /** 1.39 발굴 2-2: on a 보완 요청, opens the user's own pay where its fields are set; null when theirs is not to be changed here. */
+    onFixAt: ((List<String>) -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -876,8 +881,20 @@ private fun PostRow(
             if (p.mine) TextButton(onClick = { com.bamnat.app.ui.settings.InquiryLinks.ask(appealStart(p.id)) },
                 contentPadding = PaddingValues(horizontal = 0.dp)) { Text("이의 제기") }
         }
-        // [PLZ-09] A proposal's lines: what, now → as it should be, why.
-        if (p.change.isNotEmpty()) {
+        // 1.39 [PAYP-05] 발굴 2-2: a 보완 요청 says where, no values, and, for one whose pay is their own, opens it right there.
+        if (p.kind == "fix") {
+            val fields = p.change.map { it.field }
+            Text("보완 요청 · 어디가 다른지: " + fields.joinToString(" · ") { com.bamnat.app.company.Plaza.CHANGE_FIELDS[it] ?: it },
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 2.dp))
+            if (onFixAt != null && !p.mine && p.hidden == null && fields.isNotEmpty()) {
+                TextButton(onClick = { onFixAt(fields) }, contentPadding = PaddingValues(horizontal = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("내 급여에서 ${fixFocus(fields).label} 열기")
+                }
+                Text("고친 뒤 ‘회사 설정 보내기’로 새 판을 올리면, 이 판을 쓰는 분께 ‘새 판으로 바꾸기’가 보여요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (p.change.isNotEmpty()) {
+            // [PLZ-09] A proposal's lines: what, now → as it should be, why.
             SoftCard(Modifier.padding(top = 4.dp)) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     p.change.forEach { c ->

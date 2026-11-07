@@ -237,9 +237,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 // [TRY-05] Back from trying it on the real app: 입어 보기 again, the same parts ticked and the same tab.
                 val again by LiveTryOn.reopen.collectAsStateWithLifecycle()
+                // [TRY-07] 1.39 발굴: 입기·넣기 pressed on the band comes back to the question of 넣기, the tried parts ticked.
                 LaunchedEffect(again, r) {
-                    if (!hasLooks) return@LaunchedEffect
-                    LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code }?.let { tryAgain = it; tryOn = true }
+                    val back = LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code } ?: return@LaunchedEffect
+                    if (hasLooks) { tryAgain = back; tryOn = true; if (back.wear) { vm.lookParts(back.picked); confirming = true } }
+                    else if (back.wear) confirming = true
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 val liveTry = LocalContext.current.appContainer
@@ -380,7 +382,16 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
             }
         }
     }
-    if (confirming) AlertDialog(
+    // PC 03111522 (써 보는 중 넣기 창: '‘커피’은 이미 있는 것과 하는 일이 같아'): a work being tried is put back first, and what 넣기
+    // changes is worked out again against my own app, before the question shows.
+    val ctx = LocalContext.current
+    var settling by remember { mutableStateOf(false) }
+    LaunchedEffect(confirming) {
+        if (!confirming || !com.bamnat.app.recipe.FunctionTrial.busy(ctx)) return@LaunchedEffect
+        settling = true
+        try { LiveTryOn.settle(ctx.appContainer, snack = false); vm.preview()?.join() } finally { settling = false }
+    }
+    if (confirming && !settling) AlertDialog(
         onDismissRequest = { confirming = false },
         title = { Text("이렇게 바뀌어요") },
         text = {

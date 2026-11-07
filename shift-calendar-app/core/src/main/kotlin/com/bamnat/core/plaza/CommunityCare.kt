@@ -78,7 +78,11 @@ object CommunityCare {
         else -> "마을 운영자가 드리는 말"
     }
 
-    fun warningBody(w: CareNote): String = buildString {
+    /**
+     * [badgeRest] 1.39 제작자 표식(광장 커뮤니티 갈래의 깃발이 켜졌을 때 true): 첫 안내가 아니면 30일 동안 표식이 쉰다고 숨기지 않고 말해요
+     * (운영 규칙 6항 '숨기지 않습니다'). 서버 판단은 company-worker `careQuietMany`.
+     */
+    fun warningBody(w: CareNote, badgeRest: Boolean = false): String = buildString {
         val what = aboutText(w.about)
         when (w.reason) {
             "auto_first" -> append("${what ?: "쓴 글"} 하나가 운영자 확인 뒤 가려졌어요. 처음이라 안내만 드려요. 마을은 여러 분이 함께 보는 곳이라 조금만 더 부드럽게 부탁드려요.")
@@ -86,8 +90,13 @@ object CommunityCare {
             else -> append("${what?.let { "$it 가운데 " } ?: ""}‘${reasonText(w.reason)}’로 신고된 것을 운영자가 직접 확인했어요. 지금은 아무것도 막지 않았어요. 앞으로 함께 편한 마을이 되도록 부탁드려요.")
         }
         w.note?.let { append("\n\n운영자 한 줄: $it") }
+        if (badgeRest && w.reason != "auto_first") append("\n\n$BADGE_REST_WARN")
         append("\n\n근거: $RULE · 잘못 보았다면 ‘해명하기’로 알려 주세요.")
     }
+
+    /** 1.39 제작자 표식이 쉬는 동안의 한 줄(경고 창, 쉬는 중 자세히). 해명을 받아들이면 바로 돌아와요. */
+    const val BADGE_REST_WARN = "그동안(30일) 내 제작자 표식은 잠시 쉬어요. 해명을 받아들이면 바로 돌아와요."
+    const val BADGE_REST_HOLD = "쉬는 동안 내 제작자 표식도 잠시 쉬고, 끝나면 저절로 돌아와요."
 
     /** 쉬는 중 한 줄(마을 위). */
     fun holdLine(h: CareNote, zone: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")): String =

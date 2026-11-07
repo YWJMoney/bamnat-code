@@ -603,6 +603,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
             }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 1.39 발굴: '보완 요청이 n개 왔어요' opens that version's talk, over 마을 › 내 글 (back leaves both).
+            NoticeLinks.Target.FIX_TALK -> {
+                com.bamnat.app.ui.company.TalkSheets.closeAll()
+                com.bamnat.app.ui.company.TalkSheets.pending.value = NoticeLinks.FixTalk.of(NoticeLinks.payload.value)
+                nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
@@ -655,6 +661,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [INVA-01] AR 1.29: a photo shared on another kind of calendar while an investor calendar exists, asked where it goes.
     var shotToPlace by remember { mutableStateOf<Pair<android.net.Uri, com.bamnat.app.data.PersonalCalendar>?>(null) }
     var shotIsRoster by remember { mutableStateOf(false) }
+    // [READ-31] 1.39: a shared roster waiting for "어디에 넣을까요?" (내 달력 · 팀 근무표 · 직원 명단), and 내 달력 once picked.
+    var manageAsk by remember { mutableStateOf<Triple<com.bamnat.app.IncomingRoster.Shared, android.net.Uri, List<com.bamnat.app.imports.SharedToManage.Place>>?>(null) }
+    var manageBusy by remember { mutableStateOf<String?>(null) }
+    var manageNote by remember { mutableStateOf<String?>(null) }
+    var rosterToMine by remember { mutableStateOf(false) }
     LaunchedEffect(sharedRoster) {
         // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
         // 한 달 근무 넣기 (U, ROST-09) is open stays that screen's.
@@ -673,9 +684,62 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             return@LaunchedEffect
         }
         shotIsRoster = false
+        // [READ-31] 1.39: a leader's or a 사장님's share may be the team's roster or the staff list: asked where it goes.
+        val shared = sharedRoster
+        val sharedUri = (shared as? com.bamnat.app.IncomingRoster.Shared.Photo)?.uri ?: (shared as? com.bamnat.app.IncomingRoster.Shared.File)?.uri
+        if (shared != null && sharedUri != null && !rosterOpen && !rosterToMine) {
+            val places = runCatching { sharedPlaces(container) }.getOrDefault(emptyList())
+            if (places.isNotEmpty()) {
+                com.bamnat.app.IncomingRoster.take()
+                manageAsk = Triple(shared, sharedUri, places)
+                return@LaunchedEffect
+            }
+        }
+        rosterToMine = false
         if (sharedRoster != null && !rosterOpen) {
             nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }
         }
+    }
+    manageAsk?.let { (shared, uri, places) ->
+        val askContext = LocalContext.current
+        com.bamnat.app.imports.SharedToManageChoice(places, busy = manageBusy, note = manageNote,
+            onMine = {
+                manageAsk = null; manageNote = null
+                rosterToMine = true
+                com.bamnat.app.IncomingRoster.put(shared)
+            },
+            onPlace = { place ->
+                when (place) {
+                    com.bamnat.app.imports.SharedToManage.Place.Staff -> {
+                        manageAsk = null; manageNote = null
+                        com.bamnat.app.imports.SharedToManage.putStaff(uri)
+                        nav.navigate(Routes.MANAGE) { launchSingleTop = true }
+                    }
+                    is com.bamnat.app.imports.SharedToManage.Place.Team -> rootScope.launch {
+                        manageBusy = "근무표를 읽고 있어요…"
+                        manageNote = null
+                        val team = container.phaseThree.teamList.first().firstOrNull { it.id == place.id }
+                        val today = com.bamnat.core.time.Today.date()
+                        val got = if (team == null) com.bamnat.app.imports.ManageImport.Got.Failed("이 팀을 찾지 못했어요.")
+                            else com.bamnat.app.imports.ManageImport.roster(askContext, uri, java.time.YearMonth.from(today).plusMonths(1), team.shifts, today)
+                        manageBusy = null
+                        when (got) {
+                            is com.bamnat.app.imports.ManageImport.Got.Read -> {
+                                manageAsk = null
+                                com.bamnat.app.imports.SharedToManage.putTeam(com.bamnat.app.imports.SharedToManage.ForTeam(place.id, got.value, got.fromPhoto))
+                                container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, "shared")
+                                nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true }
+                            }
+                            is com.bamnat.app.imports.ManageImport.Got.Failed -> {
+                                manageNote = got.why
+                                container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "shared")
+                            }
+                        }
+                    }
+                }
+            },
+            onDismiss = { manageAsk = null; manageNote = null },
+        )
     }
     shotToPlace?.let { (uri, investor) ->
         com.bamnat.app.ui.invest.SharedShotChoice(
@@ -722,8 +786,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [GUIDE-06] A feature turned off from its ⋮: where it comes back, one tap away.
     LaunchedEffect(Unit) {
-        com.bamnat.app.ui.guide.FeatureLinks.turnedOff.collect { name ->
-            val result = snackbar.showSnackbar("‘$name’ 꺼졌어요. 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요",
+        com.bamnat.app.ui.guide.FeatureLinks.turnedOff.collect { off ->
+            // 1.39 발굴 [GUIDE-06][GUIDE-21] A card's records stay: said so, with where it comes back.
+            val kept = if (off.keepsRecords) " 적은 기록은 그대로 남아요." else ""
+            val result = snackbar.showSnackbar("‘${off.name}’ 껐어요.$kept 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요",
                 actionLabel = "바로 가기", duration = SnackbarDuration.Long)
             if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.FEATURES) { launchSingleTop = true }
         }
@@ -988,6 +1054,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
         }
         (TopLevel.entries.firstOrNull { it.route == t.tab } ?: TopLevel.CALENDAR).let { dest -> if (dest.route != route) navigateTop(dest) }
+    }
+    // [TRY-07] 1.39 발굴: '바뀐 곳' on the band walks the tabs the look changes, one by one.
+    val tourAt = liveTrial?.at ?: 0
+    LaunchedEffect(trialOn, tourAt) {
+        val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: return@LaunchedEffect
+        TopLevel.entries.firstOrNull { it.route == t.tour.getOrNull(t.at) }?.let { dest -> if (dest.route != route) navigateTop(dest) }
     }
     // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
     // [TRY-06] One with 기능 waits a little (a photo for a memo, a glance elsewhere) and then puts them back.
@@ -2700,3 +2772,12 @@ private fun LookUndoBand() {
 /** The words' colour that reads on [ground]: near-black on a light colour, white on a dark one. */
 private fun inkOn(ground: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
     if (ground.luminance() > 0.45f) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.White
+
+/** [READ-31] 1.39: where a shared roster may go besides 내 달력: the leader's teams, the 사장님's staff list (each behind its flag). */
+private suspend fun sharedPlaces(c: AppContainer): List<com.bamnat.app.imports.SharedToManage.Place> {
+    val flags = c.flags.byKey.value
+    val teams = if (flags[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true)
+        c.phaseThree.teamList.first().filter { !it.archived }.map { com.bamnat.app.imports.SharedToManage.Place.Team(it.id, it.name) } else emptyList()
+    val shop = flags[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true && c.phaseThree.workplaces.first().isNotEmpty()
+    return com.bamnat.app.imports.SharedToManage.places(teams, shop)
+}

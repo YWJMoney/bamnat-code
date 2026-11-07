@@ -235,3 +235,36 @@ test("[CARE] 조사 ①③⑧: the 안내 says what, by which rule and if it was
   s = (await standing(2)).data;
   assert.deepEqual(s.warning.appeal, { result: null });
 });
+
+test("[CARE] 제작자 표식 쉼(careQuietMany): 쉬는 중·풀지 않은 경고 30일·신고 누적 제한이면 쉬고, 첫 안내와 푼 것은 그대로, 꺼지면 제한만", async () => {
+  const { d1 } = await import("./d1.mjs");
+  const { CARE_SCHEMA, careQuietMany, careQuiet } = await import("../src/community-care.js");
+  const { WRITE_LIMITS_SCHEMA, WRITE_LIMITS_COLUMNS } = await import("../src/write-limits.js");
+  const env = { DB: d1() };
+  for (const sql of [...WRITE_LIMITS_SCHEMA, ...WRITE_LIMITS_COLUMNS, ...CARE_SCHEMA]) {
+    try { await env.DB.prepare(sql).run(); } catch { /* a column already there */ }
+  }
+  let on = true;
+  const d = {
+    all: async (e, sql, ...p) => (await e.DB.prepare(sql).bind(...p).all()).results,
+    legalOpen: async () => on,
+  };
+  const note = (id, dev, kind, reason, at, until = null, lifted = null) => env.DB.prepare(
+    "INSERT INTO care_notes (id, device, kind, reason, note, days, at, until, by, ref, lifted_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, 'operator', NULL, ?)")
+    .bind(id, dev, kind, reason, at, until, lifted).run();
+  await note("c1", "hold", "community", "abuse", NOW - DAY, NOW + 3 * DAY);
+  await note("c2", "warned", "warn", "abuse", NOW - 10 * DAY);
+  await note("c3", "oldwarn", "warn", "abuse", NOW - 31 * DAY);
+  await note("c4", "first", "warn", "auto_first", NOW - DAY);
+  await note("c5", "lifted", "warn", "abuse", NOW - DAY, null, NOW - 1000);
+  await note("c6", "ended", "opinion", "abuse", NOW - 10 * DAY, NOW - DAY);
+  await env.DB.prepare("INSERT INTO write_limits (device, step, since, until, per_day, times) VALUES ('limited', 1, ?, ?, 5, 1)").bind(NOW - DAY, NOW + 2 * DAY).run();
+  const all = ["hold", "warned", "oldwarn", "first", "lifted", "ended", "limited", "clean"];
+  assert.deepEqual([...await careQuietMany(d, env, all, NOW)].sort(), ["hold", "limited", "warned"]);
+  assert.equal(await careQuiet(d, env, "clean", NOW), false);
+  // A long list is read in parts under D1's 100 values.
+  const many = Array.from({ length: 250 }, (_, i) => `x${i}`).concat("hold");
+  assert.deepEqual([...await careQuietMany(d, env, many, NOW)], ["hold"]);
+  on = false;
+  assert.deepEqual([...await careQuietMany(d, env, all, NOW)], ["limited"]);
+});

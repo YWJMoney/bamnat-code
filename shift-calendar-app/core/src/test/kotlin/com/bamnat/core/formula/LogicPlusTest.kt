@@ -39,6 +39,13 @@ class LogicPlusTest {
         assertTrue(full.mergeSay(Logic(rules = listOf(night)))!!.contains("넘는 1개"))
     }
 
+    /** PC 03111522 ('‘커피’은'): 은/는 and 과/와 follow the word. */
+    @Test fun theSameOneIsSaidWithTheRightEnding() {
+        assertEquals("‘커피’는 이미 있는 것과 하는 일이 같아 하나로 뒀어요", Logic(listOf(memo.copy(label = "커피"))).mergeSay(Logic(listOf(memo.copy(label = "커피")))))
+        val mine = Logic(rules = listOf(night.copy(name = "내 야간 알리미")))
+        assertEquals("‘야간 수당’은 내 ‘내 야간 알리미’와 하는 일이 같아 하나로 뒀어요", mine.mergeSay(Logic(rules = listOf(night.copy(name = "야간 수당")))))
+    }
+
     @Test fun plusKeepsLimits() {
         val many = Logic(rules = (0 until 20).map { reset.copy(min = it) })
         assertEquals(Logic.MAX_RULES, Logic().plus(many).rules.size)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -643,7 +644,7 @@ private fun SetupCard(
             if (!s.adopted) PointsBar(s.points, s.threshold)
             WaitReason(s.points, s.threshold, s.adopted, s.agree)
             // [PLZ-08] Who stands behind it, in the names they chose.
-            WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong)
+            WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong, fixes = s.fixes, sentAt = s.sentAt)
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
                 Row(
@@ -656,8 +657,10 @@ private fun SetupCard(
                 }
                 AnimatedVisibility(more) { Column { pay.forEach { (label, text) -> SetupLine(label, text) } } }
             } else if (s.payHidden) {
-                // [PLAZA-08] 결정 D79: that there is one and how many stand behind it, never its values.
-                Text("급여 방식 있음 · 확인 ${s.persons}명 · 쓰면 보여요", style = MaterialTheme.typography.labelLarge,
+                // [PLAZA-08] 결정 D79: that there is one and how many stand behind it, never its values. 1.39 [PAYP-01]: a server
+                // that shows the pay to no one shows it once used neither (발굴: '쓰면 보여요' was no longer true).
+                Text(if (s.payPrivate) "급여 방식 있음 · 계산 방식은 공유한 분만 봐요" else "급여 방식 있음 · 확인 ${s.persons}명 · 쓰면 보여요",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (!s.hasPay) {
                 Text("급여 계산 방식은 없어요. 근무표만 가져와요.", style = MaterialTheme.typography.bodySmall,
@@ -748,7 +751,7 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
  * "오늘은 어떤 근무예요?": the rotation as rows of the coming week, one per place today could be in
  * it. Coworkers on other teams share the order on other days, so only the user can say [COMM-01].
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
@@ -767,6 +770,20 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                 },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // [CYC-06] 1.39: a file naming every 조 lets the row be picked by 조; the rows below stay for checking it.
+            if (phases.teams.isNotEmpty()) {
+                Text("몇 조예요?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    phases.teams.forEach { (name, step) ->
+                        val theirs = phases.team != null && com.bamnat.core.imports.DutyCodes.norm(name) == com.bamnat.core.imports.DutyCodes.norm(phases.team)
+                        androidx.compose.material3.FilterChip(selected = picked == step, onClick = { picked = step },
+                            label = { Text(if (theirs) "$name · 보낸 분" else name, style = MaterialTheme.typography.titleSmall) },
+                            modifier = Modifier.heightIn(min = 48.dp))
+                    }
+                }
+                Text("조를 고르면 아래에서 그 조의 줄이 골라져요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 8.dp, top = 4.dp)) {
                 (0 until 7).forEach { d ->
                     val day = today.plusDays(d.toLong())

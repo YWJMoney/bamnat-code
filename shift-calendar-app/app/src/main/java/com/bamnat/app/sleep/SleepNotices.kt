@@ -24,13 +24,20 @@ import com.bamnat.core.time.Today
 object SleepActions {
     const val ACTION_ASLEEP = "com.bamnat.app.sleep.ASLEEP"
     const val ACTION_AWAKE = "com.bamnat.app.sleep.AWAKE"
+    /** 1.39 G5-B1: 깼어요 pressed by a sleepy hand. The sleep goes on from where it began. */
+    const val ACTION_STILL_ASLEEP = "com.bamnat.app.sleep.STILL_ASLEEP"
+    const val EXTRA_SLEEP_ID = "sleep_id"
 
     fun asleep(context: Context): NotificationCompat.Action = action(context, "잠들었어요", ACTION_ASLEEP, 3311)
     fun awake(context: Context): NotificationCompat.Action = action(context, "깼어요", ACTION_AWAKE, 3312)
 
-    private fun action(context: Context, title: String, action: String, requestCode: Int): NotificationCompat.Action =
+    /** On the 몇 시간 잤어요 notice: 깼어요 by mistake (from the notice, the app or the night screen) is undone in one tap. */
+    fun stillAsleep(context: Context, sleepId: Long): NotificationCompat.Action =
+        action(context, "아직 자요", ACTION_STILL_ASLEEP, 3315) { putExtra(EXTRA_SLEEP_ID, sleepId) }
+
+    private fun action(context: Context, title: String, action: String, requestCode: Int, extras: Intent.() -> Unit = {}): NotificationCompat.Action =
         NotificationCompat.Action.Builder(0, title, PendingIntent.getBroadcast(
-            context, requestCode, Intent(context, SleepActionReceiver::class.java).setAction(action),
+            context, requestCode, Intent(context, SleepActionReceiver::class.java).setAction(action).apply(extras),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )).setAuthenticationRequired(false).build()
 }
@@ -52,6 +59,13 @@ class SleepActionReceiver : BroadcastReceiver() {
                         container.sleepRepository.wokeUp()
                         // 1.39 [SLEEP-06] 깼어요 ends 자는 동안 소리 too, at once.
                         SleepRecordService.stop(context)
+                    }
+                    SleepActions.ACTION_STILL_ASLEEP -> {
+                        // Only the sleep that just ended, and only while no other sleep was begun since: the 자는 중 notice and
+                        // 방해 금지 come back by themselves (they follow the log). 자는 동안 소리 is not started again here (Android
+                        // lets the microphone start only from the app on screen); the 자는 중 notice opens the night screen for it.
+                        val id = intent.getLongExtra(SleepActions.EXTRA_SLEEP_ID, 0L)
+                        if (id > 0 && container.sleepRepository.openNow() == null) container.sleepRepository.reopen(id)
                     }
                 }
             } finally {
@@ -104,6 +118,8 @@ object SleepingNotice {
             .setContentTitle("${HoursFormat.korean(minutes.toInt())} 잤어요")
             .apply { next?.let { setContentText("다음: $it") } }
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3313))
+            // 1.39 G5-B1 (PC 1.38 최종 사용성 6: 깼어요 잘못 누르기): the sleep goes on, from when it began.
+            .apply { if (slept.id > 0 && !slept.imported) addAction(SleepActions.stillAsleep(context, slept.id)) }
             .setAutoCancel(true)
             .setTimeoutAfter(WOKE_SHOWN_MILLIS)
             .build()
