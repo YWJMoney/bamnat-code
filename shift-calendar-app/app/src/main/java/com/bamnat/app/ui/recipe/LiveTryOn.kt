@@ -174,7 +174,8 @@ object LiveTryOn {
             goBack?.let { go -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) { runCatching { go() } } }
             if (t.hasLook) _reopen.value = Reopen(t.from, t.picked, t.tab)
         }
-        tell(e)
+        // PC 03111522 (같은 글이 카드와 스낵으로 두 번): back on the page it came from, its card says it.
+        tell(e, snack = t?.from !is From.Detail)
     }
 
     /** The trial let go with nothing opened again (the app left, or a look put on for real); 기능 tried are put back after. */
@@ -184,11 +185,11 @@ object LiveTryOn {
     }
 
     /** [TRY-06] Ends whatever is being tried, waiting for its 기능 to be put back (what the user wrote stays). */
-    suspend fun settle(c: AppContainer) {
+    suspend fun settle(c: AppContainer, snack: Boolean = true) {
         away?.cancel()
         val e = runCatching { com.bamnat.app.recipe.FunctionTrial(c).finish(keepMine = true) }.getOrNull()
         lookOff(c)
-        tell(e)
+        tell(e, snack)
     }
 
     private fun lookOff(c: AppContainer) {
@@ -201,10 +202,10 @@ object LiveTryOn {
     fun forget() { _ended.value = null }
 
     /** What the 기능 did while tried, said once (and kept for the page it came from). */
-    internal fun tell(e: com.bamnat.app.recipe.FunctionTrial.Ended?) {
+    internal fun tell(e: com.bamnat.app.recipe.FunctionTrial.Ended?, snack: Boolean = true) {
         e ?: return
         _ended.value = e
-        com.bamnat.app.logic.LogicRunner.say(say(e))
+        if (snack) com.bamnat.app.logic.LogicRunner.say(say(e))
     }
 
     /** "‘야식 관리’ 써 보기를 끝냈어요. 단추·규칙이 3번 일했고, 그 기록은 모두 지웠어요". */
@@ -274,11 +275,12 @@ fun LiveTryOnBand(c: AppContainer) {
                         ending -> "원래대로 돌리는 중…"
                         !trial.showing -> "지금 내 모습 (입기 전)"
                         fn -> "‘${trial.title}’ 써 보는 중"
-                        else -> "‘${trial.title}’ 입어 보는 중"
+                        else -> "‘${trial.title}’ 입혀 보는 중"
                     }, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(when {
                         !trial.showing -> "‘입은 모습’을 누르면 다시 입혀 봐요"
-                        fn -> "실제로 돌아요: ${trial.functions.distinct().joinToString("·")} · 써 보며 생긴 기록은 끝내면 지워요"
+                        // PC 03111522 (모양+기능이면 '…끝내면 지…'로 잘림): two names and how many more.
+                        fn -> trial.functions.distinct().let { l -> "실제로 돌아요: ${l.take(2).joinToString("·")}${if (l.size > 2) " 외 ${l.size - 2}개" else ""} · 생긴 기록은 끝내면 지워요" }
                         trial.looksOnly -> "실제 화면이에요 · 모양만 입혀 봤어요(기능은 넣을 때) · 저장 안 돼요"
                         else -> "실제 화면이에요 · 탭·화면을 눌러 둘러봐요 · 저장 안 돼요"
                     }, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

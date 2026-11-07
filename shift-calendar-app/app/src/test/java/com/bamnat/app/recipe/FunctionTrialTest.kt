@@ -155,4 +155,14 @@ class FunctionTrialTest {
         assertEquals(saved, c.recipes.pieces.lookOf(c.settingsRepository.settings.value))
         assertNotNull("입어 보기 opens again with the parts ticked", LiveTryOn.take { it == LiveTryOn.From.Detail("FN234567") })
     }
+
+    /** PC 03111522: 넣기 asked while trying is worked out against my own app (the button tried is not 'already there'). */
+    @Test fun whatPuttingInChangesIsSaidAgainstMyOwnApp() = runBlocking {
+        val logic = work.pieces.first { it.kind == PieceKind.LOGIC }.values
+        assertTrue(tryIt())
+        assertTrue("while tried, it counts as there", c.recipes.pieces.preview(PieceKind.LOGIC, logic, PersonalCalendar.MAIN).any { it.text.contains("하는 일이 같아") })
+        LiveTryOn.settle(c, snack = false)
+        assertTrue(c.recipes.pieces.preview(PieceKind.LOGIC, logic, PersonalCalendar.MAIN).none { it.text.contains("하는 일이 같아") })
+        assertNotNull("the page's card says it ended", LiveTryOn.ended.value)
+    }
 }
