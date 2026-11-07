@@ -153,7 +153,7 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
             if (c.invites.mayType() && !typing) TextButton(onClick = { typing = true }) { Text("초대 코드 넣기") }
         }
         if (typing && c.invites.mayType()) {
-            OutlinedTextField(typed, { typed = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(9) },
+            OutlinedTextField(typed, { said = null; typed = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(9) },
                 label = { Text("받은 초대 코드 (8자리)") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), modifier = Modifier.fillMaxWidth())
             val code = InviteRules.code(typed)
@@ -167,8 +167,8 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
                         onMessage(inviteAnswerWords(a))
                     } catch (e: CompanyException) {
                         val w = if (e.code == "code") "초대 코드가 맞지 않아요. 친구에게 다시 확인해 주세요." else serverProblem(e.code)
+                        // 4차 PC: shown once, under the button (the screen's own line said it a second time below the card).
                         said = w
-                        onMessage(w)
                     } finally {
                         busy = false
                     }

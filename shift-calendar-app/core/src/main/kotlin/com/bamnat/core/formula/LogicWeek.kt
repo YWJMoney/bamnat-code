@@ -46,18 +46,24 @@ object LogicWeek {
             return v.name
         }
 
-        fun fire(r: LogicRule, date: LocalDate, at: LocalTime?, depth: Int) {
+        // [date] is the day the rule belongs to (a night's 끝 belongs to the night's own day, as the runner keeps it: 그날 메모, 그날 조건);
+        // [shown] is when it really happens (the next morning), for the line.
+        fun fire(r: LogicRule, date: LocalDate, at: LocalTime?, depth: Int, shown: LocalDateTime? = null) {
             if (out.size >= MAX_LINES) return
+            val lineDate = shown?.toLocalDate() ?: date
+            val lineAt = shown?.toLocalTime() ?: at
             val s = scope(date, at)
             val holds = r.cond.isEmpty() || Formula.eval(r.cond, s)?.truthy == true
             val steps = r.steps(holds)
             if (steps.isEmpty()) {
-                out += Line(date, at, r.name, "조건(${EasyWhen.read(r.cond)?.say() ?: "수식"})이 맞지 않아 쉬어요", ran = false)
+                out += Line(lineDate, lineAt, who(r, date, lineDate), "조건(${EasyWhen.read(r.cond)?.say() ?: "수식"})이 맞지 않아 쉬어요", ran = false)
                 return
             }
-            val words = steps.joinToString(" · ") { LogicTryout.result(it, scope(date, at)) }
-            out += Line(date, at, r.name, (if (!holds) "‘아니면’으로 " else "") + words)
+            // Each act is said after the ones before it ran, as the phone runs them: '야간' 0 → 1, then the memo says 1번째.
+            val words = mutableListOf<String>()
+            val next = mutableListOf<LogicRule>()
             for (a in steps) {
+                words += LogicTryout.result(a, scope(date, at))
                 val before = byName[a.arg]?.let { ValueBook.now(book[it.name], it, date) }
                 val name = change(a, date, at?.plusMinutes((a.after ?: 0).toLong()), scope(date, at)) ?: continue
                 if (depth >= 3) continue
@@ -65,27 +71,51 @@ object LogicWeek {
                 val after = ValueBook.now(book[name], v, date)
                 l.rules.filter { it.on == RuleTrigger.VALUE && it.of == name }.forEach { vr ->
                     val goal = v.goal
-                    if (!vr.goal || (goal != null && before != null && before < goal && after >= goal)) fire(vr, date, at, depth + 1)
+                    if (!vr.goal || (goal != null && before != null && before < goal && after >= goal)) next += vr
                 }
             }
+            out += Line(lineDate, lineAt, who(r, date, lineDate), (if (!holds) "‘아니면’으로 " else "") + words.joinToString(" · "))
+            next.forEach { fire(it, date, at, depth + 1, shown) }
         }
 
-        for (i in 0 until days) {
+        // From the day before, so last night's 끝 this morning is in; only what happens inside the 7 days is shown.
+        val first = from.atStartOfDay()
+        val last = from.plusDays(days.toLong()).atStartOfDay()
+        val events = mutableListOf<Triple<LocalDateTime, LocalDate, LogicRule>>()
+        for (i in -1 until days) {
             val date = from.plusDays(i.toLong())
-            val today = mutableListOf<Pair<LocalDateTime, LogicRule>>()
+            val v = facts.values(date)
             for (r in l.rules) when (r.on) {
                 RuleTrigger.START, RuleTrigger.END, RuleTrigger.DAILY -> LogicTryout.rule(r, date, facts).let { t ->
-                    if (t.at != null && (t.runs || r.cond.isNotEmpty())) today += date.atTime(t.at) to r
+                    if (t.at != null && (t.runs || r.cond.isNotEmpty())) events += Triple(date.atTime(t.at).plusDays(if (overnight(r, v)) 1 else 0), date, r)
                 }
-                RuleTrigger.EVERY -> everyTimes(r, date, facts.values(date)).forEach { today += it to r }
+                RuleTrigger.EVERY -> everyTimes(r, date, v).forEach { events += Triple(it, date, r) }
                 else -> Unit
             }
-            today.sortedBy { it.first }.forEach { (at, r) -> fire(r, date, at.toLocalTime(), 0) }
         }
+        events.filter { !it.first.isBefore(first) && it.first.isBefore(last) }.sortedBy { it.first }
+            .forEach { (at, date, r) -> fire(r, date, at.toLocalTime(), 0, at) }
         val waiting = l.rules.filter { !LogicTryout.timed(it) && it.on != RuleTrigger.VALUE }.map { "${it.name}: ${it.sayWhen()} 돌아요" }
         val end = from.plusDays((days - 1).toLong())
         val values = l.values.associate { v -> v.name to v.show(book[v.name], end) }
         return Week(out.take(MAX_LINES), waiting, values)
+    }
+
+    /** The rule's name, and which night it belongs to when it shows the morning after (4차 PC: 끝나는 날 아래에). */
+    private fun who(r: LogicRule, date: LocalDate, shown: LocalDate): String = when {
+        shown == date -> r.name
+        r.on == RuleTrigger.END -> "${r.name}(전날 근무 끝)"
+        r.on == RuleTrigger.EVERY -> "${r.name}(전날 근무 중)"
+        else -> r.name
+    }
+
+    /** A 근무 끝 rule on a day whose shift ends after midnight (end not after start): it comes the next morning, as the runner keeps it. */
+    private fun overnight(r: LogicRule, v: Map<String, Any?>): Boolean {
+        if (r.on != RuleTrigger.END) return false
+        fun time(s: Any?) = (s as? String)?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
+        val start = time(v[FormulaName.START.ko]) ?: return false
+        val end = time(v[FormulaName.END.ko]) ?: return false
+        return !end.isAfter(start)
     }
 
     /**

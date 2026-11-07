@@ -1023,17 +1023,20 @@ fun LogicEditor(
 private fun FxStarters(logic: Logic, onChange: (Logic) -> Unit, facts: com.bamnat.core.formula.DayFactsBook?, day: LocalDate) {
     var week by remember { mutableStateOf(false) }
     var full by remember { mutableStateOf<String?>(null) }
+    var put by remember { mutableStateOf<String?>(null) }
     Text("예시로 시작", style = MaterialTheme.typography.labelLarge)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         com.bamnat.core.formula.FxExamples.ALL.forEach { e ->
             AssistChip(onClick = {
                 val next = com.bamnat.core.formula.FxExamples.into(logic, e)
                 if (next == null) full = "자리가 모자라요. 단추 ${Logic.MAX_BUTTONS}개·규칙 ${Logic.MAX_RULES}개·값 칸 ${com.bamnat.core.formula.LogicValue.MAX}개까지예요"
-                else { full = null; onChange(next); LogicRunner.say("‘${e.title}’ 예시를 넣었어요. ${e.say}") }
+                // 4차 PC: the runner's message is not shown in the 스튜디오, so the line stays right under the chips.
+                else { full = null; onChange(next); put = "‘${e.title}’ 예시를 넣었어요. ${e.say}" }
             }, label = { Text("${e.emoji} ${e.title}") })
         }
     }
     full?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    if (full == null) put?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     if (logic.rules.isNotEmpty() && facts != null) OutlinedButton(onClick = { week = true }) { Text("일주일 미리 돌려 보기") }
     if (week && facts != null) {
         val w = remember(logic, facts, day) { com.bamnat.core.formula.LogicWeek.run(logic, facts, day) }
