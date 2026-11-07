@@ -78,7 +78,7 @@ export function theme(s) {
   for (const [k, v] of Object.entries(s.screens ?? {})) scr.push(`${k}~${v}`);
   const alarmBg = p.alarmBg ?? (p.dark ? p.bg : "#0E0F14");
   const alarm = [`bg:${H(alarmBg)}`, `fl:${pa.alarm ?? (p.dark && pa.screen ? pa.screen : lg(180, alarmBg, p.alarmTo ?? "#1B1D27"))}`, `cd:${H(p.alarmCard ?? (p.dark ? p.card : "#262833"))}`, `ik:FFFFFFFF`,
-    `ac:${H(p.alarmAccent ?? (contrast(p.accent, alarmBg) < 3 ? "#F2F2F2" : p.accent))}`, `ft:${f.alarm ?? f.body}`];
+    `ac:${H(p.alarmAccent ?? (contrast(p.accent, alarmBg) < 3 ? "#F2F2F2" : p.accent))}`, `ft:${f.alarm ?? (f.body === "nanumpen" ? "gaegu" : f.body)}`]; // 막 깬 눈에 가는 펜 글씨는 안 읽혀요(렌더 확인): 같은 손글씨 결의 개구로
   if (s.photo && s.alarmPhoto !== false) alarm.push(`ph:${use(s.photo)}`, `dm:${Math.min(80, (s.dim ?? 20) + 40)}`);
   if (!s.screens?.alarm) scr.push(`alarm~${alarm.join("|")}`);
   const payStyles = style ? [style] : ["SHIFT", "DAY", "HOURLY", "FIELD"];

@@ -1822,7 +1822,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFFFFFFF|ac:FFF5E27A|ft:nanumpen"
+     "screens": "alarm~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFFFFFFF|ac:FFF5E27A|ft:gaegu"
     },
     {
      "kind": "alarms",

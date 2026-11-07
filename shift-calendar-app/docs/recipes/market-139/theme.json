@@ -18851,7 +18851,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "all~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFF2F2EA|ac:FFFFE08A|ft:nanumpen/alarm~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFFFFFFF|ac:FFFFE08A|ft:nanumpen",
+     "screens": "all~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFF2F2EA|ac:FFFFE08A|ft:nanumpen/alarm~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFFFFFFF|ac:FFFFE08A|ft:gaegu",
      "pay": "FIELD~tt:xl|pl:FF26352C|mn:FFFFE08A|rw:roomy|dy:1"
     },
     {

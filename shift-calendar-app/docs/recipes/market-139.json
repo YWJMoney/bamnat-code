@@ -6549,7 +6549,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFFFFFFF|ac:FFF5E27A|ft:nanumpen"
+     "screens": "alarm~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFFFFFFF|ac:FFF5E27A|ft:gaegu"
     },
     {
      "byRole": [
@@ -57107,7 +57107,7 @@
     {
      "kind": "screenLook",
      "pay": "FIELD~tt:xl|pl:FF26352C|mn:FFFFE08A|rw:roomy|dy:1",
-     "screens": "all~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFF2F2EA|ac:FFFFE08A|ft:nanumpen/alarm~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFFFFFFF|ac:FFFFE08A|ft:nanumpen"
+     "screens": "all~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFF2F2EA|ac:FFFFE08A|ft:nanumpen/alarm~bg:FF1F2B24|fl:tx.felt.FF1F2B24.12|cd:FF26352C|ik:FFFFFFFF|ac:FFFFE08A|ft:gaegu"
     },
     {
      "badge": "small",
