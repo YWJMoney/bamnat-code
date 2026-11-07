@@ -175,7 +175,9 @@ sealed interface MadeItem {
 }
 
 /** [PAYS-07] What a new item does to the month: the amount it adds (negative when it takes off) and how often it came up. */
-data class ItemEffect(val amount: Long, val times: Int)
+data class ItemEffect(val amount: Long, val times: Int,
+    /** 1.39 [PAYX-56] PC a483ca15: what it takes off 실수령 after tax (사택관리비), which the 급여 total does not show. */
+    val afterTax: Long = 0)
 
 /** The builder's answers; [made] turns them into the item, with a stand-in amount for [probe] so the count shows early. */
 @Stable
@@ -1032,8 +1034,12 @@ private fun EffectBar(
             val per = draft.kind == ItemKind.PER_SHIFT || draft.kind == ItemKind.PER_DAY || draft.kind == ItemKind.PER_HOUR || draft.kind == ItemKind.PREMIUM ||
                 draft.kind == ItemKind.DEDUCT && draft.deductWay != DeductWay.MONTHLY
             Column(Modifier.semantics(mergeDescendants = true) {}) {
-                Text("${month.monthValue}월 급여에", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 1.39 [PAYX-56] PC a483ca15 사용성: a 세후 공제 is '실수령 −50,000원', not '급여에 +0원'.
+                val takeHomeOnly = effect != null && effect.amount == 0L && effect.afterTax != 0L
+                Text("${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else "급여에"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
+                    takeHomeOnly -> Text("−" + won(abs(effect!!.afterTax)) + " (세금 뗀 뒤 빼요)",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + if (per) " · ${effect.times}번" else "",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
