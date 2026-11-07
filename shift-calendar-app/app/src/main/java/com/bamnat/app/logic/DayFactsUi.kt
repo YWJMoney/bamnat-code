@@ -111,6 +111,8 @@ fun dayFactsOf(
     extras: FormulaExtras = FormulaExtras(),
     /** 1.39 [LINK-02] 수면 기록 (잠잔시간). */
     sleeps: List<com.bamnat.core.sleep.SleepEntry> = emptyList(),
+    /** 1.39 [LINK-03] 근무 입력·탭 연동 이름 (추가근무·대근·남은할일·잠잔시간 …) are read: 프로, 하루 써 보기, 입혀 보기. */
+    link: Boolean = true,
 ): DayFactsBook {
     // 1.39 [LINK-02] Minutes slept by the day the sleep ended.
     val slept = sleeps.filter { it.end != null }.groupBy { it.wakeDate!! }.mapValues { (_, l) -> l.sumOf { it.minutes ?: 0L } }
@@ -175,6 +177,7 @@ fun dayFactsOf(
             rows.count { it.kind == com.bamnat.core.memo.TaskList.Kind.TODAY && !it.done } to rows.count { it.kind == com.bamnat.core.memo.TaskList.Kind.LATE }
         },
         sleep = { d -> slept[d] },
+        hidden = if (link) emptySet() else com.bamnat.core.formula.FxPro.LINK_NAMES,
     )
 }
 
@@ -196,10 +199,13 @@ fun AppContainer.formulaExtras(cal: String): Flow<FormulaExtras> {
 fun AppContainer.dayFactsFlow(): Flow<DayFactsBook> = calendars.active.flatMapLatest { cal ->
     val s = scopeOf(cal)
     val book = combine(s.schedule.live, memoRepository.memos.map { list -> list.filter { it.showsOn(cal) } }, s.money.book, s.settings, formulaExtras(cal)) { snap, memos, money, settings, extras ->
-        { sleeps: List<com.bamnat.core.sleep.SleepEntry> -> dayFactsOf(snap, memos, money, settings.workStyle, com.bamnat.core.time.Today.date(), extras, sleeps) }
+        { sleeps: List<com.bamnat.core.sleep.SleepEntry>, link: Boolean -> dayFactsOf(snap, memos, money, settings.workStyle, com.bamnat.core.time.Today.date(), extras, sleeps, link) }
     }
     // 1.39 [LINK-02] 잠잔시간 reads the phone's 수면 기록 (one for the phone, whatever calendar is shown).
-    combine(book, sleepRepository.recent(60)) { make, sleeps -> make(sleeps) }
+    // 1.39 [LINK-03] The 연동 names are read with 프로, a 하루 써 보기 or while a work is tried on.
+    combine(book, sleepRepository.recent(60), featureGate.state, FxAccess.taste(this), com.bamnat.app.ui.recipe.LiveTryOn.trial) { make, sleeps, _, _, trial ->
+        make(sleeps, trial != null || FxAccess.on(this))
+    }
 }.flowOn(Dispatchers.Default)
 
 @Composable
@@ -210,7 +216,8 @@ fun rememberDayFacts(snap: ScheduleSnapshot?, memos: List<Memo>, money: MoneyBoo
     val extras by extrasFlow.collectAsState(FormulaExtras())
     val sleepFlow = remember(c) { c.sleepRepository.recent(60) }
     val sleeps by sleepFlow.collectAsState(emptyList())
-    return remember(snap, memos, money, style, today, extras, sleeps) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps) } }
+    val link = rememberLinkOn(c)
+    return remember(snap, memos, money, style, today, extras, sleeps, link) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps, link) } }
 }
 
 /**

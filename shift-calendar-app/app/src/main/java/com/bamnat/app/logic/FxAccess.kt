@@ -1,6 +1,8 @@
 package com.bamnat.app.logic
 
 import android.content.Context
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.bamnat.app.AppContainer
 import com.bamnat.app.tier.Feature
 import com.bamnat.core.formula.FxPro
@@ -62,7 +64,7 @@ object FxAccess {
     /** The 프로 기능 장치 a whole work carries in its 규칙·단추 piece (none: free to put in and to send up). */
     fun partsOf(r: com.bamnat.core.recipe.Recipe): Set<FxPro.Part> =
         (r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) } +
-            r.pieces.flatMap { FxPro.looks(it.kind.key, it.values) }).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
+            r.pieces.flatMap { FxPro.looks(it.kind.key, it.values) + FxPro.links(it.kind.key, it.values) }).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
 
     /** What runs of [full] now. */
     fun runnable(c: AppContainer, full: Logic, now: Instant = Today.instant()): Logic {
@@ -203,4 +205,16 @@ object FxValues {
         c.appContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(ALL).apply()
         _all.value = emptyMap()
     }
+}
+
+/**
+ * 1.39 [LINK-03] Whether 근무 입력·탭 연동 꾸밈 (FxPro.Part.LINK) is drawn and read now: [FxAccess.on] (프로, 하루 써 보기, 기능까지 써 보기)
+ * or a work being tried on ([com.bamnat.app.ui.recipe.LiveTryOn], free like every 입혀 보기). Followed as each of them changes.
+ */
+@androidx.compose.runtime.Composable
+fun rememberLinkOn(c: AppContainer): Boolean {
+    val gate by c.featureGate.state.collectAsState()
+    val taste by androidx.compose.runtime.remember(c) { FxAccess.taste(c) }.collectAsState()
+    val trial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsState()
+    return androidx.compose.runtime.remember(gate, taste, trial) { trial != null || FxAccess.on(c) }
 }

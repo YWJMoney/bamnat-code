@@ -16,7 +16,7 @@ import { DAY, HOUR } from "./units.js";
 import { careGate, careRepeat } from "./community-care.js";
 import { makerMarks, markFields } from "./maker-mark.js";
 import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
-import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys } from "./formula.js";
+import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys, fxReadsLink } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 import { waitingPhotos } from "./photo-guard.js";
@@ -1279,7 +1279,7 @@ export function toolsOf(body, scope) {
  * 1.39 [FX-01] 프로 문 (core formula/FxPro.uses, the same list in the same order): the 1.39 기능 장치 a work's 규칙·단추 use, each needing 프로
  * to put in and to use. Empty when everything in it is free (모양, 1.38까지의 규칙·단추).
  */
-export const FX_PARTS = ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "reach", "look"];
+export const FX_PARTS = ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "reach", "look", "link"];
 /** core LogicVerb.NEW_SCREENS: screens a 화면 열기 reaches from 1.39 on ([FX-21]). */
 const FX_NEW_SCREENS = ["sleep", "night"];
 /** core FxPro.NEW_LOOKS: 1.39 새 화면 모양 부품 (piece kind, or a prefix ending in "."), [FX-22]. */
@@ -1296,6 +1296,11 @@ const FX_HISTORY = ["PAST", "STREAK", "TOTAL", "MEAN", "SINCE"];
  * 사용자 2026-11-07 18:38 '하나씩 무료 맛보기' (core FxPro.TASTE): the first 값 칸 when it is a number, and the first 단추 위젯 button
  * counting it (or doing a 1.38 thing), are free; the rest of the 1.39 기능 장치 is 프로.
  */
+/** core FxPro.LINK_STATES (DayWork.STATES): 대근·잔업·특근·연차·직접 바꾼 날. */
+const FX_LINK_STATES = ["leave", "extra", "cover", "edited"];
+const fxLinkLine = (l) => !!l && typeof l === "object" && (FX_LINK_STATES.includes(l.on) || fxReadsLink(l.when) ||
+  Object.values(l).some((v) => v && typeof v === "object" && typeof v.fx === "string" && fxReadsLink(v.fx)));
+
 export function fxPartsOf(body) {
   let rec;
   try {
@@ -1305,6 +1310,7 @@ export function fxPartsOf(body) {
   }
   const out = new Set();
   const reads = (src, text, add) => {
+    if (fxReadsLink(src, text)) add("link");
     const calls = fxCallKeys(src, text);
     if (calls.includes("VALUE")) add("valueRead");
     if (calls.some((c) => FX_HISTORY.includes(c))) add("history");
@@ -1319,6 +1325,9 @@ export function fxPartsOf(body) {
   };
   for (const p of rec?.pieces ?? []) {
     if (fxNewLook(p?.kind) || (p?.kind === "parts" && (p.parts ?? []).some((x) => fxNewLook(x?.id)))) add("look");
+    // 1.39 [LINK-03] core FxPro.links: 부품 꾸미기 lines and 꾸밈 층 items on the new day states or reading the new names.
+    if (p?.kind === "parts" && (p.parts ?? []).some(fxLinkLine)) add("link");
+    if (p?.kind === "decor" && (p.items ?? []).some((x) => FX_LINK_STATES.includes(x?.on))) add("link");
     if (p?.kind !== "logic") continue;
     const bs = p.buttons ?? [];
     const rs = p.rules ?? [];

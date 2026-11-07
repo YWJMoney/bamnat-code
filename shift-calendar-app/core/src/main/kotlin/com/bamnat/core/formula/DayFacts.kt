@@ -37,6 +37,8 @@ class DayFactsBook(
     private val tasks: (LocalDate) -> Pair<Int, Int>? = { null },
     /** 1.39 [LINK-02] Minutes slept in the sleeps that ended on the day (수면 기록); null when there is none. */
     private val sleep: (LocalDate) -> Long? = { null },
+    /** 1.39 [LINK-03] Names left unread here (없음): [FxPro.LINK_NAMES] without 프로 (the 1.39 연동 장치 rest; the day itself reads the same). */
+    private val hidden: Set<String> = emptySet(),
 ) {
     private val ahead: MoneyFacts? by lazy { runCatching(moneyFacts).getOrNull() }
     /** A day's work as the calendar resolved it. [role] is [com.bamnat.core.recipe.ShiftRole]'s key. */
@@ -72,6 +74,7 @@ class DayFactsBook(
         var pay: Map<String, Any?>? = null
         object : FormulaScope {
             override fun get(name: String): Value? {
+                if (name in hidden) return null
                 if (name in MONEY_AHEAD) return Value.of(aheadValue(name, date, plain))
                 // 1.39 [LINK-02] 할 일 is a walk over every memo: only when a formula reads it, once a day.
                 if (name == FormulaName.TASKS_LEFT.ko || name == FormulaName.TASKS_LATE.ko) return Value.of(taskValues(date)[name])
@@ -137,7 +140,7 @@ class DayFactsBook(
     }
 
     /** Every value of the day, 급여·할 일 included. */
-    fun values(date: LocalDate): Map<String, Any?> = plainValues(date) + payValues(date) + taskValues(date)
+    fun values(date: LocalDate): Map<String, Any?> = (plainValues(date) + payValues(date) + taskValues(date)).let { if (hidden.isEmpty()) it else it - hidden }
 
     private fun plainValues(date: LocalDate): Map<String, Any?> {
         val s = shifts(date)
