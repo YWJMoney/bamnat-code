@@ -40,7 +40,12 @@ enum class CalendarBoard(val key: String, val label: String, val what: String) {
 }
 
 /** [TAB-04] One stretch of a 타임라인 bar: minutes from this day's midnight, [from] to [to] (to ≤ 1440). */
-data class TimeSpan(val from: Int, val to: Int, val carried: Boolean = false) {
+data class TimeSpan(
+    val from: Int, val to: Int, val carried: Boolean = false,
+    /** 1.39 [LINK-01] 잔업·특근·대근 on the clock (its kind's colour [colorArgb]), drawn beside the shift: a 야간 대근 on a day off has a bar too. */
+    val extra: Boolean = false,
+    val colorArgb: Long? = null,
+) {
     val minutes: Int get() = to - from
 }
 
@@ -56,6 +61,17 @@ object Timeline {
         yesterday?.let { y -> carry(y)?.let { if (it > 0) out += TimeSpan(0, minOf(it, DAY), carried = true) } }
         today?.let { t ->
             if (t.date == date) own(t)?.let { (s, e) -> if (e > s) out += TimeSpan(s, e) }
+        }
+        // [LINK-01] 1.39 Extra work with clock times, yesterday's carried past midnight too.
+        val midnight = date.atStartOfDay()
+        for (d in listOfNotNull(yesterday, today?.takeIf { it.date == date })) for (e in d.extras) {
+            val f = e.from ?: continue
+            val t = e.to ?: continue
+            val a = java.time.Duration.between(midnight, f).toMinutes().toInt()
+            val b = java.time.Duration.between(midnight, t).toMinutes().toInt()
+            val s = a.coerceIn(0, DAY)
+            val x = b.coerceIn(0, DAY)
+            if (x > s) out += TimeSpan(s, x, carried = a < 0, extra = true, colorArgb = (e.covered?.colorArgb ?: e.kind.colorArgb))
         }
         return out
     }

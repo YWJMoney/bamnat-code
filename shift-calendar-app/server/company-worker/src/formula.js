@@ -113,6 +113,8 @@ export const FORMULA_NAMES = [
   ["근무", "shift"], ["근무종류", "shiftKind"], ["근무시작", "shiftStart"], ["근무끝", "shiftEnd"], ["근무시간", "hours"], ["쉬는날", "isOff"],
   ["휴가", "leave"], ["이번주야간", "weekNights"], ["이번주근무시간", "weekHours"], ["이달야간", "monthNights"], ["이달근무시간", "monthHours"],
   ["연속근무", "streak"],
+  ["추가근무", "extraWork"], ["추가근무시간", "extraHours"], ["근무표시간", "shiftHours"], ["대근", "isCover", ["대타"]], ["직접바꿈", "isEdited"],
+  ["남은할일", "tasksLeft"], ["늦은할일", "tasksLate"], ["잠잔시간", "sleptHours", ["수면시간"]], ["근무알람", "shiftAlarm"],
   ["메모수", "memoCount"], ["메모", "memo"], ["꼬리표", "tags", ["태그"]], ["체크율", "checkRate"], ["남은체크", "checksLeft"],
   ["지출", "spend"], ["수입", "income"], ["지출분류", "spendKinds"], ["이달지출", "monthSpend"], ["이달수입", "monthIncome"],
   ["오늘쓸돈", "spendToday", ["하루쓸돈"]], ["월급까지", "daysToPay", ["입금까지"]], ["예상잔액", "balanceAhead"], ["봉투모은돈", "envelopeSaved"], ["봉투진행", "envelopeRate"], ["지출근무시간", "spendHours"],

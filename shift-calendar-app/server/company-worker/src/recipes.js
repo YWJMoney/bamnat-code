@@ -150,7 +150,7 @@ export const PART_IDS = [
   "night", "night.date", "night.clock", "night.line", "night.card", "night.button", "night.morning",
   "widget.task", "widget.task.check", "widget.task.add",
 ];
-const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "late", "done", "sel", "dark"];
+const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "leave", "extra", "cover", "edited", "in", "out", "sat", "sun", "holiday", "dim", "today", "late", "done", "sel", "dark"];
 const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
   : PART_IDS.includes(id.slice(0, id.lastIndexOf("."))) ? id.slice(0, id.lastIndexOf(".")) : "app");
 const PART_CHILDREN = {};
@@ -1398,7 +1398,12 @@ const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
  * 1.39 [TASK-07] Parts and states an older app cannot read (its RecipeCodec refuses the whole recipe on a name it does not know), each
  * with the first versionCode that reads it. A maker's recipe that uses one is listed only to apps that new ([partsMinApp] → min_app).
  */
-export const PARTS_SINCE = { ids: { "widget.task": 53, "widget.task.check": 53, "widget.task.add": 53 }, states: { late: 53, done: 53 } };
+export const PARTS_SINCE = {
+  ids: { "widget.task": 53, "widget.task.check": 53, "widget.task.add": 53 },
+  // 1.39 [LINK-01] 근무 입력 상태 (연차·잔업·특근·대근·직접 바꾼 날): parts lines and 꾸밈 층 items alike.
+  states: { late: 53, done: 53, leave: 53, extra: 53, cover: 53, edited: 53 },
+};
+const DECOR_SINCE = { leave: 53, extra: 53, cover: 53, edited: 53 };
 
 /** 1.39 [TASK-07] The versionCode a recipe's parts lines need ([PARTS_SINCE]), or null when any app reads them. */
 export function partsMinApp(recipe) {
@@ -1408,6 +1413,7 @@ export function partsMinApp(recipe) {
     if (!v || typeof v !== "object") return;
     if (typeof v.id === "string" && PARTS_SINCE.ids[v.id]) need = Math.max(need, PARTS_SINCE.ids[v.id]);
     if (typeof v.on === "string" && PARTS_SINCE.states[v.on] && typeof v.id === "string" && PART_IDS.includes(v.id)) need = Math.max(need, PARTS_SINCE.states[v.on]);
+    if (typeof v.on === "string" && DECOR_SINCE[v.on] && typeof v.at === "string") need = Math.max(need, DECOR_SINCE[v.on]);
     Object.values(v).forEach(walk);
   };
   walk(recipe);

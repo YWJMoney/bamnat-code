@@ -33,6 +33,10 @@ class DayFactsBook(
      * it), for `값("물 잔")` on each day and 지난값·연속·값합계·지난시간.
      */
     private val values: (String) -> ValueSeries? = { null },
+    /** 1.39 [LINK-02] 할 일: (not finished that day, late as of that day), worked out by the app's 할 일 list (core memo TaskList). */
+    private val tasks: (LocalDate) -> Pair<Int, Int>? = { null },
+    /** 1.39 [LINK-02] Minutes slept in the sleeps that ended on the day (수면 기록); null when there is none. */
+    private val sleep: (LocalDate) -> Long? = { null },
 ) {
     private val ahead: MoneyFacts? by lazy { runCatching(moneyFacts).getOrNull() }
     /** A day's work as the calendar resolved it. [role] is [com.bamnat.core.recipe.ShiftRole]'s key. */
@@ -44,6 +48,13 @@ class DayFactsBook(
         val minutes: Int = 0,
         val off: Boolean = false,
         val leave: String? = null,
+        /** 1.39 [LINK-01] 잔업·특근·대근 that day: their kinds and minutes ([minutes] already counts them), a 대근, a day changed by hand. */
+        val extras: List<String> = emptyList(),
+        val extraMinutes: Int = 0,
+        val cover: Boolean = false,
+        val edited: Boolean = false,
+        /** 1.39 [LINK-02] A work alarm rings that day. */
+        val alarm: Boolean = false,
     )
 
     /** A day's money: in, out and the kinds of what went out. */
@@ -62,6 +73,8 @@ class DayFactsBook(
         object : FormulaScope {
             override fun get(name: String): Value? {
                 if (name in MONEY_AHEAD) return Value.of(aheadValue(name, date, plain))
+                // 1.39 [LINK-02] 할 일 is a walk over every memo: only when a formula reads it, once a day.
+                if (name == FormulaName.TASKS_LEFT.ko || name == FormulaName.TASKS_LATE.ko) return Value.of(taskValues(date)[name])
                 if (name == FormulaName.MONTH_PAY.ko || name == FormulaName.HOUR_PAY.ko) {
                     val p = pay ?: payValues(date).also { pay = it }
                     return Value.of(p[name])
@@ -114,8 +127,17 @@ class DayFactsBook(
         }
     }
 
-    /** Every value of the day, 급여 included. */
-    fun values(date: LocalDate): Map<String, Any?> = plainValues(date) + payValues(date)
+    private val taskCache = HashMap<LocalDate, Map<String, Any?>>()
+
+    private fun taskValues(date: LocalDate): Map<String, Any?> = synchronized(taskCache) {
+        taskCache.getOrPut(date) {
+            val t = runCatching { tasks(date) }.getOrNull()
+            mapOf(FormulaName.TASKS_LEFT.ko to (t?.first ?: 0), FormulaName.TASKS_LATE.ko to (t?.second ?: 0))
+        }
+    }
+
+    /** Every value of the day, 급여·할 일 included. */
+    fun values(date: LocalDate): Map<String, Any?> = plainValues(date) + payValues(date) + taskValues(date)
 
     private fun plainValues(date: LocalDate): Map<String, Any?> {
         val s = shifts(date)
@@ -155,6 +177,13 @@ class DayFactsBook(
             FormulaName.HOURS.ko to hoursOf(s),
             FormulaName.OFF.ko to (s == null || s.off),
             FormulaName.LEAVE.ko to s?.leave.orEmpty(),
+            FormulaName.EXTRA.ko to s?.extras.orEmpty().take(Formula.MAX_LIST),
+            FormulaName.EXTRA_HOURS.ko to (s?.extraMinutes ?: 0) / 60.0,
+            FormulaName.SHIFT_HOURS.ko to (s?.let { if (it.off) 0.0 else (it.minutes - it.extraMinutes).coerceAtLeast(0) / 60.0 } ?: 0.0),
+            FormulaName.COVER.ko to (s?.cover == true),
+            FormulaName.EDITED.ko to (s?.edited == true),
+            FormulaName.ALARM.ko to (s?.alarm == true),
+            FormulaName.SLEPT.ko to runCatching { sleep(date) }.getOrNull()?.let { Math.round(it / 6.0) / 10.0 },
             FormulaName.WEEK_NIGHTS.ko to week.count(::isNight),
             FormulaName.WEEK_HOURS.ko to week.sumOf(::hoursOf),
             FormulaName.MONTH_NIGHTS.ko to (endOfMonth?.first ?: 0),

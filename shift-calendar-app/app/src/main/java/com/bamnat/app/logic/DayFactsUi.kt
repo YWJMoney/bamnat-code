@@ -109,7 +109,12 @@ fun dayFactsOf(
     style: WorkStyle?,
     today: LocalDate,
     extras: FormulaExtras = FormulaExtras(),
+    /** 1.39 [LINK-02] 수면 기록 (잠잔시간). */
+    sleeps: List<com.bamnat.core.sleep.SleepEntry> = emptyList(),
 ): DayFactsBook {
+    // 1.39 [LINK-02] Minutes slept by the day the sleep ended.
+    val slept = sleeps.filter { it.end != null }.groupBy { it.wakeDate!! }.mapValues { (_, l) -> l.sumOf { it.minutes ?: 0L } }
+    val live = memos.filter { !it.inTrash }
     val byDate = memos.filter { it.date != null && !it.inTrash }.groupBy { it.date!! }
     val cash = money.entries.groupBy { it.date }.mapValues { (_, es) ->
         DayFactsBook.DayCash(
@@ -127,16 +132,23 @@ fun dayFactsOf(
             synchronized(shifts) {
                 shifts.getOrPut(d) {
                     val r = runCatching { snap.resolver.resolve(d) }.getOrNull() ?: return@getOrPut null
-                    val t = r.shiftType ?: r.coveredShift ?: return@getOrPut null
-                    val minutes = if (t.isOff) 0 else r.scheduledMinutes
+                    // [LINK-01] 1.39 The day as the calendar's cell has it (com.bamnat.core.schedule.DayWork): before, a 교대 day off is itself a
+                    // kind (비·휴), so `shiftType ?: coveredShift` never reached the 대근 and 잔업·특근 hours were left out of 근무시간.
+                    val w = com.bamnat.core.schedule.DayWork.of(r, snap.hasPattern)
+                    val name = w.name ?: return@getOrPut null
                     DayFactsBook.DayShift(
-                        name = t.name,
-                        role = ShiftRole.guess(t.name, t.isOff, r.start?.hour ?: t.start?.hour, minutes).key,
-                        start = r.start?.format(HM),
-                        end = r.end?.format(HM),
-                        minutes = minutes,
-                        off = t.isOff || r.leave?.isFullDay == true,
+                        name = name,
+                        role = (w.role ?: ShiftRole.OTHER).key,
+                        start = w.start?.format(HM),
+                        end = w.end?.format(HM),
+                        minutes = if (w.worked) w.totalMinutes else 0,
+                        off = w.off,
                         leave = r.leave?.kind?.label,
+                        extras = w.extraKinds,
+                        extraMinutes = w.extraMinutes,
+                        cover = w.cover,
+                        edited = w.edited,
+                        alarm = w.alarm,
                     )
                 }
             }
@@ -157,6 +169,12 @@ fun dayFactsOf(
         },
         // 1.39 [FX-03] 값 칸, live (a widget's +1 shows at once in a 값() formula).
         values = FxValues::series,
+        // 1.39 [LINK-02] 할 일 as the 할 일 위젯 lists them (core TaskList): not finished that day, and late as of that day.
+        tasks = { d ->
+            val rows = com.bamnat.core.memo.TaskList.of(live, d)
+            rows.count { it.kind == com.bamnat.core.memo.TaskList.Kind.TODAY && !it.done } to rows.count { it.kind == com.bamnat.core.memo.TaskList.Kind.LATE }
+        },
+        sleep = { d -> slept[d] },
     )
 }
 
@@ -177,9 +195,11 @@ fun AppContainer.formulaExtras(cal: String): Flow<FormulaExtras> {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 fun AppContainer.dayFactsFlow(): Flow<DayFactsBook> = calendars.active.flatMapLatest { cal ->
     val s = scopeOf(cal)
-    combine(s.schedule.live, memoRepository.memos.map { list -> list.filter { it.showsOn(cal) } }, s.money.book, s.settings, formulaExtras(cal)) { snap, memos, money, settings, extras ->
-        dayFactsOf(snap, memos, money, settings.workStyle, com.bamnat.core.time.Today.date(), extras)
+    val book = combine(s.schedule.live, memoRepository.memos.map { list -> list.filter { it.showsOn(cal) } }, s.money.book, s.settings, formulaExtras(cal)) { snap, memos, money, settings, extras ->
+        { sleeps: List<com.bamnat.core.sleep.SleepEntry> -> dayFactsOf(snap, memos, money, settings.workStyle, com.bamnat.core.time.Today.date(), extras, sleeps) }
     }
+    // 1.39 [LINK-02] 잠잔시간 reads the phone's 수면 기록 (one for the phone, whatever calendar is shown).
+    combine(book, sleepRepository.recent(60)) { make, sleeps -> make(sleeps) }
 }.flowOn(Dispatchers.Default)
 
 @Composable
@@ -188,7 +208,9 @@ fun rememberDayFacts(snap: ScheduleSnapshot?, memos: List<Memo>, money: MoneyBoo
     val cal by c.calendars.active.collectAsState()
     val extrasFlow = remember(c, cal) { c.formulaExtras(cal) }
     val extras by extrasFlow.collectAsState(FormulaExtras())
-    return remember(snap, memos, money, style, today, extras) { snap?.let { dayFactsOf(it, memos, money, style, today, extras) } }
+    val sleepFlow = remember(c) { c.sleepRepository.recent(60) }
+    val sleeps by sleepFlow.collectAsState(emptyList())
+    return remember(snap, memos, money, style, today, extras, sleeps) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps) } }
 }
 
 /**

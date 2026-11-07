@@ -111,7 +111,11 @@ object BlueprintParts {
 
     /** The states a line may be for (`on`), in the order they lay over each other. */
     val STATES: List<String> = listOf(
-        "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today",
+        "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other",
+        // 1.39 [LINK-01] 근무 입력 그대로 (com.bamnat.core.schedule.DayWork): 연차·반차, 잔업·특근·대근이 있는 날, 대근, 직접 바꾼 날. Laid right
+        // after the kind of work, so 토·일·공휴일·오늘 still show over them.
+        "leave", "extra", "cover", "edited",
+        "in", "out", "sat", "sun", "holiday", "dim", "today",
         // 1.39 [TASK-07] 할 일 위젯의 한 줄: 늦은 할 일, 끝낸 할 일 (끝냄이 늦음 위에).
         "late", "done", "sel",
         // [BLU-12] 어두운 화면: not a state a part asks for, it is laid over the part's own line once for the whole app ([Blueprint.forDark]).

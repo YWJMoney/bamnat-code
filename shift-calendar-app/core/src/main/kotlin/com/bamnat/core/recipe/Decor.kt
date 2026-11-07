@@ -120,6 +120,7 @@ data class DecorItem(
             o == "sun" -> day.dayOfWeek == 7
             o == "dim" -> day.dim
             o.startsWith("role.") -> day.role == o.removePrefix("role.")
+            o in Decor.WORK_ONS -> o in day.work
             o.startsWith("w") -> o.drop(1).toIntOrNull() == day.dayOfWeek
             o.startsWith("m") -> o.drop(1).split('d').let { it.size == 2 && it[0].toIntOrNull() == day.month && it[1].toIntOrNull() == day.dayOfMonth }
             o.startsWith("d") -> o.drop(1).toIntOrNull() == day.dayOfMonth
@@ -142,6 +143,8 @@ data class DecorItem(
 /** What a day cell's decorations look at. [dayOfWeek] is 1 Monday … 7 Sunday; [role] a [ShiftRole] key. */
 data class DecorDay(
     val month: Int, val dayOfMonth: Int, val dayOfWeek: Int, val role: String?, val today: Boolean, val holiday: Boolean, val dim: Boolean = false,
+    /** 1.39 [LINK-01] The day's 근무 입력 states (`leave`·`extra`·`cover`·`edited`, [com.bamnat.core.schedule.DayWork.states]). */
+    val work: Set<String> = emptySet(),
 )
 
 enum class DecorKind(val key: String, val label: String) {
@@ -212,8 +215,11 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
             else -> "cal"
         }
 
+        /** 1.39 [LINK-01] 근무 입력 states a decoration may stand on (edited the day's work by hand, 대근 …). */
+        val WORK_ONS = setOf("leave", "extra", "cover", "edited")
+
         /** The days a cell decoration may stand on: the part states and days of its own. */
-        private val ON = Regex("^(today|sat|sun|holiday|dim|role\\.(day|eve|night|long|off|other)|d([1-9]|[12][0-9]|3[01])|w[1-7]|m([1-9]|1[0-2])d([1-9]|[12][0-9]|3[01]))$")
+        private val ON = Regex("^(today|sat|sun|holiday|dim|role\\.(day|eve|night|long|off|other)|leave|extra|cover|edited|d([1-9]|[12][0-9]|3[01])|w[1-7]|m([1-9]|1[0-2])d([1-9]|[12][0-9]|3[01]))$")
         fun onProblem(s: String): String? = if (s.isEmpty() || ON.matches(s)) null else "on"
         fun fontProblem(s: String): String? = if (s.isEmpty() || FONT.matches(s)) null else "font"
         private val PHOTO = Regex("^[0-9a-f]{16}$")
@@ -230,6 +236,10 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
             on == "sat" -> "토요일"
             on == "sun" -> "일요일"
             on == "dim" -> "다른 달 날"
+            on == "leave" -> "연차·반차 날"
+            on == "extra" -> "잔업·특근·대근 날"
+            on == "cover" -> "대근 날"
+            on == "edited" -> "직접 바꾼 날"
             on.startsWith("role.") -> ShiftRole.entries.firstOrNull { it.key == on.removePrefix("role.") }?.label?.let { "$it 근무 날" } ?: on
             on.startsWith("w") -> listOf("월", "화", "수", "목", "금", "토", "일").getOrNull((on.drop(1).toIntOrNull() ?: 0) - 1)?.let { "매주 ${it}요일" } ?: on
             on.startsWith("m") -> on.drop(1).split('d').let { "매년 ${it[0]}월 ${it.getOrNull(1)}일" }

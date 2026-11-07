@@ -648,7 +648,9 @@ private fun GlyphGrid(list: List<DecorGlyphs.Glyph>, cell: @Composable (DecorGly
 }
 
 /** The days a cell decoration may stand on, in the order they are offered. */
-private val ON_CHOICES: List<String?> = listOf(null, "today", "holiday", "sat", "sun") + ShiftRole.entries.map { "role." + it.key }
+private val ON_CHOICES: List<String?> = listOf(null, "today", "holiday", "sat", "sun") + ShiftRole.entries.map { "role." + it.key } +
+    // 1.39 [LINK-01] 근무 입력에 따라: 잔업·특근·대근, 대근, 연차·반차, 직접 바꾼 날.
+    listOf("extra", "cover", "leave", "edited")
 
 /** 고치기: the picked decorations' look, place and size; several picked are changed together. */
 @OptIn(ExperimentalLayoutApi::class)
