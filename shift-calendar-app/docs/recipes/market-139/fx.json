@@ -1,0 +1,5063 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 회복 스테이션",
+   "summary": "홈 화면에서 물·잠을 한 번에 적고, 야간 끝엔 회복 순서가 알림으로 오는 교대 프로",
+   "desc": "깊은 남색 화면에 상태등처럼 근무가 떠요. 홈 화면 단추로 물 한 잔·잠들기를 앱을 열지 않고 적고, 물 6잔을 채우면 막대가 차올라요. 야간이 끝나면 '잠들기' 단추가 달린 알림이 오고, 알람을 끄면 몇 시간 잤는지 알려 줘요. 이달 야간 수는 저절로 세어 메모에 남아요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 홈 화면 물·잠 단추(목표 막대·지난 7일)\n· 야간 끝 알림 속 '잠들기' 단추\n· 알람 끄면 잔 시간\n· 이달 야간 자동 세기\n· 근무 중 2시간마다 물(근무 시간에만)\n· 상태등 칸·궤도 머리\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF070B1A|fl:rg.80.0.140.FF1B2A6B,FF070B1A@75|cd:FF0F1630|ik:FFE6ECFF|ac:FF7CF0FF|ft:ibmplexsanskr/alarm~bg:FF070B1A|fl:rg.80.0.140.FF1B2A6B,FF070B1A@75|cd:FF0F1630|ik:FFFFFFFF|ac:FF7CF0FF|ft:ibmplexsanskr",
+     "pay": "SHIFT~tt:l|pl:FF0F1630|mn:FF7CF0FF|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "looks": "bg:FF0F1630|ba:80|cr:12|dp:tl|ds:m|dw:b|mk:dot|mp:below|pd:2/cr:12|dp:tl|ds:m|dw:b|dc:FFB49CFF|mk:dot|mp:below|pd:2|fl:lg.180.10B49CFF,40B49CFF/cr:12|dp:tl|ds:m|dc:FF4B557A|mk:none|pd:2",
+     "pattern": "shift:night=1,off=2"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4286378239,
+     "sat": 4287608063,
+     "sun": 4294937242,
+     "holiday": 4294937242,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4286378239,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4294951546,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4290026751,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4282008422,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "photoLook",
+     "icons": [
+      {
+       "role": "day",
+       "image": "e686f18708633fd9"
+      },
+      {
+       "role": "eve",
+       "image": "f2e9691b4d2b7ded"
+      },
+      {
+       "role": "night",
+       "image": "57bb392916950948"
+      },
+      {
+       "role": "off",
+       "image": "972e60ab0c6a3cf7"
+      }
+     ],
+     "corners": "round"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "list",
+     "card": "own",
+     "cardColor": 4279178800,
+     "border": "thin",
+     "corner": 18,
+     "lines": 3,
+     "title": "m",
+     "bold": true,
+     "font": "ibmplexsanskr",
+     "date": true,
+     "bg": 4278651674
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "dot",
+     "income": 4286378176,
+     "expense": 4294941352,
+     "dayHead": "line"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279178800,
+     "ink": 4293324031,
+     "corner": 24,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4286378239,
+     "motion": "tn:fade|td:pulse|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.00070B1A",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "orbit",
+       "weight": 800,
+       "ink": 4293324031,
+       "track": 2
+      },
+      {
+       "id": "app.tabs",
+       "paint": "gl.F00B1124.20",
+       "r": 26,
+       "out": 10,
+       "shadow": 4,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280693866
+      },
+      {
+       "id": "app.tab",
+       "ink": 4287865032
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4286378239,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "paint": "gl.E60F1630.18",
+       "r": 18,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280166994
+      },
+      {
+       "id": "app.button",
+       "fill": 4286378239,
+       "ink": 4278456858,
+       "r": 20,
+       "weight": 800,
+       "font": "orbit"
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280166994,
+       "ink": 4293324031
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4279178800,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "lg.90.227CF0FF,18B49CFF,00070B1A",
+       "r": 18,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "orbit",
+       "size": 26,
+       "weight": 800,
+       "ink": 4293324031,
+       "track": 2,
+       "tshadow": 8,
+       "tshadowC": 4286378239,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4293324031
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4286378239,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "spacemono",
+       "size": 11,
+       "weight": 700,
+       "ink": 4287865032,
+       "track": 16
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4294937242
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4287608063
+      },
+      {
+       "id": "cal.cell",
+       "r": 12
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "paint": "rg.50.50.70.507CF0FF,007CF0FF",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4286378239,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "spacemono",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4294937242
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4287608063
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4294937242
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "orbit",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4287865032,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "paint": "gl.E60F1630.18",
+       "r": 18
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.00070B1A"
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.E60F1630.18",
+       "r": 18,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280166994
+      },
+      {
+       "id": "memo.card.title",
+       "font": "ibmplexsanskr",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "spacemono",
+       "ink": 4286378239,
+       "fill": 4286378239,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "paint": "tx.noise.FF0F1630.16",
+       "font": "ibmplexsanskr",
+       "ink": 4293324031
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280166994
+      },
+      {
+       "id": "money.head",
+       "paint": "lg.90.227CF0FF,18B49CFF,00070B1A",
+       "r": 18,
+       "ink": 4293324031
+      },
+      {
+       "id": "money.day",
+       "fill": 4279178800,
+       "r": 12,
+       "padX": 12,
+       "font": "spacemono",
+       "ink": 4293324031,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "jetbrainsmono",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4294941352
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4286378176
+      },
+      {
+       "id": "pay.head",
+       "font": "orbit",
+       "ink": 4293324031
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF18265A,FF2B1C5E",
+       "r": 22,
+       "ink": 4293324031,
+       "font": "jetbrainsmono",
+       "shadow": 2
+      },
+      {
+       "id": "pay.row",
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4286378176
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294941352
+      },
+      {
+       "id": "widget",
+       "fill": 4279178800,
+       "r": 24,
+       "font": "ibmplexsanskr",
+       "ink": 4293324031
+      },
+      {
+       "id": "widget.head",
+       "font": "orbit",
+       "weight": 800,
+       "ink": 4286378239
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286378239,
+       "ink": 4278456858
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4294937242
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294941352
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4286378239
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4294941352,
+       "fillA": 14,
+       "r": 12
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4286378176,
+       "fillA": 12,
+       "r": 12
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4286378176
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\" 그리고 연속근무 >= 3",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4290026751,
+       "motion": "pulse"
+      },
+      {
+       "id": "cal.cell",
+       "when": "쉬는날 그리고 이번주야간 >= 3",
+       "fill": 4286378176,
+       "fillA": 18
+      },
+      {
+       "id": "cal.cell.date",
+       "when": "연속근무 >= 5",
+       "ink": 4294937242,
+       "weight": 900
+      },
+      {
+       "id": "cal.cell",
+       "when": "공휴일 그리고 아님 쉬는날",
+       "line": "double",
+       "lineW": 2.5,
+       "lineC": 4294951546
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "ring",
+       "at": "bg.calendar",
+       "x": 860,
+       "y": 70,
+       "w": 220,
+       "h": 220,
+       "line": "dot",
+       "lineW": 1,
+       "lineC": 4286378239,
+       "fillA": 0,
+       "alpha": 60
+      },
+      {
+       "shape": "circle",
+       "at": "bg.calendar",
+       "x": 960,
+       "y": 70,
+       "w": 14,
+       "h": 14,
+       "fill": 4290026751,
+       "fillA": 100
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "water",
+       "label": "물 한 잔",
+       "emoji": "💧",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "물 잔",
+       "by": 1
+      },
+      {
+       "id": "sleep",
+       "label": "잠들어요",
+       "emoji": "🌙",
+       "where": "widget",
+       "do": "valStamp",
+       "arg": "잠",
+       "more": [
+        {
+         "do": "screen",
+         "arg": "sleep"
+        }
+       ]
+      },
+      {
+       "id": "sleept",
+       "label": "잠들어요",
+       "emoji": "🌙",
+       "where": "tile",
+       "do": "valStamp",
+       "arg": "잠"
+      }
+     ],
+     "rules": [
+      {
+       "name": "야간 끝 회복",
+       "on": "end",
+       "role": "night",
+       "do": "valAdd",
+       "arg": "이달 야간",
+       "by": 1,
+       "more": [
+        {
+         "do": "memoLine",
+         "arg": "이달 야간 {값(\"이달 야간\")}번째 · 물 {값(\"물 잔\")}잔"
+        },
+        {
+         "do": "notify",
+         "arg": "야간 끝, 수고했어요. 커튼 치고 잠들 때 단추를 눌러요",
+         "then": [
+          "sleep",
+          "again60"
+         ]
+        }
+       ]
+      },
+      {
+       "name": "근무 중 물",
+       "on": "every",
+       "min": 120,
+       "during": "work",
+       "when": "값(\"물 잔\") < 6",
+       "do": "notify",
+       "arg": "물 {값(\"물 잔\")}잔째예요. 한 잔 더 마셔요",
+       "then": [
+        "water",
+        "again10"
+       ]
+      },
+      {
+       "name": "물 다 마심",
+       "on": "value",
+       "of": "물 잔",
+       "edge": "goal",
+       "do": "notify",
+       "arg": "오늘 물 6잔을 채웠어요. {연속(\"물 잔\")}일째 이어 가요"
+      },
+      {
+       "name": "알람 끄면 잔 시간",
+       "on": "alarmOff",
+       "when": "지난시간(\"잠\") < 16",
+       "do": "notify",
+       "arg": "{지난시간(\"잠\")}시간 잤어요. 오늘 {근무}예요"
+      }
+     ],
+     "values": [
+      {
+       "name": "물 잔",
+       "reset": "day",
+       "goal": 6,
+       "unit": "잔"
+      },
+      {
+       "name": "잠",
+       "reset": "never",
+       "kind": "time"
+      },
+      {
+       "name": "이달 야간",
+       "reset": "month",
+       "unit": "번"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "수면 기록",
+       "emoji": "😴",
+       "body": "{근무} 끝 {근무끝} · 이번 주 야간 {이번주야간}번\n잔 시간: \n깬 횟수: ",
+       "asks": [
+        {
+         "label": "잠 점수",
+         "type": "star"
+        }
+       ]
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4278651674,
+    "b": 4286378239,
+    "dir": 2,
+    "emoji": "🛰️"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4278651674,
+     "dark": 4278651674
+    },
+    {
+     "name": "카드",
+     "light": 4279178800,
+     "dark": 4279178800
+    },
+    {
+     "name": "글자",
+     "light": 4293324031,
+     "dark": 4293324031
+    },
+    {
+     "name": "포인트",
+     "light": 4286378239,
+     "dark": 4286378239
+    },
+    {
+     "name": "선",
+     "light": 4280166994,
+     "dark": 4280166994
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "딥워크 데스크",
+   "summary": "50분 집중 단추와 커피 한 번 적기, 하루 집중 막대가 홈 화면에 서는 직장인 프로",
+   "desc": "따뜻한 회색 종이 위 먹색 글씨, 한 가지 귤색 포인트만 남긴 조용한 책상이에요. 홈 화면 '집중 시작'을 누르면 50분 뒤 쉬라는 알림이 오고, 그 알림에서 바로 다음 집중을 시작해요. 하루 집중 4번 막대와 지난 7일이 위젯에 쌓이고, 커피 단추는 누르는 그 자리에서 가계부 카페 줄까지 적어요.\n누구에게 좋아요: 평일 출근하는 직장인\n적용하면 바뀌는 것:\n· 홈 화면 집중 단추(50분 뒤 알림, 목표 4번 막대·지난 7일)\n· 알림 속 '다음 집중' 단추\n· 커피 한 번에 가계부\n· 퇴근 때 오늘 집중 기록\n· 먹색·귤색 한 점 지면\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFEFEDE8|fl:tx.paper.FFEFEDE8.14|cd:FFFBFAF7|ik:FF1B1B1A|ac:FFE8641E|ft:notosanskr/alarm~bg:FF522814|fl:tx.paper.FF522814.14|cd:FF7A3817|ik:FFFFFFFF|ac:FFF2AA83|ft:notosanskr",
+     "pay": "DAY~tt:xl|pl:FFFBFAF7|mn:FFE8641E|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "line",
+     "date": "center",
+     "text": "normal",
+     "grid": "line",
+     "looks": "cr:4|dp:tl|ds:l|dw:b|mk:line|mp:bottom|pd:3|ff:dmserif/cr:4|dp:tl|ds:l|dc:FFB5AFA2|mk:none|pd:3|ff:dmserif",
+     "pattern": "shift:off=1"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4293420062,
+     "sat": 4282014348,
+     "sun": 4290919202,
+     "holiday": 4290919202,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "출근",
+       "role": "day",
+       "label": "출",
+       "color": 4279966490,
+       "emoji": "💼"
+      },
+      {
+       "name": "재택",
+       "role": "other",
+       "label": "재",
+       "color": 4287399804,
+       "emoji": "🏠"
+      },
+      {
+       "name": "당직",
+       "role": "long",
+       "label": "당",
+       "color": 4293420062,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4291413176,
+       "emoji": "🌿"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "list",
+     "card": "own",
+     "cardColor": 4294703863,
+     "border": "thin",
+     "corner": 6,
+     "lines": 3,
+     "title": "m",
+     "bold": true,
+     "font": "notoserifkr",
+     "date": true,
+     "bg": 4293914088
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "dot",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "line"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294703863,
+     "ink": 4279966490,
+     "corner": 12,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "table",
+     "memoSort": "p:마감",
+     "money": "list"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4293420062,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "notosanskr"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.00EFEDE8",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "hahmlet",
+       "weight": 700,
+       "ink": 4279966490,
+       "track": -1
+      },
+      {
+       "id": "app.tabs",
+       "paint": "so.FF1B1B1A",
+       "r": 30,
+       "out": 10,
+       "shadow": 0
+      },
+      {
+       "id": "app.tab",
+       "ink": 4287399804
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4294967295,
+       "weight": 800,
+       "fill": 4293420062
+      },
+      {
+       "id": "app.card",
+       "paint": "so.FFFBFAF7",
+       "r": 6,
+       "shadow": 1,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292466124
+      },
+      {
+       "id": "app.button",
+       "fill": 4293420062,
+       "ink": 4294967295,
+       "r": 30,
+       "weight": 800,
+       "font": "hahmlet"
+      },
+      {
+       "id": "app.chip",
+       "r": 30,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292466124,
+       "ink": 4279966490
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4294703863,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "so.00EFEDE8",
+       "r": 6,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "hahmlet",
+       "size": 30,
+       "weight": 700,
+       "ink": 4279966490,
+       "track": -1
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4279966490
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4293420062,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "dmserif",
+       "size": 11,
+       "weight": 700,
+       "ink": 4284637274,
+       "track": 24
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4290919202
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4282014348
+      },
+      {
+       "id": "cal.cell",
+       "r": 4,
+       "line": "solid",
+       "lineW": 0.5,
+       "lineC": 4292466124
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293420062,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "dmserif",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4290919202
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4282014348
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4290919202
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "hahmlet",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4284637274,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "paint": "so.FFFBFAF7",
+       "r": 6
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.00EFEDE8"
+      },
+      {
+       "id": "memo.card",
+       "paint": "so.FFFBFAF7",
+       "r": 6,
+       "shadow": 1,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292466124
+      },
+      {
+       "id": "memo.card.title",
+       "font": "notoserifkr",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "notoserifkr"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "dmserif",
+       "ink": 4293420062,
+       "fill": 4293420062,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "paint": "tx.paper.FFFBFAF7.12",
+       "font": "notoserifkr",
+       "ink": 4279966490
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292466124
+      },
+      {
+       "id": "money.head",
+       "paint": "so.FFFBFAF7",
+       "r": 6,
+       "ink": 4279966490
+      },
+      {
+       "id": "money.day",
+       "fill": 4294243052,
+       "r": 6,
+       "padX": 12,
+       "font": "dmserif",
+       "ink": 4279966490,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 6
+      },
+      {
+       "id": "money.amount",
+       "font": "dmserif",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.head",
+       "font": "hahmlet",
+       "ink": 4279966490
+      },
+      {
+       "id": "pay.total",
+       "paint": "so.FF1B1B1A",
+       "r": 10,
+       "ink": 4294967295,
+       "font": "dmserif",
+       "shadow": 3
+      },
+      {
+       "id": "pay.row",
+       "font": "notosanskr"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "widget",
+       "fill": 4294703863,
+       "r": 12,
+       "font": "notosanskr",
+       "ink": 4279966490
+      },
+      {
+       "id": "widget.head",
+       "font": "hahmlet",
+       "weight": 800,
+       "ink": 4293420062
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4293420062,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4290919202
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4291051567
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293420062
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4291051567,
+       "fillA": 14,
+       "r": 6
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4281109067,
+       "fillA": 12,
+       "r": 6
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4281109067
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 >= 10",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4293420062
+      },
+      {
+       "id": "cal.cell.date",
+       "when": "요일 = \"금\" 그리고 아님 쉬는날",
+       "ink": 4293420062
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "line_h",
+       "at": "cal.head",
+       "x": 40,
+       "y": 900,
+       "w": 160,
+       "h": 4,
+       "fill": 4293420062,
+       "fillA": 100
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "focus",
+       "label": "집중 시작",
+       "emoji": "🎧",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "집중",
+       "by": 1,
+       "more": [
+        {
+         "do": "notify",
+         "arg": "50분 집중 끝. 5분 쉬고 다시 시작해요 ({값(\"집중\")}번째)",
+         "after": 50,
+         "then": [
+          "focus"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "coffee",
+       "label": "커피",
+       "emoji": "☕",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "커피",
+       "by": 1,
+       "more": [
+        {
+         "do": "addMoney",
+         "arg": "카페",
+         "amount": 4500
+        }
+       ]
+      },
+      {
+       "id": "focust",
+       "label": "집중 시작",
+       "emoji": "🎧",
+       "where": "shortcut",
+       "do": "valAdd",
+       "arg": "집중",
+       "by": 1,
+       "more": [
+        {
+         "do": "notify",
+         "arg": "50분 집중 끝. 잠깐 쉬어요",
+         "after": 50
+        }
+       ]
+      }
+     ],
+     "rules": [
+      {
+       "name": "퇴근 집중 기록",
+       "on": "end",
+       "do": "memoLine",
+       "arg": "오늘 집중 {값(\"집중\")}번 · 커피 {값(\"커피\")}잔 · 7일 평균 {값평균(\"집중\", 7)}번"
+      },
+      {
+       "name": "집중 4번",
+       "on": "value",
+       "of": "집중",
+       "edge": "goal",
+       "do": "notify",
+       "arg": "오늘 깊게 4번 일했어요. 남은 시간은 가볍게 가요"
+      },
+      {
+       "name": "금요일 주간 회고",
+       "on": "daily",
+       "at": "17:30",
+       "when": "요일 = \"금\"",
+       "do": "newMemo",
+       "arg": "주간 회고"
+      }
+     ],
+     "values": [
+      {
+       "name": "집중",
+       "reset": "day",
+       "goal": 4,
+       "unit": "번"
+      },
+      {
+       "name": "커피",
+       "reset": "day",
+       "unit": "잔"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "회의록",
+       "emoji": "🗒️",
+       "body": "{날짜} ({요일})\n참석: \n정한 것: \n할 사람: ",
+       "asks": [
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      },
+      {
+       "title": "오늘 계획",
+       "emoji": "☀️",
+       "body": "{날짜} {요일} · {근무}",
+       "check": [
+        "가장 중요한 일",
+        "두 번째 일",
+        "나를 위한 일"
+       ]
+      },
+      {
+       "title": "주간 회고",
+       "emoji": "🗓️",
+       "body": "이번 주 일한 시간 {이번주근무시간}시간\n이달 쓴 돈 {원(이달지출)}",
+       "check": [
+        "잘된 것 세 개",
+        "아쉬운 것 하나",
+        "다음 주 꼭 할 것"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true
+    }
+   ],
+   "cover": {
+    "a": 4293914088,
+    "b": 4293420062,
+    "dir": 2,
+    "emoji": "🎧"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4293914088,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294703863,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4279966490,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4293420062,
+     "dark": 4293420062
+    },
+    {
+     "name": "선",
+     "light": 4292466124,
+     "dark": 4282006074
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "라이더 콜보드",
+   "summary": "홈 화면 +1건 단추와 목표 막대, 끝나면 오늘 건수·7일 평균이 오는 배달·알바 프로",
+   "desc": "검정 아스팔트 위 형광 노랑 차선처럼 또렷한 화면이에요. 홈 화면 '+1건'이나 알림 막대 빠른 설정을 누르면 앱을 열지 않고 건수가 올라가고, 목표 30건 막대와 지난 7일이 위젯에 쌓여요. 근무가 끝나면 오늘 건수와 7일 평균이 메모에 남고, 쉬기 단추는 20분 뒤 다시 나가자고 알려 줘요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 홈 화면 +1건(목표 막대·지난 7일)\n· 알림 막대 빠른 설정 +1건\n· 쉬기 20분 타이머\n· 근무 끝 건수·7일 평균 기록\n· 목표 채우면 축하, 3일 연속이면 한 번 더\n· 아스팔트·차선 화면\n주의할 점: 기록은 그대로예요. 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "HOURLY",
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF111214|fl:tx.concrete.FF111214.14|cd:FF1B1C20|ik:FFF4F4F0|ac:FFE8FF3A|ft:notosanskr/alarm~bg:FF111214|fl:tx.concrete.FF111214.14|cd:FF1B1C20|ik:FFFFFFFF|ac:FFE8FF3A|ft:notosanskr",
+     "pay": "SHIFT~tt:xl|pl:FF1B1C20|mn:FFE8FF3A|rw:roomy|dy:1/DAY~tt:xl|pl:FF1B1C20|mn:FFE8FF3A|rw:roomy|dy:1/HOURLY~tt:xl|pl:FF1B1C20|mn:FFE8FF3A|rw:roomy|dy:1/FIELD~tt:xl|pl:FF1B1C20|mn:FFE8FF3A|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "looks": "cr:6|dp:tl|ds:l|dw:b|mk:line|mp:bottom|pd:2|ff:oswald/cr:6|dp:tl|ds:l|dc:FF55575E|mk:none|pd:2|ff:oswald",
+     "pattern": "shift:off=1"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4293459770,
+     "sat": 4286560511,
+     "sun": 4294933099,
+     "holiday": 4294933099,
+     "cell": "tint"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "compact",
+     "card": "own",
+     "cardColor": 4279966752,
+     "border": "thin",
+     "corner": 6,
+     "lines": 2,
+     "title": "m",
+     "bold": true,
+     "font": "notosanskr",
+     "date": true,
+     "bg": 4279308820
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "dot",
+     "income": 4290311531,
+     "expense": 4294937210,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279966752,
+     "ink": 4294243568,
+     "corner": 12,
+     "text": "l"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "tag",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4293459770,
+     "motion": "tn:slide|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "notosanskr"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.00111214",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "bebasneue",
+       "weight": 800,
+       "ink": 4294243568,
+       "track": 2
+      },
+      {
+       "id": "app.tabs",
+       "paint": "so.FF0B0B0D",
+       "r": 8,
+       "out": 10,
+       "shadow": 4,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293459770,
+       "lineA": 60
+      },
+      {
+       "id": "app.tab",
+       "ink": 4288914590
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4293459770,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "fill": 4279966752,
+       "r": 6,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281085491
+      },
+      {
+       "id": "app.button",
+       "fill": 4293459770,
+       "ink": 4279308820,
+       "r": 6,
+       "weight": 800,
+       "font": "bebasneue"
+      },
+      {
+       "id": "app.chip",
+       "r": 6,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281085491,
+       "ink": 4294243568
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4279966752,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "pt.stripes.26E8FF3A.FF111214.60.45",
+       "r": 6,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "bebasneue",
+       "size": 36,
+       "weight": 800,
+       "ink": 4294243568,
+       "track": 2
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4294243568
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4293459770,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "oswald",
+       "size": 11,
+       "weight": 700,
+       "ink": 4288914590,
+       "track": 18
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4294933099
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4286560511
+      },
+      {
+       "id": "cal.cell",
+       "r": 6
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "paint": "lg.180.00E8FF3A,55E8FF3A",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293459770,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "oswald",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4294933099
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4286560511
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4294933099
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "bebasneue",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4288914590,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "fill": 4279966752,
+       "r": 6
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.00111214"
+      },
+      {
+       "id": "memo.card",
+       "fill": 4279966752,
+       "r": 6,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281085491
+      },
+      {
+       "id": "memo.card.title",
+       "font": "notosanskr",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "notosanskr"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "oswald",
+       "ink": 4293459770,
+       "fill": 4293459770,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "fill": 4279966752,
+       "font": "notosanskr",
+       "ink": 4294243568
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281085491
+      },
+      {
+       "id": "money.head",
+       "paint": "pt.stripes.26E8FF3A.FF111214.60.45",
+       "r": 6,
+       "ink": 4294243568
+      },
+      {
+       "id": "money.day",
+       "fill": 4279966752,
+       "r": 6,
+       "padX": 12,
+       "font": "oswald",
+       "ink": 4294243568,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 6
+      },
+      {
+       "id": "money.amount",
+       "font": "bebasneue",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4294937210
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4290311531
+      },
+      {
+       "id": "pay.head",
+       "font": "bebasneue",
+       "ink": 4294243568
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.90.FF1B1C20,FF2A2B10",
+       "r": 10,
+       "ink": 4294243568,
+       "font": "bebasneue",
+       "shadow": 2
+      },
+      {
+       "id": "pay.row",
+       "font": "notosanskr"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4290311531
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937210
+      },
+      {
+       "id": "widget",
+       "fill": 4279966752,
+       "r": 12,
+       "font": "notosanskr",
+       "ink": 4294243568
+      },
+      {
+       "id": "widget.head",
+       "font": "bebasneue",
+       "weight": 800,
+       "ink": 4293459770
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4293459770,
+       "ink": 4279308820
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4294933099
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294937210
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293459770
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4294937210,
+       "fillA": 14,
+       "r": 6
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4290311531,
+       "fillA": 12,
+       "r": 6
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4290311531
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 >= 9",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293459770
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "fill": 4290311531,
+       "fillA": 16
+      },
+      {
+       "id": "cal.cell",
+       "when": "공휴일 그리고 아님 쉬는날",
+       "line": "double",
+       "lineW": 2.5,
+       "lineC": 4294946874
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "dash_h",
+       "at": "cal.head",
+       "x": 500,
+       "y": 940,
+       "w": 400,
+       "h": 6,
+       "fill": 4293459770,
+       "fillA": 90
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "plus",
+       "label": "+1건",
+       "emoji": "🛵",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "건수",
+       "by": 1
+      },
+      {
+       "id": "rest",
+       "label": "쉬기 20분",
+       "emoji": "☕",
+       "where": "widget",
+       "do": "notify",
+       "arg": "20분 쉬었어요. 다시 나가 볼까요? 지금 {값(\"건수\")}건",
+       "after": 20
+      },
+      {
+       "id": "plust",
+       "label": "+1건",
+       "emoji": "🛵",
+       "where": "tile",
+       "do": "valAdd",
+       "arg": "건수",
+       "by": 1
+      },
+      {
+       "id": "undo",
+       "label": "-1건",
+       "emoji": "↩️",
+       "where": "day",
+       "do": "valAdd",
+       "arg": "건수",
+       "by": -1
+      }
+     ],
+     "rules": [
+      {
+       "name": "근무 끝 건수",
+       "on": "end",
+       "do": "memoLine",
+       "arg": "오늘 {값(\"건수\")}건 · 7일 평균 {값평균(\"건수\", 7)}건 · {근무시간}시간",
+       "more": [
+        {
+         "do": "notify",
+         "arg": "오늘 {값(\"건수\")}건 했어요. 7일 합계 {값합계(\"건수\", 7)}건"
+        }
+       ]
+      },
+      {
+       "name": "목표 채움",
+       "on": "value",
+       "of": "건수",
+       "edge": "goal",
+       "do": "notify",
+       "arg": "오늘 목표 30건 채웠어요 🎉",
+       "more": [
+        {
+         "do": "notify",
+         "arg": "{연속(\"건수\")}일 연속 목표예요. 내일은 조금 쉬어도 돼요",
+         "after": 1
+        }
+       ]
+      },
+      {
+       "name": "근무 중 물",
+       "on": "every",
+       "min": 90,
+       "during": "work",
+       "do": "notify",
+       "arg": "한 시간 반 달렸어요. 물 한 모금",
+       "then": [
+        "rest",
+        "again10"
+       ]
+      }
+     ],
+     "values": [
+      {
+       "name": "건수",
+       "reset": "day",
+       "goal": 30,
+       "unit": "건"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "하루 돈 정리",
+       "emoji": "🧾",
+       "body": "{날짜} 쓴 돈 {원(지출)} · 들어온 돈 {원(수입)}\n이달 쓴 돈 {원(이달지출)}"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279308820,
+    "b": 4293459770,
+    "dir": 2,
+    "emoji": "🛵"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4279308820,
+     "dark": 4279308820
+    },
+    {
+     "name": "카드",
+     "light": 4279966752,
+     "dark": 4279966752
+    },
+    {
+     "name": "글자",
+     "light": 4294243568,
+     "dark": 4294243568
+    },
+    {
+     "name": "포인트",
+     "light": 4293459770,
+     "dark": 4293459770
+    },
+    {
+     "name": "선",
+     "light": 4281085491,
+     "dark": 4281085491
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "공수 카운터",
+   "summary": "홈 화면에서 반 공수·한 공수를 누르면 이달 공수가 쌓이고, 알람 끄면 안전 점검이 오는 현장 프로",
+   "desc": "안전 표지판처럼 노랑과 먹색 사선이 둘린 화면이에요. 일이 끝나면 홈 화면 '1공수'나 '0.5공수'를 눌러 이달 공수를 쌓고, 달력 칸에는 그날 일한 시간이 굵게 서요. 아침 알람을 끄면 '점검 시작' 단추가 달린 안전 점검 알림이 오고, 25일엔 이달 공수 합계를 메모로 정리해 줘요.\n누구에게 좋아요: 현장·프리랜서로 일감마다 일하는 분\n적용하면 바뀌는 것:\n· 홈 화면 1공수·0.5공수(이달 합계 막대)\n· 알람 끄면 안전 점검 알림(점검 시작 단추)\n· 25일 이달 공수 정리\n· 비 오는 날 꼬리표 기록\n· 안전 표지판 사선 화면\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFF5F2E6|fl:tx.concrete.FFF5F2E6.10|cd:FFFFFFFF|ik:FF1C1C1A|ac:FF1C1C1A|ft:notosanskr/alarm~bg:FF101113|fl:tx.concrete.FF101113.10|cd:FF141415|ik:FFFFFFFF|ac:FF828281|ft:notosanskr",
+     "pay": "FIELD~tt:xl|pl:FFFFF6CC|mn:FF1C1C1A|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "big",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "hours": true,
+     "looks": "cr:4|dp:tl|ds:m|dw:b|mk:big|mp:below|pd:2/cr:4|dp:tl|ds:m|dc:FF9A9483|mk:none|pd:2",
+     "pattern": "shift:off=1"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4294956032,
+     "sat": 4280571814,
+     "sun": 4291375134,
+     "holiday": 4291375134,
+     "cell": "tint"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "list",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 4,
+     "lines": 3,
+     "title": "m",
+     "bold": true,
+     "font": "notosanskr",
+     "date": true,
+     "bg": 4294308582
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280032282,
+     "corner": 10,
+     "text": "l"
+    },
+    {
+     "kind": "tabView",
+     "cal": "list",
+     "memo": "table",
+     "memoSort": "-p:금액",
+     "money": "board"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4280032282,
+     "motion": "tn:fade|td:pulse|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "notosanskr"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.00F5F2E6",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "blackhansans",
+       "weight": 800,
+       "ink": 4280032282,
+       "track": 0
+      },
+      {
+       "id": "app.tabs",
+       "paint": "so.FF1C1C1A",
+       "r": 4,
+       "shadow": 6
+      },
+      {
+       "id": "app.tab",
+       "ink": 4284176978
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4294956032,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "fill": 4294967295,
+       "r": 4,
+       "shadow": 2,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4280032282
+      },
+      {
+       "id": "app.button",
+       "fill": 4280032282,
+       "ink": 4294956032,
+       "r": 4,
+       "weight": 800,
+       "font": "blackhansans"
+      },
+      {
+       "id": "app.chip",
+       "r": 4,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292662974,
+       "ink": 4280032282
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4294967295,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "so.FFFFD400",
+       "r": 4,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "blackhansans",
+       "size": 30,
+       "weight": 800,
+       "ink": 4280032282,
+       "track": 0
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4280032282
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4280032282,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "oswald",
+       "size": 11,
+       "weight": 700,
+       "ink": 4284176978,
+       "track": 6
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4291375134
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280571814
+      },
+      {
+       "id": "cal.cell",
+       "r": 4,
+       "line": "solid",
+       "lineW": 0.5,
+       "lineC": 4292662974
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "paint": "so.90FFD400",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4280032282,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "oswald",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4291375134
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4280571814
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4291375134
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "blackhansans",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4284176978,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "fill": 4294967295,
+       "r": 4
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.00F5F2E6"
+      },
+      {
+       "id": "memo.card",
+       "fill": 4294967295,
+       "r": 4,
+       "shadow": 2,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4280032282
+      },
+      {
+       "id": "memo.card.title",
+       "font": "notosanskr",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "notosanskr"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "oswald",
+       "ink": 4280032282,
+       "fill": 4280032282,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "fill": 4294967295,
+       "font": "notosanskr",
+       "ink": 4280032282
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292662974
+      },
+      {
+       "id": "money.head",
+       "paint": "so.FFFFD400",
+       "r": 4,
+       "ink": 4280032282
+      },
+      {
+       "id": "money.day",
+       "fill": 4294964940,
+       "r": 4,
+       "padX": 12,
+       "font": "oswald",
+       "ink": 4280032282,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 4
+      },
+      {
+       "id": "money.amount",
+       "font": "oswald",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.head",
+       "font": "blackhansans",
+       "ink": 4280032282
+      },
+      {
+       "id": "pay.total",
+       "paint": "pt.stripes.30FFD400.FF1C1C1A.70.45",
+       "r": 8,
+       "ink": 4294956032,
+       "font": "oswald",
+       "shadow": 4
+      },
+      {
+       "id": "pay.row",
+       "font": "notosanskr"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "r": 10,
+       "font": "notosanskr",
+       "ink": 4280032282
+      },
+      {
+       "id": "widget.head",
+       "font": "blackhansans",
+       "weight": 800,
+       "ink": 4280032282
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4280032282,
+       "ink": 4294956032
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4291375134
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4291051567
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4280032282
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4291051567,
+       "fillA": 14,
+       "r": 4
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4281109067,
+       "fillA": 12,
+       "r": 4
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4281109067
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 >= 10",
+       "line": "solid",
+       "lineW": 2.5,
+       "lineC": 4280032282
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"우천\")",
+       "fill": 4280571814,
+       "fillA": 14
+      },
+      {
+       "id": "cal.cell",
+       "when": "공휴일 그리고 아님 쉬는날",
+       "line": "double",
+       "lineW": 2.5,
+       "lineC": 4291375134
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "tape",
+       "at": "cal.head",
+       "x": 500,
+       "y": 960,
+       "w": 400,
+       "h": 40,
+       "fill": 4280032282,
+       "fillA": 100
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "one",
+       "label": "1공수",
+       "emoji": "🦺",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "공수",
+       "by": 1,
+       "more": [
+        {
+         "do": "memoLine",
+         "arg": "1공수 · 이달 {값(\"공수\")}공수"
+        }
+       ]
+      },
+      {
+       "id": "half",
+       "label": "0.5공수",
+       "emoji": "⛑️",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "공수",
+       "by": 0.5,
+       "more": [
+        {
+         "do": "memoLine",
+         "arg": "0.5공수 · 이달 {값(\"공수\")}공수"
+        }
+       ]
+      },
+      {
+       "id": "check",
+       "label": "점검 시작",
+       "emoji": "✅",
+       "where": "day",
+       "do": "memoTpl",
+       "arg": "작업 전 안전 점검"
+      },
+      {
+       "id": "rain",
+       "label": "우천 쉼",
+       "emoji": "🌧️",
+       "where": "day",
+       "do": "memoLine",
+       "arg": "#우천 비로 쉼 · 이달 {값(\"공수\")}공수"
+      }
+     ],
+     "rules": [
+      {
+       "name": "알람 끄면 안전 점검",
+       "on": "alarmOff",
+       "do": "notify",
+       "arg": "오늘 현장 들어가기 전 안전 점검을 해요",
+       "then": [
+        "check"
+       ]
+      },
+      {
+       "name": "25일 공수 정리",
+       "on": "daily",
+       "at": "19:00",
+       "when": "일 = 25",
+       "do": "newMemo",
+       "arg": "이달 공수 {값(\"공수\")}공수 · 일한 시간 {이달근무시간}시간"
+      },
+      {
+       "name": "공수 다 채움",
+       "on": "value",
+       "of": "공수",
+       "edge": "goal",
+       "do": "notify",
+       "arg": "이달 {값(\"공수\")}공수를 채웠어요. 수고 많았어요"
+      }
+     ],
+     "values": [
+      {
+       "name": "공수",
+       "reset": "month",
+       "goal": 22,
+       "unit": "공수"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "안전 점검",
+       "emoji": "🦺",
+       "check": [
+        "안전모·안전화",
+        "추락 방지",
+        "장비 점검",
+        "물·그늘 쉬는 곳"
+       ]
+      },
+      {
+       "title": "현장 일지",
+       "emoji": "📒",
+       "body": "{날짜} · {근무시간}시간\n현장: \n공정: \n투입 인원: ",
+       "check": [
+        "오늘 한 일",
+        "자재 들어온 것",
+        "내일 할 일",
+        "사진 찍기"
+       ]
+      },
+      {
+       "title": "받을 돈",
+       "emoji": "💸",
+       "body": "일감: \n금액: \n받을 날: \n상태: 받기 전",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "받기 전",
+          "일부",
+          "다 받음"
+         ]
+        },
+        {
+         "label": "받을 날",
+         "type": "date"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "field",
+     "mode": "DAY_RATE",
+     "dayRate": {
+      "input": "i1"
+     },
+     "chips": [
+      0.5,
+      1,
+      1.5,
+      2
+     ],
+     "ends": [
+      {
+       "end": "17:00",
+       "units": 1
+      },
+      {
+       "end": "19:00",
+       "units": 1.5
+      },
+      {
+       "end": "21:00",
+       "units": 2
+      }
+     ],
+     "kinds": [
+      "본작업",
+      "보수",
+      "철거",
+      "마감"
+     ],
+     "costs": [
+      "자재비",
+      "공구",
+      "유류비",
+      "식대",
+      "주차비"
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294308582,
+    "b": 4280032282,
+    "dir": 2,
+    "emoji": "🦺"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294308582,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294967295,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4280032282,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4280032282,
+     "dark": 4280032282
+    },
+    {
+     "name": "선",
+     "light": 4292662974,
+     "dark": 4282006074
+    }
+   ],
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "일당",
+     "kind": "money",
+     "default": 180000,
+     "min": 0,
+     "hint": "하루 일당으로 바꿔요"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "카운터 손님 장부",
+   "summary": "카드·현금·포장 손님을 홈 화면에서 세고, 마감 때 오늘 손님을 한 줄로 남기는 가게 프로",
+   "desc": "따뜻한 크림 종이에 초록 잉크 도장을 찍은 가게 장부예요. 계산대 옆 폰 홈 화면에서 카드·현금·포장 손님을 한 번씩 누르면 오늘 손님이 세어지고, 목표 손님 수 막대가 차요. 밤 열 시엔 오늘 손님과 지난 7일 평균이 메모에 한 줄로 남고, 마감 알림에서 바로 마감 점검을 열어요.\n누구에게 좋아요: 작은 가게를 꾸리는 사장님\n적용하면 바뀌는 것:\n· 홈 화면 카드·현금·포장 손님 단추\n· 손님 목표 막대·지난 7일\n· 밤 열 시 오늘 손님 한 줄\n· 마감 알림 속 마감 점검 단추\n· 크림 장부·초록 도장 화면\n주의할 점: 메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFF7F1E3|fl:tx.paper.FFF7F1E3.16|cd:FFFFFDF6|ik:FF1E2A22|ac:FF1F6B47|ft:gowundodum/alarm~bg:FF112A22|fl:tx.paper.FF112A22.16|cd:FF153C2C|ik:FFFFFFFF|ac:FF84AE9A|ft:gowundodum"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "spend": true,
+     "looks": "cr:8|dp:tl|ds:m|dw:b|mk:dot|mp:below|pd:2|ff:dmserif/cr:8|dp:tl|ds:m|dc:FFA69D86|mk:none|pd:2|ff:dmserif",
+     "pattern": "shift:off=1"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4280249159,
+     "sat": 4281163680,
+     "sun": 4290263339,
+     "holiday": 4290263339,
+     "cell": "tint"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "list",
+     "card": "own",
+     "cardColor": 4294966774,
+     "border": "thin",
+     "corner": 10,
+     "lines": 3,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4294439395
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4280249159,
+     "expense": 4290263339,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294966774,
+     "ink": 4280166946,
+     "corner": 16,
+     "text": "l"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "tag",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4280249159,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "gowundodum"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.00F7F1E3",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "gowunbatang",
+       "weight": 800,
+       "ink": 4280166946,
+       "track": 0
+      },
+      {
+       "id": "app.tabs",
+       "paint": "so.FF1E2A22",
+       "r": 18,
+       "out": 10,
+       "shadow": 6
+      },
+      {
+       "id": "app.tab",
+       "ink": 4284377696
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4294439395,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "paint": "tx.paper.FFFFFDF6.10",
+       "r": 10,
+       "shadow": 2,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293056704
+      },
+      {
+       "id": "app.button",
+       "fill": 4280249159,
+       "ink": 4294967295,
+       "r": 10,
+       "weight": 800,
+       "font": "gowunbatang"
+      },
+      {
+       "id": "app.chip",
+       "r": 10,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293056704,
+       "ink": 4280166946
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4294966774,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "so.00F7F1E3",
+       "r": 10,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "gowunbatang",
+       "size": 28,
+       "weight": 800,
+       "ink": 4280166946,
+       "track": 0
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4280166946
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4280249159,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "dmserif",
+       "size": 11,
+       "weight": 700,
+       "ink": 4284377696,
+       "track": 6
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4290263339
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4281163680
+      },
+      {
+       "id": "cal.cell",
+       "r": 8
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4280249159,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "dmserif",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4290263339
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4281163680
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4290263339
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "gowunbatang",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4284377696,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "paint": "tx.paper.FFFFFDF6.10",
+       "r": 10
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.00F7F1E3"
+      },
+      {
+       "id": "memo.card",
+       "paint": "tx.paper.FFFFFDF6.10",
+       "r": 10,
+       "shadow": 2,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293056704
+      },
+      {
+       "id": "memo.card.title",
+       "font": "gowundodum",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "dmserif",
+       "ink": 4280249159,
+       "fill": 4280249159,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "paint": "pt.thin.FFE2D8C0.FFFFFDF6.60.0",
+       "font": "gowundodum",
+       "ink": 4280166946
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293056704
+      },
+      {
+       "id": "money.head",
+       "paint": "tx.paper.FFFFFDF6.10",
+       "r": 10,
+       "ink": 4280166946
+      },
+      {
+       "id": "money.day",
+       "fill": 4294043858,
+       "r": 10,
+       "padX": 12,
+       "font": "dmserif",
+       "ink": 4280166946,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 10
+      },
+      {
+       "id": "money.amount",
+       "font": "dmserif",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4290263339
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4280249159
+      },
+      {
+       "id": "pay.head",
+       "font": "gowunbatang",
+       "ink": 4280166946
+      },
+      {
+       "id": "pay.total",
+       "paint": "so.FF1F6B47",
+       "r": 14,
+       "ink": 4294967295,
+       "font": "dmserif",
+       "shadow": 4
+      },
+      {
+       "id": "pay.row",
+       "font": "gowundodum"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4280249159
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4290263339
+      },
+      {
+       "id": "widget",
+       "fill": 4294966774,
+       "r": 16,
+       "font": "gowundodum",
+       "ink": 4280166946
+      },
+      {
+       "id": "widget.head",
+       "font": "gowunbatang",
+       "weight": 800,
+       "ink": 4280249159
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4280249159,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4290263339
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4290263339
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4280249159
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4290263339,
+       "fillA": 14,
+       "r": 10
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4280249159,
+       "fillA": 12,
+       "r": 10
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4280249159
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 >= 칸(\"하루 목표 매출\", 500000)",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4280249159,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "when": "공휴일",
+       "ink": 4290263339,
+       "weight": 900
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "seal",
+       "at": "cal.head",
+       "x": 880,
+       "y": 300,
+       "w": 80,
+       "h": 80,
+       "fill": 4280249159,
+       "fillA": 18,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4280249159,
+       "rot": 12
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "card",
+       "label": "카드",
+       "emoji": "💳",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "카드 손님",
+       "by": 1
+      },
+      {
+       "id": "cash",
+       "label": "현금",
+       "emoji": "💵",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "현금 손님",
+       "by": 1
+      },
+      {
+       "id": "togo",
+       "label": "포장",
+       "emoji": "🥡",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "포장",
+       "by": 1
+      },
+      {
+       "id": "close",
+       "label": "마감 점검",
+       "emoji": "🔒",
+       "where": "day",
+       "do": "memoTpl",
+       "arg": "마감 점검"
+      }
+     ],
+     "rules": [
+      {
+       "name": "밤 열 시 손님 정리",
+       "on": "daily",
+       "at": "22:00",
+       "do": "memoLine",
+       "arg": "손님 {값(\"카드 손님\") + 값(\"현금 손님\")}명(카드 {값(\"카드 손님\")} · 현금 {값(\"현금 손님\")}) · 포장 {값(\"포장\")}건",
+       "more": [
+        {
+         "do": "notify",
+         "arg": "오늘 손님 {값(\"카드 손님\") + 값(\"현금 손님\")}명. 마감 점검을 열어요",
+         "then": [
+          "close"
+         ]
+        }
+       ]
+      },
+      {
+       "name": "매출 적으면 한 줄",
+       "on": "money",
+       "when": "수입 > 0",
+       "do": "memoLine",
+       "arg": "오늘 매출 {원(수입)} · 이달 {원(이달수입)}"
+      }
+     ],
+     "values": [
+      {
+       "name": "카드 손님",
+       "reset": "day",
+       "unit": "명"
+      },
+      {
+       "name": "현금 손님",
+       "reset": "day",
+       "unit": "명"
+      },
+      {
+       "name": "포장",
+       "reset": "day",
+       "unit": "건"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "마감",
+       "emoji": "🔒",
+       "check": [
+        "시재 맞추기",
+        "청소",
+        "재료 정리",
+        "쓰레기",
+        "문단속"
+       ],
+       "body": "오늘 매출 {원(수입)} · 이달 {원(이달수입)}"
+      },
+      {
+       "title": "발주",
+       "emoji": "📦",
+       "body": "거래처: \n금액: ",
+       "check": [
+        "재료",
+        "포장재",
+        "소모품"
+       ],
+       "repeat": "W1"
+      },
+      {
+       "title": "오픈 준비",
+       "emoji": "🌅",
+       "check": [
+        "간판·조명",
+        "포스 켜기",
+        "재료 확인",
+        "청소 마무리"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "shop",
+     "open": [
+      "MONDAY",
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY"
+     ],
+     "opens": "10:00",
+     "closes": "21:00",
+     "cardFee": 1.5,
+     "settleDays": 3,
+     "closing": [
+      "시재 마감",
+      "청소",
+      "재료 정리",
+      "문단속"
+     ],
+     "costs": [
+      "재료비",
+      "포장재",
+      "임대료",
+      "공과금",
+      "인건비"
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294439395,
+    "b": 4280249159,
+    "dir": 2,
+    "emoji": "🧾"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294439395,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294966774,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4280166946,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4280249159,
+     "dark": 4280249159
+    },
+    {
+     "name": "선",
+     "light": 4293056704,
+     "dark": 4282006074
+    }
+   ],
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "하루 목표 매출",
+     "kind": "money",
+     "default": 500000,
+     "min": 0,
+     "hint": "우리 가게 하루 목표로 바꿔요"
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "원칙 체크 터미널",
+   "summary": "매매·참은 충동을 홈 화면에서 세고, 하루 세 번을 넘기면 원칙부터 묻는 투자 기록 프로",
+   "desc": "먹색 터미널에 호박색 글자가 한 줄씩 떠요. 매매할 때 홈 화면 '매매 +1'을 누르면 오늘 세 번째부터는 원칙 점검 알림이 먼저 오고, 사고 싶던 걸 참았으면 '참았어요'를 눌러 이번 주 참은 횟수를 쌓아요. 장이 끝나면 오늘 매매와 이번 주 참은 횟수가 일지에 한 줄로 남아요.\n누구에게 좋아요: 원칙대로 투자 기록을 남기는 분\n적용하면 바뀌는 것:\n· 홈 화면 매매 +1·참았어요\n· 세 번째 매매부터 원칙 점검 알림\n· 장 끝 일지 한 줄\n· 호박색 터미널 화면\n주의할 점: 메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF0C0C0B|fl:rg.50.0.140.FF1E1A10,FF0C0C0B@70|cd:FF151513|ik:FFF3E9D2|ac:FFFFB347|ft:ibmplexsanskr/alarm~bg:FF0C0C0B|fl:rg.50.0.140.FF1E1A10,FF0C0C0B@70|cd:FF151513|ik:FFFFFFFF|ac:FFFFB347|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "calView",
+     "size": "normal",
+     "badge": "line",
+     "date": "center",
+     "text": "normal",
+     "grid": "line",
+     "looks": "cr:2|dp:tl|ds:m|mk:line|mp:bottom|pd:2|ff:jetbrainsmono"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4294947655,
+     "sat": 4286558463,
+     "sun": 4294933099,
+     "holiday": 4294933099,
+     "cell": "tint"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "list",
+     "card": "own",
+     "cardColor": 4279571731,
+     "border": "thin",
+     "corner": 2,
+     "lines": 3,
+     "title": "m",
+     "bold": true,
+     "font": "nanumgothiccoding",
+     "date": true,
+     "bg": 4278979595
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "dot",
+     "income": 4286570656,
+     "expense": 4294937210,
+     "dayHead": "line"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279571731,
+     "ink": 4294175186,
+     "corner": 8,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "table",
+     "memoSort": "-p:감정 점수",
+     "money": "table"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4294947655,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.000C0C0B",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "vt323",
+       "weight": 800,
+       "ink": 4294175186,
+       "track": 3
+      },
+      {
+       "id": "app.tabs",
+       "paint": "so.FF0C0C0B",
+       "r": 2,
+       "shadow": 4,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280952868
+      },
+      {
+       "id": "app.tab",
+       "ink": 4289240970
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4294947655,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "paint": "so.FF151513",
+       "r": 2,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280952868
+      },
+      {
+       "id": "app.button",
+       "fill": 4294947655,
+       "ink": 4279898630,
+       "r": 2,
+       "weight": 800,
+       "font": "vt323"
+      },
+      {
+       "id": "app.chip",
+       "r": 2,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280952868,
+       "ink": 4294175186
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4279571731,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "pt.thin.14FFB347.FF0C0C0B.50.0",
+       "r": 2,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "vt323",
+       "size": 34,
+       "weight": 800,
+       "ink": 4294175186,
+       "track": 3,
+       "tshadow": 6,
+       "tshadowC": 4294947655,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4294175186
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4294947655,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "jetbrainsmono",
+       "size": 11,
+       "weight": 700,
+       "ink": 4289240970,
+       "track": 22
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4294933099
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4286558463
+      },
+      {
+       "id": "cal.cell",
+       "r": 2,
+       "line": "solid",
+       "lineW": 0.5,
+       "lineC": 4280229403
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947655,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "jetbrainsmono",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4294933099
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4286558463
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4294933099
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "vt323",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4289240970,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "paint": "so.FF151513",
+       "r": 2
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.000C0C0B"
+      },
+      {
+       "id": "memo.card",
+       "paint": "so.FF151513",
+       "r": 2,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280952868
+      },
+      {
+       "id": "memo.card.title",
+       "font": "nanumgothiccoding",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "nanumgothiccoding"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "jetbrainsmono",
+       "ink": 4294947655,
+       "fill": 4294947655,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "paint": "tx.noise.FF151513.16",
+       "font": "nanumgothiccoding",
+       "ink": 4294175186
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280952868
+      },
+      {
+       "id": "money.head",
+       "paint": "pt.thin.14FFB347.FF0C0C0B.50.0",
+       "r": 2,
+       "ink": 4294175186
+      },
+      {
+       "id": "money.day",
+       "fill": 4279571731,
+       "r": 2,
+       "padX": 12,
+       "font": "jetbrainsmono",
+       "ink": 4294175186,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 2
+      },
+      {
+       "id": "money.amount",
+       "font": "jetbrainsmono",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4294937210
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4286570656
+      },
+      {
+       "id": "pay.head",
+       "font": "vt323",
+       "ink": 4294175186
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.135.FF2A2210,FF151513",
+       "r": 6,
+       "ink": 4294175186,
+       "font": "jetbrainsmono",
+       "shadow": 2
+      },
+      {
+       "id": "pay.row",
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4286570656
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937210
+      },
+      {
+       "id": "widget",
+       "fill": 4279571731,
+       "r": 8,
+       "font": "ibmplexsanskr",
+       "ink": 4294175186
+      },
+      {
+       "id": "widget.head",
+       "font": "vt323",
+       "weight": 800,
+       "ink": 4294947655
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294947655,
+       "ink": 4279898630
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4294933099
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294937210
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947655
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4294937210,
+       "fillA": 14,
+       "r": 2
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4286570656,
+       "fillA": 12,
+       "r": 2
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4286570656
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"매매\")",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947655
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"매매\") 그리고 아님 꼬리표.포함(\"일지\")",
+       "fill": 4294933099,
+       "fillA": 16
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "trade",
+       "label": "매매 +1",
+       "emoji": "📈",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "매매",
+       "by": 1,
+       "if": "값(\"매매\") >= 2",
+       "more": [
+        {
+         "do": "notify",
+         "arg": "오늘 {값(\"매매\")}번째 매매예요. 정한 원칙에 맞나요?",
+         "then": [
+          "rules"
+         ]
+        }
+       ]
+      },
+      {
+       "id": "hold",
+       "label": "참았어요",
+       "emoji": "🧘",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "참은 충동",
+       "by": 1
+      },
+      {
+       "id": "rules",
+       "label": "원칙 보기",
+       "emoji": "🧭",
+       "where": "day",
+       "do": "memoTpl",
+       "arg": "내 원칙 점검"
+      }
+     ],
+     "rules": [
+      {
+       "name": "장 끝 일지",
+       "on": "daily",
+       "at": "15:40",
+       "when": "아님 주말 그리고 아님 공휴일 그리고 값(\"매매\") > 0",
+       "do": "memoLine",
+       "arg": "#매매 오늘 {값(\"매매\")}번 · 이번 주 참은 충동 {값(\"참은 충동\")}번"
+      },
+      {
+       "name": "금요일 돌아보기",
+       "on": "daily",
+       "at": "18:00",
+       "when": "요일 = \"금\"",
+       "do": "notify",
+       "arg": "이번 주 참은 충동 {값(\"참은 충동\")}번. 지난주 {지난값(\"참은 충동\", 1)}번이었어요"
+      }
+     ],
+     "values": [
+      {
+       "name": "매매",
+       "reset": "day",
+       "unit": "번"
+      },
+      {
+       "name": "참은 충동",
+       "reset": "week",
+       "unit": "번"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "내 원칙 점검",
+       "emoji": "🧭",
+       "check": [
+        "정한 비중을 지켰나",
+        "소문으로 사지 않았나",
+        "손절 기준을 적었나"
+       ]
+      },
+      {
+       "title": "매매 일지",
+       "emoji": "📈",
+       "body": "{날짜} · 이달 쓴 돈 {원(이달지출)}\n산·판 이유: \n원칙 지켰나: \n마음: ",
+       "asks": [
+        {
+         "label": "감정 점수",
+         "type": "star"
+        },
+        {
+         "label": "원칙 지킴",
+         "type": "check"
+        }
+       ]
+      },
+      {
+       "title": "리밸런싱 점검",
+       "emoji": "⚖️",
+       "check": [
+        "목표 비중과 차이",
+        "현금 비중",
+        "산 이유 그대로인가",
+        "다음 분기 계획"
+       ]
+      },
+      {
+       "title": "공부 기록",
+       "emoji": "🎓",
+       "body": "읽은 것: \n배운 것 한 줄: \n시간: ",
+       "asks": [
+        {
+         "label": "시간",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "invest",
+     "rules": [
+      {
+       "text": "산 이유를 한 줄로 쓸 수 있을 때만 산다"
+      },
+      {
+       "text": "한 번에 다 사지 않고 나눠 산다"
+      },
+      {
+       "text": "빚내서 사지 않는다"
+      },
+      {
+       "text": "뉴스를 본 날은 하루 기다린다"
+      }
+     ],
+     "journal": [
+      "산 이유",
+      "판 이유",
+      "원칙 지킴",
+      "감정 점수"
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278979595,
+    "b": 4294947655,
+    "dir": 2,
+    "emoji": "🧭"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4278979595,
+     "dark": 4278979595
+    },
+    {
+     "name": "카드",
+     "light": 4279571731,
+     "dark": 4279571731
+    },
+    {
+     "name": "글자",
+     "light": 4294175186,
+     "dark": 4294175186
+    },
+    {
+     "name": "포인트",
+     "light": 4294947655,
+     "dark": 4294947655
+    },
+    {
+     "name": "선",
+     "light": 4280952868,
+     "dark": 4280952868
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "하루 루틴 트래커",
+   "summary": "물·약·걷기를 홈 화면에서 체크하고, 약 먹은 지 12시간이면 다시 알려 주는 생활 루틴 프로",
+   "desc": "옅은 세이지와 복숭아색이 번지는 부드러운 화면이에요. 홈 화면 단추로 물 한 잔·약 먹음·10분 걷기를 앱을 열지 않고 적고, 물 8잔 막대와 지난 7일이 쌓여요. 약을 먹은 지 12시간이 지나면 '먹었어요' 단추가 달린 알림이 오고, 근무가 있는 날엔 근무 중에만 두 시간마다 걷자고 알려 줘요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 홈 화면 물·약·걷기 단추(목표 막대·지난 7일)\n· 약 12시간 지나면 알림 속 '먹었어요' 단추\n· 근무 중에만 두 시간마다 걷기\n· 3일 연속 목표면 칭찬\n· 세이지·복숭아 화면\n주의할 점: 기록은 그대로예요. 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFF3F6F1|fl:sh.mesh.FFE5F0E6,FFFBE7DD,FFEEF3E9.1|cd:FFFFFFFF|ik:FF23302A|ac:FF4E8C6A|ft:nunito/alarm~bg:FF20352D|fl:lg.180.FF20352D,FF141E1D|cd:FF2D4C3D|ik:FFFFFFFF|ac:FF9EC0AD|ft:nunito",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF4E8C6A|rw:roomy|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF4E8C6A|rw:roomy|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF4E8C6A|rw:roomy|dy:1/FIELD~tt:xl|pl:FFFFFFFF|mn:FF4E8C6A|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "looks": "cr:14|dp:mc|ds:m|mk:dot|mp:below|pd:2"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4294093194,
+     "sat": 4283070648,
+     "sun": 4291978318,
+     "holiday": 4291978318,
+     "cell": "tint"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 22,
+     "lines": 3,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4294178545
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280496170,
+     "corner": 28,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "tag",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4283337834,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "nunito"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.00F3F6F1",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "gowunbatang",
+       "weight": 800,
+       "ink": 4280496170,
+       "track": 0
+      },
+      {
+       "id": "app.tabs",
+       "paint": "gl.E6FFFFFF.18",
+       "r": 28,
+       "out": 10,
+       "shadow": 6
+      },
+      {
+       "id": "app.tab",
+       "ink": 4284378468
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4283337834,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "paint": "gl.D8FFFFFF.16",
+       "r": 22,
+       "shadow": 2,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292667102
+      },
+      {
+       "id": "app.button",
+       "fill": 4283337834,
+       "ink": 4294967295,
+       "r": 24,
+       "weight": 800,
+       "font": "gowunbatang"
+      },
+      {
+       "id": "app.chip",
+       "r": 24,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292667102,
+       "ink": 4280496170
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4294967295,
+       "r": 22
+      },
+      {
+       "id": "cal.head",
+       "paint": "so.00F3F6F1",
+       "r": 22,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "gowunbatang",
+       "size": 26,
+       "weight": 800,
+       "ink": 4280496170,
+       "track": 0
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4280496170
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4283337834,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "quicksand",
+       "size": 11,
+       "weight": 700,
+       "ink": 4284378468,
+       "track": 6
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4291978318
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4283070648
+      },
+      {
+       "id": "cal.cell",
+       "r": 14
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4283337834,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "quicksand",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4291978318
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4283070648
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4291978318
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "gowunbatang",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4284378468,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "paint": "gl.D8FFFFFF.16",
+       "r": 22
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.00F3F6F1"
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.D8FFFFFF.16",
+       "r": 22,
+       "shadow": 2,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292667102
+      },
+      {
+       "id": "memo.card.title",
+       "font": "gowundodum",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "quicksand",
+       "ink": 4283337834,
+       "fill": 4283337834,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "paint": "tx.paper.FFFFFFFF.10",
+       "font": "gowundodum",
+       "ink": 4280496170
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4292667102
+      },
+      {
+       "id": "money.head",
+       "paint": "gl.D8FFFFFF.16",
+       "r": 22,
+       "ink": 4280496170
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 12,
+       "padX": 12,
+       "font": "quicksand",
+       "ink": 4280496170,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "quicksand",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.head",
+       "font": "gowunbatang",
+       "ink": 4280496170
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.135.FF4E8C6A,FF7FB08F",
+       "r": 26,
+       "ink": 4294967295,
+       "font": "quicksand",
+       "shadow": 4
+      },
+      {
+       "id": "pay.row",
+       "font": "nunito"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "r": 28,
+       "font": "nunito",
+       "ink": 4280496170
+      },
+      {
+       "id": "widget.head",
+       "font": "gowunbatang",
+       "weight": 800,
+       "ink": 4283337834
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4283337834,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4291978318
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4291051567
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4283337834
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4291051567,
+       "fillA": 14,
+       "r": 12
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4281109067,
+       "fillA": 12,
+       "r": 12
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4281109067
+      },
+      {
+       "id": "cal.cell",
+       "when": "쉬는날",
+       "fill": 4294093194,
+       "fillA": 14
+      },
+      {
+       "id": "cal.cell",
+       "when": "체크율 >= 100",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4283337834
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "leaf",
+       "at": "cal.head",
+       "x": 900,
+       "y": 360,
+       "w": 70,
+       "h": 70,
+       "fill": 4283337834,
+       "fillA": 30,
+       "rot": 20
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "water",
+       "label": "물 한 잔",
+       "emoji": "💧",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "물 잔",
+       "by": 1
+      },
+      {
+       "id": "pill",
+       "label": "약 먹음",
+       "emoji": "💊",
+       "where": "widget",
+       "do": "valStamp",
+       "arg": "약"
+      },
+      {
+       "id": "walk",
+       "label": "10분 걷기",
+       "emoji": "🚶",
+       "where": "widget",
+       "do": "valAdd",
+       "arg": "걷기",
+       "by": 1
+      }
+     ],
+     "rules": [
+      {
+       "name": "약 12시간",
+       "on": "every",
+       "min": 60,
+       "at": "08:00",
+       "until": "22:00",
+       "when": "지난시간(\"약\") >= 12",
+       "do": "notify",
+       "arg": "약 먹은 지 {지난시간(\"약\")}시간 지났어요",
+       "then": [
+        "pill",
+        "again60"
+       ]
+      },
+      {
+       "name": "근무 중 걷기",
+       "on": "every",
+       "min": 120,
+       "during": "work",
+       "when": "값(\"걷기\") < 3",
+       "do": "notify",
+       "arg": "두 시간 앉아 있었어요. 10분만 걸어요",
+       "then": [
+        "walk",
+        "again10"
+       ]
+      },
+      {
+       "name": "물 다 마심",
+       "on": "value",
+       "of": "물 잔",
+       "edge": "goal",
+       "do": "notify",
+       "arg": "오늘 물 8잔 끝. {연속(\"물 잔\")}일째예요 🌿"
+      }
+     ],
+     "values": [
+      {
+       "name": "물 잔",
+       "reset": "day",
+       "goal": 8,
+       "unit": "잔"
+      },
+      {
+       "name": "약",
+       "reset": "never",
+       "kind": "time"
+      },
+      {
+       "name": "걷기",
+       "reset": "day",
+       "goal": 3,
+       "unit": "번"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294178545,
+    "b": 4283337834,
+    "dir": 2,
+    "emoji": "🌿"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294178545,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294967295,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4280496170,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4283337834,
+     "dark": 4283337834
+    },
+    {
+     "name": "선",
+     "light": 4292667102,
+     "dark": 4282006074
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "잠의 정원",
+   "summary": "잠들기 단추로 잠을 재고, 알람을 끄면 잔 시간과 오늘 근무가 오는 밤 루틴 프로",
+   "desc": "밤이 깊어질수록 짙어지는 남보라 정원 같은 화면이에요. 빠른 설정이나 홈 화면 '잠들어요'를 누르면 잠든 시각이 적히고 수면 화면이 열려요. 아침 알람을 끄면 몇 시간 잤는지와 오늘 근무가 오고, 6시간이 안 되면 그날 메모에 #짧은잠이 남아 달력 칸이 연보라로 물들어요. 밤 열한 시엔 '잠들어요' 단추가 달린 알림이 와요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 빠른 설정·홈 화면 '잠들어요'(수면 화면 열림)\n· 알람 끄면 잔 시간·오늘 근무\n· 6시간 못 잔 날 #짧은잠·칸 물들임\n· 밤 열한 시 알림 속 단추\n· 남보라 정원 화면\n주의할 점: 기록은 그대로예요. 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF14122B|fl:lg.180.FF1F1A45,FF0E0C20|cd:FF1E1B3D|ik:FFECE8FF|ac:FFC9B6FF|ft:gowundodum/alarm~bg:FF14122B|fl:lg.180.FF1F1A45,FF0E0C20|cd:FF1E1B3D|ik:FFFFFFFF|ac:FFC9B6FF|ft:gowundodum",
+     "pay": "SHIFT~tt:xl|pl:FF1E1B3D|mn:FFC9B6FF|rw:roomy|dy:1/DAY~tt:xl|pl:FF1E1B3D|mn:FFC9B6FF|rw:roomy|dy:1/HOURLY~tt:xl|pl:FF1E1B3D|mn:FFC9B6FF|rw:roomy|dy:1/FIELD~tt:xl|pl:FF1E1B3D|mn:FFC9B6FF|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "looks": "cr:16|dp:mc|ds:m|mk:dot|mp:below|pd:2"
+    },
+    {
+     "kind": "calTheme",
+     "today": 4291409663,
+     "sat": 4287608063,
+     "sun": 4294941360,
+     "holiday": 4294941360,
+     "cell": "tint"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "diary",
+     "card": "own",
+     "cardColor": 4280163133,
+     "border": "thin",
+     "corner": 20,
+     "lines": 5,
+     "title": "m",
+     "bold": true,
+     "font": "gowunbatang",
+     "date": true,
+     "bg": 4279505451
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "dot",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "line"
+    },
+    {
+     "kind": "widget",
+     "alpha": 94,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4280163133,
+     "ink": 4293716223,
+     "corner": 26,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "tag",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4291409663,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app",
+       "font": "gowundodum"
+      },
+      {
+       "id": "app.bar",
+       "paint": "so.0014122B",
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "songmyung",
+       "weight": 800,
+       "ink": 4293716223,
+       "track": 0
+      },
+      {
+       "id": "app.tabs",
+       "paint": "gl.F014122B.20",
+       "r": 28,
+       "out": 10,
+       "shadow": 4
+      },
+      {
+       "id": "app.tab",
+       "ink": 4288912844
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": 4291409663,
+       "weight": 800
+      },
+      {
+       "id": "app.card",
+       "paint": "gl.E01E1B3D.18",
+       "r": 20,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281215575
+      },
+      {
+       "id": "app.button",
+       "fill": 4291409663,
+       "ink": 4279702320,
+       "r": 22,
+       "weight": 800,
+       "font": "songmyung"
+      },
+      {
+       "id": "app.chip",
+       "r": 22,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281215575,
+       "ink": 4293716223
+      },
+      {
+       "id": "app.sheet",
+       "fill": 4280163133,
+       "r": 20
+      },
+      {
+       "id": "cal.head",
+       "paint": "rg.85.20.70.30C9B6FF,00C9B6FF",
+       "r": 20,
+       "pad": 12,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "songmyung",
+       "size": 26,
+       "weight": 800,
+       "ink": 4293716223,
+       "track": 0,
+       "tshadow": 10,
+       "tshadowC": 4291409663,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4293716223
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4291409663,
+       "weight": 800
+      },
+      {
+       "id": "cal.week.day",
+       "font": "lora",
+       "size": 11,
+       "weight": 700,
+       "ink": 4288912844,
+       "track": 6
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4294941360
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4287608063
+      },
+      {
+       "id": "cal.cell",
+       "r": 16
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4291409663,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 35
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "lora",
+       "weight": 700
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4294941360
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sat",
+       "ink": 4287608063
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "holiday",
+       "ink": 4294941360
+      },
+      {
+       "id": "cal.cell.mark",
+       "font": "songmyung",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell.memo",
+       "ink": 4288912844,
+       "size": 9
+      },
+      {
+       "id": "cal.foot",
+       "paint": "gl.E01E1B3D.18",
+       "r": 20
+      },
+      {
+       "id": "memo.head",
+       "paint": "so.0014122B"
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.E01E1B3D.18",
+       "r": 20,
+       "shadow": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281215575
+      },
+      {
+       "id": "memo.card.title",
+       "font": "gowunbatang",
+       "weight": 800,
+       "size": 15
+      },
+      {
+       "id": "memo.card.body",
+       "font": "gowunbatang"
+      },
+      {
+       "id": "memo.card.date",
+       "font": "lora",
+       "ink": 4291409663,
+       "fill": 4291409663,
+       "fillA": 16,
+       "weight": 700,
+       "size": 11
+      },
+      {
+       "id": "memo.page",
+       "paint": "tx.noise.FF1E1B3D.16",
+       "font": "gowunbatang",
+       "ink": 4293716223
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4281215575
+      },
+      {
+       "id": "money.head",
+       "paint": "rg.85.20.70.30C9B6FF,00C9B6FF",
+       "r": 20,
+       "ink": 4293716223
+      },
+      {
+       "id": "money.day",
+       "fill": 4280163133,
+       "r": 12,
+       "padX": 12,
+       "font": "lora",
+       "ink": 4293716223,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "lora",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "pay.head",
+       "font": "songmyung",
+       "ink": 4293716223
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.135.FF3A2F7A,FF221D4D",
+       "r": 24,
+       "ink": 4293716223,
+       "font": "lora",
+       "shadow": 2
+      },
+      {
+       "id": "pay.row",
+       "font": "gowundodum"
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285257359
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294938496
+      },
+      {
+       "id": "widget",
+       "fill": 4280163133,
+       "r": 26,
+       "font": "gowundodum",
+       "ink": 4293716223
+      },
+      {
+       "id": "widget.head",
+       "font": "songmyung",
+       "weight": 800,
+       "ink": 4291409663
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4291409663,
+       "ink": 4279702320
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4294941360
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294938496
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4291409663
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4294938496,
+       "fillA": 14,
+       "r": 12
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4285257359,
+       "fillA": 12,
+       "r": 12
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4285257359
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"짧은잠\")",
+       "fill": 4291409663,
+       "fillA": 30,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\"",
+       "fill": 4291409663,
+       "fillA": 18
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "moon",
+       "at": "cal.head",
+       "x": 880,
+       "y": 260,
+       "w": 80,
+       "h": 80,
+       "fill": 4291409663,
+       "fillA": 70
+      },
+      {
+       "shape": "sparkle",
+       "at": "bg.calendar",
+       "x": 120,
+       "y": 60,
+       "w": 24,
+       "h": 24,
+       "fill": 4293716223,
+       "fillA": 60
+      },
+      {
+       "shape": "sparkle",
+       "at": "bg.calendar",
+       "x": 300,
+       "y": 30,
+       "w": 14,
+       "h": 14,
+       "fill": 4293716223,
+       "fillA": 40
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "id": "sleep",
+       "label": "잠들어요",
+       "emoji": "🌘",
+       "where": "widget",
+       "do": "valStamp",
+       "arg": "잠",
+       "more": [
+        {
+         "do": "screen",
+         "arg": "sleep"
+        }
+       ]
+      },
+      {
+       "id": "sleept",
+       "label": "잠들어요",
+       "emoji": "🌘",
+       "where": "tile",
+       "do": "valStamp",
+       "arg": "잠"
+      }
+     ],
+     "rules": [
+      {
+       "name": "밤 열한 시",
+       "on": "daily",
+       "at": "23:00",
+       "do": "notify",
+       "arg": "곧 잘 시간이에요. 내일 {근무}예요",
+       "then": [
+        "sleep",
+        "again60"
+       ]
+      },
+      {
+       "name": "잘 잔 아침",
+       "on": "alarmOff",
+       "when": "지난시간(\"잠\") >= 6 그리고 지난시간(\"잠\") < 16",
+       "do": "notify",
+       "arg": "{지난시간(\"잠\")}시간 잤어요. 오늘 {근무}예요"
+      },
+      {
+       "name": "짧게 잔 아침",
+       "on": "alarmOff",
+       "when": "지난시간(\"잠\") < 6",
+       "do": "notify",
+       "arg": "{지난시간(\"잠\")}시간밖에 못 잤어요. 오늘 {근무}, 무리하지 말아요",
+       "more": [
+        {
+         "do": "memoLine",
+         "arg": "#짧은잠 {지난시간(\"잠\")}시간"
+        }
+       ]
+      }
+     ],
+     "values": [
+      {
+       "name": "잠",
+       "reset": "never",
+       "kind": "time"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279505451,
+    "b": 4291409663,
+    "dir": 2,
+    "emoji": "🌘"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4279505451,
+     "dark": 4279505451
+    },
+    {
+     "name": "카드",
+     "light": 4280163133,
+     "dark": 4280163133
+    },
+    {
+     "name": "글자",
+     "light": 4293716223,
+     "dark": 4293716223
+    },
+    {
+     "name": "포인트",
+     "light": 4291409663,
+     "dark": 4291409663
+    },
+    {
+     "name": "선",
+     "light": 4281215575,
+     "dark": 4281215575
+    }
+   ]
+  }
+ }
+]

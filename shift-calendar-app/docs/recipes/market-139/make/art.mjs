@@ -215,7 +215,9 @@ export function theme(s) {
     roleIcons.length ? { kind: "photoLook", icons: roleIcons, corners: s.iconCorners ?? "round" } : null,
     memoLook, moneyLook, widget, view, feel, parts,
     s.decor?.length ? { kind: "decor", items: s.decor } : null,
-    ruleItems.length || s.buttons?.length ? { kind: "logic", ...(s.buttons?.length ? { buttons: s.buttons } : {}), ...(ruleItems.length ? { rules: ruleItems } : {}) } : null,
+    ruleItems.length || s.buttons?.length || s.values?.length ? { kind: "logic", ...(s.buttons?.length ? { buttons: s.buttons } : {}), ...(ruleItems.length ? { rules: ruleItems } : {}),
+      // 1.39 [MKW-07] 프로 작품의 값 칸(FX-03).
+      ...(s.values?.length ? { values: s.values } : {}) } : null,
     tplItems.length ? { kind: "memoTpl", items: tplItems } : null,
     roster && s.alarms !== null && kit ? (s.alarms ?? kit.alarms) : null,
     kit && s.piece !== null ? (s.piece ?? kit.piece ?? null) : null,
