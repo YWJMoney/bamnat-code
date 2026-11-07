@@ -161,7 +161,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     }
     if (ledgerOpen) {
         val roster = remember { WorkToolsStore.get(context).current(calendarId).roster }
-        PayrollScreen(roster, now.minusMonths(1)) { ledgerOpen = false }
+        PayrollScreen(roster) { ledgerOpen = false }
     }
 }
 
