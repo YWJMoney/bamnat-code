@@ -340,7 +340,7 @@ fun LiveTryOnBand(c: AppContainer) {
         }
     }
     asking?.let { made ->
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { asking = null },
             title = { Text("써 보며 적은 기록") },
             text = { Text("‘${trial.title}’${com.bamnat.app.ui.Fmt.obj(trial.title)} 써 보는 동안 직접 적은 기록(${made.say()})이 있어요. 써 보기용이면 지우고, " +

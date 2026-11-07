@@ -603,6 +603,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
             }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 1.39 발굴: '보완 요청이 n개 왔어요' opens that version's talk, over 마을 › 내 글 (back leaves both).
+            NoticeLinks.Target.FIX_TALK -> {
+                com.bamnat.app.ui.company.TalkSheets.closeAll()
+                com.bamnat.app.ui.company.TalkSheets.pending.value = NoticeLinks.FixTalk.of(NoticeLinks.payload.value)
+                nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
@@ -2586,13 +2592,18 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         )
     }
     CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
-    if (container.companyApi.enabled && plan.room != null) {
-        val home = appViewModel(key = "plaza-home-$calendar-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar) }
+    // 1.39 [PLZC-02] 교대·일근 with no company open on their own plaza (사람 먼저) once plaza.people is on; the rule plaza is a door.
+    val ownTalk = container.companyApi.enabled && plan.room == null && plan.alsoRoom != null && com.bamnat.app.ui.company.plazaPeopleOn(container)
+    if (container.companyApi.enabled && (plan.room != null || ownTalk)) {
+        val home = appViewModel(key = "plaza-home-$calendar-${plan.room ?: plan.alsoRoom}") {
+            com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar, own = ownTalk)
+        }
         com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = onBack,
             onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
             onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
             onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
+            onFind = if (ownTalk && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
             header = chips)
     } else {
         val vm = appViewModel(key = "company-board-$calendar") { CompanyBoardViewModel(it, calendar) }

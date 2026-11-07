@@ -1503,6 +1503,13 @@ fun CalendarScreen(
                         rangeLabel = payRange?.let { "${it.from.monthValue}/${it.from.dayOfMonth}~${it.to.monthValue}/${it.to.dayOfMonth} · ${visibleMonth.monthValue}월 월급분" } ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
                             snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
                             ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표" },
+                        // 1.39 [PAYX-64] 발굴 G3-M1: 1일~말일 ↔ 월급분 right here, the same setting as 통계's chips (a big-text or low screen keeps the room).
+                        rangeSwitch = payProfile?.period?.takeIf { payShown && !low && com.bamnat.app.data.StatsPeriod.PAY.byPay(it) }?.let { p ->
+                            if (payRange != null) "1일~말일로 보기" else "${visibleMonth.monthValue}월 월급분(${p.label(visibleMonth)})으로 보기"
+                        },
+                        onRangeSwitch = {
+                            vm.updateSettings { s -> s.copy(statsPeriod = if (payRange != null) com.bamnat.app.data.StatsPeriod.MONTH else com.bamnat.app.data.StatsPeriod.PAY) }
+                        },
                     )
                 }
             }

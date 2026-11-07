@@ -76,6 +76,7 @@ class PlazaHomeViewModel(
     own: Boolean = false,
 ) : ViewModel() {
     private val scope = c.companyOf(calendar)
+    internal val container: AppContainer get() = c
     val enabled: Boolean = c.companyApi.enabled
     private val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     /** The company this calendar joined, as the server last said; else none. */
@@ -112,12 +113,24 @@ class PlazaHomeViewModel(
     private fun seenKey() = "seen_${_plan.value.room}"
     private fun readSeen() { _seen.value = runCatching { ui.getLong(seenKey(), 0L) }.getOrDefault(0L) }
 
+    // 1.39 [PLZC-10][PLZC-13][PLZC-03] my tag, the 시간 맞춤 line and older pages (declared before init, which reads them).
+    private val _mine = MutableStateFlow<com.bamnat.core.plaza.PlazaTag?>(null)
+    val mine: StateFlow<com.bamnat.core.plaza.PlazaTag?> = _mine.asStateFlow()
+    private val _timeLine = MutableStateFlow<Pair<String, String>?>(null)
+    val timeLine: StateFlow<Pair<String, String>?> = _timeLine.asStateFlow()
+    private val _older = MutableStateFlow<List<com.bamnat.app.company.TalkPost>>(emptyList())
+    val older: StateFlow<List<com.bamnat.app.company.TalkPost>> = _older.asStateFlow()
+    private val _olderMore = MutableStateFlow(true)
+    val olderMore: StateFlow<Boolean> = _olderMore.asStateFlow()
+    private val _loadingOlder = MutableStateFlow(false)
+    val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
 
     init {
         // [SPD-12] The whole list of companies, for 다른 회사 규칙 광장 and its search, if the start of the app did not yet.
         c.warmCompanies()
         readSeen()
         load()
+        refreshMine()
     }
 
     /** Back and forth between a company's room and its kind of work's plaza ([StylePlaza.Plan.alsoRoom]). */
@@ -125,8 +138,10 @@ class PlazaHomeViewModel(
         val p = _plan.value
         _plan.value = if (p.top == StylePlaza.Top.COMPANY_ROOM) StylePlaza.own(style) else StylePlaza.plan(style, company)
         _state.value = State()
+        _older.value = emptyList(); _olderMore.value = true
         readSeen()
         load()
+        refreshMine()
     }
 
     /**
@@ -170,6 +185,56 @@ class PlazaHomeViewModel(
                 else stateOf(talk.first, talk.second, r)
             if (!atOnce && talk.first != null) com.bamnat.app.company.NetTimings.end(com.bamnat.app.company.NetTimings.Wait.PLAZA, started)
             if (_plan.value == p) _state.value = next
+        }
+    }
+
+    /**
+     * 1.39 [PLZC-10] My own tag on this plaza (what my posts would carry now, months shown as 처음 until the server counts them),
+     * and [PLZC-13] the 시간 맞춤 line from my calendar. Only on a kind of work's plaza while plaza.people is on.
+     */
+
+    fun refreshMine() {
+        val room = _plan.value.room?.takeIf { it.startsWith("style-") && c.plazaTags.on }
+        if (room == null) { _mine.value = null; _timeLine.value = null; return }
+        viewModelScope.launch {
+            val day = runCatching { withContext(Dispatchers.Default) { c.plazaTags.dayFor(room) } }.getOrNull()
+            if (_plan.value.room != room) return@launch
+            _mine.value = day?.tag?.copy(months = if (c.plazaTags.scope().months) 0 else null)
+            _timeLine.value = day?.let { timeLine(it.tag.now, it.offAfterNight, it.dayOff) }
+        }
+    }
+
+    /** [PLZC-03] Older pages of the room's talk (지난 글 더 보기), newest page last; [olderMore] while the server has more. */
+
+    fun more() {
+        val room = _plan.value.room ?: return
+        if (_loadingOlder.value) return
+        val oldest = (_state.value.talk?.posts.orEmpty() + _older.value).filter { it.parent == null && !it.id.startsWith("local-") }
+            .minOfOrNull { it.at } ?: return
+        _loadingOlder.value = true
+        viewModelScope.launch {
+            try {
+                val page = c.companyApi.talkBefore(c.companyStore.device, room, oldest)
+                if (_plan.value.room == room) {
+                    _older.value = (_older.value + page.posts).distinctBy { it.id }
+                    _olderMore.value = page.more
+                }
+            } catch (_: CompanyException) {
+            } finally {
+                _loadingOlder.value = false
+            }
+        }
+    }
+
+    /** [PLZC-04] 나도요 (true) on a post on the page, or taken back (null); the count comes back from the server. */
+    fun vote(id: String, ok: Boolean?) {
+        viewModelScope.launch {
+            val v = try { c.companyApi.postVote(c.companyStore.device, id, ok) } catch (_: CompanyException) { return@launch }
+            fun List<com.bamnat.app.company.TalkPost>.with() = map {
+                if (it.id == id) it.copy(agree = v.agree, disagree = v.disagree, trust = v.trust, myVote = v.myVote) else it
+            }
+            _state.value.talk?.let { t -> _state.value = _state.value.copy(talk = t.copy(posts = t.posts.with())) }
+            _older.value = _older.value.with()
         }
     }
 
@@ -235,6 +300,8 @@ fun PlazaHomeScreen(
     header: (@Composable () -> Unit)? = null,
     /** PC 확인 41e73582: what goes under the talk (교대 광장's 장터 cards, which pushed 글 보기·쓰기 two screens down). */
     footer: (@Composable () -> Unit)? = null,
+    /** 1.39 [PLZC-02] 교대·일근 with no company: 회사 찾기 as a door. */
+    onFind: (() -> Unit)? = null,
 ) {
     val plan by vm.plan.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -284,29 +351,43 @@ fun PlazaHomeScreen(
                     Spacer(Modifier.width(6.dp))
                     Text(plan.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
-                    InfoCard(state, onCompany = { plan.room?.let(onCompany) })
-                    FixesCard(state, onCompany = { plan.room?.let(onCompany) }, onShare = onShare)
-                }
-                plan.rates?.let { r ->
-                    SoftCard {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(r.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                            Text(if (r.unit == "hour") "같은 지역 분들이 올린 시급을 금액 그대로 모아 봐요. 누가 올렸는지는 보이지 않아요."
-                                else "지역·직종별로 올라온 일당·단가를 모아 봐요. 누가 올렸는지는 보이지 않아요.",
-                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            FilledTonalButton(onClick = onRates, modifier = Modifier.heightIn(min = 48.dp)) { Text("시세 보기·올리기") }
+                val people = plazaPeopleOn(vm.container) && plan.room != null
+                if (people) {
+                    // 1.39 [PLZC-01] 사람 먼저: the talk is the page; 정보·고친 점·시세 are doors on one line above it.
+                    // 다른 회사 규칙 means something to a company's room and to 교대·일근 (J133-71), not to 알바·현장·가게·투자.
+                    PlazaDoors(plan, onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
+                        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
+                        onFind = onFind)
+                    FreshAnswers(state, vm.seen.collectAsStateWithLifecycle().value) { vm.openTalk() }
+                    PlazaFeed(vm.container, vm, plan, state.talk, state.error,
+                        older = vm.older.collectAsStateWithLifecycle().value,
+                        olderMore = vm.olderMore.collectAsStateWithLifecycle().value,
+                        loadingOlder = vm.loadingOlder.collectAsStateWithLifecycle().value)
+                } else {
+                    if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
+                        InfoCard(state, onCompany = { plan.room?.let(onCompany) })
+                        FixesCard(state, onCompany = { plan.room?.let(onCompany) }, onShare = onShare)
+                    }
+                    plan.rates?.let { r ->
+                        SoftCard {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(r.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                                Text(if (r.unit == "hour") "같은 지역 분들이 올린 시급을 금액 그대로 모아 봐요. 누가 올렸는지는 보이지 않아요."
+                                    else "지역·직종별로 올라온 일당·단가를 모아 봐요. 누가 올렸는지는 보이지 않아요.",
+                                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                FilledTonalButton(onClick = onRates, modifier = Modifier.heightIn(min = 48.dp)) { Text("시세 보기·올리기") }
+                            }
                         }
                     }
+                    TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = { vm.openTalk() }, onPost = { vm.openTalk(it) })
                 }
-                TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = { vm.openTalk() }, onPost = { vm.openTalk(it) })
                 (plan.alsoRoom ?: vm.backRoom.takeIf { plan.top != StylePlaza.Top.COMPANY_ROOM })?.let {
                     OutlinedButton(onClick = vm::across, modifier = Modifier.fillMaxWidth()) {
                         Text(if (plan.top == StylePlaza.Top.COMPANY_ROOM) "${styleName(it)}도 보기" else "회사 정보 광장으로")
                     }
                 }
                 // [J133-71] 1.33: other companies' rules mean something to 교대·일근 and to a company's room, not to 알바·현장·가게·투자.
-                if (plan.top == StylePlaza.Top.COMPANY_ROOM) TextButton(onClick = onAll, modifier = Modifier.fillMaxWidth()) { Text("다른 회사 규칙 광장 보기") }
+                if (plan.top == StylePlaza.Top.COMPANY_ROOM && !(plazaPeopleOn(vm.container) && plan.room != null)) TextButton(onClick = onAll, modifier = Modifier.fillMaxWidth()) { Text("다른 회사 규칙 광장 보기") }
                 footer?.invoke()
                 Spacer(Modifier.height(24.dp))
             }
@@ -419,4 +500,38 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("글 보기·쓰기") }
         }
     }
+}
+
+
+/** 1.39 [PLZC-01] The plaza's tools as doors on one line: a company's 근무·급여 정보 and 고친 점, 시세, 다른 회사 규칙. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun PlazaDoors(plan: StylePlaza.Plan, onCompany: () -> Unit, onShare: () -> Unit, onRates: () -> Unit, onAll: (() -> Unit)?,
+    onFind: (() -> Unit)? = null) {
+    val doors = buildList {
+        if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
+            add("📋 근무·급여 정보" to onCompany)
+            add("✏️ 고친 점" to onCompany)
+            add("📤 내 설정 보내기" to onShare)
+        }
+        plan.rates?.let { r -> add("💰 ${r.title}" to onRates) }
+        onAll?.let { add((if (plan.top == StylePlaza.Top.COMPANY_ROOM) "🏢 다른 회사 규칙" else "📏 회사 규칙 광장") to it) }
+        onFind?.let { add("🔎 우리 회사 찾기" to it) }
+    }
+    if (doors.isEmpty()) return
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        doors.forEach { (label, go) ->
+            androidx.compose.material3.AssistChip(onClick = go, label = { Text(label, maxLines = 1) }, modifier = Modifier.heightIn(min = 48.dp))
+        }
+    }
+}
+
+/** 1.36 [VIL-09] kept on the people page: answers to my posts since the talk was last opened. */
+@Composable
+private fun FreshAnswers(state: PlazaHomeViewModel.State, seen: Long, onOpen: () -> Unit) {
+    val t = state.talk ?: return
+    val mine = t.posts.filter { it.mine && it.parent == null }.map { it.id }.toSet()
+    val fresh = if (seen == 0L || mine.isEmpty()) 0 else t.posts.count { it.parent in mine && !it.mine && it.at.toEpochMilli() > seen }
+    if (fresh > 0) Text("💬 내 글에 새 답 ${fresh}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clickable(onClickLabel = "새 답 보기", onClick = onOpen).padding(vertical = 4.dp))
 }

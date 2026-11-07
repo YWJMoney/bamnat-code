@@ -264,7 +264,8 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
         Hint("근무표대로 셌어요. 야간·휴일 가산과 산재보험은 빠져 있어요. 참고용이에요.", Modifier.padding(top = 6.dp))
     }
     if (open) StaffScreen(calendarId, month) { open = false }
-    if (ledgerOpen) PayrollScreen(roster, month) { ledgerOpen = false }
+    // 1.39 G2: a month moved to on the card opens as it is; this month opens on the one to settle, as the 관리 card does.
+    if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }) { ledgerOpen = false }
 }
 
 private val DEFAULT_SHIFT = StaffShift(LocalTime.of(9, 0), LocalTime.of(13, 0))

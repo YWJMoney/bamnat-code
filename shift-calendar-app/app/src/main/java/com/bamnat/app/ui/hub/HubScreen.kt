@@ -81,9 +81,13 @@ val LocalHubReselect = androidx.compose.runtime.compositionLocalOf { 0 }
 /** [VIL-07] Where 마을 remembers the part last seen (this phone only, not a setting). */
 private const val HUB_PREFS = "village_ui"
 
-/** [VIL-07] The part 마을 first opens on: 장터 for 자영업·투자, whose 광장 is a quiet talk; 광장 for the rest. */
-fun firstSection(style: WorkStyle?): HubSection = when (style) {
-    WorkStyle.BUSINESS, WorkStyle.INVEST -> HubSection.SHARE
+/**
+ * [VIL-07] The part 마을 first opens on: 장터 for 자영업·투자, whose 광장 is a quiet talk; 광장 for the rest. 1.39 [PLZC-07] once
+ * 광장 is people first ([people], plaza.people on), 광장 for everyone.
+ */
+fun firstSection(style: WorkStyle?, people: Boolean = false): HubSection = when {
+    people -> HubSection.TALK
+    style == WorkStyle.BUSINESS || style == WorkStyle.INVEST -> HubSection.SHARE
     else -> HubSection.TALK
 }
 
@@ -122,7 +126,7 @@ fun HubScreen(
 ) {
     // [VIL-07] 1.36 마을 V7: 마을 opens on the part last seen; the first time on the one that fits the kind of work (자영업·투자 have a quiet 광장).
     val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
-    var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style)) }
+    var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style, com.bamnat.app.ui.company.plazaPeopleOn(c))) }
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
     // [TOWN-01] A 소식 notice says which part to open on.

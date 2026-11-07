@@ -71,8 +71,11 @@ object BossFilings {
             val lines = ledger.lines.filter { it.gross > 0 }
             if (lines.isEmpty()) continue
             val w = withheld(place, ledger)
+            // 1.39 G2 PC ef175fbf: the amount without the people left out read as a wrong sum; say right under it who is not in it.
+            val left = full.lines.filter { it.gross > 0 && it.staff.id !in lines.map { l -> l.staff.id } }.map { it.staff.name.ifBlank { "이름 없음" } }
+            val only = if (left.isEmpty()) "" else "입사일을 넣은 ${lines.size}명만이에요(${left.joinToString(", ")} 빠짐, 입사일을 넣으면 더해져요). "
             if (place.payDate(worked) != null && inside(paid)) out += Due(paid, Kind.PAY, "${worked.monthValue}월분 급여 지급",
-                "${lines.size}명 · 세전 ${won(ledger.gross)}. 명세서도 같이 줘요(근로기준법 제48조).", ledger.gross, lines.map { it.staff.id },
+                only + "${lines.size}명 · 세전 ${won(ledger.gross)}. 명세서도 같이 줘요(근로기준법 제48조).", ledger.gross, lines.map { it.staff.id },
                 "급여 대장", "pay:${place.id}:$worked")
             val tax = w.sumOf { it.tax }
             val local = w.sumOf { it.local }
