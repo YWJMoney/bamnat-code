@@ -107,7 +107,7 @@ export function insightViews(A) {
   function gatesView() {
     const d = S.data.gates;
     if (!d) return skeleton(2);
-    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">분석 › 지표</a>로 가요.</p>
+    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">숫자 › 지표</a>로 가요.</p>
       <div class="grid two">${gatesCard(d)}${remoteCard()}</div>`;
   }
 
