@@ -299,3 +299,20 @@ object TeamOverlap {
 
     private fun norm(name: String) = name.replace(" ", "").lowercase()
 }
+
+/**
+ * 1.39 G6 [SETUP-18] (PC f7f61818 유형별 빈틈 '리더 첫 설정 나중에'): a 리더 who put the first setup off has the app's sample shifts (09:00 주간…)
+ * on their calendar, not the team's. A team made then keeps the kinds of day but not those times, and the board asks for them once:
+ * the times go out on every member's link (their alarms) and the 오늘 출근 head.
+ */
+object TeamTimes {
+    /** The kinds of work still without a start or an end. */
+    fun missing(team: Team): List<TeamShift> = team.shifts.filter { !it.isOff && (it.start == null || it.end == null) }
+
+    /** [shifts] as a new team takes them while the leader's own times are not set: kinds and colours, no times. */
+    fun blank(shifts: List<TeamShift>): List<TeamShift> = shifts.map { if (it.isOff) it else it.copy(start = null, end = null) }
+
+    /** [team] with the times picked for each kind ([times] by [TeamShift.id]; a kind not in it is left as it is). */
+    fun set(team: Team, times: Map<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>): Team =
+        team.copy(shifts = team.shifts.map { s -> times[s.id]?.let { (a, b) -> s.copy(start = a, end = b) } ?: s })
+}
