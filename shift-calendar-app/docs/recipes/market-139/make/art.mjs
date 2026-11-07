@@ -15,7 +15,11 @@ export const lg = (angle, ...stops) => `lg.${angle}.${stops.map(stop).join(",")}
 export const rg = (cx, cy, r, ...stops) => `rg.${cx}.${cy}.${r}.${stops.map(stop).join(",")}`;
 export const sg = (cx, cy, turn, ...stops) => `sg.${cx}.${cy}.${turn}.${stops.map(stop).join(",")}`;
 export const pt = (kind, ink, ground, size = 100, angle = 0) => `pt.${kind}.${stop(ink)}.${stop(ground)}.${size}.${angle}`;
-export const tx = (kind, tint, strength = 40) => `tx.${kind}.${stop(tint)}.${strength}`;
+// 그려 보기(브런치 메뉴판 리넨 50, 달항아리 종이 55): 올이 굵은 결(리넨·캔버스·펠트)은 반으로, 모든 결은 16까지만 — 더 세면 얼룩처럼 보여요.
+// 그려 보기(새벽 커밋·블루프린트 급여 합계가 두 줄로 꺾임): 폭이 넓은 고정폭·장식 숫자 글꼴은 합계를 한 단계 작게.
+const WIDE_NUM = new Set(["spacemono", "jetbrainsmono", "robotomono", "vt323", "pressstart", "orbitron", "silkscreen", "nanumgothiccoding", "monoton", "bungee"]);
+const COARSE = new Set(["linen", "canvas", "felt"]);
+export const tx = (kind, tint, strength = 40) => `tx.${kind}.${stop(tint)}.${Math.min(16, COARSE.has(kind) ? Math.min(12, Math.max(4, Math.round(strength / 3))) : strength)}`;
 export const gl = (tint, a, blur = 16) => `gl.${A(tint, a)}.${blur}`;
 export const sh = (kind, colors, speed = 2) => `sh.${kind}.${colors.map(stop).join(",")}.${speed}`;
 
@@ -73,12 +77,12 @@ export function theme(s) {
   const scr = [`all~${all.join("|")}`];
   for (const [k, v] of Object.entries(s.screens ?? {})) scr.push(`${k}~${v}`);
   const alarmBg = p.alarmBg ?? (p.dark ? p.bg : "#0E0F14");
-  const alarm = [`bg:${H(alarmBg)}`, `fl:${pa.alarm ?? (p.dark && pa.screen ? pa.screen : lg(180, alarmBg, p.alarmTo ?? "#1B1D27"))}`, `ik:FFFFFFFF`,
-    `ac:${H(p.alarmAccent ?? p.accent)}`, `ft:${f.title}`];
+  const alarm = [`bg:${H(alarmBg)}`, `fl:${pa.alarm ?? (p.dark && pa.screen ? pa.screen : lg(180, alarmBg, p.alarmTo ?? "#1B1D27"))}`, `cd:${H(p.alarmCard ?? (p.dark ? p.card : "#262833"))}`, `ik:FFFFFFFF`,
+    `ac:${H(p.alarmAccent ?? (contrast(p.accent, alarmBg) < 3 ? "#F2F2F2" : p.accent))}`, `ft:${f.alarm ?? f.body}`];
   if (s.photo && s.alarmPhoto !== false) alarm.push(`ph:${use(s.photo)}`, `dm:${Math.min(80, (s.dim ?? 20) + 40)}`);
   if (!s.screens?.alarm) scr.push(`alarm~${alarm.join("|")}`);
   const payStyles = style ? [style] : ["SHIFT", "DAY", "HOURLY", "FIELD"];
-  const payWord = (st) => `${st}~tt:${s.pay?.tt ?? "xl"}|pl:${H(p.payCard ?? p.card)}|mn:${H(p.accent)}|rw:${s.pay?.rw ?? "roomy"}|dy:1`;
+  const payWord = (st) => `${st}~tt:${s.pay?.tt ?? (WIDE_NUM.has(f.num) ? "l" : "xl")}|pl:${H(p.payCard ?? p.card)}|mn:${H(p.accent)}|rw:${s.pay?.rw ?? "roomy"}|dy:1`;
   const screenLook = { kind: "screenLook", screens: scr.join("/"),
     ...(style === "BUSINESS" || style === "INVEST" ? {} : { pay: payStyles.map(payWord).join("/") }) };
 
@@ -96,18 +100,19 @@ export function theme(s) {
   const glow = s.glow ? { tshadow: s.glowR ?? 8, tshadowC: c(s.glow), tshadowX: 0, tshadowY: 0 } : {};
   const shadow = s.shadow ?? (p.dark ? 0 : 2);
   const lines = [
-    { id: "app", font: f.body, ink: c(p.ink) },
-    { id: "app.bar", fill: c("#00000000"), shadow: 0 },
+    { id: "app", font: f.body },
+    { id: "app.bar", paint: so(p.bg, 0), shadow: 0 },
     { id: "app.bar.title", font: f.title, weight: s.titleWeight ?? 800, ink: c(p.ink), track: s.titleTrack ?? 0 },
     { id: "app.tabs", ...(pa.tabs ? { paint: pa.tabs } : { fill: c(p.card) }), r: r.tabs, ...(s.tabsFloat !== false ? { out: 10 } : {}),
       shadow: s.tabsShadow ?? (p.dark ? 4 : 6), ...lineOf(s.tabsLine) },
     { id: "app.tab", ink: c(p.sub) },
-    { id: "app.tab", on: "sel", ink: c(p.tabSel ?? p.accent), weight: 800 },
+    { id: "app.tab", on: "sel", ink: c(p.tabSel ?? p.accent), weight: 800, ...(p.tabPill ? { fill: c(p.tabPill) } : {}) },
     { id: "app.card", ...card, r: r.card, shadow, ...(s.cardShadowC ? { shadowC: c(s.cardShadowC) } : {}), ...lineOf(s.cardLine) },
     { id: "app.button", fill: c(p.accent), ink: c(p.onAccent), r: r.btn, weight: 800, font: f.title },
     { id: "app.chip", r: r.btn, ...lineOf({ c: p.line }), ink: c(p.ink) },
     { id: "app.sheet", fill: c(p.sheet ?? p.card), r: Math.max(r.card, 20) },
-    { id: "cal.head", ...(pa.head ? { paint: pa.head } : { fill: c("#00000000") }), r: r.card, pad: 12, out: 6, ...lineOf(s.headLine) },
+    // 그려 보기(블루프린트·영수증 머리 글씨가 제목과 겹침): 머리에 작은 글씨 꾸밈이 있으면 위아래를 넉넉히 두어 제목 위 빈자리에 서게 해요.
+    { id: "cal.head", paint: pa.head ?? so(p.bg, 0), r: r.card, pad: 12, ...(s.decor?.some((d) => d.text && d.at === "cal.head") ? { padY: 24 } : {}), out: 6, ...lineOf(s.headLine) },
     { id: "cal.head.title", font: f.title, size: s.titleSize ?? 24, weight: s.titleWeight ?? 800, ink: c(p.headInk ?? p.ink), track: s.titleTrack ?? 0, ...glow },
     { id: "cal.head.nav", ink: c(p.headInk ?? p.ink) },
     { id: "cal.head.today", ink: c(p.accent), weight: 800 },
@@ -117,17 +122,19 @@ export function theme(s) {
     { id: "cal.cell", r: r.cell, ...(pa.cell ? { paint: pa.cell } : {}), ...lineOf(s.cellLine) },
     { id: "cal.cell", on: "today", ...(pa.today ? { paint: pa.today } : {}), line: "solid", lineW: 2, lineC: c(p.todayLine ?? p.accent), motion: s.todayMotion ?? "glow" },
     { id: "cal.cell", on: "dim", alpha: 35 },
-    { id: "cal.cell.date", font: f.date, weight: s.dateWeight ?? 700, ink: c(p.ink) },
+    // 그려 보기(픽셀 시급 칸 채움 위 흰 날짜): 날짜 부품에 글자색을 주면 앱이 칸 색·오늘 동그라미에 맞춰 고르는 글자색을 덮어써요.
+    // 평일 날짜는 화면 글자색(ik)을 그대로 따라가게 두고, 주말·공휴일 색만 줘요.
+    { id: "cal.cell.date", font: f.date, weight: s.dateWeight ?? 700 },
     { id: "cal.cell.date", on: "sun", ink: c(p.sun ?? "#D9473D") },
     { id: "cal.cell.date", on: "sat", ink: c(p.sat ?? "#3D7BD9") },
     { id: "cal.cell.date", on: "holiday", ink: c(p.holiday ?? p.sun ?? "#D9473D") },
     { id: "cal.cell.mark", font: f.title, weight: 800 },
     { id: "cal.cell.memo", ink: c(p.sub), size: 9 },
     { id: "cal.foot", ...card, r: r.card },
-    { id: "memo.head", fill: c("#00000000") },
+    { id: "memo.head", paint: so(p.bg, 0) },
     { id: "memo.card", ...(pa.memoCard ? { paint: pa.memoCard } : card), r: r.card, shadow, ...lineOf(s.memoLine ?? s.cardLine) },
-    { id: "memo.card.title", font: f.memo, weight: 800, ink: c(p.ink), size: 15 },
-    { id: "memo.card.body", font: f.memo, ink: c(p.sub) },
+    { id: "memo.card.title", font: f.memo, weight: 800, size: 15 },
+    { id: "memo.card.body", font: f.memo },
     { id: "memo.card.date", font: f.date, ink: c(p.accent), weight: 700, size: 11 },
     { id: "memo.page", ...(pa.paper ? { paint: pa.paper } : { fill: c(p.paper ?? p.card) }), font: f.memo, ink: c(p.paperInk ?? p.ink) },
     { id: "memo.page.rule", line: s.rule ?? "solid", lineW: 1, lineC: c(p.ruleC ?? p.line) },
@@ -138,10 +145,10 @@ export function theme(s) {
     { id: "money.amount", on: "out", ink: c(p.expense ?? "#C4402F") },
     { id: "money.amount", on: "in", ink: c(p.income ?? "#2C8A4B") },
     { id: "pay.head", font: f.title, ink: c(p.ink) },
-    { id: "pay.total", ...(pa.total ? { paint: pa.total } : { fill: c(p.accent) }), r: r.card + 4, ink: c(p.totalInk ?? p.onAccent), font: f.num, shadow: shadow + 2 },
+    { id: "pay.total", ...(pa.total ? { paint: pa.total } : { fill: c(p.accent) }), r: r.card + 4, ink: c(p.totalInk ?? (pa.total && p.dark ? p.ink : p.onAccent)), font: f.num, shadow: shadow + 2 },
     { id: "pay.row", font: f.body },
-    { id: "pay.row", on: "in", ink: c(p.income ?? "#2C8A4B") },
-    { id: "pay.row", on: "out", ink: c(p.expense ?? "#C4402F") },
+    { id: "pay.row", on: "in", ink: c(p.income ?? (p.dark ? "#6BD68F" : "#2C8A4B")) },
+    { id: "pay.row", on: "out", ink: c(p.expense ?? (p.dark ? "#FF8F80" : "#C4402F")) },
     { id: "widget", fill: c(p.widgetBg ?? p.card), ...(s.widgetA !== undefined ? { fillA: s.widgetA } : {}), r: Math.min(28, r.card + 6), font: f.body, ink: c(p.ink) },
     { id: "widget.head", font: f.title, weight: 800, ink: c(p.widgetHead ?? p.accent) },
     { id: "widget.cell", on: "today", fill: c(p.accent), ink: c(p.onAccent) },
@@ -166,10 +173,10 @@ export function theme(s) {
   if (shift && p.long && style === "DAY") shift.items = shift.items.map((it) => (it.role === "long" ? { ...it, color: c(p.long) } : it));
   if (shift && p.other && style === "DAY") shift.items = shift.items.map((it) => (it.role === "other" ? { ...it, color: c(p.other) } : it));
 
-  const rules = [...(s.rules ?? []), ...(kit && s.kitRules !== false ? kit.rules : [])];
+  const rules = [...(s.rules ?? []), ...(kit && s.kitRules !== false && !s.only ? kit.rules : [])];
   const seen = new Set();
   const ruleItems = rules.filter((x) => !seen.has(x.name) && seen.add(x.name)).slice(0, 12);
-  const tpls = [...(s.tpls ?? []), ...(kit && s.kitTpls !== false ? kit.tpls : [])];
+  const tpls = [...(s.tpls ?? []), ...(kit && s.kitTpls !== false && !s.only ? kit.tpls : [])];
   const seenT = new Set();
   const tplItems = tpls.filter((t) => !seenT.has(t.title) && seenT.add(t.title)).slice(0, 8);
   const roleIcons = roster && s.roleIcons ? Object.entries(s.roleIcons).filter(([ro]) => ROLE_BY_STYLE[style].includes(ro)).map(([role, key]) => ({ role, image: use(key) })) : [];
@@ -185,16 +192,82 @@ export function theme(s) {
     kit && s.piece !== null ? (s.piece ?? kit.piece ?? null) : null,
     ...(s.extra ?? []),
   ].filter(Boolean);
+  const shown = s.only ? onlyTab(s.only, pieces, s) : pieces;
   const tokens = p.dark
     ? [["바탕", p.bg], ["카드", p.card], ["글자", p.ink], ["포인트", p.accent], ["선", p.line]]
     : [["바탕", p.bg, "#121212"], ["카드", p.card, "#1E1E1E"], ["글자", p.ink, "#ECECEC"], ["포인트", p.accent, p.accent], ["선", p.line, "#3A3A3A"]];
   return {
     recipe: recipe({ title: s.title, summary: s.summary, wow: s.wow, who: s.who ?? kit?.who ?? "어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분",
-      changes: s.changes, note: s.note ?? (style ? noteFor(style) : "기록은 그대로예요. 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요"),
-      styles: style ? [style] : (s.styles ?? ALL), cover: s.cover ?? [p.coverA ?? p.bg, p.accent, s.emoji], tokens, inputs: s.inputs ?? kit?.inputs, pieces }),
+      changes: s.changes, note: s.note ?? (s.only ? TAB_NOTE[s.only] : style ? noteFor(style) : "기록은 그대로예요. 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요"),
+      styles: style ? [style] : (s.styles ?? ALL), cover: s.cover ?? [p.coverA ?? p.bg, p.accent, s.emoji], tokens: s.only ? undefined : tokens,
+      inputs: s.inputs ?? (s.only ? undefined : kit?.inputs), pieces: shown }),
     mood: s.mood,
+    problems: readable(s),
     ...(s.top ? { showcase: true } : {}),
   };
+}
+
+/**
+ * 1.39 [MKW-03] 탭별 작품: 테마와 같은 미술 방향으로 그리되 [tab] 한 화면에 닿는 조각만 남겨요(장터 '탭별 작품' 구간은 그 탭 조각만).
+ * calendar(달력 화면·칸·근무 아이콘·cal.* 부품) · memo · money · pay(근무·급여) · widget · alarm. 규칙·단추·틀은 작품이 직접 준 것만.
+ */
+const TAB_NOTE = {
+  calendar: "달력 화면 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+  memo: "메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+  money: "가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+  pay: "근무·급여 화면 모양만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+  widget: "홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+  alarm: "근무 알람 시각과 알람 화면만 바뀌어요. 근무 기록은 그대로이고, 알람 설정에서 언제든 바꿀 수 있어요",
+};
+const TAB = {
+  calendar: { screen: ["calendar"], kinds: ["calView", "calTheme", "photoLook"], prefix: ["cal."], decor: ["cal.", "bg.calendar"], view: ["cal"] },
+  memo: { screen: ["memo"], kinds: ["memoLook", "memoTpl"], prefix: ["memo."], decor: ["bg.memo"], view: ["memo", "memoBy", "memoSort"] },
+  money: { screen: ["money"], kinds: ["moneyLook"], prefix: ["money."], decor: ["bg.money"], view: ["money"] },
+  pay: { screen: ["stats"], kinds: [], prefix: ["pay."], decor: ["bg.stats"], view: [] },
+  widget: { screen: [], kinds: ["widget"], prefix: ["widget"], decor: ["widget"], view: [] },
+  alarm: { screen: ["alarm"], kinds: ["alarms"], prefix: [], decor: [], view: [] },
+};
+function onlyTab(tab, pieces, s) {
+  const t = TAB[tab];
+  if (!t) throw new Error(`${s.title}: 모르는 탭 ${tab}`);
+  const out = [];
+  for (const pc of pieces) {
+    if (pc.kind === "screenLook") {
+      const scr = pc.screens.split("/").filter((x) => t.screen.includes(x.split("~")[0]));
+      // 화면 하나만 바꿀 땐 그 화면 말('all' 없이)로: all의 바탕·글꼴을 그 화면 줄에 합쳐요.
+      const all = pc.screens.split("/").find((x) => x.startsWith("all~"))?.slice(4);
+      const merged = t.screen.map((k) => {
+        const own = scr.find((x) => x.startsWith(k + "~"))?.slice(k.length + 1);
+        if (k === "alarm") return own ? `${k}~${own}` : null;
+        const words = new Map((all ?? "").split("|").filter(Boolean).map((w) => [w.split(":")[0], w]));
+        for (const w of (own ?? "").split("|").filter(Boolean)) words.set(w.split(":")[0], w);
+        return words.size ? `${k}~${[...words.values()].join("|")}` : null;
+      }).filter(Boolean);
+      if (merged.length || (tab === "pay" && pc.pay)) out.push({ kind: "screenLook", ...(merged.length ? { screens: merged.join("/") } : {}), ...(tab === "pay" && pc.pay ? { pay: pc.pay } : {}) });
+      continue;
+    }
+    if (pc.kind === "parts") {
+      const keep = pc.parts.filter((l) => t.prefix.some((x) => l.id === x.replace(/\.$/, "") || l.id.startsWith(x)));
+      if (keep.length) out.push({ kind: "parts", parts: keep });
+      continue;
+    }
+    if (pc.kind === "decor") {
+      const keep = pc.items.filter((d) => t.decor.some((x) => d.at === x || d.at?.startsWith(x)));
+      if (keep.length) out.push({ kind: "decor", items: keep });
+      continue;
+    }
+    // 장터 구간(server sectionOf): 아이콘 모서리(corners)·규칙(logic)은 앱 전체로 읽혀 '테마'가 되니 탭별 작품엔 넣지 않아요.
+    if (pc.kind === "photoLook") { const { corners, ...rest } = pc; if ((tab === "calendar" && rest.icons) || (tab === "widget" && rest.widget)) out.push(rest); continue; }
+    if (pc.kind === "tabView") {
+      const v = Object.fromEntries(Object.entries(pc).filter(([k]) => t.view.includes(k)));
+      if (Object.keys(v).length && s.view) out.push({ kind: "tabView", ...v });
+      continue;
+    }
+    if (pc.kind === "logic") continue;
+    if (pc.kind === "shiftLook") { if (tab === "calendar" && s.shiftColors) out.push(pc); continue; }
+    if (t.kinds.includes(pc.kind)) out.push(pc);
+  }
+  return [...out, ...(s.tabExtra ?? [])];
 }
 
 /** Lines with the same (id, on, when) folded into one, later fields winning (같은 줄 두 번은 서버가 거절해요). */
@@ -216,5 +289,10 @@ export function readable(s) {
   need("보조 글자/카드", p.sub ?? (p.dark ? "#A9ADBA" : "#5F6170"), p.card, 3);
   need("단추 글자", p.onAccent ?? "#FFFFFF", p.accent, 3);
   need("머리 글자/바탕", p.headInk ?? p.ink, p.headGround ?? p.bg, 3);
+  need("급여 수입 줄", p.income ?? (p.dark ? "#6BD68F" : "#2C8A4B"), p.bg, 3);
+  need("급여 공제 줄", p.expense ?? (p.dark ? "#FF8F80" : "#C4402F"), p.bg, 3);
+  const tabs = s.paint?.tabs;
+  const tabGround = typeof tabs === "string" && tabs.startsWith("so.") ? "#" + tabs.slice(5, 11) : p.card;
+  need("고른 탭", p.tabSel ?? p.accent, p.tabPill ?? tabGround, 3);
   return out;
 }

@@ -1182,7 +1182,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             val tabOn = bp.style("app.tab", setOf("sel"))
                             // 1.36 PC 통합 확인 f629c6f1 (연한 분홍 탭 막대에 안 고른 탭 글자가 흰색이라 안 보여요): a bar given its own colour and
                             // no 글자 colour reads in the ink that stands on that colour, not the theme's (a dark theme's light words).
-                            val barInk = barPart.fill?.let { inkOn(androidx.compose.ui.graphics.Color(it.toInt())) }
+                            // 1.39 [MKW-02] 그려 보기(편집 테마의 검은 탭 막대가 기본색으로 덮임): 탭 막대에 무늬·그라데이션(paint)만 준 테마는
+                            // 막대 바탕을 비워 부품이 그린 무늬가 보이게 하고, 글자색은 그 무늬의 평균색으로 정해요.
+                            val barPaintOnly = barPart.fill == null && barPart.paint != null
+                            val barInk = (barPart.fill ?: barPart.paint?.average)?.let { inkOn(androidx.compose.ui.graphics.Color(it.toInt())) }
                             val itemColors = com.bamnat.app.ui.components.Selection.navBarItemColors().let { c ->
                                 if (tabPart.isEmpty && tabOn.isEmpty && barInk == null) c else androidx.compose.material3.NavigationBarItemDefaults.colors(
                                     indicatorColor = tabOn.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIndicatorColor,
@@ -1195,7 +1198,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             }
                             NavigationBar(
                                 modifier = com.bamnat.app.ui.parts.PartMods.box(barPart.copy(fill = null), androidx.compose.ui.graphics.RectangleShape),
-                                containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) } ?: androidx.compose.material3.NavigationBarDefaults.containerColor,
+                                containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) }
+                                    ?: if (barPaintOnly) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.NavigationBarDefaults.containerColor,
                             ) {
                                 val twoLineRoom = twoLineTabs(shownSlots.map(slotLabel))
                                 shownSlots.forEachIndexed { index, sl ->
