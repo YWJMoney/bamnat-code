@@ -39,6 +39,8 @@ object ProCatalog {
         "look.wardrobe" to "THEME_WARDROBE",
         // 1.36 [PRF-12] 창작자 꾸미기.
         "recipe.creatorPro" to "CREATOR_PRO",
+        // 1.39 [FX-01] 기능 작품: 1.39부터 새로 여는 기능 장치 (formula/FxPro).
+        "recipe.fx" to "FX_WORKS",
     )
 
     fun isPro(id: String): Boolean = id in tiers

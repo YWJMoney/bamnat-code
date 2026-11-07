@@ -28,6 +28,13 @@ object LogicTryout {
             LogicVerb.ADD_INCOME -> "가계부에 수입 ‘${words.ifEmpty { "기타" }}$money’ 한 줄이 생겨요"
             LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.ifEmpty { "한 줄" }}’ 한 줄이 더해져요"
             LogicVerb.ENVELOPE -> (if (act.arg.isEmpty()) "맨 위 봉투에" else "‘${act.arg}’ 봉투에") + (if (money.isEmpty()) " 돈이" else "${money}이") + " 들어가요"
+            // 1.39 [FX-03] 값 칸: what it would be after (the default when the phone has counted none yet).
+            LogicVerb.VAL_ADD -> {
+                val by = act.by ?: 1.0
+                val now = scope.value(act.arg)?.number ?: 0.0
+                "‘${act.arg}’ 값이 ${Formula.numText(now)} → ${Formula.numText(now + by)}이 돼요"
+            }
+            LogicVerb.VAL_SET -> "‘${act.arg}’ 값이 ${Formula.numText(act.by ?: 0.0)}이 돼요"
         }
     }
 

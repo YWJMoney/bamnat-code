@@ -76,6 +76,7 @@ import com.bamnat.core.formula.LogicRule
 import com.bamnat.core.formula.LogicVerb
 import com.bamnat.core.formula.Parsed
 import com.bamnat.core.formula.RuleTrigger
+import com.bamnat.core.formula.pro
 import java.time.LocalDate
 
 /**
@@ -293,16 +294,53 @@ private fun PreviewLine(value: String, scope: FormulaScope) {
 @Composable
 private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: FormulaScope) {
     val c = LocalContext.current.appContainer
+    // 1.39 [FX-03][FX-05] the work being edited: its 값 칸 and buttons.
+    val fx = LocalFxLogic.current
     Text("무엇을", style = MaterialTheme.typography.labelLarge)
     // PC D6 (사용성 중): 8가지가 한눈에 보이게 여러 줄로 (옆으로 밀어야 보이던 쓰기 동작을 못 찾았어요).
     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LogicVerb.entries.forEach { v ->
-            FilterChip(selected = act.verb == v, onClick = { onChange(LogicAct(v, if (v == LogicVerb.SCREEN) "memo" else "", null)) },
-                label = { Text(v.label + if (v.writes) " ⚠" else "") })
+            FilterChip(selected = act.verb == v, onClick = {
+                    onChange(LogicAct(v, when (v) { LogicVerb.SCREEN -> "memo"; LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> fx.values.firstOrNull()?.name.orEmpty(); else -> "" }, null,
+                        by = if (v == LogicVerb.VAL_ADD) 1.0 else null))
+                },
+                // 1.39 [FX-01] ✦ = 프로 기능 장치 (만들기·미리 보기는 무료).
+                label = { Text(v.label + (if (v.writes) " ⚠" else "") + (if (v.pro) " ✦" else "")) })
         }
     }
     when (act.verb) {
-        LogicVerb.NOTIFY -> FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "알림 글")
+        LogicVerb.NOTIFY -> {
+            FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "알림 글")
+            // 1.39 [FX-05] 알림 단추: up to two of the work's buttons on the 알림, pressed without opening the app.
+            val buttons = fx.buttons
+            Text("알림에 단추 달기 ✦ (${LogicAct.MAX_THEN}개까지)", style = MaterialTheme.typography.labelLarge)
+            if (buttons.isEmpty()) Text("먼저 단추를 만들면 알림에서 바로 눌러요(예: 물 한 잔, 가계부에 넣기)", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                buttons.forEach { b ->
+                    val on = b.id in act.then
+                    FilterChip(selected = on, enabled = on || act.then.size < LogicAct.MAX_THEN,
+                        onClick = { onChange(act.copy(then = if (on) act.then - b.id else act.then + b.id)) },
+                        label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) })
+                }
+            }
+        }
+        // 1.39 [FX-03] 값 칸: which number, and by how much (or to what).
+        LogicVerb.VAL_ADD, LogicVerb.VAL_SET -> {
+            val values = fx.values
+            if (values.isEmpty()) Text("먼저 아래 ‘값 칸’에서 셀 것(예: 물 잔, 배달 건수)을 만들어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error)
+            else androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                values.forEach { v -> FilterChip(selected = act.arg == v.name, onClick = { onChange(act.copy(arg = v.name)) }, label = { Text(v.name) }) }
+            }
+            var text by remember(act.verb) { mutableStateOf(act.by?.let(com.bamnat.core.formula.Formula::numText) ?: "") }
+            OutlinedTextField(text, { s ->
+                text = s.filter { it.isDigit() || it == '-' || it == '.' }.take(10)
+                onChange(act.copy(by = text.toDoubleOrNull()?.coerceIn(-LogicAct.MAX_BY, LogicAct.MAX_BY)))
+            }, Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text(if (act.verb == LogicVerb.VAL_ADD) "더할 수 (−1은 하나 빼기)" else "이 수로 정하기 (0이면 처음으로)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+        }
         LogicVerb.MEMO_TEMPLATE, LogicVerb.NEW_MEMO, LogicVerb.CHECK_RESET -> {
             val templates by c.memoTemplates.items.collectAsState()
             if (templates.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -437,8 +475,15 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                 }
                 Text("어디에", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ButtonPlace.entries.forEach { p -> FilterChip(selected = b.place == p, onClick = { b = b.copy(place = p) }, label = { Text(p.label) }) }
+                    ButtonPlace.entries.forEach { p -> FilterChip(selected = b.place == p, onClick = { b = b.copy(place = p) }, label = { Text(p.label + if (p.outside) " ✦" else "") }) }
                 }
+                // 1.39 [FX-04] 밖에서 누르기: where the user finds it.
+                when (b.place) {
+                    ButtonPlace.WIDGET -> "홈 화면을 길게 눌러 위젯 › 밤낮 › ‘밤낮 단추’를 놓으면 앱을 열지 않고 눌러요(4개까지)"
+                    ButtonPlace.TILE -> "알림 막대를 내려 연필(편집)에서 ‘밤낮 단추’ 타일을 넣어요. 첫 단추 하나가 타일이 돼요"
+                    ButtonPlace.SHORTCUT -> "밤낮 아이콘을 길게 누르면 메뉴에 나와요(4개까지)"
+                    else -> null
+                }?.let { Text("$it · ✦ 프로 기능 장치", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 if (b.place == ButtonPlace.DECOR) Text("칩 줄에는 안 나와요. 스튜디오 › 꾸밈 층 › 고치기 › 누르면에서 그림·글상자에 이 단추를 이어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [RUL-22] PC D17: 스위치를 켜도 조건 칸이 대화 상자 아래로 밀려 안 보였어요. 스위치를 '어디에' 바로 아래로 올리고,
@@ -466,7 +511,8 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
             }
         },
         confirmButton = {
-            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null && !unpicked(b.show)) && (b.act.verb !in MONEY_VERBS || b.act.amount != null) && (b.act.verb != LogicVerb.MEMO_LINE || b.act.arg.isNotBlank())
+            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null && !unpicked(b.show)) && (b.act.verb !in MONEY_VERBS || b.act.amount != null) && (b.act.verb != LogicVerb.MEMO_LINE || b.act.arg.isNotBlank()) &&
+                (!b.act.verb.pro || com.bamnat.core.formula.LogicValue.isName(b.act.arg))
             TextButton(onClick = { onDone(b) }, enabled = ok) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
@@ -582,6 +628,7 @@ internal fun ruleProblem(r: LogicRule): String? = when {
     r.on == RuleTrigger.DAILY && timeOf(r.at.orEmpty()) == null -> "시각을 07:00처럼 넣어 주세요"
     r.cond.isNotEmpty() && Formula.problem(r.cond) != null -> "조건 수식을 고쳐 주세요"
     r.act.verb in MONEY_VERBS && r.act.amount == null -> "금액을 넣어 주세요"
+    r.act.verb.pro && !com.bamnat.core.formula.LogicValue.isName(r.act.arg) -> "값 칸을 골라 주세요"
     r.act.verb == LogicVerb.MEMO_LINE && r.act.arg.isBlank() -> "메모에 더할 한 줄을 써 주세요"
     else -> null
 }
@@ -621,7 +668,7 @@ fun LogicEditor(
     onOpenParts: (() -> Unit)? = null,
     /** [RUL-24] PC D19: 설정's read-only lines open the studio's 규칙·단추 when tapped (줄을 눌러도 아무 일이 없었어요). */
     onOpen: (() -> Unit)? = null,
-) {
+) = androidx.compose.runtime.CompositionLocalProvider(LocalFxLogic provides logic) {
     val c = LocalContext.current.appContainer
     val facts = LocalDayFacts.current ?: rememberAppDayFacts()
     val scope = remember(facts, day) { facts?.scope(day) ?: FormulaNames.SAMPLE }
@@ -640,7 +687,10 @@ fun LogicEditor(
     fun saidOn(r: LogicRule) = com.bamnat.app.ui.PutOnNotice.say("‘${r.name}’ 규칙을 켰어요. ${nextLine(r, facts) ?: "조건이 맞으면 저절로 해요"}".trim()) {
         store.setOff(r.key, true); bump++; LogicRunner.schedule(c); true
     }
+    var editValue by remember { mutableStateOf<Int?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // 1.39 [FX-01] 프로 문: what of this work is a 프로 기능 장치, and whether it runs on this phone.
+        FxDoor(logic)
         if (show != LogicShow.RULES) {
         Text("단추", style = MaterialTheme.typography.titleSmall)
         if (logic.buttons.isEmpty()) Text("하루 화면·메모장·달력에 단추를 놓으면 한 번 눌러 메모 틀을 열거나 가계부에 넣을 수 있어요",
@@ -698,6 +748,16 @@ fun LogicEditor(
         }
         if (!readOnly && logic.rules.size < Logic.MAX_RULES) TextButton(onClick = { editRule = -1 }) { Text("+ 규칙 만들기") }
         }
+        // 1.39 [FX-03] 값 칸: numbers the work counts (물 잔, 배달 건수), read by 값("이름") and shown on the 단추 위젯.
+        Text("값 칸 ✦", style = MaterialTheme.typography.titleSmall)
+        if (logic.values.isEmpty()) Text("작품이 스스로 세는 숫자예요. 단추로 +1 하고, 매일·매주·매달 저절로 처음으로 돌아가요. 수식에서는 값(\"물 잔\")으로 읽어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        logic.values.forEachIndexed { i, v ->
+            val now = remember(bump, v) { FxValues.now(v.name) }
+            LineCard(v.say(), now?.let { "지금 ${v.show(it)}" }, null, null, onEdit = if (readOnly) onOpen else ({ editValue = i }),
+                onRemove = { onChange(logic.copy(values = logic.values.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
+        }
+        if (!readOnly && logic.values.size < com.bamnat.core.formula.LogicValue.MAX) TextButton(onClick = { editValue = -1 }) { Text("+ 값 칸 만들기") }
         if (phone && store.undo != null) OutlinedButton(onClick = { c.appScope.launch { LogicRunner.undo(c); bump++ } }) { Text("마지막 동작 되돌리기") }
         askOn?.let { r ->
             AlertDialog(onDismissRequest = { askOn = null },
@@ -723,6 +783,28 @@ fun LogicEditor(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            // 1.39 [FX-06] B-3 '왜 안 됐지': every run and skip with why, newest first (조건·꺼 둠·프로 기능 장치·놓침).
+            val log = remember(bump) { store.log() }
+            var logOpen by remember { mutableStateOf(false) }
+            if (log.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("최근 기록 (왜 안 됐지?) ${log.size}줄", style = MaterialTheme.typography.bodyMedium)
+                        val skipped = log.count { !it.what.endsWith("를 했어요") }
+                        if (!logOpen && skipped > 0) Text("안 한 것 ${skipped}번 · 마지막: ${log.last { !it.what.endsWith("를 했어요") }.let { "${it.who} ${it.what}" }}",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    }
+                    TextButton(onClick = { logOpen = !logOpen }) { Text(if (logOpen) "접기" else "보기") }
+                    if (logOpen) TextButton(onClick = { store.clearLog(); bump++ }) { Text("비우기") }
+                }
+                if (logOpen) log.asReversed().forEach { l ->
+                    val at = java.time.Instant.ofEpochMilli(l.at).atZone(com.bamnat.core.time.Today.zone())
+                    val ran = l.what.endsWith("를 했어요")
+                    Text("${at.monthValue}/${at.dayOfMonth} ${"%02d:%02d".format(at.hour, at.minute)} · ${l.who}: ${l.what}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (ran) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.tertiary)
+                }
+            }
             if (asking) com.bamnat.app.ui.components.AlertDialog(
                 onDismissRequest = { asking = false },
                 title = { Text("규칙이 쓴 것을 모두 되돌릴까요?") },
@@ -745,6 +827,89 @@ fun LogicEditor(
             onChange(logic.copy(buttons = if (i < 0) logic.buttons + b2 else logic.buttons.toMutableList().also { it[i] = b2 })); editButton = null
         }, { editButton = null })
     }
+    editValue?.let { i ->
+        ValueDialog(logic.values.getOrNull(i), taken = logic.values.filterIndexed { j, _ -> j != i }.map { it.name }.toSet(), onDone = { v ->
+            // A 값 칸 renamed: the buttons and rules that counted it follow.
+            val old = logic.values.getOrNull(i)?.name
+            fun follow(a: LogicAct) = if (old != null && old != v.name && a.verb.pro && a.arg == old) a.copy(arg = v.name) else a
+            onChange(logic.copy(values = if (i < 0) logic.values + v else logic.values.toMutableList().also { it[i] = v },
+                buttons = logic.buttons.map { it.copy(act = follow(it.act)) }, rules = logic.rules.map { it.copy(act = follow(it.act)) }))
+            editValue = null
+        }, onDismiss = { editValue = null })
+    }
+}
+
+/** 1.39 [FX-03][FX-05] The work open in the editor, for the 무엇을 part (its 값 칸 and buttons). */
+internal val LocalFxLogic = androidx.compose.runtime.compositionLocalOf { Logic() }
+
+/**
+ * 1.39 [FX-01] 프로 문 card (사용자 2026-11-07 "무료 프로의 구분은 확실히"): which 프로 기능 장치 the work has, that making and previewing
+ * them is free, and how they run here — 프로, 하루 써 보기 (once, [com.bamnat.core.formula.FxTaste.OWN] for one's own), or resting.
+ * Nothing shows for a work of only free things.
+ */
+@Composable
+fun FxDoor(logic: Logic, key: String = com.bamnat.core.formula.FxTaste.OWN) {
+    val c = LocalContext.current.appContainer
+    val parts = remember(logic) { com.bamnat.core.formula.FxPro.uses(logic) }
+    if (parts.isEmpty()) return
+    val gate by c.featureGate.state.collectAsState()
+    val taste by FxAccess.taste(c).collectAsState()
+    val now = com.bamnat.core.time.Today.instant()
+    val pro = remember(gate) { FxAccess.pro(c) }
+    val status = remember(taste, gate) { FxAccess.status(c, key, now) }
+    val running = remember(taste) { taste?.running(now) }
+    Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("✦ 프로 기능 장치: ${com.bamnat.core.formula.FxPro.say(parts)}", style = MaterialTheme.typography.titleSmall)
+            Text(when {
+                pro -> "프로라 이 기능이 모두 돌아요"
+                running != null -> "하루 써 보기 중이에요 · ${fxUntil(running.second)}까지 모두 돌아요"
+                else -> "만들기와 미리 보기는 무료예요. 내 앱에서 돌리고 장터에 올리는 건 프로예요. 그동안 ✦ 없는 단추·규칙은 그대로 돌아요"
+            }, style = MaterialTheme.typography.bodySmall)
+            if (!pro && running == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (status is com.bamnat.core.formula.FxTaste.Status.Ready) androidx.compose.material3.Button(onClick = {
+                    if (FxAccess.start(c, key)) LogicRunner.say("하루 동안 프로 기능 장치를 써 봐요. 끝나면 한 일을 알려 드려요")
+                }) { Text("하루 써 보기") }
+                OutlinedButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PRO) }) { Text("프로 보기") }
+            }
+        }
+    }
+}
+
+/** "오늘 21:40", "내일 09:10". */
+internal fun fxUntil(at: java.time.Instant): String {
+    val z = at.atZone(com.bamnat.core.time.Today.zone())
+    val day = if (z.toLocalDate() == com.bamnat.core.time.Today.date()) "오늘" else "내일"
+    return "$day ${"%02d:%02d".format(z.hour, z.minute)}"
+}
+
+/** 1.39 [FX-03] 값 칸 만들기·고치기. */
+@Composable
+private fun ValueDialog(start: com.bamnat.core.formula.LogicValue?, taken: Set<String>, onDone: (com.bamnat.core.formula.LogicValue) -> Unit, onDismiss: () -> Unit) {
+    var v by remember { mutableStateOf(start ?: com.bamnat.core.formula.LogicValue("물 잔", com.bamnat.core.formula.ValueReset.DAY, goal = 8.0, unit = "잔")) }
+    var goal by remember { mutableStateOf(v.goal?.let(com.bamnat.core.formula.Formula::numText).orEmpty()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (start == null) "값 칸 만들기" else "값 칸 고치기") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(v.name, { v = v.copy(name = it.take(12)) }, Modifier.weight(1f), singleLine = true, label = { Text("이름") })
+                    OutlinedTextField(v.unit, { v = v.copy(unit = it.take(com.bamnat.core.formula.LogicValue.MAX_UNIT)) }, Modifier.width(88.dp), singleLine = true, label = { Text("단위") })
+                }
+                Text("처음으로 돌아가기", style = MaterialTheme.typography.labelLarge)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.formula.ValueReset.entries.forEach { r -> FilterChip(selected = v.reset == r, onClick = { v = v.copy(reset = r) }, label = { Text(r.label) }) }
+                }
+                OutlinedTextField(goal, { s -> goal = s.filter { it.isDigit() || it == '.' }.take(9); v = v.copy(goal = goal.toDoubleOrNull()?.takeIf { it > 0 }) },
+                    Modifier.fillMaxWidth(), singleLine = true, label = { Text("목표 (비우면 없음)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                Text(v.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                if (v.name in taken) Text("같은 이름의 값 칸이 이미 있어요", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(v.copy(name = v.name.trim())) }, enabled = com.bamnat.core.formula.LogicValue.isName(v.name.trim()) && v.name.trim() !in taken) { Text("저장") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 @Composable

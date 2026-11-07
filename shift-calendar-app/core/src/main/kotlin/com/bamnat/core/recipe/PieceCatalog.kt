@@ -391,6 +391,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                     Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
                     Field.Money("amount", optional = true),
                     Field.Text("show", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                    // 1.39 [FX-03] 값 더하기·정하기: by how much / to what.
+                    Field.Num("by", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
                 ),
             ),
             Field.Items(
@@ -405,6 +407,20 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                     Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
                     Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
                     Field.Money("amount", optional = true),
+                    Field.Num("by", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+                    // 1.39 [FX-05] 알림 단추: the buttons an 알림 carries.
+                    Field.Texts("then", com.bamnat.core.formula.LogicAct.MAX_THEN, 12),
+                ),
+            ),
+            // 1.39 [FX-03] 값 칸.
+            Field.Items(
+                "values", com.bamnat.core.formula.LogicValue.MAX, optional = true,
+                fields = listOf(
+                    Field.Text("name", 12, min = 1, check = { s -> if (com.bamnat.core.formula.LogicValue.isName(s)) null else "name" }),
+                    Field.Pick("reset", com.bamnat.core.formula.ValueReset.KEYS, optional = true),
+                    Field.Num("start", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+                    Field.Num("goal", 0.0, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+                    Field.Text("unit", com.bamnat.core.formula.LogicValue.MAX_UNIT, optional = true),
                 ),
             ),
         ),

@@ -155,6 +155,8 @@ fun dayFactsOf(
             val hourly = if (style == WorkStyle.INVEST) null else pay?.hourly(today)
             com.bamnat.core.formula.MoneyFacts.of(money, today, w, payDays, hourly, extras.envelopes.first, extras.envelopes.second)
         },
+        // 1.39 [FX-03] 값 칸, live (a widget's +1 shows at once in a 값() formula).
+        values = FxValues::now,
     )
 }
 

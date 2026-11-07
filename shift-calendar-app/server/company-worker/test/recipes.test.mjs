@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn, seasoned } from "./helpers.mjs";
 import { MATERIAL_CHECKS } from "../src/materials.js";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf, logicOnly } from "../src/recipes.js";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf, logicOnly, fxPartsOf, FX_PARTS, listItem } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -433,6 +433,40 @@ test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own se
   assert.deepEqual(got.data.items.map((i) => [i.title, i.scope]), [["퇴근 규칙·단추", "logic"]]);
   const tabs = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab");
   assert.deepEqual(tabs.data.items.map((i) => i.title), ["알람만"]);
+});
+
+test("[FX-01] 프로 문: 값 칸·값 더하기·값() 수식·밖 단추·알림 단추 are read, listed as 기능 장치 (core FxPro), the rest is free", async () => {
+  assert.deepEqual(FX_PARTS, ["values", "valueAct", "valueRead", "outside", "notifyButtons"]);
+  const fx = { kind: "logic", values: [{ name: "물 잔", reset: "day", goal: 8, unit: "잔" }],
+    buttons: [{ id: "water", label: "물 한 잔", where: "widget", do: "valAdd", arg: "물 잔", by: 1 }, { id: "snz", label: "10분 뒤", where: "day", do: "notify", arg: "다시" }],
+    rules: [{ name: "물 알림", on: "daily", at: "15:00", when: "값(\"물 잔\", 0) < 4", do: "notify", arg: "물 {값(\"물 잔\")}잔째", then: ["water"] }] };
+  const ok = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, fx] })));
+  for (const k of ['"values"', '"valAdd"', '"where":"widget"', '"then":["water"]', '"by":1']) assert.ok(ok.text.includes(k), k);
+  assert.deepEqual(fxPartsOf(ok.text), ["values", "valueAct", "valueRead", "outside", "notifyButtons"]);
+  // 1.38까지의 규칙·단추만 있으면 프로 장치가 없어요.
+  const old = { kind: "logic", buttons: [{ label: "기록", where: "day", do: "memoTpl", arg: "하루" }], rules: [{ name: "끝", on: "end", do: "checkReset" }] };
+  assert.deepEqual(fxPartsOf({ pieces: [old] }), []);
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "logic", rules: [{ name: "a", on: "open", do: "notify", arg: "오늘 {값(\"배달\", 0)}건" }] }] }), ["valueRead"]);
+  assert.deepEqual(fxPartsOf("not json"), []);
+  const row = { body: ok.text, code: "c", title: "t", summary: "", styles: "SHIFT", cover: "{}", version: 1, likes: 0, dislikes: 0, applied: 0, kept7: 0, official: 0, public_data: 0, updated_at: 0, created_at: 0 };
+  assert.deepEqual(listItem(row, 0).fx, FX_PARTS);
+  assert.equal(listItem({ ...row, body: JSON.stringify({ pieces: [old] }) }, 0).fx, undefined);
+  // fx=1: only works with a 기능 장치, beside any scope.
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  for (const [title, pieces] of [["물 위젯", [fx]], ["옛 규칙", [old]]]) {
+    const put = await call("POST", "/api/admin/recipes", { recipe: recipe({ title, pieces }) }, admin);
+    assert.ok(put.status < 300, JSON.stringify(put.data));
+  }
+  const all = await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53");
+  assert.ok(all.data.items.map((i) => i.title).includes("옛 규칙"));
+  const only = await call("GET", "/api/recipes?style=SHIFT&sort=new&fx=1&app=53");
+  assert.deepEqual(only.data.items.map((i) => [i.title, i.fx]), [["물 위젯", FX_PARTS]]);
+  const tools = await call("GET", "/api/recipes?style=SHIFT&sort=new&fx=1&scope=tool&app=53");
+  assert.deepEqual(tools.data.items.map((i) => i.title), ["물 위젯"]);
+  // A bad 값 칸 name or place is refused like any other field.
+  await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...fx, values: [{ name: "a/b" }] }] }))), (e) => e.code !== undefined);
+  await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...fx, buttons: [{ ...fx.buttons[0], where: "lock" }] }] }))), (e) => e.code !== undefined);
 });
 
 test("[FREE-09] every 추천 테마 core wrote reads the same on the server, nine for each kind of work (전문 달력 first, TAB-05), each with its look for the list", async () => {

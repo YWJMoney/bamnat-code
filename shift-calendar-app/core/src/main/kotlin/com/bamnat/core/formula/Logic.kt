@@ -10,8 +10,16 @@ import com.bamnat.core.recipe.RecipeText
  * - Only the safe verbs in [LogicVerb] exist. Never 지우기, 밖으로 보내기, 결제, 알람 끄기, 잠금 or 동의 (계획 1장 2항). The verbs that write
  *   data ([LogicVerb.writes]) are said first when the recipe is put on and can be taken back.
  */
-data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<LogicRule> = emptyList()) {
-    val isEmpty: Boolean get() = buttons.isEmpty() && rules.isEmpty()
+data class Logic(
+    val buttons: List<LogicButton> = emptyList(),
+    val rules: List<LogicRule> = emptyList(),
+    /** 1.39 [FX-03] 값 칸: the numbers this work counts ([LogicValue]). */
+    val values: List<LogicValue> = emptyList(),
+) {
+    val isEmpty: Boolean get() = buttons.isEmpty() && rules.isEmpty() && values.isEmpty()
+
+    /** 1.39 [FX-03] The 값 칸 named [name]. */
+    fun value(name: String): LogicValue? = values.firstOrNull { it.name == name }
 
     /** Does anything in it write the user's data (메모 만들기, 가계부 넣기, 체크 다시)? */
     val writes: Boolean get() = buttons.any { it.act.verb.writes } || rules.any { it.act.verb.writes }
@@ -19,13 +27,14 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
     fun toValues(): Map<String, Any?> = buildMap {
         if (buttons.isNotEmpty()) put("buttons", buttons.map { it.toMap() })
         if (rules.isNotEmpty()) put("rules", rules.map { it.toMap() })
+        if (this@Logic.values.isNotEmpty()) put("values", this@Logic.values.map { it.toMap() })
     }
 
     /**
      * 1.36 [SEC-12] 보안 점검 M4: these as they come in from someone else's recipe: a 가계부 amount is held to [RECEIVED_MAX_WON]
      * (a prank or a mistake cannot put 1억 원 in each day). The phone's own buttons and rules are never held.
      */
-    fun received(): Logic = Logic(buttons.map { it.copy(act = it.act.held()) }, rules.map { it.copy(act = it.act.held()) })
+    fun received(): Logic = Logic(buttons.map { it.copy(act = it.act.held()) }, rules.map { it.copy(act = it.act.held()) }, values)
 
     /** Whether [received] would hold an amount down. */
     val overReceived: Boolean get() = buttons.any { it.act.held() != it.act } || rules.any { it.act.held() != it.act }
@@ -62,6 +71,7 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
     fun minus(other: Logic): Logic = Logic(
         buttons.filter { b -> other.buttons.none { it.toMap() == b.toMap() } },
         rules.filter { r -> other.rules.none { it.key == r.key } },
+        values.filter { v -> other.values.none { it.name == v.name } },
     )
 
     /** 누락 점검 N8: the button a 꾸밈 항목's `tap` names. */
@@ -71,6 +81,8 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
     fun plus(other: Logic): Logic = Logic(
         (buttons + other.buttons.filter { b -> buttons.none { it.toMap() == b.toMap() } }).take(MAX_BUTTONS),
         (rules + other.rules.filter { r -> rules.none { it.key == r.key } }).take(MAX_RULES),
+        // 1.39 [FX-03] A 값 칸 of the same name is the same number (two works counting 물 잔 count one).
+        (values + other.values.filter { v -> values.none { it.name == v.name } }).take(LogicValue.MAX),
     )
 
     companion object {
@@ -85,7 +97,8 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
             if (values == null) return Logic()
             val b = (values["buttons"] as? List<Map<String, Any?>>).orEmpty().mapNotNull(LogicButton::from).take(MAX_BUTTONS)
             val r = (values["rules"] as? List<Map<String, Any?>>).orEmpty().mapNotNull(LogicRule::from).take(MAX_RULES)
-            return Logic(b, r)
+            val v = (values["values"] as? List<Map<String, Any?>>).orEmpty().mapNotNull(LogicValue::from).distinctBy { it.name }.take(LogicValue.MAX)
+            return Logic(b, r, v)
         }
 
         /** As the setting keeps it (the piece's values, written as the codec writes them). */
@@ -106,11 +119,21 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
 }
 
 /** What a button or a rule does. [arg] is the 메모 틀's title, the screen, or the words (with {formulas}); [amount] for 가계부. */
-data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long? = null) {
+data class LogicAct(
+    val verb: LogicVerb,
+    val arg: String = "",
+    val amount: Long? = null,
+    /** 1.39 [FX-03] 값 더하기·정하기: by how much (−1 takes one back), or what to set it to. */
+    val by: Double? = null,
+    /** 1.39 [FX-05] 알림 단추: the buttons ([LogicButton.id]) an 알림 carries, at most [MAX_THEN]. */
+    val then: List<String> = emptyList(),
+) {
     fun toMap(): Map<String, Any?> = buildMap {
         put("do", verb.key)
         if (arg.isNotEmpty()) put("arg", arg)
         amount?.let { put("amount", it) }
+        by?.let { put("by", it) }
+        if (then.isNotEmpty()) put("then", then)
     }
 
     /** 1.36 [SEC-12] This act with a 가계부 amount held to [Logic.RECEIVED_MAX_WON]. */
@@ -129,14 +152,23 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
         LogicVerb.MEMO_LINE -> "그날 메모에 ‘${arg.ifEmpty { "한 줄" }}’ 더하기"
         LogicVerb.ENVELOPE -> (if (arg.isEmpty()) "맨 위 봉투에" else "‘$arg’ 봉투에") + "${amount?.let { " " + won(it) } ?: ""} 넣기"
         LogicVerb.SCREEN -> "${LogicVerb.SCREENS[arg] ?: "화면"} 열기"
-    }
+        LogicVerb.VAL_ADD -> (by ?: 1.0).let { b -> "‘${arg.ifEmpty { "값" }}’에 " + (if (b < 0) "${Formula.numText(-b)} 빼기" else "${Formula.numText(b)} 더하기") }
+        LogicVerb.VAL_SET -> "‘${arg.ifEmpty { "값" }}’을 ${Formula.numText(by ?: 0.0)}으로"
+    } + (if (then.isNotEmpty() && verb == LogicVerb.NOTIFY) " (단추 ${then.size}개)" else "")
 
     companion object {
+        const val MAX_THEN = 2
+        const val MAX_BY = 1_000_000.0
+
+        @Suppress("UNCHECKED_CAST")
         fun from(m: Map<String, Any?>): LogicAct? {
             val verb = LogicVerb.of(m["do"] as? String) ?: return null
             val arg = (m["arg"] as? String).orEmpty()
             if (verb == LogicVerb.SCREEN && arg !in LogicVerb.SCREENS) return null
-            return LogicAct(verb, arg, (m["amount"] as? Number)?.toLong())
+            if ((verb == LogicVerb.VAL_ADD || verb == LogicVerb.VAL_SET) && !LogicValue.isName(arg.trim())) return null
+            val then = (m["then"] as? List<Any?>).orEmpty().mapNotNull { (it as? String)?.takeIf(LogicButton.ID::matches) }.distinct().take(MAX_THEN)
+            return LogicAct(verb, if (verb == LogicVerb.VAL_ADD || verb == LogicVerb.VAL_SET) arg.trim() else arg, (m["amount"] as? Number)?.toLong(),
+                (m["by"] as? Number)?.toDouble()?.coerceIn(-MAX_BY, MAX_BY), if (verb == LogicVerb.NOTIFY) then else emptyList())
         }
 
         internal fun won(v: Long) = v.toString().reversed().chunked(3).joinToString(",").reversed() + "원"
@@ -156,7 +188,11 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
     /** 가계부 수입 쪽 (예: 야간 근무 끝에 야간 수당 기록). */
     ADD_INCOME("addIncome", "가계부에 수입 넣기", true),
     /** 1.37 [LEDH-12] 모으기 봉투에 넣기 (예: 야간 근무 끝마다 '여행' 봉투에 1만 원). 이름이 없거나 없는 봉투면 첫 봉투. */
-    ENVELOPE("envelope", "봉투에 넣기", true);
+    ENVELOPE("envelope", "봉투에 넣기", true),
+    /** 1.39 [FX-03] 값 칸에 더하기 (프로 기능 장치): '+1건', '물 한 잔'. The work's own number, not the user's records. */
+    VAL_ADD("valAdd", "값 더하기", false),
+    /** 1.39 [FX-03] 값 칸을 정하기 (프로 기능 장치): 0으로 되돌리기, 오늘 목표로. */
+    VAL_SET("valSet", "값 정하기", false);
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -173,7 +209,16 @@ enum class ButtonPlace(val key: String, val label: String) {
     /** 사용자 2026-11-01 "가계부와 연동도": 가계부 화면에도 단추. */
     MONEY("money", "가계부 화면"),
     /** 누락 점검 N8: 꾸밈 층의 그림을 누르면 (갈래 C의 꾸밈 항목 `tap`이 단추 [LogicButton.id]를 담아요). 칩 줄에는 안 나와요. */
-    DECOR("decor", "꾸밈 층");
+    DECOR("decor", "꾸밈 층"),
+    /** 1.39 [FX-04] 단추 위젯 (프로 기능 장치): 홈 화면에서 앱을 열지 않고 눌러요. */
+    WIDGET("widget", "단추 위젯"),
+    /** 1.39 [FX-04] 빠른 설정 타일 (프로 기능 장치): 알림 막대를 내려 눌러요. */
+    TILE("tile", "빠른 설정"),
+    /** 1.39 [FX-04] 앱 바로가기 (프로 기능 장치): 앱 아이콘을 길게 눌러요. */
+    SHORTCUT("shortcut", "앱 바로가기");
+
+    /** 1.39 [FX-04] Outside the app: pressed without opening it, shown on no screen's chip row. */
+    val outside: Boolean get() = this == WIDGET || this == TILE || this == SHORTCUT
 
     companion object {
         val KEYS = entries.map { it.key }

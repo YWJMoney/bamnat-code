@@ -123,6 +123,9 @@ fun interface FormulaScope {
     /** The receiver's answer to the field labelled [label]; none by default. */
     fun input(label: String): Value? = null
 
+    /** 1.39 [FX-03] 값 칸: what a work counted and kept under [name] (`값("물 잔")`); none by default. */
+    fun value(name: String): Value? = null
+
     companion object {
         val EMPTY = FormulaScope { null }
         fun of(map: Map<String, Any?>, inputs: Map<String, Any?> = emptyMap()): FormulaScope = object : FormulaScope {
@@ -136,6 +139,18 @@ fun interface FormulaScope {
 class Compiled internal constructor(val source: String, internal val root: Node) {
     /** The names it reads (main spellings), for the 쉬운 보기 and "이 규칙이 보는 것". */
     val names: Set<String> by lazy { buildSet { collect(root, this) } }
+
+    /** 1.39 [FX-01] The functions it calls (main Korean names), so 프로 문 can tell a formula that reads `값(…)`. */
+    val calls: Set<String> by lazy { buildSet { calls(root, this) } }
+
+    private fun calls(n: Node, out: MutableSet<String>) {
+        when (n) {
+            is Node.Call -> { out += n.fn.ko; n.args.forEach { calls(it, out) } }
+            is Node.Un -> calls(n.x, out)
+            is Node.Bin -> { calls(n.a, out); calls(n.b, out) }
+            else -> Unit
+        }
+    }
 
     private fun collect(n: Node, out: MutableSet<String>) {
         when (n) {
@@ -517,6 +532,10 @@ internal class Eval(val scope: FormulaScope) {
                 val label = eval(args[0], d + 1).text.trim()
                 scope.input(label) ?: (if (args.size > 1) eval(args[1], d + 1) else Value.None)
             }
+            Fn.VALUE -> {
+                val name = eval(args[0], d + 1).text.trim()
+                scope.value(name) ?: (if (args.size > 1) eval(args[1], d + 1) else Value.None)
+            }
             else -> Value.None
         }
     }
@@ -569,6 +588,8 @@ internal enum class Fn(val ko: String, val en: String, val min: Int, val max: In
     NOT("아님", "not", 1, 1, help = "참과 거짓을 뒤집기", example = "아님(쉬는날)"),
     IFNONE("없으면", "ifEmpty", 2, 2, true, "앞 값이 비었으면 뒤 값", "없으면(근무, \"쉬는 날\")"),
     INPUT("칸", "input", 1, 2, true, "받는 사람이 채운 칸의 값(이름으로)", "칸(\"기준 금액\", 50000)"),
+    /** 1.39 [FX-03] 값 칸 (프로 기능 장치): what the work counted, by its name; the second value when it has none yet. */
+    VALUE("값", "value", 1, 2, true, "작품이 세어 둔 값(값 칸 이름으로)", "값(\"물 잔\", 0)"),
     CONTAINS("포함", "contains", 2, 2, help = "글이나 목록에 들어 있나", example = "꼬리표.포함(\"병원\")"),
     STARTS("시작", "startsWith", 2, 2, help = "글이 이것으로 시작하나", example = "근무.시작(\"야\")"),
     ENDS("끝", "endsWith", 2, 2, help = "글이 이것으로 끝나나", example = "메모.끝(\"!\")"),
