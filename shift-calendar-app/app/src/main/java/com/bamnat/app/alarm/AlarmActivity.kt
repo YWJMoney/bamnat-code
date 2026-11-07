@@ -150,6 +150,7 @@ class AlarmActivity : ComponentActivity() {
                 val quiet by AlarmService.quiet.collectAsStateWithLifecycle()
                 val allOffWaits by AlarmService.allOffAfterMission.collectAsStateWithLifecycle()
                 val inCall by AlarmService.inCall.collectAsStateWithLifecycle()
+                val stage by AlarmService.wakeStage.collectAsStateWithLifecycle()
                 if (current != null && inMission && mission != AlarmMission.NONE) {
                     MissionScreen(
                         mission = mission,
@@ -182,6 +183,7 @@ class AlarmActivity : ComponentActivity() {
                         shift = ringShift(current, Today.date()),
                         // [EASE-19] With a mission 끄기 opens the mission, so the shortcut is left out.
                         onToday = if (mission == AlarmMission.NONE) ({ dismissAndOpenToday() }) else null,
+                        stage = stage,
                     )
                 }
               }

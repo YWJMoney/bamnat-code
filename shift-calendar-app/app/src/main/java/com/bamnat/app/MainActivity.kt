@@ -109,7 +109,9 @@ class MainActivity : ComponentActivity() {
         val settings = if (safe) stored.safeLooks() else stored
         // [SHFT-05] 야간 근무 중 어둡게 turns into dark or the phone's theme as the night shift starts and ends.
         val themeMode = com.bamnat.app.ui.theme.rememberThemeMode(settings.themeMode, container)
-        val dark = when (themeMode) {
+        // 1.39 [FLOW-14] 밤 색: warm and dark in the sleep planned around the work, while asleep and at 01~05 (설정 › 화면과 글자).
+        val night = if (safe) false else com.bamnat.app.ui.theme.rememberAppNight(settings, container)
+        val dark = night || when (themeMode) {
             ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
             ThemeMode.LIGHT -> false
             ThemeMode.DARK -> true
@@ -145,7 +147,7 @@ class MainActivity : ComponentActivity() {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
-            corners = photoLook.corners, accent = settings.accentColor,
+            corners = photoLook.corners, accent = settings.accentColor, night = night,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
                 if (partsResting) com.bamnat.core.recipe.Blueprint.EMPTY else com.bamnat.core.recipe.Blueprint.decode(settings.parts)
             }) {

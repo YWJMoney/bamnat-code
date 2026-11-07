@@ -80,7 +80,8 @@ object SleepingNotice {
             .setWhen(start.atZone(Today.zone()).toInstant().toEpochMilli())
             .setUsesChronometer(true)
             .setShowWhen(true)
-            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3313))
+            // 1.39 [FLOW-13] Opened at night, it is the night screen (clock, the alarm, 깼어요), not the bright calendar.
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.NIGHT, 3319))
             .addAction(SleepActions.awake(context))
             .setTimeoutAfter(left)
             .build()

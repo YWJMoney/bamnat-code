@@ -30,6 +30,9 @@ enum class SleepTag(val key: String, val label: String) {
     NOISE("noise", "시끄러웠음"),
     STRESS("stress", "스트레스");
 
+    /** 1.39 [FLOW-12] The chip's meaning colour: what helps sleep is 좋음 (green), the rest 살펴볼 것 (orange), as everywhere in the app. */
+    val helps: Boolean get() = this == EXERCISE
+
     companion object {
         fun of(key: String): SleepTag? = entries.firstOrNull { it.key == key }
         fun encode(tags: Set<SleepTag>): String = entries.filter { it in tags }.joinToString(",") { it.key }

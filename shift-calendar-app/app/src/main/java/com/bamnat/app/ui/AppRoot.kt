@@ -284,6 +284,8 @@ private object Routes {
 
     // [SLP-16][RECV-02][IMPORT-01] The sleep log, money owed, and bringing in the phone's calendar.
     const val SLEEP = "sleep"
+    /** 1.39 [FLOW-13] 밤 화면. */
+    const val NIGHT = "night"
     const val OWED = "owed"
     const val CALENDAR_IMPORT = "calendar_import"
     /** [COMN-01] 모든 달력 합쳐 보기. */
@@ -563,6 +565,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     com.bamnat.app.sleep.SleepRecordService.allowed(nav.context)) com.bamnat.app.sleep.SleepRecordService.start(nav.context)
                 nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target)
             }
+            NoticeLinks.Target.NIGHT -> { nav.navigate(Routes.NIGHT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -1970,7 +1973,14 @@ private fun AppNavHost(
         // [EXTRA-04] Names, hours and pay of each kind of extra work, from settings, a day or the pay rules.
         composable(Routes.SLEEP) {
             val vm = appViewModel { com.bamnat.app.ui.sleep.SleepViewModel(it) }
-            com.bamnat.app.ui.sleep.SleepScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.SLEEP) })
+            com.bamnat.app.ui.sleep.SleepScreen(vm = vm, wide = wide, onBack = { nav.popFrom(Routes.SLEEP) },
+                onNight = { nav.navigate(Routes.NIGHT) { launchSingleTop = true } })
+        }
+        // 1.39 [FLOW-13] 밤 화면: from 잠들었어요, 측정 시작, the 자는 중 notice and the sleep screen.
+        composable(Routes.NIGHT) {
+            val vm = appViewModel { com.bamnat.app.ui.sleep.NightViewModel(it) }
+            com.bamnat.app.ui.sleep.NightScreen(vm = vm, onClose = { nav.popFrom(Routes.NIGHT) },
+                onAlarms = { NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK) })
         }
         composable(Routes.OWED) {
             val calendar by container.calendars.active.collectAsStateWithLifecycle()

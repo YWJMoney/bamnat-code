@@ -152,6 +152,8 @@ data class ReceivedCalendar(
     val follow: String? = null,
     /** 1.39 [TEAM-22] The last change said over the calendar (put in, asked, or the link gone), until closed. */
     val note: FollowNote? = null,
+    /** 1.39 [SLEEP-15][P3-L-18] The leader asked for 피곤해요 합계 on this link ([ReceivedShare.tired]): the sleep screen offers the button. */
+    val tired: Boolean = false,
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
@@ -271,9 +273,14 @@ class ReceivedCalendarStore(
         val title = share.schedule.optString("title").trim()
         val color = old?.color ?: ReceivedCalendar.COLORS[_calendars.value.size % ReceivedCalendar.COLORS.size]
         val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag,
-            mine = mine || old?.mine == true, adopted = old?.adopted == true, follow = old?.follow, note = old?.note)
+            mine = mine || old?.mine == true, adopted = old?.adopted == true, follow = old?.follow, note = old?.note, tired = share.tired)
         write(if (old == null) _calendars.value + cal else _calendars.value.map { if (it.id == id) cal else it })
         return cal
+    }
+
+    /** 1.39 [SLEEP-15] The leader turned 피곤해요 off (the server says not_found to a press): no button for this link until it comes back. */
+    fun setTired(id: String, on: Boolean) {
+        if (get(id)?.tired != on) write(_calendars.value.map { if (it.id == id) it.copy(tired = on) else it })
     }
 
     /** [SHR-12] Asked and nothing changed: the copy here is current as of now. */
@@ -363,6 +370,7 @@ class ReceivedCalendarStore(
         if (adopted) put("adopted", true)
         follow?.let { put("follow", it) }
         note?.let { put("note", it.toJson()) }
+        if (tired) put("tired", true)
     }
 
     private fun fromJson(o: JSONObject): ReceivedCalendar? {
@@ -372,7 +380,7 @@ class ReceivedCalendarStore(
             time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"),
             o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() }, o.optBoolean("mine", false),
             adopted = o.optBoolean("adopted", false), follow = o.optString("follow").takeIf { it.isNotEmpty() },
-            note = FollowNote.fromJson(o.optJSONObject("note")))
+            note = FollowNote.fromJson(o.optJSONObject("note")), tired = o.optBoolean("tired", false))
     }
 
     companion object {

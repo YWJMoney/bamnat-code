@@ -147,7 +147,8 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         asleepSince = log.firstOrNull { it.end == null && !it.imported }?.start,
         onAction = { action, date ->
             when (action) {
-                TodayFlow.Action.ASLEEP -> vm.fellAsleep()
+                // 1.39 [FLOW-13] and the dark night screen (clock, tomorrow's alarm, 잠드는 소리, 깼어요).
+                TodayFlow.Action.ASLEEP -> { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) }
                 TodayFlow.Action.AWAKE -> vm.wokeUp()
                 TodayFlow.Action.ALARM_ON -> date?.let { vm.setAlarmSkipped(it, false, announce = true) }
                 TodayFlow.Action.AWAKE_AT -> Unit // asks for the time first, below

@@ -688,7 +688,8 @@ private fun QuickChips(
         if (day.date == today && settings.sleepTips && !moneyFirst) item {
             val asleep = log.firstOrNull { it.end == null } != null
             AssistChip(
-                onClick = { if (asleep) vm.wokeUp() else vm.fellAsleep() },
+                // 1.39 [FLOW-13] 잠들었어요 opens the dark night screen too.
+                onClick = { if (asleep) vm.wokeUp() else { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) } },
                 label = { ChipText(if (asleep) "깼어요" else "잠들었어요") },
                 leadingIcon = { Icon(if (asleep) Icons.Filled.WbSunny else Icons.Filled.Bedtime, null, Modifier.size(18.dp)) },
             )

@@ -278,22 +278,27 @@ fun BamnatTheme(
     accent: Long = 0L,
     /** [BLU-05] 1.36 부품 꾸미기: the app-wide parts (앱 전체·단추·카드·칩·아래 창) over the colours, shapes and letters. */
     parts: com.bamnat.core.recipe.Blueprint = com.bamnat.core.recipe.Blueprint.EMPTY,
+    /**
+     * 1.39 [FLOW-14][DSG-07] 밤 색 now ([rememberAppNight]): the whole app in [NightPalette], over the accent, the phone's own
+     * colours and the parts' colours (a bright part colour is what would glare); letters and shapes stay the user's.
+     */
+    night: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val dark = when (themeMode) {
+    val dark = night || when (themeMode) {
         // [SHFT-05] The app resolves NIGHT_SHIFT before it gets here (rememberThemeMode); elsewhere it is the phone's.
         ThemeMode.SYSTEM, ThemeMode.NIGHT_SHIFT -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val colors: ColorScheme = when {
+    val colors: ColorScheme = if (night) NightPalette.scheme else when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         dark -> DarkColors
         else -> LightColors
-    }.let { if (accent == 0L) it else accented(it, accent, dark) }
+    }.let { if (accent == 0L || night) it else accented(it, accent, dark) }
     // [BLU-12] 1.36 어두운 화면: the parts' `on: dark` lines (a token's dark colour) laid over theirs when the screen is dark.
     val raw = parts
     val parts = androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
@@ -314,7 +319,7 @@ fun BamnatTheme(
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
             MaterialTheme(
-                colorScheme = com.bamnat.app.ui.parts.PartTheme.colors(colors, parts),
+                colorScheme = if (night) colors else com.bamnat.app.ui.parts.PartTheme.colors(colors, parts),
                 typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
                 shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
             ) {
