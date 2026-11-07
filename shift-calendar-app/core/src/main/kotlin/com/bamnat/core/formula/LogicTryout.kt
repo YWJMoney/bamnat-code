@@ -32,12 +32,26 @@ object LogicTryout {
             LogicVerb.VAL_ADD -> {
                 val by = act.by ?: 1.0
                 val now = scope.value(act.arg)?.number ?: 0.0
-                "‘${act.arg}’ 값이 ${Formula.numText(now)} → ${Formula.numText(now + by)}이 돼요"
+                "‘${act.arg}’ 값이 ${Formula.numText(now)} → ${numIGa(Formula.numText(now + by))} 돼요"
             }
-            LogicVerb.VAL_SET -> "‘${act.arg}’ 값이 ${Formula.numText(act.by ?: 0.0)}이 돼요"
+            LogicVerb.VAL_SET -> "‘${act.arg}’ 값이 ${numIGa(Formula.numText(act.by ?: 0.0))} 돼요"
             LogicVerb.VAL_STAMP -> "‘${act.arg}’에 지금 시각이 적혀요"
-            LogicVerb.VAL_TEXT -> "‘${act.arg}’에 ‘${runCatching { FormulaText.render(act.text, scope) }.getOrDefault(act.text).take(24)}’이 적혀요"
+            LogicVerb.VAL_TEXT -> runCatching { FormulaText.render(act.text, scope) }.getOrDefault(act.text).take(24)
+                .let { w -> "‘${act.arg}’에 ‘$w’${numIGa(w).takeLast(1)} 적혀요" }
         } + (act.after?.let { " (${LogicAct.afterWords(it)} 뒤에)" } ?: "")
+    }
+
+    /**
+     * [t] with 이 or 가 as it is read aloud: "1이", "2가", "10이" (십), "2.5가", "물이", "커피가". A number reads by its last digit
+     * (2·4·5·9 end in a vowel: 이·사·오·구); a word by its last syllable; anything else takes 이.
+     */
+    internal fun numIGa(t: String): String {
+        val last = t.trimEnd().lastOrNull() ?: return t
+        return when {
+            last in '0'..'9' -> t + if (last in "2459") "가" else "이"
+            last in '가'..'힣' -> com.bamnat.core.pay.particle(t, "이", "가")
+            else -> t + "이"
+        }
     }
 
     /** [b] pressed on [date]: hidden on a day its 보이는 조건 is false. */

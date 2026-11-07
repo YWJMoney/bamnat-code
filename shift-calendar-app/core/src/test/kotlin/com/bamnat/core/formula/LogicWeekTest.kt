@@ -55,4 +55,23 @@ class LogicWeekTest {
         // The same rule is kept once, not a clash; a different time is not one either.
         assertTrue(LogicClash.check(mine, Logic(rules = listOf(pay, pay.copy(name = "주간", role = "day", min = 30)))).isEmpty())
     }
+
+    @Test fun aNightsEndIsShownTheNextMorningAndTheMemoSeesTheNewCount() {
+        // 4차 PC: 11/7 야간(19:00~07:00)의 끝이 '11/7 07:00'에 보였고, 값이 1이 됐는데 메모는 '0번째', '1 → 2이 돼요'.
+        val night = DayFactsBook.DayShift("야간", "night", "19:00", "07:00", 720)
+        val facts = DayFactsBook(today = day, style = "교대", shifts = { d -> if (d.dayOfWeek.value <= 2) night else DayFactsBook.DayShift("휴무", "off", off = true) })
+        val nights = FxExamples.into(Logic(), FxExamples.ALL.first { it.key == "nights" })!!
+        val w = LogicWeek.run(nights, facts, day)
+        // 월 night ends 화 07:00, 화 night ends 수 07:00; last 일요일 had no night, so nothing on 월 morning.
+        assertEquals(listOf(day.plusDays(1), day.plusDays(2)), w.lines.map { it.date })
+        assertTrue(w.lines.all { it.at == java.time.LocalTime.of(7, 0) && it.who == "야간 세기(전날 근무 끝)" })
+        assertTrue(w.lines[0].what, w.lines[0].what.contains("0 → 1이 돼요") && w.lines[0].what.contains("이달 야간 1번째"))
+        assertTrue(w.lines[1].what, w.lines[1].what.contains("1 → 2가 돼요") && w.lines[1].what.contains("이달 야간 2번째"))
+        // A night that began the day before the week still ends inside it.
+        val fromTue = LogicWeek.run(nights, facts, day.plusDays(1))
+        assertEquals(day.plusDays(1), fromTue.lines.first().date)
+        assertEquals("2가", LogicTryout.numIGa("2"))
+        assertEquals("10이", LogicTryout.numIGa("10"))
+        assertEquals("커피가", LogicTryout.numIGa("커피"))
+    }
 }
