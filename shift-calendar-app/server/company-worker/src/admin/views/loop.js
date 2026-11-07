@@ -19,6 +19,8 @@ export function loopViews(A) {
     syncUrl();
     load({ quiet: true });
   };
+  /** 설정 칸은 접어 둬요(휴대폰에서 화면이 길어지지 않게). 연 상태는 앱이 기억해요(S.opened). */
+  const fold = (key, title, meta, body) => `<details class="card how" data-key="loop-${key}"${S.opened.get(`loop-${key}`) ? " open" : ""}><summary><b>${esc(title)}</b>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}</summary>${body}</details>`;
   const SHIP_NAMES = { waiting: "보류 중", done: "보냄", cancelled: "취소함" };
   const SHIP_TONES = { waiting: "warn", done: "ok", cancelled: "" };
   const REWARD_NAMES = [["bugDays", "문제 신고가 고쳐짐", "문제 신고(버그)를 보낸 폰에, 그 개발사항이 완료되면"], ["polishDays", "제안이 다듬기로 들어감", "건의·제안이 '다듬기' 크기로 완료되면"],
@@ -66,17 +68,18 @@ export function loopViews(A) {
 
   function trainCard(d) {
     const t = d.train;
-    return `<section class="card">${head("정기 출시 열차", t.next ? `다음 출발 ${t.next}` : "")}
+    return fold("train", "정기 출시 열차", t.next ? `다음 출발 ${t.next} · ${t.days}일마다` : "", `
       <p class="hint">앱 판으로 고친 것은 ${t.days}일마다 한 번 모아 나가요. 고친 직후 문의에는 '○월 ○일 정기 업데이트에 들어가요'가 날짜와 함께 가요. 알람·데이터·결제·앱이 안 열림 같은 긴급은 열차를 기다리지 않아요.</p>
       ${owner() ? `<form class="inline-form" data-form="loop-train"><label for="lt-start">첫 출발일</label><input id="lt-start" name="start" type="date" required value="${esc(t.start)}">
         <label for="lt-days">며칠마다</label><input id="lt-days" name="days" type="number" min="7" max="60" required value="${t.days}">
-        <div class="actions"><button class="btn small primary" type="submit">저장</button></div></form>` : ""}</section>`;
+        <div class="actions"><button class="btn small primary" type="submit">저장</button></div></form>` : ""}`);
   }
 
   function switchCard(d) {
     const sw = d.switches;
     const box = (k, label, hint) => `<label class="chk"><input type="checkbox" name="${k}"${sw[k] ? " checked" : ""}${owner() ? "" : " disabled"}><span><b>${esc(label)}</b> <small>${esc(hint)}</small></span></label>`;
-    return `<section class="card">${head("멈춤 스위치", "문제가 보이면 바로 끄세요")}
+    const off = ["autoShip", "sync", "phone", "halt"].filter((k) => !sw[k]).length;
+    return fold("switches", "멈춤 스위치 · 인앱 업데이트", off ? `${off}개 꺼짐` : "모두 켜짐", `
       <form data-form="loop-switches">${box("autoShip", "Play 출시를 보고 스스로 안내", "끄면 지금처럼 '나간 판 저장'을 사람이 눌러요")}
         ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 받지 않아요(409)")}
         ${box("phone", "고친 판으로 연 폰에 바로 안내", "단계적 출시 중에 그 폰에만")}
@@ -85,27 +88,28 @@ export function loopViews(A) {
         <p class="hint">앱이 하루 한 번 읽어요. 이 versionCode보다 낮은 앱은 긴급이면 바로 업데이트 화면을, 정기면 앱 안에서 한 번 '업데이트' 단추를 보여요. 0이면 권하지 않아요.</p>
         <label for="ls-urgent">긴급(바로 업데이트) 기준 versionCode</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}"${owner() ? "" : " disabled"}>
         <label for="ls-flex">정기(한 번 권함) 기준 versionCode</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}"${owner() ? "" : " disabled"}>
-        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form></section>`;
+        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
   }
 
   function autonomyCard(d) {
     const a = d.autonomy;
-    return `<section class="card">${head("믿을수록 더 맡기기", `연속 ${a.need}번이면 제안`)}
+    const ready = a.piles.filter((p) => p.suggest).length;
+    return fold("trust", "믿을수록 더 맡기기", ready ? `맡겨도 되는 종류 ${ready}개` : `연속 ${a.need}번이면 제안`, `
       <p class="hint">Claude 답은 10분 보류 뒤 나가요. 종류마다 사람이 손대지 않고 그대로 나간 수를 세요. 켠 종류는 보류 없이 바로 가요. 결제·환불 말이 있거나 회사 방식 문의면 켜 두어도 보류해요. '새 문제'는 켤 수 없어요.</p>
       <form data-form="loop-instant"><ul class="rows">${a.piles.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.name)}</b>
         <small>그대로 ${p.sent} · 고쳐서 ${p.edited} · 취소 ${p.cancelled}${p.quick ? ` · 바로 ${p.quick}` : ""} · 연속 ${p.streak}</small></span>
         ${p.suggest ? '<span class="pill gold">맡겨도 돼요</span>' : ""}
         ${p.pile === "new" ? "" : `<label class="chk"><input type="checkbox" name="instant" value="${esc(p.pile)}"${p.instant ? " checked" : ""}${owner() ? "" : " disabled"}><span>바로</span></label>`}</div></li>`).join("")}</ul>
-      ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : ""}</form></section>`;
+      ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : ""}</form>`);
   }
 
   function rewardCard(d) {
     const r = d.rewards;
-    return `<section class="card" id="reward-rules">${head("쓰면 쌓이는 날 규칙", "문의·제안 보상")}
+    return fold("rewards", "쓰면 쌓이는 날 규칙", `문제 신고 ${r.bugDays}일 · 새 기능 제안 ${r.featureDays}일 · 한 달 ${r.monthCap}일까지`, `
       <p class="hint">프로를 날 수만큼 열어 드려요. 회사 방식 채택·요청 반영의 개월 보상은 관리 › 채택 규칙에 있어요.</p>
       <form data-form="loop-rewards">${REWARD_NAMES.map(([k, label, hint]) => `<label for="lr-${k}">${esc(label)} <small>${esc(hint)}</small></label>
         <input id="lr-${k}" name="${k}" type="number" min="0" max="${k === "monthCap" ? 60 : 30}" inputmode="numeric" value="${r[k]}"${owner() ? "" : " disabled"}>`).join("")}
-        ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form></section>`;
+        ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
   }
 
   function queueCard() {
