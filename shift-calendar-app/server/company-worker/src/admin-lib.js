@@ -341,7 +341,7 @@ export function adminLib() {
     desk: { label: "운영 장부", old: "운영 장부 체크시트 할 일함 정리함 대기열 누락 기한 넘김 다시 열림 상태 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 붙여 넣기 Claude 차례 최고 관리자 확인 CSV work sort desk ledger" },
     // 1.39 [LOOP] 자동 순환(Play 출시 감지·저장소 동기화·정기 출시 열차·멈춤 스위치·믿을수록 더 맡기기·보상 규칙), 결정함, 요금 판단.
     loop: { label: "자동 순환", area: "dev", old: "자동 순환 자동 출시 Play 트랙 출시 감지 보류 저장소 동기화 GitHub 정기 출시 열차 2주 인앱 업데이트 멈춤 스위치 믿을수록 맡기기 바로 보내기 보상 규칙 쓰면 쌓이는 날 영향도 대기열 loop" },
-    decide: { label: "결정함", area: "dev", old: "결정함 최고 관리자 확인 Claude 초안 무료 프로 요금 정하기 decide" },
+    decide: { label: "결정함", area: "dev", badge: (o) => (o.decideBack ?? 0) + (o.decideHalts ?? 0) + (o.decideTiers ?? 0), strip: "결정할 것", old: "결정함 최고 관리자 확인 Claude 초안 무료 프로 요금 정하기 decide" },
     tiers: { label: "요금 판단", area: "metrics", old: "요금 판단 무료 프로 관측치 새 기능 요금 tier tiers" },
     // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
     growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },

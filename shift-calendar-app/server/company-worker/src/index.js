@@ -5890,6 +5890,12 @@ const BADGE_SQL = {
   bugsUncopied: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'"],
   // 1.38 [ADM3] 오류·데이터 요청·사고·리뷰·출시 점검표(admin-ops.js).
   ...OPS_BADGE_SQL,
+  // 1.39 [LOOP-09] 결정함 숫자(PC G10 사용성 제안: 접은 폭 위 탭이 많아 결정함까지 밀어 봐야 해서). '아직이에요'로 다시 열린 개발사항,
+  // 7일 안의 출시 멈춤 권장, (최고 관리자만) 요금을 정할 새 기능. decideBox와 같은 조건.
+  decideBack: ["dev", `SELECT COUNT(DISTINCT d.id) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL
+      AND d.status IN ('todo', 'doing') WHERE h.action = 'fixed_no'`],
+  decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > (CAST(strftime('%s', 'now') AS INTEGER) - 7 * 86400) * 1000"],
+  decideTiers: ["owner", "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND size = 'feature' AND status != 'rejected' AND tier IN ('', 'later')"],
 };
 
 // AN 1.28 시작

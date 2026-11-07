@@ -215,6 +215,8 @@ test("[LOOP-06][LOOP-15][LOOP-16] 고친 판으로 연 폰에만 바로 안내�
   // 결정함 '다시 봐야 할 것'에도 떠요(PC 확인 1.39 G10).
   const box = (await call("GET", "/api/admin/loop/decide", undefined, owner)).data;
   assert.deepEqual(box.back.map((x) => [x.id, x.times, x.status]), [[d, 1, "todo"]]);
+  // 결정함 탭 숫자에도 세요(PC G10 사용성 제안).
+  assert.equal((await call("GET", "/api/admin/badges", undefined, owner)).data.decideBack, 1);
   // 남의 문의·안내 전 문의는 못 눌러요.
   assert.equal((await call("POST", `/api/inquiries/${q1}/fixed`, { ok: true }, { "x-device": device(2) })).status, 404);
   const q3 = await ask(call, 3, "질문이 있어요", "question");
@@ -264,6 +266,9 @@ test("[LOOP-10][LOOP-11] 요금을 정하지 않은 새 기능은 스위치를 �
   const box = (await call("GET", "/api/admin/loop/decide", undefined, owner)).data;
   assert.equal(box.tiers[0].id, d);
   assert.equal(box.tiers[0].ask, "free");
+  const badges = (await call("GET", "/api/admin/badges", undefined, owner)).data;
+  assert.equal(badges.decideTiers, 1);
+  assert.equal(badges.decideHalts, 0);
   // 관측치: 요청 수.
   const obs = (await call("GET", `/api/admin/loop/tier/${d}`, undefined, owner)).data;
   assert.equal(obs.requests.asks, 1);
