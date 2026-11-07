@@ -481,6 +481,19 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 val charges = active.count { it.skill == Skill.CHARGE }
                 val lines = remember(signs, charges) { TeamCheck.summary(signs, { Fmt.monthDay(it) }, charges) }
                 var all by remember { mutableStateOf(false) }
+                // 1.39 G2 PC 5066b027: with 신청 open the month is mostly empty, and 31 부족 notes pushed the 신청 card down. While a
+                // round is open they fold to one line until asked for.
+                val asking = round?.open(Today.millis()) == true
+                var shown by remember(round?.id) { mutableStateOf(!asking) }
+                if (!shown) {
+                    val danger = lines.count { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("신청을 받는 중이라 접어 뒀어요" + (if (danger > 0) " · 규칙 ${danger}줄" else ""), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { shown = true }) { Text("펼치기") }
+                    }
+                    return@SectionCard
+                }
                 lines.take(if (all) lines.size else 6).forEach { l ->
                     val danger = l.kind == TeamCheck.Kind.RULE || l.kind == TeamCheck.Kind.WEEK_HOURS
                     Text((if (danger) "⚠ " else "· ") + l.text, style = MaterialTheme.typography.bodySmall,

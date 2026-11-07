@@ -168,21 +168,35 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             if (unticked.isNotEmpty() && !isClosed) Text("4대보험을 고르지 않았어요: " + unticked.joinToString(", ") { it.name } + " · 고르면 사장님 몫까지 맞게 나와요",
                 style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
                 modifier = Modifier.clickable(role = Role.Button) { editing = unticked.first() }.padding(vertical = 4.dp))
-            // 1.39 G2-M1·I3: the weeks before a new 최저임금·요율 day, what changes and whom it reaches (core LawChange, 출처는 거기).
+            // 1.39 G2 PC 5066b027 (상): 최저임금·두루누리·산재 lines stacked over ten lines above the people. They fold into one
+            // '알아 둘 것 N' row that names each; what needs fixing (새 최저임금보다 적은 사람) stays in the warning colour on that row.
             val law = remember(place, staff) { com.bamnat.core.boss.LawChange.next(place, staff, Today.date()) }
-            law?.let { n ->
-                Text("${n.from.monthValue}월 ${n.from.dayOfMonth}일부터 바뀌어요 · " + n.changes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-                if (n.under.isNotEmpty()) Text("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
-                    (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
-                    style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
-                    modifier = Modifier.clickable(role = Role.Button) { editing = n.under.first().first }.padding(vertical = 4.dp))
+            val durunuri = remember(ledger) { com.bamnat.core.boss.Durunuri.hint(ledger) }
+            val noIndustry = place.industry == null && ledger.lines.isNotEmpty()
+            val notes = listOfNotNull(law?.let { "${it.from.monthValue}월 법 바뀜" }, durunuri?.let { "두루누리" }, if (noIndustry) "산재 업종" else null)
+            if (notes.isNotEmpty()) {
+                var open by rememberSaveable { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(top = 4.dp)) {
+                    Text("알아 둘 것 ${notes.size} · " + notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    Text(if (open) "접기" else "펼치기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+                law?.takeIf { it.under.isNotEmpty() }?.let { n ->
+                    Text("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
+                        (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
+                        style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
+                        modifier = Modifier.clickable(role = Role.Button) { editing = n.under.first().first }.padding(vertical = 4.dp))
+                }
+                if (open) {
+                    // G2-M1·I3: the weeks before a new 최저임금·요율 day, what changes (core LawChange, 출처는 거기).
+                    law?.let { n -> Hint("${n.from.monthValue}월 ${n.from.dayOfMonth}일부터 바뀌어요 · " + n.changes.joinToString(" · ")) }
+                    // G2-M2 두루누리: the 4대보험 above is before it (core Durunuri, 출처는 거기).
+                    durunuri?.let { Hint(it) }
+                    if (noIndustry) Text("업종을 고르면 산재보험료(사장님만 내요)도 더해요 · 사업장 설정에서 한 번",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable(role = Role.Button) { settings = true }.padding(vertical = 4.dp))
+                }
             }
-            // 1.39 G2-M2 두루누리: the 4대보험 above is before it; a small place is told once (core Durunuri, 출처는 거기).
-            com.bamnat.core.boss.Durunuri.hint(ledger)?.let { Hint(it) }
-            if (place.industry == null && ledger.lines.isNotEmpty()) Text("업종을 고르면 산재보험료(사장님만 내요)도 더해요 · 사업장 설정에서 한 번",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(role = Role.Button) { settings = true }.padding(vertical = 4.dp))
             if (ledger.lines.size >= 2 || lastLedger.lines.isNotEmpty() && ledger.lines.isNotEmpty())
                 StaffCostBars(ledger.lines, lastLedger.lines.associate { it.staff.id to it.employerTotal }, Modifier.padding(vertical = 6.dp))
             // 1.38 [P3-X-07] 인건비율: the 가계부's 매출 for the month next to it.
@@ -198,8 +212,9 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                 val pct = r.percent
                 if (pct != null) {
                     ValueLine("매출 대비 인건비", label(pct) + " (매출 ${Fmt.won(r.sales)}, ${r.salesDays}일)", strong = true)
-                    r.pacePercent?.let { Hint("지금까지 매출 흐름이면 이달 매출 약 ${Fmt.won(r.paceSales!!)}, 인건비율 약 ${label(it)}") }
-                    r.lastPercent?.let { Hint("지난달 ${label(it)}") }
+                    // PC 5066b027: two hint lines under it became one.
+                    listOfNotNull(r.pacePercent?.let { "이 흐름이면 이달 매출 약 ${Fmt.won(r.paceSales!!)}, 인건비율 약 ${label(it)}" }, r.lastPercent?.let { "지난달 ${label(it)}" })
+                        .takeIf { it.isNotEmpty() }?.let { Hint(it.joinToString(" · ")) }
                 } else if (ledger.total > 0) Hint("가계부에 하루 매출을 적으면 매출 대비 인건비가 여기에 보여요.")
             }
             place.payDate(ym)?.let { Hint("지급일 ${Fmt.monthDay(it)}") }
@@ -472,15 +487,28 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, plac
                 Text(usual?.let { "평소 ${Fmt.time(it.start)}~${Fmt.time(it.end)}" } ?: "평소 쉬는 날", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    WorkKind.entries.forEach { k -> FilterChip(selected = kind == k, onClick = { kind = k }, label = { Text(k.label) }) }
+                    // 1.39 G2 PC 5066b027 (상): '지각' kept 15:00~23:00 and the pay did not move. Picking 지각·조퇴 now opens the time that changed.
+                    WorkKind.entries.forEach { k -> FilterChip(selected = kind == k, onClick = {
+                        kind = k
+                        if (k == WorkKind.LATE && start == usual?.start) picking = true
+                        if (k == WorkKind.EARLY && end == usual?.end) picking = false
+                    }, label = { Text(k.label) }) }
+                }
+                val ask = when {
+                    kind == WorkKind.LATE && usual != null && start == usual.start -> "몇 시에 왔나요? 시작 시간을 고쳐야 금액이 바뀌어요."
+                    kind == WorkKind.EARLY && usual != null && end == usual.end -> "몇 시에 갔나요? 끝 시간을 고쳐야 금액이 바뀌어요."
+                    else -> null
                 }
                 if (kind in StaffWork.TIMED) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("일한 시간", modifier = Modifier.weight(1f))
-                    TextButton(onClick = { picking = true }) { Text(Fmt.time(start)) }
+                    if (kind == WorkKind.LATE && ask != null) OutlinedButton(onClick = { picking = true }) { Text(Fmt.time(start)) }
+                    else TextButton(onClick = { picking = true }) { Text(Fmt.time(start)) }
                     Text("~")
-                    TextButton(onClick = { picking = false }) { Text(Fmt.time(end)) }
+                    if (kind == WorkKind.EARLY && ask != null) OutlinedButton(onClick = { picking = false }) { Text(Fmt.time(end)) }
+                    else TextButton(onClick = { picking = false }) { Text(Fmt.time(end)) }
                 }
-                Text(when (kind) {
+                if (ask != null) Text(ask, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                else Text(when (kind) {
                     WorkKind.ABSENT -> "결근한 주는 주휴수당이 빠져요."
                     WorkKind.OFF -> "가게가 쉬는 날처럼 빼요. 결근이 아니라 주휴수당은 그대로예요."
                     WorkKind.LEAVE -> "유급 연차: 평소처럼 일한 것으로 줘요."
@@ -552,7 +580,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     // 1.39 G2 (PC f7f61818, 상): a new staff member's 4대보험 follow the law (월급 or 주 15시간 이상 → 모두) until the boss ticks a chip.
     val breaks = place?.legalBreaks ?: true
     var insTouched by remember { mutableStateOf(start.name.isNotBlank() || start.insurance.any) }
-    LaunchedEffect(s.form, s.weekly) { if (!insTouched) s = s.copy(insurance = com.bamnat.core.boss.InsuranceRules.defaultFor(s, breaks)) }
+    LaunchedEffect(s.form, s.weekly, s.birth) { if (!insTouched) s = s.copy(insurance = com.bamnat.core.boss.InsuranceRules.defaultFor(s, breaks, Today.date())) }
     ToolScreen(s.name.ifBlank { "새 직원" }, close, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { onSave(s) }) {
         OutlinedTextField(s.name, { s = s.copy(name = it.take(20)) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
