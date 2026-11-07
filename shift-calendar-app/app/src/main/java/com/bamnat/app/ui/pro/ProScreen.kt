@@ -164,6 +164,15 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     )
 }
 
+/**
+ * 1.39 [FLOW-25] 결제 창 머리 (흐름 디자인 3-12, 체험 혼동이 1점 리뷰의 원인인 앱을 반대로 배움): what a free month costs today, the day
+ * it turns paid and for how much, and that it is said again before then (7일 전 물음과 마지막 날, [TrialConsentPrompt]), in one line.
+ */
+fun trialHead(today: LocalDate, priceWords: String): String {
+    val end = today.plusMonths(1)
+    return "오늘 0원 · ${end.monthValue}월 ${end.dayOfMonth}일부터 $priceWords · 끝나기 7일 전과 하루 전에 알려 드려요"
+}
+
 /** 1.39 [FAM-03] What a family phone's 프로 is, and what a paused one is told. */
 internal const val FAMILY_ON = "가족 프로 이용권으로 프로를 무료로 써요"
 internal const val FAMILY_PAUSED = "가족 프로 이용권을 잠시 멈췄어요. 다시 켜지면 코드를 넣지 않아도 저절로 프로로 돌아와요."

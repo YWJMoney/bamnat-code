@@ -349,6 +349,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 IconButton(onClick = { monthText = month.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             }
+            // 1.39 [FLOW-23] this month's board starts with today: 출근 수·빈자리 and the day's kinds by start time.
+            val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }
+            if (today != null && active.isNotEmpty()) TeamTodayHead(today)
             // 1.38 검토: the whole month at once (사용자 2026-11-04 "좌우로 스크롤해야 보이는 줄은 펼쳐서 한눈에"), colors only when small.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${active.size}명 · ${b.days.size}일", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
