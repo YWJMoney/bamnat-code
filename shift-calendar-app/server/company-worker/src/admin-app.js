@@ -2742,6 +2742,8 @@ function adminApp(L, BUILD, M) {
         <p class="hint" data-doubt>대표에서 빠지는 기준: 맞아요·달라요가 ${S.overview?.doubt?.votes ?? 5}표 이상이고 달라요가 ${S.overview?.doubt?.share ?? 40}%를 넘으면 앱의 대표 주기에서 빠지고 같은 사업장의 다음 판이 대표가 돼요. 다음 판이 채택 조건을 채우면 지지로 이기지 않아도 채택돼요.</p>
         ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월", edit)}
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
+        ${stepper("askMonths", "요청 반영 보상", s.askMonths ?? s.rewardMonths, "개월", edit)}
+        <p class="hint">회사 방식 요청에 '앱에 넣을게요'로 답할 때 보낸 분께 드릴 프로 기간이에요. 채택 보상과 따로 정해요. 문의·제안의 '쓰면 쌓이는 날'은 관리 › 보상 › 보상 규칙에서 정해요.</p>
         ${stepper("adoptPersons", "채택에 필요한 사람", s.adoptPersons ?? 3, "명", edit)}
         <p class="hint">점수와 비율을 채워도 서로 다른 휴대폰이 이만큼은 돼야 자동으로 채택해요(결정 D32). 임금표 시세도 같아요.</p>
         ${stepper("amendPersons", "쓰는 규칙 고치기", s.amendPersons ?? 3, "명", edit)}
@@ -3094,7 +3096,7 @@ function adminApp(L, BUILD, M) {
 
   function openAnswer(id) {
     const answers = Object.entries(S.overview?.answers ?? {});
-    const months = S.overview?.settings?.rewardMonths ?? 0;
+    const months = S.overview?.settings?.askMonths ?? S.overview?.settings?.rewardMonths ?? 0;
     openDialog(`<form data-form="answer" data-id="${id}"><h2>어떻게 답할까요?</h2><p>보낸 분 앱에 이 답이 보여요.</p>
       <div class="radios">${answers.map(([key, text], i) => `<label class="radio"><input type="radio" name="answer" value="${key}"${i === 0 ? " checked" : ""}>
         <span>${esc(text)}</span></label>`).join("")}</div>
@@ -4510,8 +4512,8 @@ function adminApp(L, BUILD, M) {
     step: ({ key, d }) => {
       const s = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
       const RANGES = { adoptPoints: [2, 20, 1], adoptAgree: [50, 100, 5], adoptPersons: [2, 10, 1], amendPersons: [2, 10, 1],
-        rewardCapMonths: [1, 24, 1], rewardCapDays: [30, 365, 30] };
-      const DEFAULT = { adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90 };
+        rewardCapMonths: [1, 24, 1], rewardCapDays: [30, 365, 30], askMonths: [0, 24, 1] };
+      const DEFAULT = { adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90, askMonths: s.rewardMonths ?? 3 };
       const [lo, hi, by] = RANGES[key] ?? [0, 24, 1];
       s[key] = Math.min(hi, Math.max(lo, (s[key] ?? DEFAULT[key]) + Number(d) * by));
       S.draft = s;

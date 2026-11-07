@@ -6,6 +6,7 @@ import { FEATURE, launchState } from "./money.js";
 import { ITEM_FIXED_POLICY } from "./plaza-items.js";
 import { DAY } from "./units.js";
 import { kstDay } from "./usage.js";
+import { tierGate } from "./loop.js";
 // AM 1.28 시작
 // ---- 기능 플래그(다크머지) [FLAG-20]~[FLAG-33] ----
 //
@@ -456,6 +457,11 @@ export async function setFlagForce(request, env, actor, key, now) {
     && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
   const review = force === "off" && body.reviewAt ? (realDay(body.reviewAt) && body.reviewAt >= kstDay(now) && body.reviewAt <= kstDay(now + FLAG_LIMITS.untilDays * DAY)
     ? body.reviewAt : refuse("review_at", "reviewAt")) : null;
+  // 1.39 [LOOP-10] 요금(무료·프로)을 정하지 않은 새 기능은 켜지 못해요(사용자 2026-11-07 "무료 프로는 사용자 논의를 거쳐야지만").
+  if (force === "on") {
+    const gate = await tierGate(env, key);
+    if (gate) return json({ error: "tier", field: "key", item: { id: gate.id, title: gate.title } }, 409);
+  }
   // [FLAG-32] At least one way of working stays to choose.
   if (force === "off" && def.group === "type") {
     const left = Object.values(TYPE_FLAGS).filter((k) => k !== key && serverEval(store, k, now).on);
@@ -487,6 +493,11 @@ export async function setFlagConditions(request, env, actor, key, now) {
     conditions = checked.list;
   }
   const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
+  // 1.39 [LOOP-10] 조건(날짜·판·비율)으로 켜지게 두는 것도 요금을 정한 뒤에만.
+  if (conditions) {
+    const gate = await tierGate(env, key);
+    if (gate) return json({ error: "tier", field: "conditions", item: { id: gate.id, title: gate.title } }, 409);
+  }
   const store = await flagStore(env);
   const before = store.overrides.get(key) ?? null;
   await run(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto) VALUES (?, NULL, ?, ?, NULL, NULL, ?, ?, ?, 0)

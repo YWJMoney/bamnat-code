@@ -94,6 +94,7 @@ import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
+import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy } from "./loop.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
@@ -143,7 +144,7 @@ export const LIMITS = {
 // [COMM-07] adoptAgree: the share of 맞았어요 among everyone who voted that a rule set needs to be adopted on its own.
 // [PLAZA-10] firstMonths: the pass for a company's or department's first setup with its pay; at most firstCapYear a year.
 const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90,
-  firstMonths: 1, firstCapYear: 3 };
+  firstMonths: 1, firstCapYear: 3, askMonths: 3 };
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
@@ -255,13 +256,19 @@ export default {
     if (!env.DB) return;
     // 1.38 [DESK-09] 5분마다: 보류가 끝난 Claude 답만 보내요(나머지 정리는 매시 17분 그대로).
     if (event?.cron === "*/5 * * * *") {
-      ctx.waitUntil(ready(env).then(() => releaseHeld(env, Date.now())));
+      // 1.39 [LOOP-02] 1시간 보류가 끝난 자동 출시 안내도 5분마다.
+      ctx.waitUntil(ready(env).then(() => releaseHeld(env, Date.now())).then(() => shipTick(env, Date.now(), loopAnswer)));
       return;
     }
     // 1.38 [ADM3-05] 단계마다 따로: 한 단계가 실패해도 다음 단계가 돌고, 관리 › 서버 상태에 단계마다 마지막 성공·실패가 남아요.
     ctx.waitUntil(ready(env).then(() => runJobs(env, hourlySteps(env), Date.now())).finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
+
+/** 1.39 [LOOP] 자동 순환의 답: 사람이 부르면 그 이름, 열쇠면 10분 보류(DESK-09), 매시·5분 작업이면 '자동 정리'. */
+function loopAnswer(e, id, text, at) {
+  return inboxAnswer(e, id, text, at, e.actor ? actorName(e) : "자동 정리");
+}
 
 /** 1.38 [ADM3-05] 매시 17분 작업의 단계(이름은 ops-watch.js JOB_NAMES). 순서는 1.37까지와 같아요. */
 export const hourlySteps = (env) => [
@@ -276,6 +283,10 @@ export const hourlySteps = (env) => [
   ["digest", () => digestTick(env, Date.now())], // R131 1.31 [ADMX-14], 1.38 [ADM3-30] 아침·저녁
   ["growth", () => growthTick(env, Date.now())], // 1.36 [GRW-02][GRW-03][GRW-05]
   ["held", () => releaseHeld(env, Date.now())], // 1.38 [DESK-09]
+  // 1.39 [LOOP-01][LOOP-02][LOOP-03][LOOP-06] Play 트랙 읽기, 보류 끝난 출시 안내, 업데이트 없이 고친 것이 닿았는지.
+  ["play", () => playTick(env, Date.now())],
+  ["ship", () => shipTick(env, Date.now(), loopAnswer)],
+  ["live", () => liveTick(env, Date.now(), loopAnswer)],
   ["watch", () => flushWatch(env, Date.now(), true).then(() => pruneWatch(env, Date.now()))], // 1.38 [ADM3-19]
   ...opsSteps(env, () => playVitals(env, Date.now())),
 ];
@@ -541,7 +552,10 @@ async function routeOnce(request, env, url, ctx) {
     return json(await publicQa(env), 200, { "cache-control": `public, max-age=${QA.cacheSeconds}` });
   }
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
-  if (path === "/api/config" && method === "GET") return json(await config(env));
+  // 1.39 [LOOP-13] Play 인앱 업데이트: 이 versionCode보다 낮으면 바로(긴급)·유연하게 권해요.
+  if (path === "/api/config" && method === "GET") return json({ ...(await config(env)), update: await updatePolicy(env) });
+  // 1.39 [LOOP-17] 알려진 문제판과 '나도 겪어요'.
+  if (path === "/api/known" || path.startsWith("/api/known/")) return knownRoute(request, env, path);
   // 1.36 [SEC-11] An install shows Play's verdict once a week (integrity.js).
   if (path === "/api/integrity" && method === "POST") { await ready(env); return integrityRoute(recipeDeps, request, env, playIntegrity); }
   if (path === "/api/events" && method === "POST") return usage(request, env);
@@ -798,6 +812,8 @@ const SCHEMA = [
   ...WORK_SCHEMA,
   // 1.37 [ADM2-03] Claude 운영 열쇠 (desk.js).
   ...DESK_SCHEMA,
+  // 1.39 [LOOP] 문의·개발·출시 자동 순환 (loop.js).
+  ...LOOP_SCHEMA,
   // 1.38 [DESK-02] 운영 장부 줄 번호와 요약 (ledger.js).
   ...LEDGER_SCHEMA,
   // 1.38 [ADM3]
@@ -883,6 +899,7 @@ const COLUMNS = [
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
   ...DESK_COLUMNS,
+  ...LOOP_COLUMNS,
   // 1.38 [EASE-31] 밤낮 Q&A.
   // 1.38 [EASE-31] 자주 쓰는 답의 '마을에 공개할 묻는 말' (inquiries.js QA). Written here, not imported: index.js runs this list
   // while inquiries.js may still be loading (a test that imports it first).
@@ -1049,7 +1066,7 @@ export async function flushMeter(env, now, force = false) {
     ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
 }
 
-const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year'";
+const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months'";
 
 async function settings(env) {
   return readSettings(await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`));
@@ -1068,7 +1085,10 @@ function readSettings(rows) {
     autoReward: read("auto_reward", DEFAULTS.autoReward), rewardCapMonths: read("reward_cap_months", DEFAULTS.rewardCapMonths),
     rewardCapDays: read("reward_cap_days", DEFAULTS.rewardCapDays),
     // [PLAZA-10] The new-information pass (결정 D79, AF-D5).
-    firstMonths: read("first_months", DEFAULTS.firstMonths), firstCapYear: read("first_cap_year", DEFAULTS.firstCapYear) };
+    firstMonths: read("first_months", DEFAULTS.firstMonths), firstCapYear: read("first_cap_year", DEFAULTS.firstCapYear),
+    // 1.39 [LOOP-14] 세분화(사용자 2026-11-07): 회사 방식 요청에 '앱에 넣을게요'로 답할 때의 보상. 1.38까지는 채택 보상(rewardMonths)을 같이 썼어요.
+    // 따로 적은 적이 없으면 채택 보상과 같은 값으로 시작해요.
+    askMonths: read("ask_months", read("reward_months", DEFAULTS.askMonths)) };
 }
 
 // SP1 1.30 [SPD-03] The server's own salt, read once per Worker: before 1.30 every public read without RATE_SALT wrote it again
@@ -4506,6 +4526,9 @@ function areaFor(path) {
   // 1.37 [ADM2] 흐름과 장부는 문의를 맡은 사람이, 나간 판 저장은 개발사항 처리를 가진 사람이, 운영 열쇠는 주인만(아래 기본값).
   if (path === "/flow" || path === "/desk") return "inquiries";
   if (path === "/desk/ship") return "devStatus";
+  // 1.39 [LOOP] 자동 순환은 개발사항을 보는 사람이(스위치·열차·보상 규칙·요금은 loop.js가 최고 관리자만), 저장소 동기화는 개발사항 처리 권한.
+  if (path === "/dev/sync") return "devStatus";
+  if (path === "/loop" || path.startsWith("/loop/")) return "dev";
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -4658,6 +4681,13 @@ async function signedRoute(request, env, url, path, method, now, session) {
   }
   if (path === "/inquiries" || path.startsWith("/inquiries/")) return adminInquiries(request, env, url, path, now);
   if (path === "/templates" || path.startsWith("/templates/")) return templateRoute(request, env, path, now);
+  // 1.39 [LOOP-05] 저장소(main)의 dev-status를 받는 길: 동기화 열쇠(GitHub Action)나 개발사항 처리 권한을 가진 사람.
+  if (path === "/dev/sync" && method === "POST") return syncDev(request, env, now, loopAnswer);
+  // 1.39 [LOOP] 자동 순환: 흐름 칸·대기열·결정함·요금·스위치·열차·보상 규칙.
+  if (path === "/loop" || path.startsWith("/loop/")) {
+    const r = await loopRoute(request, env, url, path, method, now, { answer: loopAnswer, ledgerQuery });
+    if (r) return r;
+  }
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
   if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status"), url.searchParams));
   m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
@@ -5857,12 +5887,12 @@ export async function answer(request, env, id, now) {
   if (!Object.hasOwn(ANSWERS, body.answer)) refuse("answer", "answer");
   const r = await one(env, "SELECT id, device FROM reports WHERE id = ? AND status = 'ask'", id);
   if (!r) return json({ error: "not_found" }, 404);
-  const { rewardMonths } = await settings(env);
+  const { askMonths } = await settings(env);
   const stmts = [stmt(env, "UPDATE reports SET status = 'answered', reason = ?, decided_at = ? WHERE id = ?", body.answer, now, id)];
-  const reward = body.answer === "planned" && body.reward === true && rewardMonths > 0;
+  const reward = body.answer === "planned" && body.reward === true && askMonths > 0;
   if (reward) {
     stmts.push(stmt(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at)
-      VALUES (?, ?, '', ?, ?, 'owed', '', ?, NULL)`, `w${id}`, id, r.device, rewardMonths, now));
+      VALUES (?, ?, '', ?, ?, 'owed', '요청 반영', ?, NULL)`, `w${id}`, id, r.device, askMonths, now));
   }
   await batch(env, stmts);
   await audit(env, now, "answer", id, `${body.answer}${reward ? "+reward" : ""}`);
@@ -6189,7 +6219,9 @@ async function saveSettings(request, env, now) {
   };
   const extra = { adopt_persons: pick("adoptPersons", 2, 10), amend_persons: pick("amendPersons", 2, 10), auto_reward: pick("autoReward", 0, 1),
     reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365),
-    first_months: pick("firstMonths", 0, 12), first_cap_year: pick("firstCapYear", 0, 12) };
+    first_months: pick("firstMonths", 0, 12), first_cap_year: pick("firstCapYear", 0, 12),
+    // 1.39 [LOOP-14] 따로 보낸 때만 적어요: 그 전까지는 채택 보상을 따라가요(1.38까지와 같음).
+    ...(body.askMonths !== undefined ? { ask_months: pick("askMonths", 0, 24) } : {}) };
   await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
@@ -6659,7 +6691,7 @@ async function signedBy(bytes, signature) {
   return false;
 }
 
-async function remoteState(env, now, fresh = false) {
+export async function remoteState(env, now, fresh = false) {
   const kept = remoteKept.get(env.DB ?? env);
   if (!fresh && kept && kept.until > now) return kept.value;
   const base = (typeof env.REMOTE_BASE_URL === "string" && /^https:\/\/[^\s]+$/.test(env.REMOTE_BASE_URL.trim())

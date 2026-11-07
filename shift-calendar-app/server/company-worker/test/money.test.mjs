@@ -58,7 +58,9 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T01:00:00Z") });
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
-  const { flags, policy, serverTime, ...old } = before;
+  const { flags, policy, serverTime, update, ...old } = before;
+  // 1.39 [LOOP-13] Play 인앱 업데이트 기준: 처음엔 둘 다 0(권하지 않음).
+  assert.deepEqual(update, { urgentMin: 0, flexibleMin: 0 });
   assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, workPlans: MONEY.workPlans, notices: [], off: [] });
   assert.equal(serverTime, "2026-11-20T01:00:00.000Z");
   assert.ok(flags.billing && policy.some((p) => p.version === "3.1"));
