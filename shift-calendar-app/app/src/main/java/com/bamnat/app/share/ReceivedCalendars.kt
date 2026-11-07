@@ -169,10 +169,17 @@ data class ReceivedCalendar(
  */
 fun ReceivedCalendar.mineLine(short: Boolean = false): String {
     if (gone) return if (short) "받은 근무표 · 링크가 끊겼어요" else "${name} 링크가 끊겼어요 · 새 링크를 받으면 이어서 와요"
-    val last = schedule?.last
-    val until = last?.let { "${it.monthValue}월 ${it.dayOfMonth}일까지" }
-    return if (short) listOfNotNull("받은 근무표", name, until).joinToString(" · ")
-    else listOfNotNull("${name}에서 받아요", until?.let { "$it 받았어요" }, "다음 달 근무표는 확정되면 알림으로 와요").joinToString(" · ")
+    // 1.38 PC 12.5 빈틈 3: a roster is a month's; '12월 2일까지' (the last day painted) read as if the rest of 12월 were missing.
+    val first = schedule?.first?.let(java.time.YearMonth::from)
+    val last = schedule?.last?.let(java.time.YearMonth::from)
+    fun m(ym: java.time.YearMonth) = "${ym.monthValue}월"
+    val months = when {
+        first == null || last == null -> null
+        first == last -> m(last)
+        else -> "${m(first)}~${m(last)}"
+    }
+    return if (short) listOfNotNull("받은 근무표", name, months?.let { "$it 근무표" }).joinToString(" · ")
+    else listOfNotNull("${name}에서 받아요", months?.let { "$it 근무표를 받았어요" }, "다음 달 근무표는 확정되면 알림으로 와요").joinToString(" · ")
 }
 
 /**
