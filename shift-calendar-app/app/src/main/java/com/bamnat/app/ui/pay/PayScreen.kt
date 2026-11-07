@@ -764,8 +764,9 @@ private fun PayResult(
                 profile.customRules.forEach { rule ->
                     CustomRuleRow(rule, shiftNames, unlocked,
                         // [PAYX-52] A 매달 amount (사택관리비) can be its own in this month.
-                        month = result.month, onThisMonth = if (rule.pay is com.bamnat.core.pay.RulePay.Monthly) ({ monthAmountFor = rule }) else null,
+                        month = result.month, onThisMonth = if (rule.pay is com.bamnat.core.pay.RulePay.Monthly && !rule.oneMonth) ({ monthAmountFor = rule }) else null,
                         onEdit = if (ItemKind.of(rule) != null) ({ editingRule = rule }) else null,
+                        onAfterTax = { after -> vm.setCustomRuleAfterTax(rule.id, after) },
                         onOn = { vm.setCustomRuleOn(rule.id, it) },
                         onRemove = { vm.removeCustomRule(rule.id) })
                 }

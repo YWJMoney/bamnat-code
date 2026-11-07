@@ -42,6 +42,6 @@ object InsuranceRules {
     }
 
     /** G4 건강보험 보수월액 하한 (국민건강보험법 시행령 제32조): 28만 원. */
-    const val HEALTH_BASE_MIN = 280_000L
+    const val HEALTH_BASE_MIN = com.bamnat.core.pay.TakeHome.HEALTH_BASE_MIN
 
 }

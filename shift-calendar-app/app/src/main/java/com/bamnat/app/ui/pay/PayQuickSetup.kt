@@ -580,8 +580,8 @@ private fun ConfirmPage(
     } else {
         PayslipPreview(r)
         // [J133-01] 이번 달 통장에 들어올 돈: the 세후 on the first setup's last page, with the way it is worked out.
-        val net = remember(r.total, p.taxMode, p.taxFamily, p.taxChildren) {
-            com.bamnat.core.pay.TakeHome.estimate(r.total, p.taxMode, p.taxFamily, month.atDay(1), p.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(p, month))
+        val net = remember(r.total, p) {
+            com.bamnat.core.pay.TakeHome.forProfile(p, month, r.total)
         }
         Text("통장에 들어올 돈 (세후 예상)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(com.bamnat.app.ui.Fmt.won(net.net), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary,

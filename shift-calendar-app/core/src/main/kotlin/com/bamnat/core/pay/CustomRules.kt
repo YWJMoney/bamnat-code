@@ -153,7 +153,25 @@ data class CustomRule(
      * others pay [RulePay.Monthly.amount]. Kept on the phone only.
      */
     val byMonth: Map<java.time.YearMonth, Long> = emptyMap(),
+    /**
+     * 1.39 [PAYX-56] A 매달 빠지는 돈 that the payslip takes off its 공제 side, after tax (사택관리비·기숙사비·친목회비·노조비): it is not
+     * part of 지급 총액, so 4대보험·소득세 are worked out on the pay before it and it comes off 실수령 only. null is a rule from before
+     * 1.39 (or read from a rule sentence), kept the old way so nobody's pay moves unasked: 지급 총액에서 빼요, like false (지각·결근 공제).
+     * The 수당 추가 window sets it, first guessed from the name ([looksAfterTax]); the pay screen offers it for a null one that looks so.
+     */
+    val afterTax: Boolean? = null,
+    /** 1.39 [PAYX-57] A 매달 수당 kept as a rule (기간·이번 달만) that is 비과세 (식대 등), like [PayItem.taxable]. */
+    val taxable: Boolean = true,
 ) {
+    /** 1.39 [PAYX-56] Taken off 실수령 after tax instead of 지급 총액: only a 매달 정액 차감. */
+    val paidAfterTax: Boolean get() = deduct && pay is RulePay.Monthly && afterTax == true
+
+    /** 1.39 [PAYX-56] A rule from before 1.39 that looks like a 공제 칸 돈: the pay screen asks once whether to take it off after tax. */
+    val mayBeAfterTax: Boolean get() = deduct && pay is RulePay.Monthly && afterTax == null && looksAfterTax(name)
+
+    /** 1.39 [PAYX-57] One month only (소급분 지급·공제, 이번 달만): it starts and ends in the same month. */
+    val oneMonth: Boolean get() = from != null && from == until
+
     /** [PAYX-52] What a [RulePay.Monthly] rule comes to in [month]: that month's own amount, or the usual one. */
     fun monthlyAmount(month: java.time.YearMonth): Long? = (pay as? RulePay.Monthly)?.let { byMonth[month] ?: it.amount }
 
@@ -178,8 +196,10 @@ data class CustomRule(
             years(maxTenureMonths).takeIf { maxTenureMonths > 0 }?.let { "$it 미만" }).joinToString(" "))
         if (capPerMonth > 0) add("월 ${won(capPerMonth)}까지")
         if (maxTimes > 0) add("월 ${maxTimes}회까지")
-        from?.let { add("${it.year}년 ${it.monthValue}월부터") }
-        until?.let { add("${it.year}년 ${it.monthValue}월까지") }
+        if (oneMonth) add("${from!!.year}년 ${from.monthValue}월만") else {
+            from?.let { add("${it.year}년 ${it.monthValue}월부터") }
+            until?.let { add("${it.year}년 ${it.monthValue}월까지") }
+        }
     }.joinToString(" · ")
 
     /** "토요일 근무일: 통상시급의 50%", "매달 50,000원 차감". */
@@ -202,12 +222,27 @@ data class CustomRule(
             way + if (deduct) " 차감" else ""
     }
 
-    /** [PAYS-07] The month's line for it: "자격수당 (회사 규칙)", "기숙사비 (차감)". */
-    val lineLabel: String get() = "$name (${if (deduct) "차감" else "회사 규칙"})"
+    /** [PAYS-07] The month's line for it: "자격수당 (회사 규칙)", "기숙사비 (차감)", 1.39 "사택관리비 (세후 공제)". */
+    val lineLabel: String get() = "$name (${if (paidAfterTax) "세후 공제" else if (deduct) "차감" else "회사 규칙"})"
 
     companion object {
         const val MAX = 20
         const val MAX_NAME = 16
+
+        /**
+         * 1.39 [PAYX-56] Names a payslip lists on its 공제 side (세후): 사택·기숙사 관리비, 회비·친목회, 노동조합비, 상조회, 가불·대출 상환,
+         * 저축. 지각·결근·조퇴 are taken off the pay itself (지급 쪽) and are not here.
+         */
+        val AFTER_TAX_WORDS = listOf("사택", "기숙사", "관리비", "회비", "친목", "조합", "노조", "상조", "가불", "대출", "상환", "저축", "적금",
+            "동호회", "볼링", "축구", "골프", "기부", "후원", "식권", "주차")
+
+        fun looksAfterTax(name: String): Boolean {
+            val n = name.replace(" ", "")
+            return listOf("지각", "결근", "조퇴", "외출").none { it in n } && AFTER_TAX_WORDS.any { it in n }
+        }
+
+        /** 1.39 [PAYX-57] 소급분 (지급·공제): paid once, in the month it is on the payslip. */
+        fun looksOneMonth(name: String): Boolean = "소급" in name.replace(" ", "")
 
         /** 36 → "3년", 18 → "1년 6개월". */
         fun years(months: Int): String = listOfNotNull((months / 12).takeIf { it > 0 }?.let { "${it}년" }, (months % 12).takeIf { it > 0 }?.let { "${it}개월" })

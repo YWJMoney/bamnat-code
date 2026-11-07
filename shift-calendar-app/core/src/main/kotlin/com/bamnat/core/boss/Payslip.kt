@@ -96,15 +96,8 @@ data class Payslip(
                     else -> true
                 }
             }
-            // G4 건강보험 보수월액 하한 28만 원: a small month still pays on 28만 원 (시행령 제32조).
-            val taxable = (line.gross - nonTaxable).coerceAtLeast(0)
-            val floored = if (ins.health && taxable in 1 until InsuranceRules.HEALTH_BASE_MIN) {
-                val sh = TakeHome.sharesOn(on)
-                val health = (InsuranceRules.HEALTH_BASE_MIN * sh.health).toLong() / 10 * 10
-                val care = (health * sh.careOfHealth).toLong() / 10 * 10
-                kept.map { (n, v) -> when (n) { "건강보험" -> n to health; "장기요양" -> n to care; else -> n to v } }
-            } else kept
-            return Payslip(place, line, place.payDate(line.month), floored)
+            // G4 건강보험 보수월액 하한 28만 원 (시행령 제32조): 1.39 [PAYX-59] [TakeHome.estimate] floors it itself, with the exact won × rate.
+            return Payslip(place, line, place.payDate(line.month), kept)
         }
     }
 }

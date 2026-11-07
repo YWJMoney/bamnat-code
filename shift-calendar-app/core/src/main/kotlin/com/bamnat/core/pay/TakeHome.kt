@@ -7,7 +7,22 @@ import java.time.LocalDate
 enum class TaxMode { NONE, WITHHOLDING_3_3, INSURANCE_4 }
 
 /** [HRLY-04] Pay before tax, what comes off it line by line, and what reaches the account. */
-data class TakeHomeResult(val gross: Long, val deductions: List<Pair<String, Long>>, val net: Long)
+data class TakeHomeResult(
+    val gross: Long, val deductions: List<Pair<String, Long>>, val net: Long,
+    /** 1.39 [PAYX-59] Why a 4대보험 line is not taken or is taken on a floor ("주 15시간 미만이라 국민연금을 떼지 않아요"). */
+    val notes: List<String> = emptyList(),
+)
+
+/**
+ * 1.39 [PAYX-59] One of the employee's 4대보험 lines, to leave out when the law leaves the worker out (공식 대조 G2·G3·G6): 주 15시간
+ * 미만 (국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조, 고용보험법 제10조), 만 60세 이상 국민연금 (국민연금법 제6조), 65세 이후
+ * 새로 고용된 사람의 고용보험 (고용보험법 제10조). 장기요양 follows 건강보험.
+ */
+enum class InsuranceLine(val label: String, val why: String) {
+    PENSION("국민연금", "만 60세 이상이거나 주 15시간 미만이면 떼지 않아요"),
+    HEALTH("건강보험", "주 15시간 미만이면 회사 건강보험에 들지 않아요(장기요양도 함께)"),
+    EMPLOYMENT("고용보험", "65세 이후 새로 일했거나 주 15시간 미만(3개월 미만)이면 떼지 않아요"),
+}
 
 /**
  * [HRLY-04] 예상 실수령 from a month's pay before tax. 3.3% is [Withholding.of]. 4대보험 takes the employee half of
@@ -59,19 +74,29 @@ object TakeHome {
      */
     fun estimate(
         gross: Long, mode: TaxMode, dependents: Int = 1, on: LocalDate? = null, children: Int = 0, nonTaxable: Long = 0,
+        /** 1.39 [PAYX-59] 4대보험 lines the worker is out of (60세·주 15시간 미만·65세 이후 고용). */
+        off: Set<InsuranceLine> = emptySet(),
+        /** 1.39 [PAYX-56] 공제 쪽 돈 (사택관리비·회비), taken off after tax whatever the tax way. */
+        afterTax: List<Pair<String, Long>> = emptyList(),
     ): TakeHomeResult {
         val sh = on?.let(::sharesOn) ?: DEFAULT_SHARES
         val g = gross.coerceAtLeast(0)
         val free = nonTaxable.coerceIn(0, g)
+        val notes = ArrayList<String>()
         val deductions: List<Pair<String, Long>> = when (mode) {
             TaxMode.NONE -> emptyList()
             TaxMode.WITHHOLDING_3_3 -> listOf("원천징수 3.3%" to Withholding.of(g))
             TaxMode.INSURANCE_4 -> {
                 val taxable = g - free
-                val pension = if (taxable == 0L) 0L else WonCut.cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
-                val health = WonCut.cut10(taxable, sh.health)
+                val pension = if (taxable == 0L || InsuranceLine.PENSION in off) 0L
+                    else WonCut.cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
+                // 1.39 [PAYX-59] G4 건강보험 보수월액 하한 28만 원 (국민건강보험법 시행령 제32조): a smaller pay pays on 28만 원.
+                val healthBase = if (taxable in 1 until HEALTH_BASE_MIN) HEALTH_BASE_MIN else taxable
+                val health = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
+                if (health > 0 && healthBase != taxable) notes += "건강보험은 보수 하한 ${won(HEALTH_BASE_MIN)}으로 계산했어요(국민건강보험법 시행령 제32조)"
                 val care = WonCut.cut10(health, sh.careRatio)
-                val employment = WonCut.cut10(taxable, sh.employment)
+                val employment = if (InsuranceLine.EMPLOYMENT in off) 0L else WonCut.cut10(taxable, sh.employment)
+                off.forEach { notes += "${it.label}은 떼지 않아요 (${it.why})" }
                 val table = WithholdingTable.on(on ?: TABLE_DAY) ?: WithholdingTable.on(TABLE_DAY)
                 val tax = table?.tax(taxable, dependents, children) ?: incomeTax(taxable, dependents, pension)
                 listOf(
@@ -83,9 +108,41 @@ object TakeHome {
                     LOCAL_TAX_LABEL to tax / 100 * 10,
                 ).filter { it.second > 0 }
             }
-        }
-        return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second })
+        } + afterTax.filter { it.second > 0 }
+        return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second }, notes)
     }
+
+    /** 1.39 [PAYX-59] G4 건강보험 보수월액 하한 (국민건강보험법 시행령 제32조): 28만 원. */
+    const val HEALTH_BASE_MIN = 280_000L
+
+    /**
+     * 1.39 [PAYX-56][PAYX-58][PAYX-59] [estimate] with everything the pay setup knows: its tax way, 가족·자녀, the month's 비과세
+     * ([nonTaxable], or [free] when the caller worked it out with the month's pay), the 4대보험 the worker is out of and the
+     * 공제 쪽 돈 of [afterTax]. Every screen that says 실수령 goes through here so they say the same.
+     */
+    fun forProfile(
+        profile: PayProfile, month: java.time.YearMonth, gross: Long, free: Long? = null, mode: TaxMode = profile.taxMode,
+        pay: MonthPay? = null,
+    ): TakeHomeResult = estimate(
+        gross, mode, profile.taxFamily, month.atDay(1), profile.taxChildren, free ?: nonTaxable(profile, month),
+        off = profile.insuranceOff, afterTax = pay?.afterTax?.map { it.label to it.amount } ?: afterTax(profile, month),
+    )
+
+    /** 1.39 [PAYX-56] [forProfile] for a screen that may have no pay setup yet (then 가족 1명, 비과세 [free] or none). */
+    fun of(profile: PayProfile?, month: java.time.YearMonth, gross: Long, mode: TaxMode, free: Long? = null): TakeHomeResult =
+        profile?.let { forProfile(it, month, gross, free, mode) } ?: estimate(gross, mode, on = month.atDay(1), nonTaxable = free ?: 0)
+
+    /**
+     * 1.39 [PAYX-56] The month's 공제 쪽 돈 ([CustomRule.paidAfterTax]: 사택관리비·회비), each as [PayCalculator] counts it (그달 금액,
+     * 기간, 근속, 한도), so a screen with only the month's total takes the same off as one with the month's pay.
+     */
+    fun afterTax(profile: PayProfile, month: java.time.YearMonth): List<Pair<String, Long>> =
+        profile.customRules.filter { it.on && it.paidAfterTax && it.inPeriod(month) && it.tenureOk(month, profile.hireDate) == true }
+            .mapNotNull { r ->
+                val whole = r.monthlyAmount(month) ?: return@mapNotNull null
+                val amount = if (r.capPerMonth > 0) minOf(whole, r.capPerMonth) else whole
+                (r.lineLabel to amount).takeIf { amount > 0 }
+            }
 
     /**
      * [PAYX-23] The pay before tax whose [estimate] leaves [net] (실수령액), found by halving the range: for a payslip
@@ -95,13 +152,14 @@ object TakeHome {
      */
     fun grossFromNet(
         net: Long, mode: TaxMode, dependents: Int = 1, on: LocalDate? = null, children: Int = 0, nonTaxable: Long = 0,
+        off: Set<InsuranceLine> = emptySet(),
     ): Long {
         if (net <= 0 || mode == TaxMode.NONE) return net.coerceAtLeast(0)
         var lo = net
         var hi = net * 2 + 1_000_000
         while (lo < hi) {
             val mid = (lo + hi) / 2
-            if (estimate(mid, mode, dependents, on, children, nonTaxable).net >= net) hi = mid else lo = mid + 1
+            if (estimate(mid, mode, dependents, on, children, nonTaxable, off).net >= net) hi = mid else lo = mid + 1
         }
         return lo
     }
@@ -114,8 +172,50 @@ object TakeHome {
      * [NON_TAXABLE_LIMIT]. Bonuses and per-day pay are always taxed here.
      */
     fun nonTaxable(profile: PayProfile, month: java.time.YearMonth): Long =
-        profile.items.filter { !it.taxable && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
-            .sumOf { it.amount.on(month).value.coerceIn(0, NON_TAXABLE_LIMIT) }
+        nonTaxableParts(profile, month).sumOf { it.amount }
+
+    /**
+     * 1.39 [PAYX-58] One 비과세 limit: what the month's allowances of it come to and the part that is free. The limit is for the kind,
+     * not for each allowance (식대 월 20만 원: 중식대 10만 원 + 석식대 15만 원 is 20만 원 free, not 25만 원, 소득세법 시행령 제17조의2).
+     */
+    data class FreePart(val kind: String, val paid: Long, val amount: Long, val names: List<String>) {
+        /** "식대 25만 원 중 20만 원까지만 비과세 (한도는 종류마다 한 번)". */
+        val over: Boolean get() = paid > amount
+    }
+
+    /**
+     * 1.39 [PAYX-58] The month's 비과세 by kind: 매달 수당 not [PayItem.taxable] and 1.39 [PAYX-57] 매달 수당 kept as a rule with
+     * [CustomRule.taxable] off (기간·이번 달만), grouped by [freeKind] and each kind up to [NON_TAXABLE_LIMIT]. An allowance whose name
+     * is none of the kinds the law names (교통비 등, the user's own switch) is its own kind, up to the same 20만 원.
+     */
+    fun nonTaxableParts(profile: PayProfile, month: java.time.YearMonth): List<FreePart> {
+        val paid = profile.items.filter { !it.taxable && it.cadence == Cadence.MONTHLY && !it.isFixedOvertime }
+            .map { it.name to it.amount.on(month).value.coerceAtLeast(0) } +
+            profile.customRules.filter { it.on && !it.deduct && !it.taxable && it.inPeriod(month) && it.tenureOk(month, profile.hireDate) == true }
+                .mapNotNull { r -> r.monthlyAmount(month)?.let { a -> r.name to (if (r.capPerMonth > 0) minOf(a, r.capPerMonth) else a) } }
+        return paid.filter { it.second > 0 }.groupBy { (name, _) -> freeKind(name) ?: "기타:$name" }.map { (kind, list) ->
+            val sum = list.sumOf { it.second }
+            FreePart(kind.removePrefix("기타:"), sum, sum.coerceAtMost(NON_TAXABLE_LIMIT), list.map { it.first })
+        }
+    }
+
+    /**
+     * 1.39 [PAYX-58] The 비과세 kind a name is (소득세법 시행령 제12조·제17조의2·제17조의4): 식대, 자가운전보조금, 출산·보육수당, 연구보조비,
+     * 벽지수당, 취재수당; null for any other name.
+     */
+    fun freeKind(name: String): String? {
+        val n = name.replace(" ", "")
+        return FREE_KINDS.firstOrNull { (_, words) -> words.any { it in n } }?.first
+    }
+
+    private val FREE_KINDS = listOf(
+        "식대" to listOf("식대", "식비", "중식", "석식", "급식"),
+        "자가운전보조금" to listOf("자가운전", "차량유지"),
+        "출산·보육수당" to listOf("보육", "육아"),
+        "연구보조비" to listOf("연구보조", "연구활동"),
+        "벽지수당" to listOf("벽지"),
+        "취재수당" to listOf("취재"),
+    )
 
     /**
      * [PAYX-25] With [pay], also the 생산직 연장·야간·휴일 수당 비과세 ([productionFree]); [usedThisYear] is what earlier

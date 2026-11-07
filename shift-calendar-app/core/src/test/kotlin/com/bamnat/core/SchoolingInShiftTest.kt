@@ -78,3 +78,28 @@ class SchoolingInShiftTest {
         assertTrue(line.hourly > 0)
     }
 }
+
+/** 1.39 G3 (1.38 PC 12.5 '#274-2 교육 16~20 못 봄'): 일근 09~18 날 교육 16~20은 근무와 겹친 2시간을 빼고 2시간만 급여에 들어가요. */
+class SchoolingOverlapPayTest {
+    private val nov = YearMonth.of(2026, 11)
+    private val work = ShiftType(1, "일근", "일", 0xFF1E88E5, LocalTime.of(9, 0), LocalTime.of(18, 0), 60, LocalTime.of(12, 0))
+    private val off = ShiftType(9, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
+    private val school = ExtraKind(50, "교육", "교", 0xFF7048E8, ExtraTiming.AfterShift(240))
+    private val date = LocalDate.of(2026, 11, 10)
+    private fun resolver(vararg e: ExtraEntry) = ScheduleResolver(listOf(work, off),
+        WorkPattern.Rotation(LocalDate.of(2026, 11, 1), listOf(1L)),
+        listOf(DayEntry(date, extras = e.toList())), ExtraKinds(ExtraKinds.DEFAULTS + school))
+
+    @Test fun schoolingSixteenToTwentyPaysTwoHours() {
+        val profile = WorkForms.apply(WorkForm.OFFICE, 2_430_000, LocalDate.of(2026, 11, 1))
+        val rule = ExtraRule(basis = ExtraBasis.HOURLY_RATE, multiplier = 1.5, monthlyHours = 243)
+        val ruled = profile.copy(rules = profile.rules.copy(extra = profile.rules.extra + (50L to rule)))
+        val plain = PayCalculator().calculate(ruled, nov, resolver()::resolve, checks = false)
+        val r = PayCalculator().calculate(ruled, nov, resolver(ExtraEntry(50, LocalTime.of(16, 0), LocalTime.of(20, 0)))::resolve, checks = false)
+        val line = r.lines.single { it.kind == com.bamnat.core.pay.LineKind.EXTRA }
+        assertEquals("겹친 2시간을 뺀 2시간만", 120, line.minutes)
+        // 2,430,000 ÷ 243 = 10,000원, × 2시간 × 150% = 30,000원.
+        assertEquals(30_000L, line.amount)
+        assertEquals(plain.total + 30_000, r.total)
+    }
+}

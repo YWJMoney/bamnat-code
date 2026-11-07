@@ -105,6 +105,8 @@ data class WorkplaceEntity(
     @androidx.room.ColumnInfo(defaultValue = "1") val minuteUnit: Int = 1,
     /** 1.38 (DB 30) [P3-X-01] 대타 요청, the same JSON as [TeamEntity.calls]. */
     @androidx.room.ColumnInfo(defaultValue = "") val calls: String = "",
+    /** 1.39 (DB 32) [BOSS-12] 산재보험 사업종류 code; null until picked. */
+    val industry: String? = null,
 )
 
 @Entity(tableName = "staff", indices = [Index("workplaceId")])

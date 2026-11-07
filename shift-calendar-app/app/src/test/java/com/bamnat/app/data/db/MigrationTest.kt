@@ -491,6 +491,7 @@ class MigrationTest {
             db.payrollDao().upsertWorkplace(WorkplaceEntity("p", "우리 카페", true, 10, true, 1, null, 1))
             assertEquals("29판 계산 단위 기본은 1분", 1, db.payrollDao().workplaces().single().minuteUnit)
             assertEquals("30판 대타 요청은 처음엔 없음", "", db.payrollDao().workplaces().single().calls)
+            assertEquals("32판 산재 업종은 처음엔 안 고름", null, db.payrollDao().workplaces().single().industry)
             db.payrollDao().upsertStaff(StaffEntity("s", "p", "준호", "HOUR", 10_320, "[]", null, null, null, "", "{}", true, "{}", null, 0))
             db.payrollDao().upsertWork(StaffWorkEntity("s", 20760, "ABSENT", null, null))
             assertEquals("ABSENT", db.payrollDao().work().single().kind)
