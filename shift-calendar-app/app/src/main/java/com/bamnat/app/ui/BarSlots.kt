@@ -97,8 +97,14 @@ internal object TabSlotsUi {
 
 /** [NAV2-01] A place's icon, with 설정's count of new answers or 마을's dot when the place holds them. */
 @Composable
-internal fun SlotIcon(icon: ImageVector, badge: Int, dot: Boolean, dotSaid: String = "광장 내 글에 새 답") {
+internal fun SlotIcon(icon: ImageVector, badge: Int, dot: Boolean, dotSaid: String = "광장 내 글에 새 답", group: Int = 0) {
     when {
+        // 1.39 PC NAV2 (묶음인지 모르겠어요): a 묶음 shows how many screens it holds, quietly, when it has no news.
+        group > 1 && badge <= 0 && !dot -> BadgedBox(badge = {
+            androidx.compose.material3.Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+                Text("$group")
+            }
+        }) { Icon(icon, contentDescription = null) }
         badge > 0 -> BadgedBox(badge = { IconCountBadge(badge, "문의에 새 답 ${badge}개", cap = 9) }) { Icon(icon, contentDescription = null) }
         dot -> BadgedBox(badge = { androidx.compose.material3.Badge(Modifier.semantics { contentDescription = dotSaid }) }) { Icon(icon, contentDescription = null) }
         else -> Icon(icon, contentDescription = null)

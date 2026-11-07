@@ -106,7 +106,13 @@ internal object TabPicks {
     private fun top(t: TopLevel, style: WorkStyle?) = TabPick(t.route, t.labelFor(style), t.icon, t.selectedIcon, KIND_TABS)
 
     private fun feature(x: Feature, style: WorkStyle?) =
-        TabPick(f(x.place), x.label, x.icon, kind = x.kind, fits = style == null || x.styles == null || style in x.styles)
+        TabPick(f(x.place), labelOf(x, style), x.icon, kind = x.kind, fits = style == null || x.styles == null || style in x.styles)
+
+    /** 1.39 PC NAV2: a shop's 근무 주기 is its 영업일 (the screen it opens). */
+    private fun labelOf(x: Feature, style: WorkStyle?): String = if (x.place == Place.PATTERN && style == WorkStyle.BUSINESS) "영업일" else x.label
+
+    /** 1.39 PC NAV2 (식당·투자에 '근무와 돈'): the picker's heading for [kind] on the calendar of [style]. */
+    fun kindName(kind: String, style: WorkStyle?): String = if (kind == KIND_WORK && style != null && !style.usesPayEngine) "돈과 일정" else kind
 
     /** The icon a 묶음 shows when none of its screens is on screen. */
     val groupIcon: ImageVector = Icons.Outlined.AutoAwesome

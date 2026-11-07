@@ -38,6 +38,13 @@ class TabPicksTest {
         assertTrue(shop.first { it.key == "f:SLEEP" }.fits)
         // No kind of work set yet: everything fits.
         assertTrue(TabPicks.all(null, manageOn = false).all { it.fits })
+        // 1.39 PC NAV2: a shop or an investor reads 돈과 일정, a shop's 근무 주기 is its 영업일.
+        assertEquals("돈과 일정", TabPicks.kindName(TabPicks.KIND_WORK, WorkStyle.BUSINESS))
+        assertEquals("근무와 돈", TabPicks.kindName(TabPicks.KIND_WORK, WorkStyle.SHIFT))
+        assertEquals("영업일", TabPicks.of("f:PATTERN", WorkStyle.BUSINESS)?.label)
+        assertEquals("와", com.bamnat.core.text.Josa.gwawa("가계부"))
+        assertEquals("와", com.bamnat.core.text.Josa.gwawa("연차"))
+        assertEquals("과", com.bamnat.core.text.Josa.gwawa("받을 돈"))
         // The money tab is named for the work, as in the bar.
         assertEquals(TopLevel.MONEY.labelFor(WorkStyle.BUSINESS), TabPicks.of("money", WorkStyle.BUSINESS)?.label)
     }

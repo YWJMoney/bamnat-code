@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -111,13 +112,17 @@ internal fun BarSlotsDialog(
         title = { Text(TAB_ORDER_ROW) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                // 1.39 PC NAV2 (안내 글이 길어 목록이 밀려요): one line, the rest folded.
+                var more by rememberSaveable { mutableStateOf(false) }
                 Text(
-                    "아래 막대에 칸이 ${TabSlots.MAX}개까지 있어요. 칸마다 화면 하나를 두거나, 여러 화면을 묶어 두면 누를 때 목록이 떠서 바로 가요. " +
-                        "앱은 맨 앞 탭($home)으로 열려요. 막대에 없는 탭과 설정은 화면 위 ‘나’ 단추에 있어요.",
+                    "칸 이름을 누르면 바꾸고, ⋮로 여러 화면을 묶어요." + if (more) " 묶은 칸을 누르면 목록이 떠서 바로 가요. " +
+                        "앱은 맨 앞 탭($home)으로 열려요. 막대에 없는 탭과 설정은 화면 위 ‘나’ 단추에 있어요." else "",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp),
                 )
+                if (!more) Text("자세히", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable { more = true }.padding(vertical = 6.dp))
+                Spacer(Modifier.height(8.dp))
                 slots.forEachIndexed { i, slot ->
                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     SlotLine(
@@ -137,15 +142,14 @@ internal fun BarSlotsDialog(
                         Text(" 칸 더하기 (${slots.size}/${TabSlots.MAX})")
                     }
                 }
+                // 1.39 PC NAV2 (150%·200%에서 '처음대로'가 창 밖으로 잘림): in the list, not beside 완료.
+                TextButton(onClick = onReset, enabled = settings.tabSlots.isNotEmpty() || settings.tabOrder.isNotEmpty()) { Text("처음대로 (다섯 탭)") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("완료") } },
         dismissButton = {
-            Row {
-                // [RCX-12] 1.35 화면 배치 piece: this bar (and the calendar's cards) as a recipe.
-                com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.LAYOUT)
-                TextButton(onClick = onReset, enabled = settings.tabSlots.isNotEmpty() || settings.tabOrder.isNotEmpty()) { Text("처음대로") }
-            }
+            // [RCX-12] 1.35 화면 배치 piece: this bar (and the calendar's cards) as a recipe.
+            com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.LAYOUT)
         },
     )
     picking?.let { p ->
@@ -154,11 +158,16 @@ internal fun BarSlotsDialog(
             title = when {
                 at == null -> "새 칸에 둘 화면"
                 p.add && at is TabSlots.Group -> "‘${at.name}’에 더할 화면"
-                p.add -> "‘${label(at.keys.single())}’과 묶을 화면"
+                p.add -> label(at.keys.single()).let { "‘$it’${com.bamnat.core.text.Josa.gwawa(it)} 묶을 화면" }
                 else -> "${p.index + 1}번 칸에 둘 화면"
             },
             picks = TabPicks.all(style, manageOn).filter { at == null || it.key !in at.keys },
             slots = slots,
+            style = style,
+            // 1.39 PC NAV2 (빼면 마을이 어디로 가는지 안 보여요): a tab taken off the bar waits by the 나 button.
+            note = (at as? TabSlots.One)?.takeIf { !p.add }?.let { one ->
+                "지금: ${label(one.key)}" + if (TabPicks.topOf(one.key) != null) " · 바꾸면 ${label(one.key)}${com.bamnat.core.text.Josa.eunneun(label(one.key))} 화면 위 ‘나’에서 열어요" else ""
+            },
             onPick = { k ->
                 picking = null
                 change(if (p.add) TabSlots.addTo(slots, p.index, k) else TabSlots.replace(slots, p.index, k))
@@ -199,6 +208,7 @@ private fun SlotLine(
         is TabSlots.Group -> slot.name
     }
     var menu by remember { mutableStateOf(false) }
+    val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -220,16 +230,21 @@ private fun SlotLine(
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f).clip(MaterialTheme.shapes.small).clickable(onClick = onReplace)) {
                 Text(name, style = MaterialTheme.typography.bodyLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (slot is TabSlots.Group) Tag("묶음 ${slot.members.size}개", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
                     if (isHome) Tag("첫 화면", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
-            IconButton(onClick = { onMove(-1) }, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "$name 위로") }
-            IconButton(onClick = { onMove(1) }, enabled = !last) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "$name 아래로") }
+            // 1.39 PC NAV2 (150%·200%에서 칸 이름이 '가/계/부'로 세로로 섬): at large text the arrows wait in ⋮.
+            if (!bigText) {
+                IconButton(onClick = { onMove(-1) }, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "$name 위로") }
+                IconButton(onClick = { onMove(1) }, enabled = !last) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "$name 아래로") }
+            }
             androidx.compose.foundation.layout.Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = "$name 고치기") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (bigText && !first) DropdownMenuItem(text = { Text("앞으로 옮기기") }, onClick = { menu = false; onMove(-1) })
+                    if (bigText && !last) DropdownMenuItem(text = { Text("뒤로 옮기기") }, onClick = { menu = false; onMove(1) })
                     DropdownMenuItem(text = { Text("다른 화면으로 바꾸기") }, onClick = { menu = false; onReplace() })
                     if (slot.keys.size < TabSlots.MAX_IN_GROUP) {
                         DropdownMenuItem(text = { Text(if (slot is TabSlots.Group) "이 묶음에 화면 더하기" else "화면 더해 묶음 만들기") }, onClick = { menu = false; onAdd() })
@@ -243,7 +258,7 @@ private fun SlotLine(
         if (slot is TabSlots.Group) {
             picks.forEachIndexed { m, p ->
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 52.dp).heightIn(min = 44.dp),
+                    Modifier.fillMaxWidth().padding(start = if (bigText) 24.dp else 52.dp).heightIn(min = 44.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(p.icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -269,7 +284,7 @@ private fun Tag(text: String, fill: androidx.compose.ui.graphics.Color, ink: and
  * '다른 일의 화면' (never hidden). A screen already in a place says which, and moves from there.
  */
 @Composable
-private fun ScreenPicker(title: String, picks: List<TabPick>, slots: List<TabSlots.Slot>, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+private fun ScreenPicker(title: String, picks: List<TabPick>, slots: List<TabSlots.Slot>, style: WorkStyle?, note: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val where: (String) -> String? = { k -> slots.indexOfFirst { k in it.keys }.takeIf { it >= 0 }?.let { "${it + 1}번 칸에서 옮겨요" } }
     val fit = picks.filter { it.fits }
     val other = picks.filter { !it.fits }
@@ -278,8 +293,9 @@ private fun ScreenPicker(title: String, picks: List<TabPick>, slots: List<TabSlo
         title = { Text(title) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                note?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 fit.groupBy { it.kind }.forEach { (kind, list) ->
-                    PickHeading(kind)
+                    PickHeading(TabPicks.kindName(kind, style))
                     list.forEach { p -> PickLine(p, where(p.key), onPick) }
                 }
                 if (other.isNotEmpty()) {

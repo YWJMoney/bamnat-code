@@ -1102,7 +1102,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 onClick = { onSlot(sl) },
                                 icon = {
                                     androidx.compose.foundation.layout.Box {
-                                        WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot) }
+                                        WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
                                         look.members?.let { m ->
                                             GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
                                         }
@@ -1167,7 +1167,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                             onClick = { onSlot(sl) },
                                             icon = {
                                                 androidx.compose.foundation.layout.Box {
-                                                    WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot) }
+                                                    WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
                                                     look.members?.let { m ->
                                                         GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
                                                     }

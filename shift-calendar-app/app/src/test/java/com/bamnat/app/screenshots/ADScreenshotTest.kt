@@ -220,7 +220,7 @@ class ADScreenshotTest : ScreenshotBase() {
             // [NAV2-02] Settings waits by the 나 button.
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)
-            tapText("처음대로", exact = true)
+            tapText("처음대로 (다섯 탭)", exact = true)
             assertEquals("", saved())
             tapText("완료", exact = true)
         }
