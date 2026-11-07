@@ -161,9 +161,9 @@
       },
       {
         "version": "3.11",
-        "posted": "2026-11-04",
-        "effective": "2027-12-31",
-        "heldUntil": null
+        "posted": "2026-11-07",
+        "effective": "2026-11-07",
+        "heldUntil": "2026-12-07"
       }
     ],
     "serverTime": "2026-11-12T03:00:00.000Z"

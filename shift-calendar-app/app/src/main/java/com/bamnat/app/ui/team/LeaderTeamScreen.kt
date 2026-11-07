@@ -570,7 +570,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 })
             }
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌어요.",
+            Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 1.38 같이 쉬는 사람 (경쟁 앱 조사 P3-L-11): off until the leader turns it on — it puts teammates' names in each link.
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -757,7 +757,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     }
     resent?.let { (v, list) ->
         AlertDialog(onDismissRequest = { resent = null }, title = { Text("${v}판으로 다시 확정했어요") }, text = {
-            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 다시 보낼 필요는 없어요. 바뀐 걸 알려 주고 싶으면 보내도 돼요.", style = MaterialTheme.typography.bodyMedium)
+            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. 그보다 옛 판을 쓰는 팀원은 저절로 바뀌지 않으니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { resent = null }) { Text("알겠어요") } },
             dismissButton = { TextButton(onClick = { resent = null; linksFor = list }) { Text("그래도 알리기") } })
     }

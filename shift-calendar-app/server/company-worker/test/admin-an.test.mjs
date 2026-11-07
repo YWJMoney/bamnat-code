@@ -147,7 +147,8 @@ test("[ADMUX-40][FLAG-28] /badges carries 기능 관리's number and 오늘's le
   // Forcing billing on is a write: the kept numbers are fresh at once, with the 24-hour card and billingLive.
   assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "Play 승인" }, owner)).status, 200);
   const after = (await call("GET", "/api/admin/badges", undefined, owner)).data;
-  assert.deepEqual(after.flagAlerts.map((a) => a.key), ["billing"]);
+  // 1.38: 3.11 takes effect 2026-11-07, so on a real clock past it share.look may turn on in the same 24 hours; billing is the one forced.
+  assert.deepEqual(after.flagAlerts.map((a) => a.key).filter((k) => k !== "share.look"), ["billing"]);
   assert.equal(after.billingLive, true);
   // 운영 without 기능 관리 (flags none): no flag numbers, and the flag screens are closed.
   const s = (await call("GET", "/api/admin/badges", undefined, support)).data;

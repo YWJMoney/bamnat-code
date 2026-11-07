@@ -250,7 +250,7 @@ object FlagCatalog {
     val SHARE_LOOK_FLAG = Flag(
         SHARE_LOOK, "링크에 테마·근무 설정 담기",
         what = "근무표 링크를 만들 때 ‘내 테마’와 ‘근무 설정’을 고르면 링크에 함께 담아요. 테마는 달력·메모·가계부의 모양(사진은 빼요), 근무 설정은 근무 이름·색·글자, 근무 전 알람 시각, 근무 주기예요. 급여 규칙·기본급·금액·메모·사진은 담지 않아요. 받는 분은 밤낮 앱에서 입어 보고 고른 것만 넣어요.",
-        whyOff = "처리방침 3.11의 시행일부터 저절로 켜져요. 3.11은 1.38 배포 때 게시하고 그날을 관리자 앱 일정에 넣어요(그 전까지는 먼 날이라 꺼져 있어요). 3.11 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 그보다 늦게예요. 그 전에는 공유 창에 날짜가 정해지면 알려 주고 링크에는 담지 않아요.",
+        whyOff = "처리방침 3.11의 시행일(2026-11-07)부터 저절로 켜져요. 3.11 게시 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 30일 고지가 끝나는 12-07부터예요. 그 전에는 공유 창에 그날을 알려 주고 링크에는 담지 않아요.",
         basis = Basis(policy = "3.11 1항", requirement = "SHR-31", note = "1.37 묶음 E 달력 공유에 테마·설정"),
         conditions = listOf(Condition.Date(policy = SHARE_LOOK_POLICY), Condition.Policy(SHARE_LOOK_POLICY)),
         default = false, risk = Risk.LEGAL, since = "1.37.0", group = FlagGroup.LAW,
@@ -302,18 +302,17 @@ object FlagCatalog {
      */
     /**
      * 1.38 Phase 3 (사용자 2026-11-05 C안 "모든 기능을 해당 일에 푸는 거야, 내가 따로 지정하면 그날에"): every Phase 3 row opens on
-     * 정식 출시일, the effective day of 처리방침 [PolicyConsent.LAUNCH_VERSION] as the server's calendar has it, so moving that day in
-     * the admin app moves them all. Nothing here sends new data, so no consent hold of its own; force-off in the admin app still rests one.
+     * the effective day of 처리방침 [PHASE3_POLICY] as the server's calendar has it, so moving that day in the admin app moves them all.
+     * 3.11 names what they send (팀원·직원 이름, 신청·출퇴근 링크, 지금 자는 중), so a phone installed before 3.11 was posted waits for
+     * its yes on the calendar card or the end of the 30-day notice (12-07), like `share.look`; force-off in the admin app still rests one.
      */
-    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PHASE3_POLICY))
+    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PHASE3_POLICY), Condition.Policy(PHASE3_POLICY))
 
     /**
-     * 1.38 출시 점검 E2 (마무리 때 사용자 결정 D2): the 처리방침 판 whose 시행일 opens the Phase 3 and 수면 rows. Now 3.1 (정식 출시일,
-     * 기본 11-12). If 1.38 ships after that day, these rows would open before the new 처리방침 판 that names them takes effect; then
-     * set this to that 판 (e.g. "3.12", 판 id as the admin app's 처리방침 일정 has it), re-export the catalog
-     * (`BAMNAT_WRITE_FLAG_CATALOG=1 … FlagCatalogExportTest`) and run the company-worker tests. One line moves all six rows.
+     * 1.38 출시 점검 E2 (사용자 2026-11-07, 1.38 마무리): the 처리방침 판 whose 시행일 opens the Phase 3 and 수면 rows: 3.11, the one
+     * 판 that names them (게시·시행 2026-11-07). Moving 3.11's 시행일 in the admin app's 처리방침 일정 moves all six rows with it.
      */
-    const val PHASE3_POLICY: String = PolicyConsent.LAUNCH_VERSION
+    const val PHASE3_POLICY: String = PolicyConsent.SHARE_LOOK_VERSION
 
     val TEAM_LEADER_FLAG = Flag(
         TEAM_LEADER, "리더 팀 근무표",

@@ -33,6 +33,12 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
+ * 1.38 출시 점검 D9 (사용자 2026-11-07, 추천안): what is put in was a copy taken once. 1.39 [TEAM-22]: the leader's later change now
+ * comes by itself (or is asked, as '이 근무표가 바뀌면' says), so the note says that instead.
+ */
+internal const val ONCE_NOTE = "넣은 뒤 리더가 근무표를 고치면 6시간 안에 받아서, 아래 '이 근무표가 바뀌면'에 고른 대로 내 달력과 알람에 넣거나 여쭤봐요. 내가 직접 바꾼 날은 그대로 둬요."
+
+/**
  * 1.38 [P3-X-03] 받은 근무표를 내 달력으로: the month's days of the link written into the user's own calendar (so the 근무 알람 rings
  * for them), with the pay the user's own 급여 설정 makes of it, next to what their calendar says now. A changed link shows its
  * changed days here again ("바뀐 날 2일, +38,000원"); one press puts them in, one more takes them back.
@@ -63,6 +69,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     SectionCard(title = "내 달력에 넣기") {
         if (undo != null && changes.isEmpty()) {
             Text("${undo!!.size}일 넣었어요. 근무 알람도 이 근무대로 울려요.", style = MaterialTheme.typography.bodyMedium)
+            Text(ONCE_NOTE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { val u = undo!!; undo = null; app.launch { u.forEach { (d, e) -> c.scheduleRepository.restoreDay(d, e) } } }) { Text("되돌리기") }
             return@SectionCard
         }
@@ -77,6 +84,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
         } ?: Text("급여 설정을 하면 이 근무표로 이번 달 월급이 얼마인지도 바로 보여요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (missing.isNotEmpty()) Text("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
             style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+        Text(ONCE_NOTE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(onClick = {
                 val todo = changes

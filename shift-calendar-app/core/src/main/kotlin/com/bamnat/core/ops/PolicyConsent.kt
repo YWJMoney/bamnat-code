@@ -35,14 +35,15 @@ object PolicyConsent {
      * 고지가 끝나는 [SHARE_LOOK_HELD_UNTIL]부터예요. 카드는 가장 새 판 [ASK_VERSION]을 물어요(동의하면 3.9·3.1도 동의한 것으로 쳐요).
      */
     const val SHARE_LOOK_VERSION = "3.11"
-    val SHARE_LOOK_POSTED: LocalDate = LocalDate.of(2026, 11, 4)
-    val SHARE_LOOK_HELD_UNTIL: LocalDate = LocalDate.of(2026, 12, 4)
+    val SHARE_LOOK_POSTED: LocalDate = LocalDate.of(2026, 11, 7)
+    val SHARE_LOOK_HELD_UNTIL: LocalDate = LocalDate.of(2026, 12, 7)
     /**
-     * 1.38 (사용자 2026-11-05 "1.38배포할때 처리방침 바꾸자"): 3.11은 아직 게시 전(공개 저장소 PR #10 보류)이라 시행일을 정하지 않았어요.
-     * 그동안 `share.look`이 정식 출시일에 저절로 풀리지 않게 먼 날을 둬요(동의 없이도 시행되는 날은 따로 두지 않아요: 시행일보다 앞설 수 없어요).
-     * 1.38 배포일에 새 판을 게시하면 관리자 앱 일정에서 게시일·시행일·[SHARE_LOOK_HELD_UNTIL](30일 고지 끝)을 그날에 맞춰 넣어요.
+     * 1.38 (사용자 2026-11-07 "처리방침은 오늘 기준으로 작성해줘 오늘 정식 출시가 됬으니깐 아직 사용자가 다운 받지 않았을때 해야해"):
+     * 3.11은 1.37·1.38의 모든 새 항목(테마·근무 설정, 팀·가게 링크, 지금 자는 중 등)을 한 판으로 담아 2026-11-07에 게시하고 같은 날 시행해요.
+     * 게시 전에 깐 휴대폰은 달력 위 카드로 한 번 묻고, 동의하지 않으면 30일 고지가 끝나는 [SHARE_LOOK_HELD_UNTIL](12-07)부터예요.
+     * 게시가 늦어지면 관리자 앱 › 기능 관리 › 일정 › 처리방침 일정에서 세 날을 함께 옮겨요(앱 업데이트 없이).
      */
-    val SHARE_LOOK_EFFECTIVE: LocalDate = LocalDate.of(2027, 12, 31)
+    val SHARE_LOOK_EFFECTIVE: LocalDate = LocalDate.of(2026, 11, 7)
     /** The newest version the calendar card asks for and a yes writes. */
     const val ASK_VERSION = SHARE_LOOK_VERSION
 
@@ -62,8 +63,8 @@ object PolicyConsent {
     fun holdsLaunch(installed: LocalDate?, agreed: Boolean, today: LocalDate): Boolean = asks(installed, agreed, today)
 
     val lines: List<String> = listOf(
-        "정식 출시일부터 새 처리방침·이용약관이 시행돼요(원래 알린 날은 11월 24일~12월 4일)",
-        "그날부터 레시피 올리기·좋아요·이야기·구독, 동료 링크에 회사 설정 담기, 근무표 링크에 테마·근무 설정 담기, 문의에 멈춤 관찰 기록 붙이기, 회사 공통 수당 금액 나누기, ‘사진이 달라요’ 횟수, 따로 동의한 분의 통계 더 보내기가 시작돼요",
+        "정식 출시일부터 새 처리방침·이용약관이 시행돼요(원래 알린 날은 11월 24일~12월 7일)",
+        "그날부터 레시피 올리기·좋아요·이야기·구독, 동료 링크에 회사 설정 담기, 근무표 링크에 테마·근무 설정 담기, 팀·가게 링크에 팀원·직원 이름 담기, 근무표 링크에 지금 자는 중 나누기, 문의에 멈춤 관찰 기록 붙이기, 회사 공통 수당 금액 나누기, ‘사진이 달라요’ 횟수, 따로 동의한 분의 통계 더 보내기가 시작돼요",
         "프로·광고는 Play 정식 출시가 승인된 날부터 켜져요. 그 전엔 지금처럼 모두 무료예요",
     )
 }

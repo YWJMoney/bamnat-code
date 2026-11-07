@@ -993,7 +993,8 @@ test("[ADMUX-27][FLAG-28] a legal flag on for under 24 hours sits at the top of 
   await u.settle(30);
   assert.equal((await u.api("GET", "/api/admin/flags/billing")).override.force, "off");
   await u.settle(20);
-  assert.ok(!u.$("#main .card.flag-alert"), "gone once forced off");
+  // 1.38: 3.11 takes effect 2026-11-07, so on a real clock share.look may have its own card too; billing's is the one gone.
+  assert.ok(![...u.$("#main").querySelectorAll(".card.flag-alert")].some((c) => /결제\(프로 구독\)/.test(c.textContent)), "gone once forced off");
   assert.deepEqual(u.errors, []);
 });
 
