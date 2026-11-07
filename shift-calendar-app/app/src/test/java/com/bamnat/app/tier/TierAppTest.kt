@@ -122,6 +122,8 @@ class TierAppTest {
                 "THEME_WARDROBE" to Tier.PRO,
                 // [PRF-12] 1.36.
                 "CREATOR_PRO" to Tier.PRO,
+                // 1.39 [TASK-07].
+                "MORE_TASK_WIDGETS" to Tier.PRO,
                 // [FX-01] 1.39.
                 "FX_WORKS" to Tier.PRO,
             ),

@@ -414,6 +414,11 @@ fun TalkSheet(holder: TalkHolder) {
     val myTag by androidx.compose.runtime.produceState<com.bamnat.core.plaza.PlazaTag?>(null, people, o.company, tagTick) {
         value = if (people) holder.myTag(o.company) else null
     }
+    // 1.39 [PLZC-20] 근무 카드 붙이기: my month so far from the calendar of this plaza's kind of work.
+    var withCard by remember(o.setup) { mutableStateOf(false) }
+    val myCard by androidx.compose.runtime.produceState<com.bamnat.core.plaza.WorkCard?>(null, people, o.company) {
+        value = if (people) runCatching { holder.container.plazaTags.card(o.company) }.getOrNull() else null
+    }
     val showable by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), styleRoom, kind) {
         if (styleRoom && kind == "show") value = holder.showable()
     }
@@ -629,6 +634,12 @@ fun TalkSheet(holder: TalkHolder) {
                         TextButton(onClick = { tagScope = true }) { Text("고르기") }
                     }
                 }
+                if (replyTo == null && kind != "proposal") myCard?.let { card ->
+                    com.bamnat.app.ui.components.FilterChip(selected = withCard, onClick = { withCard = !withCard },
+                        label = { Text(if (withCard) "📅 근무 카드 붙임 · ${card.line()}" else "📅 이번 달 근무 카드 붙이기", maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                        modifier = Modifier.padding(top = 2.dp))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -667,12 +678,14 @@ fun TalkSheet(holder: TalkHolder) {
                               val go = { rules.ensure {
                                 rulesOk = true
                                 busy = true
+                                // [PLZC-20] the card goes with this top post only (taken once by the client).
+                                holder.container.plazaTags.cardOnce = if (withCard && parent == null && myCard != null) o.company else null
                                 holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt, poll = poll,
                                     attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->
-                                    busy = false; error = e
+                                    busy = false; error = e; holder.container.plazaTags.cardOnce = null
                                     // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
                                     if (e == null) {
-                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null
+                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null; withCard = false
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
                                 }
@@ -795,9 +808,8 @@ private fun PostRow(
             val name = p.nick ?: "참여자 ${p.who}"
             // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
             val maker = p.maker
-            if (maker != null && !p.mine) Text("$name ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClickLabel = "프로필 보기") { com.bamnat.app.recipe.RecipeLinks.openMaker(maker) }.heightIn(min = 32.dp))
-            else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
+            com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
+                onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } })
             if (meToo) WriterMarks(p)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
@@ -848,6 +860,7 @@ private fun PostRow(
             }
         }
         if (meToo) p.tag?.let { PlazaTagLine(it) }
+        if (meToo) p.card?.let { WorkCardLine(it, Modifier.padding(top = 2.dp)) }
         // [COMM-11] I2: one 개인 정보 신고 marks the post 확인 중, dimmed, until an admin looks.
         if (p.review && p.hidden == null) {
             Text("확인 중 · 개인 정보가 있다는 신고가 있어 운영자가 보고 있어요", style = MaterialTheme.typography.labelSmall,
@@ -1000,6 +1013,17 @@ private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (
         }
         Text(if (v.mine == null) "골라야 결과가 보여요 · ${v.total}명 참여" else "${v.total}명 참여 · 다시 누르면 거둬요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.39 [PLZC-31] 근무형태별 결과, after this phone picked too: each 근무형태's leading choice (5명 미만은 합쳐서).
+        if (v.mine != null && v.byForm.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("근무형태별", style = MaterialTheme.typography.labelMedium)
+            v.byForm.forEach { g ->
+                val (i, pct) = g.lead() ?: return@forEach
+                Text("${g.form?.label ?: "그 밖의 근무"} ${g.total}명 · '${v.options.getOrElse(i) { "" }}' $pct%",
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            Text("한 근무형태가 5명이 안 되면 '그 밖의 근무'로 합쳐요. 누가 무엇을 골랐는지는 보이지 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

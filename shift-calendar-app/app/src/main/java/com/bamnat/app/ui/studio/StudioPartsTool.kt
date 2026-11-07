@@ -403,6 +403,9 @@ private fun statesOf(id: String): List<String> = when {
     // [BLU-10] 위젯 칸 is a day like the calendar's cells; 위젯 머리 turns red on a public holiday.
     id == "widget.cell" -> listOf("today", "sat", "sun", "holiday", "dim", "role.day", "role.eve", "role.night", "role.long", "role.off")
     id == "widget.head" -> listOf("holiday")
+    // 1.39 [TASK-07] 할 일 한 줄은 오늘·늦음·끝냄, 그 동그라미는 늦음·끝냄.
+    id == "widget.task" -> listOf("today", "late", "done")
+    id == "widget.task.check" -> listOf("late", "done")
     // [TAB-07] 1.36 탭 판 부품.
     id == "cal.band.slot" || id == "cal.line.row" || id == "money.cal.cell" || id == "memo.cal.cell" -> listOf("today", "sel")
     id == "cal.weekly.day" -> listOf("today", "sel", "sat", "sun", "dim")
@@ -421,6 +424,8 @@ internal val STATE_WORDS = mapOf<String?, String>(
     "dark" to "어두운 화면", "today" to "오늘", "sat" to "토요일", "sun" to "일요일", "holiday" to "공휴일", "dim" to "다른 달", "sel" to "고른 것",
     "role.day" to "주간 근무", "role.eve" to "오후·저녁 근무", "role.night" to "야간 근무", "role.long" to "24시간·당직", "role.off" to "쉬는 날",
     "role.other" to "그 밖 근무", "in" to "수입", "out" to "지출",
+    // 1.39 [TASK-07] 할 일 위젯.
+    "late" to "늦은 할 일", "done" to "끝낸 할 일",
 )
 
 private val FONT_WORDS = listOf("sans" to "고딕", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨", "round" to "둥근")

@@ -39,6 +39,10 @@ fun WeekStrip(
     today: LocalDate? = null,
     onPick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    /** 1.39 [FLOW-19] How many things each day has (메모 n개), a plain dot under it where there is no [marks] colour. */
+    counts: Map<LocalDate, Int> = emptyMap(),
+    /** What [counts] counts, for TalkBack ("메모"). */
+    countWord: String = "",
 ) {
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
         days.forEach { d ->
@@ -52,7 +56,7 @@ fun WeekStrip(
                         contentDescription = "${d.monthValue}월 ${d.dayOfMonth}일 ($weekday)" +
                             (if (d == today) ", 오늘" else "") + when (mark) {
                                 Tone.Good -> ", 좋음"; Tone.Caution -> ", 살펴볼 것"; Tone.Danger -> ", 위험"; else -> ""
-                            }
+                            } + (counts[d]?.takeIf { it > 0 }?.let { ", $countWord ${it}개" } ?: "")
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -65,6 +69,7 @@ fun WeekStrip(
                         color = if (picked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                 }
                 Box(Modifier.size(6.dp).background(mark?.takeIf { it != Tone.Plain }?.color()
+                    ?: MaterialTheme.colorScheme.onSurfaceVariant.takeIf { (counts[d] ?: 0) > 0 }
                     ?: androidx.compose.ui.graphics.Color.Transparent, CircleShape))
             }
         }

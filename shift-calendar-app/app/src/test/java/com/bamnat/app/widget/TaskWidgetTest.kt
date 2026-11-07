@@ -1,0 +1,90 @@
+package com.bamnat.app.widget
+
+import android.content.Context
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
+import androidx.glance.appwidget.GlanceRemoteViews
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.appContainer
+import com.bamnat.app.tier.Feature
+import com.bamnat.core.memo.ChecklistItem
+import com.bamnat.core.memo.Memo
+import com.bamnat.core.memo.TaskList
+import com.bamnat.core.time.Today
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/** 1.39 [TASK-07] 할 일 위젯: the list from 내 달력's memos, the circle finishing a memo there, and the second widget being 프로. */
+@RunWith(AndroidJUnit4::class)
+@OptIn(ExperimentalGlanceRemoteViewsApi::class)
+class TaskWidgetTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
+    @Test fun theCircleFinishesTodaysMemoAndBringsItBack() = runBlocking<Unit> {
+        val repo = context.appContainer.memoRepository
+        val today = Today.date()
+        val memo = repo.save(Memo(date = today, title = "택배 받기", isChecklist = true, checklist = listOf(ChecklistItem("문 앞"))))
+        val pill = repo.save(Memo(date = today.minusDays(3), title = "약 먹기", repeat = "D"))
+        val shown = TaskWidget.load(context, null)
+        assertTrue(shown.allowed)
+        assertEquals(listOf("택배 받기", "약 먹기"), shown.rows.map { it.text })
+
+        assertNotNull(TaskDoneAction.toggle(context, pill.id, today))
+        val after = repo.get(pill.id)!!
+        assertTrue(after.isDoneOn(today))
+        assertFalse("only today: tomorrow it is to do again", after.isDoneOn(today.plusDays(1)))
+        assertEquals(listOf("택배 받기", "약 먹기"), TaskWidget.load(context, null).rows.map { it.text })
+        assertEquals(listOf(false, true), TaskWidget.load(context, null).rows.map { it.done })
+
+        TaskDoneAction.toggle(context, memo.id, today)
+        assertEquals("오늘 할 일을 다 끝냈어요", TaskList.headline(TaskWidget.load(context, null).rows))
+        TaskDoneAction.toggle(context, memo.id, today)
+        assertFalse(repo.get(memo.id)!!.isDone)
+    }
+
+    @Test fun aGoneMemoIsLeftAlone() = runBlocking<Unit> {
+        val repo = context.appContainer.memoRepository
+        val memo = repo.save(Memo(date = Today.date(), title = "지울 것"))
+        repo.delete(memo, offerUndo = false)
+        assertEquals(null, TaskDoneAction.toggle(context, memo.id, Today.date()))
+        assertEquals(null, TaskDoneAction.toggle(context, 987_654L, Today.date()))
+    }
+
+    @Test fun theWidgetDrawsItsRowsAndTheLockedOne() = runBlocking<Unit> {
+        val today = Today.date()
+        val rows = TaskList.of(listOf(
+            Memo(id = 1, date = today, title = "치과"),
+            Memo(id = 2, date = today, title = "빨래", doneAtMillis = 1),
+        ), today)
+        val views = GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskContent(rows, today) } } }
+        assertNotNull(views.remoteViews)
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) { WidgetLookTheme { TaskLocked() } }.remoteViews)
+        // 1.39 [TASK-31] 할 일 한 줄: one row, with what is left, and its locked one.
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(rows) } } }.remoteViews)
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLine(emptyList()) } }.remoteViews)
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLocked(short = true) } }.remoteViews)
+        assertTrue(TaskWidget.SHORT_BELOW > 60.dp && TaskWidget.SHORT_BELOW < 110.dp)
+        // PC e0f19f47: a launcher drew the "○" letter as a dot. The circle is a picture, at least 18 dp, and no row writes "○" or "✓".
+        val line = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(rows) } } }
+        val drawn = line.remoteViews.apply(context, android.widget.FrameLayout(context))
+        val texts = mutableListOf<String>()
+        val pictures = mutableListOf<android.widget.ImageView>()
+        fun walk(v: android.view.View) {
+            if (v is android.widget.TextView) texts += v.text.toString()
+            if (v is android.widget.ImageView && v.drawable != null) pictures += v
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(drawn)
+        assertTrue("no circle letter: $texts", texts.none { "○" in it || "✓" in it })
+        assertTrue("the circle is drawn: $texts", pictures.isNotEmpty())
+        // The second widget's row is 프로; the first is free whatever the tier.
+        assertEquals(com.bamnat.app.tier.Tier.PRO, Feature.MORE_TASK_WIDGETS.minTier)
+    }
+}

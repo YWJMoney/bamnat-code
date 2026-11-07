@@ -31,6 +31,15 @@ class TabPicksTest {
         assertTrue(TabPicks.known(TabPicks.MANAGE))
     }
 
+    /** 1.39 3차 PC: 사무직 with no team is not offered 팀·가게 관리; someone who made a team or a 사업장, or a shop, is. */
+    @Test fun theManageScreenIsOfferedOnlyToSomeoneWhoLeads() {
+        assertFalse(TabPicks.manageShown(true, WorkStyle.DAY, hasTeam = false, hasWorkplace = false))
+        assertTrue(TabPicks.manageShown(true, WorkStyle.DAY, hasTeam = true, hasWorkplace = false))
+        assertTrue(TabPicks.manageShown(true, WorkStyle.SHIFT, hasTeam = false, hasWorkplace = true))
+        assertTrue(TabPicks.manageShown(true, WorkStyle.BUSINESS, hasTeam = false, hasWorkplace = false))
+        assertFalse("off while its feature is off", TabPicks.manageShown(false, WorkStyle.BUSINESS, hasTeam = true, hasWorkplace = true))
+    }
+
     @Test fun screensOfOtherWorkWaitAfterButAreNeverHidden() {
         val shop = TabPicks.all(WorkStyle.BUSINESS, manageOn = false)
         val pay = shop.first { it.key == "f:PAY" }

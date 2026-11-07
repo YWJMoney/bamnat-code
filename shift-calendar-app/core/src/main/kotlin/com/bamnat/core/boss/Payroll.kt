@@ -333,7 +333,8 @@ object PayrollLedger {
             overtimeMinutes = minutesOf(LineKind.OVERTIME), nightMinutes = minutesOf(LineKind.NIGHT), holidayMinutes = minutesOf(LineKind.HOLIDAY),
             employerInsurance = insurance, warnings = emptyList(), accident = accident, weekMinutes = weekMinutes,
         )
-        return line.copy(warnings = warnings(place, line, worked.isEmpty()))
+        val young = young(s, month, days.filter { it.date.year == month.year && it.date.month == month.month }, weekMinutes)
+        return line.copy(warnings = warnings(place, line, worked.isEmpty()) + young)
     }
 
     fun month(place: Workplace, staff: List<StaffMember>, month: YearMonth, work: Collection<StaffWork>): Ledger {
@@ -365,6 +366,38 @@ object PayrollLedger {
         val cap = com.bamnat.core.pay.TakeHome.healthCap(on)
         val ceiling = if (ins.health && cap != null && health > cap) (cap + cut.cut10(cap, sh.careRatio)) - (health + care) else 0
         return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment) + floor + ceiling
+    }
+
+    /**
+     * 1.39 G2-N2 연소근로자 (근로기준법 제64·69·70조, 5인 미만에도 적용 — 시행령 별표 1): under 18 on the month's first day, a day past
+     * 7시간 or a week past 35시간 (합의해도 하루 8·주 40까지), and any work between 22시 and 06시, which needs their consent and the
+     * 노동부 인가. Under 15 needs a 취직인허증. Nothing is said without a 생년월일.
+     */
+    fun young(s: StaffMember, month: YearMonth, days: List<com.bamnat.core.schedule.ResolvedDay>, weekMinutes: List<Int>): List<LedgerWarning> {
+        val birth = s.birth ?: return emptyList()
+        val on = month.atDay(1)
+        if (!on.isBefore(birth.plusYears(18)) || days.none { it.totalMinutes > 0 }) return emptyList()
+        val age = java.time.Period.between(birth, on).years
+        val out = ArrayList<LedgerWarning>()
+        val longDays = days.count { it.totalMinutes > 7 * 60 }
+        val longWeeks = weekMinutes.count { it > 35 * 60 }
+        if (longDays > 0 || longWeeks > 0) out += LedgerWarning("young-hours", "18세 미만 근로시간을 넘었어요",
+            "만 ${age}세는 하루 7시간·한 주 35시간까지예요(근로기준법 제69조). 서로 합의하면 하루 1시간·한 주 5시간까지만 더할 수 있어요." +
+                listOfNotNull(longDays.takeIf { it > 0 }?.let { "7시간 넘은 날 ${it}일" }, longWeeks.takeIf { it > 0 }?.let { "35시간 넘은 주 ${it}주" })
+                    .joinToString(", ", prefix = " 이번 달: ") + ".")
+        fun night(d: com.bamnat.core.schedule.ResolvedDay): Boolean {
+            val a = d.start ?: return false
+            val b = d.end ?: return false
+            val late = LocalTime.of(22, 0)
+            val early = LocalTime.of(6, 0)
+            return a.isBefore(early) || b.isAfter(late) || !b.isAfter(a) || a.isAfter(late) || (b.isBefore(early) && b != LocalTime.MIDNIGHT)
+        }
+        val nights = days.count { it.totalMinutes > 0 && night(it) }
+        if (nights > 0) out += LedgerWarning("young-night", "18세 미만 밤 근무가 있어요",
+            "밤 10시~아침 6시와 휴일에 일하려면 본인 동의와 고용노동부 인가가 있어야 해요(근로기준법 제70조). 이번 달 ${nights}일이에요.")
+        if (age < 15) out += LedgerWarning("young-permit", "15세 미만은 취직인허증이 필요해요",
+            "만 15세 미만은 고용노동부의 취직인허증이 있어야 일할 수 있어요(근로기준법 제64조).")
+        return out
     }
 
     /** [BOSS-05] 최저임금 미달, 주휴가 빠진 주, 결근, 아직 모르는 5인 여부, the engine's own 확인 필요. */

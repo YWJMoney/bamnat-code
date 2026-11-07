@@ -46,10 +46,14 @@ object InsuranceRules {
      * the boss says otherwise. 월급, or a usual week of 15시간 이상 (월 60시간), is in all four (국민연금법 제8조, 국민건강보험법 제6조,
      * 고용보험법 제8조); a shorter week is left empty and [of] says why. [legalBreaks] as the place counts its 휴게.
      */
-    fun defaultFor(s: StaffMember, legalBreaks: Boolean): Insurance {
+    fun defaultFor(s: StaffMember, legalBreaks: Boolean, on: java.time.LocalDate? = null): Insurance {
         val weekly = s.weekly.values.sumOf { it.paidMinutes(legalBreaks) }
         val all = s.form == WageForm.MONTH || weekly >= WEEK_MINUTES
-        return (if (all) Insurance.ALL else Insurance()).copy(tax = s.insurance.tax)
+        val ins = (if (all) Insurance.ALL else Insurance()).copy(tax = s.insurance.tax)
+        // 1.39 G2 PC 5066b027: a 16세 직원 had 국민연금 ticked by default beside '만 18세 미만은 국민연금 가입 대상이 아니에요'. With a
+        // 생년월일 and a day, the 국민연금 age (만 18세 이상 60세 미만, 법 제6조) sets that chip too; [of] still decides the month.
+        val age = if (s.birth != null && on != null) Period.between(s.birth, on).years else null
+        return if (age != null && (age < 18 || age >= 60)) ins.copy(pension = false) else ins
     }
 
     /** Someone the law puts in the 4대보험 with none ticked: the 인건비 shown is short of what the boss pays. */

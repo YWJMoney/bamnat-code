@@ -7,6 +7,16 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
+    <!-- 1.39 [TASK-38] 할 일 적기 window: see-through, over whatever is on the screen; Compose draws the dim and the card. -->
+    <style name="Theme.Bamnat.Quick" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+
     <style name="Theme.Bamnat.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>

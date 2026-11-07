@@ -1,0 +1,183 @@
+package com.bamnat.app.memo
+
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+import com.bamnat.app.appContainer
+import com.bamnat.app.ui.theme.BamnatTheme
+import com.bamnat.app.widget.TaskWidget
+import com.bamnat.core.memo.Memo
+import com.bamnat.core.memo.MemoReminder
+import com.bamnat.core.memo.MemoTime
+import com.bamnat.core.time.Today
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import kotlinx.coroutines.launch
+
+/**
+ * 1.39 [TASK-38][TASK-32][TASK-33] 한 줄로 할 일 적기, without opening the app: a small window over whatever is on the screen.
+ * The 할 일 위젯's ＋, the quick settings '할 일 적기' tile and a text shared from another app (카톡·문자 'Share → 밤낮 할 일로 적기')
+ * all open it. The day and time in the line are read ([MemoTime.line]) and shown as chips the user can change before 적기; nothing
+ * is saved until then. No permission is asked: the share comes in as text, and the tile is bound by the system.
+ */
+class QuickTaskActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        val shared = if (intent?.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty().take(MAX_CHARS) else ""
+        setContent {
+            BamnatTheme {
+                QuickTask(shared, onClose = { finish() }, onSave = { memo ->
+                    lifecycleScope.launch {
+                        val saved = runCatching { appContainer.memoRepository.save(memo) }.isSuccess
+                        if (saved) runCatching { TaskWidget.redraw(applicationContext) }
+                        Toast.makeText(applicationContext, if (saved) "할 일에 적었어요" else "적지 못했어요. 앱에서 다시 적어 주세요", Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                })
+            }
+        }
+    }
+
+    companion object {
+        /** A shared text longer than this is cut: a memo, not a document. */
+        const val MAX_CHARS = 4_000
+
+        fun intent(context: Context): Intent = Intent(context, QuickTaskActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    }
+}
+
+/** Which day the line goes on: what was read, today, tomorrow, or none (a note pinned for later). */
+internal enum class QuickDay { READ, TODAY, TOMORROW, NONE }
+
+/** The memo [text] makes with the chips as they stand, or null when there is nothing written. */
+internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDateTime): Memo? {
+    if (text.isBlank()) return null
+    val line = MemoTime.line(text, now)
+    val today = now.toLocalDate()
+    val date: LocalDate? = when (day) {
+        QuickDay.READ -> line.date ?: today
+        QuickDay.TODAY -> today
+        QuickDay.TOMORROW -> today.plusDays(1)
+        QuickDay.NONE -> null
+    }
+    // The time read goes with the day picked (내일 저녁 6시, moved to 오늘, rings 오늘 저녁 6시); no day, no ring.
+    val at = line.at?.let { a -> date?.atTime(a.toLocalTime()) }?.takeIf { ring && it.isAfter(now) }
+    return Memo(
+        date = date,
+        title = line.title,
+        body = line.rest,
+        reminder = at?.let { MemoReminder(it, ring = false, notify = true) },
+        // A line with no day stays at hand as a pinned note, as on the widget's 고정 list.
+        pinned = date == null,
+    )
+}
+
+@Composable
+internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo) -> Unit) {
+    var text by rememberSaveable { mutableStateOf(shared) }
+    var day by rememberSaveable { mutableStateOf(QuickDay.READ) }
+    var ring by rememberSaveable { mutableStateOf(true) }
+    val now = remember { Today.dateTime() }
+    val line = remember(text) { MemoTime.line(text, now) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val dayFmt = remember { DateTimeFormatter.ofPattern("M/d (E)", Locale.KOREAN) }
+    // The dim around the card closes it, as a sheet does.
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
+            .semantics { contentDescription = "닫기" },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Surface(
+            Modifier.widthIn(max = 560.dp).fillMaxWidth().imePadding().navigationBarsPadding()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            tonalElevation = 3.dp,
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("할 일 적기", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it.take(QuickTaskActivity.MAX_CHARS) },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    placeholder = { Text("예: 내일 저녁 6시 치과") },
+                    maxLines = 4,
+                )
+                // What was read, said back: the title without the day and time words, and where it goes.
+                if (text.isNotBlank()) {
+                    val at = line.at
+                    val read = line.date?.let { d -> if (at != null) "${dayFmt.format(d)} ${at.toLocalTime()}" else dayFmt.format(d) }
+                    Text(
+                        "제목: ${line.title}" + (read?.let { " · 읽은 날짜·시각: $it" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val readDay = line.date?.takeIf { it != now.toLocalDate() && it != now.toLocalDate().plusDays(1) }
+                    if (readDay != null) FilterChip(day == QuickDay.READ, { day = QuickDay.READ }, { Text(dayFmt.format(readDay)) })
+                    FilterChip(day == QuickDay.TODAY || (day == QuickDay.READ && readDay == null && (line.date == null || line.date == now.toLocalDate())),
+                        { day = QuickDay.TODAY }, { Text("오늘") })
+                    FilterChip(day == QuickDay.TOMORROW || (day == QuickDay.READ && line.date == now.toLocalDate().plusDays(1)),
+                        { day = QuickDay.TOMORROW }, { Text("내일") })
+                    FilterChip(day == QuickDay.NONE, { day = QuickDay.NONE }, { Text("날짜 없이") })
+                    line.at?.takeIf { day != QuickDay.NONE }?.let { at -> FilterChip(ring, { ring = !ring }, { Text("알림 ${at.toLocalTime()}") }) }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onClose) { Text("닫기") }
+                    Spacer(Modifier.height(1.dp).padding(horizontal = 4.dp))
+                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime())?.let(onSave) }, enabled = text.isNotBlank()) { Text("적기") }
+                }
+            }
+        }
+    }
+}

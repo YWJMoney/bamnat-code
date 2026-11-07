@@ -17,7 +17,6 @@ import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.TextButton
@@ -154,6 +153,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
@@ -342,7 +342,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // and are not asked; a setup on its way (or being saved) is never taken for one of those.
     val settingsNow by container.settingsRepository.settings.collectAsStateWithLifecycle()
     // 1.36 [PUSH-01] PC 8fe7d8b3: 밤낮 소식을 끄면 바로 알림 토큰도 그 자리에서 거두고(다음 답 확인을 기다리지 않고), 켜면 다시 줘요.
-    LaunchedEffect(settingsNow.plazaNews) { container.appScope.launch { runCatching { com.bamnat.app.company.PushPhone.sync(container) } } }
+    // 1.39 [PLZC-41] 광장 답 바로 알림 keeps the token too, once the plaza's rules are agreed; the watch follows 밤낮 소식.
+    LaunchedEffect(settingsNow.plazaNews, settingsNow.plazaRulesAgreed > 0) {
+        container.appScope.launch {
+            runCatching { com.bamnat.app.company.PushPhone.sync(container) }
+            com.bamnat.app.company.PlazaPush.syncWatch(container)
+        }
+    }
     // [CALS-02] The calendar on screen and its kind of work, which names the tabs and opens its own settings.
     val activeCalendarId by container.calendars.active.collectAsStateWithLifecycle()
     val calendarList by container.calendars.calendars.collectAsStateWithLifecycle()
@@ -486,10 +492,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         com.bamnat.core.layout.TabSlots.resolve(settingsNow.tabSlots, settingsNow.tabOrder, TabPicks.known)
     }
     val home = TopLevel.entries.first { it.route == com.bamnat.core.layout.TabSlots.home(slots) }
+    // 1.39 [NAV2-07] Beside the rail of an unfolded phone up to seven places; a phone bar shows the first five.
+    val barSlots = com.bamnat.core.layout.TabSlots.onBar(slots, wide)
     val shownSlots = if (tabEdit.editing) {
-        val byKey = slots.associateBy(com.bamnat.core.layout.TabSlots::key)
-        tabEdit.order.mapNotNull { byKey[it] }.ifEmpty { slots }
-    } else slots
+        val byKey = barSlots.associateBy(com.bamnat.core.layout.TabSlots::key)
+        tabEdit.order.mapNotNull { byKey[it] }.ifEmpty { barSlots }
+    } else barSlots
 
     // Opening the app (again) always lands on the first tab (the calendar unless the user moved another first).
     val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
@@ -572,6 +580,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.LOGIC_MEMO -> {
                 val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                 nav.navigate(Routes.memo(0, day)) { launchSingleTop = true }
+                NoticeLinks.consume(target)
+            }
+            // 1.39 [TASK-07] 할 일 위젯: a row opens its memo on its day, ＋ a new one for today.
+            NoticeLinks.Target.MEMO_OPEN -> {
+                val (id, day) = NoticeLinks.payload.value.orEmpty().split('|').let { p ->
+                    (p.getOrNull(0)?.toLongOrNull() ?: 0L) to p.getOrNull(1)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } }
+                nav.navigate(Routes.memo(id, day)) { launchSingleTop = true }
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -1129,7 +1144,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     if (tabEdit.editing) androidx.activity.compose.BackHandler { saveTabs() }
     LaunchedEffect(route, showNav) { if (!showNav || topLevel == null) saveTabs() }
     val flagRowsNav by container.flags.byKey.collectAsStateWithLifecycle()
-    val manageOn = flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    // 1.39 3차 PC (사무직, 팀 없음: '칸 더하기'에 '팀·가게 관리'): only for someone who leads — a team made or a 사업장 set up on this
+    // phone, or a shop's calendar — while its feature is on ([TabPicks.manageShown]).
+    val ledTeams by remember(container) { container.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val ledPlaces by remember(container) { container.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val manageOn = TabPicks.manageShown(
+        flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true,
+        activeStyle, ledTeams, ledPlaces)
     val pickOf: (String) -> TabPick? = { k -> TabPicks.of(k, activeStyle) }
     val slotLabel: (com.bamnat.core.layout.TabSlots.Slot) -> String = { sl ->
         when (sl) {
@@ -1183,11 +1204,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [NAV2-02] The 나 button at the top of the tabs: 설정 and the tabs the bar does not hold.
     androidx.compose.runtime.SideEffect { ShownRoute.route = route }
-    val missingTabs = com.bamnat.core.layout.TabSlots.missing(slots)
+    val missingTabs = com.bamnat.core.layout.TabSlots.missing(barSlots)
+    // [NAV2-07] Folded, the screens of the sixth and seventh places wait here too.
+    val offBar = com.bamnat.core.layout.TabSlots.offBar(slots, wide).filter { it !in missingTabs }
     val meState = MeState(
-        show = missingTabs.isNotEmpty(),
+        show = missingTabs.isNotEmpty() || offBar.isNotEmpty(),
         unread = if (com.bamnat.core.layout.TabOrder.SETTINGS in missingTabs) inquiryUnread else 0,
-        missing = missingTabs.mapNotNull(pickOf),
+        missing = (missingTabs + offBar).mapNotNull(pickOf),
         open = openPick,
         editBar = { editingBar = true },
         inRail = wide,
@@ -1197,6 +1220,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         onChange = { made -> container.settingsRepository.update { it.withBar(made) } },
         onReset = { container.settingsRepository.update { it.copy(tabSlots = "", tabOrder = emptyList()) } },
         onDismiss = { editingBar = false },
+        wide = wide,
     )
 
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
@@ -1220,7 +1244,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                     androidx.compose.foundation.layout.Box {
                                         WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
                                         look.members?.let { m ->
-                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
+                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null }, beside = true)
                                         }
                                     }
                                 },
@@ -1258,7 +1282,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             val tabOn = bp.style("app.tab", setOf("sel"))
                             // 1.36 PC 통합 확인 f629c6f1 (연한 분홍 탭 막대에 안 고른 탭 글자가 흰색이라 안 보여요): a bar given its own colour and
                             // no 글자 colour reads in the ink that stands on that colour, not the theme's (a dark theme's light words).
-                            val barInk = barPart.fill?.let { inkOn(androidx.compose.ui.graphics.Color(it.toInt())) }
+                            // 1.39 [MKW-02] 그려 보기(편집 테마의 검은 탭 막대가 기본색으로 덮임): 탭 막대에 무늬·그라데이션(paint)만 준 테마는
+                            // 막대 바탕을 비워 부품이 그린 무늬가 보이게 하고, 글자색은 그 무늬의 평균색으로 정해요.
+                            val barPaintOnly = barPart.fill == null && barPart.paint != null
+                            val barInk = (barPart.fill ?: barPart.paint?.average)?.let { inkOn(androidx.compose.ui.graphics.Color(it.toInt())) }
                             val itemColors = com.bamnat.app.ui.components.Selection.navBarItemColors().let { c ->
                                 if (tabPart.isEmpty && tabOn.isEmpty && barInk == null) c else androidx.compose.material3.NavigationBarItemDefaults.colors(
                                     indicatorColor = tabOn.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIndicatorColor,
@@ -1271,9 +1298,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             }
                             NavigationBar(
                                 modifier = com.bamnat.app.ui.parts.PartMods.box(barPart.copy(fill = null), androidx.compose.ui.graphics.RectangleShape),
-                                containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) } ?: androidx.compose.material3.NavigationBarDefaults.containerColor,
+                                containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) }
+                                    ?: if (barPaintOnly) androidx.compose.ui.graphics.Color.Transparent else androidx.compose.material3.NavigationBarDefaults.containerColor,
                             ) {
-                                val twoLineRoom = twoLineTabs(shownSlots.map(slotLabel))
                                 shownSlots.forEachIndexed { index, sl ->
                                     val k = com.bamnat.core.layout.TabSlots.key(sl)
                                     androidx.compose.runtime.key(k) {
@@ -1289,7 +1316,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                                     }
                                                 }
                                             },
-                                            label = { TabLabel(look.label, twoLineRoom, if (look.selected) tabOn else tabPart) },
+                                            label = { TabLabel(look.label, if (look.selected) tabOn else tabPart) },
                                             modifier = tabEditModifier(tabEdit, k, index, shownSlots.size, look.label, horizontal = true, tabsShown, tabNames, saveTabs)
                                                 .then(if (look.members != null) Modifier.semantics { contentDescription = look.said } else Modifier),
                                             colors = itemColors,
@@ -2355,46 +2382,23 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
+private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
     val style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.labelMedium)
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
-    // (A11Y-04); then it kept one line with its last word ("급여").
-    // 1.36 (PC 확인: '근무·급여'가 '급여'로만 보여 다른 탭인 줄 알았어요): both words, one above the other. PC 확인 8e9e888a
-    // 사용성 제안 (두 줄 글자가 다른 탭보다 아주 작아요): each line is 0.8 of the others' size, and with [twoLineRoom] (the bar
-    // has such a name) every other name gets the same room under its icon, so all the icons stay in one line.
-    val one = style
-    val parts = text.split('·')
+    // (A11Y-04); then it kept one line with its last word ("급여"), then (1.36) both words one above the other.
+    // 1.39 총괄 사용성 제안 (화면 사진 164, 글자 2배: '근무·급여'가 두 줄로 꺾이고 그 칸만 키가 커서 아이콘이 위로 올라가요): every name is one
+    // line, whole, its letters no bigger than at [TAB_SCALE_MAX] (the bar is as wide as the phone, not the text), and a long one shrinks to fit.
     val density = androidx.compose.ui.platform.LocalDensity.current
-    if (parts.size == 2 && density.fontScale >= TWO_LINE_FROM) {
-        val line = style.copy(fontSize = one.fontSize * TWO_LINE_SIZE, lineHeight = one.fontSize * TWO_LINE_HEIGHT)
-        val each = with(density) { (one.fontSize * TWO_LINE_HEIGHT).toDp() }
-        Column(Modifier.clearAndSetSemantics { contentDescription = text }, horizontalAlignment = Alignment.CenterHorizontally) {
-            parts.forEach {
-                androidx.compose.foundation.layout.Box(Modifier.height(each).wrapContentHeight(unbounded = true), contentAlignment = Alignment.Center) {
-                    FitText(it, line)
-                }
-            }
-        }
-    } else if (twoLineRoom) {
-        val room = with(density) { (one.fontSize * (TWO_LINE_HEIGHT * 2)).toDp() }
-        androidx.compose.foundation.layout.Box(Modifier.heightIn(min = room), contentAlignment = Alignment.Center) { FitText(text, style) }
-    } else {
-        FitText(text, style)
-    }
+    val capped = if (density.fontScale > TAB_SCALE_MAX) style.copy(fontSize = style.fontSize * (TAB_SCALE_MAX / density.fontScale)) else style
+    FitText(text, capped)
 }
 
-/** A two-word tab name takes two lines from this text scale, each [TWO_LINE_SIZE] of the others' size in [TWO_LINE_HEIGHT] of room. */
+/** 1.39: a tab name's letters grow with the phone's text size up to this much, so five names fit the bar on one line. */
+private const val TAB_SCALE_MAX = 1.5f
+
 /** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
 internal const val SCHOOLING_KIND = "교육"
 
-private const val TWO_LINE_FROM = 1.5f
-private const val TWO_LINE_SIZE = 0.8f
-private const val TWO_LINE_HEIGHT = 0.9f
-
-/** True when the bar's tab names at this text scale include a two-line one, so the others keep the same room. */
-@Composable
-private fun twoLineTabs(names: List<String>): Boolean =
-    androidx.compose.ui.platform.LocalDensity.current.fontScale >= TWO_LINE_FROM && names.any { it.split('·').size == 2 }
 
 /** [TYPE-03] 근무 주기 of a calendar; a shop's is its 영업일·정기휴무. */
 private fun NavHostController.openPattern(c: com.bamnat.app.AppContainer, calendar: String) {
@@ -2493,6 +2497,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO_MEMO -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MEMO")
     SettingsGo.STUDIO_STATS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "STATS")
     SettingsGo.STUDIO_MANAGE -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MANAGE")
+    SettingsGo.STUDIO_WIDGET -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "WIDGET")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,

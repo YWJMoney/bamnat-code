@@ -726,7 +726,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
             }
             DecorKind.EMOJI -> {}
             DecorKind.PHOTO -> {
-                if (place == Decor.APP || place.startsWith("bg.")) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (place == Decor.APP || place.startsWith("bg.") || place == Decor.WIDGET) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = first.full, onClick = { all(null) { it.copy(full = true) } }, label = { Text("화면 가득") })
                     FilterChip(selected = !first.full, onClick = { all(null) { it.copy(full = false) } }, label = { Text("자리·크기 정하기") })
                 }

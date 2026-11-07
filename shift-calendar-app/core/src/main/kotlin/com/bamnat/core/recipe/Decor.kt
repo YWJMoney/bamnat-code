@@ -70,7 +70,8 @@ data class DecorItem(
     val tap: String? = null,
     /**
      * PC 확인 C6 1.36 (배경 사진은 화면을 채우게): on a screen's background, the whole screen — the place and size are kept for when it is
-     * turned off. Elsewhere it is ignored.
+     * turned off. 1.39 작품제작: on the home-screen widget too (its 꾸밈 층 is a picture the widget's size), so a frame goes round the
+     * whole widget whatever its size. Elsewhere it is ignored.
      */
     val full: Boolean = false,
 ) {
@@ -269,7 +270,7 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
                 dbl("size", 14.0, 6.0, 96.0), int("weight", 400, 100, 900), col("ink"), m["italic"] == true, int("alpha", 100, 0, 100),
                 m["hide"] == true, m["over"] == true, m["flip"] == true, m["lock"] == true, int("group", 0, 0, 9),
                 (m["tap"] as? String)?.takeIf { tapProblem(it) == null && it.isNotEmpty() },
-                m["full"] == true && (at == APP || at.startsWith("bg.")),
+                m["full"] == true && (at == APP || at.startsWith("bg.") || at == WIDGET),
             )
         }
 

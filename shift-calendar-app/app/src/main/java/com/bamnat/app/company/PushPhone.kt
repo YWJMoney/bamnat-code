@@ -19,7 +19,7 @@ import kotlin.coroutines.resume
  * Only a phone that has asked something, with 설정 › 알림 › 밤낮 소식 on, gives the server its FCM token. When an answer is
  * written the server sends one data message {kind: inquiry} with no words in it; [PushService] then runs the same check
  * as [InquiryReplyJob] (asks the server, shows "문의에 답이 왔어요"). Without the build's ids (or Play services) nothing
- * here runs and the job keeps checking by itself.
+ * here runs and the job keeps checking by itself. 1.39 [PLZC-41]: a phone with 광장 답 바로 알림 on keeps its token there too.
  */
 object PushPhone {
     private const val PREFS = "push_phone"
@@ -35,8 +35,8 @@ object PushPhone {
             .setProjectId(BuildConfig.FCM_PROJECT_ID).setGcmSenderId(BuildConfig.FCM_SENDER_ID).build())
     }.getOrNull()
 
-    private fun wanted(c: AppContainer): Boolean =
-        configured && c.inquiryApi.enabled && c.inquiryStore.asked && c.settingsRepository.current.plazaNews
+    private fun wanted(c: AppContainer): Boolean = configured && (
+        (c.inquiryApi.enabled && c.inquiryStore.asked && c.settingsRepository.current.plazaNews) || PlazaPush.wanted(c))
 
     /** After a question went, the app opened, or 밤낮 소식 changed: the token goes to the server, or is taken back. */
     suspend fun sync(c: AppContainer, token: String? = null) {
@@ -76,8 +76,13 @@ class PushService : FirebaseMessagingService() {
         // Only this project's server (or the operator's Firebase console test) can reach the token, so a message without a
         // kind is taken as "look now" too: the check itself asks our server and tells only what is really new.
         val kind = message.data["kind"]
-        if (kind != null && kind != "inquiry") return
         val c = applicationContext.appContainer
+        // 1.39 [PLZC-41] 광장 답 바로 알림 / 같은 근무 새 질문.
+        if (kind == PlazaPush.ANSWER || kind == PlazaPush.QUESTION) {
+            c.appScope.launch { PlazaPush.handle(c, kind) }
+            return
+        }
+        if (kind != null && kind != "inquiry") return
         c.appScope.launch { runCatching { InquiryReplyJob.check(c, fromPush = true) } }
     }
 }

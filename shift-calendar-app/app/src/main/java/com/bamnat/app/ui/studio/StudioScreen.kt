@@ -733,7 +733,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 val manageOn = com.bamnat.app.ui.work.rememberManageOn()
-                                Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
+                                // 1.39 PC 2afb3a76 (스튜디오에서 위젯으로 가는 길을 못 찾았어요): 위젯 has no screen of its own (no target) and had
+                                // dropped out of this list with 1.37's canvas; it is one of the screens again.
+                                Area.entries.filter { (it.target != null || it == Area.WIDGET) && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
                                     .forEach { a -> DropdownMenuItem({ Text(a.labelFor(vm.style)) }, onClick = { open = false; pick(a) }) }
                                 HorizontalDivider()
                                 listOf(Area.ALL, Area.FEATURES, Area.RULES).forEach { a ->
@@ -1420,7 +1422,11 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
         com.bamnat.app.ui.components.FoldRow("studio.widget4") {
             // PC 확인 W3 1.36: each chip says how big the widget is.
             listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
-                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1").forEach { (cls, label) ->
+                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1",
+                // 1.39 [TASK-07] 할 일 위젯 (처음 하나는 무료).
+                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2",
+                // 1.39 [TASK-31] 할 일 한 줄 (같은 할 일 위젯, 처음 놓은 하나가 무료).
+                com.bamnat.app.widget.TaskLineWidgetReceiver::class.java to "할 일 한 줄 · 2×1").forEach { (cls, label) ->
                 androidx.compose.material3.AssistChip(onClick = {
                     if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
                 }, label = { Text(label) })
@@ -1524,6 +1530,44 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             }
                         }
                     }
+                    // 1.39 [TASK-07] 할 일 위젯: 머리와 ＋, 늦은·오늘·끝낸 할 일 한 줄씩, 각 줄 앞 동그라미 (부품 widget.task·check·add).
+                    WidgetKind.TASKS -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) { Head("할 일 2개 · 늦은 것 1개") }
+                            val plus = bp.style("widget.task.add")
+                            if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
+                                MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
+                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), RoundedCornerShape(16.dp)))
+                                    .padding(horizontal = 12.dp, vertical = 2.dp))
+                        }
+                        TASK_SAMPLE.forEach { (words, late, done) ->
+                            val states = setOfNotNull("late".takeIf { late }, "done".takeIf { done }, "today".takeIf { !late })
+                            val line = bp.style("widget.task", states)
+                            if (line.hide == true) return@forEach
+                            val check = bp.style("widget.task.check", states - "today")
+                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
+                                val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
+                                    color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
+                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
+                                Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
+                                        contentDescription = null, tint = circle.color,
+                                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { circle.fontSize.toDp() }.coerceIn(10.dp, 40.dp)))
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    com.bamnat.app.ui.parts.PartText(words, face.over(line),
+                                        MaterialTheme.typography.bodyMedium.copy(color = if (done) ink.copy(alpha = 0.6f) else ink, fontSize = (14 * scale).sp,
+                                            textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null), Modifier)
+                                    if (late) Text("늦음 · 어제", style = MaterialTheme.typography.labelSmall.copy(fontSize = (11 * scale).sp), color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1531,7 +1575,10 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
 }
 
 /** [LAY-12] The home screen's widgets, as the studio's widget example shows them. */
-private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯") }
+private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯"), TASKS("할 일 위젯") }
+
+/** 1.39 [TASK-07] The 할 일 widget's example rows: the words, and whether each is late, finished or neither. */
+private val TASK_SAMPLE = listOf(Triple("서류 내기", true, false), Triple("택배 받기", false, false), Triple("약 먹기", false, true))
 
 private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
 

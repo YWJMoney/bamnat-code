@@ -411,7 +411,7 @@ fun CalendarScreen(
             delay(1500)
             // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
             val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
-            if (!InAppReview.calm(System.currentTimeMillis(), crashAt)) return@LaunchedEffect
+            if (!InAppReview.calm(com.bamnat.core.time.Today.millis(), crashAt)) return@LaunchedEffect
             context.findActivity()?.let { InAppReview.ask(it) }
             vm.markReviewAsked(reviewMoment)
         }
@@ -1454,6 +1454,9 @@ fun CalendarScreen(
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
                 }
                 CalendarPart.MEMOS -> memoPart()
+                // 1.39 [FLOW-22] 하루 이야기 of the picked day, as a card the user placed.
+                CalendarPart.DAY_STORY -> DayStoryCalendarCard(vm, snap, selected, onOpenMemo = onOpenMemo,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
                 else -> Unit
             }
         }

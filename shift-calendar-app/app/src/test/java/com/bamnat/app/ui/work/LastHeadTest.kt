@@ -41,3 +41,14 @@ class LastHeadTest {
         assertNull(lastHead(now, Ledger(place, nov.minusMonths(1), emptyList())))
     }
 }
+
+/** 1.39 G2 PC ef175fbf: the 대장 opens on the month to settle next. */
+class OpenMonthTest {
+    @Test fun beforeAndAfterLastMonthsPayDay() {
+        val place = Workplace("p", "식당", payday = 10)
+        org.junit.Assert.assertEquals(YearMonth.of(2026, 10), openMonth(place, LocalDate.of(2026, 11, 7)))
+        org.junit.Assert.assertEquals(YearMonth.of(2026, 10), openMonth(place, LocalDate.of(2026, 11, 10)))
+        org.junit.Assert.assertEquals(YearMonth.of(2026, 11), openMonth(place, LocalDate.of(2026, 11, 11)))
+        org.junit.Assert.assertEquals(YearMonth.of(2026, 10), openMonth(Workplace("p", "식당"), LocalDate.of(2026, 11, 25)))
+    }
+}

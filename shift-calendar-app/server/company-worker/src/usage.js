@@ -368,7 +368,10 @@ export async function usage(request, env) {
   // 1.31 [STAT-08] Lookup times only once 처리방침 3.5 is in force (stats.lookup's date); before it they are left out.
   const lookups = lookupRows(body.lookups);
   const lookupOn = lookups.length > 0 && serverEval(await flagStore(env), "stats.lookup", now).on;
-  for (const [kind, step, bucket] of [...startupRows(body.startup), ...(lookupOn ? lookups : [])]) {
+  // 1.39 [SETUP-20] 첫 설정 누른 횟수 only once 처리방침 3.12 is in force (stats.setup's date); before it it is left out.
+  const setup = setupRows(body.setup);
+  const setupOn = setup.length > 0 && serverEval(await flagStore(env), "stats.setup", now).on;
+  for (const [kind, step, bucket] of [...startupRows(body.startup), ...(lookupOn ? lookups : []), ...(setupOn ? setup : [])]) {
     stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
       ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));
   }
@@ -434,14 +437,30 @@ export function lookupRows(lookups) {
   return rows;
 }
 
+/**
+ * 1.39 [SETUP-20] (사용자 결정 2026-11-07, 발굴 G6 4-1): taps from a new install's first open until its first setup is saved, rounded
+ * up to one of these edges by the app (core stats/SetupTaps.BUCKETS); 150 means more than 100. With the kind of work chosen, once.
+ */
+export const SETUP_TAP_BUCKETS = [5, 10, 15, 20, 25, 30, 40, 50, 70, 100, 150];
+/** The kinds of work a setup count is kept for (the app's WorkStyle names). */
+export const SETUP_STEPS = { setup: ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"] };
+
+/** 1.39 [SETUP-20] `setup: {style, taps}` → one [kind, step, bucket] row, or none for anything else. */
+export function setupRows(setup) {
+  if (!setup || typeof setup !== "object" || Array.isArray(setup)) return [];
+  const { style, taps } = setup;
+  if (!SETUP_STEPS.setup.includes(style) || !Number.isInteger(taps) || !SETUP_TAP_BUCKETS.includes(taps)) return [];
+  return [["setup", style, taps]];
+}
+
 /** [PERF-17] The bucket where [share] of the phones are at or under, from {bucket → phones}. */
-export function bucketQuantile(hist, total, share) {
+export function bucketQuantile(hist, total, share, buckets = STARTUP_BUCKETS) {
   let seen = 0;
-  for (const b of STARTUP_BUCKETS) {
+  for (const b of buckets) {
     seen += hist.get(b) ?? 0;
     if (seen >= total * share) return b;
   }
-  return STARTUP_BUCKETS.at(-1);
+  return buckets.at(-1);
 }
 
 export const appOrder = (a, b) => {
@@ -468,13 +487,15 @@ export async function startupMetrics(env, from, to) {
   }
   const versions = [...byApp.keys()].sort(appOrder).slice(0, 6).map((app) => {
     const out = { app };
-    for (const [kind, steps] of Object.entries({ ...STARTUP_STEPS, ...LOOKUP_STEPS })) {
+    for (const [kind, steps] of Object.entries({ ...STARTUP_STEPS, ...LOOKUP_STEPS, ...SETUP_STEPS })) {
       const part = {};
+      // 1.39 [SETUP-20] Setup counts are taps, read against their own edges.
+      const edges = kind === "setup" ? SETUP_TAP_BUCKETS : STARTUP_BUCKETS;
       for (const step of steps) {
         const hist = byApp.get(app).get(`${app}|${kind}|${step}`);
         if (!hist) continue;
         const phones = [...hist.values()].reduce((n, v) => n + v, 0);
-        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5), p90: bucketQuantile(hist, phones, 0.9) };
+        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5, edges), p90: bucketQuantile(hist, phones, 0.9, edges) };
       }
       if (Object.keys(part).length) out[kind] = part;
     }

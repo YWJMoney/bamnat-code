@@ -32,6 +32,8 @@ enum class CalendarPart(val id: String, val label: String, val what: String, val
     HOURS("hours", "주 근무시간 줄", "이 주(월~일)와 3개월 주평균", above = false),
     REST("rest", "휴식 점검", "근무 사이 11시간 못 쉰 날", above = false),
     MEMOS("memos", "이번 달 메모", "날짜가 있는 메모 목록", above = false),
+    /** 1.39 [FLOW-22] 하루 이야기 (FLOW-08) of the picked day as a card; off until added here (see [lineParts]). */
+    DAY_STORY("dayStory", "하루 이야기", "누른 날의 근무·알람·잠·돈·메모를 시간 순서 한 줄로", above = false),
     ;
 
     /** [J135-06] F-64: the name this kind of work calls it (오늘 일감 on 현장, 오늘 매출 on 가게, 오늘 투자 on 투자). */
@@ -91,7 +93,15 @@ private fun AppSettings.lineParts(): List<PageLayout.Placed<CalendarPart>> {
             rest.take(at) + PageLayout.Placed(CalendarPart.MONTH, true, false) + rest.drop(at)
         }
     }
-    return placed.map { p -> if (p.part == CalendarPart.MONTH) p.copy(shown = true, isNew = false) else p }
+    return placed.map { p ->
+        when {
+            p.part == CalendarPart.MONTH -> p.copy(shown = true, isNew = false)
+            // 1.39 [FLOW-22] A card that came with 1.39 starts off (not every day on every calendar wants it); turned on in 카드 배치,
+            // it is in the line and follows the line from then on.
+            p.part == CalendarPart.DAY_STORY && p.part.id !in layout.order -> p.copy(shown = false)
+            else -> p
+        }
+    }
 }
 
 /**
@@ -102,7 +112,7 @@ private fun AppSettings.lineParts(): List<PageLayout.Placed<CalendarPart>> {
  */
 internal val CALENDAR_FIRST: List<CalendarPart> = listOf(
     CalendarPart.ASK, CalendarPart.JOURNAL, CalendarPart.TODAY_FLOW, CalendarPart.MONTH, CalendarPart.DAY_CARD, CalendarPart.TODAY_WORK,
-    CalendarPart.SUMMARY, CalendarPart.COUNTS, CalendarPart.HOURS, CalendarPart.REST, CalendarPart.MEMOS,
+    CalendarPart.SUMMARY, CalendarPart.COUNTS, CalendarPart.HOURS, CalendarPart.REST, CalendarPart.MEMOS, CalendarPart.DAY_STORY,
 )
 
 /** [FIT-01] Whether [part] belongs on this calendar: it suits its kind of work, or the user added it ([added]). */

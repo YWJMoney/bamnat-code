@@ -43,6 +43,13 @@ export const SETS = {
   // 이미 장터에 있는 판은 넣는 즉시 바뀌어요: 1.38 출시 날 사용자 확인 뒤 넣어요.
   "138r": { dir: join(ROOT, "market-138-refresh"), out: join(ROOT, "market-138-refresh.json"), batch: "1.38 옛 작품 새 판", minApp: null,
     goals: { theme: 49, "tab:calendar": 22, "tab:memo": 11, "tab:money": 1, "tab:pay": 22, "tab:widget": 2 } },
+  // 1.39 [MKW-05] 정상급 출시 작품(docs/recipes/market-139/make): 미술 방향 하나씩 그린 테마 50, 같은 방향 세트의 탭별 작품 50씩, 도구.
+  // 1.39에서 고친 그림(투명 바탕 글자색·아래 막대 그림 칠)에 맞춰 그렸고 FX 프로 작품이 더해질 묶음이라 1.39 앱(versionCode 53)부터 보여요.
+  // 실서버는 1.39 출시 날 사용자 확인 뒤.
+  139: { dir: join(ROOT, "market-139"), out: join(ROOT, "market-139.json"), batch: "1.39 정상급 작품", minApp: 53,
+    goals: { theme: 50, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 50, "tab:widget": 50, "tab:alarm": 50, part: 48, logic: 38,
+      // 1.39 [FLOW-21] 장터 새 탭 '밤 화면'의 첫 작품(밤 화면·아침 한 장 부품, G8).
+      "tab:night": 6 } },
 };
 
 export function sectionKey(text) {
@@ -134,7 +141,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     process.exit(0);
   }
   const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
-  if (!set) throw new Error("--set 은 136, 138, 138s, 138r 중 하나예요");
+  if (!set) throw new Error("--set 은 136, 138, 138s, 138r, 139 중 하나예요");
   const { entries, refused, count, short } = await build(readWorks(set.dir), set);
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const r of refused) console.log(`거절: ${r}`);

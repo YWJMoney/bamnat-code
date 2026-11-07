@@ -64,6 +64,20 @@ class CompanyShare(
     /** [CYC-06] 1.39: the calendar's 모든 조 보기, so the file names every 조 and a coworker on any of them picks theirs by name. */
     private val teamRoster: () -> com.bamnat.core.schedule.TeamRoster? = { null },
 ) {
+    /**
+     * [CYC-06] 1.39 PC e1240d5a: the 조 that go in the file, as 모든 조 보기 shows them: the ones set there, else the ones it
+     * works out from the order (A조 mine first), which most people never open 조 설정 to save. Null when the order does not
+     * split into 조 evenly (24시간 맞교대 and the like), so no 조 are made up.
+     */
+    fun rosterFor(rotation: WorkPattern.Rotation): com.bamnat.core.schedule.TeamRoster? =
+        teamRoster()?.takeIf { it.teams.size >= 2 }
+            ?: com.bamnat.core.schedule.TeamRoster.suggest(rotation)
+                .takeIf { com.bamnat.core.schedule.TeamRoster.teamCount(rotation.steps) != null }
+
+    /** [CYC-06] The 조 [export] would send today, for the share box to fill in mine; null without an order of 조. */
+    suspend fun teamsToSend(): com.bamnat.core.schedule.TeamRoster? =
+        (PatternTimeline.current(schedule.snapshot.first().patterns, today()) as? WorkPattern.Rotation)?.let(::rosterFor)
+
     suspend fun export(company: String, withAmounts: Boolean, team: String = ""): String {
         val snapshot = schedule.snapshot.first()
         val names = snapshot.shiftTypes.associate { it.id to it.name }
@@ -92,7 +106,7 @@ class CompanyShare(
                 .apply {
                     // [CYC-06] 1.39: with 모든 조 보기 set, every 조 and the day it starts the order ("몇 조예요?" for every coworker),
                     // and the sender's own 조 by that name when they left the box empty.
-                    val roster = teamRoster()
+                    val roster = rosterFor(current)
                     val teams = roster?.let { com.bamnat.core.setup.TeamAnchors.ofRoster(it, current.anchorDate, current.steps.size) }.orEmpty()
                     val own = team.trim().ifEmpty { if (teams.isNotEmpty()) roster?.mine?.name.orEmpty() else "" }
                     own.take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) }

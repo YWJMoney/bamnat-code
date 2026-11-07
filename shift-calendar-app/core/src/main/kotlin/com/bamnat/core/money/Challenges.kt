@@ -69,6 +69,21 @@ object Challenges {
             (ChronoUnit.DAYS.between(run.start, today) + 1).toInt().coerceIn(1, run.kind.days))
     }
 
+    /**
+     * 1.39 G8 발굴 [LEDH-31] 칩에서 도전으로: when 근무별 돈 ([ShiftMoneyChips]) says a night (or the day after one) buys more food out,
+     * 야간 도시락 주간 is offered right under it; when it says 배달 goes up on some kind of day, 배달 줄이기 주간. Nothing while a run
+     * is going ([active], until its last day has gone by [today]) or when the chips say neither. [isNight] tells a chip's day kind is a night ([TaxPlus] labels).
+     */
+    fun suggest(rows: ShiftMoneyChips.Rows, active: Run?, today: LocalDate, isNight: (String) -> Boolean): Kind? {
+        if (active != null && !today.isAfter(active.start.plusDays(active.kind.days - 1L))) return null
+        val more = rows.caution
+        return when {
+            more.any { isNight(it.dayKind) && it.category in OUT_FOOD } -> Kind.NIGHT_LUNCHBOX
+            more.any { it.category == "배달" } -> Kind.LESS_DELIVERY
+            else -> null
+        }
+    }
+
     /** The line under the stamps. */
     fun words(s: Status): String = when {
         s.done -> "끝났어요. ${s.counted}일 중 ${s.kept}일 지켰어요" + if (s.kept == s.counted && s.counted > 0) ". 다 지켰어요!" else ""

@@ -191,10 +191,12 @@ class MigrationAllVersionsTest(private val from: Int) {
                 "colorIndex" to 2, "pinned" to 1, "createdAt" to 1, "updatedAt" to 2, "deletedAt" to null, "remindAt" to "2026-11-03T15:00",
                 "remindRing" to 1, "remindNotify" to 0, "remindAsked" to "2026-11-03T15:00", "calendars" to ",*,", "repeat" to "M25",
                 // 1.38 Version 28's 이 날만 빼기; older versions get none.
-                "skips" to "20026,20057"),
+                "skips" to "20026,20057",
+                // 1.39 Version 33's 끝냄; older versions get none (not finished).
+                "doneDays" to "20026"),
             "memos" to mapOf("id" to 2, "epochDay" to null, "title" to "지운 메모", "body" to "", "checklist" to "", "isChecklist" to 0,
                 "colorIndex" to 0, "pinned" to 0, "createdAt" to 3, "updatedAt" to 4, "deletedAt" to 5, "remindAt" to null,
-                "remindRing" to 0, "remindNotify" to 0, "remindAsked" to null, "calendars" to "", "repeat" to ""),
+                "remindRing" to 0, "remindNotify" to 0, "remindAsked" to null, "calendars" to "", "repeat" to "", "doneAt" to 6),
             "money_entries" to mapOf("id" to 1, "epochDay" to 20745, "kind" to "EXPENSE", "amount" to 4500, "category" to "카페", "note" to "",
                 "source" to "NOTIFICATION", "createdAt" to 1, "merchant" to "가나다카페", "minuteOfDay" to 485, "cardLast4" to "1234", "reviewed" to 0,
                 "accountId" to 1, "toAccountId" to null, "memo" to "민지랑", "tags" to "여행", "parts" to "", "installments" to 1, "fixedId" to null,

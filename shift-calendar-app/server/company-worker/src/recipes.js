@@ -14,6 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { careGate, careRepeat } from "./community-care.js";
+import { makerMarks, markFields } from "./maker-mark.js";
 import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
@@ -145,8 +146,11 @@ export const PART_IDS = [
   "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
   "pay.head", "pay.total", "pay.row",
   "widget", "widget.head", "widget.cell",
+  // 1.39 [FLOW-21] 밤 화면·아침 한 장
+  "night", "night.date", "night.clock", "night.line", "night.card", "night.button", "night.morning",
+  "widget.task", "widget.task.check", "widget.task.add",
 ];
-const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel", "dark"];
+const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "late", "done", "sel", "dark"];
 const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
   : PART_IDS.includes(id.slice(0, id.lastIndexOf("."))) ? id.slice(0, id.lastIndexOf(".")) : "app");
 const PART_CHILDREN = {};
@@ -1050,7 +1054,7 @@ const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`
  * [MKX-01] 1.36 장터 두 구간 (사용자 2026-10-31 "테마는 모든 것을 종합으로 만든 것이고 기능별은 한 개의 탭을 전문적으로"): the tabs a
  * recipe changes — calendar, pay (근무·급여·통계), money (가계부·장부), memo, alarm, widget, app (앱 전체 색·아래 탭·모서리·느낌).
  */
-export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget"];
+export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget", "night"];
 const SCREEN_TAB = { calendar: "calendar", memo: "memo", money: "money", stats: "pay", alarm: "alarm", all: "app", settings: "app", guarded: "app", plaza: "app" };
 
 export function tabsOf(body) {
@@ -1097,7 +1101,7 @@ export function tabsOf(body) {
       case "parts":
         for (const l of Array.isArray(p.parts) ? p.parts : []) {
           const root = String(l?.id ?? "").split(".")[0];
-          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget" }[root];
+          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget", night: "night" }[root];
           if (tab) out.add(tab);
         }
         break;
@@ -1191,7 +1195,7 @@ export function scopeOf(tabs, body) {
  * (cal.* → calendar, memo.* → memo, money.* → money, pay.* → pay, app.* → app, widget.* → widget), a button's place and a rule's verb.
  */
 export const MARKET_SCOPES = ["theme", "tab", "part", "logic"];
-const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm" };
+const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm", night: "night" };
 const LOGIC_TAB = { day: "calendar", cal: "calendar", calendar: "calendar", memo: "memo", memoTpl: "memo", newMemo: "memo", checkReset: "memo", memoLine: "memo",
   money: "money", addMoney: "money", addIncome: "money", envelope: "money", notify: "alarm", pay: "pay", stats: "pay", alarm: "alarm" };
 // D 갈래: 'screen' 동작은 arg가 보낼 탭이에요.
@@ -1397,6 +1401,26 @@ async function readDevice(d, request, body) {
 
 const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
 
+/**
+ * 1.39 [TASK-07] Parts and states an older app cannot read (its RecipeCodec refuses the whole recipe on a name it does not know), each
+ * with the first versionCode that reads it. A maker's recipe that uses one is listed only to apps that new ([partsMinApp] → min_app).
+ */
+export const PARTS_SINCE = { ids: { "widget.task": 53, "widget.task.check": 53, "widget.task.add": 53 }, states: { late: 53, done: 53 } };
+
+/** 1.39 [TASK-07] The versionCode a recipe's parts lines need ([PARTS_SINCE]), or null when any app reads them. */
+export function partsMinApp(recipe) {
+  let need = 0;
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== "object") return;
+    if (typeof v.id === "string" && PARTS_SINCE.ids[v.id]) need = Math.max(need, PARTS_SINCE.ids[v.id]);
+    if (typeof v.on === "string" && PARTS_SINCE.states[v.on] && typeof v.id === "string" && PART_IDS.includes(v.id)) need = Math.max(need, PARTS_SINCE.states[v.on]);
+    Object.values(v).forEach(walk);
+  };
+  walk(recipe);
+  return need || null;
+}
+
 /** 1.36 [MKS-01] The list's app= (the phone's versionCode), 0 when absent or odd. */
 export function appCodeOf(url) {
   const n = Number(url.searchParams.get("app"));
@@ -1532,9 +1556,12 @@ async function recipeList(d, env, url) {
   // 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): body=1 sends each work's written form and hash with its
   // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
   const withBody = url.searchParams.get("body") === "1";
+  // 1.39 [PLZC-40] 만든 분 표식·팔로워 수(장터 카드의 만든 분 줄).
+  const marks = await makerMarks(d, env, page.map((r) => r.maker), now);
   return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
     // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part.
-    items: await Promise.all(page.map(async (r) => (withBody ? { ...listItem(r, now), ...(await sharedPayOut(r.body, r.hash)) } : listItem(r, now)))),
+    items: await Promise.all(page.map(async (r) => ({ ...listItem(r, now), ...markFields(marks, r.maker),
+      ...(withBody ? await sharedPayOut(r.body, r.hash) : {}) }))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1554,7 +1581,7 @@ async function show(d, env, request, code, url) {
   // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
   if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
-  const out = { ...listItem(r, Date.now()), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
+  const out = { ...listItem(r, Date.now()), ...markFields(await makerMarks(d, env, [r.maker]), r.maker), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
   if (mine) {
     // The maker sees where it stands and every 안좋아요's reason, without who (결정 D107, 처리방침 3.8).
     const reasons = await d.all(env, "SELECT reason, opinion, at FROM recipe_votes WHERE code = ? AND value = -1 AND held = 0 ORDER BY at DESC LIMIT 100", code);
@@ -1620,8 +1647,8 @@ async function publish(d, env, request) {
     d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at, maker, min_app)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
     state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev),
-    // 1.39 [FX-01] An app before 1.39 cannot read a 기능 장치, so it never lists the work.
-    fxPartsOf(clean.text).length ? FX_SINCE_APP : null),
+    // 1.39 [FX-01] An app before 1.39 cannot read a 기능 장치, so it never lists the work; parts keep their own minApp (TASK-07).
+    Math.max(partsMinApp(r) ?? 0, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0) || null),
     d.stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", dev, await makerId(dev), now),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
   ]);
@@ -1674,8 +1701,8 @@ async function newVersion(d, env, request, code) {
   const rec = clean.recipe;
   await d.batch(env, [
     d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, scope = ?, state = ?, version = ?, hash = ?, body = ?,
-      updated_at = ?, note = '', min_app = NULLIF(MAX(COALESCE(min_app, 0), ?), 0) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
-    state, v, clean.hash, clean.text, now, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0, code),
+      updated_at = ?, note = '', min_app = MAX(COALESCE(min_app, 0), COALESCE(?, 0)) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
+    state, v, clean.hash, clean.text, now, Math.max(partsMinApp(rec) ?? 0, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0) || null, code),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", code, v, clean.hash, clean.text, now),
   ]);
   return d.json({ code, version: v, hash: clean.hash, state, scope });

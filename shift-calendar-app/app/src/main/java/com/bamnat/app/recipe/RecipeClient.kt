@@ -49,6 +49,18 @@ data class RecipeItem(
     val made: String? = null,
     /** 1.39 [MKC-01] 도구의 종류 (part 부품, rule 자동 규칙, button 단추); empty for a 테마·탭별 작품 or from a server before 1.39. */
     val tools: List<String> = emptyList(),
+    /**
+     * 1.39 [MKC-04] 1.39부터 새로 연 기능 장치 (서버 fx, core FxPro.Part 키: values·valueAct·valueRead·outside·notifyButtons). 비어 있으면
+     * 1.38까지 장치만 써서 모두 무료로 쓸 수 있어요; 있으면 '✦ 프로 기능'.
+     */
+    val fx: List<String> = emptyList(),
+    /**
+     * 1.39 [MKD-41] 만든 분 표식 (광장 갈래 MakerMark 키: "month" 이달의 제작자, "popular" 인기 제작자). 쉬는 중이거나 없으면 null.
+     * 서버 recipes.js listItem·show의 mark.
+     */
+    val mark: String? = null,
+    /** 1.39 [MKD-41] 만든 분의 팔로워 수 (서버 followers); 옛 서버는 null. */
+    val followers: Int? = null,
 )
 
 /**
@@ -374,23 +386,27 @@ class RecipeClient(
             if (cursor > 0) add("cursor=$cursor")
             // 1.36 [MKS-01] This app's versionCode: the server shows a 출시 작품 made for a newer app only to apps that can read it.
             add("app=${com.bamnat.app.BuildConfig.VERSION_CODE}")
+            // 1.39 [MKC-04] '✦ 프로 기능'만 (어느 구간에서든 끝에 [FX]). A server before 1.39 FX-01 sends all; [fits] keeps those with fx.
+            if (fxOnly(kind)) add("fx=1")
+            if (freeOnly(kind)) add("fx=0")
+            val k = plain(kind)
             // [MKX-01] 1.36 두 구간: "theme" or "tab:<tab>" goes as scope (and tab), with the nearest 1.35 kind for a server before 1.36.
             when {
-                kind == SCOPE_THEME -> { add("scope=theme"); add("kind=skin") }
-                kind == SCOPE_LOGIC -> { add("scope=logic"); add("kind=rules") }
+                k == SCOPE_THEME -> { add("scope=theme"); add("kind=skin") }
+                k == SCOPE_LOGIC -> { add("scope=logic"); add("kind=rules") }
                 // 1.39 [MKC-01] 도구: 부품과 규칙·단추를 함께 (tool= 종류, tab= 쓰는 화면). A server before 1.39 reads kind=rules (규칙·단추만).
-                kind != null && kind.startsWith(SCOPE_TOOL) -> {
+                k != null && k.startsWith(SCOPE_TOOL) -> {
                     add("scope=tool"); add("kind=rules")
-                    toolOf(kind).takeIf { it in TOOL_KINDS }?.let { add("tool=$it") }
-                    toolOn(kind)?.let { add("tab=$it") }
+                    toolOf(k).takeIf { it in TOOL_KINDS }?.let { add("tool=$it") }
+                    toolOn(k)?.let { add("tab=$it") }
                 }
-                kind != null && kind.startsWith(SCOPE_TAB) -> {
+                k != null && k.startsWith(SCOPE_TAB) -> {
                     add("scope=tab")
-                    val t = tabOf(kind)
+                    val t = tabOf(k)
                     if (t in MARKET_TABS) { add("tab=$t"); legacyKind(t)?.let { add("kind=$it") } }
-                    madeOf(kind)?.let { add("made=$it") }
+                    madeOf(k)?.let { add("made=$it") }
                 }
-                else -> kind?.takeIf { it in KINDS }?.let { add("kind=$it") }
+                else -> k?.takeIf { it in KINDS }?.let { add("kind=$it") }
             }
         }.joinToString("&")
         val o = call("GET", "/api/recipes?$query&body=1")
@@ -724,6 +740,9 @@ class RecipeClient(
                 o.optBoolean("newMaker"),
                 o.optStringOrNull("made")?.takeIf { it == "look" || it == "func" || it == "both" },
                 o.optJSONArray("tools")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in TOOL_KINDS } }.orEmpty(),
+                o.optJSONArray("fx").strings().filter { it.isNotBlank() },
+                o.optStringOrNull("mark")?.takeIf { it.isNotBlank() },
+                o.optInt("followers").takeIf { o.has("followers") && !o.isNull("followers") },
             )
         }
 
@@ -743,19 +762,59 @@ class RecipeClient(
         val TOOL_KINDS = listOf("part", "rule", "button")
         /** 1.39 [MKC-01] 탭별 작품의 꾸미기·기능: "tab:<탭>~look" or "~func". */
         val MADE_KINDS = listOf("look", "func")
-        fun tabOf(kind: String?): String = kind.orEmpty().removePrefix(SCOPE_TAB).substringBefore('~')
-        fun madeOf(kind: String?): String? = kind?.takeIf { it.startsWith(SCOPE_TAB) }?.substringAfter('~', "")?.takeIf { it in MADE_KINDS }
-        fun toolOf(kind: String?): String = kind.orEmpty().removePrefix(SCOPE_TOOL).substringBefore('@')
-        fun toolOn(kind: String?): String? = kind?.takeIf { it.startsWith(SCOPE_TOOL) }?.substringAfter('@', "")?.takeIf { it in MARKET_TABS }
-        fun tabKind(tab: String, made: String?): String = SCOPE_TAB + tab + (made?.takeIf { it in MADE_KINDS }?.let { "~$it" } ?: "")
-        fun toolKind(tool: String, on: String?): String = SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: "")
-        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
+        /**
+         * 1.39 [MKC-04] '✦ 프로 기능'만 보기 (사용자 2026-11-07 "무료 프로의 구분은 확실히"): 어느 구간 뒤에든 붙는 표시 ("theme!fx",
+         * "tab:memo!fx", "tool:@money!fx"). 탭별 작품·도구에서는 꾸미기·기능, 부품·규칙·단추 칩과 같은 줄의 한 칩이라 그 둘과 함께 고르지 않아요.
+         */
+        const val FX = "!fx"
+        fun fxOnly(kind: String?): Boolean = kind?.endsWith(FX) == true
+        /** 1.39 [MKD-11] '무료로 다 되는 것'만 (서버 fx=0): ✦ 장치가 하나도 없는 작품. [FX]와 같은 자리에 붙고 둘 중 하나만이에요. */
+        const val FREE = "!free"
+        fun freeOnly(kind: String?): Boolean = kind?.endsWith(FREE) == true
+        /** [FX], [FREE] or "" — what [kind] keeps when another chip of its row is picked. */
+        fun price(kind: String?): String = when { fxOnly(kind) -> FX; freeOnly(kind) -> FREE; else -> "" }
+        /** [kind] without [FX] or [FREE]. */
+        fun plain(kind: String?): String? = kind?.removeSuffix(FX)?.removeSuffix(FREE)
+        fun withPrice(kind: String, price: String): String = plain(kind).orEmpty() + price.takeIf { it == FX || it == FREE }.orEmpty()
+        fun withFx(kind: String, on: Boolean): String = withPrice(kind, if (on) FX else "")
+        fun withFree(kind: String, on: Boolean): String = withPrice(kind, if (on) FREE else "")
+
+        /**
+         * 1.39 [MKD-03] 장치·종류 이름으로 찾기 (사용자는 '값 칸', '위젯', '알림 단추', '프로'로 찾아요; 서버 찾기는 제목·설명만 봐요): 그 말이
+         * 가리키는 칩(장터 종류)과 그 칩의 이름. 찾기 칸 아래 칩으로 보여 누르면 그 칩으로 가요.
+         */
+        fun wordKind(q: String, kind: String?): Pair<String, String>? {
+            val w = q.trim().removePrefix("✦").trim().replace(" ", "")
+            val here = plain(kind)?.takeIf { it.isNotEmpty() } ?: SCOPE_THEME
+            return when (w) {
+                "프로", "프로기능", "값칸", "값", "알림단추", "단추위젯", "빠른설정", "바로가기", "fx" -> withFx(here, true) to "✦ 프로 기능 작품"
+                "무료" -> withFree(here, true) to "무료로 다 되는 것"
+                "위젯" -> tabKind("widget", null) to "탭별 작품 › 위젯"
+                "부품" -> toolKind("part", null) to "도구 › 부품"
+                "규칙", "자동규칙" -> toolKind("rule", null) to "도구 › 자동 규칙"
+                "단추" -> toolKind("button", null) to "도구 › 단추"
+                else -> null
+            }?.takeIf { it.first != kind }
+        }
+        fun tabOf(kind: String?): String = plain(kind).orEmpty().removePrefix(SCOPE_TAB).substringBefore('~')
+        fun madeOf(kind: String?): String? = plain(kind)?.takeIf { it.startsWith(SCOPE_TAB) }?.substringAfter('~', "")?.takeIf { it in MADE_KINDS }
+        fun toolOf(kind: String?): String = plain(kind).orEmpty().removePrefix(SCOPE_TOOL).substringBefore('@')
+        fun toolOn(kind: String?): String? = plain(kind)?.takeIf { it.startsWith(SCOPE_TOOL) }?.substringAfter('@', "")?.takeIf { it in MARKET_TABS }
+        fun tabKind(tab: String, made: String?, fx: Boolean = false, free: Boolean = false): String =
+            withPrice(SCOPE_TAB + tab + (made?.takeIf { it in MADE_KINDS }?.let { "~$it" } ?: ""), if (made != null) "" else if (fx) FX else if (free) FREE else "")
+        fun toolKind(tool: String, on: String?, fx: Boolean = false, free: Boolean = false): String = withPrice(
+            SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: ""),
+            if (tool in TOOL_KINDS) "" else if (fx) FX else if (free) FREE else "")
+        // 1.39 [FLOW-21] 밤 화면(밤 화면·아침 한 장 부품).
+        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget", "night")
         private fun legacyKind(tab: String): String? = when (tab) {
             "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
         }
 
         /** [MKX-01] Whether [item] belongs where [kind] points (a server before 1.36 sends no tabs: then all it sent). */
-        fun fits(item: RecipeItem, kind: String?): Boolean = when {
+        fun fits(item: RecipeItem, kind: String?): Boolean =
+            if ((fxOnly(kind) && item.fx.isEmpty()) || (freeOnly(kind) && item.fx.isNotEmpty())) false else fitsPlain(item, plain(kind))
+        private fun fitsPlain(item: RecipeItem, kind: String?): Boolean = when {
             item.tabs.isEmpty() || kind == null -> true
             kind == SCOPE_THEME -> item.scope == "theme"
             kind == SCOPE_LOGIC -> item.scope == "logic"

@@ -108,7 +108,12 @@ private val InkCache = java.util.concurrent.ConcurrentHashMap<Int, Color>()
 val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 @Composable
-fun isDarkSurface(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+@androidx.compose.runtime.ReadOnlyComposable
+fun isDarkSurface(): Boolean = MaterialTheme.colorScheme.let { s ->
+    // 1.39 [MKW-02] 그려 보기(밝은 테마의 메모가 남색 카드에 검은 글씨): 꾸밈이 화면 밑에 깔리면 ScreenSkin이 surface를 투명으로 두어
+    // 투명(밝기 0)을 어둡다고 읽었어요. 투명하면 그 위 글자색(onSurface)으로 바탕이 밝은지 어두운지 가려요.
+    if (s.surface.alpha >= 0.5f) s.surface.luminance() < 0.5f else s.onSurface.luminance() > 0.5f
+}
 
 @Composable
 fun memoBackground(index: Int): Color {

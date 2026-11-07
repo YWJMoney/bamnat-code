@@ -668,6 +668,14 @@ test("1.38 [SLEEP-11] a link may say 지금 자는 중 with two times only, and 
   // Nothing rides along, and the times make sense.
   assert.equal(validate({ ...sample, sleepNow: { since, wakeAt, where: "home" } }).error, "sleep_now");
   assert.equal(validate({ ...sample, sleepNow: { since: "x" } }).error, "sleep_now");
+  // 1.39 G5-N4 계획한 잠 시간: pairs of times only, at most 24, none over 16 hours.
+  const from = since + 3600 * 1000, to = from + 7 * 3600 * 1000;
+  assert.deepEqual(validate({ ...sample, sleepPlan: [{ from, to }] }).schedule.sleepPlan, [{ from, to }]);
+  assert.equal(validate({ ...sample, sleepPlan: [{ from, to, note: "x" }] }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: [{ from: to, to: from }] }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: [{ from, to: from + 17 * 3600 * 1000 }] }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: Array.from({ length: 25 }, () => ({ from, to })) }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: { from, to } }).error, "sleep_plan");
   assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since - 1 } }).error, "sleep_now");
   assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since + 21 * 3600 * 1000 } }).error, "sleep_now");
   assert.equal(validate({ ...sample, sleepNow: [since] }).error, "sleep_now");

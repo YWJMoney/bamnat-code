@@ -42,6 +42,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import com.bamnat.app.ui.parts.fillColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -167,11 +172,29 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
         )
     }
+    // 1.39 [FLOW-21] 스튜디오에서 꾸민 밤 화면: 바탕(사진·채우기), 날짜·시계·내일 줄 글자, 카드, 단추. A blueprint without night lines
+    // leaves the screen as it was; what a look leaves out stays the warm dark.
+    val ground = nightStyle("night")
+    val dateStyle = nightStyle("night.date")
+    val clockStyle = nightStyle("night.clock")
+    val cardStyle = nightStyle("night.card")
+    val buttonStyle = nightStyle("night.button")
     val sleepButton: @Composable () -> Unit = {
-        if (o != null) Button(onClick = { vm.wokeUp(onClose) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-            Text("깼어요", style = MaterialTheme.typography.titleMedium)
-        } else Button(onClick = vm::fellAsleep, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-            Text("잠들었어요", style = MaterialTheme.typography.titleMedium)
+        val buttonShape = com.bamnat.app.ui.parts.PartMods.shapeOf(buttonStyle, androidx.compose.material3.ButtonDefaults.shape)
+        val buttonColors = buttonStyle.fillColor?.let { c ->
+            androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = c,
+                contentColor = buttonStyle.ink?.let { Color(it.toInt()) } ?: (if (c.luminance() > 0.45f) Color.Black else Color.White))
+        } ?: androidx.compose.material3.ButtonDefaults.buttonColors()
+        val buttonText = com.bamnat.app.ui.parts.PartMods.text(buttonStyle.copy(ink = null), MaterialTheme.typography.titleMedium)
+        if (o != null) Button(onClick = { vm.wokeUp(onClose) }, shape = buttonShape, colors = buttonColors, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Text("깼어요", style = buttonText)
+        } else Button(onClick = vm::fellAsleep, shape = buttonShape, colors = buttonColors, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Text("잠들었어요", style = buttonText)
+        }
+    }
+    val soundCard: @Composable () -> Unit = {
+        Box(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(cardStyle, RoundedCornerShape(16.dp)))) {
+            SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
         }
     }
     val note: @Composable (String) -> Unit = { text ->
@@ -184,7 +207,7 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
             if (tabletop != null) {
                 val density = androidx.compose.ui.platform.LocalDensity.current
                 var areaTop by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
-                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().then(com.bamnat.app.ui.parts.PartMods.box(ground.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape)).safeDrawingPadding()
                     .onGloballyPositioned { areaTop = it.positionInWindow().y.toInt() }) {
                     val upper = with(density) { tabletop.upperHeight(areaTop, constraints.maxHeight).toDp() }
                     Column(Modifier.fillMaxSize()) {
@@ -192,9 +215,11 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                             IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart)) { Icon(Icons.Filled.Close, "밤 화면 닫기") }
                             val (dx, dy) = if (clockOn) NightClockShift.of(now.minute) else 0 to 0
                             Column(Modifier.align(Alignment.Center).offset(dx.dp, dy.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(Fmt.dayTitle(now.toLocalDate()), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(Fmt.time(now.toLocalTime()), fontSize = 96.sp, fontWeight = FontWeight.Light, style = NumberStyle,
-                                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { heading() })
+                                Text(Fmt.dayTitle(now.toLocalDate()), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = com.bamnat.app.ui.parts.PartMods.text(dateStyle, MaterialTheme.typography.titleMedium))
+                                Text(Fmt.time(now.toLocalTime()), color = MaterialTheme.colorScheme.onSurface,
+                                    style = com.bamnat.app.ui.parts.PartMods.text(clockStyle, NumberStyle.copy(fontSize = 96.sp, fontWeight = FontWeight.Light)),
+                                    modifier = Modifier.then(com.bamnat.app.ui.parts.PartMods.box(clockStyle, RoundedCornerShape(16.dp))).semantics { heading() })
                                 line?.let { l -> NightLineRow(l, onAlarms, vm::turnOnAlarms, switchOff = !settings.alarmsEnabled) }
                             }
                         }
@@ -203,7 +228,7 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                             status()
                             Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 sleepButton()
-                                SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
+                                soundCard()
                                 note(if (clockOn) "충전 중이라 화면을 켜 둬요. 시계는 화면에 자국이 남지 않게 조금씩 자리를 옮겨요. 근무 알람은 이 화면과 상관없이 울려요."
                                     else "충전기에 꽂으면 화면이 꺼지지 않는 탁상 시계가 돼요. 근무 알람은 이 화면과 상관없이 울려요.")
                             }
@@ -212,16 +237,19 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                 }
                 return@Surface
             }
-            Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+            Column(Modifier.fillMaxSize().then(com.bamnat.app.ui.parts.PartMods.box(ground.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
+                .safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 // A visible way out (CLAUDE.md 3항: 보이는 닫기가 없는 창은 문제).
                 Row(Modifier.fillMaxWidth()) {
                     IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "밤 화면 닫기") }
                 }
                 Spacer(Modifier.height(24.dp))
-                Text(Fmt.dayTitle(now.toLocalDate()), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(Fmt.time(now.toLocalTime()), fontSize = 76.sp, fontWeight = FontWeight.Light, style = NumberStyle,
-                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { heading() })
+                Text(Fmt.dayTitle(now.toLocalDate()), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = com.bamnat.app.ui.parts.PartMods.text(dateStyle, MaterialTheme.typography.titleMedium))
+                Text(Fmt.time(now.toLocalTime()), color = MaterialTheme.colorScheme.onSurface,
+                    style = com.bamnat.app.ui.parts.PartMods.text(clockStyle, NumberStyle.copy(fontSize = 76.sp, fontWeight = FontWeight.Light)),
+                    modifier = Modifier.then(com.bamnat.app.ui.parts.PartMods.box(clockStyle, RoundedCornerShape(16.dp))).semantics { heading() })
                 line?.let { l -> NightLineRow(l, onAlarms, vm::turnOnAlarms, switchOff = !settings.alarmsEnabled) }
                 if (com.bamnat.app.ui.components.LocalShowKani.current) {
                     Spacer(Modifier.height(16.dp))
@@ -231,7 +259,7 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                 status()
                 Spacer(Modifier.height(20.dp))
                 Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
+                    soundCard()
                     sleepButton()
                     note("화면이 꺼지는 시간은 휴대폰 설정 그대로예요. 근무 알람은 이 화면과 상관없이 울려요.")
                 }
@@ -270,10 +298,13 @@ private fun pluggedIn(context: Context): Boolean =
  */
 @Composable
 private fun NightLineRow(l: NightLine.Line, onAlarms: () -> Unit, onTurnOn: () -> Unit, switchOff: Boolean) {
-    val tint = if (l.alarmOn) MaterialTheme.colorScheme.onSurface else com.bamnat.app.ui.theme.Tone.Caution.color()
+    // 1.39 [FLOW-21] 밤 화면 꾸미기's line letters; an alarm that is off keeps the caution colour whatever the look says (믿음).
+    val lineStyle = nightStyle("night.line")
+    val tint = if (l.alarmOn) lineStyle.ink?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.onSurface else com.bamnat.app.ui.theme.Tone.Caution.color()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
         Icon(if (l.alarmOn) Icons.Outlined.Alarm else Icons.Outlined.AlarmOff, null, tint = tint, modifier = Modifier.size(20.dp))
-        Text(" ${l.text}", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, color = tint)
+        Text(" ${l.text}", style = com.bamnat.app.ui.parts.PartMods.text(lineStyle.copy(ink = null), MaterialTheme.typography.titleMedium),
+            textAlign = TextAlign.Center, color = tint)
     }
     if (!l.alarmOn) Row(horizontalArrangement = Arrangement.Center) {
         if (switchOff) Button(onClick = onTurnOn, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람 켜기") }
@@ -285,4 +316,22 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+/**
+ * 1.39 [FLOW-21] 밤 화면·아침 한 장 꾸밈 is one of 1.39's new looks (프로, core FxPro.NEW_LOOKS "night"/"night."): with no 프로 and no
+ * 하루 써 보기 the screen is drawn in its own warm dark; the look's lines stay in settings and come back with 프로 (쉬기만, 지우지 않음).
+ */
+@Composable
+internal fun nightStyle(id: String): com.bamnat.core.recipe.PartStyle =
+    if (nightLooksOn()) com.bamnat.app.ui.parts.partStyle(id) else com.bamnat.core.recipe.PartStyle()
+
+/**
+ * Whether 밤 화면 꾸밈 is drawn. Until the FX 프로 문 (PR #316, `FxAccess.on(c)`: 프로 or 하루 써 보기) is in the 1.39 integration this
+ * follows the 정식 출시 switch only (before it every phone has 프로); the one line here becomes `FxAccess.on(c)` when both are merged.
+ */
+@Composable
+private fun nightLooksOn(): Boolean {
+    val c = (LocalContext.current.applicationContext as? com.bamnat.app.BamnatApp)?.container ?: return true
+    return !c.featureGate.state.value.live || c.featureGate.state.value.tier >= com.bamnat.app.tier.Tier.PRO
 }

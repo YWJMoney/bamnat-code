@@ -850,6 +850,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(100 to "불투명", 85 to "조금 비침", 65 to "반쯤 비침", 40 to "많이 비침"), listOf(100, 85, 65, 40).minBy { kotlin.math.abs(it - wl.alpha) }) { a ->
             saveLook(wl.copy(alpha = a))
         }
+        // 1.39 PC 2afb3a76: the widgets' own parts (할 일 줄·동그라미·＋, 머리, 칸) are in 스튜디오 › 위젯; a row leads there.
+        NavRow("위젯 꾸미기 (스튜디오)", "오늘·주·달·할 일 위젯의 글자·색·모서리·부품을 하나씩 바꿔요") { SettingsLinks.go(SettingsGo.STUDIO_WIDGET) }
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.WIDGET)
         // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
         ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
