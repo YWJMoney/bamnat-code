@@ -126,6 +126,10 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
             teams.orEmpty().filter { !it.archived }.forEach { t ->
                 SectionCard(title = t.name, trailing = { TextButton(onClick = { openId = t.id }) { Text("열기") } }) {
                     val members by store.members(t.id).collectAsStateWithLifecycle(emptyList())
+                    // 1.39 [FLOW-23] (PC f7f61818 하): the team list says today too, as the 관리 화면 card does.
+                    val nowBoard by store.board(t.id, YearMonth.from(Today.date())).collectAsStateWithLifecycle(null)
+                    val today = remember(nowBoard, t, Today.date()) { nowBoard?.let { com.bamnat.core.team.TeamToday.of(t, it, Today.date()) } }
+                    if (today != null && members.any { it.active } && nowBoard?.cells?.isNotEmpty() == true) TeamTodayHead(today, Modifier.padding(bottom = 4.dp))
                     Text("${members.count { it.active }}명 · 근무 ${t.shifts.count { !it.isOff }}가지", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -539,7 +543,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 ImportButton(onClick = pickFile)
             }
             val changes = remember(b, was, state) { if (state.state == MonthState.CONFIRMED) b.changesFrom(TeamBoard(month, b.members, was.mapValues { (k, v) -> com.bamnat.core.team.TeamCell(k.first, k.second, v) })) else emptyList() }
-            Button(onClick = {
+            // 1.39 G2 (PC f7f61818): with links gone and nothing changed, '링크 다시 보내기' next to '새 링크 n개 만들어 보내기' read as two ways
+            // to the same thing; the 봤어요 line's button is the one left.
+            val goneNow = seen?.let { com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, it).gone }.orEmpty()
+            if (!(state.state == MonthState.CONFIRMED && changes.isEmpty() && goneNow.isNotEmpty())) Button(onClick = {
                 scope.launch {
                     // 1.38 PC 11차: a member with no day filled has nothing to share (the server refuses an empty link), so say who
                     // before 확정 instead of confirming and then blaming the internet.
