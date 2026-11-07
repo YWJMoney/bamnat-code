@@ -353,6 +353,35 @@
             android:isolatedProcess="true"
             android:process=":fontprobe" />
 
+        <!-- 1.39 [TASK-38][TASK-32] 할 일 적기: a small window over any screen (widget ＋, tile), and 'Share → 밤낮 할 일로 적기' for a
+             text from another app. Nothing is saved until 적기; no permission is needed. -->
+        <activity
+            android:name=".memo.QuickTaskActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/quick_task_label"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bamnat.Quick"
+            android:windowSoftInputMode="adjustResize|stateVisible">
+            <intent-filter android:label="@string/quick_task_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- 1.39 [TASK-33] 빠른 설정의 '할 일 적기' 타일: only the system's quick settings binds it. -->
+        <service
+            android:name=".memo.TaskAddTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_task_add"
+            android:label="@string/tile_task_add"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- 1.37 [LEDH-14] 빠른 설정의 '돈 적기' 타일: only the system's quick settings binds it. -->
         <service
             android:name=".money.MoneyAddTile"

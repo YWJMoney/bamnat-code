@@ -147,7 +147,8 @@ internal fun openMemo(context: Context, id: Long, day: LocalDate?) =
 internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate) {
     val context = androidx.glance.LocalContext.current
     Column(GlanceModifier.fillMaxSize()) {
-        TaskHead(TaskList.headline(rows), openMemo(context, 0, today))
+        // 1.39 [TASK-38] ＋ opens the 한 줄 window over the home screen, not the whole app.
+        TaskHead(TaskList.headline(rows), actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context)))
         Spacer(GlanceModifier.height(4.dp))
         if (rows.isEmpty()) {
             Text("오늘 할 일이 없어요. ＋를 눌러 써 보세요", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 2,
