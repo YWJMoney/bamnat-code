@@ -40,7 +40,7 @@ internal object MarketDisk {
     suspend fun shot(context: Context, key: String): ImageBitmap? = withContext(Dispatchers.IO) {
         val f = File(shotDir(context), name(key) + ".webp")
         if (!f.isFile) return@withContext null
-        if (f.lastModified() < System.currentTimeMillis() - MAX_DAYS * DAY) { f.delete(); return@withContext null }
+        if (f.lastModified() < com.bamnat.core.time.Today.millis() - MAX_DAYS * DAY) { f.delete(); return@withContext null }
         runCatching { BitmapFactory.decodeFile(f.path)?.asImageBitmap() }.getOrNull()
     }
 
@@ -49,7 +49,7 @@ internal object MarketDisk {
             val dir = shotDir(context).apply { mkdirs() }
             val bmp = picture.asAndroidBitmap().let { b ->
                 // A picture read back from a layer can live on the graphics card; it is copied out before it is written.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && b.config == Bitmap.Config.HARDWARE) b.copy(Bitmap.Config.ARGB_8888, false) else b
+                if (b.config == Bitmap.Config.HARDWARE) b.copy(Bitmap.Config.ARGB_8888, false) else b
             }
             val tmp = File(dir, name(key) + ".tmp")
             tmp.outputStream().use { out ->
@@ -86,7 +86,7 @@ internal object MarketDisk {
     private fun tidyNow(context: Context) {
         if (++writes % 20 != 1) return
         val root = root(context)
-        val now = System.currentTimeMillis()
+        val now = com.bamnat.core.time.Today.millis()
         root.listFiles()?.filter { it.isDirectory && it.name.startsWith("shot-") && it.name != shotDir(context).name }?.forEach { it.deleteRecursively() }
         val files = root.walkTopDown().filter { it.isFile }.toMutableList()
         files.filter { it.lastModified() < now - MAX_DAYS * DAY || it.name.endsWith(".tmp") && it.lastModified() < now - 60_000 }
