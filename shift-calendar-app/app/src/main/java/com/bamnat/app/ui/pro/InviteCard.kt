@@ -167,8 +167,8 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
                         onMessage(inviteAnswerWords(a))
                     } catch (e: CompanyException) {
                         val w = if (e.code == "code") "초대 코드가 맞지 않아요. 친구에게 다시 확인해 주세요." else serverProblem(e.code)
+                        // 1.39 PC c0ca3d9f: said here under the button only (the screen's own line said it a second time).
                         said = w
-                        onMessage(w)
                     } finally {
                         busy = false
                     }
