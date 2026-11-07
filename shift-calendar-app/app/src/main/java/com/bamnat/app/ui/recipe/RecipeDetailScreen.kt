@@ -282,6 +282,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                                     }
                                 }
+                                // 1.39 [MKP-05] 기능도 입어 보듯: what it changes here, 지금 ↔ 넣으면, under its tick (3 rows, the rest unfold).
+                                if (p.on) BeforeAfter(p.sides, Modifier.padding(start = 12.dp), fold = 3)
                             }
                         } },
                     ) { picked ->
@@ -526,7 +528,11 @@ private fun PieceCard(r: com.bamnat.core.recipe.Recipe, p: RecipeDetailViewModel
                     Text("내 근무와 이름이 같거나, 주간·야간처럼 역할이 같은 근무에 넣어요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                p.lines.forEach { l ->
+                // 1.39 [MKP-05] 기능 조각 전후: 지금 ↔ 넣으면 side by side (근무 꾸미기 shows its own badges above). With the table, the lines
+                // left are what it cannot use here and warnings; 규칙·단추 keep each rule's sentence, which the counts do not say.
+                val table = p.kind != PieceKind.SHIFT_LOOK && p.sides.isNotEmpty()
+                if (table) BeforeAfter(p.sides)
+                p.lines.filter { !table || it.skipped || p.kind == PieceKind.LOGIC || it.text.startsWith("⚠") }.forEach { l ->
                     Text((if (l.skipped) "– " else "→ ") + l.text, style = MaterialTheme.typography.bodySmall,
                         color = if (l.skipped) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
                 }

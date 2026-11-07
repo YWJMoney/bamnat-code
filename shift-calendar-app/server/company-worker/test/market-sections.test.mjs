@@ -48,3 +48,27 @@ test("[N14][N15] 요청 판 14일 안내 and 고친 판 바꾼 곳", async () =>
   assert.deepEqual(pieceChanges(a, b), [{ kind: "calTheme", how: "edit" }, { kind: "alarms", how: "add" }, { kind: "memoLook", how: "del" }]);
   assert.deepEqual(pieceChanges(a, a), []);
 });
+
+test("[MKP-01] 1.39 장터 로딩: body=1 sends each card's written form and hash; a work read with no phone is the same as with one", async (t) => {
+  const { device, from } = await import("./helpers.mjs");
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call } = server({ plaza: true });
+  const recipe = { format: "bamnat-recipe", v: 1, title: "야간 많은 교대 세트", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const a = await call("POST", "/api/recipes", { device: device(1), recipe, scope: "public" }, from(1));
+  assert.equal(a.status, 201);
+  const plain = await call("GET", "/api/recipes?style=SHIFT&sort=new");
+  assert.equal(plain.data.items[0].body, undefined, "without body=1 the list is as before");
+  const full = await call("GET", "/api/recipes?style=SHIFT&sort=new&body=1");
+  const item = full.data.items[0];
+  assert.equal(item.code, a.data.code);
+  assert.equal(item.hash, a.data.hash);
+  const shown = await call("GET", `/api/recipes/${a.data.code}`);
+  assert.equal(shown.status, 200);
+  assert.equal(shown.data.body, item.body);
+  assert.equal(shown.data.hash, item.hash);
+  assert.equal(shown.data.mine, false);
+  // The maker still sees their own (named by the phone), never a copy kept for everyone.
+  const mine = await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(1) });
+  assert.equal(mine.data.mine, true);
+});

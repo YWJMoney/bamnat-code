@@ -61,6 +61,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * [MKV-01] 1.37 장터 카드 실제 모습 (사용자 2026-11-05 "장터에서 테마나 기능들 보여지는 모습들이 실제로 해당 테마나 기능들의 모습을
@@ -97,6 +98,8 @@ internal object MarketShots {
     const val HOLD = 1500L
     /** How long a card must have stood still on the screen (the list not moving) before it is drawn. */
     const val STILL = 200L
+    /** 1.39 [MKP-04] After a card's first frame, a frame or two more before the next card starts drawing. */
+    const val SETTLE = 48L
 
     fun shot(key: String): ImageBitmap? = shots.get(key)
     fun keep(key: String, b: ImageBitmap) { shots.put(key, b) }
@@ -105,14 +108,67 @@ internal object MarketShots {
         val k = key(item)
         recipes.get(k)?.let { return it }
         if (k in failed) return null
+        // 1.39 [MKP-01][MKP-02] The written form that came with the list, or the one kept on the phone, before asking for it alone.
+        (raws.get(k) ?: MarketDisk.body(c.appContext, k)?.also { raws.put(k, it) })?.let { (hash, body) ->
+            read(hash, body)?.let { r -> recipes.put(k, r); return r }
+        }
         val got = gate.withPermit {
             recipes.get(k) ?: withContext(Dispatchers.IO) {
-                runCatching { c.recipeApi.show(item.code, null, null) }.getOrNull()?.let { doc -> runCatching { doc.recipe() }.getOrNull() ?: known(doc.body) }
+                runCatching { c.recipeApi.show(item.code, null, null) }.getOrNull()?.let { doc ->
+                    keepDoc(c, doc)
+                    runCatching { doc.recipe() }.getOrNull() ?: known(doc.body)
+                }
             }
         }
         if (got == null) failed.add(k) else recipes.put(k, got)
         return got
     }
+
+    /** The work in [body], checked by its [hash] as [com.bamnat.app.recipe.RecipeDoc.recipe] does (a newer app's: what this app knows of it). */
+    private suspend fun read(hash: String, body: String): Recipe? = withContext(Dispatchers.Default) {
+        runCatching {
+            val r = com.bamnat.core.recipe.RecipeCodec.read(body)
+            r.takeIf { com.bamnat.core.recipe.RecipeCodec.hash(it) == hash }
+        }.getOrNull() ?: known(body)
+    }
+
+    // ---- 1.39 [MKP-01][MKP-03] 장터 로딩: what a list brought, for the cards and for opening a work at once ----
+
+    /** Each work's written form (hash, body) by [key]: from the list (`body=1`), a work opened, or the phone's own copy. */
+    private val raws = android.util.LruCache<String, Pair<String, String>>(200)
+    /** The last list card seen of each code, so a work opens with its name and counts while the rest comes. */
+    private val items = android.util.LruCache<String, RecipeItem>(200)
+
+    /** A page of the list came: its cards and written forms are kept here, and the written forms on the phone (in the background). */
+    fun feed(c: AppContainer, page: com.bamnat.app.recipe.RecipePage) {
+        page.items.forEach { items.put(it.code, it) }
+        if (page.bodies.isEmpty()) return
+        page.bodies.forEach { (k, v) -> raws.put(k, v) }
+        c.appScope.launch { page.bodies.forEach { (k, v) -> MarketDisk.keepBody(c.appContext, k, v.first, v.second) } }
+    }
+
+    /** A work read whole ([com.bamnat.app.recipe.RecipeApi.show]): its written form kept like a list's. */
+    fun keepDoc(c: AppContainer, doc: com.bamnat.app.recipe.RecipeDoc) {
+        val k = key(doc.item)
+        items.put(doc.item.code, doc.item)
+        if (raws.get(k) == null) {
+            raws.put(k, doc.hash to doc.body)
+            c.appScope.launch { MarketDisk.keepBody(c.appContext, k, doc.hash, doc.body) }
+        }
+    }
+
+    /**
+     * 1.39 [MKP-03] 작품 바로 열기: what a tapped card already has — its card and written form — as a work to show at once, while the
+     * whole one (this phone's 좋아요, whether it is mine) comes; null when this phone has not seen it.
+     */
+    fun seen(code: String): com.bamnat.app.recipe.RecipeDoc? {
+        val item = items.get(code) ?: return null
+        val (hash, body) = raws.get(key(item)) ?: return null
+        return com.bamnat.app.recipe.RecipeDoc(item, hash, body, scope = "public", mine = false)
+    }
+
+    /** The written form of card [key] (for [MarketDisk.complete]). */
+    fun body(key: String): String? = raws.get(key)?.second
 
     /** Whether this card's work could not be had (offline, gone): it keeps its small picture for good. */
     fun gaveUp(item: RecipeItem): Boolean = key(item) in failed
@@ -187,9 +243,19 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     val shown = style?.takeIf { it in item.styles || item.styles.isEmpty() } ?: item.styles.firstOrNull() ?: style
     val key = MarketShots.key(item) + "|" + shown?.name + "|" + dark + "|" + width.value.toInt()
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
-    val recipe by produceState<Recipe?>(null, key) { if (picture == null) value = MarketShots.recipe(c, item) }
+    val recipe by produceState<Recipe?>(null, key) {
+        if (picture != null) return@produceState
+        // 1.39 [MKP-02] The picture this phone kept from before (the 장터 opened again, or after the app was closed): no drawing at all.
+        MarketDisk.shot(c.appContext, key)?.let { MarketShots.keep(key, it); picture = it; return@produceState }
+        value = MarketShots.recipe(c, item)
+    }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
-    ShotFrame(key, width, height, picture, { picture = it }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
+    ShotFrame(key, width, height, picture, { got ->
+        picture = got
+        // 1.39 [MKP-02] Kept on the phone too, when all it names (pictures, fonts) was there to draw it as it really looks.
+        val body = MarketShots.body(MarketShots.key(item))
+        if (body != null) c.appScope.launch { if (MarketDisk.complete(c.appContext, body)) MarketDisk.keepShot(c.appContext, key, got) }
+    }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
         face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) })
 }
 
@@ -217,6 +283,8 @@ private fun ShotFrame(
     // never recomposes the card.
     val still = remember(key) { StillWatch() }
     val now by androidx.compose.runtime.rememberUpdatedState(picture)
+    // Whether the example phone has been drawn into its layer once.
+    val drew = remember(key) { booleanArrayOf(false) }
     if (picture == null && recipe != null) LaunchedEffect(key) {
         while (true) {
             val was = still.where
@@ -226,7 +294,11 @@ private fun ShotFrame(
         MarketShots.drawing.lock()
         try {
             turn = true
-            kotlinx.coroutines.withTimeoutOrNull(MarketShots.HOLD) { androidx.compose.runtime.snapshotFlow { now }.first { it != null } }
+            // 1.39 [MKP-04] 장터 로딩: the turn is held only while this phone is drawn the first time (the heavy part), not through the
+            // wait for its fonts and pictures before it is kept as a picture; the next card is drawn meanwhile (four still cards on the
+            // screen took four of those waits one after another).
+            kotlinx.coroutines.withTimeoutOrNull(MarketShots.HOLD) { while (!drew[0] && now == null) kotlinx.coroutines.delay(16) }
+            kotlinx.coroutines.delay(MarketShots.SETTLE)
         } finally { MarketShots.drawing.unlock() }
     }
     val said = if (picture != null || recipe != null) "작품 모습" else if (gaveUp) "작품 작은 그림" else "작품 모습 불러오는 중"
@@ -240,8 +312,7 @@ private fun ShotFrame(
             r != null && turn -> {
                 // Drawn live once; when its fonts and pictures have come in, kept as a picture.
                 val layer = rememberGraphicsLayer()
-                // Taken only once the phone has really been drawn into the layer; until then it is tried again.
-                val drew = remember(key) { booleanArrayOf(false) }
+                // Taken only once the phone has really been drawn into the layer ([drew]); until then it is tried again.
                 // PC 확인 e50bb622 MED-3: a picture of the phone, its letters the example's own size under 아주 크게 too.
                 val d = androidx.compose.ui.platform.LocalDensity.current
                 androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {

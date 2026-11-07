@@ -173,6 +173,30 @@ class RCScreenshotTest : ScreenshotBase() {
     }
 
     /**
+     * 1.39 [MKP-05] 기능 조각 전후 (사용자 2026-11-07 "기능 조각들도 어떠한지 전후를 알 수 있으면"): a work's alarm piece says, before
+     * anything goes in, each of my shifts' alarms now and after, side by side.
+     */
+    @Test fun aFunctionPieceShowsNowAndAfter() = shoot("1342h_rcp_detail_before_after", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        runBlocking {
+            c.scheduleRepository.saveShiftType(com.bamnat.core.model.ShiftType(0, "야간", "야", 0xFF3949ABL, java.time.LocalTime.of(19, 0),
+                java.time.LocalTime.of(7, 0), alarms = listOf(com.bamnat.core.model.AlarmSpec(60))))
+        }
+        val i = api.recipes.indexOfFirst { (r, data) -> !data && WorkStyle.SHIFT in r.styles && r.pieces.any { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS } }
+        assertTrue("알람 조각이 든 시작 레시피", i >= 0)
+        val vm = RecipeDetailViewModel(c, api.code(i), PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        val alarms = vm.state.value.pieces.first { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS }
+        assertTrue("알람 조각의 전후 줄: 내 야간 둘 다", alarms.sides.count { it.what == "야간 알람" && it.changed } == 2)
+        assertTrue("내 야간은 1시간 전에서 더해져요", alarms.sides.any { it.what == "야간 알람" && it.now.contains("(1시간 전)") && it.then.startsWith("2시간 전") })
+        assertTrue("넣기 전에는 아무것도 바뀌지 않아요", runBlocking { c.recipes.applied.first() }.isEmpty())
+        repeat(3) { scrollDown(-300) }
+        assertTrue(appears("지금 ↔ 넣으면", exact = false))
+    }
+
+    /**
      * PC 확인 20ab0254 (require에서 신고하면 창만 닫혀요): the answer to a report stays on screen, whether the server turned it
      * away for Play Integrity or took it. The line was cleared before it was shown, which took the snackbar down at once.
      */
