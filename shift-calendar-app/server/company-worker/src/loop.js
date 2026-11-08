@@ -26,6 +26,14 @@ import { SERVER_BUILT } from "./dev-built.js";
 export const LOOP = {
   /** 100% 출시를 본 뒤 자동 안내까지 기다리는 시간(그 사이 취소·지금 보내기). */
   shipHold: HOUR,
+  /**
+   * [LOOP-32] Play 트랙의 'completed'는 검토 중에도 같아요(Play API는 검토·게시 상태를 알려 주지 않아요, 1.39 실서버 11-08).
+   * 그래서 실제로 나갔는지는 그 판으로 쓰는 휴대폰으로 봐요: 지난 며칠 중 하루라도 이만큼(테스트 트랙 사람보다 많게),
+   * 그리고 앞 판 하루 휴대폰의 이 비율 이상이면 나간 것으로 봐요. 그 전에도 사람이 Play Console에서 보고 '게시됨 확인'을 누를 수 있어요.
+   */
+  liveMin: 30,
+  liveShare: 0.05,
+  liveDays: 3,
   /** 정기 앱 업데이트 주기(사용자 2026-11-07: 2주). */
   trainDays: 14,
   /** 알려진 문제판: 공개 제목이 있고 묶인 문의·나도 겪어요가 이만큼이면 보여요(한 사람만의 일은 안 보이게). */
@@ -178,18 +186,22 @@ export async function playTick(env, now = Date.now()) {
   const sw = await loopSwitches(env);
   const track = await readProduction(env, now);
   if (!track) return { skipped: "no_play" };
-  await saveSetting(env, "play_track", track);
   const shipped = await shippedVersion(env);
+  const newer = (v) => v && (!shipped || compareVersions(version(v), version(shipped.v)) > 0);
+  // [LOOP-32] 트랙 100%는 '검토 중일 수 있음'(review)으로만 적어요. 보류 시계는 실제로 나간 것을 본 뒤에 시작해요.
+  if (newer(track.done)) {
+    track.seen = await liveSeen(env, track.done, now, shipped?.v);
+    if (sw.autoShip) await run(env, "INSERT OR IGNORE INTO loop_ships (version, seen_at, until, status) VALUES (?, ?, 0, 'review')", track.done, now);
+  }
+  await saveSetting(env, "play_track", track);
   let held = null;
-  if (track.done && sw.autoShip && (!shipped || compareVersions(version(track.done), version(shipped.v)) > 0)) {
-    const r = await run(env, "INSERT OR IGNORE INTO loop_ships (version, seen_at, until, status) VALUES (?, ?, ?, 'waiting')", track.done, now, now + LOOP.shipHold);
-    if (r.meta.changes) {
-      held = track.done;
-      const dry = await shipNow(env, track.done, { dry: true }, now);
-      await audit(env, now, "loop_ship_seen", track.done, `문의 ${dry.answers}건 · 공지 ${dry.notice ? 1 : 0}`);
-      await notifyAdmins(env, "inquiry", { title: `${track.done} 출시를 확인했어요`,
-        body: `1시간 뒤 문의 ${dry.answers}건 안내${dry.notice ? "와 업데이트 소식 공지" : ""}가 나가요. 멈추려면 눌러 주세요`, url: "/admin/#/flow" }, now, { ignoreQuiet: true });
+  for (const r of await all(env, "SELECT version FROM loop_ships WHERE status = 'review'").catch(() => [])) {
+    if (!newer(r.version)) {
+      await run(env, "UPDATE loop_ships SET status = 'done', done_at = ?, by = ?, result = ? WHERE version = ? AND status = 'review'", now, "자동", "이미 저장된 판", r.version);
+      continue;
     }
+    const seen = r.version === track.done && track.seen ? track.seen : await liveSeen(env, r.version, now, shipped?.v);
+    if (seen.live && sw.autoShip && await holdShip(env, r.version, now, `이 판으로 쓰는 휴대폰 ${seen.phones}대`)) held = r.version;
   }
   let advice = null;
   if (track.rolling && sw.halt) {
@@ -207,8 +219,33 @@ export async function playTick(env, now = Date.now()) {
   return { track, held, advice };
 }
 
-/** 5분마다·매시: 보류가 끝난 출시 안내를 보내요. */
+/**
+ * [LOOP-32] 이 판으로 쓰는 휴대폰 수(usage_days, 지난 [LOOP.liveDays]일 중 가장 많은 하루)와 나갔다고 볼 기준.
+ * 앞 판([prev])이 있으면 그 판 하루 휴대폰의 [LOOP.liveShare] 이상이어야 해요(테스트 트랙 사람만으로는 넘지 않게).
+ */
+export async function liveSeen(env, v, now, prev = null) {
+  const rows = await all(env, "SELECT app, MAX(phones) AS most FROM usage_days WHERE day >= ? AND app IN (?, ?) GROUP BY app",
+    kstDay(now - LOOP.liveDays * DAY), v, prev ?? v).catch(() => []);
+  const most = (a) => rows.find((r) => r.app === a)?.most ?? 0;
+  const phones = most(v);
+  const need = Math.max(LOOP.liveMin, prev && prev !== v ? Math.ceil(most(prev) * LOOP.liveShare) : 0);
+  return { phones, need, live: phones >= need };
+}
+
+/** [LOOP-32] '검토 중일 수 있음' 판을 실제로 나갔다고 보고 1시간 보류를 시작해요. 시작했으면 참. */
+async function holdShip(env, v, now, why) {
+  const r = await run(env, "UPDATE loop_ships SET status = 'waiting', until = ? WHERE version = ? AND status = 'review'", now + LOOP.shipHold, v);
+  if (!r.meta.changes) return false;
+  const dry = await shipNow(env, v, { dry: true }, now);
+  await audit(env, now, "loop_ship_seen", v, `${why} · 문의 ${dry.answers}건 · 공지 ${dry.notice ? 1 : 0}`);
+  await notifyAdmins(env, "inquiry", { title: `${v} 출시를 확인했어요`,
+    body: `${why}. 1시간 뒤 문의 ${dry.answers}건 안내${dry.notice ? "와 업데이트 소식 공지" : ""}가 나가요. 멈추려면 눌러 주세요`, url: "/admin/#/loop" }, now, { ignoreQuiet: true });
+  return true;
+}
+
+/** 5분마다·매시: 보류가 끝난 출시 안내를 보내요. 스스로 안내 스위치가 꺼져 있으면 보내지 않아요(사람이 '지금 보내기'). */
 export async function shipTick(env, now = Date.now(), answer) {
+  if (!(await loopSwitches(env)).autoShip) return [];
   const rows = await all(env, "SELECT * FROM loop_ships WHERE status = 'waiting' AND until <= ?", now).catch(() => []);
   const out = [];
   for (const r of rows) out.push(await sendShip(env, r.version, now, answer ?? autoReply, "자동"));
@@ -743,16 +780,21 @@ export async function instantOk(env, pile, kind, text) {
 
 // ---- [LOOP-18] 연결 점검 ----
 
+/** [LOOP-32] 트랙 100% 판이 실제로 나갔는지 한 마디로. */
+const seenWords = (s) => (s.live ? `실제로 나감(휴대폰 ${s.phones}대)` : `검토 중이거나 아직 안 나갔을 수 있어요(이 판 휴대폰 ${s.phones}/${s.need}대)`);
+
 /**
  * 실제 Play·GitHub에 처음 붙기 전에 한 화면에서: 무엇이 됐고 무엇이 빠졌는지 한 줄씩. play가 참이면 Play 트랙을 한 번 읽어 봐요
  * (편집을 열고 읽고 지움, 확정하지 않음). 값(열쇠·비밀값)은 보이지 않고 있는지만.
  */
 export async function loopCheck(env, now, { play = false } = {}) {
-  const [sw, train, track, sync, syncKey, opsKey] = await Promise.all([
+  const [sw, train, track, sync, syncKey, opsKey, job] = await Promise.all([
     loopSwitches(env), loopTrain(env), readSetting(env, "play_track", {}),
     one(env, "SELECT * FROM loop_syncs ORDER BY id DESC LIMIT 1").catch(() => null),
     one(env, "SELECT last_at FROM admin_keys WHERE scope = 'sync' AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 1", now).catch(() => null),
     one(env, "SELECT last_at FROM admin_keys WHERE scope = 'ops' AND revoked_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 1", now).catch(() => null),
+    // [LOOP-32] 매시 17분 Play 읽기의 마지막 성공·실패(ops-watch.js job_runs).
+    one(env, "SELECT ok_at, fail_at, error FROM job_runs WHERE step = 'play'").catch(() => null),
   ]);
   const lines = [];
   const line = (key, name, state, text, fix = "") => lines.push({ key, name, state, text, ...(fix ? { fix } : {}) });
@@ -760,12 +802,20 @@ export async function loopCheck(env, now, { play = false } = {}) {
   else if (play) {
     try {
       const r = await readProduction(env, now);
-      line("play", "Play 출시 읽기", "ok", `방금 읽었어요 · 100% 나간 판 ${r?.done ?? "없음"}${r?.rolling ? ` · 단계적 ${r.rolling.v} ${Math.round((r.rolling.fraction ?? 0) * 100)}%` : ""}`);
+      const shipped = await shippedVersion(env);
+      const fresh = r?.done && (!shipped || compareVersions(version(r.done), version(shipped.v)) > 0);
+      const seen = fresh ? await liveSeen(env, r.done, now, shipped?.v) : null;
+      line("play", "Play 출시 읽기", "ok", `방금 읽었어요 · Play 트랙 100% ${r?.done ?? "없음"}${fresh ? ` · ${seenWords(seen)}` : ""}${r?.rolling ? ` · 단계적 ${r.rolling.v} ${Math.round((r.rolling.fraction ?? 0) * 100)}%` : ""}`);
+      // [LOOP-32] 읽은 것은 남겨요(새로 고쳐도 '한 번도 읽지 않았어요'로 돌아가지 않게). 보류 안내는 매시 작업만 세워요.
+      if (r) await saveSetting(env, "play_track", { ...r, ...(seen ? { seen } : {}) });
     } catch (e) {
       line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 서비스 계정 권한을 봐요");
     }
-  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${iso(track.at)} · 100% 나간 판 ${track.done ?? "없음"}`);
+  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${iso(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
   else line("play", "Play 출시 읽기", "warn", "아직 한 번도 읽지 않았어요", "'Play까지 점검'을 눌러 한 번 읽어 봐요");
+  if (playReady(env) && job?.fail_at && job.fail_at > (job.ok_at ?? 0)) {
+    line("playJob", "매시 Play 읽기", "bad", `${iso(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업 'play'를 봐요");
+  }
   line("autoShip", "스스로 출시 안내", sw.autoShip ? "ok" : "warn", sw.autoShip ? "켜짐 · 100% 출시를 보면 1시간 보류 뒤 안내" : "꺼짐 · '나간 판 저장'을 사람이 눌러요");
   line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${iso(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
     syncKey ? "" : "아래 저장소 동기화 › 동기화 열쇠 만들기 → GitHub Secret BAMNAT_SYNC_KEY");
@@ -836,11 +886,16 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
   if (path === "/loop/tiers" && method === "GET") return json(await tierBoard(env, now));
   if (path === "/loop/autonomy" && method === "GET") return json(await autonomy(env));
   if (path === "/loop/check" && method === "GET") return json(await loopCheck(env, now, { play: url.searchParams.get("play") === "1" && !env.actor?.key }));
-  let m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/(cancel|now)$/);
+  let m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/(cancel|now|live)$/);
   if (m && method === "POST") {
     if (env.actor?.key) return json({ error: "no_permission" }, 403);
-    const row = await one(env, "SELECT * FROM loop_ships WHERE version = ? AND status = 'waiting'", m[1]);
-    if (!row) return json({ error: "not_found" }, 404);
+    // [LOOP-32] '검토 중일 수 있음' 판은 멈추기와 '게시됨 확인'(사람이 Play Console에서 본 뒤)만 돼요.
+    const row = await one(env, "SELECT * FROM loop_ships WHERE version = ? AND status IN ('review', 'waiting')", m[1]);
+    if (!row || (m[2] === "now" && row.status !== "waiting") || (m[2] === "live" && row.status !== "review")) return json({ error: "not_found" }, 404);
+    if (m[2] === "live") {
+      await holdShip(env, m[1], now, `${actorName(env)}님이 Play Console에서 게시를 확인`);
+      return json({ version: m[1], status: "waiting", until: iso(now + LOOP.shipHold) });
+    }
     if (m[2] === "cancel") {
       await run(env, "UPDATE loop_ships SET status = 'cancelled', by = ?, done_at = ? WHERE version = ?", actorName(env), now, m[1]);
       await audit(env, now, "loop_ship_cancel", m[1]);
