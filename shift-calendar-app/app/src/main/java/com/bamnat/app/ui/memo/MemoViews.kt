@@ -694,7 +694,7 @@ internal fun MemoCalendarView(
     val first = ym.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
     val weeks = ((java.time.temporal.ChronoUnit.DAYS.between(first, ym.atEndOfMonth()) / 7) + 1).toInt()
     val byDay = remember(memos, month, shiftsOf) {
-        val shiftly = memos.filter { com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat) == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT && shiftsOf(it) != null }
+        val shiftly = memos.filter { com.bamnat.core.memo.MemoRepeat.followsSchedule(it.repeat) && shiftsOf(it) != null }
         val laid = com.bamnat.core.memo.MemoRepeat.expand(shiftly, first, first.plusDays(weeks * 7L - 1), shiftsOf)
         val rest = MemoView.byDay(memos - shiftly.toSet())
         (rest.keys + laid.mapNotNull { it.date }).associateWith { d -> rest[d].orEmpty() + laid.filter { it.date == d } }

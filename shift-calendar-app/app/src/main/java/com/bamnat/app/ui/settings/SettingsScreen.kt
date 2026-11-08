@@ -247,7 +247,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
                 container.memoRepository.memosFor(id).map { list ->
                     list.filter { m ->
-                        m.repeat.isNotEmpty() && (com.bamnat.core.memo.MemoRepeat.shiftIdOf(m.repeat) == null ||
+                        m.repeat.isNotEmpty() && (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat) ||
                             com.bamnat.app.data.MemoRepository.calendarOf(m, id) == id)
                     }
                 },

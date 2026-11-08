@@ -24,14 +24,14 @@ object MemoSnooze {
      * 1.39 [TASK-39] '다른 때…' (두 앱 실사용 2차: 할 일 앱은 5분 고정, 비즈 달력은 고르는 창): the ways the picking window offers,
      * the day off's morning first when there is one ahead (밤낮은 근무 기준으로 미뤄요).
      */
-    fun choices(rest: LocalDate?): List<Way> =
+    fun choices(rest: LocalDateTime?): List<Way> =
         listOfNotNull(Way.REST.takeIf { rest != null }, Way.MIN10, Way.MIN30, Way.HOUR1, Way.HOUR3, Way.TOMORROW)
 
     /** The third button: to [rest] when there is one, else to tomorrow. */
-    fun later(rest: LocalDate?): Way = if (rest != null) Way.REST else Way.TOMORROW
+    fun later(rest: LocalDateTime?): Way = if (rest != null) Way.REST else Way.TOMORROW
 
     /** The button's words: "10분 뒤", "1시간 뒤", "쉬는 날(11/9)", "내일". */
-    fun label(way: Way, rest: LocalDate?): String = when (way) {
+    fun label(way: Way, rest: LocalDateTime?): String = when (way) {
         Way.MIN10 -> "10분 뒤"
         Way.MIN30 -> "30분 뒤"
         Way.HOUR1 -> "1시간 뒤"
@@ -40,13 +40,16 @@ object MemoSnooze {
         Way.TOMORROW -> "내일"
     }
 
-    /** The new time: [now] on, or the day off's morning ([ShiftMemoTime.OFF_TIME]), or tomorrow at [was]'s time. */
-    fun at(way: Way, now: LocalDateTime, was: LocalDateTime, rest: LocalDate?): LocalDateTime = when (way) {
+    /**
+     * The new time: [now] on, or [rest] (the day off's morning, [ShiftMemoTime.offTime]: the afternoon after a 야간), or tomorrow at
+     * [was]'s time.
+     */
+    fun at(way: Way, now: LocalDateTime, was: LocalDateTime, rest: LocalDateTime?): LocalDateTime = when (way) {
         Way.MIN10 -> now.plusMinutes(10)
         Way.MIN30 -> now.plusMinutes(30)
         Way.HOUR1 -> now.plusHours(1)
         Way.HOUR3 -> now.plusHours(3)
-        Way.REST -> rest?.atTime(ShiftMemoTime.OFF_TIME) ?: now.toLocalDate().plusDays(1).atTime(was.toLocalTime())
+        Way.REST -> rest ?: now.toLocalDate().plusDays(1).atTime(was.toLocalTime())
         Way.TOMORROW -> now.toLocalDate().plusDays(1).atTime(was.toLocalTime())
     }.withSecond(0).withNano(0)
 }

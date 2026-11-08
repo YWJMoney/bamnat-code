@@ -47,6 +47,20 @@ class QuickTaskTest {
         assertNull(quickMemo("  ", QuickDay.READ, ring = true, now))
     }
 
+    /** 1.39 [TASK-44] PC 6차: '매일 오전 9시 24분 …' left '매일' in the title. It is the repeat, and today's time gone rings tomorrow. */
+    @Test fun aDailyLineRepeats() {
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("M/d (E)", java.util.Locale.KOREAN)
+        val m = quickMemo("매일 오전 9시 24분 약 먹기", QuickDay.TODAY, ring = true, now)!!
+        assertEquals("약 먹기", m.title)
+        assertEquals("D", m.repeat)
+        assertEquals(now.toLocalDate().atTime(9, 24), m.reminder?.at)
+        val line = com.bamnat.core.memo.MemoTime.line("매일 오전 9시 24분 약 먹기", now)
+        assertFalse(quickPast(line, QuickDay.TODAY, now))
+        assertEquals("제목: 약 먹기 · 매일 · 11/7 (토)부터 09:24 알림", quickSay(line, QuickDay.TODAY, ring = true, now, fmt))
+        assertEquals("B", quickMemo("평일마다 8시 출근 도장", QuickDay.READ, ring = true, now)!!.repeat)
+        assertEquals("", quickMemo("우유 사기", QuickDay.READ, ring = true, now)!!.repeat)
+    }
+
     /** PC c0ca3d9f: '오늘' was picked but the line still said 11/9 21:00, and a time gone today was dropped without a word. */
     @Test fun theLineSaysWhereTheChipsPutIt() {
         val fmt = java.time.format.DateTimeFormatter.ofPattern("M/d (E)", java.util.Locale.KOREAN)
@@ -112,12 +126,41 @@ class QuickWindowsTest {
     /** 다른 때…: the day off's morning first, then 10분·30분·1시간·3시간 뒤 and 내일 이 시각; nothing moves until one is picked. */
     @Test fun laterOffersTheDayOffFirst() {
         val picked = mutableListOf<com.bamnat.core.memo.MemoSnooze.Way>()
-        window({ MemoLater(java.time.LocalDate.of(2026, 11, 12), onClose = {}, onPick = { picked += it }) }) {
+        window({ MemoLater(java.time.LocalDateTime.of(2026, 11, 12, 9, 0), onClose = {}, onPick = { picked += it }) }) {
         compose.onNodeWithText("쉬는 날(11/12) 아침").assertExists()
         compose.onNodeWithText("3시간 뒤").assertExists()
         assertTrue(picked.isEmpty())
         compose.onNodeWithText("내일 이 시각").performClick()
         assertEquals(listOf(com.bamnat.core.memo.MemoSnooze.Way.TOMORROW), picked)
+        }
+    }
+
+    /** 1.39 [TASK-44] PC 6차: the 일정 창 offers '반복: 안 함·매일·평일·쉬는 날', and the one picked comes back before the save. */
+    @Test fun theScheduleWindowOffersARepeat() {
+        val picked = mutableListOf<Any>()
+        window({
+            com.bamnat.app.ui.memo.ScheduleDialog(
+                initial = LocalDateTime.of(2026, 11, 9, 9, 24), current = null, onDismiss = {},
+                onSave = { picked += it }, now = { LocalDateTime.of(2026, 11, 9, 10, 0) },
+                repeat = "", onRepeat = { picked += it }, restRepeat = true,
+            )
+        }) {
+            compose.onNodeWithText("반복").assertExists()
+            compose.onNodeWithText("평일").assertExists()
+            compose.onNodeWithText("쉬는 날").assertExists()
+            // 9:24 today is gone: a schedule that does not repeat cannot be saved, a daily one can (it rings tomorrow).
+            compose.onNodeWithText("저장", substring = true).assertIsNotEnabled()
+            compose.onNodeWithText("매일").performClick()
+            compose.onNodeWithText("저장", substring = true).performClick()
+            assertEquals(com.bamnat.core.memo.MemoRepeat.Kind.DAY, picked.first())
+            assertEquals(LocalDateTime.of(2026, 11, 9, 9, 24), (picked[1] as com.bamnat.core.memo.MemoReminder).at)
+        }
+    }
+
+    /** PC 6차: after a 야간 the day off is told in the afternoon, and the window says so. */
+    @Test fun laterSaysAfternoonAfterANight() {
+        window({ MemoLater(java.time.LocalDateTime.of(2026, 11, 12, 14, 0), onClose = {}, onPick = {}) }) {
+            compose.onNodeWithText("쉬는 날(11/12) 오후").assertExists()
         }
     }
 }
