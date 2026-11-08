@@ -678,6 +678,12 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             val all = s.insurance.pension && s.insurance.health && s.insurance.employment
             FilterChip(selected = all, onClick = { insTouched = true; s = s.copy(insurance = s.insurance.copy(pension = !all, health = !all, employment = !all)) }, label = { Text("모두") })
         }
+        // 1.39 G2 통합 6차 PC: '모두' pressed before the 생년월일 kept 국민연금 on for a 16세 with nothing said. The ledger leaves it
+        // out by age ([InsuranceRules.of]); the chip says so wherever it was ticked.
+        val pensionAge = s.birth?.let { java.time.Period.between(it, Today.date()).years }
+        if (insTouched && s.insurance.pension && pensionAge != null && (pensionAge < 18 || pensionAge >= 60)) Text(
+            (if (pensionAge < 18) "만 18세 미만은" else "만 60세 이상은") + " 국민연금 의무 가입 대상이 아니에요. 대장은 국민연금을 빼고 계산해요.",
+            style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
         // 1.39 G2 통합 5차 PC: with 국민연금 left off for age the line still said '모두 골라 두었어요'. It now says what was left out and why.
         if (!insTouched && s.insurance.any) Hint(
             if (s.insurance.pension) "월급이거나 한 주 15시간 이상이라 4대보험을 모두 골라 두었어요(법으로 가입 대상). 실제로 들지 않은 보험은 풀어 주세요."
