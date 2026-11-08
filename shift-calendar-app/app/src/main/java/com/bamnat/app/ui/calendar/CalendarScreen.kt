@@ -1237,7 +1237,15 @@ fun CalendarScreen(
             AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈·규칙 쉼",
                 "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
         }
+        // 1.39 [CALX-07] 8차 PC (식당: 시작 카드·급여 대장·알림 1개 더 보기·보기 고르기 네 칸이 쌓여 달력이 맨 아래로): the one-time
+        // '달력만 볼까요' is a notice, the open one, so the others fold under it; it waits while the start card is up and while the
+        // first setup's month fills.
+        val fillingNow = SetupFill.now.collectAsStateWithLifecycle().value?.calendar == activeCalendar.id
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            if (!settings.viewAsked && paint == null && viewingReceived == null && !startCardUp && !fillingNow) add(Notice("viewAsk", "보기 고르기") {
+                CalendarViewAsk(settings.calendarOnly, onAnswer = { only -> vm.updateSettings { it.copy(calendarOnly = only, viewAsked = true) } },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            })
             // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
             // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
             if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
@@ -1608,11 +1616,6 @@ fun CalendarScreen(
             val fillMine = fillMoment?.takeIf { it.calendar == activeCalendar.id && paint == null }
             val fillNow = rememberSetupFill(fillMine, activeCalendar.id, ready = !snap.isEmpty)
             if (fillMine != null) SetupFillCard(fillMine, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-            // 1.39 [CALX-07] Once on a new install, after the month has filled: 달력만 or with the cards.
-            else if (!settings.viewAsked && paint == null && viewingReceived == null) {
-                CalendarViewAsk(settings.calendarOnly, onAnswer = { only -> vm.updateSettings { it.copy(calendarOnly = only, viewAsked = true) } },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
-            }
             if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
             BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)
