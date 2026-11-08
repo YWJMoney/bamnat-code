@@ -3408,6 +3408,16 @@ function adminApp(L, BUILD, M) {
     dialog.querySelector("input:not([type=radio]):not([type=hidden]):not([readonly]),textarea")?.focus();
   }
 
+  /**
+   * 1.39 [PAYP-17] (7차 PC) What a merge carries, in numbers, for its confirm: the company page's [c] (companyInfo, its `carry`).
+   */
+  function mergeWords(c) {
+    const k = c?.carry ?? {};
+    const n = (v) => Number(v) || 0;
+    const talk = `토론 글 ${n(k.posts)}개${n(k.fixes) ? `(보완 요청 ${n(k.fixes)}개 포함)` : ""}`;
+    return `참여한 분 ${n(k.members ?? c?.members)}명, 쓰는 사람 ${n(k.uses)}명, ${talk}도 제보·규칙과 함께 옮겨져요. 되돌릴 수 없고, 예전 이름으로도 찾아져요.`;
+  }
+
   function confirmBox(title, text, label, then, tone = "danger") {
     pendingConfirm = then;
     openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2><p>${esc(text)}</p>
@@ -4806,7 +4816,7 @@ function adminApp(L, BUILD, M) {
     },
     "withdraw-rule": ({ id }) => confirmBox("이 규칙을 내릴까요?", "회사 찾기에서 바로 빠져요. 나중에 다시 올릴 수 있어요.", "내리기", () => setRule(id, true)),
     "restore-rule": ({ id }) => setRule(id, false),
-    "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, "제보와 규칙이 모두 옮겨지고 되돌릴 수 없어요.", "합치기", async () => {
+    "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, mergeWords(S.data.company), "합치기", async () => {
       const c = await api(`/companies/${S.route.id}/merge`, "POST", { into: id });
       S.data.company = c;
       toast("합쳤어요");
@@ -6306,7 +6316,7 @@ function adminApp(L, BUILD, M) {
    */
   const A = {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
-    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
+    confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
   const V = Object.assign({}, ...groups);

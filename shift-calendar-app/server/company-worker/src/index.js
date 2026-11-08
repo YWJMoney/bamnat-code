@@ -6505,7 +6505,7 @@ async function companies(env, query, params = new URLSearchParams()) {
 
 async function companyInfo(env, id) {
   // One trip for the whole page, however many rules the company has.
-  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending], [joined]] = (await batch(env, [
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending], [joined], [carry]] = (await batch(env, [
     stmt(env, "SELECT * FROM companies WHERE id = ?", id),
     stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
@@ -6516,6 +6516,10 @@ async function companyInfo(env, id) {
     stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
     // [PLAZA-13] Phones that joined it (결정 D79).
     stmt(env, "SELECT COUNT(*) AS n FROM members WHERE company_id = ? AND left = 0", id),
+    // 1.39 [PAYP-17] What a merge carries besides reports and rules, said on its confirm (7차 PC): 쓰는 사람, 토론 (보완 요청 among it).
+    stmt(env, `SELECT (SELECT COUNT(DISTINCT device) FROM uses WHERE company_id = ?1) AS uses,
+      (SELECT COUNT(*) FROM posts WHERE company_id = ?1 AND status != 'hidden') AS posts,
+      (SELECT COUNT(*) FROM posts WHERE company_id = ?1 AND status != 'hidden' AND kind = 'fix') AS fixes`, id),
   ])).map((r) => r.results);
   if (!c) return json({ error: "not_found" }, 404);
   const into = intoRows[0] ?? null;
@@ -6544,6 +6548,7 @@ async function companyInfo(env, id) {
   return json({
     id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: into, createdAt: iso(c.created_at), aliases, rules, pending: pending.n,
     members: joined.n,
+    carry: { members: joined.n, uses: carry?.uses ?? 0, posts: carry?.posts ?? 0, fixes: carry?.fixes ?? 0 },
   });
 }
 
