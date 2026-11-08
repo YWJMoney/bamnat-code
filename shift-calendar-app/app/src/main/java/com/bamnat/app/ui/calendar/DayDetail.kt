@@ -375,7 +375,8 @@ private fun DayGroups(
                         }
                     }
                     G.EXTRA -> {
-                        val names = day.extras.map(ExtraText::name)
+                        // 1.39 [WTYP-30] PC 6차: 일근 says 야근 here as on the chip above.
+                        val names = day.extras.map { ExtraText.name(it, style) }
                         val review = day.extras.any { it.entry.needsReview }
                         DayGroup(
                             title = if (style == com.bamnat.core.work.WorkStyle.FIELD) "일정 더하기" else "추가 근무", icon = Icons.Outlined.MoreTime,

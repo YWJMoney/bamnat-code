@@ -144,12 +144,22 @@ object ExtraText {
         e.entry.kindId == choice.entry.kindId && e.entry.coveredShiftId == choice.entry.coveredShiftId
     }
 
-    /** The piece's name to say back: "야간 대근", "잔업 2시간", "특근". */
-    fun name(e: ResolvedExtra): String = when {
+    /**
+     * The piece's name to say back: "야간 대근", "잔업 2시간", "특근". With [style] 일근 the built-in 잔업 is "야근", the
+     * weekday worker's own word ([J133-27]), the same on the chip, the 추가 근무 line and its rows (1.39 [WTYP-30] PC 6차).
+     */
+    fun name(e: ResolvedExtra, style: com.bamnat.core.work.WorkStyle? = null): String = when {
         e.covered != null -> coverName(e.kind, e.covered)
-        namesHours(e) -> "${e.kind.name} ${HoursFormat.korean(e.minutes)}"
-        else -> e.kind.name
+        namesHours(e) -> "${kindName(e.kind, style)} ${HoursFormat.korean(e.minutes)}"
+        else -> kindName(e.kind, style)
     }
+
+    /** [kind]'s name, "야근" for a weekday worker's built-in 잔업 ([J133-27]). */
+    fun kindName(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String = word(kind.name, kind.id, style)
+
+    /** [text] with 잔업 said "야근" when it is the built-in 잔업 of a weekday worker ([J133-27]). */
+    fun word(text: String, kindId: Long, style: com.bamnat.core.work.WorkStyle?): String =
+        if (style == com.bamnat.core.work.WorkStyle.DAY && kindId == ExtraKind.OVERTIME_ID) text.replace("잔업", "야근") else text
 
     /** Whether [name] already says how long the piece is, as "잔업 2시간" does. */
     fun namesHours(e: ResolvedExtra): Boolean = e.covered == null && !e.entry.hasTimes
