@@ -1070,8 +1070,9 @@ async function noteDeploy(env, got) {
   const was = got.server_version ?? null;
   if (was === name) return;
   if (was === null) {
-    await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('server_version', ?)").bind(name).run();
-    if (!got.schema) return;
+    // 1.39 실서버(11-08): 배포 직후 isolate 여럿이 함께 '아직 없음'을 읽어 '서버 배포'가 4줄 남았어요. 이 줄을 실제로 넣은 쪽 하나만 적어요.
+    const r = await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('server_version', ?)").bind(name).run();
+    if (!got.schema || !r?.meta?.changes) return;
   } else {
     const r = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'server_version' AND value = ?").bind(name, was).run();
     if (!r?.meta?.changes) return;
