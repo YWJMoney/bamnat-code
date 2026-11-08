@@ -59,6 +59,7 @@
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
 import { glance } from "./glance.js";
+import { similarCompanies, skipSimilar } from "./company-similar.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // AX 1.30 [ADMX-02] 판 차이 (src/plaza-diff.js) and [ADMX-01][ADMX-06][ADMX-07][ADMX-08][ADMX-10] the developer app's
@@ -5090,6 +5091,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/asks\/([A-Za-z0-9]{22})$/);
   if (m && method === "POST") return answer(request, env, m[1], now);
   if (path === "/companies" && method === "GET") return json(await companies(env, url.searchParams.get("q"), url.searchParams));
+  // 1.39 [ADM3-45] 이름이 비슷한 회사 합치기 제안(실서버 둘러보기 B2).
+  if (path === "/companies/similar" && method === "GET") return json(await similarCompanies(env));
+  if (path === "/companies/similar/skip" && method === "POST") return skipSimilar(request, env, now);
   if (path === "/companies" && method === "POST") return createCompany(request, env, now);
   m = path.match(/^\/companies\/([A-Za-z0-9]{12})(\/aliases|\/aliases\/remove|\/merge)?$/);
   if (m && method === "GET" && !m[2]) return companyInfo(env, m[1]);

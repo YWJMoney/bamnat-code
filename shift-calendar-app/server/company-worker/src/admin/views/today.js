@@ -25,6 +25,29 @@ export function todayViews(A) {
       <ul class="alert-list">${list.map((a) => `<li class="${a.tone === "bad" ? "bad" : "warn"}"><a href="${esc(a.to)}"><b>${esc(a.title)}</b>${a.meta ? `<small>${esc(a.meta)}</small>` : ""}</a>${icon(P.chevron)}</li>`).join("")}</ul></section>`;
   }
 
+  /**
+   * 1.39 [ADM3-47] 크롬 둘러보기 디자인 관찰 '첫 화면은 오늘 상태 한 문장 + 할 일 3개': 주의 필요의 수로 한 문장(빨강이 있으면 빨강),
+   * 그 아래 할 일에서 기한이 가장 가까운 셋. 주의 필요 목록과 할 일 전체는 아래 카드에 그대로 있어요. 모양은 숫자 › 한눈에의 큰 신호와 같아요.
+   */
+  function heroCard(t, o, hi) {
+    const alerts = Array.isArray(t.alerts) ? t.alerts : [];
+    const hide = snoozed();
+    const todo = (t.todo?.items ?? []).filter((x) => !hide[`${x.type}:${x.id}`]);
+    const bad = alerts.filter((a) => a.tone === "bad");
+    const tone = bad.length ? "bad" : alerts.length ? "warn" : "ok";
+    const line = bad.length ? `바로 볼 것이 ${bad.length}개 있어요` : alerts.length ? `살펴볼 것이 ${alerts.length}개 있어요`
+      : todo.length ? `급한 일은 없고, 할 일이 ${todo.length}개예요` : "지금 기다리는 일이 없어요";
+    const sum = [can("inquiries") ? `답 대기 ${o.inquiries ?? 0}` : "", can("review") ? `검토 대기 ${L.reviewCount(o)}` : "", o.doneToday ? `오늘 처리 ${o.doneToday}` : ""].filter(Boolean).join(" · ");
+    const line2 = alerts.length ? `${bad[0]?.title ?? alerts[0].title}${alerts.length > 1 ? ` 외 ${alerts.length - 1}개는 아래 '주의 필요'에` : ""}` : "";
+    const picks = todo.slice(0, 3).map((x) => ({ tone: "todo", to: inboxLink(x), title: `${INBOX_NAMES[x.type] ?? x.type} · ${x.title}`, meta: x.company ?? "", due: x }));
+    const rest = todo.length - picks.length;
+    return `<section class="gl-hero today-hero ${tone}" aria-labelledby="today-hero-h"><div class="gl-hero-top"><span class="gl-pulse" aria-hidden="true"><span></span></span>
+        <div class="gl-hero-text"><p class="gl-eyebrow">${esc(hi)}, ${esc(S.me.name)}님</p><h2 id="today-hero-h">${esc(line)}</h2>${line2 ? `<p class="gl-sub today-why">${esc(line2)}</p>` : ""}${sum ? `<p class="gl-sub">${esc(sum)}</p>` : ""}</div></div>
+        ${picks.length ? `<ol class="today-three">${picks.map((p, i) => `<li class="${p.tone}"><a href="${esc(p.to)}"><span class="n" aria-hidden="true">${i + 1}</span>
+          <span class="t"><b>${esc(p.title)}</b><span class="sub">${p.due ? dueText(p.due, Date.now()) : ""}${p.meta ? `<small>${esc(p.meta)}</small>` : ""}</span></span>${icon(P.chevron)}</a></li>`).join("")}</ol>` : ""}
+        ${picks.length ? `<p class="today-rest">지금 할 ${picks.length}가지${rest > 0 ? ` · 나머지 ${rest}개는 아래 '할 일'에` : ""}</p>` : ""}</section>`;
+  }
+
   function homeView() {
     const t = S.data.today;
     const top = flagAlertCard();
@@ -74,8 +97,8 @@ export function todayViews(A) {
     const people = (o.assigned ?? []).length ? `<section class="card"><h2>누가 몇 건 맡았나</h2><ul class="people">${o.assigned.map((a) =>
       `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul></section>` : "";
     const views = S.prefs.views.filter((v) => String(v.hash).startsWith("#/"));
-    return `${top}<div class="hello"><h2>${esc(hi)}, ${esc(S.me.name)}님</h2>
-        <p>${o.doneToday ? `오늘 ${o.doneToday}건 처리했어요. ` : ""}${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p></div>
+    return `${top}${heroCard(t, o, hi)}
+      <p class="hello-who">${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p>
       ${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
       <a class="sort-nudge" href="#/desk">${icon(P.check)}<span><b>운영 장부</b> 문의·개발사항·스튜디오 요구·신고·사진을 한 줄씩. ${can("inquiries") && o.inquiries ? `답 대기 ${o.inquiries}건은 겹침과 보낼 답까지 적어 두었어요. ` : ""}오늘 할 것부터 빠짐없이 처리해요</span>${icon(P.chevron)}</a>
       ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
