@@ -1235,5 +1235,8 @@ a.gl-gauge:hover{border-color:var(--g)}
 .today-three .t .sub{display:flex;align-items:center;gap:.4rem;min-width:0}.today-three .t .sub>*{flex:none}.today-three .t .sub small{flex:1;min-width:0}
 .today-three svg{flex:none;width:1.1rem;height:1.1rem;color:var(--faint)}
 .today-rest{margin:.6rem 0 0;font-size:.8rem;color:var(--muted)}
+.shown-above{margin:.35rem 0 0}.shown-above>summary{cursor:pointer;list-style:none;font-size:.82rem;font-weight:700;color:var(--muted);padding:.35rem .1rem}
+.shown-above>summary::before{content:"▸ ";color:var(--faint)}.shown-above[open]>summary::before{content:"▾ "}
+.shown-above .alert-list,.shown-above .rows{opacity:.85}
 .hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
 `;
