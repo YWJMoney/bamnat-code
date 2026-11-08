@@ -30,7 +30,9 @@ internal object MarketDisk {
     @Volatile private var writes = 0
 
     private fun root(context: Context) = File(context.cacheDir, "market")
-    private fun shotDir(context: Context) = File(root(context), "shot-${com.bamnat.app.BuildConfig.VERSION_CODE}")
+    /** 1.39 [MKP-06] Raised when a card is drawn differently within one app version (2: in its own fonts), so older pictures go. */
+    private const val DRAW = 2
+    private fun shotDir(context: Context) = File(root(context), "shot-${com.bamnat.app.BuildConfig.VERSION_CODE}-$DRAW")
     private fun bodyDir(context: Context) = File(root(context), "body")
 
     private fun name(key: String): String =
@@ -49,7 +51,7 @@ internal object MarketDisk {
             val dir = shotDir(context).apply { mkdirs() }
             val bmp = picture.asAndroidBitmap().let { b ->
                 // A picture read back from a layer can live on the graphics card; it is copied out before it is written.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && b.config == Bitmap.Config.HARDWARE) b.copy(Bitmap.Config.ARGB_8888, false) else b
+                if (b.config == Bitmap.Config.HARDWARE) b.copy(Bitmap.Config.ARGB_8888, false) else b
             }
             val tmp = File(dir, name(key) + ".tmp")
             tmp.outputStream().use { out ->
@@ -82,6 +84,32 @@ internal object MarketDisk {
         }
     }
 
+    // ---- 1.39 [MKP-07] 장터 목록을 폰에 두기 (사용자 2026-11-08 "아직도 장터 로딩이 너무 느려") ----
+
+    private fun listDir(context: Context) = File(root(context), "list")
+
+    /**
+     * The list last read for [key] (구간·칸·찾기·근무 유형) and when, or null: shown at once when the 장터 is opened after the app was
+     * closed, while it is read again. Kept [MAX_DAYS] at most, like the rest.
+     */
+    suspend fun list(context: Context, key: String): Pair<com.bamnat.app.recipe.RecipePage, Long>? = withContext(Dispatchers.IO) {
+        val f = File(listDir(context), name(key) + ".json")
+        if (!f.isFile) return@withContext null
+        val at = f.lastModified()
+        if (at < com.bamnat.core.time.Today.millis() - MAX_DAYS * DAY) return@withContext null
+        runCatching { com.bamnat.app.recipe.RecipeClient.pageOf(org.json.JSONObject(f.readText())) to at }.getOrNull()
+    }
+
+    suspend fun keepList(context: Context, key: String, raw: String) = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = listDir(context).apply { mkdirs() }
+            val tmp = File(dir, name(key) + ".tmp")
+            tmp.writeText(raw)
+            tmp.renameTo(File(dir, name(key) + ".json"))
+            tidyNow(context)
+        }
+    }
+
     /** Every 20th write: old app versions' pictures, files past [MAX_DAYS], then the oldest past [MAX_BYTES]. */
     private fun tidyNow(context: Context) {
         if (++writes % 20 != 1) return
@@ -106,7 +134,9 @@ internal object MarketDisk {
     fun complete(context: Context, body: String): Boolean {
         val pictures = PICTURE.findAll(body).map { it.groupValues[1] }.toSet()
         if (pictures.any { !com.bamnat.app.recipe.LookImages.has(context, it) }) return false
-        return com.bamnat.app.recipe.RecipeFonts.idsIn(body).all { com.bamnat.app.ui.theme.UserFonts.file(context, it) != null }
+        if (!com.bamnat.app.recipe.RecipeFonts.idsIn(body).all { com.bamnat.app.ui.theme.UserFonts.file(context, it) != null }) return false
+        // 1.39 [MKP-06] and every open font it names, whole or as a card font (a card drawn in the phone's font is drawn again next time).
+        return MarketFonts.complete(context, MarketFonts.ids(body))
     }
 
     private val PICTURE = Regex("\"([0-9a-f]{16})\"")

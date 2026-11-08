@@ -142,7 +142,9 @@ data class RecipePage(val items: List<RecipeItem>, val next: Int?,
      * 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): each work's written form (hash, body) by
      * "code@version", sent with the list (`body=1`) so a card is drawn without asking for its work alone; empty from an older server.
      */
-    val bodies: Map<String, Pair<String, String>> = emptyMap())
+    val bodies: Map<String, Pair<String, String>> = emptyMap(),
+    /** 1.39 [MKP-07] The answer as it came, so the phone can keep it and show it at once next time ([RecipeClient.pageOf]). */
+    val raw: String? = null)
 
 /** [RCP-29] What the server said of a recipe sent. */
 data class Sent(val code: String, val version: Int, val hash: String, val state: String, val scope: String)
@@ -412,9 +414,7 @@ class RecipeClient(
             }
         }.joinToString("&")
         val o = call("GET", "/api/recipes?$query&body=1")
-        val rows = o.optJSONArray("items").objects()
-        RecipePage(rows.map(::item), if (o.isNull("next")) null else o.optInt("next"),
-            rows.mapNotNull { r -> r.optStringOrNull("body")?.let { b -> r.optStringOrNull("hash")?.let { h -> "${r.getString("code")}@${r.optInt("version", 1)}" to (h to b) } } }.toMap())
+        pageOf(o).copy(raw = o.toString())
     }
 
     override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc = readCall {
@@ -727,6 +727,13 @@ class RecipeClient(
 
         /** The server keeps shared fonts up to 8 MB. */
         const val FONT_MAX = 8 * 1024 * 1024
+
+        /** A list answer ([RecipeApi.list]): its cards, the next page, and the written forms that came with them. */
+        fun pageOf(o: JSONObject): RecipePage {
+            val rows = o.optJSONArray("items").objects()
+            return RecipePage(rows.map(::item), if (o.isNull("next")) null else o.optInt("next"),
+                rows.mapNotNull { r -> r.optStringOrNull("body")?.let { b -> r.optStringOrNull("hash")?.let { h -> "${r.getString("code")}@${r.optInt("version", 1)}" to (h to b) } } }.toMap())
+        }
         fun item(o: JSONObject): RecipeItem {
             val c = o.optJSONObject("cover")
             return RecipeItem(

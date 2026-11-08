@@ -26,6 +26,11 @@ import org.json.JSONObject
 @android.annotation.SuppressLint("StaticFieldLeak") // only the application context (see init)
 object AppFonts {
     private val cache = ConcurrentHashMap<String, FontFamily>()
+
+    /** 1.39 [MKP-06] What a 장터 card's example phone names a font as ("card:" + id), so its parts read the card's small font. */
+    const val CARD = "card:"
+    /** "card:<id>" → only the letters a card shows of <id> ([com.bamnat.app.ui.recipe.MarketFonts]); never read outside a card. */
+    val cards = ConcurrentHashMap<String, FontFamily>()
     // The application context only (init takes applicationContext), so nothing short-lived is kept.
     @android.annotation.SuppressLint("StaticFieldLeak")
     @Volatile private var app: Context? = null
@@ -39,6 +44,8 @@ object AppFonts {
     /** [id]'s family, or null for the app's own (no font chosen). */
     fun family(context: Context?, id: String?): FontFamily? {
         if (id == null) return null
+        // 1.39 [MKP-06] A 장터 card's part named "card:<id>": that font's small file if the card has it, else the font as anywhere else.
+        if (id.startsWith(CARD)) return cards[id]?.takeUnless { com.bamnat.app.diag.StartGuard.safe.value } ?: family(context, id.removePrefix(CARD))
         // 1.36 [SEC-10] 보안 점검 M2: 안전 모드 draws a downloaded or received font as the phone's closest one (not kept, so
         // 평소대로 brings the font back).
         if (com.bamnat.app.diag.StartGuard.safe.value && (FontCatalog.isUser(id) || FontCatalog.byId(id)?.family != null)) {
@@ -156,9 +163,22 @@ object AppFonts {
 fun rememberFontFamily(id: String?, fetch: Boolean = true): FontFamily? {
     val ctx = LocalContext.current
     val load = id?.let { AppFonts.loads[it] }
-    if (fetch && id != null && AppFonts.downloads(id) && load == null) androidx.compose.runtime.LaunchedEffect(id) { AppFonts.start(ctx, id) }
-    return remember(id, load) { AppFonts.family(ctx, id) }
+    // 1.39 [MKP-06] Inside a 장터 card: never the whole font (2~14 MB a card); the card's small font of only its letters, if it has one.
+    val card = LocalCardFonts.current
+    val small = if (card != null && id != null) card[id] else null
+    if (card == null && fetch && id != null && AppFonts.downloads(id) && load == null) androidx.compose.runtime.LaunchedEffect(id) { AppFonts.start(ctx, id) }
+    return remember(id, load, small) {
+        small?.takeIf { OpenFonts.file(ctx, id!!, bold = false) == null } ?: AppFonts.family(ctx, id)
+    }
 }
+
+/**
+ * 1.39 [MKP-06] 장터 카드 글꼴 (사용자 2026-11-08 "아직도 장터 로딩이 너무 느려"): non-null while a 장터 card's example phone is drawn. The
+ * open fonts it names are then not brought down whole (each card started a 2~14 MB download, so a page of 테마 pulled tens of MB
+ * before its pictures were done); a font found here (only the letters a card shows, [com.bamnat.app.ui.recipe.MarketFonts]) is used,
+ * and any other the closest phone font.
+ */
+val LocalCardFonts = androidx.compose.runtime.staticCompositionLocalOf<Map<String, FontFamily>?> { null }
 
 /** Every text style of [this] in [family] (sizes, weights and spacing stay). */
 fun Typography.inFamily(family: FontFamily?): Typography = if (family == null) this else Typography(
