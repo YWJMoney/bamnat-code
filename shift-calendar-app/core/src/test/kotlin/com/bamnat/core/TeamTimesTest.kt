@@ -50,4 +50,41 @@ class TeamTimesTest {
         assertEquals(LocalTime.of(7, 0) to LocalTime.of(19, 0), two[1L])
         assertEquals(LocalTime.of(19, 0) to LocalTime.of(7, 0), two[2L])
     }
+
+    /** 1.39 [SETUP-21] PC 5차 리더 폰: the team's times go to the leader's own kinds of the same name or sort; one set by hand is asked. */
+    @Test fun theLeadersOwnCalendarTakesTheTeamsTimes() {
+        fun t(h: Int) = LocalTime.of(h, 0)
+        val defaults = listOf(
+            com.bamnat.core.model.ShiftType(0, "주간", "주", 0, t(9), t(18)),
+            com.bamnat.core.model.ShiftType(0, "야간", "야", 0, t(22), t(7)),
+        )
+        val team = Team("t", "7병동", shifts = listOf(
+            TeamShift(11, "주", "주", 0, false, t(7), t(15)),
+            TeamShift(12, "오", "오", 0, false, t(15), t(23)),
+            TeamShift(13, "야", "야", 0, false, t(23), t(7)),
+            TeamShift(14, "휴", "휴무", 0, true),
+        ))
+        val mine = listOf(
+            com.bamnat.core.model.ShiftType(1, "주간", "주", 0, t(9), t(18)),
+            com.bamnat.core.model.ShiftType(2, "야간", "야", 0, t(22), t(7)),
+            com.bamnat.core.model.ShiftType(3, "휴무", "휴", 0, null, null, isOff = true),
+        )
+        val changes = TeamTimes.mine(team, mine, defaults)
+        assertEquals(listOf(1L, 2L), changes.map { it.type.id })
+        assertEquals(t(7) to t(15), changes[0].start to changes[0].end)
+        assertEquals(t(23) to t(7), changes[1].start to changes[1].end)
+        assertTrue("the app's own times change without asking", changes.none { it.ask })
+
+        // 주간 changed by hand to 08–17: asked. A kind already at the team's time is left alone.
+        val byHand = listOf(mine[0].copy(start = t(8), end = t(17)), mine[1].copy(start = t(23), end = t(7)), mine[2])
+        val asked = TeamTimes.mine(team, byHand, defaults)
+        assertEquals(listOf(1L), asked.map { it.type.id })
+        assertTrue(asked.single().ask)
+
+        // The same id wins over the name; two of the same sort on one side are not guessed.
+        val twoDays = listOf(mine[0], mine[0].copy(id = 4, name = "주간2", label = "주2"))
+        assertTrue(TeamTimes.mine(team, twoDays, defaults).isEmpty())
+        val byId = Team("t", "7병동", shifts = listOf(TeamShift(4, "D", "데이", 0, false, t(6), t(14))))
+        assertEquals(listOf(4L), TeamTimes.mine(byId, twoDays, defaults).map { it.type.id })
+    }
 }
