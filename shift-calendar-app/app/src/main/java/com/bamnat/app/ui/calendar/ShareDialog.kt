@@ -745,6 +745,8 @@ private fun expiryText(s: ShareLinkState): String =
 
 private fun messageFor(e: Exception, options: ShareOptions): String = when (e.message) {
     "rate_limited" -> com.bamnat.app.company.RateLimits.text("링크 만들기", 3_600, "device")
+    // 1.39 [CARE-09] 7차 PC: a title with a phone number etc. (1.39 server), in the line's own words.
+    "contact" -> com.bamnat.app.share.linkProblem(e) ?: com.bamnat.core.plaza.TeamLinkText.contact(null)
     "not_found", "forbidden" -> "이 링크는 이미 지워졌어요. 링크 끊기를 누른 뒤 새로 만들어 주세요."
     // A server from before 1.10 takes only shifts and leave.
     // [SHR-11] A server from before 1.13 takes no 일정 and no link without shifts.

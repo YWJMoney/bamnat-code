@@ -89,7 +89,10 @@ import com.bamnat.core.setup.SetupStep
  */
 private data class Primary(
     val label: String, val enabled: Boolean = true, val hint: String? = null,
-    val note: String? = null, val secondary: Pair<String, () -> Unit>? = null, val onClick: () -> Unit,
+    val note: String? = null, val secondary: Pair<String, () -> Unit>? = null,
+    /** 1.39 7차 PC 1-12: a small ask said right above the button (the usage-stats yes/no on the first setup's last step). */
+    val above: (@Composable () -> Unit)? = null,
+    val onClick: () -> Unit,
 )
 
 /**
@@ -173,7 +176,7 @@ fun SetupHost(
     }
     val inviteDays by inviteContainer.invites.store.state.collectAsStateWithLifecycle()
     val todayAsk by vm.todayAsk.collectAsStateWithLifecycle()
-    val primary = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
+    val primaryNoAsk = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
         val code = inviteCode
         if (p == null || !atSummary || code == null) p
         else p.copy(
@@ -185,6 +188,13 @@ fun SetupHost(
                 p.onClick()
             },
         )
+    }
+    // [EASE-05][ONBOARD-05][OBS2-06] 사용 통계: 첫 설정에서만, 미리 켜 두지 않고 두 단추로 직접 골라요(D42). 1.39 7차 PC 1-12: 요약
+    // 본문 맨 아래에 있으면 스크롤해야 보여서, 저장 단추 바로 위에 둬요. 고르지 않고 저장해도 꺼짐 그대로예요.
+    val statsSettings by inviteContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    val primary = primaryNoAsk?.let { p ->
+        if (!atSummary) p
+        else p.copy(above = { com.bamnat.app.ui.onboarding.StatsAsk(statsSettings.shareUsageStats) { inviteContainer.setUsageStats(it) } })
     }
     val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
@@ -398,6 +408,7 @@ private fun BottomButton(p: Primary, busy: Boolean) {
             Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            p.above?.let { Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(bottom = 8.dp)) { it() } }
             p.note?.let {
                 Text(
                     it,

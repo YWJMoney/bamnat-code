@@ -57,7 +57,7 @@ export function plazaViews(A) {
     if ((f === "all" || f === "groups" || f === "shape") && groups.length) {
       const title = f === "shape" ? "" : f === "all" ? `<h2 class="section">채택을 기다리는 제보<span class="count">${groups.length}</span></h2>` : "";
       const lead = f === "shape" ? '<p class="hint">같은 회사·부서인데 교대 수나 주기 길이가 쓰는 판과 크게 달라요. 다른 부서일 수 있으니 토론과 메모를 보고 정해 주세요.</p>' : "";
-      parts.push(`${title}${lead}<ul class="rows review-rows">${groups.map((g) => groupRow(g, editable, picking)).join("")}</ul>`);
+      parts.push(`${title}${lead}${editable ? L.draftEmpty(groups) : ""}<ul class="rows review-rows">${groups.map((g) => groupRow(g, editable, picking)).join("")}</ul>`);
     }
     if ((f === "all" || f === "asks") && q.asks.length) {
       parts.push(`<h2 class="section">앱에 없는 방식<span class="count">${q.asks.length}</span></h2><p class="hint">앱으로 설정하지 못한 방식이에요. 답을 고르면 보낸 분 앱에 보여요.</p>
@@ -236,7 +236,7 @@ export function plazaViews(A) {
     const side = (c) => `<b>${esc(c.name)}</b><small>제보 ${c.reports} · 규칙 ${c.rules} · 참여 ${c.members}</small>`;
     return `<section class="card similar" aria-labelledby="similar-title"><div class="card-head"><h2 id="similar-title">같은 회사일까요? <span class="pill warn">${pairs.length}쌍</span></h2>
         <span class="meta">이름이 비슷해요. 합치면 제보·규칙·참여가 한곳에 모여요</span></div>
-      <ul class="rows similar-rows">${pairs.map((p) => `<li><div class="pair"><a href="${href("companies", p.from.id)}">${side(p.from)}</a><span class="arrow" aria-hidden="true">→</span>
+      ${L.draftEmpty(pairs)}<ul class="rows similar-rows">${pairs.map((p) => `<li><div class="pair"><a href="${href("companies", p.from.id)}">${side(p.from)}</a><span class="arrow" aria-hidden="true">→</span>
           <a href="${href("companies", p.into.id)}">${side(p.into)}</a></div><small class="why">${esc(p.why)}</small>
         ${L.draftNote(p.draft)}
         <div class="actions start"><button class="btn small primary" data-act="similar-merge" data-from="${p.from.id}" data-into="${p.into.id}" data-a="${esc(p.from.name)}" data-b="${esc(p.into.name)}">이쪽으로 합치기</button>
@@ -320,7 +320,9 @@ export function plazaViews(A) {
     },
     // [ADMX-06]
     // 1.39 [ADM3-45] 비슷한 회사 짝.
-    "similar-merge": ({ from, into, a, b }) => A.confirmBox(`‘${a}’ 회사를 ‘${b}’ 회사에 합칠까요?`, "제보·규칙·참여가 모두 옮겨지고 되돌릴 수 없어요. 예전 이름으로도 찾아져요.", "합치기", async () => {
+    // 1.39 [PAYP-17] (7차 PC) the confirm says what goes along, in numbers, read from the company that goes.
+    "similar-merge": async ({ from, into, a, b }) => A.confirmBox(`‘${a}’ 회사를 ‘${b}’ 회사에 합칠까요?`,
+      A.mergeWords(await api(`/companies/${from}`).catch(() => null)), "합치기", async () => {
       await api(`/companies/${from}/merge`, "POST", { into });
       toast("합쳤어요");
       S.data.similar = await api("/companies/similar").catch(() => S.data.similar);

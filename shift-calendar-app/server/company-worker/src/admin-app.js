@@ -2283,7 +2283,7 @@ function adminApp(L, BUILD, M) {
     const edit = can("rewards", "edit");
     const segs = [["owed", "드릴 보상"], ["paid", "지급함"], ["void", "취소"]].map(([key, label]) => seg("reward-tab", key, S.rewardTab, label, counts[key])).join("");
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
-      : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
+      : `${S.rewardTab === "owed" && edit ? L.draftEmpty(r.rewards) : ""}<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
           <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
@@ -3408,6 +3408,16 @@ function adminApp(L, BUILD, M) {
     dialog.querySelector("input:not([type=radio]):not([type=hidden]):not([readonly]),textarea")?.focus();
   }
 
+  /**
+   * 1.39 [PAYP-17] (7차 PC) What a merge carries, in numbers, for its confirm: the company page's [c] (companyInfo, its `carry`).
+   */
+  function mergeWords(c) {
+    const k = c?.carry ?? {};
+    const n = (v) => Number(v) || 0;
+    const talk = `토론 글 ${n(k.posts)}개${n(k.fixes) ? `(보완 요청 ${n(k.fixes)}개 포함)` : ""}`;
+    return `참여한 분 ${n(k.members ?? c?.members)}명, 쓰는 사람 ${n(k.uses)}명, ${talk}도 제보·규칙과 함께 옮겨져요. 되돌릴 수 없고, 예전 이름으로도 찾아져요.`;
+  }
+
   function confirmBox(title, text, label, then, tone = "danger") {
     pendingConfirm = then;
     openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2><p>${esc(text)}</p>
@@ -4271,7 +4281,7 @@ function adminApp(L, BUILD, M) {
     // 1.39 PC 6차 J1(폭 380): 일곱 장이 쌓여 오늘의 큰 카드가 두 화면 아래로 밀렸어요. 여럿이면 한 장으로 접어요.
     const key = "home:flag-alerts";
     return `<section class="card flag-alert" role="status"><details data-key="${key}"${S.opened.get(key) ? " open" : ""}>
-      <summary class="card-head"><h2>기능 ${list.length}개가 저절로 켜졌어요</h2><span class="pill bad">${esc(ago(list[0].since))}</span><span class="more">펼치기</span></summary>
+      <summary class="card-head"><h2>기능 ${list.length}개가 저절로 켜졌어요</h2><span class="pill bad">${esc(ago(list[0].since))}</span><span class="more">${S.opened.get(key) ? "접기" : "펼치기"}</span></summary>
       ${hint}<ul class="rows flag-alert-list">${list.map((a) => `<li><div class="row"><span class="row-main"><b>${esc(a.name)}${igaSuffix(a.name)} 켜졌어요</b><small>${esc(ago(a.since))}</small></span>
         <span class="row-side">${off(a)}<a class="btn small" href="${flagLink(a.key)}">자세히</a></span></div></li>`).join("")}</ul></details></section>`;
   }
@@ -4806,7 +4816,7 @@ function adminApp(L, BUILD, M) {
     },
     "withdraw-rule": ({ id }) => confirmBox("이 규칙을 내릴까요?", "회사 찾기에서 바로 빠져요. 나중에 다시 올릴 수 있어요.", "내리기", () => setRule(id, true)),
     "restore-rule": ({ id }) => setRule(id, false),
-    "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, "제보와 규칙이 모두 옮겨지고 되돌릴 수 없어요.", "합치기", async () => {
+    "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, mergeWords(S.data.company), "합치기", async () => {
       const c = await api(`/companies/${S.route.id}/merge`, "POST", { into: id });
       S.data.company = c;
       toast("합쳤어요");
@@ -6306,7 +6316,7 @@ function adminApp(L, BUILD, M) {
    */
   const A = {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
-    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
+    confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
   const V = Object.assign({}, ...groups);
@@ -6321,6 +6331,9 @@ function adminApp(L, BUILD, M) {
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
     if (e.target instanceof HTMLDetailsElement && e.target.dataset.key) S.opened.set(e.target.dataset.key, e.target.open);
+    // 1.39 PC 7차 1-8: 펼치기 ↔ 접기 말도 바로 바꿔요(다시 그리기를 기다리지 않고).
+    const more = e.target instanceof HTMLDetailsElement ? e.target.querySelector(":scope>summary .more") : null;
+    if (more && (more.textContent === "펼치기" || more.textContent === "접기")) more.textContent = e.target.open ? "접기" : "펼치기";
   }, true);
 
   /**

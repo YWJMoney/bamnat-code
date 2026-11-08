@@ -921,7 +921,7 @@ private fun ClockLinkLine(s: StaffMember, place: Workplace, onChange: (StaffMemb
                     com.bamnat.app.boss.StaffClockJob.schedule(context)
                     sendClock(context, s.name, link.url)
                     note = null
-                }.onFailure { note = "인터넷이 안 돼 링크를 만들지 못했어요. 연결한 뒤 다시 눌러 주세요." }
+                }.onFailure { e -> note = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 안 돼 링크를 만들지 못했어요. 연결한 뒤 다시 눌러 주세요." }
                 busy = false
             }
         }) { Text("출퇴근 링크 만들어 보내기") }

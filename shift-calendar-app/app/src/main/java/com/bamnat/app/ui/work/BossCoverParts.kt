@@ -62,7 +62,7 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
     val list = remember(place, staff, work, absentId, date) { BossCover.candidates(place, staff, work, absentId, date) }
     var picked by remember(list) { mutableStateOf(list.filter { it.ok }.take(3).map { it.staff.id }.toSet()) }
     var busy by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf<String?>(null) }
     val absent = staff.firstOrNull { it.id == absentId }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("대신 일할 사람") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -90,7 +90,7 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
                     }) { Text("넣기") }
                 }
             }
-            if (failed) Text("요청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            failed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         }
     }, confirmButton = {
         TextButton(enabled = picked.isNotEmpty() && shift != null && !busy, onClick = {
@@ -99,7 +99,7 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
                 val gap = TeamCover.Gap(absentId, date, 0)
                 runCatching { BossCallSync.open(app, place, gap, shift!!, list.map { it.staff }.filter { it.id in picked }) }
                     .onSuccess { (_, k) -> share(context, BossCallSync.message(gap, shift!!, k, staff)); onDismiss() }
-                    .onFailure { failed = true }
+                    .onFailure { e -> failed = com.bamnat.app.share.linkProblem(e) ?: "요청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
                 busy = false
             }
         }) { Text("${picked.size}명에게 요청 보내기") }

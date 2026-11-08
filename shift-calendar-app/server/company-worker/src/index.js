@@ -358,6 +358,8 @@ export async function prune(env, now) {
     // AM 1.28 [FLAG-30]
     stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
+    stmt(env, "DELETE FROM usage_kinds WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // 1.39 [OBS2-08]
+    stmt(env, "DELETE FROM usage_keep WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // 1.39 [OBS2-08]
     stmt(env, "DELETE FROM photo_wrong WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AQ 1.29 [PHOTO-10]
     // 1.36 [INQ-07] A 결제·환불 record keeps its photos (a receipt, a charge) with its words.
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND billing_at IS NULL AND updated_at < ?)",
@@ -860,6 +862,11 @@ const SCHEMA = [
   ...PLAZA_PUSH_SCHEMA,
   ...PLAZA_CHECKIN_SCHEMA,
   ...PLAZA_PICKS_SCHEMA,
+  // 1.39 [OBS2-08] 유형별 흐름과 기능과 머묾(처리방침 3.12, 깃발 stats.kind·stats.keep): 날짜·판·방식(또는 기능·창)별 휴대폰 수만.
+  `CREATE TABLE IF NOT EXISTS usage_kinds (day TEXT NOT NULL, app TEXT NOT NULL, style TEXT NOT NULL, event TEXT NOT NULL, phones INTEGER NOT NULL,
+    PRIMARY KEY (day, app, style, event))`,
+  `CREATE TABLE IF NOT EXISTS usage_keep (day TEXT NOT NULL, app TEXT NOT NULL, event TEXT NOT NULL, win INTEGER NOT NULL, phones INTEGER NOT NULL,
+    PRIMARY KEY (day, app, event, win))`,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -4953,7 +4960,7 @@ function areaFor(path) {
   // 1.39 [ADM3-49] Claude 초안: 종류마다 그 칸 권한을 claude-drafts.js가 봐요.
   if (path === "/drafts") return null;
   // 1.39 [OBS2] 관측: 읽기는 숫자, 신호 처리는 observe.js가(개발사항으로 넘기기는 개발사항 고치기 권한).
-  if (path === "/observe" || path === "/observe/signals") return null;
+  if (path === "/observe" || path === "/observe/signals" || path === "/observe/refresh") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -5245,7 +5252,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.
   if (path === "/glance" && method === "GET") return json(await glance(env, now));
   // 1.39 [OBS2-01~05] 관측 판·개선 신호(observe.js가 숫자·개발사항 권한을 봐요).
-  if (path === "/observe" || path === "/observe/signals") {
+  if (path === "/observe" || path === "/observe/signals" || path === "/observe/refresh") {
     const r = await observeRoute(request, env, path, method, now);
     if (r) return r;
   }
@@ -6505,7 +6512,7 @@ async function companies(env, query, params = new URLSearchParams()) {
 
 async function companyInfo(env, id) {
   // One trip for the whole page, however many rules the company has.
-  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending], [joined]] = (await batch(env, [
+  const [[c], intoRows, aliasRows, ruleRows, reports, votes, [pending], [joined], [carry]] = (await batch(env, [
     stmt(env, "SELECT * FROM companies WHERE id = ?", id),
     stmt(env, "SELECT m.id, m.name FROM companies c JOIN companies m ON m.id = c.merged_into WHERE c.id = ?", id),
     stmt(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
@@ -6516,6 +6523,10 @@ async function companyInfo(env, id) {
     stmt(env, "SELECT COUNT(DISTINCT grp) AS n FROM reports WHERE company_id = ? AND status = 'pending'", id),
     // [PLAZA-13] Phones that joined it (결정 D79).
     stmt(env, "SELECT COUNT(*) AS n FROM members WHERE company_id = ? AND left = 0", id),
+    // 1.39 [PAYP-17] What a merge carries besides reports and rules, said on its confirm (7차 PC): 쓰는 사람, 토론 (보완 요청 among it).
+    stmt(env, `SELECT (SELECT COUNT(DISTINCT device) FROM uses WHERE company_id = ?1) AS uses,
+      (SELECT COUNT(*) FROM posts WHERE company_id = ?1 AND status != 'hidden') AS posts,
+      (SELECT COUNT(*) FROM posts WHERE company_id = ?1 AND status != 'hidden' AND kind = 'fix') AS fixes`, id),
   ])).map((r) => r.results);
   if (!c) return json({ error: "not_found" }, 404);
   const into = intoRows[0] ?? null;
@@ -6544,6 +6555,7 @@ async function companyInfo(env, id) {
   return json({
     id: c.id, name: c.name, hidden: c.hidden === 1, mergedInto: into, createdAt: iso(c.created_at), aliases, rules, pending: pending.n,
     members: joined.n,
+    carry: { members: joined.n, uses: carry?.uses ?? 0, posts: carry?.posts ?? 0, fixes: carry?.fixes ?? 0 },
   });
 }
 

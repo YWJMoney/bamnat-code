@@ -197,4 +197,32 @@ object TeamLinkText {
         "messenger" -> "다른 메신저로 옮기자는 말을"
         else -> "연락처·계좌·다른 메신저를"
     } + " 넣을 수 없어요. 링크로 돈을 요구하는 사기를 막으려는 거예요. 그 줄을 빼고 다시 보내 주세요. 연락은 직접 해 주세요."
+
+    /**
+     * 1.39 [CARE-09] 7차 PC(결원 링크가 '인터넷이 될 때 다시'라고만 했어요): 서버가 어느 글([text], 내가 보낸 글 그대로 40자까지)의 어느 칸([key])인지
+     * 알려 주면 그 줄과 고칠 곳을 말해요. 예: "‘유나 010-1234-5678’에 전화번호가 있어 링크에 넣을 수 없어요. 팀원 이름에서 빼고 다시 보내 주세요."
+     */
+    fun contact(why: String?, text: String?, key: String?): String {
+        if (text.isNullOrBlank()) return contact(why)
+        val what = when (why) {
+            "phone" -> "전화번호가"
+            "link" -> "다른 사이트 주소가"
+            "account" -> "계좌번호 같은 긴 숫자가"
+            "messenger" -> "다른 메신저로 옮기자는 말이"
+            else -> "연락처가"
+        }
+        return "‘${text.trim()}’에 $what 있어 링크에 넣을 수 없어요. ${place(key)}에서 빼고 다시 보내 주세요. 링크로 돈을 요구하는 사기를 막으려는 거예요."
+    }
+
+    /** Where in the app the line is fixed, from the server's field name. */
+    fun place(key: String?): String = when (key) {
+        "people", "names", "name", "staff", "members", "member" -> "팀원·직원 이름"
+        "team" -> "팀·가게 이름"
+        "place" -> "가게 이름"
+        "title" -> "제목(이름)"
+        "type", "labels", "label" -> "근무 이름"
+        "detail", "note", "memo", "body" -> "적은 글"
+        "t", "b", "items" -> "계약서 항목"
+        else -> "그 줄"
+    }
 }

@@ -22,11 +22,14 @@ function installsCsv(list, spike = false) {
 const storeCsv = (list) => ["Date,Package name,Traffic source,Search term,UTM source,UTM campaign,Store listing acquisitions,Store listing visitors,Store listing conversion rate",
   ...list.flatMap((d) => [`${d},com.bamnat.app,Google Play search,"근무표, 교대",,,6,40,15.00%`, `${d},com.bamnat.app,Third-party referrals,,bamnat_web,calc,2,5,40.00%`])].join("\n");
 const versionsCsv = (list) => ["Date,Package Name,App Version Code,Daily Device Installs,Daily Device Uninstalls,Daily Device Upgrades,Active Device Installs,Install events,Update events,Uninstall events",
-  ...list.flatMap((d, i) => [`${d},com.bamnat.app,52,1,0,0,30,1,0,0`, ...(i >= 3 ? [`${d},com.bamnat.app,53,1,0,1,10,1,1,0`] : [])])].join("\n");
+  ...list.flatMap((d, i) => [`${d},com.bamnat.app,52,1,1,0,30,1,0,1`, ...(i >= 3 ? [`${d},com.bamnat.app,53,1,0,1,10,1,1,0`] : [])])].join("\n");
 const ratingsCsv = (list) => ["Date,Package Name,Daily Average Rating,Total Average Rating", ...list.map((d, i) => `${d},com.bamnat.app,${i % 2 ? "NA" : "4.50"},4.41`)].join("\n");
 
 test("[OBS2-01] Play 보고서 CSV(UTF-16)를 날짜 줄·출처·판·별점으로 읽어요", () => {
   assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: "gs://pubsite_prod_rev_0123456789/stats/installs" }), "pubsite_prod_rev_0123456789");
+  // Play Console's 'Cloud Storage URI 복사' today: no "rev", the number is the developer account ID.
+  assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: "gs://pubsite_prod_6734895202737078415/stats/installs/" }), "pubsite_prod_6734895202737078415");
+  assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: " gs://pubsite_prod_6734895202737078415 " }), "pubsite_prod_6734895202737078415");
   assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: "Bad Name!" }), null);
   const list = days("2026-11-06", 20);
   const text = obsText(utf16(installsCsv(list)));
@@ -43,7 +46,8 @@ test("[OBS2-01] Play 보고서 CSV(UTF-16)를 날짜 줄·출처·판·별점으
   assert.equal(got.days[1].total, 4.41);
   assert.deepEqual(got.sources.map((s) => s.source), ["Google Play search", "utm:bamnat_web"]);
   assert.equal(got.sources[0].acq, 6 * 20);
-  assert.deepEqual(got.versions.rows, [{ code: 53, n: 10 }, { code: 52, n: 30 }]);
+  // [OBS2-09] 판마다 최근 7일 삭제(52는 하루 하나씩).
+  assert.deepEqual(got.versions.rows, [{ code: 53, n: 10, out7: 0 }, { code: 52, n: 30, out7: 7 }]);
   assert.equal(got.versions.first[53], list[3]);
 });
 
@@ -96,10 +100,23 @@ test("[OBS2-05] 관측 빈틈: 연결이 빠진 것은 고치는 법, 새로 모
   const keys = gaps.map((g) => g.key);
   assert.ok(keys.includes("play-bucket"));
   assert.match(gaps.find((g) => g.key === "play-bucket").how, /PLAY_REPORTS_BUCKET/);
-  assert.ok(keys.includes("sample-small"));
-  assert.ok(keys.includes("life-off"));
   assert.match(gaps.find((g) => g.key === "dev-events").title, /4개/);
-  assert.deepEqual(gaps.filter((g) => g.policy).map((g) => g.key), ["by-type", "feature-keep", "why-leave"]);
+  // [OBS2-09] 사용자 11-08 '이미 해결된 것도 보이네': 할 일(todo)과 기다리면 풀리는 것(wait), 이미 정한 것(decided)을 나눠요.
+  const state = Object.fromEntries(gaps.map((g) => [g.key, g.state]));
+  assert.deepEqual(state, { "play-bucket": "todo", "sample-small": "wait", "at-312": "wait", "why-leave": "decided", "dev-events": "todo" });
+  // 3.12 시행일에 함께 켜지는 셋은 한 줄로.
+  assert.match(gaps.find((g) => g.key === "at-312").title, /진입·머묾·회복 · 유형별 흐름 · 기능과 머묾/);
+  assert.match(gaps.find((g) => g.key === "why-leave").how, /판마다 최근 7일 삭제/);
+
+  // Play 권한을 막 저장했으면 하루 동안은 기다리는 것, 하루가 넘도록 막히면 다시 할 일.
+  const now = Date.parse("2026-11-08T13:00:00Z");
+  const wait = obsGaps({ at: now, play: { state: "denied", deniedSince: now - 2 * 3600000 }, sample: { daily: 40, lifeOn: true }, kinds: {}, keep: { rows: [1] } })
+    .find((g) => g.key === "play-denied");
+  assert.equal(wait.state, "wait");
+  assert.match(wait.title, /퍼지는 중이에요\(약 24시간 안에\)/);
+  const stuck = obsGaps({ at: now, play: { state: "denied", deniedSince: now - 30 * 3600000 }, sample: { daily: 40, lifeOn: true }, kinds: {}, keep: { rows: [1] } })
+    .find((g) => g.key === "play-denied");
+  assert.equal(stuck.state, "todo");
 });
 
 test("[OBS2-01][OBS2-04] 관측 판·매시 작업·신호 → 개발사항, Claude 열쇠도; Play 보고서는 서비스 계정 토큰으로 저장소에서 읽어요", async (t) => {
@@ -166,4 +183,8 @@ test("[OBS2-02][OBS2-03] Play 계정이 없어도 판은 서버 요청 수와 �
   assert.equal(b.play.state, "off");
   assert.equal(b.active.config.at(-1).n, 42);
   assert.ok(b.gaps.some((g) => g.key === "play-account"));
+  // [OBS2-09] '지금 다시 확인'은 숫자 보기만으로는 못 누르고, 누르면 지금 상태를 돌려줘요.
+  const r = await call("POST", "/api/admin/observe/refresh", {}, owner);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.state, "off");
 });
