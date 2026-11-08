@@ -1190,6 +1190,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
     LaunchedEffect(Unit) { BarEditLinks.asks.collect { editingBar = true } }
+    // 1.39 G2 통합 6차 PC: the calendar's 급여 대장 line goes to 관리, which opens its 급여 대장 ([SharedToManage.openLedger]).
+    val ledgerAsked by com.bamnat.app.imports.SharedToManage.ledgerAsked.collectAsStateWithLifecycle()
+    LaunchedEffect(ledgerAsked) { if (ledgerAsked && route != Routes.MANAGE) nav.navigate(Routes.MANAGE) { launchSingleTop = true } }
     /** How a place looks now: chosen while its tab (or one of its 묶음's) is on show. */
     class SlotLook(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val selected: Boolean, val badge: Int, val dot: Boolean,
         val members: List<TabPick>?, val current: String?, val said: String)

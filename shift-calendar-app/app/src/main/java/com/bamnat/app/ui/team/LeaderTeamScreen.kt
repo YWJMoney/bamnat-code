@@ -757,7 +757,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 dialog = null
                 scope.launch { store.saveTeam(t); if (go) fill(t) }
             }
-            "wish" -> WishDialog(team, month, active, wishes, onDismiss = { dialog = null })
+            "wish" -> WishDialog(team, month, active, wishes, onDismiss = { dialog = null },
+                onOpenAsk = if (round == null) ({ dialog = null; asking = true }) else null)
             "fair" -> FairDialog(team, b, month, onDismiss = { dialog = null })
             "askEnd" -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text("신청 끝내기") }, text = {
                 Text("서버에 있는 신청과 팀원 신청 링크를 지워요. 이미 가져온 신청은 이 휴대폰 표에 그대로 남아요. 끝내기 전에 한 번 더 가져올게요.")
@@ -1024,7 +1025,8 @@ private fun NeedDialog(team: Team, thenFill: Boolean = false, onDismiss: () -> U
 
 /** [TEAM-19] 희망 휴무: pasted lines from members ("[밤낮 희망] 민지 11월 3 7 쉬고"), or typed by the leader; ♡ on the board. */
 @Composable
-private fun WishDialog(team: Team, month: YearMonth, members: List<TeamMember>, wishes: List<TeamWish>, onDismiss: () -> Unit) {
+private fun WishDialog(team: Team, month: YearMonth, members: List<TeamMember>, wishes: List<TeamWish>, onDismiss: () -> Unit,
+                       onOpenAsk: (() -> Unit)? = null) {
     val store = LocalContext.current.appContainer.phaseThree
     val scope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
@@ -1032,6 +1034,12 @@ private fun WishDialog(team: Team, month: YearMonth, members: List<TeamMember>, 
     val names = members.associate { it.id to it.name }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("희망 휴무 (${Fmt.monthShort(month)})") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 1.39 G2 통합 6차 PC: '신청·희망 0' was found but not '근무 신청 받기' beside it; the way members ask for themselves starts here too.
+            if (onOpenAsk != null) {
+                Text("팀원이 직접 신청하게 하려면 링크를 보내요. 팀원은 앱 없이 그 링크에서 날짜를 골라 보내요.", style = MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick = onOpenAsk, modifier = Modifier.fillMaxWidth()) { Text("근무 신청 받기 (팀원에게 링크)") }
+                Text("또는", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text("팀원이 보낸 글을 그대로 붙여 넣거나 '민지 3 7 15'처럼 적어요. 자동 채우기가 지켜요.", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(text, { text = it.take(4000) }, minLines = 3, modifier = Modifier.fillMaxWidth(), label = { Text("받은 글") })
             if (read.isNotEmpty()) Text("${read.size}개 읽음: " + read.take(5).joinToString(", ") { "${names[it.memberId]} ${it.date.dayOfMonth}일 ${it.kind.label}" },

@@ -75,9 +75,11 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     var teamOpen by rememberSaveable { mutableStateOf<String?>(null) }
     var teamsList by rememberSaveable { mutableStateOf(false) }
     // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 opens the 급여 대장, which reads it.
-    var ledgerOpen by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.staffWaiting) }
+    var ledgerOpen by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.staffWaiting || com.bamnat.app.imports.SharedToManage.takeLedger()) }
+    val ledgerAsked by com.bamnat.app.imports.SharedToManage.ledgerAsked.collectAsStateWithLifecycle()
     val staffShared by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(staffShared) { if (staffShared != null) { teamOpen = null; teamsList = false; ledgerOpen = true } }
+    androidx.compose.runtime.LaunchedEffect(ledgerAsked) { if (ledgerAsked && com.bamnat.app.imports.SharedToManage.takeLedger()) { teamOpen = null; teamsList = false; ledgerOpen = true } }
     if (teamOpen != null || teamsList) {
         BackHandler { teamOpen = null; teamsList = false }
         com.bamnat.app.ui.team.LeaderTeamScreen(calendarId, onBack = { teamOpen = null; teamsList = false }, startTeam = teamOpen)

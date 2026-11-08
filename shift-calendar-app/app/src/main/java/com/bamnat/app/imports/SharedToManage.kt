@@ -48,6 +48,16 @@ object SharedToManage {
 
     val staffWaiting: Boolean get() = staff.value != null
 
+    private val ledger = MutableStateFlow(false)
+
+    /** 1.39 G2 통합 6차 PC: the calendar's 급여 대장 line opens 관리 straight on its 급여 대장 (it took three presses). */
+    fun openLedger() { ledger.value = true }
+
+    val ledgerAsked: kotlinx.coroutines.flow.StateFlow<Boolean> get() = ledger
+
+    /** True once after [openLedger]. */
+    fun takeLedger(): Boolean = ledger.value.also { ledger.value = false }
+
     /** The staff list waiting, watched so a 관리 화면 already open goes to its 급여 대장. */
     val staffShared: kotlinx.coroutines.flow.StateFlow<Uri?> get() = staff
 
