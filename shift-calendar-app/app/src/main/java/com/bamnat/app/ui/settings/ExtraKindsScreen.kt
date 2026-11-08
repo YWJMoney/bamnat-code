@@ -561,7 +561,7 @@ private fun KindRow(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     ) {
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            ExtraKindMark(kind, size = 32.dp, modifier = Modifier.alpha(if (kind.hidden) 0.45f else 1f))
+            ExtraKindMark(kind, size = 32.dp, modifier = Modifier.alpha(if (kind.hidden) 0.45f else 1f), asIs = true)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -605,7 +605,7 @@ private fun TemplateDialog(templates: List<KindTemplate>, onPick: (KindTemplate)
                             Box(Modifier.size(28.dp).clip(MaterialTheme.shapes.small).border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small),
                                 contentAlignment = Alignment.Center) { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) }
                         } else {
-                            ExtraKindMark(t.kind, size = 28.dp)
+                            ExtraKindMark(t.kind, size = 28.dp, asIs = true)
                         }
                         Spacer(Modifier.width(12.dp))
                         Column {
@@ -688,7 +688,7 @@ private fun KindEditor(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ExtraKindMark(kind.copy(short = kind.short.ifBlank { kind.name.take(1).ifBlank { "?" } }), size = 44.dp)
+                        ExtraKindMark(kind.copy(short = kind.short.ifBlank { kind.name.take(1).ifBlank { "?" } }), size = 44.dp, asIs = true)
                         Spacer(Modifier.width(12.dp))
                         OutlinedTextField(
                             value = kind.name,

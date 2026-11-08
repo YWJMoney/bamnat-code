@@ -35,9 +35,10 @@ val LocalExtraKinds = compositionLocalOf { ExtraKinds() }
 
 /** [EXTRA-01] A square with the kind's mark (잔·특·대 or the company's own) in the kind's colour. */
 @Composable
-fun ExtraKindMark(kind: ExtraKind, size: Dp = 16.dp, modifier: Modifier = Modifier) {
+fun ExtraKindMark(kind: ExtraKind, size: Dp = 16.dp, modifier: Modifier = Modifier, asIs: Boolean = false) {
     val color = kind.colorArgb.asColor()
-    val mark = kind.mark
+    // 1.39 [WTYP-30] PC 7차: 일근's built-in 잔업 is 야근, so its mark is '야' too ([asIs] keeps the kind's own, as its editor does).
+    val mark = if (asIs) kind.mark else ExtraText.mark(kind, ExtraText.styleHere())
     // Sized to the square, not the font setting, so it always fits [VIS-01].
     val fs = with(LocalDensity.current) { (size * if (mark.length > 1) 0.42f else 0.6f).toSp() }
     Box(modifier.size(size).clip(RoundedCornerShape(size / 4)).background(color), contentAlignment = Alignment.Center) {
@@ -161,6 +162,10 @@ object ExtraText {
     fun styleHere(): com.bamnat.core.work.WorkStyle? =
         androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings
             .collectAsStateWithLifecycle().value.workStyle
+
+    /** [kind]'s one-letter mark: '야' for a weekday worker's built-in 잔업 still marked '잔' ([WTYP-30]). */
+    fun mark(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String =
+        if (style == com.bamnat.core.work.WorkStyle.DAY && kind.id == ExtraKind.OVERTIME_ID && kind.mark == "잔") "야" else kind.mark
 
     /** [kind]'s name, "야근" for a weekday worker's built-in 잔업 ([J133-27]). */
     fun kindName(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String = word(kind.name, kind.id, style)

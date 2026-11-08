@@ -589,6 +589,9 @@ private fun QuickChips(
             on + off.take((QUICK_EXTRAS - on.size).coerceAtLeast(0))
         }
     }
+    // 1.39 [WTYP-31] PC 7차: 비상소집 only for a job that is called in (경찰·소방…), or a 비상소집 kind the user made.
+    val payProfile by vm.payProfile.collectAsStateWithLifecycle()
+    val callable = com.bamnat.core.work.Callout.forJob(settings.workStyle, payProfile?.occupation, settings.orgDayGroup, snapshot.kinds)
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val log by vm.sleepLog.collectAsStateWithLifecycle()
     // [FLD-01][FLD-02] A day-rate field calendar offers 공수 buttons instead of 일감 적기.
@@ -634,7 +637,7 @@ private fun QuickChips(
         if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
         // 1.32 [WTYP-09] 비번 날 비상소집·동원, one chip (기능 켜고 끄기 `shift.callout`).
         // [SETUP-16] 1.37 PC f42b2eba: without any 근무표 (일근 first setup put off) no day is a 비번 to be called in on.
-        if (!moneyFirst && !day.isWorkDay && (snapshot.hasPattern || !settings.setupLater) && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
+        if (!moneyFirst && !day.isWorkDay && (snapshot.hasPattern || !settings.setupLater) && callable &&
             !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
         ) item { CalloutChip(day, snapshot, vm) }
         // 1.32 [WTYP-11] 희망 오프 on a day to come (기능 켜고 끄기 `shift.wishOff`).
