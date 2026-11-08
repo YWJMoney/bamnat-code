@@ -678,7 +678,12 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             val all = s.insurance.pension && s.insurance.health && s.insurance.employment
             FilterChip(selected = all, onClick = { insTouched = true; s = s.copy(insurance = s.insurance.copy(pension = !all, health = !all, employment = !all)) }, label = { Text("모두") })
         }
-        if (!insTouched && s.insurance.any) Hint("월급이거나 한 주 15시간 이상이라 4대보험을 모두 골라 두었어요(법으로 가입 대상). 실제로 들지 않은 보험은 풀어 주세요.")
+        // 1.39 G2 통합 5차 PC: with 국민연금 left off for age the line still said '모두 골라 두었어요'. It now says what was left out and why.
+        if (!insTouched && s.insurance.any) Hint(
+            if (s.insurance.pension) "월급이거나 한 주 15시간 이상이라 4대보험을 모두 골라 두었어요(법으로 가입 대상). 실제로 들지 않은 보험은 풀어 주세요."
+            else "월급이거나 한 주 15시간 이상이라 건강·고용보험을 골라 두었어요(법으로 가입 대상). 국민연금은 " +
+                (if (s.birth?.let { java.time.Period.between(it, Today.date()).years }?.let { it >= 60 } == true) "만 60세 이상이라" else "만 18세 미만이라") +
+                " 뺐어요(본인이 원하면 가입). 실제로 들지 않은 보험은 풀어 주세요.")
         else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) Text("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.",
             style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
         Text("소득세 떼는 법 (명세서)", style = MaterialTheme.typography.labelLarge)
