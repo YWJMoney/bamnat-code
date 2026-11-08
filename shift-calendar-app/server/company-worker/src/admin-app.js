@@ -2283,7 +2283,7 @@ function adminApp(L, BUILD, M) {
     const edit = can("rewards", "edit");
     const segs = [["owed", "드릴 보상"], ["paid", "지급함"], ["void", "취소"]].map(([key, label]) => seg("reward-tab", key, S.rewardTab, label, counts[key])).join("");
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
-      : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
+      : `${S.rewardTab === "owed" && edit ? L.draftEmpty(r.rewards) : ""}<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
           <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
@@ -4271,7 +4271,7 @@ function adminApp(L, BUILD, M) {
     // 1.39 PC 6차 J1(폭 380): 일곱 장이 쌓여 오늘의 큰 카드가 두 화면 아래로 밀렸어요. 여럿이면 한 장으로 접어요.
     const key = "home:flag-alerts";
     return `<section class="card flag-alert" role="status"><details data-key="${key}"${S.opened.get(key) ? " open" : ""}>
-      <summary class="card-head"><h2>기능 ${list.length}개가 저절로 켜졌어요</h2><span class="pill bad">${esc(ago(list[0].since))}</span><span class="more">펼치기</span></summary>
+      <summary class="card-head"><h2>기능 ${list.length}개가 저절로 켜졌어요</h2><span class="pill bad">${esc(ago(list[0].since))}</span><span class="more">${S.opened.get(key) ? "접기" : "펼치기"}</span></summary>
       ${hint}<ul class="rows flag-alert-list">${list.map((a) => `<li><div class="row"><span class="row-main"><b>${esc(a.name)}${igaSuffix(a.name)} 켜졌어요</b><small>${esc(ago(a.since))}</small></span>
         <span class="row-side">${off(a)}<a class="btn small" href="${flagLink(a.key)}">자세히</a></span></div></li>`).join("")}</ul></details></section>`;
   }
@@ -6321,6 +6321,9 @@ function adminApp(L, BUILD, M) {
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
     if (e.target instanceof HTMLDetailsElement && e.target.dataset.key) S.opened.set(e.target.dataset.key, e.target.open);
+    // 1.39 PC 7차 1-8: 펼치기 ↔ 접기 말도 바로 바꿔요(다시 그리기를 기다리지 않고).
+    const more = e.target instanceof HTMLDetailsElement ? e.target.querySelector(":scope>summary .more") : null;
+    if (more && (more.textContent === "펼치기" || more.textContent === "접기")) more.textContent = e.target.open ? "접기" : "펼치기";
   }, true);
 
   /**

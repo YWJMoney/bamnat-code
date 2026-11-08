@@ -791,6 +791,15 @@ export function adminLib() {
       <p class="why">${esc(d.note)}</p>${src ? `<p class="meta">${src}</p>` : ""}<p class="meta">버튼을 누르기 전에는 아무것도 바뀌지 않아요. 정하면 추천과 같았는지 남아요.</p></div>`;
   }
 
+  /**
+   * 1.39 7차 PC 6장 2: 목록에 정할 것이 있는데 Claude 추천이 하나도 없으면, 상자가 숨은 게 아니라 아직 안 적힌 것임을 한 줄로.
+   * 추천은 운영 열쇠로만 적혀서(매일 08·20시 자동 처리), 열쇠가 없는 로컬 서버에서는 늘 이 줄이 보여요.
+   */
+  function draftEmpty(items) {
+    if (!items?.length || items.some((x) => x?.draft?.pick)) return "";
+    return '<p class="hint claude-draft-empty"><span class="pill">Claude 추천 없음</span> 아직 추천이 적히지 않았어요. 운영 장부 자동 처리(매일 08·20시)가 읽고 붙여요. 기다리지 않고 바로 정해도 돼요.</p>';
+  }
+
   /** [ADMUX-09] Points all in and still waiting: why, in the app's words (core SetupDiff.waitReason). */
   function waitReason(g, agreeNeeded = 75) {
     if (g.points < g.threshold) return "";
@@ -1432,7 +1441,7 @@ export function adminLib() {
   }
 
   return {
-    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
+    esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, draftEmpty, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion, undoPlace,
