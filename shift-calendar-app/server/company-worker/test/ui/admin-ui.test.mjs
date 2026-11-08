@@ -1996,3 +1996,34 @@ test("[ADM3-50] seven flags on at once are one folded card above 오늘's big ca
   assert.match(t.text("#main .server-sum"), /관리자 앱 빌드/);
   assert.deepEqual(t.errors, []);
 });
+
+test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say where each number comes from, a 개선 신호 becomes a 개발사항, 관측 빈틈 marks what needs the policy", async (t) => {
+  offline(t);
+  const { env } = server();
+  const now = Date.now();
+  const signal = { key: "uninstall-spike:2026-11-08", kind: "uninstall-spike", subject: "", tone: "bad", title: "앱 삭제가 늘었어요: 최근 3일 하루 6, 그 전 2주 1.5",
+    why: "Play 보고서의 하루 삭제 수예요.", dev: "앱 삭제가 늘어난 이유 찾기", to: "#/glance", unit: "/일", better: "down", value: 6, base: 1.5, now: 6, first: now, last: now, at: now, state: "new" };
+  const better = { ...signal, key: "store-conv:2026-10-30", kind: "store-conv", title: "스토어 방문 → 설치가 9%로 떨어졌어요", unit: "%", value: 9, after: 16, cleared: now, state: "dev", devId: "dCCCCCCCCCCCCCCC" };
+  const u = await asOwner(env, t);
+  env.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)").run(JSON.stringify({ list: [signal, better] }));
+  await u.go("#/glance");
+  await u.settle(40);
+  assert.ok(u.$("#main .ob-all"), "전체 사용자");
+  // No Play account here: one line says what to connect, not four empty boxes.
+  assert.equal(u.$$("#main .ob-tile.need").length, 1);
+  assert.match(u.text("#main .ob-tile.need"), /연결 필요/);
+  assert.match(u.text("#main .ob-tile.keep"), /앱 → 서버 요청/);
+  assert.match(u.text("#main .ob-tile.voice"), /문의/);
+  assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 좋아진 신호");
+  assert.match(u.text("#main .ob-better"), /9% → 16%/);
+  assert.ok(u.$$("#main .ob-gap-list li.policy").length >= 3);
+  assert.match(u.text("#main .ob-gaps"), /처리방침 · 사용자 결정/);
+  await u.click('#main [data-act="obs-signal"][data-do="dev"]');
+  await u.settle(40);
+  const made = env.DB.db.prepare("SELECT id, title FROM dev_items ORDER BY created_at DESC LIMIT 1").get();
+  assert.match(made.title, /앱 삭제가 늘어난 이유/);
+  assert.match(u.text("#main .ob-signal"), /개발사항/);
+  assert.ok(u.$(`#main .ob-signal a[href*="${made.id}"]`), "a link to the new 개발사항");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});

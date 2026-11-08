@@ -290,7 +290,9 @@ const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/
   // 1.39 [LOOP-08][LOOP-09][LOOP-11][LOOP-12] 자동 순환: 흐름 칸, 점수 순 개발 대기열, 결정함, 요금 판단 관측치, 믿을수록 더 맡기기.
   /^\/loop$/, /^\/loop\/queue$/, /^\/loop\/decide$/, /^\/loop\/tiers$/, /^\/loop\/autonomy$/, /^\/loop\/tier\/d[A-Za-z0-9]{15}$/,
   // 1.39 [ADM3-49] 제보 검토·보상·회사 합치기 초안(사용자 11-08 '클로드 열쇠로 제보 검토 보상 초안까지'): 검토함·회사·판·보상 읽기와 초안 목록.
-  /^\/queue$/, /^\/companies$/, /^\/companies\/similar$/, /^\/companies\/[A-Za-z0-9]{12}$/, /^\/versions$/, /^\/rewards$/, /^\/drafts$/];
+  /^\/queue$/, /^\/companies$/, /^\/companies\/similar$/, /^\/companies\/[A-Za-z0-9]{12}$/, /^\/versions$/, /^\/rewards$/, /^\/drafts$/,
+  // 1.39 [OBS2-04] 관측 판과 개선 신호(사용자 11-08 '통계를 통한 완전한 자가 발전'): Claude가 신호를 개발사항으로 넘기고 효과를 확인해요.
+  /^\/observe$/, /^\/observe\/signals$/];
 const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/, /^\/inquiries\/sort\/apply$/, /^\/inquiries\/handoff\/(mark|result)$/,
   /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/,
   // 1.38 [DESK-02][DESK-03] 장부 줄의 상태(보는 중·기다림·끝, 이유와 함께)·되돌리기·한 줄 요약.
@@ -299,7 +301,9 @@ const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/,
   // 1.39 [LOOP-09] 결정함의 Claude 초안(최고 관리자 확인 문의에 보낼 답을 적어 두기만, 보내기는 사람).
   /^\/loop\/drafts$/,
   // 1.39 [ADM3-49] 추천만 적어요. 채택·거절·되돌리기(/groups/…), 보상 지급(/rewards/<id>), 회사 합치기(/companies/<id>/merge)는 이 목록에 없어 막혀요.
-  /^\/drafts$/];
+  /^\/drafts$/,
+  // 1.39 [OBS2-04] 개선 신호를 개발사항으로 넘기기·지켜보기·아님(보내는 것이 아니라 안쪽 기록).
+  /^\/observe\/signals$/];
 // 1.39 [LOOP-05] 저장소 동기화 열쇠(GitHub Action): 이 한 길만.
 const SYNC_POST = [/^\/dev\/sync$/];
 export const keyAllows = (path, method, scope = "ops") => (scope === "sync" ? (method === "POST" ? SYNC_POST : [])

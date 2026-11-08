@@ -59,6 +59,7 @@
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
 import { glance } from "./glance.js";
+import { OBS_BADGE_SQL, observeRoute, observeTick } from "./observe.js";
 import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
 import { similarCompanies, skipSimilar } from "./company-similar.js";
 import { adminLib } from "./admin-lib.js";
@@ -300,6 +301,8 @@ export const hourlySteps = (env) => [
   ["live", () => liveTick(env, Date.now(), loopAnswer)],
   ["watch", () => flushWatch(env, Date.now(), true).then(() => pruneWatch(env, Date.now()))], // 1.38 [ADM3-19]
   ...opsSteps(env, () => playVitals(env, Date.now())),
+  // 1.39 [OBS2-01][OBS2-04] Play 보고서(12시간마다 새로)와 개선 신호 합치기.
+  ["observe", () => observeTick(env, Date.now())],
 ];
 
 /**
@@ -4949,6 +4952,8 @@ function areaFor(path) {
   if (path === "/loop" || path.startsWith("/loop/")) return "dev";
   // 1.39 [ADM3-49] Claude 초안: 종류마다 그 칸 권한을 claude-drafts.js가 봐요.
   if (path === "/drafts") return null;
+  // 1.39 [OBS2] 관측: 읽기는 숫자, 신호 처리는 observe.js가(개발사항으로 넘기기는 개발사항 고치기 권한).
+  if (path === "/observe" || path === "/observe/signals") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -5239,6 +5244,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
   // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.
   if (path === "/glance" && method === "GET") return json(await glance(env, now));
+  // 1.39 [OBS2-01~05] 관측 판·개선 신호(observe.js가 숫자·개발사항 권한을 봐요).
+  if (path === "/observe" || path === "/observe/signals") {
+    const r = await observeRoute(request, env, path, method, now);
+    if (r) return r;
+  }
   if (path === "/metrics" && method === "GET") {
     // 1.39 [ADM3-43] 네 덩어리를 차례로 읽던 것을 한꺼번에(기간은 지표와 같은 metricRange).
     const { from, to } = metricRange(url, now);
@@ -6120,6 +6130,8 @@ const BADGE_SQL = {
   bugsUncopied: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'"],
   // 1.38 [ADM3] 오류·데이터 요청·사고·리뷰·출시 점검표(admin-ops.js).
   ...OPS_BADGE_SQL,
+  // 1.39 [OBS2-04] 숫자 › 한눈에의 개선 신호 중 아직 아무도 보지 않은 것.
+  ...OBS_BADGE_SQL,
   // 1.39 [LOOP-09] 결정함 숫자(PC G10 사용성 제안: 접은 폭 위 탭이 많아 결정함까지 밀어 봐야 해서). '아직이에요'로 다시 열린 개발사항,
   // 7일 안의 출시 멈춤 권장, (최고 관리자만) 요금을 정할 새 기능. decideBox와 같은 조건.
   decideBack: ["dev", `SELECT COUNT(DISTINCT d.id) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL
@@ -7124,25 +7136,28 @@ export async function playVitals(env, now) {
     const res = await fetch(`${VITALS.api}/${encodeURIComponent(pkg)}/${set}:query`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ timelineSpec: { aggregationPeriod: "DAILY", startTime: la(now - 10 * DAY), endTime: la(now) },
+      body: JSON.stringify({ timelineSpec: { aggregationPeriod: "DAILY", startTime: la(now - 30 * DAY), endTime: la(now) },
         metrics: [metric, "distinctUsers"] }),
       signal: AbortSignal.timeout(SHARE_TIMEOUT_MS),
     });
     if (!res.ok) throw new Refuse(res.status === 403 ? "play_denied" : "play", "play", 502);
     const rows = (await res.json()).rows ?? [];
     const last = rows.at(-1);
-    if (!last) return { rate: null, users: 0, day: null };
-    const val = (name) => Number(last.metrics?.find((x) => x.metric === name)?.decimalValue?.value);
-    const t = last.startTime ?? {};
+    if (!last) return { rate: null, users: 0, day: null, series: [] };
+    const valOf = (row, name) => Number(row.metrics?.find((x) => x.metric === name)?.decimalValue?.value);
+    const dayOf = (t = {}) => (t.year ? `${t.year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}` : null);
+    const val = (name) => valOf(last, name);
+    // 1.39 [OBS2-02] 날마다 하루 사용자(Android 진단을 켠 휴대폰): 관측 판의 '하루 사용자'.
+    const series = rows.map((r) => ({ day: dayOf(r.startTime), users: Number.isFinite(valOf(r, "distinctUsers")) ? valOf(r, "distinctUsers") : 0 })).filter((r) => r.day);
     return { rate: Number.isFinite(val(metric)) ? val(metric) : null, users: Number.isFinite(val("distinctUsers")) ? val("distinctUsers") : 0,
-      day: t.year ? `${t.year}-${String(t.month).padStart(2, "0")}-${String(t.day).padStart(2, "0")}` : null };
+      day: dayOf(last.startTime), series };
   };
   let value;
   try {
     const token = await playToken(env, account, now, VITALS.scope);
     const [crash, anr] = await Promise.all([ask(token, "crashRateMetricSet", "userPerceivedCrashRate28dUserWeighted"),
       ask(token, "anrRateMetricSet", "userPerceivedAnrRate28dUserWeighted")]);
-    value = { crash: crash.rate, anr: anr.rate, users: crash.users, day: crash.day };
+    value = { crash: crash.rate, anr: anr.rate, users: crash.users, day: crash.day, series: crash.series };
   } catch (e) {
     value = { error: e?.code === "play_denied" ? "denied" : "unreachable" };
   }
