@@ -130,7 +130,11 @@ class NightViewModel(private val container: AppContainer) : ViewModel() {
 private const val NIGHT_BRIGHTNESS = 0.08f
 
 @Composable
-fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
+fun NightScreen(
+    vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit,
+    /** 1.39 사용자 2026-11-08 (수면 기록 찾기 쉽게): where 깼어요 goes, the sleep log with last night's 아침 한 장; [onClose] if not given. */
+    onWoke: () -> Unit = onClose,
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val open by vm.open.collectAsStateWithLifecycle()
     val line by vm.line.collectAsStateWithLifecycle()
@@ -186,7 +190,7 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                 contentColor = buttonStyle.ink?.let { Color(it.toInt()) } ?: (if (c.luminance() > 0.45f) Color.Black else Color.White))
         } ?: androidx.compose.material3.ButtonDefaults.buttonColors()
         val buttonText = com.bamnat.app.ui.parts.PartMods.text(buttonStyle.copy(ink = null), MaterialTheme.typography.titleMedium)
-        if (o != null) Button(onClick = { vm.wokeUp(onClose) }, shape = buttonShape, colors = buttonColors, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+        if (o != null) Button(onClick = { vm.wokeUp(onWoke) }, shape = buttonShape, colors = buttonColors, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
             Text("깼어요", style = buttonText)
         } else Button(onClick = vm::fellAsleep, shape = buttonShape, colors = buttonColors, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
             Text("잠들었어요", style = buttonText)

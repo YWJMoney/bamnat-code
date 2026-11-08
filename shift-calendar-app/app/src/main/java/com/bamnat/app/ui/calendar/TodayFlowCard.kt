@@ -164,6 +164,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         onFold = vm::setFlowFolded,
         // 1.38 사용자 2026-11-06: 밤샘·첫 야간 rules only where there are nights to work.
         nights = nightWork(settings.workStyle, snapshot),
+        // 1.39 사용자 2026-11-08 (수면 기록이 찾기 어려워요): the card that says when to sleep opens the sleep log too, as the
+        // feature list has long said (달력 › 오늘의 흐름 › 수면 기록).
+        onSleepLog = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP) },
     )
 }
 
@@ -212,6 +215,8 @@ internal fun TodayFlowCard(
     nights: Boolean = true,
     /** 1.39 [FLOW-28] The day dial and what a screen reader hears of it; null when it is off or has nothing to show. */
     dial: Pair<com.bamnat.core.design.DayDialArcs.Dial, String>? = null,
+    /** 1.39 The way to 수면 기록 (근무별 평균, 아침 한 장, 기록 고치기) from the opened card; null shows no link. */
+    onSleepLog: (() -> Unit)? = null,
 ) {
     var info by remember { mutableStateOf(false) }
     var askWake by remember { mutableStateOf(false) }
@@ -300,9 +305,16 @@ internal fun TodayFlowCard(
                 }
             }
             FlowStrip(card, Modifier.padding(top = 12.dp, end = 12.dp))
-            card.action?.let { a ->
-                Row(Modifier.fillMaxWidth().padding(top = 2.dp, end = 12.dp), horizontalArrangement = Arrangement.End) {
-                    ActionButton(a) { onPick(a, card, onAction) { askWake = true } }
+            if (card.action != null || onSleepLog != null) {
+                Row(Modifier.fillMaxWidth().padding(top = 2.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // 1.39 사용자 2026-11-08: 수면 기록 one tap from the card looked at every day, beside its one button.
+                    if (onSleepLog != null) TextButton(onClick = onSleepLog, contentPadding = ButtonDefaults.TextButtonWithIconContentPadding) {
+                        Icon(Icons.Outlined.Bedtime, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("수면 기록", maxLines = 1)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    card.action?.let { a -> ActionButton(a) { onPick(a, card, onAction) { askWake = true } } }
                 }
             }
         }
