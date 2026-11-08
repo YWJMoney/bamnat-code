@@ -1270,6 +1270,16 @@ fun CalendarScreen(
                 com.bamnat.app.ui.guide.StartStepsCard(startRows, onDismiss = { com.bamnat.app.ui.guide.StartStepsState.dismiss(c31); startHidden = true },
                     onShifts = { vm.setPaint(PaintTool.Pick) })
             })
+            // 1.39 G2 통합 5차 PC (식당 사장: 아래 칸에 '관리'가 없어 급여 대장까지 멀어요): a shop's calendar says once where it is.
+            val payrollOn = context.appContainer.flags.byKey.collectAsStateWithLifecycle().value[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+            val barNow = remember(settings.tabSlots, settings.tabOrder) {
+                com.bamnat.core.layout.TabSlots.resolve(settings.tabSlots, settings.tabOrder, com.bamnat.app.ui.TabPicks.known)
+            }
+            val ledgerHintDone = remember { com.bamnat.app.ui.calendar.HintStore(context).done(com.bamnat.app.ui.work.BossLedgerLine.KEY) }
+            if (paint == null && viewingReceived == null && !ledgerHintDone && com.bamnat.app.ui.work.BossLedgerLine.wanted(settings.workStyle, payrollOn, barNow))
+                add(Notice("bossLedger", "급여 대장") {
+                    com.bamnat.app.ui.work.BossLedgerNotice(settings, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                })
             // [GUIDE-02][GUIDE-03][EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
             // [EASE-03] 1.38: the question card waits for the day after the first setup too (its 시작 단계 waits already).
             if (guideHere && askOn && startRows == null && !c31.firstSetup.quietToday()) add(Notice("ask", "질문 1개") {
