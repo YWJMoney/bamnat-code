@@ -78,4 +78,20 @@ class TaskListTest {
         assertEquals("1/2", rows[0].count)
         assertEquals(today, rows[1].day)
     }
+
+    /** 1.39 [TASK-39] PC 6차: 오늘 09:21 at 09:35 had no red 늦음. It stays on today's list, late; the head counts it. */
+    @Test fun todaysGoneTimeIsLate() {
+        val today = java.time.LocalDate.of(2026, 11, 8)
+        val rows = TaskList.of(listOf(
+            Memo(id = 1, date = today, title = "약", reminder = MemoReminder(today.atTime(9, 21), ring = false, notify = true)),
+            Memo(id = 2, date = today, title = "회의", reminder = MemoReminder(today.atTime(15, 0), ring = false, notify = true)),
+            Memo(id = 3, date = today, title = "빨래"),
+        ), today)
+        val now = today.atTime(9, 35)
+        assertEquals(mapOf("약" to true, "회의" to false, "빨래" to false), rows.associate { it.text to TaskList.overdue(it, now) })
+        assertEquals(TaskList.Kind.TODAY, rows.first { it.text == "약" }.kind)
+        assertEquals("할 일 3개 · 늦은 것 1개", TaskList.headline(rows, now))
+        assertEquals("not yet at 09:20", false, TaskList.overdue(rows.first { it.text == "약" }, today.atTime(9, 20)))
+        assertEquals("할 일 3개 남았어요", TaskList.headline(rows))
+    }
 }

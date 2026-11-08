@@ -69,10 +69,20 @@ object TaskList {
     private val OPEN_BOX = Regex("^\\s*(☐ |- \\[ ] )\\S")
     private val TICKED_BOX = Regex("^\\s*(☑ |- \\[[xX]] )\\S")
 
-    /** "오늘 할 일 3개 남음" and the like, for the widget's head. */
-    fun headline(rows: List<Row>): String {
+    /**
+     * 1.39 [TASK-39] Late as the widget shows it: from a day before, or today's with its time already gone (오늘 09:21 at 09:35, PC 6차).
+     * Today's stays on today's list, in red; tomorrow it moves up to 늦음 with its day.
+     */
+    fun overdue(row: Row, now: java.time.LocalDateTime): Boolean = !row.done && when (row.kind) {
+        Kind.LATE -> true
+        Kind.TODAY -> row.time != null && !(row.day ?: now.toLocalDate()).atTime(row.time).isAfter(now)
+        Kind.PINNED -> false
+    }
+
+    /** "오늘 할 일 3개 남음" and the like, for the widget's head; [now] counts today's gone times as late too. */
+    fun headline(rows: List<Row>, now: java.time.LocalDateTime? = null): String {
         val left = rows.count { !it.done }
-        val late = rows.count { it.kind == Kind.LATE }
+        val late = rows.count { r -> if (now != null) overdue(r, now) else r.kind == Kind.LATE && !r.done }
         return when {
             rows.isEmpty() -> "할 일"
             left == 0 -> "오늘 할 일을 다 끝냈어요"

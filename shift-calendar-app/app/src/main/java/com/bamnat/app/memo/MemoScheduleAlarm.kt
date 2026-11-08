@@ -134,6 +134,8 @@ class MemoScheduleReceiver : BroadcastReceiver() {
                 val due = if (atMillis == 0L) emptyList() else MemoSchedules.dueAt(memos, AlarmScheduler.millisToLocal(atMillis))
                 val rests = due.associate { it.id to MemoSnoozeReceiver.nextRest(container, it) }
                 MemoScheduleAlarm.handle(context, memos, atMillis, restOf = { rests[it.id] })
+                // 1.39 [TASK-39] The schedule's time has come: the 할 일 위젯 shows it late (red) from now, not at the next redraw (PC 6차).
+                if (due.isNotEmpty()) runCatching { com.bamnat.app.widget.TaskWidget.redraw(context) }
                 val after = if (atMillis != 0L) AlarmScheduler.millisToLocal(atMillis) else Today.dateTime()
                 MemoScheduleAlarm.reschedule(context, memos, maxOf(after, Today.dateTime().minusSeconds(1)))
             } finally {

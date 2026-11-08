@@ -72,7 +72,7 @@ class TaskWidget : GlanceAppWidget() {
     override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val first = runCatching { load(context, id) }.getOrNull() ?: Shown(emptyList(), true, Today.date())
+        val first = runCatching { load(context, id) }.getOrNull() ?: Shown(emptyList(), true, Today.date(), Today.dateTime())
         val placedAsLine = runCatching {
             val widgetId = GlanceAppWidgetManager(context).getAppWidgetId(id)
             android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetInfo(widgetId)?.provider?.className == TaskLineWidgetReceiver::class.java.name
@@ -87,8 +87,8 @@ class TaskWidget : GlanceAppWidget() {
                 WidgetSurface(GlanceModifier) {
                     when {
                         !shown.allowed -> TaskLocked(short)
-                        short -> TaskLine(shown.rows)
-                        else -> TaskContent(shown.rows, shown.today)
+                        short -> TaskLine(shown.rows, shown.now)
+                        else -> TaskContent(shown.rows, shown.today, shown.now)
                     }
                 }
             }
@@ -96,7 +96,8 @@ class TaskWidget : GlanceAppWidget() {
     }
 
     /** The list for [today], or [allowed] false on a widget past the free one without 프로. */
-    internal data class Shown(val rows: List<TaskList.Row>, val allowed: Boolean, val today: LocalDate)
+    // [now] is when the list was read: a schedule's notice redraws the widget at its time, so 오늘 09:21 turns red then (PC 6차).
+    internal data class Shown(val rows: List<TaskList.Row>, val allowed: Boolean, val today: LocalDate, val now: java.time.LocalDateTime)
 
     companion object {
         private val STAMP = androidx.datastore.preferences.core.longPreferencesKey("task_stamp")
@@ -106,10 +107,10 @@ class TaskWidget : GlanceAppWidget() {
             val c = context.appContainer
             val today = Today.date()
             val allowed = id == null || c.featureGate.allows(Feature.MORE_TASK_WIDGETS) || isFirst(context, id)
-            if (!allowed) return@withContext Shown(emptyList(), false, today)
+            if (!allowed) return@withContext Shown(emptyList(), false, today, Today.dateTime())
             val memos = c.memoRepository.memosFor(PersonalCalendar.MAIN).first()
             val shifts = c.memoRepository.shiftLookup(memos, PersonalCalendar.MAIN).first()
-            Shown(TaskList.of(memos, today, shifts), true, today)
+            Shown(TaskList.of(memos, today, shifts), true, today, Today.dateTime())
         }
 
         /** The free one: the to-do widget placed first (the lowest id) on this phone. */
@@ -183,11 +184,11 @@ internal fun openMemo(context: Context, id: Long, day: LocalDate?) =
     actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.MEMO_OPEN, payload = "$id|${day ?: ""}"))
 
 @Composable
-internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate) {
+internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate, now: java.time.LocalDateTime = Today.dateTime()) {
     val context = androidx.glance.LocalContext.current
     Column(GlanceModifier.fillMaxSize()) {
         // 1.39 [TASK-38] ＋ opens the 한 줄 window over the home screen, not the whole app.
-        TaskHead(TaskList.headline(rows), actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context)))
+        TaskHead(TaskList.headline(rows, now), actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context)))
         Spacer(GlanceModifier.height(4.dp))
         if (rows.isEmpty()) {
             Text("오늘 할 일이 없어요. ＋를 눌러 써 보세요", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 2,
@@ -195,7 +196,7 @@ internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate) {
             return@Column
         }
         LazyColumn(GlanceModifier.fillMaxWidth().defaultWeight()) {
-            items(rows, itemId = { it.memo.id * 4 + it.kind.ordinal }) { row -> TaskRow(row, today) }
+            items(rows, itemId = { it.memo.id * 4 + it.kind.ordinal }) { row -> TaskRow(row, today, now) }
         }
     }
 }
@@ -222,9 +223,11 @@ private fun TaskHead(title: String, add: androidx.glance.action.Action) {
 }
 
 @Composable
-private fun TaskRow(row: TaskList.Row, today: LocalDate) {
+private fun TaskRow(row: TaskList.Row, today: LocalDate, now: java.time.LocalDateTime) {
     val context = androidx.glance.LocalContext.current
-    val states = setOfNotNull("today".takeIf { row.kind == TaskList.Kind.TODAY }, "late".takeIf { row.kind == TaskList.Kind.LATE }, "done".takeIf { row.done })
+    // 1.39 [TASK-39] 오늘 09:21 at 09:35 is late too (PC 6차): red, on today's list.
+    val late = TaskList.overdue(row, now)
+    val states = setOfNotNull("today".takeIf { row.kind == TaskList.Kind.TODAY && !late }, "late".takeIf { late }, "done".takeIf { row.done })
     val line = widgetPart("widget.task", states)
     if (line.hide == true) return
     val check = widgetPart("widget.task.check", states - "today")
@@ -237,15 +240,15 @@ private fun TaskRow(row: TaskList.Row, today: LocalDate) {
         // TalkBack reads what the circle does, not "○" (조사 보완 11-07: 위젯 글자 읽기).
         val said = if (row.done) "끝냄 취소: ${row.text}" else "끝내기: ${row.text}"
         Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle).semantics { contentDescription = said }, contentAlignment = Alignment.Center) {
-            TaskCircle(row.done, when { row.done -> GlanceTheme.colors.primary; row.kind == TaskList.Kind.LATE -> GlanceTheme.colors.error
+            TaskCircle(row.done, when { row.done -> GlanceTheme.colors.primary; late -> GlanceTheme.colors.error
                 else -> GlanceTheme.colors.onSurfaceVariant }, check)
         }
         Column(GlanceModifier.defaultWeight().clickable(openMemo(context, row.memo.id, row.day))) {
             Text(row.text.ifEmpty { "제목 없는 메모" },
                 style = TextStyle(color = faint, fontSize = wsp(14), textDecoration = if (row.done) TextDecoration.LineThrough else TextDecoration.None).widgetLetters(line),
                 maxLines = 1)
-            note(row, today)?.let { n ->
-                Text(n, style = TextStyle(color = if (row.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
+            note(row, late)?.let { n ->
+                Text(n, style = TextStyle(color = if (late) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
                     fontSize = wsp(11)), maxLines = 1)
             }
         }
@@ -266,12 +269,12 @@ private fun TaskCircle(done: Boolean, color: ColorProvider, check: PartStyle) {
         modifier = GlanceModifier.widgetBox(check, 18).width(side.dp).height(side.dp))
 }
 
-/** The small line under a row: "늦음 · 11/5 10:00", "15:00 · 2/5", "고정", or nothing. */
-private fun note(row: TaskList.Row, today: LocalDate): String? = listOfNotNull(
+/** The small line under a row: "늦음 · 11/5 10:00", "늦음 · 09:21" (today's, its time gone), "15:00 · 2/5", "고정", or nothing. */
+internal fun note(row: TaskList.Row, late: Boolean): String? = listOfNotNull(
     when (row.kind) {
         TaskList.Kind.LATE -> "늦음 · ${row.day?.let { Fmt.shortDate(it) }.orEmpty()}"
         TaskList.Kind.PINNED -> "고정"
-        TaskList.Kind.TODAY -> null
+        TaskList.Kind.TODAY -> "늦음".takeIf { late }
     },
     row.time?.let { Fmt.time(it) },
     row.count,
@@ -282,27 +285,28 @@ private fun note(row: TaskList.Row, today: LocalDate): String? = listOfNotNull(
  * and ＋. With nothing left it says so.
  */
 @Composable
-internal fun TaskLine(rows: List<TaskList.Row>) {
+internal fun TaskLine(rows: List<TaskList.Row>, now: java.time.LocalDateTime = Today.dateTime()) {
     val context = androidx.glance.LocalContext.current
     val next = rows.firstOrNull { !it.done }
     val left = rows.count { !it.done }
     Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         if (next != null) {
-            val states = setOfNotNull("today".takeIf { next.kind == TaskList.Kind.TODAY }, "late".takeIf { next.kind == TaskList.Kind.LATE })
+            val late = TaskList.overdue(next, now)
+            val states = setOfNotNull("today".takeIf { next.kind == TaskList.Kind.TODAY && !late }, "late".takeIf { late })
             val check = widgetPart("widget.task.check", states - "today")
             val toggle = actionRunCallback<TaskDoneAction>(actionParametersOf(TaskWidget.MEMO_ID to next.memo.id, TaskWidget.DAY to (next.day?.toString() ?: "")))
             Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle).semantics { contentDescription = "끝내기: ${next.text}" },
                 contentAlignment = Alignment.Center) {
-                TaskCircle(false, if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, check)
+                TaskCircle(false, if (late) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, check)
             }
             val line = widgetPart("widget.task", states)
             // PC eae4e024: in one line '우유 사기 ·…' cut the time and what is left at 2×1. The title gets the line, the time (늦음) goes
             // small under it, and how many are left sits as a number by ＋, so none of it is cut.
-            val note = listOfNotNull("늦음".takeIf { next.kind == TaskList.Kind.LATE }, next.time?.let { Fmt.time(it) }).joinToString(" · ")
+            val note = listOfNotNull("늦음".takeIf { late }, next.time?.let { Fmt.time(it) }).joinToString(" · ")
             Column(GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day))) {
                 Text(next.text.ifEmpty { "제목 없는 메모" },
                     style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1)
-                if (note.isNotEmpty()) Text(note, style = TextStyle(color = if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error
+                if (note.isNotEmpty()) Text(note, style = TextStyle(color = if (late) GlanceTheme.colors.error
                     else GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(11)), maxLines = 1)
             }
             if (left > 1) {
