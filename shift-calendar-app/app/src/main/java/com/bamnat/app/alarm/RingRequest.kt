@@ -29,7 +29,7 @@ data class RingRequest(
     val shiftColor: Long = 0,
 ) {
     /** "주간 근무 알람", "알람" for a hand-set alarm on a day without work, or a memo schedule's words. */
-    val title: String get() = if (recheck) "일어났나요?" else label ?: if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
+    val title: String get() = if (recheck) "일어났나요?" else label ?: if (shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.alarm(shiftName)
 
     fun putInto(intent: Intent): Intent = intent
         .putExtra(X_NAME, shiftName)

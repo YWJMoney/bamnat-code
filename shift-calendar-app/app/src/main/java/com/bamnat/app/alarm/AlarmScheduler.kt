@@ -149,10 +149,10 @@ class AlarmScheduler(
     /** [ALRM-21] What 곧 알람이 울려요 says the alarm is for. */
     /** [ALRM-29] "05:30 주간 근무 알람", "07:00 알람". */
     private fun backText(plan: PlannedAlarm): String =
-        com.bamnat.app.ui.Fmt.time(plan.triggerAt.toLocalTime()) + if (plan.shiftName.isNotBlank()) " ${plan.shiftName} 근무 알람" else " 알람"
+        com.bamnat.app.ui.Fmt.time(plan.triggerAt.toLocalTime()) + if (plan.shiftName.isNotBlank()) " ${com.bamnat.core.alarm.AlarmWords.alarm(plan.shiftName)}" else " 알람"
 
     private fun soonText(plan: PlannedAlarm): String = when {
-        plan.shiftName.isNotBlank() -> "${plan.shiftName} 근무 알람이에요. 이번 알람을 끌까요?"
+        plan.shiftName.isNotBlank() -> "${com.bamnat.core.alarm.AlarmWords.alarm(plan.shiftName)}이에요. 이번 알람을 끌까요?"
         else -> "이 날 알람이에요. 이번 알람을 끌까요?"
     }
 

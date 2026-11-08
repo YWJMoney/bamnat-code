@@ -146,7 +146,7 @@ internal fun nextLine(enabled: Boolean, next: UpcomingAlarm?, today: LocalDate):
     next == null -> "120일 안에 울릴 알람이 없어요"
     else -> {
         val at = next.plan.triggerAt
-        val what = if (next.plan.shiftName.isBlank()) "이 날 알람" else "${next.plan.shiftName} 근무 알람"
+        val what = if (next.plan.shiftName.isBlank()) "이 날 알람" else com.bamnat.core.alarm.AlarmWords.alarm(next.plan.shiftName) // 1.39 [SHOP-13]
         "${whenText(at.toLocalDate(), today)} ${Fmt.time(at.toLocalTime())} · $what"
     }
 }
