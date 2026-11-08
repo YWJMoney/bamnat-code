@@ -63,7 +63,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
                     }
                 },
                 label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) },
-                modifier = Modifier.semantics { contentDescription = "${b.label} 단추, 누르면 ${b.act.say()}" },
+                modifier = Modifier.semantics { contentDescription = "${b.label} 단추, 누르면 ${com.bamnat.app.ui.recipe.sample(b.act.say())}" },
             )
         }
     }

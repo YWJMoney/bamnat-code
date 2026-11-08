@@ -78,6 +78,20 @@ fun Dialog(onDismissRequest: () -> Unit, properties: DialogProperties = DialogPr
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest, properties = properties, content = keep(d, content))
 }
 
+/** The current context with a Korean locale, for Material parts that word themselves (the date picker). */
+@Composable
+private fun koreanContext(): android.content.Context {
+    val base = androidx.compose.ui.platform.LocalContext.current
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    return remember(base, config) {
+        if (config.locales[0]?.language == "ko") base
+        else object : android.content.ContextWrapper(base) {
+            private val res = base.createConfigurationContext(android.content.res.Configuration(config).apply { setLocale(java.util.Locale.KOREA) }).resources
+            override fun getResources(): android.content.res.Resources = res
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DatePickerDialog(
@@ -103,7 +117,15 @@ fun DatePickerDialog(
         properties = properties,
     ) {
         // 1.38 PC 11차: Material's dialog puts content in a Box, so a row above the picker (YearJump) was drawn under it.
-        CompositionLocalProvider(LocalDensity provides d) { androidx.compose.foundation.layout.Column { content() } }
+        // 1.39 PC 5차: on a phone set to English the picker said "Select date"·"January 2000" in an app that is Korean
+        // everywhere else; the picker reads its words from the context's resources and its month names from the
+        // configuration's locale, so both are Korean here (localeFilters keeps only ko, which Material ships).
+        val ko = koreanContext()
+        CompositionLocalProvider(
+            LocalDensity provides d,
+            androidx.compose.ui.platform.LocalContext provides ko,
+            androidx.compose.ui.platform.LocalConfiguration provides ko.resources.configuration,
+        ) { androidx.compose.foundation.layout.Column { content() } }
     }
 }
 

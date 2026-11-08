@@ -429,7 +429,8 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
                 onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
                 label = { ChipText(t.name) },
                 leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) },
-                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 지금 근무" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
+                // 1.39 PC 5차 (가게 유형 TalkBack '영업, 지금 근무'): said without '근무', which a shop's or a field day's chip is not.
+                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
             )
         }
         if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off") {

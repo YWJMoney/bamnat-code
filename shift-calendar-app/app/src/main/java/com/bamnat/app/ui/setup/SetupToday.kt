@@ -104,13 +104,6 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     val date = vm.questionDate(d)
     val early = vm.earlyHours(d)
     val day = relativeDay(date, today)
-    StepHeader(
-        "$day(${Fmt.shortDate(date)}) 무슨 근무${if (date == today) "예요" else "였어요"}?",
-        // 1.38 통합 7차: '오늘로 답할게요' asks about today, so 쉬는 날'이면'.
-        "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날${if (date == today) "이면" else "이었으면"} 휴무를 고르면 돼요.",
-    )
-    if (early) EarlyHoursNote(todayBased, today, earlyNote(vm.earlyBecause(d), vm.hourNow(), today), onToday = { vm.answerForToday(!todayBased) })
-
     val source = d.source
     // [SETUP-14] These answers survive folding and unfolding.
     var otherTeam by rememberSaveable(source?.anchor) { mutableStateOf(false) }
@@ -123,7 +116,29 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
             ?.let { com.bamnat.core.setup.TeamAnchors.pickable(it, d.rotation.size) }.orEmpty()
     }
     var fileTeamUnknown by rememberSaveable(source?.text?.hashCode()) { mutableStateOf(false) }
-    if (fileTeams.size >= 2 && !fileTeamUnknown) {
+    // [CYC-06] 1.38: a public row that names its teams and their days asks "몇 조예요?" first; the order must be the row's own.
+    val teams = remember(source, d.rotation) {
+        source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.id?.let(com.bamnat.core.plaza.PublicCycles::byId)
+            ?.takeIf { vm.sourceOrder(d) == d.rotation }
+            ?.let { com.bamnat.core.setup.TeamAnchors.pickable(it.teams, d.rotation.size) }.orEmpty()
+    }
+    var teamUnknown by rememberSaveable(source?.id) { mutableStateOf(false) }
+    val pickFileTeam = fileTeams.size >= 2 && !fileTeamUnknown
+    val pickTeam = !pickFileTeam && !(teamAnchor != null && !otherTeam) && teams.isNotEmpty() && !teamUnknown
+    // 1.39 PC 5차 (새벽, 조 칩): the big title asked '어제 무슨 근무였어요?' over '몇 조예요?' chips, so it was not clear which
+    // to answer. While the 조 is asked, that is the title, and the small-hours note (about which day) waits for the shift question.
+    if (pickFileTeam || pickTeam) {
+        StepHeader("몇 조예요?", "근무표의 조 이름을 보고 골라 주세요. 조를 고르면 오늘 근무는 묻지 않고 한 달을 채워요.")
+    } else {
+        StepHeader(
+            "$day(${Fmt.shortDate(date)}) 무슨 근무${if (date == today) "예요" else "였어요"}?",
+            // 1.38 통합 7차: '오늘로 답할게요' asks about today, so 쉬는 날'이면'.
+            "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날${if (date == today) "이면" else "이었으면"} 휴무를 고르면 돼요.",
+        )
+        if (early) EarlyHoursNote(todayBased, today, earlyNote(vm.earlyBecause(d), vm.hourNow(), today), onToday = { vm.answerForToday(!todayBased) })
+    }
+
+    if (pickFileTeam) {
         TeamPick(fileTeams, d.anchor, sender = source?.team, fromFile = true, onPick = vm::answerAnchor,
             onUnknown = { fileTeamUnknown = true; otherTeam = true; vm.clearToday() })
     } else if (teamAnchor != null && !otherTeam) {
@@ -133,14 +148,7 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
                 vm.clearToday()
             })
     } else {
-        // [CYC-06] 1.38: a public row that names its teams and their days asks "몇 조예요?" first; the order must be the row's own.
-        val teams = remember(source, d.rotation) {
-            source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.id?.let(com.bamnat.core.plaza.PublicCycles::byId)
-                ?.takeIf { vm.sourceOrder(d) == d.rotation }
-                ?.let { com.bamnat.core.setup.TeamAnchors.pickable(it.teams, d.rotation.size) }.orEmpty()
-        }
-        var teamUnknown by rememberSaveable(source?.id) { mutableStateOf(false) }
-        if (teams.isNotEmpty() && !teamUnknown) {
+        if (pickTeam) {
             TeamPick(teams, d.anchor, onPick = vm::answerAnchor, onUnknown = { teamUnknown = true; vm.clearToday() })
         } else {
             TodayPicker(d, date, today, onAnswer = { step -> vm.answerToday(date, step) }, onClear = vm::clearToday,
@@ -229,7 +237,7 @@ private fun TeamPick(
     sender: String? = null,
     fromFile: Boolean = false,
 ) {
-    FollowTitle("몇 조예요?")
+    // The step's own title says "몇 조예요?" (1.39 PC 5차), so only why it is asked.
     Text(
         if (fromFile) "보낸 분 휴대폰에 조마다 시작하는 날이 있어요. 내 조를 고르면 오늘 근무를 따로 묻지 않아요."
         else "공개 자료에 조마다 시작하는 날이 있어요. 조를 고르면 오늘 근무를 따로 묻지 않아요.",
