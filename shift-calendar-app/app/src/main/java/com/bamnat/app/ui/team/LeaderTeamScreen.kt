@@ -550,7 +550,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 AskCard(round, active, wishes, team.shifts, busy != null, misses,
                     onPull = { pull() },
                     onSend = { send(context, com.bamnat.app.team.TeamAskSync.message(team, round, active), "근무 신청 링크 보내기") },
-                    onClose = { close -> scope.launch { runCatching { com.bamnat.app.team.TeamAskSync.close(c, team, close) }.onFailure { dialog = "인터넷이 될 때 다시 눌러 주세요." } } },
+                    onClose = { close -> scope.launch { runCatching { com.bamnat.app.team.TeamAskSync.close(c, team, close) }.onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 눌러 주세요." } } },
                     onEnd = { dialog = "askEnd" })
             }
             // 1.38 [P3-X-01] 결원 메우기: each ask of the month, settled ones until closed.
@@ -569,7 +569,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     scope.launch {
                         busy = "링크에 알리고 있어요…"
                         runCatching { com.bamnat.app.team.TeamSwapSync.decide(c, store.teamNow(team.id) ?: team, ask, yes, after, settings.rules, prevBoard) }
-                            .onFailure { dialog = if (yes) "표는 바꿨어요. 인터넷이 될 때 '고친 표 올리기'를 눌러 팀원 링크에도 알려 주세요." else "인터넷이 될 때 다시 눌러 주세요." }
+                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: if (yes) "표는 바꿨어요. 인터넷이 될 때 '고친 표 올리기'를 눌러 팀원 링크에도 알려 주세요." else "인터넷이 될 때 다시 눌러 주세요." }
                         busy = null
                     }
                 },
@@ -577,7 +577,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     dialog = if (e.message == "not_found") "바꾸기 링크가 서버에 없어요. 끝났거나 지워졌어요." else "인터넷이 될 때 다시 가져와 주세요." }; busy = null } },
                 onSend = { send(context, com.bamnat.app.team.TeamSwapSync.message(team, swap, b.members), "근무 바꾸기 링크 보내기") },
                 onRefresh = { scope.launch { busy = "고친 표를 올리고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.refresh(c, team, b, settings.rules, prevBoard) }
-                    .onSuccess { dialog = "팀원 링크에 고친 표와 바꿀 수 있는 날을 새로 올렸어요." }.onFailure { dialog = "인터넷이 될 때 다시 눌러 주세요." }; busy = null } },
+                    .onSuccess { dialog = "팀원 링크에 고친 표와 바꿀 수 있는 날을 새로 올렸어요." }.onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 눌러 주세요." }; busy = null } },
                 onEnd = { scope.launch { com.bamnat.app.team.TeamSwapSync.end(c, team) } })
             // The month's tools.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -589,7 +589,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         val members = swapPeople(b)
                         runCatching { com.bamnat.app.team.TeamSwapSync.open(c, store.teamNow(team.id) ?: team, b, members, settings.rules, prevBoard) }
                             .onSuccess { t -> t.swap?.let { send(context, com.bamnat.app.team.TeamSwapSync.message(t, it, members), "근무 바꾸기 링크 보내기") } }
-                            .onFailure { dialog = "바꾸기 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
+                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "바꾸기 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
                         busy = null
                     }
                 }) { Text("바꾸기 요청 받기") }
@@ -636,7 +636,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     val made = runCatching { links(c, team, b, active, if (state.state == MonthState.CONFIRMED && !again) was else emptyMap()) }
                     // 1.38 [P3-L-15] 병동 전체 보기, when on: the table link follows each 확정.
                     if (made.isSuccess && wardOn) runCatching { com.bamnat.app.team.TeamReceiveSync.putBoard(c, context, team, b, active) }
-                        .onSuccess { ward = it.url }.onFailure { dialog = "팀 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
+                        .onSuccess { ward = it.url }.onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "팀 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
                     busy = null
                     // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
                     made.onFailure { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "team_links") }
@@ -688,7 +688,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     if (!on) scope.launch { com.bamnat.app.team.TeamReceiveSync.dropBoard(c, context, team.id); ward = null }
                     else if (state.state == MonthState.CONFIRMED) scope.launch {
                         runCatching { com.bamnat.app.team.TeamReceiveSync.putBoard(c, context, team, b, active) }.onSuccess { ward = it.url }
-                            .onFailure { dialog = "인터넷이 될 때 다시 켜 주세요."; wardOn = false }
+                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 켜 주세요."; wardOn = false }
                     }
                 })
             }
@@ -704,7 +704,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     tiredOn = on
                     scope.launch {
                         if (on) runCatching { com.bamnat.app.team.TeamReceiveSync.tiredOn(c, context, team, active) }
-                            .onFailure { dialog = "인터넷이 될 때 다시 켜 주세요."; tiredOn = false }
+                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 켜 주세요."; tiredOn = false }
                         else { com.bamnat.app.team.TeamReceiveSync.tiredOff(c, context, team.id, active); tired = null }
                     }
                 })
@@ -735,7 +735,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                                 val goneIds = line.gone.map { it.id }.toSet()
                                 runCatching { links(c, team, b, now.members.filter { it.active && it.id in goneIds }) }
                                     .onSuccess { l -> freshIds = l.list.map { it.first.id }.toSet(); linksFor = l.list }
-                                    .onFailure { dialog = "새 링크는 인터넷이 될 때 다시 눌러 주세요." }
+                                    .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "새 링크는 인터넷이 될 때 다시 눌러 주세요." }
                                 busy = null
                             }
                         }) { Text("새 링크 ${line.gone.size}개 만들어 보내기") }
@@ -768,7 +768,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     scope.launch {
                         busy = "신청을 정리하고 있어요…"
                         runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team)?.let { com.bamnat.app.team.TeamAskSync.end(c, it) } ?: com.bamnat.app.team.TeamAskSync.end(c, team) }
-                            .onFailure { dialog = "인터넷이 될 때 다시 눌러 주세요." }
+                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 눌러 주세요." }
                         busy = null
                     }
                 }) { Text("끝내기") }
@@ -792,7 +792,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         busy = "요청 링크를 만들고 있어요…"
                         runCatching { com.bamnat.app.team.TeamCallSync.open(c, store.teamNow(team.id) ?: team, gap, people) }
                             .onSuccess { (t, k) -> send(context, com.bamnat.app.team.TeamCallSync.message(t, k, now.members), "대신 근무 요청 보내기") }
-                            .onFailure { dialog = "요청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
+                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "요청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
                         busy = null
                     }
                 })
@@ -806,7 +806,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             val members = board?.members?.filter { it.active }.orEmpty()
             runCatching { com.bamnat.app.team.TeamAskSync.open(c, team, month, rules, members) }
                 .onSuccess { t -> t.ask?.let { send(context, com.bamnat.app.team.TeamAskSync.message(t, it, members), "근무 신청 링크 보내기") } }
-                .onFailure { dialog = "신청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
+                .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "신청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
             busy = null
         }
     }
