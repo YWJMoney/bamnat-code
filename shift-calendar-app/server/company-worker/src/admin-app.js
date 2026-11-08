@@ -3147,8 +3147,9 @@ function adminApp(L, BUILD, M) {
   function serverView() {
     // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
     const watch = Boolean(S.me?.owner && S.data.watch);
-    return `${V.watchBoard()}<section class="card"><h2>${watch ? "무결성·회사 수" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}
-        <p class="meta">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p></section>`;
+    // 1.39 PC 6차 H1: 무엇이 돌고 있는지(회사·규칙 수, 서버 판, 관리자 앱 빌드)는 맨 위 한 줄로. 전에는 맨 아래에 있었어요.
+    const sum = `<p class="meta server-sum">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p>`;
+    return `${sum}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
   }
 
   /**
@@ -4249,13 +4250,30 @@ function adminApp(L, BUILD, M) {
   // ---- home [ADMUX-27][FLAG-28] ----
 
   /** A legal flag that turned on in the last 24 hours: at the top of 홈, with a one-tap force off (결정 D99). */
+  /**
+   * 1.39 PC 6차 J1: '결제(프로 구독)가'처럼 이름 끝 글자(괄호 앞)의 받침으로 이·가를 골라요. 한글이 아니면 '이(가)'.
+   */
+  const igaSuffix = (w) => {
+    const c = String(w ?? "").replace(/\s*\([^()]*\)\s*$/, "").trim().slice(-1).charCodeAt(0);
+    if (!(c >= 0xac00 && c <= 0xd7a3)) return "이(가)";
+    return (c - 0xac00) % 28 === 0 ? "가" : "이";
+  };
   function flagAlertCard() {
     const list = S.overview?.flagAlerts ?? [];
     if (!list.length) return "";
-    return list.map((a) => `<section class="card flag-alert" role="status"><div class="card-head"><h2>${esc(a.name)}이(가) 켜졌어요</h2><span class="pill bad">${esc(ago(a.since))}</span></div>
-      <p class="hint">법적 기능이 조건을 채워 저절로 켜졌어요. 24시간 동안 여기 보여요. 결제·광고에 문제가 보이면 바로 강제로 꺼 주세요.</p>
-      <div class="actions start">${can("flagOff", "edit") ? `<button class="btn danger" data-act="flag-force" data-key="${esc(a.key)}" data-force="off" data-why="켜진 뒤 문제가 보여 홈에서 바로 껐어요">강제로 끄기</button>` : ""}
-        <a class="btn" href="${flagLink(a.key)}">자세히</a></div></section>`).join("");
+    const off = (a) => (can("flagOff", "edit") ? `<button class="btn danger${list.length > 1 ? " small" : ""}" data-act="flag-force" data-key="${esc(a.key)}" data-force="off" data-why="켜진 뒤 문제가 보여 홈에서 바로 껐어요">강제로 끄기</button>` : "");
+    const hint = '<p class="hint">법적 기능이 조건을 채워 저절로 켜졌어요. 24시간 동안 여기 보여요. 결제·광고에 문제가 보이면 바로 강제로 꺼 주세요.</p>';
+    if (list.length === 1) {
+      const [a] = list;
+      return `<section class="card flag-alert" role="status"><div class="card-head"><h2>${esc(a.name)}${igaSuffix(a.name)} 켜졌어요</h2><span class="pill bad">${esc(ago(a.since))}</span></div>
+      ${hint}<div class="actions start">${off(a)}<a class="btn" href="${flagLink(a.key)}">자세히</a></div></section>`;
+    }
+    // 1.39 PC 6차 J1(폭 380): 일곱 장이 쌓여 오늘의 큰 카드가 두 화면 아래로 밀렸어요. 여럿이면 한 장으로 접어요.
+    const key = "home:flag-alerts";
+    return `<section class="card flag-alert" role="status"><details data-key="${key}"${S.opened.get(key) ? " open" : ""}>
+      <summary class="card-head"><h2>기능 ${list.length}개가 저절로 켜졌어요</h2><span class="pill bad">${esc(ago(list[0].since))}</span><span class="more">펼치기</span></summary>
+      ${hint}<ul class="rows flag-alert-list">${list.map((a) => `<li><div class="row"><span class="row-main"><b>${esc(a.name)}${igaSuffix(a.name)} 켜졌어요</b><small>${esc(ago(a.since))}</small></span>
+        <span class="row-side">${off(a)}<a class="btn small" href="${flagLink(a.key)}">자세히</a></span></div></li>`).join("")}</ul></details></section>`;
   }
 
   // ---- 분석 › 기능별 효과 (1.28 통합) [ADMUX-40][FLAG-30] ----

@@ -553,6 +553,9 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .checklist .c-main{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
 .checklist small{display:block;color:var(--muted);font-size:.8rem}
 .card.flag-alert{border-color:var(--bad);background:var(--bad-bg)}
+.card.flag-alert summary{cursor:pointer;list-style:none;flex-wrap:wrap;gap:.4rem}.card.flag-alert summary::-webkit-details-marker{display:none}
+.card.flag-alert summary .more{margin-left:auto;font-size:.82rem;font-weight:700;color:var(--muted)}.card.flag-alert details[open] summary .more{display:none}
+.flag-alert-list .row-side{flex-wrap:wrap}.server-sum{margin:0 0 .6rem}
 .agenda .date{flex:none;width:4.5rem;display:flex;flex-direction:column;font-weight:800;font-size:.9rem}
 .agenda .date small{font-weight:600;color:var(--muted);font-size:.75rem}
 .cond-out{margin:.5rem 0 0;font-size:.88rem}
