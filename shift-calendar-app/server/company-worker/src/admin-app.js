@@ -2204,7 +2204,7 @@ function adminApp(L, BUILD, M) {
       </section>
       ${edit ? `<section class="card">
         <h2>다른 회사에 합치기</h2>
-        <p class="hint">같은 회사가 다른 이름으로 두 번 생겼을 때 써요. 제보와 규칙이 모두 옮겨지고 이 이름은 다른 이름으로 남아요.</p>
+        <p class="hint">같은 회사가 다른 이름으로 두 번 생겼을 때 써요. 제보·규칙·참여한 분·쓰는 사람 수·토론(보완 요청 포함)이 모두 옮겨지고 이 이름은 다른 이름으로 남아요.</p>
         <form data-form="merge-search"><div class="field"><input name="q" placeholder="합칠 회사 이름" required aria-label="합칠 회사 이름">
           <button class="btn" type="submit">찾기</button></div></form>
         <div id="merge-results"></div>

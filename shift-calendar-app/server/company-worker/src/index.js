@@ -6603,6 +6603,13 @@ async function merge(request, env, id, now) {
     stmt(env, "UPDATE OR IGNORE votes SET company_id = ? WHERE company_id = ?", into.id, from.id),
     stmt(env, "DELETE FROM votes WHERE company_id = ?", from.id),
     stmt(env, "UPDATE rules SET company_id = ? WHERE company_id = ?", into.id, from.id),
+    // 1.39 (사용자 11-08 '회사 합쳐줘' 때 찾음): who joined, who uses which version, and the talk (보완 요청 too) go along. Before,
+    // a phone that had joined the old name was no member of the merged company: no '이 급여 방식 쓰기', no talk, its posts gone.
+    stmt(env, "UPDATE members SET company_id = ? WHERE company_id = ?", into.id, from.id),
+    stmt(env, "UPDATE OR IGNORE uses SET company_id = ? WHERE company_id = ?", into.id, from.id),
+    stmt(env, "DELETE FROM uses WHERE company_id = ?", from.id),
+    stmt(env, "UPDATE posts SET company_id = ? WHERE company_id = ?", into.id, from.id),
+    stmt(env, "UPDATE plaza_results SET company_id = ? WHERE company_id = ?", into.id, from.id),
     stmt(env, "UPDATE companies SET merged_into = ? WHERE id = ? OR merged_into = ?", into.id, from.id, from.id),
   );
   await batch(env, stmts);
