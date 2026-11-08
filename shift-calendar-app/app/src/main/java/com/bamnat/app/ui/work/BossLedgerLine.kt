@@ -62,14 +62,16 @@ internal fun BossLedgerNotice(settings: AppSettings, modifier: Modifier = Modifi
         Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text("직원이 있으면 급여 대장을 써 보세요", style = MaterialTheme.typography.bodyMedium)
-                Text("평소 근무로 한 달 급여·주휴·4대보험과 명세서까지 계산해요. 아래 칸 '관리'에 있어요.",
+                Text("평소 근무로 한 달 급여·주휴·4대보험과 명세서까지 계산해요. 열면 아래 칸에 '관리'를 넣어 다음부터 한 번에 와요.",
                     style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = {
                     val app = context.appContainer
                     val slots = TabSlots.resolve(settings.tabSlots, settings.tabOrder, TabPicks.known)
                     app.settingsRepository.update { it.withBar(BossLedgerLine.added(slots)) }
                     hints.markDone(BossLedgerLine.KEY); shown = false
-                }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("아래 칸에 '관리' 넣기") }
+                    // 통합 6차 PC: the press put 관리 on the bar and went nowhere (3 presses to the 급여 대장). It now opens it too.
+                    com.bamnat.app.imports.SharedToManage.openLedger()
+                }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("급여 대장 열기") }
             }
             IconButton(onClick = { hints.markDone(BossLedgerLine.KEY); shown = false }) { Icon(Icons.Filled.Close, "안내 닫기") }
         }

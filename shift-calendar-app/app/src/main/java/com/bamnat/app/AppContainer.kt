@@ -100,7 +100,7 @@ class AppContainer(context: Context) {
         s.cleaned(list.map { it.id })
     }, shiftsOf = { id ->
         // [EASE-22] 근무마다 메모 follow the calendar's own days (one shared reading per calendar).
-        calendars.repository(id).live.map { s -> com.bamnat.core.memo.MemoRepeat.ShiftOf { d -> s.resolver.shiftIdOn(d) } }
+        calendars.repository(id).live.map { s -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(s.resolver) }
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
@@ -1041,10 +1041,17 @@ class AppContainer(context: Context) {
             }
             // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
             keep("memoschedule") {
+                // 1.39 [TASK-44] A repeat changed or a day finished moves the next ring too.
                 memoRepository.memos.map { list -> list.filter { it.reminder != null } }
-                    .distinctUntilChanged { a, b -> a.map { it.id to it.reminder } == b.map { it.id to it.reminder } }
+                    .distinctUntilChanged { a, b ->
+                        a.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.skips, it.inTrash) } ==
+                            b.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.skips, it.inTrash) }
+                    }
                     .debounce(300)
-                    .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
+                    .collect { list ->
+                        val shifts = com.bamnat.app.memo.MemoScheduleAlarm.shiftsFor(appContext, list)
+                        com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, list, shiftsOf = shifts)
+                    }
             }
             // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
             keep("taskwidget") {

@@ -80,7 +80,7 @@ class MemoScheduleAppTest {
         Notifications.createChannels(context)
         val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
         val memo = Memo(id = 8, title = "택배 받기", reminder = MemoReminder(at, ring = false, notify = true))
-        val rest = LocalDate.of(2026, 11, 12)
+        val rest = LocalDateTime.of(2026, 11, 12, 14, 0)
         MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000, restOf = { rest })
         val posted = shadowOf(nm).allNotifications.single()
         assertEquals(listOf("끝내기", "10분 뒤", "다른 때…"), posted.actions.map { it.title.toString() })
@@ -94,7 +94,7 @@ class MemoScheduleAppTest {
         val later = shadowOf(posted.actions[2].actionIntent)
         assertTrue("다른 때… opens the window", later.isActivityIntent)
         assertEquals(MemoLaterActivity::class.java.name, later.savedIntent.component?.className)
-        assertEquals(rest.toEpochDay(), later.savedIntent.getLongExtra("rest", 0))
+        assertEquals(rest, MemoSnoozeReceiver.restAt(later.savedIntent))
     }
 
     /** 1.39 [TASK-39] 끝내기 finishes the memo for real (the 할 일 앱's Complete left it open), a repeating one on that day only. */
@@ -120,9 +120,13 @@ class MemoScheduleAppTest {
         val repo = context.appContainer.memoRepository
         val day = LocalDate.now()
         val memo = repo.save(Memo(date = day, title = "약 먹기", reminder = MemoReminder(day.atTime(8, 0), ring = false, notify = true)))
-        val rest = day.plusDays(3)
+        val rest = day.plusDays(3).atTime(com.bamnat.core.memo.ShiftMemoTime.AFTER_NIGHT)
         val at = MemoSnoozeReceiver.put(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.REST, rest)!!
-        assertEquals(rest.atTime(com.bamnat.core.memo.ShiftMemoTime.OFF_TIME), at)
+        assertEquals(rest, at)
+        // The time rides the notice's buttons as minutes.
+        val carried = MemoSnoozeReceiver.putRest(android.content.Intent(), rest)
+        assertEquals(rest, MemoSnoozeReceiver.restAt(carried))
+        assertNull(MemoSnoozeReceiver.restAt(android.content.Intent()))
         assertEquals(at, repo.get(memo.id)!!.reminder!!.at)
         val now = LocalDateTime.of(2026, 11, 8, 14, 3)
         assertEquals("오후 2:13", laterSaid(now.plusMinutes(10), now))

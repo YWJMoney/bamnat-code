@@ -1114,7 +1114,8 @@ test("[ADMUX-27][FLAG-28] a legal flag on for under 24 hours sits at the top of 
   await u.settle(20);
   const card = u.$("#main .card.flag-alert");
   assert.ok(card, "the warning card");
-  assert.match(card.textContent, /결제\(프로 구독\)이\(가\) 켜졌어요/);
+  // 1.39 PC 6차 J1: '이(가)' 대신 받침대로 '가'. 여럿 켜졌으면 한 장으로 접혀도 이 줄은 그 안에 있어요.
+  assert.match(card.textContent, /결제\(프로 구독\)가 켜졌어요/);
   assert.ok(u.$("#main").firstElementChild.classList.contains("flag-alert"), "at the top");
   await u.click('#main .flag-alert [data-act="flag-force"]');
   assert.match(u.$("#ff-why").value, /홈에서 바로 껐어요/);
@@ -1955,4 +1956,43 @@ test("[ADM3-49] Claude 추천 shows on 검토함·보상, 거절 starts at its r
   assert.match(u.text("#main"), /제보·보상 추천/);
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
+});
+
+test("[ADM3-50] seven flags on at once are one folded card above 오늘's big card, with 이·가 by the last letter (PC 6차 J1·H1)", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const names = ["결제(프로 구독)", "광고", "공유 급여 보기", "수면 기록", "팀 근무표", "사장님 급여", "건강 알림"];
+  const real = t.window.fetch;
+  t.window.fetch = async (input, init) => {
+    if (new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname !== "/api/admin/badges") return real(input, init);
+    const headers = new Headers(init?.headers ?? {});
+    headers.delete("if-none-match");
+    const b = await (await real(input, { ...init, headers })).json();
+    const since = new Date(Date.now() - 600e3).toISOString();
+    return new t.window.Response(JSON.stringify({ ...b, flagAlerts: names.map((name, i) => ({ key: `f${i}`, name, since })) }),
+      { status: 200, headers: { "content-type": "application/json" } });
+  };
+  // The menu numbers are kept 15 seconds; the clock moves past them so the next screen asks again.
+  const clock = t.window.Date.now.bind(t.window.Date);
+  t.window.Date.now = () => clock() + 20000;
+  await t.go("#/companies");
+  await t.go("#/home");
+  await t.settle(30);
+  assert.equal(t.$$("#main .card.flag-alert").length, 1, "one card, not seven");
+  assert.match(t.text("#main .flag-alert summary"), /기능 7개가 저절로 켜졌어요/);
+  assert.equal(t.$("#main .flag-alert details").open, false, "folded until 펼치기");
+  assert.ok(t.$("#main .flag-alert + .today-hero"), "the big card right under it");
+  const lines = t.$$("#main .flag-alert-list b").map((b) => b.textContent);
+  assert.ok(lines.includes("결제(프로 구독)가 켜졌어요"));
+  assert.ok(lines.includes("광고가 켜졌어요"));
+  assert.ok(lines.includes("수면 기록이 켜졌어요"));
+  assert.ok(lines.includes("건강 알림이 켜졌어요"));
+  // H1: what runs (회사·규칙·서버 판·빌드) first on 서버 상태.
+  await t.go("#/server");
+  await t.settle(30);
+  const kids = [...t.$("#main").children];
+  const at = kids.findIndex((k) => k.classList.contains("server-sum"));
+  assert.ok(at >= 0 && at < kids.findIndex((k) => k.matches(".card, section")), kids.map((k) => k.className).join(" | "));
+  assert.match(t.text("#main .server-sum"), /관리자 앱 빌드/);
+  assert.deepEqual(t.errors, []);
 });

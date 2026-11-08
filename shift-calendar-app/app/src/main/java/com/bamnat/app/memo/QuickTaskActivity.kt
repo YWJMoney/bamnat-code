@@ -108,11 +108,14 @@ internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDat
     val line = MemoTime.line(text, now)
     val date: LocalDate? = quickDate(line, day, now)
     // The time read goes with the day picked (내일 저녁 6시, moved to 오늘, rings 오늘 저녁 6시); no day, no ring.
-    val at = line.at?.let { a -> date?.atTime(a.toLocalTime()) }?.takeIf { ring && it.isAfter(now) }
+    // 1.39 [TASK-44] A repeating one ('매일 오전 9시') keeps its time even when today's is gone: it rings on its next day.
+    val repeat = date?.let { com.bamnat.core.memo.MemoRepeat.code(line.repeat, it) }.orEmpty()
+    val at = line.at?.let { a -> date?.atTime(a.toLocalTime()) }?.takeIf { ring && (it.isAfter(now) || repeat.isNotEmpty()) }
     return Memo(
         date = date,
         title = line.title,
         body = line.rest,
+        repeat = repeat,
         reminder = at?.let { MemoReminder(it, ring = false, notify = true) },
         // A line with no day stays at hand as a pinned note, as on the widget's 고정 list.
         pinned = date == null,
@@ -129,6 +132,8 @@ private fun quickDate(line: MemoTime.Line, day: QuickDay, now: LocalDateTime): L
 
 /** Whether the time read is already gone on the day picked (오늘 21:00 at 23:06): it cannot ring, so the window says so. */
 internal fun quickPast(line: MemoTime.Line, day: QuickDay, now: LocalDateTime): Boolean {
+    // 1.39 [TASK-44] A repeating line rings on its next day instead.
+    if (line.repeat != com.bamnat.core.memo.MemoRepeat.Kind.NONE) return false
     val at = line.at ?: return false
     val date = quickDate(line, day, now) ?: return false
     return !date.atTime(at.toLocalTime()).isAfter(now)
@@ -138,8 +143,12 @@ internal fun quickPast(line: MemoTime.Line, day: QuickDay, now: LocalDateTime): 
 internal fun quickSay(line: MemoTime.Line, day: QuickDay, ring: Boolean, now: LocalDateTime, dayFmt: DateTimeFormatter): String {
     val date = quickDate(line, day, now)
     val time = line.at?.toLocalTime()
+    // 1.39 [TASK-44] "매일 · 11/9 (월)부터 09:24 알림".
+    val again = date?.let { com.bamnat.core.memo.MemoRepeat.label(com.bamnat.core.memo.MemoRepeat.code(line.repeat, it)) }.orEmpty()
     val where = when {
         date == null -> "날짜 없이 고정"
+        again.isNotEmpty() && time == null -> "$again · ${dayFmt.format(date)}부터"
+        again.isNotEmpty() -> "$again · ${dayFmt.format(date)}부터 $time" + if (ring) " 알림" else " · 알림 없이"
         time == null -> dayFmt.format(date)
         quickPast(line, day, now) -> "${dayFmt.format(date)} · ${time}은 지났어요. 시각 없이 적어요(알림은 '내일'을 골라요)"
         ring -> "${dayFmt.format(date)} $time 알림"

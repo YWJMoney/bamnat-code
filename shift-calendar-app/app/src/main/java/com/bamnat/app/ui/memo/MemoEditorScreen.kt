@@ -575,16 +575,25 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     }
 
     if (scheduling) {
+        var pickedRepeat by remember { mutableStateOf<com.bamnat.core.memo.MemoRepeat.Kind?>(null) }
         ScheduleDialog(
             initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime()),
             current = memo.reminder,
             onDismiss = { scheduling = false },
             shiftTimes = remember(shiftDays) { com.bamnat.core.memo.ShiftMemoTime.suggestions(shiftDays, Today.dateTime()) },
             clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays)?.text },
+            // 1.39 [TASK-44] PC 6차: 반복 here too (the chip by the date was not found); 쉬는 날 where the calendar has days off.
+            repeat = memo.repeat,
+            onRepeat = { kind -> pickedRepeat = kind },
+            restRepeat = shiftDays.any { !it.work },
             onSave = { r ->
+                pickedRepeat?.let { vm.setRepeat(it, from = r.at.toLocalDate()) }
+                pickedRepeat = null
                 vm.setReminder(r, answered = answering)
                 scheduling = false
-                Toast.makeText(context, "${scheduleText(r.at)}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
+                val again = com.bamnat.core.memo.MemoRepeat.label(vm.memo.value.repeat).let { if (it.isEmpty()) "" else "$it " }
+                val at = if (again.isEmpty()) scheduleText(r.at) else again + scheduleText(r.at).substringAfter(") ")
+                Toast.makeText(context, "${at}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
             },
         )
     }
