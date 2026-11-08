@@ -67,6 +67,8 @@ async function seed() {
     }), env);
   }
   await send("/api/reports", report(8, { company: "사아자물류", setup: odd, verified: true }), "10.0.0.8");
+  // 1.39 [ADM3-45] 같은 회사일까요?: 이름만 조금 다른 회사 하나(사람과 글 › 회사 맨 위에 짝으로 보여요).
+  await send("/api/reports", report(15, { company: "사아자물류 평택센터", setup: odd }), "10.0.0.15");
   if (login.ok) await seedAdmins(login.headers.get("set-cookie").split(";")[0]);
   // A way the app cannot set yet.
   await send("/api/reports", report(9, {
