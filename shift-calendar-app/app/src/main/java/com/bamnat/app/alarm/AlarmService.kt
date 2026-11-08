@@ -181,6 +181,8 @@ class AlarmService : Service() {
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
                     // 1.39 [SLEEP-06] The morning alarm off: 자는 동안 소리 stops too, so the microphone does not run into the day.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepRecordService.stop(this)
+                    // 1.39 [FX-21] 규칙 '근무 알람을 끄면'.
+                    if (ring.label == null && !ring.recheck) runCatching { com.bamnat.app.logic.LogicRunner.onAlarmOff(appContainer) }
                 }
                 if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()

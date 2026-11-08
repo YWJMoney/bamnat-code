@@ -261,6 +261,7 @@ class AppContainer(context: Context) {
     val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
     init {
         (companyApi as? com.bamnat.app.company.CompanyClient)?.roomTag = { room -> plazaTags.json(room) }
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomCard = { room -> plazaTags.cardJson(room) }
     }
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
@@ -793,6 +794,8 @@ class AppContainer(context: Context) {
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
+                // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
+                com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
                 com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
             }
         }
@@ -1040,6 +1043,12 @@ class AppContainer(context: Context) {
                     .distinctUntilChanged { a, b -> a.map { it.id to it.reminder } == b.map { it.id to it.reminder } }
                     .debounce(300)
                     .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
+            }
+            // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
+            keep("taskwidget") {
+                combine(memoRepository.memos, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
+                    .drop(1).debounce(800)
+                    .collect { com.bamnat.app.widget.TaskWidget.redraw(appContext) }
             }
             // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
             keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }

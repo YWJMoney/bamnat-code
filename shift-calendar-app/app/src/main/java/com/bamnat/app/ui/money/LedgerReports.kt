@@ -82,6 +82,8 @@ fun LedgerReportsPane(
     month: YearMonth,
     snapshot: com.bamnat.app.data.ScheduleSnapshot? = null,
     onMessage: (String) -> Unit = {},
+    /** 1.39 [FLOW-18] The shown month's category budgets, for the 잘 쓴 곳·많이 쓴 곳 chips. */
+    budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
 ) {
     if (analysis == null) return
     val places = remember(book, month) { MoneyStats.places(book.entries, month) }
@@ -92,7 +94,7 @@ fun LedgerReportsPane(
         // [MON-04] Locked, the user's own analysis shows blurred under the lock.
         com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory)
+                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory, budgetLines, today)
                 PaceCard(r, budget, today)
                 InOutCard(m, style)
             }
@@ -184,7 +186,8 @@ private fun ProNote() {
 
 /** [LEDG-10] Where the money went, as a ring and a list; a tap shows that category's lines. */
 @Composable
-private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit) {
+private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
+    today: LocalDate = com.bamnat.core.time.Today.date()) {
     val cal = LocalCalendarColors.current
     val shown = r.categories.take(7)
     val rest = r.categories.drop(7)
@@ -192,6 +195,18 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit) {
     val slices = shown.map { Slice(it.category, it.amount, categoryColor(it.category)) } +
         listOfNotNull(rest.takeIf { it.isNotEmpty() }?.let { l -> Slice("그 밖에", l.sumOf { it.amount }, other) })
     SectionCard(title = "분류별 지출", trailing = { ProPill() }) {
+        // 1.39 [FLOW-18] 잘 쓴 곳(초록)·많이 쓴 곳(주황) 칩 두 줄, above the ring and the list; a tap shows that category's lines.
+        val chips = remember(r, budgetLines, today) { com.bamnat.core.money.MonthChips.of(r, budgetLines, today) }
+        if (!chips.isEmpty) {
+            val word = { v: Long -> wonBrief(v) + "원" }
+            com.bamnat.app.ui.components.ToneChipRows(
+                "잘 쓴 곳", chips.good.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hideShort(c.words(word))) { onCategory(c.category) } },
+                "많이 쓴 곳", chips.caution.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hideShort(c.words(word))) { onCategory(c.category) } },
+            )
+            com.bamnat.app.ui.components.ToneChipNote(
+                if (YearMonth.from(today) == r.month) "예산이 있으면 예산과, 없으면 지난달 같은 때까지와 견줘요." else "예산이 있으면 예산과, 없으면 지난달과 견줘요.")
+            Spacer(Modifier.height(12.dp))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             Donut(slices, Fmt.won(r.spent), "나간 돈")
         }

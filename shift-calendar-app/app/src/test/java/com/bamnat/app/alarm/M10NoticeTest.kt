@@ -144,6 +144,9 @@ class M10NoticeTest {
         assertEquals(NotificationManager.IMPORTANCE_DEFAULT, nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).importance)
         assertNull(nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).sound)
         assertTrue(sleeping.extras.getString(Notification.EXTRA_TITLE)!!.endsWith("부터 자는 중"))
+        // 1.39 PC c0ca3d9f: a group with no summary was still bundled with D9's notice; it is its own group's summary.
+        assertEquals(Notifications.SLEEPING_GROUP, sleeping.group)
+        assertTrue(sleeping.flags and Notification.FLAG_GROUP_SUMMARY != 0)
         SleepingNotice.woke(context, SleepEntry(1, now.minusHours(7).minusMinutes(30), now), "오늘 19:00 야간")
         val woke = posted(Notifications.SLEEPING_ID)!!
         assertEquals("7시간 30분 잤어요", woke.extras.getString(Notification.EXTRA_TITLE))
@@ -151,6 +154,7 @@ class M10NoticeTest {
         assertTrue(woke.flags and Notification.FLAG_ONGOING_EVENT == 0)
         // 1.39 G5-B1 (PC 1.38 최종 사용성 6): 깼어요 by a sleepy hand is undone from the notice, the sleep going on.
         assertEquals(listOf("아직 자요"), woke.actions.map { it.title.toString() })
+        assertTrue(woke.flags and Notification.FLAG_GROUP_SUMMARY != 0)
         // Left open for 16 hours, it was a missed 깼어요: no notice.
         SleepingNotice.show(context, SleepEntry(2, now.minusHours(17), null), null, now)
         assertNull(posted(Notifications.SLEEPING_ID))

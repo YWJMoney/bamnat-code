@@ -124,6 +124,12 @@ class PlazaHomeViewModel(
     val olderMore: StateFlow<Boolean> = _olderMore.asStateFlow()
     private val _loadingOlder = MutableStateFlow(false)
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+    // [PLZC-22] 선배 답 모음 of this kind of work's plaza.
+    private val _picks = MutableStateFlow<List<com.bamnat.app.company.PlazaPick>>(emptyList())
+    val picks: StateFlow<List<com.bamnat.app.company.PlazaPick>> = _picks.asStateFlow()
+    // [PLZC-21] 오늘 출근: my shift today (night or day) from my calendar.
+    private val _todayShift = MutableStateFlow<com.bamnat.core.plaza.PlazaTag.Now?>(null)
+    val todayShift: StateFlow<com.bamnat.core.plaza.PlazaTag.Now?> = _todayShift.asStateFlow()
 
     init {
         // [SPD-12] The whole list of companies, for 다른 회사 규칙 광장 and its search, if the start of the app did not yet.
@@ -150,9 +156,29 @@ class PlazaHomeViewModel(
      * the company's page with its room and room talk, or a kind of work's talk) shows at once, then one request reads it all
      * again ([com.bamnat.app.company.bundle]; 1.29 asked twice for each, and read the plaza twice as it opened).
      */
+    /** When [load] last asked the server (elapsed time), so coming back within a moment does not ask again. */
+    private var loadedAt = 0L
+
+    /**
+     * PC 4차 c0ca3d9f (상, 다른 폰이 쓴 글·출근 숫자가 앱을 껐다 켜야 보였어요): coming back to 광장 (the tab, the screen, the app
+     * to the front) reads the talk again when the last read is older than [STALE_MS]; 당겨 내리기 always ([pull]).
+     */
+    fun refreshIfStale() {
+        if (android.os.SystemClock.elapsedRealtime() - loadedAt < STALE_MS) return
+        load()
+        refreshMine()
+    }
+
+    /** 당겨 내리기: the talk, my tag and 선배 답 모음 again now. */
+    fun pull() {
+        load()
+        refreshMine()
+    }
+
     fun load() {
         val p = _plan.value
         val room = p.room ?: return
+        loadedAt = android.os.SystemClock.elapsedRealtime()
         val started = com.bamnat.app.company.NetTimings.start()
         val company = p.top == StylePlaza.Top.COMPANY_ROOM
         val cache = c.companySearch.cache
@@ -195,12 +221,18 @@ class PlazaHomeViewModel(
 
     fun refreshMine() {
         val room = _plan.value.room?.takeIf { it.startsWith("style-") && c.plazaTags.on }
-        if (room == null) { _mine.value = null; _timeLine.value = null; return }
+        if (room == null) { _mine.value = null; _timeLine.value = null; _picks.value = emptyList(); return }
         viewModelScope.launch {
             val day = runCatching { withContext(Dispatchers.Default) { c.plazaTags.dayFor(room) } }.getOrNull()
             if (_plan.value.room != room) return@launch
             _mine.value = day?.tag?.copy(months = if (c.plazaTags.scope().months) 0 else null)
             _timeLine.value = day?.let { timeLine(it.tag.now, it.offAfterNight, it.dayOff) }
+            _todayShift.value = day?.todayShift
+            // [PLZC-22] 선배 답 모음, my 근무형태 first.
+            val got = runCatching { c.companyApi.plazaPicks(room) }.getOrDefault(emptyList())
+            if (_plan.value.room == room) _picks.value = got.sortedByDescending { it.form != null && it.form == day?.tag?.form }
+            // [PLZC-41] the 근무형태 같은 근무 새 질문 알림 watches follows the calendar.
+            com.bamnat.app.company.PlazaPush.syncWatch(c)
         }
     }
 
@@ -223,6 +255,21 @@ class PlazaHomeViewModel(
             } finally {
                 _loadingOlder.value = false
             }
+        }
+    }
+
+    private companion object {
+        const val STALE_MS = 15_000L
+    }
+
+    /** [PLZC-21] 오늘 출근 [kind] (null takes it back); the room's head line takes the counts that come back. */
+    fun checkin(kind: String?) {
+        val room = _plan.value.room ?: return
+        viewModelScope.launch {
+            val got = try { c.companyApi.plazaCheckin(c.companyStore.device, room, kind) } catch (_: CompanyException) { return@launch }
+            val t = _state.value.talk ?: return@launch
+            if (_plan.value.room != room) return@launch
+            _state.value = _state.value.copy(talk = t.copy(pulse = t.pulse?.copy(checkin = got)))
         }
     }
 
@@ -266,11 +313,13 @@ class PlazaHomeViewModel(
     }
 
     /** [focus]: the post tapped on the card (PC 확인 a6cab3c8: 미리보기를 눌러도 반응이 없어요), scrolled to and marked. */
-    fun openTalk(focus: String? = null) {
+    fun openTalk(focus: String? = null, reply: Boolean = false) {
         val p = _plan.value
         val room = p.room ?: return
         markSeen()
         talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note, focus = focus)
+        // PC 4차 c0ca3d9f ('환영 답 남기기'가 시트 맨 위만 열었어요): the box answers that post at once ('○○에게 답글').
+        if (reply && focus != null) talk.replyId.value = focus
     }
 
     /**
@@ -318,7 +367,12 @@ fun PlazaHomeScreen(
     // 사용자 2026-11-03: in 마을 the 광장 tab pressed again goes back to the top.
     val page = rememberScrollState()
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
-    LaunchedEffect(reselect) { if (reselect > 0) page.animateScrollTo(0) }
+    LaunchedEffect(reselect) { if (reselect > 0) { page.animateScrollTo(0); vm.refreshIfStale() } }
+    // PC 4차 c0ca3d9f: back to 광장 (마을's tabs, another screen, the app to the front) reads it again when it is old.
+    LaunchedEffect(Unit) { vm.refreshIfStale() }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refreshIfStale() }
+    var pulling by remember { mutableStateOf(false) }
+    LaunchedEffect(state.refreshing) { if (!state.refreshing) pulling = false }
     // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
     val homeTitle = listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" ")
     Scaffold(
@@ -330,8 +384,12 @@ fun PlazaHomeScreen(
             )
         },
     ) { padding ->
+      // PC 4차 c0ca3d9f: 당겨 내리면 새 글·숫자를 다시 받아요.
+      androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = pulling, onRefresh = { pulling = true; vm.pull() }, modifier = Modifier.fillMaxSize().padding(padding),
+      ) {
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(page).padding(horizontal = 16.dp),
+            Modifier.fillMaxSize().verticalScroll(page).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -351,13 +409,18 @@ fun PlazaHomeScreen(
                     Spacer(Modifier.width(6.dp))
                     Text(plan.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                val people = plazaPeopleOn(vm.container) && plan.room != null
+                // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
+                val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
+                val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
                 if (people) {
                     // 1.39 [PLZC-01] 사람 먼저: the talk is the page; 정보·고친 점·시세 are doors on one line above it.
                     // 다른 회사 규칙 means something to a company's room and to 교대·일근 (J133-71), not to 알바·현장·가게·투자.
+                    val picks = vm.picks.collectAsStateWithLifecycle().value
+                    var picksOpen by remember { mutableStateOf(false) }
+                    if (picksOpen) PlazaPicksDialog(picks, vm.mine.collectAsStateWithLifecycle().value?.form) { picksOpen = false }
                     PlazaDoors(plan, onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
                         onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
-                        onFind = onFind)
+                        onFind = onFind, picks = picks.size, onPicks = { picksOpen = true })
                     FreshAnswers(state, vm.seen.collectAsStateWithLifecycle().value) { vm.openTalk() }
                     PlazaFeed(vm.container, vm, plan, state.talk, state.error,
                         older = vm.older.collectAsStateWithLifecycle().value,
@@ -392,6 +455,7 @@ fun PlazaHomeScreen(
                 Spacer(Modifier.height(24.dp))
             }
         }
+      }
     }
     TalkSheet(vm.talk)
 }
@@ -507,8 +571,10 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PlazaDoors(plan: StylePlaza.Plan, onCompany: () -> Unit, onShare: () -> Unit, onRates: () -> Unit, onAll: (() -> Unit)?,
-    onFind: (() -> Unit)? = null) {
+    onFind: (() -> Unit)? = null, picks: Int = 0, onPicks: () -> Unit = {}) {
     val doors = buildList {
+        // 1.39 [PLZC-22] 선배 답 모음 first: what this plaza already learned.
+        if (picks > 0) add("📚 선배 답 모음 $picks" to onPicks)
         if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
             add("📋 근무·급여 정보" to onCompany)
             add("✏️ 고친 점" to onCompany)
@@ -534,4 +600,34 @@ private fun FreshAnswers(state: PlazaHomeViewModel.State, seen: Long, onOpen: ()
     val fresh = if (seen == 0L || mine.isEmpty()) 0 else t.posts.count { it.parent in mine && !it.mine && it.at.toEpochMilli() > seen }
     if (fresh > 0) Text("💬 내 글에 새 답 ${fresh}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.clickable(onClickLabel = "새 답 보기", onClick = onOpen).padding(vertical = 4.dp))
+}
+
+/** 1.39 [PLZC-22] 선배 답 모음: the answers the operator kept from this plaza, my 근무형태's first; a tap opens the answer. */
+@Composable
+private fun PlazaPicksDialog(picks: List<com.bamnat.app.company.PlazaPick>, myForm: com.bamnat.core.pay.WorkForm?, onDismiss: () -> Unit) {
+    var open by remember { mutableStateOf<String?>(picks.firstOrNull()?.id) }
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("선배 답 모음") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("이 광장에서 도움이 된 답을 운영자가 골라 모았어요." + if (myForm != null) " ${myForm.label} 분들 답이 먼저예요." else "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                picks.forEach { p ->
+                    val shown = open == p.id
+                    Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (shown) "접기" else "답 보기") { open = if (shown) null else p.id }
+                        .padding(vertical = 6.dp)) {
+                        Text((if (shown) "▾ " else "▸ ") + p.title, style = MaterialTheme.typography.titleSmall)
+                        p.form?.let { Text(it.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                        if (shown) {
+                            Text("Q. ${p.question}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp))
+                            Text("A. ${p.answer}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }

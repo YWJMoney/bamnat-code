@@ -433,6 +433,13 @@ class RecipeMakeViewModel(
             _state.value = s.copy(error = "바뀐 것이 없어요. 고친 뒤에 새 판으로 올려 주세요", errorCode = "same")
             return
         }
+        // 1.39 [FX-01] 프로 문: a work with a 1.39 기능 장치 goes up to 장터 (광장·링크) only from a 프로 phone; 나만 보기 keeps it as mine.
+        val fx = com.bamnat.app.logic.FxAccess.partsOf(s.recipe)
+        if (fx.isNotEmpty() && s.scope != "private" && !com.bamnat.app.logic.FxAccess.pro(c)) {
+            _state.value = s.copy(error = "프로 기능 장치(${com.bamnat.core.formula.FxPro.say(fx)})가 든 작품은 프로에서 장터에 올려요. 나만 보기로는 지금 저장할 수 있어요",
+                errorCode = "fx_pro")
+            return
+        }
         _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null, ownSame = null)
         viewModelScope.launch {
             try {

@@ -77,7 +77,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
+import { hasPro, INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
@@ -89,9 +89,14 @@ import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, con
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
-import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut } from "./plaza-people.js";
+import { makerMarks } from "./maker-mark.js";
+import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleCard, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
+import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
+import { PLAZA_PICKS_SCHEMA, plazaPicksAdmin, plazaPicksRoute } from "./plaza-picks.js";
+import { plazaEffectAdmin } from "./plaza-effect.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
+import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
@@ -556,6 +561,10 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/activity" && method === "GET") return activity(request, env);
   // 1.36 [PUSH-01] 문의 답 바로 알리기: the phone's FCM token.
   if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
+  // 1.39 [PLZC-41] 같은 근무 새 질문 알림을 받을 광장.
+  if (path === "/api/plaza/watch" && (method === "POST" || method === "DELETE")) return plazaWatchRoute(request, env, await peopleOn(env));
+  if (path === "/api/plaza/checkin" && method === "POST") return plazaCheckinRoute(request, env, await peopleOn(env));
+  if (path === "/api/plaza/picks" && method === "GET") return plazaPicksRoute(request, env, url, await peopleOn(env));
   // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
   if (path === "/api/growth/miss") { const r = await growthRoute(request, env, path, url); if (r) return r; }
   // 1.38 [EASE-31] 밤낮 Q&A (마을): 관리자가 공개로 고른 자주 쓰는 답.
@@ -835,6 +844,9 @@ const SCHEMA = [
   ...PASSKEY_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
+  ...PLAZA_PUSH_SCHEMA,
+  ...PLAZA_CHECKIN_SCHEMA,
+  ...PLAZA_PICKS_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -2597,11 +2609,15 @@ async function roomPost(request, env, body) {
     const m = tag.wantsMonths ? peopleMonths(seen?.first ?? now, now) : null;
     if (m !== null) tag.m = m;
   }
+  // 1.39 [PLZC-20] 근무 카드, on a top post in a kind of work's plaza that counts days at work, once plaza.people is on.
+  const card = place.style && !parent && given(body.card) && (await peopleOn(env, now)) ? peopleCard(body.card, place.id, refuse) : null;
   const id = `p${randomId(15)}`;
   await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
-      parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form)
-    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
-  poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null);
+      parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form, card)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
+  poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null, card ? JSON.stringify(card) : null);
+  // 1.39 [PLZC-41] 답이 오면 질문한 분에게, 근무형태가 붙은 질문이면 그 근무를 지켜보는 분에게 바로 (말 없는 알림).
+  if (place.style) await plazaPushAfter(env, { room: place.id, writer: dev, parent, kind, form: tag?.f ?? null, on: await peopleOn(env, now) }, now);
   return json({ id, at: iso(now) }, 201);
 }
 
@@ -4011,6 +4027,9 @@ async function talkData(request, env, companyId, grp, known = null) {
   // 1.39 [PLZC] 근무 태그·머리 숫자, on a kind of work's plaza once plaza.people is on.
   const people = style && (await peopleOn(env, now));
   const pulse = people && before === null ? await peoplePulse(one, env, c.id, now, grp) : null;
+  // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
+  const checkin = pulse ? await plazaCheckins(env, c.id, me, now) : null;
+  if (checkin) pulse.checkin = checkin;
   // [PLZC-15][PLZC-16] 첫 글 and 도움 n beside a writer's name.
   const writerFacts = people ? await peopleFacts(all, env, rows.map((p) => p.device)) : null;
   // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers
@@ -4029,11 +4048,15 @@ async function talkData(request, env, companyId, grp, known = null) {
   // PC 확인 V27: the card carries the recipe's look, so the 자랑 shows a small picture of it.
   const cards = new Map(attached.length ? (await all(env, `SELECT code, title, body FROM recipes WHERE state = 'visible' AND scope = 'public'
     AND code IN (${attached.map(() => "?").join(",")})`, ...attached)).map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]) : []);
+  // 1.39 [PLZC-31] 근무형태별 투표 결과, on a kind of work's plaza once plaza.people is on.
+  const splits = people && polled.length
+    ? await pollByForm(all, env, polled, new Map(rows.filter((p) => p.poll).map((p) => [p.id, JSON.parse(p.poll).length]))) : new Map();
   const pollOfRow = (p) => {
     const options = JSON.parse(p.poll);
     const counts = options.map((_, i) => pollCounts.find((r) => r.post_id === p.id && r.choice === i)?.n ?? 0);
     const mine = myPolls.find((r) => r.post_id === p.id)?.choice;
-    return { options, counts, ...(mine === undefined ? {} : { mine }) };
+    const byForm = splits.get(p.id);
+    return { options, counts, ...(mine === undefined ? {} : { mine }), ...(byForm ? { byForm } : {}) };
   };
   const dropped = new Set();
   let hiddenByYou = 0;
@@ -4061,6 +4084,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     }
   }
   const makers = new Map(makerRows.filter((m) => !m.hidden && !m.closed).map((m) => [m.device, m.maker]));
+  // 1.39 [PLZC-40] 🏅·⭐ 제작자 표식 beside a name (the same as on 장터's cards), once plaza.people is on.
+  const marks = people && makers.size ? await makerMarks(recipeDeps, env, [...makers.values()], now) : null;
   const review = new Set(reviewRows.map((r) => r.post_id));
   const proposals = new Map(proposalRows.map((r) => [r.id, r]));
   // [PLZ-02] Where each proposal's setup stands, every one in one round.
@@ -4093,6 +4118,7 @@ async function talkData(request, env, companyId, grp, known = null) {
       // 1.36 [V3] 마을 이름 하나: shown in a kind of work's 광장 (with the 프로필 it leads to), never in a company's.
       nick: style ? nicks.get(p.device) ?? null : null,
       ...(style && makers.has(p.device) ? { maker: makers.get(p.device) } : {}),
+      ...(marks?.get(makers.get(p.device))?.mark ? { mark: marks.get(makers.get(p.device)).mark } : {}),
       stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
       verified: verified.has(p.device) || v?.verified === 1,
       body: p.body,
@@ -4106,6 +4132,7 @@ async function talkData(request, env, companyId, grp, known = null) {
       ...(p.kind === "question" && p.answer ? { answer: p.answer } : {}),
       ...(p.poll ? { poll: pollOfRow(p) } : {}),
       ...(peopleTagOut(p, people) ? { tag: peopleTagOut(p, people) } : {}),
+      ...(people && p.card ? { card: JSON.parse(p.card) } : {}),
       ...(writerFacts && !p.parent && writerFacts.first.get(p.device) === p.created_at ? { first: true } : {}),
       ...(writerFacts && nicks.has(p.device) && writerFacts.helped.get(p.device) ? { helped: writerFacts.helped.get(p.device) } : {}),
       ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach).title,
@@ -4303,19 +4330,23 @@ async function pollVote(request, env, id) {
   const limitHit = await overLimit(env, now, [["device", `vote|${dev}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
-  const p = await one(env, "SELECT id, status, poll FROM posts WHERE id = ?", id);
+  const p = await one(env, "SELECT id, status, poll, company_id FROM posts WHERE id = ?", id);
   if (!p || p.status !== "shown" || !p.poll) return json({ error: "not_found" }, 404);
   const options = JSON.parse(p.poll);
+  // 1.39 [PLZC-31] The voter's 근무형태 goes with the vote in a kind of work's plaza, once plaza.people is on.
+  const people = Object.hasOwn(STYLE_ROOMS, p.company_id) && (await peopleOn(env, now));
+  const form = people && given(body.tag) ? (peopleTag(body.tag, p.company_id, refuse)?.f ?? null) : null;
   if (body.choice === null) {
     await run(env, "DELETE FROM poll_votes WHERE post_id = ? AND device = ?", id, dev);
   } else {
     if (!Number.isInteger(body.choice) || body.choice < 0 || body.choice >= options.length) refuse("choice", "choice");
-    await run(env, `INSERT INTO poll_votes (post_id, device, choice, at) VALUES (?, ?, ?, ?)
-      ON CONFLICT (post_id, device) DO UPDATE SET choice = excluded.choice, at = excluded.at`, id, dev, body.choice, now);
+    await run(env, `INSERT INTO poll_votes (post_id, device, choice, at, form) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (post_id, device) DO UPDATE SET choice = excluded.choice, at = excluded.at, form = excluded.form`, id, dev, body.choice, now, form);
   }
   const rows = await all(env, "SELECT choice, COUNT(*) AS n FROM poll_votes WHERE post_id = ? GROUP BY choice", id);
   const counts = options.map((_, i) => rows.find((r) => r.choice === i)?.n ?? 0);
-  return json({ id, poll: { options, counts, ...(body.choice === null ? {} : { mine: body.choice }) } });
+  const byForm = people ? (await pollByForm(all, env, [id], new Map([[id, options.length]]))).get(id) : undefined;
+  return json({ id, poll: { options, counts, ...(body.choice === null ? {} : { mine: body.choice }), ...(byForm ? { byForm } : {}) } });
 }
 
 async function postVote(request, env, id) {
@@ -4870,6 +4901,10 @@ function areaFor(path) {
   // 1.39 [CARE-05] 마을 돌봄(경고·쉬기)도 글을 돌보는 사람이.
   if (path === "/care" || path.startsWith("/care/")) return "community";
   if (path.startsWith("/village/")) return "community";
+  // 1.39 [PLZC-22] 광장 답 모음도 마을을 돌보는 사람이.
+  if (path === "/plaza/picks" || path.startsWith("/plaza/picks/")) return "community";
+  // 1.39 [PLZC-33] 광장 효과는 숫자: 숫자를 보는 사람과 마을을 돌보는 사람 둘 다 (마을 운영 화면에 있어요).
+  if (path === "/plaza/effect") return "community";
   // 1.36 [GRW-02] 스튜디오 요구는 문의를 맡은 사람이, 기본 도구 후보는 장터를 맡은 사람이.
   if (path.startsWith("/growth/needs")) return "inquiries";
   if (path.startsWith("/growth/")) return "community";
@@ -4951,6 +4986,12 @@ async function signedRoute(request, env, url, path, method, now, session) {
     if (env.actor?.key) return json({ error: "no_permission" }, 403);
     const r = await passkeyMine(request, env, url, path, method, actor, now);
     if (r) return r;
+  }
+  // 1.39 [ADM3-42] 로그인 잠금 보기·풀기: 최고 관리자만, 운영 열쇠(Claude)로는 못 해요(사용자 11-07 '슈퍼관리자만').
+  if (path === "/login-locks" || path === "/login-locks/clear") {
+    if (!actor.owner || actor.key) return json({ error: "no_permission", area: "owner" }, 403);
+    if (method === "GET") return json(await loginLocks(env, now));
+    if (method === "POST" && path === "/login-locks/clear") return json(await loginUnlock(env, now));
   }
   if (path === "/me/2fa" && method === "GET") return json(await secondView(env, actor));
   if (path === "/me/2fa" && method === "POST") return secondChange(request, env, actor, now);
@@ -5061,6 +5102,16 @@ async function signedRoute(request, env, url, path, method, now, session) {
   }
   // 1.39 [CARE-05] 마을 돌봄: 경고·의견 쉬기·마을 쉬기 목록, 사람 하나, 보내기, 풀기.
   if (path === "/care" || path.startsWith("/care/")) return careAdmin(request, env, url, path, method, now);
+  // 1.39 [PLZC-33] 광장 효과 (합계만).
+  if (path === "/plaza/effect") { const v = await plazaEffectAdmin(request, env, path, now, STYLE_ROOMS); if (v) return v; }
+  // 1.39 [PLZC-22] 광장 답 모음.
+  if (path === "/plaza/picks" || path.startsWith("/plaza/picks/")) {
+    const v = await plazaPicksAdmin(request, env, path, now, STYLE_ROOMS);
+    if (v) {
+      if (request.method !== "GET") await audit(env, now, "plaza_pick", path);
+      return v;
+    }
+  }
   // 1.36 [VIL-11] 이번 주 이야기 주제 of each kind of work's plaza.
   if (path.startsWith("/village/")) {
     const v = await villageAdmin(recipeDeps, request, env, path, now, STYLE_ROOMS);
@@ -5217,6 +5268,30 @@ async function login(request, env, now) {
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
+}
+
+/**
+ * 1.39 [ADM3-42] 지금 잠긴 로그인: 잠긴 곳(네트워크·관리자 계정) 수, 틀렸지만 아직 안 잠긴 곳 수, 가장 늦게 풀리는 때.
+ * 어디인지는 보여 주지 않아요(네트워크는 원래 짧은 해시로만 남아요).
+ */
+async function loginLocks(env, now) {
+  const rows = await all(env, "SELECT key, count, expires FROM counters WHERE key LIKE 'login|%' AND expires > ?", now);
+  const places = rows.filter((r) => r.key !== "login|all");
+  const locked = places.filter((r) => r.count >= LIMITS.loginFailures);
+  const wide = (rows.find((r) => r.key === "login|all")?.count ?? 0) >= 10 * LIMITS.loginFailures;
+  const until = Math.max(0, ...locked.map((r) => r.expires));
+  return { locked: locked.length, tries: places.length - locked.length, wide, until: until ? iso(until) : null };
+}
+
+/**
+ * 1.39 [ADM3-42] 로그인 잠금을 모두 풀어요(사용자 11-07 22:14 '한없이 기다릴 순 없잖아'). 다른 기기에 최고 관리자로
+ * 로그인해 있을 때 1시간을 기다리지 않게 해요. 틀린 횟수도 함께 0이 되고, 활동 기록에 남아요.
+ */
+async function loginUnlock(env, now) {
+  const before = await loginLocks(env, now);
+  await run(env, "DELETE FROM counters WHERE key LIKE 'login|%'");
+  await audit(env, now, "login_unlock", "", `잠긴 곳 ${before.locked} · 틀린 곳 ${before.tries}${before.wide ? " · 전체 잠금" : ""}`);
+  return { ok: true, ...before };
 }
 
 /**
@@ -7885,6 +7960,8 @@ const recipeDeps = {
   // 1.36 [SEC-11] Play Integrity before a write others see (integrity.js); null to go on.
   integrity: (env, dev, now) => integrityGate(recipeDeps, env, dev, now),
   legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
+  // 1.39 [FX-17] 기능 작품을 남이 보게 올리는 사람은 프로 (money.js hasPro).
+  hasPro: (env, dev, now) => hasPro(env, dev, now),
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
   authorKey,
   authorToken,

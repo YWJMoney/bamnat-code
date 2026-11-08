@@ -1264,14 +1264,14 @@ export function adminLib() {
    * code still reads as words: its first part (reward_x → 보상) and "처리".
    */
   const ACTION_NAMES = {
-    login: "로그인", login_failed: "로그인 실패", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", village_contest: "이달의 주제 공모 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
     inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",

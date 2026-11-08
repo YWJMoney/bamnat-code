@@ -59,4 +59,15 @@ class TeamAnchorsTest {
         assertNull(TeamAnchors.roster(teams, jan5.plusDays(1), 4))
         assertEquals(listOf(2, 0), TeamAnchors.roster(teams, jan5.plusDays(2), 4)!!.teams.map { it.lag })
     }
+
+    /** 1.39 PC c0ca3d9f: days off kept as a 휴무·비번 kind split like blank days (4조 2교대 → 4, 3조 2교대 → 3). */
+    @Test fun daysOffAsAKindStillSplit() {
+        val (d, n, o, b) = listOf(1L, 2L, 9L, 8L)
+        assertEquals(null, com.bamnat.core.schedule.TeamRoster.teamCount(listOf(d, d, n, n, o, o, o, o)))
+        assertEquals(4, com.bamnat.core.schedule.TeamRoster.teamCount(listOf(d, d, n, n, o, o, o, o), setOf(o)))
+        assertEquals(3, com.bamnat.core.schedule.TeamRoster.teamCount(listOf(d, d, n, n, b, o), setOf(o, b)))
+        val r = com.bamnat.core.model.WorkPattern.Rotation(java.time.LocalDate.of(2026, 11, 7), listOf(d, d, n, n, b, o))
+        assertEquals(listOf(0, 2, 4), com.bamnat.core.schedule.TeamRoster.suggest(r, off = setOf(o, b)).teams.map { it.lag })
+        assertEquals(null, com.bamnat.core.schedule.TeamRoster.teamCount(listOf(d, d, o), setOf(o)))
+    }
 }

@@ -18,6 +18,7 @@ function kv() {
   };
 }
 const call = (env, path, init = {}) => worker.fetch(new Request(`https://share.example${path}`, { ...init, headers: { "cf-connecting-ip": "203.0.113.51", ...(init.headers ?? {}) } }), env, { waitUntil() {} });
+const APP139 = { "x-bamnat-app": "53" };
 const form = (body) => ({ method: "POST", body, headers: { "content-type": "application/x-www-form-urlencoded" } });
 const contract = { place: "밤낮 카페", staff: "김 하나", title: "단시간 근로자 근로계약서", days: 7,
   items: [{ t: "근로 시작일", b: "2026년 11월 9일부터" }, { t: "임금", b: "시급 10,320원\n지급일: 매월 10일" }, { t: "사업자", b: "123-45-67890" }] };
@@ -28,13 +29,23 @@ test("[CARE-09] phone numbers, links, account numbers and moves to a messenger a
   assert.equal((await call(env, "/api/sign", { method: "POST", body: JSON.stringify(contract) })).status, 201);
   for (const [b, why] of [["보증금 30만 원은 110-123-456789로 보내 주세요", "account"], ["문의 010-1234-5678", "phone"],
     ["자세한 건 https://bit.ly/x", "link"], ["오픈채팅으로 오세요", "messenger"]]) {
-    const r = await call(env, "/api/sign", { method: "POST", body: JSON.stringify({ ...contract, items: [...contract.items, { t: "안내", b }] }) });
+    const r = await call(env, "/api/sign", { method: "POST", headers: APP139, body: JSON.stringify({ ...contract, items: [...contract.items, { t: "안내", b }] }) });
     assert.equal(r.status, 400, b);
     assert.deepEqual(await r.json(), { error: "contact", why });
   }
-  const bad = await call(env, "/api/call", { method: "POST", body: JSON.stringify({ team: "6병동", title: "고액 대타 텔레그램 연락", detail: "", people: ["다"] }) });
+  const bad = await call(env, "/api/call", { method: "POST", headers: APP139, body: JSON.stringify({ team: "6병동", title: "고액 대타 텔레그램 연락", detail: "", people: ["다"] }) });
   assert.equal(bad.status, 400);
   assert.equal(scamProblem({ a: ["09:00-18:00", "2026-11-08", "시급 10,030원", "월 2,100,000원"] }), null);
+});
+
+test("[CARE-09] 1.38 이하 앱(헤더 없음·52)은 예전처럼 받아요(사용자 2026-11-08 '1.39 앱에서만')", async () => {
+  readsForget();
+  const env = { SHARES: kv() };
+  const body = JSON.stringify({ ...contract, items: [...contract.items, { t: "안내", b: "문의 010-1234-5678" }] });
+  assert.equal((await call(env, "/api/sign", { method: "POST", body })).status, 201);
+  assert.equal((await call(env, "/api/sign", { method: "POST", headers: { "x-bamnat-app": "52" }, body })).status, 201);
+  assert.equal((await call(env, "/api/call", { method: "POST", body: JSON.stringify({ team: "6병동", title: "고액 대타 텔레그램 연락", detail: "", people: ["다"] }) })).status, 201);
+  assert.equal((await call(env, "/api/sign", { method: "POST", headers: APP139, body })).status, 400);
 });
 
 test("[CARE-07][CARE-08] a 근로계약서 page has the report form; a report is counted by kind; the operator takes it down with why", async () => {

@@ -412,6 +412,9 @@ abstract class ScreenshotBase {
             touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
         }
 
+        /** 1.39 [MKD-42] Whether [text] is reached by scrolling down to it (no tap), as a long page puts it below the first screen. */
+        fun scrolledTo(text: String, exact: Boolean = false, scrolls: Int = 8): Boolean = runCatching { reach(text, exact, false, scrolls, 0.5f) }.isSuccess
+
         /**
          * [TAB-04] The calendar's 목록 판, as '달력 판 고르기 > 목록' picks it. The menu is Compose's DropdownMenu, a popup window [find]
          * does not read, so the button is checked and the pick written the way the menu writes it.

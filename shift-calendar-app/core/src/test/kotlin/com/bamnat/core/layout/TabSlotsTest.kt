@@ -39,8 +39,11 @@ class TabSlotsTest {
     }
 
     @Test fun atMostFivePlacesAndANameWithoutTheSplitters() {
-        val got = TabSlots.decode("calendar;money;memos;stats;plaza;settings", known)
-        assertEquals(5, got.size)
+        // 1.39 [NAV2-07] Seven are kept (an unfolded phone's rail); a phone bar shows five.
+        val got = TabSlots.decode("calendar;money;memos;stats;plaza;settings;f:SLEEP;f:PAY", known)
+        assertEquals(7, got.size)
+        assertEquals(5, TabSlots.onBar(got, wide = false).size)
+        assertEquals(5, TabSlots.addTo(TabSlots.decode("calendar;money;memos;stats;plaza", known), 5, "settings").size)
         assertEquals("가계부모음", TabSlots.cleanName("가계부;|모음+"))
         assertEquals("모음", (TabSlots.decode("calendar;g||money+memos", known)[1] as Group).name)
     }
@@ -103,5 +106,21 @@ class TabSlotsTest {
         assertEquals(null, TabSlots.asOrder(listOf("calendar", "money", "memos", "stats").map(::One)))
         assertEquals(null, TabSlots.asOrder(listOf(One("calendar"), One("f:SLEEP"))))
         assertEquals(null, TabSlots.asOrder(listOf(One("calendar"), Group("돈", listOf("money", "stats")))))
+    }
+
+    /** 1.39 [NAV2-07] Beside an unfolded phone's rail two more places; folded, their screens wait by the 나 button. */
+    @Test fun anUnfoldedRailHoldsSevenAndFoldedTheRestWaitByMe() {
+        val five = TabSlots.decode("calendar;money;memos;stats;plaza", known)
+        val six = TabSlots.addTo(five, 5, "f:SLEEP", max = TabSlots.MAX_WIDE)
+        val seven = TabSlots.addTo(six, 6, "settings", max = TabSlots.MAX_WIDE)
+        assertEquals(7, seven.size)
+        assertEquals("no eighth", seven, TabSlots.addTo(seven, 7, "f:PAY", max = TabSlots.MAX_WIDE))
+        assertEquals(seven, TabSlots.decode(TabSlots.encode(seven), known))
+        assertEquals(7, TabSlots.onBar(seven, wide = true).size)
+        assertEquals(listOf("f:SLEEP", "settings"), TabSlots.offBar(seven, wide = false))
+        assertEquals(emptyList<String>(), TabSlots.offBar(seven, wide = true))
+        // Folded, 설정 in the seventh place is not on the bar: the 나 button lists it.
+        assertTrue(TabOrder.SETTINGS in TabSlots.missing(TabSlots.onBar(seven, wide = false)))
+        assertFalse(TabOrder.SETTINGS in TabSlots.missing(TabSlots.onBar(seven, wide = true)))
     }
 }

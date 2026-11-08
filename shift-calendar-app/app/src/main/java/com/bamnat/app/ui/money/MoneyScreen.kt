@@ -811,7 +811,14 @@ fun MoneyScreen(
         MoneyPart.ASKME to { AskLedgerCard(book, today) },
         MoneyPart.ASK to { LedgerAsksCard(book, today, vm) },
         MoneyPart.INSTALL to { InstallmentPlanCard(book, today) },
-        MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate) },
+        MoneyPart.SHIFTSPEND to {
+            ShiftSpendCard(book, snapshot, today, gate, onCategory = vm::showCategory,
+                challenge = remember(settings.moneyChallenge) { com.bamnat.core.money.Challenges.decode(settings.moneyChallenge) },
+                onChallenge = { k ->
+                    vm.updateSettings { it.copy(moneyChallenge = com.bamnat.core.money.Challenges.encode(com.bamnat.core.money.Challenges.Run(k, today))) }
+                    vm.showPage(MoneyViewModel.Page.SUMMARY)
+                })
+        },
         MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
         MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
     )
@@ -931,7 +938,7 @@ fun MoneyScreen(
                     onAdd = { adding = MoneyKind.EXPENSE })
                 MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
                     onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
-                    snapshot = snapshot, onMessage = vm::message)
+                    snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
             }
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;

@@ -416,6 +416,15 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val tab = if (looks.isEmpty()) null else com.bamnat.core.recipe.LookParts.onlyTab(lookRecipe)
             if (looks.isNotEmpty() && tab == null) c.wardrobe.beforeWear()
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
+            // 1.39 [FX-01] 프로 문: 규칙·단추 with a 1.39 기능 장치 go in with 프로 or while this work's 하루 써 보기 runs (the 장터's
+            // '하루 써 보기' starts it with FxAccess.start before this). Its looks alone (규칙·단추 꺼 둠) always go in: 모양은 무료.
+            val fx = if (picks.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) com.bamnat.app.logic.FxAccess.partsOf(r) else emptySet()
+            if (fx.isNotEmpty() && !com.bamnat.app.logic.FxAccess.pro(c) &&
+                com.bamnat.app.logic.FxAccess.status(c, code) !is com.bamnat.core.formula.FxTaste.Status.Using) {
+                _state.value = _state.value.copy(applying = false, message = "프로 기능 장치(${com.bamnat.core.formula.FxPro.say(fx)})가 든 작품이에요. " +
+                    "하루 써 보기로 넣어 보거나 프로에서 넣어요. 규칙·단추를 끄면 모양만 지금 넣을 수 있어요")
+                return@launch
+            }
             val counted = c.recipes.countedHere(code)
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.getOrDefault(false)

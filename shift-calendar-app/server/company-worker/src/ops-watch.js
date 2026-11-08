@@ -299,6 +299,12 @@ export async function sharePing(env) {
   const t0 = Date.now();
   try {
     const res = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(4000) });
+    // 1.39 [ADM3-41] A share server before 1.39 has no /api/health (404) though it is up: its robots.txt, which every
+    // version answers, says it is alive. Anything else than 404 (5xx, a timeout) is still '답 없음'.
+    if (res.status === 404) {
+      const old = await fetch(`${base}/robots.txt`, { signal: AbortSignal.timeout(4000) });
+      return { ok: old.ok, status: old.status, ms: Date.now() - t0, ...(old.ok ? { old: true } : {}) };
+    }
     return { ok: res.ok, status: res.status, ms: Date.now() - t0 };
   } catch {
     return { ok: false, status: 0, ms: Date.now() - t0 };

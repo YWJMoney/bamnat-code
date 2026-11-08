@@ -199,7 +199,9 @@ internal fun SharedSchedule.showsText(): String? {
         "일정".takeIf { "jobs" in shows },
         "휴가 종류".takeIf { "leaveKinds" in shows && days.values.any { it.leave != null } },
         "연장·휴무일 근무".takeIf { "extras" in shows && days.values.any { it.extras.isNotEmpty() } },
-    ) + memoNames + listOfNotNull(payKind.label.takeIf { "pay" in shows })).takeIf { it.isNotEmpty() }?.joinToString(", ")
+    ) + memoNames + listOfNotNull(payKind.label.takeIf { "pay" in shows },
+        // 1.39 PC c0ca3d9f: the preview said '근무와 휴가만' while the plan line showed on the calendar.
+        "지금 자는 중".takeIf { sleepNow != null }, "계획한 잠 시간".takeIf { sleepPlan.isNotEmpty() })).takeIf { it.isNotEmpty() }?.joinToString(", ")
 }
 
 /**
@@ -627,7 +629,8 @@ fun ReceivedCalendarView(
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
-            schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) }?.let { line ->
+            // 1.39 G5-N4 계획한 잠 시간 when no 지금 자는 중 is said: what the plan says now or within a day.
+            (schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) } ?: sleepPlanLine(schedule.sleepPlan))?.let { line ->
                 Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 4.dp))
             }
@@ -1052,6 +1055,13 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
+}
+
+/** 1.39 G5-N4 "오늘 09:00~16:00 잘 계획이에요" or "지금은 잘 계획 시간이에요 · 16:00까지"; null with nothing within a day. */
+internal fun sleepPlanLine(plan: List<com.bamnat.app.share.SleepPlanWindow>, now: java.time.LocalDateTime = com.bamnat.core.time.Today.dateTime()): String? {
+    if (plan.isEmpty()) return null
+    fun t(ms: Long) = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), com.bamnat.core.time.Today.zone())
+    return com.bamnat.core.sleep.SleepPlanShare.line(plan.map { com.bamnat.core.sleep.SleepPlanShare.Window(t(it.from), t(it.to)) }, now)
 }
 
 /** 1.38 [SLEEP-11] "22:10부터 자는 중 · 6:30에 일어나요"; null once it is stale ([com.bamnat.app.share.SleepNow.shownAt]). */

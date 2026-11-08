@@ -47,7 +47,7 @@ class PlazaTagSource(private val c: AppContainer) {
     }
 
     /** My day by the calendar of [room]'s kind of work: the tag a post carries now, and whether a night just ended or today is off. */
-    data class MyDay(val tag: PlazaTag, val offAfterNight: Boolean = false, val dayOff: Boolean = false)
+    data class MyDay(val tag: PlazaTag, val offAfterNight: Boolean = false, val dayOff: Boolean = false, val todayShift: PlazaTag.Now? = null)
 
     /** The tag a post in [room] carries now (months left to the server); null without a calendar of that kind of work. */
     suspend fun tagFor(room: String): PlazaTag? = dayFor(room)?.tag
@@ -60,7 +60,7 @@ class PlazaTagSource(private val c: AppContainer) {
         val pattern = PatternTimeline.current(snap.patterns, today)
         val worked = snap.resolver.resolveRange(today.minusDays(PlazaTags.WINDOW_DAYS - 1L), today).count { it.isWorkDay }
         val profile = runCatching { c.calendars.pay(calendar).profile.value }.getOrNull()
-        val at = java.time.LocalDateTime.now(Today.zone())
+        val at = Today.dateTime()
         val yesterday = snap.resolver.resolve(today.minusDays(1))
         val todayDay = snap.resolver.resolve(today)
         // Today's shift, or yesterday's still running past midnight.
@@ -70,7 +70,34 @@ class PlazaTagSource(private val c: AppContainer) {
             end.toLocalDate() == today && !at.isBefore(end) && at.isBefore(end.plusHours(10)) && yesterday.shiftFrom?.toLocalDate() != today
         } == true
         val dayOff = now == null && !offAfterNight && !todayDay.isWorkDay
-        return MyDay(PlazaTags.compute(style, snap.shiftTypes, pattern, profile, worked, scope(), now), offAfterNight, dayOff)
+        // [PLZC-21] 오늘 출근: the shift on now (yesterday's night still running counts), else today's own, night or day.
+        val running = listOf(yesterday, todayDay).firstOrNull { PlazaTags.nowOf(it.shiftFrom, it.shiftTo, at) != null }
+        val todayShift = (running ?: todayDay.takeIf { it.isWorkDay })?.shiftFrom?.let { PlazaTags.shiftOf(it.hour) }
+        return MyDay(PlazaTags.compute(style, snap.shiftTypes, pattern, profile, worked, scope(), now), offAfterNight, dayOff, todayShift)
+    }
+
+    /**
+     * 1.39 [PLZC-20] 근무 카드 of [room]'s kind of work from its calendar, the 1st to today; null where the plaza has none
+     * ([CARD_STYLES]), without such a calendar, or before plaza.people.
+     */
+    suspend fun card(room: String): com.bamnat.core.plaza.WorkCard? {
+        if (!on) return null
+        val style = StylePlaza.styleOf(room)?.takeIf { it in CARD_STYLES } ?: return null
+        val calendar = calendarFor(style) ?: return null
+        val today = Today.date()
+        val snap = c.calendars.repository(calendar).windowSnapshot(java.time.YearMonth.from(today))
+        val days = snap.resolver.resolveRange(today.withDayOfMonth(1), today).map { d -> d.isWorkDay to d.shiftFrom?.hour }
+        return com.bamnat.core.plaza.WorkCard.of(days)
+    }
+
+    /** [PLZC-20] The room whose next top post takes my 근무 카드 (set by the writing box just before 보내기, taken once). */
+    @Volatile var cardOnce: String? = null
+
+    /** What [com.bamnat.app.company.CompanyClient] adds to a top post in [room]: the card, once, when the box asked for it. */
+    suspend fun cardJson(room: String): JSONObject? {
+        if (cardOnce != room) return null
+        cardOnce = null
+        return card(room)?.let { JSONObject(it.fields()) }
     }
 
     /** What goes with a post: the tag's keys, and whether the server may add the months ("m": true). */
@@ -80,3 +107,6 @@ class PlazaTagSource(private val c: AppContainer) {
         return JSONObject(t.fields()).apply { if (scope().months) put("m", true) }
     }
 }
+
+/** 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (as the server's CARD_STYLES). */
+val CARD_STYLES = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.FIELD, WorkStyle.HOURLY)

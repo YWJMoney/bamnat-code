@@ -98,8 +98,11 @@ data class TeamRoster(val teams: List<Team>) {
          * How many teams [steps] split into: the fewest teams, a whole share of the order apart, that put
          * every working shift on exactly one team every day (주주야야비휴 → 3, 주야비휴 → 4). Null when no
          * even split does, such as 24시간 4조 맞교대; then the user sets the teams.
+         * [off]: 1.39 PC c0ca3d9f, days off kept as a type of their own (휴무·오프·비번 from a first setup or a company file)
+         * are no one's shift, as a blank day is; without it 주주야야휴휴휴휴 with a 휴무 type never split.
          */
-        fun teamCount(steps: List<Long?>): Int? {
+        fun teamCount(steps: List<Long?>, off: Set<Long> = emptySet()): Int? {
+            @Suppress("NAME_SHADOWING") val steps = steps.map { it?.takeIf { id -> id !in off } }
             val size = steps.size
             val work = steps.filterNotNull().toSet()
             if (work.isEmpty()) return null
@@ -112,9 +115,9 @@ data class TeamRoster(val teams: List<Team>) {
         }
 
         /** [teamCount] teams (or [fallback]) named A조, B조…, mine first, each a share of the order behind the one before. */
-        fun suggest(rotation: WorkPattern.Rotation, fallback: Int = 4): TeamRoster {
+        fun suggest(rotation: WorkPattern.Rotation, fallback: Int = 4, off: Set<Long> = emptySet()): TeamRoster {
             val size = rotation.steps.size
-            val n = teamCount(rotation.steps) ?: fallback.coerceIn(2, MAX_TEAMS)
+            val n = teamCount(rotation.steps, off) ?: fallback.coerceIn(2, MAX_TEAMS)
             val share = maxOf(1, size / n)
             return TeamRoster((0 until n).map { j -> Team(NAMES[j], Math.floorMod(j * share, size), mine = j == 0) })
         }

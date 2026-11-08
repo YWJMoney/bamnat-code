@@ -39,7 +39,10 @@ import java.time.LocalDate
 fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modifier) {
     val c = LocalContext.current.appContainer
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle(c.settingsRepository.current)
-    val logic = remember(settings.logic) { Logic.decode(settings.logic) }
+    // 1.39 [FX-01] What runs now (without 프로 a 기능 장치 button rests); [ButtonPlace.outside] ones are never chips.
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+    val taste by FxAccess.taste(c).collectAsStateWithLifecycle()
+    val logic = remember(settings.logic, gate, taste) { LogicRunner.logic(c) }
     val buttons = logic.buttons.filter { it.place == place }
     if (buttons.isEmpty()) return
     val provided = LocalDayFacts.current
@@ -56,7 +59,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
                 onClick = {
                     scope.launch {
                         val f = facts ?: LogicRunner.facts(c)
-                        runCatching { LogicRunner.run(c, b.act, date, f.scope(date), b.label) }
+                        runCatching { LogicRunner.pressButton(c, b, date, f.scope(date)) }
                     }
                 },
                 label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) },

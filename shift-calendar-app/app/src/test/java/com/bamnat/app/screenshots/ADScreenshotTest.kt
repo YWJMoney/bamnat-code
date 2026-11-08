@@ -4,6 +4,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.MainActivity
@@ -344,6 +345,38 @@ class ADScreenshotTest : ScreenshotBase() {
         c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
         settle()
         noCuts("grouped_rail_unfolded")
+    }
+    /** 1.39 3차 PC (펼친 화면: 옆 막대 묶음 칸의 목록이 막대를 덮어요): the list opens beside the rail. */
+    @Test fun groupedRailMenuBeside() = shoot("1039_ad_grouped_rail_menu_unfolded", UNFOLDED) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
+        settle()
+        val tabs = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
+        val railLeft = tabs.minOf { it.boundsInWindow.left }
+        val rail = tabs.filter { it.boundsInWindow.left <= railLeft + 1f }.maxBy { it.boundsInWindow.right }
+        val railRight = rail.positionOnScreen.x + rail.size.width
+        tab(1, wide = true)
+        settle()
+        // The list is a popup of its own, read through the compose rule: every line starts right of the rail, none over it.
+        val lines = listOf("가계부", "받을 돈", "급여").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().positionOnScreen.x }
+        assertTrue("목록이 막대를 덮어요: $lines <= $railRight", lines.all { it >= railRight })
+    }
+    /** 1.39 [NAV2-07]: seven places beside an unfolded phone's rail; folded, the phone bar keeps five and 나 lists the other two. */
+    @Test fun sevenPlacesBesideTheRail() = shoot("1036_ad_rail_seven_unfolded", UNFOLDED) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;money;memos;stats;plaza;f:SLEEP;f:PAY") }
+        settle()
+        val tabs = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab && it.config.getOrNull(SemanticsProperties.Selected) != null }
+        val left = tabs.minOf { it.boundsInWindow.left }
+        assertEquals(7, tabs.count { it.boundsInWindow.left <= left + 1f })
+        noCuts("rail_seven")
+    }
+    @Test fun sevenPlacesFoldedKeepFive() = shoot("1036_ad_rail_seven_folded", PHONE_393) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;money;memos;stats;plaza;f:SLEEP;f:PAY") }
+        settle()
+        val tabs = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab && it.config.getOrNull(SemanticsProperties.Selected) != null }
+        val low = tabs.maxOf { it.boundsInWindow.bottom }
+        assertEquals(5, tabs.count { it.boundsInWindow.bottom >= low - 1f })
+        // The sixth and seventh wait by the 나 button.
+        assertTrue(appears(com.bamnat.app.ui.ME_BUTTON, exact = true))
     }
     @Test fun slotEditorWithAGroup() = shoot("1038_ad_slot_editor", PHONE_393) {
         c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }

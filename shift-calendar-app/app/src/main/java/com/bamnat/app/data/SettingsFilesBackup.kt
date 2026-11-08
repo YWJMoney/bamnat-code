@@ -170,12 +170,16 @@ class SettingsFilesBackup(
             Part("wish_off"),
             // 1.36 [VIL-13] 마을 › 간직한 글: posts kept to read again, only on the phone (the server keeps no list).
             Part("village_saved"),
+            // 1.39 [PLZC-10] 광장 근무 태그에 무엇을 보일지(근무형태·업종·개월·근무 중): 새 휴대폰에서도 같게.
+            Part("plaza_tag"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
             // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
             Part("calendar_start"),
             Part("leave_hire"), // [LEAVE-14]
             Part("pro_trials"), // [MON-13]
+            Part("fx_values"), // 1.39 [FX-03] 값 칸의 숫자
+            Part("fx_taste"), // 1.39 [FX-02] 작품마다 하루 써 보기를 쓴 것 (새로 깔아도 다시 주지 않게)
             Part("work_plans"), // 1.38 팀 요금제: 무료로 쓴 첫 확정 달 (팀을 지워도, 새로 깔아도 남게)
             Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
             Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays", "folders", "placed")),
@@ -213,6 +217,7 @@ class SettingsFilesBackup(
         val DEVICE_ONLY = mapOf(
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.
             "in_app_update" to "Play 인앱 업데이트를 이 판에서 이미 물어봤는지, 이 휴대폰에 깔린 판의 것",
+            "plaza_tag" to "광장 근무 태그 공개 범위(근무 형태·업종·밤낮 쓴 기간·지금 근무 중)는 이 휴대폰에만, 새 휴대폰에서 한 번 다시 골라요(PLZC-10)",
             "share_forget" to "모두 지우기 때 아직 못 지운 공유 링크(종류:번호), 이 휴대폰이 인터넷이 되면 마저 지움. 지운 뒤 남은 일이라 되살린 폰에 옮기지 않아요",
             // 1.38 [P3-X-08] 신고·지급 '했어요' 표시: 알림 목록이라 복원 뒤엔 지난 일이 길어야 일주일 다시 보여요.
             "boss_filed" to "다가올 신고·지급에서 '했어요'를 누른 것, 이 휴대폰의 것",
@@ -222,6 +227,8 @@ class SettingsFilesBackup(
             "studio_materials" to "광고로 30일 연 재료 묶음과 재료 표시, 이 휴대폰의 것",
             // 1.38 [EASE-29] 홈 화면 위젯 목록에 내 근무 그림을 올린 날: 이 휴대폰의 런처 일이라 옮기지 않아요.
             "widget_previews" to "홈 화면 위젯 목록에 내 근무 그림을 올린 날(하루 한 번), 이 휴대폰의 것",
+            // 1.39 [MKF-03] 장터 작게 보기(3열·펼침 4열): 이 휴대폰 화면 폭에 맞춘 것이라 옮기지 않아요.
+            "market_view" to "장터 카드를 작게(3열) 볼지, 이 휴대폰 화면에 맞춘 것",
             // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.
             "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.

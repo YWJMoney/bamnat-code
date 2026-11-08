@@ -79,6 +79,13 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     THEME_WARDROBE(Tier.PRO),
     /** [PRF-12] 1.36 창작자 꾸미기: 프로필 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프. 팔로우·보기는 늘 무료. */
     CREATOR_PRO(Tier.PRO),
+    /** 1.39 [TASK-07] 할 일 위젯: the first on the home screen is free, a second and more are 프로. */
+    MORE_TASK_WIDGETS(Tier.PRO),
+    /**
+     * 1.39 [FX-01] 기능 작품 (core formula/FxPro): the 기능 장치 that came with 1.39 — 값 칸, 단추 위젯·빠른 설정·바로가기, 알림 단추 — put
+     * in and used. Making and previewing them is free, and each work has one 하루 써 보기 ([com.bamnat.app.logic.FxAccess]).
+     */
+    FX_WORKS(Tier.PRO),
     ;
 
     /** [NXT-03] 1.29 AU: a 프로 feature's name is core's ProFeatures table, the one the server and 진단 use for free.<FEATURE>. */

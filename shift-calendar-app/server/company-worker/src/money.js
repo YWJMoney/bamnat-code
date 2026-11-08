@@ -284,6 +284,24 @@ export async function sharedUntil(env, dev, now) {
   return until ? { until: iso(until) } : null;
 }
 
+/**
+ * 1.39 [FX-17] Does this install have 프로 now, as the app's FeatureGate sees it: everyone before the 정식 출시 switch (billing),
+ * else a subscription or trial running, a 1년 이용권, 프로 나눔, thank-you months and earned days, or an approved admin link.
+ */
+export async function hasPro(env, dev, now) {
+  const s = await launchState(env);
+  if (!s.billingLive) return true;
+  const sub = await one(env, "SELECT 1 AS ok FROM subs WHERE device = ? AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ? LIMIT 1", dev, now);
+  if (sub || (await boughtUntil(env, dev, now)) || (await sharedUntil(env, dev, now))) return true;
+  const link = await one(env, "SELECT status FROM admin_devices WHERE device = ?", dev);
+  if (link?.status === "approved") return true;
+  const rows = await all(env, "SELECT months, status, paid_at, deferred, rule_id, memo FROM rewards WHERE device = ?", dev);
+  const p = stack(rows, s.launchedAt);
+  const earned = await all(env, "SELECT kind, days, given_at FROM day_rewards WHERE device = ? ORDER BY given_at", dev);
+  const d = stackDays(p.until, earned, s.launchedAt);
+  return Boolean(d.until && d.until > now);
+}
+
 async function shareView(env, dev, now) {
   const [until, row] = await Promise.all([boughtUntil(env, dev, now), one(env, "SELECT code, code_at, guest, guest_at FROM pro_shares WHERE owner = ?", dev)]);
   const codeOpen = row?.code && now - row.code_at < PRO_SHARE.codeMs;

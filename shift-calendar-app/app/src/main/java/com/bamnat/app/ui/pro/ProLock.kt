@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pro
 
+import com.bamnat.app.ui.theme.washSurface
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -66,7 +67,7 @@ fun ProLock(feature: Feature, gate: Gate, modifier: Modifier = Modifier, content
         Box(Modifier.then(if (Build.VERSION.SDK_INT >= 31) Modifier.blur(10.dp) else Modifier).clearAndSetSemantics { }) { content() }
         Box(
             Modifier.matchParentSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = if (Build.VERSION.SDK_INT >= 31) 0.35f else 0.9f))
+                .background(MaterialTheme.colorScheme.washSurface.copy(alpha = if (Build.VERSION.SDK_INT >= 31) 0.35f else 0.9f))
                 .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "프로 알아보기") { openPro(feature) },
         )
         LockPanel(feature, gate, Modifier.align(Alignment.Center).padding(12.dp))

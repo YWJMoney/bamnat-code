@@ -37,7 +37,25 @@ data class Memo(
      * included. Kept as it is when the repeat changes, so turning a repeat off and on again does not bring them back.
      */
     val skips: Set<LocalDate> = emptySet(),
+    /**
+     * 1.39 (DB 33판) [TASK-02] 끝냄: when a memo that does not repeat was finished; null while it is not. A repeating memo is
+     * finished day by day, in [doneDays] (its own date included), so 매일 '약 먹기' done today is still to do tomorrow.
+     */
+    val doneAtMillis: Long? = null,
+    val doneDays: Set<LocalDate> = emptySet(),
 ) {
+    /** 1.39 [TASK-02] Finished on [day] (its own date for one that does not repeat). */
+    fun isDoneOn(day: LocalDate?): Boolean =
+        if (repeat.isNotEmpty() && day != null) day in doneDays else doneAtMillis != null
+
+    /** 1.39 [TASK-02] Finished as it is shown: on its [date] (a repeating memo laid on a day carries that day). */
+    val isDone: Boolean get() = isDoneOn(date)
+
+    /** 1.39 [TASK-02] This memo finished ([done]) or not on [day], at [now]. */
+    fun withDone(done: Boolean, day: LocalDate?, now: Long): Memo =
+        if (repeat.isNotEmpty() && day != null) copy(doneDays = if (done) doneDays + day else doneDays - day)
+        else copy(doneAtMillis = if (done) doneAtMillis ?: now else null)
+
     /** [MEMO-01] Written for every calendar, now and later ones too. */
     val onEveryCalendar: Boolean get() = MemoCalendars.EVERY in calendars
 
@@ -235,4 +253,7 @@ object ChecklistCodec {
 
 /** Memo ordering used everywhere: pinned first, then most recently edited. */
 val MemoOrdering: Comparator<Memo> =
-    compareByDescending<Memo> { it.pinned }.thenByDescending { it.updatedAtMillis }.thenByDescending { it.id }
+    compareByDescending<Memo> { it.pinned }
+        // 1.39 [TASK-02] A finished memo that does not repeat steps down, under the ones still to do.
+        .thenBy { it.repeat.isEmpty() && it.doneAtMillis != null }
+        .thenByDescending { it.updatedAtMillis }.thenByDescending { it.id }

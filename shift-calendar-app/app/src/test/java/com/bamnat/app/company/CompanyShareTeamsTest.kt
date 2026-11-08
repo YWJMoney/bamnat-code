@@ -37,14 +37,17 @@ class CompanyShareTeamsTest {
 
     @After fun close() { db.close() }
 
-    private suspend fun share(roster: TeamRoster?): CompanyShare {
+    private suspend fun share(roster: TeamRoster?, splits: Boolean = true): CompanyShare {
         val schedule = ScheduleRepository(db)
         schedule.ensureDefaults()
         val t = schedule.snapshot.first().shiftTypes
         val day = t.first { it.name == "주간" }.id
         val night = t.first { it.name == "야간" }.id
-        // 주주야야휴휴휴휴 from 11/3 for my 조.
-        schedule.setFirstPattern(WorkPattern.Rotation(today, listOf(day, day, night, night, null, null, null, null), LocalDate.of(2026, 11, 3)), today)
+        // 주주야야휴휴휴휴 from 11/3 for my 조, the days off as the 휴무 kind a first setup keeps (PC c0ca3d9f);
+        // 주주휴 does not split into 조 evenly.
+        val off = t.first { it.isOff }.id
+        val steps = if (splits) listOf(day, day, night, night, off, off, off, off) else listOf(day, day, off)
+        schedule.setFirstPattern(WorkPattern.Rotation(today, steps, anchorDate = LocalDate.of(2026, 11, 3)), today)
         return CompanyShare(schedule, PayStore(context), SettingsRepository(context), today = { today }, teamRoster = { roster })
     }
 
@@ -63,19 +66,31 @@ class CompanyShareTeamsTest {
         val steps = rotation.getJSONArray("steps")
         fun on(anchor: LocalDate, day: LocalDate) = steps.opt(TeamAnchors.stepOn(anchor, day, 8)).toString()
         (0L until 16L).map(today::plusDays).forEach { day -> assertEquals("$day", on(start, day.minusDays(4)), on(c, day)) }
-        assertTrue((0L until 8L).map { on(c, today.plusDays(it)) }.toSet().containsAll(listOf("주간", "야간", "null")))
+        assertTrue((0L until 8L).map { on(c, today.plusDays(it)) }.toSet().containsAll(listOf("주간", "야간")))
         assertEquals("C조", TeamAnchors.roster(teams, c, 8)!!.mine.name)
         // The box typed by the sender wins over the roster's name.
         assertEquals("1팀", JSONObject(share(roster).export("", false, team = "1팀")).getJSONObject("rotation").getString("team"))
     }
 
+    /** PC e1240d5a: 모든 조 보기 never saved (the usual case) still sends the 조 it shows, A조 mine; nothing is made up otherwise. */
+    @Test fun unsavedTeamsGoAsTheScreenShowsThem() = runBlocking {
+        val text = share(null).export("밤낮전자", withAmounts = false)
+        val rotation = JSONObject(text).getJSONObject("rotation")
+        assertEquals("A조", rotation.getString("team"))
+        val start = LocalDate.parse(rotation.getString("anchor"))
+        assertEquals(listOf("A조" to start, "B조" to start.plusDays(2), "C조" to start.plusDays(4), "D조" to start.plusDays(6)),
+            CompanyShare.teamsOf(text).map { it.name to it.anchor })
+        assertEquals("A조", share(null).teamsToSend()!!.mine.name)
+        // A saved roster of one 조 is not a 모든 조 보기 either: the screen's own split goes.
+        assertEquals(4, CompanyShare.teamsOf(share(TeamRoster(listOf(TeamRoster.Team("A조", 0, true)))).export("", false)).size)
+    }
+
     @Test fun aFileWithoutTeamsReadsAsBefore() = runBlocking {
-        val plain = share(null).export("밤낮전자", withAmounts = false)
+        val plain = share(null, splits = false).export("밤낮전자", withAmounts = false)
         assertFalse(JSONObject(plain).getJSONObject("rotation").has("teams"))
         assertFalse(JSONObject(plain).getJSONObject("rotation").has("team"))
         assertTrue(CompanyShare.teamsOf(plain).isEmpty())
-        val one = share(TeamRoster(listOf(TeamRoster.Team("A조", 0, true)))).export("", false)
-        assertTrue(CompanyShare.teamsOf(one).isEmpty())
+        assertEquals(null, share(null, splits = false).teamsToSend())
         assertTrue(CompanyShare.teamsOf("not json").isEmpty())
     }
 }

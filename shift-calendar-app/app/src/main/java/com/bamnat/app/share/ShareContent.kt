@@ -36,12 +36,32 @@ object ShareContent {
             val look = if (options.look && open) lookFile(c, title) else null
             val kit = if (options.kit && open) kitFile(c, calendar, title, withCycle = setup == null) else null
             val sleep = if (options.sleepNow && calendar == PersonalCalendar.MAIN) sleepNow(c) else null
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep)
+            val plan = if (options.sleepPlan && calendar == PersonalCalendar.MAIN) sleepPlan(c, snapshot) else emptyList()
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan)
         }
 
     /** 1.38 [SLEEP-11] Whether a link may say 지금 자는 중 (`sleep.share`, from the 처리방침 date). */
     fun sleepInLink(c: AppContainer): Boolean =
         runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SHARE) }.getOrDefault(false)
+
+    /** 1.39 G5-N4 Whether a link may carry 계획한 잠 시간 (`sleep.plan_share`, from 처리방침 3.12's date). */
+    fun sleepPlanInLink(c: AppContainer): Boolean =
+        runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_PLAN_SHARE) }.getOrDefault(false)
+
+    /** 1.39 G5-N4 Two weeks of the sleep planned around the work (the same plan as 오늘의 흐름), the ones not over yet. */
+    fun sleepPlan(c: AppContainer, snapshot: ScheduleSnapshot): List<SleepPlanWindow> {
+        if (!sleepPlanInLink(c)) return emptyList()
+        val s = c.settingsRepository.current
+        val now = Today.dateTime()
+        val today = now.toLocalDate()
+        return runCatching {
+            val sleeps = com.bamnat.core.sleep.SleepSchedule.of(snapshot.resolver, today.minusDays(1), today.plusDays(com.bamnat.core.sleep.SleepPlanShare.DAYS),
+                s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes).sleeps
+            com.bamnat.core.sleep.SleepPlanShare.windows(sleeps, now).map { w ->
+                SleepPlanWindow(w.from.atZone(Today.zone()).toInstant().toEpochMilli(), w.to.atZone(Today.zone()).toInstant().toEpochMilli())
+            }
+        }.getOrDefault(emptyList())
+    }
 
     /** 1.38 [SLEEP-11] The open sleep (not an imported one) and the next alarm, or null while awake. */
     suspend fun sleepNow(c: AppContainer): SleepNow? {

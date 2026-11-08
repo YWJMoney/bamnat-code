@@ -37,4 +37,16 @@ class InsuranceDefaultTest {
         assertFalse(InsuranceRules.unticked(biz, true))
         assertFalse(InsuranceRules.unticked(StaffMember("e", "민수", form = WageForm.MONTH, insurance = Insurance(health = true)), true))
     }
+
+    /** PC 5066b027: a 16세 직원 had 국민연금 ticked beside '만 18세 미만은 국민연금 가입 대상이 아니에요'. */
+    @Test fun `the pension chip follows the age when a birth day is known`() {
+        val day = java.time.LocalDate.of(2026, 11, 7)
+        val young = StaffMember("f", "하늘", weekly = week(5, 15, 23), birth = java.time.LocalDate.of(2010, 3, 1))
+        val ins = InsuranceRules.defaultFor(young, true, day)
+        assertFalse(ins.pension)
+        assertTrue(ins.health && ins.employment)
+        assertTrue("날짜가 없으면 예전처럼", InsuranceRules.defaultFor(young, true).pension)
+        assertFalse(InsuranceRules.defaultFor(young.copy(birth = java.time.LocalDate.of(1965, 1, 1)), true, day).pension)
+        assertTrue(InsuranceRules.defaultFor(young.copy(birth = java.time.LocalDate.of(1990, 1, 1)), true, day).pension)
+    }
 }

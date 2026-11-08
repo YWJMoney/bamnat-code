@@ -353,6 +353,35 @@
             android:isolatedProcess="true"
             android:process=":fontprobe" />
 
+        <!-- 1.39 [TASK-38][TASK-32] 할 일 적기: a small window over any screen (widget ＋, tile), and 'Share → 밤낮 할 일로 적기' for a
+             text from another app. Nothing is saved until 적기; no permission is needed. -->
+        <activity
+            android:name=".memo.QuickTaskActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/quick_task_label"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bamnat.Quick"
+            android:windowSoftInputMode="adjustResize|stateVisible">
+            <intent-filter android:label="@string/quick_task_label">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- 1.39 [TASK-33] 빠른 설정의 '할 일 적기' 타일: only the system's quick settings binds it. -->
+        <service
+            android:name=".memo.TaskAddTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_task_add"
+            android:label="@string/tile_task_add"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- 1.37 [LEDH-14] 빠른 설정의 '돈 적기' 타일: only the system's quick settings binds it. -->
         <service
             android:name=".money.MoneyAddTile"
@@ -364,6 +393,27 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- 1.39 [FX-04] 빠른 설정 '밤낮 단추' 타일 (기능 작품): only the system's quick settings binds it. -->
+        <service
+            android:name=".logic.FxButtonTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_money_add"
+            android:label="@string/tile_fx_button"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- 1.39 [FX-04] 앱 바로가기 단추: presses and closes; only launched by our own dynamic shortcuts (not exported). -->
+        <activity
+            android:name=".logic.FxPressActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <service
@@ -475,6 +525,24 @@
                 android:resource="@xml/widget_countdown_info" />
         </receiver>
 
+        <!-- 1.39 [FX-04] 밤낮 단추 위젯 (기능 작품, 프로). -->
+        <receiver
+            android:name=".widget.FxButtonWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_fx_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_fx_info" />
+        </receiver>
+
+        <!-- 1.39 [FX-05] 알림 단추: only this app's own notices send it. -->
+        <receiver
+            android:name=".logic.FxPressReceiver"
+            android:exported="false" />
+
         <!-- 1.37 [LEDH-14] 오늘 쓸 돈 + 돈 적기. -->
         <receiver
             android:name=".widget.MoneyWidgetReceiver"
@@ -486,6 +554,31 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_money_info" />
+        </receiver>
+
+        <!-- 1.39 [TASK-31] 할 일 한 줄: the same 할 일 widget, small. -->
+        <receiver
+            android:name=".widget.TaskLineWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_task_line_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_task_line_info" />
+        </receiver>
+        <!-- 1.39 [TASK-07] 할 일. -->
+        <receiver
+            android:name=".widget.TaskWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_tasks_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_tasks_info" />
         </receiver>
 
         <!-- [DAILY-03] 오늘 모든 조. -->

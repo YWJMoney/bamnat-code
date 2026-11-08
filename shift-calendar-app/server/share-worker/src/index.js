@@ -182,6 +182,10 @@ const SCAM_TEXT = [
   ["messenger", /오픈\s*채팅|오픈\s*톡|텔레그램|카톡\s*(아이디|id)|카카오톡\s*(아이디|id)|라인\s*아이디|위챗|whats\s*app/i],
 ];
 const digitsIn = (s) => s.replace(/\D/g, "").length;
+/** 1.39 [CARE-09] 걸러내기는 1.39 앱(versionCode 53)부터만 (사용자 2026-11-08 "1.39 앱에서만 걸리게"). 1.38 이하 앱은 헤더가 없어 예전처럼 받고,
+ * 1.39 앱은 `X-Bamnat-App: <versionCode>`를 보내고 거절 이유를 사람 말로 보여 줘요. */
+export const SCAM_SINCE_APP = 53;
+export const scamChecked = (request) => Number(request.headers.get("x-bamnat-app")) >= SCAM_SINCE_APP;
 
 /** Why one of the strings in [value] (any depth) cannot go on a team page, or null. */
 export function scamProblem(value, depth = 0) {
@@ -262,6 +266,10 @@ async function route(request, env) {
   if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/k/") || path.startsWith("/b/") || path.startsWith("/api/sign/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
+  }
+  // 1.39 [ADM3-41] 관리자 앱 › 서버 상태가 살아 있는지 보는 곳. 아무것도 읽지 않고 살아 있다고만 답해요.
+  if (path === "/api/health" && (request.method === "GET" || request.method === "HEAD")) {
+    return new Response(request.method === "HEAD" ? null : JSON.stringify({ ok: true }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
   }
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
   if (path === SPREAD_HIDE && request.method === "POST") return spreadHide(request, url);
@@ -425,7 +433,10 @@ async function view(request, env, id) {
   const record = await env.SHARES.get(id, "json");
   if (record?.removed) return html(page("내려진 링크예요", `<p class="empty">${REMOVED_TEXT}</p>`), 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
-    return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext("최신 근무표가 필요하면 보낸 분께 새 링크를 부탁해 주세요.", "family")}`), 404);
+    // 1.39 PC (SPREAD 2차): an expired link still kept says whose it was (a leader's teammate link speaks to a teammate); one
+    // the sharer cut is gone, so its card speaks to anyone who keeps a schedule.
+    return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
+      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : "최신 근무표가 필요하면 보낸 분께 새 링크를 부탁해 주세요.", record?.schedule ? scheduleKind(record.schedule) : "schedule")}`), 404);
   }
   const phone = platformOf(request.headers.get("user-agent") || "");
   if (request.method === "GET") {
@@ -850,7 +861,7 @@ async function clockCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 2048)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const name = cleanText(body?.name, LIMITS.clockName);
   const place = cleanText(body?.place ?? "", LIMITS.clockPlace);
@@ -982,7 +993,7 @@ async function askCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 16 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const month = isMonth(body?.month) ? body.month : null;
@@ -1195,7 +1206,7 @@ async function callCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 8 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const title = cleanText(body?.title, LIMITS.callTitle);
@@ -1295,9 +1306,15 @@ async function callView(env, key, said, status = 200, known = null) {
   const done = record.taken != null;
   const state = done ? (record.taken === p ? `<p class="done">${esc(me)}님이 들어가기로 정해졌어요. 고마워요!</p>` : `<p class="muted">다른 분이 들어가기로 정해졌어요. 답해 줘서 고마워요.</p>`)
     : record.closed ? `<p class="muted">요청이 닫혔어요.</p>`
-    : `<div class="buttons"><form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="yes"><button class="in">들어갈 수 있어요</button></form>` +
-      `<form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="no"><button class="out">어려워요</button></form></div>` +
-      (mine.a ? `<p class="muted">지금 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} (바꿀 수 있어요)</p>` : "");
+    // 1.39 G2 PC 5066b027: after an answer both big buttons stayed alike and read as 'not sent yet'. The picked one keeps its look
+    // with ✓, the other shrinks and fades but can still be pressed to change the answer.
+    : (() => {
+      const pick = (a) => !mine.a ? "" : mine.a === a ? " picked" : " other";
+      const mark = (a) => (mine.a === a ? "✓ " : "");
+      return `<div class="buttons"><form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="yes"><button class="in${pick("yes")}">${mark("yes")}들어갈 수 있어요</button></form>` +
+        `<form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="no"><button class="out${pick("no")}">${mark("no")}어려워요</button></form></div>` +
+        (mine.a ? `<p class="muted">보낸 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} · 다른 쪽을 누르면 바뀌어요</p>` : "");
+    })();
   const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
   const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.team)} · ${esc(me)}님께</p>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}${saidHtml}${state}
 <p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("call")}`;
@@ -1472,7 +1489,7 @@ async function boardCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const board = boardBody(body);
   if (!board || Date.parse(board.expiresAt) < Date.now()) return json({ error: "bad_board" }, 400);
@@ -1497,7 +1514,7 @@ async function boardUpdate(request, env, id) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const board = boardBody(body);
   if (!board) return json({ error: "bad_board" }, 400);
@@ -1544,7 +1561,7 @@ async function signCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 24 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const place = cleanText(body?.place, LIMITS.clockPlace);
   const staff = cleanText(body?.staff, LIMITS.askName);
@@ -1671,7 +1688,7 @@ async function swapCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const month = typeof body?.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.month) ? body.month : null;
@@ -1722,7 +1739,7 @@ async function swapChange(request, env, id, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   if (body?.labels !== undefined) {
     const days = record.rows[0]?.length ?? 0;
@@ -2020,6 +2037,10 @@ export function validate(body) {
   }
   days.sort((a, b) => a.date.localeCompare(b.date));
   const schedule = { v: v2 ? 2 : 1, title, types, days };
+  // 1.39 PC (SPREAD 2차): a team leader's 팀원 링크 says so from its first 확정 (before, only 바뀜·같이 쉬어요 notes told), so the
+  // page's card and preview speak to a teammate. A mark only, nothing about the team.
+  if (body.team != null && typeof body.team !== "boolean") return { error: "team" };
+  if (body.team === true) schedule.team = true;
   // [FEAT-15] The sharer turned on the address calendar apps subscribe to, in the time zone of their phone.
   if (body.ics != null && typeof body.ics !== "boolean") return { error: "ics" };
   if (body.ics === true) {
@@ -2076,7 +2097,27 @@ export function validate(body) {
     if (s === null) return { error: "sleep_now" };
     schedule.sleepNow = s;
   }
+  // 1.39 G5-N4 계획한 잠 시간: only when the sender ticked it, pairs of times (epoch millis) and nothing else. Like 지금 자는 중, only
+  // the receiving app shows it; the web page (/s/:id) never does.
+  if (body.sleepPlan != null) {
+    const p = sleepPlan(body.sleepPlan);
+    if (p === null) return { error: "sleep_plan" };
+    schedule.sleepPlan = p;
+  }
   return { schedule, ttlDays };
+}
+
+/** 1.39 G5-N4 [{from, to}] in epoch millis: at most 24, each a from before a to at most 16 hours on. Null refuses it. */
+function sleepPlan(v) {
+  if (!Array.isArray(v) || v.length > 24) return null;
+  const out = [];
+  for (const w of v) {
+    if (!w || typeof w !== "object" || Array.isArray(w)) return null;
+    if (Object.keys(w).some((k) => k !== "from" && k !== "to")) return null;
+    if (!Number.isSafeInteger(w.from) || !Number.isSafeInteger(w.to) || w.from <= 0 || w.to <= w.from || w.to - w.from > 16 * 3600 * 1000) return null;
+    out.push({ from: w.from, to: w.to });
+  }
+  return out;
 }
 
 /** 1.38 [SLEEP-11] {since, wakeAt?} in epoch millis: since first, the wake within 20 hours of it. Null refuses it. */
@@ -2244,6 +2285,9 @@ export const SPREAD_KINDS = {
     line: "밤낮에 근무를 넣어 두면 바꾼 날도 한 번에 고치고, 알람이 따라 바뀌어요." },
   clock: { campaign: "boss", title: "내 시급으로 이번 달 월급 미리 보기",
     line: "밤낮에 시급과 일한 날을 넣으면 이번 달 받을 돈과 주휴수당을 미리 볼 수 있어요. 무료예요." },
+  // A schedule link that is gone, whoever it was from: speaks to anyone who keeps a schedule.
+  schedule: { campaign: "family", title: "내 근무도 달력과 알람으로",
+    line: "밤낮에 근무를 넣으면 한 달 달력이 저절로 차고 출근 전에 알람이 울려요. 받은 근무표도 내 달력 옆에 둘 수 있어요. 무료예요." },
   sign: { campaign: "boss", title: "계약한 시급으로 이번 달 월급 미리 보기",
     line: "밤낮에 시급과 일한 날을 넣으면 이번 달 받을 돈과 주휴수당을 미리 볼 수 있어요. 무료예요." },
 };
@@ -2421,6 +2465,16 @@ function appLink(id, kind = "family") {
 }
 
 /**
+ * 1.39 [SPREAD-01] A team leader's link speaks to a teammate; any other to family. The leader's app marks its links (team) from
+ * 1.39; an older app's link is known by its notes (바뀜·같이 쉬어요), which only a 다시 확정 or 같이 쉬는 사람 adds.
+ */
+export function scheduleKind(schedule) {
+  if (schedule.team === true) return "team";
+  const notes = (schedule.days ?? []).flatMap((d) => (d.memo ? String(d.memo).split(" · ") : []));
+  return notes.some((n) => /^(바뀜: |같이 쉬어요: )/.test(n)) ? "team" : "family";
+}
+
+/**
  * Month grids for every month the days touch, weeks starting on Sunday.
  * 1.39 [IOS-02..05] [opts]: `phone` (platformOf), `feed` ("host/s/<id>.ics" when the page is served), `tired` (tiredState or null),
  * `said` (the ?t= answer of the 피곤해요 form).
@@ -2493,8 +2547,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
         return `<li><span>${y}년 ${m}월${p.label ? ` <span class="muted">${esc(p.label)}</span>` : ""}</span><b>${won(p.amount)}</b></li>`;
       }).join("")}</ul><p class="muted">${PAY_NOTES[payKind]}</p></section>`
     : "";
-  // 1.39 [SPREAD-01] A team leader's link (its notes say 바뀜·같이 쉬어요) speaks to a teammate; any other to family.
-  const kind = notes.some((n) => /^(바뀜: |같이 쉬어요: )/.test(n)) ? "team" : "family";
+  const kind = scheduleKind(schedule);
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
@@ -2639,7 +2692,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;align-items:center;gap:6px}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
-.buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
+.buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.buttons .other{opacity:.45;min-height:64px;font-size:18px}.buttons .picked{outline:4px solid var(--today);outline-offset:2px}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
 .pick{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;cursor:pointer}.pick.on{background:var(--sat);color:#fff;border-color:var(--sat)}

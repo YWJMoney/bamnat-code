@@ -67,6 +67,39 @@ object MemoTime {
         return date.atTime(time.time).plusDays(time.nextDay)
     }
 
+    /** 1.39 [TASK-32][TASK-38] One line typed or shared, read: the title left once the day and time words are taken out, and the rest. */
+    data class Line(val title: String, val rest: String, val date: LocalDate?, val at: LocalDateTime?, val read: String)
+
+    /**
+     * 1.39 [TASK-32][TASK-38] The 한 줄 입력 window's reading of [text] ("내일 저녁 6시 치과"): the day and time it names, taken out of the
+     * title ("치과") so the title says only the thing (할 일 앱 조사 15-2: that app keeps the words in the title). A time with no day is
+     * the next such time; a day with no time is that day. The first line is the title, the other lines the body ([Line.rest]).
+     */
+    fun line(text: String, now: LocalDateTime): Line {
+        val lines = text.trim().lines()
+        val first = lines.firstOrNull().orEmpty().trim()
+        val rest = lines.drop(1).joinToString("\n").trim()
+        val today = now.toLocalDate()
+        val written = findDate(first, today)
+        val time = findTime(first)
+        val at = time?.let { t ->
+            val base = (written?.first ?: today).atTime(t.time).plusDays(t.nextDay)
+            // "8시 약 먹기" typed at 19시 with no 오전·저녁: tonight's 8시, not tomorrow morning's.
+            val unmarked = Regex(MARKS).find(t.phrase) == null && t.time.hour in 1..11 && t.nextDay == 0L
+            when {
+                written != null || base.isAfter(now) -> base
+                unmarked && base.plusHours(12).isAfter(now) -> base.plusHours(12)
+                else -> base.plusDays(1)
+            }
+        }
+        var title = first
+        listOfNotNull(written?.second, time?.phrase).forEach { title = title.replaceFirst(it, " ") }
+        title = title.replace(Regex("\\s+"), " ").trim().trim(',', '.', '·', '-').trim()
+        if (title.isEmpty()) title = first
+        val read = listOfNotNull(written?.second, time?.phrase).joinToString(" ")
+        return Line(title, rest, written?.first ?: at?.toLocalDate(), at, read)
+    }
+
     private class Time(val time: LocalTime, val nextDay: Long, val phrase: String)
 
     private fun findTime(text: String): Time? {
