@@ -57,6 +57,7 @@
 // once and can take a report back.
 
 import { adminFile, adminBuild } from "./admin-app.js";
+import { SERVER_VERSION } from "./version.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // AX 1.30 [ADMX-02] 판 차이 (src/plaza-diff.js) and [ADMX-01][ADMX-06][ADMX-07][ADMX-08][ADMX-10] the developer app's
@@ -574,7 +575,11 @@ async function routeOnce(request, env, url, ctx) {
   }
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   // 1.39 [LOOP-13] Play 인앱 업데이트: 이 versionCode보다 낮으면 바로(긴급)·유연하게 권해요.
-  if (path === "/api/config" && method === "GET") return json({ ...(await config(env)), update: await updatePolicy(env) });
+  if (path === "/api/config" && method === "GET") {
+    // 1.39 [ADM3-43] 모든 앱이 매일 부르는 길: 두 읽기를 동시에(실서버 점검 11-08, 중간 400ms).
+    const [c, update] = await Promise.all([config(env), updatePolicy(env)]);
+    return json({ ...c, update });
+  }
   // 1.39 [LOOP-17] 알려진 문제판과 '나도 겪어요'.
   if (path === "/api/known" || path.startsWith("/api/known/")) return knownRoute(request, env, path);
   // 1.36 [SEC-11] An install shows Play's verdict once a week (integrity.js).
@@ -1004,6 +1009,22 @@ const FTS_SQL = [
 
 const schemas = new WeakMap();
 
+/** 1.39 [ADM3-43] [alters] 가운데 아직 없는 칸을 더하는 것만(표·칸 이름을 한 번에 읽어서). 읽기에 실패하면 [alters] 그대로. */
+async function missingColumns(env, alters) {
+  let have;
+  try {
+    const got = await env.DB.prepare("SELECT m.name AS t, p.name AS c FROM sqlite_master m, pragma_table_info(m.name) p WHERE m.type = 'table'").all();
+    have = new Set((got.results ?? []).map((r) => `${r.t}|${r.c}`.toLowerCase()));
+  } catch {
+    return alters;
+  }
+  if (!have.size) return alters;
+  return alters.filter((sql) => {
+    const m = /ALTER\s+TABLE\s+([A-Za-z0-9_]+)\s+ADD\s+COLUMN\s+([A-Za-z0-9_]+)/i.exec(sql);
+    return !m || !have.has(`${m[1]}|${m[2]}`.toLowerCase());
+  });
+}
+
 /** Changes whenever SCHEMA, COLUMNS or LATE_INDEXES does, so a server made by this code skips making tables again. */
 const SCHEMA_VERSION = (() => {
   let h = 5381;
@@ -1028,7 +1049,9 @@ function ready(env) {
       // with the columns below, where a column already there is skipped.
       const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
       await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
-      for (const sql of [...SCHEMA.filter(alter), ...COLUMNS]) {
+      // 1.39 [ADM3-43] 배포 직후 첫 요청이 15초 넘게 걸렸어요(실서버 점검 11-08): ALTER 100여 개를 하나씩 보내서요. 이제 있는 칸을
+      // 한 번에 읽고 없는 칸만 더해요. 읽지 못하는 DB면 예전처럼 다 보내고 '이미 있음'은 넘겨요.
+      for (const sql of await missingColumns(env, [...SCHEMA.filter(alter), ...COLUMNS])) {
         try {
           await env.DB.prepare(sql).run();
         } catch (e) {
@@ -5018,7 +5041,12 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
-  if (path === "/server" && method === "GET") return json({ ...serverState(env), integrity: await integrityState(recipeDeps, env, now, playIntegrity(env) !== null) });
+  if (path === "/server" && method === "GET") {
+    // 1.39 [ADM3-43] 회사·쓰는 규칙 수와 서버 판도 여기서(서버 상태 화면은 오늘을 읽지 않아 '–'로 보였어요, 실서버 점검 11-08).
+    const [integrity, counts] = await Promise.all([integrityState(recipeDeps, env, now, playIntegrity(env) !== null),
+      batch(env, [stmt(env, "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"), stmt(env, "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0")])]);
+    return json({ ...serverState(env), integrity, companies: counts[0].results?.[0]?.n ?? 0, rules: counts[1].results?.[0]?.n ?? 0, version: SERVER_VERSION });
+  }
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
   if (path === "/admins" && method === "GET") return json(await adminList(env));
   if (path === "/invites" && method === "POST") return invite(request, env, url, now);
@@ -5168,11 +5196,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
   if (path === "/metrics" && method === "GET") {
-    const m = await metrics(env, url, now);
-    m.startup = await startupMetrics(env, m.from, m.to); // AO 1.28 [PERF-17]
-    m.photoWrong = await photoWrongMetrics(env, m.from, m.to); // AQ 1.29 [PHOTO-10]
-    Object.assign(m, await metricExtras(env, m.from, m.to)); // AX 1.30 [ADMX-07] releases, compare
-    return json(m);
+    // 1.39 [ADM3-43] 네 덩어리를 차례로 읽던 것을 한꺼번에(기간은 지표와 같은 metricRange).
+    const { from, to } = metricRange(url, now);
+    const [m, startup, photoWrong, extras] = await Promise.all([metrics(env, url, now), startupMetrics(env, from, to), // AO 1.28 [PERF-17]
+      photoWrongMetrics(env, from, to), metricExtras(env, from, to)]); // AQ 1.29 [PHOTO-10], AX 1.30 [ADMX-07] releases, compare
+    return json(Object.assign(m, { startup, photoWrong }, extras));
   }
   // [ADMUX-15] 원격 갱신 배포 현황 (?fresh=1 skips the ten minutes it is kept).
   if (path === "/remote" && method === "GET") return json(await remoteState(env, now, url.searchParams.get("fresh") === "1"));
@@ -6986,6 +7014,17 @@ export async function playVitals(env, now) {
   if (!account) return null;
   const kept = vitalsKept.get(env.DB ?? env);
   if (kept && kept.until > now) return kept.value;
+  // 1.39 [ADM3-43] 새로 뜬 isolate마다 Google에 다시 묻느라 지표가 몇 초 걸렸어요: 받은 값을 DB에도 6시간(실패는 1시간) 두어요.
+  const saved = await one(env, "SELECT value FROM settings WHERE key = 'play_vitals'").catch(() => null);
+  try {
+    const got = saved ? JSON.parse(saved.value) : null;
+    if (got && got.until > now && got.value) {
+      vitalsKept.set(env.DB ?? env, got);
+      return got.value;
+    }
+  } catch {
+    // A broken copy is asked again.
+  }
   const pkg = env.PLAY_PACKAGE || "com.bamnat.app";
   // Daily rows are Los Angeles days (the only zone Play takes); ten days back is enough for the latest one.
   const la = (ms) => {
@@ -7018,7 +7057,9 @@ export async function playVitals(env, now) {
   } catch (e) {
     value = { error: e?.code === "play_denied" ? "denied" : "unreachable" };
   }
-  vitalsKept.set(env.DB ?? env, { value, until: now + (value.error ? HOUR : VITALS.keepMs) });
+  const keep = { value, until: now + (value.error ? HOUR : VITALS.keepMs) };
+  vitalsKept.set(env.DB ?? env, keep);
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('play_vitals', ?)", JSON.stringify(keep)).catch(() => {});
   return value;
 }
 

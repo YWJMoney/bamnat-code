@@ -144,10 +144,12 @@ export async function releaseRoute(request, env, path, method, now) {
  */
 export async function versionHealth(env, now = Date.now(), days = 14, vitals = null) {
   const from = now - days * DAY;
-  const [usage, inq, errors] = (await batch(env, [
+  const [usage, inq, errors, grouped] = (await batch(env, [
     stmt(env, "SELECT app, SUM(phones) AS phones, COUNT(DISTINCT day) AS days FROM usage_days WHERE day >= ? GROUP BY app", kstDay(from)),
     stmt(env, `SELECT json_extract(info, '$.app') AS app, kind, COUNT(*) AS n FROM inquiries WHERE created_at >= ? GROUP BY app, kind`, from),
     stmt(env, "SELECT key, count FROM counters WHERE key LIKE 'errors|%' AND key >= ?", `errors|${kstDay(from)}`),
+    // 1.39 [ADM3-43] 같은 날들 가운데 오류 묶음에 담긴 수(1.38부터). 다르면 화면이 '묶음에 N'으로 함께 보여요.
+    stmt(env, "SELECT COALESCE(SUM(count), 0) AS n FROM error_days WHERE day >= ?", kstDay(from)),
   ])).map((r) => r.results ?? []);
   const map = new Map();
   const row = (app) => {
@@ -175,7 +177,8 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
     if ((latest.inquiryRate ?? 0) > (prev.inquiryRate ?? 0) * 1.5 && latest.inquiries >= 5) worse.push(`문의가 ${prev.app}보다 많아요`);
   }
   const serverErrors = errors.reduce((n, e) => n + (e.count ?? 0), 0);
-  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors, vitals };
+  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors,
+    groupedErrors: grouped[0]?.n ?? 0, vitals };
 }
 
 // ---- 바뀐 일 [ADM3-33] ----

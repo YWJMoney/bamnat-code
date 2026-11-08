@@ -88,7 +88,9 @@ export function insightViews(A) {
       <p class="hint">비율은 최근 28일 안에 한 번이라도 한 휴대폰의 비율이에요.</p>
       <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
         <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></details>`;
-    return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>` : "")
+    // 1.39 [ADM3-43] '하루 평균 활성 1대'가 Play 월간 활성 6과 달라 헷갈렸어요(실서버 점검 11-08): 무엇을 세는지와 Play가 본 수를 나란히.
+    const who = `<p class="meta" data-active-who>활성·휴대폰 수는 설정에서 '사용 통계 보내기'를 켠 휴대폰만 세요.${d.playUsers ? ` Play가 본 하루 사용자는 ${d.playUsers}명이에요(${esc(d.playDay ?? "")}, 모든 휴대폰).` : ""} Play Console › 통계의 월간 활성 사용자는 모든 휴대폰이라 더 커요.</p>`;
+    return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>${who}` : "")
       + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${setupTapsCard(d) /* 1.39 SETUP-20 */}${remoteCard()}${funnel}${shares}${phase3}</div>${events}`;
   }
 

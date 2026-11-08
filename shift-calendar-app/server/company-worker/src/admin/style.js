@@ -798,6 +798,7 @@ h1,h2,h3{letter-spacing:-.018em}
 .tile .v{font-weight:750;letter-spacing:-.03em}
 .tile.hot{border-color:var(--line)}
 .tile.hot .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--bad)}
+.tile.warn .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--warn)}
 .tile.kpi[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .rows{border-radius:var(--r-lg)}
 a.row:hover,button.row:hover,label.row:hover{background:var(--hover)}

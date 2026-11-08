@@ -3098,7 +3098,7 @@ function adminApp(L, BUILD, M) {
     // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
     const watch = Boolean(S.me?.owner && S.data.watch);
     return `${V.watchBoard()}<section class="card"><h2>${watch ? "무결성·회사 수" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}
-        <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
+        <p class="meta">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p></section>`;
   }
 
   /**

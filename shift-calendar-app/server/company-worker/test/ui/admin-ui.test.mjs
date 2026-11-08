@@ -490,6 +490,27 @@ test("[ADM3-42] 로그인 잠금 풀기: the owner's 내 계정 shows a locked P
   assert.deepEqual(u.errors, []);
 });
 
+test("[ADM3-43] 서버 상태: company counts and versions, an old share server is 판 다름 (not red), a backup without R2 is 꺼짐", async (t) => {
+  const real = globalThis.fetch;
+  const robots = (u) => String(u).endsWith("/robots.txt");
+  globalThis.fetch = async (u) => new Response(robots(u) ? "User-agent: *" : "", { status: robots(u) ? 200 : 404 });
+  t.after(() => { globalThis.fetch = real; });
+  const { call, env, DB } = server({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "x".repeat(32) });
+  await call("POST", "/api/reports", report(1), from(1));
+  DB.db.prepare("INSERT INTO job_runs (step, ok_at, ms, runs, last_at, ver) VALUES ('backup', ?, 3, 5, ?, '1.38.0')").run(Date.now() - 600e3, Date.now() - 600e3);
+  const u = await asOwner(env, t);
+  await u.go("#/server");
+  await u.settle(30);
+  assert.match(u.text("#main"), /회사 1 · 쓰는 규칙 \d+ · 서버 1\.39\.0 · 관리자 앱 빌드/);
+  const share = [...u.$$("#main .tile")].find((x) => /공유 서버/.test(x.textContent));
+  assert.match(share.textContent, /살아 있음 · 판 다름/);
+  assert.ok(!share.classList.contains("hot"));
+  const backup = [...u.$$("#main .rows li")].find((li) => li.querySelector("b")?.textContent === "하루 백업");
+  assert.match(backup.textContent, /꺼짐/);
+  assert.match(backup.textContent, /R2 묶음\(BACKUP\)이 없어 건너뛰어요/);
+  assert.deepEqual(u.errors, []);
+});
+
 test("[ADMUX-18] 여러 판: 다시 대표로 asks first, then the earlier version is the rule again", async (t) => {
   offline(t);
   const s = server();
