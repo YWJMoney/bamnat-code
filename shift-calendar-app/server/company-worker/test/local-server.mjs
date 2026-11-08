@@ -108,6 +108,15 @@ async function seed() {
       await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
     }
   }
+  // 1.39 [STAT2-02] 숫자 › 한눈에: 56 days of made-up 진입·머묾·회복 counts (shown once the 3.12 date is in 기능 관리 › 일정).
+  for (let i = 1; i <= 56; i++) {
+    const day = kst(Date.now() - i * 864e5);
+    const came = 3 + ((i * 5) % 7);
+    for (const [event, n] of [["life_new", came], ["life_d1", Math.round(came * 0.62)], ["life_d7", Math.round(came * 0.38)], ["life_d30", Math.round(came * 0.21)],
+      ["life_back7", i % 3 === 0 ? 2 : 1], ["life_back30", i % 5 === 0 ? 1 : 0]]) {
+      if (n) await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, 0)", day, event, n, n);
+    }
+  }
   // 1.38 Phase 3 분석판: a few days of 팀·가게 events and made-up 팀·직원 요금제 purchases, so the card has something on it.
   for (let i = 1; i <= 20; i++) {
     const day = kst(Date.now() - i * 864e5);

@@ -490,6 +490,27 @@ test("[ADM3-42] 로그인 잠금 풀기: the owner's 내 계정 shows a locked P
   assert.deepEqual(u.errors, []);
 });
 
+test("[ADM3-43] 서버 상태: company counts and versions, an old share server is 판 다름 (not red), a backup without R2 is 꺼짐", async (t) => {
+  const real = globalThis.fetch;
+  const robots = (u) => String(u).endsWith("/robots.txt");
+  globalThis.fetch = async (u) => new Response(robots(u) ? "User-agent: *" : "", { status: robots(u) ? 200 : 404 });
+  t.after(() => { globalThis.fetch = real; });
+  const { call, env, DB } = server({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "x".repeat(32) });
+  await call("POST", "/api/reports", report(1), from(1));
+  DB.db.prepare("INSERT INTO job_runs (step, ok_at, ms, runs, last_at, ver) VALUES ('backup', ?, 3, 5, ?, '1.38.0')").run(Date.now() - 600e3, Date.now() - 600e3);
+  const u = await asOwner(env, t);
+  await u.go("#/server");
+  await u.settle(30);
+  assert.match(u.text("#main"), /회사 1 · 쓰는 규칙 \d+ · 서버 1\.39\.0 · 관리자 앱 빌드/);
+  const share = [...u.$$("#main .tile")].find((x) => /공유 서버/.test(x.textContent));
+  assert.match(share.textContent, /살아 있음 · 판 다름/);
+  assert.ok(!share.classList.contains("hot"));
+  const backup = [...u.$$("#main .rows li")].find((li) => li.querySelector("b")?.textContent === "하루 백업");
+  assert.match(backup.textContent, /꺼짐/);
+  assert.match(backup.textContent, /R2 묶음\(BACKUP\)이 없어 건너뛰어요/);
+  assert.deepEqual(u.errors, []);
+});
+
 test("[ADMUX-18] 여러 판: 다시 대표로 asks first, then the earlier version is the rule again", async (t) => {
   offline(t);
   const s = server();
@@ -1794,4 +1815,35 @@ test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo
   await t1.settle(20);
   assert.match(t1.text("#main"), /볼 사진이 없어요/);
   assert.deepEqual(t1.errors, []);
+});
+
+test("[STAT2-01~04] 숫자 › 한눈에: 정상도 신호, 초기 모드, 진입·머묾 고리·주마다 머묾 표, 더 보기", async (t) => {
+  offline(t);
+  const { call, env, DB } = server();
+  await call("GET", "/api/config");
+  // 처리방침 3.12 in force, so stats.life is on; ten phones came 20 days ago, six opened the next day, three a week later.
+  DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2026-01-01", effective: "2026-01-02", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
+  const put = DB.db.prepare("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, 0)");
+  put.run(day(20), "life_new", 10, 10);
+  put.run(day(19), "life_d1", 6, 6);
+  put.run(day(13), "life_d7", 3, 3);
+  put.run(day(5), "life_back7", 2, 2);
+  DB.db.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.39.0', 4)").run(day(2));
+  const u = await asOwner(env, t);
+  await u.go("#/glance");
+  await u.settle(30);
+  const main = u.text("#main");
+  assert.match(main, /앱 정상도/);
+  assert.ok(u.$("#main .gl-hero"), "the big signal");
+  assert.equal(u.$$("#main .gl-gauge").length, 4);
+  assert.match(main, /초기 모드/, "fewer than 30 phones a day");
+  assert.match(main, /60%/, "1일째 6 of 10");
+  assert.match(main, /30%/, "7일째 3 of 10");
+  assert.equal(u.$$("#main .gl-ring").length, 3);
+  assert.ok(u.$("#main .gl-cohort td[data-label='1일째'].h4"), "주마다 머묾 표 with a heat class");
+  assert.match(main, /회복/);
+  assert.ok([...u.$$("#main .gl-more a")].some((a) => a.getAttribute("href") === "#/metrics"));
+  assert.deepEqual(u.errors, []);
 });

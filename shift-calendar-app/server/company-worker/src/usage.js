@@ -305,12 +305,23 @@ export const EVENTS = {
   manage_hint_shown: "팀·가게 기능 안내 보임",
   manage_hint_open: "팀·가게 기능 안내 누름",
   manage_import: "팀·직원 파일 가져오기",
+  // 1.39 [STAT2-02] 진입·머묾·회복(깃발 stats.life, 처리방침 3.12 전에는 받지 않아요). 숫자 › 한눈에가 읽어요(glance.js).
+  life_new: "처음 연 날",
+  life_d1: "깐 다음 날 다시 염",
+  life_d7: "깐 지 7일째 다시 염",
+  life_d30: "깐 지 30일째 다시 염",
+  life_back7: "7일 넘게 쉬다 다시 염",
+  life_back30: "30일 넘게 쉬다 다시 염",
 };
 
 export async function usage(request, env) {
   // Switched off, the server takes nothing and the app does not try again until tomorrow.
-  if (await paused(env, "USAGE_STATS")) return new Response(null, { status: 204 });
-  const body = await readJson(request, USAGE.bytes);
+  // 1.39 [ADM3-43] 스위치 읽기와 몸통 읽기를 동시에(실서버 점검 11-08 /api/events 1.6초). 꺼져 있으면 몸통이 어떻든 204예요.
+  const [off, read] = await Promise.allSettled([paused(env, "USAGE_STATS"), readJson(request, USAGE.bytes)]);
+  if (off.status === "rejected") throw off.reason;
+  if (off.value) return new Response(null, { status: 204 });
+  if (read.status === "rejected") throw read.reason;
+  const body = read.value;
   if (body.v !== 1) refuse("version", "v");
   if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
   if (!Array.isArray(body.days) || body.days.length < 1 || body.days.length > USAGE.days) refuse("days", "days");
@@ -343,9 +354,14 @@ export async function usage(request, env) {
       if (!Number.isInteger(n) || n < 1 || n > USAGE.count) refuse("count", "events");
       if (Object.hasOwn(EVENTS, name)) counts.set(name, n);
     }
-    const lately = new Set(recent.filter((e) => typeof e === "string" && Object.hasOwn(EVENTS, e)));
+    // 1.39 [STAT2-02] life_*는 그날 있었는지만 세요('최근 28일'에 넣지 않아요).
+    const lately = new Set(recent.filter((e) => typeof e === "string" && Object.hasOwn(EVENTS, e) && !e.startsWith("life_")));
     for (const e of counts.keys()) lately.add(e);
     for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
+  }
+  // 1.39 [STAT2-02] 처리방침 3.12 시행일(깃발 stats.life) 전에 온 life_*는 버려요.
+  if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await flagStore(env), "stats.life", now).on) {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("life_")) rows.splice(i, 1);
   }
   const app = body.app;
   if (days.size === 0) return json({ ok: true, skipped });
@@ -604,6 +620,11 @@ export async function metrics(env, url, now) {
   const end = Date.parse(`${to}T00:00:00+09:00`) + DAY;
   const lastWeek = kstDay(Date.parse(`${to}T00:00:00+09:00`) - 6 * DAY);
   const byDay = (col) => `strftime('%Y-%m-%d', (${col} + 32400000) / 1000, 'unixepoch')`;
+  // 1.39 [ADM3-43] 지표가 중간 6.6초였어요(실서버 점검 11-08): Play 숫자와 공유 서버 숫자를 DB 읽기와 동시에 물어요(전에는 차례로).
+  const vitalsP = playVitals(env, now);
+  const sharesP = shareStats(env, r.days);
+  vitalsP.catch(() => {});
+  sharesP.catch(() => {});
   const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows, passRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
@@ -648,10 +669,11 @@ export async function metrics(env, url, now) {
   };
   const s = subs[0] ?? {};
   const week = dayRows.filter((x) => x.day >= lastWeek);
-  const vitals = await playVitals(env, now);
+  const vitals = await vitalsP;
   const vital = (name, rule, key, least) => {
     const v = vitals?.[key];
-    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : "play" };
+    // 1.39 [STAT2-01] 실서버 둘러보기 B5: Play가 숫자를 읽어 줬는데 비율이 비어 있으면(사용자가 적어 Play가 숨김) 'Play Console에서 확인'이 아니라 '데이터 부족'.
+    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : vitals ? "few" : "play" };
     return { name, rule, value: Math.round(v * 10000) / 100, status: vitals.users < 100 ? "few" : v * 100 < least ? "pass" : "fail" };
   };
   const dayList = [];
@@ -664,6 +686,8 @@ export async function metrics(env, url, now) {
   const sla = readSla(slaRows);
   return {
     from, to, days, phoneDays, daily, enough,
+    // 1.39 [ADM3-43] Play가 본 하루 사용자(비정상 종료 숫자와 같이 오는 것), 사용 통계를 켠 휴대폰 수 옆에.
+    playUsers: vitals?.users ?? null, playDay: vitals?.day ?? null,
     series: dayRows.map((x) => ({ day: x.day, phones: x.phones })),
     // The same day [days] earlier for each day of the series, 0 when nothing came that day.
     before: dayRows.map((x) => was.get(kstDay(Date.parse(`${x.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
@@ -685,7 +709,7 @@ export async function metrics(env, url, now) {
       trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0, yearly: s.yearly ?? 0,
       passes: passRows?.[0]?.running ?? 0, passesBought: passRows?.[0]?.bought ?? 0,
     },
-    shares: await shareStats(env, days),
+    shares: await sharesP,
     // 1.38 Phase 3 분석판.
     phase3: await phase3Metrics(env, start, end, now, ev),
     // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.

@@ -144,10 +144,12 @@ export async function releaseRoute(request, env, path, method, now) {
  */
 export async function versionHealth(env, now = Date.now(), days = 14, vitals = null) {
   const from = now - days * DAY;
-  const [usage, inq, errors] = (await batch(env, [
+  const [usage, inq, errors, grouped] = (await batch(env, [
     stmt(env, "SELECT app, SUM(phones) AS phones, COUNT(DISTINCT day) AS days FROM usage_days WHERE day >= ? GROUP BY app", kstDay(from)),
     stmt(env, `SELECT json_extract(info, '$.app') AS app, kind, COUNT(*) AS n FROM inquiries WHERE created_at >= ? GROUP BY app, kind`, from),
     stmt(env, "SELECT key, count FROM counters WHERE key LIKE 'errors|%' AND key >= ?", `errors|${kstDay(from)}`),
+    // 1.39 [ADM3-43] 같은 날들 가운데 오류 묶음에 담긴 수(1.38부터). 다르면 화면이 '묶음에 N'으로 함께 보여요.
+    stmt(env, "SELECT COALESCE(SUM(count), 0) AS n FROM error_days WHERE day >= ?", kstDay(from)),
   ])).map((r) => r.results ?? []);
   const map = new Map();
   const row = (app) => {
@@ -175,7 +177,8 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
     if ((latest.inquiryRate ?? 0) > (prev.inquiryRate ?? 0) * 1.5 && latest.inquiries >= 5) worse.push(`문의가 ${prev.app}보다 많아요`);
   }
   const serverErrors = errors.reduce((n, e) => n + (e.count ?? 0), 0);
-  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors, vitals };
+  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors,
+    groupedErrors: grouped[0]?.n ?? 0, vitals };
 }
 
 // ---- 바뀐 일 [ADM3-33] ----
@@ -184,11 +187,13 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
 export async function changeMarks(env, from, to) {
   const [auditRows, flagRows] = (await batch(env, [
     stmt(env, `SELECT at, action, target, detail FROM audit WHERE at >= ? AND at < ? AND action IN ('shipped_version', 'price_table', 'launch_recorded', 'auto_rest',
-      'auto_resume', 'release_start', 'notice_remove', 'flag_force', 'flag_policy', 'rule_promote', 'incident_open', 'incident_close') ORDER BY at`, from, to),
+      'auto_resume', 'release_start', 'notice_remove', 'flag_force', 'flag_policy', 'rule_promote', 'incident_open', 'incident_close', 'server_deployed') ORDER BY at`, from, to),
     stmt(env, "SELECT at, key, action FROM flag_history WHERE at >= ? AND at < ? ORDER BY at LIMIT 200", from, to),
   ]).catch(() => [{ results: [] }, { results: [] }])).map((r) => r.results ?? []);
   const words = { shipped_version: "판 나감", price_table: "가격표", launch_recorded: "정식 출시", auto_rest: "D1 쉬기", auto_resume: "쉬기 끝", release_start: "출시 점검표",
-    notice_remove: "공지 내림", flag_force: "기능 강제", flag_policy: "처리방침 날짜", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝" };
+    notice_remove: "공지 내림", flag_force: "기능 강제", flag_policy: "처리방침 날짜", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝",
+    // 1.39 [STAT2-05] 서버가 새 판으로 처음 뜬 때(사고 때 가장 먼저 의심할 일).
+    server_deployed: "서버 배포" };
   const marks = auditRows.map((r) => ({ at: r.at, day: kstDay(r.at), kind: r.action, text: `${words[r.action] ?? r.action} ${r.target ?? ""}`.trim() }));
   for (const f of flagRows) marks.push({ at: f.at, day: kstDay(f.at), kind: "flag", text: `기능 ${f.key} ${f.action}` });
   const notices = await noticeRows(env).catch(() => []);

@@ -87,7 +87,7 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
   }
   if (got.ops_requests?.[0]?.n) out.push({ key: `requests:${got.ops_requests[0].n}`, kind: "incident", tone: "bad", title: `데이터 요청 ${got.ops_requests[0].n}건 기한 임박·넘김`, meta: "개인정보·환불·법 신고", to: "#/requests" });
   if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: setup.missing.join(" · "), to: "#/server" });
-  const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now)).filter((j) => j.state === "fail" || j.state === "stale");
+  const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now, env)).filter((j) => j.state === "fail" || j.state === "stale");
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
   if (got.ops_reviews?.[0]?.n) out.push({ key: `reviews:${got.ops_reviews[0].n}`, kind: "spike", tone: "warn", title: `답 안 한 낮은 별점 리뷰 ${got.ops_reviews[0].n}개`, meta: "별 1~2개", to: "#/reviews" });

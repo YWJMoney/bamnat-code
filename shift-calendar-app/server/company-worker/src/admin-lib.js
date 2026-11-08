@@ -322,7 +322,7 @@ export function adminLib() {
     { key: "today", label: "오늘", icon: "home", tabs: ["home", "desk", "decide", "flow", "loop", "cockpit", "incident"] },
     { key: "ask", label: "사람과 글", icon: "inquiries", tabs: ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"] },
     { key: "release", label: "출시", icon: "release", tabs: ["launch", "flags", "materials", "types", "notices", "chores", "gates"] },
-    { key: "insight", label: "숫자", icon: "metrics", tabs: ["metrics", "health", "money", "errors", "effects", "tiers"] },
+    { key: "insight", label: "숫자", icon: "metrics", tabs: ["glance", "metrics", "health", "money", "errors", "effects", "tiers"] },
     { key: "manage", label: "관리", icon: "admins", tabs: ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
   ];
 
@@ -365,6 +365,8 @@ export function adminLib() {
     notices: { label: "앱 공지", area: "ops", old: "공지 notices 운영" },
     chores: { label: "이달 할 일", area: "ops", badge: (o) => o.opsLeft ?? 0, old: "이달 할 일 chores 운영" },
     gates: { label: "출시 관문", area: "metrics", old: "지표 출시 관문 원격 갱신 gates" },
+    // 1.39 [STAT2-01] 숫자의 첫 칸: 정상도·진입·머묾·이탈·회복을 한 화면에.
+    glance: { label: "한눈에", area: "metrics", old: "한눈에 통계 정상도 앱 상태 진입 머묾 이탈 회복 리텐션 잔존 사용자 흐름 glance overview" },
     metrics: { label: "지표", area: "metrics", old: "통계 metrics" },
     effects: { label: "기능별 효과", area: "metrics", old: "플래그 효과 effects" },
     audit: { label: "활동 기록", area: "audit", old: "audit" },
@@ -1264,7 +1266,7 @@ export function adminLib() {
    * code still reads as words: its first part (reward_x → 보상) and "처리".
    */
   const ACTION_NAMES = {
-    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",

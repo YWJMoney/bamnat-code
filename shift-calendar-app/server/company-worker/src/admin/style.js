@@ -798,6 +798,7 @@ h1,h2,h3{letter-spacing:-.018em}
 .tile .v{font-weight:750;letter-spacing:-.03em}
 .tile.hot{border-color:var(--line)}
 .tile.hot .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--bad)}
+.tile.warn .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--warn)}
 .tile.kpi[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .rows{border-radius:var(--r-lg)}
 a.row:hover,button.row:hover,label.row:hover{background:var(--hover)}
@@ -1098,4 +1099,111 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 .stage-strip a.next{border-color:var(--accent);background:var(--accent-soft)}
 .stage-strip a.stuck{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));color:var(--bad)}
 .stage-strip .sep{color:var(--faint);flex:none}
+/* 1.39 [STAT2-01] 숫자 › 한눈에. 한 줄 흐름(폴드 접힘 380) → 두 칸(펼침 840) → 네 칸(웹 1024+). 색은 모두 토큰이라 어두운 화면도 같아요. */
+.glance{display:grid;gap:.9rem;font-variant-numeric:tabular-nums}
+.glance .gl-k{display:block;font-size:.74rem;font-weight:800;letter-spacing:.04em;color:var(--muted)}
+.glance small{display:block;font-size:.76rem;color:var(--muted);line-height:1.4}
+.gl-hero{--tone:var(--ok);--tone-bg:var(--ok-bg);position:relative;overflow:hidden;border-radius:var(--r-lg);padding:1.1rem 1rem 1rem;border:1px solid color-mix(in srgb,var(--tone) 28%,var(--line));
+  background:linear-gradient(160deg,color-mix(in srgb,var(--tone-bg) 92%,var(--surface)) 0%,var(--surface) 62%);box-shadow:var(--shadow)}
+.gl-hero.warn{--tone:var(--warn);--tone-bg:var(--warn-bg)}.gl-hero.bad{--tone:var(--bad);--tone-bg:var(--bad-bg)}
+.gl-hero.skeleton{min-height:14rem;background:var(--soft);border-color:var(--line)}
+.gl-hero-top{display:flex;align-items:flex-start;gap:.85rem}
+.gl-pulse{position:relative;flex:none;width:2.6rem;height:2.6rem;border-radius:50%;background:color-mix(in srgb,var(--tone) 16%,transparent);display:grid;place-items:center;margin-top:.15rem}
+.gl-pulse span{width:.9rem;height:.9rem;border-radius:50%;background:var(--tone);box-shadow:0 0 0 4px color-mix(in srgb,var(--tone) 22%,transparent)}
+.gl-pulse::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--tone);opacity:0;animation:gl-ping 2.4s ease-out infinite}
+.gl-hero.ok .gl-pulse::after{animation-duration:3.6s}
+@keyframes gl-ping{0%{transform:scale(.55);opacity:.55}80%,100%{transform:scale(1.25);opacity:0}}
+.gl-hero-text{min-width:0}
+.gl-eyebrow{margin:0;font-size:.74rem;font-weight:800;letter-spacing:.05em;color:var(--tone)}
+.gl-hero h2{margin:.15rem 0 0;font-size:1.45rem;font-weight:900;letter-spacing:-.025em;line-height:1.2;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.gl-count{display:inline-grid;place-items:center;min-width:1.7rem;height:1.7rem;padding:0 .45rem;border-radius:999px;background:var(--tone);color:var(--surface);font-size:.9rem;font-weight:900}
+.gl-sub{margin:.3rem 0 0;font-size:.88rem;color:var(--muted)}
+.gl-signals{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;margin:.9rem 0 0;padding:0}
+.gl-chip{display:inline-flex;align-items:center;gap:.4rem;min-height:2.25rem;padding:.35rem .75rem;border-radius:999px;font-size:.82rem;font-weight:700;text-decoration:none;
+  color:var(--fg);background:var(--surface);border:1px solid var(--line);transition:border-color .15s,transform .15s}
+.gl-chip::before{content:"";flex:none;width:.5rem;height:.5rem;border-radius:50%;background:var(--warn)}
+.gl-chip.bad::before{background:var(--bad)}.gl-chip.bad{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.gl-chip:hover{border-color:var(--tone);transform:translateY(-1px)}
+.gl-gauges{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem;margin-top:1rem}
+.gl-gauge{--g:var(--faint);display:flex;flex-direction:column;gap:.2rem;min-width:0;padding:.7rem .75rem;border-radius:var(--r);background:color-mix(in srgb,var(--surface) 88%,transparent);
+  border:1px solid var(--line);color:inherit;text-decoration:none;transition:border-color .15s}
+a.gl-gauge:hover{border-color:var(--g)}
+.gl-gauge.ok{--g:var(--ok)}.gl-gauge.warn{--g:var(--warn)}.gl-gauge.bad{--g:var(--bad)}
+.gl-gauge .gl-v{font-size:1.35rem;font-weight:900;letter-spacing:-.02em;line-height:1.15}
+.gl-gauge.warn .gl-v,.gl-gauge.bad .gl-v{color:var(--g)}
+.gl-meter{display:block;width:100%;height:6px;margin:.15rem 0;stroke:none}
+.gl-meter .gl-track{fill:var(--soft)}.gl-meter .gl-fill{fill:var(--g)}
+.gl-gauge .gl-d{font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gl-early{border-radius:var(--r-lg);padding:1rem;background:var(--surface);border:1px dashed color-mix(in srgb,var(--info) 45%,var(--line))}
+.gl-early-head{display:flex;align-items:flex-start;gap:.6rem}.gl-early-head p{margin:0;font-size:.86rem;color:var(--muted)}
+.gl-early-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem;margin-top:.8rem}
+.gl-early-grid>*{display:flex;flex-direction:column;gap:.15rem;padding:.75rem .85rem;border-radius:var(--r);background:var(--soft);color:inherit;text-decoration:none}
+.gl-early-grid b{font-size:1.4rem;font-weight:900;letter-spacing:-.02em}
+.gl-early-grid a:hover{background:var(--hover)}
+.gl-flow{padding-bottom:1.1rem}
+.gl-off{margin:0 0 .75rem}
+.gl-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:.6rem;counter-reset:gl}
+.gl-step{--s:var(--accent);position:relative;display:flex;flex-direction:column;gap:.2rem;min-width:0;padding:.85rem .9rem .8rem;border-radius:var(--r);background:var(--soft);
+  border-top:3px solid var(--s)}
+.gl-step.keep{--s:var(--ok)}.gl-step.out{--s:var(--bad)}.gl-step.back{--s:var(--gold)}
+.gl-step>b{font-size:1.75rem;font-weight:900;letter-spacing:-.03em;line-height:1.1;color:var(--fg)}
+.gl-step .spark polyline{stroke:var(--s)}.gl-step .spark circle{fill:var(--s)}
+.gl-rings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.35rem;margin-top:.35rem}
+.gl-ring{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.05rem;position:relative}
+.gl-ring svg{width:4.1rem;height:4.1rem;display:block}
+.gl-ring circle{fill:none;stroke-width:4.5}.gl-ring .gl-track{stroke:color-mix(in srgb,var(--ok) 14%,var(--surface))}.gl-ring .gl-fill{stroke:var(--ok);stroke-linecap:round}
+.gl-ring b{position:absolute;top:1.5rem;left:0;right:0;font-size:.86rem;font-weight:900}
+.gl-ring span{font-size:.74rem;font-weight:800;color:var(--fg);margin-top:.15rem}
+.gl-ring small{font-size:.68rem}
+.gl-active{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
+.gl-active-head{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem}
+.gl-active-head b{font-size:1.5rem;font-weight:900;letter-spacing:-.02em;display:flex;align-items:baseline;gap:.3rem}
+.gl-active-head b small{display:inline;font-weight:700}
+.gl-more{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+.gl-more a{display:flex;flex-direction:column;gap:.15rem;padding:.8rem .9rem;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);color:inherit;text-decoration:none;
+  transition:border-color .15s,transform .15s}
+.gl-more a b{font-size:.92rem;font-weight:800}
+.gl-more a b::after{content:" ›";color:var(--faint)}
+.gl-more a:hover{border-color:var(--accent);transform:translateY(-1px)}
+@media (min-width:600px){
+  .gl-hero{padding:1.4rem 1.4rem 1.25rem}
+  .gl-hero h2{font-size:1.75rem}
+  .gl-gauges{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .gl-early-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .gl-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .gl-more{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (min-width:1024px){
+  .gl-hero{padding:1.6rem 1.75rem 1.5rem}
+  .gl-hero h2{font-size:2rem}
+  .gl-pulse{width:3rem;height:3rem}
+  .gl-gauge .gl-v{font-size:1.6rem}
+  .gl-steps{grid-template-columns:minmax(0,.8fr) minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1fr);gap:1.1rem}
+  .gl-step:not(:last-child)::after{content:"›";position:absolute;right:-.85rem;top:50%;transform:translateY(-50%);color:var(--faint);font-size:1.1rem;font-weight:900}
+  .gl-more{grid-template-columns:repeat(5,minmax(0,1fr))}
+}
+@media (max-width:599.98px){.gl-steps{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense}.gl-step.keep,.gl-step.back{grid-column:1/-1}.gl-step>b{font-size:1.5rem}}
+@media (max-width:399.98px){.gl-ring svg{width:3.5rem;height:3.5rem}.gl-ring b{top:1.27rem;font-size:.8rem}.gl-hero h2{font-size:1.3rem}}
+.gl-trend{display:inline-flex;align-items:center;gap:.15rem;margin-left:.35rem;padding:.05rem .4rem;border-radius:999px;font-size:.7rem;font-weight:800;letter-spacing:0;vertical-align:1px}
+.gl-trend.up{background:var(--ok-bg);color:var(--ok)}.gl-trend.down{background:var(--bad-bg);color:var(--bad)}.gl-trend.flat{background:var(--soft);color:var(--muted)}
+.gl-cohort-wrap{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
+.gl-cohort-wrap .gl-active-head{flex-wrap:wrap;align-items:baseline}
+.gl-cohort{width:100%;border-collapse:separate;border-spacing:3px;margin-top:.5rem;font-size:.84rem}
+.gl-cohort th{font-size:.74rem;font-weight:800;color:var(--muted);text-align:left;padding:.3rem .45rem}
+.gl-cohort tbody th{color:var(--fg);white-space:nowrap}
+.gl-cohort td{text-align:center;padding:.45rem .4rem;border-radius:8px;font-weight:800;background:var(--soft)}
+.gl-cohort td.none{color:var(--faint);font-weight:600}
+.gl-cohort td.h0{color:var(--muted)}
+.gl-cohort td.h1{background:color-mix(in srgb,var(--ok) 12%,var(--surface))}
+.gl-cohort td.h2{background:color-mix(in srgb,var(--ok) 24%,var(--surface))}
+.gl-cohort td.h3{background:color-mix(in srgb,var(--ok) 38%,var(--surface))}
+.gl-cohort td.h4{background:color-mix(in srgb,var(--ok) 55%,var(--surface));color:var(--fg)}
+@media (max-width:599.98px){
+  .gl-cohort thead{display:none}
+  .gl-cohort,.gl-cohort tbody{display:block}
+  .gl-cohort tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;margin-bottom:.5rem}
+  .gl-cohort tbody th{grid-column:1/-1;padding:.2rem 0}
+  .gl-cohort td{display:flex;flex-direction:column;gap:.1rem;font-size:.86rem}
+  .gl-cohort td::before{content:attr(data-label);font-size:.66rem;font-weight:700;color:var(--muted)}
+}
 `;

@@ -529,6 +529,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
         // 1.39 [SETUP-20]: 첫 설정 누른 횟수 from 처리방침 3.12's date on (the `stats.setup` row turns on by itself that day).
         com.bamnat.app.diag.SetupTapStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_SETUP) }
+        // 1.39 [STAT2-02]: 처음 연 날·다시 연 날 counts from 처리방침 3.12's date on (the `stats.life` row turns on by itself that day).
+        com.bamnat.app.diag.UsageStats.lifeAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LIFE) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
