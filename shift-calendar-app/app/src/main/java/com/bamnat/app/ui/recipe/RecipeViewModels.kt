@@ -138,8 +138,15 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
             else s.copy(loading = true, error = null, items = if (more) s.items else emptyList())
         loading = viewModelScope.launch {
             try {
+                // 1.39 [MKP-07] 앱을 다시 켠 뒤 처음 여는 장터: the list this phone kept from last time, at once, while it is read again.
+                if (!more && kept == null) MarketDisk.list(c.appContext, key)?.let { (page, at) ->
+                    MarketShots.feed(c, page, keep = false)
+                    val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
+                    if (_state.value.items.isEmpty() && got.isNotEmpty()) _state.value = _state.value.copy(items = got, next = page.next, loadedAt = at)
+                }
                 val page = c.recipeApi.list(styleNow, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
                 MarketShots.feed(c, page)
+                if (!more) page.raw?.let { raw -> c.appScope.launch { MarketDisk.keepList(c.appContext, key, raw) } }
                 // [PRF-05] 1.36 차단한 분의 작품은 이 폰에서 빼요 (목록은 모든 폰이 같은 캐시).
                 val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
                 val items = if (more) _state.value.items + got else got
@@ -255,15 +262,19 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun load() {
         // 1.39 [MKP-03] 작품 바로 열기 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): a card tapped in the 장터 already brought the
         // work's written form; it shows at once (조각·미리 보기·입어 보기) while the whole work is read, and 넣기 waits for that.
-        if (_state.value.doc == null) MarketShots.seen(code)?.let { d ->
+        fun showSeen(d: RecipeDoc) {
+            if (_state.value.doc != null) return
             runCatching { d.recipe() }.getOrNull()?.let { r ->
                 newerBody = d.body
                 _state.value = _state.value.copy(doc = d, recipe = r, pieces = piecesOf(r), error = null, votes = Votes(d.item.likes, d.item.dislikes, null))
                 preview()
             }
         }
+        if (_state.value.doc == null) MarketShots.seen(code)?.let(::showSeen)
         viewModelScope.launch {
             try {
+                // 1.39 [MKP-07] A card no longer in memory: the written form this phone kept of it, before the server answers.
+                if (_state.value.doc == null) MarketShots.seenKept(c, code)?.let(::showSeen)
                 // PC 확인 W34 1.36 (처음 들어갈 때 한 번 '인터넷에 연결되지 않았어요', 다시 해 보기로 열림): a connection that drops on the
                 // first try is tried once more before it is said.
                 val doc = try { c.recipeApi.show(code, device) } catch (e: java.io.IOException) {

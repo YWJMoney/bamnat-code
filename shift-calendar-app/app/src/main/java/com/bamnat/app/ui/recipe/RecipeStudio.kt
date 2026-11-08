@@ -214,8 +214,11 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
     }
     // [BLU-05] 1.36 부품 꾸미기 on the example app: the parts as the phone draws them (앱 전체·단추·카드 through the theme).
     @Suppress("UNCHECKED_CAST")
-    val rawParts = remember(resolved) {
-        (resolved[PieceKind.PARTS]?.get("parts") as? List<Map<String, Any?>>)?.let { l -> runCatching { com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(l)) }.getOrNull() }
+    // 1.39 [MKP-06] On a 장터 card, the parts' fonts are the card's small fonts.
+    val cardFonts = com.bamnat.app.ui.theme.LocalCardFonts.current
+    val rawParts = remember(resolved, cardFonts) {
+        (resolved[PieceKind.PARTS]?.get("parts") as? List<Map<String, Any?>>)?.let { l ->
+            runCatching { com.bamnat.core.recipe.Blueprint(MarketFonts.lines(com.bamnat.core.recipe.Blueprint.clean(l), cardFonts.orEmpty())) }.getOrNull() }
             ?: com.bamnat.core.recipe.Blueprint.EMPTY
     }
     val blueprint = rawParts.let { b -> val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f; remember(b, dark) { b.forDark(dark) } }
