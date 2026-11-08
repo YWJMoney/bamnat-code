@@ -6243,6 +6243,8 @@ function adminApp(L, BUILD, M) {
   Object.assign(V, { actions: Object.assign({}, ...groups.map((g) => g.actions ?? {})), forms: Object.assign({}, ...groups.map((g) => g.forms ?? {})) });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
+  // [LOOP-32] 화면 묶음이 주는 즉시 저장 칸(data-change).
+  for (const g of groups) Object.assign(CHANGES, g.changes ?? {});
   // 1.38 [DESK-02] 장부의 판 고르기(select)는 바꿀 때만.
   CHANGES["ledger-v"] = (t) => V.actions["ledger-v"]({}, t);
 
