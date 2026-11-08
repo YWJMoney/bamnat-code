@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.work
 
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +108,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
     var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var finding by remember { mutableStateOf<Pair<String, LocalDate>?>(null) }
     var contracting by remember { mutableStateOf<String?>(null) }
-    ToolScreen("급여 대장", onClose) {
+    // 1.39 [CALX-08] 좌우로 밀어 달 넘기기.
+    ToolScreen("급여 대장", onClose, bodyModifier = Modifier.monthSwipe(ym) { month = ym.plusMonths(it.toLong()).toString() }) {
         if (place == null) { Hint("사업장을 준비하고 있어요…"); return@ToolScreen }
         val staff by store.staff(place.id).collectAsStateWithLifecycle(emptyList())
         val work by store.work(place.id, ym).collectAsStateWithLifecycle(emptyList())

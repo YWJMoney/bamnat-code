@@ -935,11 +935,16 @@ fun MoneyScreen(
                         Spacer(Modifier.height(FabClearance))
                     }
                 }
-                MoneyViewModel.Page.LIST -> LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
-                    onAdd = { adding = MoneyKind.EXPENSE })
-                MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
-                    onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
-                    snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
+                // 1.39 [CALX-08] 내역·통계도 옆으로 밀어 달을 넘겨요 (사용자 11-08 "돈을 보여 주는 곳 모두"); 내역 줄의 밀기와 고르는 중에는 그쪽이 먼저.
+                MoneyViewModel.Page.LIST -> Box(Modifier.fillMaxSize().then(if (selection.isEmpty()) Modifier.monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) } else Modifier)) {
+                    LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
+                        onAdd = { adding = MoneyKind.EXPENSE })
+                }
+                MoneyViewModel.Page.REPORT -> Box(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }) {
+                    LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
+                        onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
+                        snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
+                }
             }
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
