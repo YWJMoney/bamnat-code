@@ -522,6 +522,24 @@ private fun NoticesPage(
         // [SET-02] The alarm's own switches are in 설정 › 알람 only.
         Note("${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
     }
+    // 1.39 [NTC-04] 알림 한눈에: 켜 둔 것·더 켤 수 있는 것(내 알림 규칙까지), 겹치는 것 표시.
+    SectionCard(title = "알림 한눈에") { NoticeBoardCard() }
+    // 1.39 [NTC-03] 앱 알림을 켜는데 같은 말을 하는 내 규칙이 켜져 있으면: 기존 설정을 바꿀까요?
+    var turnOnAsk by remember { mutableStateOf<Pair<com.bamnat.core.formula.NoticeOverlap.BuiltIn, List<com.bamnat.core.formula.LogicRule>>?>(null) }
+    fun turnOn(b: com.bamnat.core.formula.NoticeOverlap.BuiltIn, on: Boolean, change: (AppSettings) -> AppSettings) {
+        val store = com.bamnat.app.logic.LogicStore(context)
+        val same = if (on) com.bamnat.core.formula.NoticeOverlap.repeating(com.bamnat.core.formula.Logic.decode(settings.logic), b) { !store.isOff(it.key) } else emptyList()
+        if (same.isEmpty()) set(on, change) else turnOnAsk = b to same
+    }
+    turnOnAsk?.let { (b, same) ->
+        TurnOnAsk(b, same) { offRules ->
+            turnOnAsk = null
+            if (offRules != null) {
+                offRules.forEach { NoticeBoard.setRule(context.appContainer, it, false) }
+                set(true) { s -> NoticeBoard.OWN.first { it.key == b.key }.set(s, true) }
+            }
+        }
+    }
     val planned = settings.workStyle?.usesPayEngine != false
     // 1.38 PC 11차 식당 둘러보기 (퇴근길 안전: 야간, 52시간이 가게에 보임): what follows a 근무표 shows where there is one, and 퇴근길 안전
     // (the end of a night) to 교대 only; one already on still shows wherever, so it can be turned off.
@@ -562,7 +580,7 @@ private fun NoticesPage(
         Column(Modifier.focusMark("잠금 화면 오늘 근무")) {
             SwitchRow("잠금 화면 오늘 $lockWord", "오늘과 내일 $lockWord${Fmt.obj(lockWord)} 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
                 warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
-                set(on) { it.copy(todayShiftNotice = on) }
+                turnOn(com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY, on) { it.copy(todayShiftNotice = on) }
             }
         }
         // 1.38 [EASE-29] What the lock screen will say, with my today and tomorrow.
@@ -576,7 +594,7 @@ private fun NoticesPage(
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST && settings.workStyle != com.bamnat.core.work.WorkStyle.BUSINESS)
             SwitchRow(DAY_CLOSE_ROW, "근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요. 야간이면 다음 날 아침 퇴근 뒤예요",
                 settings.dayCloseNotice, warning = warning(settings.dayCloseNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
-                set(on) { it.copy(dayCloseNotice = on) }
+                turnOn(com.bamnat.core.formula.NoticeOverlap.BuiltIn.DAY_CLOSE, on) { it.copy(dayCloseNotice = on) }
             }
         // 1.38 [LEDH-24] 근무 전 한 줄 예고: 근무표가 있는 유형만.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT || settings.workStyle == com.bamnat.core.work.WorkStyle.DAY ||

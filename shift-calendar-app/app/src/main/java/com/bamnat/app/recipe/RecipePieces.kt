@@ -45,6 +45,25 @@ class RecipePieces(private val c: AppContainer) {
     /** One line of what a piece changes; [skipped] lines say what it could not use here. */
     data class Change(val text: String, val skipped: Boolean = false)
 
+    // ---- 1.39 [NTC-03] 겹치는 알림: 넣기 전에 '기존 설정을 바꿀까요?' ----
+
+    /** The app's own notices that are on in [s]. */
+    fun noticesOn(s: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Set<com.bamnat.core.formula.NoticeOverlap.BuiltIn> = buildSet {
+        if (s.todayShiftNotice) add(com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY)
+        if (s.dayCloseNotice) add(com.bamnat.core.formula.NoticeOverlap.BuiltIn.DAY_CLOSE)
+    }
+
+    /**
+     * 1.39 [NTC-03] (사용자 2026-11-08 "부품 기능을 넣을때 기존의 설정을 바꿀까요?"): the 알림 rules of a 규칙·단추 piece ([values]) that say
+     * what an app notice that is on, or a rule of mine that is on, says already. [Mode.REPLACE] turns those off as it goes in
+     * (되돌리기 turns them back on); [Mode.BOTH] keeps them, a 오늘 근무 one folded into the lock-screen notice.
+     */
+    fun overlaps(values: Map<String, Any?>, cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current): List<com.bamnat.core.formula.NoticeOverlap.Hit> {
+        val store = com.bamnat.app.logic.LogicStore(c.appContext)
+        return com.bamnat.core.formula.NoticeOverlap.check(com.bamnat.core.formula.Logic.decode(cur.logic),
+            com.bamnat.core.formula.Logic.from(values).received(), noticesOn(cur)) { !store.isOff(it.key) }
+    }
+
     /** How a piece meets what the user has: put the recipe's on, keep both (where a piece can), or leave it out. */
     enum class Mode { REPLACE, BOTH, SKIP }
 
@@ -477,7 +496,15 @@ class RecipePieces(private val c: AppContainer) {
             listOfNotNull(
                 Side("규칙", "${mine.rules.size}개", "${after.rules.size}개").takeIf { l.rules.isNotEmpty() },
                 Side("단추", "${mine.buttons.size}개", "${after.buttons.size}개").takeIf { l.buttons.isNotEmpty() },
-            )
+            ) + overlaps(values).map { h ->
+                // 1.39 [NTC-03] 겹치는 알림이 넣은 뒤 어떻게 되는지.
+                val what = h.builtIn?.let { "${it.label} 알림" } ?: "내 ‘${h.other?.name}’ 규칙"
+                Side(what, "켬", when {
+                    mode == Mode.REPLACE -> "끔(‘${h.rule.name}’으로)"
+                    h.builtIn == com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY -> "켬 · 알림 하나로 합쳐요"
+                    else -> "켬 · 둘 다 와요"
+                })
+            }
         }
         PieceKind.COMPANY -> if (cal != PersonalCalendar.MAIN) emptyList() else {
             val now = types(cal)
@@ -748,7 +775,9 @@ class RecipePieces(private val c: AppContainer) {
                 // PC D7: one of theirs kept once because mine does the same shows its name on my line (all of it the same is no change).
                 if (kind == PieceKind.LOGIC) com.bamnat.app.logic.LogicStore(c.appContext)
                     .noteSame(com.bamnat.core.formula.Logic.decode(now.logic), com.bamnat.core.formula.Logic.from(vals))
-                val changes = settingsAfter(kind, vals, cal).filter { (k, v) -> settingOf(now, k) != v }
+                val changes = settingsAfter(kind, vals, cal, mode = mode).filter { (k, v) -> settingOf(now, k) != v }
+                // 1.39 [NTC-03] 바꾸기: my rules saying the same at the same time are switched off (the app's notices are in [changes]).
+                val twins = if (kind == PieceKind.LOGIC && mode == Mode.REPLACE) overlaps(vals, now).mapNotNull { it.other?.key }.distinct() else emptyList()
                 if (changes.isEmpty()) null else {
                     val out = JSONObject()
                     changes.forEach { (k, v) -> out.put(k, JSONArray().put(settingOf(now, k)).put(v)) }
@@ -763,9 +792,10 @@ class RecipePieces(private val c: AppContainer) {
                         val hadB = com.bamnat.core.formula.Logic.decode(now.logic).buttons.map { it.id }.toSet()
                         val after = com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic)
                         store.markFrom(code, after.rules.map { it.key }.filter { it !in had }, after.buttons.map { it.id }.filter { it !in hadB })
+                        twins.forEach { store.setOff(it, true) }
                         com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                     }
-                    JSONObject().put("settings", out)
+                    JSONObject().put("settings", out).apply { if (twins.isNotEmpty()) put("rulesOff", JSONArray(twins)) }
                 }
             }
         }
@@ -980,6 +1010,12 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
+                // 1.39 [NTC-03] my rules switched off for this one come back on.
+                before.optJSONArray("rulesOff")?.let { a ->
+                    val store = com.bamnat.app.logic.LogicStore(c.appContext)
+                    (0 until a.length()).forEach { store.setOff(a.getString(it), false) }
+                    com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+                }
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -995,7 +1031,7 @@ class RecipePieces(private val c: AppContainer) {
 
     /** The settings [kind] would leave, by key, as text. */
     private suspend fun settingsAfter(kind: PieceKind, values: Map<String, Any?>, cal: String,
-                                      cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, String> {
+                                      cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current, mode: Mode = Mode.BOTH): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
                 texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
@@ -1119,7 +1155,9 @@ class RecipePieces(private val c: AppContainer) {
                 ?.let { mapOf("parts" to it) }.orEmpty()
             // [RUL-03][RUL-04] The recipe's buttons and rules take the place of the ones there were (되돌리기 puts them back).
             // PC D6: they are added after mine (the same one kept once), as from the studio's 보관함; they never take mine away.
-            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(cur.logic).plus(com.bamnat.core.formula.Logic.from(values))))
+            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(cur.logic).plus(com.bamnat.core.formula.Logic.from(values)))) +
+                // 1.39 [NTC-03] 바꾸기: the app notice it repeats goes off (되돌리기 turns it on again).
+                (if (mode == Mode.REPLACE) overlaps(values, cur).mapNotNull { it.builtIn }.associate { it.key to "false" } else emptyMap())
             // [LAY-01] 꾸밈 층: the piece's decorations take the places (붙는 곳) it uses; mine on the other places stay.
             PieceKind.DECOR -> {
                 val theirs = com.bamnat.core.recipe.Decor.of(values)
@@ -1181,6 +1219,8 @@ class RecipePieces(private val c: AppContainer) {
         "parts" -> s.parts
         "logic" -> s.logic
         "decor" -> s.decor
+        "todayShiftNotice" -> s.todayShiftNotice.toString()
+        "dayCloseNotice" -> s.dayCloseNotice.toString()
         else -> ""
     }
 
@@ -1221,6 +1261,8 @@ class RecipePieces(private val c: AppContainer) {
         "calTheme" -> s.copy(calTheme = v)
         "parts" -> s.copy(parts = v.takeIf { com.bamnat.core.recipe.Blueprint.problem(it) == null } ?: s.parts)
         "decor" -> s.copy(decor = v)
+        "todayShiftNotice" -> s.copy(todayShiftNotice = v == "true")
+        "dayCloseNotice" -> s.copy(dayCloseNotice = v == "true")
         else -> s
     }
 

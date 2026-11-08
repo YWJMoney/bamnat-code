@@ -86,7 +86,7 @@ object LogicRunner {
 
     /** Does [act] for [date]; [who] names the rule or the button (for its count and its line). */
     suspend fun run(c: AppContainer, act: LogicAct, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0,
-                    trusted: Boolean = false) {
+                    trusted: Boolean = false, /** 1.39 [NTC-02] its 알림 goes into the lock-screen 오늘 근무 notice. */ fold: Boolean = false) {
         if (resting) {
             LogicStore(c.appContext).log(who, "안전 모드라 쉬었어요")
             if (!quiet) _message.value = "안전 모드라 규칙과 단추는 쉬어요. ‘평소대로’를 누르면 다시 돌아요"; return
@@ -113,8 +113,15 @@ object LogicRunner {
         var valueAfter: String? = null
         var changed: Triple<String, Double?, Double>? = null
         when (act.verb) {
-            LogicVerb.NOTIFY -> notify(ctx, who, words.ifBlank { who }, buttons = act.then.mapNotNull { id -> logic(c).button(id) }, date = date,
-                again = act.then.filter { it in LogicAct.AGAIN })
+            LogicVerb.NOTIFY -> {
+                // 1.39 [NTC-02] 겹치는 알림 하나로: a rule saying today's shift while the lock-screen 오늘 근무 shows puts the rest of its
+                // words there (one notice, not two); its 알림 단추 keep their own notice.
+                val rest = if (fold && act.then.isEmpty())
+                    com.bamnat.core.formula.NoticeOverlap.tidy(FormulaText.render(com.bamnat.core.formula.NoticeOverlap.withoutShift(act.arg), scope)) else null
+                if (rest != null && com.bamnat.app.alarm.TodayShiftNotice.fold(ctx, who, rest)) store.log(who, "잠금 화면 ‘오늘 근무’ 알림에 합쳐 보였어요")
+                else notify(ctx, who, com.bamnat.core.formula.NoticeOverlap.tidy(words).ifBlank { who }, buttons = act.then.mapNotNull { id -> logic(c).button(id) },
+                    date = date, again = act.then.filter { it in LogicAct.AGAIN })
+            }
             // 1.39 [FX-03][FX-13] 값 칸: the number (and words) before are kept for 되돌리기; then 값이 바뀌면 rules ([valueChanged]).
             LogicVerb.VAL_ADD, LogicVerb.VAL_SET, LogicVerb.VAL_STAMP, LogicVerb.VAL_TEXT -> {
                 val before = FxValues.kept(c, act.arg)
@@ -207,7 +214,7 @@ object LogicRunner {
         if (quiet && act.verb.writes && !seen) wroteQuietly(ctx, who, act)
         if (seen && act.verb != LogicVerb.SCREEN && act.verb != LogicVerb.MEMO_TEMPLATE) {
             _message.value = when (act.verb) {
-                LogicVerb.NOTIFY -> words.ifBlank { who }
+                LogicVerb.NOTIFY -> com.bamnat.core.formula.NoticeOverlap.tidy(words).ifBlank { who }
                 LogicVerb.NEW_MEMO -> "‘${act.arg.ifEmpty { "메모" }}’ 메모를 만들었어요"
                 LogicVerb.CHECK_RESET -> "‘${act.arg.ifEmpty { "체크 목록" }}’ 체크를 다시 비웠어요"
                 LogicVerb.ADD_MONEY -> "가계부에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
@@ -224,13 +231,14 @@ object LogicRunner {
     /**
      * 1.39 [FX-11] 동작 줄: [acts] one after another (a later one reads what an earlier one counted), a screen or a 메모 틀 opened once.
      */
-    suspend fun runSteps(c: AppContainer, acts: List<LogicAct>, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0) {
+    suspend fun runSteps(c: AppContainer, acts: List<LogicAct>, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0,
+                         fold: Boolean = false) {
         var opened = false
         for (a in acts.take(1 + com.bamnat.core.formula.MAX_MORE)) {
             val opens = a.after == null && (a.verb == LogicVerb.SCREEN || a.verb == LogicVerb.MEMO_TEMPLATE)
             if (opens && opened) continue
             opened = opened || opens
-            run(c, a, date, scope, who, quiet, depth)
+            run(c, a, date, scope, who, quiet, depth, fold = fold)
         }
     }
 
@@ -512,7 +520,7 @@ object LogicRunner {
         store.lastOpen = today.toString()
         c.appScope.launch {
             val f = facts(c)
-            due(c, RuleTrigger.OPEN, today, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, today, f.scope(today), r.name) } }
+            due(c, RuleTrigger.OPEN, today, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, today, f.scope(today), r.name, fold = foldsToday(c, r)) } }
         }
     }
 
@@ -653,7 +661,7 @@ object LogicRunner {
             if (!holds && r.otherwise.isEmpty()) {
                 store.result(r.key, at, "조건이 맞지 않아 건너뛰었어요"); store.log(r.name, "${at.monthValue}/${at.dayOfMonth} 조건(${r.cond.take(30)})이 맞지 않아 건너뛰었어요"); continue
             }
-            val ok = runCatching { runSteps(c, r.steps(holds), day, scope, r.name, quiet = true) }
+            val ok = runCatching { runSteps(c, r.steps(holds), day, scope, r.name, quiet = true, fold = day == Today.date() && foldsToday(c, r)) }
             if (ok.isFailure) store.log(r.name, "하다가 멈췄어요")
             store.result(r.key, at, when {
                 ok.isFailure -> "하다가 멈췄어요"
@@ -672,6 +680,10 @@ object LogicRunner {
         val ok = runCatching { runSteps(c, listOf(r.act) + r.more, day, f.scope(day), r.name) }
         LogicStore(c.appContext).result(r.key, Today.dateTime(), if (ok.isSuccess) "놓친 것을 지금 했어요" else "하다가 멈췄어요")
     }
+
+    /** 1.39 [NTC-02] [r] only repeats 오늘 근무 while the lock-screen 오늘 근무 notice is on. */
+    private fun foldsToday(c: AppContainer, r: LogicRule): Boolean =
+        c.settingsRepository.current.todayShiftNotice && com.bamnat.core.formula.NoticeOverlap.foldsIntoToday(r)
 
     private val TIMED = setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END, RuleTrigger.EVERY)
     internal const val PRO_REST = "프로 기능 장치라 쉬었어요 (하루 써 보기·프로에서 돌아요)"

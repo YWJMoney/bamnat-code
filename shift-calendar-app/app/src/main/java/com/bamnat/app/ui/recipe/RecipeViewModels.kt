@@ -215,7 +215,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         /** [RCX-23] Titles of mine the piece runs into (메모 틀), asked 바꾸기 / 둘 다 두기. */
         val clashes: List<String> = emptyList(),
         /** 1.39 [MKP-05] 기능 조각 전후: what it touches here, 지금 ↔ 넣으면. */
-        val sides: List<RecipePieces.Side> = emptyList())
+        val sides: List<RecipePieces.Side> = emptyList(),
+        /** 1.39 [NTC-03] 겹치는 알림 (규칙·단추): asked 기존 것 끄기 ([RecipePieces.Mode.REPLACE]) / 둘 다(하나로) 두기. */
+        val overlaps: List<com.bamnat.core.formula.NoticeOverlap.Hit> = emptyList())
 
     data class State(
         val doc: RecipeDoc? = null, val recipe: Recipe? = null, val error: String? = null,
@@ -371,13 +373,17 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val clashes = r.pieces.firstOrNull { it.kind == PieceKind.MEMO_TEMPLATES }?.let { p ->
                 runCatching { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
             }.orEmpty()
+            val overlaps = r.pieces.firstOrNull { it.kind == PieceKind.LOGIC }?.let { p ->
+                runCatching { c.recipes.pieces.overlaps(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
+            }.orEmpty()
             // 1.39 [MKP-05] 지금 ↔ 넣으면, with the 바꾸기 / 둘 다 두기 chosen for each piece.
             val modes = _state.value.pieces.associate { it.kind to it.mode }
             val sides = r.pieces.associate { p ->
                 p.kind to c.recipes.pieces.compare(p.kind, RecipeResolve.piece(r, p, answers), calendar, modes[p.kind] ?: RecipePieces.Mode.REPLACE)
             }
             _state.value = _state.value.copy(pieces = _state.value.pieces.map {
-                it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList(), sides = sides[it.kind].orEmpty())
+                it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList(), sides = sides[it.kind].orEmpty(),
+                    overlaps = if (it.kind == PieceKind.LOGIC) overlaps else emptyList())
             }, looks = look)
         }
     }
