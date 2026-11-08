@@ -296,10 +296,20 @@ internal fun TaskLine(rows: List<TaskList.Row>) {
                 TaskCircle(false, if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, check)
             }
             val line = widgetPart("widget.task", states)
-            val tail = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { next.kind == TaskList.Kind.LATE }, "남은 $left".takeIf { left > 1 })
-            Text(next.text.ifEmpty { "제목 없는 메모" } + tail.joinToString("") { " · $it" },
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1,
-                modifier = GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day)))
+            // PC eae4e024: in one line '우유 사기 ·…' cut the time and what is left at 2×1. The title gets the line, the time (늦음) goes
+            // small under it, and how many are left sits as a number by ＋, so none of it is cut.
+            val note = listOfNotNull("늦음".takeIf { next.kind == TaskList.Kind.LATE }, next.time?.let { Fmt.time(it) }).joinToString(" · ")
+            Column(GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day))) {
+                Text(next.text.ifEmpty { "제목 없는 메모" },
+                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1)
+                if (note.isNotEmpty()) Text(note, style = TextStyle(color = if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error
+                    else GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(11)), maxLines = 1)
+            }
+            if (left > 1) {
+                Box(GlanceModifier.padding(horizontal = 6.dp).semantics { contentDescription = "남은 할 일 ${left}개" }, contentAlignment = Alignment.Center) {
+                    Text("$left", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12), fontWeight = FontWeight.Medium), maxLines = 1)
+                }
+            }
         } else {
             Text(if (rows.isEmpty()) "오늘 할 일이 없어요" else "오늘 할 일을 다 끝냈어요",
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(13)), maxLines = 1,
