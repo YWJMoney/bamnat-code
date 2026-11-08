@@ -1185,6 +1185,27 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
             androidx.compose.material3.DatePicker(state)
         }
     }
+    // 1.39 G2 통합 7차 PC: a name could not be changed (a 전화번호 put in it meant 빼고 다시 더하기, which wipes their days). Pressing the
+    // name changes it in place; the days, links and 입사일 stay. CARE-09's refusal points here.
+    var renaming by remember { mutableStateOf<TeamMember?>(null) }
+    renaming?.let { m ->
+        var name by rememberSaveable(m.id) { mutableStateOf(m.name) }
+        val clean = name.trim().take(20)
+        val taken = clean.isNotEmpty() && clean != m.name && members.any { it.id != m.id && it.name == clean }
+        AlertDialog(onDismissRequest = { renaming = null }, title = { Text("이름 고치기") }, text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedTextField(name, { name = it.take(20) }, label = { Text("팀원 이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text(if (taken) "같은 이름의 팀원이 있어요. 구별되게 적어 주세요." else "칠한 칸·링크·입사일은 그대로예요. 이름은 다음 확정 때 그 팀원 링크에도 바뀌어요. 전화번호·계좌는 넣지 않아요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (taken) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }, confirmButton = {
+            TextButton(enabled = clean.isNotEmpty() && clean != m.name && !taken, onClick = {
+                scope.launch { store.saveMembers(listOf(m.copy(name = clean))) }
+                renaming = null
+            }) { Text("저장") }
+        }, dismissButton = { TextButton(onClick = { renaming = null }) { Text("닫기") } })
+    }
     var cutting by remember { mutableStateOf<TeamMember?>(null) }
     cutting?.let { m ->
         AlertDialog(onDismissRequest = { cutting = null }, title = { Text("${m.name} 링크 새로 만들기") }, text = {
@@ -1197,7 +1218,9 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             members.forEach { m ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(m.name + if (!m.active) " (쉬는 중)" else "", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(m.name + (if (!m.active) " (쉬는 중)" else "") + " ✎", style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f).clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "이름 고치기") { renaming = m }
+                            .padding(vertical = 10.dp))
                     FilterChip(selected = m.skill == Skill.CHARGE, onClick = { scope.launch { store.saveMembers(listOf(m.copy(skill = if (m.skill == Skill.CHARGE) Skill.REG else Skill.CHARGE))) } },
                         label = { Text("책임") })
                     TextButton(onClick = { if (m.active) rest(m) else scope.launch { store.saveMembers(listOf(m.copy(active = true))) } }) { Text(if (m.active) "쉼" else "복귀") }
