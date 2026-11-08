@@ -121,7 +121,7 @@ class LegalPagesTest {
         assertTrue("커뮤니티 운영 규칙 페이지가 있어요", rules.exists())
         val r = rules.readText()
         // 1.39 [CARE-12]: the page is 운영 규칙 2 (marks 3.12), and says that 6·7항 follow 운영 규칙 1 until its 시행일.
-        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION_CARE} · 앱 버전 1.39.0"))
+        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION_CARE} · 앱 버전 1.39.0 기준 · 게시일 2026년 11월 9일 · 시행일 2026년 12월 9일"))
         assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION}(2026년 11월 21일 시행)"))
         assertTrue(com.bamnat.core.plaza.PlazaRules.URL.endsWith("/community/"))
         assertTrue(r.contains("제44조의2 제5항") && r.contains("30일 안에") && r.contains("‘이 사람 글 안 보기’"))
