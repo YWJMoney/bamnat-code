@@ -21,8 +21,10 @@ export function loopViews(A) {
   };
   /** 설정 칸은 접어 둬요(휴대폰에서 화면이 길어지지 않게). 연 상태는 앱이 기억해요(S.opened). */
   const fold = (key, title, meta, body) => `<details class="card how" data-key="loop-${key}"${S.opened.get(`loop-${key}`) ? " open" : ""}><summary><b>${esc(title)}</b>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}</summary>${body}</details>`;
-  const SHIP_NAMES = { waiting: "보류 중", done: "보냄", cancelled: "취소함" };
-  const SHIP_TONES = { waiting: "warn", done: "ok", cancelled: "" };
+  const SHIP_NAMES = { review: "검토 중일 수 있음", waiting: "보류 중", done: "보냄", cancelled: "취소함" };
+  const SHIP_TONES = { review: "info", waiting: "warn", done: "ok", cancelled: "" };
+  /** [LOOP-32] Play 트랙 100% 판이 실제로 나갔는지(이 판으로 쓰는 휴대폰). */
+  const seenText = (s) => (s.live ? `실제로 나갔어요 · 이 판 휴대폰 ${s.phones}대` : `검토 중이거나 아직 안 나갔을 수 있어요 · 이 판 휴대폰 ${s.phones}/${s.need}대`);
   const REWARD_NAMES = [["bugDays", "문제 신고가 고쳐짐", "문제 신고(버그)를 보낸 폰에, 그 개발사항이 완료되면"], ["polishDays", "제안이 다듬기로 들어감", "건의·제안이 '다듬기' 크기로 완료되면"],
     ["featureDays", "제안이 새 기능으로 들어감", "건의·제안이 '새 기능' 크기로 완료되면"], ["knownDays", "알려진 문제에 '나도 겪어요'", "목록에서 나도 겪어요만 누른 폰에, 고쳐지면(0이면 안 줌)"],
     ["monthCap", "한 휴대폰 한 달 상한", "위 날을 다 더해 한 달(한국 시간)에 받을 수 있는 날"]];
@@ -34,18 +36,21 @@ export function loopViews(A) {
     const pills = [p.ready ? '<span class="pill ok">Play 연결됨</span>' : '<span class="pill warn">Play 서비스 계정 없음</span>',
       d.shipped ? `<span class="pill info">나간 판 ${esc(d.shipped.v)}</span>` : '<span class="pill warn">나간 판 없음</span>',
       d.switches.autoShip ? "" : '<span class="pill bad">자동 출시 안내 꺼짐</span>'].filter(Boolean).join(" ");
-    const track = p.at ? `<dl class="lines"><div><dt>100% 나간 판</dt><dd>${esc(p.done ?? "—")}</dd></div>
+    const track = p.at ? `<dl class="lines"><div><dt>Play 트랙 100%</dt><dd>${esc(p.done ?? "—")}${p.seen ? `<br><small>${esc(seenText(p.seen))}</small>` : ""}</dd></div>
         <div><dt>단계적 출시</dt><dd>${p.rolling ? `${esc(p.rolling.v)} · ${Math.round((p.rolling.fraction ?? 0) * 100)}%` : "없음"}</dd></div>
         ${p.halted ? `<div><dt>멈춘 출시</dt><dd>${esc(p.halted)}</dd></div>` : ""}<div><dt>마지막으로 읽음</dt><dd>${esc(ago(p.at))}</dd></div></dl>`
       : `<p class="hint">${p.ready ? "매시 17분에 프로덕션 트랙을 읽어요. 아직 한 번도 읽지 않았어요." : "서버 비밀값 PLAY_SERVICE_ACCOUNT에 '앱 정보 보기' 권한이 있으면 매시 Play 프로덕션 트랙을 읽어요. 없으면 지금처럼 흐름 › '나간 판 저장'을 눌러요."}</p>`;
     const ships = d.ships.length ? `<ul class="rows">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
-        <small>${s.status === "waiting" ? `${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
+        <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 이 판으로 쓰는 휴대폰이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
+          : s.status === "waiting" ? `${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
         <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
+        ${s.status === "review" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
+          <button class="btn small primary" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : ""}
         ${s.status === "waiting" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small primary" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
-    return `<section class="card">${head("Play 출시 감지", "판이 100% 나가면 1시간 뒤 스스로 '나간 판 저장'", can("devStatus", "edit") && p.ready ? '<button class="btn small" type="button" data-act="loop-play">지금 읽기</button>' : "")}
+    return `<section class="card">${head("Play 출시 감지", "판이 실제로 나가면 1시간 뒤 스스로 '나간 판 저장'", can("devStatus", "edit") && p.ready ? '<button class="btn small" type="button" data-act="loop-play">지금 읽기</button>' : "")}
       <p>${pills}</p>${track}${ships}
-      <p class="hint">단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
+      <p class="hint">Play는 검토 중인 판도 '100%'로 보여 줘서, 이 판으로 쓰는 휴대폰이 보이거나 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
   }
 
   // [LOOP-18] 연결 점검: 실제 Play·GitHub에 처음 붙기 전에 한 화면에서.
@@ -105,18 +110,20 @@ export function loopViews(A) {
 
   function switchCard(d) {
     const sw = d.switches;
-    const box = (k, label, hint) => `<label class="chk"><input type="checkbox" name="${k}"${sw[k] ? " checked" : ""}${owner() ? "" : " disabled"}><span><b>${esc(label)}</b> <small>${esc(hint)}</small></span></label>`;
+    // [LOOP-32] 체크하면 바로 저장돼요(전에는 아래 '저장'을 눌러야 해서 화면만 바뀐 줄 몰랐어요, 실서버 11-08).
+    const box = (k, label, hint) => `<label class="chk"><input type="checkbox" name="${k}" data-change="loop-switch" data-label="${esc(label)}"${sw[k] ? " checked" : ""}${owner() ? "" : " disabled"}><span><b>${esc(label)}</b> <small>${esc(hint)}</small></span></label>`;
     const off = ["autoShip", "sync", "phone", "halt"].filter((k) => !sw[k]).length;
     return fold("switches", "멈춤 스위치 · 인앱 업데이트", off ? `${off}개 꺼짐` : "모두 켜짐", `
-      <form data-form="loop-switches">${box("autoShip", "Play 출시를 보고 스스로 안내", "끄면 지금처럼 '나간 판 저장'을 사람이 눌러요")}
+      ${owner() ? '<p class="hint">스위치는 누르면 바로 저장돼요.</p>' : ""}
+      <div class="switches">${box("autoShip", "Play 출시를 보고 스스로 안내", "끄면 지금처럼 '나간 판 저장'을 사람이 눌러요")}
         ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 받지 않아요(409)")}
         ${box("phone", "고친 판으로 연 폰에 바로 안내", "단계적 출시 중에 그 폰에만")}
-        ${box("halt", "단계적 출시가 나빠지면 멈춤 권장 알림", "판 건강 비교로")}
-        <h3>Play 인앱 업데이트</h3>
+        ${box("halt", "단계적 출시가 나빠지면 멈춤 권장 알림", "판 건강 비교로")}</div>
+      <form data-form="loop-switches"><h3>Play 인앱 업데이트</h3>
         <p class="hint">앱이 하루 한 번 읽고 열 때마다 봐요(첫 설정을 마친 폰만). 이 versionCode보다 낮은 앱은 긴급이면 Play 전체 화면 업데이트를, 정기면 Play의 '업데이트할까요?' 창을 새 판마다 한 번 띄우고 뒤에서 받은 뒤 '다시 시작'을 물어요. 0이면 권하지 않아요. Play에서 받은 앱에서만 돼요.</p>
         <label for="ls-urgent">긴급(바로 업데이트) 기준 versionCode</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}"${owner() ? "" : " disabled"}>
         <label for="ls-flex">정기(한 번 권함) 기준 versionCode</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}"${owner() ? "" : " disabled"}>
-        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
+        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">기준 저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
   }
 
   function autonomyCard(d) {
@@ -127,8 +134,8 @@ export function loopViews(A) {
       <form data-form="loop-instant"><ul class="rows">${a.piles.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.name)}</b>
         <small>그대로 ${p.sent} · 고쳐서 ${p.edited} · 취소 ${p.cancelled}${p.quick ? ` · 바로 ${p.quick}` : ""} · 연속 ${p.streak}</small></span>
         ${p.suggest ? '<span class="pill gold">맡겨도 돼요</span>' : ""}
-        ${p.pile === "new" ? "" : `<label class="chk"><input type="checkbox" name="instant" value="${esc(p.pile)}"${p.instant ? " checked" : ""}${owner() ? "" : " disabled"}><span>바로</span></label>`}</div></li>`).join("")}</ul>
-      ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : ""}</form>`);
+        ${p.pile === "new" ? "" : `<label class="chk"><input type="checkbox" name="instant" value="${esc(p.pile)}" data-change="loop-instant" data-label="${esc(p.name)}"${p.instant ? " checked" : ""}${owner() ? "" : " disabled"}><span>바로</span></label>`}</div></li>`).join("")}</ul>
+      ${owner() ? '<p class="hint">바로는 누르면 바로 저장돼요.</p>' : ""}</form>`);
   }
 
   function rewardCard(d) {
@@ -234,6 +241,10 @@ export function loopViews(A) {
     "loop-ship-cancel": ({ v }) => confirmBox(`${v} 자동 안내를 멈출까요?`, "멈추면 이 판은 스스로 저장되지 않아요. 나중에 흐름 › '나간 판 저장'으로 직접 저장해요.", "멈추기", async () => {
       if (await act(() => api(`/loop/ship/${v}/cancel`, "POST", {}), "멈췄어요")) reload("loopState");
     }),
+    // [LOOP-32] Play Console에서 '게시됨'을 본 사람이 눌러요: 그때부터 1시간 보류.
+    "loop-ship-live": ({ v }) => confirmBox(`${v}이 Play에 게시된 걸 확인했나요?`, "Play Console › 게시 개요에서 '검토 중'이 아니라 게시됨인지 보고 눌러요. 누르면 1시간 뒤 묶인 문의 안내와 업데이트 소식이 나가요(그 사이 멈출 수 있어요).", "게시됨 확인", async () => {
+      if (await act(() => api(`/loop/ship/${v}/live`, "POST", {}), "1시간 보류를 시작했어요")) reload("loopState");
+    }, "primary"),
     "loop-ship-now": ({ v }) => confirmBox(`${v} 안내를 지금 보낼까요?`, "나간 판으로 저장하고 묶인 문의에 업데이트 안내를, 앱에 업데이트 소식 공지를 올려요.", "지금 보내기", async () => {
       if (await act(() => api(`/loop/ship/${v}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
     }, "primary"),
@@ -248,7 +259,8 @@ export function loopViews(A) {
     "loop-play": async () => {
       const r = await act(() => api("/loop/play", "POST", {}));
       if (r?.error) toast(`Play를 읽지 못했어요: ${r.error}`);
-      else if (r) toast(r.held ? `${r.held} 출시를 봤어요. 1시간 뒤 안내가 나가요` : "읽었어요. 새로 100% 나간 판은 없어요");
+      else if (r) toast(r.held ? `${r.held} 출시를 봤어요. 1시간 뒤 안내가 나가요`
+        : r.track?.seen && !r.track.seen.live ? `${r.track.done}은 Play 트랙 100%지만 아직 나간 것으로 보지 않아요(휴대폰 ${r.track.seen.phones}/${r.track.seen.need}대)` : "읽었어요. 새로 나간 판은 없어요");
       reload("loopState");
     },
     "loop-sync-key": async () => {
@@ -286,13 +298,8 @@ export function loopViews(A) {
     },
     "loop-switches": async (form) => {
       const f = new FormData(form);
-      const body = { autoShip: f.has("autoShip"), sync: f.has("sync"), phone: f.has("phone"), halt: f.has("halt"),
-        urgentMin: Number(f.get("urgentMin") || 0), flexibleMin: Number(f.get("flexibleMin") || 0) };
-      if (await act(() => api("/loop/switches", "POST", body), "저장했어요")) reload("loopState");
-    },
-    "loop-instant": async (form) => {
-      const instant = new FormData(form).getAll("instant").map(String);
-      if (await act(() => api("/loop/switches", "POST", { instant }), "저장했어요")) reload("loopState");
+      const body = { urgentMin: Number(f.get("urgentMin") || 0), flexibleMin: Number(f.get("flexibleMin") || 0) };
+      if (await act(() => api("/loop/switches", "POST", body), "인앱 업데이트 기준을 저장했어요")) reload("loopState");
     },
     "loop-rewards": async (form) => {
       const f = new FormData(form);
@@ -306,5 +313,18 @@ export function loopViews(A) {
     },
   };
 
-  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms };
+  /** [LOOP-32] 체크 칸은 누르는 즉시 저장해요. 실패하면 원래대로 돌려요. */
+  const saveBox = async (t, body, on) => {
+    t.disabled = true;
+    const r = await act(() => api("/loop/switches", "POST", body), `${t.dataset.label} ${on ? "켰어요" : "껐어요"} · 저장됨`);
+    t.disabled = false;
+    if (!r) t.checked = !t.checked;
+    else reload("loopState");
+  };
+  const changes = {
+    "loop-switch": (t) => saveBox(t, { [t.name]: t.checked }, t.checked),
+    "loop-instant": (t) => saveBox(t, { instant: [...t.form.querySelectorAll('input[name="instant"]:checked')].map((x) => x.value) }, t.checked),
+  };
+
+  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms, changes };
 }

@@ -12,6 +12,9 @@ import { waitingNote } from "../src/inquiries.js";
 const NOW = Date.parse("2026-11-20T01:00:00Z");
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
+const kst = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
+/** [LOOP-32] 이 판으로 쓰는 휴대폰(어제 하루). */
+const phones = (env, app, n) => env.DB.db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)").run(kst(Date.now() - DAY), app, n);
 
 const ask = (call, n, text, kind = "bug", app = "1.38.0 (52)") =>
   call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info: { app } }).then((r) => r.data.id);
@@ -94,11 +97,27 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
   assert.ok(play.seen.includes("POST com.bamnat.app/edits") && play.seen.includes("DELETE com.bamnat.app/edits/edit1"), "수정은 열고 꼭 닫아요");
   assert.ok(!play.seen.some((s) => s.includes(":commit")), "아무것도 바꾸지 않아요");
 
-  // 100%: 1시간 보류 안내가 서요. 그 안에는 답이 가지 않아요.
+  // [LOOP-32] 트랙 100%: Play는 검토 중인 판도 completed로 보여 줘요(1.39 실서버 11-08, 1.38.0 검토 중). 그래서 '검토 중일 수 있음'으로만 적고 아무것도 보내지 않아요.
   track.releases = [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }];
+  phones(env, "1.39.0", 12); // 테스트 트랙 사람 정도
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].version, "1.39.0");
+  assert.equal(loop.ships[0].status, "review");
+  assert.deepEqual(loop.play.seen, { phones: 12, need: 30, live: false });
+  assert.match((await call("GET", "/api/admin/loop/check", undefined, admin)).data.lines.find((x) => x.key === "play").text, /검토 중이거나 아직 안 나갔을 수 있어요\(이 판 휴대폰 12\/30대\)/);
+  t.mock.timers.tick(3 * HOUR);
+  await fiveMinutes(env);
+  await hourly(env);
+  assert.equal((await thread(call, q, 1)).progress.stage, "building", "검토 중에는 '나왔어요'가 가지 않아요");
+  assert.equal((await call("GET", "/api/admin/loop", undefined, admin)).data.ships[0].status, "review");
+  // '지금 보내기'는 검토 중일 수 있는 판에는 안 돼요.
+  assert.equal((await call("POST", "/api/admin/loop/ship/1.39.0/now", {}, admin)).status, 404);
+
+  // 이 판으로 쓰는 휴대폰이 기준을 넘으면 그때 1시간 보류 안내가 서요. 그 안에는 답이 가지 않아요.
+  phones(env, "1.39.0", 30);
+  await hourly(env);
+  loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "waiting");
   t.mock.timers.tick(30 * 60e3);
   await fiveMinutes(env);
@@ -120,9 +139,10 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
   const notices = (await call("GET", "/api/config")).data.notices;
   assert.ok(notices.some((n) => /1\.39\.0 업데이트 소식/.test(n.title)));
 
-  // 다음 판은 사람이 취소할 수 있어요(열쇠는 못 해요).
+  // 다음 판은 사람이 취소할 수 있어요(열쇠는 못 해요). 검토 중일 수 있는 판도 멈출 수 있어요.
   track.releases = [{ name: "54 (1.39.1)", versionCodes: ["54"], status: "completed" }];
   await hourly(env);
+  assert.equal((await call("GET", "/api/admin/loop", undefined, admin)).data.ships[0].status, "review");
   const made = (await call("POST", "/api/admin/keys", { label: "Claude" }, admin)).data;
   const key = { authorization: `Bearer ${made.key}`, "x-admin": "1" };
   assert.equal((await call("POST", "/api/admin/loop/ship/1.39.1/cancel", {}, key)).status, 403);
@@ -135,6 +155,43 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
   track.releases = [{ name: "55 (1.39.2)", versionCodes: ["55"], status: "completed" }];
   await hourly(env);
   assert.ok(!(await call("GET", "/api/admin/loop", undefined, admin)).data.ships.some((s) => s.version === "1.39.2"));
+});
+
+test("[LOOP-32] 검토 중 판: 사람이 '게시됨 확인'을 누르면 1시간 보류, 앞 판이 크면 기준도 커지고, 스위치를 끄면 보류가 끝나도 안 보내요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const track = { releases: [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }] };
+  const play = fakePlay(t, track);
+  const { call, env } = server({ PLAY_SERVICE_ACCOUNT: play.account });
+  const admin = await signIn(call);
+  await call("POST", "/api/admin/desk/ship", { version: "1.38.0" }, admin);
+  const q = await ask(call, 1, "잠금 화면에서 알람 소리가 안 나요");
+  const d = await item(call, admin, "잠금 화면 알람 소리", [q]);
+  await call("POST", `/api/admin/dev/${d}`, { status: "done", releasedIn: "1.39.0", news: "잠금 화면에서도 알람 소리가 나요" }, admin);
+  // 앞 판 휴대폰이 1000대면 기준은 50대(5%): 40대로는 아직이에요.
+  phones(env, "1.38.0", 1000);
+  phones(env, "1.39.0", 40);
+  await hourly(env);
+  let loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
+  assert.deepEqual(loop.play.seen, { phones: 40, need: 50, live: false });
+  assert.equal(loop.ships[0].status, "review");
+  // 열쇠는 못 누르고, 사람이 Play Console에서 보고 누르면 1시간 보류가 시작돼요.
+  const made = (await call("POST", "/api/admin/keys", { label: "Claude" }, admin)).data;
+  assert.equal((await call("POST", "/api/admin/loop/ship/1.39.0/live", {}, { authorization: `Bearer ${made.key}`, "x-admin": "1" })).status, 403);
+  const r = (await call("POST", "/api/admin/loop/ship/1.39.0/live", {}, admin)).data;
+  assert.equal(r.status, "waiting");
+  assert.equal((await call("POST", "/api/admin/loop/ship/1.39.0/live", {}, admin)).status, 404, "두 번은 안 돼요");
+  // 보류 중에 스위치를 끄면 1시간이 지나도 스스로 보내지 않아요('지금 보내기'는 돼요).
+  assert.equal((await call("POST", "/api/admin/loop/switches", { autoShip: false }, admin)).data.autoShip, false);
+  t.mock.timers.tick(2 * HOUR);
+  await fiveMinutes(env);
+  assert.equal((await thread(call, q, 1)).progress.stage, "building");
+  assert.equal((await call("POST", "/api/admin/loop/ship/1.39.0/now", {}, admin)).data.version, "1.39.0");
+  assert.equal((await thread(call, q, 1)).progress.stage, "released");
+  // 스위치 하나만 보내도 다른 것은 그대로예요(체크하면 바로 저장).
+  const sw = (await call("POST", "/api/admin/loop/switches", { halt: false }, admin)).data;
+  assert.equal(sw.autoShip, false);
+  assert.equal(sw.sync, true);
+  assert.equal(sw.halt, false);
 });
 
 test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 개발사항을 만들고, 고친 판·다음 정기 출발일을 답해요; 요금은 못 정해요", async (t) => {
@@ -288,6 +345,13 @@ test("[LOOP-18] 연결 점검: 무엇이 됐고 무엇이 빠졌는지 한 줄�
   assert.ok(!play.seen.some((x) => /:commit/.test(x)));
   // 읽기만이라 보류 안내가 생기지 않아요.
   assert.equal((await call("GET", "/api/admin/loop", undefined, owner)).data.ships.length, 0);
+  // [LOOP-32] 읽은 것은 남아서, 새로 고쳐도 '한 번도 읽지 않았어요'로 돌아가지 않아요.
+  c = (await call("GET", "/api/admin/loop/check", undefined, owner)).data;
+  assert.match(c.lines.find((x) => x.key === "play").text, /마지막으로 읽음 .* Play 트랙 100% 1\.39\.0 · 검토 중이거나/);
+  // 매시 Play 읽기가 실패하면 따로 한 줄.
+  env.DB.db.prepare("INSERT OR REPLACE INTO job_runs (step, ok_at, fail_at, error) VALUES ('play', NULL, ?, 'play_denied: 권한')").run(Date.now());
+  c = (await call("GET", "/api/admin/loop/check", undefined, owner)).data;
+  assert.equal(c.lines.find((x) => x.key === "playJob").state, "bad");
 });
 
 test("[LOOP-06] 기능 스위치로 고친 것은 스위치가 켜진 때 바로 답해요(앱 업데이트 없이)", async (t) => {
