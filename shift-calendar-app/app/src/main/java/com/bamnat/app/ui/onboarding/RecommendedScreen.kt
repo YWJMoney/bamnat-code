@@ -305,14 +305,14 @@ private fun SleepBarOffer(bar: List<com.bamnat.core.layout.TabSlots.Slot>, swaps
         Text("고른 칸이 ‘잠’이 되고, 그 칸의 화면은 위쪽 ‘나’ 단추에서 열려요. 나중에 ‘나 › 아래 메뉴 고치기’에서 바꿔요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.FilterChip(selected = chosen < 0, onClick = { onPick(-1) },
+            com.bamnat.app.ui.components.FilterChip(selected = chosen < 0, onClick = { onPick(-1) },
                 label = { Text("두지 않기") })
             swaps.forEach { i ->
                 val name = bar[i].let { s ->
                     (s as? com.bamnat.core.layout.TabSlots.Group)?.name
                         ?: com.bamnat.app.ui.TabPicks.of(s.keys.first(), style)?.label ?: s.keys.first()
                 }
-                androidx.compose.material3.FilterChip(selected = chosen == i, onClick = { onPick(i) },
+                com.bamnat.app.ui.components.FilterChip(selected = chosen == i, onClick = { onPick(i) },
                     label = { Text("$name 대신") },
                     leadingIcon = if (chosen == i) ({ Icon(Icons.Outlined.Bedtime, null, Modifier.size(18.dp)) }) else null)
             }
