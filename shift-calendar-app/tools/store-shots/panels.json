@@ -1,0 +1,283 @@
+{
+ "panels": [
+  {
+   "name": "01-대표",
+   "theme": "night",
+   "label": "교대 근무자 · 팀 리더 · 사장님",
+   "title": "내 근무부터\n<g>팀 근무표까지</g>",
+   "sub": "근무표·알람·월급·잠을 로그인 없이 한 앱에서",
+   "image": "screens/store_1b_calendar.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 820,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "badges": [
+    {
+     "text": "근무표 사진으로 넣기",
+     "left": 40,
+     "top": 900
+    },
+    {
+     "text": "근무마다 다른 알람",
+     "left": 560,
+     "top": 1110
+    },
+    {
+     "text": "수당까지 이번 달 월급",
+     "left": 30,
+     "top": 1330
+    },
+    {
+     "text": "근무에 맞춘 잘 시간",
+     "left": 540,
+     "top": 1550
+    },
+    {
+     "text": "팀·직원 근무표",
+     "left": 70,
+     "top": 1770
+    }
+   ]
+  },
+  {
+   "name": "02-근무표읽기",
+   "theme": "day",
+   "label": "근무표 읽기",
+   "title": "근무표 나오는 날,\n<g>찍으면 한 달 끝</g>",
+   "sub": "옮겨 적지 마세요. 사진·엑셀·PDF에서 내 줄만 쏙",
+   "image": "screens/819_u_setup_which_line.png",
+   "main": {
+    "crop": [
+     0,
+     720,
+     968,
+     1660
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      80,
+      940,
+      810,
+      155
+     ],
+     "inplace": true,
+     "scale": 1.1,
+     "tag": "내 줄"
+    }
+   ],
+   "orbitY": 1250
+  },
+  {
+   "name": "03-알람",
+   "theme": "night",
+   "label": "근무 알람",
+   "title": "근무가 바뀌면\n<g>알람도 알아서</g>",
+   "sub": "주간·야간마다 다른 시각에, 쉬는 날엔 조용히",
+   "image": "screens/store_4c_shift_kinds.png",
+   "main": {
+    "crop": [
+     0,
+     150,
+     1080,
+     2250
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      45,
+      1355,
+      995,
+      310
+     ],
+     "inplace": true,
+     "scale": 1.08,
+     "tag": "야간 알람"
+    }
+   ],
+   "orbitY": 1300
+  },
+  {
+   "name": "04-오늘의흐름",
+   "theme": "day",
+   "label": "오늘의 흐름 · 잠",
+   "title": "출근부터 잠까지\n<g>오늘 하루 한 줄로</g>",
+   "sub": "퇴근까지 남은 시간, 잘 시간·일어날 시간을 근무에 맞춰",
+   "image": "screens/store_1c_flow.png",
+   "main": {
+    "crop": [
+     0,
+     150,
+     1080,
+     2250
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      45,
+      325,
+      995,
+      515
+     ],
+     "inplace": true,
+     "scale": 1.07
+    }
+   ],
+   "orbitY": 1300
+  },
+  {
+   "name": "05-월급",
+   "theme": "night",
+   "label": "급여 계산",
+   "title": "야간·연장 수당까지\n<g>이번 달 월급 미리</g>",
+   "sub": "항목별로 어떻게 계산했는지까지 보여 줘요",
+   "image": "screens/store_6e_pay_real.png",
+   "main": {
+    "crop": [
+     0,
+     150,
+     1080,
+     2250
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      50,
+      520,
+      985,
+      410
+     ],
+     "inplace": true,
+     "scale": 1.08
+    }
+   ],
+   "orbitY": 1300
+  },
+  {
+   "name": "06-팀리더",
+   "theme": "day",
+   "label": "팀 리더",
+   "title": "근무표 짜는 리더라면\n<g>링크 하나로 공유</g>",
+   "sub": "팀원은 앱 없이 자기 근무만 보고, 근무 신청도 받아요",
+   "image": "screens/store_7_team.png",
+   "titleSize": 96,
+   "main": {
+    "crop": [
+     0,
+     330,
+     1080,
+     2070
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      20,
+      1560,
+      720,
+      175
+     ],
+     "inplace": true,
+     "scale": 1.15
+    }
+   ],
+   "orbitY": 1350
+  },
+  {
+   "name": "07-사장님",
+   "theme": "night",
+   "label": "사장님",
+   "title": "알바 스케줄부터\n<g>급여 대장까지</g>",
+   "sub": "출퇴근 기록 링크, 근로계약서 서명도 한 곳에서",
+   "image": "screens/store_9b_payroll.png",
+   "main": {
+    "crop": [
+     0,
+     500,
+     1080,
+     1900
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      80,
+      815,
+      920,
+      245
+     ],
+     "inplace": true,
+     "scale": 1.08,
+     "tag": "자동 계산"
+    }
+   ],
+   "orbitY": 1300,
+   "badges": [
+    {
+     "text": "근로계약서 링크로 서명",
+     "left": 140,
+     "top": 1722
+    },
+    {
+     "text": "출퇴근 기록 링크",
+     "left": 480,
+     "top": 1828
+    }
+   ]
+  },
+  {
+   "name": "08-메모",
+   "theme": "day",
+   "label": "메모 · 꾸미기",
+   "title": "근무 날 메모에\n<g>사진까지 쏙</g>",
+   "sub": "사진 크기를 바꾸고 옆에 글을 써요. 스튜디오로 꾸며도 돼요",
+   "image": "screens/store_8_memos.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 900,
+    "top": 690
+   },
+   "pops": [
+    {
+     "crop": [
+      40,
+      830,
+      1000,
+      470
+     ],
+     "inplace": true,
+     "scale": 1.08
+    }
+   ],
+   "orbitY": 1250
+  }
+ ]
+}
