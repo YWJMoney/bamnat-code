@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.memo
 
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -700,7 +701,9 @@ internal fun MemoCalendarView(
         (rest.keys + laid.mapNotNull { it.date }).associateWith { d -> rest[d].orEmpty() + laid.filter { it.date == d } }
     }
     val undated = remember(memos) { memos.count { MemoView.dayOf(it) == null } }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(bottom = 160.dp)) {
+    // 1.39 [CALX-08] 좌우로 밀어 달 넘기기, 달력처럼.
+    LazyColumn(Modifier.fillMaxSize().monthSwipe(month) { month = java.time.YearMonth.parse(month).plusMonths(it.toLong()).toString(); picked = null }.padding(horizontal = 12.dp),
+        contentPadding = PaddingValues(bottom = 160.dp)) {
         item(key = "head") {
             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.theme.PhotoGround.head()), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.IconButton(onClick = { month = ym.minusMonths(1).toString(); picked = null }) {

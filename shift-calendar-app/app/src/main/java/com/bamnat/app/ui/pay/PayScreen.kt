@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import com.bamnat.app.ui.parts.fillColor
@@ -506,7 +507,8 @@ private fun PayResult(
         if (focus == PayFocus.REPORT && y != null) resultScroll.animateScrollTo(y)
     }
     Column(
-        Modifier.fillMaxSize().verticalScroll(resultScroll).padding(horizontal = 16.dp, vertical = 12.dp),
+        // 1.39 [CALX-08] 좌우로 밀어 달 넘기기.
+        Modifier.fillMaxSize().monthSwipe(Unit) { vm.moveMonth(it.toLong()) }.verticalScroll(resultScroll).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:

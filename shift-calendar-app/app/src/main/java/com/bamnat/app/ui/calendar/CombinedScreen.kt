@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -106,7 +107,8 @@ fun CombinedScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+        // 1.39 [CALX-08] 좌우로 밀어 달 넘기기, 달력처럼.
+        Column(Modifier.fillMaxSize().padding(padding).monthSwipe(month) { month = month.plusMonths(it.toLong()) }.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { month = month.minusMonths(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
                 Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
