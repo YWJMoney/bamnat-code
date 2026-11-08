@@ -16,7 +16,10 @@ object NightSummary {
         return lines.takeIf { it.isNotEmpty() }?.sumOf { it.amount }?.takeIf { it > 0 }
     }
 
-    /** The calendar line: "이달 나이트 7개 · 나이트 수당 약 210,000원", or only the count without pay. */
+    /**
+     * The calendar line: "이달 야간 7일 · 야간 수당 약 210,000원", or only the count without pay. 1.39 PC eae4e024: 야간 and 일,
+     * as the 휴식 점검 lines under it on the same card say ("한 달 야간 많음 · 11월 야간 16일").
+     */
     fun line(nights: Int, allowance: Long?): String =
-        "이달 나이트 ${nights}개" + (allowance?.let { " · 나이트 수당 약 ${"%,d".format(it)}원" } ?: "")
+        "이달 야간 ${nights}일" + (allowance?.let { " · 야간 수당 약 ${"%,d".format(it)}원" } ?: "")
 }
