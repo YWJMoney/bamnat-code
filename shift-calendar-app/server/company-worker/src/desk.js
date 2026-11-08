@@ -281,7 +281,7 @@ const keyHash = (key) => sha256(`opskey|${key}`);
 const keyDayOf = (now) => new Date(now + 9 * HOUR).toISOString().slice(0, 10);
 
 /** 열쇠로 할 수 있는 것: 문의·개발사항 읽기·답·상태·묶기, 장부, 나간 판. 이 밖은 모두 막아요. */
-const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
+const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/servers$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
   /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/,
   // 1.38 [DESK-02] 운영 장부(줄·CSV·기록): 열쇠의 권한(문의·개발사항) 안의 줄만 보여요.
   /^\/ledger$/, /^\/ledger\.csv$/, /^\/ledger\/log$/,

@@ -34,6 +34,12 @@ export const LOOP = {
   liveMin: 30,
   liveShare: 0.05,
   liveDays: 3,
+  /**
+   * [LOOP-33] 사용자 2026-11-08 '30대가 떠야지 인지하는 거야?': 위 휴대폰은 사용 통계에 동의한 폰만이라(실서버 하루 1대 남짓) 1.38이
+   * 게시되고도 0/30대에 멈췄어요. 그래서 동의와 상관없이 Play 보고서(판별 설치)도 봐요: 트랙에서 100%를 본 날부터 그 판 번호로 새로 깔거나
+   * 올린 기기가 이만큼이면 나간 것으로 봐요. 테스트 트랙 사람은 그 전에 이미 올렸으니 이 수에 들지 않아요. 보고서는 하루 이틀 늦어요.
+   */
+  playMin: 3,
   /** 정기 앱 업데이트 주기(사용자 2026-11-07: 2주 → 2026-11-08: 1주). */
   trainDays: 7,
   /** 알려진 문제판: 공개 제목이 있고 묶인 문의·나도 겪어요가 이만큼이면 보여요(한 사람만의 일은 안 보이게). */
@@ -174,7 +180,7 @@ export async function readProduction(env, now) {
     const done = releases.filter((r) => r.status === "completed" && version(r.v)).sort((a, b) => compareVersions(version(b.v), version(a.v)))[0] ?? null;
     const rolling = releases.find((r) => r.status === "inProgress" && version(r.v)) ?? null;
     const halted = releases.find((r) => r.status === "halted" && version(r.v)) ?? null;
-    return { done: done?.v ?? null, rolling: rolling ? { v: rolling.v, fraction: rolling.fraction } : null, halted: halted?.v ?? null, at: now };
+    return { done: done?.v ?? null, ...(done?.codes?.length ? { doneCodes: done.codes } : {}), rolling: rolling ? { v: rolling.v, fraction: rolling.fraction } : null, halted: halted?.v ?? null, at: now };
   } finally {
     await fetch(`${PLAY.api}/${pkg}/edits/${encodeURIComponent(edit)}`, { method: "DELETE", headers: auth, signal: AbortSignal.timeout(8000) }).catch(() => null);
   }
@@ -190,8 +196,8 @@ export async function playTick(env, now = Date.now()) {
   const newer = (v) => v && (!shipped || compareVersions(version(v), version(shipped.v)) > 0);
   // [LOOP-32] 트랙 100%는 '검토 중일 수 있음'(review)으로만 적어요. 보류 시계는 실제로 나간 것을 본 뒤에 시작해요.
   if (newer(track.done)) {
-    track.seen = await liveSeen(env, track.done, now, shipped?.v);
     if (sw.autoShip) await run(env, "INSERT OR IGNORE INTO loop_ships (version, seen_at, until, status) VALUES (?, ?, 0, 'review')", track.done, now);
+    track.seen = await liveSeen(env, track.done, now, shipped?.v, track.doneCodes);
   }
   await saveSetting(env, "play_track", track);
   let held = null;
@@ -201,7 +207,8 @@ export async function playTick(env, now = Date.now()) {
       continue;
     }
     const seen = r.version === track.done && track.seen ? track.seen : await liveSeen(env, r.version, now, shipped?.v);
-    if (seen.live && sw.autoShip && await holdShip(env, r.version, now, `이 판으로 쓰는 휴대폰 ${seen.phones}대`)) held = r.version;
+    const why = seen.phones >= seen.need ? `이 판으로 쓰는 휴대폰 ${seen.phones}대` : `Play 보고서: 이 판을 새로 깔거나 올린 기기 ${seen.play}대`;
+    if (seen.live && sw.autoShip && await holdShip(env, r.version, now, why)) held = r.version;
   }
   let advice = null;
   if (track.rolling && sw.halt) {
@@ -223,13 +230,37 @@ export async function playTick(env, now = Date.now()) {
  * [LOOP-32] 이 판으로 쓰는 휴대폰 수(usage_days, 지난 [LOOP.liveDays]일 중 가장 많은 하루)와 나갔다고 볼 기준.
  * 앞 판([prev])이 있으면 그 판 하루 휴대폰의 [LOOP.liveShare] 이상이어야 해요(테스트 트랙 사람만으로는 넘지 않게).
  */
-export async function liveSeen(env, v, now, prev = null) {
+export async function liveSeen(env, v, now, prev = null, codes = null) {
   const rows = await all(env, "SELECT app, MAX(phones) AS most FROM usage_days WHERE day >= ? AND app IN (?, ?) GROUP BY app",
     kstDay(now - LOOP.liveDays * DAY), v, prev ?? v).catch(() => []);
   const most = (a) => rows.find((r) => r.app === a)?.most ?? 0;
   const phones = most(v);
   const need = Math.max(LOOP.liveMin, prev && prev !== v ? Math.ceil(most(prev) * LOOP.liveShare) : 0);
-  return { phones, need, live: phones >= need };
+  const play = await playMoved(env, v, now, codes);
+  return { phones, need, live: phones >= need || (play !== null && play >= LOOP.playMin), ...(play !== null ? { play, playNeed: LOOP.playMin } : {}) };
+}
+
+/**
+ * [LOOP-33] Play 보고서(판별 설치)에서 트랙 100%를 본 날(한국 날짜)부터 이 판 번호로 새로 깔거나 올린 기기. 보고서나 판 번호를 모르면 null.
+ * 판 번호는 트랙 줄(versionCodes)에서, 없으면 마지막으로 읽은 트랙에서 가져와요.
+ */
+async function playMoved(env, v, now, codes) {
+  const [ship, reports, track] = await Promise.all([one(env, "SELECT seen_at FROM loop_ships WHERE version = ?", v).catch(() => null),
+    one(env, "SELECT value FROM settings WHERE key = 'play_reports'").catch(() => null),
+    codes?.length ? null : one(env, "SELECT value FROM settings WHERE key = 'play_track'").catch(() => null)]);
+  const read = (row) => {
+    try {
+      return row ? JSON.parse(row.value) : null;
+    } catch {
+      return null;
+    }
+  };
+  const t = read(track);
+  const want = new Set((codes?.length ? codes : t?.done === v ? t.doneCodes ?? [] : []).map(Number).filter(Number.isFinite));
+  const moves = read(reports)?.value?.versions?.moves;
+  if (!want.size || !Array.isArray(moves)) return null;
+  const from = kstDay(ship?.seen_at ?? now);
+  return moves.filter((m) => Array.isArray(m) && want.has(Number(m[1])) && String(m[0]) >= from).reduce((n, m) => n + (Number(m[2]) || 0), 0);
 }
 
 /** [LOOP-32] '검토 중일 수 있음' 판을 실제로 나갔다고 보고 1시간 보류를 시작해요. 시작했으면 참. */
@@ -781,7 +812,8 @@ export async function instantOk(env, pile, kind, text) {
 // ---- [LOOP-18] 연결 점검 ----
 
 /** [LOOP-32] 트랙 100% 판이 실제로 나갔는지 한 마디로. */
-const seenWords = (s) => (s.live ? `실제로 나감(휴대폰 ${s.phones}대)` : `검토 중이거나 아직 안 나갔을 수 있어요(이 판 휴대폰 ${s.phones}/${s.need}대)`);
+const seenWords = (s) => (s.live ? `실제로 나감(휴대폰 ${s.phones}대${s.play !== undefined ? ` · Play 보고서 ${s.play}대` : ""})`
+  : `검토 중이거나 아직 안 나갔을 수 있어요(이 판 휴대폰 ${s.phones}/${s.need}대${s.play !== undefined ? ` · Play 보고서 ${s.play}/${s.playNeed}대` : ""})`);
 
 /**
  * 실제 Play·GitHub에 처음 붙기 전에 한 화면에서: 무엇이 됐고 무엇이 빠졌는지 한 줄씩. play가 참이면 Play 트랙을 한 번 읽어 봐요

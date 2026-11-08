@@ -205,7 +205,9 @@ export function obsParse(files, keepDays = OBS.keepDays) {
       const code = obsNum(r, "app version code");
       if (!d || code === null) continue;
       versionRows.push({ day: d, code, active: obsNum(r, "active device installs"), installs: obsNum(r, "install events", "daily device installs", "daily device upgrades"),
-        uninstalls: obsNum(r, "uninstall events", "daily device uninstalls", "daily user uninstalls") });
+        uninstalls: obsNum(r, "uninstall events", "daily device uninstalls", "daily user uninstalls"),
+        // [LOOP-33] 그날 이 판을 새로 깔거나 이 판으로 올린 기기(동의와 상관없이 Play가 세요): 자동 순환이 '실제로 나갔는지' 봐요.
+        moved: (obsNum(r, "install events", "daily device installs") ?? 0) + (obsNum(r, "daily device upgrades") ?? 0) });
     }
   }
   const list = [...days.values()].sort((a, b) => (a.day < b.day ? -1 : 1)).slice(-keepDays);
@@ -230,7 +232,10 @@ export function obsParse(files, keepDays = OBS.keepDays) {
   for (const r of versionRows) if (r.day >= from7 && r.uninstalls) out7.set(r.code, (out7.get(r.code) ?? 0) + r.uninstalls);
   const vRows = versionRows.filter((r) => r.day === vDay).map((r) => ({ code: r.code, n: r.active ?? r.installs ?? 0, out7: out7.get(r.code) ?? 0 }))
     .sort((a, b) => b.code - a.code);
-  return { days: list, lastDay, sources, versions: vDay ? { day: vDay, rows: vRows, first } : null };
+  // [LOOP-33] 최근 21일, 판마다 하루 새로 깔거나 올린 기기 [날, 판 번호, 대수].
+  const from21 = vDay ? new Date(Date.parse(`${vDay}T00:00:00Z`) - 20 * DAY).toISOString().slice(0, 10) : "";
+  const moves = versionRows.filter((r) => r.day >= from21 && r.moved > 0).map((r) => [r.day, r.code, r.moved]);
+  return { days: list, lastDay, sources, versions: vDay ? { day: vDay, rows: vRows, first, moves } : null };
 }
 
 const reportsKept = new WeakMap();

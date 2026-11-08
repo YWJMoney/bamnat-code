@@ -194,6 +194,32 @@ test("[LOOP-32] 검토 중 판: 사람이 '게시됨 확인'을 누르면 1시�
   assert.equal(sw.halt, false);
 });
 
+// [LOOP-33] 사용자 2026-11-08 '30대가 떠야지 인지하는 거야?': 통계 동의 휴대폰이 적어도 Play 보고서(동의와 상관없이 Play가 세는 판별 설치)로 나간 것을 봐요.
+test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 번호로 새로 깔거나 올린 기기가 3대면 나간 것으로 보고 1시간 보류해요; 그 전 날(테스트 트랙)은 세지 않아요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const track = { releases: [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }] };
+  const play = fakePlay(t, track);
+  const { call, env } = server({ PLAY_SERVICE_ACCOUNT: play.account });
+  const admin = await signIn(call);
+  await call("POST", "/api/admin/desk/ship", { version: "1.38.0" }, admin);
+  const reports = (moves) => env.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('play_reports', ?)")
+    .run(JSON.stringify({ until: Date.now() + DAY, value: { state: "ok", at: Date.now(), versions: { day: kst(Date.now()), rows: [], first: {}, moves } } }));
+  // 테스트 트랙 사람이 100%를 보기 전날 올린 것(5대)과 다른 판 번호는 세지 않아요.
+  reports([[kst(Date.now() - DAY), 53, 5], [kst(Date.now()), 52, 9]]);
+  await hourly(env);
+  let loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
+  assert.equal(loop.ships[0].status, "review");
+  assert.deepEqual(loop.play.seen, { phones: 0, need: 30, live: false, play: 0, playNeed: 3 });
+  // 그날부터 2대 + 다음 날 1대 = 3대: 나간 것으로 봐요.
+  reports([[kst(Date.now() - DAY), 53, 5], [kst(Date.now()), 53, 2], [kst(Date.now() + DAY), 53, 1]]);
+  t.mock.timers.tick(HOUR);
+  await hourly(env);
+  loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
+  assert.equal(loop.ships[0].status, "waiting");
+  const seen = env.DB.db.prepare("SELECT detail FROM audit WHERE action = 'loop_ship_seen'").get();
+  assert.match(seen.detail, /Play 보고서: 이 판을 새로 깔거나 올린 기기 3대/);
+});
+
 test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 개발사항을 만들고, 고친 판·다음 정기 출발일을 답해요; 요금은 못 정해요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call, env } = server();

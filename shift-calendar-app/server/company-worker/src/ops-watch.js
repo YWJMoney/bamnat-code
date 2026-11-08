@@ -342,3 +342,35 @@ export async function healthBoard(env, now = Date.now()) {
   return { at: now, jobs, speed, errors: { counts: errors.counts, daily: errors.daily, days: errors.days, top: errors.groups.slice(0, 5) }, dbBytes: size,
     dbLimit: 10 * 1024 ** 3, share, setup: requiredSetup(env), version: SERVER_VERSION };
 }
+
+/**
+ * 1.39 관리자 앱 머리띠의 '지금 도는 서버 판'(사용자 11-08 '현재 출시된 서버가 몇 버젼인지 위쪽에 보여지게').
+ * 회사 서버는 제 버전 메타데이터(배포 도구가 --tag로 붙인 커밋, 배포 시각)를, 공유 서버는 관리 열쇠로 /api/admin/version을 읽어요.
+ * 공유 서버가 1.39 이 판 전이면(404) 공개 health의 판만, 닿지 않으면 ok:false예요.
+ */
+export function deployInfo(env) {
+  const m = env?.CF_VERSION_METADATA ?? {};
+  const tag = typeof m.tag === "string" && /^[0-9a-f]{7,40}$/.test(m.tag) ? m.tag.slice(0, 8) : null;
+  const at = typeof m.timestamp === "string" && !Number.isNaN(Date.parse(m.timestamp)) ? Date.parse(m.timestamp) : null;
+  return { version: SERVER_VERSION, commit: tag, id: typeof m.id === "string" ? m.id.slice(0, 8) : null, at };
+}
+
+export async function serverVersions(env) {
+  const company = { ok: true, ...deployInfo(env) };
+  const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
+  const token = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
+  if (!/^https?:\/\//.test(base)) return { company, share: null };
+  const pick = (b) => ({ version: typeof b?.version === "string" ? b.version.slice(0, 20) : null,
+    commit: typeof b?.commit === "string" && /^[0-9a-f]{7,40}$/.test(b.commit) ? b.commit.slice(0, 8) : null,
+    id: typeof b?.id === "string" ? b.id.slice(0, 8) : null, at: Number.isFinite(b?.at) ? b.at : null });
+  try {
+    if (token.length >= 20) {
+      const res = await fetch(`${base}/api/admin/version`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000) });
+      if (res.ok) return { company, share: { ok: true, ...pick(await res.json().catch(() => null)) } };
+    }
+    const ping = await sharePing(env);
+    return { company, share: { ok: Boolean(ping?.ok), version: ping?.version ?? null, commit: null, id: null, at: null } };
+  } catch {
+    return { company, share: { ok: false, version: null, commit: null, id: null, at: null } };
+  }
+}
