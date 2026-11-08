@@ -92,3 +92,15 @@ test("[STAT2-05] a new server version is written once to 활동 기록 and shows
   const marks = await changeMarks({ DB, RATE_SALT: "test-salt" }, Date.now() - 3600e3, Date.now() + 1000);
   assert.ok(marks.some((m) => m.kind === "server_deployed" && m.text.startsWith("서버 배포")));
 });
+
+test("[STAT2-05] the first 1.39 deploy onto an older database: four isolates at once leave one '서버 배포' (실서버 11-08)", async () => {
+  const { call, DB } = server();
+  await call("GET", "/api/config");
+  // A 1.38 database: tables are there, no server_version kept yet, and the schema mark is older.
+  await DB.prepare("DELETE FROM settings WHERE key = 'server_version'").run();
+  await DB.prepare("UPDATE settings SET value = 'old' WHERE key = 'schema'").run();
+  const { default: worker } = await import("../src/index.js");
+  await Promise.all([1, 2, 3, 4].map(() =>
+    worker.fetch(new Request("https://company.example/api/config"), { DB: Object.create(DB), RATE_SALT: "test-salt" })));
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = 'server_deployed'").get().n, 1);
+});

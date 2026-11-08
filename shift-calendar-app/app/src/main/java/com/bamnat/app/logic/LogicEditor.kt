@@ -855,6 +855,9 @@ fun LogicEditor(
         store.setOff(r.key, true); bump++; LogicRunner.schedule(c); true
     }
     var editValue by remember { mutableStateOf<Int?>(null) }
+    // 1.39 PC 5차 (스튜디오 규칙 목록 '{값("야간")}'): the lines say their blanks as this phone's day would fill them, as 미리 돌려 보기 does.
+    val words = remember(facts, day, bump) { facts?.let { f -> runCatching { f.scope(day) }.getOrNull() } }
+    fun plain(text: String) = com.bamnat.app.ui.recipe.sample(text, words)
     var history by remember { mutableStateOf<com.bamnat.core.formula.LogicValue?>(null) }
     history?.let { v -> ValueHistory(v, { history = null }) { bump++ } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -869,7 +872,7 @@ fun LogicEditor(
         logic.buttons.forEachIndexed { i, b ->
             val sameB = remember(bump, b.id) { store.sameButton(b.id)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" } }
             val shows = remember(bump, b.show, facts, day) { showLine(b, facts, day) }
-            LineCard(b.say(), listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
+            LineCard(plain(b.say()), listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
                 onEdit = if (readOnly) onOpen else ({ editButton = i }), onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
         if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
@@ -901,7 +904,7 @@ fun LogicEditor(
             }
             // PC D10: rules made before names were kept apart show which is which.
             val nth = logic.rules.take(i).count { it.name == r.name }
-            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${r.say()}", note,
+            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${plain(r.say())}", note,
                 if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c); if (v) saidOn(r) } },
                 onEdit = if (readOnly) onOpen else ({ editRule = i }), onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
                 action = when {

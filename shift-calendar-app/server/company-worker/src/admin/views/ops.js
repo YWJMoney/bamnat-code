@@ -94,7 +94,7 @@ export function opsViews(A) {
     const d = S.data.cockpit;
     if (!d) return skeleton(2);
     const key = d.keys.find((k) => k.alive);
-    const state = `<div class="tiles core">${tile("보류 중인 답", d.held.length, "10분 안에 멈출 수 있어요", d.held.length ? "hot" : "")}${tile("오늘 Claude가 한 일", d.today, "활동 기록 'Claude'")}
+    const state = `<div class="tiles core">${tile("보류 중인 답", d.held.length, "10분 안에 멈출 수 있어요", d.held.length ? "hot" : "")}${tile("오늘 Claude가 한 일", d.today, d.reads ? `고친 일 · 읽기 ${d.reads}번 따로` : "활동 기록 'Claude'")}
       ${tile("열쇠", key ? "켜짐" : "없음", key ? `${esc(key.label)}${key.lastAt ? ` · ${agoMs(key.lastAt)}` : ""}` : "관리 › Claude 열쇠", key ? "" : "hot", href("keys"))}
       ${tile("Claude 차례", "장부", "Claude가 볼 줄만 모아 보기", "", L.routeHash("desk", null, { view: "claude" }))}</div>`;
     const held = d.held.length ? `<ul class="rows">${d.held.map((h) => `<li><div class="row held-row"><span class="row-main"><small>${esc(h.ask || "(질문 글 없음)")}</small>

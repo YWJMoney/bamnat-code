@@ -10,6 +10,7 @@ import com.bamnat.core.team.TeamShift
 import com.bamnat.core.work.Staff
 import com.bamnat.core.work.StaffRoster
 import com.bamnat.core.work.StaffShift
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -145,6 +146,26 @@ class Phase3ScreenshotTest : ScreenshotBase() {
         tapText("열기", exact = true)
         settle()
         tapText("나중에", exact = true)
+    }
+
+    /** 1.39 [SETUP-21] 5차 PC 리더 폰: saving the team's times also sets the leader's own kinds of the same name, said once. */
+    @Test fun teamTimesGoToMyCalendar() = shoot("p3_15_team_times_mine", FOLDED) {
+        seedNoTimes()
+        val before = runBlocking { app.container.scheduleRepository.shiftTypes.first() }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        settle()
+        tapText("저장", exact = true)
+        settle()
+        val team = runBlocking { app.container.phaseThree.teamNow("t1")!! }
+        val after = runBlocking { app.container.scheduleRepository.shiftTypes.first() }
+        val changes = com.bamnat.core.team.TeamTimes.mine(team, before, com.bamnat.app.data.DefaultShiftTypes.all())
+        org.junit.Assert.assertTrue("the team's times reached a kind of mine", changes.isNotEmpty())
+        for (ch in changes.filter { !it.ask }) {
+            val t = after.first { it.id == ch.type.id }
+            org.junit.Assert.assertEquals(ch.start to ch.end, t.start to t.end)
+        }
     }
 
     @Test fun teamPlanSheet() = shoot("p3_7_team_plan", FOLDED) {

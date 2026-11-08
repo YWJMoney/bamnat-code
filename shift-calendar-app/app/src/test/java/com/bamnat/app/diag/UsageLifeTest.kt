@@ -21,7 +21,9 @@ import java.time.ZoneId
  * the last open day stays on the phone and goes when 사용 통계 is turned off.
  */
 @RunWith(AndroidJUnit4::class)
-@Config(sdk = [35])
+// A plain Application: BamnatApp builds its container on its own thread, and the container's start() clears
+// usage_stats when 사용 통계 is off, racing these checks in a long run (6차 전체 시험에서 둘이 비어 실패).
+@Config(sdk = [35], application = android.app.Application::class)
 class UsageLifeTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val zone = ZoneId.of("Asia/Seoul")

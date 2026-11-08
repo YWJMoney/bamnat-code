@@ -706,6 +706,8 @@ function adminApp(L, BUILD, M) {
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
       if (name === "companies" && !id) jobs.push(api(companiesPath()).then(keep((d) => { S.data.list = d; })));
+      // 1.39 [ADM3-45] 이름이 비슷한 회사 짝(합칠까요?): 목록을 기다리게 하지 않아요.
+      if (name === "companies" && !id && can("companies", "edit")) api("/companies/similar").then(keep((d) => { S.data.similar = d; if (S.route.name === "companies" && !S.route.id) render({ keepScroll: true }); })).catch(() => {});
       if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then(keep((d) => { S.data.company = d; })));
       if (name === "community") {
         // An id is one talk: company.setup, opened from the review screen.

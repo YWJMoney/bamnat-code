@@ -70,7 +70,22 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
   // 1.39 [ADM3-42] 지금 잠긴 로그인(네트워크·관리자 계정). 내가 잠겼으면 내 계정에서 풀고, 아니면 누가 맞혀 보는 중일 수 있어요.
   ops_logins: ["SELECT COUNT(*) AS n FROM counters WHERE key LIKE 'login|%' AND key <> 'login|all' AND count >= ? AND expires > ?", LIMITS.loginFailures, now],
+  // 1.39 [ADM3-44] 실서버 둘러보기(11-08) A9·B4·B8·B9: 잠기기 전의 연달아 틀림, 오래 기다린 보상, 오래 안 쓴 관리자, 최고 관리자 패스키.
+  ops_login_tries: [`SELECT COUNT(*) AS places, COALESCE(SUM(count), 0) AS n FROM counters WHERE key LIKE 'login|%' AND key <> 'login|all'
+    AND count >= ? AND count < ? AND expires > ?`, LOGIN_TRIES, LIMITS.loginFailures, now],
+  ops_owed: ["SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed' AND created_at < ?", now - REWARD_DAYS * DAY],
+  ops_idle_admins: ["SELECT COUNT(*) AS n FROM admins WHERE status = 'active' AND COALESCE(last_login, approved_at, created_at) < ?", now - IDLE_ADMIN_DAYS * DAY],
+  ops_passkey: ["SELECT COUNT(*) AS n FROM admin_passkeys WHERE admin = 'owner'"],
 });
+
+/**
+ * 1.39 [ADM3-44] 한 곳에서 이만큼 틀리면(잠기기 전) 알려요(휴대폰 알림 '급증'으로도). 드릴 보상은 이 날 수(알림 '기한'), 관리자는 이 날 수 넘게
+ * 안 쓰면. 패스키·안 쓴 관리자는 'nudge'라 휴대폰 알림으로는 가지 않고 오늘 화면에만 있어요.
+ */
+/** 1.39 [ADM3-44] 한 곳에서 이만큼 틀리면(잠기기 전) 알려요. 드릴 보상은 이 날 수, 관리자는 이 날 수 넘게 안 쓰면. */
+export const LOGIN_TRIES = 3;
+export const REWARD_DAYS = 7;
+export const IDLE_ADMIN_DAYS = 30;
 
 export function opsAlertsFrom(env, got, now = Date.now()) {
   const out = [];
@@ -93,6 +108,16 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
   if (got.ops_reviews?.[0]?.n) out.push({ key: `reviews:${got.ops_reviews[0].n}`, kind: "spike", tone: "warn", title: `답 안 한 낮은 별점 리뷰 ${got.ops_reviews[0].n}개`, meta: "별 1~2개", to: "#/reviews" });
   if (got.ops_logins?.[0]?.n) out.push({ key: `logins:${got.ops_logins[0].n}`, kind: "spike", tone: "warn", title: `로그인 잠긴 곳 ${got.ops_logins[0].n}곳`,
     meta: "1시간 뒤 저절로 풀려요. 내가 잠긴 거면 내 계정 › 로그인에서 바로 풀어요", to: "#/account" });
+  const tries = got.ops_login_tries?.[0];
+  if (tries?.places) out.push({ key: `login-tries:${tries.places}:${tries.n}`, kind: "spike", tone: "warn", title: `로그인 실패가 연달아 있어요(${tries.places}곳, ${tries.n}번)`,
+    meta: `1시간 안에 ${LIMITS.loginFailures}번이면 잠겨요. 내가 아니면 Cloudflare에서 ADMIN_PASSWORD를 바꿔요`, to: "#/audit" });
+  const owed = got.ops_owed?.[0];
+  if (owed?.n) out.push({ key: `owed:${owed.n}`, kind: "late", tone: "warn", title: `드릴 보상 ${owed.n}개가 ${REWARD_DAYS}일 넘게 기다려요`,
+    meta: owed.since ? `가장 오래된 것 ${Math.floor((now - owed.since) / DAY)}일째` : "", to: "#/rewards" });
+  if (got.ops_idle_admins?.[0]?.n) out.push({ key: `idle-admins:${got.ops_idle_admins[0].n}`, kind: "nudge", tone: "warn",
+    title: `${IDLE_ADMIN_DAYS}일 넘게 안 쓴 관리자 ${got.ops_idle_admins[0].n}명`, meta: "안 쓰는 계정은 멈춰 두면 안전해요(관리 › 관리자)", to: "#/admins" });
+  if (got.ops_passkey && !got.ops_passkey[0]?.n) out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
+    meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
   return out;
 }
 
@@ -109,6 +134,8 @@ export async function cockpit(env, now = Date.now()) {
     held: held.map((h) => ({ id: h.id, inquiry: h.inquiry_id, text: h.text, close: Boolean(h.close), until: h.until, at: h.at, ask: String(h.ask ?? "").slice(0, 120), kind: h.kind })),
     done: done.map((d) => ({ at: d.at, action: d.action, target: d.target, detail: d.detail })),
     today: done.filter((d) => d.at >= start).length,
+    // 1.39 [ADM3-44] B10: 열쇠로 오늘 읽기만 한 횟수(장부·문의 읽기). 고친 일은 활동 기록에 남고, 읽기는 열쇠 카운터에만 있어요.
+    reads: keys.reduce((n, k) => n + (k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10) ? Math.max(0, (k.n ?? 0) - (k.writes ?? 0)) : 0), 0),
     keys: keys.map((k) => ({ label: k.label, lastAt: k.last_at, n: k.day && k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10) ? k.n : 0, alive: !k.revoked_at && k.expires_at > now })),
   };
 }

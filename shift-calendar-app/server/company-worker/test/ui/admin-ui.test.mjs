@@ -1847,3 +1847,35 @@ test("[STAT2-01~04] 숫자 › 한눈에: 정상도 신호, 초기 모드, 진�
   assert.ok([...u.$$("#main .gl-more a")].some((a) => a.getAttribute("href") === "#/metrics"));
   assert.deepEqual(u.errors, []);
 });
+
+test("[ADM3-45~47] 오늘 첫 화면 한 문장 + 할 일 셋, 같은 회사일까요?, 여러 판 맨 위 한 줄", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  await call("POST", "/api/reports", report(1, { company: "lg전자 칠러공장" }), from(1));
+  await call("POST", "/api/reports", report(2, { company: "LG전자(칠러)" }), from(2));
+  // Two versions in one department, so 여러 판 has something to decide.
+  await call("POST", "/api/reports", report(3), from(3));
+  const twelve = setup();
+  twelve.pay.rules.extra[3].percent = 0.12;
+  await call("POST", "/api/reports", report(4, { setup: twelve }), from(4));
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  await u.settle(30);
+  const hero = u.$("#main .today-hero");
+  assert.ok(hero, "the state in one sentence first");
+  assert.match(u.text("#main .today-hero h2"), /있어요|없어요|할 일이/);
+  assert.ok(u.$$("#main .today-three li").length <= 3);
+  assert.ok(u.$("#main .alerts") || u.$("#main .calm"), "주의 필요 is still there in full");
+  await u.go("#/companies");
+  await u.settle(30);
+  assert.match(u.text("#main .similar"), /같은 회사일까요\?/);
+  assert.match(u.text("#main .similar"), /이름이 같아요/);
+  await u.click('#main [data-act="similar-skip"]');
+  await u.settle(30);
+  assert.equal(u.$("#main .similar"), null, "'다른 회사예요' takes it away");
+  await u.go("#/versions");
+  await u.settle(30);
+  assert.match(u.text("#main .vrec"), /항목이 달라요|숫자만 달라요/);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});

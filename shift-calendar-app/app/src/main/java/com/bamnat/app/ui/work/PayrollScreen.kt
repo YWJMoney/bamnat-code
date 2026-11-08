@@ -706,7 +706,8 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             picking = null
         }
     }
-    if (birthPick) DayPick(s.birth ?: LocalDate.of(2000, 1, 1), onDismiss = { birthPick = false }) { s = s.copy(birth = it); birthPick = false }
+    // 1.39 PC 5차: a 생년월일 is typed (2008. 03. 14.) rather than paged back month by month from 2000년 1월.
+    if (birthPick) DayPick(s.birth, onDismiss = { birthPick = false }, birth = true) { s = s.copy(birth = it); birthPick = false }
     if (hirePick) DayPick(s.hiredOn ?: Today.date(), onDismiss = { hirePick = false }, years = true) { s = s.copy(hiredOn = it); hirePick = false }
     if (leftPick) DayPick(s.leftOn ?: Today.date(), onDismiss = { leftPick = false }) { s = s.copy(leftOn = it); leftPick = false }
     if (rehirePick) {
@@ -824,7 +825,7 @@ private fun IndustryPicker(code: String?, onPick: (String?) -> Unit) {
 /** A day picked on Material's calendar. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, after: LocalDate? = null, years: Boolean = false, onPick: (LocalDate) -> Unit) {
+private fun DayPick(initial: LocalDate?, onDismiss: () -> Unit, after: LocalDate? = null, years: Boolean = false, birth: Boolean = false, onPick: (LocalDate) -> Unit) {
     // [after]: only days later than it can be picked (다시 입사는 퇴사일 다음 날부터).
     val selectable = remember(after) {
         object : androidx.compose.material3.SelectableDates {
@@ -832,7 +833,15 @@ private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, after: LocalDate?
             override fun isSelectableYear(year: Int) = after == null || year >= after.year
         }
     }
-    val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = initial.toEpochDay() * 86_400_000L, selectableDates = selectable)
+    val now = Today.date()
+    val state = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = initial?.let { it.toEpochDay() * 86_400_000L },
+        // [birth]: no day is guessed; the calendar (if switched to) opens 20 years back, and only past years are offered.
+        initialDisplayedMonthMillis = (initial ?: if (birth) now.minusYears(20).withDayOfYear(1) else now).toEpochDay() * 86_400_000L,
+        yearRange = if (birth) (now.year - 90)..now.year else androidx.compose.material3.DatePickerDefaults.YearRange,
+        initialDisplayMode = if (birth) androidx.compose.material3.DisplayMode.Input else androidx.compose.material3.DisplayMode.Picker,
+        selectableDates = selectable,
+    )
     com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
         TextButton(onClick = { state.selectedDateMillis?.let { onPick(LocalDate.ofEpochDay(it / 86_400_000L)) } ?: onDismiss() }) { Text("고르기") }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } }) {

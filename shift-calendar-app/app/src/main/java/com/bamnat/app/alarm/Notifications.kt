@@ -300,7 +300,11 @@ object Notifications {
             val nm = context.getSystemService(NotificationManager::class.java)
             for (sbn in nm.activeNotifications) {
                 if (sbn.id == SLEEPING_ID || !quietsAtNight(context, sbn.notification)) continue
-                NotificationManagerCompat.from(context).notify(sbn.tag, sbn.id, quiet(context, sbn.notification))
+                try {
+                    NotificationManagerCompat.from(context).notify(sbn.tag, sbn.id, quiet(context, sbn.notification))
+                } catch (e: SecurityException) {
+                    return@runCatching // Notifications were turned off between the check and the post (lint MissingPermission).
+                }
             }
         }
     }

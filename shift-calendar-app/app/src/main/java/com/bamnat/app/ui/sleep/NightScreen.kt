@@ -333,5 +333,7 @@ internal fun nightStyle(id: String): com.bamnat.core.recipe.PartStyle =
 @Composable
 private fun nightLooksOn(): Boolean {
     val c = (LocalContext.current.applicationContext as? com.bamnat.app.BamnatApp)?.container ?: return true
-    return !c.featureGate.state.value.live || c.featureGate.state.value.tier >= com.bamnat.app.tier.Tier.PRO
+    // Read as state (lint StateFlowValueCalledInComposition): a change of 정식 출시 or 프로 draws the screen again.
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+    return !gate.live || gate.tier >= com.bamnat.app.tier.Tier.PRO
 }

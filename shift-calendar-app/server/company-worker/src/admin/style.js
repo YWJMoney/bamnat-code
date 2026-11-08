@@ -1206,4 +1206,34 @@ a.gl-gauge:hover{border-color:var(--g)}
   .gl-cohort td{display:flex;flex-direction:column;gap:.1rem;font-size:.86rem}
   .gl-cohort td::before{content:attr(data-label);font-size:.66rem;font-weight:700;color:var(--muted)}
 }
+/* 1.39 [ADM3-45] 같은 회사일까요? 짝 카드: 넓으면 두 이름이 한 줄, 접힌 폭이면 위아래. */
+.similar-rows li{display:flex;flex-direction:column;gap:.35rem;padding:.75rem 0;border-top:1px solid var(--line)}
+.similar-rows li:first-child{border-top:0}
+.similar-rows .pair{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:.5rem;align-items:center}
+.similar-rows .pair a{display:flex;flex-direction:column;gap:.1rem;padding:.55rem .7rem;border-radius:var(--r-sm);background:var(--soft);color:inherit;text-decoration:none;min-width:0}
+.similar-rows .pair a b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.similar-rows .pair a:last-child{background:var(--ok-bg)}
+.similar-rows .arrow{color:var(--faint);font-weight:900}
+.similar-rows .why{color:var(--muted);font-size:.78rem}
+@media (max-width:599.98px){.similar-rows .pair{grid-template-columns:minmax(0,1fr)}.similar-rows .arrow{transform:rotate(90deg);justify-self:center}}
+/* 1.39 [ADM3-46] 여러 판 카드 맨 위 한 줄: 무엇이 다르고 어느 판을 왜 추천하는지. */
+.vrec{margin:.1rem 0 .6rem;padding:.55rem .75rem;border-radius:var(--r-sm);background:var(--gold-soft);font-size:.86rem;line-height:1.5}
+.vrec.none{background:var(--soft);color:var(--muted)}.vrec.none b{color:var(--fg)}
+/* 1.39 [ADM3-47] 오늘 첫 화면: 상태 한 문장 + 지금 할 3가지(숫자 › 한눈에의 큰 신호와 같은 모양). */
+.today-hero{margin:0 0 .6rem}
+.today-three{list-style:none;margin:.9rem 0 0;padding:0;display:grid;gap:.4rem;counter-reset:none}
+.today-three a{display:flex;align-items:center;gap:.65rem;padding:.65rem .75rem;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);color:inherit;text-decoration:none;
+  transition:border-color .15s,transform .15s}
+.today-three a:hover{border-color:var(--tone);transform:translateY(-1px)}
+.today-three .n{flex:none;display:grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:900;font-size:.85rem}
+.today-why{color:var(--fg);font-weight:700}
+.today-three li.bad .n{background:var(--bad-bg);color:var(--bad)}.today-three li.warn .n{background:var(--warn-bg);color:var(--warn)}
+.today-three li.todo .n{background:var(--accent-soft);color:var(--accent)}
+.today-three .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.today-three .t b{font-size:.92rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.today-three .t small{font-size:.76rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.today-three .t .sub{display:flex;align-items:center;gap:.4rem;min-width:0}.today-three .t .sub>*{flex:none}.today-three .t .sub small{flex:1;min-width:0}
+.today-three svg{flex:none;width:1.1rem;height:1.1rem;color:var(--faint)}
+.today-rest{margin:.6rem 0 0;font-size:.8rem;color:var(--muted)}
+.hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
 `;
