@@ -627,6 +627,46 @@ function adminApp(L, BUILD, M) {
   const countsKey = () => JSON.stringify(Object.fromEntries(Object.entries(S.overview ?? {}).filter(([, v]) => typeof v === "number" || (v && typeof v === "object" && "waiting" in v))));
 
   /**
+   * 1.39 실서버(11-08 크롬): 회사 서버를 새로 올려도 '새로 열기'를 눌러야 새 화면이 나왔어요. 앱 파일은 서비스 워커가 기기에
+   * 두었다가 먼저 보여 주기 때문이에요. 새 빌드를 알면 서비스 워커부터 새로 받게 한 뒤 다시 열고([freshReload]), 글을 쓰는
+   * 중이거나 창·큐 모드가 열려 있지 않으면 빌드마다 한 번 저절로 그렇게 해요([autoReload]). 그래도 옛 빌드면 띠만 남아요.
+   */
+  let reloading = false;
+  async function freshReload() {
+    reloading = true;
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration("/admin/");
+      if (reg) {
+        await reg.update().catch(() => {});
+        if (reg.installing || reg.waiting) {
+          await new Promise((ok) => {
+            navigator.serviceWorker.addEventListener("controllerchange", ok, { once: true });
+            setTimeout(ok, 4000);
+          });
+        }
+      }
+    } catch {
+      // 서비스 워커가 없으면 그냥 다시 열어요.
+    }
+    location.reload();
+  }
+  function busyTyping() {
+    const a = document.activeElement;
+    return dialog.open || Boolean(S.queue) || Boolean(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
+  }
+  function autoReload(build) {
+    if (reloading || !S.newBuild || busyTyping()) return;
+    const key = `admin:auto-reload:${build}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      return;
+    }
+    freshReload();
+  }
+
+  /**
    * [ADMUX-37] The menu numbers and who is signed in (/badges): never waited for by a screen. Within 15 seconds of
    * the last answer nothing is asked unless [force]. A change of permissions draws the menu again.
    */
@@ -642,6 +682,7 @@ function adminApp(L, BUILD, M) {
       if (!("flagAlerts" in b)) S.overview.flagAlerts = [];
       S.me = b.me;
       S.newBuild = Boolean(b.build && b.build !== BUILD);
+      autoReload(b.build);
       if (S.phase !== "app") return;
       const home = S.route.name === "home" && JSON.stringify(S.overview.flagAlerts) !== alerts;
       if (home || JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]) !== before) render({ keepScroll: true });
@@ -4474,7 +4515,7 @@ function adminApp(L, BUILD, M) {
     refresh: () => load(),
     close: () => dialog.close(),
     shortcuts: () => openShortcuts(),
-    reload: () => location.reload(),
+    reload: () => freshReload(),
     palette: () => openPalette(),
     "palette-go": ({ i }) => paletteGo(Number(i)),
     "theme-next": () => {
@@ -6699,6 +6740,7 @@ function adminApp(L, BUILD, M) {
     S.overview = { ...b };
     S.me = b.me;
     S.newBuild = Boolean(b.build && b.build !== BUILD);
+    autoReload(b.build);
     S.phase = "app";
     S.route = readRoute();
     applyParams(S.route);

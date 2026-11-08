@@ -1885,3 +1885,45 @@ test("[ADM3-45~47] 오늘 첫 화면 한 문장 + 할 일 셋, 같은 회사일�
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
+
+test("[ADM3-48] a new admin build opens itself once when nobody is typing, and never under typing (실서버 11-08 크롬 '새로 열기')", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  let reloads = 0;
+  try {
+    Object.defineProperty(t.window.location, "reload", { configurable: true, value: () => { reloads++; } });
+  } catch {
+    t.window.location.reload = () => { reloads++; };
+  }
+  // Typing an answer: the band shows, nothing reloads under the words.
+  await t.go("#/inquiries");
+  await t.click("#main .rows .row");
+  await t.type("#reply", "확인하고 있어요");
+  t.$("#reply").focus();
+  const real = t.window.fetch;
+  t.window.fetch = async (input, init) => {
+    if (new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname !== "/api/admin/badges") return real(input, init);
+    // The whole answer each time (no 304), with the server saying a newer build is out.
+    const headers = new Headers(init?.headers ?? {});
+    headers.delete("if-none-match");
+    const res = await real(input, { ...init, headers });
+    const b = await res.json();
+    return new t.window.Response(JSON.stringify({ ...b, build: "next-build" }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  t.window.document.dispatchEvent(new t.window.Event("visibilitychange"));
+  await t.settle(30);
+  assert.equal(reloads, 0, "not while typing");
+  assert.match(t.text("#banners"), /관리자 앱이 새로 나왔어요/);
+  // Not typing any more: once for this build, however often the numbers come again.
+  t.$("#reply").blur();
+  // The next numbers come with the 30-second poll; here the clock moves past the 15 seconds they are kept.
+  const clock = t.window.Date.now.bind(t.window.Date);
+  t.window.Date.now = () => clock() + 20000;
+  t.window.document.dispatchEvent(new t.window.Event("visibilitychange"));
+  await t.settle(30);
+  t.window.document.dispatchEvent(new t.window.Event("visibilitychange"));
+  await t.settle(30);
+  assert.equal(reloads, 1);
+  assert.equal(t.window.sessionStorage.getItem("admin:auto-reload:next-build"), "1");
+  assert.deepEqual(t.errors, []);
+});
