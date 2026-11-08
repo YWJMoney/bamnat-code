@@ -284,7 +284,7 @@ class RecipeMakeViewModel(
     /** [STU-05] 내 앱에만 넣기: put the recipe on this phone without sending it; 되돌리기 works as for any recipe for 7 days. */
     fun putOnMine() = viewModelScope.launch {
         val s = _state.value
-        val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
+        val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, if (it.kind == PieceKind.LOGIC) com.bamnat.app.recipe.RecipePieces.Mode.BOTH else com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
         val answers = s.recipe.inputs.associate { it.id to it.default }
         val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }.getOrNull()
         _state.value = _state.value.copy(putMine = id ?: -1L)

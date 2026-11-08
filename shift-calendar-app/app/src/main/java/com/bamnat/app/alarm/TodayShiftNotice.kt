@@ -35,7 +35,9 @@ object TodayShiftNotice {
             return false
         }
         val (title, text) = lines(snapshot.resolver, today)
-        val notification = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
+        // 1.39 [NTC-02] 겹친 규칙 알림의 나머지 한 줄 (이달 쓴 돈 …): this notice says it, so there is one notice, not two.
+        val extra = folded(context, today)
+        fun base() = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setOngoing(true)
@@ -48,9 +50,39 @@ object TodayShiftNotice {
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3314))
             // [TOWN-08] Its own group, so Android does not bundle it with 소식 or other notices (a tap on the bundle opened this).
             .setGroup(Notifications.GROUP_TODAY).setGroupSummary(true)
+        val notification = if (extra == null) base().build() else base()
+            .setContentText("$text · ${extra.second}")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${extra.second}"))
+            // 1.36 [SEC-12] M5: a rule's words may hold the 가계부's numbers, so the lock screen keeps only the shifts.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(base().build())
             .build()
         Notifications.post(context, ID, notification)
         return true
+    }
+
+    private fun prefs(context: Context) = context.getSharedPreferences("today_notice_fold", Context.MODE_PRIVATE)
+
+    /** 1.39 [NTC-02] The words a rule folded in today ([fold]), with the rule's name; gone at midnight. */
+    fun folded(context: Context, today: LocalDate = Today.date()): Pair<String, String>? {
+        val p = prefs(context)
+        if (p.getString("day", null) != today.toString()) return null
+        val text = p.getString("text", null)?.takeIf { it.isNotBlank() } ?: return null
+        return p.getString("who", "").orEmpty() to text
+    }
+
+    /**
+     * 1.39 [NTC-02] 겹치는 알림 하나로 (사용자 2026-11-08 사진 '오늘 휴무 / 내일 주간' 위에 '오늘 요약 / 오늘 휴무 ~ · 이달 쓴 돈'): rule
+     * [who]'s 알림 said today's shift, which this notice already shows; the rest of its words ([rest], maybe none) go into this notice.
+     * False when this notice is not showing (off, no 근무표, 알림 꺼짐), so the rule's own notice goes out as before.
+     */
+    suspend fun fold(context: Context, who: String, rest: String): Boolean {
+        val today = Today.date()
+        val p = prefs(context)
+        val had = p.getString("text", null)?.takeIf { p.getString("day", null) == today.toString() }
+        if (rest.isNotBlank()) p.edit().putString("day", today.toString()).putString("who", who)
+            .putString("text", listOfNotNull(had?.takeIf { it != rest && rest !in it }, rest).joinToString(" · ").take(160)).apply()
+        return update(context, today)
     }
 
     fun cancel(context: Context) = NotificationManagerCompat.from(context).cancel(ID)

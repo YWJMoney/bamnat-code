@@ -492,6 +492,10 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         Text("• " + if (labels == listOf(name)) name else name + ": " + labels.joinToString(", "), style = MaterialTheme.typography.bodySmall)
                     }
                 }
+                // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
+                s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
+                    com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }
+                }
                 s.pieces.filter { it.on && it.fits && (parts == null || it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) }.forEach { p ->
                     Text(p.kind.label, style = MaterialTheme.typography.labelLarge)
                     p.lines.ifEmpty { listOf(RecipePieces.Change("바뀌는 것이 없어요", true)) }.forEach { l ->
@@ -522,6 +526,12 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     else -> "7일 안에는 마을 › 테마(내 서랍)의 받은 것에서 되돌릴 수 있어요"
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                // 1.39 [NTC-04] 알림을 보내는 규칙이 들어오면: 지금 켜 둔 알림과 더 켤 수 있는 알림 (줄이거나 더하기).
+                val notifies = s.recipe?.pieces?.firstOrNull { it.kind == PieceKind.LOGIC }?.let { lp ->
+                    s.pieces.any { it.kind == PieceKind.LOGIC && it.on && it.fits } &&
+                        com.bamnat.core.formula.Logic.from(lp.values).rules.any { r -> r.acts.any { a -> a.verb == com.bamnat.core.formula.LogicVerb.NOTIFY } }
+                } == true
+                if (notifies) com.bamnat.app.ui.settings.NoticeBoardCard(modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
@@ -649,6 +659,8 @@ private fun PieceCard(r: com.bamnat.core.recipe.Recipe, p: RecipeDetailViewModel
                     Text("넣지 않으려면 위 스위치를 끄면 돼요. 바꿔도 7일 안에 되돌리면 내 것이 돌아와요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // 1.39 [NTC-03] 겹치는 알림: 기존 것 끄기 / 둘 다(하나로) 두기.
+                if (p.kind == PieceKind.LOGIC) com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }
                 if (p.kind == PieceKind.SHIFT_LOOK || p.kind == PieceKind.ALARMS) {
                     Text("내 근무와 이름이 같거나, 주간·야간처럼 역할이 같은 근무에 넣어요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)

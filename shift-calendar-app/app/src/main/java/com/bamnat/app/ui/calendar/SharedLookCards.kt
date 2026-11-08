@@ -137,7 +137,7 @@ private fun KitDialog(
         c.appScope.launch {
             // The 근무 주기 first: it may add the kinds of day the looks and alarms then match.
             val picks = kit.pieces.map { it.kind }.filter { it in picked }.sortedBy { if (it == PieceKind.COMPANY) 0 else 1 }
-                .map { RecipeRepository.Pick(it, RecipePieces.Mode.REPLACE) }
+                .map { RecipeRepository.Pick(it, if (it == com.bamnat.core.recipe.PieceKind.LOGIC) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE) }
             val switching = theirs != null && switchStyle && picks.any { it.kind == PieceKind.COMPANY }
             if (switching) runCatching { c.settingsRepository.update { it.copy(workStyle = theirs) } }
             // [CELL-02] 1.39 Their 달력 모양, my cells' content (메모 줄·줄 순서·시간·음력·지출).
