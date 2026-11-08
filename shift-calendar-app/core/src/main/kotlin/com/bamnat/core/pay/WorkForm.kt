@@ -56,7 +56,10 @@ object WorkForms {
         val nurseNames = working.map { it.label.uppercase() }.containsAll(listOf("D", "E", "N")) ||
             working.map { it.name }.containsAll(listOf("데이", "이브닝", "나이트"))
         if (working.size >= 3 && working.any(::night)) return if (nurseNames) WorkForm.NURSE else WorkForm.THREE_SHIFT
-        if (working.size == 2 && working.all { span(it) >= 11 * 60 } && working.any(::night)) {
+        // 1.39 PC 5차: a rotation that runs just two kinds, one of them at night, is 2교대 whatever the hours (8시간 주·야로 도는
+        // 3조 2교대 '주주야야비휴'가 3교대로 보이던 것). Without an order, two long kinds still say it.
+        val twoInOrder = inOrder.isNotEmpty() && working.all { it.id in inOrder }
+        if (working.size == 2 && (twoInOrder || working.all { span(it) >= 11 * 60 }) && working.any(::night)) {
             return if ((pattern as? WorkPattern.Rotation)?.steps?.size == 8) WorkForm.FOUR_TEAM else WorkForm.TWO_SHIFT
         }
         if (working.size == 1 && !night(working.single())) return WorkForm.OFFICE

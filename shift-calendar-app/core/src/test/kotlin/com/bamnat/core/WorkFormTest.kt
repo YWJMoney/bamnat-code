@@ -43,6 +43,12 @@ class WorkFormTest {
         // An 오후 kind put in once by hand is not in the order: still 2교대.
         val fiveDays = WorkPattern.Rotation(since, listOf(1L, 1L, 2L, 2L, 9L))
         assertEquals(WorkForm.TWO_SHIFT, WorkForms.guess(listOf(day12, night12, type(3, "오후", "오", 13, 22), off), fiveDays))
+        // 1.39 PC 5차: 8시간 주·야 둘로만 도는 3조 2교대(주주야야비휴)는 2교대예요. 순서 밖 오후 칸이 있어도.
+        val day8 = type(1, "주간", "주", 7, 15); val night8 = type(3, "야간", "야", 23, 7); val rest = type(8, "비번", "비", null, null)
+        val three2 = WorkPattern.Rotation(since, listOf(1L, 1L, 3L, 3L, 8L, 9L))
+        assertEquals(WorkForm.TWO_SHIFT, WorkForms.guess(listOf(day8, type(2, "오후", "오", 15, 23), night8, rest, off), three2))
+        // Without an order, the three 8-hour kinds are still 3교대.
+        assertEquals(WorkForm.THREE_SHIFT, WorkForms.guess(listOf(day8, type(2, "오후", "오", 15, 23), night8, off)))
         assertEquals(WorkForm.DAY_ON_DAY_OFF, WorkForms.guess(listOf(type(1, "당번", "당", 9, 9), off)))
         assertEquals(WorkForm.ON_CALL, WorkForms.guess(listOf(type(1, "근무", "근", 9, 18), type(2, "당직", "당", 18, 9), off)))
         assertEquals(WorkForm.OFFICE, WorkForms.guess(listOf(type(1, "사무", "사", 9, 18), off)))
