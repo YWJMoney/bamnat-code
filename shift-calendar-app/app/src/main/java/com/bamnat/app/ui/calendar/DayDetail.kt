@@ -932,6 +932,9 @@ private fun AlarmContent(
             custom != null -> "이 날 알람이에요. 근무 알람 대신 울려요."
             day.alarmSkipped -> "이 날은 알람이 울리지 않아요. 위 스위치로 다시 켤 수 있어요."
             type != null && type.alarmEnabled -> "${type.name} 근무 알람 설정을 따라요."
+            // 1.39 [SHOP-12] 가게는 처음부터 영업 알람이 없어요: 그렇게 둔 까닭과 한 번에 켜는 곳.
+            type != null && focus == com.bamnat.core.work.CalendarFocus.SALES ->
+                "${type.name} 날은 처음부터 알람이 없어요. 문 열기 전에 알림을 받으려면 켜 주세요."
             type != null -> "${type.name} 근무는 알람이 꺼져 있어요."
             planned.isNotEmpty() -> "대근한 근무의 알람이 울려요."
             // [CAL-05] A field or shop day without work is not called a day off.
@@ -954,7 +957,11 @@ private fun AlarmContent(
             Text(if (custom != null) "이 날 알람 고치기" else "이 날만 알람 정하기")
         }
         if (custom != null) TextButton(onClick = { vm.setDayAlarms(day.date, null) }) { Text("근무 알람으로") }
-        if (type != null && !type.alarmEnabled && custom == null) TextButton(onClick = onOpenShiftTypes) { Text("${type.name} 알람 켜기") }
+        if (type != null && !type.alarmEnabled && custom == null) {
+            // 1.39 [SHOP-12] 가게 영업 날은 이 자리에서 바로 켜요(문 열기 1시간 전, 되돌리기). 근무 종류 화면을 거치지 않아요.
+            if (focus == com.bamnat.core.work.CalendarFocus.SALES) TextButton(onClick = { vm.turnOnTypeAlarm(type) }) { Text("${type.name} 알람 켜기") }
+            else TextButton(onClick = onOpenShiftTypes) { Text("${type.name} 알람 켜기") }
+        }
     }
 
     if (editing) {
