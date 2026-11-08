@@ -1240,7 +1240,9 @@ a.gl-gauge:hover{border-color:var(--g)}
 .deploy-line code{font-size:.72rem;padding:0 .25rem;border-radius:4px;background:var(--surface)}
 .deploy-line small{font-size:.7rem}
 .deploy-line .pill{font-size:.68rem}
-@media (max-width:600px){.deploy-line{gap:.5rem;padding:.15rem .75rem}.deploy-line .dl-tag,.deploy-line small{display:none}}
+@media (max-width:600px){.deploy-line{gap:.5rem;padding:.15rem .75rem}.deploy-line .dl-tag:not(.local),.deploy-line small{display:none}}
+/* 8차 PC 1-21: 커밋이 없는(로컬) 서버는 좁은 폭에서도 '로컬 서버'·'로컬'이 보여요 */
+.deploy-line code.local{color:var(--muted);font-style:normal}
 /* 1.39 [OBS2-09] 관측 빈틈: 할 일만 펼치고 기다리는 것·정한 것은 접기 */
 .ob-gap-rest{margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem}
 .ob-gap-rest summary{cursor:pointer;font-size:.84rem;font-weight:700;color:var(--muted);min-height:44px;display:flex;align-items:center}
