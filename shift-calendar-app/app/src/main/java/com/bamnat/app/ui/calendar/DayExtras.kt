@@ -140,6 +140,7 @@ internal fun ExtrasContent(
         if (day.extras.isEmpty()) {
             Text(
                 if (day.isRestDay) "쉬는 날 일했다면 여기서 넣어 주세요. 근무표는 그대로 두고 일한 시간만 더해져서 급여가 맞게 계산돼요."
+                else if (snapshot.kinds.visible().none { it.timing is com.bamnat.core.model.ExtraTiming.AsShift }) "근무 뒤 잔업이나 특근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요."
                 else "근무 뒤 잔업이나 같은 날 대근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

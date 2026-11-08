@@ -136,6 +136,15 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
         if (kinds.none { it.id == ExtraKind.COVER_ID && it.name == "대근" }) this
         else ExtraKinds(kinds.map { if (it.id == ExtraKind.COVER_ID && it.name == "대근") it.copy(name = "대타") else it })
 
+    /**
+     * 1.39 PC eae4e024 (일반 직장인 칸 창에 '일근 대근 09–18'이 먼저): a first setup of 일근 keeps 대근 folded, as 잔업·특근 are
+     * what office work adds; 설정 › 연장 휴무일 근무 지정 shows it again. Only the kinds as they come: ones the user or a company file
+     * changed stay as they are.
+     */
+    fun forDayWork(): ExtraKinds =
+        if (this != ExtraKinds()) this
+        else ExtraKinds(kinds.map { if (it.id == ExtraKind.COVER_ID) it.copy(hidden = true) else it })
+
     /** Kinds offered when marking a day; kinds already on the day show anyway so they can be cleared. */
     fun visible(current: Collection<Long> = emptyList()): List<ExtraKind> = kinds.filter { !it.hidden || it.id in current }
 
