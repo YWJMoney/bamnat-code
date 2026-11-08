@@ -231,6 +231,22 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     init { viewPrefs.registerOnSharedPreferenceChangeListener(viewChanged) }
 
+    // 1.39 [SETUP-22] 7차 PC 리더 폰: a first setup put off ('나중에') ends once the main calendar has its own order or the leader has
+    // made a team some other way, so '근무 설정을 마저 해 주세요' does not stay over a calendar that is already filled.
+    init {
+        viewModelScope.launch {
+            combine(container.setupDrafts.draft, container.settingsRepository.settings, container.scheduleRepository.patterns,
+                container.phaseThree.teamList) { d, s, p, t ->
+                com.bamnat.core.setup.SetupLaterDone.done(later = d?.later == true && s.setupLater, styleChosen = s.workStyle != null,
+                    hasPattern = p.isNotEmpty(), hasTeam = t.isNotEmpty())
+            }.distinctUntilChanged().collect { done ->
+                if (!done) return@collect
+                container.settingsRepository.update { it.copy(setupLater = false) }
+                container.setupDrafts.clear()
+            }
+        }
+    }
+
     override fun onCleared() {
         viewPrefs.unregisterOnSharedPreferenceChangeListener(viewChanged)
         super.onCleared()
@@ -1455,6 +1471,23 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                     schedule.restoreDay(date, before)
                 })
             }
+        }
+    }
+
+    /**
+     * 1.39 [SHOP-12] 7차 PC 가게(식당): 가게의 영업 날은 처음부터 알람이 없어요(사장님이 문을 여는 때를 스스로 정해서,
+     * 묻지 않은 알람이 첫 아침에 울리지 않게). 칸 창에서 한 번에 켜요. 알람이 없던 날은 문 열기 1시간 전, 되돌리기와 함께.
+     */
+    fun turnOnTypeAlarm(type: ShiftType) = gate(WriteKind.ALARM) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
+            val on = type.copy(alarmEnabled = true, alarms = type.alarms.ifEmpty { listOf(com.bamnat.core.model.AlarmSpec(60)) })
+            schedule.saveShiftType(on)
+            val first = on.alarms.filter { it.enabled }.maxOfOrNull { it.offsetMinutes }
+            val start = type.start
+            val text = if (first != null && start != null) "${type.name} 날마다 ${Fmt.time(start.minusMinutes(first.toLong()))}에 알람이 울려요"
+                else "${type.name} 날 알람을 켰어요"
+            _messages.tryEmit(UndoMessage(text) { schedule.saveShiftType(type) })
         }
     }
 

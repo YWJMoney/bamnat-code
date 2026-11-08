@@ -231,6 +231,51 @@ class CalendarKindsTest {
         assertTrue(vm.calendarAlarmsOn.value)
     }
 
+    /** 1.39 [SHOP-12] 7차 PC 식당: 영업 날은 처음부터 알람이 없고, 칸 창에서 한 번에 켜요(문 열기 1시간 전, 되돌리기). */
+    @Test fun aShopsOpenDayAlarmIsTurnedOnInOneTap() {
+        val id = runBlocking {
+            c.scheduleRepository.saveShiftType(com.bamnat.core.model.ShiftType(0, "영업", "영", 0xFF27AE60,
+                java.time.LocalTime.of(10, 0), java.time.LocalTime.of(22, 0), alarms = emptyList()))
+        }
+        val before = runBlocking { c.scheduleRepository.shiftTypes.first() }.first { it.id == id }
+        assertFalse(before.alarmEnabled)
+        val vm = CalendarViewModel(c)
+        val got = messagesOf(vm)
+        settle()
+        vm.turnOnTypeAlarm(before)
+        settle()
+        val on = runBlocking { c.scheduleRepository.shiftTypes.first() }.first { it.id == id }
+        assertTrue(on.alarmEnabled)
+        assertEquals(listOf(60), on.alarms.map { it.offsetMinutes })
+        assertEquals("영업 날마다 09:00에 알람이 울려요", got.last().message)
+        vm.runUndo(got.last())
+        settle()
+        assertFalse(runBlocking { c.scheduleRepository.shiftTypes.first() }.first { it.id == id }.alarmEnabled)
+    }
+
+    /**
+     * 1.39 [SETUP-22] 7차 PC 리더: 첫 설정을 '나중에'로 미룬 뒤 근무 주기나 팀을 넣으면, 달력 맨 위
+     * '근무 설정을 마저 해 주세요'는 끝난 것으로 쳐서 사라져요. 아무것도 넣지 않았으면 그대로 남아요.
+     */
+    @Test fun aSetupPutOffEndsOnceTheCalendarHasAPattern() {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, setupLater = true) }
+        c.setupDrafts.save(com.bamnat.core.setup.SetupDraft(style = WorkStyle.SHIFT, later = true))
+        val vm = CalendarViewModel(c)
+        settle()
+        assertTrue(c.settingsRepository.current.setupLater)
+        assertTrue(c.setupDrafts.draft.value?.later == true)
+        runBlocking {
+            val shift = dayShiftId()
+            c.scheduleRepository.setFirstPattern(com.bamnat.core.model.WorkPattern.Weekly(LocalDate.of(2026, 11, 2),
+                java.time.DayOfWeek.entries.associateWith { shift }), LocalDate.of(2026, 11, 2))
+        }
+        settle()
+        assertFalse(c.settingsRepository.current.setupLater)
+        assertTrue(c.settingsRepository.current.setupDone)
+        assertNull(c.setupDrafts.draft.value)
+        vm.hashCode()
+    }
+
     @Test fun changesOnADaySayThemselvesWithUndo() {
         val vm = CalendarViewModel(c)
         val got = messagesOf(vm)
