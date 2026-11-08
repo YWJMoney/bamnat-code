@@ -1229,6 +1229,18 @@ a.gl-gauge:hover{border-color:var(--g)}
 .gl-cohort-wrap{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
 /* 1.39 7차 PC 6장 2: Claude 추천이 아직 없을 때 한 줄 */
 .claude-draft-empty{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:.2rem 0 .6rem}
+/* 1.39 머리띠의 지금 도는 서버 판(사용자 11-08): 한 줄, 좁으면 가로로 밀어 봐요 */
+.deploy-line{display:flex;align-items:center;gap:.6rem;min-height:28px;padding:.15rem 1rem;font-size:.74rem;color:var(--muted);text-decoration:none;white-space:nowrap;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.deploy-line[hidden]{display:none}
+.deploy-line::-webkit-scrollbar{display:none}
+.deploy-line .dl-tag{font-weight:700;color:var(--accent)}.deploy-line .dl-tag.local{color:var(--muted)}
+.deploy-line .dl-part{display:inline-flex;align-items:baseline;gap:.3rem}
+.deploy-line .dl-part b{color:var(--text);font-weight:700}
+.deploy-line .dl-part.bad b{color:var(--danger,#c0392b)}
+.deploy-line code{font-size:.72rem;padding:0 .25rem;border-radius:4px;background:var(--surface)}
+.deploy-line small{font-size:.7rem}
+.deploy-line .pill{font-size:.68rem}
+@media (max-width:600px){.deploy-line{gap:.5rem;padding:.15rem .75rem}.deploy-line .dl-tag,.deploy-line small{display:none}}
 /* 1.39 [OBS2-09] 관측 빈틈: 할 일만 펼치고 기다리는 것·정한 것은 접기 */
 .ob-gap-rest{margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem}
 .ob-gap-rest summary{cursor:pointer;font-size:.84rem;font-weight:700;color:var(--muted);min-height:44px;display:flex;align-items:center}

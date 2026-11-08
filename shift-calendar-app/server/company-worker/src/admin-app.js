@@ -695,6 +695,44 @@ function adminApp(L, BUILD, M) {
     }
   }
 
+  /**
+   * 1.39 머리띠의 '지금 도는 서버 판'(사용자 11-08 '현재 출시된 서버가 몇 버젼인지 위쪽에 보여지게'): 회사·공유 서버의 판, 커밋,
+   * 배포 시각을 한 줄로. 처음 한 번과 새로 고침, 그리고 10분마다(배포는 드물어서) 읽어요. 누르면 서버 상태로 가요.
+   */
+  let serversAt = 0;
+  async function loadServers(force = false) {
+    if (!force && Date.now() - serversAt < 10 * 60000) return;
+    serversAt = Date.now();
+    try {
+      S.servers = await api("/servers");
+    } catch {
+      serversAt = 0;
+      return;
+    }
+    paintDeployLine();
+  }
+  function paintDeployLine() {
+    const el = document.getElementById("deploy-line");
+    const v = S.servers;
+    if (!el || !v?.company) return;
+    const when = (t) => {
+      if (!t) return "";
+      const d = new Date(t);
+      const two = (n) => String(n).padStart(2, "0");
+      return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+    };
+    const part = (label, x) => !x ? "" : !x.ok && !x.version ? `<span class="dl-part bad"><b>${label}</b> 닿지 않음</span>`
+      : `<span class="dl-part"><b>${label}</b> ${esc(x.version ?? "?")}${x.commit ? ` <code>${esc(x.commit)}</code>` : ""}${x.at ? `<small>${esc(when(x.at))} 배포</small>` : ""}</span>`;
+    const live = Boolean(v.company.id);
+    const differ = v.share?.version && v.share.version !== v.company.version;
+    const title = [`회사 서버 ${v.company.version}${v.company.commit ? ` · 커밋 ${v.company.commit}` : ""}${v.company.at ? ` · ${when(v.company.at)} 배포` : ""}`,
+      v.share ? `공유 서버 ${v.share.version ?? "?"}${v.share.commit ? ` · 커밋 ${v.share.commit}` : ""}${v.share.at ? ` · ${when(v.share.at)} 배포` : ""}` : ""].filter(Boolean).join("\n");
+    el.innerHTML = `<span class="dl-tag${live ? "" : " local"}">${live ? "지금 도는 서버" : "배포 번호 없음"}</span>${part("회사", v.company)}${part("공유", v.share)}${differ ? '<span class="pill warn">판 다름</span>' : ""}`;
+    el.title = title;
+    el.setAttribute("aria-label", title.replace("\n", ", "));
+    el.hidden = false;
+  }
+
   /** [ADMUX-37] What the screens share and rarely changes (/basics): 채택 settings, answer targets, reason words. */
   async function loadBasics() {
     const b = await api("/basics");
@@ -716,6 +754,7 @@ function adminApp(L, BUILD, M) {
     };
     const jobs = [];
     refreshBadges();
+    loadServers();
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
@@ -966,6 +1005,7 @@ function adminApp(L, BUILD, M) {
         </aside>
         <div class="content">
           <header class="top">
+            <a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a>
             <div class="bar" id="bar"></div>
             <nav class="hubtabs" id="hubtabs" hidden></nav>
             <div id="progress" class="progress${S.busy ? " on" : ""}"></div>
@@ -4543,7 +4583,10 @@ function adminApp(L, BUILD, M) {
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
     ...FLAG_ACTIONS,
-    refresh: () => load(),
+    refresh: () => {
+      loadServers(true);
+      return load();
+    },
     close: () => dialog.close(),
     shortcuts: () => openShortcuts(),
     reload: () => freshReload(),

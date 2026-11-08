@@ -20,3 +20,20 @@ test("the share server's version is the app's version", () => {
   const props = readFileSync(new URL("../../../gradle.properties", import.meta.url), "utf8");
   assert.equal(SERVER_VERSION, props.match(/^bamnat\.versionName=(.+)$/m)[1].trim());
 });
+
+// 1.39 관리자 앱 머리띠: 판·커밋·배포 시각은 관리 열쇠로만, 공개 health는 판만.
+test("/api/admin/version tells the deploy behind the token; without metadata only the version", async () => {
+  const { deployInfo } = await import("../src/index.js");
+  const token = "t".repeat(24);
+  const meta = { id: "0f1e2d3c-aaaa-bbbb-cccc-111122223333", tag: "9a99201a1b2c", timestamp: "2026-11-08T14:30:00.000Z" };
+  const env = { SHARE_ADMIN_TOKEN: token, CF_VERSION_METADATA: meta, SHARES: { async get() { return null; } } };
+  const call = (auth) => worker.fetch(new Request("https://share.example/api/admin/version", { headers: auth ? { authorization: `Bearer ${auth}` } : {} }), env, { waitUntil() {} });
+  assert.equal((await call(null)).status, 403);
+  const ok = await call(token);
+  assert.equal(ok.status, 200);
+  assert.deepEqual(await ok.json(), { version: SERVER_VERSION, commit: "9a99201a", id: "0f1e2d3c", at: Date.parse(meta.timestamp) });
+  assert.deepEqual(deployInfo({}), { version: SERVER_VERSION, commit: null, id: null, at: null });
+  assert.deepEqual(deployInfo({ CF_VERSION_METADATA: { tag: "not a sha", timestamp: "x" } }), { version: SERVER_VERSION, commit: null, id: null, at: null });
+  const pub = await worker.fetch(new Request("https://share.example/api/health"), env, { waitUntil() {} });
+  assert.deepEqual(await pub.json(), { ok: true, version: SERVER_VERSION }, "the public health says no commit");
+});

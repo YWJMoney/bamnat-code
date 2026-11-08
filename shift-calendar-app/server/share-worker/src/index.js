@@ -605,6 +605,14 @@ async function report(request, env, id, fromPage) {
   return done(fromPage ? 200 : 204, thanks);
 }
 
+/** 이 서버가 지금 도는 판: 코드 판, 배포 도구가 붙인 커밋(--tag), Cloudflare 배포 번호와 시각. 로컬에는 판만 있어요. */
+export function deployInfo(env) {
+  const m = env?.CF_VERSION_METADATA ?? {};
+  const tag = typeof m.tag === "string" && /^[0-9a-f]{7,40}$/.test(m.tag) ? m.tag.slice(0, 8) : null;
+  const at = typeof m.timestamp === "string" && !Number.isNaN(Date.parse(m.timestamp)) ? Date.parse(m.timestamp) : null;
+  return { version: SERVER_VERSION, commit: tag, id: typeof m.id === "string" ? m.id.slice(0, 8) : null, at };
+}
+
 /** The company server's 개발자 앱 only: a shared token in Authorization, compared as digests. */
 async function admin(request, env, url) {
   const secret = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
@@ -620,6 +628,8 @@ async function admin(request, env, url) {
   if (team && request.method === "DELETE") return teamTakeDown(request, env, team[1], team[2]);
   if (team && request.method === "GET") return teamPeek(env, team[1], team[2]);
   if (path === "/stats" && request.method === "GET") return json(await stats(env, url.searchParams.get("days")));
+  // 1.39 관리자 앱 머리띠(사용자 11-08 '현재 출시된 서버가 몇 버젼인지 위쪽에'): 판·커밋·배포 시각. 공개 /api/health는 판만 그대로예요.
+  if (path === "/version" && request.method === "GET") return json(deployInfo(env));
   if (path === "/flags" && request.method === "PUT") {
     let body = {};
     try { body = JSON.parse((await request.text()).slice(0, 256)); } catch { /* nothing */ }

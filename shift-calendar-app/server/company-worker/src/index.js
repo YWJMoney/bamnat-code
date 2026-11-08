@@ -111,7 +111,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, s
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { flushWatch, pruneWatch, recordError, recordRequest, runJobs } from "./ops-watch.js";
+import { flushWatch, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -4943,6 +4943,8 @@ function areaFor(path) {
   if (/^\/devices\/d[A-Za-z0-9]{15}\/previews$/.test(path)) return null;
   // AN 1.28 [ADMUX-37] The badges, 오늘 and the shared words: each reads only the areas the admin has.
   if (path === "/badges" || path === "/today" || path === "/basics") return null;
+  // 1.39 머리띠의 서버 판: 판·커밋·배포 시각만이라 누구나(사용자 11-08).
+  if (path === "/servers") return null;
   // AX 1.30 [ADMX-08] One search: each part reads only what the admin may see (adminSearch).
   if (path === "/search") return null;
   // 1.36 [GRW-07] 할 일함: each part reads only the areas the admin has (work.js).
@@ -5086,6 +5088,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/badges" && method === "GET") return json(await badges(env, actor, now));
   if (path === "/today" && method === "GET") return json(await today(env, actor, now));
   if (path === "/basics" && method === "GET") return json(await basics(env));
+  if (path === "/servers" && method === "GET") return json(await serverVersions(env));
   // AX 1.30 [ADMX-08] 찾기·이동: companies, questions, 개발사항 and admins in one ask.
   if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));

@@ -24,7 +24,9 @@ export function loopViews(A) {
   const SHIP_NAMES = { review: "검토 중일 수 있음", waiting: "보류 중", done: "보냄", cancelled: "취소함" };
   const SHIP_TONES = { review: "info", waiting: "warn", done: "ok", cancelled: "" };
   /** [LOOP-32] Play 트랙 100% 판이 실제로 나갔는지(이 판으로 쓰는 휴대폰). */
-  const seenText = (s) => (s.live ? `실제로 나갔어요 · 이 판 휴대폰 ${s.phones}대` : `검토 중이거나 아직 안 나갔을 수 있어요 · 이 판 휴대폰 ${s.phones}/${s.need}대`);
+  // [LOOP-33] 통계 동의한 휴대폰과, 동의와 상관없는 Play 보고서(트랙 100%를 본 뒤 새로 깔거나 올린 기기) 둘 중 하나면 나간 것으로 봐요.
+  const playText = (s) => (s.play !== undefined ? ` · Play 보고서 ${s.play}${s.live ? "" : `/${s.playNeed}`}대` : " · Play 보고서는 아직(권한·하루 늦음)");
+  const seenText = (s) => (s.live ? `실제로 나갔어요 · 이 판 휴대폰 ${s.phones}대${playText(s)}` : `검토 중이거나 아직 안 나갔을 수 있어요 · 통계 동의 휴대폰 ${s.phones}/${s.need}대${playText(s)}`);
   const REWARD_NAMES = [["bugDays", "문제 신고가 고쳐짐", "문제 신고(버그)를 보낸 폰에, 그 개발사항이 완료되면"], ["polishDays", "제안이 다듬기로 들어감", "건의·제안이 '다듬기' 크기로 완료되면"],
     ["featureDays", "제안이 새 기능으로 들어감", "건의·제안이 '새 기능' 크기로 완료되면"], ["knownDays", "알려진 문제에 '나도 겪어요'", "목록에서 나도 겪어요만 누른 폰에, 고쳐지면(0이면 안 줌)"],
     ["monthCap", "한 휴대폰 한 달 상한", "위 날을 다 더해 한 달(한국 시간)에 받을 수 있는 날"]];
