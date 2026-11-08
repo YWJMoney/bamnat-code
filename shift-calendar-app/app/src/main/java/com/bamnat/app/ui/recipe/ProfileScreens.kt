@@ -1189,6 +1189,9 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
     val reselectAt = remember { reselect }
     LaunchedEffect(reselect) { vm.load(force = reselect > reselectAt) }
     if (!s.loaded) return
+    // 1.39 [MKD-60] (사용자 2026-11-08 장터 윗부분): with no one followed and no 이달의 제작자 the row was a lone '🔍 찾아보기' circle (the
+    // same as 마을's 🔍 at the top) and 내 프로필 (the '나' button); it shows only when there are makers in it.
+    if (s.following.isEmpty() && s.month.isEmpty()) return
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         if (s.following.isEmpty() && s.month.isNotEmpty()) Text("이달의 제작자", style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(horizontal = 16.dp).semantics { heading() })
@@ -1196,7 +1199,7 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             s.me?.let { m -> StripFace(m.copy(nick = m.nick), "내 프로필", m.fresh) { onMaker(m.maker) } }
             (s.following.ifEmpty { s.month }).forEach { m -> StripFace(m, m.nick ?: "이름 없는 분", m.fresh) { onMaker(m.maker) } }
-            if (s.following.isNotEmpty() || s.month.isEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
+            if (s.following.isNotEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
                 // PC 확인 5c21f3bb: '🔍 찾아보기' opened the 팔로잉 새 작품 (empty with no one followed), not a search.
                 onClick = if (s.following.isEmpty()) onFind ?: onAll else onAll),
                 horizontalAlignment = Alignment.CenterHorizontally) {

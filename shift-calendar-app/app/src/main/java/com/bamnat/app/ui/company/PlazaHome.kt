@@ -394,9 +394,28 @@ fun PlazaHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
+                val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
+                val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
                 // [SPD-13] What the phone kept is on screen while it is read again: a thin line, not a spinner.
-                if (onBack == null) Text(homeTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                // 1.39 [PLZC-60] with 사람 먼저 the name is on the head line ([PlazaHead]).
+                if (onBack == null && !people) Text(homeTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                // 1.39 [PLZC-60] (사용자 2026-11-08): with 사람 먼저 the head is one line, the plaza's own door beside its name and the rest in its menu.
+                if (people) {
+                    val picks = vm.picks.collectAsStateWithLifecycle().value
+                    val mine = vm.mine.collectAsStateWithLifecycle().value
+                    var picksOpen by remember { mutableStateOf(false) }
+                    var tagOpen by remember { mutableStateOf(false) }
+                    if (picksOpen) PlazaPicksDialog(picks, mine?.form) { picksOpen = false }
+                    if (tagOpen) PlazaTagScopeDialog(vm.container, plan.room, onDismiss = { tagOpen = false; vm.refreshMine() })
+                    PlazaHead(title = homeTitle.takeIf { onBack == null }, plan = plan, today = state.talk?.pulse?.today,
+                        picks = picks.size, onPicks = { picksOpen = true },
+                        onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
+                        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
+                        onFind = onFind,
+                        onTag = { tagOpen = true }.takeIf { plan.room?.startsWith("style-") == true && mine != null })
+                }
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
                 header?.invoke()
                 vm.note?.let { n ->
@@ -404,23 +423,16 @@ fun PlazaHomeScreen(
                         Text(n, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
                     }
                 }
-                Row(verticalAlignment = Alignment.Top) {
+                // 1.39 [PLZC-60] with 사람 먼저 the plaza's rule is in the head's menu (지킬 것) and on the 글 쓰기 sheet, not a line above the posts.
+                if (!people) Row(verticalAlignment = Alignment.Top) {
                     Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(6.dp))
                     Text(plan.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
-                val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
-                val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
                 if (people) {
-                    // 1.39 [PLZC-01] 사람 먼저: the talk is the page; 정보·고친 점·시세 are doors on one line above it.
+                    // 1.39 [PLZC-01] 사람 먼저: the talk is the page; 정보·고친 점·시세 are doors above it.
+                    // 1.39 [PLZC-60] (사용자 2026-11-08): one head line, the plaza's own door beside its name and the rest in its menu.
                     // 다른 회사 규칙 means something to a company's room and to 교대·일근 (J133-71), not to 알바·현장·가게·투자.
-                    val picks = vm.picks.collectAsStateWithLifecycle().value
-                    var picksOpen by remember { mutableStateOf(false) }
-                    if (picksOpen) PlazaPicksDialog(picks, vm.mine.collectAsStateWithLifecycle().value?.form) { picksOpen = false }
-                    PlazaDoors(plan, onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
-                        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
-                        onFind = onFind, picks = picks.size, onPicks = { picksOpen = true })
                     FreshAnswers(state, vm.seen.collectAsStateWithLifecycle().value) { vm.openTalk() }
                     PlazaFeed(vm.container, vm, plan, state.talk, state.error,
                         older = vm.older.collectAsStateWithLifecycle().value,
@@ -566,31 +578,6 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
     }
 }
 
-
-/** 1.39 [PLZC-01] The plaza's tools as doors on one line: a company's 근무·급여 정보 and 고친 점, 시세, 다른 회사 규칙. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun PlazaDoors(plan: StylePlaza.Plan, onCompany: () -> Unit, onShare: () -> Unit, onRates: () -> Unit, onAll: (() -> Unit)?,
-    onFind: (() -> Unit)? = null, picks: Int = 0, onPicks: () -> Unit = {}) {
-    val doors = buildList {
-        // 1.39 [PLZC-22] 선배 답 모음 first: what this plaza already learned.
-        if (picks > 0) add("📚 선배 답 모음 $picks" to onPicks)
-        if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
-            add("📋 근무·급여 정보" to onCompany)
-            add("✏️ 고친 점" to onCompany)
-            add("📤 내 설정 보내기" to onShare)
-        }
-        plan.rates?.let { r -> add("💰 ${r.title}" to onRates) }
-        onAll?.let { add((if (plan.top == StylePlaza.Top.COMPANY_ROOM) "🏢 다른 회사 규칙" else "📏 회사 규칙 광장") to it) }
-        onFind?.let { add("🔎 우리 회사 찾기" to it) }
-    }
-    if (doors.isEmpty()) return
-    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        doors.forEach { (label, go) ->
-            androidx.compose.material3.AssistChip(onClick = go, label = { Text(label, maxLines = 1) }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-    }
-}
 
 /** 1.36 [VIL-09] kept on the people page: answers to my posts since the talk was last opened. */
 @Composable
