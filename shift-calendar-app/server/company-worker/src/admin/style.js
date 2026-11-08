@@ -553,8 +553,16 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .checklist .c-main{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
 .checklist small{display:block;color:var(--muted);font-size:.8rem}
 .card.flag-alert{border-color:var(--bad);background:var(--bad-bg)}
-.card.flag-alert summary{cursor:pointer;list-style:none;flex-wrap:wrap;gap:.4rem}.card.flag-alert summary::-webkit-details-marker{display:none}
-.card.flag-alert summary .more{margin-left:auto;font-size:.82rem;font-weight:700;color:var(--muted)}.card.flag-alert details[open] summary .more{display:none}
+/* 1.39 PC 7차 1-8: 접힌 한 장은 한 줄 단추처럼(기본 details 위 줄·▾ 줄바꿈 없이), 줄 전체를 누르면 펼쳐져요. */
+.card.flag-alert details{margin:0;border:0;padding:0}
+.card.flag-alert summary{cursor:pointer;list-style:none;display:flex;flex-wrap:nowrap;align-items:center;gap:.5rem;min-height:44px;margin:0;-webkit-tap-highlight-color:transparent}
+.card.flag-alert summary::-webkit-details-marker{display:none}.card.flag-alert summary::after,.card.flag-alert details[open]>summary::after{content:none}
+.card.flag-alert summary h2{flex:1;min-width:0;margin:0;font-size:1rem}
+.card.flag-alert summary .pill{flex:none}
+.card.flag-alert summary .more{flex:none;display:inline-flex;align-items:center;gap:.2rem;font-size:.82rem;font-weight:700;color:var(--accent);padding:.35rem .5rem;border-radius:999px;background:var(--surface)}
+.card.flag-alert summary .more::after{content:"▾"}.card.flag-alert details[open] summary .more::after{content:"▴"}
+.card.flag-alert details[open]>summary{margin-bottom:.4rem}
+@media (max-width:600px){.flag-alert-list .row{flex-wrap:wrap;row-gap:.4rem}.flag-alert-list .row-main{flex:1 1 100%}.flag-alert-list .row-side{flex-direction:row;flex-wrap:nowrap;gap:.4rem}}
 .flag-alert-list .row-side{flex-wrap:wrap}.server-sum{margin:0 0 .6rem}
 .agenda .date{flex:none;width:4.5rem;display:flex;flex-direction:column;font-weight:800;font-size:.9rem}
 .agenda .date small{font-weight:600;color:var(--muted);font-size:.75rem}
@@ -1219,6 +1227,8 @@ a.gl-gauge:hover{border-color:var(--g)}
 .gl-trend{display:inline-flex;align-items:center;gap:.15rem;margin-left:.35rem;padding:.05rem .4rem;border-radius:999px;font-size:.7rem;font-weight:800;letter-spacing:0;vertical-align:1px}
 .gl-trend.up{background:var(--ok-bg);color:var(--ok)}.gl-trend.down{background:var(--bad-bg);color:var(--bad)}.gl-trend.flat{background:var(--soft);color:var(--muted)}
 .gl-cohort-wrap{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
+/* 1.39 7차 PC 6장 2: Claude 추천이 아직 없을 때 한 줄 */
+.claude-draft-empty{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:.2rem 0 .6rem}
 /* 1.39 [OBS2-09] 관측 빈틈: 할 일만 펼치고 기다리는 것·정한 것은 접기 */
 .ob-gap-rest{margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem}
 .ob-gap-rest summary{cursor:pointer;font-size:.84rem;font-weight:700;color:var(--muted);min-height:44px;display:flex;align-items:center}
@@ -1264,7 +1274,7 @@ a.gl-gauge:hover{border-color:var(--g)}
 .vrec.none{background:var(--soft);color:var(--muted)}.vrec.none b{color:var(--fg)}
 /* 1.39 [ADM3-47] 오늘 첫 화면: 상태 한 문장 + 지금 할 3가지(숫자 › 한눈에의 큰 신호와 같은 모양). */
 .today-hero{margin:0 0 .6rem}
-.today-three{list-style:none;margin:.9rem 0 0;padding:0;display:grid;gap:.4rem;counter-reset:none}
+.today-three{list-style:none;margin:.9rem 0 0;padding:0;display:grid;grid-template-columns:minmax(0,1fr);gap:.4rem;counter-reset:none}.today-three li{min-width:0}
 .today-three a{display:flex;align-items:center;gap:.65rem;padding:.65rem .75rem;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);color:inherit;text-decoration:none;
   transition:border-color .15s,transform .15s}
 .today-three a:hover{border-color:var(--tone);transform:translateY(-1px)}

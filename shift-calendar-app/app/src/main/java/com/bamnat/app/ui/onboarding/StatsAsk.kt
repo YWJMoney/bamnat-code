@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
  * 같은 자리에서 작은 카드로 묻고, 사용자가 '보낼게요'·'보내지 않을래요' 중 하나를 직접 골라요. 두 단추는 같은 모양과 무게예요.
  * 기본값은 계속 꺼짐이고, 고르지 않고 넘어가도 꺼짐이에요(D42, 개인정보 보호법 제22조). 무엇이 가고 무엇이 안 가는지, 얼마나
  * 남는지는 '보낼 내용 보기'에서 고르기 전에 볼 수 있어요(제15조 제2항). 고른 뒤에는 한 줄로 접히고, 거기서 다시 바꿀 수 있어요.
+ * 7차 PC 1-12부터는 요약 화면 본문이 아니라 첫 설정 아래 막대, '저장하고 달력 보기' 바로 위에 있어요(SetupHost).
  * 같은 값(설정 shareUsageStats)을 켜고 끄므로 첫 설정 누른 횟수(SETUP-20)와 설정 › 개인정보·앱 정보가 그대로 따라와요.
  */
 @Composable
@@ -42,14 +43,15 @@ internal fun StatsAsk(on: Boolean, onChange: (Boolean) -> Unit) {
     // 이 화면에서 한 번 고르면 접혀요. 켜진 채로 들어왔으면(다시 설정 등) 이미 고른 것으로 봐요.
     var answered by rememberSaveable { mutableStateOf(on) }
     var show by rememberSaveable { mutableStateOf(false) }
+    // 1.39 7차 PC 1-12: 요약 화면 맨 아래에 있으면 '이대로 저장할까요?'에서 스크롤해야 보여서, 저장 단추 바로 위(아래 막대)에 작게 둬요.
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         if (answered) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 4.dp),
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 14.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 Text(
                     if (on) "사용 통계를 보내요. 고마워요" else "사용 통계를 보내지 않아요",
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
@@ -57,18 +59,21 @@ internal fun StatsAsk(on: Boolean, onChange: (Boolean) -> Unit) {
                 TextButton(onClick = { answered = false }) { Text("바꾸기") }
             }
         } else {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(Icons.Outlined.Insights, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            Column(Modifier.padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Outlined.Insights, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                     Text("앱을 고치는 데 도움을 주실래요? (선택)", style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.semantics { heading() })
+                        modifier = Modifier.weight(1f).semantics { heading() })
                 }
-                Text(
-                    "어떤 기능을 하루에 몇 번 썼는지만 개발자에게 보내요. 근무·금액·메모·휴대폰 정보는 보내지 않아요. 보내지 않아도 앱은 똑같이 돼요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(onClick = { show = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("보낼 내용 보기") }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "기능 이름과 횟수만 보내요. 근무·금액·메모는 보내지 않아요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { show = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("보낼 내용 보기") }
+                }
+                Row(Modifier.fillMaxWidth().padding(end = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { onChange(false); answered = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                         Text("보내지 않을래요")
                     }
@@ -76,8 +81,6 @@ internal fun StatsAsk(on: Boolean, onChange: (Boolean) -> Unit) {
                         Text("보낼게요")
                     }
                 }
-                Text("설정 › 개인정보·앱 정보에서 언제든 바꿔요.", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -85,7 +88,7 @@ internal fun StatsAsk(on: Boolean, onChange: (Boolean) -> Unit) {
         AlertDialog(
             onDismissRequest = { show = false },
             title = { Text("보낼 내용") },
-            text = { Text(STATS_WHAT) },
+            text = { Text(STATS_WHAT + "\n\n보내지 않아도 앱은 똑같이 돼요. 설정 › 개인정보·앱 정보에서 언제든 바꿔요.") },
             confirmButton = { TextButton(onClick = { show = false }) { Text("확인") } },
         )
     }

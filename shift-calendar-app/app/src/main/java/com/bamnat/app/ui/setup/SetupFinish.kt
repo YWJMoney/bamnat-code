@@ -272,14 +272,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             ShareCycleLine(s.name, on, upload = s.id.isNullOrEmpty()) { vm.shareCycle.value = it }
         }
     }
-    // [EASE-05][ONBOARD-05] 1.38: the first-start page is gone, so its one yes that goes to a server is here, on the first setup only,
-    // never ticked beforehand (D42); 설정 › 개인정보·앱 정보 changes it later.
-    // 1.39 [OBS2-06] 사용자 11-08 관측 범위 'B': 지나치기 쉬운 체크 한 줄 대신 두 단추로 직접 고르는 작은 카드(StatsAsk). 고르지 않으면 꺼짐 그대로.
-    if (vm.calendarId == null && !vm.again) {
-        val c = LocalContext.current.appContainer
-        val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-        com.bamnat.app.ui.onboarding.StatsAsk(settings.shareUsageStats) { c.setUsageStats(it) }
-    }
+    // [EASE-05][ONBOARD-05][OBS2-06] 사용 통계 묻기는 1.39 7차 PC 1-12부터 아래 막대, 저장 단추 바로 위에 있어요(SetupHost).
 }
 
 /** 1.39 [FLOW-04] The answers in words, folded to one line under the month: "교대 근무 · 4조 2교대 · 주간 07:00~19:00 외 1 ▾". */
