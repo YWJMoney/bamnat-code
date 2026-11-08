@@ -182,6 +182,10 @@ const SCAM_TEXT = [
   ["messenger", /오픈\s*채팅|오픈\s*톡|텔레그램|카톡\s*(아이디|id)|카카오톡\s*(아이디|id)|라인\s*아이디|위챗|whats\s*app/i],
 ];
 const digitsIn = (s) => s.replace(/\D/g, "").length;
+/** 1.39 [CARE-09] 걸러내기는 1.39 앱(versionCode 53)부터만 (사용자 2026-11-08 "1.39 앱에서만 걸리게"). 1.38 이하 앱은 헤더가 없어 예전처럼 받고,
+ * 1.39 앱은 `X-Bamnat-App: <versionCode>`를 보내고 거절 이유를 사람 말로 보여 줘요. */
+export const SCAM_SINCE_APP = 53;
+export const scamChecked = (request) => Number(request.headers.get("x-bamnat-app")) >= SCAM_SINCE_APP;
 
 /** Why one of the strings in [value] (any depth) cannot go on a team page, or null. */
 export function scamProblem(value, depth = 0) {
@@ -857,7 +861,7 @@ async function clockCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 2048)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const name = cleanText(body?.name, LIMITS.clockName);
   const place = cleanText(body?.place ?? "", LIMITS.clockPlace);
@@ -989,7 +993,7 @@ async function askCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 16 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const month = isMonth(body?.month) ? body.month : null;
@@ -1202,7 +1206,7 @@ async function callCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 8 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const title = cleanText(body?.title, LIMITS.callTitle);
@@ -1485,7 +1489,7 @@ async function boardCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const board = boardBody(body);
   if (!board || Date.parse(board.expiresAt) < Date.now()) return json({ error: "bad_board" }, 400);
@@ -1510,7 +1514,7 @@ async function boardUpdate(request, env, id) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const board = boardBody(body);
   if (!board) return json({ error: "bad_board" }, 400);
@@ -1557,7 +1561,7 @@ async function signCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 24 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const place = cleanText(body?.place, LIMITS.clockPlace);
   const staff = cleanText(body?.staff, LIMITS.askName);
@@ -1684,7 +1688,7 @@ async function swapCreate(request, env, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const month = typeof body?.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.month) ? body.month : null;
@@ -1735,7 +1739,7 @@ async function swapChange(request, env, id, url) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
   // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
-  const scam = scamProblem(body);
+  const scam = scamChecked(request) ? scamProblem(body) : null;
   if (scam) return json({ error: "contact", why: scam }, 400);
   if (body?.labels !== undefined) {
     const days = record.rows[0]?.length ?? 0;

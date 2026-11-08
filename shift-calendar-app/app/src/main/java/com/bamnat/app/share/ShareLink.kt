@@ -1083,6 +1083,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             token?.let { conn.setRequestProperty("X-Delete-Token", it) }
             etag?.let { conn.setRequestProperty("If-None-Match", it) }
             if (quiet) conn.setRequestProperty("X-Bamnat-Quiet", "1")
+            // 1.39 [CARE-09] 앱 판: 공유 서버가 연락처 걸러내기를 1.39 앱부터만 해요(옛 앱은 예전처럼).
+            conn.setRequestProperty("X-Bamnat-App", BuildConfig.VERSION_CODE.toString())
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
