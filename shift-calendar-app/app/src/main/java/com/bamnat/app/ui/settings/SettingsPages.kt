@@ -869,7 +869,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }, listOf("menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기"), settings.longPress) { v -> vm.update { it.copy(longPress = v) } }
         // B 1.32 [CALX-04] (사용자 2026-10-28 "달력 화면 요소 모두 켜고 끄기"): every card at once; 화면 꾸미기 picks them one by one.
         SwitchRow("달력만 보기", "달력 위아래의 카드(요약·오늘의 흐름·근무시간 줄·메모 목록 등)를 모두 숨겨요. 하나씩 고르려면 달력 › 도구 › 화면 꾸미기",
-            settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on) } }
+            settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on, viewAsked = true) } }
         // B 1.32 [CALX-03] 한 번 눌러 고르기, for a calendar looked over day by day before anything opens.
         SwitchRow("한 번 눌러 고르기", "처음 누르면 그 날만 골라지고(테두리), 같은 날을 한 번 더 누르면 열려요. 잘못 눌러 화면이 열리는 일이 줄어요",
             settings.tapSelectFirst) { on -> vm.update { it.copy(tapSelectFirst = on) } }

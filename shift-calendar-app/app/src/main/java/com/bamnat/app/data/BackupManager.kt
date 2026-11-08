@@ -1105,6 +1105,7 @@ class BackupManager(
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
                     weekHoursNudge = o.optBoolean("weekHoursNudge", s.weekHoursNudge),
                     calendarOnly = o.optBoolean("calendarOnly", false),
+                    viewAsked = true, // 1.39 [CALX-07] a restored backup brings its own view: not asked again
                     statsPeriod = StatsPeriod.read(o.optString("statsPeriod").ifEmpty { null }, o.optBoolean("statsPayPeriod", false)),
                     moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),

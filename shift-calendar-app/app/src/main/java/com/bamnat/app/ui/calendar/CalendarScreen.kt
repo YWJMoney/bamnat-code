@@ -812,6 +812,10 @@ fun CalendarScreen(
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
     // How far down the month the FAB may not go: the rows with this month's days where the FAB rests (the right side).
     var ownRowsPx by remember { mutableFloatStateOf(Float.NaN) }
+    // 1.39 [CALX-07] (사용자 2026-11-08 "달력만 보기인데 밑에 더 이상 내용이 없는데 스크롤이 돼"): how tall what stands under the month is
+    // (안내·카드). With nothing there the page keeps only the FAB's room under the month, not the room for a last card as well, so a
+    // month that fits does not scroll into empty space.
+    var belowPx by remember { mutableIntStateOf(-1) }
     val docking = paint == null && !listView && !(weekOnly && !wide)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val fabLift = with(density) { (FAB_MARGIN + FAB_HEIGHT).toPx() }
@@ -1604,6 +1608,11 @@ fun CalendarScreen(
             val fillMine = fillMoment?.takeIf { it.calendar == activeCalendar.id && paint == null }
             val fillNow = rememberSetupFill(fillMine, activeCalendar.id, ready = !snap.isEmpty)
             if (fillMine != null) SetupFillCard(fillMine, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            // 1.39 [CALX-07] Once on a new install, after the month has filled: 달력만 or with the cards.
+            else if (!settings.viewAsked && paint == null && viewingReceived == null) {
+                CalendarViewAsk(settings.calendarOnly, onAnswer = { only -> vm.updateSettings { it.copy(calendarOnly = only, viewAsked = true) } },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            }
             if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
             BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)
@@ -1743,6 +1752,7 @@ fun CalendarScreen(
             Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
+            Column(Modifier.fillMaxWidth().onSizeChanged { belowPx = it.height }) {
             if (settled) guidePart()
             if (settled) calendarParts.filter { !isAbove(it.part) && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
                 when (placed.part) {
@@ -1751,6 +1761,7 @@ fun CalendarScreen(
                     CalendarPart.COUNTS -> MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                     else -> aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
                 }
+            }
             }
         }
     }
@@ -1779,6 +1790,8 @@ fun CalendarScreen(
     }
 
     val bottomSpace = if (paint != null) 132.dp else 88.dp
+    // 1.39 [CALX-07] The scrolling page's own end: nothing under the month, no room for a card that is not there.
+    val pageEnd = if (paint == null && settled && belowPx == 0) 0.dp else bottomSpace
     val fab: @Composable BoxScope.() -> Unit = {
         // [CAL-15] Where the FAB rests: the bottom of the area it floats in.
         Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaBottom = c.positionInWindow().y + c.size.height })
@@ -1846,7 +1859,7 @@ fun CalendarScreen(
                             Modifier
                                 .fillMaxSize()
                                 .verticalScroll(pageScroll)
-                                .padding(bottom = bottomSpace),
+                                .padding(bottom = pageEnd),
                         ) { calendarPart() }
                         fab()
                     }
@@ -1874,7 +1887,7 @@ fun CalendarScreen(
                             Modifier
                                 .fillMaxSize()
                                 .verticalScroll(pageScroll)
-                                .padding(bottom = bottomSpace),
+                                .padding(bottom = pageEnd),
                         ) { calendarPart() }
                         fab()
                     }
@@ -1906,7 +1919,7 @@ fun CalendarScreen(
                     .fillMaxSize()
                     .imePadding()
                     .verticalScroll(pageScroll)
-                    .padding(bottom = bottomSpace),
+                    .padding(bottom = pageEnd),
             ) {
                 com.bamnat.app.ui.theme.PhotoHead()
                 calendarPart()
@@ -2260,8 +2273,8 @@ private fun CalendarHeader(
                 slots.toMutableList().apply {
                     // B 1.32 [CALX-04] 달력만 보기 in one tap, and back.
                     val only = context.appContainer.settingsRepository.current.calendarOnly
-                    add(at, CalendarTool(if (only) "카드 다시 보이기" else "달력만 보기", Icons.Outlined.Apps, onClick = {
-                        context.appContainer.settingsRepository.update { it.copy(calendarOnly = !only) }
+                    add(at, CalendarTool(if (only) "카드도 함께 보기" else "달력만 보기", Icons.Outlined.Apps, onClick = {
+                        context.appContainer.settingsRepository.update { it.copy(calendarOnly = !only, viewAsked = true) }
                     }))
                     recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
                     // [PLAZA-06] U25-나: the first setup again, a way out of the calendar, so last in that row and nothing moves

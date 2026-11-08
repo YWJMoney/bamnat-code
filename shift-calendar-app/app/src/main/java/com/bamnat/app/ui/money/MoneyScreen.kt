@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -922,13 +923,13 @@ fun MoneyScreen(
             when (page) {
                 MoneyViewModel.Page.SUMMARY -> if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+                        Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { left(); Spacer(Modifier.height(FabClearance)) }
-                        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+                        Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { right(); Spacer(Modifier.height(FabClearance)) }
                     }
                 } else {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+                    Column(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) {
                         MoneyLayered(placed, gap, settings.moneyCheckOpen, onCheck) { draw(it) }
                         Spacer(Modifier.height(FabClearance))

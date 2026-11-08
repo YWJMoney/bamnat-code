@@ -244,6 +244,13 @@ data class AppSettings(
     val weekHoursNudge: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
     val calendarOnly: Boolean = false,
+    /**
+     * 1.39 [CALX-07] (사용자 2026-11-08 "달력만 보기가 기본값, 카드 보기는 선택, 처음 달력 칸을 볼 때 고르게"): whether the one-time
+     * '달력만 볼까요, 카드도 함께 볼까요' line over the month was answered. A new install starts on 달력만 보기 with it unanswered
+     * ([com.bamnat.app.ui.onboarding.QuietStart.newView], at the first setup); a phone that had the app before keeps its own view and
+     * is not asked.
+     */
+    val viewAsked: Boolean = true,
     /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. 1.39 [PAYX-60] three ways. */
     val statsPeriod: StatsPeriod = StatsPeriod.AUTO,
     /** 1.37 [LEDH-06] 가계부 예산·하루 쓸 돈을 월급날~다음 월급날 전날로 봄 (급여일 주기); off is 1일~말일. In the backup. */
@@ -536,6 +543,7 @@ class SettingsRepository(context: Context) {
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             weekHoursNudge = prefs.getBoolean(K_WEEK_HOURS_NUDGE, d.weekHoursNudge),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
+            viewAsked = prefs.getBoolean(K_VIEW_ASKED, d.viewAsked),
             statsPeriod = StatsPeriod.read(prefs.getString(K_STATS_PERIOD_WAY, null), prefs.getBoolean(K_STATS_PERIOD, false)),
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
@@ -675,6 +683,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_WEEK_HOURS_NUDGE, s.weekHoursNudge)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
+            .putBoolean(K_VIEW_ASKED, s.viewAsked)
             .putString(K_STATS_PERIOD_WAY, s.statsPeriod.name)
             .putBoolean(K_STATS_PERIOD, s.statsPeriod == StatsPeriod.PAY)
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
@@ -748,6 +757,7 @@ class SettingsRepository(context: Context) {
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_WEEK_HOURS_NUDGE = "week_hours_nudge"
         const val K_CAL_ONLY = "calendar_only"
+        const val K_VIEW_ASKED = "calendar_view_asked"
         const val K_STATS_PERIOD = "stats_pay_period"
         const val K_STATS_PERIOD_WAY = "stats_period_way"
         const val K_APP_LOCK = "app_lock"

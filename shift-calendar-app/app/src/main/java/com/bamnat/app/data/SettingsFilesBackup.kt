@@ -190,6 +190,7 @@ class SettingsFilesBackup(
          * "settings"; a test fails when a new field is in neither.
          */
         val SETTINGS_ON_PHONE = mapOf(
+            "viewAsked" to "처음 달력의 보기 묻기(1.39 CALX-07), 복원한 백업은 그 보기 그대로라 다시 묻지 않아요",
             "hideAmounts" to "금액 가리기는 이 휴대폰을 남에게 보일 때 쓰는 것",
             "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
             "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",

@@ -23,9 +23,15 @@ object QuietStart {
         val available = ConsentChecks.available(ctx, container.healthSleep, container.consentStore)
         val start = RecommendedPlan.forStyle(style).start
         container.settingsRepository.update { s ->
-            if (keepRestored && RecommendedSettings.on(s).isNotEmpty()) s else RecommendedSettings.apply(s, start)
+            (if (keepRestored && RecommendedSettings.on(s).isNotEmpty()) s else RecommendedSettings.apply(s, start)).let { if (keepRestored) it else newView(it) }
         }
         container.consentStore.markFirstStartDone(available)
         container.consentStore.markRecommendOffered()
     }
+
+    /**
+     * 1.39 [CALX-07] (사용자 2026-11-08 "달력만 보기가 기본값, 카드 보기는 선택값, 처음 달력 칸을 볼 때 고르게"): a phone set up fresh opens
+     * on 달력만 보기 and is asked once over its first month ([com.bamnat.app.ui.calendar.CalendarViewAsk]). A backup keeps its own view.
+     */
+    fun newView(s: com.bamnat.app.data.AppSettings): com.bamnat.app.data.AppSettings = s.copy(calendarOnly = true, viewAsked = false)
 }

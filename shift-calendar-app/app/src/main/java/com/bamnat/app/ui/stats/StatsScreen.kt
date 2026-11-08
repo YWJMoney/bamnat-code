@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -205,6 +206,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     Column(
         Modifier
             .fillMaxSize()
+            // 1.39 [CALX-08] A sideways swipe turns the month (the week, on 주), as ‹ › do.
+            .monthSwipe(month to rangeMode) { step ->
+                if (rangeMode == com.bamnat.core.hours.StatsRange.Mode.WEEK) weekShift += step else vm.showMonth(month.plusMonths(step.toLong()))
+            }
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
