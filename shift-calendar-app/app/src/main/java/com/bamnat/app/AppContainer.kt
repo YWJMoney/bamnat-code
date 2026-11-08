@@ -198,7 +198,8 @@ class AppContainer(context: Context) {
     /** 1.39 [SETUP-20] 첫 설정 누른 횟수 for 사용 통계 (처리방침 3.12), counted from the first open of a new install. */
     val setupTaps = com.bamnat.app.diag.SetupTapStats(context.applicationContext,
         allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.SetupTapStats.policyAllows() })
-    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats, setupTaps = setupTaps)
+    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats, setupTaps = setupTaps,
+        style = { settingsRepository.current.workStyle?.name }) // 1.39 [OBS2-08] 유형별 흐름 (stats.kind)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
         soonMinutes = { settingsRepository.current.alarmSoonMinutes }, guard = { settingsRepository.current.alarmGuard })
@@ -531,6 +532,9 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.SetupTapStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_SETUP) }
         // 1.39 [STAT2-02]: 처음 연 날·다시 연 날 counts from 처리방침 3.12's date on (the `stats.life` row turns on by itself that day).
         com.bamnat.app.diag.UsageStats.lifeAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LIFE) }
+        // 1.39 [OBS2-08]: 유형별 흐름·기능과 머묾 from 처리방침 3.12's date on (사용자 2026-11-08 '유형별·기능 둘만').
+        com.bamnat.app.diag.UsageStats.kindAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KIND) }
+        com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }

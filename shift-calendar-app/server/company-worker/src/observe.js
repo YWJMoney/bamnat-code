@@ -2,7 +2,8 @@ import { audit, batch, can, json, one, playVitals, randomId, readJson, refuse, r
 import { DEV, actorName, devEvent, plainText } from "./inquiries.js";
 import { playReady, playToken } from "./money.js";
 import { serverEval, flagStore } from "./flags.js";
-import { EVENTS, kstDay } from "./usage.js";
+import { EVENTS, SETUP_STEPS, kstDay } from "./usage.js";
+import { retention } from "./glance.js";
 import { MISS_PLACES } from "./growth.js";
 import { DAY, HOUR } from "./units.js";
 
@@ -29,6 +30,16 @@ import { DAY, HOUR } from "./units.js";
 
 export const OBS = {
   days: 28,
+  /** 1.39 [OBS2-08] 유형별 흐름·기능과 머묾은 61일(30일째 머묾과 30일 창이 끝난 날까지). */
+  longDays: 61,
+  /** [OBS2-09] Play 권한은 저장한 뒤 퍼지는 데 하루까지 걸려요: 처음 막힌 뒤 이만큼은 '기다리는 것'으로. */
+  permWaitMs: 26 * HOUR,
+  /** [OBS2-09] '지금 다시 확인'은 이보다 자주 Google에 묻지 않아요. */
+  refreshMs: 2 * 60 * 1000,
+  /** 기능과 머묾: 쓴 휴대폰이 이보다 적은 기능은 비율을 보이지 않아요. */
+  keepMin: 20,
+  /** 유형별 흐름 신호: 7일째를 알 수 있는 처음 연 휴대폰이 이만큼 있어야 견줘요. */
+  kindMin: 30,
   scope: "https://www.googleapis.com/auth/devstorage.read_only",
   storage: "https://storage.googleapis.com/storage/v1/b",
   /** 보고서는 하루 한 번 바뀌어요: 12시간(실패는 1시간) 둬요. */
@@ -59,7 +70,7 @@ const obsRound1 = (v) => (v === null || v === undefined || !Number.isFinite(v) ?
 const obsSum = (a) => a.reduce((n, v) => n + (v ?? 0), 0);
 const obsAvg = (a) => (a.length ? obsSum(a) / a.length : 0);
 
-/** PLAY_REPORTS_BUCKET: 'pubsite_prod_rev_0123…', 'gs://pubsite_prod_rev_0123…/stats' 어느 쪽이든 저장소 이름만. 아니면 null. */
+/** PLAY_REPORTS_BUCKET: 'pubsite_prod_0123…'(숫자는 개발자 계정 ID, 옛 계정은 pubsite_prod_rev_…), 'gs://pubsite_prod_0123…/stats/installs/' 어느 쪽이든 저장소 이름만. 아니면 null. */
 export function obsBucket(env) {
   const raw = typeof env.PLAY_REPORTS_BUCKET === "string" ? env.PLAY_REPORTS_BUCKET.trim() : "";
   const name = raw.replace(/^gs:\/\//, "").split("/")[0];
@@ -193,7 +204,8 @@ export function obsParse(files, keepDays = OBS.keepDays) {
       const d = obsDay(r.date);
       const code = obsNum(r, "app version code");
       if (!d || code === null) continue;
-      versionRows.push({ day: d, code, active: obsNum(r, "active device installs"), installs: obsNum(r, "install events", "daily device installs", "daily device upgrades") });
+      versionRows.push({ day: d, code, active: obsNum(r, "active device installs"), installs: obsNum(r, "install events", "daily device installs", "daily device upgrades"),
+        uninstalls: obsNum(r, "uninstall events", "daily device uninstalls", "daily user uninstalls") });
     }
   }
   const list = [...days.values()].sort((a, b) => (a.day < b.day ? -1 : 1)).slice(-keepDays);
@@ -212,7 +224,12 @@ export function obsParse(files, keepDays = OBS.keepDays) {
   const first = {};
   for (const r of versionRows) if ((r.active ?? r.installs ?? 0) > 0 && (!first[r.code] || r.day < first[r.code])) first[r.code] = r.day;
   const vDay = versionRows.reduce((m, r) => (r.day > m ? r.day : m), "");
-  const vRows = versionRows.filter((r) => r.day === vDay).map((r) => ({ code: r.code, n: r.active ?? r.installs ?? 0 })).sort((a, b) => b.code - a.code);
+  // [OBS2-09] 판마다 최근 7일 삭제: '어느 판에서 지우는지'(지운 이유 대신, 동의 없이 Play가 세는 것).
+  const out7 = new Map();
+  const from7 = vDay ? new Date(Date.parse(`${vDay}T00:00:00Z`) - 6 * DAY).toISOString().slice(0, 10) : "";
+  for (const r of versionRows) if (r.day >= from7 && r.uninstalls) out7.set(r.code, (out7.get(r.code) ?? 0) + r.uninstalls);
+  const vRows = versionRows.filter((r) => r.day === vDay).map((r) => ({ code: r.code, n: r.active ?? r.installs ?? 0, out7: out7.get(r.code) ?? 0 }))
+    .sort((a, b) => b.code - a.code);
   return { days: list, lastDay, sources, versions: vDay ? { day: vDay, rows: vRows, first } : null };
 }
 
@@ -264,10 +281,13 @@ export async function playReports(env, now = Date.now(), force = false) {
     // 지난번 날짜 줄 중 이번에 없는 날(석 달보다 앞)은 이어 붙여요.
     const old = (before?.value?.days ?? []).filter((d) => !got.days.some((x) => x.day === d.day));
     const days = [...old, ...got.days].sort((a, b) => (a.day < b.day ? -1 : 1)).slice(-OBS.keepDays);
-    value = { state: "ok", at: now, days, lastDay: days.at(-1)?.day ?? null, sources: got.sources, versions: got.versions,
+    value = { state: "ok", at: now, okSince: before?.value?.state === "ok" ? before.value.okSince ?? now : now, days, lastDay: days.at(-1)?.day ?? null, sources: got.sources, versions: got.versions,
       files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.length > 0])) };
   } catch (e) {
-    value = { state: e?.code === "denied" ? "denied" : "unreachable", at: now, ...(before?.value?.days ? { days: before.value.days, lastDay: before.value.lastDay,
+    const state = e?.code === "denied" ? "denied" : "unreachable";
+    // [OBS2-09] 처음 막힌 때: 권한을 막 저장했다면 퍼지는 동안(하루까지)은 할 일이 아니라 기다리는 것이에요.
+    const deniedSince = state === "denied" ? (before?.value?.state === "denied" && before.value.deniedSince) || now : null;
+    value = { state, at: now, ...(deniedSince ? { deniedSince } : {}), ...(before?.value?.days ? { days: before.value.days, lastDay: before.value.lastDay,
       sources: before.value.sources, versions: before.value.versions, stale: true } : {}) };
   }
   const keep = { value, until: now + (value.state === "ok" ? OBS.keepMs : OBS.failMs) };
@@ -398,6 +418,17 @@ export function obsRules(b) {
       title: `처음 연 다음 날 다시 연 휴대폰이 ${s.keep.d1.rate}%예요`, why: "첫 설정 뒤 첫날 경험(달력이 찼는지, 알람이 맞는지)을 봐요. 사용 통계 표본이에요.",
       dev: "첫날 머묾 올리기(첫 설정 끝·첫 알람 점검)", to: "#/glance" });
   }
+  // 1.39 [OBS2-08] 유형별 흐름: 한 유형의 7일째 머묾이 전체의 70% 아래.
+  const k = b.kinds;
+  if (k?.all?.d7?.rate !== null && k?.all?.d7?.rate !== undefined && k.all.d7.base >= OBS.kindMin) {
+    for (const r of k.rows) {
+      if ((r.d7?.base ?? 0) < OBS.kindMin || r.d7.rate === null) continue;
+      push({ kind: "kind-keep-low", subject: r.style, value: r.d7.rate, base: k.all.d7.rate, better: "up", unit: "%", on: r.d7.rate < k.all.d7.rate * 0.7, tone: "bad",
+        title: `${r.name} 유형의 7일째 머묾이 ${r.d7.rate}%로 전체 ${k.all.d7.rate}%보다 낮아요`,
+        why: "그 유형의 첫 설정·첫 주에 맞지 않는 말·기능이 있는지 봐요(유형별 둘러보기). 사용 통계 표본이에요.",
+        dev: `${r.name} 유형 첫 주 이탈 줄이기(첫 설정·홈·알람 둘러보기)`, to: "#/glance" });
+    }
+  }
   for (const f of (s?.features ?? []).slice(0, OBS.featureSignals)) {
     push({ kind: "feature-fall", subject: f.event, value: f.now, base: f.before, better: "up", unit: "대", on: true,
       title: `'${f.name}' 쓰는 휴대폰이 반 넘게 줄었어요(7일 ${f.now}, 그 전 ${f.before})`,
@@ -474,25 +505,117 @@ export const OBS_BADGE_SQL = {
  */
 export function obsGaps(b) {
   const out = [];
-  const add = (key, title, need, how, policy = false) => out.push({ key, title, need, how, policy });
+  // [OBS2-09] 사용자 2026-11-08 '이미 해결된 것도 보이네': state todo(할 일) · wait(기다리면 저절로 풀림) · decided(사용자가 정함).
+  const add = (key, title, need, how, policy = false, state = "todo") => out.push({ key, title, need, how, policy, state });
+  const now = b.at ?? Date.now();
   const r = b.play;
   if (r?.state === "off") add("play-account", "Play 숫자를 아직 못 읽어요", "Play 서비스 계정(PLAY_SERVICE_ACCOUNT)", "관리 › 서버 상태의 설정 칸을 따라 넣어요");
   else if (r?.state === "nobucket") add("play-bucket", "설치·삭제·스토어 전환·출처가 비어 있어요", "Play 보고서 저장소 이름(PLAY_REPORTS_BUCKET)",
     "Play Console › 보고서 다운로드 › 통계에서 'Cloud Storage URI 복사' → 서버 변수 PLAY_REPORTS_BUCKET, 서비스 계정에 '앱 정보 보기 및 대량 보고서 다운로드' 권한");
-  else if (r?.state === "denied") add("play-denied", "Play 보고서 저장소가 서비스 계정을 막고 있어요", "'앱 정보 보기 및 대량 보고서 다운로드' 권한",
-    "Play Console › 사용자 및 권한에서 서비스 계정에 그 권한을 줘요(바뀌는 데 하루까지 걸려요)");
+  else if (r?.state === "denied") {
+    const since = r.deniedSince ?? now;
+    const left = since + OBS.permWaitMs - now;
+    if (left > 0) add("play-denied", `Play 보고서 권한이 퍼지는 중이에요(약 ${Math.max(1, Math.ceil(left / HOUR))}시간 안에)`, "기다리기만 하면 돼요",
+      "권한을 저장한 뒤 Google 쪽에 퍼지는 데 하루까지 걸려요. 서버가 1시간마다 다시 읽고, '지금 다시 확인'으로 바로 볼 수도 있어요", false, "wait");
+    else add("play-denied", "Play 보고서 저장소가 하루 넘게 서비스 계정을 막고 있어요", "'앱 정보 보기 및 대량 보고서 다운로드' 권한",
+      "Play Console › 사용자 및 권한에서 서비스 계정에 그 권한이 '모든 앱'(또는 밤낮)으로 저장됐는지, PLAY_REPORTS_BUCKET이 그 계정의 저장소인지 봐요");
+  }
   else if (r?.state === "ok" && !r.files?.store) add("play-store", "스토어 방문·전환·출처 파일이 없어요", "Play 보고서의 store_performance 파일", "Play Console에서 그 보고서가 나오는지 보고, 이름이 바뀌었으면 알려 주세요");
   if (b.quality?.vitals?.error === "denied") add("vitals-denied", "비정상 종료·하루 사용자가 비어 있어요", "Play Developer Reporting 권한", "서비스 계정에 '앱 품질 정보 보기' 권한을 줘요");
   if ((b.sample?.daily ?? 0) < 30) add("sample-small", `사용 통계를 보내는 휴대폰이 하루 ${b.sample?.daily ?? 0}대라 머묾·기능 쓰임이 흔들려요`,
-    "더 많은 동의(1.39 첫 설정 끝 묻기 카드)", "1.39가 퍼지면 늘어요. 그때까지는 Play 숫자를 먼저 봐요");
-  if (b.sample && !b.sample.lifeOn) add("life-off", "진입·머묾·회복(사용 통계)은 처리방침 3.12 시행일부터 모여요", "처리방침 3.12 시행", "기능 관리 › 일정의 3.12 날짜");
-  add("by-type", "근무 유형(교대·일근·알바·현장·자영업·투자)마다 어디서 빠지는지 몰라요", "진입·머묾에 근무 유형을 붙이기", "처리방침 3.13 문장과 시행일이 필요해요", true);
-  add("feature-keep", "어떤 기능을 쓴 사람이 더 오래 남는지 몰라요", "'기능을 쓴 날 + 7일째 다시 연 날' 묶음 이벤트", "처리방침 문장이 필요해요(G7-S5)", true);
-  add("why-leave", "앱을 지운 이유를 몰라요", "지우기 전 마지막 화면·마지막 오류 묶음(휴대폰 구별 없이)", "Android는 지울 때 묻지 못해요. 마지막 화면 합계는 처리방침 문장이 필요해요", true);
+    "1.39 출시(첫 설정 끝 사용 통계 묻기 카드)", "1.39가 퍼지면 늘어요. 그동안 전체 사용자 칸(Play·서버 요청)은 동의와 상관없이 모든 휴대폰을 세요", false, "wait");
+  // [OBS2-09] 처리방침 3.12 시행일에 함께 켜지는 셋은 한 줄로.
+  const at312 = [];
+  if (b.sample && !b.sample.lifeOn) at312.push("진입·머묾·회복");
+  // 1.39 [OBS2-08] 사용자 2026-11-08 결정 '유형별·기능 둘만': 둘은 처리방침 3.12에 넣어 시행일에 켜져요. 지운 이유는 넣지 않았어요.
+  if (!b.kinds) at312.push("유형별 흐름");
+  if (!b.keep) at312.push("기능과 머묾");
+  if (at312.length) add("at-312", `${at312.join(" · ")}은 처리방침 3.12 시행일에 저절로 켜져요`, "처리방침 3.12 시행(사용자 결정대로 문장 넣음)",
+    "기능 관리 › 일정에 3.12 날짜가 들어가면 그날부터 모여요. 그 전에는 휴대폰도 보내지 않아요", false, "wait");
+  if (b.kinds && (b.kinds.all?.d7?.base ?? 0) < OBS.kindMin) add("by-type", `유형별 흐름 표본이 아직 적어요(7일째를 알 수 있는 처음 연 휴대폰 ${b.kinds.all?.d7?.base ?? 0}대)`,
+    `${OBS.kindMin}대 이상`, "시행일 뒤 몇 주가 지나면 차요", false, "wait");
+  if (b.keep && !b.keep.rows.length) add("feature-keep", "기능과 머묾 표본이 아직 적어요", `기능마다 쓴 휴대폰 ${OBS.keepMin}대 이상(7일 창이 끝난 날)`,
+    "시행일 뒤 1~2주가 지나면 차요", false, "wait");
+  add("why-leave", "지운 이유는 새로 모으지 않아요", "사용자 결정 2026-11-08(지우기 전 마지막 화면 빼기)",
+    "대신 Play 하루 삭제 수와 판마다 최근 7일 삭제(전체 사용자 › 판별), 삭제 급증 신호, 1~2점 리뷰·문의로 봐요", true, "decided");
   const noEvents = b.dev?.noEvents ?? [];
   if (noEvents.length) add("dev-events", `효과를 잴 이벤트 없이 진행·완료된 개발사항 ${b.dev.noEventsCount}개`, "개발사항마다 events(쓰임을 셀 이벤트 이름)",
     `dev-status.jsonl에 events를 적으면 요금 판단·기능별 효과가 그 숫자를 써요. 예: ${noEvents.map((d) => d.title).slice(0, 3).join(" · ")}`);
   return out;
+}
+
+// 1.39 [OBS2-08] 유형별 흐름·기능과 머묾 ---------------------------------------------------------------------------------
+/** 일하는 방식의 짧은 이름(앱 WorkStyle 순서). */
+export const OBS_STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+
+/** [OBS.longDays]일 날 목록(KST, 오늘 포함). */
+export function obsLongDays(now) {
+  const out = [];
+  for (let i = OBS.longDays - 1; i >= 0; i--) out.push(kstDay(now - i * DAY));
+  return out;
+}
+
+/**
+ * 유형별 흐름: usage_kinds 줄({day, style, event, phones})을 유형마다 진입(처음 연 휴대폰)과 1·7·30일째 머묾으로. 숫자 › 한눈에의 머묾과 같은 셈
+ * (glance retention)이고, all은 유형을 보낸 휴대폰 전체예요.
+ */
+export function obsKinds(rows, list) {
+  const per = new Map();
+  for (const r of rows) {
+    const s = per.get(r.style) ?? {};
+    const m = (s[r.event] ??= new Map());
+    m.set(r.day, (m.get(r.day) ?? 0) + (r.phones ?? 0));
+    per.set(r.style, s);
+  }
+  const all = {};
+  for (const s of per.values()) {
+    for (const [e, m] of Object.entries(s)) {
+      const a = (all[e] ??= new Map());
+      for (const [d, n] of m) a.set(d, (a.get(d) ?? 0) + n);
+    }
+  }
+  const row = (style, s) => {
+    let n = 0;
+    for (const v of s.life_new?.values() ?? []) n += v;
+    return { style, name: OBS_STYLE_NAMES[style] ?? "전체", new: n, d1: retention(list, s, 1), d7: retention(list, s, 7), d30: retention(list, s, 30) };
+  };
+  return { rows: SETUP_STEPS.setup.filter((st) => per.has(st)).map((st) => row(st, per.get(st))), all: row("ALL", all) };
+}
+
+/**
+ * 기능과 머묾: 그날 그 기능을 쓴 휴대폰(usage_events) 가운데 7일 안(또는 30일 안)에 다시 연 휴대폰(usage_keep)의 비율. 창이 끝난 날만 더하고,
+ * [since](깃발이 켜진 날) 앞의 날은 빼요. 'open'은 그날 연 휴대폰 전체라 기준(base)이에요. lift7은 기준과의 차이(%p).
+ */
+export function obsKeep(useRows, keepRows, list, since, names = {}) {
+  const n = list.length;
+  const after = (d) => !since || d >= since;
+  const c7 = new Set(list.slice(Math.max(0, n - 38), Math.max(0, n - 8)).filter(after));
+  const c30 = new Set(list.slice(0, Math.max(0, n - 31)).filter(after));
+  const by = new Map();
+  const get = (e) => {
+    if (!by.has(e)) by.set(e, { event: e, users7: 0, back7: 0, users30: 0, back30: 0 });
+    return by.get(e);
+  };
+  for (const r of useRows) {
+    if (/^life_/.test(r.event)) continue;
+    if (c7.has(r.day)) get(r.event).users7 += r.phones ?? 0;
+    if (c30.has(r.day)) get(r.event).users30 += r.phones ?? 0;
+  }
+  for (const r of keepRows) {
+    if (/^life_/.test(r.event)) continue;
+    const x = get(r.event);
+    if (c7.has(r.day) && r.win === 7) x.back7 += r.phones ?? 0;
+    if (c30.has(r.day)) x.back30 += r.phones ?? 0;
+  }
+  const pct = (a, b) => (b ? obsRound1((Math.min(a, b) / b) * 100) : null);
+  const rows = [...by.values()].map((x) => ({ event: x.event, name: names[x.event] ?? x.event, users: x.users7, rate7: pct(x.back7, x.users7),
+    users30: x.users30, rate30: pct(x.back30, x.users30) }));
+  const base = rows.find((r) => r.event === "open") ?? null;
+  for (const r of rows) r.lift7 = base?.rate7 !== null && base?.rate7 !== undefined && r.rate7 !== null ? obsRound1(r.rate7 - base.rate7) : null;
+  const shown = rows.filter((r) => r.event !== "open" && r.users >= OBS.keepMin).sort((a, b) => (b.lift7 ?? -1e9) - (a.lift7 ?? -1e9));
+  const days7 = [...c7].sort();
+  return { base, rows: shown, small: rows.filter((r) => r.event !== "open" && r.users > 0 && r.users < OBS.keepMin).length,
+    from: days7[0] ?? null, to: days7.at(-1) ?? null };
 }
 
 /** 사용 통계 표본의 기능 이벤트 중 최근 7일 쓰는 휴대폰이 그 전 7일의 반 아래로 줄어든 것(그 전 20대 이상). */
@@ -547,16 +670,31 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   const vit = vitals && !vitals.error ? { crash: vitals.crash === null ? null : Math.round(vitals.crash * 10000) / 100,
     anr: vitals.anr === null ? null : Math.round(vitals.anr * 10000) / 100, users: vitals.users ?? null, day: vitals.day ?? null } : vitals?.error ? { error: vitals.error } : null;
   const lifeOn = store ? serverEval(store, "stats.life", now).on : false;
+  // 1.39 [OBS2-08] 유형별 흐름·기능과 머묾: 깃발(처리방침 3.12)이 켜진 뒤에만 읽어요.
+  const kindOn = store ? serverEval(store, "stats.kind", now).on : false;
+  const keepOn = store ? serverEval(store, "stats.keep", now).on : false;
+  const long = obsLongDays(now);
+  const more = kindOn || keepOn ? (await batch(env, [
+    ...(kindOn ? [stmt(env, "SELECT day, style, event, SUM(phones) AS phones FROM usage_kinds WHERE day >= ? GROUP BY day, style, event", long[0])] : []),
+    ...(keepOn ? [stmt(env, "SELECT day, event, SUM(phones) AS phones FROM usage_events WHERE day BETWEEN ? AND ? GROUP BY day, event", long[0], long.at(-9)),
+      stmt(env, "SELECT day, event, win, SUM(phones) AS phones FROM usage_keep WHERE day >= ? GROUP BY day, event, win", long[0])] : []),
+  ]).catch(() => null))?.map((r) => r.results ?? []) ?? null : null;
+  const keepState = store?.state?.get("stats.keep");
+  const keepSince = keepState?.on_now && Number.isFinite(Number(keepState.since)) ? kstDay(Number(keepState.since)) : null;
+  const kinds = kindOn && more ? obsKinds(more[0], long) : null;
+  const keep = keepOn && more ? obsKeep(more.at(-2), more.at(-1), long, keepSince, names) : null;
   const last7 = sampleSeries.slice(-7);
   const board = {
     at: now, days, play: { state: reports.state, stale: reports.stale ?? false, lastDay: reports.lastDay ?? null, days: playRows, sources: reports.sources ?? [],
-      versions: reports.versions ?? null, files: reports.files ?? null },
+      versions: reports.versions ?? null, files: reports.files ?? null, at: reports.at ?? null, deniedSince: reports.deniedSince ?? null },
     active: { play: vSeries, config },
     quality: { vitals: vit },
     sample: { daily: Math.round(obsAvg(last7)), series: sampleSeries, lifeOn, features: obsFeatureFalls(eventRows, from7, names) },
     voice: { misses, inquiries: { n: inqRows[0]?.n ?? 0, week: inqRows[0]?.week ?? 0 },
       reviews: { n: revRows[0]?.n ?? 0, stars: revRows[0]?.stars === null || revRows[0]?.stars === undefined ? null : obsRound1(revRows[0].stars), week: revRows[0]?.week ?? 0 } },
     dev: { noEvents: noEvRows.map((d) => ({ id: d.id, title: d.title })), noEventsCount: noEvCount[0]?.n ?? 0 },
+    kinds,
+    keep,
   };
   board.found = obsRules(board);
   board.signals = stored;
@@ -584,6 +722,19 @@ export async function observeRoute(request, env, path, method, now) {
   if (!can(actor, "metrics", "view")) return json({ error: "no_permission", area: "metrics" }, 403);
   if (path === "/observe" && method === "GET") return json(await observe(env, now));
   if (path === "/observe/signals" && method === "GET") return json({ list: await obsStored(env) });
+  // [OBS2-09] '지금 다시 확인': Play 보고서를 바로 다시 읽어요(2분에 한 번까지).
+  if (path === "/observe/refresh" && method === "POST") {
+    if (!can(actor, "metrics", "edit") && !can(actor, "dev", "edit")) return json({ error: "no_permission", area: "metrics" }, 403);
+    const last = await one(env, "SELECT value FROM settings WHERE key = 'play_reports'").catch(() => null);
+    let at = 0;
+    try {
+      at = JSON.parse(last?.value ?? "{}")?.value?.at ?? 0;
+    } catch {
+      at = 0;
+    }
+    const r = now - at < OBS.refreshMs ? await playReports(env, now) : await playReports(env, now, true);
+    return json({ ok: true, state: r.state, at: r.at ?? null, again: now - at < OBS.refreshMs });
+  }
   if (path !== "/observe/signals" || method !== "POST") return null;
   const body = await readJson(request, 8 * 1024);
   const act = Object.hasOwn(OBS_ACTS, body.act) ? body.act : refuse("act", "act");
