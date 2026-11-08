@@ -82,12 +82,12 @@ class MemoRepository(
      * Any other memo gets null. No such memo: no schedule is read at all.
      */
     fun shiftLookup(list: List<Memo>, calendar: String): Flow<(Memo) -> MemoRepeat.ShiftOf?> {
-        val cals = list.filter { MemoRepeat.kindOf(it.repeat) == MemoRepeat.Kind.SHIFT }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
+        val cals = list.filter { MemoRepeat.followsSchedule(it.repeat) }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
         if (cals.isEmpty()) return flowOf { _: Memo -> null }
         return combine(cals.map { c -> shiftsOf(c).map { c to it } }) { pairs ->
             val byCal = pairs.toMap()
             val lookup: (Memo) -> MemoRepeat.ShiftOf? = { m ->
-                if (MemoRepeat.kindOf(m.repeat) == MemoRepeat.Kind.SHIFT) byCal[calendarOf(m, calendar)] else null
+                if (MemoRepeat.followsSchedule(m.repeat)) byCal[calendarOf(m, calendar)] else null
             }
             lookup
         }

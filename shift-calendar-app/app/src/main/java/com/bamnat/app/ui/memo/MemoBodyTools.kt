@@ -106,7 +106,9 @@ internal fun MemoRepeatChip(
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             val from = date ?: com.bamnat.core.time.Today.date()
             // 1.39 [CAL2-06] 매일 and 매년 음력 (제사·음력 생일) with the others.
-            listOf(MemoRepeat.Kind.NONE, MemoRepeat.Kind.DAY, MemoRepeat.Kind.WEEK, MemoRepeat.Kind.MONTH, MemoRepeat.Kind.YEAR, MemoRepeat.Kind.LUNAR).forEach { kind ->
+            // 1.39 [TASK-44] 평일, and 쉬는 날마다 where the calendar has a schedule.
+            listOfNotNull(MemoRepeat.Kind.NONE, MemoRepeat.Kind.DAY, MemoRepeat.Kind.WEEKDAYS, MemoRepeat.Kind.WEEK, MemoRepeat.Kind.MONTH, MemoRepeat.Kind.YEAR,
+                MemoRepeat.Kind.LUNAR, MemoRepeat.Kind.REST.takeIf { shiftTypes.isNotEmpty() }).forEach { kind ->
                 val code = MemoRepeat.code(kind, from)
                 if (kind != MemoRepeat.Kind.NONE && code.isEmpty()) return@forEach
                 val text = if (kind == MemoRepeat.Kind.NONE) "반복 없음" else MemoRepeat.label(code)

@@ -269,9 +269,9 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             weekCounts = weekCounts,
             shiftOn = snapshots[active]?.resolver?.let { r -> { d: LocalDate -> r.resolve(d).shiftType } } ?: { _: LocalDate -> null },
             shiftsOf = { m: Memo ->
-                if (com.bamnat.core.memo.MemoRepeat.kindOf(m.repeat) != com.bamnat.core.memo.MemoRepeat.Kind.SHIFT) null
+                if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat)) null
                 else snapshots[com.bamnat.app.data.MemoRepository.calendarOf(m, active)]?.resolver
-                    ?.let { r -> com.bamnat.core.memo.MemoRepeat.ShiftOf { d -> r.shiftIdOn(d) } }
+                    ?.let { r -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(r) }
             },
         )
     }
@@ -605,14 +605,16 @@ class MemoEditorViewModel(
      * memo with no date gets today's (a repeat needs a day to start from) instead of being told to put one first; returns what
      * was done for the user to read, or null when nothing needs saying.
      */
-    fun setRepeat(kind: com.bamnat.core.memo.MemoRepeat.Kind): String? {
+    fun setRepeat(kind: com.bamnat.core.memo.MemoRepeat.Kind, from: LocalDate? = null): String? {
         val m = _memo.value
         if (kind == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT) return null
         val today = Today.date()
         if (kind == com.bamnat.core.memo.MemoRepeat.Kind.NONE) { update { it.copy(repeat = "") }; return null }
-        val date = m.date ?: today
+        // 1.39 [TASK-44] From the 일정 창, an undated memo starts on its schedule's day.
+        val date = m.date ?: from ?: today
         update { it.copy(date = date, repeat = com.bamnat.core.memo.MemoRepeat.code(kind, date)) }
-        return if (m.date == null) "반복하려면 시작할 날이 있어야 해서 오늘(${com.bamnat.app.ui.Fmt.monthDay(today)})부터로 정했어요" else null
+        val day = if (date == today) "오늘" else com.bamnat.app.ui.Fmt.dayTitle(date)
+        return if (m.date == null) "반복하려면 시작할 날이 있어야 해서 $day(${com.bamnat.app.ui.Fmt.monthDay(date)})부터로 정했어요" else null
     }
 
     /**
@@ -671,11 +673,8 @@ class MemoEditorViewModel(
     val shiftDays: StateFlow<List<com.bamnat.core.memo.ShiftMemoTime.Day>> = shiftCal.flatMapLatest { cal ->
         container.calendars.repository(cal).live.map { snap ->
             val from = Today.date()
-            (-1L..60L).mapNotNull { i ->
-                val d = snap.resolver.resolve(from.plusDays(i))
-                val type = d.shiftType ?: return@mapNotNull null
-                com.bamnat.core.memo.ShiftMemoTime.Day(d.date, type.name, d.isWorkDay, d.start, d.end)
-            }
+            // 1.39 [TASK-39] PC 6차: a day the schedule leaves empty (평일 일근's 토·일) is a day off too, so '근무에 맞춰' offers its morning.
+            (-1L..60L).mapNotNull { i -> com.bamnat.core.memo.ShiftMemoTime.of(snap.resolver.resolve(from.plusDays(i))) }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

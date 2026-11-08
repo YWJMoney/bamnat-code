@@ -38,7 +38,6 @@ import androidx.lifecycle.lifecycleScope
 import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.core.memo.MemoSnooze
 import com.bamnat.core.time.Today
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -54,7 +53,7 @@ class MemoLaterActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val id = intent.getLongExtra(EXTRA_MEMO, -1L)
-        val rest = intent.getLongExtra(EXTRA_REST, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(LocalDate::ofEpochDay)
+        val rest = MemoSnoozeReceiver.restAt(intent)
         setContent {
             BamnatTheme {
                 MemoLater(rest, onClose = { finish() }, onPick = { way ->
@@ -71,14 +70,13 @@ class MemoLaterActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_MEMO = "memo"
-        private const val EXTRA_REST = "rest"
         private const val REQUEST_BASE = 0x4C000
 
-        fun intent(context: Context, memo: Long, rest: LocalDate?): PendingIntent = PendingIntent.getActivity(
+        fun intent(context: Context, memo: Long, rest: LocalDateTime?): PendingIntent = PendingIntent.getActivity(
             context, REQUEST_BASE + (memo.toInt() and 0x3ff),
             Intent(context, MemoLaterActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                .putExtra(EXTRA_MEMO, memo).apply { rest?.let { putExtra(EXTRA_REST, it.toEpochDay()) } },
+                .putExtra(EXTRA_MEMO, memo).let { MemoSnoozeReceiver.putRest(it, rest) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -95,7 +93,7 @@ internal fun laterSaid(at: LocalDateTime, now: LocalDateTime): String {
 }
 
 @Composable
-internal fun MemoLater(rest: LocalDate?, onClose: () -> Unit, onPick: (MemoSnooze.Way) -> Unit) {
+internal fun MemoLater(rest: LocalDateTime?, onClose: () -> Unit, onPick: (MemoSnooze.Way) -> Unit) {
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
@@ -114,7 +112,8 @@ internal fun MemoLater(rest: LocalDate?, onClose: () -> Unit, onPick: (MemoSnooz
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         pair.forEach { way ->
                             val words = when (way) {
-                                MemoSnooze.Way.REST -> MemoSnooze.label(way, rest) + " 아침"
+                                // 1.39 PC 6차: "아침", or "오후" after a 야간 (that morning is slept through).
+                                MemoSnooze.Way.REST -> MemoSnooze.label(way, rest) + " " + com.bamnat.core.memo.ShiftMemoTime.partOf(rest!!)
                                 MemoSnooze.Way.TOMORROW -> "내일 이 시각"
                                 else -> MemoSnooze.label(way, rest)
                             }

@@ -84,7 +84,9 @@ object RuleCards {
             val cond = if (kind == MemoRepeat.Kind.SHIFT) {
                 val name = MemoRepeat.shiftIdOf(m.repeat)?.let { names[it] } ?: continue // its kind of day was deleted
                 "$name 날이면"
-            } else ifWord(MemoRepeat.label(m.repeat))
+            } else if (kind == MemoRepeat.Kind.WEEKDAYS) "평일이면"
+            else if (kind == MemoRepeat.Kind.REST) "쉬는 날이면"
+            else ifWord(MemoRepeat.label(m.repeat))
             val title = m.title.ifBlank { m.body.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty() }.trim().let {
                 if (it.length > MEMO_TITLE) it.take(MEMO_TITLE) + "…" else it
             }
