@@ -1816,3 +1816,34 @@ test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo
   assert.match(t1.text("#main"), /볼 사진이 없어요/);
   assert.deepEqual(t1.errors, []);
 });
+
+test("[STAT2-01~04] 숫자 › 한눈에: 정상도 신호, 초기 모드, 진입·머묾 고리·주마다 머묾 표, 더 보기", async (t) => {
+  offline(t);
+  const { call, env, DB } = server();
+  await call("GET", "/api/config");
+  // 처리방침 3.12 in force, so stats.life is on; ten phones came 20 days ago, six opened the next day, three a week later.
+  DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2026-01-01", effective: "2026-01-02", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
+  const put = DB.db.prepare("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, 0)");
+  put.run(day(20), "life_new", 10, 10);
+  put.run(day(19), "life_d1", 6, 6);
+  put.run(day(13), "life_d7", 3, 3);
+  put.run(day(5), "life_back7", 2, 2);
+  DB.db.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.39.0', 4)").run(day(2));
+  const u = await asOwner(env, t);
+  await u.go("#/glance");
+  await u.settle(30);
+  const main = u.text("#main");
+  assert.match(main, /앱 정상도/);
+  assert.ok(u.$("#main .gl-hero"), "the big signal");
+  assert.equal(u.$$("#main .gl-gauge").length, 4);
+  assert.match(main, /초기 모드/, "fewer than 30 phones a day");
+  assert.match(main, /60%/, "1일째 6 of 10");
+  assert.match(main, /30%/, "7일째 3 of 10");
+  assert.equal(u.$$("#main .gl-ring").length, 3);
+  assert.ok(u.$("#main .gl-cohort td[data-label='1일째'].h4"), "주마다 머묾 표 with a heat class");
+  assert.match(main, /회복/);
+  assert.ok([...u.$$("#main .gl-more a")].some((a) => a.getAttribute("href") === "#/metrics"));
+  assert.deepEqual(u.errors, []);
+});

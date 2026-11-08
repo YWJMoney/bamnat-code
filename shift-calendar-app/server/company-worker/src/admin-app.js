@@ -20,6 +20,7 @@ import { ledgerViews } from "./admin/views/ledger.js";
 // 1.38 [ADM3] 사고·Claude 조종석·스토어 리뷰·데이터 요청·백업·출시 점검표·판 건강·돈·오류 묶음·서버 상태 판·사람 옆 패널·개발 이야기.
 import { opsViews } from "./admin/views/ops.js";
 import { loopViews } from "./admin/views/loop.js";
+import { glanceViews } from "./admin/views/glance.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -76,7 +77,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews}, ops: ${opsViews}, loop: ${loopViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews}, ops: ${opsViews}, loop: ${loopViews}, glance: ${glanceViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -782,6 +783,8 @@ function adminApp(L, BUILD, M) {
       for (const [path, k] of V.opsLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
       // 1.39 [LOOP] 자동 순환·결정함·요금 판단(loop.js loopLoads).
       for (const [path, k] of V.loopLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
+      // 1.39 [STAT2-01] 숫자 › 한눈에(glance.js glanceLoads).
+      for (const [path, k] of V.glanceLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
       // [ADM3-11] 문의 하나를 열면 그 휴대폰(사람 옆 패널), [ADM3-34] 개발사항 하나를 열면 이야기: 화면을 기다리게 하지 않아요.
       if (name === "inquiries" && id && can("inquiries") && S.data.person?.for !== id) {
         S.data.person = { for: id, loading: true };
@@ -1168,6 +1171,8 @@ function adminApp(L, BUILD, M) {
     loop: () => V.loopViews.loop(),
     decide: () => V.loopViews.decide(),
     tiers: () => V.loopViews.tiers(),
+    // 1.39 [STAT2-01] 숫자 › 한눈에(src/admin/views/glance.js).
+    glance: () => V.glanceView(),
   };
 
   function view() {
@@ -1186,6 +1191,7 @@ function adminApp(L, BUILD, M) {
     const d = S.data;
     if (V.opsHas[name]) return Boolean(V.opsHas[name]());
     if (V.loopHas[name]) return Boolean(V.loopHas[name]());
+    if (V.glanceHas[name]) return Boolean(V.glanceHas[name]());
     return Boolean({
       home: d.today, desk: d.ledger, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
@@ -6238,7 +6244,7 @@ function adminApp(L, BUILD, M) {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
-  const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A)];
+  const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
   const V = Object.assign({}, ...groups);
   Object.assign(V, { actions: Object.assign({}, ...groups.map((g) => g.actions ?? {})), forms: Object.assign({}, ...groups.map((g) => g.forms ?? {})) });
   Object.assign(ACTIONS, V.actions ?? {});

@@ -20,7 +20,8 @@ const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "ty
   "sleep.auto", "sleep.sound", "sleep.share" /* 1.38 SLEEP-01·06·11, same launch day */,
   "plaza.fix_request" /* 1.39 PAYP-05, on from 처리방침 3.12 */,
   "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
-  "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */];
+  "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */,
+  "stats.life" /* 1.39 STAT2-02, 3.12 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };

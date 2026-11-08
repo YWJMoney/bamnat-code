@@ -58,6 +58,7 @@
 
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
+import { glance } from "./glance.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // AX 1.30 [ADMX-02] 판 차이 (src/plaza-diff.js) and [ADMX-01][ADMX-06][ADMX-07][ADMX-08][ADMX-10] the developer app's
@@ -1042,30 +1043,11 @@ function ready(env) {
   const key = spDbKey(env);
   let done = schemas.get(key);
   if (!done) {
-    done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
-      if (made === SCHEMA_VERSION) return;
-      // 1.37 hotfix: an ALTER TABLE in SCHEMA (recipe-fonts' info·glyphs·fallback) fails as "duplicate column" on a database that
-      // already has it, and that failed the whole batch, so every request was a 500 after any later schema change. ALTERs run
-      // with the columns below, where a column already there is skipped.
-      const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
-      await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
-      // 1.39 [ADM3-43] 배포 직후 첫 요청이 15초 넘게 걸렸어요(실서버 점검 11-08): ALTER 100여 개를 하나씩 보내서요. 이제 있는 칸을
-      // 한 번에 읽고 없는 칸만 더해요. 읽지 못하는 DB면 예전처럼 다 보내고 '이미 있음'은 넘겨요.
-      for (const sql of await missingColumns(env, [...SCHEMA.filter(alter), ...COLUMNS])) {
-        try {
-          await env.DB.prepare(sql).run();
-        } catch (e) {
-          if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
-        }
-      }
-      await env.DB.batch(LATE_INDEXES.map((sql) => env.DB.prepare(sql)));
-      // R131 1.31 [SRCH-16] Without FTS5 (or its trigram words) the search reads through, as before 1.31.
-      try {
-        await env.DB.batch(FTS_SQL.map((sql) => env.DB.prepare(sql)));
-      } catch (e) {
-        console.error(`company_fts: ${e?.message ?? e}`);
-      }
-      await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
+    // 1.39 [STAT2-05] 서버 판도 같이 읽어, 바뀌었으면 '서버 배포'로 활동 기록·바꾼 일·사고 타임라인에 남겨요(실서버 둘러보기 A8·C1).
+    done = env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('schema', 'server_version')").all()
+      .then((r) => Object.fromEntries((r.results ?? []).map((x) => [x.key, x.value]))).catch(() => ({})).then(async (got) => {
+      await schemaUp(env, got.schema ?? null);
+      await noteDeploy(env, got);
     // AM 1.28 [FLAG-23] the 1.27 switches become flag overrides, once per database.
     }).then(() => migrateFlags(env)).catch((e) => {
       schemas.delete(key);
@@ -1074,6 +1056,54 @@ function ready(env) {
     schemas.set(key, done);
   }
   return done;
+}
+
+/** 1.39 [STAT2-05] 이 서버의 판 이름: 코드 판(SERVER_VERSION)과, Cloudflare 버전 정보가 묶여 있으면 그 배포 번호 앞 8자. */
+const deployName = (env) => `${SERVER_VERSION}${env.CF_VERSION_METADATA?.id ? ` · ${String(env.CF_VERSION_METADATA.id).slice(0, 8)}` : ""}`;
+
+/**
+ * 1.39 [STAT2-05] 배포를 스스로 적어요: 지난번과 판 이름이 다르면 활동 기록 'server_deployed'(바꾼 일·사고 타임라인이 읽어요). 표가 처음
+ * 생기는 새 DB는 이름만 적고 기록은 남기지 않아요. 여러 isolate가 함께 떠도 바꾼 쪽 하나만 적어요.
+ */
+async function noteDeploy(env, got) {
+  const name = deployName(env);
+  const was = got.server_version ?? null;
+  if (was === name) return;
+  if (was === null) {
+    await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('server_version', ?)").bind(name).run();
+    if (!got.schema) return;
+  } else {
+    const r = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'server_version' AND value = ?").bind(name, was).run();
+    if (!r?.meta?.changes) return;
+  }
+  await audit(env, Date.now(), "server_deployed", name, was ? `${was} → ${name}` : name).catch(() => {});
+}
+
+/** Tables as this code has them; [made] is the schema mark the database had. */
+async function schemaUp(env, made) {
+  if (made === SCHEMA_VERSION) return;
+  // 1.37 hotfix: an ALTER TABLE in SCHEMA (recipe-fonts' info·glyphs·fallback) fails as "duplicate column" on a database that
+  // already has it, and that failed the whole batch, so every request was a 500 after any later schema change. ALTERs run
+  // with the columns below, where a column already there is skipped.
+  const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
+  await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
+  // 1.39 [ADM3-43] 배포 직후 첫 요청이 15초 넘게 걸렸어요(실서버 점검 11-08): ALTER 100여 개를 하나씩 보내서요. 이제 있는 칸을
+  // 한 번에 읽고 없는 칸만 더해요. 읽지 못하는 DB면 예전처럼 다 보내고 '이미 있음'은 넘겨요.
+  for (const sql of await missingColumns(env, [...SCHEMA.filter(alter), ...COLUMNS])) {
+    try {
+      await env.DB.prepare(sql).run();
+    } catch (e) {
+      if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
+    }
+  }
+  await env.DB.batch(LATE_INDEXES.map((sql) => env.DB.prepare(sql)));
+  // R131 1.31 [SRCH-16] Without FTS5 (or its trigram words) the search reads through, as before 1.31.
+  try {
+    await env.DB.batch(FTS_SQL.map((sql) => env.DB.prepare(sql)));
+  } catch (e) {
+    console.error(`company_fts: ${e?.message ?? e}`);
+  }
+  await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
 }
 
 export const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
@@ -4935,7 +4965,7 @@ function areaFor(path) {
   if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
   if (path.startsWith("/notices") || path === "/ops") return "ops";
   // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과 reads flag numbers beside the other numbers.
-  if (path === "/metrics" || path === "/remote" || path === "/effects") return "metrics";
+  if (path === "/metrics" || path === "/remote" || path === "/effects" || path === "/glance") return "metrics";
   if (path.startsWith("/shares")) return "shares";
   if (path === "/audit") return "audit";
   return "owner";
@@ -5195,6 +5225,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/switches" && method === "POST") return setSwitch(request, env, now);
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
+  // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.
+  if (path === "/glance" && method === "GET") return json(await glance(env, now));
   if (path === "/metrics" && method === "GET") {
     // 1.39 [ADM3-43] 네 덩어리를 차례로 읽던 것을 한꺼번에(기간은 지표와 같은 metricRange).
     const { from, to } = metricRange(url, now);

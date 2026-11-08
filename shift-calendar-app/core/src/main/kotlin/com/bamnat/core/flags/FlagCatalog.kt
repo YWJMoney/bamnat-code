@@ -27,6 +27,8 @@ object FlagCatalog {
     const val STATS_LOOKUP = "stats.lookup"
     /** 1.39 [SETUP-20]: how many taps first setup took (횟수 구간과 일하는 방식만), sent with 사용 통계 once 처리방침 3.12 names it. */
     const val STATS_SETUP = "stats.setup"
+    /** 1.39 [STAT2-02]: 진입·머묾·회복 (처음 연 날, 1·7·30일째, 7·30일 넘게 쉬다 다시 연 날) as 사용 통계 counts, once 처리방침 3.12 names them. */
+    const val STATS_LIFE = "stats.life"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
@@ -421,6 +423,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.39 [STAT2-02] (사용자 2026-11-08 "통계쪽 혁신 … 어플의 정상도 사용자 이탈 회복 진입 등 모든 것을 전반적으로"): 이미 동의한 사용 통계에
+     * 그날이 '처음 연 날'인지, 설치하고 1·7·30일째인지, 7일·30일 넘게 쉬다 다시 연 날인지를 다른 이벤트처럼 날마다 횟수로만 실어요. 설치한 날짜·
+     * 쉰 날 수 자체와 휴대폰 구별은 보내지 않아요. 처리방침 3.12(1-9항 사용 통계 항목)의 시행일에 저절로 켜지고, 그 전에는 세지 않아요.
+     */
+    val STATS_LIFE_FLAG = Flag(
+        STATS_LIFE, "처음 연 날·다시 연 날 보내기",
+        what = "사용 통계를 켠 휴대폰이 그날이 처음 연 날인지, 깐 지 1·7·30일째인지, 7일·30일 넘게 쉬다 다시 연 날인지를 다른 사용 통계처럼 날마다 횟수로만 보내요. 관리자 앱 › 숫자 › 한눈에서 진입·머묾·회복·이탈 어림으로 보여요. 설치한 날짜와 휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "STAT2-02", note = "1.39 통계 개편 (사용자 2026-11-08 '정상도·이탈·회복·진입')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -461,7 +477,8 @@ object FlagCatalog {
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG) +
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
+        STATS_LIFE_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }
