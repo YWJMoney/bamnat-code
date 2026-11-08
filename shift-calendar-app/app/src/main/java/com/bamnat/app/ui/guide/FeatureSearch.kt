@@ -50,10 +50,15 @@ import com.bamnat.core.work.WorkStyle
  */
 internal object FeatureSearch {
     fun search(query: String, style: WorkStyle? = null, limit: Int = 4, features: List<AppFeature> = FeatureRegistry.shown,
-               hidden: Set<WorkStyle> = emptySet()): List<AppFeature> =
+               hidden: Set<WorkStyle> = emptySet()): List<AppFeature> {
         // [J133-06] A feature only for kinds of work hidden here is not offered.
-        SearchText.best(features.filter { f -> f.styles.isEmpty() || !hidden.containsAll(f.styles) }, limit) { f ->
-            val s = SearchText.score(query, f.name, f.keywords, f.what + " " + f.where)
+        val shown = features.filter { f -> f.styles.isEmpty() || !hidden.containsAll(f.styles) }
+        val raw = shown.associateWith { f -> SearchText.score(query, f.name, f.keywords, f.what + " " + f.where) }
+        // 1.39 8차 PC (설정에서 '잠'으로 찾으면 수면 기록이 안 나와요): its parts (잠드는 소리, 잠 자동으로 잡기…) start with the word and
+        // took the three places; a feature whose parts match leads them, so the screen they are on is found first.
+        val parents = raw.filterValues { it > 0 }.keys.mapNotNull { it.under }.toSet()
+        return SearchText.best(shown, limit) { f ->
+            val s = raw.getValue(f).let { if (it > 0 && f.id in parents) it + PARENT_LEAD else it }
             when {
                 s <= 0 || style == null -> s
                 // Another kind of work's feature still shows, after this calendar's own.
@@ -62,6 +67,10 @@ internal object FeatureSearch {
                 else -> s
             }
         }
+    }
+
+    /** What a feature whose parts also match is lifted by: above a part that starts with the word (40 against 25 + this). */
+    private const val PARENT_LEAD = 20
 
     /** [GUIDE-07] What a 의견 starts with when the search found nothing: the words and the kind of work. */
     fun ideaText(query: String, style: WorkStyle?): String =

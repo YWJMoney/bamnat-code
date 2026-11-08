@@ -289,7 +289,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun SleepBarOffer(bar: List<com.bamnat.core.layout.TabSlots.Slot>, swaps: List<Int>, style: WorkStyle?, chosen: Int, soundOn: Boolean, onPick: (Int) -> Unit) {
+internal fun SleepBarOffer(bar: List<com.bamnat.core.layout.TabSlots.Slot>, swaps: List<Int>, style: WorkStyle?, chosen: Int, soundOn: Boolean, onPick: (Int) -> Unit) {
     Section("잠도 밤낮이 챙겨요") {
         SleepPromo.lines(style, soundOn).forEach { line ->
             Row(verticalAlignment = Alignment.Top) {

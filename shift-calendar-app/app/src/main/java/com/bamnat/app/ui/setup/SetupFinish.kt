@@ -272,6 +272,18 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             ShareCycleLine(s.name, on, upload = s.id.isNullOrEmpty()) { vm.shareCycle.value = it }
         }
     }
+    // 1.39 사용자 2026-11-08 (잠도 첫 설정에서 '이런 것도 돼요'로, 아래 메뉴 '잠' 한 번 권하기). 8차 PC 1-24: a new install ends its
+    // first setup here, so the offer is here (the 추천 page has it only for a phone updated mid-way).
+    if (vm.offersSleepBar) {
+        val app = LocalContext.current.appContainer
+        val settings = remember { app.settingsRepository.current }
+        val sleepKey = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.SLEEP.name
+        val bar = remember(settings) { com.bamnat.core.layout.TabSlots.resolve(settings.tabSlots, settings.tabOrder, com.bamnat.app.ui.TabPicks.known) }
+        val swaps = remember(bar) { com.bamnat.core.layout.TabSlots.swapChoices(bar, sleepKey) }
+        val soundOn = remember { runCatching { app.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false) }
+        val chosen by vm.sleepSlot.collectAsStateWithLifecycle()
+        com.bamnat.app.ui.onboarding.SleepBarOffer(bar, swaps, d.style, chosen, soundOn) { vm.sleepSlot.value = it }
+    }
     // [EASE-05][ONBOARD-05][OBS2-06] 사용 통계 묻기는 1.39 7차 PC 1-12부터 아래 막대, 저장 단추 바로 위에 있어요(SetupHost).
 }
 
