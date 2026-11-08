@@ -66,8 +66,8 @@ test("[OBS2-08] 유형별 흐름 and 기능과 머묾 are read like 머묾: the 
 
   // 관측 빈틈: before the flags, where they come from; after, only while there are too few.
   const before = obsGaps({ sample: { daily: 50, lifeOn: true }, kinds: null, keep: null });
-  assert.match(before.find((g) => g.key === "by-type").need, /3\.12/);
-  assert.match(before.find((g) => g.key === "feature-keep").need, /3\.12/);
+  assert.match(before.find((g) => g.key === "at-312").title, /^유형별 흐름 · 기능과 머묾은 처리방침 3\.12/);
+  assert.equal(before.find((g) => g.key === "at-312").state, "wait");
   assert.deepEqual(before.filter((g) => g.policy).map((g) => g.key), ["why-leave"]);
   const after = obsGaps({ sample: { daily: 50, lifeOn: true }, kinds: many, keep: kp });
   assert.ok(!after.some((g) => g.key === "by-type" || g.key === "feature-keep"));
@@ -97,5 +97,5 @@ test("[OBS2-08] the server drops style and keep before 처리방침 3.12 and cou
   const o = (await call("GET", "/api/admin/observe", undefined, admin)).data;
   assert.deepEqual(o.kinds.rows.map((r) => r.style), ["SHIFT"]);
   assert.ok(Array.isArray(o.keep.rows), "기능과 머묾 is there once stats.keep is on");
-  assert.ok(o.gaps.some((g) => g.key === "feature-keep" && /적어요/.test(g.title)), "a window not over yet reads as too few");
+  assert.ok(o.gaps.some((g) => g.key === "feature-keep" && /적어요/.test(g.title) && g.state === "wait"), "a window not over yet reads as too few");
 });

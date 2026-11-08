@@ -142,7 +142,7 @@ export function glanceViews(A) {
     const missing = (label, cls) => tile(`${cls} need`, label, "—", esc(need ? need.how : "아직 숫자가 없어요"), "", playSrc);
     const tiles = [];
     // Play 보고서가 아예 없으면 빈 칸 넷 대신 한 줄로: 무엇이 비었고 무엇을 하면 채워지는지.
-    if (!on) tiles.push(`<div class="ob-tile need wide"><span class="gl-k">유입 · 설치 − 삭제 · 판별 설치 기기 · 별점</span><b>연결 필요</b>
+    if (!on) tiles.push(`<div class="ob-tile need wide"><span class="gl-k">유입 · 설치 − 삭제 · 판별 설치 기기 · 별점</span><b>${need?.state === "wait" ? "권한 퍼지는 중" : "연결 필요"}</b>
       <small>${esc(need ? `${need.title}. ${need.how}` : "Play 보고서를 아직 받지 못했어요.")}</small><span class="ob-src">${esc(playSrc)}</span></div>`);
     // 유입: 스토어 방문 → 설치와 출처.
     if (on && has("visitors")) {
@@ -178,7 +178,8 @@ export function glanceViews(A) {
       const total = v.rows.reduce((n, r) => n + r.n, 0) || 1;
       const bars = v.rows.slice(0, 4).map((r, i) => {
         const share = Math.round((r.n / total) * 1000) / 10;
-        return `<li class="${i ? "" : "top"}"><span>${esc(String(r.code))}</span><svg class="gl-meter" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-track" width="100" height="6" rx="3"/><rect class="gl-fill" width="${Math.max(2, share)}" height="6" rx="3"/></svg><b>${share}%</b></li>`;
+        // [OBS2-09] 그 판에서 최근 7일 지운 휴대폰(지운 이유 대신 '어느 판에서').
+        return `<li class="${i ? "" : "top"}"><span>${esc(String(r.code))}</span><svg class="gl-meter" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-track" width="100" height="6" rx="3"/><rect class="gl-fill" width="${Math.max(2, share)}" height="6" rx="3"/></svg><b>${share}%</b>${r.out7 ? `<small>7일 삭제 ${r.out7}</small>` : ""}</li>`;
       }).join("");
       tiles.push(tile("ver", "판별 설치 기기", `${Math.round((v.rows[0].n / total) * 100)}<small>% 최신 판</small>`, `${esc(String(v.rows[0].code))} · ${md(v.day)}`, `<ul class="ob-vers">${bars}</ul>`, playSrc));
     } else if (on) tiles.push(missing("판별 설치 기기", "ver"));
@@ -228,12 +229,25 @@ export function glanceViews(A) {
   }
 
   /** [OBS2-05] 관측 빈틈: 아직 답하지 못하는 질문과 그 답에 필요한 것. */
+  /**
+   * 관측 빈틈 [OBS2-05][OBS2-09]: 할 일만 펼쳐 보이고, 기다리면 저절로 풀리는 것(권한 퍼짐·3.12 시행·1.39 출시)과 사용자가 이미 정한 것은
+   * 한 줄로 접어요(사용자 2026-11-08 '이미 해결된 것도 보이네').
+   */
   function gapsCard(o) {
     const g = o.gaps ?? [];
     if (!g.length) return "";
-    return `<section class="card ob-gaps" aria-labelledby="ob-gap-title"><div class="card-head"><h2 id="ob-gap-title">관측 빈틈</h2><span class="meta">${g.length}가지</span></div>
-      <p class="hint">지금 숫자로 답하지 못하는 질문이에요. 처리방침이 필요한 것은 사용자가 정해요.</p>
-      <ul class="ob-gap-list">${g.map((x) => `<li class="${x.policy ? "policy" : ""}"><b>${esc(x.title)}</b><small>필요: ${esc(x.need)}</small><small>${esc(x.how)}</small>${x.policy ? '<span class="pill">처리방침 · 사용자 결정</span>' : ""}</li>`).join("")}</ul></section>`;
+    const todo = g.filter((x) => (x.state ?? "todo") === "todo");
+    const rest = g.filter((x) => (x.state ?? "todo") !== "todo");
+    const item = (x) => `<li class="${x.state === "decided" ? "policy decided" : x.state === "wait" ? "wait" : x.policy ? "policy" : ""}"><b>${esc(x.title)}</b><small>필요: ${esc(x.need)}</small><small>${esc(x.how)}</small>${
+      x.state === "decided" ? '<span class="pill">사용자 결정</span>' : x.state === "wait" ? '<span class="pill">기다리는 중</span>' : x.policy ? '<span class="pill">처리방침 · 사용자 결정</span>' : ""}${
+      x.key === "play-denied" && (can("metrics", "edit") || can("dev", "edit")) ? '<div class="actions start"><button class="btn small" data-act="obs-refresh">지금 다시 확인</button></div>' : ""}</li>`;
+    const waits = rest.filter((x) => x.state === "wait").length;
+    const decided = rest.length - waits;
+    const restLine = [waits ? `기다리면 풀리는 것 ${waits}` : "", decided ? `정한 것 ${decided}` : ""].filter(Boolean).join(" · ");
+    const folded = rest.length ? `<details class="ob-gap-rest" data-key="obs:gaprest"${S.opened.get("obs:gaprest") ? " open" : ""}><summary>${esc(restLine)}</summary><ul class="ob-gap-list">${rest.map(item).join("")}</ul></details>` : "";
+    return `<section class="card ob-gaps" aria-labelledby="ob-gap-title"><div class="card-head"><h2 id="ob-gap-title">관측 빈틈</h2>${todo.length ? `<span class="pill warn">할 일 ${todo.length}</span>` : '<span class="meta">할 일 없음</span>'}</div>
+      <p class="hint">지금 숫자로 답하지 못하는 질문이에요. 할 일만 펼쳐 두고, 기다리면 저절로 풀리는 것과 이미 정한 것은 접어 둬요.</p>
+      ${todo.length ? `<ul class="ob-gap-list">${todo.map(item).join("")}</ul>` : '<p class="empty-line">지금 할 일은 없어요.</p>'}${folded}</section>`;
   }
 
   /**
@@ -271,6 +285,12 @@ export function glanceViews(A) {
   const OBS_KEEP_MIN = 20;
 
   const actions = {
+    // [OBS2-09] Play 권한을 막 저장했을 때: 1시간을 기다리지 않고 바로 다시 읽어요.
+    "obs-refresh": async () => {
+      if (await act(() => api("/observe/refresh", "POST", {}), (r) => (r.state === "ok" ? "Play 보고서를 받았어요" : r.again ? "방금 확인했어요. 잠시 뒤 다시 눌러 주세요" : "아직 권한이 퍼지는 중이에요"))) {
+        await load({ quiet: true });
+      }
+    },
     "obs-signal": ({ key, do: what }) => {
       const go = async () => {
         if (await act(() => api("/observe/signals", "POST", { key, act: what }), what === "dev" ? (r) => `개발사항 ${r.signal.devId}을 만들었어요` : what === "watch" ? "지켜볼게요" : "아님으로 두었어요")) {

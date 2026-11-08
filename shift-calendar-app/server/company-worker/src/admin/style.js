@@ -1219,6 +1219,11 @@ a.gl-gauge:hover{border-color:var(--g)}
 .gl-trend{display:inline-flex;align-items:center;gap:.15rem;margin-left:.35rem;padding:.05rem .4rem;border-radius:999px;font-size:.7rem;font-weight:800;letter-spacing:0;vertical-align:1px}
 .gl-trend.up{background:var(--ok-bg);color:var(--ok)}.gl-trend.down{background:var(--bad-bg);color:var(--bad)}.gl-trend.flat{background:var(--soft);color:var(--muted)}
 .gl-cohort-wrap{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
+/* 1.39 [OBS2-09] 관측 빈틈: 할 일만 펼치고 기다리는 것·정한 것은 접기 */
+.ob-gap-rest{margin-top:.6rem;border-top:1px solid var(--line);padding-top:.5rem}
+.ob-gap-rest summary{cursor:pointer;font-size:.84rem;font-weight:700;color:var(--muted);min-height:44px;display:flex;align-items:center}
+.ob-gap-list li.wait b,.ob-gap-list li.decided b{color:var(--muted)}
+.ob-vers li small{grid-column:1/-1;font-size:.7rem;color:var(--muted)}
 /* 1.39 [OBS2-08] 유형별 흐름·기능과 머묾: 주마다 머묾 표와 같은 모양 */
 .ob-kind-table td small{display:block;font-size:.68rem;font-weight:600;color:var(--muted)}
 .ob-kind-table tr.ob-all-row th,.ob-kind-table tr.ob-all-row td{border-top:2px solid var(--line)}

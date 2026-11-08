@@ -4960,7 +4960,7 @@ function areaFor(path) {
   // 1.39 [ADM3-49] Claude 초안: 종류마다 그 칸 권한을 claude-drafts.js가 봐요.
   if (path === "/drafts") return null;
   // 1.39 [OBS2] 관측: 읽기는 숫자, 신호 처리는 observe.js가(개발사항으로 넘기기는 개발사항 고치기 권한).
-  if (path === "/observe" || path === "/observe/signals") return null;
+  if (path === "/observe" || path === "/observe/signals" || path === "/observe/refresh") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -5252,7 +5252,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.
   if (path === "/glance" && method === "GET") return json(await glance(env, now));
   // 1.39 [OBS2-01~05] 관측 판·개선 신호(observe.js가 숫자·개발사항 권한을 봐요).
-  if (path === "/observe" || path === "/observe/signals") {
+  if (path === "/observe" || path === "/observe/signals" || path === "/observe/refresh") {
     const r = await observeRoute(request, env, path, method, now);
     if (r) return r;
   }

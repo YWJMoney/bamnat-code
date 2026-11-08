@@ -303,7 +303,7 @@ const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/,
   // 1.39 [ADM3-49] 추천만 적어요. 채택·거절·되돌리기(/groups/…), 보상 지급(/rewards/<id>), 회사 합치기(/companies/<id>/merge)는 이 목록에 없어 막혀요.
   /^\/drafts$/,
   // 1.39 [OBS2-04] 개선 신호를 개발사항으로 넘기기·지켜보기·아님(보내는 것이 아니라 안쪽 기록).
-  /^\/observe\/signals$/];
+  /^\/observe\/signals$/, /^\/observe\/refresh$/];
 // 1.39 [LOOP-05] 저장소 동기화 열쇠(GitHub Action): 이 한 길만.
 const SYNC_POST = [/^\/dev\/sync$/];
 export const keyAllows = (path, method, scope = "ops") => (scope === "sync" ? (method === "POST" ? SYNC_POST : [])

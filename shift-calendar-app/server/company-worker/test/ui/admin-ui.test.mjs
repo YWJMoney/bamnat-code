@@ -2016,10 +2016,12 @@ test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say whe
   assert.match(u.text("#main .ob-tile.voice"), /문의/);
   assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 좋아진 신호");
   assert.match(u.text("#main .ob-better"), /9% → 16%/);
-  // 사용자 11-08 '유형별·기능 둘만': 지운 이유만 사용자 결정으로 남고, 둘은 처리방침 3.12 시행을 기다려요 [OBS2-08].
-  assert.equal(u.$$("#main .ob-gap-list li.policy").length, 1);
-  assert.match(u.text("#main .ob-gaps"), /3\.12/);
-  assert.match(u.text("#main .ob-gaps"), /처리방침 · 사용자 결정/);
+  // [OBS2-09] 할 일만 펼치고, 기다리면 풀리는 것(3.12 시행·1.39 출시)과 정한 것(지운 이유)은 접어요.
+  assert.ok(u.$("#main .ob-gaps details.ob-gap-rest"), "folded");
+  assert.match(u.text("#main .ob-gap-rest summary"), /기다리면 풀리는 것 \d · 정한 것 1/);
+  assert.equal(u.$$("#main .ob-gaps > .ob-gap-list li.decided").length, 0, "정한 것 is not in the open list");
+  assert.match(u.text("#main .ob-gap-rest"), /3\.12/);
+  assert.match(u.text("#main .ob-gaps"), /사용자 결정/);
   await u.click('#main [data-act="obs-signal"][data-do="dev"]');
   await u.settle(40);
   const made = env.DB.db.prepare("SELECT id, title FROM dev_items ORDER BY created_at DESC LIMIT 1").get();
