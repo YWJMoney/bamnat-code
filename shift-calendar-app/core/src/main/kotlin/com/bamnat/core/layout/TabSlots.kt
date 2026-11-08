@@ -169,6 +169,16 @@ object TabSlots {
         }
     }
 
+    /**
+     * 1.39 사용자 결정 2026-11-08 (첫 설정 끝에 '잠을 아래 메뉴에 둘까요?' 한 번 권하기): the places of a phone bar [key] may take,
+     * by index: every place on the bar but the one holding the home screen ([home]), none when [key] is on the bar already.
+     */
+    fun swapChoices(slots: List<Slot>, key: String): List<Int> {
+        if (shows(slots, key)) return emptyList()
+        val home = home(slots)
+        return onBar(slots, wide = false).indices.filter { home !in slots[it].keys }
+    }
+
     /** [slots] with the place at [index] holding [key] alone instead (it leaves any other place). */
     fun replace(slots: List<Slot>, index: Int, key: String): List<Slot> {
         val at = slots.getOrNull(index) ?: return slots
