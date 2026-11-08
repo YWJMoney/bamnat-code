@@ -1,4 +1,5 @@
 import { all, audit, json, one, readJson, run } from "./index.js";
+import { draftsFor, mergeDraftKey, settleDraft } from "./claude-drafts.js";
 
 // ---- 1.39 [ADM3-45] 비슷한 회사 합치기 제안 (실서버 둘러보기 11-08 B2) ----
 //
@@ -53,6 +54,13 @@ export async function similarCompanies(env, limit = 12) {
       pairs.push({ into: card(keep), from: card(from), why });
     }
   }
+  // 1.39 [ADM3-49] 짝마다 Claude 초안(합칠까요?)이 있으면 함께. 어느 쪽으로 적었든 찾아요.
+  const keys = pairs.flatMap((p) => [mergeDraftKey(p.from.id, p.into.id), mergeDraftKey(p.into.id, p.from.id)]);
+  const drafts = await draftsFor(env, keys);
+  for (const p of pairs) {
+    const d = drafts.get(mergeDraftKey(p.from.id, p.into.id)) ?? drafts.get(mergeDraftKey(p.into.id, p.from.id));
+    if (d) p.draft = d;
+  }
   return { pairs };
 }
 
@@ -67,5 +75,7 @@ export async function skipSimilar(request, env, now) {
   await run(env, "INSERT INTO settings (key, value) VALUES ('company_not_same', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
     JSON.stringify(list.slice(-500)));
   await audit(env, now, "company_not_same", `${a}|${b}`).catch(() => {});
+  await settleDraft(env, mergeDraftKey(a, b), "skip", now);
+  await settleDraft(env, mergeDraftKey(b, a), "skip", now);
   return json(await similarCompanies(env));
 }

@@ -7,6 +7,7 @@ import { KEEP_SCHEMA, backupTick, keepRoute, requestTick } from "./keep.js";
 import { REVIEW_SCHEMA, reviewCounts, reviewRoute, reviewTick } from "./store-reviews.js";
 import { INCIDENT_SCHEMA, incidentBadge, incidentRoute, incidentTick } from "./incident.js";
 import { DAY, HOUR } from "./units.js";
+import { draftStats } from "./claude-drafts.js";
 
 // ---- 1.38 [ADM3] 관리자 앱 개편의 서버 쪽 길 하나 ----
 //
@@ -123,6 +124,7 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
 
 /** [ADM3-31] Claude 조종석: 보류 중인 Claude 답(보내기 전 멈출 수 있음), 오늘 Claude가 한 일, Claude 차례 수. */
 export async function cockpit(env, now = Date.now()) {
+  const drafts = await draftStats(env, now).catch(() => null);
   const start = Date.parse(`${new Date(now + 9 * HOUR).toISOString().slice(0, 10)}T00:00:00+09:00`);
   const [held, done, keys] = (await batch(env, [
     stmt(env, `SELECT h.id, h.inquiry_id, h.text, h.close, h.until, h.at, (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = h.inquiry_id AND m.sender = 'user'
@@ -137,6 +139,8 @@ export async function cockpit(env, now = Date.now()) {
     // 1.39 [ADM3-44] B10: 열쇠로 오늘 읽기만 한 횟수(장부·문의 읽기). 고친 일은 활동 기록에 남고, 읽기는 열쇠 카운터에만 있어요.
     reads: keys.reduce((n, k) => n + (k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10) ? Math.max(0, (k.n ?? 0) - (k.writes ?? 0)) : 0), 0),
     keys: keys.map((k) => ({ label: k.label, lastAt: k.last_at, n: k.day && k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10) ? k.n : 0, alive: !k.revoked_at && k.expires_at > now })),
+    // 1.39 [ADM3-49] 제보·보상·합치기 초안: 열린 수, 사람이 정한 것과 같았던 비율, 넓히기 관문.
+    drafts,
   };
 }
 

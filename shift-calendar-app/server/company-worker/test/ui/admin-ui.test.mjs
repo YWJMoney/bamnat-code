@@ -1927,3 +1927,32 @@ test("[ADM3-48] a new admin build opens itself once when nobody is typing, and n
   assert.equal(t.window.sessionStorage.getItem("admin:auto-reload:next-build"), "1");
   assert.deepEqual(t.errors, []);
 });
+
+test("[ADM3-49] Claude 추천 shows on 검토함·보상, 거절 starts at its reason, and 조종석 counts how often a person agreed", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  await call("POST", "/api/reports", report(1, { company: "가나다물류" }), from(1));
+  const reward = "w" + "B".repeat(22);
+  env.DB.db.prepare("INSERT INTO rewards (id, report_id, rule_id, device, months, status, created_at) VALUES (?, 'rp', '', 'dev', 1, 'owed', ?)").run(reward, Date.now());
+  const u = await asOwner(env, t);
+  const [g] = (await u.api("GET", "/api/admin/queue")).groups;
+  await u.api("POST", "/api/admin/drafts", { kind: "group", company: g.company.id, grp: g.setup, pick: "reject", reason: "wrong", note: "공고의 교대와 달라요", sources: ["https://example.com/a"] });
+  await u.api("POST", "/api/admin/drafts", { kind: "reward", id: reward, pick: "paid", months: 3, note: "회사 방식 채택이라 3개월" });
+  await u.go("#/review");
+  await u.settle(30);
+  assert.match(u.text("#main .rv-body .claude-draft"), /Claude 추천 거절/);
+  assert.match(u.text("#main .rv-body .claude-draft"), /공고의 교대와 달라요/);
+  assert.equal(u.$("#main .rv-body .claude-draft a").getAttribute("rel"), "noopener noreferrer");
+  await u.click('#main [data-act="reject"]');
+  assert.equal(u.$('#dialog input[name="reason"]:checked').value, "wrong", "the 추천's reason is picked first");
+  u.$('#dialog [data-act="close"]').click();
+  await u.go("#/rewards");
+  await u.settle(30);
+  assert.match(u.text("#main .claude-draft"), /지급 · 3개월/);
+  assert.match(u.text(`#main [data-act="reward"][data-status="paid"]`), /3개월/);
+  await u.go("#/cockpit");
+  await u.settle(30);
+  assert.match(u.text("#main"), /제보·보상 추천/);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});

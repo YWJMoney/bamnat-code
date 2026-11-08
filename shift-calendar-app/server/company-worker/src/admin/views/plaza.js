@@ -101,12 +101,13 @@ export function plazaViews(A) {
       <summary class="row">${picking ? `<input type="checkbox" class="check" data-act="review-pick" data-key="${esc(groupKey(g))}" aria-label="${esc(g.company.name)} 고르기"${picked ? " checked" : ""}>` : ""}
         <span class="row-main"><b>${name(g.company, g.dept)}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</b>
           <small>${gist ? `<span class="gist">${esc(gist)}</span> · ` : ""}${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 ${verified}` : ""} · ${day(g.reports[0].at)}</small></span>
-        <span class="row-side inline">${kind}
+        <span class="row-side inline">${kind}${g.draft ? `<span class="pill info" title="Claude 추천">Claude ${esc(L.DRAFT_WORDS[g.draft.pick] ?? "")}</span>` : ""}
           <span class="score mini" title="채택 점수"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}</b></span>
           ${g.bad ? `<span class="pill bad">달라요 ${g.bad}</span>` : ""}
-          ${editable ? `<button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}">거절</button>
+          ${editable ? `<button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}"${g.draft?.reason ? ` data-reason="${esc(g.draft.reason)}"` : ""}>거절</button>
           <button class="btn small primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button>` : ""}</span></summary>
       <div class="rv-body">
+        ${L.draftNote(g.draft, g.draft?.reason ? S.overview?.reasons?.[g.draft.reason] ?? "" : "")}
         ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
         <p class="meta">신뢰도 ${g.trust ?? 0} · 맞았어요 ${g.agree ?? 0}%${g.posts ? ` · 토론 ${g.posts}개` : ""}${claims ? ` · 명세서 확인(근거 없음) ${claims}건` : ""}${siblings ? ` · 같은 회사 다른 부서 제보 ${siblings}건` : ""}</p>
         ${g.company.hidden ? '<p class="note warn">숨긴 회사예요. 채택해도 회사 찾기에 나오지 않아요.</p>' : ""}
@@ -237,6 +238,7 @@ export function plazaViews(A) {
         <span class="meta">이름이 비슷해요. 합치면 제보·규칙·참여가 한곳에 모여요</span></div>
       <ul class="rows similar-rows">${pairs.map((p) => `<li><div class="pair"><a href="${href("companies", p.from.id)}">${side(p.from)}</a><span class="arrow" aria-hidden="true">→</span>
           <a href="${href("companies", p.into.id)}">${side(p.into)}</a></div><small class="why">${esc(p.why)}</small>
+        ${L.draftNote(p.draft)}
         <div class="actions start"><button class="btn small primary" data-act="similar-merge" data-from="${p.from.id}" data-into="${p.into.id}" data-a="${esc(p.from.name)}" data-b="${esc(p.into.name)}">이쪽으로 합치기</button>
           <button class="btn small ghost" data-act="similar-skip" data-a="${p.from.id}" data-b="${p.into.id}">다른 회사예요</button></div></li>`).join("")}</ul></section>`;
   }

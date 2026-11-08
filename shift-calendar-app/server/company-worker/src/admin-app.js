@@ -2287,9 +2287,10 @@ function adminApp(L, BUILD, M) {
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
           <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
-          ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
+          ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}
+          ${L.draftNote(w.draft, w.draft?.months ? `${w.draft.months}개월` : "")}</div>
         ${edit ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
-          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${w.months}">지급하기</button>`
+          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${w.draft?.pick === "paid" && w.draft.months ? w.draft.months : w.months}">지급하기${w.draft?.pick === "paid" && w.draft.months && w.draft.months !== w.months ? `(${w.draft.months}개월)` : ""}</button>`
           : `<button class="btn" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}
       </li>`).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
     // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
@@ -3412,10 +3413,12 @@ function adminApp(L, BUILD, M) {
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn ${tone}" type="submit">${esc(label)}</button></div></form>`);
   }
 
-  function openReject(company, setup) {
+  function openReject(company, setup, pick = "") {
     const reasons = Object.entries(S.overview?.reasons ?? {});
+    // 1.39 [ADM3-49] Claude가 거절을 추천했으면 그 이유를 먼저 골라 둬요.
+    const first = reasons.some(([key]) => key === pick) ? pick : reasons[0]?.[0];
     openDialog(`<form data-form="reject" data-company="${company}" data-setup="${setup}"><h2>거절할까요?</h2><p>보낸 분 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${key === first ? " checked" : ""}>
         <span>${esc(text)}</span></label>`).join("")}</div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">거절하기</button></div></form>`);
   }
@@ -4775,7 +4778,7 @@ function adminApp(L, BUILD, M) {
     // [ADMUX-01] 채택 puts a rule in front of every user, so it is asked once.
     adopt: ({ company, setup }) => confirmBox("이 제보를 채택할까요?", "바로 회사 찾기에 나오고 같은 회사를 쓰는 분들 앱에 들어가요. 나중에 규칙을 내릴 수는 있어요.", "채택",
       () => act(() => api(`/groups/${company}/${setup}/adopt`, "POST"), "채택했어요. 이제 회사 찾기에 나와요").then(() => load()), "primary"),
-    reject: ({ company, setup }) => openReject(company, setup),
+    reject: ({ company, setup, reason }) => openReject(company, setup, reason),
     answer: ({ id }) => openAnswer(id),
     "new-company": () => openNewCompany(),
     "remove-alias": async ({ name }) => {

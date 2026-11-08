@@ -39,8 +39,21 @@
 | `/dev`, `/dev/<id>`, `/templates` | `/desk/ship` |
 | `/ledger?view=claude&q=…`(장부 줄, 300줄씩 `more`), `/ledger.csv`, `/ledger/log?key=q12` | `/ledger/state {keys,state,reason}`, `/ledger/undo {key}`, `/ledger/summary {key,text}` |
 | 1.39 `/loop`(자동 순환 상태), `/loop/queue`(영향도 순 개발 대기열), `/loop/decide`(결정함), `/loop/tiers`, `/loop/tier/<d…>`(요금 관측치, 읽기만), `/loop/autonomy` | 1.39 `/loop/drafts`(결정함 문의에 보낼 답 초안만) |
+| 1.39 `/queue`(검토함: 제보 묶음·명세서 확인 수·달라요·토론 수), `/companies?q=`, `/companies/<id>`, `/companies/similar`, `/versions`(여러 판), `/rewards`(드릴 보상), `/drafts`(열린 추천과 일치율) | 1.39 `/drafts` 추천만(아래) |
 
 그 밖(지우기, 여러 개 한 번에 닫기, 공개 바꾸기, 사진, 결제 기록, 자동 대응 설정, 기능 스위치, 공지, 관리자, 열쇠 목록)은 403. 하루 3000번·바꾸기 400번을 넘으면 429.
+
+## 제보 검토·보상·회사 합치기 추천 (1.39 ADM3-49, 사용자 2026-11-08)
+열쇠는 **추천만** 적어요. 채택·거절·되돌리기(`/groups/…`), 보상 지급(`/rewards/<id>`), 회사 합치기(`/companies/<id>/merge`, `/companies/similar/skip`)는 403이고, 관리자 앱에서 사람이 추천을 보고 버튼을 한 번 눌러요.
+
+- 제보 묶음: `POST /api/admin/drafts {kind:"group", company, grp(=queue의 setup), pick:"adopt"|"reject", reason?(reject면 different·unclear·wrong·duplicate·inappropriate), note, sources?}`
+- 보상: `{kind:"reward", id, pick:"paid"|"void", months?(1~12, paid), note}`
+- 비슷한 회사: `{kind:"merge", from, into, pick:"merge"|"skip", note}`
+- 지우기: 같은 대상에 `pick: null`.
+- `note`는 500자, 결론부터. `sources`는 https 주소 다섯 개까지. 원문을 열어 확인한 공개 자료(공고·기사·노무 사이트)만 적어요(CLAUDE.md 5항, 다른 앱 자료 긁기 금지). 검토함의 '명세서 확인' 수와 달라요·토론도 근거로 써요.
+- 보상은 돈과 같아 늘 사람이 정해요(3-2항). 사람이 정하면 활동 기록 '추천과 맞춰 봄'에 같음·다름이 남고, Claude 조종석 '제보·보상 추천' 칸이 일치율을 보여요.
+- **넓히기 관문**: 정한 추천 20건 이상, 같음 90% 이상이면 조종석이 '더 맡길지 여쭐 때예요'를 보여요. 그때 사용자에게 '뚜렷한 제보는 Claude가 바로 채택·거절'을 물어요(보상은 계속 사람).
+- 하루 두 번 운영 장부 자동 처리 때 검토함과 드릴 보상을 읽고, 추천이 없는 묶음·보상에 추천을 적어요.
 
 ## 자동 순환 (1.39 G10)
 - **나간 판 저장이 저절로**: 서버가 Play 프로덕션 트랙을 매시 읽어 판이 100%가 되면 1시간 기다렸다가 위 '나간 판 저장'을 해요. 관리자 앱 › 자동 순환에서 그 1시간 안에 취소·지금 보내기, 스위치로 끄기. 단계적 출시 중에는 앱이 보낸 판(X-App)으로 고친 판을 연 폰에만 먼저 안내해요.
