@@ -195,4 +195,20 @@ class WorkTypeAudit132Test {
         assertEquals(2, res.compared)
         assertEquals("2일 비교 · 1일 달라요 · 회사 기록이 1분 적어요", res.summary)
     }
+
+    /** 1.39 [WTYP-31] PC 7차: 비상소집 only for jobs that are called in, or for a 비상소집 kind the user made. */
+    @Test fun calloutOnlyForJobsCalledIn() {
+        val day = com.bamnat.core.work.WorkStyle.DAY
+        val shift = com.bamnat.core.work.WorkStyle.SHIFT
+        val none = ExtraKinds()
+        assertTrue(!Callout.forJob(day, null, "", none))
+        assertTrue(!Callout.forJob(shift, com.bamnat.core.pay.Occupation.NURSE, "hospital", none))
+        assertTrue(Callout.forJob(shift, com.bamnat.core.pay.Occupation.FIRE, "", none))
+        assertTrue(Callout.forJob(shift, com.bamnat.core.pay.Occupation.POLICE, "", none))
+        assertTrue(Callout.forJob(shift, null, "correction", none))
+        assertTrue(!Callout.forJob(com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.pay.Occupation.FIRE, "fire", none))
+        // A nurse who made a 비상소집 kind sees it again.
+        val made = ExtraKinds(none.kinds + Callout.kind(none))
+        assertTrue(Callout.forJob(shift, com.bamnat.core.pay.Occupation.NURSE, "hospital", made))
+    }
 }

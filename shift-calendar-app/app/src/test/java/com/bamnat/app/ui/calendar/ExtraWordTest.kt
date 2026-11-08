@@ -16,5 +16,9 @@ class ExtraWordTest {
         assertEquals("잔업", ExtraText.kindName(overtime, null))
         assertEquals(special.name, ExtraText.kindName(special, WorkStyle.DAY))
         assertEquals("야근 +2시간", ExtraText.word("잔업 +2시간", ExtraKind.OVERTIME_ID, WorkStyle.DAY))
+        // 1.39 PC 7차: its mark too, unless the user gave it one of their own.
+        assertEquals("야", ExtraText.mark(overtime, WorkStyle.DAY))
+        assertEquals("잔", ExtraText.mark(overtime, WorkStyle.SHIFT))
+        assertEquals("O", ExtraText.mark(overtime.copy(short = "O"), WorkStyle.DAY))
     }
 }

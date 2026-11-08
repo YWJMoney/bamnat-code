@@ -415,7 +415,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         for ((id, minutes) in summary.extraByKind.entries.sortedByDescending { it.value }) {
                             val kind = kinds.of(id)
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                com.bamnat.app.ui.calendar.ExtraKindMark(kind, size = 20.dp)
+                                com.bamnat.app.ui.calendar.ExtraKindMark(kind, size = 20.dp, asIs = true)
                                 Spacer(Modifier.width(10.dp))
                                 Text(kind.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                                 Text("${summary.extraCountByKind[id] ?: 0}번 · ", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
