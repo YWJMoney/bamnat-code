@@ -266,6 +266,12 @@ npm ci
 npm run test:ui
 ```
 
+## 자동 배포 (1.39, GitHub Actions)
+
+크롬·대시보드 붙여 넣기 없이 `.github/workflows/deploy-server.yml`이 회사·공유 서버를 올려요. main에서 Run workflow를 누르고 `ref`에 배포할 브랜치를 적어요. `check`는 올리고 대조까지만, `deploy`는 끝까지예요.
+순서와 안전장치는 `shift-calendar-app/tools/deploy_worker.py` 맨 위에 있어요: 서버 시험 → 번들(붙여 넣던 `dist/worker.js`와 같은 파일) → 새 판 올리기만 → 앞 판 바인딩(DB·변수·비밀값 이름)이 모두 이어지는지 대조 → 100% → health 5번 → 실패면 앞 판으로 되돌리기.
+DB·KV 번호는 저장소에 적지 않고 지금 도는 판의 바인딩에서 읽어 채워요. 열쇠는 저장소 Secret `CLOUDFLARE_API_TOKEN`(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만)이에요.
+
 ## 명령줄로 배포하기 (선택)
 
 ```sh

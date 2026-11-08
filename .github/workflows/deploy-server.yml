@@ -1,0 +1,81 @@
+# 1.39 [DEPLOY-01] 서버 자동 배포 (크롬·대시보드 붙여 넣기 없이). 사용자 결정 2026-11-08: Claude가 시작해 끝까지(승인 단계 없음).
+# 시작: Actions › deploy-server › Run workflow (main에서), 배포할 브랜치를 ref에. Claude는 GitHub 도구로 같은 일을 해요.
+# 안전장치는 shift-calendar-app/tools/deploy_worker.py 맨 위 설명: 시험 → 올리기만 → 바인딩 대조 → 100% → health 5번 → 실패면 앞 판으로.
+# 열쇠: 저장소 Settings › Secrets › Actions의 CLOUDFLARE_API_TOKEN(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만).
+# 고를 수 있는 값: Variables의 CLOUDFLARE_ACCOUNT_ID(토큰이 닿는 계정이 하나면 없어도 됨), BAMNAT_API·BAMNAT_SHARE(health 주소, 기본 api.·s.bamnat.app).
+name: deploy-server
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 배포할 브랜치·커밋 (예 claude/project-thread-r5u2si 또는 main)
+        required: true
+        default: main
+      target:
+        description: 어느 서버
+        type: choice
+        options: [both, company, share]
+        default: both
+      mode:
+        description: check는 올리고 대조까지만(손님은 앞 판), deploy는 끝까지
+        type: choice
+        options: [check, deploy]
+        default: check
+      reason:
+        description: 왜 배포하는지 한 줄 (배포 기록에 남아요)
+        required: false
+        default: ""
+      allow_older:
+        description: 지금 도는 판보다 낮은 판도 올리기(되돌릴 때만)
+        type: boolean
+        default: false
+  pull_request:
+    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", ".github/workflows/deploy-server.yml"]
+permissions:
+  contents: read
+# 배포는 한 번에 하나씩, 도중에 끊지 않아요.
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 shift-calendar-app/tools/test_deploy_worker.py
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      BAMNAT_API: ${{ vars.BAMNAT_API }}
+      BAMNAT_SHARE: ${{ vars.BAMNAT_SHARE }}
+      IN_REF: ${{ inputs.ref }}
+      IN_TARGET: ${{ inputs.target }}
+      IN_MODE: ${{ inputs.mode }}
+      IN_REASON: ${{ inputs.reason }}
+      IN_OLDER: ${{ inputs.allow_older }}
+    steps:
+      # 배포 도구는 main의 것, 서버 코드는 고른 브랜치의 것.
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          path: target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 배포
+        run: |
+          python3 shift-calendar-app/tools/test_deploy_worker.py
+          sha=$(git -C target rev-parse HEAD)
+          echo "## 서버 배포 ${IN_MODE}: ${IN_REF} (${sha:0:8})" >> "$GITHUB_STEP_SUMMARY"
+          older=(); [ "$IN_OLDER" = "true" ] && older=(--allow-older)
+          case "$IN_TARGET" in both) workers="company share";; *) workers="$IN_TARGET";; esac
+          for w in $workers; do
+            BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
+              python3 shift-calendar-app/tools/deploy_worker.py --worker "$w" --mode "$IN_MODE" --sha "$sha" --reason "$IN_REASON" "${older[@]}"
+          done

@@ -1,2 +1,5 @@
 node_modules/
 .wrangler/
+dist/
+wrangler.deploy.toml
+.deploy-out.ndjson
