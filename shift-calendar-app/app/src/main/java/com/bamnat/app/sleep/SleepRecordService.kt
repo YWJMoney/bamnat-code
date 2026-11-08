@@ -314,6 +314,8 @@ class SleepRecordService : Service(), SensorEventListener {
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setGroup(Notifications.SLEEPING_REC_GROUP).setGroupSummary(true)
+            // PC 5차: a colored service notice is one Android 16 never folds into the app's bundle.
+            .setColorized(true).setColor(0xFF1A237E.toInt())
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
             .setOngoing(true)
