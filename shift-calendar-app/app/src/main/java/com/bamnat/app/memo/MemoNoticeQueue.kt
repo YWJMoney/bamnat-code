@@ -33,7 +33,7 @@ internal object MemoNoticeQueue {
     }.getOrDefault(emptyList()).sortedWith(compareByDescending<Entry> { it.at }.thenByDescending { it.added })
 
     fun put(context: Context, e: Entry) {
-        val o = JSONObject().put("at", minutes(e.at)).put("title", e.title).put("text", e.text).put("added", System.currentTimeMillis())
+        val o = JSONObject().put("at", minutes(e.at)).put("title", e.title).put("text", e.text).put("added", com.bamnat.core.time.Today.millis())
         e.rest?.let { o.put("rest", minutes(it)) }
         prefs(context).edit().putString(e.memo.toString(), o.toString()).commit()
     }
