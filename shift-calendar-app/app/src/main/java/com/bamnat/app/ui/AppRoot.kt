@@ -1065,7 +1065,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         // PC 4차 c0ca3d9f (장터 3, 상): the tab the page was opened in (마을 for a 장터 page). A tab moved to while trying keeps that tab's
         // screens put away with the tried tab on top; 끝내기 brings that tab back and goes down to the page, so 마을 on the bar is 마을
         // again after (it opened 근무·급여 with 근무·급여 lit, and back went to the page).
-        val owner = nav.currentBackStack.value.asReversed().firstNotNullOfOrNull { e ->
+        val owner = wholeStack(nav).asReversed().firstNotNullOfOrNull { e ->
             e.destination.route?.takeIf { r -> TopLevel.entries.any { it.route == r } }
         }
         com.bamnat.app.ui.recipe.LiveTryOn.back = back@{
@@ -2812,3 +2812,10 @@ private suspend fun sharedPlaces(c: AppContainer): List<com.bamnat.app.imports.S
     val shop = flags[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true && c.phaseThree.workplaces.first().isNotEmpty()
     return com.bamnat.app.imports.SharedToManage.places(teams, shop)
 }
+
+/**
+ * The whole back stack, bottom first. Navigation keeps it as a library-group API (lint RestrictedApi); no public call gives the stack
+ * below the previous entry, and 써 보기 끝내기 needs the tab a page was opened from (PC 4차 c0ca3d9f 장터 3).
+ */
+@android.annotation.SuppressLint("RestrictedApi")
+private fun wholeStack(nav: androidx.navigation.NavController): List<androidx.navigation.NavBackStackEntry> = nav.currentBackStack.value
