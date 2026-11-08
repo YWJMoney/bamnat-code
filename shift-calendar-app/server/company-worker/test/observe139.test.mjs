@@ -27,6 +27,9 @@ const ratingsCsv = (list) => ["Date,Package Name,Daily Average Rating,Total Aver
 
 test("[OBS2-01] Play 보고서 CSV(UTF-16)를 날짜 줄·출처·판·별점으로 읽어요", () => {
   assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: "gs://pubsite_prod_rev_0123456789/stats/installs" }), "pubsite_prod_rev_0123456789");
+  // Play Console's 'Cloud Storage URI 복사' today: no "rev", the number is the developer account ID.
+  assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: "gs://pubsite_prod_6734895202737078415/stats/installs/" }), "pubsite_prod_6734895202737078415");
+  assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: " gs://pubsite_prod_6734895202737078415 " }), "pubsite_prod_6734895202737078415");
   assert.equal(obsBucket({ PLAY_REPORTS_BUCKET: "Bad Name!" }), null);
   const list = days("2026-11-06", 20);
   const text = obsText(utf16(installsCsv(list)));

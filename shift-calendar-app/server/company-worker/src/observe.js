@@ -59,7 +59,7 @@ const obsRound1 = (v) => (v === null || v === undefined || !Number.isFinite(v) ?
 const obsSum = (a) => a.reduce((n, v) => n + (v ?? 0), 0);
 const obsAvg = (a) => (a.length ? obsSum(a) / a.length : 0);
 
-/** PLAY_REPORTS_BUCKET: 'pubsite_prod_rev_0123…', 'gs://pubsite_prod_rev_0123…/stats' 어느 쪽이든 저장소 이름만. 아니면 null. */
+/** PLAY_REPORTS_BUCKET: 'pubsite_prod_0123…'(숫자는 개발자 계정 ID, 옛 계정은 pubsite_prod_rev_…), 'gs://pubsite_prod_0123…/stats/installs/' 어느 쪽이든 저장소 이름만. 아니면 null. */
 export function obsBucket(env) {
   const raw = typeof env.PLAY_REPORTS_BUCKET === "string" ? env.PLAY_REPORTS_BUCKET.trim() : "";
   const name = raw.replace(/^gs:\/\//, "").split("/")[0];
