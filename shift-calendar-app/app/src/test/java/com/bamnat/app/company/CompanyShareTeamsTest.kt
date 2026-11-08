@@ -43,9 +43,11 @@ class CompanyShareTeamsTest {
         val t = schedule.snapshot.first().shiftTypes
         val day = t.first { it.name == "주간" }.id
         val night = t.first { it.name == "야간" }.id
-        // 주주야야휴휴휴휴 from 11/3 for my 조; 주주휴 does not split into 조 evenly.
-        val steps = if (splits) listOf(day, day, night, night, null, null, null, null) else listOf(day, day, null)
-        schedule.setFirstPattern(WorkPattern.Rotation(today, steps, LocalDate.of(2026, 11, 3)), today)
+        // 주주야야휴휴휴휴 from 11/3 for my 조, the days off as the 휴무 kind a first setup keeps (PC c0ca3d9f);
+        // 주주휴 does not split into 조 evenly.
+        val off = t.first { it.isOff }.id
+        val steps = if (splits) listOf(day, day, night, night, off, off, off, off) else listOf(day, day, off)
+        schedule.setFirstPattern(WorkPattern.Rotation(today, steps, anchorDate = LocalDate.of(2026, 11, 3)), today)
         return CompanyShare(schedule, PayStore(context), SettingsRepository(context), today = { today }, teamRoster = { roster })
     }
 
@@ -64,7 +66,7 @@ class CompanyShareTeamsTest {
         val steps = rotation.getJSONArray("steps")
         fun on(anchor: LocalDate, day: LocalDate) = steps.opt(TeamAnchors.stepOn(anchor, day, 8)).toString()
         (0L until 16L).map(today::plusDays).forEach { day -> assertEquals("$day", on(start, day.minusDays(4)), on(c, day)) }
-        assertTrue((0L until 8L).map { on(c, today.plusDays(it)) }.toSet().containsAll(listOf("주간", "야간", "null")))
+        assertTrue((0L until 8L).map { on(c, today.plusDays(it)) }.toSet().containsAll(listOf("주간", "야간")))
         assertEquals("C조", TeamAnchors.roster(teams, c, 8)!!.mine.name)
         // The box typed by the sender wins over the roster's name.
         assertEquals("1팀", JSONObject(share(roster).export("", false, team = "1팀")).getJSONObject("rotation").getString("team"))
