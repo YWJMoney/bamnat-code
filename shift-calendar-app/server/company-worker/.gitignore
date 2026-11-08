@@ -2,3 +2,5 @@ node_modules/
 .wrangler/
 *.sqlite
 dist/
+wrangler.deploy.toml
+.deploy-out.ndjson

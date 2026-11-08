@@ -27,7 +27,7 @@ object LedgerColors {
     /** The palette for the current theme, read from the surface so it follows the app's light or dark choice. */
     @Composable
     @ReadOnlyComposable
-    fun palette(): List<Color> = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) dark else light
+    fun palette(): List<Color> = if (com.bamnat.app.ui.components.isDarkSurface()) dark else light
 
     /** A steady color for [name]: built-in categories keep their place in [order], others a hash of the name. */
     @Composable

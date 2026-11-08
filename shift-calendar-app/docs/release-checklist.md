@@ -19,7 +19,7 @@
 | 회사 서버·공유 서버 시험 | `android.yml` servers | |
 | 16KB 정렬 | `release-build.yml` zipalign -c -P 16 | |
 | 광고 규칙(1.36부터): 띠 광고 없음, 보상형은 사용자가 고를 때 누르는 단추 한 파일에서만, 전면·앱 열기·네이티브·알람 화면 광고 없음, 정식 출시 전·프로·설치 3일 안에는 광고 SDK를 시작하지 않음, 광고 SDK는 AdMob 하나 [GROW-01·02] | `AdAndLicenseRulesTest` | |
-| 무료 약속: 위젯·기본 알람(울림·다시 알림·근무별 시간)은 프로 잠금이 없음 [GROW-03] | `FreePromiseRulesTest` | |
+| 무료 약속: 위젯·기본 알람(울림·다시 알림·근무별 시간)은 프로 잠금이 없음, 할 일 위젯 2개째만 프로 [GROW-03][TASK-07] | `FreePromiseRulesTest` | |
 | 약관·처리방침이 앱의 숫자(체험 질문 7일, 광고 없는 3일)와 같음 | `LegalPagesTest` | |
 | 오픈소스 라이선스 목록이 의존성과 같음 | `AdAndLicenseRulesTest` | |
 | 서명 인증서 SHA-256이 업로드 키와 같음 | `apksigner verify --print-certs` (HANDOFF 5항) | |

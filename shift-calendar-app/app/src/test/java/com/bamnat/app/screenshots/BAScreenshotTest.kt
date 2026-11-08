@@ -305,9 +305,11 @@ class BAScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(bare(), keepUndo = false) }
         c.companyOf(PersonalCalendar.MAIN).pendingWays.offer(way(PendingWay.Source.APPLY))
         c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
-        assertTrue(appears("통상시급 기준 시간: 회사 규칙 180시간", exact = true))
-        tapText("209시간", exact = true)
-        assertTrue(appears("회사 규칙은 180시간이에요. 209시간으로 계산하고, 넣은 뒤 같은 회사 분들께 의견으로 보낼지 여쭤볼게요.", exact = true))
+        // 1.39 [PAYP-04] (3차 통합 PC): the way is the sharer's once in, so its hours are neither shown nor picked here; the
+        // card groups them (1.30 BA showed "통상시급 기준 시간: 회사 규칙 180시간" with 209·226·243 to pick).
+        assertTrue(appears(com.bamnat.app.ui.company.SharedPayWords.WAY_TITLE, exact = true))
+        assertTrue(gone("통상시급 기준 시간:", exact = false))
+        assertTrue(gone("209시간", exact = true))
     }
 
     // ---- [PAYG-11] 금액 화면: 회사 공통 항목, 사람마다 다른 수당만, 형태·시작 달은 접어서 ----

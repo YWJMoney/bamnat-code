@@ -141,7 +141,7 @@ test("[STAT-01] switched off, the server takes nothing; day totals go after 400 
 
 test("[STAT-01] the app and the server know the same event names", () => {
   const kotlin = readFileSync(new URL("../../../core/src/main/kotlin/com/bamnat/core/stats/UsageEvents.kt", import.meta.url), "utf8");
-  const app = [...kotlin.matchAll(/^\s+[A-Z_]+\("([a-z_]+)"\)/gm)].map((m) => m[1]).sort();
+  const app = [...kotlin.matchAll(/^\s+[A-Z0-9_]+\("([a-z0-9_]+)"\)/gm)].map((m) => m[1]).sort();
   assert.deepEqual(app, Object.keys(EVENTS).sort());
 });
 

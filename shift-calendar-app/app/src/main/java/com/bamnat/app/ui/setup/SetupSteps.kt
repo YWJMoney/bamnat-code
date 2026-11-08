@@ -77,7 +77,20 @@ import java.time.LocalTime
 
 // ---- 1. how the user works ----
 
-internal data class StyleChoice(val style: WorkStyle, val roster: Boolean, val title: String, val subtitle: String, val icon: ImageVector)
+internal data class StyleChoice(val style: WorkStyle, val roster: Boolean, val title: String, val subtitle: String, val icon: ImageVector) {
+    /** 1.39 [FLOW-01] The kind's own colour for its big picture: night blue for shifts, sun for weekdays, and so on. */
+    val color: androidx.compose.ui.graphics.Color get() = androidx.compose.ui.graphics.Color(
+        when {
+            style == WorkStyle.SHIFT && roster -> 0xFF7E57C2
+            style == WorkStyle.SHIFT -> 0xFF3F5BD0
+            style == WorkStyle.DAY -> 0xFFD98E00
+            style == WorkStyle.HOURLY -> 0xFF00A88F
+            style == WorkStyle.FIELD -> 0xFFE0662B
+            style == WorkStyle.BUSINESS -> 0xFFD6457A
+            else -> 0xFF2D8FD0
+        },
+    )
+}
 
 /** Shift work is asked as two answers, since a roster painted every month is set up differently. */
 internal val STYLE_CHOICES = listOf(
@@ -116,7 +129,7 @@ internal fun StyleStep(
         StepHeader("어떤 일로 둘러볼까요?", "고른 일의 예시 달력이 열려요. 둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않아요.")
         STYLE_CHOICES.filter { (it.style != WorkStyle.SHIFT || !it.roster) && shown.shows(it.style) }.forEach { c ->
             ChoiceCard(title = c.title.substringBefore(" · ").let { if (c.style == WorkStyle.SHIFT) "교대 근무" else it },
-                subtitle = shown.mark(c.style, c.subtitle.substringBefore(" · ")), icon = c.icon, selected = false, onClick = { onBrowse(c.style) })
+                subtitle = shown.mark(c.style, c.subtitle.substringBefore(" · ")), icon = c.icon, picture = c.color, selected = false, onClick = { onBrowse(c.style) })
         }
         TextButton(onClick = { browsing = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 정보로 바로 시작할게요") }
         return
@@ -134,6 +147,7 @@ internal fun StyleStep(
             title = c.title,
             subtitle = shown.mark(c.style, c.subtitle),
             icon = c.icon,
+            picture = c.color,
             selected = d.style == c.style && (c.style != WorkStyle.SHIFT || d.rosterMonthly == c.roster),
             onClick = { onPick(c.style, c.roster) },
         )

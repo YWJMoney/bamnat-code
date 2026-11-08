@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.setup
 
+import com.bamnat.app.ui.withBar
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -111,6 +112,14 @@ class SetupViewModel(
     /** [EASE-03] 1.38: the summary's '같은 회사 분들과 이 근무주기 나누기' box; never ticked beforehand. */
     val shareCycle = MutableStateFlow(false)
 
+    /**
+     * 1.39 사용자 2026-11-08 (첫 설정 끝에 '잠을 아래 메뉴에 둘까요?' 한 번 권하기; 8차 PC 1-24: 새 설치는 첫 설정 요약이 마지막 화면이라
+     * 추천 화면의 권하기가 안 보였어요): the place of the bar 잠 takes when the first setup is saved; -1 keeps the bar. Never picked
+     * beforehand. Only the first setup of a new install offers it ([offersSleepBar]).
+     */
+    val sleepSlot = MutableStateFlow(-1)
+    val offersSleepBar: Boolean get() = calendarId == null && !again
+
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
@@ -205,6 +214,7 @@ class SetupViewModel(
     fun later() {
         c.telemetry.event("setup_later", current.step.name)
         if (again) return cancelAgain()
+        if (calendarId == null) c.setupTaps.end() // 1.39 [SETUP-20] 나중에: install to a full calendar did not happen, nothing goes.
         update { it.copy(later = true) }
         if (calendarId == null) current.style?.let { style -> keepStyle(style) }
     }
@@ -817,6 +827,19 @@ class SetupViewModel(
 
     fun clearToday() = update { it.copy(anchor = null, todayConfirmed = false) }
 
+    /** [CYC-06] 1.39: the 조 the setup's source names, as 모든 조 보기 with the one answered marked mine; null without them. */
+    private fun teamsOf(d: SetupDraft): com.bamnat.core.schedule.TeamRoster? {
+        val source = d.source ?: return null
+        val anchor = d.anchor ?: return null
+        if (d.rotation.size < 2 || sourceOrder(d) != d.rotation) return null
+        val teams = when (source.kind) {
+            SetupSource.Kind.PUBLIC -> source.id?.let(com.bamnat.core.plaza.PublicCycles::byId)?.teams.orEmpty()
+            SetupSource.Kind.FILE -> com.bamnat.app.data.CompanyShare.teamsOf(source.text)
+            else -> emptyList()
+        }
+        return com.bamnat.core.setup.TeamAnchors.roster(teams, anchor, d.rotation.size)
+    }
+
     /** [CYC-06] "몇 조예요?" answered: the day that team starts the cycle. */
     fun answerAnchor(date: LocalDate) = update { it.copy(anchor = date, todayConfirmed = false) }
 
@@ -849,6 +872,13 @@ class SetupViewModel(
         return AlarmPlanner.nextAlarm(snapshot.resolver, at)
     }
 
+    /** 1.39 [FLOW-03] What the saved setup puts on the calendar from today, said in one line; null when no day works. */
+    internal fun fillLine(d: SetupDraft): com.bamnat.core.setup.FillMoment.Line? {
+        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(today), d.paintedEntries())
+        if (snapshot.isEmpty) return null
+        return com.bamnat.core.setup.FillMoment.of(snapshot.resolver.resolveRange(today, today.plusDays(70)), today, firstAlarm(d)?.triggerAt)
+    }
+
     // ---- 8. saving ----
 
     fun save() = save(current)
@@ -860,10 +890,21 @@ class SetupViewModel(
         c.appScope.launch {
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
+                    // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
+                    if (calendarId == null && !again) c.setupTaps.finish(d.style)
+                    // 1.39 사용자 2026-11-08: 잠 in the place picked on the summary ([sleepSlot]).
+                    if (offersSleepBar && sleepSlot.value >= 0) runCatching { putSleepOnBar(sleepSlot.value) }
+                        .onFailure { android.util.Log.w("Setup", "sleep on the bar", it) }
+                    // 1.39 [FLOW-03] The month fills over the calendar with its one line ("이번 달 야간 8번 · 첫 알람 내일 06:00").
+                    runCatching { fillLine(d) }.getOrNull()?.let { line ->
+                        com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN, line))
+                    }
                     if (again) { store.clear(); _done.value = true }
                     // [J133-51] The day the calendar was set up: no question cards or tips on top of it.
                     val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
                     c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
+                    // [CYC-06] 1.39: "몇 조예요?" answered from a row or a coworker's file sets up 모든 조 보기 too, unless it is set.
+                    runCatching { teamsOf(d)?.let { r -> if (c.teams.get(cal) == null) c.teams.set(cal, r) } }
                     // 1.38 통합 11차 (식당 운영: 영업일을 정하기 전까지 모든 칸이 '쉬는 날'): [EASE-09] keeps the calendar first, so the shop
                     // opens every day 10~22 at once; 영업일·정기휴무 changes it whenever the user wants.
                     if (d.style == WorkStyle.BUSINESS && c.calendars.get(cal)?.shop == null)
@@ -888,6 +929,17 @@ class SetupViewModel(
                 }
             _saving.value = false
         }
+    }
+
+    /** 1.39 사용자 2026-11-08: the bar with 잠 in place [index] (one the summary offered: never the home screen's). */
+    private fun putSleepOnBar(index: Int) {
+        val key = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.SLEEP.name
+        c.settingsRepository.update { s ->
+            val bar = com.bamnat.core.layout.TabSlots.resolve(s.tabSlots, s.tabOrder, com.bamnat.app.ui.TabPicks.known)
+            if (index !in com.bamnat.core.layout.TabSlots.swapChoices(bar, key)) s
+            else s.withBar(com.bamnat.core.layout.TabSlots.replace(bar, index, key))
+        }
+        c.telemetry.event("bar_sleep", "setup")
     }
 
     /**

@@ -46,6 +46,18 @@ const FILLER = /안녕하세요|안녕하십니까|감사합니다|감사해요|
 // Particles and endings taken off a word so 알람이·알람은·알람을 meet as 알람.
 const TAIL = /(에서는|에서도|으로는|에게서|이에요|입니다|해요|돼요|되요|어요|아요|에서|으로|이랑|하고|까지|부터|처럼|보다|이나|은|는|이|가|을|를|에|로|도|만|요|의|와|과|나)$/;
 
+/**
+ * 1.39 [DESK-05] 같은 뜻 낱말 사전(설계 3장 '알람=울림=소리, 급여=월급=임금'): 조사를 뗀 낱말을 한 낱말로 모아 비교해요.
+ * '알림'은 넣지 않아요. 밤낮에서 알림(문의 답·근무 전 알림·결제 알림 읽기)은 알람과 다른 기능이라, 묶으면 다른 문제가 한 묶음이 돼요.
+ * 배운 별칭(묶은 기록으로 개발사항마다 낱말 더하기)은 DESK-06이에요.
+ */
+export const SAME_WORD = {
+  울림: "알람", 울려: "알람", 울리: "알람", 소리: "알람", 알람음: "알람", 알람소리: "알람", 모닝콜: "알람",
+  월급: "급여", 임금: "급여", 급료: "급여", 봉급: "급여", 페이: "급여", 월급날: "급여일", 월급일: "급여일",
+  스케줄: "근무표", 스케쥴: "근무표", 근무일정: "근무표", 듀티: "근무표", 듀티표: "근무표", 시간표: "근무표",
+  나이트: "야간", 밤근무: "야간", 데이: "주간", 낮근무: "주간",
+};
+
 /** The words of [text] with particles off, and their letter pairs, for [likeness]. */
 export function grams(text) {
   const t = String(text ?? "").normalize("NFC").toLowerCase().replace(FILLER, " ").replace(/[^0-9a-z가-힣]+/g, " ").trim();
@@ -55,6 +67,7 @@ export function grams(text) {
     if (!w) continue;
     const bare = [...w].length > 2 ? w.replace(TAIL, "") : w;
     if (bare) w = bare;
+    w = SAME_WORD[w] ?? w;
     words.add(w);
     const c = [...w];
     if (c.length === 1) pairs.add(w);
@@ -93,6 +106,29 @@ export function compareVersions(a, b) {
   return 0;
 }
 
+/**
+ * 1.39 [ADM3-37] 관리자앱-13차-확인 7 (오늘 › 할 일에서 같은 문의가 줄마다 따로): 답을 기다리는 문의 중 같은 말로 읽히는 것을 한 묶음으로.
+ * 정리함의 '새 문제' 묶기와 같은 잣대(SORTING.same, 같은 주제면 조금 더)예요. [items]는 오늘 할 일 순서(기한 가까운 것 먼저) 그대로 두고,
+ * 묶음의 첫 줄에 `others`(나머지 id)를, 나머지 줄에 `bundle`(첫 줄 id)을 붙여요. 큐 모드·주의 필요·할 일함은 줄을 하나씩 그대로 써요.
+ * [texts]는 id → 첫 글. 화면 경로 '[설정 > …]'는 빼고 비교해요(같은 화면에서 온 다른 말이 묶이지 않게).
+ */
+export function bundleInquiries(items, texts) {
+  const leads = [];
+  for (const x of items) {
+    if (x.type !== "inquiry") continue;
+    const text = String(texts.get(x.id) ?? x.title ?? "");
+    const g = grams(text.replace(/^\s*\[[^\]\n]{1,40}\]\s*/, ""));
+    if (!g.words.size) continue;
+    const topic = triage(x.kind, text, null).topic;
+    const lead = leads.find((l) => likeness(l.g, g, l.topic === topic && topic !== "etc") >= SORTING.same);
+    if (lead) {
+      lead.item.others = [...(lead.item.others ?? []), x.id];
+      x.bundle = lead.item.id;
+    } else leads.push({ item: x, g, topic });
+  }
+  return items;
+}
+
 /** The answer each pile starts with; the admin may change it before sending. */
 export function replyFor(pile, match) {
   const v = match?.releasedIn;
@@ -121,7 +157,7 @@ export function titleFrom(text) {
 /** What the server knows to weigh questions against: 개발사항, answered questions, saved answers. 1.38 [DESK-02] 운영 장부도 써요. */
 export async function known(env) {
   const [devs, answered, templates, shipped] = await Promise.all([
-    all(env, `SELECT id, title, body, status, reason, released_in FROM dev_items WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ${SORTING.devs}`),
+    all(env, `SELECT id, title, body, status, reason, released_in, news FROM dev_items WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ${SORTING.devs}`),
     // Questions an admin answered (the last word theirs), with the first question and that answer.
     all(env, `SELECT i.id, i.kind, i.info,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
@@ -133,7 +169,8 @@ export async function known(env) {
   ]);
   return {
     shipped,
-    devs: devs.map((d) => ({ ...d, g: grams(`${d.title} ${d.title} ${d.body}`) })),
+    // 1.39 [DESK-05] 출시 노트 후보: 개발사항의 '업데이트 소식' 한 줄(사용자 말로 쓴 것)도 따로 비교해요.
+    devs: devs.map((d) => ({ ...d, g: grams(`${d.title} ${d.title} ${d.body}`), ...(d.news ? { ng: grams(d.news) } : {}) })),
     answered: answered.filter((a) => a.answer && a.first).map((a) => ({ ...a, g: grams(a.first), topic: triage(a.kind, a.first, JSON.parse(a.info)).topic })),
     templates: templates.map((t) => ({ ...t, g: grams(`${t.label} ${t.text}`) })),
   };
@@ -146,7 +183,8 @@ export function classify(q, k) {
   const app = version(q.info?.app);
   let dev = null;
   for (const d of k.devs) {
-    const s = likeness(g, d.g);
+    // 1.39 [DESK-05] 그 개발사항의 업데이트 소식 한 줄과 닮아도 같은 것으로 봐요.
+    const s = Math.max(likeness(g, d.g), d.ng ? likeness(g, d.ng) : 0);
     if (s >= SORTING.same && (!dev || s > dev.score)) dev = { score: s, d };
   }
   if (dev) {
@@ -260,6 +298,9 @@ export async function applySort(request, env, now) {
   return json(done);
 }
 
+/** 1.39 [LOOP-12] 정리함 줄이 들었던 더미(Claude가 결과에 같이 적어요). 모르면 "". */
+const pileOf = (a) => (typeof a?.pile === "string" && PILES.includes(a.pile) ? a.pile : "");
+
 /** The 정리함 steps themselves, shared by applySort and 1.37 [ADM2-08] the 결과 block's 문의 lines; a Response when not allowed. */
 async function sortActions(env, actions, now) {
   const body = { actions };
@@ -285,7 +326,7 @@ async function sortActions(env, actions, now) {
       done.created.push({ id: item, title });
       for (const id of ids) {
         if (await link(env, item, id, now, name)) done.linked++;
-        if (a.text && (await inboxAnswer(env, id, a.text, now, name))) done.replied++;
+        if (a.text && (await inboxAnswer(env, id, a.text, now, name, pileOf(a)))) done.replied++;
       }
       continue;
     }
@@ -304,7 +345,7 @@ async function sortActions(env, actions, now) {
     if (a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item)) {
       if (await link(env, devId(a.item), id, now, name)) done.linked++;
     }
-    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name))) {
+    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name, pileOf(a)))) {
       done.replied++;
       // 1.37 [ADM2-10] 이미 나간 판으로 고친 개발사항에 묶어 답했으면 그 답이 '나왔어요' 안내예요: 판을 저장할 때 다시 보내지 않아요.
       if (a.do === "reply" && a.item) {
@@ -327,10 +368,10 @@ async function link(env, item, id, now, by) {
 }
 
 /** An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it). */
-export async function inboxAnswer(env, id, text, now, by) {
+export async function inboxAnswer(env, id, text, now, by, pile = "") {
   const t = plainText(text, INQUIRY.text, "text", true);
-  // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류.
-  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, {}, now) : false;
+  // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류. 1.39 [LOOP-12] 정리함 더미(pile)를 같이 적어 '믿을수록 더 맡기기'를 세요.
+  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, { pile }, now) : false;
   const r = await run(env, "UPDATE inquiries SET status = 'answered', updated_at = ?, assignee = COALESCE(assignee, ?), assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?",
     now, env.actor?.id ?? null, by, id);
   if (!r.meta.changes) return false;

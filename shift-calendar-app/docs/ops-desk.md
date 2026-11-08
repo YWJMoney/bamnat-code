@@ -38,8 +38,41 @@
 | `/inquiries`, `/inquiries/<id>`(알람 점검 기록은 빠짐), `/inquiries/sort`, `/inquiries/handoff` | `/dev`, `/dev/<id>`, `/dev/<id>/links·links/remove·notes·reply` |
 | `/dev`, `/dev/<id>`, `/templates` | `/desk/ship` |
 | `/ledger?view=claude&q=…`(장부 줄, 300줄씩 `more`), `/ledger.csv`, `/ledger/log?key=q12` | `/ledger/state {keys,state,reason}`, `/ledger/undo {key}`, `/ledger/summary {key,text}` |
+| 1.39 `/loop`(자동 순환 상태), `/loop/queue`(영향도 순 개발 대기열), `/loop/decide`(결정함), `/loop/tiers`, `/loop/tier/<d…>`(요금 관측치, 읽기만), `/loop/autonomy` | 1.39 `/loop/drafts`(결정함 문의에 보낼 답 초안만) |
+| 1.39 `/queue`(검토함: 제보 묶음·명세서 확인 수·달라요·토론 수), `/companies?q=`, `/companies/<id>`, `/companies/similar`, `/versions`(여러 판), `/rewards`(드릴 보상), `/drafts`(열린 추천과 일치율) | 1.39 `/drafts` 추천만(아래) |
 
 그 밖(지우기, 여러 개 한 번에 닫기, 공개 바꾸기, 사진, 결제 기록, 자동 대응 설정, 기능 스위치, 공지, 관리자, 열쇠 목록)은 403. 하루 3000번·바꾸기 400번을 넘으면 429.
+
+## 제보 검토·보상·회사 합치기 추천 (1.39 ADM3-49, 사용자 2026-11-08)
+열쇠는 **추천만** 적어요. 채택·거절·되돌리기(`/groups/…`), 보상 지급(`/rewards/<id>`), 회사 합치기(`/companies/<id>/merge`, `/companies/similar/skip`)는 403이고, 관리자 앱에서 사람이 추천을 보고 버튼을 한 번 눌러요.
+
+- 제보 묶음: `POST /api/admin/drafts {kind:"group", company, grp(=queue의 setup), pick:"adopt"|"reject", reason?(reject면 different·unclear·wrong·duplicate·inappropriate), note, sources?}`
+- 보상: `{kind:"reward", id, pick:"paid"|"void", months?(1~12, paid), note}`
+- 비슷한 회사: `{kind:"merge", from, into, pick:"merge"|"skip", note}`
+- 지우기: 같은 대상에 `pick: null`.
+- `note`는 500자, 결론부터. `sources`는 https 주소 다섯 개까지. 원문을 열어 확인한 공개 자료(공고·기사·노무 사이트)만 적어요(CLAUDE.md 5항, 다른 앱 자료 긁기 금지). 검토함의 '명세서 확인' 수와 달라요·토론도 근거로 써요.
+- 보상은 돈과 같아 늘 사람이 정해요(3-2항). 사람이 정하면 활동 기록 '추천과 맞춰 봄'에 같음·다름이 남고, Claude 조종석 '제보·보상 추천' 칸이 일치율을 보여요.
+- **넓히기 관문**: 정한 추천 20건 이상, 같음 90% 이상이면 조종석이 '더 맡길지 여쭐 때예요'를 보여요. 그때 사용자에게 '뚜렷한 제보는 Claude가 바로 채택·거절'을 물어요(보상은 계속 사람).
+- 하루 두 번 운영 장부 자동 처리 때 검토함과 드릴 보상을 읽고, 추천이 없는 묶음·보상에 추천을 적어요.
+
+## 개선 신호와 관측 빈틈 (1.39 OBS2, 사용자 2026-11-08 '통계를 통한 완전한 자가 발전')
+문의가 개발로 이어지듯, **숫자에서 찾은 문제도 개발로** 이어져요. 서버가 매시 관측 판(Play 보고서·Play vitals·서버 요청·사용 통계 표본·찾았는데 없던 말)을 기준과 견줘 '개선 신호'를 쌓아요(`src/observe.js` `obsRules`).
+
+- 읽기: `GET /api/admin/observe`(판 한 장: 전체 사용자·신호·빈틈), `GET /api/admin/observe/signals`(신호만).
+- 처리: `POST /api/admin/observe/signals {key, act:"dev"|"watch"|"dismiss"|"reopen", title?, note?}`.
+  - `dev`는 개발사항을 만들고 본문에 근거(신호 key·지금 값·기준)를 붙여요. 그 뒤는 다른 개발사항과 같아요(dev-status.jsonl, PR, 디버그 빌드, PC 확인).
+  - 고친 뒤 그 숫자가 사흘 동안 기준 안이면 신호가 '좋아진 신호'로 옮겨지고 그때 값이 남아요. 출시 보고에 '고치기 전 → 뒤'로 써요. 다시 나타나면 '다시 나타남 N'.
+  - `watch`는 표본이 적거나 하루 이틀 튄 것. `dismiss`는 이유(note)를 꼭 남겨요(30일 동안 같은 신호를 다시 띄우지 않아요).
+- 하루 두 번 운영 장부 자동 처리 때 새 신호(배지 `obsNew`)를 봐요: 같은 문제의 문의·개발사항이 있으면 그 개발사항에 근거로 잇고(`/dev/<id>/notes`), 없으면 `dev`로 만들어요. 요금·처리방침이 걸리면 사용자에게 카드로.
+- **관측 빈틈**(`gaps`): 지금 숫자로 답하지 못하는 질문이에요. 줄마다 `state`가 있어요: `todo`(할 일, 이것만 처리), `wait`(Play 권한 퍼짐·1.39 출시·3.12 시행처럼 기다리면 풀림), `decided`(사용자가 정함). Play 권한을 막 저장했으면 `POST /api/admin/observe/refresh`로 바로 다시 읽어요(2분에 한 번). 연결이 빠진 것은 고치는 법이 적혀 있어요. `policy: true`(근무 유형별 흐름, 기능과 머묾, 지운 이유)는 새로 모으는 것이라 처리방침 문장과 사용자 결정이 먼저예요. Claude는 제안만 해요.
+- **유형별 흐름·기능과 머묾**(1.39 OBS2-08, 처리방침 3.12 시행일부터): 판의 `kinds`(유형마다 진입·1·7·30일째, `all`은 전체)와 `keep`(기능마다 쓴 휴대폰·7일 안에 다시 온 비율·기준 `open`과의 차이 `lift7`). 한 유형의 7일째 머묾이 전체의 70% 아래면 `kind-keep-low` 신호예요. 높은 `lift7`은 '함께 간다'일 뿐이니, 그 기능을 첫 주에 더 쉽게 찾게 하는 개발사항을 제안할 때 근거로만 써요.
+- **개발하며 더 모을 데이터**: 개발사항마다 그 효과를 잴 이벤트(`dev-status.jsonl` `events`)를 적어요. 없이 진행·완료된 개발사항은 빈틈에 '효과를 잴 이벤트 없이 …'로 떠요. 새 이벤트 이름이 처리방침 1-9항 목록 밖이면 다음 처리방침 판 문장 후보로 계획 문서에 적어요.
+
+## 자동 순환 (1.39 G10)
+- **나간 판 저장이 저절로**: 서버가 Play 프로덕션 트랙을 매시 읽어 판이 100%가 되면 1시간 기다렸다가 위 '나간 판 저장'을 해요. 관리자 앱 › 자동 순환에서 그 1시간 안에 취소·지금 보내기, 스위치로 끄기. 단계적 출시 중에는 앱이 보낸 판(X-App)으로 고친 판을 연 폰에만 먼저 안내해요.
+- **개발 상태는 저장소에서**: `ops/dev-status.jsonl`(문의 글 없음)이 main에 합쳐지면 GitHub Action이 동기화 열쇠(`POST /dev/sync`만 됨)로 보내요. 고친 판은 그 커밋의 versionName. 동기화 열쇠는 관리자 앱 › 열쇠에서 '동기화'로 만들어요(하나만, 1년).
+- **요금은 사람만**: 열쇠로는 요금을 정하지 못해요(`/loop/tier/<d…>` POST는 최고 관리자 세션만). Claude는 `tierAsk`·`tierWhy`로 제안하고, 결정함에 올라가요.
+- **해결됐나요·알려진 문제**: 앱에서 '아직이에요'가 오면 문의가 다시 열리고 개발사항이 접수로 돌아가 결정함·알림에 떠요. '나도 겪어요'는 짧은 문의 한 건(이미 답한 상태)으로 묶여 관리자 차례에 쌓이지 않아요.
 
 ## 시험
 `npm test`의 `test/ledger.test.mjs`(장부 줄·K 번호·겹침·단계·끝내기 이유·되돌리기·7일 되돌아옴·CSV·열쇠 범위), `test/desk.test.mjs`(나간 판 전후 앱 단계·답·묶음 답, 흐름 숫자, 열쇠 범위·끊기). 로컬에서 보기: `ADMIN_PASSWORD=… npm run local -- 8788 --seed --test-clock` 뒤 `/admin/#/flow`, `/admin/#/desk`.

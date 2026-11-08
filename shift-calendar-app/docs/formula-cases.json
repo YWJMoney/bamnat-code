@@ -19,6 +19,8 @@
  {"src":"1 / 0","want":{"fails":true,"ok":true}},
  {"src":"지출 > 칸(\"기준 금액\")","want":{"ok":true,"text":"참","truthy":true,"type":"bool"}},
  {"src":"칸(\"없는 칸\", 7) * 2","want":{"ok":true,"text":"14","truthy":true,"type":"num"}},
+ {"src":"값(\"물 잔\", 3) + 1","want":{"ok":true,"text":"4","truthy":true,"type":"num"}},
+ {"src":"value(\"배달\")","want":{"ok":true,"text":"","truthy":false,"type":"none"}},
  {"src":"근무 & \" \" & 근무시간 & \"시간\"","want":{"ok":true,"text":"야간 9.5시간","truthy":true,"type":"text"}},
  {"src":"근무 + 1","want":{"ok":true,"text":"야간1","truthy":true,"type":"text"}},
  {"src":"\"12,000원\" + 1","want":{"ok":true,"text":"12001","truthy":true,"type":"num"}},

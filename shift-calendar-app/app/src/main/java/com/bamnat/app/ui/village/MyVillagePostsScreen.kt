@@ -67,6 +67,19 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
     com.bamnat.app.ui.company.TalkSheet(talk)
     val open = { room: String, name: String, id: String -> talk.show(room, com.bamnat.core.plaza.StylePlaza.ROOM, name, focus = id) }
+    // 1.39 발굴: from '보완 요청이 n개 왔어요', the version's talk opens at once.
+    val fixTalk by com.bamnat.app.ui.company.TalkSheets.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(fixTalk) {
+        val f = fixTalk ?: return@LaunchedEffect
+        com.bamnat.app.ui.company.TalkSheets.pending.value = null
+        talk.show(f.company, f.setup, f.title)
+    }
+    // 1.39 조사 ③(4) 가려진 내 글 '다시 보여 주세요'(마을 돌봄이 켜진 뒤, 처리방침 3.12): 운영자가 다시 읽고 답해요.
+    val canAsk = c.flags.on(com.bamnat.core.flags.FlagCatalog.COMMUNITY_CARE)
+    var askFor by remember { mutableStateOf<String?>(null) }
+    askFor?.let { id ->
+        com.bamnat.app.ui.hub.AppealDialog(c, "post:$id", onDone = { sent -> askFor = null; sent?.let { scope.launch { snack.showSnackbar(it) } } })
+    }
     LaunchedEffect(Unit) {
         mine = try {
             c.companyApi.myPosts(c.companyStore.device).also { list ->
@@ -126,6 +139,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                                         if (p.hidden) "다른 분께는 가려졌어요" else null,
                                     ).joinToString(" · ").ifEmpty { null }) {
                                     if (p.room.isNotBlank()) TextButton(onClick = { open(p.room, p.roomName, p.id) }) { Text("글 보기") }
+                                    if (p.hidden && canAsk) TextButton(onClick = { askFor = p.id }) { Text("다시 보여 주세요") }
                                 }
                             }
                         }

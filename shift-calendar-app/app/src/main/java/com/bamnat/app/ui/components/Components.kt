@@ -108,7 +108,12 @@ private val InkCache = java.util.concurrent.ConcurrentHashMap<Int, Color>()
 val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }
 
 @Composable
-fun isDarkSurface(): Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+@androidx.compose.runtime.ReadOnlyComposable
+fun isDarkSurface(): Boolean = MaterialTheme.colorScheme.let { s ->
+    // 1.39 [MKW-02] 그려 보기(밝은 테마의 메모가 남색 카드에 검은 글씨): 꾸밈이 화면 밑에 깔리면 ScreenSkin이 surface를 투명으로 두어
+    // 투명(밝기 0)을 어둡다고 읽었어요. 투명하면 그 위 글자색(onSurface)으로 바탕이 밝은지 어두운지 가려요.
+    if (s.surface.alpha >= 0.5f) s.surface.luminance() < 0.5f else s.onSurface.luminance() > 0.5f
+}
 
 @Composable
 fun memoBackground(index: Int): Color {
@@ -217,11 +222,10 @@ fun SectionCard(
     if (LocalFlatSections.current) {
         Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             if (title != null || trailing != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f))
-                    trailing?.invoke()
-                }
+                // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                    Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                }, end = { trailing?.invoke() })
                 Spacer(Modifier.padding(top = 4.dp))
             }
             content()
@@ -239,19 +243,15 @@ fun SectionCard(
         // U 1.32 [UX132-06] 촘촘하게 (기본) trims the card's top and bottom; the sides stay 16dp for the finger.
         Column(Modifier.padding(horizontal = 16.dp, vertical = com.bamnat.app.ui.theme.LocalSpacing.current.inner)) {
             if (title != null || trailing != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (title != null) {
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f).semantics { heading() },
-                        )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    trailing?.invoke()
-                }
+                // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                    if (title != null) Text(
+                        title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                }, end = { trailing?.invoke() })
                 Spacer(Modifier.padding(top = 10.dp))
             }
             content()
@@ -446,11 +446,14 @@ internal fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Co
     androidx.compose.runtime.LaunchedEffect(pressed, enabled) {
         if (!pressed || !enabled) return@LaunchedEffect
         repeated = false
-        kotlinx.coroutines.delay(450)
+        // [JOBDAYS-01] 1.39 (PC a483ca15: 작업 기간 +를 두 번 눌렀는데 60일): a tap is one step; only a real hold repeats, slowly for
+        // the first steps and quicker after, so a press a slow phone holds a moment too long adds a step or two, not dozens.
+        kotlinx.coroutines.delay(550)
+        var n = 0
         while (true) {
             repeated = true
             step()
-            kotlinx.coroutines.delay(90)
+            kotlinx.coroutines.delay(if (n++ < 5) 220 else 90)
         }
     }
     FilledTonalIconButton(

@@ -126,6 +126,15 @@ class HealthSleep(private val context: Context, private val clock: () -> Long = 
         return runCatching { client.insertRecords(records); records.size }.getOrDefault(-1)
     }
 
+    /**
+     * 1.39 G5 점검 [SLEEP-09]: a sleep deleted in the app goes from Health Connect too, so other apps do not keep a sleep the
+     * user took back. Only the app's own copy (its clientRecordId); nothing when writing is not allowed.
+     */
+    suspend fun forget(id: Long) {
+        if (id <= 0 || !canWrite()) return
+        runCatching { client.deleteRecords(SleepSessionRecord::class, emptyList(), listOf("bamnat-sleep-$id")) }
+    }
+
     companion object {
         const val DAYS = 30L
         /** 1.38 [SLEEP-09] Asked only when the user turns on 헬스 커넥트에 쓰기. */

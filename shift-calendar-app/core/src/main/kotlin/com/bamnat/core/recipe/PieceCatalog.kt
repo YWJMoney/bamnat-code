@@ -63,6 +63,19 @@ sealed interface Field {
     ) : Field
 }
 
+/** 1.39 [FX-11] One act of a 동작 줄 ("more", "else"): the fields a button's or a rule's own act has. */
+internal val LOGIC_ACT_MORE: List<Field> = listOf(
+    Field.Texts("then", com.bamnat.core.formula.LogicAct.MAX_THEN, 12),
+    Field.Num("after", 1.0, com.bamnat.core.formula.LogicAct.MAX_AFTER.toDouble(), optional = true),
+    Field.Text("text", com.bamnat.core.formula.LogicAct.MAX_TEXT, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+)
+internal val LOGIC_ACT: List<Field> = listOf(
+    Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
+    Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+    Field.Money("amount", optional = true),
+    Field.Num("by", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+) + LOGIC_ACT_MORE
+
 /** The kinds of piece, each with the kinds of work it fits and the screen it comes from. */
 enum class PieceKind(val key: String, val label: String, val styles: Set<WorkStyle>, val fields: List<Field>) {
     /** [RCP-08] 근무 꾸미기: names, letters, colours and emoji of the kinds of day. */
@@ -391,6 +404,13 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                     Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
                     Field.Money("amount", optional = true),
                     Field.Text("show", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                    // 1.39 [FX-03] 값 더하기·정하기: by how much / to what.
+                    Field.Num("by", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+                    *LOGIC_ACT_MORE.toTypedArray(),
+                    // 1.39 [FX-11] 그리고/아니면, 동작 줄.
+                    Field.Text("if", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                    Field.Items("more", com.bamnat.core.formula.MAX_MORE, LOGIC_ACT, optional = true),
+                    Field.Items("else", com.bamnat.core.formula.MAX_ELSE, LOGIC_ACT, optional = true),
                 ),
             ),
             Field.Items(
@@ -398,13 +418,38 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                 fields = listOf(
                     Field.Text("name", 20, min = 1),
                     Field.Pick("on", com.bamnat.core.formula.RuleTrigger.KEYS),
-                    Field.Num("min", -720.0, 720.0, optional = true),
+                    Field.Num("min", -720.0, 720.0, optional = true, input = true),
                     Field.Clock("at", optional = true, input = false),
                     Field.Pick("role", ShiftRole.KEYS, optional = true),
                     Field.Text("when", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
                     Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
                     Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
                     Field.Money("amount", optional = true),
+                    Field.Num("by", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+                    // 1.39 [FX-05] 알림 단추: the buttons an 알림 carries.
+                    Field.Texts("then", com.bamnat.core.formula.LogicAct.MAX_THEN, 12),
+                    Field.Num("after", 1.0, com.bamnat.core.formula.LogicAct.MAX_AFTER.toDouble(), optional = true),
+                    Field.Text("text", com.bamnat.core.formula.LogicAct.MAX_TEXT, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+                    // 1.39 [FX-11] 동작 줄·아니면, [FX-12] 값이 바뀌면, [FX-15] 몇 분마다.
+                    Field.Items("more", com.bamnat.core.formula.MAX_MORE, LOGIC_ACT, optional = true),
+                    Field.Items("else", com.bamnat.core.formula.MAX_ELSE, LOGIC_ACT, optional = true),
+                    Field.Text("of", 12, optional = true, check = { s -> if (com.bamnat.core.formula.LogicValue.isName(s)) null else "name" }),
+                    Field.Pick("edge", listOf("goal"), optional = true),
+                    Field.Clock("until", optional = true, input = false),
+                    Field.Pick("during", listOf("work"), optional = true),
+                ),
+            ),
+            // 1.39 [FX-03] 값 칸.
+            Field.Items(
+                "values", com.bamnat.core.formula.LogicValue.MAX, optional = true,
+                fields = listOf(
+                    Field.Text("name", 12, min = 1, check = { s -> if (com.bamnat.core.formula.LogicValue.isName(s)) null else "name" }),
+                    Field.Pick("reset", com.bamnat.core.formula.ValueReset.KEYS, optional = true),
+                    Field.Num("start", -com.bamnat.core.formula.LogicAct.MAX_BY, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true),
+                    // 1.39 [FX-19] 받는 사람이 정하는 목표 (칸).
+                    Field.Num("goal", 0.0, com.bamnat.core.formula.LogicAct.MAX_BY, decimals = 2, optional = true, input = true),
+                    Field.Text("unit", com.bamnat.core.formula.LogicValue.MAX_UNIT, optional = true),
+                    Field.Pick("kind", com.bamnat.core.formula.ValueKind.KEYS, optional = true),
                 ),
             ),
         ),
@@ -594,6 +639,12 @@ data class CalendarView(
         /** What can stand under a day's mark, in the app's own order. */
         val LINES = listOf("holiday", "memo", "money", "hours", "spend", "lunar")
 
+        /**
+         * [CELL-02] 1.39 (사용자 2026-11-07 "테마를 입으면 달력에 적어 둔 것이 안 보여요"): what a 달력 모양 piece says about *what* the cells
+         * show (메모 줄 수, 줄 순서, 근무 시간·음력·지출) rather than how they look. Someone else's theme leaves these as the user set them.
+         */
+        val CONTENT_KEYS = setOf("memo", "order", "hours", "lunar", "spend")
+
         fun orderProblem(s: String): String? =
             if (s.isEmpty() || s.split(',').let { l -> l.all { it in LINES } && l.size == l.distinct().size }) null else "order"
 
@@ -624,6 +675,14 @@ data class CalendarView(
         )
     }
 }
+
+/**
+ * [CELL-02] 1.39 Someone else's theme as a look only: its 달력 모양 keeps how the cells look (크기·표시·날짜 자리·칸 디자인·패턴) and leaves
+ * what they show ([CalendarView.CONTENT_KEYS]) as the user has it, so memos and jobs written on the calendar stay in sight.
+ */
+fun Recipe.keepMyCellContent(): Recipe = copy(pieces = pieces.map { p ->
+    if (p.kind == PieceKind.CAL_VIEW) p.copy(values = p.values - CalendarView.CONTENT_KEYS) else p
+})
 
 /** [CVW-07] 1.35 앱 동작's choices, as a recipe writes them. */
 object AppFeel {

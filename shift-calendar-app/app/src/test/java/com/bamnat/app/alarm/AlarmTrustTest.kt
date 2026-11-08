@@ -53,6 +53,8 @@ class AlarmTrustTest {
     fun cardSaysTheNextAlarm() {
         val plan = PlannedAlarm(today.plusDays(1).atTime(5, 30), today.plusDays(1), LocalTime.of(7, 0), 1, "주간", 90, null)
         assertEquals("내일 05:30 · 주간 근무 알람", nextLine(true, UpcomingAlarm(plan, 0L, true), today))
+        // 1.39 [SHOP-13] 8차 PC 식당: 가게의 영업은 '영업 근무 알람'이 아니에요.
+        assertEquals("내일 05:30 · 영업 알람", nextLine(true, UpcomingAlarm(plan.copy(shiftName = "영업"), 0L, true), today))
         assertEquals("알람이 모두 꺼져 있어요", nextLine(false, UpcomingAlarm(plan, 0L, true), today))
         assertEquals("오늘", whenText(today, today))
         assertEquals("11월 8일 (일)", whenText(today.plusDays(3), today))

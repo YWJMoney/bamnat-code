@@ -1,6 +1,8 @@
 package com.bamnat.app.screenshots
 
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.recipe.MakerPage
@@ -101,9 +103,9 @@ class RCScreenshotTest : ScreenshotBase() {
         // [CNV-13] the tool row opens with 펼치기 instead of sliding it.
         tapText("도구 줄 모두 펼쳐 보기", exact = true)
         tapText("보관함", prefix = true)
-        tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
+        tapText("장터 ‘탭별 작품 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
-        assertTrue(appears("탭 하나만", exact = true))
+        assertTrue(appears("탭 하나를 위해", exact = true))
         back()
         assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
     } }
@@ -123,7 +125,7 @@ class RCScreenshotTest : ScreenshotBase() {
         model.query("없는이름가나"); model.load()
         settle()
         assertTrue(appears("‘없는이름가나’에 맞는 작품이", exact = false))
-        assertTrue(appears("기능별 탭에서 찾기", exact = true))
+        assertTrue(appears("탭별 작품에서 찾기", exact = true))
     }
 
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {
@@ -154,7 +156,10 @@ class RCScreenshotTest : ScreenshotBase() {
         val vm = RecipeDetailViewModel(c, api.code(0), PersonalCalendar.MAIN)
         content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
         settle()
-        assertTrue(appears("내 달력에 넣을 것 고르기", exact = true))
+        // 1.39 [MKD-42][MKD-43] 위에는 작품 모습·만든 분, 가운데 '넣기 전에 해 보기', 넣을 조각 고르기는 '자세히 보기' 안에.
+        assertTrue(appears("만든 분 밤낮", exact = false) || appears("밤낮", exact = true))
+        assertTrue(scrolledTo("넣기 전에 해 보기", exact = true))
+        assertTrue(scrolledTo("자세히 보기", exact = true))
         tapText("내 달력에 넣기", exact = false)
         settle()
         assertTrue("넣기 전에 바뀌는 것을 보여 줘요", appears("이렇게 바뀌어요", exact = true))
@@ -170,6 +175,31 @@ class RCScreenshotTest : ScreenshotBase() {
         val again = runBlocking { c.recipes.apply(r, api.code(0), 1, PersonalCalendar.MAIN, r.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap()) }
         assertTrue("다시 들어갔어요", again != null)
         assertEquals("한 휴대폰은 한 번만 세요", 1, api.applied)
+    }
+
+    /**
+     * 1.39 [MKP-05] 기능 조각 전후 (사용자 2026-11-07 "기능 조각들도 어떠한지 전후를 알 수 있으면"): a work's alarm piece says, before
+     * anything goes in, each of my shifts' alarms now and after, side by side.
+     */
+    @Test fun aFunctionPieceShowsNowAndAfter() = shoot("1342h_rcp_detail_before_after", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        runBlocking {
+            c.scheduleRepository.saveShiftType(com.bamnat.core.model.ShiftType(0, "야간", "야", 0xFF3949ABL, java.time.LocalTime.of(19, 0),
+                java.time.LocalTime.of(7, 0), alarms = listOf(com.bamnat.core.model.AlarmSpec(60))))
+        }
+        val i = api.recipes.indexOfFirst { (r, data) -> !data && WorkStyle.SHIFT in r.styles && r.pieces.any { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS } }
+        assertTrue("알람 조각이 든 시작 레시피", i >= 0)
+        val vm = RecipeDetailViewModel(c, api.code(i), PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        val alarms = vm.state.value.pieces.first { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS }
+        assertTrue("알람 조각의 전후 줄: 내 야간 둘 다", alarms.sides.count { it.what == "야간 알람" && it.changed } == 2)
+        assertTrue("내 야간은 1시간 전에서 더해져요", alarms.sides.any { it.what == "야간 알람" && it.now.contains("(1시간 전)") && it.then.startsWith("2시간 전") })
+        assertTrue("넣기 전에는 아무것도 바뀌지 않아요", runBlocking { c.recipes.applied.first() }.isEmpty())
+        tapText("자세히 보기", exact = true)
+        settle()
+        assertTrue(scrolledTo("지금 ↔ 넣으면", exact = false))
     }
 
     /**
@@ -226,18 +256,17 @@ class RCScreenshotTest : ScreenshotBase() {
         // The 넣었어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
         compose.mainClock.advanceTimeBy(12_000)
         settle()
-        repeat(6) { scrollDown(400) }
-        settle()
-        assertTrue(appears("내 달력에 넣어 둔 레시피예요", exact = true))
-        // 되돌리기 on the line, then on its question.
-        tapText("되돌리기", exact = true, scrolls = 0)
+        // 1.39 [MKD-43] 사다리 넣기 칸이 '✓ 넣었어요 · 다시 넣기'와 그 옆 되돌리기로 (입혀 보기 갈래 PC 확인).
+        assertTrue(scrolledTo("✓ 넣었어요 · 다시 넣기", exact = true))
+        // 되돌리기 beside it, then on its question.
+        tapText("되돌리기", exact = true)
         settle()
         assertTrue(appears("넣기 전으로 되돌릴까요?", exact = true))
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
         settle()
         assertEquals(null, vm.state.value.appliedAt)
-        assertTrue("되돌린 뒤 줄이 없어요", gone("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue("되돌린 뒤 줄이 없어요", gone("✓ 넣었어요 · 다시 넣기", exact = true))
         assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == api.code(0) })
     }
 
@@ -253,14 +282,15 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("넣기", exact = true)
         settle()
         assertTrue(appears("넣었어요", exact = false))
-        tapText("되돌리기", exact = true, scrolls = 0)
+        // 1.39 [MKD-43] The page's own 되돌리기 (사다리 넣기 칸 옆) may show too: the line's is the one at the bottom of the screen.
+        val undos = compose.onAllNodesWithText("되돌리기", substring = false)
+        val lowest = undos.fetchSemanticsNodes().withIndex().maxBy { it.value.boundsInWindow.top }.index
+        undos[lowest].performClick()
         settle()
         settle()
         assertTrue("되돌린 뒤: ${vm.state.value.appliedAt} ${vm.state.value.message}", vm.state.value.appliedAt == null)
         assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == api.code(0) })
-        repeat(6) { scrollDown(400) }
-        settle()
-        assertTrue("되돌린 뒤 줄이 없어요", gone("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue("되돌린 뒤 넣기 칸도 처음대로", !scrolledTo("✓ 넣었어요 · 다시 넣기", exact = true, scrolls = 4))
     }
 
     /** PC 확인 8773e3ae: put on twice with other pieces, 되돌리기 on the page takes the whole recipe back, not only the newer half. */
@@ -282,7 +312,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val vm = RecipeDetailViewModel(c, code, PersonalCalendar.MAIN)
         content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
         settle()
-        assertTrue(appears("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue(scrolledTo("✓ 넣었어요 · 다시 넣기", exact = true))
         assertEquals("두 번 넣은 것이 모두 남아 있어요", 2, runBlocking { c.database.recipeDao().applied() }.count { it.code == code && it.undoneAt == null && it.replacedAt == null })
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
@@ -293,7 +323,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         settle()
         assertEquals(null, vm.state.value.appliedAt)
-        assertTrue("되돌린 뒤 줄이 없어요", gone("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue("되돌린 뒤 줄이 없어요", gone("✓ 넣었어요 · 다시 넣기", exact = true))
         assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == code })
         // Opened again, the page has no line to come back with.
         val again = RecipeDetailViewModel(c, code, PersonalCalendar.MAIN)
@@ -323,10 +353,8 @@ class RCScreenshotTest : ScreenshotBase() {
         // Its line (with 되돌리기 now, as the tab comes off here too) goes after ten seconds; then the card's.
         compose.mainClock.advanceTimeBy(12_000)
         settle()
-        repeat(6) { scrollDown(400) }
-        settle()
-        assertTrue(appears("내 달력에 넣어 둔 레시피예요", exact = true))
-        tapText("되돌리기", exact = true, scrolls = 0)
+        assertTrue(scrolledTo("✓ 넣었어요 · 다시 넣기", exact = true))
+        tapText("되돌리기", exact = true)
         settle()
         assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
         assertTrue(appears("테마 위에 얹음 · ‘달력’ 탭", exact = false))
@@ -337,7 +365,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue("얹은 탭도 빠졌어요", c.wardrobe.overlays.value.none { it.code == code })
         assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == code })
         assertEquals(null, vm.state.value.laidAt)
-        assertTrue(gone("내 달력에 넣어 둔 레시피예요", exact = true))
+        assertTrue(gone("✓ 넣었어요 · 다시 넣기", exact = true))
     }
 
     /** PC 확인 보안 8차 (넣어도 쓰는 분 0명): a recipe of one tab is laid on the theme with no record, and is a use all the same. */
@@ -381,10 +409,10 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeDetailViewModel(c, api.code(i))
         content { RecipeDetailScreen(model, onBack = {}, onRemake = {}) }
         settle()
-        repeat(3) { scrollDown(400) }
+        // The lines of what it changes, on the page under 자세히 보기 (the same ones the question repeats).
+        tapText("자세히 보기", exact = true)
         settle()
-        // The lines of what it changes, on the page (the same ones the question repeats).
-        assertTrue(appears("휴무: 색만 바뀜", exact = false))
+        assertTrue(scrolledTo("휴무: 색만 바뀜", exact = false))
         assertTrue(gone("글자 휴→휴", exact = false))
         assertTrue(gone("글자 주→주", exact = false))
     }
@@ -404,7 +432,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeDetailViewModel(c, "THEM2345")
         content { RecipeDetailScreen(model, onBack = {}, onRemake = {}) }
         settle()
-        tapText("입어 보고 고르기", exact = true)
+        tapText("예시로 보기", exact = true)
         settle()
         tapText("이 테마 입기", exact = true)  // 1.38 PC 스튜디오: all ticked says it in one word
         settle()
@@ -636,7 +664,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val vm = RecipeDetailViewModel(c, "RMIX2345", PersonalCalendar.MAIN)
         content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
         settle()
-        assertTrue(appears("내 판과 달라진 점", exact = true))
+        assertTrue(scrolledTo("내 판과 달라진 점", exact = true))
         val diff = vm.state.value.diff
         assertEquals(setOf(PieceKind.SHIFT_LOOK, PieceKind.CAL_VIEW), diff.map { it.kind }.toSet())
         // Only the colour is taken; the 달력 모양 the 수정판 added is left out.
@@ -647,7 +675,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(taken.pieces.none { it.kind == PieceKind.CAL_VIEW })
         assertTrue(taken.desc.contains("도움 준 수정판: ‘야간 더 진하게’"))
         // Every row starts ticked: a piece added whole counts once.
-        assertTrue(appears("고른 2개 내 판에 가져오기", exact = true))
+        assertTrue(scrolledTo("고른 2개 내 판에 가져오기", exact = true))
         assertEquals("내 판 그대로의 이름", mine.title, taken.title)
     }
 }

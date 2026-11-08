@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.memo
 
+import com.bamnat.app.ui.theme.washSurface
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.shape
 import com.bamnat.app.ui.parts.text
@@ -35,6 +36,8 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.bamnat.app.appContainer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.LocalContentColor
@@ -159,6 +162,10 @@ fun MemoListScreen(
         onDelete = vm::delete,
         // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for 10 seconds (PC 확인 5ff9ae28: 4–6초 was missed).
         onChange = { before, after, said -> vm.saveEdited(after); undo = UndoBar(said, { vm.saveEdited(before) }, "바꾸기 전으로 돌아왔어요") },
+        onDone = { memo, day, done ->
+            vm.setDone(memo, day, done)
+            undo = UndoBar(if (done) "끝냈어요" else "끝냄을 풀었어요", { vm.setDone(memo, day, !done) }, "바꾸기 전으로 돌아왔어요")
+        },
     )
     androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
 
@@ -202,7 +209,7 @@ fun MemoListScreen(
                         singleLine = true,
                         shape = MaterialTheme.shapes.extraLarge,
                     )
-                    MemoPart.FOLD -> Unit
+                    MemoPart.FOLD, MemoPart.WEEK -> Unit
                 }
             }
             PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(Color.Transparent)) {
@@ -220,6 +227,11 @@ fun MemoListScreen(
             // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
             val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
             val memoView = tabViews.memo
+            // 1.39 [FLOW-19] 주 띠: a week of days over the 달력 메모 list (not over its own 달력 보기), a dot for a day with memos;
+            // a day picked shows only its memos, the same day again or '모두 보기' shows them all.
+            androidx.compose.runtime.LaunchedEffect(appSettings.weekStart) { vm.setWeekStart(appSettings.weekStart) }
+            if (state.tab == MemoTab.CALENDAR && state.week.isNotEmpty() && memoView.view != com.bamnat.core.memo.MemoView.CALENDAR &&
+                parts.any { it.part == MemoPart.WEEK && it.shown }) MemoWeekStrip(state, today, vm)
             val shown = remember(state.tab, state.upcoming, state.past, state.general) {
                 if (state.tab == MemoTab.CALENDAR) (state.upcoming + state.past).flatMap { it.memos }.distinctBy { it.id } else state.general
             }
@@ -339,6 +351,8 @@ internal enum class MemoPart(val id: String, val label: String, val what: String
     NOTEBOOKS("notebooks", "공책", "공책을 나눠 쓸 때 위에 고르는 줄"),
     SEARCH("search", "검색 칸", "제목·내용·#태그 찾기"),
     FOLD("fold", "필터는 검색 칸 아이콘으로 접기", "끄면 필터·태그 칩이 늘 펼쳐져 있어요", movable = false),
+    /** 1.39 [FLOW-19] 주 띠 over the 달력 메모 list. */
+    WEEK("week", "주 띠", "달력 메모 위에 한 주 7일, 날을 누르면 그날 메모만", movable = false),
 }
 
 internal fun memoParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(MemoPart.entries.toList()) { it.id }
@@ -383,6 +397,8 @@ internal class CardActions(
      * [TAB-02] 누락 점검 N9: a memo changed in a view (moved to another 보드 칸, a 표 칸 picked) — saved, with [said] and 되돌리기 to [before].
      */
     val onChange: (before: Memo, after: Memo, said: String) -> Unit = { _, _, _ -> },
+    /** 1.39 [TASK-02] 끝냄 표시 / 풀기 on [day] (a repeating memo's day; the memo's own for one that does not repeat). */
+    val onDone: ((memo: Memo, day: java.time.LocalDate?, done: Boolean) -> Unit)? = null,
 )
 
 @Composable
@@ -422,6 +438,7 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
                 Icon(Icons.Outlined.Delete, contentDescription = "휴지통")
             }
         }
+        com.bamnat.app.ui.MeButton() // [NAV2-02]
     }
 }
 
@@ -467,6 +484,28 @@ private fun SelectionBar(
             }
             onShare?.let { IconButton(onClick = it) { Icon(Icons.Outlined.Groups, "보일 달력 정하기") } }
             IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, "휴지통으로 옮기기") }
+        }
+    }
+}
+
+/** 1.39 [FLOW-19] 주 띠 (DSG-06): ‹ week › with a dot under each day that has memos; the picked day's line under it with 모두 보기. */
+@Composable
+private fun MemoWeekStrip(state: MemoListState, today: LocalDate, vm: MemoListViewModel) = Column(Modifier.padding(horizontal = 4.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { vm.moveWeek(-1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") }
+        com.bamnat.app.ui.components.WeekStrip(
+            days = state.week, selected = state.day ?: LocalDate.MIN, today = today,
+            onPick = vm::pickDay, modifier = Modifier.weight(1f), counts = state.weekCounts, countWord = "메모",
+        )
+        IconButton(onClick = { vm.moveWeek(1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
+    }
+    state.day?.let { d ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            val n = state.weekCounts[d] ?: 0
+            // PC 4차: '메모 0개 · 이날은 메모가 없어요' said it twice.
+            Text("${d.monthValue}월 ${d.dayOfMonth}일 " + if (n == 0) "· 이날은 메모가 없어요" else "메모 ${n}개",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            androidx.compose.material3.TextButton(onClick = vm::clearDay) { Text("모두 보기") }
         }
     }
 }
@@ -660,6 +699,9 @@ internal fun MemoCard(
     var menu by remember { mutableStateOf(false) }
     var toLedger by remember { mutableStateOf(false) }
     if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
+    // 1.39 [TASK-02] A repeating memo in the list is finished day by day: today's.
+    val doneDay = if (memo.repeat.isNotEmpty()) Today.date() else memo.date
+    val done = memo.isDoneOn(doneDay)
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
@@ -687,7 +729,8 @@ internal fun MemoCard(
     val ink = if (cardPart.ink != null) Color(cardPart.ink!!.toInt()) else if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
     // PC d0799995 (체크 진행 카드): the part's 투명도 (alpha), so '체크율 >= 100이면 흐리게' lets a finished card step back.
     Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)
-        .then(cardPart.alpha?.let { a -> Modifier.graphicsLayer { alpha = a.coerceIn(0, 100) / 100f } } ?: Modifier)) {
+        .then(cardPart.alpha?.let { a -> Modifier.graphicsLayer { alpha = a.coerceIn(0, 100) / 100f } }
+            ?: if (done) Modifier.graphicsLayer { alpha = DONE_ALPHA } else Modifier)) {
         Surface(
             shape = shape,
             color = cardColor,
@@ -725,11 +768,15 @@ internal fun MemoCard(
                             else -> MaterialTheme.typography.titleSmall
                         }.let { st -> memoFont(look.font)?.let { st.copy(fontFamily = it) } ?: st }
                             .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } }
-                            .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) },
+                            .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) }
+                            .let { st -> if (done) st.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough) else st },
                         maxLines = if (look.layout == "compact") 1 else 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.title")),
                     )
+                    if (done) {
+                        Icon(Icons.Filled.CheckCircle, "끝냄", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
                     if (memo.pinned) {
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
@@ -751,6 +798,13 @@ internal fun MemoCard(
           }
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            actions.onDone?.let { onDone ->
+                DropdownMenuItem(
+                    text = { Text(if (done) "끝냄 풀기" else "끝냄 표시") },
+                    leadingIcon = { Icon(Icons.Filled.CheckCircle, null) },
+                    onClick = { menu = false; onDone(memo, doneDay, !done) },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(if (memo.pinned) "고정 해제" else "맨 위에 고정") },
                 leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
@@ -858,7 +912,7 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val pillColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+        val pillColor = MaterialTheme.colorScheme.washSurface.copy(alpha = 0.6f)
         // [BLU-05] 1.36 부품 '메모 날짜'(memo.card.date).
         val datePart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.card.date", scope = com.bamnat.app.logic.scopeFor(memo.date) { com.bamnat.core.layout.TabFacts.memo(memo) })
         if (date != null && datePart.hide != true) {
@@ -1021,3 +1075,6 @@ private data class UndoBar(val said: String, val back: (() -> Unit)?, val backSa
 
 /** A body line that is only 꼬리표 ("#집안일 #급함"). */
 private val TAG_LINE = Regex("^(#[\\p{L}\\p{N}_]+\\s*)+$")
+
+/** 1.39 [TASK-02] How far a finished memo's card steps back. */
+private const val DONE_ALPHA = 0.6f

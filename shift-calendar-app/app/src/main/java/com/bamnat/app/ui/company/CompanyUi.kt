@@ -30,8 +30,12 @@ import com.bamnat.app.company.CompanyTerms
 import com.bamnat.app.company.ReportStatus
 
 /** [LIM-03] 1.31: [companyProblem] for a refusal, with when it goes again and why when the server said ([RateLimits]). */
-fun companyProblem(e: com.bamnat.app.company.CompanyException): String =
-    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e) else companyProblem(e.code, e.field)
+fun companyProblem(e: com.bamnat.app.company.CompanyException): String = when (e.code) {
+    "rate_limited" -> com.bamnat.app.company.RateLimits.of(e)
+    // 1.39 발굴(마을 돌봄): 마을 쉬기 중의 맞아요·달라요·보완 요청도 '서버에 문제'가 아니라 언제까지 쉬는지 말해요.
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(e.untilMillis)
+    else -> companyProblem(e.code, e.field)
+}
 
 /** What to say for an error word from the company server [COMM-04], with the field it was about. */
 fun companyProblem(code: String, field: String? = null): String = when (code) {
@@ -68,6 +72,12 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "member" -> "이 회사에 참여한 휴대폰만 볼 수 있어요. 이 회사 설정을 쓰면 참여돼요"
     // [PLZD-01] 1.30 BD: 이 규칙 쓰기 could not put the plaza's rule into the calendar.
     "apply" -> "이 규칙을 넣지 못했어요. 회사 광장에서 다시 해 주세요"
+    // 1.39 [PAYP-03][PAYP-05] A version with no pay part, 보완 요청 before 처리방침 3.12.
+    "no_pay" -> "이 판에는 급여 방식이 없어요"
+    "closed" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
+    "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 마을에서 쉬어 가요. 마을 맨 위에서 까닭을 볼 수 있어요"
+    "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
+    "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
 }
 

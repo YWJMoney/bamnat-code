@@ -3,6 +3,13 @@ name = "bamnat-share"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
+# 1.39 운영 설정 지키기: 대시보드에서 넣은 일반 변수(VAPID_SUBJECT, SHARE_BASE_URL 등)는 저장소에 적지 않아요(운영 값).
+# `npx wrangler deploy`가 그 변수를 지우지 않게 둬요. Secret은 원래 배포로 지워지지 않아요.
+keep_vars = true
+
+# 1.39 관리자 앱 머리띠의 '지금 도는 서버 판'(사용자 11-08): 배포 번호·커밋(배포 도구의 --tag)·배포 시각. 회사 서버만 관리 열쇠로 읽어요.
+[version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [[kv_namespaces]]
 binding = "SHARES"

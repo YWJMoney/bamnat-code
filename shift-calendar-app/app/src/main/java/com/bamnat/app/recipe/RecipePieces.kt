@@ -45,6 +45,25 @@ class RecipePieces(private val c: AppContainer) {
     /** One line of what a piece changes; [skipped] lines say what it could not use here. */
     data class Change(val text: String, val skipped: Boolean = false)
 
+    // ---- 1.39 [NTC-03] 겹치는 알림: 넣기 전에 '기존 설정을 바꿀까요?' ----
+
+    /** The app's own notices that are on in [s]. */
+    fun noticesOn(s: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Set<com.bamnat.core.formula.NoticeOverlap.BuiltIn> = buildSet {
+        if (s.todayShiftNotice) add(com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY)
+        if (s.dayCloseNotice) add(com.bamnat.core.formula.NoticeOverlap.BuiltIn.DAY_CLOSE)
+    }
+
+    /**
+     * 1.39 [NTC-03] (사용자 2026-11-08 "부품 기능을 넣을때 기존의 설정을 바꿀까요?"): the 알림 rules of a 규칙·단추 piece ([values]) that say
+     * what an app notice that is on, or a rule of mine that is on, says already. [Mode.REPLACE] turns those off as it goes in
+     * (되돌리기 turns them back on); [Mode.BOTH] keeps them, a 오늘 근무 one folded into the lock-screen notice.
+     */
+    fun overlaps(values: Map<String, Any?>, cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current): List<com.bamnat.core.formula.NoticeOverlap.Hit> {
+        val store = com.bamnat.app.logic.LogicStore(c.appContext)
+        return com.bamnat.core.formula.NoticeOverlap.check(com.bamnat.core.formula.Logic.decode(cur.logic),
+            com.bamnat.core.formula.Logic.from(values).received(), noticesOn(cur)) { !store.isOff(it.key) }
+    }
+
     /** How a piece meets what the user has: put the recipe's on, keep both (where a piece can), or leave it out. */
     enum class Mode { REPLACE, BOTH, SKIP }
 
@@ -187,7 +206,7 @@ class RecipePieces(private val c: AppContainer) {
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
                 "accent" to s.accentColor.takeIf { it != 0L }, "textStep" to s.textStep.toLong(), "compact" to s.compact, "clock12" to s.clock12,
                 "tap" to s.phoneDayView.name.lowercase(), "hold" to s.longPress, "dayOrder" to s.dayGroupOrder.joinToString(",").ifEmpty { null },
-                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod, "motion" to s.motion.ifEmpty { null })
+                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to (s.statsPeriod == com.bamnat.app.data.StatsPeriod.PAY).takeIf { it }, "motion" to s.motion.ifEmpty { null })
         }
         // [LAY-01] 1.36 꾸밈 층.
         PieceKind.DECOR -> com.bamnat.core.recipe.Decor.decode(from.decor).takeIf { !it.isDefault }?.values()
@@ -320,7 +339,9 @@ class RecipePieces(private val c: AppContainer) {
                     // PC D6: 내 규칙 뒤에 더해지고, 같은 것은 하나로 둬요 (말없이 합쳐지지 않게).
                     Change("내 규칙·단추는 그대로 두고 뒤에 더해요"),
                     com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).mergeSay(l)?.let { Change(it) },
-                ))
+                ) +
+                    // 1.39 [FX-25] 넣기 전 부딪힘: 같은 때 같은 가계부·값 칸, 뜻이 다른 같은 이름 값 칸, 같은 자리 같은 이름 단추.
+                    com.bamnat.core.formula.LogicClash.check(com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic), l).map { Change("⚠ $it") })
                 .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
@@ -336,14 +357,218 @@ class RecipePieces(private val c: AppContainer) {
         }
     }
 
+    // ---- 전후 (1.39 [MKP-05]) ----
+
+    /**
+     * 1.39 [MKP-05] 기능 조각 전후 (사용자 2026-11-07 "기능 조각들도 어떠한지 전후를 알 수 있으면"): one thing a piece touches, as this phone
+     * has it [now] and as it would be once put in ([then]). A colour is shown as a swatch beside its words. Rows that stay as they are
+     * are kept too (dimmed on the screen), so what does not change is as plain as what does.
+     */
+    data class Side(val what: String, val now: String, val then: String, val nowColor: Long? = null, val thenColor: Long? = null) {
+        val changed: Boolean get() = now != then || nowColor != thenColor
+    }
+
+    /** 1.39 [MKP-05] [kind] with [values] (inputs filled in) on calendar [cal], 지금 ↔ 넣으면, row by row; empty where a piece has none. */
+    suspend fun compare(kind: PieceKind, values: Map<String, Any?>, cal: String, mode: Mode = Mode.REPLACE): List<Side> =
+        runCatching { compareOf(kind, values, cal, mode) }.getOrDefault(emptyList())
+
+    private suspend fun compareOf(kind: PieceKind, values: Map<String, Any?>, cal: String, mode: Mode): List<Side> = when (kind) {
+        PieceKind.SHIFT_LOOK -> lookPairs(values, cal).map { (a, b) ->
+            fun say(t: ShiftType) = "글자 ${t.label}" + (ShiftIcon.emoji(t.icon)?.let { " $it" } ?: "")
+            Side(a.name, say(a), say(b), a.colorArgb or 0xFF000000L, b.colorArgb or 0xFF000000L)
+        }
+        PieceKind.CAL_THEME -> {
+            val t = CalendarTheme.decode(c.settingsRepository.current.calTheme)
+            listOf("today" to "오늘", "sat" to "토요일", "sun" to "일요일", "holiday" to "공휴일").mapNotNull { (k, name) ->
+                val v = (values[k] as? Number)?.toLong() ?: return@mapNotNull null
+                val now = when (k) { "today" -> t.today; "sat" -> t.sat; "sun" -> t.sun; else -> t.holiday }
+                Side("$name 글자색", if (now == null) "앱 기본" else "", "", now?.let { it or 0xFF000000L }, v or 0xFF000000L)
+            } + listOfNotNull((values["cell"] as? String)?.let { Side("날짜 칸 칠하기", cellLabel(t.cell ?: "tint"), cellLabel(it)) })
+        }
+        PieceKind.ALARMS -> {
+            val cur = c.settingsRepository.current
+            val mine = types(cal).filter { !it.isOff }
+            fun say(list: List<Int>) = if (list.isEmpty()) "없음" else list.sortedDescending().joinToString("·") { minutesBefore(it) }
+            // Each of my shifts once, with what every role line of the piece adds to it (two shifts of one name are two rows).
+            val adds = LinkedHashMap<Long, Pair<ShiftType, MutableSet<Int>>>()
+            for (r in items(values, "byRole")) {
+                val role = ShiftRole.of(r["role"] as? String)
+                for (t in mine.filter { role(it) == role }) adds.getOrPut(t.id) { t to mutableSetOf() }.second += nums(r["before"])
+            }
+            val rows = adds.values.map { (t, add) ->
+                val had = t.alarms.map { it.offsetMinutes }
+                val now = if (!t.alarmEnabled && had.isNotEmpty()) "꺼짐 (${say(had)})" else say(had)
+                Side("${t.name} 알람", now, say((had + add.filter { it !in had }).distinct()))
+            }
+            fun onOff(b: Boolean) = if (b) "켬" else "끔"
+            rows + listOfNotNull(
+                (values["snooze"] as? Number)?.toInt()?.let { Side("다시 울림", "${cur.snoozeMinutes}분", "${it}분") },
+                (values["ring"] as? Number)?.toInt()?.let { Side("울림 길이", "${cur.ringMinutes}분", "${it}분") },
+                (values["gradual"] as? Boolean)?.let { Side("점점 크게", onOff(cur.gradualVolume), onOff(it)) },
+                (values["vibrate"] as? Boolean)?.let { Side("진동", onOff(cur.vibrate), onOff(it)) },
+                (values["mission"] as? String)?.takeIf { it != "none" }?.let {
+                    Side("끄기 미션", AlarmMission.of(cur.alarmMission).label, AlarmMission.of(it).label)
+                },
+            )
+        }
+        PieceKind.MEMO_TEMPLATES -> {
+            val mine = c.memoTemplates.items.value
+            val titles = items(values, "items").mapNotNull { (it["title"] as? String)?.takeIf { t -> t.isNotBlank() } }.distinct()
+            val same = titles.filter { t -> mine.any { it.title == t } }
+            val after = mine.size + titles.size - if (mode == Mode.REPLACE) mine.count { it.title in same } else 0
+            listOf(Side("메모 틀", "${mine.size}개", "${after}개")) + titles.take(MAX_SIDE_ROWS).map { t ->
+                val had = t in same
+                Side("‘$t’", if (had) "내 틀 있음" else "없음", when { !had -> "새로 생겨요"; mode == Mode.REPLACE -> "이 작품 틀로 바뀌어요"; else -> "둘 다 있어요" })
+            }
+        }
+        PieceKind.HOURLY_RULES -> {
+            val p = c.scopeOf(cal).pay.profile.value
+            if (p == null) emptyList() else {
+                val a = hourlyAfter(p, values)
+                val today = Today.date()
+                fun yes(b: Boolean, y: String = "예", n: String = "아니오") = if (b) y else n
+                fun night(x: Double?) = "${Math.round((x ?: 0.5) * 100)}%"
+                listOfNotNull(
+                    payPair(values, cal)?.let { (x, y) -> Side("이번 달 예상 급여 (세전)", com.bamnat.app.ui.Fmt.won(x), com.bamnat.app.ui.Fmt.won(y)) },
+                    values["wage"]?.takeIf { p.wageType == com.bamnat.core.pay.WageType.HOURLY }?.let {
+                        Side("시급 (오늘부터)", com.bamnat.app.ui.Fmt.won(p.base.on(today).value), com.bamnat.app.ui.Fmt.won(a.base.on(today).value))
+                    },
+                    values["weeklyPay"]?.let { Side("주휴수당", yes(p.rules.weeklyHolidayPay, "받음", "없음"), yes(a.rules.weeklyHolidayPay, "받음", "없음")) },
+                    values["five"]?.let { Side("5인 이상 사업장", yes(p.fiveOrMoreEmployees), yes(a.fiveOrMoreEmployees)) },
+                    values["breakPay"]?.let { Side("휴게시간", p.rules.breakPay.label, a.rules.breakPay.label) },
+                    values["night"]?.let { Side("야간 가산", night(p.rules.nightPremium), night(a.rules.nightPremium)) },
+                    values["partTime"]?.let { Side("단시간 가산", yes(p.rules.partTimePremium), yes(a.rules.partTimePremium)) },
+                    values["rounding"]?.let { Side("원 단위 맺기", p.rules.wonRounding.label, a.rules.wonRounding.label) },
+                    values["weekStart"]?.let { Side("한 주 시작", weekDay(p.holidayWeekStart), weekDay(a.holidayWeekStart)) },
+                    values["tax"]?.let { Side("세금", taxLabel(p.taxMode.name), taxLabel(a.taxMode.name)) },
+                )
+            }
+        }
+        PieceKind.FIELD_SHEET -> {
+            val f = c.calendars.get(cal)?.field ?: com.bamnat.core.money.FieldRules()
+            fun chips(l: List<Double>) = if (l.isEmpty()) "기본" else l.joinToString("·") { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() }
+            listOfNotNull(
+                (values["mode"] as? String)?.let { Side("세는 방식", f.mode?.label ?: "정하지 않음", FieldMode.valueOf(it).label) },
+                (values["dayRate"] as? Number)?.toLong()?.let { Side("일당", if (f.dayRate > 0) com.bamnat.app.ui.Fmt.won(f.dayRate) else "없음", com.bamnat.app.ui.Fmt.won(it)) },
+                (values["chips"] as? List<*>)?.mapNotNull { (it as? Number)?.toDouble() }?.takeIf { it.isNotEmpty() }?.let { Side("공수 칩", chips(f.unitChips), chips(it)) },
+            ) + categorySides(cal, MoneyKind.INCOME, texts(values, "kinds"), com.bamnat.core.work.WorkStyle.FIELD, "작업 분류") +
+                categorySides(cal, MoneyKind.EXPENSE, texts(values, "costs"), com.bamnat.core.work.WorkStyle.FIELD, "경비 분류")
+        }
+        PieceKind.SHOP -> {
+            val cal0 = c.calendars.get(cal)
+            val r0 = cal0?.shop ?: com.bamnat.core.work.ShopRules()
+            val m0 = cal0?.shopMoney ?: com.bamnat.core.work.ShopMoney()
+            fun open(closed: Set<DayOfWeek>) = DayOfWeek.entries.filter { it !in closed }.joinToString("") { dayShort(it.name) }.ifEmpty { "없음" }
+            listOfNotNull(
+                (values["open"] as? List<*>)?.let { o -> Side("영업일", open(r0.closedWeekdays), open(DayOfWeek.entries.filter { it.name !in o.map(Any?::toString) }.toSet())) },
+                (values["opens"] as? String)?.let { Side("여는 시각", clock(r0.open), it) },
+                (values["closes"] as? String)?.let { Side("닫는 시각", clock(r0.close), it) },
+                (values["holidaysClosed"] as? Boolean)?.let { Side("공휴일", if (r0.holidaysClosed) "쉬어요" else "열어요", if (it) "쉬어요" else "열어요") },
+                (values["cardFee"] as? Number)?.let { Side("카드 수수료", "%.2f%%".format(m0.cardFeeBp / 100.0).replace(".00%", "%"), "${it}%") },
+            ) + memoSides(texts(values, "closing").isNotEmpty(), CLOSING_TITLE) +
+                categorySides(cal, MoneyKind.EXPENSE, texts(values, "costs"), com.bamnat.core.work.WorkStyle.BUSINESS, "경비 분류")
+        }
+        PieceKind.INVEST -> {
+            val before = c.invest(cal).book.first().settings.principles
+            val add = items(values, "rules").mapNotNull { it["text"] as? String }.filter { it !in before }
+            listOfNotNull(Side("투자 원칙", "${before.size}개", "${(before.size + add.size).coerceAtMost(PRINCIPLES_MAX)}개").takeIf { add.isNotEmpty() || before.isNotEmpty() }) +
+                add.take(MAX_SIDE_ROWS).map { Side("‘${it.take(24)}’", "없음", "새로 생겨요") } + memoSides(texts(values, "journal").isNotEmpty(), JOURNAL_TITLE)
+        }
+        PieceKind.LEDGER -> {
+            val money = c.scopeOf(cal).money
+            val style = c.scopeOf(cal).settings.first().workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT
+            val had = money.allBudgets().associate { it.category to it.amount }
+            val budgets = items(values, "budgets").mapNotNull { b ->
+                val name = (b["category"] as? String)?.let(MoneyCategories::clean)?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val amount = (b["amount"] as? Number)?.toLong() ?: return@mapNotNull null
+                Side("‘$name’ 예산", had[name]?.takeIf { it > 0 }?.let { com.bamnat.app.ui.Fmt.won(it) } ?: "없음", com.bamnat.app.ui.Fmt.won(amount))
+            }
+            val open = money.envelopes.first().first.filter { !it.closed }.map { it.name }.toSet()
+            val envs = items(values, "envelopes").mapNotNull { (it["name"] as? String)?.trim()?.takeIf { n -> n.isNotEmpty() } }
+            categorySides(cal, MoneyKind.EXPENSE, texts(values, "costs"), style, "지출 분류") +
+                categorySides(cal, MoneyKind.INCOME, texts(values, "incomes"), style, "수입 분류") + budgets.take(MAX_SIDE_ROWS) +
+                listOfNotNull(Side("모으기 봉투", "${open.size}개", "${open.size + envs.count { it !in open }}개").takeIf { envs.isNotEmpty() })
+        }
+        PieceKind.LOGIC -> {
+            val mine = com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic)
+            val l = com.bamnat.core.formula.Logic.from(values).received()
+            val after = mine.plus(l)
+            listOfNotNull(
+                Side("규칙", "${mine.rules.size}개", "${after.rules.size}개").takeIf { l.rules.isNotEmpty() },
+                Side("단추", "${mine.buttons.size}개", "${after.buttons.size}개").takeIf { l.buttons.isNotEmpty() },
+            ) + overlaps(values).map { h ->
+                // 1.39 [NTC-03] 겹치는 알림이 넣은 뒤 어떻게 되는지.
+                val what = h.builtIn?.let { "${it.label} 알림" } ?: "내 ‘${h.other?.name}’ 규칙"
+                Side(what, "켬", when {
+                    mode == Mode.REPLACE -> "끔(‘${h.rule.name}’으로)"
+                    h.builtIn == com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY -> "켬 · 알림 하나로 합쳐요"
+                    else -> "켬 · 둘 다 와요"
+                })
+            }
+        }
+        PieceKind.COMPANY -> if (cal != PersonalCalendar.MAIN) emptyList() else {
+            val now = types(cal)
+            val s = runCatching { c.companyShare.summarize(values["setup"] as String) }.getOrNull()
+            if (s == null) emptyList() else listOfNotNull(
+                Side("근무 종류", now.joinToString("·") { it.name }.ifEmpty { "없음" }.take(40), s.shiftTypes.joinToString("·").take(40)),
+                Side("급여 규칙", if (c.payStore.profile.value != null) "내 설정" else "없음", "이 작품 회사 규칙").takeIf { s.hasRules || s.items.isNotEmpty() },
+            )
+        }
+        PieceKind.PHOTO_LOOK -> {
+            val l = com.bamnat.core.recipe.PhotoLook.decode(c.settingsRepository.current.photoLook)
+            fun has(b: Boolean) = if (b) "내 그림" else "없음"
+            listOfNotNull(
+                values["bg"]?.let { Side("달력 배경 그림", has(l.bg != null), "작품 그림") },
+                values["head"]?.let { Side("달력 위 머리 그림", has(l.head != null), "작품 그림") },
+                values["widget"]?.let { Side("위젯 배경 그림", has(l.widget != null), "작품 그림") },
+                items(values, "icons").takeIf { it.isNotEmpty() }?.let { Side("근무 그림", if (l.icons.isEmpty()) "없음" else "${l.icons.size}개", "작품 그림 ${it.size}개") },
+            )
+        }
+        // 모양만 바꾸는 조각: which settings move, the picture itself is in 입어 보기.
+        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
+        PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
+            val cur = c.settingsRepository.current
+            settingsAfter(kind, values, cal).map { (k, v) -> Side(SETTING_NAMES[k] ?: k, "지금 모양", if (settingOf(cur, k) == v) "지금 모양 그대로" else "작품 모양") }
+        }
+        PieceKind.BUNDLE -> emptyList()
+    }
+
+    /** Categories a piece adds: how many [kind] categories there are now and after, and the new ones by name. */
+    private suspend fun categorySides(cal: String, kind: MoneyKind, names: List<String>, style: com.bamnat.core.work.WorkStyle, what: String): List<Side> {
+        if (names.isEmpty()) return emptyList()
+        val shown = MoneyCategories.of(kind, c.scopeOf(cal).money.categories.first(), style)
+        val add = names.map(MoneyCategories::clean).filter { it.isNotEmpty() && it !in shown }.distinct()
+        val more = if (add.isEmpty()) "" else " · " + add.take(4).joinToString("·") + if (add.size > 4) " 외 ${add.size - 4}개" else ""
+        return listOf(Side(what, "${shown.size}개", "${shown.size + add.size}개$more"))
+    }
+
+    /** A memo template a piece adds by its fixed title (마감 점검·매매 일지). */
+    private fun memoSides(adds: Boolean, title: String): List<Side> = if (!adds) emptyList() else {
+        val had = c.memoTemplates.items.value.any { it.title == title }
+        listOf(Side("메모 틀 ‘$title’", if (had) "내 틀 있음" else "없음", if (had) "하나 더 생겨요" else "새로 생겨요"))
+    }
+
+    private fun weekDay(d: DayOfWeek?) = d?.let { dayShort(it.name) + "요일" } ?: "앱 기본"
+
+    private fun minutesBefore(m: Int) = when {
+        m >= 60 && m % 60 == 0 -> "${m / 60}시간 전"
+        m >= 60 -> "${m / 60}시간 ${m % 60}분 전"
+        else -> "${m}분 전"
+    }
+
     // ---- apply ----
 
     /**
      * Puts [values] on calendar [cal]; returns what it replaced (for [restore]) or null when nothing changed. [code] marks what it
      * added (메모 틀) so [restore] takes exactly that away.
      */
-    suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE): JSONObject? {
+    suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE,
+                      /** [TRY-06] Put on by [FunctionTrial] itself. */ trial: Boolean = false): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // [TRY-06] Anything put on for real ends a work's 기능 only being tried first (put back whole), so the two never mix.
+        if (!trial && FunctionTrial.busy(c.appContext)) com.bamnat.app.ui.recipe.LiveTryOn.settle(c)
+        // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
+        if (kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
         return when (kind) {
             PieceKind.SHIFT_LOOK -> {
                 val repo = c.scopeOf(cal).schedule
@@ -550,7 +775,9 @@ class RecipePieces(private val c: AppContainer) {
                 // PC D7: one of theirs kept once because mine does the same shows its name on my line (all of it the same is no change).
                 if (kind == PieceKind.LOGIC) com.bamnat.app.logic.LogicStore(c.appContext)
                     .noteSame(com.bamnat.core.formula.Logic.decode(now.logic), com.bamnat.core.formula.Logic.from(vals))
-                val changes = settingsAfter(kind, vals, cal).filter { (k, v) -> settingOf(now, k) != v }
+                val changes = settingsAfter(kind, vals, cal, mode = mode).filter { (k, v) -> settingOf(now, k) != v }
+                // 1.39 [NTC-03] 바꾸기: my rules saying the same at the same time are switched off (the app's notices are in [changes]).
+                val twins = if (kind == PieceKind.LOGIC && mode == Mode.REPLACE) overlaps(vals, now).mapNotNull { it.other?.key }.distinct() else emptyList()
                 if (changes.isEmpty()) null else {
                     val out = JSONObject()
                     changes.forEach { (k, v) -> out.put(k, JSONArray().put(settingOf(now, k)).put(v)) }
@@ -561,9 +788,14 @@ class RecipePieces(private val c: AppContainer) {
                         val store = com.bamnat.app.logic.LogicStore(c.appContext)
                         com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.gotOff(it.key) }
                         store.markGot(com.bamnat.core.formula.Logic.from(vals).rules.map { it.key }.filter { it !in had })
+                        // 1.39 [FX-23] 작품마다 하루 써 보기: the new ones remember this work.
+                        val hadB = com.bamnat.core.formula.Logic.decode(now.logic).buttons.map { it.id }.toSet()
+                        val after = com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic)
+                        store.markFrom(code, after.rules.map { it.key }.filter { it !in had }, after.buttons.map { it.id }.filter { it !in hadB })
+                        twins.forEach { store.setOff(it, true) }
                         com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                     }
-                    JSONObject().put("settings", out)
+                    JSONObject().put("settings", out).apply { if (twins.isNotEmpty()) put("rulesOff", JSONArray(twins)) }
                 }
             }
         }
@@ -778,6 +1010,12 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
+                // 1.39 [NTC-03] my rules switched off for this one come back on.
+                before.optJSONArray("rulesOff")?.let { a ->
+                    val store = com.bamnat.app.logic.LogicStore(c.appContext)
+                    (0 until a.length()).forEach { store.setOff(a.getString(it), false) }
+                    com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+                }
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -793,7 +1031,7 @@ class RecipePieces(private val c: AppContainer) {
 
     /** The settings [kind] would leave, by key, as text. */
     private suspend fun settingsAfter(kind: PieceKind, values: Map<String, Any?>, cal: String,
-                                      cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, String> {
+                                      cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current, mode: Mode = Mode.BOTH): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
                 texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
@@ -866,7 +1104,8 @@ class RecipePieces(private val c: AppContainer) {
                 (values["dayOrder"] as? String)?.takeIf { com.bamnat.core.recipe.AppFeel.dayOrderProblem(it) == null }?.let { "dayGroupOrder" to it },
                 (values["flow"] as? Boolean)?.let { "sleepTips" to it.toString() },
                 (values["rest"] as? Boolean)?.let { "restCheck" to it.toString() },
-                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to it.toString() },
+                // 1.39 [PAYX-60] Off in an older recipe was only the default: it leaves the 급여 기간 to the pay.
+                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to (if (it) com.bamnat.app.data.StatsPeriod.PAY else com.bamnat.app.data.StatsPeriod.AUTO).name },
                 (values["motion"] as? String)?.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null }?.let { "motion" to it },
             ).toMap()
             // [FREE-04] What the piece names over the user's own.
@@ -916,7 +1155,9 @@ class RecipePieces(private val c: AppContainer) {
                 ?.let { mapOf("parts" to it) }.orEmpty()
             // [RUL-03][RUL-04] The recipe's buttons and rules take the place of the ones there were (되돌리기 puts them back).
             // PC D6: they are added after mine (the same one kept once), as from the studio's 보관함; they never take mine away.
-            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(cur.logic).plus(com.bamnat.core.formula.Logic.from(values))))
+            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(cur.logic).plus(com.bamnat.core.formula.Logic.from(values)))) +
+                // 1.39 [NTC-03] 바꾸기: the app notice it repeats goes off (되돌리기 turns it on again).
+                (if (mode == Mode.REPLACE) overlaps(values, cur).mapNotNull { it.builtIn }.associate { it.key to "false" } else emptyMap())
             // [LAY-01] 꾸밈 층: the piece's decorations take the places (붙는 곳) it uses; mine on the other places stay.
             PieceKind.DECOR -> {
                 val theirs = com.bamnat.core.recipe.Decor.of(values)
@@ -968,7 +1209,7 @@ class RecipePieces(private val c: AppContainer) {
         "dayGroupOrder" -> s.dayGroupOrder.joinToString(",")
         "sleepTips" -> s.sleepTips.toString()
         "restCheck" -> s.restCheck.toString()
-        "statsByPayPeriod" -> s.statsByPayPeriod.toString()
+        "statsByPayPeriod" -> s.statsPeriod.name
         "motion" -> s.motion
         "memoLook" -> s.memoLook
         "moneyLook" -> s.moneyLook
@@ -978,6 +1219,8 @@ class RecipePieces(private val c: AppContainer) {
         "parts" -> s.parts
         "logic" -> s.logic
         "decor" -> s.decor
+        "todayShiftNotice" -> s.todayShiftNotice.toString()
+        "dayCloseNotice" -> s.dayCloseNotice.toString()
         else -> ""
     }
 
@@ -1008,7 +1251,7 @@ class RecipePieces(private val c: AppContainer) {
         "dayGroupOrder" -> s.copy(dayGroupOrder = v.split(',').filter { it.isNotEmpty() })
         "sleepTips" -> s.copy(sleepTips = v == "true")
         "restCheck" -> s.copy(restCheck = v == "true")
-        "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
+        "statsByPayPeriod" -> s.copy(statsPeriod = com.bamnat.app.data.StatsPeriod.read(v.takeIf { it != "true" && it != "false" }, v == "true"))
         "motion" -> s.copy(motion = v.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null } ?: s.motion)
         "memoLook" -> s.copy(memoLook = v)
         "logic" -> s.copy(logic = v)
@@ -1018,6 +1261,8 @@ class RecipePieces(private val c: AppContainer) {
         "calTheme" -> s.copy(calTheme = v)
         "parts" -> s.copy(parts = v.takeIf { com.bamnat.core.recipe.Blueprint.problem(it) == null } ?: s.parts)
         "decor" -> s.copy(decor = v)
+        "todayShiftNotice" -> s.copy(todayShiftNotice = v == "true")
+        "dayCloseNotice" -> s.copy(dayCloseNotice = v == "true")
         else -> s
     }
 
@@ -1059,8 +1304,13 @@ class RecipePieces(private val c: AppContainer) {
     /** [FREE-10] The settings a theme can change ([com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS]); never a record, an alarm or a rule. */
     fun lookSnapshot(): Map<String, String> = LOOK_SETTINGS.associateWith { settingOf(c.settingsRepository.current, it) }
 
+    /** [TRY-05] [s] with the look settings of [look] (as [lookOf] writes them) on it; nothing else changes. */
+    fun withLook(s: com.bamnat.app.data.AppSettings, look: Map<String, String>): com.bamnat.app.data.AppSettings =
+        look.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) }
+
     /** [FREE-10] Puts back a look written by [lookSnapshot]. */
     fun restoreLook(m: Map<String, String>) {
+        com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
         c.settingsRepository.update { s -> m.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) } }
     }
 
@@ -1205,6 +1455,8 @@ class RecipePieces(private val c: AppContainer) {
         const val CLOSING_TITLE = "마감 체크"
         const val JOURNAL_TITLE = "투자일지"
         const val PRINCIPLES_MAX = 20
+        /** 1.39 [MKP-05] 전후 표: at most this many named rows of one kind (메모 틀·원칙·예산), the count row says the rest. */
+        const val MAX_SIDE_ROWS = 6
         val ROUNDINGS = setOf("HOURLY_FIRST", "AT_END", "AT_END_UP", "AT_END_DOWN")
 
         private fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }

@@ -10,6 +10,7 @@ import com.bamnat.core.team.TeamShift
 import com.bamnat.core.work.Staff
 import com.bamnat.core.work.StaffRoster
 import com.bamnat.core.work.StaffShift
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -98,6 +99,73 @@ class Phase3ScreenshotTest : ScreenshotBase() {
             store.saveStaff(com.bamnat.core.boss.StaffMember("s1", "김알바", base = 10_320L, weekly = mapOf(java.time.DayOfWeek.MONDAY to StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0)))), "p1")
         }
         content { com.bamnat.app.ui.work.ManageScreen("main", onBack = {}, showAll = true) }
+    }
+
+    /** 1.39 [FLOW-23] this month's board: 오늘 출근·빈자리 and the day's kinds by start time, on the 관리 화면 and the board. */
+    private fun seedToday() = runBlocking {
+        val team = seedTeam()
+        val store = app.container.phaseThree
+        val now = YearMonth.from(Today.date())
+        val members = store.boardNow(team.id, now).members
+        val rot = listOf(1L, 1L, 2L, 2L, 3L, 4L, 4L, 4L)
+        val cells = members.flatMapIndexed { i, m -> (1..now.lengthOfMonth()).map { d -> val date = now.atDay(d); (m.id to date) to TeamCell(m.id, date, rot[(d + i) % rot.size]) } }.toMap()
+        store.saveBoard(team.id, TeamBoard(now, members, cells))
+    }
+
+    @Test fun teamTodayManage() = shoot("p3_11_team_today_manage", FOLDED) {
+        seedToday()
+        content { com.bamnat.app.ui.work.ManageScreen("main", onBack = {}, showAll = true) }
+    }
+
+    @Test fun teamTodayBoard() = shoot("p3_12_team_today_board", FOLDED) {
+        seedToday()
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        settle()
+        tapText("지난달", exact = true)
+    }
+
+    /** 1.39 G6 [SETUP-18] A team made while the 리더's first setup waits: its times are asked once when the board opens. */
+    private fun seedNoTimes() = runBlocking {
+        val t = seedTeam()
+        app.container.phaseThree.saveTeam(t.copy(shifts = com.bamnat.core.team.TeamTimes.blank(t.shifts)))
+    }
+
+    @Test fun teamTimesAsked() = shoot("p3_13_team_times_ask", FOLDED) {
+        seedNoTimes()
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+    }
+
+    @Test fun teamTimesCard() = shoot("p3_14_team_times_card", FOLDED) {
+        seedNoTimes()
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        settle()
+        tapText("나중에", exact = true)
+    }
+
+    /** 1.39 [SETUP-21] 5차 PC 리더 폰: saving the team's times also sets the leader's own kinds of the same name, said once. */
+    @Test fun teamTimesGoToMyCalendar() = shoot("p3_15_team_times_mine", FOLDED) {
+        seedNoTimes()
+        val before = runBlocking { app.container.scheduleRepository.shiftTypes.first() }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        settle()
+        tapText("저장", exact = true)
+        settle()
+        val team = runBlocking { app.container.phaseThree.teamNow("t1")!! }
+        val after = runBlocking { app.container.scheduleRepository.shiftTypes.first() }
+        val changes = com.bamnat.core.team.TeamTimes.mine(team, before, com.bamnat.app.data.DefaultShiftTypes.all())
+        org.junit.Assert.assertTrue("the team's times reached a kind of mine", changes.isNotEmpty())
+        for (ch in changes.filter { !it.ask }) {
+            val t = after.first { it.id == ch.type.id }
+            org.junit.Assert.assertEquals(ch.start to ch.end, t.start to t.end)
+        }
     }
 
     @Test fun teamPlanSheet() = shoot("p3_7_team_plan", FOLDED) {

@@ -150,6 +150,7 @@ class AlarmActivity : ComponentActivity() {
                 val quiet by AlarmService.quiet.collectAsStateWithLifecycle()
                 val allOffWaits by AlarmService.allOffAfterMission.collectAsStateWithLifecycle()
                 val inCall by AlarmService.inCall.collectAsStateWithLifecycle()
+                val stage by AlarmService.wakeStage.collectAsStateWithLifecycle()
                 if (current != null && inMission && mission != AlarmMission.NONE) {
                     MissionScreen(
                         mission = mission,
@@ -163,7 +164,7 @@ class AlarmActivity : ComponentActivity() {
                     )
                 } else if (current != null) {
                     RingingScreen(
-                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else "${current.shiftName} 근무",
+                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.work(current.shiftName),
                         // 1.38 [SLEEP-08] "얕은 잠이라 12분 일찍 깨웠어요" under the same words when it came early.
                         subtitle = listOfNotNull(AlarmService.describe(current), com.bamnat.app.sleep.SmartWake.earlyLine(this, current, AlarmService.ringStartedAt.takeIf { it > 0L } ?: Today.millis())).joinToString("\n"),
                         snoozeMinutes = snoozeMinutes,
@@ -182,6 +183,7 @@ class AlarmActivity : ComponentActivity() {
                         shift = ringShift(current, Today.date()),
                         // [EASE-19] With a mission 끄기 opens the mission, so the shortcut is left out.
                         onToday = if (mission == AlarmMission.NONE) ({ dismissAndOpenToday() }) else null,
+                        stage = stage,
                     )
                 }
               }

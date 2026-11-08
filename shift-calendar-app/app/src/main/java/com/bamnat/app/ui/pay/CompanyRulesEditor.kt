@@ -456,7 +456,7 @@ fun CompanyRulesEditor(
                             label = { Text("법정 휴일근로") })
                         kinds.visible(listOfNotNull(rules.publicHolidayAs)).forEach { k ->
                             FilterChip(selected = rules.publicHolidayAs == k.id, onClick = { setRules(rules.copy(publicHolidayAs = k.id)) },
-                                label = { Text("${k.name}처럼 계산") }, leadingIcon = { ExtraKindMark(k, size = 18.dp) })
+                                label = { Text("${k.name}처럼 계산") }, leadingIcon = { ExtraKindMark(k, size = 18.dp, asIs = true) })
                         }
                     }
                     rules.publicHolidayAs?.let { id ->
@@ -486,7 +486,7 @@ fun CompanyRulesEditor(
             FoldSection(title = "연장 휴무일 근무 지정") {
                 kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-                        ExtraKindMark(k, size = 22.dp)
+                        ExtraKindMark(k, size = 22.dp, asIs = true)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(k.name, style = MaterialTheme.typography.bodyLarge)

@@ -50,6 +50,9 @@ private const val MAX_DIGITS = 10
 /** Longest job one booking covers; longer work is several bookings (one per stage). */
 private const val MAX_JOB_DAYS = 60
 
+/** [JOBDAYS-01] 1.39 A work period this long (or longer) is asked about once before it is saved. */
+private const val LONG_JOB_DAYS = 15
+
 /** Whole won typed as digits and shown with thousands separators [LEDG-01]. */
 /**
  * 1.38 PC 확인 (대출 더하기 칸 넷이 자판에 가려 다음 칸이 안 보임): when this field takes focus, it is scrolled above the keyboard
@@ -134,6 +137,8 @@ fun JobDialog(
     var remind by rememberSaveable { mutableStateOf(initial?.remindMinutes) }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
     var days by rememberSaveable { mutableIntStateOf(initial?.days ?: 1) }
+    // [JOBDAYS-01] 1.39 '60일 맞나요?' before a long period the user has just set is saved.
+    var askLong by rememberSaveable { mutableStateOf(false) }
     var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
     var withholding by rememberSaveable { mutableStateOf(initial?.withholding ?: false) }
     // [FLD-03] 가계약·확정·완료·취소; [FLD-09] the day the money is promised.
@@ -211,7 +216,7 @@ fun JobDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = title.isNotBlank() || amount.toAmount() > 0, onClick = {
+            val save = {
                 onSave(
                     Job(
                         id = initial?.id ?: 0, date = initial?.date ?: date, title = title.trim().ifEmpty { "일감" },
@@ -223,7 +228,20 @@ fun JobDialog(
                         status = status, units = initial?.units, due = due?.let(LocalDate::parse),
                     ),
                 )
+            }
+            TextButton(enabled = title.isNotBlank() || amount.toAmount() > 0, onClick = {
+                if (days >= LONG_JOB_DAYS && days != initial?.days) askLong = true else save()
             }) { Text("저장") }
+            if (askLong) {
+                val start = initial?.date ?: date
+                AlertDialog(
+                    onDismissRequest = { askLong = false },
+                    title = { Text("작업 기간이 ${days}일 맞나요?") },
+                    text = { Text("${Fmt.shortDate(start)}부터 ${Fmt.shortDate(start.plusDays(days - 1L))}까지 달력의 ${days}일에 이 일감이 들어가요.") },
+                    confirmButton = { TextButton(onClick = { askLong = false; save() }) { Text("맞아요, 저장") } },
+                    dismissButton = { TextButton(onClick = { askLong = false }) { Text("기간 고치기") } },
+                )
+            }
         },
         dismissButton = {
             Row {

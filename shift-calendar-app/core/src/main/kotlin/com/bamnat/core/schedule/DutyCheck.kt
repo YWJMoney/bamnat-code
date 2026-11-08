@@ -54,7 +54,7 @@ object DutyCheck {
                 if (need > 0 && known && firstWork != null && !(firstWork > 1 && isNight(byDate[date.plusDays(firstWork.toLong())]))) {
                     val nextDate = date.plusDays(firstWork.toLong())
                     out += Warning(Kind.NO_OFF_AFTER_NIGHT, nextDate,
-                        "${md(date)} 나이트 끝나고 ${if (firstWork == 1) "바로 다음 날" else "${firstWork}일째"} 근무예요 (${rules.note("나이트 뒤 쉬는 날 ${need}일보다 적으면")})",
+                        "${md(date)} 야간 끝나고 ${if (firstWork == 1) "바로 다음 날" else "${firstWork}일째"} 근무예요 (${rules.note("야간 뒤 쉬는 날 ${need}일보다 적으면")})",
                         RestRules.Sources.NIGHTS, pattern = when {
                             firstWork == 2 && isDay(byDate[nextDate]) -> "N-O-D(나오데)"
                             firstWork == 1 && isDay(byDate[nextDate]) -> "N-D"
@@ -64,14 +64,14 @@ object DutyCheck {
             }
         }
         if (rules.maxNightsInRow > 0) runs(sorted) { isNight(it) }.filter { it.size > rules.maxNightsInRow }.forEach { r ->
-            out += Warning(Kind.MANY_NIGHTS, r.first(), "${md(r.first())}부터 나이트 ${r.size}일 연속 (${rules.note("${rules.maxNightsInRow + 1}일 연속부터")})", RestRules.Sources.NIGHTS)
+            out += Warning(Kind.MANY_NIGHTS, r.first(), "${md(r.first())}부터 야간 ${r.size}일 연속 (${rules.note("${rules.maxNightsInRow + 1}일 연속부터")})", RestRules.Sources.NIGHTS)
         }
         if (rules.maxWorkDaysInRow > 0) runs(sorted) { works(it) }.filter { it.size > rules.maxWorkDaysInRow }.forEach { r ->
             out += Warning(Kind.LONG_RUN, r.first(), "${md(r.first())}부터 ${r.size}일 연속 근무 (${rules.note("${rules.maxWorkDaysInRow + 1}일 연속부터")})", RestRules.Sources.WEEK)
         }
         if (rules.maxNightsPerMonth > 0) sorted.filter { isNight(it.second) }.groupBy { java.time.YearMonth.from(it.first) }.forEach { (m, ns) ->
             ns.getOrNull(rules.maxNightsPerMonth)?.let { (d, _) ->
-                out += Warning(Kind.MONTH_NIGHTS, d, "${m.monthValue}월 나이트 ${ns.size}개 (${rules.note("한 달 ${rules.maxNightsPerMonth + 1}개째부터")})", RestRules.Sources.NIGHTS)
+                out += Warning(Kind.MONTH_NIGHTS, d, "${m.monthValue}월 야간 ${ns.size}일 (${rules.note("한 달 ${rules.maxNightsPerMonth + 1}일째부터")})", RestRules.Sources.NIGHTS)
             }
         }
         // One sign per day for the rest before it: short rest wins over days off after nights [REST-02].

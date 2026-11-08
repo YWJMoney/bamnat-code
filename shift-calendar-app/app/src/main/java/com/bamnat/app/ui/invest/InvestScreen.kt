@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.invest
 
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -148,15 +149,27 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
         PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 12.dp, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
             InvestTab.entries.forEach { t -> Tab(selected = tab == t, onClick = { tab = t }, text = { Text(t.label) }) }
         }
+        // 1.39 [CALX-08] 기록·통계의 달(통계는 '연'이면 해)을 여기서 들고, 좌우로 밀어 넘겨요.
+        val thisMonth = java.time.YearMonth.from(state.today).toString()
+        var recordsMonth by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(thisMonth) }
+        var statsMonth by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(thisMonth) }
+        var statsYearly by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxSize()
+                .then(if (tab != InvestTab.RECORDS && tab != InvestTab.STATS) Modifier else Modifier.monthSwipe(tab) { step ->
+                    if (tab == InvestTab.RECORDS) recordsMonth = java.time.YearMonth.parse(recordsMonth).plusMonths(step.toLong()).toString()
+                    else java.time.YearMonth.parse(statsMonth).let { ym ->
+                        statsMonth = (if (statsYearly) ym.plusYears(step.toLong()) else ym.plusMonths(step.toLong())).toString()
+                    }
+                })
+                .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (tab) {
                 InvestTab.OVERVIEW -> OverviewTab(vm, state, open)
                 InvestTab.HOLDINGS -> HoldingsTab(state, open)
-                InvestTab.RECORDS -> RecordsTab(state, open)
-                InvestTab.STATS -> InvestStatsTab(state, wide, vm.calendarId)
+                InvestTab.RECORDS -> RecordsTab(state, open, recordsMonth) { recordsMonth = it }
+                InvestTab.STATS -> InvestStatsTab(state, wide, vm.calendarId, statsMonth, { statsMonth = it }, statsYearly, { statsYearly = it })
                 InvestTab.JOURNAL -> JournalTab(state, open)
                 InvestTab.ALARMS -> AlarmsTab(vm, state, open)
             }

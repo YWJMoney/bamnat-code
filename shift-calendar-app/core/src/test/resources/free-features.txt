@@ -96,6 +96,7 @@ leave.promotion
 leave.promotionLog
 lock.today
 memo.lastShift
+memo.done
 memo.repeat
 memo.photo
 memo.paper
@@ -225,6 +226,8 @@ widget.fieldActions
 widget.lines
 widget.memo
 widget.nextOff
+memo.quickLine
+widget.tasks
 widget.teams
 recipe.browse
 recipe.make
@@ -273,3 +276,6 @@ sleep.adapt
 sleep.challenge
 sleep.dnd
 day.story
+view.dayDial
+day.start
+sleep.diary

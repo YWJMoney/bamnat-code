@@ -53,7 +53,7 @@ object WatchSync {
         val view = if (chosenId == null) snap else shown ?: c.calendars.repository(chosenId).snapshot.first()
         val days = WatchDays.of(from, until, view.resolver::resolve)
         val alarmAt = next?.let { LocalDateTime.ofInstant(Instant.ofEpochMilli(it.triggerAtMillis), Today.zone()) }
-        val label = next?.plan?.let { p -> if (p.shiftName.isNotBlank()) "${p.shiftName} 근무" else "알람" }.orEmpty()
+        val label = next?.plan?.let { p -> if (p.shiftName.isNotBlank()) com.bamnat.core.alarm.AlarmWords.work(p.shiftName) else "알람" }.orEmpty()
         val name = c.calendars.get(chosenId ?: PersonalCalendar.MAIN)?.name ?: PersonalCalendar.MAIN_NAME
         // [WEAR-03] This week's hours against 주 52시간, what an 알바 can write now, and whether today has an alarm to turn off.
         val week = com.bamnat.core.hours.WorkHoursCalculator(view.resolver, java.time.DayOfWeek.MONDAY, settings.limits).week(today)

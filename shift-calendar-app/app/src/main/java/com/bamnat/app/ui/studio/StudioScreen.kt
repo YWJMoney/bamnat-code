@@ -135,6 +135,7 @@ import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.recipe.WidgetLook
 import com.bamnat.core.work.WorkStyle
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.ui.calendar.calendarLineSettled
 import com.bamnat.app.ui.calendar.calendarParts
 import com.bamnat.app.ui.calendar.withPartMoved
 import com.bamnat.app.ui.calendar.withPartHome
@@ -336,10 +337,11 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
         fun fits(p: CalendarPart) = com.bamnat.core.guide.FitTable.visible(FitSurface.CALENDAR_PARTS, p.id, style, added)
         fun aboveIn(d: AppSettings, p: CalendarPart) = com.bamnat.app.ui.calendar.calendarAbove(d.calendarParts().map { it.part })(p)
         PageCards("달력", ids, CalendarPart.entries.associate { it.id to it.labelFor(style) }, skip.map { it.id }.toSet(),
-            { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLayout }, { d, l -> d.copy(calendarLayout = l) },
+            // 1.39 [FLOW-22] PC 4차 (＋ 카드 넣기에 하루 이야기가 없음): the line as the calendar reads it, a card that starts off included.
+            { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLineSettled() }, { d, l -> d.copy(calendarLayout = l) },
             moveFn = { d, id, by -> CalendarPart.byId(id)?.let { p -> d.withPartMoved(p, by) { q -> fits(q) } } ?: d },
-            showFn = { d, id, shown -> CalendarPart.byId(id)?.let { p -> d.withPartShown(p, shown).let { x -> x.copy(calendarLayout = StudioEdit.showCard(x.calendarLayout, ids, id, shown)) } } ?: d },
-            hiddenFn = { d -> d.calendarParts().filter { it.part !in skip && fits(it.part) && !StudioEdit.cardShown(d.calendarLayout, ids, it.part.id) }.map { it.part.id } },
+            showFn = { d, id, shown -> CalendarPart.byId(id)?.let { p -> d.withPartShown(p, shown).let { x -> x.copy(calendarLayout = StudioEdit.showCard(x.calendarLineSettled(), ids, id, shown)) } } ?: d },
+            hiddenFn = { d -> d.calendarParts().filter { it.part !in skip && fits(it.part) && !StudioEdit.cardShown(d.calendarLineSettled(), ids, it.part.id) }.map { it.part.id } },
             aboveFn = { d, id -> CalendarPart.byId(id)?.let { aboveIn(d, it) } ?: true },
             across = { d, id ->
                 val p = CalendarPart.byId(id)
@@ -733,7 +735,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 val manageOn = com.bamnat.app.ui.work.rememberManageOn()
-                                Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
+                                // 1.39 PC 2afb3a76 (스튜디오에서 위젯으로 가는 길을 못 찾았어요): 위젯 has no screen of its own (no target) and had
+                                // dropped out of this list with 1.37's canvas; it is one of the screens again.
+                                Area.entries.filter { (it.target != null || it == Area.WIDGET) && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
                                     .forEach { a -> DropdownMenuItem({ Text(a.labelFor(vm.style)) }, onClick = { open = false; pick(a) }) }
                                 HorizontalDivider()
                                 listOf(Area.ALL, Area.FEATURES, Area.RULES).forEach { a ->
@@ -1177,11 +1181,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             Column {
                                 Text(when (v) { null -> "테마 전체"; featuresOnly -> "기능만 (" + s.extras.keys.sortedBy { it.ordinal }.joinToString(", ") { it.label } + ")"
                                     else -> "${com.bamnat.app.ui.recipe.tabName(v)} 탭만" }, style = MaterialTheme.typography.bodyLarge)
-                                Text(if (v == featuresOnly) "장터 ‘기능별’에 올라가요. 모양은 빠지고 기능 ${s.extras.size}개만 가요"
-                                    else if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                Text(if (v == featuresOnly) "장터 ‘탭별 작품 › 기능’에 올라가요. 모양은 빠지고 기능 ${s.extras.size}개만 가요"
+                                    else if (v != null) "장터 ‘탭별 작품’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
                                     (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
                                     // PC 확인 1.36 (한 화면만 바꾸고 테마 전체로 올리면 장터 어디에도 안 보임): one screen changed is one tab in 장터, said.
-                                    else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
+                                    else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘탭별 작품 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
                                     else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개가" else "이") + " 함께 가요",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -1420,7 +1424,11 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
         com.bamnat.app.ui.components.FoldRow("studio.widget4") {
             // PC 확인 W3 1.36: each chip says how big the widget is.
             listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
-                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1").forEach { (cls, label) ->
+                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1",
+                // 1.39 [TASK-07] 할 일 위젯 (처음 하나는 무료).
+                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2",
+                // 1.39 [TASK-31] 할 일 한 줄 (같은 할 일 위젯, 처음 놓은 하나가 무료).
+                com.bamnat.app.widget.TaskLineWidgetReceiver::class.java to "할 일 한 줄 · 2×1").forEach { (cls, label) ->
                 androidx.compose.material3.AssistChip(onClick = {
                     if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
                 }, label = { Text(label) })
@@ -1524,6 +1532,44 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             }
                         }
                     }
+                    // 1.39 [TASK-07] 할 일 위젯: 머리와 ＋, 늦은·오늘·끝낸 할 일 한 줄씩, 각 줄 앞 동그라미 (부품 widget.task·check·add).
+                    WidgetKind.TASKS -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) { Head("할 일 2개 · 늦은 것 1개") }
+                            val plus = bp.style("widget.task.add")
+                            if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
+                                MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
+                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), RoundedCornerShape(16.dp)))
+                                    .padding(horizontal = 12.dp, vertical = 2.dp))
+                        }
+                        TASK_SAMPLE.forEach { (words, late, done) ->
+                            val states = setOfNotNull("late".takeIf { late }, "done".takeIf { done }, "today".takeIf { !late })
+                            val line = bp.style("widget.task", states)
+                            if (line.hide == true) return@forEach
+                            val check = bp.style("widget.task.check", states - "today")
+                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
+                                val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
+                                    color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
+                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
+                                Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
+                                        contentDescription = null, tint = circle.color,
+                                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { circle.fontSize.toDp() }.coerceIn(10.dp, 40.dp)))
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    com.bamnat.app.ui.parts.PartText(words, face.over(line),
+                                        MaterialTheme.typography.bodyMedium.copy(color = if (done) ink.copy(alpha = 0.6f) else ink, fontSize = (14 * scale).sp,
+                                            textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null), Modifier)
+                                    if (late) Text("늦음 · 어제", style = MaterialTheme.typography.labelSmall.copy(fontSize = (11 * scale).sp), color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1531,7 +1577,10 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
 }
 
 /** [LAY-12] The home screen's widgets, as the studio's widget example shows them. */
-private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯") }
+private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯"), TASKS("할 일 위젯") }
+
+/** 1.39 [TASK-07] The 할 일 widget's example rows: the words, and whether each is late, finished or neither. */
+private val TASK_SAMPLE = listOf(Triple("서류 내기", true, false), Triple("택배 받기", false, false), Triple("약 먹기", false, true))
 
 private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
 
@@ -1567,8 +1616,8 @@ private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area:
     // what is 담아 두기'd there comes back here, in 보관함, to lay on.
     if (onMarket != null) OutlinedButton(onClick = onMarket, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text(if (area.marketKind.startsWith(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB) && area.marketKind != com.bamnat.app.recipe.RecipeClient.SCOPE_TAB)
-            "장터 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
-        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘기능별 탭’에서 찾기")
+            "장터 ‘탭별 작품 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
+        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘탭별 작품’에서 찾기")
     }
     // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
     val kept = remember(kept0) { kept0.sortedByDescending { it.id } }

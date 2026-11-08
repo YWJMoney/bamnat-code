@@ -1,0 +1,305 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "깊은 밤 남색",
+   "summary": "밤 화면 바탕이 깊은 남색, 시계는 가늘고 크게",
+   "desc": "잠들 때 여는 밤 화면을 깊은 남색으로 칠하고 시계 글자를 가늘게 키웠어요. 눈부심이 적은 어두운 색만 썼어요.\n적용하면 바뀌는 것:\n· 밤 화면 바탕\n· 큰 시계 글자\n· 내일 근무·알람 줄 색\n주의할 점: 밤 화면만 바뀌어요. 근무 알람은 그대로 울려요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "night",
+       "fill": 4278915110
+      },
+      {
+       "id": "night.clock",
+       "weight": 200,
+       "size": 84,
+       "ink": 4291152617
+      },
+      {
+       "id": "night.line",
+       "ink": 4288653530
+      },
+      {
+       "id": "night.card",
+       "fill": 4279573307,
+       "r": 18
+      },
+      {
+       "id": "night.button",
+       "fill": 4281944491,
+       "ink": 4294967295,
+       "r": 28
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278915110,
+    "b": 4281944491,
+    "dir": 2,
+    "emoji": "🌌"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "촛불 주황",
+   "summary": "따뜻한 촛불 빛 바탕, 시계는 둥근 글꼴",
+   "desc": "푸른빛을 줄인 따뜻한 주황 밤 화면이에요. 시계와 날짜를 둥근 글꼴로 바꿨어요.\n적용하면 바뀌는 것:\n· 밤 화면 바탕 그라데이션\n· 시계·날짜 글꼴\n· 단추 색\n주의할 점: 밤 화면만 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "night",
+       "paint": {
+        "fx": "\"lg.180.FF1A0F08,FF3A1E0C\""
+       }
+      },
+      {
+       "id": "night.date",
+       "font": "round",
+       "ink": 4294954112
+      },
+      {
+       "id": "night.clock",
+       "font": "round",
+       "ink": 4294959282,
+       "weight": 300
+      },
+      {
+       "id": "night.line",
+       "ink": 4294948685
+      },
+      {
+       "id": "night.button",
+       "fill": 4293284096,
+       "ink": 4294964192,
+       "r": 24
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279897864,
+    "b": 4293284096,
+    "dir": 2,
+    "emoji": "🕯️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 근무 뒤 아침",
+   "summary": "아침 한 장이 연한 하늘색, 밤 화면은 차분한 회색",
+   "desc": "야간을 마치고 자는 분을 위해 밤 화면은 낮에도 어둡게, 아침 한 장은 연한 하늘색 카드로 바꿨어요.\n누구에게 좋아요: 낮에 자는 교대 근무자\n적용하면 바뀌는 것:\n· 밤 화면 바탕\n· 아침 한 장 카드 색·모서리\n주의할 점: 밤 화면과 아침 한 장만 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "night",
+       "fill": 4280033060
+      },
+      {
+       "id": "night.clock",
+       "ink": 4293718001,
+       "weight": 300
+      },
+      {
+       "id": "night.card",
+       "fill": 4280691249,
+       "r": 16
+      },
+      {
+       "id": "night.morning",
+       "fill": 4293128957,
+       "r": 20,
+       "ink": 4279060385
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280033060,
+    "b": 4293128957,
+    "dir": 2,
+    "emoji": "🌅"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "큰 숫자만",
+   "summary": "시계를 아주 크게, 나머지는 흐리게",
+   "desc": "누워서 흘끗 봐도 보이게 시계를 아주 크게 키우고 날짜와 카드는 흐리게 줄였어요.\n적용하면 바뀌는 것:\n· 시계 크기\n· 날짜·카드 흐리게\n주의할 점: 밤 화면만 바뀌어요. 알람이 꺼져 있으면 그 줄은 늘 주황으로 보여요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "night.clock",
+       "size": 96,
+       "weight": 200
+      },
+      {
+       "id": "night.date",
+       "alpha": 60
+      },
+      {
+       "id": "night.card",
+       "alpha": 70
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278190080,
+    "b": 4282532418,
+    "dir": 2,
+    "emoji": "⏰"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "숲 속 밤",
+   "summary": "짙은 초록 바탕, 단추는 이끼색",
+   "desc": "짙은 숲 색 밤 화면이에요. 단추와 카드에 이끼색을 썼어요.\n적용하면 바뀌는 것:\n· 밤 화면 바탕\n· 카드·단추 색\n주의할 점: 밤 화면만 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "night",
+       "fill": 4279114258
+      },
+      {
+       "id": "night.clock",
+       "ink": 4291356361,
+       "weight": 300
+      },
+      {
+       "id": "night.line",
+       "ink": 4289058471
+      },
+      {
+       "id": "night.card",
+       "fill": 4279641627,
+       "r": 14
+      },
+      {
+       "id": "night.button",
+       "fill": 4281559326,
+       "ink": 4294047977,
+       "r": 14
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279114258,
+    "b": 4281559326,
+    "dir": 2,
+    "emoji": "🌲"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "손글씨 밤 인사",
+   "summary": "날짜·내일 줄을 손글씨로, 시계는 그대로",
+   "desc": "밤 화면의 날짜와 '내일 근무·알람' 줄을 손글씨 글꼴로 바꿔 부드럽게 했어요.\n적용하면 바뀌는 것:\n· 날짜·내일 줄 글꼴\n· 아침 한 장 글꼴\n주의할 점: 글꼴만 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "night.date",
+       "font": "hand",
+       "size": 20
+      },
+      {
+       "id": "night.line",
+       "font": "hand",
+       "size": 20
+      },
+      {
+       "id": "night.morning",
+       "font": "hand"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280361249,
+    "b": 4294965473,
+    "dir": 2,
+    "emoji": "✍️"
+   }
+  }
+ }
+]

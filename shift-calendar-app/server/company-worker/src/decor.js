@@ -35,7 +35,7 @@ export const DECOR_SCREENS = ["calendar", "memo", "money", "stats", "pay", "plaz
 export const DECOR_ANCHORS = ["app", ...DECOR_SCREENS.map((s) => `bg.${s}`), "cal.head", "cal.week", "cal.cell", "widget"];
 export const DECOR_LINES = ["none", "solid", "dash", "dot", "double"];
 export const DECOR_MAX = 40;
-const DECOR_ON_RE = /^(today|sat|sun|holiday|dim|role\.(day|eve|night|long|off|other)|d([1-9]|[12][0-9]|3[01])|w[1-7]|m([1-9]|1[0-2])d([1-9]|[12][0-9]|3[01]))$/;
+const DECOR_ON_RE = /^(today|sat|sun|holiday|dim|role\.(day|eve|night|long|off|other)|leave|extra|cover|edited|d([1-9]|[12][0-9]|3[01])|w[1-7]|m([1-9]|1[0-2])d([1-9]|[12][0-9]|3[01]))$/;
 const DECOR_FONT_RE = /^([a-z][a-z0-9-]{1,39}|u\+[0-9a-f]{16})$/;
 export const decorOn = (s) => (s === "" || DECOR_ON_RE.test(s) ? null : "on");
 export const decorFont = (s) => (s === "" || DECOR_FONT_RE.test(s) ? null : "font");

@@ -104,6 +104,12 @@ class ShiftWorkTest {
         assertEquals(1, m.covers.size)
         assertEquals("박주임", m.covers.single().name)
         assertEquals(listOf("김간호" to 2, "박주임" to 1), m.names)
+        // 1.39 PC 6차: '대근 포함' only when a 대근 was one of the nights.
+        assertEquals(1, m.nightCovers)
+        assertEquals("22~06시에 걸침 · 대근 1번 포함", ShiftMonth.nightCaption(m))
+        val plain = ShiftMonth.of(YearMonth.of(2026, 10), Fixtures.all, ScheduleResolver(Fixtures.all, WorkPattern.Rotation(oct1, cycle), emptyList())::resolve)
+        assertEquals(0, plain.nightCovers)
+        assertEquals("22~06시에 걸침", ShiftMonth.nightCaption(plain))
     }
 
     @Test

@@ -24,13 +24,20 @@ import com.bamnat.core.time.Today
 object SleepActions {
     const val ACTION_ASLEEP = "com.bamnat.app.sleep.ASLEEP"
     const val ACTION_AWAKE = "com.bamnat.app.sleep.AWAKE"
+    /** 1.39 G5-B1: 깼어요 pressed by a sleepy hand. The sleep goes on from where it began. */
+    const val ACTION_STILL_ASLEEP = "com.bamnat.app.sleep.STILL_ASLEEP"
+    const val EXTRA_SLEEP_ID = "sleep_id"
 
     fun asleep(context: Context): NotificationCompat.Action = action(context, "잠들었어요", ACTION_ASLEEP, 3311)
     fun awake(context: Context): NotificationCompat.Action = action(context, "깼어요", ACTION_AWAKE, 3312)
 
-    private fun action(context: Context, title: String, action: String, requestCode: Int): NotificationCompat.Action =
+    /** On the 몇 시간 잤어요 notice: 깼어요 by mistake (from the notice, the app or the night screen) is undone in one tap. */
+    fun stillAsleep(context: Context, sleepId: Long): NotificationCompat.Action =
+        action(context, "아직 자요", ACTION_STILL_ASLEEP, 3315) { putExtra(EXTRA_SLEEP_ID, sleepId) }
+
+    private fun action(context: Context, title: String, action: String, requestCode: Int, extras: Intent.() -> Unit = {}): NotificationCompat.Action =
         NotificationCompat.Action.Builder(0, title, PendingIntent.getBroadcast(
-            context, requestCode, Intent(context, SleepActionReceiver::class.java).setAction(action),
+            context, requestCode, Intent(context, SleepActionReceiver::class.java).setAction(action).apply(extras),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )).setAuthenticationRequired(false).build()
 }
@@ -48,7 +55,18 @@ class SleepActionReceiver : BroadcastReceiver() {
                         Notifications.cancel(context, Notifications.BEDTIME_ID)
                         Notifications.cancel(context, Notifications.COMMUTE_ID)
                     }
-                    SleepActions.ACTION_AWAKE -> container.sleepRepository.wokeUp()
+                    SleepActions.ACTION_AWAKE -> {
+                        container.sleepRepository.wokeUp()
+                        // 1.39 [SLEEP-06] 깼어요 ends 자는 동안 소리 too, at once.
+                        SleepRecordService.stop(context)
+                    }
+                    SleepActions.ACTION_STILL_ASLEEP -> {
+                        // Only the sleep that just ended, and only while no other sleep was begun since: the 자는 중 notice and
+                        // 방해 금지 come back by themselves (they follow the log). 자는 동안 소리 is not started again here (Android
+                        // lets the microphone start only from the app on screen); the 자는 중 notice opens the night screen for it.
+                        val id = intent.getLongExtra(SleepActions.EXTRA_SLEEP_ID, 0L)
+                        if (id > 0 && container.sleepRepository.openNow() == null) container.sleepRepository.reopen(id)
+                    }
                 }
             } finally {
                 pending.finish()
@@ -70,33 +88,44 @@ object SleepingNotice {
         val left = SleepDebt.MAX_SLEEP_MINUTES * 60_000 - Duration.between(start, now).toMillis()
         if (left <= 0) return cancel(context)
         val title = (if (start.toLocalDate() == now.toLocalDate()) "" else "어제 ") + "${hm(start)}부터 자는 중"
-        val notification = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setGroup(Notifications.SLEEPING_GROUP).setGroupSummary(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setSilent(true)
             .setContentTitle(title)
-            .setContentText(nextAlarm?.let { "다음 알람 " + (if (it.toLocalDate() == now.toLocalDate()) "" else "내일 ") + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
+            // 1.39 (PC a483ca15): any day after today was "내일" here; the night screen's day word now (오늘·내일·모레·11/15).
+            .setContentText(nextAlarm?.let { "다음 알람 " + com.bamnat.core.sleep.NightLine.day(now, it) + " " + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
             .setWhen(start.atZone(Today.zone()).toInstant().toEpochMilli())
             .setUsesChronometer(true)
             .setShowWhen(true)
-            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3313))
+            // 1.39 [FLOW-13] Opened at night, it is the night screen (clock, the alarm, 깼어요), not the bright calendar.
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.NIGHT, 3319))
             .addAction(SleepActions.awake(context))
             .setTimeoutAfter(left)
             .build()
+        // PC 5차: Android 16 bundles it with any other sounding notice of the app, whatever the group; those go quiet.
+        Notifications.quietOthers(context)
         Notifications.post(context, Notifications.SLEEPING_ID, notification)
     }
 
     fun woke(context: Context, slept: SleepEntry, next: String?) {
         val minutes = slept.minutes ?: return cancel(context)
-        val notification = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
+        // PC 5차: on 자는 중's channel, in the top section the night left to it alone (the quiet one holds 오늘 근무).
+        val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setSilent(true)
             .setContentTitle("${HoursFormat.korean(minutes.toInt())} 잤어요")
             .apply { next?.let { setContentText("다음: $it") } }
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3313))
+            // 1.39 G5-B1 (PC 1.38 최종 사용성 6: 깼어요 잘못 누르기): the sleep goes on, from when it began.
+            .apply { if (slept.id > 0 && !slept.imported) addAction(SleepActions.stillAsleep(context, slept.id)) }
             .setAutoCancel(true)
+            // PC c0ca3d9f: unbundled too, so 아직 자요 is there without an expand.
+            .setGroup(Notifications.SLEEPING_GROUP).setGroupSummary(true)
             .setTimeoutAfter(WOKE_SHOWN_MILLIS)
             .build()
         Notifications.post(context, Notifications.SLEEPING_ID, notification)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import com.bamnat.app.ui.monthSwipe
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -465,7 +466,7 @@ class MoneyViewModel(
             val removed = money.remove(a)
             _undo.tryEmit(
                 if (removed) UndoMessage("‘${a.name}’을 지웠어요") { money.save(a) }
-                else UndoMessage("기록이 있어서 ‘${a.name}’은 숨겼어요") { money.save(a.copy(hidden = false)) },
+                else UndoMessage("기록이 있어서 ‘${a.name}’${com.bamnat.core.text.Josa.eunneun(a.name)} 숨겼어요") { money.save(a.copy(hidden = false)) },
             )
         }
     }
@@ -811,7 +812,14 @@ fun MoneyScreen(
         MoneyPart.ASKME to { AskLedgerCard(book, today) },
         MoneyPart.ASK to { LedgerAsksCard(book, today, vm) },
         MoneyPart.INSTALL to { InstallmentPlanCard(book, today) },
-        MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate) },
+        MoneyPart.SHIFTSPEND to {
+            ShiftSpendCard(book, snapshot, today, gate, onCategory = vm::showCategory,
+                challenge = remember(settings.moneyChallenge) { com.bamnat.core.money.Challenges.decode(settings.moneyChallenge) },
+                onChallenge = { k ->
+                    vm.updateSettings { it.copy(moneyChallenge = com.bamnat.core.money.Challenges.encode(com.bamnat.core.money.Challenges.Run(k, today))) }
+                    vm.showPage(MoneyViewModel.Page.SUMMARY)
+                })
+        },
         MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
         MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
     )
@@ -892,6 +900,7 @@ fun MoneyScreen(
                         DropdownMenuItem(text = { Text(if (settings.hideAmounts) "금액 보이기" else "금액 가리기") }, onClick = { menuOpen = false; flipHide() })
                     }
                 }
+                com.bamnat.app.ui.MeButton() // [NAV2-02]
             }
             // [MCAL-06] Whose money this is, once there are several calendars.
             com.bamnat.app.ui.calendar.CalendarScopeChips(LocalContext.current.appContainer, Modifier.padding(horizontal = 16.dp))
@@ -914,23 +923,28 @@ fun MoneyScreen(
             when (page) {
                 MoneyViewModel.Page.SUMMARY -> if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+                        Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { left(); Spacer(Modifier.height(FabClearance)) }
-                        Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
+                        Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { right(); Spacer(Modifier.height(FabClearance)) }
                     }
                 } else {
-                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+                    Column(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) {
                         MoneyLayered(placed, gap, settings.moneyCheckOpen, onCheck) { draw(it) }
                         Spacer(Modifier.height(FabClearance))
                     }
                 }
-                MoneyViewModel.Page.LIST -> LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
-                    onAdd = { adding = MoneyKind.EXPENSE })
-                MoneyViewModel.Page.REPORT -> LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
-                    onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
-                    snapshot = snapshot, onMessage = vm::message)
+                // 1.39 [CALX-08] 내역·통계도 옆으로 밀어 달을 넘겨요 (사용자 11-08 "돈을 보여 주는 곳 모두"); 내역 줄의 밀기와 고르는 중에는 그쪽이 먼저.
+                MoneyViewModel.Page.LIST -> Box(Modifier.fillMaxSize().then(if (selection.isEmpty()) Modifier.monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) } else Modifier)) {
+                    LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
+                        onAdd = { adding = MoneyKind.EXPENSE })
+                }
+                MoneyViewModel.Page.REPORT -> Box(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }) {
+                    LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
+                        onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
+                        snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
+                }
             }
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
@@ -951,7 +965,13 @@ fun MoneyScreen(
         }
     }
 
-    val addDate = if (YearMonth.from(today) == month) today else month.atEndOfMonth()
+    // 1.39 [FLOW-30] 근무 기준 하루: a coffee bought at 02:10 in last night's shift is put on that night's day, as is the small hours of
+    // a day with no work before 하루 시작 시각 (기본 04:00). The date row on the sheet still changes it.
+    val addDate = if (YearMonth.from(today) == month) {
+        val at = com.bamnat.core.time.Today.dateTime()
+        snapshot?.let { s -> com.bamnat.core.design.DayBoundary.dayOf(at, s.resolver::resolve, com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) }
+            ?.takeIf { at.toLocalDate() == today } ?: today
+    } else month.atEndOfMonth()
     adding?.let { k ->
         // A new round for 저장하고 하나 더, so the sheet starts empty again.
         key(addRound) {

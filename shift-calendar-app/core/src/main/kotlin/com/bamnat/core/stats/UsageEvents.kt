@@ -48,10 +48,24 @@ enum class UsageEvent(val key: String) {
     MANAGE_HINT_OPEN("manage_hint_open"),
     // 1.38 가져오기: a roster or staff list put in from a file or photo (어느 쪽인지·몇 칸인지는 보내지 않음).
     MANAGE_IMPORT("manage_import"),
+    // 1.39 [STAT2-02] 진입·머묾·회복 (깃발 stats.life, 처리방침 3.12): that day was the first open, the 1st·7th·30th day after
+    // install, or an open after 7·30 days away. Counted like the rest, never the install date or a phone id ([LifeMarks]).
+    LIFE_NEW("life_new"),
+    LIFE_D1("life_d1"),
+    LIFE_D7("life_d7"),
+    LIFE_D30("life_d30"),
+    LIFE_BACK7("life_back7"),
+    LIFE_BACK30("life_back30"),
     ;
 
     companion object {
         private val byKey = entries.associateBy { it.key }
+
+        /**
+         * 1.39 [STAT2-02] The names that come with 처리방침 3.12 (깃발 stats.life). The 3.11 page counts the rest ("36가지"); the
+         * phone keeps these off until the flag is on and the server drops them before it, so 3.11 stays true until 3.12 says 42.
+         */
+        val POLICY_312: Set<UsageEvent> = setOf(LIFE_NEW, LIFE_D1, LIFE_D7, LIFE_D30, LIFE_BACK7, LIFE_BACK30)
 
         fun of(key: String): UsageEvent? = byKey[key]
 

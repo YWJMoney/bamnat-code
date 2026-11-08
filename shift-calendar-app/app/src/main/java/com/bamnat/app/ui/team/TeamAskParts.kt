@@ -183,7 +183,9 @@ internal fun AskCard(
             TextButton(onClick = onEnd, enabled = !busy) { Text("신청 끝내기") }
         }
         round.syncedAt?.let {
-            val t = java.time.Instant.ofEpochMilli(it).atZone(ZoneId.of("Asia/Seoul"))
+            // 1.39 G2 통합 7차 PC: '22:22에 가져왔어요' on a phone at 13:22 (GMT). When it was fetched is the phone's own time, like its
+            // clock; the 마감 above stays in 한국 시각, as the 신청 page shows it.
+            val t = java.time.Instant.ofEpochMilli(it).atZone(com.bamnat.core.time.Today.zone())
             Text("${t.monthValue}/${t.dayOfMonth} ${"%02d:%02d".format(t.hour, t.minute)}에 가져왔어요. 화면을 열 때마다 새로 가져와요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

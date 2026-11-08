@@ -47,7 +47,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
     val bundle = gate.bundle(feature) ?: run {
         // 1.36 PC B1: say why there is no ad, rather than leave a way out of the sheet missing.
-        Text("‘${feature.label}’은 광고로 열 수 없어요. 프로에서 늘 써요.", style = small, color = dim, textAlign = TextAlign.Center,
+        Text("‘${feature.label}’${com.bamnat.core.text.Josa.eunneun(feature.label)} 광고로 열 수 없어요. 프로에서 늘 써요.", style = small, color = dim, textAlign = TextAlign.Center,
             modifier = modifier.fillMaxWidth())
         return
     }
@@ -173,9 +173,10 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                     loading = false
                     var earned = false
                     ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                        override fun onAdDismissedFullScreenContent() { if (earned) rewarded() else onQuit() }
+                        override fun onAdDismissedFullScreenContent() { com.bamnat.app.review.InAppReview.hush(); if (earned) rewarded() else onQuit() }
                         override fun onAdFailedToShowFullScreenContent(e: com.google.android.gms.ads.AdError) { onNoAd("show_failed") }
                     }
+                    com.bamnat.app.review.InAppReview.hush() // 1.39 [SPREAD-06] no review sheet right after an ad
                     ad.show(activity) { earned = true }
                 }
 

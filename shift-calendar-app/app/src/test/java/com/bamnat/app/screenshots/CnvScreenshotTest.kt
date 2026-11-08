@@ -63,7 +63,7 @@ class CnvScreenshotTest : ScreenshotBase() {
         assertTrue("the summary is put away", gone("255h", exact = true))
         // Put back one by one (each 넣기 picks the card it put back) until none is left hidden.
         var n = 0
-        while (n++ < 8) {
+        while (n++ < 12) { // 1.39 [FLOW-22] one card more (하루 이야기)
             if (!shows("넣기", exact = true) && shows("고르기 끝", exact = true)) tapText("고르기 끝", exact = true)
             if (shows("＋ 카드 넣기", exact = true)) break
             if (!shows("넣기", exact = true)) tapText("＋ 카드 넣기", prefix = true)

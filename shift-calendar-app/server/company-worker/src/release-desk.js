@@ -17,12 +17,13 @@ export const RELEASE_SCHEMA = [
 /** 점검표 단계: key, 이름, 할 일, 저절로 알 수 있으면 auto, 열 곳. 순서가 곧 할 순서예요. */
 export const RELEASE_STEPS = [
   { key: "play", name: "Play 올림", what: "Play Console › 프로덕션에 새 판을 올리고 출시를 시작해요(단계적 출시면 비율도 적어 두기).", to: null },
-  { key: "ship", name: "나간 판 저장", what: "Play에 나간 판을 저장해요. 그래야 앱에 '반영'과 '업데이트하세요' 답이 맞게 나가요.", to: "#/desk?view=release", auto: true },
+  // 1.39 [ADM3-38] 나간 판 저장·묶인 문의 답의 [열기]는 저장 단추가 있는 오늘 › 흐름으로(장부에는 release 보기가 없어요).
+  { key: "ship", name: "나간 판 저장", what: "Play에 나간 판을 저장해요. 그래야 앱에 '반영'과 '업데이트하세요' 답이 맞게 나가요.", to: "#/flow", auto: true },
   { key: "flags", name: "기능 일정 확인", what: "출시 › 기능 관리 › 일정에서 이 판과 함께 켜질 기능과 날짜(처리방침 시행일)를 확인해요.", to: "#/flags?view=timeline" },
   { key: "materials", name: "스튜디오 재료 잠금", what: "출시 › 스튜디오 재료에서 묶음마다 공개·무료·광고를 정해요(아이콘 모두 무료, 배경 3분의 1 무료).", to: "#/materials", auto: true },
   { key: "market", name: "장터 작품 공개", what: "사람과 글 › 마을 장터 › 출시 대기에서 공개를 기다리는 작품을 지금 공개하거나 예약해요.", to: "#/recipes?tab=waiting", auto: true },
   { key: "notice", name: "공지", what: "출시 › 앱 공지에 '업데이트 소식'과 처리방침 개정 알림을 올려요.", to: "#/notices", auto: true },
-  { key: "answers", name: "묶인 문의 답 보내기", what: "고친 판이 나가기를 기다리던 문의에 답이 다 갔는지 봐요(나간 판 저장 때 함께 보내요).", to: "#/desk?view=release", auto: true },
+  { key: "answers", name: "묶인 문의 답 보내기", what: "고친 판이 나가기를 기다리던 문의에 답이 다 갔는지 봐요(나간 판 저장 때 함께 보내요).", to: "#/flow", auto: true },
   { key: "health", name: "24시간 뒤 판 건강", what: "하루 뒤 숫자 › 판 건강에서 문의·문제 신고·서버 오류·비정상 종료가 이전 판보다 나빠지지 않았는지 봐요.", to: "#/health", auto: true },
 ];
 
@@ -143,10 +144,12 @@ export async function releaseRoute(request, env, path, method, now) {
  */
 export async function versionHealth(env, now = Date.now(), days = 14, vitals = null) {
   const from = now - days * DAY;
-  const [usage, inq, errors] = (await batch(env, [
+  const [usage, inq, errors, grouped] = (await batch(env, [
     stmt(env, "SELECT app, SUM(phones) AS phones, COUNT(DISTINCT day) AS days FROM usage_days WHERE day >= ? GROUP BY app", kstDay(from)),
     stmt(env, `SELECT json_extract(info, '$.app') AS app, kind, COUNT(*) AS n FROM inquiries WHERE created_at >= ? GROUP BY app, kind`, from),
     stmt(env, "SELECT key, count FROM counters WHERE key LIKE 'errors|%' AND key >= ?", `errors|${kstDay(from)}`),
+    // 1.39 [ADM3-43] 같은 날들 가운데 오류 묶음에 담긴 수(1.38부터). 다르면 화면이 '묶음에 N'으로 함께 보여요.
+    stmt(env, "SELECT COALESCE(SUM(count), 0) AS n FROM error_days WHERE day >= ?", kstDay(from)),
   ])).map((r) => r.results ?? []);
   const map = new Map();
   const row = (app) => {
@@ -174,7 +177,8 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
     if ((latest.inquiryRate ?? 0) > (prev.inquiryRate ?? 0) * 1.5 && latest.inquiries >= 5) worse.push(`문의가 ${prev.app}보다 많아요`);
   }
   const serverErrors = errors.reduce((n, e) => n + (e.count ?? 0), 0);
-  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors, vitals };
+  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors,
+    groupedErrors: grouped[0]?.n ?? 0, vitals };
 }
 
 // ---- 바뀐 일 [ADM3-33] ----
@@ -183,11 +187,13 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
 export async function changeMarks(env, from, to) {
   const [auditRows, flagRows] = (await batch(env, [
     stmt(env, `SELECT at, action, target, detail FROM audit WHERE at >= ? AND at < ? AND action IN ('shipped_version', 'price_table', 'launch_recorded', 'auto_rest',
-      'auto_resume', 'release_start', 'notice_remove', 'flag_force', 'flag_policy', 'rule_promote', 'incident_open', 'incident_close') ORDER BY at`, from, to),
+      'auto_resume', 'release_start', 'notice_remove', 'flag_force', 'flag_policy', 'rule_promote', 'incident_open', 'incident_close', 'server_deployed') ORDER BY at`, from, to),
     stmt(env, "SELECT at, key, action FROM flag_history WHERE at >= ? AND at < ? ORDER BY at LIMIT 200", from, to),
   ]).catch(() => [{ results: [] }, { results: [] }])).map((r) => r.results ?? []);
   const words = { shipped_version: "판 나감", price_table: "가격표", launch_recorded: "정식 출시", auto_rest: "D1 쉬기", auto_resume: "쉬기 끝", release_start: "출시 점검표",
-    notice_remove: "공지 내림", flag_force: "기능 강제", flag_policy: "처리방침 날짜", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝" };
+    notice_remove: "공지 내림", flag_force: "기능 강제", flag_policy: "처리방침 날짜", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝",
+    // 1.39 [STAT2-05] 서버가 새 판으로 처음 뜬 때(사고 때 가장 먼저 의심할 일).
+    server_deployed: "서버 배포" };
   const marks = auditRows.map((r) => ({ at: r.at, day: kstDay(r.at), kind: r.action, text: `${words[r.action] ?? r.action} ${r.target ?? ""}`.trim() }));
   for (const f of flagRows) marks.push({ at: f.at, day: kstDay(f.at), kind: "flag", text: `기능 ${f.key} ${f.action}` });
   const notices = await noticeRows(env).catch(() => []);

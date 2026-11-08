@@ -57,7 +57,7 @@ export function plazaViews(A) {
     if ((f === "all" || f === "groups" || f === "shape") && groups.length) {
       const title = f === "shape" ? "" : f === "all" ? `<h2 class="section">채택을 기다리는 제보<span class="count">${groups.length}</span></h2>` : "";
       const lead = f === "shape" ? '<p class="hint">같은 회사·부서인데 교대 수나 주기 길이가 쓰는 판과 크게 달라요. 다른 부서일 수 있으니 토론과 메모를 보고 정해 주세요.</p>' : "";
-      parts.push(`${title}${lead}<ul class="rows review-rows">${groups.map((g) => groupRow(g, editable, picking)).join("")}</ul>`);
+      parts.push(`${title}${lead}${editable ? L.draftEmpty(groups) : ""}<ul class="rows review-rows">${groups.map((g) => groupRow(g, editable, picking)).join("")}</ul>`);
     }
     if ((f === "all" || f === "asks") && q.asks.length) {
       parts.push(`<h2 class="section">앱에 없는 방식<span class="count">${q.asks.length}</span></h2><p class="hint">앱으로 설정하지 못한 방식이에요. 답을 고르면 보낸 분 앱에 보여요.</p>
@@ -101,12 +101,13 @@ export function plazaViews(A) {
       <summary class="row">${picking ? `<input type="checkbox" class="check" data-act="review-pick" data-key="${esc(groupKey(g))}" aria-label="${esc(g.company.name)} 고르기"${picked ? " checked" : ""}>` : ""}
         <span class="row-main"><b>${name(g.company, g.dept)}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</b>
           <small>${gist ? `<span class="gist">${esc(gist)}</span> · ` : ""}${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 ${verified}` : ""} · ${day(g.reports[0].at)}</small></span>
-        <span class="row-side inline">${kind}
+        <span class="row-side inline">${kind}${g.draft ? `<span class="pill info" title="Claude 추천">Claude ${esc(L.DRAFT_WORDS[g.draft.pick] ?? "")}</span>` : ""}
           <span class="score mini" title="채택 점수"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}</b></span>
           ${g.bad ? `<span class="pill bad">달라요 ${g.bad}</span>` : ""}
-          ${editable ? `<button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}">거절</button>
+          ${editable ? `<button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}"${g.draft?.reason ? ` data-reason="${esc(g.draft.reason)}"` : ""}>거절</button>
           <button class="btn small primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button>` : ""}</span></summary>
       <div class="rv-body">
+        ${L.draftNote(g.draft, g.draft?.reason ? S.overview?.reasons?.[g.draft.reason] ?? "" : "")}
         ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
         <p class="meta">신뢰도 ${g.trust ?? 0} · 맞았어요 ${g.agree ?? 0}%${g.posts ? ` · 토론 ${g.posts}개` : ""}${claims ? ` · 명세서 확인(근거 없음) ${claims}건` : ""}${siblings ? ` · 같은 회사 다른 부서 제보 ${siblings}건` : ""}</p>
         ${g.company.hidden ? '<p class="note warn">숨긴 회사예요. 채택해도 회사 찾기에 나오지 않아요.</p>' : ""}
@@ -154,6 +155,22 @@ export function plazaViews(A) {
     return head + d.items.map(versionTable).join("");
   }
 
+  /**
+   * 1.39 [ADM3-46] 실서버 둘러보기 B3: 표를 읽기 전에 한 줄로. 몇 항목이 다른지와, 추천 판이면 왜(명세서 확인·맞았어요·적용·신뢰 하한).
+   * 추천이 없으면 무엇이 모자라 정하지 못하는지.
+   */
+  function recommendLine(list, rows) {
+    const diff = rows.filter((r) => !r.same).map((r) => r.label);
+    const what = diff.length ? `${diff.slice(0, 3).join("·")}${diff.length > 3 ? ` 외 ${diff.length - 3}개` : ""} 항목이 달라요` : "설정은 같고 숫자만 달라요";
+    const best = list.find((c) => c.recommended);
+    if (!best) {
+      const votes = list.reduce((n, c) => n + c.ok + c.bad, 0);
+      return `<p class="vrec none"><b>${esc(what)}.</b> 아직 추천할 판이 없어요${votes < 5 ? `(맞았어요·달라요 ${votes}표, 5표부터 비교)` : ""}. 명세서로 확인한 제보가 있는 판부터 보세요.</p>`;
+    }
+    const why = [best.verified ? `명세서로 확인 ${best.verified}건` : "", best.ok ? `맞았어요 ${best.ok}` : "", best.uses ? `적용 ${best.uses}대` : "", `신뢰 하한 ${best.wilson}%`].filter(Boolean).join(" · ");
+    return `<p class="vrec"><b>${esc(what)}.</b> 추천은 <span class="pill gold">${esc(stateName(best))}</span> ${esc(why)}</p>`;
+  }
+
   function versionTable(v) {
     const editRules = can("takedown", "edit");
     const editReview = can("review", "edit");
@@ -188,7 +205,7 @@ export function plazaViews(A) {
     return `<article class="card vcmp">
       <div class="card-head"><h3>${can("companies") ? `<a href="${href("companies", v.company.id)}">${esc(v.company.name)}</a>` : esc(v.company.name)}${v.dept ? ` <span class="dept">${esc(v.dept)}</span>` : ""}</h3>
         ${v.conflict ? '<span class="pill warn">정할 것</span>' : ""}</div>
-      ${summaries.length ? `<ul class="vsum">${summaries.join("")}</ul>` : ""}
+      ${recommendLine(list, rows)}${summaries.length ? `<ul class="vsum">${summaries.join("")}</ul>` : ""}
       <div class="table-wrap"><table class="cmp"><thead><tr><th scope="col" class="lab">항목</th>${list.map((c, i) => `<th scope="col" class="${best(i).trim()}">
         <span class="pill ${VERSION_STATE[c.state]?.[0] ?? ""}">${esc(stateName(c))}</span>${c.recommended ? ' <span class="pill gold">추천</span>' : ""}${c.shape ? ' <span class="pill warn">모양이 다른 판</span>' : ""}
         <span class="meta">${esc(day(c.at))}${c.source === "promote" ? " · 되돌림" : ""}</span></th>`).join("")}</tr></thead>
@@ -209,7 +226,21 @@ export function plazaViews(A) {
     return `<div class="searchbar"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
         enterkeyhint="search" aria-label="회사 찾기">${edit ? `<button class="btn" data-act="company-pick-mode" aria-pressed="${Boolean(S.companyPick)}">${S.companyPick ? "선택 마침" : "여러 개 고르기"}</button>
         <button class="btn primary" data-act="new-company">${icon(P.plus)}회사 만들기</button>` : ""}</div>
-      <div id="company-list">${companyRows()}</div>`;
+      ${edit && !S.query ? similarCard() : ""}<div id="company-list">${companyRows()}</div>`;
+  }
+
+  /** 1.39 [ADM3-45] 실서버 둘러보기 B2: 이름이 비슷한 회사 짝. 제보·참여가 많은 쪽으로 합치거나 '다른 회사예요'. */
+  function similarCard() {
+    const pairs = S.data.similar?.pairs ?? [];
+    if (!pairs.length) return "";
+    const side = (c) => `<b>${esc(c.name)}</b><small>제보 ${c.reports} · 규칙 ${c.rules} · 참여 ${c.members}</small>`;
+    return `<section class="card similar" aria-labelledby="similar-title"><div class="card-head"><h2 id="similar-title">같은 회사일까요? <span class="pill warn">${pairs.length}쌍</span></h2>
+        <span class="meta">이름이 비슷해요. 합치면 제보·규칙·참여가 한곳에 모여요</span></div>
+      ${L.draftEmpty(pairs)}<ul class="rows similar-rows">${pairs.map((p) => `<li><div class="pair"><a href="${href("companies", p.from.id)}">${side(p.from)}</a><span class="arrow" aria-hidden="true">→</span>
+          <a href="${href("companies", p.into.id)}">${side(p.into)}</a></div><small class="why">${esc(p.why)}</small>
+        ${L.draftNote(p.draft)}
+        <div class="actions start"><button class="btn small primary" data-act="similar-merge" data-from="${p.from.id}" data-into="${p.into.id}" data-a="${esc(p.from.name)}" data-b="${esc(p.into.name)}">이쪽으로 합치기</button>
+          <button class="btn small ghost" data-act="similar-skip" data-a="${p.from.id}" data-b="${p.into.id}">다른 회사예요</button></div></li>`).join("")}</ul></section>`;
   }
 
   function companyRows() {
@@ -288,6 +319,20 @@ export function plazaViews(A) {
       render({ keepScroll: true });
     },
     // [ADMX-06]
+    // 1.39 [ADM3-45] 비슷한 회사 짝.
+    // 1.39 [PAYP-17] (7차 PC) the confirm says what goes along, in numbers, read from the company that goes.
+    "similar-merge": async ({ from, into, a, b }) => A.confirmBox(`‘${a}’ 회사를 ‘${b}’ 회사에 합칠까요?`,
+      A.mergeWords(await api(`/companies/${from}`).catch(() => null)), "합치기", async () => {
+      await api(`/companies/${from}/merge`, "POST", { into });
+      toast("합쳤어요");
+      S.data.similar = await api("/companies/similar").catch(() => S.data.similar);
+      await load();
+    }),
+    "similar-skip": async ({ a, b }) => {
+      const d = await act(() => api("/companies/similar/skip", "POST", { a, b }), "다시 묻지 않을게요");
+      if (d) S.data.similar = d;
+      render({ keepScroll: true });
+    },
     "company-sort": ({ key }) => {
       S.companySort = key === "new" ? "" : key;
       refilter("list");

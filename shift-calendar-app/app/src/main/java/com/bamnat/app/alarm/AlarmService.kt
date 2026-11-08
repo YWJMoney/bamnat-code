@@ -67,6 +67,53 @@ class AlarmService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        // Leaving is looked at a moment later: 끄기 on the screen closes it before the ring has stopped.
+        onScreen = { shown -> handler.postDelayed({ screenChanged(shown) }, if (shown) 0L else 800L) }
+    }
+
+    /**
+     * 1.39 [ALRM-31] (PC 5c4ad849 사용성 제안 '근무 알람 화면: 헤드업 알림이 큰 시계를 가려요'): with the ringing screen in front,
+     * the ringing notice goes on quietly in the shade (same buttons, no pop-up over the clock); when the screen is left while it
+     * still rings and the phone is in use, the notice pops up again so 끄기 and 다시 울림 stay at hand.
+     */
+    private fun screenChanged(shown: Boolean) {
+        val ring = _ringing.value ?: return
+        if (inCallNow) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        runCatching {
+            val nm = NotificationManagerCompat.from(this)
+            if (shown) {
+                nm.cancel(Notifications.ALARM_AGAIN_ID)
+                nm.notify(Notifications.ALARM_NOTIFICATION_ID, quietNotice(ring))
+            } else if (screenShownAt != 0L && screenHiddenAt >= screenShownAt && (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive) {
+                nm.notify(Notifications.ALARM_NOTIFICATION_ID, buildNotification(ring))
+            }
+        }
+    }
+
+    /** [ALRM-31] The ringing notice without its pop-up: on the quiet 알람 상태 channel, no sound of its own, no full screen. */
+    private fun quietNotice(ring: RingRequest): android.app.Notification {
+        val full = buildNotification(ring)
+        return NotificationCompat.Builder(this, Notifications.STATUS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setContentTitle(ring.title)
+            .setContentText(describe(ring))
+            .setContentIntent(full.contentIntent)
+            .setDeleteIntent(full.deleteIntent)
+            .setColorized(true)
+            .setColor(0xFFFF6B5E.toInt())
+            .apply { full.actions.orEmpty().forEach { a -> addAction(NotificationCompat.Action.Builder(0, a.title, a.actionIntent).setAuthenticationRequired(false).build()) } }
+            .build()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
@@ -132,6 +179,10 @@ class AlarmService : Service() {
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
                     // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
+                    // 1.39 [SLEEP-06] The morning alarm off: 자는 동안 소리 stops too, so the microphone does not run into the day.
+                    if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepRecordService.stop(this)
+                    // 1.39 [FX-21] 규칙 '근무 알람을 끄면'.
+                    if (ring.label == null && !ring.recheck) runCatching { com.bamnat.app.logic.LogicRunner.onAlarmOff(appContainer) }
                 }
                 if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()
@@ -237,6 +288,8 @@ class AlarmService : Service() {
                 if (!reached && watchFirst) handler.post { if (phoneLater === later) { handler.removeCallbacks(later); later.run() } }
             }
         }
+        // 1.39 [FLOW-15] 깨우는 단계: the watch first is 1 (진동); the phone's sound comes in at phoneOutputs.
+        _stage.value = if (watchFirst) 1 else 0
         if (!watchFirst) phoneOutputs(ring)
         listenForPowerButton()
         if (!inCallNow) handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
@@ -329,6 +382,8 @@ class AlarmService : Service() {
         if (sound != AppSettings.SILENT_SOUND) {
             requestFocus()
             playSound(candidateUris(sound), settings.gradualVolume)
+            // 1.39 [FLOW-15] A sound that grows is 2 (소리 작게) until it is full; a full sound after the watch is 3.
+            _stage.value = if (settings.gradualVolume) 2 else if (_stage.value > 0) 3 else 0
         }
         if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
     }
@@ -493,6 +548,7 @@ class AlarmService : Service() {
             val mp = player ?: return
             volume = (volume + RAMP_INCREMENT).coerceAtMost(1f)
             if (quietUntil == 0L) runCatching { mp.setVolume(volume, volume) }
+            if (volume >= 1f && _stage.value > 0) _stage.value = 3
             if (volume < 1f) handler.postDelayed(this, RAMP_STEP_MILLIS)
         }
     }
@@ -556,6 +612,7 @@ class AlarmService : Service() {
         _allOffAfterMission.value = false
         _ringing.value = null
         _since.value = null
+        _stage.value = 0
         inCallNow = false
         holdSince = 0L
         _inCall.value = false
@@ -566,9 +623,11 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
+        onScreen = null
         stopOutputs()
         _ringing.value = null
         _since.value = null
+        _stage.value = 0
         super.onDestroy()
     }
 
@@ -632,6 +691,13 @@ class AlarmService : Service() {
         /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
         val ringingSince: StateFlow<Long?> = _since.asStateFlow()
 
+        private val _stage = MutableStateFlow(0)
+        /**
+         * 1.39 [FLOW-15] 깨우는 단계 for the ringing screen's three dots: 1 진동 (the watch first), 2 소리 작게 (점점 크게 is growing),
+         * 3 소리 크게; 0 when this ring has no steps (full sound at once), and the dots are not shown.
+         */
+        val wakeStage: StateFlow<Int> = _stage.asStateFlow()
+
         private val _inCall = MutableStateFlow(false)
         /** [ALRM-22] The ring waits for a call to end. */
         val inCall: StateFlow<Boolean> = _inCall.asStateFlow()
@@ -684,8 +750,11 @@ class AlarmService : Service() {
             return true
         }
 
-        fun screenShown(now: Long = Today.millis()) { screenShownAt = now }
-        fun screenHidden(now: Long = Today.millis()) { screenHiddenAt = now }
+        /** [ALRM-31] The running service's answer to the ringing screen coming and going. */
+        @Volatile private var onScreen: ((Boolean) -> Unit)? = null
+
+        fun screenShown(now: Long = Today.millis()) { screenShownAt = now; onScreen?.invoke(true) }
+        fun screenHidden(now: Long = Today.millis()) { screenHiddenAt = now; onScreen?.invoke(false) }
         /** The ringing screen is gone: the next ring starts from nothing. */
         fun screenGone() { screenShownAt = 0L; screenHiddenAt = 0L }
 

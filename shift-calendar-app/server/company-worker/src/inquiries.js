@@ -1,12 +1,14 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { autoAnswer } from "./inbox.js";
+import { SORTING, autoAnswer, compareVersions, grams, likeness, version } from "./inbox.js";
+import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
-import { bugFixed } from "./money.js";
+import { bugFixed, ideaAdopted } from "./money.js";
+import { LOOP, WAITING_SQL, styleList, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -103,6 +105,8 @@ export const INQUIRY_TOPICS = [
 export const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
 
 /** Words that make a problem urgent: an alarm that did not ring, an app that will not open, money paid. */
+// 1.39 수면 긴급 넷(사용자 승인 2026-11-07): 녹음·마이크가 안 꺼짐, 방해 금지가 안 풀림, 소리 클립이 안 지워짐(깨우는 알람은 URGENT에 있음).
+export const SLEEP_URGENT = /(녹음|마이크|측정).{0,8}(계속|안\s*꺼|안\s*멈|켜져)|방해\s*금지.{0,8}(안\s*풀|계속|안\s*꺼)|(소리|녹음).{0,6}(파일|클립).{0,8}(남아|안\s*지워)/;
 export const URGENT = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
 
 /** What the list and a thread show for sorting: topic, its label and how soon it needs an answer. */
@@ -124,7 +128,7 @@ export function triage(kind, text, info) {
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
-  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) || SLEEP_URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
 
@@ -140,11 +144,22 @@ export async function inquiries(request, env, path) {
   if (!device) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(device);
   if (path === "/api/inquiries" && method === "GET") {
+    // 1.39 [LOOP-15] 앱이 자기 판(x-app "1.39.0 (53)")을 보내면: 이 폰이 이미 고친 판이면 묶인 문의에 바로 안내해요(단계적 출시 중에도).
+    const app = request.headers.get("x-app");
+    if (app) await phoneArrived(env, dev, app, Date.now()).catch(() => 0);
     const rows = await all(env, `SELECT i.*, (SELECT COUNT(*) FROM inquiry_photos p WHERE p.inquiry_id = i.id) AS photos
       FROM inquiries i WHERE i.device = ? ORDER BY i.updated_at DESC LIMIT 50`, dev);
     const out = [];
-    for (const r of rows) out.push(await inquiryView(env, r));
+    for (const r of rows) out.push(await inquiryView(env, r, false, app));
     return json({ inquiries: out });
+  }
+  // 1.39 [LOOP-16] 해결됐나요: 고친 판 안내를 받은 문의에 '해결됐어요'(ok true)·'아직이에요'(false).
+  const fixed = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/fixed$/);
+  if (fixed && method === "POST") {
+    const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", fixed[1]);
+    if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
+    const r = await fixedAnswer(request, env, row, Date.now());
+    return r ?? json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id), false, request.headers.get("x-app")));
   }
   const rated = path.match(/^\/api\/inquiries\/([A-Za-z0-9]{22})\/rating$/);
   if (rated && method === "POST") return inquiryRating(request, env, rated[1], dev);
@@ -227,11 +242,22 @@ export async function ask(request, env) {
   ]);
   // [ADMIN-19] Admins who asked for it hear of a new question (a bug or a problem counts as urgent); nothing
   // happens without VAPID keys, and a push that fails never fails the question.
-  await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
-    title: "새 문의",
-    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건`,
-    url: "/admin/#/inquiries",
-  }, now);
+  // 1.39 [LOOP-19] 알람이 안 울림·앱이 안 열림·데이터 사라짐·결제·수면 긴급 넷을 말하는 문의는 '급함'으로 따로, 조용한 시간에도
+  // (사고·법적 기능처럼). 알림에는 문의 글을 넣지 않고 무엇에 관한 것인지만. 결정함 맨 위에도 떠요.
+  const tri = triage(body.kind, text, info);
+  // 1.39 G7 발굴 1-4(G10이 받음): 알림만 보고 급한지 알게, 답을 기다리는 수와 2주 안의 같은 문의가 몇 건째인지(글은 넣지 않아요).
+  const piled = await waitingNote(env, id, text, tri.topic);
+  if (tri.urgency === "urgent") {
+    await notifyAdmins(env, "urgent", { title: "급함 문의", body: `${tri.topicName ?? "문의"} · 알람·앱 실행·데이터·결제·수면 중 하나가 안 된다는 문의 1건${piled}`,
+      url: "/admin/#/decide", urgent: true }, now, { ignoreQuiet: true });
+  } else {
+    await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
+      title: "새 문의",
+      body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건${piled}`,
+      // 1.39 [ADM3-38] Opens 운영 장부 › 오늘 할 것, where a new question lands (1.38 흐름), not the old 문의 list.
+      url: "/admin/#/desk?view=today",
+    }, now);
+  }
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
   // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
@@ -239,6 +265,20 @@ export async function ask(request, env) {
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
   return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}), ...(studio ? { studio } : {}) }, 201);
+}
+
+/** 새 문의 알림 뒤에 붙는 말: ' · 답 기다림 N건 · 같은 문의 M건째'. 읽지 못하면 빈 글(알림은 그대로 가요). */
+export async function waitingNote(env, id, text, topic) {
+  try {
+    const rows = await all(env, WAITING_SQL);
+    const waiting = rows.filter((r) => r.last === "user").length;
+    const g = grams(text);
+    const since = Date.now() - 14 * DAY;
+    const same = rows.filter((r) => r.id !== id && r.created_at >= since && r.first && likeness(g, grams(r.first), triage(r.kind, r.first, null).topic === topic && topic !== "etc") >= SORTING.same).length;
+    return `${waiting > 1 ? ` · 답 기다림 ${waiting}건` : ""}${same ? ` · 같은 문의 ${same + 1}건째` : ""}`;
+  } catch {
+    return "";
+  }
 }
 
 /** What the user typed: up to 2000 characters, without an email, phone number or amount. */
@@ -273,7 +313,7 @@ export function inquiryInfo(v) {
 export const messagesOf = (env, id) => all(env, "SELECT sender, text, by, at FROM inquiry_messages WHERE inquiry_id = ? ORDER BY id", id);
 
 /** A question as the app sees it; [admin] adds what was sent with it and who answered. */
-export async function inquiryView(env, row, admin = false) {
+export async function inquiryView(env, row, admin = false, app = null) {
   const messages = await messagesOf(env, row.id);
   const view = {
     id: row.id,
@@ -286,7 +326,10 @@ export async function inquiryView(env, row, admin = false) {
     same: row.same ?? 0,
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
     rating: row.rating ?? 0,
-    progress: await inquiryProgress(env, row, messages),
+    progress: await inquiryProgress(env, row, messages, app),
+    // 1.39 [LOOP-16] 해결됐나요: 0 아직 안 물음·안 답함, 1 해결됐어요, -1 아직이에요. askFixed면 앱이 두 단추를 보여요.
+    fixed: row.fixed ?? 0,
+    askFixed: !row.fixed && (await fixedAsk(env, row.id)),
     // [SRV-06] How many photos came with it; each one is read on its own address.
     photos: row.photos ?? (await one(env, "SELECT COUNT(*) AS n FROM inquiry_photos WHERE inquiry_id = ?", row.id)).n,
   };
@@ -316,12 +359,19 @@ export async function inquiryView(env, row, admin = false) {
  * 답변 (answered), 개발 목록 (in a 개발사항 being made) and 반영 (in a finished one, with its version). The
  * items themselves stay the admins': only the stage and the version go to the app.
  */
-export async function inquiryProgress(env, row, messages) {
-  const items = await all(env, `SELECT d.status, d.released_in FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
+export async function inquiryProgress(env, row, messages, app = null) {
+  const items = await all(env, `SELECT d.status, d.released_in, d.route, d.live_at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
     WHERE l.inquiry_id = ?`, row.id);
   // 1.37 [ADM2-02] '반영'은 고친 판이 Play에 나갔을 때만. 고쳤지만 아직 안 나갔으면 '만드는 중'.
+  // 1.39 [LOOP-06] 업데이트 없이 고친 것(서버·원격 자료·스위치)은 실제로 닿은 때(live_at)부터, [LOOP-15] 이 폰이 이미 고친 판이면 그때부터.
   const shipped = items.some((d) => d.status === "done") ? await shippedVersion(env) : null;
-  const done = items.filter((d) => d.status === "done" && (!d.released_in || isOut(d.released_in, shipped)));
+  const mine = version(String(app ?? "").split(" ")[0]);
+  const out = (d) => {
+    if (d.live_at) return true;
+    if (!d.released_in) return !["server", "remote", "flag"].includes(d.route ?? "");
+    return isOut(d.released_in, shipped) || Boolean(mine && version(d.released_in) && compareVersions(mine, version(d.released_in)) >= 0);
+  };
+  const done = items.filter((d) => d.status === "done" && out(d));
   if (done.length) return { stage: "released", version: done.map((d) => d.released_in).find(Boolean) ?? null };
   if (items.some((d) => d.status === "done")) return { stage: "building" };
   if (items.some((d) => d.status === "todo" || d.status === "doing")) return { stage: items.some((d) => d.status === "doing") ? "building" : "planned" };
@@ -599,9 +649,14 @@ export async function holdReply(env, row, text, body, now) {
   const n = (await one(env, "SELECT COUNT(*) AS n FROM held_replies WHERE at >= ?", since)).n
     + (await one(env, "SELECT COUNT(*) AS n FROM audit WHERE action = 'inquiry_reply_sent' AND at >= ?", since)).n;
   if (n >= DESK.claudeAnswersDay) throw new Refuse("answer_limit", "text", 429);
-  await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
-    actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, now + DESK.hold);
-  await audit(env, now, "inquiry_reply_held", row.id, `${Math.round(DESK.hold / 60000)}분 보류`);
+  // 1.39 [LOOP-12] 믿을수록 더 맡기기: 이 답의 종류(정리함 더미)를 최고 관리자가 '바로 보내기'로 켰으면 보류 없이 가요.
+  const pile = typeof body.pile === "string" && Object.hasOwn(LOOP.piles, body.pile) ? body.pile : "";
+  const kind = pile ? (await one(env, "SELECT kind FROM inquiries WHERE id = ?", row.id))?.kind : null;
+  const instant = await instantOk(env, pile, kind, text);
+  await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
+    actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, instant ? now : now + DESK.hold, pile);
+  await audit(env, now, "inquiry_reply_held", row.id, instant ? `바로 보내기(${LOOP.piles[pile]})` : `${Math.round(DESK.hold / 60000)}분 보류`);
+  if (instant) await releaseHeld(env, now);
   return true;
 }
 
@@ -627,6 +682,8 @@ export async function releaseHeld(env, now) {
       told.push(h.inquiry_id);
     }
     await batch(env, out);
+    // 1.39 [LOOP-12] 종류마다 그대로 나갔는지·고쳐서 나갔는지(바로 보내기는 따로 셈).
+    if (row) await heldLog(env, h.pile, h.until <= h.at ? "instant" : h.edited ? "edited" : "sent", now);
   }
   if (told.length) await fcmTell(env, [...new Set(told)], now);
   return told.length;
@@ -640,9 +697,10 @@ export async function heldChange(env, inquiryId, heldId, body, now) {
   if (body.cancel === true) {
     await run(env, "DELETE FROM held_replies WHERE id = ?", h.id);
     await audit(env, now, "inquiry_reply_cancel", inquiryId, h.by);
+    await heldLog(env, h.pile, "cancelled", now);
   } else {
     if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
-    await run(env, "UPDATE held_replies SET text = ? WHERE id = ?", body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), h.id);
+    await run(env, "UPDATE held_replies SET text = ?, edited = 1 WHERE id = ?", body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), h.id);
     await audit(env, now, "inquiry_reply_edit", inquiryId, h.by);
   }
   return null;
@@ -743,6 +801,8 @@ export async function adminInquiryView(env, row) {
     // 1.36 [INQ-07] A 결제·환불 record: since when, until when it is kept, and whether the asker deleted it.
     billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs) } : null,
     leftByAsker: String(row.device).startsWith("gone"),
+    // 1.39 [CARE-10] 마을 경고·쉬기에 대한 해명이면: 무엇에 대한 것인지와 결정.
+    appeal: await careAppealOf({ one, all, run, batch, stmt, randomId }, env, row.id, now),
   };
   if (view.waitingHours !== null) {
     const last = view.messages[view.messages.length - 1];
@@ -1186,6 +1246,24 @@ export async function devUpdate(env, row, body, now) {
     const text = body.news === null ? "" : plainText(body.news, 80, "news");
     if (text !== (row.news ?? "")) [edit.news, set.news] = [[row.news ?? "", text], text];
   }
+  // 1.39 [LOOP-17][LOOP-08] 알려진 문제판에 보일 쉬운 제목·보일지, 전달 길·크기: 저장소 동기화와 같은 칸을 관리자 앱에서도(요금은 따로, 최고 관리자만).
+  if (body.publicTitle !== undefined) {
+    const text = body.publicTitle ? inquiryText(String(body.publicTitle)).slice(0, LOOP.knownTitle) : "";
+    if (text !== (row.public_title ?? "")) [edit.publicTitle, set.public_title] = [[row.public_title ?? "", text], text];
+  }
+  if (body.known !== undefined) {
+    const k = body.known === true ? 1 : body.known === false ? -1 : 0;
+    if (k !== (row.known ?? 0)) [edit.known, set.known] = [[row.known ?? 0, k], k];
+  }
+  if (body.styles !== undefined) {
+    const v = styleList(body.styles);
+    if (v !== (row.styles ?? "")) [edit.styles, set.styles] = [[row.styles ?? "", v], v];
+  }
+  for (const [key, names] of [["route", LOOP.routes], ["size", LOOP.sizes]]) {
+    if (body[key] === undefined) continue;
+    const v = body[key] === null || body[key] === "" ? "" : Object.hasOwn(names, body[key]) ? body[key] : refuse(key, key);
+    if (v !== (row[key] ?? "")) [edit[key], set[key]] = [[row[key] ?? "", v], v];
+  }
   if (Object.keys(edit).length) {
     stmts.push(devEvent(env, row.id, now, "edit", edit));
     notes.push(["dev_edit", Object.keys(edit).join(" ")]);
@@ -1229,7 +1307,10 @@ export async function devUpdate(env, row, body, now) {
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
   // 1.36 841 쓰면 쌓이는 날: 완료 gives the phones that reported it 3 days.
-  if (set.status === "done") await bugFixed(env, row.id, now);
+  if (set.status === "done") {
+    await bugFixed(env, row.id, now);
+    await ideaAdopted(env, row.id, now); // 1.39 [LOOP-14]
+  }
   return true;
 }
 
@@ -1257,7 +1338,10 @@ export async function devBulk(request, env, now) {
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
     await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
-    if (next.status === "done") for (const r of change) await bugFixed(env, r.id, now);
+    if (next.status === "done") for (const r of change) {
+      await bugFixed(env, r.id, now);
+      await ideaAdopted(env, r.id, now); // 1.39 [LOOP-14]
+    }
   }
   return json({ changed: change.length, ids: change.map((r) => r.id) });
 }
@@ -1335,6 +1419,13 @@ export const devItem = (r) => ({
   releasedIn: r.released_in ?? null,
   shipReply: r.ship_reply ?? "",
   news: r.news ?? "",
+  // 1.39 [LOOP-17][LOOP-08]
+  publicTitle: r.public_title ?? "",
+  known: r.known ?? 0,
+  route: r.route ?? "",
+  size: r.size ?? "",
+  track: r.track ?? "",
+  styles: String(r.styles ?? "").split(",").filter(Boolean),
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   createdBy: { id: r.created_by, name: r.created_by_name },

@@ -34,6 +34,20 @@ object Callout {
     /** Shift and day calendars: a 비번 day first, but any day can be called in. */
     fun offered(style: WorkStyle?): Boolean = style == null || style == WorkStyle.SHIFT || style == WorkStyle.DAY
 
+    /** 업종 묶음 ([com.bamnat.core.plaza.IndustryGroups]) that are called in on a day off: 소방·경찰·해양경찰·교정. */
+    private val CALLED_GROUPS = setOf("fire", "police", "coast", "correction")
+
+    /** 급여 직군 ([com.bamnat.core.pay.Occupation]) that are called in: 경찰·소방·공무원(교대·현업). */
+    private val CALLED_JOBS = setOf(com.bamnat.core.pay.Occupation.POLICE, com.bamnat.core.pay.Occupation.FIRE, com.bamnat.core.pay.Occupation.PUBLIC)
+
+    /**
+     * 1.39 [WTYP-31] PC 7차 (사무직·간호사 쉬는 날에 '비상소집'): only a job that is called in sees the chip — the pay's 직군
+     * (경찰·소방·공무원) or the calendar's 업종 묶음 (소방·경찰·해양경찰·교정) — or anyone who made a 비상소집 kind of
+     * their own in 추가 근무 종류 (the way back for any other job).
+     */
+    fun forJob(style: WorkStyle?, occupation: com.bamnat.core.pay.Occupation?, group: String, kinds: ExtraKinds): Boolean =
+        offered(style) && (occupation in CALLED_JOBS || group in CALLED_GROUPS || find(kinds)?.hidden == false)
+
     /** The month's call-ins: how many and how long, for the month's line. */
     fun month(entries: List<DayEntry>, kinds: ExtraKinds, month: YearMonth): Pair<Int, Int> {
         val id = find(kinds)?.id ?: return 0 to 0

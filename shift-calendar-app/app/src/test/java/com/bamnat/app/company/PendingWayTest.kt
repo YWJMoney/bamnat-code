@@ -139,12 +139,27 @@ class PendingWayTest {
         assertEquals(2_800_000L, BaseAsk.known(p, month))
         assertFalse(BaseAsk.needed(p, month))
         assertEquals(0.5, p.rules.nightPremium!!, 0.0)
-        assertEquals(PayWay("c1", "(주)예시정밀", "생산팀", "s1"), c.payWays.way.value?.copy(vote = null, why = null))
+        // 1.39 [PAYP-04] Put in from 1.39: someone else's shared way, locked on the pay screen.
+        assertEquals(PayWay("c1", "(주)예시정밀", "생산팀", "s1", shared = true), c.payWays.way.value?.copy(vote = null, why = null))
         assertEquals("(주)예시정밀", c.companyStore.draft.value?.company)
         assertNull(main.pendingWays.pending.value)
         assertNull(main.pendingWays.dropped.value)
         assertNull("the company's own hours are not offered back", main.pendingWays.hoursAsk.value)
         waitFor("the server hears it is used") { calls.contains("use:c1:s1:true:main") }
+    }
+
+    /** 1.39 [PAYP-04] 직접 만들기: the setup and its 7 days of changes go, so nothing of the shared way comes back through 고친 기록. */
+    @Test fun leavingASharedWayLeavesNothingOfIt() = runBlocking {
+        val main = c.companyOf(PersonalCalendar.MAIN)
+        val w = way(companyFile())
+        main.pendingWays.offer(w)
+        assertTrue(main.commit(c, w, 2_800_000, null, Today.month()))
+        assertTrue(c.payWays.way.value?.shared == true)
+        c.payStore.leaveShared()
+        c.payWays.use(null)
+        assertNull(c.payStore.profile.value)
+        assertTrue(c.payStore.history.value.isEmpty())
+        assertNull(c.payWays.way.value)
     }
 
     @Test fun otherHoursAreOfferedBackAsAnOpinion() = runBlocking {
@@ -180,6 +195,22 @@ class PendingWayTest {
         main.cancelPending(c)
         assertEquals("s2", other.pendingWays.pending.value?.setup)
         waitFor("the server hears it for that calendar") { calls.any { it.startsWith("use:c1:s1:true:") && !it.endsWith(":main") } }
+    }
+
+    // 1.39 발굴 2-1: '새 판으로 바꾸기' puts the newer version in as the shared way in use, counted, and the older one no longer.
+    @Test fun movingToANewerVersionCountsItAndNotTheOlder() = runBlocking {
+        val main = c.companyOf(PersonalCalendar.MAIN)
+        val text = companyFile()
+        val first = way(text)
+        main.pendingWays.offer(first)
+        assertTrue(main.commit(c, first, 2_500_000, null, today.let { java.time.YearMonth.from(it) }))
+        val newer = PendingWay("c1", "(주)예시정밀", "생산팀", "s2", text, PendingWay.Source.NEWER)
+        main.pendingWays.offer(newer)
+        assertTrue(main.commit(c, newer, 2_500_000, null, java.time.YearMonth.from(today)))
+        assertEquals("s2", c.payWays.way.value?.setup)
+        assertEquals(true, c.payWays.way.value?.shared)
+        waitFor("the newer one counted") { calls.any { it.startsWith("use:c1:s2:true:") } }
+        waitFor("the older one no longer") { calls.any { it.startsWith("use:c1:s1:false:") } }
     }
 
     private fun <T> assertNotNullOf(v: T?): T { assertNotNull(v); return v!! }

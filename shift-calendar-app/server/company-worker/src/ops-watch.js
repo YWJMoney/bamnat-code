@@ -1,5 +1,6 @@
 import { all, run } from "./index.js";
 import { DAY, HOUR } from "./units.js";
+import { SERVER_VERSION } from "./version.js";
 
 // ---- 1.38 [ADM3-05][ADM3-13][ADM3-19] 서버가 스스로 보는 눈: 정기 작업, 오류 묶음, 응답 속도 ----
 //
@@ -32,6 +33,8 @@ export const WATCH_SCHEMA = [
     app TEXT NOT NULL DEFAULT '', first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, total INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'new', note TEXT NOT NULL DEFAULT '', seen_at INTEGER)`,
   "CREATE INDEX IF NOT EXISTS error_groups_last ON error_groups (last_at)",
+  // 1.39 [ADM3-43] 그 단계를 마지막으로 돌린 서버 판(배포 직후 옛 판 기록인지 보이게).
+  "ALTER TABLE job_runs ADD COLUMN ver TEXT NOT NULL DEFAULT ''",
   "CREATE TABLE IF NOT EXISTS error_days (day TEXT NOT NULL, sig TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY (day, sig))",
   `CREATE TABLE IF NOT EXISTS req_stats (hour TEXT NOT NULL, route TEXT NOT NULL, n INTEGER NOT NULL, err INTEGER NOT NULL, ms_sum INTEGER NOT NULL,
     ms_max INTEGER NOT NULL, b0 INTEGER NOT NULL DEFAULT 0, b1 INTEGER NOT NULL DEFAULT 0, b2 INTEGER NOT NULL DEFAULT 0, b3 INTEGER NOT NULL DEFAULT 0,
@@ -153,14 +156,14 @@ export async function runJob(env, step, fn, now = Date.now()) {
   try {
     const v = await fn();
     const ms = Date.now() - t0;
-    await run(env, `INSERT INTO job_runs (step, ok_at, ms, runs, last_at) VALUES (?1, ?2, ?3, 1, ?2)
-      ON CONFLICT (step) DO UPDATE SET ok_at = ?2, ms = ?3, runs = runs + 1, last_at = ?2`, step, now, ms).catch(() => {});
+    await run(env, `INSERT INTO job_runs (step, ok_at, ms, runs, last_at, ver) VALUES (?1, ?2, ?3, 1, ?2, ?4)
+      ON CONFLICT (step) DO UPDATE SET ok_at = ?2, ms = ?3, runs = runs + 1, last_at = ?2, ver = ?4`, step, now, ms, SERVER_VERSION).catch(() => {});
     return v;
   } catch (e) {
     console.error(`job ${step}: ${e?.stack ?? e}`);
-    await run(env, `INSERT INTO job_runs (step, fail_at, error, ms, runs, fails, last_at) VALUES (?1, ?2, ?3, ?4, 1, 1, ?2)
-      ON CONFLICT (step) DO UPDATE SET fail_at = ?2, error = ?3, ms = ?4, runs = runs + 1, fails = fails + 1, last_at = ?2`,
-    step, now, errorLine(e), Date.now() - t0).catch(() => {});
+    await run(env, `INSERT INTO job_runs (step, fail_at, error, ms, runs, fails, last_at, ver) VALUES (?1, ?2, ?3, ?4, 1, 1, ?2, ?5)
+      ON CONFLICT (step) DO UPDATE SET fail_at = ?2, error = ?3, ms = ?4, runs = runs + 1, fails = fails + 1, last_at = ?2, ver = ?5`,
+    step, now, errorLine(e), Date.now() - t0, SERVER_VERSION).catch(() => {});
     return undefined;
   }
 }
@@ -187,19 +190,28 @@ export async function pruneWatch(env, now = Date.now()) {
 export const JOB_NAMES = {
   prune: "오래된 기록 지우기", trials: "동의 없는 체험 멈추기", lapsed: "끝난 구독 다시 확인", rest: "D1 한도 전 쉬기", share: "공유 서버 스위치 맞추기",
   flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", held: "보류 끝난 Claude 답 보내기",
+  play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기",
   watch: "응답 속도 모으기·정리", reviews: "스토어 리뷰 가져오기", backup: "하루 백업", incident: "사고 살피기", requests: "데이터 요청 기한 알림",
 };
 
-/** job_runs 한 줄을 화면 모양으로. */
-export function jobRow(r, now = Date.now()) {
-  const failing = r.fail_at && (!r.ok_at || r.fail_at > r.ok_at);
-  const stale = !failing && r.ok_at && now - r.ok_at > WATCH.staleMs && r.step !== "backup" && r.step !== "digest";
+/**
+ * 1.39 [ADM3-43] 할 것이 없어 건너뛰는 단계: 하루 백업은 R2 묶음(BACKUP)이 없으면 돌아도 아무것도 하지 않아요.
+ * 그때는 '정상'이 아니라 '꺼짐'으로 보여요(1.39 실서버 점검 11-08).
+ */
+const jobOff = (env, step) => (step === "backup" && !(env?.BACKUP && typeof env.BACKUP.put === "function") ? "R2 묶음(BACKUP)이 없어 건너뛰어요" : "");
+
+/** job_runs 한 줄을 화면 모양으로. [env]를 주면 꺼진 단계는 'off'. */
+export function jobRow(r, now = Date.now(), env = null) {
+  const off = env ? jobOff(env, r.step) : "";
+  const failing = !off && r.fail_at && (!r.ok_at || r.fail_at > r.ok_at);
+  const stale = !off && !failing && r.ok_at && now - r.ok_at > WATCH.staleMs && r.step !== "backup" && r.step !== "digest";
   return { step: r.step, name: JOB_NAMES[r.step] ?? r.step, okAt: r.ok_at ?? null, failAt: r.fail_at ?? null, error: failing ? r.error : "",
-    ms: r.ms ?? 0, runs: r.runs ?? 0, fails: r.fails ?? 0, state: failing ? "fail" : stale ? "stale" : r.ok_at ? "ok" : "never" };
+    ms: r.ms ?? 0, runs: r.runs ?? 0, fails: r.fails ?? 0, ver: r.ver || null, ...(off ? { off } : {}),
+    state: off ? "off" : failing ? "fail" : stale ? "stale" : r.ok_at ? "ok" : "never" };
 }
 
 export async function jobState(env, now = Date.now()) {
-  return (await all(env, "SELECT * FROM job_runs ORDER BY step")).map((r) => jobRow(r, now));
+  return (await all(env, "SELECT * FROM job_runs ORDER BY step")).map((r) => jobRow(r, now, env));
 }
 
 /** 응답 속도: 지난 [hours]시간, 주소마다(느린 것 먼저)와 시간마다. */
@@ -243,8 +255,13 @@ export async function errorState(env, now = Date.now(), { status = "open" } = {}
     per.get(d.sig).set(d.day, d.count);
   }
   const daily = list.map((day) => days.filter((d) => d.day === day).reduce((n, d) => n + d.count, 0));
+  // 1.39 [ADM3-43] 판 건강의 '서버 오류'는 날마다 센 수(counters errors|날, 1.38 전부터)예요. 묶음은 1.38부터라, 그 전에 났거나
+  // 묶기에 실패한 오류는 묶음에 없어요. 두 수가 다르면 화면이 '묶이지 않은 오류 N번'을 따로 알려요(실서버 점검 11-08).
+  const counted = new Map((await all(env, "SELECT key, count FROM counters WHERE key >= ? AND key LIKE 'errors|%'", `errors|${from}`).catch(() => []))
+    .map((r) => [String(r.key).slice(7), r.count]));
+  const loose = list.reduce((n, day, i) => n + Math.max(0, (counted.get(day) ?? 0) - daily[i]), 0);
   return {
-    days: list, daily,
+    days: list, daily, loose,
     groups: groups.map((g) => ({ sig: g.sig, route: g.route, message: g.message, sample: g.sample, app: g.app, firstAt: g.first_at, lastAt: g.last_at,
       total: g.total, status: g.status, note: g.note, fresh: now - g.first_at < DAY, trend: list.map((day) => per.get(g.sig)?.get(day) ?? 0) })),
     counts: Object.fromEntries((await all(env, "SELECT status, COUNT(*) AS n FROM error_groups GROUP BY status")).map((r) => [r.status, r.n])),
@@ -286,6 +303,10 @@ export function requiredSetup(env) {
     { key: "FCM_SERVICE_ACCOUNT", need: "nice", ok: has("FCM_SERVICE_ACCOUNT"), what: "앱 사용자에게 보내는 푸시(문의 답 알림)", lose: "문의 답이 앱을 열 때만 보여요" },
     { key: "BACKUP(R2)", need: "nice", ok: Boolean(env.BACKUP && typeof env.BACKUP.put === "function"), what: "하루 백업을 둘 R2 저장소", lose: "D1 되돌리기(Time Travel)만 쓸 수 있어요" },
     { key: "MAIL_API_KEY·MAIL_FROM", need: "nice", ok: has("MAIL_API_KEY") && has("MAIL_FROM"), what: "초대·확인 메일", lose: "초대 링크를 직접 전해야 해요" },
+    // 1.39 실서버(11-08): 같은 판(1.39.0)을 다시 배포하면 판 이름이 같아 '서버 배포'가 남지 않았어요. 버전 메타데이터를 묶으면 배포 번호가 판 이름에 붙어요.
+    { key: "CF_VERSION_METADATA", need: "nice", ok: Boolean(env.CF_VERSION_METADATA?.id), what: "배포 번호(버전 메타데이터)", lose: "같은 판을 다시 배포하면 사고 › 바꾼 것에 남지 않아요" },
+    // 1.39 [OBS2-01] Play 보고서 저장소: 설치·삭제·스토어 전환·출처·판·별점(관측 판의 '전체 사용자').
+    { key: "PLAY_REPORTS_BUCKET", need: "nice", ok: has("PLAY_REPORTS_BUCKET"), what: "Play 보고서(설치·삭제·스토어 전환·출처)", lose: "숫자 › 한눈에의 전체 사용자 칸이 비어요" },
     { key: "SHARE_BASE_URL·SHARE_ADMIN_TOKEN", need: "nice", ok: has("SHARE_BASE_URL") && has("SHARE_ADMIN_TOKEN"), what: "공유 서버 신고·상태 보기", lose: "공유 링크 신고와 공유 서버 상태를 못 봐요" },
   ];
   return { items, missing: items.filter((i) => i.need === "must" && !i.ok).map((i) => i.key) };
@@ -298,7 +319,17 @@ export async function sharePing(env) {
   const t0 = Date.now();
   try {
     const res = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(4000) });
-    return { ok: res.ok, status: res.status, ms: Date.now() - t0 };
+    // 1.39 [ADM3-41] A share server before 1.39 has no /api/health (404) though it is up: its robots.txt, which every
+    // version answers, says it is alive. Anything else than 404 (5xx, a timeout) is still '답 없음'.
+    if (res.status === 404) {
+      const old = await fetch(`${base}/robots.txt`, { signal: AbortSignal.timeout(4000) });
+      return { ok: old.ok, status: old.status, ms: Date.now() - t0, ...(old.ok ? { old: true } : {}) };
+    }
+    // 1.39 [ADM3-43] 1.39부터 공유 서버가 제 판을 알려 줘요. 회사 서버 판과 다르면 화면이 '판 다름'을 보여요.
+    const ms = Date.now() - t0;
+    const body = res.ok ? await res.json().catch(() => null) : null;
+    const version = typeof body?.version === "string" ? body.version.slice(0, 20) : null;
+    return { ok: res.ok, status: res.status, ms, ...(version ? { version } : {}) };
   } catch {
     return { ok: false, status: 0, ms: Date.now() - t0 };
   }
@@ -309,5 +340,37 @@ export async function healthBoard(env, now = Date.now()) {
   await flushWatch(env, now, true).catch(() => {});
   const [jobs, speed, errors, size, share] = await Promise.all([jobState(env, now), speedState(env, now), errorState(env, now), dbSize(env), sharePing(env)]);
   return { at: now, jobs, speed, errors: { counts: errors.counts, daily: errors.daily, days: errors.days, top: errors.groups.slice(0, 5) }, dbBytes: size,
-    dbLimit: 10 * 1024 ** 3, share, setup: requiredSetup(env) };
+    dbLimit: 10 * 1024 ** 3, share, setup: requiredSetup(env), version: SERVER_VERSION };
+}
+
+/**
+ * 1.39 관리자 앱 머리띠의 '지금 도는 서버 판'(사용자 11-08 '현재 출시된 서버가 몇 버젼인지 위쪽에 보여지게').
+ * 회사 서버는 제 버전 메타데이터(배포 도구가 --tag로 붙인 커밋, 배포 시각)를, 공유 서버는 관리 열쇠로 /api/admin/version을 읽어요.
+ * 공유 서버가 1.39 이 판 전이면(404) 공개 health의 판만, 닿지 않으면 ok:false예요.
+ */
+export function deployInfo(env) {
+  const m = env?.CF_VERSION_METADATA ?? {};
+  const tag = typeof m.tag === "string" && /^[0-9a-f]{7,40}$/.test(m.tag) ? m.tag.slice(0, 8) : null;
+  const at = typeof m.timestamp === "string" && !Number.isNaN(Date.parse(m.timestamp)) ? Date.parse(m.timestamp) : null;
+  return { version: SERVER_VERSION, commit: tag, id: typeof m.id === "string" ? m.id.slice(0, 8) : null, at };
+}
+
+export async function serverVersions(env) {
+  const company = { ok: true, ...deployInfo(env) };
+  const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
+  const token = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
+  if (!/^https?:\/\//.test(base)) return { company, share: null };
+  const pick = (b) => ({ version: typeof b?.version === "string" ? b.version.slice(0, 20) : null,
+    commit: typeof b?.commit === "string" && /^[0-9a-f]{7,40}$/.test(b.commit) ? b.commit.slice(0, 8) : null,
+    id: typeof b?.id === "string" ? b.id.slice(0, 8) : null, at: Number.isFinite(b?.at) ? b.at : null });
+  try {
+    if (token.length >= 20) {
+      const res = await fetch(`${base}/api/admin/version`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000) });
+      if (res.ok) return { company, share: { ok: true, ...pick(await res.json().catch(() => null)) } };
+    }
+    const ping = await sharePing(env);
+    return { company, share: { ok: Boolean(ping?.ok), version: ping?.version ?? null, commit: null, id: null, at: null } };
+  } catch {
+    return { company, share: { ok: false, version: null, commit: null, id: null, at: null } };
+  }
 }

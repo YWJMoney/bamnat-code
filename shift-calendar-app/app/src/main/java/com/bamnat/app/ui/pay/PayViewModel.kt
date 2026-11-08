@@ -178,6 +178,26 @@ class PayViewModel(
             .forEach { (key, _) -> container.profiles.mark(calendarId, key, com.bamnat.core.profile.Source.TYPED, why = "급여 설정") }
     }
 
+    /** 1.39 [PAYP-04] The company way this calendar's pay uses; [PayWay.shared] locks its calculation on the pay screen. */
+    val sharedWay: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.company.PayWay?> = container.companyOf(calendarId).payWays.way
+
+    /**
+     * 1.39 [PAYP-04] 직접 만들기 (사용자 2026-11-07 "직접 만들어서 사용하게"): the shared way out and the pay made again from its first step,
+     * with nothing of the shared calculation kept (no 7-day way back to it). The server stops counting the phone as using it.
+     */
+    fun leaveShared() = viewModelScope.launch {
+        val company = container.companyOf(calendarId)
+        val w = company.payWays.way.value
+        payStore.leaveShared()
+        company.payWays.use(null)
+        if (w != null && container.companyApi.enabled) {
+            val device = company.store.device
+            val cal = company.serverCal
+            container.appScope.launch { runCatching { container.companyApi.use(device, w.companyId, w.setup, false, cal) } }
+        }
+        container.telemetry.event("pay_way", "leave_shared")
+    }
+
     fun reset() = viewModelScope.launch {
         payStore.save(null)
         // [PAYF-04] No pay, no company pay way in use.
@@ -402,6 +422,9 @@ class PayViewModel(
     /** [EXTRA-05] The 1.8 way of paying a day off was shown next to the law's once; it is not shown again. */
     fun restDayCompared() = container.settingsRepository.update { it.copy(restDayCompared = true) }
 
+    /** 1.39 [PAYX-62] 주 15시간 경계 알림 끄기·켜기(설정 › 알림과 잠 › 돈에서도). */
+    fun weekHoursNudge(on: Boolean) = container.settingsRepository.update { it.copy(weekHoursNudge = on) }
+
     /** Changes the company's rules [PAYX-07]; every change can be undone like a value edit. */
     fun updateRules(transform: (CompanyRules) -> CompanyRules) {
         update { it.copy(rules = transform(it.rules)) }
@@ -598,7 +621,7 @@ class PayViewModel(
                 is MadeItem.Item -> if (made.item.cadence == Cadence.MONTHLY) 1 else after.itemTimes[made.item.id] ?: 0
                 is MadeItem.Rule -> if (made.rule.pay.monthly) 1 else after.days.count { d -> d.parts.any { it.label == made.rule.name } }
             }
-            ItemEffect(after.total - before.total, times)
+            ItemEffect(after.total - before.total, times, after.afterTax.sumOf { it.amount } - before.afterTax.sumOf { it.amount })
         }
 
     /** [PAYS-07] Keeps an item the user made; a rule made before keeps its place in the list. */
@@ -629,6 +652,11 @@ class PayViewModel(
 
     fun setCustomRuleOn(id: String, on: Boolean) = update { p -> p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(on = on) else it }) }
 
+    /** 1.39 [PAYX-56] 세금 뗀 뒤 빼기 (사택관리비·회비) or 지금처럼, for a rule from before 1.39. */
+    fun setCustomRuleAfterTax(id: String, after: Boolean) = update(if (after) "세금 뗀 뒤 빼도록 바꿨어요" else "급여 값을 고쳤어요") { p ->
+        p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(afterTax = after) else it })
+    }
+
     fun removeCustomRule(id: String) = update { p -> p.copy(customRules = p.customRules.filterNot { it.id == id }) }
 
     /** D 1.32 [PAYA-03] Every kept payslip month at once (프로): the settings that fit them all; nothing is saved until [applyFit]. */
@@ -646,11 +674,16 @@ class PayViewModel(
     }
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
-    fun applyMatch(match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet(), extra: List<PayItem> = emptyList()) =
+    fun applyMatch(
+        match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet(), extra: List<PayItem> = emptyList(),
+        /** 1.39 [PAYX-57] 명세서의 소급분, that month only. */
+        extraRules: List<com.bamnat.core.pay.CustomRule> = emptyList(),
+    ) =
         update("명세서에 맞춰 바꿨어요") { p ->
         val picked = match.picked(p, keep, Today.millis())
         // PC a34f53b0: allowances only the payslip had, picked to add; the month was not matched with them, so not marked checked.
-        val v = if (extra.isEmpty()) picked else picked.copy(items = picked.items + extra, verified = p.verified)
+        val v = if (extra.isEmpty() && extraRules.isEmpty()) picked
+            else picked.copy(items = picked.items + extra, customRules = (picked.customRules + extraRules).take(com.bamnat.core.pay.CustomRule.MAX), verified = p.verified)
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }

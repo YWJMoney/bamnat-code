@@ -247,7 +247,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
                 container.memoRepository.memosFor(id).map { list ->
                     list.filter { m ->
-                        m.repeat.isNotEmpty() && (com.bamnat.core.memo.MemoRepeat.shiftIdOf(m.repeat) == null ||
+                        m.repeat.isNotEmpty() && (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat) ||
                             com.bamnat.app.data.MemoRepository.calendarOf(m, id) == id)
                     }
                 },
@@ -504,6 +504,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     suspend fun phasesFor(text: String): com.bamnat.app.ui.company.Phases? =
         runCatching { com.bamnat.app.ui.company.rotationPhases(container, text, fromSender = true) }.getOrNull()
 
+    private fun keepTeams(text: String, size: Int, todayStep: Int) {
+        val main = com.bamnat.app.data.PersonalCalendar.MAIN
+        if (container.teams.get(main) != null) return
+        val anchor = Today.date().minusDays(Math.floorMod(todayStep, size).toLong())
+        com.bamnat.core.setup.TeamAnchors.roster(com.bamnat.app.data.CompanyShare.teamsOf(text), anchor, size)?.let { container.teams.set(main, it) }
+    }
+
     /** [todayStep]: today's place in the file's order, so another 조 lines up too [SETUP-02]. */
     fun applyCompany(rotation: Boolean, todayStep: Int? = null) {
         val text = _pendingCompany.value?.first ?: return
@@ -513,6 +520,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 // [SET-01] Kept first, so the company's setup can be taken back.
                 container.importUndo.save()
                 val done = container.companyShare.apply(text, rotation, todayStep)
+                // [CYC-06] 1.39: a file naming every 조 sets up 모든 조 보기 too (only when this phone has none yet).
+                if (rotation && done.cycleDays != null && todayStep != null) keepTeams(text, done.cycleDays, todayStep)
                 // [COMM-01] With no pay setup yet, the pay screen asks only for the user's own amounts.
                 if (done.pendingPay) container.companyStore.pendingPay = text
                 container.telemetry.event(DiagEvents.COMPANY_IMPORT)
@@ -820,7 +829,11 @@ private fun SettingsHub(
             // [J133-71] 1.33: what the calendar's kind of work has, so 알바 finds no 회사 찾기.
             val companyWork = context.appContainer.companyFits(com.bamnat.app.ui.company.companyCalendarOf(context.appContainer, null))
             val style = work.workStyle
-            val entries = remember(onOpenBoard != null, companyWork, style) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
+            val searchCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+            val flowAdded = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", style,
+                com.bamnat.app.ui.guide.rememberFitAdded(searchCalendar))
+            val entries = remember(onOpenBoard != null, companyWork, style, flowAdded) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
+                flowAdded = flowAdded,
                 sleepAuto = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false),
                 sleepSound = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)) }
             SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick)

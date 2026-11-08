@@ -44,6 +44,9 @@ import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.Alarm
@@ -69,6 +72,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -201,19 +205,30 @@ fun DayPanel(
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     // 1.38 PC 12차 유형별 빈틈 9: with the day's story up, the head's '메모 · …' token said the same thing again above it.
     var storyUp by remember(date) { mutableStateOf(false) }
-    Column(modifier) {
+    // [BIGTXT-01] 1.39 With a big font on a short screen the day's head alone filled the sheet and its last chips were squeezed: the head
+    // then scrolls with the groups, as one page; otherwise it stays put above them.
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val oneScroll = scrollGroups && conf.fontScale >= 1.5f && conf.screenHeightDp < 760
+    val head: @Composable () -> Unit = {
         DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact, memoToken = !storyUp)
         weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         // [RUL-03] 1.36 단추 on the day screen (스튜디오·받은 테마).
         com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.DAY, date, Modifier.padding(bottom = 4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    }
+    val body: @Composable () -> Unit = {
+        DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
+            onStory = { storyUp = it })
+    }
+    if (oneScroll) Column(modifier.imePadding().verticalScroll(rememberScrollState())) {
+        head()
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding)) { body() }
+    } else Column(modifier) {
+        head()
         Column(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
-        ) {
-            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
-                onStory = { storyUp = it })
-        }
+        ) { body() }
     }
 }
 
@@ -248,6 +263,12 @@ private fun DayGroups(
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     val dayBook = remember(book, date) { book.on(date) }
     val profile by vm.payProfile.collectAsStateWithLifecycle()
+    // 1.39 PC 5c4ad849: the followed 근무표 this day came from, if it did (작업 요약에 '직접 바꿈' 대신).
+    val received by androidx.compose.ui.platform.LocalContext.current.appContainer.received.calendars.collectAsStateWithLifecycle()
+    val linkName = remember(day, received, snapshot) {
+        if (day.source != DaySource.OVERRIDE) null
+        else com.bamnat.app.share.RosterFollower.linkFor(received, day, snapshot.shiftTypes)?.fullName
+    }
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
     // [MON-01] A day's pay is free.
     val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date) {
@@ -273,16 +294,9 @@ private fun DayGroups(
     // 1.38 [FLOW-08] 내 하루 이야기: shifts (last night's too), alarms, sleep, money and memos of the day on one line,
     // only when it says more than the work card (a sleep, money or memo on it).
     val sleepLog by vm.sleepLog.collectAsStateWithLifecycle()
-    val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms) {
-        if (!settings.dayStory) null else runCatching {
-            val ring = settings.alarmsEnabled && calendarAlarms
-            val alarmsAround = if (!ring) emptyList() else listOf(date, date.plusDays(1))
-                .flatMap { com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snapshot.resolver, it) }
-            val near = sleepLog.filter { it.start.toLocalDate() in date.minusDays(1)..date }
-            val items = com.bamnat.core.design.DayStoryItems.of(date, snapshot.resolver, alarmsAround, near, tips, dayBook.entries,
-                com.bamnat.core.memo.MemoStory.items(memos, date))
-            items.takeIf { com.bamnat.core.design.DayStoryItems.worthShowing(com.bamnat.core.design.DayStory.arrange(date, it)) }
-        }.getOrNull()
+    val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms, settings.dayStartMinutes) {
+        // 1.39 [FLOW-22] worked out in one place (DayStoryPart), as the 달력 아래 하루 이야기 카드 does.
+        dayStoryItems(snapshot, date, settings, calendarAlarms, sleepLog, dayBook.entries, memos, tips)
     }
     val storyShown = story != null
     LaunchedEffect(storyShown) { onStory(storyShown) }
@@ -300,6 +314,12 @@ private fun DayGroups(
                     onOpen = { e -> com.bamnat.core.memo.MemoStory.memoIdOf(e)?.let { onOpenMemo(it, date) } },
                     shiftColor = day.shiftType?.let { Color((it.colorArgb or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primary,
                 )
+                // 1.39 G8 발굴 1-1 (PC 4차: 달력 아래 카드를 찾지 못함): the card starts off, so it is offered here where the story is seen.
+                val onCalendar = remember(settings) { settings.calendarParts().any { it.part == CalendarPart.DAY_STORY && it.shown } }
+                if (!onCalendar) androidx.compose.material3.TextButton(
+                    onClick = { vm.updateSettings { it.withPartShown(CalendarPart.DAY_STORY, true) } },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text("달력 아래에도 두기 (카드 배치에서 뺄 수 있어요)") }
             }
         }
     }
@@ -343,7 +363,7 @@ private fun DayGroups(
                         DayGroup(
                             // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
                             title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
-                            summary = workSummary(day, snapshot),
+                            summary = workSummary(day, snapshot, linkName),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
                         ) {
@@ -355,7 +375,8 @@ private fun DayGroups(
                         }
                     }
                     G.EXTRA -> {
-                        val names = day.extras.map(ExtraText::name)
+                        // 1.39 [WTYP-30] PC 6차: 일근 says 야근 here as on the chip above.
+                        val names = day.extras.map { ExtraText.name(it, style) }
                         val review = day.extras.any { it.entry.needsReview }
                         DayGroup(
                             title = if (style == com.bamnat.core.work.WorkStyle.FIELD) "일정 더하기" else "추가 근무", icon = Icons.Outlined.MoreTime,
@@ -487,17 +508,33 @@ private fun DayGroups(
                         // 1.38 [HLTH-01] 계획 대 실제, only while health.compare is on (Phase 3, 꺼진 채).
                         val flagsNow by vm.flagStates.collectAsStateWithLifecycle()
                         val compare = remember(snapshot, settings, log, date, flagsNow) { vm.planVsActual(snapshot, date, settings, log) }
+                        val bodyOpen = groups.isOpen(key, rest.isNotEmpty())
+                        // 1.39 8차 PC 1-23: a new phone starts in 달력만 보기, with no 오늘의 흐름 and so no 수면 기록 on the calendar.
+                        // Today's folded 몸 keeps its one record button beside the title, the way into the night screen and the log.
+                        val sleeping = log.firstOrNull { it.end == null && !it.imported }
+                        val stale = sleeping != null &&
+                            java.time.Duration.between(sleeping.start, now).toMinutes() > com.bamnat.core.sleep.SleepDebt.MAX_SLEEP_MINUTES
+                        val sleepButton: (@Composable () -> Unit)? = if (date != today || !settings.sleepTips || bodyOpen || stale) null else ({
+                            if (sleeping == null) {
+                                TextButton(onClick = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) }) { Text("잠들었어요") }
+                            } else {
+                                TextButton(onClick = { vm.wokeUp() }) { Text("깼어요") }
+                            }
+                        })
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
                             summaryColor = if (rest.isNotEmpty()) cal.warning else null,
-                            open = groups.isOpen(key, rest.isNotEmpty()), onToggle = { groups.toggle(key, rest.isNotEmpty()) },
+                            open = bodyOpen, onToggle = { groups.toggle(key, rest.isNotEmpty()) },
+                            trailing = sleepButton,
                         ) {
                             if (rest.isNotEmpty()) RestWarning(rest)
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
-                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
-                                    onAsleep = vm::fellAsleep, onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
+                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare, style = settings.workStyle,
+                                    // 1.39 [FLOW-13] (PC 3차 sik-5): 잠들었어요 here opens the night screen too, as on the sleep screen and the date chip.
+                                    onAsleep = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) },
+                                    onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
                             }
                         }
                     }
@@ -513,7 +550,9 @@ private fun DayGroups(
 
     // [DAY-04] The order of these groups is the user's; changed here, where it shows.
     var ordering by remember { mutableStateOf(false) }
-    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '일정 시간도 적기'가 한 글자씩 세로로) the two buttons wrap to the next line instead.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { ordering = true }) {
             Icon(Icons.Filled.SwapVert, contentDescription = null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
@@ -576,20 +615,24 @@ private fun DayGroup(
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                if (summary != null && !(open && onToggle == null)) {
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
-                        color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                        // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            val head: @Composable () -> Unit = {
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                    if (summary != null && !(open && onToggle == null)) {
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
+                            color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                            // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
-            trailing?.invoke()
+            // [BIGTXT-01] 1.39 With a big font the button beside the title ('자세히 쓰기') squeezed '메모' to a letter a line: it goes under it.
+            if (trailing != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 96.dp, start = head, end = trailing)
+            else Box(Modifier.weight(1f)) { head() }
             // 1.37 시간 바퀴 PC LOW: a switch right beside the arrow was easy to hit for the other; a gap and a line keep them apart.
             if (trailing != null && onToggle != null) {
                 Spacer(Modifier.width(12.dp))
@@ -608,13 +651,15 @@ private fun DayGroup(
     }
 }
 
-private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
+private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot, link: String? = null): String {
     val name = day.shiftType?.name ?: if (day.isWorkDay) "근무" else "쉬는 날"
     val start = day.start
     val end = day.end
     val time = if (day.isWorkDay && start != null && end != null) " · ${ExtraText.span(start, end)}" else ""
     return when {
         // [READ-37] Without an order every day is put in by hand or from a photo: no "직접 바꿈" on each.
+        // 1.39 PC 5c4ad849: a day put in from a followed 근무표 is not one the user changed by hand.
+        day.source == DaySource.OVERRIDE && link != null -> "$name$time · ${link}대로"
         day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
@@ -900,8 +945,11 @@ private fun AlarmContent(
         when {
             custom != null -> "이 날 알람이에요. 근무 알람 대신 울려요."
             day.alarmSkipped -> "이 날은 알람이 울리지 않아요. 위 스위치로 다시 켤 수 있어요."
-            type != null && type.alarmEnabled -> "${type.name} 근무 알람 설정을 따라요."
-            type != null -> "${type.name} 근무는 알람이 꺼져 있어요."
+            type != null && type.alarmEnabled -> "${com.bamnat.core.alarm.AlarmWords.alarm(type.name)} 설정을 따라요." // 1.39 [SHOP-13] 영업 알람, 주간 근무 알람
+            // 1.39 [SHOP-12] 가게는 처음부터 영업 알람이 없어요: 그렇게 둔 까닭과 한 번에 켜는 곳.
+            type != null && focus == com.bamnat.core.work.CalendarFocus.SALES ->
+                "${type.name} 날은 처음부터 알람이 없어요. 문 열기 전에 알림을 받으려면 켜 주세요."
+            type != null -> com.bamnat.core.alarm.AlarmWords.work(type.name).let { "$it${Fmt.eun(it)} 알람이 꺼져 있어요." }
             planned.isNotEmpty() -> "대근한 근무의 알람이 울려요."
             // [CAL-05] A field or shop day without work is not called a day off.
             focus == com.bamnat.core.work.CalendarFocus.JOBS -> "근무 알람이 없는 날이에요. 일감 알림은 일감에서 정하고, 이 날만 알람을 정할 수도 있어요."
@@ -923,7 +971,11 @@ private fun AlarmContent(
             Text(if (custom != null) "이 날 알람 고치기" else "이 날만 알람 정하기")
         }
         if (custom != null) TextButton(onClick = { vm.setDayAlarms(day.date, null) }) { Text("근무 알람으로") }
-        if (type != null && !type.alarmEnabled && custom == null) TextButton(onClick = onOpenShiftTypes) { Text("${type.name} 알람 켜기") }
+        if (type != null && !type.alarmEnabled && custom == null) {
+            // 1.39 [SHOP-12] 가게 영업 날은 이 자리에서 바로 켜요(문 열기 1시간 전, 되돌리기). 근무 종류 화면을 거치지 않아요.
+            if (focus == com.bamnat.core.work.CalendarFocus.SALES) TextButton(onClick = { vm.turnOnTypeAlarm(type) }) { Text("${type.name} 알람 켜기") }
+            else TextButton(onClick = onOpenShiftTypes) { Text("${type.name} 알람 켜기") }
+        }
     }
 
     if (editing) {
@@ -1109,7 +1161,8 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
         }
     }
     for (memo in memos) {
-        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo })
+        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo },
+            done = memo.isDoneOn(date), onDone = { vm.setMemoDone(memo, date, it) })
     }
     deleting?.let { m ->
         // 1.38 (DB 28판) A repeating memo asks: 이 날만 빼기 or 반복 전부 지우기.
@@ -1134,7 +1187,7 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit, done: Boolean = false, onDone: (Boolean) -> Unit = {}) {
     // A 1.32 [FIX132-05] A long press copies the memo, all of it or a part, without opening it.
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" },
@@ -1145,20 +1198,30 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .background(memoBackground(memo.colorIndex))
             .combinedClickable(onClick = onClick, onLongClick = { copying = true }, onLongClickLabel = "메모 복사")
-            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+            .padding(top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 1.39 [TASK-02] 끝냄 right on the day's list, one tap (할 일 앱처럼 체크), the memo staying where it is, crossed out.
+        IconButton(onClick = { onDone(!done) }) {
+            Icon(
+                if (done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (done) "끝냄 풀기" else "끝냄 표시",
+                tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (memo.isChecklist) {
             Icon(Icons.Filled.Checklist, contentDescription = "체크리스트", Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Column(Modifier.weight(1f)) {
+        val crossed = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+        Column(Modifier.weight(1f).then(if (done) Modifier.alpha(0.6f) else Modifier)) {
             if (memo.title.isNotBlank()) {
-                Text(memo.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(memo.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = crossed)
             }
             val preview = memo.preview
             if (preview.isNotBlank()) {
-                Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (memo.title.isBlank()) crossed else null)
             }
         }
         if (memo.isChecklist && memo.itemCount > 0) {
@@ -1308,6 +1371,7 @@ private fun SleepSection(
     targetMinutes: Int,
     health: com.bamnat.app.sleep.HealthSleep.State,
     compare: List<com.bamnat.core.sleep.PlanVsActual.Night> = emptyList(),
+    style: com.bamnat.core.work.WorkStyle? = null,
     onAsleep: () -> Unit,
     onAwake: () -> Unit,
     onWokeAt: (java.time.LocalDateTime) -> Unit,
@@ -1375,9 +1439,10 @@ private fun SleepSection(
             }
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
-                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(야간 뒤·쉬는 날)을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
-                else "최근 7일 중 ${debt.days}일 기록 · 평균 ${hoursText(debt.averageMinutes)}" +
-                    if (debt.shortMinutes > 0) " · 목표보다 ${hoursText(debt.shortMinutes)} 부족" else " · 목표만큼 잤어요",
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(${com.bamnat.core.sleep.SleepInsights.groupsWord(style)})을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
+                // 1.39 (PC 5c4ad849): the sleep screen's head, word for word ("평균 7시간 10분 · 목표보다 10분 더 잤어요 ·
+                // 7일 중 5일 적음"); this used to add up each short day ("0시간 30분 부족") while that compared the average.
+                else com.bamnat.core.sleep.SleepHead.of(debt, targetMinutes).let { "평균 ${it.value} · ${it.caption}" },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -1415,8 +1480,6 @@ private fun tipSummary(tips: List<com.bamnat.core.sleep.SleepPlan.Tip>, date: Lo
     tips.firstOrNull { it.kind == com.bamnat.core.sleep.SleepPlan.Kind.SLEEP_AFTER_NIGHT || it.kind == com.bamnat.core.sleep.SleepPlan.Kind.BEDTIME }
         ?.let { "잘 시간 " + sleepTime(it, date) }
         ?: tips.firstOrNull { it.kind == com.bamnat.core.sleep.SleepPlan.Kind.NAP }?.let { "낮잠 " + sleepTime(it, date) }
-
-private fun hoursText(minutes: Long): String = if (minutes % 60 == 0L) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"
 
 private fun sleepTime(tip: com.bamnat.core.sleep.SleepPlan.Tip, date: LocalDate): String {
     fun hm(x: java.time.LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)

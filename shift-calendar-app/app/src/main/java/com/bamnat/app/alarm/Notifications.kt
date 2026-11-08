@@ -22,8 +22,24 @@ object Notifications {
     const val FALLBACK_CHANNEL_ID = "shift_alarm_fallback_v1"
     /** A snooze waiting to ring again, and an alarm permission that went missing. */
     const val STATUS_CHANNEL_ID = "alarm_status_v1"
-    /** 하루 브리핑, 잘 준비 and 자는 중: silent. */
+    /** 하루 브리핑 and 잘 준비: silent. */
     const val DAY_CHANNEL_ID = "day_flow_v1"
+    /**
+     * 1.39 [SLEEP-06] 자는 중 (and 소리 재는 중): no sound or buzz either, but not in the folded 무음 group, so 깼어요 and
+     * 측정만 끝 are there without two expands (PC 5c4ad849). Its own group keeps Android from bundling it with others.
+     * PC c0ca3d9f: a group with no summary is still bundled (with D9's 근무표 notice), so each sleep notice is its own
+     * group's summary, as [TodayShiftNotice] is; the 소리 재는 중 notice has a group of its own ([SLEEPING_REC_GROUP]).
+     */
+    const val SLEEPING_CHANNEL_ID = "sleeping_v1"
+    const val SLEEPING_GROUP = "bamnat_sleeping"
+    const val SLEEPING_REC_GROUP = "bamnat_sleeping_rec"
+    /**
+     * 1.39 [SLEEP-06] PC 5차 (eae4e024): Android 16 folds an app's notices of one shade section into one bundle
+     * (Aggregate_AlertingSection) whatever their group keys, as soon as there are two of them. So while 자는 중 is up the
+     * app's other sounding notices (D9 근무표 바뀜, 문의 답, …) are put up again here, quiet, in the silent section, and 자는 중
+     * stands alone at the top with 깼어요. Nothing is held back: they are all in the shade, without a sound at night.
+     */
+    const val NIGHT_QUIET_CHANNEL_ID = "night_quiet_v1"
     /** When a night ends: the one day notice with a sound. */
     const val COMMUTE_CHANNEL_ID = "commute_v1"
     const val JOB_CHANNEL_ID = "job_reminder_v1"
@@ -55,6 +71,8 @@ object Notifications {
     const val INQUIRY_CHANNEL_ID = "inquiry_reply_v1"
     /** 1.38 [P3-B-11] 직원이 출퇴근 링크에서 누른 출근·퇴근 (사장님 휴대폰). */
     const val CLOCK_CHANNEL_ID = "staff_clock_v1"
+    /** 1.39 [TEAM-22] 리더가 바꾼 팀 근무표가 내 달력에 들어갔어요 (또는 넣을까요?): the alarms follow it, so it is said with a sound. */
+    const val ROSTER_CHANNEL_ID = "roster_follow_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -66,6 +84,8 @@ object Notifications {
     const val GROUP_TODAY = "bamnat_today"
     /** 1.38 '오늘 남은 알람을 껐어요' alone, never bundled with 소식. */
     const val GROUP_STATUS = "bamnat_status"
+    /** 1.39 D9 '받은 근무표 바뀜', one group per received calendar, never bundled with 자는 중 (PC c0ca3d9f). */
+    const val GROUP_ROSTER = "bamnat_roster_"
 
     const val ALARM_NOTIFICATION_ID = 7001
     /** 1.35 [J135-08] The ringing notice put up again as a new one (an update of the first does not pop up again). */
@@ -93,6 +113,8 @@ object Notifications {
     const val INQUIRY_ID = 7208
     /** 1.38 [P3-B-11] One notice per staff member, tagged by their id. */
     const val CLOCK_ID = 7231
+    /** 1.39 [TEAM-22] One notice per received link, tagged by its id. */
+    const val ROSTER_ID = 7232
     /** [ALRM-01] 휴대폰 캘린더 permission taken back. */
     const val CALENDAR_PERMISSION_ID = 7206
     /** [ALRM-01] Why an alarm rang late or only as a plain notice. */
@@ -102,7 +124,9 @@ object Notifications {
 
     /** [TOWN-08] Whether the newest channel this version made is on the phone (one check, not a call per channel). */
     fun channelsMade(context: Context): Boolean =
-        context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(PLAZA_CHANNEL_ID) != null
+        context.getSystemService(NotificationManager::class.java)?.let {
+            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null
+        } == true
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
@@ -138,8 +162,16 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         val day = NotificationChannel(DAY_CHANNEL_ID, "오늘의 흐름", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "하루 브리핑, 잘 준비, 자는 중. 소리 없이 알림창에만 와요"
+            description = "하루 브리핑, 잘 준비. 소리 없이 알림창에만 와요"
             group = GROUP_DAY
+        }
+        val sleeping = NotificationChannel(SLEEPING_CHANNEL_ID, "자는 중", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "잠들었어요를 누른 뒤 깼어요·측정만 끝 단추. 소리·진동 없이 알림창 위쪽에 펼쳐 둬요"
+            group = GROUP_DAY
+            setSound(null, null)
+            enableVibration(false)
+            setShowBadge(false)
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         val commute = NotificationChannel(COMMUTE_CHANNEL_ID, "퇴근길 안전", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "야간·당번이 끝날 때 한 번, 졸음운전을 조심하라고 알려요"
@@ -186,6 +218,11 @@ object Notifications {
             description = "직원이 출퇴근 링크에서 출근·퇴근을 누르면 알려요(15분쯤마다 확인, 위치는 받지 않아요)"
             group = GROUP_MONEY
         }
+        val roster = NotificationChannel(ROSTER_CHANNEL_ID, "받은 근무표 바뀜", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "리더가 팀 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
+            group = GROUP_DAY
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
         val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
             group = GROUP_DAY
@@ -205,18 +242,22 @@ object Notifications {
             // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
+        val nightQuiet = NotificationChannel(NIGHT_QUIET_CHANNEL_ID, "자는 동안 온 알림", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "자는 중일 때 온 근무표 바뀜·문의 답 같은 알림. 소리 없이 알림창 아래쪽에 모여 있어요"
+            group = GROUP_DAY
+        }
         val inquiry = NotificationChannel(INQUIRY_CHANNEL_ID, "문의 답", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock))
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock, roster))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }
 
     /** [SLP-15] A notice's tap opens the screen it is about. */
-    fun open(context: Context, target: NoticeLinks.Target, requestCode: Int, calendar: String? = null): PendingIntent = PendingIntent.getActivity(
-        context, requestCode, NoticeLinks.intent(context, target, calendar),
+    fun open(context: Context, target: NoticeLinks.Target, requestCode: Int, calendar: String? = null, payload: String? = null): PendingIntent = PendingIntent.getActivity(
+        context, requestCode, NoticeLinks.intent(context, target, calendar, payload),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -224,13 +265,49 @@ object Notifications {
     fun post(context: Context, id: Int, notification: android.app.Notification, tag: String? = null) {
         if (!canPost(context)) return
         try {
-            NotificationManagerCompat.from(context).notify(tag, id, notification)
+            val shown = if (id != SLEEPING_ID && quietsAtNight(context, notification) && sleepingShown(context)) quiet(context, notification) else notification
+            NotificationManagerCompat.from(context).notify(tag, id, shown)
         } catch (e: SecurityException) {
             // Notifications were turned off between the check and the post.
         }
     }
 
     fun cancel(context: Context, id: Int, tag: String? = null) = NotificationManagerCompat.from(context).cancel(tag, id)
+
+    /** 1.39 [SLEEP-06] The 자는 중 notice is up (it is there exactly while a logged sleep is open; 잤어요 after it is not ongoing). */
+    fun sleepingShown(context: Context): Boolean = runCatching {
+        context.getSystemService(NotificationManager::class.java).activeNotifications
+            .any { it.id == SLEEPING_ID && it.notification.channelId == SLEEPING_CHANNEL_ID && it.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT != 0 }
+    }.getOrDefault(false)
+
+    /** A notice that would sit beside 자는 중 in the shade's top section: any that sounds, but not a ringing alarm or a service's own. */
+    internal fun quietsAtNight(context: Context, n: android.app.Notification): Boolean {
+        val channel = n.channelId ?: return false
+        if (channel in NEVER_QUIETED || n.flags and android.app.Notification.FLAG_FOREGROUND_SERVICE != 0) return false
+        val importance = context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(channel)?.importance ?: return false
+        return importance >= NotificationManager.IMPORTANCE_DEFAULT
+    }
+
+    private val NEVER_QUIETED = setOf(ALARM_CHANNEL_ID, FALLBACK_CHANNEL_ID, SLEEPING_CHANNEL_ID, NIGHT_QUIET_CHANNEL_ID)
+
+    private fun quiet(context: Context, n: android.app.Notification): android.app.Notification =
+        android.app.Notification.Builder.recoverBuilder(context, n).setChannelId(NIGHT_QUIET_CHANNEL_ID).setOnlyAlertOnce(true).build()
+
+    /** As 자는 중 goes up: the app's sounding notices already in the shade move to the quiet section, so it stands alone. */
+    fun quietOthers(context: Context) {
+        if (!canPost(context)) return
+        runCatching {
+            val nm = context.getSystemService(NotificationManager::class.java)
+            for (sbn in nm.activeNotifications) {
+                if (sbn.id == SLEEPING_ID || !quietsAtNight(context, sbn.notification)) continue
+                try {
+                    NotificationManagerCompat.from(context).notify(sbn.tag, sbn.id, quiet(context, sbn.notification))
+                } catch (e: SecurityException) {
+                    return@runCatching // Notifications were turned off between the check and the post (lint MissingPermission).
+                }
+            }
+        }
+    }
 
     /**
      * Tells the user that alarms can no longer ring on time because the exact-alarm permission

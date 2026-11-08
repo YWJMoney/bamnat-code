@@ -148,9 +148,13 @@ internal fun SwitchRow(
 
 /** A line under a setting that says it will not work as set, with one button that fixes it. */
 @Composable
-internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?) {
+internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?,
+    /** 1.39 [FLOW-05] A permission asked here for the first time: what it gives, drawn small in place of the mark. */
+    picture: com.bamnat.app.ui.components.PermissionResult? = null) {
     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+        if (picture != null) com.bamnat.app.ui.components.PermissionPicture(picture, accent = MaterialTheme.colorScheme.error,
+            ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
+        else Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
         if (onFix != null) TextButton(onClick = onFix) { Text(fixLabel) }

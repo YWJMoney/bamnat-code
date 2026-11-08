@@ -175,7 +175,9 @@ sealed interface MadeItem {
 }
 
 /** [PAYS-07] What a new item does to the month: the amount it adds (negative when it takes off) and how often it came up. */
-data class ItemEffect(val amount: Long, val times: Int)
+data class ItemEffect(val amount: Long, val times: Int,
+    /** 1.39 [PAYX-56] PC a483ca15: what it takes off 실수령 after tax (사택관리비), which the 급여 total does not show. */
+    val afterTax: Long = 0)
 
 /** The builder's answers; [made] turns them into the item, with a stand-in amount for [probe] so the count shows early. */
 @Stable
@@ -238,6 +240,19 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var taxable by mutableStateOf<Boolean?>(null)
     /** [PAYX-52] A 매달 rule's own amounts by month, kept when it is changed. */
     var byMonth: Map<YearMonth, Long> = emptyMap()
+    /**
+     * 1.39 [PAYX-56] A 매달 빠지는 돈 taken off after tax (명세서 공제 칸: 사택관리비·회비); null guesses from the name
+     * ([CustomRule.looksAfterTax]).
+     */
+    var afterTax by mutableStateOf<Boolean?>(null)
+    /** 1.39 [PAYX-57] The 소급분 name turned '이번 달만' on once; the user's own choice after that stays. */
+    var oneMonthGuessed = false
+
+    /** 1.39 [PAYX-57] 이번 달만 (소급분 지급·공제): it starts and ends in the same month. */
+    val oneMonth: Boolean get() = since != null && since == until
+
+    /** 1.39 [PAYX-56] Whether this 빠지는 돈 is taken off after tax, as saved. */
+    fun afterTaxNow(): Boolean = afterTax ?: CustomRule.looksAfterTax(name.trim())
 
     /** [PAYX-50] A 매달 allowance with an amount (not a rule, not a percent): the one that can be a 고정 연장수당. */
     val asksFixedOt: Boolean get() = kind == ItemKind.MONTHLY && !asRule && !hasLimits
@@ -259,6 +274,9 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         capPerMonth = cap?.takeIf { it > 0 && !rule.pay.monthly } ?: 0, maxTimes = if (rule.pay.monthly) 0 else maxTimes,
         from = since, until = until?.takeIf { s -> since == null || !s.isBefore(since) },
         byMonth = if (rule.pay is RulePay.Monthly) byMonth else emptyMap(),
+        // 1.39 [PAYX-56] 세후 공제 for a 매달 빠지는 돈; [PAYX-57] 비과세 kept for a 매달 수당 held as a rule (이번 달만·기간).
+        afterTax = if (rule.deduct && rule.pay is RulePay.Monthly) afterTaxNow() else null,
+        taxable = if (!rule.deduct && rule.pay is RulePay.Monthly) taxable ?: !com.bamnat.core.pay.TakeHome.looksNonTaxable(rule.name) else true,
     )
 
     /** The share the percent field holds, 50 → 0.5; null when it is not a number above 0. */
@@ -402,6 +420,9 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
                 source = rule.source
                 asRule = true
                 byMonth = rule.byMonth
+                afterTax = rule.afterTax ?: if (rule.deduct && rule.pay is RulePay.Monthly) false else null
+                if (!rule.deduct && rule.pay is RulePay.Monthly) taxable = rule.taxable
+                oneMonthGuessed = true
                 when (val p = rule.pay) {
                     is RulePay.PerTime -> amount = p.amount
                     is RulePay.PerHour -> amount = p.amount
@@ -575,7 +596,7 @@ internal fun CustomItemDialog(
                         if (k == null) KindStep(gap) { picked -> draft.kind = picked; prefill(draft, gap); draft.guessFrom(draft.name) }
                         else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null, fromCompany = fromCompany,
                             kindChips = oneWindow && !isEdit, unknownAmount = allowUnknownAmount,
-                            fixedOt = profile.wageType != com.bamnat.core.pay.WageType.HOURLY, nameFocus = nameFocus)
+                            fixedOt = profile.wageType != com.bamnat.core.pay.WageType.HOURLY, nameFocus = nameFocus, month = month)
                         if (full) Text("직접 만든 항목은 ${CustomRule.MAX}개까지예요. 쓰지 않는 항목을 지운 뒤 만들어 주세요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(24.dp))
@@ -660,8 +681,16 @@ internal fun ColumnScope.FormStep(
     fixedOt: Boolean = false,
     /** [PAYX-53] Where 추가 with no name puts the cursor. */
     nameFocus: FocusRequester? = null,
+    /** 1.39 [PAYX-57] The month on screen, for '이번 달만'; null leaves the switch out. */
+    month: YearMonth? = null,
 ) {
     if (gap != null) GapBanner(gap)
+    // 1.39 [PAYX-57] 소급분 is paid (or taken) once: its name turns '이번 달만' on, once.
+    if (month != null && !draft.oneMonthGuessed && CustomRule.looksOneMonth(draft.name) && !draft.hasLimits &&
+        (kind == ItemKind.MONTHLY || kind == ItemKind.DEDUCT && draft.deductWay == DeductWay.MONTHLY)) {
+        draft.oneMonthGuessed = true
+        draft.since = month; draft.until = month
+    }
     if (kindChips) {
         Label("어떻게 주나요?")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -743,9 +772,16 @@ internal fun ColumnScope.FormStep(
             }
         }
         ItemKind.DEDUCT -> {
-            Hint("명세서 지급 칸에서 빠지는 돈만 넣어요. 세금과 4대보험은 넣지 않아도 돼요. 앱은 세금 떼기 전 금액을 계산해요.")
-            // [PAYX-52] 1.38 PC 12.1: 사택관리비처럼 달마다 다른 돈.
-            if (draft.deductWay == DeductWay.MONTHLY) Hint("사택관리비처럼 달마다 금액이 다르면 보통 금액을 넣어 두고, 만든 뒤 급여 화면의 이 줄에서 ‘○월만 금액 다르게’로 그달 금액을 넣어요.")
+            Hint("세금과 4대보험은 넣지 않아도 돼요. 앱이 따로 계산해요.")
+            // 1.39 [PAYX-56] 명세서 공제 칸의 돈(사택관리비·회비)은 세금 뒤에 빠져요: 지급 총액·세금 기준은 그대로.
+            if (draft.deductWay == DeductWay.MONTHLY) {
+                Toggle("세금 뗀 뒤 빼요 (명세서 공제 칸)",
+                    if (draft.afterTaxNow()) "사택관리비·기숙사비·회비처럼 명세서 공제 칸에 있는 돈이에요. 지급 총액과 세금은 그대로 두고 실수령에서만 빼요."
+                    else "지각·결근처럼 명세서 지급 칸에서 줄어드는 돈이에요. 지급 총액에서 빼고 세금도 줄어든 금액으로 어림해요.",
+                    draft.afterTaxNow()) { draft.afterTax = it }
+                // [PAYX-52] 1.38 PC 12.1: 사택관리비처럼 달마다 다른 돈.
+                Hint("사택관리비처럼 달마다 금액이 다르면 보통 금액을 넣어 두고, 만든 뒤 급여 화면의 이 줄에서 ‘○월만 금액 다르게’로 그달 금액을 넣어요.")
+            }
             TermLink("차감")
         }
         ItemKind.MONTHLY, ItemKind.PER_DAY -> if (!draft.asRule && !draft.hasLimits) {
@@ -757,15 +793,22 @@ internal fun ColumnScope.FormStep(
             ) { if (draft.fixedOtHours == 0) draft.ordinary = it }
             TermLink("통상임금")
             if (fixedOt && draft.asksFixedOt) FixedOtChips(draft)
-            // [PAYX-52] 1.38 PC 12.1: 비과세 for any 매달 수당, not only the names the app knows (식대 등).
-            if (kind == ItemKind.MONTHLY && draft.fixedOtHours == 0) {
-                val guess = !com.bamnat.core.pay.TakeHome.looksNonTaxable(draft.name.trim().ifEmpty { kind.defaultName })
-                Toggle("세금 없는 돈 (비과세)", "식대·자가운전보조금·보육수당·연구보조비처럼 명세서에 비과세로 적힌 수당이면 켜요. 항목마다 월 20만 원까지 세금에서 빼고 어림해요." +
-                    if (draft.taxable == null && !guess) " 이름을 보고 켜 두었어요." else "",
-                    !(draft.taxable ?: guess)) { draft.taxable = !it }
-            }
         }
         else -> Unit
+    }
+    // [PAYX-52] 1.38 PC 12.1: 비과세 for any 매달 수당, not only the names the app knows (식대 등). 1.39 [PAYX-57]: a 매달 수당 kept as a
+    // rule (이번 달만·기간) too, which had lost it.
+    if (kind == ItemKind.MONTHLY && draft.fixedOtHours == 0) {
+        val guess = !com.bamnat.core.pay.TakeHome.looksNonTaxable(draft.name.trim().ifEmpty { kind.defaultName })
+        Toggle("세금 없는 돈 (비과세)", "식대·자가운전보조금·보육수당·연구보조비처럼 명세서에 비과세로 적힌 수당이면 켜요. 종류마다 월 20만 원까지 세금에서 빼고 어림해요(식대가 둘이면 합쳐서 20만 원)." +
+            if (draft.taxable == null && !guess) " 이름을 보고 켜 두었어요." else "",
+            !(draft.taxable ?: guess)) { draft.taxable = !it }
+    }
+    // 1.39 [PAYX-57] 소급분처럼 한 번만 주거나 빼는 돈: 이번 달에만 넣어요(근속·한도·기간을 펼치지 않아도).
+    if (month != null && (kind == ItemKind.MONTHLY || kind == ItemKind.DEDUCT && draft.deductWay == DeductWay.MONTHLY)) {
+        Toggle("${month.monthValue}월만 (소급분처럼 한 번)",
+            if (draft.oneMonth) "${month.year}년 ${month.monthValue}월에만 계산해요. 다른 달에는 없어요." else "켜면 이 달에만 넣어요. 소급분(지급·공제), 한 번 받은 격려금처럼요.",
+            draft.oneMonth) { on -> if (on) { draft.since = month; draft.until = month } else { draft.since = null; draft.until = null } }
     }
 
     if (draft.asksWhen) WhenSection(draft, kind, snapshot)
@@ -991,8 +1034,12 @@ private fun EffectBar(
             val per = draft.kind == ItemKind.PER_SHIFT || draft.kind == ItemKind.PER_DAY || draft.kind == ItemKind.PER_HOUR || draft.kind == ItemKind.PREMIUM ||
                 draft.kind == ItemKind.DEDUCT && draft.deductWay != DeductWay.MONTHLY
             Column(Modifier.semantics(mergeDescendants = true) {}) {
-                Text("${month.monthValue}월 급여에", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 1.39 [PAYX-56] PC a483ca15 사용성: a 세후 공제 is '실수령 −50,000원', not '급여에 +0원'.
+                val takeHomeOnly = effect != null && effect.amount == 0L && effect.afterTax != 0L
+                Text("${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else "급여에"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
+                    takeHomeOnly -> Text("−" + won(abs(effect!!.afterTax)) + " (세금 뗀 뒤 빼요)",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + if (per) " · ${effect.times}번" else "",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
@@ -1089,6 +1136,8 @@ internal fun CustomRuleRow(
     /** [PAYX-52] The month on screen, and its own amount for a 매달 rule (사택관리비); null leaves the button out. */
     month: YearMonth? = null,
     onThisMonth: (() -> Unit)? = null,
+    /** 1.39 [PAYX-56] For a 1.38 사택관리비·회비 rule ([CustomRule.mayBeAfterTax]): take it off after tax, one tap. */
+    onAfterTax: ((Boolean) -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled && onEdit != null, onClickLabel = "고치기") { onEdit?.invoke() }.padding(vertical = 6.dp),
@@ -1098,13 +1147,23 @@ internal fun CustomRuleRow(
             Text(rule.name, style = MaterialTheme.typography.bodyLarge,
                 color = if (rule.on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
             // The way it is paid (or taken off), and that a tap changes it, as the alarm rows say it.
-            Text(rule.describe(shiftNames) + if (enabled && onEdit != null) " · 눌러서 고치기" else "",
+            // 1.39 [PAYX-56][PAYX-57] 세후 공제 and 비과세 said on the row too.
+            Text(rule.describe(shiftNames) + (if (rule.paidAfterTax) " · 세금 뗀 뒤 빼요" else "") +
+                (if (!rule.deduct && !rule.taxable) " · 비과세" else "") + if (enabled && onEdit != null) " · 눌러서 고치기" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (month != null && onThisMonth != null) {
                 val own = rule.byMonth[month]
                 TextButton(onClick = onThisMonth, enabled = enabled, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
                     modifier = Modifier.heightIn(min = 40.dp)) {
                     Text(if (own != null) "${month.monthValue}월은 ${won(own)} · 바꾸기" else "${month.monthValue}월만 금액 다르게")
+                }
+            }
+            if (onAfterTax != null && rule.mayBeAfterTax) {
+                Text("명세서 공제 칸에 있는 돈이면 지급 총액에서 빼지 않고 세금 뒤 실수령에서 빼야 명세서와 맞아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Row {
+                    TextButton(onClick = { onAfterTax(true) }, enabled = enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("세금 뗀 뒤 빼기") }
+                    TextButton(onClick = { onAfterTax(false) }, enabled = enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("지금처럼 두기") }
                 }
             }
         }

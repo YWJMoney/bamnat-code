@@ -71,6 +71,8 @@ object LookParts {
         Part("stats.parts", TabOrder.STATS, "급여 부품", listOf(Take.Parts(setOf("pay")))),
         Part("app.parts", TabOrder.SETTINGS, "앱 전체 부품", listOf(Take.Parts(setOf("app")))),
         Part("widget.parts", WIDGET, "위젯 부품", listOf(Take.Parts(setOf("widget")))),
+        // 1.39 [FLOW-21] 밤 화면·아침 한 장 부품 (앱 전체 쪽에 둬요: 밤 화면은 탭이 아니에요).
+        Part("night.parts", TabOrder.SETTINGS, "밤 화면 부품", listOf(Take.Parts(setOf("night")))),
         // [LAY-01] 1.36 꾸밈 층, a part on each tab it is pinned to.
         Part("cal.decor", TabOrder.CALENDAR, "달력 꾸밈", listOf(Take.Decor { it.startsWith("cal.") || it == "bg.calendar" })),
         Part("memo.decor", TabOrder.MEMOS, "메모 꾸밈", listOf(Take.Decor { it == "bg.memo" })),

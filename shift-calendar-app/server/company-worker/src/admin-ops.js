@@ -1,4 +1,4 @@
-import { audit, batch, can, json, one, readJson, stmt } from "./index.js";
+import { LIMITS, audit, batch, can, json, one, readJson, stmt } from "./index.js";
 import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
@@ -7,6 +7,7 @@ import { KEEP_SCHEMA, backupTick, keepRoute, requestTick } from "./keep.js";
 import { REVIEW_SCHEMA, reviewCounts, reviewRoute, reviewTick } from "./store-reviews.js";
 import { INCIDENT_SCHEMA, incidentBadge, incidentRoute, incidentTick } from "./incident.js";
 import { DAY, HOUR } from "./units.js";
+import { draftStats } from "./claude-drafts.js";
 
 // ---- 1.38 [ADM3] 관리자 앱 개편의 서버 쪽 길 하나 ----
 //
@@ -68,7 +69,24 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
   ops_incident: ["SELECT id, signals FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"],
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
+  // 1.39 [ADM3-42] 지금 잠긴 로그인(네트워크·관리자 계정). 내가 잠겼으면 내 계정에서 풀고, 아니면 누가 맞혀 보는 중일 수 있어요.
+  ops_logins: ["SELECT COUNT(*) AS n FROM counters WHERE key LIKE 'login|%' AND key <> 'login|all' AND count >= ? AND expires > ?", LIMITS.loginFailures, now],
+  // 1.39 [ADM3-44] 실서버 둘러보기(11-08) A9·B4·B8·B9: 잠기기 전의 연달아 틀림, 오래 기다린 보상, 오래 안 쓴 관리자, 최고 관리자 패스키.
+  ops_login_tries: [`SELECT COUNT(*) AS places, COALESCE(SUM(count), 0) AS n FROM counters WHERE key LIKE 'login|%' AND key <> 'login|all'
+    AND count >= ? AND count < ? AND expires > ?`, LOGIN_TRIES, LIMITS.loginFailures, now],
+  ops_owed: ["SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed' AND created_at < ?", now - REWARD_DAYS * DAY],
+  ops_idle_admins: ["SELECT COUNT(*) AS n FROM admins WHERE status = 'active' AND COALESCE(last_login, approved_at, created_at) < ?", now - IDLE_ADMIN_DAYS * DAY],
+  ops_passkey: ["SELECT COUNT(*) AS n FROM admin_passkeys WHERE admin = 'owner'"],
 });
+
+/**
+ * 1.39 [ADM3-44] 한 곳에서 이만큼 틀리면(잠기기 전) 알려요(휴대폰 알림 '급증'으로도). 드릴 보상은 이 날 수(알림 '기한'), 관리자는 이 날 수 넘게
+ * 안 쓰면. 패스키·안 쓴 관리자는 'nudge'라 휴대폰 알림으로는 가지 않고 오늘 화면에만 있어요.
+ */
+/** 1.39 [ADM3-44] 한 곳에서 이만큼 틀리면(잠기기 전) 알려요. 드릴 보상은 이 날 수, 관리자는 이 날 수 넘게 안 쓰면. */
+export const LOGIN_TRIES = 3;
+export const REWARD_DAYS = 7;
+export const IDLE_ADMIN_DAYS = 30;
 
 export function opsAlertsFrom(env, got, now = Date.now()) {
   const out = [];
@@ -85,15 +103,28 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
   }
   if (got.ops_requests?.[0]?.n) out.push({ key: `requests:${got.ops_requests[0].n}`, kind: "incident", tone: "bad", title: `데이터 요청 ${got.ops_requests[0].n}건 기한 임박·넘김`, meta: "개인정보·환불·법 신고", to: "#/requests" });
   if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: setup.missing.join(" · "), to: "#/server" });
-  const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now)).filter((j) => j.state === "fail" || j.state === "stale");
+  const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now, env)).filter((j) => j.state === "fail" || j.state === "stale");
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
   if (got.ops_reviews?.[0]?.n) out.push({ key: `reviews:${got.ops_reviews[0].n}`, kind: "spike", tone: "warn", title: `답 안 한 낮은 별점 리뷰 ${got.ops_reviews[0].n}개`, meta: "별 1~2개", to: "#/reviews" });
+  if (got.ops_logins?.[0]?.n) out.push({ key: `logins:${got.ops_logins[0].n}`, kind: "spike", tone: "warn", title: `로그인 잠긴 곳 ${got.ops_logins[0].n}곳`,
+    meta: "1시간 뒤 저절로 풀려요. 내가 잠긴 거면 내 계정 › 로그인에서 바로 풀어요", to: "#/account" });
+  const tries = got.ops_login_tries?.[0];
+  if (tries?.places) out.push({ key: `login-tries:${tries.places}:${tries.n}`, kind: "spike", tone: "warn", title: `로그인 실패가 연달아 있어요(${tries.places}곳, ${tries.n}번)`,
+    meta: `1시간 안에 ${LIMITS.loginFailures}번이면 잠겨요. 내가 아니면 Cloudflare에서 ADMIN_PASSWORD를 바꿔요`, to: "#/audit" });
+  const owed = got.ops_owed?.[0];
+  if (owed?.n) out.push({ key: `owed:${owed.n}`, kind: "late", tone: "warn", title: `드릴 보상 ${owed.n}개가 ${REWARD_DAYS}일 넘게 기다려요`,
+    meta: owed.since ? `가장 오래된 것 ${Math.floor((now - owed.since) / DAY)}일째` : "", to: "#/rewards" });
+  if (got.ops_idle_admins?.[0]?.n) out.push({ key: `idle-admins:${got.ops_idle_admins[0].n}`, kind: "nudge", tone: "warn",
+    title: `${IDLE_ADMIN_DAYS}일 넘게 안 쓴 관리자 ${got.ops_idle_admins[0].n}명`, meta: "안 쓰는 계정은 멈춰 두면 안전해요(관리 › 관리자)", to: "#/admins" });
+  if (got.ops_passkey && !got.ops_passkey[0]?.n) out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
+    meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
   return out;
 }
 
 /** [ADM3-31] Claude 조종석: 보류 중인 Claude 답(보내기 전 멈출 수 있음), 오늘 Claude가 한 일, Claude 차례 수. */
 export async function cockpit(env, now = Date.now()) {
+  const drafts = await draftStats(env, now).catch(() => null);
   const start = Date.parse(`${new Date(now + 9 * HOUR).toISOString().slice(0, 10)}T00:00:00+09:00`);
   const [held, done, keys] = (await batch(env, [
     stmt(env, `SELECT h.id, h.inquiry_id, h.text, h.close, h.until, h.at, (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = h.inquiry_id AND m.sender = 'user'
@@ -105,7 +136,11 @@ export async function cockpit(env, now = Date.now()) {
     held: held.map((h) => ({ id: h.id, inquiry: h.inquiry_id, text: h.text, close: Boolean(h.close), until: h.until, at: h.at, ask: String(h.ask ?? "").slice(0, 120), kind: h.kind })),
     done: done.map((d) => ({ at: d.at, action: d.action, target: d.target, detail: d.detail })),
     today: done.filter((d) => d.at >= start).length,
+    // 1.39 [ADM3-44] B10: 열쇠로 오늘 읽기만 한 횟수(장부·문의 읽기). 고친 일은 활동 기록에 남고, 읽기는 열쇠 카운터에만 있어요.
+    reads: keys.reduce((n, k) => n + (k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10) ? Math.max(0, (k.n ?? 0) - (k.writes ?? 0)) : 0), 0),
     keys: keys.map((k) => ({ label: k.label, lastAt: k.last_at, n: k.day && k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10) ? k.n : 0, alive: !k.revoked_at && k.expires_at > now })),
+    // 1.39 [ADM3-49] 제보·보상·합치기 초안: 열린 수, 사람이 정한 것과 같았던 비율, 넓히기 관문.
+    drafts,
   };
 }
 
@@ -134,7 +169,11 @@ export async function story(env, id) {
     }
     if (h.action === "link" || h.action === "unlink") continue;
     const STATUS = { todo: "접수", doing: "개발중", done: "완료", rejected: "반려", handed: "Claude에게 넘김" };
-    const NAMES = { create: "만듦", edit: "고침", assign: "담당 바뀜", delete: "지움", restore: "되살림", reply: "묶인 문의에 답", result: "개발 결과" };
+    const NAMES = { create: "만듦", edit: "고침", assign: "담당 바뀜", delete: "지움", restore: "되살림", reply: "묶인 문의에 답", result: "개발 결과",
+      // 1.39 [LOOP] 자동 순환이 남기는 것.
+      sync: `저장소에서 받음${d.pr ? ` · PR #${d.pr}` : ""}${d.version ? ` · ${d.version}` : ""}`, live: "업데이트 없이 실제로 닿음", phone_told: `고친 판(${d.app ?? ""})으로 연 폰에 안내`,
+      fixed_yes: "문의한 분: 해결됐어요", fixed_no: "문의한 분: 아직이에요(다시 열림)", me_too: "알려진 문제판: 나도 겪어요",
+      tier: `요금 ${d.tier?.[1] ?? ""}${d.note ? ` · ${d.note}` : ""}`, release: `반영 판 ${d.releasedIn?.[1] ?? ""}` };
     const what = h.action === "status" ? `상태 ${STATUS[d.status?.[0]] ?? d.status?.[0] ?? ""} → ${STATUS[d.status?.[1]] ?? d.status?.[1] ?? ""}`
       : h.action === "note" ? `기록 ${String(d.text ?? "").slice(0, 60)}` : NAMES[h.action] ?? h.action;
     if (h.action === "create") continue;

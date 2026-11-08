@@ -284,7 +284,7 @@ class RecipeMakeViewModel(
     /** [STU-05] 내 앱에만 넣기: put the recipe on this phone without sending it; 되돌리기 works as for any recipe for 7 days. */
     fun putOnMine() = viewModelScope.launch {
         val s = _state.value
-        val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
+        val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, if (it.kind == PieceKind.LOGIC) com.bamnat.app.recipe.RecipePieces.Mode.BOTH else com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
         val answers = s.recipe.inputs.associate { it.id to it.default }
         val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }.getOrNull()
         _state.value = _state.value.copy(putMine = id ?: -1L)
@@ -431,6 +431,13 @@ class RecipeMakeViewModel(
         if (!RecipeLint.ready(lint)) return
         if (upCode != null && lastSent == RecipeCodec.write(s.recipe) && lastScope == s.scope) {
             _state.value = s.copy(error = "바뀐 것이 없어요. 고친 뒤에 새 판으로 올려 주세요", errorCode = "same")
+            return
+        }
+        // 1.39 [FX-01] 프로 문: a work with a 1.39 기능 장치 goes up to 장터 (광장·링크) only from a 프로 phone; 나만 보기 keeps it as mine.
+        val fx = com.bamnat.app.logic.FxAccess.partsOf(s.recipe)
+        if (fx.isNotEmpty() && s.scope != "private" && !com.bamnat.app.logic.FxAccess.pro(c)) {
+            _state.value = s.copy(error = "프로 기능 장치(${com.bamnat.core.formula.FxPro.say(fx)})가 든 작품은 프로에서 장터에 올려요. 나만 보기로는 지금 저장할 수 있어요",
+                errorCode = "fx_pro")
             return
         }
         _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null, ownSame = null)

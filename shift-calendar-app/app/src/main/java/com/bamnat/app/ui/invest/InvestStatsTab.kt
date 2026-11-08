@@ -18,9 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,21 +48,23 @@ import kotlin.math.roundToLong
  * holding days, best and worst, and what tax it may come to.
  */
 @Composable
-internal fun InvestStatsTab(state: InvestState, wide: Boolean, calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
-    var yearly by rememberSaveable { mutableStateOf(false) }
-    var month by rememberSaveable { mutableStateOf(YearMonth.from(state.today).toString()) }
-    val ym = YearMonth.parse(month)
+internal fun InvestStatsTab(
+    state: InvestState, wide: Boolean, calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+    /** 1.39 [CALX-08] Kept by the screen, which also turns it on a sideways swipe. */
+    shownMonth: String, onMonth: (String) -> Unit, yearly: Boolean, onYearly: (Boolean) -> Unit,
+) {
+    val ym = YearMonth.parse(shownMonth)
     val hide = state.hide
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { month = (if (yearly) ym.minusYears(1) else ym.minusMonths(1)).toString() }) {
+        IconButton(onClick = { onMonth((if (yearly) ym.minusYears(1) else ym.minusMonths(1)).toString()) }) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (yearly) "이전 해" else "이전 달")
         }
         Text(if (yearly) "${ym.year}년" else Fmt.month(ym), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        IconButton(onClick = { month = (if (yearly) ym.plusYears(1) else ym.plusMonths(1)).toString() }) {
+        IconButton(onClick = { onMonth((if (yearly) ym.plusYears(1) else ym.plusMonths(1)).toString()) }) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (yearly) "다음 해" else "다음 달")
         }
-        FilterChip(selected = !yearly, onClick = { yearly = false }, label = { Text("월") })
-        FilterChip(selected = yearly, onClick = { yearly = true }, label = { Text("연") }, modifier = Modifier.padding(start = 6.dp))
+        FilterChip(selected = !yearly, onClick = { onYearly(false) }, label = { Text("월") })
+        FilterChip(selected = yearly, onClick = { onYearly(true) }, label = { Text("연") }, modifier = Modifier.padding(start = 6.dp))
     }
     val stats = remember(state, ym, yearly) {
         if (yearly) InvestStats.year(state.book, state.result, ym.year) else InvestStats.month(state.book, state.result, ym)
@@ -143,34 +143,21 @@ private fun Figures(s: PeriodStats, hide: Boolean, columns: Int) {
     }
 }
 
-/** [INV-06] Twelve months of a year as red and blue bars around zero. */
+/**
+ * [INV-06] Twelve months of a year as red and blue bars around zero. 1.39 [DSG-04] On the one chart part (수면 화면에서 먼저 쓴
+ * 그래프 규칙): the zero line, a tap that shows one bubble with the month's amount, and the months under the bars.
+ */
 @Composable
 private fun MonthlyBars(state: InvestState, year: Int) {
     val months = remember(state, year) { InvestStats.monthly(state.book, state.result, year) }
     if (months.all { it.second == 0L }) return
     val cal = LocalCalendarColors.current
-    val axis = MaterialTheme.colorScheme.outlineVariant
-    val max = months.maxOf { abs(it.second) }.coerceAtLeast(1)
+    val bars = months.map { (m, v) ->
+        com.bamnat.app.ui.components.ChartBar("${m.monthValue}월", v.toDouble(), text = InvestFmt.signedShort(v, state.hide),
+            color = if (v > 0) cal.sunday else cal.saturday)
+    }
     SectionCard(title = "${year}년 월별 손익") {
-        Canvas(Modifier.fillMaxWidth().height(110.dp).semantics {
-            contentDescription = months.filter { it.second != 0L }.joinToString(", ") { "${it.first.monthValue}월 ${InvestFmt.signedShort(it.second, state.hide)}" }
-        }) {
-            val w = size.width / 12
-            val mid = size.height / 2
-            drawLine(axis, Offset(0f, mid), Offset(size.width, mid), strokeWidth = 1.5f)
-            months.forEachIndexed { i, (_, v) ->
-                if (v == 0L) return@forEachIndexed
-                val h = (abs(v).toFloat() / max) * (mid - 4)
-                val top = if (v > 0) mid - h else mid
-                drawRect(if (v > 0) cal.sunday else cal.saturday, Offset(i * w + w * 0.2f, top), Size(w * 0.6f, h))
-            }
-        }
-        Row(Modifier.fillMaxWidth()) {
-            (1..12).forEach { m ->
-                Text("$m", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        com.bamnat.app.ui.components.BarChart(bars, null, height = 110.dp, labels = true)
     }
 }
 

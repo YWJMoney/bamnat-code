@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.39 [TASK-31] 할 일 한 줄: the next to-do and how many are left in one row (2×1, wider to 4×1), for a full home screen. The same
+     widget as 할 일 (TaskWidget): the free one is the first 할 일 widget placed, of either size. Home screen only. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_task_line_desc"
+    android:previewLayout="@layout/widget_preview_task_line"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="0" />

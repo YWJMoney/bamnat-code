@@ -49,6 +49,20 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
         flowAt(3, 14, 30), flowAt(4, 7, 20), flowAt(6, 21, 45),
     ))
 
+    // 1.39 [FLOW-13] 밤 화면, and G5-N3 폴드 탁상 시계 (half open across: the clock above the hinge, the buttons below).
+    @Test fun unfoldedNightScreen() = shoot("150_unfolded_night_screen", UNFOLDED) {
+        val vm = com.bamnat.app.ui.sleep.NightViewModel(app.container)
+        content { com.bamnat.app.ui.sleep.NightScreen(vm, {}, {}) }
+    }
+    @Test fun tabletopNightScreen() = shoot("151_tabletop_night_screen", UNFOLDED) {
+        val vm = com.bamnat.app.ui.sleep.NightViewModel(app.container)
+        content {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.LocalTabletop provides com.bamnat.app.ui.Tabletop(1080, 1080)) {
+                com.bamnat.app.ui.sleep.NightScreen(vm, {}, {})
+            }
+        }
+    }
+
 
     // ---- M5 [SLP-03][SLP-04][SLP-06][MKT-11] ----
     @Test fun foldedDaySleepTips() = shoot("85_folded_day_sleep_tips", FOLDED) {

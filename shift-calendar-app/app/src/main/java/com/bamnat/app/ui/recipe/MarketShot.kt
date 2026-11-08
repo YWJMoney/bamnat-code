@@ -61,6 +61,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * [MKV-01] 1.37 장터 카드 실제 모습 (사용자 2026-11-05 "장터에서 테마나 기능들 보여지는 모습들이 실제로 해당 테마나 기능들의 모습을
@@ -97,6 +98,10 @@ internal object MarketShots {
     const val HOLD = 1500L
     /** How long a card must have stood still on the screen (the list not moving) before it is drawn. */
     const val STILL = 200L
+    /** 1.39 [MKP-04] After a card's first frame, a frame or two more before the next card starts drawing. */
+    const val SETTLE = 48L
+    /** 1.39 [MKP-06] How long a card waits for its small fonts before it is drawn without them (and not kept on the phone). */
+    const val FONTS_MS = 4000L
 
     fun shot(key: String): ImageBitmap? = shots.get(key)
     fun keep(key: String, b: ImageBitmap) { shots.put(key, b) }
@@ -105,14 +110,75 @@ internal object MarketShots {
         val k = key(item)
         recipes.get(k)?.let { return it }
         if (k in failed) return null
+        // 1.39 [MKP-01][MKP-02] The written form that came with the list, or the one kept on the phone, before asking for it alone.
+        (raws.get(k) ?: MarketDisk.body(c.appContext, k)?.also { raws.put(k, it) })?.let { (hash, body) ->
+            read(hash, body)?.let { r -> recipes.put(k, r); return r }
+        }
         val got = gate.withPermit {
             recipes.get(k) ?: withContext(Dispatchers.IO) {
-                runCatching { c.recipeApi.show(item.code, null, null) }.getOrNull()?.let { doc -> runCatching { doc.recipe() }.getOrNull() ?: known(doc.body) }
+                runCatching { c.recipeApi.show(item.code, null, null) }.getOrNull()?.let { doc ->
+                    keepDoc(c, doc)
+                    runCatching { doc.recipe() }.getOrNull() ?: known(doc.body)
+                }
             }
         }
         if (got == null) failed.add(k) else recipes.put(k, got)
         return got
     }
+
+    /** The work in [body], checked by its [hash] as [com.bamnat.app.recipe.RecipeDoc.recipe] does (a newer app's: what this app knows of it). */
+    private suspend fun read(hash: String, body: String): Recipe? = withContext(Dispatchers.Default) {
+        runCatching {
+            val r = com.bamnat.core.recipe.RecipeCodec.read(body)
+            r.takeIf { com.bamnat.core.recipe.RecipeCodec.hash(it) == hash }
+        }.getOrNull() ?: known(body)
+    }
+
+    // ---- 1.39 [MKP-01][MKP-03] 장터 로딩: what a list brought, for the cards and for opening a work at once ----
+
+    /** Each work's written form (hash, body) by [key]: from the list (`body=1`), a work opened, or the phone's own copy. */
+    private val raws = android.util.LruCache<String, Pair<String, String>>(200)
+    /** The last list card seen of each code, so a work opens with its name and counts while the rest comes. */
+    private val items = android.util.LruCache<String, RecipeItem>(200)
+
+    /** A page of the list came: its cards and written forms are kept here, and the written forms on the phone (in the background). */
+    fun feed(c: AppContainer, page: com.bamnat.app.recipe.RecipePage, keep: Boolean = true) {
+        page.items.forEach { items.put(it.code, it) }
+        if (page.bodies.isEmpty()) return
+        page.bodies.forEach { (k, v) -> raws.put(k, v) }
+        if (keep) c.appScope.launch { page.bodies.forEach { (k, v) -> MarketDisk.keepBody(c.appContext, k, v.first, v.second) } }
+    }
+
+    /** A work read whole ([com.bamnat.app.recipe.RecipeApi.show]): its written form kept like a list's. */
+    fun keepDoc(c: AppContainer, doc: com.bamnat.app.recipe.RecipeDoc) {
+        val k = key(doc.item)
+        items.put(doc.item.code, doc.item)
+        if (raws.get(k) == null) {
+            raws.put(k, doc.hash to doc.body)
+            c.appScope.launch { MarketDisk.keepBody(c.appContext, k, doc.hash, doc.body) }
+        }
+    }
+
+    /**
+     * 1.39 [MKP-03] 작품 바로 열기: what a tapped card already has — its card and written form — as a work to show at once, while the
+     * whole one (this phone's 좋아요, whether it is mine) comes; null when this phone has not seen it.
+     */
+    fun seen(code: String): com.bamnat.app.recipe.RecipeDoc? {
+        val item = items.get(code) ?: return null
+        val (hash, body) = raws.get(key(item)) ?: return null
+        return com.bamnat.app.recipe.RecipeDoc(item, hash, body, scope = "public", mine = false)
+    }
+
+    /** 1.39 [MKP-07] [seen], or the written form this phone kept of that card (a card pushed out of memory, the app opened again). */
+    suspend fun seenKept(c: AppContainer, code: String): com.bamnat.app.recipe.RecipeDoc? {
+        seen(code)?.let { return it }
+        val item = items.get(code) ?: return null
+        val (hash, body) = MarketDisk.body(c.appContext, key(item))?.also { raws.put(key(item), it) } ?: return null
+        return com.bamnat.app.recipe.RecipeDoc(item, hash, body, scope = "public", mine = false)
+    }
+
+    /** The written form of card [key] (for [MarketDisk.complete]). */
+    fun body(key: String): String? = raws.get(key)?.second
 
     /** Whether this card's work could not be had (offline, gone): it keeps its small picture for good. */
     fun gaveUp(item: RecipeItem): Boolean = key(item) in failed
@@ -141,6 +207,13 @@ internal object MarketShots {
         data object Rules : Face
     }
 
+    /** 1.39 [MKF-01] 내 앱에 입혀 보기가 먼저 여는 탭: 카드가 보여 주는 화면의 탭. */
+    fun tabOf(f: Face): String = when (f) {
+        is Face.Tab -> f.tab
+        Face.Pay -> TabOrder.STATS
+        else -> TabOrder.CALENDAR
+    }
+
     fun faceOf(item: RecipeItem, r: Recipe): Face {
         val kinds = r.pieces.map { it.kind }.toSet()
         if (LookParts.partUnit(r) == LookParts.LOGIC || (kinds.isNotEmpty() && kinds.all { it == PieceKind.LOGIC })) return Face.Rules
@@ -167,6 +240,42 @@ internal object MarketShots {
         }
     }
 
+    /**
+     * 1.39 [MKF-02] 크게 넘겨 보기의 위아래: 이 작품이 바꾸는 모든 화면, 카드가 보여 주는 화면([faceOf])부터. 테마는 달력만이 아니라
+     * 가계부·메모·급여·위젯·알람·규칙까지 (사용자 2026-11-07 "테마는 말그대로 모든 것을 꾸민 모습"). [style]에 없는 탭(투자의 급여 등)은 빼요.
+     */
+    fun faces(item: RecipeItem, r: Recipe, style: com.bamnat.core.work.WorkStyle?): List<Face> {
+        val kinds = r.pieces.map { it.kind }.toSet()
+        val first = faceOf(item, r)
+        if (first == Face.Rules || item.scope == "part") return listOf(first)
+        val payLook = r.pieces.firstOrNull { it.kind == PieceKind.SCREEN_LOOK }?.values?.get("pay") != null
+        val all = buildList {
+            add(first)
+            if (PieceKind.SHIFT_LOOK in kinds || PieceKind.CAL_THEME in kinds || PieceKind.CAL_VIEW in kinds || PieceKind.SCREEN_LOOK in kinds)
+                add(Face.Tab(TabOrder.CALENDAR))
+            if (PieceKind.MONEY_LOOK in kinds || PieceKind.SCREEN_LOOK in kinds) add(Face.Tab(TabOrder.MONEY))
+            if (PieceKind.MEMO_LOOK in kinds || PieceKind.MEMO_TEMPLATES in kinds || PieceKind.SCREEN_LOOK in kinds) add(Face.Tab(TabOrder.MEMOS))
+            if ((PieceKind.CARDS in kinds || payLook) && marketTabFits("pay", style)) add(Face.Pay)
+            if (PieceKind.WIDGET in kinds) add(Face.Widget)
+            if (PieceKind.ALARMS in kinds && marketTabFits("alarm", style)) add(Face.Alarm)
+            if (PieceKind.LOGIC in kinds) add(Face.Rules)
+        }
+        return all.distinct()
+    }
+
+    /** 1.39 [MKF-02] 그 화면의 이름 (넘겨 보기 위아래 칩), 이 유형의 말로. */
+    fun faceName(f: Face, style: com.bamnat.core.work.WorkStyle?): String = when (f) {
+        is Face.Tab -> when (f.tab) {
+            TabOrder.MONEY -> marketTabLabel("money", style)
+            TabOrder.MEMOS -> marketTabLabel("memo", style)
+            else -> marketTabLabel("calendar", style)
+        }
+        Face.Pay -> marketTabLabel("pay", style)
+        Face.Widget -> "위젯"
+        Face.Alarm -> "알람"
+        Face.Rules -> "규칙·단추"
+    }
+
     private fun tabFace(t: String, kinds: Set<PieceKind>): Face = when (t) {
         TabOrder.STATS -> Face.Pay
         LookParts.WIDGET -> Face.Widget
@@ -187,10 +296,26 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     val shown = style?.takeIf { it in item.styles || item.styles.isEmpty() } ?: item.styles.firstOrNull() ?: style
     val key = MarketShots.key(item) + "|" + shown?.name + "|" + dark + "|" + width.value.toInt()
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
-    val recipe by produceState<Recipe?>(null, key) { if (picture == null) value = MarketShots.recipe(c, item) }
+    var fonts by remember(key) { mutableStateOf(emptyMap<String, androidx.compose.ui.text.font.FontFamily>()) }
+    val recipe by produceState<Recipe?>(null, key) {
+        if (picture != null) return@produceState
+        // 1.39 [MKP-02] The picture this phone kept from before (the 장터 opened again, or after the app was closed): no drawing at all.
+        MarketDisk.shot(c.appContext, key)?.let { MarketShots.keep(key, it); picture = it; return@produceState }
+        val r = MarketShots.recipe(c, item) ?: return@produceState
+        // 1.39 [MKP-06] Its fonts as a card's small fonts first (0.2~0.3 MB once for each font, shared by every card), so it is drawn once, in them.
+        MarketShots.body(MarketShots.key(item))?.let { body ->
+            fonts = kotlinx.coroutines.withTimeoutOrNull(MarketShots.FONTS_MS) { MarketFonts.ready(c.appContext, MarketFonts.ids(body)) }.orEmpty()
+        }
+        value = r
+    }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
-    ShotFrame(key, width, height, picture, { picture = it }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
-        face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) })
+    ShotFrame(key, width, height, picture, { got ->
+        picture = got
+        // 1.39 [MKP-02] Kept on the phone too, when all it names (pictures, fonts) was there to draw it as it really looks.
+        val body = MarketShots.body(MarketShots.key(item))
+        if (body != null) c.appScope.launch { if (MarketDisk.complete(c.appContext, body)) MarketDisk.keepShot(c.appContext, key, got) }
+    }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
+        face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) }, fonts = fonts)
 }
 
 /** [MKV-05] A theme that comes with the app (처음이라면 이런 테마부터), drawn the same way as the 장터 cards. */
@@ -200,15 +325,23 @@ internal fun BuiltInShot(r: Recipe, name: String, width: Dp, style: WorkStyle?, 
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val key = "builtin:" + name + "|" + style?.name + "|" + dark + "|" + width.value.toInt()
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
-    ShotFrame(key, width, height, picture, { picture = it }, r, false, style = style, onClick = onClick, modifier = modifier,
+    val ctx = LocalContext.current
+    // 1.39 [MKP-06] Its fonts as card fonts too (it once started each whole font coming down).
+    val fonts by produceState<Map<String, androidx.compose.ui.text.font.FontFamily>?>(null, key) {
+        value = if (picture != null) emptyMap() else kotlinx.coroutines.withTimeoutOrNull(MarketShots.FONTS_MS) {
+            MarketFonts.ready(ctx.applicationContext, MarketFonts.ids(com.bamnat.core.recipe.RecipeCodec.write(r)))
+        }.orEmpty()
+    }
+    ShotFrame(key, width, height, picture, { picture = it }, r.takeIf { fonts != null }, false, style = style, onClick = onClick, modifier = modifier,
         face = { MarketShots.Face.Tab(TabOrder.CALENDAR) },
-        standIn = { Box(Modifier.size(width, height).background(MaterialTheme.colorScheme.surfaceContainerHigh)) })
+        standIn = { Box(Modifier.size(width, height).background(MaterialTheme.colorScheme.surfaceContainerHigh)) }, fonts = fonts.orEmpty())
 }
 
 @Composable
 private fun ShotFrame(
     key: String, width: Dp, height: Dp, picture: ImageBitmap?, setPicture: (ImageBitmap) -> Unit, recipe: Recipe?, gaveUp: Boolean,
     style: WorkStyle?, onClick: () -> Unit, modifier: Modifier, face: (Recipe) -> MarketShots.Face, standIn: @Composable () -> Unit,
+    fonts: Map<String, androidx.compose.ui.text.font.FontFamily> = emptyMap(),
 ) {
     // MED-2: this card's turn to be drawn live: it is on the screen (not only composed ahead of it), has stayed a moment, and no other is drawing.
     var turn by remember(key) { mutableStateOf(false) }
@@ -217,6 +350,8 @@ private fun ShotFrame(
     // never recomposes the card.
     val still = remember(key) { StillWatch() }
     val now by androidx.compose.runtime.rememberUpdatedState(picture)
+    // Whether the example phone has been drawn into its layer once.
+    val drew = remember(key) { booleanArrayOf(false) }
     if (picture == null && recipe != null) LaunchedEffect(key) {
         while (true) {
             val was = still.where
@@ -226,7 +361,11 @@ private fun ShotFrame(
         MarketShots.drawing.lock()
         try {
             turn = true
-            kotlinx.coroutines.withTimeoutOrNull(MarketShots.HOLD) { androidx.compose.runtime.snapshotFlow { now }.first { it != null } }
+            // 1.39 [MKP-04] 장터 로딩: the turn is held only while this phone is drawn the first time (the heavy part), not through the
+            // wait for its fonts and pictures before it is kept as a picture; the next card is drawn meanwhile (four still cards on the
+            // screen took four of those waits one after another).
+            kotlinx.coroutines.withTimeoutOrNull(MarketShots.HOLD) { while (!drew[0] && now == null) kotlinx.coroutines.delay(16) }
+            kotlinx.coroutines.delay(MarketShots.SETTLE)
         } finally { MarketShots.drawing.unlock() }
     }
     val said = if (picture != null || recipe != null) "작품 모습" else if (gaveUp) "작품 작은 그림" else "작품 모습 불러오는 중"
@@ -240,11 +379,11 @@ private fun ShotFrame(
             r != null && turn -> {
                 // Drawn live once; when its fonts and pictures have come in, kept as a picture.
                 val layer = rememberGraphicsLayer()
-                // Taken only once the phone has really been drawn into the layer; until then it is tried again.
-                val drew = remember(key) { booleanArrayOf(false) }
+                // Taken only once the phone has really been drawn into the layer ([drew]); until then it is tried again.
                 // PC 확인 e50bb622 MED-3: a picture of the phone, its letters the example's own size under 아주 크게 too.
                 val d = androidx.compose.ui.platform.LocalDensity.current
-                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f),
+                    com.bamnat.app.ui.theme.LocalCardFonts provides fonts) {
                     Box(Modifier.fillMaxSize().drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer); drew[0] = true }) {
                         ShotPhone(face(r), r, style, width / MarketShots.PHONE_W.dp)
                     }
@@ -264,6 +403,28 @@ private fun ShotFrame(
     }
 }
 
+/**
+ * 1.39 [MKF-02] 작품의 한 화면을 [width] 폭으로 바로 그려요 (넘겨 보기·상세 맨 위). 카드와 같은 예시 폰이고, 예시 안의 단추는 누르지 않아요
+ * (위에 덮은 층이 누름을 받고, 끌기는 바깥의 넘기기로 가요). [onClick]은 그 누름이에요.
+ */
+@Composable
+internal fun WorkFace(r: Recipe, face: MarketShots.Face, width: Dp, style: WorkStyle?, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+    val height = width * (MarketShots.PHONE_H / MarketShots.PHONE_W)
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    // 1.39 [MKP-06] 상세 큰 모습·크게 넘겨 보기도 카드 글꼴로 (글꼴 전체는 넣기·입어 보기에서): drawn at once, in them once they come.
+    val ctx = LocalContext.current
+    val fonts by produceState(emptyMap<String, androidx.compose.ui.text.font.FontFamily>(), r) {
+        value = MarketFonts.ready(ctx.applicationContext, MarketFonts.ids(com.bamnat.core.recipe.RecipeCodec.write(r)))
+    }
+    Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).clearAndSetSemantics { contentDescription = "작품 모습" }) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f),
+            com.bamnat.app.ui.theme.LocalCardFonts provides fonts) {
+            ShotPhone(face, r, style, width / MarketShots.PHONE_W.dp)
+        }
+        Box(Modifier.fillMaxSize().pointerInput(onClick) { detectTapGestures { onClick() } })
+    }
+}
+
 /** While the work comes in (or when it cannot): the old small picture, in the phone's place so the card does not change size. */
 @Composable
 private fun ShotStandIn(item: RecipeItem, width: Dp, height: Dp, style: WorkStyle?) {
@@ -275,7 +436,7 @@ private fun ShotStandIn(item: RecipeItem, width: Dp, height: Dp, style: WorkStyl
 }
 
 @Composable
-private fun ShotPhone(face: MarketShots.Face, r: Recipe, style: WorkStyle?, scale: Float) {
+internal fun ShotPhone(face: MarketShots.Face, r: Recipe, style: WorkStyle?, scale: Float) {
     Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
         Box(Modifier.requiredSize(MarketShots.PHONE_W.dp, MarketShots.PHONE_H.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
             when (face) {
@@ -371,9 +532,17 @@ private fun RulesPhone(r: Recipe) {
     }
 }
 
-/** A notification's words with its blanks ({이번주야간} …) filled as on an ordinary day. */
-private fun sample(text: String): String = text.replace(Regex("\\{[^}]{1,20}\\}")) { m ->
+/**
+ * A notification's words with its blanks ({이번주야간} …) filled as on an ordinary day. PC 4차 c0ca3d9f (장터 1): with [scope], a blank
+ * this phone can work out for the day is its own value; one it cannot (a 값 칸 it has not counted yet) is the ordinary-day example.
+ */
+internal fun sample(text: String, scope: com.bamnat.core.formula.FormulaScope? = null): String = text.replace(Regex("\\{[^{}]{1,20}\\}")) { m ->
     val name = m.value.trim('{', '}')
+    val own = scope?.let { sc ->
+        (com.bamnat.core.formula.Formula.parse(name) as? com.bamnat.core.formula.Parsed.Ok)?.formula
+            ?.let { f -> runCatching { f.run(sc)?.text }.getOrNull() }?.takeIf { it.isNotBlank() }
+    }
+    if (own != null) return@replace own
     when {
         // PC 확인 edb46c62 LOW: '오늘 매출 3, 목표를 넘었어요' — money blanks are written {원(…)}.
         // PC 확인 f020cead LOW: '큰 지출 38,500원 · 이달 쓴 돈 38,500원' — a month's sum is bigger than one day's.

@@ -128,7 +128,18 @@ object SleepInsights {
         return if (work.any { it.date == day } || before.isNotEmpty() || after != null) Context.WORK_DAY else Context.DAY_OFF
     }
 
-    fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int): Report {
+    /**
+     * 1.39 PC c0ca3d9f 유형별 빈틈 (가게에 '야간 뒤·쉬는 날'): the kinds of day the averages split into, in the words of the work.
+     * 야간 뒤 is said to 교대 only (사용자 2026-11-06), as the sleep screen's 이렇게 쓰여요 does.
+     */
+    fun groupsWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+        null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 뒤·쉬는 날"
+        com.bamnat.core.work.WorkStyle.INVEST -> "평일·쉬는 날"
+        else -> "일한 날·쉬는 날"
+    }
+
+    fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int,
+               style: com.bamnat.core.work.WorkStyle? = null): Report {
         val (nights, work) = nightsAndWork(log, resolver, today, WINDOW_DAYS)
         val blocks = blocks(nights, work)
         // [SLEEP-02] Averages are per rest: a split sleep counts whole, a nap on its own is left out.
@@ -144,10 +155,10 @@ object SleepInsights {
         val spread = spread(main.filter { it.context != Context.AFTER_NIGHT }.map { it.entry.start })
         val loggedDays = nights.mapNotNull { it.entry.wakeDate }.toSet().size
         val report = Report(nights, groups, week, weekBefore, spread, blocks.count { it.nap }, emptyList(), loggedDays, blocks)
-        return report.copy(findings = findings(report, targetMinutes))
+        return report.copy(findings = findings(report, targetMinutes, style))
     }
 
-    private fun findings(r: Report, target: Int): List<Finding> = buildList {
+    private fun findings(r: Report, target: Int, style: com.bamnat.core.work.WorkStyle? = null): List<Finding> = buildList {
         if (r.isEmpty) return@buildList
         val night = r.group(Context.AFTER_NIGHT)
         if (night != null && night.enough && target - night.averageMinutes >= SHORT_MINUTES) {
@@ -186,7 +197,7 @@ object SleepInsights {
         }
         if (r.loggedDays < 5) {
             add(Finding("more-logs", Tone.NOTE, "기록이 쌓이면 더 알려 드려요",
-                "근무별로 2번 넘게 기록하면 야간 뒤·쉬는 날 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
+                "근무별로 2번 넘게 기록하면 ${groupsWord(style)} 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
         }
     }
 
@@ -246,4 +257,35 @@ object SleepInsights {
     }
 
     private const val DAY = 24 * 60
+}
+
+/**
+ * 1.39 사용자 2026-11-08 ("잠 앱을 배워 만들었는데 사용자 패턴 카드가 하나도 없어요"): the pattern cards wait for enough records, so
+ * a new log showed none and said nothing of them. What is still to come, each with how many more it takes, so the screen tells
+ * what the taps will open: 근무별 평균 ([SleepInsights.MIN_FOR_AVERAGE] of a kind of day), 내 기록에서 찾은 것 ([SleepCauses.MIN_TIMES]
+ * mornings answered) and the week against the one before ([WEEK_DAYS] days logged). One that is open already is left out.
+ */
+object SleepUnlocks {
+    const val WEEK_DAYS = 7
+
+    data class Unlock(val key: String, val title: String, val line: String, val have: Int, val need: Int)
+
+    fun of(report: SleepInsights.Report, answeredMornings: Int, style: com.bamnat.core.work.WorkStyle?): List<Unlock> = buildList {
+        if (report.groups.none { it.enough }) {
+            val have = report.groups.maxOfOrNull { it.count } ?: 0
+            val left = SleepInsights.MIN_FOR_AVERAGE - have
+            add(Unlock("groups", "근무별 평균", "같은 종류 날 잠을 ${left}번 더 적으면 ${SleepInsights.groupsWord(style)} 평균을 따로 보여 줘요",
+                have, SleepInsights.MIN_FOR_AVERAGE))
+        }
+        if (answeredMornings < SleepCauses.MIN_TIMES) {
+            val left = SleepCauses.MIN_TIMES - answeredMornings
+            add(Unlock("causes", "내 기록에서 찾은 것", "깬 뒤 아침 한 장에 ${left}번 더 답하면 피곤한 아침과 함께 온 것(늦은 카페인·야식…)을 찾아 줘요",
+                answeredMornings, SleepCauses.MIN_TIMES))
+        }
+        if (report.loggedDays < WEEK_DAYS) {
+            val left = WEEK_DAYS - report.loggedDays
+            add(Unlock("week", "한 주 흐름", "${left}일 더 적으면 최근 7일 평균과 목표를 견주고, 잠드는 시각이 들쭉날쭉한지 알려 줘요",
+                report.loggedDays, WEEK_DAYS))
+        }
+    }
 }

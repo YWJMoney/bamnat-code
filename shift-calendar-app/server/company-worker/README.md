@@ -21,6 +21,10 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 4. **데이터베이스 연결**
    Worker 화면의 바인딩(Bindings) → 바인딩 추가(Add binding) → D1 데이터베이스.
    변수 이름은 `DB`, 데이터베이스는 `bamnat-company`를 골라요.
+4-1. **배포 번호 연결** (1.39)
+   같은 바인딩 화면에서 바인딩 추가 → 버전 메타데이터(Version metadata), 변수 이름은 `CF_VERSION_METADATA`.
+   묶어 두면 판 이름(예: 1.39.0)이 같아도 다시 배포할 때마다 관리자 앱 사고 › 바꾼 것에 '서버 배포 1.39.0 · 배포 번호' 한 줄이 남아요.
+   묶지 않아도 서버는 돌고, 서버 상태에 '배포 번호' 빠짐으로 보여요.
 5. **비밀값 두 개 넣기**
    `bamnat-company` Worker → 설정(Settings) → 런타임 변수(Runtime variables) → 변수 추가(Add variable).
    화면에 따라 변수 및 비밀(Variables and Secrets) → 추가(Add)로 보이기도 해요. 환경은 Production에 체크해 두고,
@@ -102,6 +106,10 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
   1. Google Cloud 콘솔 → 그 서비스 계정의 프로젝트 → API 및 서비스 → **Google Play Developer Reporting API** 사용.
   2. Play Console → 사용자 및 권한 → 그 서비스 계정 → 앱 권한에 **앱 정보 보기 및 대량 보고서 다운로드(읽기 전용)**.
   켜기 전에는 출시 관문 G0가 "Play 권한 필요"(계정은 있는데 Play가 거절) 또는 "Play Console에서 확인"(계정 없음)으로 보여요. 값은 Play 기준으로 하루이틀 늦게 들어오고, 서버는 6시간마다 한 번만 물어요.
+- **Play 보고서(설치·삭제·스토어 전환·출처·판·별점, 1.39 OBS2-01)**: 같은 서비스 계정이 Play Console의 보고서 저장소(Cloud Storage)를 읽어요. 위 2번 권한(대량 보고서 다운로드)이 그대로 쓰이고, 일반 변수 하나만 넣어요.
+  1. Play Console → 보고서 다운로드 → 통계 → **Cloud Storage URI 복사**(`gs://pubsite_prod_<개발자 계정 ID>/stats/installs/`, 옛 계정은 `pubsite_prod_rev_…`).
+  2. Cloudflare → bamnat-company → 설정 → 변수 → 일반 변수 `PLAY_REPORTS_BUCKET`에 그 주소(앞의 `gs://pubsite_prod_숫자`만이어도 돼요).
+  넣으면 숫자 › 한눈에의 '전체 사용자' 칸이 차요. 서버는 12시간마다 석 달 치 CSV를 읽고 70일 날짜 줄을 남겨요. 없으면 관측 빈틈에 '저장소 연결 필요'로 보여요.
 - **원격 갱신**: 앱이 받는 공개 파일(`https://ywjmoney.github.io/-/remote/v1/`)을 서버가 읽어 서명이 실제로 맞는지 확인해요. 다른 주소를 쓰려면 선택 변수 `REMOTE_BASE_URL`을 넣어요(없어도 돼요). '다시 확인'을 누르면 10분 보관을 건너뛰고 바로 받아요.
 
 ### 관리자 앱 알림(웹 푸시) [ADMIN-19]
@@ -265,6 +273,12 @@ ADMIN_PASSWORD=<10자 이상> npm run local -- 8788 --seed
 npm ci
 npm run test:ui
 ```
+
+## 자동 배포 (1.39, GitHub Actions)
+
+크롬·대시보드 붙여 넣기 없이 `.github/workflows/deploy-server.yml`이 회사·공유 서버를 올려요. main에서 Run workflow를 누르고 `ref`에 배포할 브랜치를 적어요. `check`는 올리고 대조까지만, `deploy`는 끝까지예요.
+순서와 안전장치는 `shift-calendar-app/tools/deploy_worker.py` 맨 위에 있어요: 서버 시험 → 번들(붙여 넣던 `dist/worker.js`와 같은 파일) → 새 판 올리기만 → 앞 판 바인딩(DB·변수·비밀값 이름)이 모두 이어지는지 대조 → 100% → health 5번 → 실패면 앞 판으로 되돌리기.
+DB·KV 번호는 저장소에 적지 않고 지금 도는 판의 바인딩에서 읽어 채워요. 열쇠는 저장소 Secret `CLOUDFLARE_API_TOKEN`(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만)이에요.
 
 ## 명령줄로 배포하기 (선택)
 

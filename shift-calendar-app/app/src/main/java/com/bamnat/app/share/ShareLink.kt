@@ -63,6 +63,22 @@ data class SleepNow(val since: Long, val wakeAt: Long? = null) {
     }
 }
 
+/**
+ * 1.39 G5-N4 계획한 잠 시간 as a link carries it: one planned sleep's start and end (epoch millis). Only the plan the app made from
+ * the work, never what was slept; sent only with [ShareOptions.sleepPlan].
+ */
+data class SleepPlanWindow(val from: Long, val to: Long) {
+    companion object {
+        /** The link's list, skipping anything that is not a from before a to at most 16 hours on. */
+        fun list(a: org.json.JSONArray?): List<SleepPlanWindow> =
+            if (a == null) emptyList() else (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val from = o.optLong("from", 0L); val to = o.optLong("to", 0L)
+                SleepPlanWindow(from, to).takeIf { from > 0 && to > from && to - from <= com.bamnat.core.sleep.SleepPlanShare.MAX_HOURS * 3_600_000L }
+            }.take(com.bamnat.core.sleep.SleepPlanShare.MAX)
+    }
+}
+
 /** [SHR-01] What a link carries besides the shifts; all off until the sharer ticks them. */
 data class ShareOptions(
     val leaveKinds: Boolean = false,
@@ -82,6 +98,8 @@ data class ShareOptions(
     val kit: Boolean = false,
     /** 1.38 [SLEEP-11] 지금 자는 중: while a sleep is open the link says since when and the next alarm, nothing else (`sleep.share`). */
     val sleepNow: Boolean = false,
+    /** 1.39 G5-N4 계획한 잠 시간: two weeks of the planned sleep's from~to, nothing else (`sleep.plan_share`, off by default). */
+    val sleepPlan: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */
     val shows: List<String>
@@ -99,8 +117,8 @@ data class ShareOptions(
 
     companion object {
         fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false, look: Boolean = false, kit: Boolean = false,
-               sleepNow: Boolean = false) =
-            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit, sleepNow)
+               sleepNow: Boolean = false, sleepPlan: Boolean = false) =
+            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit, sleepNow, sleepPlan)
 
         /**
          * [SHR-20] 1.33 (계획 690~694): what each way sends at first. 동료: the 연장·휴무일 근무 and the company setup, never
@@ -286,6 +304,8 @@ object ShareLinkPayload {
         kit: String? = null,
         /** 1.38 [SLEEP-11] The open sleep's start and the next alarm (epoch millis); sent only with [ShareOptions.sleepNow]. */
         sleepNow: SleepNow? = null,
+        /** 1.39 G5-N4 The planned sleeps not over yet (epoch millis); sent only with [ShareOptions.sleepPlan]. */
+        sleepPlan: List<SleepPlanWindow> = emptyList(),
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -366,6 +386,10 @@ object ShareLinkPayload {
             if (options.sleepNow && sleepNow != null) put("sleepNow", JSONObject().apply {
                 put("since", sleepNow.since)
                 if (sleepNow.wakeAt != null && sleepNow.wakeAt > sleepNow.since) put("wakeAt", sleepNow.wakeAt)
+            })
+            // 1.39 G5-N4 A server from before 1.39 drops what it does not know.
+            if (options.sleepPlan && sleepPlan.isNotEmpty()) put("sleepPlan", JSONArray().apply {
+                sleepPlan.take(com.bamnat.core.sleep.SleepPlanShare.MAX).forEach { w -> put(JSONObject().put("from", w.from).put("to", w.to)) }
             })
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
@@ -528,11 +552,11 @@ class ShareLinkStore(
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty(),
         ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false), prefs.getBoolean("look", false), prefs.getBoolean("kit", false),
-        prefs.getBoolean("sleepNow", false))
+        prefs.getBoolean("sleepNow", false), prefs.getBoolean("sleepPlan", false))
 
     fun saveOptions(o: ShareOptions) {
         if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).putString("audience", o.audience?.key).putBoolean("setup", o.setup)
-            .putBoolean("look", o.look).putBoolean("kit", o.kit).putBoolean("sleepNow", o.sleepNow).apply()
+            .putBoolean("look", o.look).putBoolean("kit", o.kit).putBoolean("sleepNow", o.sleepNow).putBoolean("sleepPlan", o.sleepPlan).apply()
     }
 
     /**
@@ -572,6 +596,12 @@ interface ShareApi {
      * A server or fake without tags always reads it.
      */
     suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id)
+
+    /**
+     * 1.39 G2: [readIfChanged] for a check the user did not ask for (받은 근무표 따라가기 every 6 hours, 하루 한 번 소식), so the sharer's
+     * 봤어요 is not set by it.
+     */
+    suspend fun readQuietly(id: String, etag: String?): ReceivedShare? = readIfChanged(id, etag)
 
     /** [SRV-05] Reports a received link to the developer ([ShareReport] reasons); nobody learns who sent it. */
     suspend fun report(id: String, reason: String) {}
@@ -722,7 +752,15 @@ class ShareLinkException(
     message: String,
     /** [SHR-13] Why the developer took the link down, when the share server says (410 removed). */
     val removedReason: String? = null,
-) : IOException(message)
+    /** 1.39 [CARE-09] With "contact": phone, link, account or messenger (team links take none of them, against scams). */
+    val why: String? = null,
+    /** 1.39 [CARE-09] 7차 PC: the refused line as sent (40 chars) and its field, so the app says whose line and where to fix it. */
+    val text: String? = null,
+    val key: String? = null,
+) : IOException(message) {
+    /** What to tell the person for a refusal this file knows the words for, or null. */
+    val friendly: String? get() = if (message == "contact") com.bamnat.core.plaza.TeamLinkText.contact(why, text, key) else null
+}
 
 class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) : ShareApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
@@ -755,8 +793,12 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     override suspend fun read(id: String): ReceivedShare = readIfChanged(id, null)!!
 
-    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = withContext(Dispatchers.IO) {
-        val reply = request("GET", "/api/share/$id", null, null, etag)
+    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = readAt(id, etag, quiet = false)
+
+    override suspend fun readQuietly(id: String, etag: String?): ReceivedShare? = readAt(id, etag, quiet = true)
+
+    private suspend fun readAt(id: String, etag: String?, quiet: Boolean): ReceivedShare? = withContext(Dispatchers.IO) {
+        val reply = request("GET", "/api/share/$id", null, null, etag, quiet)
         if (reply.code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext null
         val o = reply.body
         readable {
@@ -1026,14 +1068,14 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
-    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
+    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null, quiet: Boolean = false): Reply {
         // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
         if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
         // [SRV-30] 1.36: at s.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
-        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag) }
+        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag, quiet) }
     }
 
-    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?): Reply {
+    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?, quiet: Boolean = false): Reply {
         // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true
@@ -1043,6 +1085,9 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             conn.readTimeout = 15_000
             token?.let { conn.setRequestProperty("X-Delete-Token", it) }
             etag?.let { conn.setRequestProperty("If-None-Match", it) }
+            if (quiet) conn.setRequestProperty("X-Bamnat-Quiet", "1")
+            // 1.39 [CARE-09] 앱 판: 공유 서버가 연락처 걸러내기를 1.39 앱부터만 해요(옛 앱은 예전처럼).
+            conn.setRequestProperty("X-Bamnat-App", BuildConfig.VERSION_CODE.toString())
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -1062,7 +1107,10 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 val err = runCatching { JSONObject(text) }.getOrNull()
                 val word = err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code"
                 throw ShareLinkException(if (word == "removed") "not_found" else word,
-                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200))
+                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200),
+                    err?.optString("why")?.takeIf { word == "contact" && it.isNotBlank() },
+                    err?.optString("text")?.takeIf { word == "contact" && it.isNotBlank() }?.take(40),
+                    err?.optString("key")?.takeIf { word == "contact" && it.isNotBlank() })
             }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
@@ -1096,3 +1144,6 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         const val MAX_REPLY_BYTES = 256 * 1024
     }
 }
+
+/** 1.39 [CARE-09] 7차 PC: the person's words for a refused team or schedule link (contact words), or null for any other failure. */
+fun linkProblem(e: Throwable): String? = (e as? ShareLinkException)?.friendly

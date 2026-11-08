@@ -305,12 +305,23 @@ export const EVENTS = {
   manage_hint_shown: "팀·가게 기능 안내 보임",
   manage_hint_open: "팀·가게 기능 안내 누름",
   manage_import: "팀·직원 파일 가져오기",
+  // 1.39 [STAT2-02] 진입·머묾·회복(깃발 stats.life, 처리방침 3.12 전에는 받지 않아요). 숫자 › 한눈에가 읽어요(glance.js).
+  life_new: "처음 연 날",
+  life_d1: "깐 다음 날 다시 염",
+  life_d7: "깐 지 7일째 다시 염",
+  life_d30: "깐 지 30일째 다시 염",
+  life_back7: "7일 넘게 쉬다 다시 염",
+  life_back30: "30일 넘게 쉬다 다시 염",
 };
 
 export async function usage(request, env) {
   // Switched off, the server takes nothing and the app does not try again until tomorrow.
-  if (await paused(env, "USAGE_STATS")) return new Response(null, { status: 204 });
-  const body = await readJson(request, USAGE.bytes);
+  // 1.39 [ADM3-43] 스위치 읽기와 몸통 읽기를 동시에(실서버 점검 11-08 /api/events 1.6초). 꺼져 있으면 몸통이 어떻든 204예요.
+  const [off, read] = await Promise.allSettled([paused(env, "USAGE_STATS"), readJson(request, USAGE.bytes)]);
+  if (off.status === "rejected") throw off.reason;
+  if (off.value) return new Response(null, { status: 204 });
+  if (read.status === "rejected") throw read.reason;
+  const body = read.value;
   if (body.v !== 1) refuse("version", "v");
   if (typeof body.app !== "string" || !/^\d{1,2}\.\d{1,3}\.\d{1,3}$/.test(body.app)) refuse("app", "app");
   if (!Array.isArray(body.days) || body.days.length < 1 || body.days.length > USAGE.days) refuse("days", "days");
@@ -343,12 +354,24 @@ export async function usage(request, env) {
       if (!Number.isInteger(n) || n < 1 || n > USAGE.count) refuse("count", "events");
       if (Object.hasOwn(EVENTS, name)) counts.set(name, n);
     }
-    const lately = new Set(recent.filter((e) => typeof e === "string" && Object.hasOwn(EVENTS, e)));
+    // 1.39 [STAT2-02] life_*는 그날 있었는지만 세요('최근 28일'에 넣지 않아요).
+    const lately = new Set(recent.filter((e) => typeof e === "string" && Object.hasOwn(EVENTS, e) && !e.startsWith("life_")));
     for (const e of counts.keys()) lately.add(e);
     for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
   }
+  // 1.39 [STAT2-02] 처리방침 3.12 시행일(깃발 stats.life) 전에 온 life_*는 버려요.
+  if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await flagStore(env), "stats.life", now).on) {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("life_")) rows.splice(i, 1);
+  }
   const app = body.app;
   if (days.size === 0) return json({ ok: true, skipped });
+  // 1.39 [OBS2-08] 유형별 흐름(stats.kind)과 기능과 머묾(stats.keep): 처리방침 3.12 시행일 전에 온 것은 버려요.
+  const style = kindOf(body.style);
+  const keep = keepRows(body.keep, now);
+  const obsStore = style || keep.length ? await flagStore(env) : null;
+  const kindRowsIn = style && serverEval(obsStore, "stats.kind", now).on
+    ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_"))).map((r) => [r[0], style, r[1]]) : [];
+  const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
   // AM 1.28 [FLAG-30] Which flags were on (only phones with stats.more on send it): per day, the list sent with the day or,
   // once for the bundle, flagsOn at the top for its newest day. '*' counts the phones that sent a list at all.
   const listOf = (v) => {
@@ -368,7 +391,10 @@ export async function usage(request, env) {
   // 1.31 [STAT-08] Lookup times only once 처리방침 3.5 is in force (stats.lookup's date); before it they are left out.
   const lookups = lookupRows(body.lookups);
   const lookupOn = lookups.length > 0 && serverEval(await flagStore(env), "stats.lookup", now).on;
-  for (const [kind, step, bucket] of [...startupRows(body.startup), ...(lookupOn ? lookups : [])]) {
+  // 1.39 [SETUP-20] 첫 설정 누른 횟수 only once 처리방침 3.12 is in force (stats.setup's date); before it it is left out.
+  const setup = setupRows(body.setup);
+  const setupOn = setup.length > 0 && serverEval(await flagStore(env), "stats.setup", now).on;
+  for (const [kind, step, bucket] of [...startupRows(body.startup), ...(lookupOn ? lookups : []), ...(setupOn ? setup : [])]) {
     stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
       ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));
   }
@@ -378,6 +404,16 @@ export async function usage(request, env) {
     stmts.push(stmt(env, `INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES ${part.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}
       ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
     ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
+  }
+  for (let i = 0; i < kindRowsIn.length; i += 20) {
+    const part = kindRowsIn.slice(i, i + 20);
+    stmts.push(stmt(env, `INSERT INTO usage_kinds (day, app, style, event, phones) VALUES ${part.map(() => "(?, ?, ?, ?, 1)").join(", ")}
+      ON CONFLICT (day, app, style, event) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, s, e]) => [day, app, s, e])));
+  }
+  for (let i = 0; i < keepIn.length; i += 20) {
+    const part = keepIn.slice(i, i + 20);
+    stmts.push(stmt(env, `INSERT INTO usage_keep (day, app, event, win, phones) VALUES ${part.map(() => "(?, ?, ?, ?, 1)").join(", ")}
+      ON CONFLICT (day, app, event, win) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, w, e]) => [day, app, e, w])));
   }
   for (let i = 0; i < flagRows.length; i += 25) {
     const part = flagRows.slice(i, i + 25);
@@ -434,14 +470,30 @@ export function lookupRows(lookups) {
   return rows;
 }
 
+/**
+ * 1.39 [SETUP-20] (사용자 결정 2026-11-07, 발굴 G6 4-1): taps from a new install's first open until its first setup is saved, rounded
+ * up to one of these edges by the app (core stats/SetupTaps.BUCKETS); 150 means more than 100. With the kind of work chosen, once.
+ */
+export const SETUP_TAP_BUCKETS = [5, 10, 15, 20, 25, 30, 40, 50, 70, 100, 150];
+/** The kinds of work a setup count is kept for (the app's WorkStyle names). */
+export const SETUP_STEPS = { setup: ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"] };
+
+/** 1.39 [SETUP-20] `setup: {style, taps}` → one [kind, step, bucket] row, or none for anything else. */
+export function setupRows(setup) {
+  if (!setup || typeof setup !== "object" || Array.isArray(setup)) return [];
+  const { style, taps } = setup;
+  if (!SETUP_STEPS.setup.includes(style) || !Number.isInteger(taps) || !SETUP_TAP_BUCKETS.includes(taps)) return [];
+  return [["setup", style, taps]];
+}
+
 /** [PERF-17] The bucket where [share] of the phones are at or under, from {bucket → phones}. */
-export function bucketQuantile(hist, total, share) {
+export function bucketQuantile(hist, total, share, buckets = STARTUP_BUCKETS) {
   let seen = 0;
-  for (const b of STARTUP_BUCKETS) {
+  for (const b of buckets) {
     seen += hist.get(b) ?? 0;
     if (seen >= total * share) return b;
   }
-  return STARTUP_BUCKETS.at(-1);
+  return buckets.at(-1);
 }
 
 export const appOrder = (a, b) => {
@@ -468,13 +520,15 @@ export async function startupMetrics(env, from, to) {
   }
   const versions = [...byApp.keys()].sort(appOrder).slice(0, 6).map((app) => {
     const out = { app };
-    for (const [kind, steps] of Object.entries({ ...STARTUP_STEPS, ...LOOKUP_STEPS })) {
+    for (const [kind, steps] of Object.entries({ ...STARTUP_STEPS, ...LOOKUP_STEPS, ...SETUP_STEPS })) {
       const part = {};
+      // 1.39 [SETUP-20] Setup counts are taps, read against their own edges.
+      const edges = kind === "setup" ? SETUP_TAP_BUCKETS : STARTUP_BUCKETS;
       for (const step of steps) {
         const hist = byApp.get(app).get(`${app}|${kind}|${step}`);
         if (!hist) continue;
         const phones = [...hist.values()].reduce((n, v) => n + v, 0);
-        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5), p90: bucketQuantile(hist, phones, 0.9) };
+        part[step] = { phones, p50: bucketQuantile(hist, phones, 0.5, edges), p90: bucketQuantile(hist, phones, 0.9, edges) };
       }
       if (Object.keys(part).length) out[kind] = part;
     }
@@ -583,6 +637,11 @@ export async function metrics(env, url, now) {
   const end = Date.parse(`${to}T00:00:00+09:00`) + DAY;
   const lastWeek = kstDay(Date.parse(`${to}T00:00:00+09:00`) - 6 * DAY);
   const byDay = (col) => `strftime('%Y-%m-%d', (${col} + 32400000) / 1000, 'unixepoch')`;
+  // 1.39 [ADM3-43] 지표가 중간 6.6초였어요(실서버 점검 11-08): Play 숫자와 공유 서버 숫자를 DB 읽기와 동시에 물어요(전에는 차례로).
+  const vitalsP = playVitals(env, now);
+  const sharesP = shareStats(env, r.days);
+  vitalsP.catch(() => {});
+  sharesP.catch(() => {});
   const [dayRows, eventRows, subs, beforeRows, versionRows, reportRows, ruleRows, postRows, flagRows, hiddenRows, useRows, rateRows, inquiryRows, errorRows, bugRows, slaRows, passRows] = (await batch(env, [
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day ORDER BY day", from, to),
     stmt(env, `SELECT event, SUM(phones) AS phones, SUM(total) AS total, SUM(recent) AS recent FROM usage_events
@@ -627,10 +686,11 @@ export async function metrics(env, url, now) {
   };
   const s = subs[0] ?? {};
   const week = dayRows.filter((x) => x.day >= lastWeek);
-  const vitals = await playVitals(env, now);
+  const vitals = await vitalsP;
   const vital = (name, rule, key, least) => {
     const v = vitals?.[key];
-    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : "play" };
+    // 1.39 [STAT2-01] 실서버 둘러보기 B5: Play가 숫자를 읽어 줬는데 비율이 비어 있으면(사용자가 적어 Play가 숨김) 'Play Console에서 확인'이 아니라 '데이터 부족'.
+    if (v === undefined || v === null) return { name, rule, value: null, status: vitals?.error ? "denied" : vitals ? "few" : "play" };
     return { name, rule, value: Math.round(v * 10000) / 100, status: vitals.users < 100 ? "few" : v * 100 < least ? "pass" : "fail" };
   };
   const dayList = [];
@@ -643,6 +703,8 @@ export async function metrics(env, url, now) {
   const sla = readSla(slaRows);
   return {
     from, to, days, phoneDays, daily, enough,
+    // 1.39 [ADM3-43] Play가 본 하루 사용자(비정상 종료 숫자와 같이 오는 것), 사용 통계를 켠 휴대폰 수 옆에.
+    playUsers: vitals?.users ?? null, playDay: vitals?.day ?? null,
     series: dayRows.map((x) => ({ day: x.day, phones: x.phones })),
     // The same day [days] earlier for each day of the series, 0 when nothing came that day.
     before: dayRows.map((x) => was.get(kstDay(Date.parse(`${x.day}T00:00:00+09:00`) - days * DAY)) ?? 0),
@@ -664,7 +726,7 @@ export async function metrics(env, url, now) {
       trials: s.trials ?? 0, paid: s.paid ?? 0, ending: s.ending ?? 0, yearly: s.yearly ?? 0,
       passes: passRows?.[0]?.running ?? 0, passesBought: passRows?.[0]?.bought ?? 0,
     },
-    shares: await shareStats(env, days),
+    shares: await sharesP,
     // 1.38 Phase 3 분석판.
     phase3: await phase3Metrics(env, start, end, now, ev),
     // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.
@@ -689,3 +751,35 @@ export async function metrics(env, url, now) {
   };
 }
 
+
+// 1.39 시작 [OBS2-08] 유형별 흐름·기능과 머묾 (사용자 2026-11-08 관측 데이터 카드 '유형별·기능 둘만', 처리방침 3.12 1-9항) ----------------------
+
+/** 앱 core KeepMarks.WINDOWS: 바로 전에 연 날 뒤 7일 안, 또는 8~30일 안에 다시 열었어요. */
+export const KEEP_WINDOWS = [7, 30];
+/** 쓴 날이 이보다 오래된 표시는 받지 않아요(휴대폰은 35일까지 기다려요). */
+export const KEEP_MAX_AGE_DAYS = 40;
+
+/** 꾸러미의 `style`: 일하는 방식 여섯 가지 중 하나만, 아니면 null. */
+export function kindOf(style) {
+  return typeof style === "string" && SETUP_STEPS.setup.includes(style) ? style : null;
+}
+
+/**
+ * `keep: [{day, win, events}]` → [day, win, event] 줄. 모양이 틀린 것은 꾸러미를 거절하지 않고 빼요. 진입·머묾(life_*)은 기능이 아니라 빼고,
+ * 같은 줄은 한 번만 세요.
+ */
+export function keepRows(keep, now = Date.now()) {
+  if (!Array.isArray(keep)) return [];
+  const latest = kstDay(now + DAY);
+  const oldest = kstDay(now - KEEP_MAX_AGE_DAYS * DAY);
+  const out = new Map();
+  for (const k of keep.slice(0, 40)) {
+    if (!k || typeof k !== "object" || typeof k.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(k.day)) continue;
+    if (k.day > latest || k.day < oldest || !KEEP_WINDOWS.includes(k.win) || !Array.isArray(k.events)) continue;
+    for (const e of k.events.slice(0, Object.keys(EVENTS).length)) {
+      if (typeof e === "string" && Object.hasOwn(EVENTS, e) && !e.startsWith("life_")) out.set(`${k.day}|${k.win}|${e}`, [k.day, k.win, e]);
+    }
+  }
+  return [...out.values()];
+}
+// 1.39 끝

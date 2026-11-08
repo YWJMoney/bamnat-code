@@ -58,7 +58,9 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T01:00:00Z") });
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
-  const { flags, policy, serverTime, ...old } = before;
+  const { flags, policy, serverTime, update, ...old } = before;
+  // 1.39 [LOOP-13] Play 인앱 업데이트 기준: 처음엔 둘 다 0(권하지 않음).
+  assert.deepEqual(update, { urgentMin: 0, flexibleMin: 0 });
   assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, workPlans: MONEY.workPlans, notices: [], off: [] });
   assert.equal(serverTime, "2026-11-20T01:00:00.000Z");
   assert.ok(flags.billing && policy.some((p) => p.version === "3.1"));
@@ -515,8 +517,12 @@ test("[FAM-01] family Pro: the owner's code, approved at once, no limit, cut any
   const paused = (await call("POST", `/api/admin/family/${momId}`, { do: "pause" }, owner)).data;
   assert.equal(paused.phones.find((d) => d.id === momId).paused, true);
   assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin, null);
+  // 1.39 [FAM-03] The paused phone is told so, apart from [admin] (an older app reads any admin as '승인 기다림').
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.familyPaused, true);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(12))).data.familyPaused, undefined, "only the paused phone");
   await call("POST", `/api/admin/family/${momId}`, { do: "resume" }, owner);
   assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.status, "approved");
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.familyPaused, undefined);
   const named = (await call("POST", `/api/admin/family/${momId}`, { do: "name", name: "우리 엄마" }, owner)).data;
   assert.equal(named.phones.find((d) => d.id === momId).name, "우리 엄마");
   assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.name, "가족");

@@ -25,6 +25,14 @@ object FlagCatalog {
     const val PLAZA_FIXED_AMOUNT = "plaza.fixed_amount"
     /** [STAT-08] 1.31 N4: how long lookups took (정해진 구간 값만), sent with 사용 통계 once 처리방침 3.5 names it. */
     const val STATS_LOOKUP = "stats.lookup"
+    /** 1.39 [SETUP-20]: how many taps first setup took (횟수 구간과 일하는 방식만), sent with 사용 통계 once 처리방침 3.12 names it. */
+    const val STATS_SETUP = "stats.setup"
+    /** 1.39 [STAT2-02]: 진입·머묾·회복 (처음 연 날, 1·7·30일째, 7·30일 넘게 쉬다 다시 연 날) as 사용 통계 counts, once 처리방침 3.12 names them. */
+    const val STATS_LIFE = "stats.life"
+    /** 1.39 [OBS2-08]: the kind of work chosen (교대·일근·알바·현장·자영업·투자) with the 진입·머묾 counts, once 처리방침 3.12 names it. */
+    const val STATS_KIND = "stats.kind"
+    /** 1.39 [OBS2-08]: which features were used on a day the phone came back to within 7·30 days, once 처리방침 3.12 names it. */
+    const val STATS_KEEP = "stats.keep"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
@@ -51,6 +59,14 @@ object FlagCatalog {
     const val SLEEP_SOUND = "sleep.sound"
     /** 1.38 [SLEEP-11] 공유한 달력에 '지금 자는 중'. */
     const val SLEEP_SHARE = "sleep.share"
+    /** 1.39 [PAYP-05] 보완 요청 on a company's shared way (글 종류·다른 곳 항목, 올린 분 소식), once 처리방침's next version names it. */
+    const val PLAZA_FIX_REQUEST = "plaza.fix_request"
+    /** 1.39 [CARE-01~06] 마을 돌봄(부드러운 경고 → 의견 쉬기·마을 쉬기, 확인한 것만 세는 단계), once 처리방침's next version names it. */
+    const val COMMUNITY_CARE = "community.care"
+    /** 1.39 [PLZC-01~16] 광장을 사람 먼저로: 이야기 흐름 첫 화면, 근무 태그(준 블라인드), 나도요, 렌즈 칩, once 처리방침 3.12 names the tag. */
+    const val PLAZA_PEOPLE = "plaza.people"
+    /** 1.39 G5-N4 가족 링크에 계획한 잠 시간(켜기 선택), once 처리방침 3.12 names it. */
+    const val SLEEP_PLAN_SHARE = "sleep.plan_share"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -117,6 +133,12 @@ object FlagCatalog {
      * yes or 11-29. A row added after 정식 출시 waits for its own version's date again (9항: 7일·30일 전 고지).
      */
     private const val EARLY = PolicyConsent.VERSION
+    /** 1.39 [PAYP-05] The 처리방침 version 1.39 ships with (보완 요청, PRIV-06 등 한 판); its dates come from the 관리자 앱 일정. */
+    const val FIX_REQUEST_POLICY = "3.12"
+    /** 1.39 [CARE-01] The 처리방침 version 1.39 ships with (공유 급여 보완 요청과 한 판); its dates come from the 관리자 앱 일정. */
+    const val CARE_POLICY = FIX_REQUEST_POLICY
+    /** 1.39 [PLZC-10] 광장 근무 태그: the same 3.12 (1.39 총괄 11-07). */
+    const val PEOPLE_POLICY = FIX_REQUEST_POLICY
 
     /** [FLAG-11] 정식 출시 retired: what the switch and the 3.1 hold did together (결정 D84). */
     private val launch: List<Condition> = listOf(
@@ -363,7 +385,117 @@ object FlagCatalog {
         conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
+    /**
+     * 1.39 [PAYP-05] (사용자 2026-11-07 "보완요청을 하면 어떤점이 다른거 같아요를 이야기할수 있게해서 제공한 사용자가 수정"): a new kind of post
+     * and a new line of 밤낮 소식, which 처리방침 1-4항 names only from its next version. Off until the owner turns it on at that
+     * version's date (관리자 앱 › 기능 관리), the rest of 1.39's shared pay changes (가리기·맞아요 순·급여 탭 잠금) need no flag.
+     */
+    val PLAZA_FIX_REQUEST_FLAG = Flag(
+        PLAZA_FIX_REQUEST, "공유 급여 보완 요청",
+        what = "회사 광장의 급여 방식 판에 ‘보완 요청’을 써요. 어디가 다른지(연장·야간·수당 등) 고르고 한 줄 적으면 그 판을 올린 분이 밤낮 소식으로 받아 고치거나 답해요. 다른 분은 ‘나도 그래요’를 눌러요.",
+        whyOff = "새 글 종류와 올린 분께 가는 소식이라 처리방침 3.12(1.39 출시 개정, 1-4항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 단추가 보이지 않고 서버도 받지 않아요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "PAYP-05", note = "1.39 공유 급여 비공개 (사용자 2026-11-07 '1.39 출시 때 자동으로 켜지게')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 1.39 [PLZC-01~16] (사용자 2026-11-07 "광장은 급여를 나누는 것 말고는 하는 것이 전혀 없어 … 유형별 태그를 달아 어떤 근무를 하는지 …
+     * 준 블라인드"): 광장 첫 화면이 이야기 흐름이 되고, 유형별 광장 글에 그 사람 달력 설정에서 저절로 붙는 근무 태그가 보여요. 태그는
+     * 처리방침 1-4항의 다음 판(3.12)에서 처음 적어요. 설계: 프로젝트 `계획/1.39-광장-커뮤니티-설계.md`.
+     */
+    val PLAZA_PEOPLE_FLAG = Flag(
+        PLAZA_PEOPLE, "광장 사람 먼저(근무 태그)",
+        what = "광장을 열면 이야기 흐름이 먼저 나오고, 회사 규칙·시세는 위쪽 문으로 가요. 유형별 광장 글에 그분 달력의 근무 설정에서 저절로 붙는 근무 태그(교대 · 4조 2교대 · 밤낮 7개월)가 보이고, ‘나와 같은 근무’·‘지금 근무 중’·‘답 기다리는 질문’으로 걸러 봐요. 이야기 글 반응은 ‘나도요’ 하나예요.",
+        whyOff = "근무 태그를 처리방침 3.12(1.39 출시 개정, 1-4항)에 적고 그 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 지금 광장 그대로이고 서버도 태그를 받지 않아요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "PLZC-10", note = "1.39 광장 커뮤니티 (사용자 2026-11-07, 총괄 '3.12에 묶음')"),
+        conditions = listOf(Condition.Date(policy = PEOPLE_POLICY), Condition.Policy(PEOPLE_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 1.39 [SETUP-20] (사용자 결정 2026-11-07 '추천대로', 발굴 G6 4-1 '처음 1분을 숫자로'): 설치부터 첫 설정을 저장해 달력이 찰 때까지
+     * 화면을 누른 횟수를, 정해진 구간 값 하나와 고른 일하는 방식만 이미 동의한 사용 통계에 실어요. 무엇을 눌렀는지·시각·휴대폰 구별은
+     * 없어요. 처리방침 3.12(1-9항 사용 통계 항목)의 시행일에 저절로 켜지고, 그 전에는 휴대폰 안에만 둬요.
+     */
+    val STATS_SETUP_FLAG = Flag(
+        STATS_SETUP, "첫 설정 누른 횟수 보내기",
+        what = "사용 통계를 켠 휴대폰이 처음 깔고 첫 설정을 저장할 때까지 화면을 누른 횟수를 정해진 구간 값(5·10·15번…)으로 한 번, 고른 일하는 방식(교대·일근 등)과 함께 보내요. 무엇을 눌렀는지와 시각은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 센 횟수를 휴대폰 안에만 두고, 사용 통계를 끄면 지워요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "SETUP-20", note = "1.39 발굴 G6 4-1 (사용자 결정 2026-11-07 '추천대로')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 1.39 [STAT2-02] (사용자 2026-11-08 "통계쪽 혁신 … 어플의 정상도 사용자 이탈 회복 진입 등 모든 것을 전반적으로"): 이미 동의한 사용 통계에
+     * 그날이 '처음 연 날'인지, 설치하고 1·7·30일째인지, 7일·30일 넘게 쉬다 다시 연 날인지를 다른 이벤트처럼 날마다 횟수로만 실어요. 설치한 날짜·
+     * 쉰 날 수 자체와 휴대폰 구별은 보내지 않아요. 처리방침 3.12(1-9항 사용 통계 항목)의 시행일에 저절로 켜지고, 그 전에는 세지 않아요.
+     */
+    val STATS_LIFE_FLAG = Flag(
+        STATS_LIFE, "처음 연 날·다시 연 날 보내기",
+        what = "사용 통계를 켠 휴대폰이 그날이 처음 연 날인지, 깐 지 1·7·30일째인지, 7일·30일 넘게 쉬다 다시 연 날인지를 다른 사용 통계처럼 날마다 횟수로만 보내요. 관리자 앱 › 숫자 › 한눈에서 진입·머묾·회복·이탈 어림으로 보여요. 설치한 날짜와 휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "STAT2-02", note = "1.39 통계 개편 (사용자 2026-11-08 '정상도·이탈·회복·진입')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 1.39 [OBS2-08] (사용자 2026-11-08 관측 데이터 카드 '유형별·기능 둘만', "통계를 통한 완전한 자가 발전"): 진입·머묾(life_*)과 첫 열기를
+     * 고른 일하는 방식별로도 세요. 방식 하나(여섯 가지 중)만 사용 통계 꾸러미에 붙고, 휴대폰 구별·회사·근무표는 없어요. 처리방침 3.12 시행일에
+     * 저절로 켜지고, 그 전에는 붙이지 않아요.
+     */
+    val STATS_KIND_FLAG = Flag(
+        STATS_KIND, "근무 유형별 흐름 보내기",
+        what = "사용 통계를 켠 휴대폰이 진입·머묾 횟수와 함께 고른 일하는 방식(교대·일근·알바·현장·자영업·투자 중 하나)을 보내요. 관리자 앱 › 숫자 › 한눈에서 유형마다 처음 연 날 → 1·7·30일째를 봐요. 회사·근무표·휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 방식을 붙이지 않아요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "OBS2-08", note = "1.39 관측 (사용자 결정 2026-11-08 '유형별·기능 둘만')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 1.39 [OBS2-08] 기능과 머묾: 그날 쓴 기능 이름을, 그 뒤 7일 안(또는 30일 안)에 다시 열었을 때만 '그날·창·이름'으로 보내요
+     * ([com.bamnat.core.stats.KeepMarks]). 서버가 그날 그 기능을 쓴 휴대폰 수로 나눠 '이 기능을 쓴 사람이 다시 오는지'를 봐요.
+     */
+    val STATS_KEEP_FLAG = Flag(
+        STATS_KEEP, "기능 쓴 뒤 다시 왔는지 보내기",
+        what = "사용 통계를 켠 휴대폰이 앱을 다시 열면, 바로 전에 연 날 쓴 기능 이름과 그 날, 7일 안에 왔는지 30일 안에 왔는지만 보내요. 관리자 앱이 기능마다 '쓴 사람이 7일 안에 돌아온 비율'을 전체와 견줘요. 며칠 만인지 정확한 수와 휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "OBS2-08", note = "1.39 관측 (사용자 결정 2026-11-08 '유형별·기능 둘만')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
+    /**
+     * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
+     * 타이트, 실제로 잘못된 행동을 하고 있을 때 제재"): 경고 기록과 운영자가 고르는 쉬기는 처리방침 1-4항과 광장 운영 규칙 6항의 다음 판에서
+     * 처음 적어요. 그 시행일(관리자 앱 › 기능 관리 › 일정의 3.12)에 저절로 켜지고, 그 전에는 1.36 신고 누적 제한(30일 안 2번) 그대로예요.
+     */
+    val COMMUNITY_CARE_FLAG = Flag(
+        COMMUNITY_CARE, "마을 돌봄(경고·쉬기)",
+        what = "마을에서 운영 원칙에 어긋난 글은 운영자가 확인한 것만 세고, 60일 안 1번은 안내, 2번은 경고, 3번부터 며칠 쓰는 횟수가 줄어요. 운영자는 경고를 먼저 보낸 뒤 1~30일 의견 쉬기·마을 쉬기를 걸 수 있어요. 앱은 마을을 열 때 안내를 한 번 보여 주고, 쉬는 동안 마을 맨 위에 한 줄로 알려요.",
+        whyOff = "경고 기록과 운영자 쉬기를 처리방침 3.12(1-4항)와 광장 운영 규칙 다음 판(6항)에 적고 그 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 신고 누적 쓰기 제한(30일 안 2번)이 그대로예요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "CARE-01", note = "1.39 마을 돌봄 (사용자 2026-11-07)"),
+        conditions = listOf(Condition.Date(policy = CARE_POLICY), Condition.Policy(CARE_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 1.39 G5-N4 (사용자 결정 1차 13번, 2026-11-07 "추천대로": 3.12 문장 넣고, 기본은 꺼짐 · 보내는 분이 켬): a family's link may carry the
+     * sleep the app planned around the work, two weeks of from~to and nothing else. 처리방침 names it from 3.12, so it opens on that date.
+     */
+    val SLEEP_PLAN_SHARE_FLAG = Flag(
+        SLEEP_PLAN_SHARE, "계획한 잠 시간 나누기",
+        what = "달력을 공유한 가족이 받은 달력에서 ‘오늘 09:00~16:00 잘 계획이에요’ 한 줄을 봐요. 앱이 근무에 맞춰 계획한 잘 시간(2주치 시작·끝)만 보내고, 실제 잔 기록·소리는 보내지 않아요. 공유 링크마다 보내는 분이 켜야 해요(기본 꺼짐).",
+        whyOff = "공유 서버로 계획한 잠 시간을 새로 보내니 처리방침 3.12의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 공유 창에 줄이 보이지 않아요.",
+        basis = Basis(policy = "3.12 1항", requirement = "SLEEP-11", note = "1.39 G5-N4 (사용자 결정 1차 13번)"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
             switchKey(s), SWITCH_NAMES.getValue(s),
@@ -376,7 +508,8 @@ object FlagCatalog {
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG) +
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

@@ -415,7 +415,10 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     // [SLP-03][SLP-04][SLP-06][SLP-07][SLP-14] Sleep that fits the schedule. Suggestions, not treatment.
     // 1.38 PC 12.4.1 빈틈 2 (투자에 오늘의 흐름 설명): the calendar shows 오늘의 흐름 only for work in shifts and hours (CalendarScreen
     // TODAY_FLOW), so 현장·가게·투자 keep the sleep settings without the switch for a card they never see.
-    val flowHere = settings.workStyle?.usesPayEngine != false
+    // 1.39 PC 12.5 '가게·현장 흐름 스위치': 현장·가게 that put 오늘의 흐름 on their calendar (달력 카드 배치 › 더 보기) get its switch here too.
+    val activeCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val flowAdded = com.bamnat.app.ui.guide.rememberFitAdded(activeCalendar)
+    val flowHere = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", settings.workStyle, flowAdded)
     SectionCard(title = if (flowHere) "오늘의 흐름" else "잠") {
         if (flowHere) SwitchRow("오늘의 흐름 보기", "달력 위에 한 줄로 지금 할 일과 잘 시간·다음 근무를 보여 줘요. 누르면 펼쳐져요. 날짜를 누르면 그날의 수면 제안도 보여요. 자리는 달력 › 도구 › 화면 꾸미기에서 옮겨요",
             settings.sleepTips) { v -> vm.update { it.copy(sleepTips = v) } }
@@ -435,14 +438,14 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     }
     // [SLP-01][MKT-07][MKT-11]
     SectionCard(title = "휴식 점검") {
-        SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 나이트가 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
+        SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
             vm.update { it.copy(restCheck = v) }
         }
         if (settings.restCheck) {
             // [REST-01] 1.21's '더 엄격하게' is a preset of the same 근무표 점검 기준 the calendar card opens.
             var rulesOpen by remember { mutableStateOf(false) }
             val r = settings.rules
-            NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, 연속 나이트 ${r.maxNightsInRow}일, 한 달 나이트 ${r.maxNightsPerMonth}개") {
+            NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, 연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일") {
                 rulesOpen = true
             }
             if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->
@@ -492,7 +495,7 @@ private fun NoticesPage(
     val context = LocalContext.current
     val canPost = remember(refresh) { Notifications.canPost(context) }
     val off = remember(refresh) {
-        listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
+        listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.SLEEPING_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
             Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID, Notifications.TODAY_CHANNEL_ID,
             // PC 8fe7d8b3: 밤낮 소식·문의 답 채널도 꺼져 있으면 여기서 바로 알려요.
             Notifications.PLAZA_CHANNEL_ID, Notifications.INQUIRY_CHANNEL_ID)
@@ -519,6 +522,24 @@ private fun NoticesPage(
         // [SET-02] The alarm's own switches are in 설정 › 알람 only.
         Note("${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
     }
+    // 1.39 [NTC-04] 알림 한눈에: 켜 둔 것·더 켤 수 있는 것(내 알림 규칙까지), 겹치는 것 표시.
+    SectionCard(title = "알림 한눈에") { NoticeBoardCard() }
+    // 1.39 [NTC-03] 앱 알림을 켜는데 같은 말을 하는 내 규칙이 켜져 있으면: 기존 설정을 바꿀까요?
+    var turnOnAsk by remember { mutableStateOf<Pair<com.bamnat.core.formula.NoticeOverlap.BuiltIn, List<com.bamnat.core.formula.LogicRule>>?>(null) }
+    fun turnOn(b: com.bamnat.core.formula.NoticeOverlap.BuiltIn, on: Boolean, change: (AppSettings) -> AppSettings) {
+        val store = com.bamnat.app.logic.LogicStore(context)
+        val same = if (on) com.bamnat.core.formula.NoticeOverlap.repeating(com.bamnat.core.formula.Logic.decode(settings.logic), b) { !store.isOff(it.key) } else emptyList()
+        if (same.isEmpty()) set(on, change) else turnOnAsk = b to same
+    }
+    turnOnAsk?.let { (b, same) ->
+        TurnOnAsk(b, same) { offRules ->
+            turnOnAsk = null
+            if (offRules != null) {
+                offRules.forEach { NoticeBoard.setRule(context.appContainer, it, false) }
+                set(true) { s -> NoticeBoard.OWN.first { it.key == b.key }.set(s, true) }
+            }
+        }
+    }
     val planned = settings.workStyle?.usesPayEngine != false
     // 1.38 PC 11차 식당 둘러보기 (퇴근길 안전: 야간, 52시간이 가게에 보임): what follows a 근무표 shows where there is one, and 퇴근길 안전
     // (the end of a night) to 교대 only; one already on still shows wherever, so it can be turned off.
@@ -538,7 +559,7 @@ private fun NoticesPage(
             set(on) { it.copy(bedtimeNotice = on) }
         }
         SwitchRow("자는 중 표시", "‘잠들었어요’를 누르면 알림창에 잔 시간과 다음 알람이 보이고, ‘깼어요’로 끝내요", settings.sleepingNotice,
-            warning = warning(settings.sleepingNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+            warning = warning(settings.sleepingNotice, Notifications.SLEEPING_CHANNEL_ID), onFix = fix(Notifications.SLEEPING_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
         }
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
@@ -559,7 +580,7 @@ private fun NoticesPage(
         Column(Modifier.focusMark("잠금 화면 오늘 근무")) {
             SwitchRow("잠금 화면 오늘 $lockWord", "오늘과 내일 $lockWord${Fmt.obj(lockWord)} 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
                 warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
-                set(on) { it.copy(todayShiftNotice = on) }
+                turnOn(com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY, on) { it.copy(todayShiftNotice = on) }
             }
         }
         // 1.38 [EASE-29] What the lock screen will say, with my today and tomorrow.
@@ -573,7 +594,7 @@ private fun NoticesPage(
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST && settings.workStyle != com.bamnat.core.work.WorkStyle.BUSINESS)
             SwitchRow(DAY_CLOSE_ROW, "근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요. 야간이면 다음 날 아침 퇴근 뒤예요",
                 settings.dayCloseNotice, warning = warning(settings.dayCloseNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
-                set(on) { it.copy(dayCloseNotice = on) }
+                turnOn(com.bamnat.core.formula.NoticeOverlap.BuiltIn.DAY_CLOSE, on) { it.copy(dayCloseNotice = on) }
             }
         // 1.38 [LEDH-24] 근무 전 한 줄 예고: 근무표가 있는 유형만.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT || settings.workStyle == com.bamnat.core.work.WorkStyle.DAY ||
@@ -606,6 +627,10 @@ private fun NoticesPage(
             settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(payDepositNotice = on) }
         }
+        // 1.39 [PAYX-62] 발굴 G3-M3: 알바만. 급여 화면 알바 카드의 '이 알림 끄기'로 끈 것을 여기서 다시 켜요.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) SwitchRow(com.bamnat.core.pay.WeekHoursNudge.ROW,
+            "이번 주 근무가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄로 알려 줘요. 주휴수당은 한 주 15시간부터예요(근로기준법 제18조 제3항)",
+            settings.weekHoursNudge) { on -> vm.update { it.copy(weekHoursNudge = on) } }
         if (leave) SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
@@ -746,16 +771,27 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow("휴대폰 배경색에 맞추기", "배경화면 색으로 앱의 색을 바꿔요", settings.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
         }
+        // 1.39 [FLOW-14][DSG-07] 밤 색: 끔, 수면 화면만(기본), 잘 시간엔 앱 전체, 휴대폰 따름.
+        NightLookRow(settings.nightLook) { k -> vm.update { it.copy(nightLook = k) } }
         // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
         AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
         // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
         SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
             settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
         // 1.38 [FLOW-08] 내 하루 이야기 줄.
-        SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요",
+        SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요. 달력 아래 카드로도 둘 수 있어요(날짜 화면의 ‘달력 아래에도 두기’ 또는 카드 배치 › ＋ 카드 넣기)",
             settings.dayStory) { on -> vm.update { it.copy(dayStory = on) } }
+        // 1.39 [FLOW-28] 하루 다이얼 on 오늘의 흐름, for work that has it (교대·일근·알바).
+        if (settings.workStyle?.usesPayEngine != false) SwitchRow("하루 다이얼", "오늘의 흐름에 하루 24시간을 원으로 보여 줘요. 근무는 근무 색 호, 잘 시간은 점선, 잔 시간은 칠한 호, 알람은 점, 지금은 바늘이에요",
+            settings.dayDial) { on -> vm.update { it.copy(dayDial = on) } }
+        // 1.39 [FLOW-30] 근무 기준 하루: where a small-hours note, spending or sleep belongs on a day with no work around it.
+        ChoiceRow("하루 시작 시각", "야간 근무 중 새벽에 적은 돈·메모·잠은 그 야간 날에 붙어요. 근무가 없는 날은 이 시각 전까지 어제로 쳐요",
+            listOf(0, 180, 240, 300, 360).map { it to if (it == 0) "자정" else "%02d:00".format(it / 60) }, settings.dayStartMinutes) { m ->
+            vm.update { it.copy(dayStartMinutes = m) }
+        }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
-        TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
+        // [NAV2-03] 1.39 the bar's five places, filled with any screen or a 묶음.
+        TabOrderRow(settings)
         // [CVW-07] 1.35 앱 동작: this section and the day's taps, shared as one piece.
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.APP_FEEL)
     }
@@ -832,6 +868,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(100 to "불투명", 85 to "조금 비침", 65 to "반쯤 비침", 40 to "많이 비침"), listOf(100, 85, 65, 40).minBy { kotlin.math.abs(it - wl.alpha) }) { a ->
             saveLook(wl.copy(alpha = a))
         }
+        // 1.39 PC 2afb3a76: the widgets' own parts (할 일 줄·동그라미·＋, 머리, 칸) are in 스튜디오 › 위젯; a row leads there.
+        NavRow("위젯 꾸미기 (스튜디오)", "오늘·주·달·할 일 위젯의 글자·색·모서리·부품을 하나씩 바꿔요") { SettingsLinks.go(SettingsGo.STUDIO_WIDGET) }
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.WIDGET)
         // [CAL-03] Unfolded, the day is always beside the calendar; this is for the cover screen and phones.
         ChoiceRow("날짜를 누르면", "접은 화면과 일반 휴대폰에서 " + when (settings.phoneDayView) {
@@ -849,7 +887,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }, listOf("menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기"), settings.longPress) { v -> vm.update { it.copy(longPress = v) } }
         // B 1.32 [CALX-04] (사용자 2026-10-28 "달력 화면 요소 모두 켜고 끄기"): every card at once; 화면 꾸미기 picks them one by one.
         SwitchRow("달력만 보기", "달력 위아래의 카드(요약·오늘의 흐름·근무시간 줄·메모 목록 등)를 모두 숨겨요. 하나씩 고르려면 달력 › 도구 › 화면 꾸미기",
-            settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on) } }
+            settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on, viewAsked = true) } }
         // B 1.32 [CALX-03] 한 번 눌러 고르기, for a calendar looked over day by day before anything opens.
         SwitchRow("한 번 눌러 고르기", "처음 누르면 그 날만 골라지고(테두리), 같은 날을 한 번 더 누르면 열려요. 잘못 눌러 화면이 열리는 일이 줄어요",
             settings.tapSelectFirst) { on -> vm.update { it.copy(tapSelectFirst = on) } }
@@ -959,6 +997,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         HorizontalDivider()
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
+    }
+    // 1.39 [SPREAD-05] The corner '밤낮' on pictures that leave the phone, on until the user turns it off.
+    SectionCard(title = "보내는 사진") {
+        SwitchRow(EXPORT_MARK_ROW, if (settings.exportMark) "근무표 사진 오른쪽 아래, 견적서·거래내역서 맨 아래에 작게 들어가요. 받은 분이 앱을 찾을 수 있어요"
+            else "근무표·견적서·거래내역서 사진에 밤낮 표시 없이 보내요", settings.exportMark) { on -> vm.update { it.copy(exportMark = on) } }
     }
     if (vm.shareOn) ShareLinkRows()
 }
@@ -1072,10 +1115,14 @@ private fun PrivacyPage(
         // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
         var forgetting by remember { mutableStateOf(false) }
         var forgot by remember { mutableStateOf<String?>(null) }
-        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의를 서버에서 지워요") { forgetting = true }
+        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요") { forgetting = true }
+        // 1.39 [PRIV-06] What links it cuts, read when it asks (none said for a phone that made none).
+        var links by remember { mutableStateOf<String?>(null) }
+        val app = context.appContainer
+        androidx.compose.runtime.LaunchedEffect(forgetting) { if (forgetting) links = runCatching { com.bamnat.app.share.ShareForget.held(app) }.getOrNull() }
         if (forgetting) ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = com.bamnat.app.ui.company.FORGET_ALL_WORDS,
+            message = (links?.let { "$it.\n\n" } ?: "") + com.bamnat.app.ui.company.FORGET_ALL_WORDS,
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },
@@ -1383,6 +1430,8 @@ internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
 internal const val WORK_TIME_ROW = "큰 지출을 근무 시간으로"
+/** 1.39 [SPREAD-05] 설정 › 데이터, also found by search. */
+internal const val EXPORT_MARK_ROW = "보내는 사진에 밤낮 표시"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 /** 1.32 [WTYP-12] */
 internal const val STRETCH_ROW = "연속 근무 경고"
@@ -1467,3 +1516,12 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
         confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/** 1.39 [FLOW-14][DSG-07] 밤 색, here and on the sleep screen: the four choices with what each does. */
+@Composable
+internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
+    val now = com.bamnat.core.design.NightLook.of(key)
+    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onPick)
+}
+
+internal const val NIGHT_LOOK_ROW = "밤 색"

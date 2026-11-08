@@ -13,8 +13,10 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
-import { FORMULA, formulaProblem, formulaTextProblem } from "./formula.js";
+import { careGate, careRepeat } from "./community-care.js";
+import { makerMarks, markFields } from "./maker-mark.js";
+import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys, fxReadsLink } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 import { waitingPhotos } from "./photo-guard.js";
@@ -144,8 +146,11 @@ export const PART_IDS = [
   "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
   "pay.head", "pay.total", "pay.row",
   "widget", "widget.head", "widget.cell",
+  // 1.39 [FLOW-21] 밤 화면·아침 한 장
+  "night", "night.date", "night.clock", "night.line", "night.card", "night.button", "night.morning",
+  "widget.task", "widget.task.check", "widget.task.add",
 ];
-const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel", "dark"];
+const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "leave", "extra", "cover", "edited", "in", "out", "sat", "sun", "holiday", "dim", "today", "late", "done", "sel", "dark"];
 const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
   : PART_IDS.includes(id.slice(0, id.lastIndexOf("."))) ? id.slice(0, id.lastIndexOf(".")) : "app");
 const PART_CHILDREN = {};
@@ -204,12 +209,23 @@ const memoSort = (s) => s === "" || s === "title" || (s.replace(/^-/, "").starts
 
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 // 1.36 [RUL-03][RUL-04] core formula/Logic.kt: where a button sits, the safe verbs, when a rule runs; a formula may compare amounts.
-const BUTTON_PLACES = ["day", "memo", "cal", "money", "decor"];
-const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome", "envelope"];
-const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold"];
+// 1.39 [FX-04] widget·tile·shortcut: 단추 위젯·빠른 설정·앱 바로가기 (프로 기능 장치).
+const BUTTON_PLACES = ["day", "memo", "cal", "money", "decor", "widget", "tile", "shortcut"];
+// 1.39 [FX-03] valAdd·valSet: 값 칸 (core LogicVerb).
+const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome", "envelope", "valAdd", "valSet", "valStamp", "valText"];
+const VALUE_VERBS = ["valAdd", "valSet", "valStamp", "valText"];
+const VALUE_KINDS = ["num", "time", "text"];
+const VALUE_RESETS = ["day", "week", "month", "never"];
+// core MemoProps.isLabel, 12 letters (LogicValue.isName).
+const valueName = (s) => (s.length <= 12 && propLabel(s) ? null : "name");
+const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold", "value", "every", "alarmOff"];
 const logicGuard = (s) => textProblemExcept(s, "amount") ?? (investAdvice(s) ? "invest_advice" : null);
 const logicFormula = (s) => (s === "" ? null : formulaProblem(s) ?? logicGuard(s));
 const logicText = (s) => (s === "" ? null : formulaTextProblem(s) ?? logicGuard(s));
+// 1.39 [FX-11] One act of a 동작 줄 (core PieceCatalog LOGIC_ACT_MORE·LOGIC_ACT).
+const LOGIC_ACT_MORE = [TS("then", 2, 12), N("after", 1, 720, { optional: true }), T("text", 24, { optional: true, guard: false, check: logicText })];
+const LOGIC_ACT = [P("do", LOGIC_VERBS), T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
+  N("by", -1_000_000, 1_000_000, { decimals: 2, optional: true }), ...LOGIC_ACT_MORE];
 export const RECIPE_PIECES = {
   shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", 20, { min: 1 }), P("role", ROLES),
     T("label", 2, { min: 1, check: (s) => (graphemes(s) > 2 ? "label" : null) }), C("color"), E("emoji")], { min: 1 })] },
@@ -293,10 +309,22 @@ export const RECIPE_PIECES = {
     // 누락 점검 N8: id (core LogicButton.ID), what a 꾸밈 항목 tap names.
     I("buttons", 8, [T("id", 12, { optional: true, guard: false, check: (s) => (/^[a-z0-9]{1,12}$/.test(s) ? null : "id") }), T("label", 16, { min: 1 }), E("emoji", { input: false }), P("where", BUTTON_PLACES), P("do", LOGIC_VERBS),
       T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
-      T("show", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula })], { optional: true }),
-    I("rules", 12, [T("name", 20, { min: 1 }), P("on", RULE_TRIGGERS), N("min", -720, 720, { optional: true }), K("at", { optional: true, input: false }),
+      T("show", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula }), N("by", -1_000_000, 1_000_000, { decimals: 2, optional: true }),
+      ...LOGIC_ACT_MORE,
+      // 1.39 [FX-11] 그리고/아니면, 동작 줄 (core PieceCatalog LOGIC_ACT).
+      T("if", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula }), I("more", 3, LOGIC_ACT, { optional: true }), I("else", 3, LOGIC_ACT, { optional: true })], { optional: true }),
+    I("rules", 12, [T("name", 20, { min: 1 }), P("on", RULE_TRIGGERS), N("min", -720, 720, { optional: true, input: true }), K("at", { optional: true, input: false }),
       P("role", ROLES, { optional: true }), T("when", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula }), P("do", LOGIC_VERBS),
-      T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true })], { optional: true }),
+      T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
+      N("by", -1_000_000, 1_000_000, { decimals: 2, optional: true }), TS("then", 2, 12),
+      N("after", 1, 720, { optional: true }), T("text", 24, { optional: true, guard: false, check: logicText }),
+      // 1.39 [FX-11] 동작 줄·아니면, [FX-12] 값이 바뀌면, [FX-15] 몇 분마다.
+      I("more", 3, LOGIC_ACT, { optional: true }), I("else", 3, LOGIC_ACT, { optional: true }), T("of", 12, { optional: true, check: valueName }),
+      P("edge", ["goal"], { optional: true }), K("until", { optional: true, input: false }), P("during", ["work"], { optional: true })], { optional: true }),
+    // 1.39 [FX-03] 값 칸 (core LogicValue); [FX-19] 목표는 받는 사람 칸이어도 돼요.
+    I("values", 8, [T("name", 12, { min: 1, check: valueName }), P("reset", VALUE_RESETS, { optional: true }),
+      N("start", -1_000_000, 1_000_000, { decimals: 2, optional: true }), N("goal", 0, 1_000_000, { decimals: 2, optional: true, input: true }),
+      T("unit", 4, { optional: true }), P("kind", VALUE_KINDS, { optional: true })], { optional: true }),
   ] },
   // [LAY-01] 1.36 꾸밈 층 (core Decor.FIELDS, same order and ranges).
   decor: { styles: STYLES, fields: [I("items", DECOR_MAX, [
@@ -816,6 +844,45 @@ export async function sha256hex(text) {
 }
 
 /** [text] (as sent) read, cleaned and written: {recipe, text, hash}. Throws RecipeError. */
+/** [PAYP-08] cleanRecipe's {recipe, text, hash} as others may read it. */
+async function sharedOnly(clean) {
+  const out = await sharedPayOut(clean.text, clean.hash);
+  return out.body === clean.text ? {} : { text: out.body, hash: out.hash, recipe: JSON.parse(out.body) };
+}
+
+/**
+ * 1.39 [PAYP-08] (사용자 2026-11-07 "급여 계산 정보는 공개되면 안될 정보"; 숨은 문제 발굴 P0-1 ①): the 근무 주기·급여 방식 piece
+ * carries the company file, pay part and all. A recipe others can read (공개·링크) keeps its shifts and order, never the pay part:
+ * shared pay ways go through the company 광장, which never shows them ([PAYP-01]). Taken out when a recipe is put up and again
+ * when one put up before 1.39 is read, with its hash for the text as served. A 나만 보기 recipe is the maker's own and keeps it.
+ */
+export async function sharedPayOut(text, hash) {
+  if (typeof text !== "string" || !text.includes('"company"')) return { body: text, hash };
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return { body: text, hash };
+  }
+  let changed = false;
+  for (const p of Array.isArray(v?.pieces) ? v.pieces : []) {
+    if (p?.kind !== "company" || typeof p.setup !== "string") continue;
+    try {
+      const file = JSON.parse(p.setup);
+      if (file && typeof file === "object" && file.pay !== undefined) {
+        delete file.pay;
+        p.setup = JSON.stringify(file);
+        changed = true;
+      }
+    } catch {
+      // A piece cleanRecipe let in always parses; anything else is left as it is.
+    }
+  }
+  if (!changed) return { body: text, hash };
+  const out = recipeCanonical(v);
+  return { body: out, hash: await sha256hex(out) };
+}
+
 export async function cleanRecipe(textOrObject) {
   const textIn = typeof textOrObject === "string" ? textOrObject : recipeCanonical(textOrObject);
   if (new TextEncoder().encode(textIn).length > RECIPE.maxBytes) fail("too_big");
@@ -921,6 +988,9 @@ export const RECIPE_COLUMNS = [
   "ALTER TABLE recipes ADD COLUMN release_at INTEGER",
   "ALTER TABLE recipes ADD COLUMN min_app INTEGER",
   "ALTER TABLE recipes ADD COLUMN batch TEXT",
+  // 1.39 판 정리 (작품 갈래 부탁): a retired work stays in the lists of apps below this versionCode, whose 장터 would otherwise be
+  // nearly empty (the new 판's works are min_app 53 and newer). null: off for every app.
+  "ALTER TABLE recipes ADD COLUMN retired_below INTEGER",
 ];
 
 export function newCode() {
@@ -987,7 +1057,7 @@ const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`
  * [MKX-01] 1.36 장터 두 구간 (사용자 2026-10-31 "테마는 모든 것을 종합으로 만든 것이고 기능별은 한 개의 탭을 전문적으로"): the tabs a
  * recipe changes — calendar, pay (근무·급여·통계), money (가계부·장부), memo, alarm, widget, app (앱 전체 색·아래 탭·모서리·느낌).
  */
-export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget"];
+export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget", "night"];
 const SCREEN_TAB = { calendar: "calendar", memo: "memo", money: "money", stats: "pay", alarm: "alarm", all: "app", settings: "app", guarded: "app", plaza: "app" };
 
 export function tabsOf(body) {
@@ -1013,6 +1083,7 @@ export function tabsOf(body) {
         for (const x of [...(p.buttons ?? []), ...(p.rules ?? [])]) {
           if (["memoTpl", "newMemo", "checkReset", "memoLine"].includes(x.do) || x.on === "memo" || x.where === "memo") out.add("memo");
           if (["addMoney", "addIncome", "envelope"].includes(x.do) || x.on === "money" || x.where === "money") out.add("money");
+          if (x.where === "widget") out.add("widget");
         }
         break;
       case "tabView":
@@ -1033,7 +1104,7 @@ export function tabsOf(body) {
       case "parts":
         for (const l of Array.isArray(p.parts) ? p.parts : []) {
           const root = String(l?.id ?? "").split(".")[0];
-          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget" }[root];
+          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget", night: "night" }[root];
           if (tab) out.add(tab);
         }
         break;
@@ -1127,7 +1198,7 @@ export function scopeOf(tabs, body) {
  * (cal.* → calendar, memo.* → memo, money.* → money, pay.* → pay, app.* → app, widget.* → widget), a button's place and a rule's verb.
  */
 export const MARKET_SCOPES = ["theme", "tab", "part", "logic"];
-const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm" };
+const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm", night: "night" };
 const LOGIC_TAB = { day: "calendar", cal: "calendar", calendar: "calendar", memo: "memo", memoTpl: "memo", newMemo: "memo", checkReset: "memo", memoLine: "memo",
   money: "money", addMoney: "money", addIncome: "money", envelope: "money", notify: "alarm", pay: "pay", stats: "pay", alarm: "alarm" };
 // D 갈래: 'screen' 동작은 arg가 보낼 탭이에요.
@@ -1165,12 +1236,141 @@ export function sectionOf(body) {
   return { scope: kinds.has("logic") ? "logic" : "part", tabs: [...out].sort(), ...(kinds.has("logic") ? {} : { unit }) };
 }
 
+/**
+ * 1.39 [MKC-01] 장터 분류 다시 (사용자 2026-11-07 "테마는 모든 것을 꾸민 모습, 각 탭별로 기능이나 디자인 한 제작물, 도구 또한 분류"):
+ * 맨 위 세 구간 테마 · 탭별 작품 · 도구. 탭별 작품은 꾸미기(모양)·기능(틀·묶음·규칙)으로, 도구(옛 부품·규칙·단추)는 부품·자동 규칙·단추로 나눠요.
+ * - LOOK_PIECES: 모양만 바꾸는 조각 (BuiltInThemes.LOOK_KINDS와 근무 꾸미기). 나머지는 기능.
+ */
+export const LOOK_PIECES = ["screenLook", "calView", "calTheme", "memoLook", "moneyLook", "widget", "photoLook", "layout", "cards", "parts", "decor", "tabView", "shiftLook"];
+/** 도구 종류 (scope part·logic). */
+export const TOOL_KINDS = ["part", "rule", "button"];
+/** 탭별 작품·테마가 무엇을 바꾸는지: "look" 꾸미기만, "func" 기능만, "both" 둘 다; 조각이 없으면 null. */
+export function madeOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return null;
+  }
+  const kinds = (rec?.pieces ?? []).map((p) => p?.kind).filter(Boolean);
+  if (!kinds.length) return null;
+  const look = kinds.some((k) => LOOK_PIECES.includes(k));
+  const func = kinds.some((k) => !LOOK_PIECES.includes(k));
+  return look && func ? "both" : look ? "look" : "func";
+}
+/** 도구의 종류 (부품·자동 규칙·단추): 규칙과 단추를 함께 담으면 둘 다예요. 도구가 아니면 빈 목록. */
+export function toolsOf(body, scope) {
+  if (scope !== "part" && scope !== "logic") return [];
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return [];
+  }
+  const out = new Set();
+  for (const p of rec?.pieces ?? []) {
+    if (p?.kind === "parts" || p?.kind === "tabView") out.add("part");
+    if (p?.kind === "logic") {
+      if ((p.rules ?? []).length) out.add("rule");
+      if ((p.buttons ?? []).length) out.add("button");
+    }
+  }
+  return TOOL_KINDS.filter((t) => out.has(t));
+}
+
+/**
+ * 1.39 [FX-01] 프로 문 (core formula/FxPro.uses, the same list in the same order): the 1.39 기능 장치 a work's 규칙·단추 use, each needing 프로
+ * to put in and to use. Empty when everything in it is free (모양, 1.38까지의 규칙·단추).
+ */
+export const FX_PARTS = ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "reach", "look", "link"];
+/** core LogicVerb.NEW_SCREENS: screens a 화면 열기 reaches from 1.39 on ([FX-21]). */
+const FX_NEW_SCREENS = ["sleep", "night"];
+/** core FxPro.NEW_LOOKS: 1.39 새 화면 모양 부품 (piece kind, or a prefix ending in "."), [FX-22]. */
+export const FX_NEW_LOOKS = [
+  // G8 FLOW-21 밤 화면·아침 한 장 (설계도 부품)
+  "night", "night.",
+];
+const fxNewLook = (id) => typeof id === "string" && FX_NEW_LOOKS.some((k) => id === k || (k.endsWith(".") && id.startsWith(k)));
+/** core FxPro.SINCE_APP: the first app (versionCode) that reads them; a work with one is kept from older apps (min_app). */
+export const FX_SINCE_APP = 53;
+const FX_AGAIN = ["again10", "again60"];
+const FX_HISTORY = ["PAST", "STREAK", "TOTAL", "MEAN", "SINCE"];
+/**
+ * 사용자 2026-11-07 18:38 '하나씩 무료 맛보기' (core FxPro.TASTE): the first 값 칸 when it is a number, and the first 단추 위젯 button
+ * counting it (or doing a 1.38 thing), are free; the rest of the 1.39 기능 장치 is 프로.
+ */
+/** core FxPro.LINK_STATES (DayWork.STATES): 대근·잔업·특근·연차·직접 바꾼 날. */
+const FX_LINK_STATES = ["leave", "extra", "cover", "edited"];
+const fxLinkLine = (l) => !!l && typeof l === "object" && (FX_LINK_STATES.includes(l.on) || fxReadsLink(l.when) ||
+  Object.values(l).some((v) => v && typeof v === "object" && typeof v.fx === "string" && fxReadsLink(v.fx)));
+
+export function fxPartsOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return [];
+  }
+  const out = new Set();
+  const reads = (src, text, add) => {
+    if (fxReadsLink(src, text)) add("link");
+    const calls = fxCallKeys(src, text);
+    if (calls.includes("VALUE")) add("valueRead");
+    if (calls.some((c) => FX_HISTORY.includes(c))) add("history");
+  };
+  const add = (k) => out.add(k);
+  const act = (a, taste) => {
+    if (VALUE_VERBS.includes(a.do) && !(taste && a.arg === taste && (a.do === "valAdd" || a.do === "valSet"))) add("valueAct");
+    if ((a.then ?? []).some((t) => !FX_AGAIN.includes(t))) add("notifyButtons");
+    if (a.after !== undefined) add("time");
+    if (a.do === "screen" && FX_NEW_SCREENS.includes(a.arg)) add("reach");
+    if (["notify", "memoLine", "newMemo", "valText"].includes(a.do)) { reads(a.arg, true, add); reads(a.text, true, add); }
+  };
+  for (const p of rec?.pieces ?? []) {
+    if (fxNewLook(p?.kind) || (p?.kind === "parts" && (p.parts ?? []).some((x) => fxNewLook(x?.id)))) add("look");
+    // 1.39 [LINK-03] core FxPro.links: 부품 꾸미기 lines and 꾸밈 층 items on the new day states or reading the new names.
+    if (p?.kind === "parts" && (p.parts ?? []).some(fxLinkLine)) add("link");
+    if (p?.kind === "decor" && (p.items ?? []).some((x) => FX_LINK_STATES.includes(x?.on))) add("link");
+    if (p?.kind !== "logic") continue;
+    const bs = p.buttons ?? [];
+    const rs = p.rules ?? [];
+    const vs = p.values ?? [];
+    const taste = vs[0] && (vs[0].kind ?? "num") === "num" ? vs[0].name : null;
+    if (vs.length > 1 || (vs.length === 1 && !taste)) add("values");
+    const firstWidget = bs.find((b) => b.where === "widget");
+    for (const b of bs) {
+      if (b.where === "tile" || b.where === "shortcut" || (b.where === "widget" && b !== firstWidget)) add("outside");
+      act(b, taste);
+      for (const a of [...(b.more ?? []), ...(b.else ?? [])]) act(a, null);
+      if ((b.more ?? []).length || (b.else ?? []).length || b.if) add("chain");
+      reads(b.show, false, add);
+      reads(b.if, false, add);
+    }
+    for (const r of rs) {
+      for (const a of [r, ...(r.more ?? []), ...(r.else ?? [])]) act(a, null);
+      if ((r.more ?? []).length || (r.else ?? []).length) add("chain");
+      if (r.on === "value") add("valueRule");
+      if (r.on === "every") add("time");
+      if (r.on === "alarmOff") add("reach");
+      reads(r.when, false, add);
+    }
+  }
+  return FX_PARTS.filter((k) => out.has(k));
+}
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
   const { scope, tabs, unit } = r.body ? sectionOf(r.body) : { scope: null, tabs: [] };
+  const made = r.body && (scope === "tab" || scope === "theme") ? madeOf(r.body) : null;
+  const tools = r.body ? toolsOf(r.body, scope) : [];
+  const fx = r.body ? fxPartsOf(r.body) : [];
   return {
+    // 1.39 [FX-01] 프로 기능 장치: the card says '프로 기능' and what.
+    ...(fx.length ? { fx } : {}),
     ...(unit ? { unit } : {}),
+    ...(made ? { made } : {}),
+    ...(tools.length ? { tools } : {}),
     ...(look ? { look } : {}),
     // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
     ...(tabs.length ? { tabs } : {}),
@@ -1212,6 +1412,32 @@ async function readDevice(d, request, body) {
 }
 
 const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
+
+/**
+ * 1.39 [TASK-07] Parts and states an older app cannot read (its RecipeCodec refuses the whole recipe on a name it does not know), each
+ * with the first versionCode that reads it. A maker's recipe that uses one is listed only to apps that new ([partsMinApp] → min_app).
+ */
+export const PARTS_SINCE = {
+  ids: { "widget.task": 53, "widget.task.check": 53, "widget.task.add": 53 },
+  // 1.39 [LINK-01] 근무 입력 상태 (연차·잔업·특근·대근·직접 바꾼 날): parts lines and 꾸밈 층 items alike.
+  states: { late: 53, done: 53, leave: 53, extra: 53, cover: 53, edited: 53 },
+};
+const DECOR_SINCE = { leave: 53, extra: 53, cover: 53, edited: 53 };
+
+/** 1.39 [TASK-07] The versionCode a recipe's parts lines need ([PARTS_SINCE]), or null when any app reads them. */
+export function partsMinApp(recipe) {
+  let need = 0;
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== "object") return;
+    if (typeof v.id === "string" && PARTS_SINCE.ids[v.id]) need = Math.max(need, PARTS_SINCE.ids[v.id]);
+    if (typeof v.on === "string" && PARTS_SINCE.states[v.on] && typeof v.id === "string" && PART_IDS.includes(v.id)) need = Math.max(need, PARTS_SINCE.states[v.on]);
+    if (typeof v.on === "string" && DECOR_SINCE[v.on] && typeof v.at === "string") need = Math.max(need, DECOR_SINCE[v.on]);
+    Object.values(v).forEach(walk);
+  };
+  walk(recipe);
+  return need || null;
+}
 
 /** 1.36 [MKS-01] The list's app= (the phone's versionCode), 0 when absent or odd. */
 export function appCodeOf(url) {
@@ -1279,11 +1505,14 @@ async function recipeList(d, env, url) {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 30);
   const cursor = Math.max(0, Math.min(600, Number(url.searchParams.get("cursor")) || 0));
   const now = Date.now();
-  const where = ["r.state = 'visible'", "r.scope = 'public'"];
-  const args = [];
+  const app = appCodeOf(url);
+  // 1.39 판 정리: a retired work with retired_below stays listed for apps older than that (an app sending no app= is before 1.36).
+  const where = [`(r.state = 'visible' OR (r.state = 'hidden' AND r.hidden_reason = '${RETIRED}' AND r.retired_below IS NOT NULL AND ? < r.retired_below))`,
+    "r.scope = 'public'"];
+  const args = [app];
   // 1.36 [MKS-01] An app sends its versionCode as app=; one that sends none (before 1.36) never sees a min_app recipe it cannot read.
   where.push("(r.min_app IS NULL OR r.min_app <= ?)");
-  args.push(appCodeOf(url));
+  args.push(app);
   if (style && ALL_STYLES.has(style)) {
     where.push("(',' || r.styles || ',') LIKE ?");
     args.push(`%,${style},%`);
@@ -1309,15 +1538,29 @@ async function recipeList(d, env, url) {
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
   // 1.36 [MKX-05] and scope=part / scope=logic (부품·규칙·단추), each with an optional tab= of the tab it touches.
-  const scope = MARKET_SCOPES.includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  // 1.39 [MKC-01] scope=tool: 도구 (부품과 규칙·단추를 함께), tool=part|rule|button으로 좁혀요. 탭별 작품은 made=look|func (둘 다 담은 것은 양쪽에).
+  const scope0 = url.searchParams.get("scope");
+  const scope = MARKET_SCOPES.includes(scope0) || scope0 === "tool" ? scope0 : null;
   const tab = scope && scope !== "theme" && [...MARKET_TABS, "app"].includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
   // A 갈래 '부품 하나': scope=part&unit=cal.head.
   const unit = scope === "part" && /^(part:)?[a-z]+(\.[A-Za-z]+)?$/.test(url.searchParams.get("unit") ?? "") ? url.searchParams.get("unit") : null;
+  const made = (scope === "tab" || scope === "theme") && ["look", "func"].includes(url.searchParams.get("made")) ? url.searchParams.get("made") : null;
+  const tool = scope === "tool" && TOOL_KINDS.includes(url.searchParams.get("tool")) ? url.searchParams.get("tool") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
-  const rows = scope ? rows0.filter((r) => {
+  // 1.39 [FX-01] fx=1: only the works with a 프로 기능 장치 (the '✦ 프로 기능' chip), with any scope or none.
+  // 1.39 [FX-01] fx=1 기능 작품만(✦ 프로 기능), fx=0 무료로 다 되는 것만 (장터 MKD-11).
+  const fxWant = url.searchParams.get("fx");
+  const rows1 = fxWant === "1" ? rows0.filter((r) => fxPartsOf(r.body).length > 0) : fxWant === "0" ? rows0.filter((r) => fxPartsOf(r.body).length === 0) : rows0;
+  const rows = scope ? rows1.filter((r) => {
     const s = sectionOf(r.body);
-    return s.scope === scope && (!tab || (scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) && (!unit || s.unit === unit);
-  }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
+    const inScope = scope === "tool" ? s.scope === "part" || s.scope === "logic" : s.scope === scope;
+    if (!inScope) return false;
+    if (tab && !(scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) return false;
+    if (unit && s.unit !== unit) return false;
+    if (made) { const m = madeOf(r.body); if (m !== made && m !== "both") return false; }
+    if (tool && !toolsOf(r.body, s.scope).includes(tool)) return false;
+    return true;
+  }) : kind ? rows1.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows1;
   let scored = rows;
   if (sort === "good") {
     scored = rows.map((r) => ({ r, s: rankGood(r.wlikes, r.wdislikes, r.applied, r.kept7) })).filter((x) => x.s !== null)
@@ -1331,25 +1574,46 @@ async function recipeList(d, env, url) {
   const newMaker = (r) => r.owner !== "operator" && counts.get(r.owner) === 1 && now - r.created_at < NEW_MAKER_DAYS * DAY;
   if (sort === "hot" || sort === "good") scored = withNewMakers(scored, newMaker);
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
-  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}), items: page.map((r) => listItem(r, now)),
+  // 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): body=1 sends each work's written form and hash with its
+  // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
+  const withBody = url.searchParams.get("body") === "1";
+  // 1.39 [PLZC-40] 만든 분 표식·팔로워 수(장터 카드의 만든 분 줄).
+  const marks = await makerMarks(d, env, page.map((r) => r.maker), now);
+  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
+    // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part.
+    items: await Promise.all(page.map(async (r) => ({ ...listItem(r, now), ...markFields(marks, r.maker),
+      ...(withBody ? await sharedPayOut(r.body, r.hash) : {}) }))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
+
+/**
+ * 1.39 판 정리 (사용자 2026-11-07 "서버에 숨긴처리 하는 로직이 있는지 확인하고 없다면 신설"): the operator's works a new 판 replaces are
+ * taken off the 장터 with hidden_reason 'retired', never deleted. They leave the lists, 찾기 and 추천 (those read state 'visible'), but
+ * whoever has the code (one already put in, a link) still opens it, sees its new 판 and keeps 쓰는 중 counted. A hide by the operator
+ * or by reports ('admin', 'flags') still closes it to everyone but its maker.
+ */
+export const RETIRED = "retired";
+const openable = (r) => r.state === "visible" || (r.state === "hidden" && r.hidden_reason === RETIRED);
 
 /** GET /api/recipes/:code — the recipe for anyone with its code (link-only too), its own for the maker whatever its state. */
 async function show(d, env, request, code, url) {
   const dev = await readDevice(d, request, null);
   const r = await d.one(env, "SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE r.code = ?", code);
   const mine = Boolean(r && dev && r.owner === dev);
-  if (!r || r.state === "deleted" || (!mine && (r.state !== "visible" || r.scope === "private"))) return d.json({ error: "not_found" }, 404);
+  if (!r || r.state === "deleted" || (!mine && (!openable(r) || r.scope === "private"))) return d.json({ error: "not_found" }, 404);
   const ver = Number(url.searchParams.get("v"));
   let version = { version: r.version, hash: r.hash, body: r.body };
   if (Number.isInteger(ver) && ver > 0 && ver !== r.version) {
     const old = await d.one(env, "SELECT version, hash, body FROM recipe_versions WHERE code = ? AND version = ?", code, ver);
     if (old) version = old;
   }
+  // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
+  if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
-  const out = { ...listItem(r, Date.now()), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
+  const out = { ...listItem(r, Date.now()), ...markFields(await makerMarks(d, env, [r.maker]), r.maker), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}),
+    // 1.39 판 정리: off the 장터, still the wearer's (the app says so and keeps what is put in).
+    ...(r.state === "hidden" && r.hidden_reason === RETIRED ? { retired: true } : {}) };
   if (mine) {
     // The maker sees where it stands and every 안좋아요's reason, without who (결정 D107, 처리방침 3.8).
     const reasons = await d.all(env, "SELECT reason, opinion, at FROM recipe_votes WHERE code = ? AND value = -1 AND held = 0 ORDER BY at DESC LIMIT 100", code);
@@ -1394,23 +1658,29 @@ async function publish(d, env, request) {
     ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
+  // 1.39 [PAYP-08] What others can read carries no company pay part.
+  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  // 1.39 [FX-17] A 기능 작품 others can see needs its maker's 프로 (the app asks first; this is the same line on the server).
+  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
   const r = clean.recipe;
   const skel = nameSkeleton(r.title);
   // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
   const same = await d.one(env, "SELECT code FROM recipes WHERE title_skel = ? AND owner != ? AND state IN ('visible', 'pending') LIMIT 1", skel, dev);
   if (same && scope === "public") return d.json({ error: "name_like", field: "title", code: same.code }, 409);
-  if (r.parent && !(await d.one(env, "SELECT 1 AS ok FROM recipes WHERE code = ? AND state = 'visible'", r.parent))) {
+  if (r.parent && !(await d.one(env, `SELECT 1 AS ok FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, r.parent))) {
     return d.json({ error: "parent", field: "parent" }, 400);
   }
   const state = scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
   let code = newCode();
   while (await d.one(env, "SELECT 1 AS x FROM recipes WHERE code = ?", code)) code = newCode();
   await d.batch(env, [
-    d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at, maker)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
-    state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev)),
+    d.stmt(env, `INSERT INTO recipes (code, owner, title, title_skel, summary, styles, cover, scope, state, parent, version, hash, body, created_at, updated_at, maker, min_app)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
+    state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev),
+    // 1.39 [FX-01] An app before 1.39 cannot read a 기능 장치, so it never lists the work; parts keep their own minApp (TASK-07).
+    Math.max(partsMinApp(r) ?? 0, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0) || null),
     d.stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", dev, await makerId(dev), now),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
   ]);
@@ -1442,8 +1712,12 @@ async function newVersion(d, env, request, code) {
     throw e;
   }
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
+  // 1.39 [PAYP-08]
+  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  // 1.39 [FX-17]
+  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
   const trust = await recipeTrust(d, env, dev, now);
   // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
   const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
@@ -1459,8 +1733,8 @@ async function newVersion(d, env, request, code) {
   const rec = clean.recipe;
   await d.batch(env, [
     d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, scope = ?, state = ?, version = ?, hash = ?, body = ?,
-      updated_at = ?, note = '' WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
-    state, v, clean.hash, clean.text, now, code),
+      updated_at = ?, note = '', min_app = MAX(COALESCE(min_app, 0), COALESCE(?, 0)) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
+    state, v, clean.hash, clean.text, now, Math.max(partsMinApp(rec) ?? 0, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0) || null, code),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", code, v, clean.hash, clean.text, now),
   ]);
   return d.json({ code, version: v, hash: clean.hash, state, scope });
@@ -1515,6 +1789,11 @@ async function recipeVote(d, env, request, code) {
     reason = readReason(body);
     if (reason.error) return d.json({ error: reason.error, field: reason.error === "reason" ? "reason" : "opinion" }, 400);
   }
+  // 1.39 [CARE-02] 마을 쉬기 중에는 좋아요·안좋아요를 쉬고, 의견 쉬기 중에는 안좋아요에 붙이는 의견 글을 쉬어요(거두기는 언제나 돼요).
+  if (body.value !== null) {
+    const held = await careGate(d, env, dev, reason?.opinion ? "opinion" : "community", now);
+    if (held) return held;
+  }
   const net = await d.network(request, env, now);
   const hit = await d.overLimit(env, now, [["device", `rvote|${dev}|${Math.floor(now / HOUR)}`, RECIPE_LIMITS.votesPerHour, HOUR]]);
   if (hit) return hit;
@@ -1552,7 +1831,7 @@ async function applied(d, env, request, code) {
   const now = Date.now();
   const net = await d.network(request, env, now);
   if (!(await d.allow(env, `rapplied|${net.day}`, RECIPE_LIMITS.appliedPerNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
-  const r = await d.one(env, "SELECT code FROM recipes WHERE code = ? AND state = 'visible'", code);
+  const r = await d.one(env, `SELECT code FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, code);
   if (!r) return d.json({ error: "not_found" }, 404);
   const col = body.kind === "applied" ? "applied" : "kept7";
   // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
@@ -1634,8 +1913,8 @@ const talkGrp = (code) => code;
 /** GET /api/recipes/:code/talk — oldest first, with 만든 사람 and 쓰는 중 N일 marks; a 안좋아요's reasons only on one's own post. */
 async function recipeTalk(d, env, request, code) {
   const dev = await readDevice(d, request, null);
-  const r = await d.one(env, "SELECT code, owner, state, scope FROM recipes WHERE code = ?", code);
-  if (!r || (r.state !== "visible" && r.owner !== dev)) return d.json({ error: "not_found" }, 404);
+  const r = await d.one(env, "SELECT code, owner, state, scope, hidden_reason FROM recipes WHERE code = ?", code);
+  if (!r || (!openable(r) && r.owner !== dev)) return d.json({ error: "not_found" }, 404);
   const now = Date.now();
   const [rows, nicks, myVotes, muted] = await Promise.all([
     d.all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 300", RECIPE_TABLE, talkGrp(code)),
@@ -1698,6 +1977,9 @@ async function talkPost(d, env, request, code) {
   if (why) return d.json({ error: why, field: "body" }, 400);
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
+  // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
+  const held = (await careGate(d, env, dev, "opinion", now)) ?? (await careRepeat(d, env, dev, t, now));
+  if (held) return held;
   const net = await d.network(request, env, now);
   const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "rtalk", 300, now)));
   if (hit) return hit;
@@ -1733,6 +2015,11 @@ async function talkVote(d, env, request, postId) {
     reason = readReason(body);
     if (reason.error) return d.json({ error: reason.error, field: reason.error === "reason" ? "reason" : "opinion" }, 400);
   }
+  // 1.39 [CARE-02] 작품 좋아요와 같이(이야기 좋아요·안좋아요).
+  if (body.value !== null) {
+    const held = await careGate(d, env, dev, reason?.opinion ? "opinion" : "community", now);
+    if (held) return held;
+  }
   const hit = await d.overLimit(env, now, [["device", `rvote|${dev}|${Math.floor(now / HOUR)}`, RECIPE_LIMITS.votesPerHour, HOUR]]);
   if (hit) return hit;
   const before = await d.one(env, "SELECT ok FROM post_votes WHERE post_id = ? AND device = ?", postId, dev);
@@ -1761,6 +2048,16 @@ export async function recipeRoute(d, request, env, path, url, ctx) {
   m = path.match(/^\/api\/recipes\/([2-9A-HJ-NP-Z]{8})(\/[a-z]+)?$/);
   if (!m) return null;
   const [, code, sub] = m;
+  // 1.39 [MKP-01] A work read with no phone named (a 장터 card's picture, the web page) is the same for everyone: kept a minute at the edge.
+  if (!sub && method === "GET" && !request.headers.get("x-device")) {
+    return d.edgeCached(request, ctx, RECIPE_LIMITS.edgeSeconds, async () => {
+      const res = await show(d, env, request, code, url);
+      if (res.status !== 200) return res;
+      const headers = new Headers(res.headers);
+      headers.set("cache-control", `public, max-age=${RECIPE_LIMITS.edgeSeconds}`);
+      return new Response(res.body, { status: 200, headers });
+    });
+  }
   if (!sub && method === "GET") return show(d, env, request, code, url);
   if (!sub && method === "DELETE") return remove(d, env, request, code);
   if (sub === "/versions" && method === "POST") return newVersion(d, env, request, code);
@@ -1789,11 +2086,11 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     if (tab === "one" && !/^[2-9A-HJ-NP-Z]{8}$/.test(code)) return d.json({ error: "code", field: "code" }, 400);
     // 1.36 [SEC-16] M10: 신고된 also lists a recipe whose reports all went to the operator only (none counted toward hiding it).
     const where = { queue: "state = 'pending'", flagged: "(flags > 0 OR EXISTS (SELECT 1 FROM recipe_flags f WHERE f.code = recipes.code)) AND state != 'deleted'",
-      hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
+      hidden: `state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}'`, retired: `state = 'hidden' AND hidden_reason = '${RETIRED}'`, visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
       one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'" }[tab]
       ?? "state = 'pending'";
     // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개 중 200개만 보이고 구간 수가 틀려요): 출시 대기 lists the whole batch.
-    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" ? 1000 : 200}`, ...(tab === "one" ? [code] : []));
+    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" || tab === "retired" ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
     // D1 takes at most 100 bound values in one query, so the codes go in groups (a list of 200 failed on the real server).
     const byCodes = async (sql) => {
       const out = [];
@@ -1816,7 +2113,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     return d.json({ tab, ...(tab === "one" ? { code } : {}), items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
       ...(r.release_at ? { releaseAt: new Date(r.release_at).toISOString() } : {}), ...(r.min_app ? { minApp: r.min_app } : {}), ...(r.batch ? { batch: r.batch } : {}),
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
-      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null })) });
+      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null, ...(r.retired_below ? { retiredBelow: r.retired_below } : {}) })) });
   }
   if (path === "/recipes/actions" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_actions ORDER BY id DESC LIMIT 300");
@@ -1902,28 +2199,51 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const n = await releaseWaiting(d, env, now, where, args, actorName);
     return d.json({ released: n });
   }
-  // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목으로 한 번에 숨겨요(지우지 않음, 하나씩 '보이기'로 되돌려요). dry: 몇 개인지만.
-  if (path === "/recipes/hide-titles" && method === "POST") {
-    const body = await d.readJson(request, 64 * 1024);
-    const titles = Array.isArray(body?.titles) ? body.titles.filter((t) => typeof t === "string" && t.trim()).slice(0, 300) : [];
-    if (titles.length === 0) return d.json({ error: "titles" }, 400);
+  // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목(이나 코드)으로 한 번에 숨겨요. 지우지 않아요.
+  // 1.39 판 정리: 이유는 'retired'라 이미 넣은 분은 코드로 계속 열고(목록·찾기·추천에서만 빠짐), show-titles로 한 번에 되돌려요.
+  // 한 번에 1,200개, 문장은 90개씩 묶어(D1 한 번에 값 100개, 한 요청 문장 수 한도) 몇 번만 보내요. dry: 몇 개인지와 없는 제목만.
+  if ((path === "/recipes/hide-titles" || path === "/recipes/show-titles") && method === "POST") {
+    const hiding = path === "/recipes/hide-titles";
+    const body = await d.readJson(request, 512 * 1024);
+    const clean = (a) => (Array.isArray(a) ? a.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim()) : []);
+    const titles = clean(body?.titles).slice(0, 1200);
+    const codes = clean(body?.codes).map((c) => c.toUpperCase()).filter((c) => /^[2-9A-HJ-NP-Z]{8}$/.test(c)).slice(0, 1200);
+    if (titles.length === 0 && codes.length === 0) return d.json({ error: "titles" }, 400);
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    // 작품 갈래 부탁: belowApp N이면 N 미만 앱의 장터에는 계속 보여요(새 판 작품이 아직 안 보이는 옛 앱이 비지 않게). 없으면 모든 앱에서 빠져요.
+    const below = Number.isInteger(body.belowApp) && body.belowApp > 0 && body.belowApp < 1_000_000 ? body.belowApp : null;
+    // 1.38 정리로 이미 'admin'으로 숨긴 운영자 작품도 다시 보내면 'retired'로 바뀌어, 넣은 분이 다시 열 수 있어요.
+    // 이미 판 정리로 내린 것도 다시 보내면 belowApp만 새로 적어요.
+    const from = hiding ? `(state IN ('visible', 'waiting') OR (state = 'hidden' AND hidden_reason IN ('admin', '${RETIRED}')))` : `state = 'hidden' AND hidden_reason = '${RETIRED}'`;
     const skels = [...new Set(titles.map(nameSkeleton))];
-    const found = [];
-    for (let i = 0; i < skels.length; i += 90) {
-      const part = skels.slice(i, i + 90);
-      found.push(...await d.all(env, `SELECT code, title, state FROM recipes WHERE owner = 'operator' AND state IN ('visible', 'waiting')
-        AND title_skel IN (${part.map(() => "?").join(",")})`, ...part));
+    const found = new Map();
+    const look = async (col, keys) => {
+      for (let i = 0; i < keys.length; i += 90) {
+        const part = keys.slice(i, i + 90);
+        for (const r of await d.all(env, `SELECT code, title, state FROM recipes WHERE owner = 'operator' AND ${from} AND ${col} IN (${part.map(() => "?").join(",")})`, ...part)) found.set(r.code, r);
+      }
+    };
+    await look("title_skel", skels);
+    await look("code", codes);
+    const rows = [...found.values()];
+    const knownSkel = new Set(rows.map((r) => nameSkeleton(r.title)));
+    const knownCode = new Set(rows.map((r) => r.code));
+    const missing = [...titles.filter((t) => !knownSkel.has(nameSkeleton(t))), ...codes.filter((c) => !knownCode.has(c))];
+    if (body.dry !== true && rows.length) {
+      const stmts = [];
+      for (let i = 0; i < rows.length; i += 90) {
+        const part = rows.slice(i, i + 90).map((r) => r.code);
+        const marks = part.map(() => "?").join(",");
+        stmts.push(hiding
+          ? d.stmt(env, `UPDATE recipes SET state = 'hidden', hidden_reason = '${RETIRED}', hidden_at = ?, note = ?, retired_below = ? WHERE code IN (${marks})`, now, note, below, ...part)
+          : d.stmt(env, `UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, note = '', retired_below = NULL WHERE code IN (${marks})`, ...part));
+        stmts.push(d.stmt(env, `INSERT INTO recipe_actions (code, action, reason, actor, at) SELECT code, ?, ?, ?, ? FROM recipes WHERE code IN (${marks})`,
+          hiding ? "hide" : "show", (note || (hiding ? "판 정리" : "판 정리 되돌림")).slice(0, 200), actorName, now, ...part));
+      }
+      await d.batch(env, stmts);
     }
-    const known = new Set(found.map((r) => nameSkeleton(r.title)));
-    const missing = titles.filter((t) => !known.has(nameSkeleton(t)));
-    if (body.dry !== true && found.length) {
-      await d.batch(env, found.flatMap((r) => [
-        d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, r.code),
-        act(r.code, "hide", note || "판 정리"),
-      ]));
-    }
-    return d.json({ hidden: body.dry === true ? 0 : found.length, found: found.length, missing });
+    const n = body.dry === true ? 0 : rows.length;
+    return d.json({ [hiding ? "hidden" : "shown"]: n, found: rows.length, missing, items: rows.slice(0, 1200).map((r) => ({ code: r.code, title: r.title })) });
   }
   const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {
@@ -1945,10 +2265,10 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     } else if (what === "hide") {
       // 1.36 [LIM-10] Hidden by the operator counts like reports hiding it (not again when reports already did).
       if (r.state !== "hidden") strike = r.owner;
-      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, code));
+      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ?, retired_below = NULL WHERE code = ?", now, note, code));
       if (r.state !== "hidden") stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
     } else if (what === "show") {
-      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '' WHERE code = ?", code));
+      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '', retired_below = NULL WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM write_strikes WHERE ref = ?", code));
       // 1.36 [SEC-16] M10: shown again, its maker's mark for it goes too (it kept 단골 away for good) and a restriction it started ends.
@@ -1968,6 +2288,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     stmts.push(act(code, what, note || (what === "show" && r.hidden_reason === "flags" ? "신고가 맞지 않았어요" : "")));
     await d.batch(env, stmts);
     if (strike) await operatorStrike(d, env, strike, "recipe", code, now);
+    // 1.39 [CARE-06] Hidden by reports, looked at and kept hidden: its waiting strike counts now (마을 돌봄).
+    if (what === "hide" && r.state === "hidden") await confirmStrike(d, env, code, now);
     if (unstrike) await strikeTakenBack(d, env, unstrike, now);
     return d.json({ code, done: what });
   }
@@ -2025,7 +2347,8 @@ async function releaseWaiting(d, env, now, where, args, actor) {
 /** Hidden recipes go 90 days after they were hidden (처리방침 3.8), from the hourly job. 1.36 [MKS-01] and 예약된 출시 대기 comes up. */
 export async function pruneRecipes(d, env, now) {
   await releaseWaiting(d, env, now, "state = 'waiting' AND release_at IS NOT NULL AND release_at <= ?", [now], "예약");
-  const old = await d.all(env, "SELECT code FROM recipes WHERE state = 'hidden' AND hidden_at < ? LIMIT 50", now - 90 * DAY);
+  // 1.39 판 정리로 내린 운영자 작품('retired')은 넣은 분이 계속 열어서 지우지 않아요(사용자 작품이 아니라 처리방침 3.8의 가린 것이 아니에요).
+  const old = await d.all(env, `SELECT code FROM recipes WHERE state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}' AND hidden_at < ? LIMIT 50`, now - 90 * DAY);
   if (old.length) await d.batch(env, old.flatMap((r) => dropRecipe(d, env, r.code)));
   return old.length;
 }

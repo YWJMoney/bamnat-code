@@ -93,6 +93,8 @@ class ShareSync(
         store.expire()
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
+        // [TRY-06] A work only being tried never goes out; once it is put back, the change sends what is there.
+        if (com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return@withLock Result.Same
         // 1.36: 프로 keeps every link open while it lasts; after it ends a kept link closes within 90 days.
         send(store, link, ShareLinkPayload.keepOpen(link, clock(), c.featureGate.state.value.keepsLinks))
     }
@@ -131,6 +133,28 @@ class ShareSync(
             }
         }
         c.telemetry.event("share_link_cut_all", if (left == 0) "done" else "left")
+        left
+    }
+
+    /**
+     * 1.39 [PRIV-06] 모두 지우기 마저: only the calendar links named by their server ids, the ones a 모두 지우기 could not reach.
+     * A link made since then is not among them and stays. The ids still here come back.
+     */
+    suspend fun cutOnly(ids: Set<String>): Set<String> = lock.withLock {
+        val left = mutableSetOf<String>()
+        for (key in allLinks()) {
+            val store = c.shareLinksOf(key)
+            val link = store.link.value ?: continue
+            if (link.id !in ids) continue
+            try {
+                c.shareApi.delete(link)
+                store.clear()
+            } catch (e: IOException) {
+                left += link.id
+            } catch (e: ShareLinkException) {
+                left += link.id
+            }
+        }
         left
     }
 

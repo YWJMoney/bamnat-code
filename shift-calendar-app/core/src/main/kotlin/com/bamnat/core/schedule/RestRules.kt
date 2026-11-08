@@ -53,8 +53,8 @@ data class RestRules(
     val preset: Preset? get() = Preset.entries.firstOrNull { it.rules == copy(on = true, rotationOrder = true, sameDayRest = true) }
 
     enum class Preset(val label: String, val note: String, val rules: RestRules) {
-        BASIC("기본", "휴식 11시간 · 나이트 뒤 쉬는 날 2일 · 연속 나이트 3일 · 7일 연속 근무 · 한 달 나이트 15일", RestRules()),
-        STRICT("더 엄격하게", "연속 나이트 2일부터 알려요 (교대근무 건강 연구의 권고)", RestRules(maxNightsInRow = 2)),
+        BASIC("기본", "휴식 11시간 · 야간 뒤 쉬는 날 2일 · 연속 야간 3일 · 7일 연속 근무 · 한 달 야간 15일", RestRules()),
+        STRICT("더 엄격하게", "연속 야간 2일부터 알려요 (교대근무 건강 연구의 권고)", RestRules(maxNightsInRow = 2)),
         LIGHT("느슨하게", "휴식 11시간과 7일 연속 근무만 봐요", RestRules(offsAfterNights = 0, maxNightsInRow = 0, maxNightsPerMonth = 0)),
     }
 

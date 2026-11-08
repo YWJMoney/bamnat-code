@@ -16,7 +16,14 @@ data class GrowState(
     val undoDay: LocalDate? = null,
     val undoCount: Int = 0,
     val undoToldOn: LocalDate? = null,
+    /** 1.39 [SPREAD-07] The one '동료에게 알려 주기' per kind: when it came due, the day it showed, and that it is over. */
+    val peerDue: Set<Peer> = emptySet(),
+    val peerShownOn: Map<Peer, LocalDate> = emptyMap(),
+    val peerDone: Set<Peer> = emptySet(),
 )
+
+/** 1.39 [SPREAD-07] Who a person might tell about 밤낮 after their own first step: other leaders, other 사장님. */
+enum class Peer { TEAM, BOSS }
 
 /**
  * AG 1.27 [INVITE-11][INVITE-12] When to ask, so asking never becomes a bother (사용자 리뷰 2026-10-25: "많은 사람을 초대할수록
@@ -42,6 +49,14 @@ object GrowNudges {
         if (s.inviteClosedOn != null && today.isBefore(s.inviteClosedOn.plusDays(INVITE_EVERY_DAYS))) return false
         return s.inviteShownOn == null || s.inviteShownOn == today || !today.isBefore(s.inviteShownOn.plusDays(INVITE_EVERY_DAYS))
     }
+
+    /**
+     * 1.39 [SPREAD-07] (앱 안 퍼짐 설계): after a leader first sends the team's links, or a 사장님 first adds a staff member, one card
+     * offers to tell other leaders·사장님 (초대한 분께 프로). It shows the day it first comes and never again once that day ends or it is
+     * closed: one per kind, so two in a lifetime at most. The calendar's 친구 초대 card's switch (기능 켜고 끄기) turns it off too.
+     */
+    fun peerInvite(s: GrowState, peer: Peer, today: LocalDate): Boolean =
+        peer in s.peerDue && peer !in s.peerDone && s.peerShownOn[peer].let { it == null || it == today }
 
     /** The 설정 card '함께 만들어요': until closed, then again [CARD_AGAIN_DAYS] on. */
     fun card(s: GrowState, today: LocalDate): Boolean = s.cardClosedOn == null || !today.isBefore(s.cardClosedOn.plusDays(CARD_AGAIN_DAYS))

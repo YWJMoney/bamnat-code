@@ -67,6 +67,8 @@ internal fun ToolScreen(
     action: String? = null,
     actionEnabled: Boolean = true,
     onAction: () -> Unit = {},
+    /** 1.39 [CALX-08] Put on the body before it scrolls, e.g. [com.bamnat.app.ui.monthSwipe]. */
+    bodyModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -81,7 +83,7 @@ internal fun ToolScreen(
                 },
             ) { padding ->
                 Column(
-                    Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+                    Modifier.fillMaxSize().padding(padding).imePadding().then(bodyModifier).verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     content = content,
                 )

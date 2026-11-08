@@ -145,7 +145,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                     com.bamnat.app.share.ShareExpiryReminder.reschedule(context, key, links.link.value, links.noticedFor)
                 }
                 // [SCHED-01] Memo schedules did not survive the reboot either.
-                com.bamnat.app.memo.MemoScheduleAlarm.reschedule(context, container.memoRepository.memos.first())
+                com.bamnat.app.memo.MemoScheduleAlarm.rescheduleNow(context)
                 // [INV-08] The investor's alarms too.
                 com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
                 com.bamnat.app.invest.InvestMonthNotice.schedule(context, container.investCalendars().isNotEmpty())

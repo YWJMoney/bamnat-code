@@ -26,6 +26,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material.icons.outlined.SentimentDissatisfied
+import androidx.compose.material.icons.outlined.SentimentNeutral
+import androidx.compose.material.icons.outlined.SentimentSatisfied
+import androidx.compose.material.icons.outlined.SentimentVeryDissatisfied
+import androidx.compose.material.icons.outlined.SentimentVerySatisfied
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.sleep.SleepAutoWatch
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.settings.SwitchRow
@@ -59,6 +71,11 @@ internal fun AutoOfferCard(offer: SleepAuto.Segment, onYes: () -> Unit, onFix: (
 /**
  * 1.38 [SLEEP-03] (디자인 스레드의 아침 카드) 아침 한 장: one tap for how the user woke, a few habit tags, and it folds into one line.
  * No score: the sleep against the plan and the morning feeling are what the user sees.
+ *
+ * 1.39 [FLOW-12] Its shape: the sounds worth hearing first (경쟁 앱 리뷰 "클립이 어디 있어요"), the hours slept as one number, five
+ * faces in one row, and the habit chips in their meaning colours (도움 된 것 초록, 살펴볼 것 주황).
+ * [FLOW-16] With the alarm's 오늘 카드 in it ([today]: "오늘 야간 19:00~07:00" · "이번 주 38시간 · 내일 쉬는 날"), so the
+ * morning has one card; the alarm's notice opens this one (AfterAlarmCard's 잘 잤어요?).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -67,48 +84,62 @@ internal fun MorningCard(
     check: SleepCheck?,
     onAnswer: (SleepMood?, Set<SleepTag>) -> Unit,
     onUndo: () -> Unit,
+    today: Pair<String, String>? = null,
+    listen: List<com.bamnat.app.data.db.SleepEventEntity> = emptyList(),
+    onKeep: (com.bamnat.app.data.db.SleepEventEntity, Boolean) -> Unit = { _, _ -> },
 ) {
     var reopened by rememberSaveable(sleep.id, check?.id) { mutableStateOf(false) }
-    val title = "${Fmt.time(sleep.start.toLocalTime())}–${Fmt.time(sleep.end!!.toLocalTime())} · " +
-        SleepInsights.hours(sleep.minutes ?: 0)
+    val times = "${Fmt.time(sleep.start.toLocalTime())}–${Fmt.time(sleep.end!!.toLocalTime())}" + if (sleep.auto) " · 자동" else ""
+    val slept = SleepInsights.hours(sleep.minutes ?: 0)
     if (check != null && !reopened) {
         // Answered: one line, with a way to change it.
         SectionCard(title = null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("오늘 아침 · ${com.bamnat.core.sleep.SleepMorning.summary(check)}", style = MaterialTheme.typography.bodyMedium,
+                Text("오늘 아침 · $slept · ${com.bamnat.core.sleep.SleepMorning.summary(check)}", style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f))
                 TextButton(onClick = { reopened = true }) { Text("고치기") }
             }
+            today?.let { (a, b) -> TodayLine(a, b) }
         }
         return
     }
     var mood by remember(check) { mutableStateOf(check?.mood) }
     var tags by remember(check) { mutableStateOf(check?.tags.orEmpty()) }
-    SectionCard(title = "잘 잤어요?") {
+    // 1.39 [FLOW-21] 스튜디오 '아침 한 장' 부품: the card's ground, edge and letters (nothing set: the card as it was).
+    val morning = nightStyle("night.morning")
+    SectionCard(title = "잘 잤어요?", modifier = com.bamnat.app.ui.parts.PartMods.box(morning.copy(pad = null, padX = null, padY = null),
+        com.bamnat.app.ui.parts.PartMods.shapeOf(morning, MaterialTheme.shapes.large))) {
+        // [FLOW-12] 들어 볼 소리 first, not at the bottom of another card.
+        if (listen.isNotEmpty()) {
+            Text("들어 볼 소리 ${listen.size}개", style = MaterialTheme.typography.labelLarge)
+            listen.forEach { e -> ClipRow(e, onKeep) }
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            com.bamnat.app.ui.components.HeroNumber(slept, caption = times, modifier = Modifier.weight(1f))
             // Design: 기지개 while asking, 기본 once a mood is picked.
             if (com.bamnat.app.ui.components.LocalShowKani.current) com.bamnat.app.ui.components.Kani(
                 if (mood == null) com.bamnat.app.ui.components.KaniMood.Stretch else com.bamnat.app.ui.components.KaniMood.Basic, size = 48.dp)
-            Text(title + if (sleep.auto) " · 자동" else "", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            SleepMood.entries.forEach { m ->
-                FilterChip(selected = mood == m, onClick = {
-                    mood = m
-                    // One tap is an answer; tags can follow.
-                    onAnswer(m, tags)
-                }, label = { Text(m.label) })
-            }
+        today?.let { (a, b) -> TodayLine(a, b) }
+        Text("일어났을 때 기분", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp))
+        MoodFaces(mood) { m ->
+            mood = m
+            // One tap is an answer; tags can follow.
+            onAnswer(m, tags)
         }
         Text("어제 있었던 일 (고르면 원인 찾기에 써요)", style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(top = 8.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             SleepTag.entries.forEach { t ->
+                val tone = if (t.helps) com.bamnat.app.ui.theme.Tone.Good else com.bamnat.app.ui.theme.Tone.Caution
                 FilterChip(selected = t in tags, onClick = {
                     tags = if (t in tags) tags - t else tags + t
                     if (mood != null || check != null) onAnswer(mood, tags)
-                }, label = { Text(t.label) })
+                }, label = { Text(t.label) }, leadingIcon = {
+                    val dot = tone.color()
+                    androidx.compose.foundation.layout.Box(Modifier.size(8.dp).background(dot, androidx.compose.foundation.shape.CircleShape))
+                })
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -117,6 +148,52 @@ internal fun MorningCard(
             else TextButton(onClick = { reopened = false }) { Text("접기") }
         }
     }
+}
+
+/** [FLOW-16] The alarm's 오늘 카드, two quiet lines in the morning card. */
+@Composable
+private fun TodayLine(title: String, text: String) {
+    Text("$title · $text", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp))
+}
+
+/**
+ * 1.39 [FLOW-12] 기분 얼굴 다섯 한 줄: each face a 48dp target with its word under it, the picked one filled in the primary colour.
+ * Read as "일어났을 때 기분, 개운, 선택됨".
+ */
+@Composable
+private fun MoodFaces(picked: SleepMood?, onPick: (SleepMood) -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        SleepMood.entries.forEach { m ->
+            val on = picked == m
+            androidx.compose.foundation.layout.Column(
+                Modifier.weight(1f).heightIn(min = 56.dp)
+                    .selectable(selected = on, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = { onPick(m) })
+                    .semantics(mergeDescendants = true) { contentDescription = "일어났을 때 기분, ${m.label}" },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(40.dp).background(if (on) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
+                        androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    androidx.compose.material3.Icon(face(m), null, modifier = Modifier.size(28.dp),
+                        tint = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text(m.label, style = MaterialTheme.typography.labelSmall, maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+private fun face(m: SleepMood): androidx.compose.ui.graphics.vector.ImageVector = when (m) {
+    SleepMood.DRAINED -> androidx.compose.material.icons.Icons.Outlined.SentimentVeryDissatisfied
+    SleepMood.TIRED -> androidx.compose.material.icons.Icons.Outlined.SentimentDissatisfied
+    SleepMood.OKAY -> androidx.compose.material.icons.Icons.Outlined.SentimentNeutral
+    SleepMood.FRESH -> androidx.compose.material.icons.Icons.Outlined.SentimentSatisfied
+    SleepMood.GREAT -> androidx.compose.material.icons.Icons.Outlined.SentimentVerySatisfied
 }
 
 /**

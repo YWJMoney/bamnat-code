@@ -3,6 +3,7 @@
 // (or an admin hid) is a strike; enough strikes in a while restrict that install for a time, each restriction stricter than the one
 // before, and a long quiet stretch steps it back down. Only the install's hash is kept.
 import { DAY } from "./units.js";
+import { careAutoWarn, careOn } from "./community-care.js";
 
 export const WRITE_LIMITS = {
   /** Strikes within this many days count together. */
@@ -15,6 +16,27 @@ export const WRITE_LIMITS = {
   forgetDays: 180,
 };
 
+/**
+ * 1.39 [CARE-06] 더 잘게, 확인한 것만 (사용자 2026-11-07 "2회는 너무 타이트, 실제로 잘못된 행동을 하고 있을 때 제재"): 마을 돌봄 깃발이 켜지면
+ * (처리방침 3.12·광장 운영 규칙 다음 판 시행일) 이 규칙을 써요. 신고로 먼저 가려진 것은 '확인 대기'로만 두고 운영자가 가린 채 둔 것만 세요.
+ * 60일 안 1번 안내, 2번 경고(막는 것 없음), 3번부터 한 단계씩, 제한을 받은 뒤 180일 안에는 1번마다 다음 단계.
+ */
+export const WRITE_LIMITS_V2 = {
+  windowDays: 60,
+  strikes: 3,
+  /** After a restriction (its step not yet forgotten), each confirmed one steps up. */
+  again: 1,
+  steps: WRITE_LIMITS.steps,
+  forgetDays: 180,
+  /** Report-hidden strikes wait for the operator; the ones under [strikes] bring a gentle 안내·경고 (community-care.js). */
+  care: true,
+};
+
+/** The rules in force now: the finer ones once 마을 돌봄 is on. */
+export async function writeRules(d, env, now) {
+  return (await careOn(d, env, now)) ? WRITE_LIMITS_V2 : WRITE_LIMITS;
+}
+
 export const WRITE_LIMITS_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS write_strikes (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL, at INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS write_strikes_device ON write_strikes (device, at)",
@@ -26,7 +48,9 @@ export const WRITE_LIMITS_SCHEMA = [
  * 1.36 PC 확인 보안 6차 (운영자가 가렸는데 '신고가 쌓여'라고 나와요): who hid what a strike is for, "operator" or null (reports, and
  * strikes from before this column).
  */
-export const WRITE_LIMITS_COLUMNS = ["ALTER TABLE write_strikes ADD COLUMN hidden_by TEXT"];
+export const WRITE_LIMITS_COLUMNS = ["ALTER TABLE write_strikes ADD COLUMN hidden_by TEXT",
+  // 1.39 [CARE-06] 0: hidden by reports, waiting for the operator (counts nowhere until confirmed).
+  "ALTER TABLE write_strikes ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 1"];
 
 /** The step a restriction would start from now, after the quiet time since the last one ended. */
 export function stepAfter(last, now, rules = WRITE_LIMITS) {
@@ -44,7 +68,7 @@ export async function writeAllowance(d, env, dev, now, rules = WRITE_LIMITS) {
   if (!dev) return null;
   const row = await d.one(env, "SELECT step, since, until, per_day FROM write_limits WHERE device = ? AND until > ?", dev, now);
   if (!row) return null;
-  const strikes = await d.all(env, "SELECT kind, hidden_by FROM write_strikes WHERE device = ? AND at > ? AND at <= ?",
+  const strikes = await d.all(env, "SELECT kind, hidden_by FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ? AND at <= ?",
     dev, row.since - rules.windowDays * DAY, row.since);
   const op = strikes.filter((x) => x.hidden_by === "operator").length;
   const by = !strikes.length ? null : op === strikes.length ? "operator" : op === 0 ? "reports" : "both";
@@ -58,17 +82,32 @@ export function limitJson(a, extra = {}) {
 
 /**
  * One strike for [dev]: [kind] ("post", "talk", "recipe") and what was hidden. Returns the restriction it started, or null. A
- * restriction starting at 0 a day also goes into `muted`, which every write already refuses.
+ * restriction starting at 0 a day also goes into `muted`, which every write already refuses. 1.39 [CARE-06]: with 마을 돌봄 on, one the
+ * reports hid waits for the operator ([confirmStrike]).
  */
-export async function addStrike(d, env, dev, kind, ref, now, rules = WRITE_LIMITS, by = null) {
+export async function addStrike(d, env, dev, kind, ref, now, rules = null, by = null) {
   if (!dev) return null;
+  rules ??= await writeRules(d, env, now);
+  const waits = Boolean(rules.care) && by !== "operator";
+  await d.run(env, "INSERT INTO write_strikes (device, kind, ref, at, hidden_by, confirmed) VALUES (?, ?, ?, ?, ?, ?)",
+    dev, kind, String(ref).slice(0, 80), now, by, waits ? 0 : 1);
+  if (waits) return null;
+  return weigh(d, env, dev, kind, ref, now, rules, by);
+}
+
+/** After a counted strike: the next step when there are enough, else (마을 돌봄) a gentle 안내 or 경고. */
+async function weigh(d, env, dev, kind, ref, now, rules, by) {
   const last = await d.one(env, "SELECT step, since, until, times FROM write_limits WHERE device = ?", dev);
+  if (last && last.until > now) return null;
   // A strike already counted toward a restriction does not count again.
   const from = Math.max(now - rules.windowDays * DAY, last ? last.since : 0);
-  await d.run(env, "INSERT INTO write_strikes (device, kind, ref, at, hidden_by) VALUES (?, ?, ?, ?, ?)", dev, kind, String(ref).slice(0, 80), now, by);
-  if (last && last.until > now) return null;
-  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND at > ?", dev, from))?.n ?? 0;
-  if (n < rules.strikes) return null;
+  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ?", dev, from))?.n ?? 0;
+  const need = rules.again && last && stepAfter(last, now, rules) > 0 ? rules.again : rules.strikes;
+  if (n < need) {
+    // 1.39 [CARE-01] 막기 전에 부드럽게: 처음은 안내, 그다음은 '한 번 더면 며칠 줄어요' 경고.
+    if (rules.care) await careAutoWarn(d, env, dev, kind, ref, by, now, { n, need, again: Boolean(last) });
+    return null;
+  }
   const step = Math.min(stepAfter(last, now, rules) + 1, rules.steps.length);
   const s = rules.steps[step - 1];
   const until = now + s.days * DAY;
@@ -82,9 +121,20 @@ export async function addStrike(d, env, dev, kind, ref, now, rules = WRITE_LIMIT
   return { step, until, perDay: s.perDay };
 }
 
+/**
+ * 1.39 [CARE-06] The operator looked at something the reports hid and kept it hidden: its waiting strike counts now (and may bring the
+ * 안내·경고 or the next step). Nothing when none waits (마을 돌봄 off, or it was counted already).
+ */
+export async function confirmStrike(d, env, ref, now) {
+  const row = await d.one(env, "SELECT id, device, kind FROM write_strikes WHERE ref = ? AND confirmed = 0 ORDER BY id DESC LIMIT 1", String(ref).slice(0, 80));
+  if (!row) return null;
+  await d.run(env, "UPDATE write_strikes SET confirmed = 1 WHERE id = ?", row.id);
+  return weigh(d, env, row.device, row.kind, ref, now, await writeRules(d, env, now), null);
+}
+
 /** A strike for something the operator hid (not reports): the same, said as the operator's. */
 export function operatorStrike(d, env, dev, kind, ref, now) {
-  return addStrike(d, env, dev, kind, ref, now, WRITE_LIMITS, "operator");
+  return addStrike(d, env, dev, kind, ref, now, null, "operator");
 }
 
 /**
@@ -109,7 +159,7 @@ export async function writeLeft(d, env, dev, key, now) {
 /** For the admin app: installs restricted now or in the last 30 days, newest first, with their strikes. */
 export async function restrictions(d, env, now) {
   const rows = await d.all(env, `SELECT l.device, l.step, l.since, l.until, l.per_day, l.times,
-      (SELECT COUNT(*) FROM write_strikes s WHERE s.device = l.device) AS strikes
+      (SELECT COUNT(*) FROM write_strikes s WHERE s.device = l.device AND s.confirmed = 1) AS strikes
     FROM write_limits l WHERE l.until > ? ORDER BY l.since DESC LIMIT 100`, now - 30 * DAY);
   return rows.map((r) => ({ who: r.device.slice(0, 12), step: r.step, since: new Date(r.since).toISOString(), until: new Date(r.until).toISOString(),
     perDay: r.per_day, times: r.times, strikes: r.strikes, now: r.until > now }));
@@ -120,11 +170,12 @@ export async function restrictions(d, env, now) {
  * strikes left before it began would not have started ends now, a step back (it should not have stepped up), with the 쓰기 막기 it
  * started, so a false report does not keep its maker restricted.
  */
-export async function strikeTakenBack(d, env, dev, now, rules = WRITE_LIMITS) {
+export async function strikeTakenBack(d, env, dev, now, rules = null) {
   if (!dev) return null;
   const l = await d.one(env, "SELECT since FROM write_limits WHERE device = ? AND until > ?", dev, now);
   if (!l) return null;
-  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND at > ? AND at <= ?",
+  rules ??= await writeRules(d, env, now);
+  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ? AND at <= ?",
     dev, l.since - rules.windowDays * DAY, l.since))?.n ?? 0;
   if (n >= rules.strikes) return null;
   await d.batch(env, [

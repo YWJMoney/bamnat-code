@@ -299,3 +299,81 @@ object TeamOverlap {
 
     private fun norm(name: String) = name.replace(" ", "").lowercase()
 }
+
+/**
+ * 1.39 G6 [SETUP-18] (PC f7f61818 유형별 빈틈 '리더 첫 설정 나중에'): a 리더 who put the first setup off has the app's sample shifts (09:00 주간…)
+ * on their calendar, not the team's. A team made then keeps the kinds of day but not those times, and the board asks for them once:
+ * the times go out on every member's link (their alarms) and the 오늘 출근 head.
+ */
+object TeamTimes {
+    /** The kinds of work still without a start or an end. */
+    fun missing(team: Team): List<TeamShift> = team.shifts.filter { !it.isOff && (it.start == null || it.end == null) }
+
+    /** [shifts] as a new team takes them while the leader's own times are not set: kinds and colours, no times. */
+    fun blank(shifts: List<TeamShift>): List<TeamShift> = shifts.map { if (it.isOff) it else it.copy(start = null, end = null) }
+
+    /**
+     * 1.39 G6 발굴 [SETUP-19] (PC 5c4ad849 '3교대 칸을 다 정해야 하고 시작이 모두 09:00'): the usual times for each kind of work still without
+     * them, read from its name: with an evening kind it is 3교대 (07–15, 15–23, 23–07), else 2교대 (07–19, 19–07); a name that says
+     * neither gets 09–18. The leader sees them filled in and only changes what differs.
+     */
+    /** The kind a name says: 'D' 주간, 'E' 오후·저녁, 'N' 야간, '?' neither. */
+    private fun kind(name: String, label: String): Char {
+        val n = ("$name $label").lowercase()
+        val l = label.trim().lowercase()
+        return when {
+            l == "n" || listOf("야", "나이트", "night").any { n.contains(it) } -> 'N'
+            l == "e" || listOf("오후", "저녁", "이브", "evening").any { n.contains(it) } -> 'E'
+            l == "d" || listOf("주", "데이", "오전", "day", "일근", "아침").any { n.contains(it) } -> 'D'
+            else -> '?'
+        }
+    }
+
+    fun suggest(shifts: List<TeamShift>): Map<Long, Pair<java.time.LocalTime, java.time.LocalTime>> {
+        fun t(h: Int) = java.time.LocalTime.of(h, 0)
+        fun kind(s: TeamShift): Char = kind(s.name, s.label)
+        val work = shifts.filter { !it.isOff && (it.start == null || it.end == null) }
+        val three = shifts.any { !it.isOff && kind(it) == 'E' }
+        return work.associate { s ->
+            s.id to when (kind(s)) {
+                'D' -> if (three) t(7) to t(15) else t(7) to t(19)
+                'E' -> t(15) to t(23)
+                'N' -> if (three) t(23) to t(7) else t(19) to t(7)
+                else -> t(9) to t(18)
+            }
+        }
+    }
+
+    /** 1.39 [SETUP-21] One of the leader's own kinds of work that should take the team's time; [ask] when the leader set it by hand. */
+    data class MineChange(val type: com.bamnat.core.model.ShiftType, val start: java.time.LocalTime, val end: java.time.LocalTime, val ask: Boolean)
+
+    /**
+     * 1.39 [SETUP-21] (PC 5차 리더 폰: 팀은 주 07–15·오 15–23·야 23–07로 정했는데 내 달력은 주간 09–18·야간 22–07 그대로): the leader's own
+     * kinds of work that are the team's too, with the team's times where they differ. The same kind is the same id, else the same name,
+     * else the one kind of the same sort by name (주 ↔ 주간, 야 ↔ 야간) when each side has only one. A time still the app's own
+     * ([defaults], same name and times) changes without asking; one the leader set by hand is [MineChange.ask]ed.
+     */
+    fun mine(team: Team, mine: List<com.bamnat.core.model.ShiftType>, defaults: List<com.bamnat.core.model.ShiftType>): List<MineChange> {
+        val own = mine.filter { !it.isOff }
+        val shifts = team.shifts.filter { !it.isOff && it.start != null && it.end != null }
+        fun sortOf(t: com.bamnat.core.model.ShiftType) = kind(t.name, t.label)
+        val used = mutableSetOf<Long>()
+        return shifts.mapNotNull { s ->
+            val k = kind(s.name, s.label)
+            val type = own.firstOrNull { it.id == s.id && it.id !in used }
+                ?: own.firstOrNull { it.name.trim() == s.name.trim() && it.id !in used }
+                ?: own.filter { k != '?' && sortOf(it) == k }.singleOrNull()
+                    ?.takeIf { it.id !in used && shifts.count { o -> kind(o.name, o.label) == k } == 1 }
+                ?: return@mapNotNull null
+            used += type.id
+            if (type.start == s.start && type.end == s.end) return@mapNotNull null
+            val untouched = type.start == null || type.end == null ||
+                defaults.any { d -> d.name == type.name && d.start == type.start && d.end == type.end }
+            MineChange(type, s.start!!, s.end!!, ask = !untouched)
+        }
+    }
+
+    /** [team] with the times picked for each kind ([times] by [TeamShift.id]; a kind not in it is left as it is). */
+    fun set(team: Team, times: Map<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>): Team =
+        team.copy(shifts = team.shifts.map { s -> times[s.id]?.let { (a, b) -> s.copy(start = a, end = b) } ?: s })
+}

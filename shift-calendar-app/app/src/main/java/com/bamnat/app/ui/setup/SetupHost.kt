@@ -63,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -88,7 +89,10 @@ import com.bamnat.core.setup.SetupStep
  */
 private data class Primary(
     val label: String, val enabled: Boolean = true, val hint: String? = null,
-    val note: String? = null, val secondary: Pair<String, () -> Unit>? = null, val onClick: () -> Unit,
+    val note: String? = null, val secondary: Pair<String, () -> Unit>? = null,
+    /** 1.39 7차 PC 1-12: a small ask said right above the button (the usage-stats yes/no on the first setup's last step). */
+    val above: (@Composable () -> Unit)? = null,
+    val onClick: () -> Unit,
 )
 
 /**
@@ -172,7 +176,7 @@ fun SetupHost(
     }
     val inviteDays by inviteContainer.invites.store.state.collectAsStateWithLifecycle()
     val todayAsk by vm.todayAsk.collectAsStateWithLifecycle()
-    val primary = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
+    val primaryNoAsk = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
         val code = inviteCode
         if (p == null || !atSummary || code == null) p
         else p.copy(
@@ -185,20 +189,21 @@ fun SetupHost(
             },
         )
     }
-    val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    // [EASE-05][ONBOARD-05][OBS2-06] 사용 통계: 첫 설정에서만, 미리 켜 두지 않고 두 단추로 직접 골라요(D42). 1.39 7차 PC 1-12: 요약
+    // 본문 맨 아래에 있으면 스크롤해야 보여서, 저장 단추 바로 위에 둬요. 고르지 않고 저장해도 꺼짐 그대로예요.
+    val statsSettings by inviteContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    val primary = primaryNoAsk?.let { p ->
+        if (!atSummary) p
+        else p.copy(above = { com.bamnat.app.ui.onboarding.StatsAsk(statsSettings.shareUsageStats) { inviteContainer.setUsageStats(it) } })
+    }
     val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
         topBar = {
             Column {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(if (fixing) "답 고치기" else vm.calendarName?.let { "$it 달력 설정" } ?: if (vm.again) "처음 설정 다시 받기" else "근무 설정",
-                                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            // [SETUP-06] What is left, once the kind of work says how many questions there are. A "2/8"
-                            // that became "3/7" when a company file skipped a question read as going backwards.
-                            if (stepsLeft != null && !bigFont) StepsLeft(stepsLeft)
-                        }
+                        Text(if (fixing) "답 고치기" else vm.calendarName?.let { "$it 달력 설정" } ?: if (vm.again) "처음 설정 다시 받기" else "근무 설정",
+                            style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     },
                     navigationIcon = {
                         if (fixing || d.previous() != null) {
@@ -230,9 +235,14 @@ fun SetupHost(
                     animationSpec = tween(400, easing = FastOutSlowInEasing),
                     label = "setup-progress",
                 )
-                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(3.dp), drawStopIndicator = {})
-                // [A11Y-04] At 200% two lines no longer fit the bar's height, so what is left goes under it.
-                if (stepsLeft != null && bigFont) StepsLeft(stepsLeft, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                // [SETUP-06] What is left, once the kind of work says how many questions there are. A "2/8" that became "3/7" when a
+                // company file skipped a question read as going backwards. 1.39 [FLOW-02]: said at the bar's end, as its end point, on
+                // one line at any text size ([A11Y-04] used to put it under the bar at 200%).
+                Row(Modifier.fillMaxWidth().heightIn(min = 22.dp).padding(end = if (stepsLeft != null) 12.dp else 0.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.weight(1f).height(4.dp), drawStopIndicator = {})
+                    if (stepsLeft != null) StepsLeft(stepsLeft, Modifier.padding(start = 8.dp))
+                }
                 // [PLAZA-06] Said once at the top, so going through the questions again is not feared.
                 if (vm.again && d.step == SetupStep.STYLE) {
                     Text("지금 달력은 그대로예요. 마지막에 저장해야 오늘부터 바뀌고, 지난 날짜와 직접 바꾼 날은 남아요. 회사 찾기도 여기서 다시 할 수 있어요.",
@@ -398,6 +408,7 @@ private fun BottomButton(p: Primary, busy: Boolean) {
             Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            p.above?.let { Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().padding(bottom = 8.dp)) { it() } }
             p.note?.let {
                 Text(
                     it,
@@ -433,15 +444,24 @@ private fun BottomButton(p: Primary, busy: Boolean) {
     }
 }
 
+/** 1.39 [FLOW-02] The bar's end point: a small pill with what is left, one line even at 200% ("3단계 남음", "마지막"). */
 @Composable
 private fun StepsLeft(left: Int, modifier: Modifier = Modifier) {
-    Text(
-        if (left <= 0) "마지막 확인이에요" else "${left}단계 남았어요",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        modifier = modifier,
-    )
+    val done = left <= 0
+    Surface(
+        shape = androidx.compose.foundation.shape.CircleShape,
+        color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+        modifier = modifier.semantics { contentDescription = if (done) "마지막 확인이에요" else "${left}단계 남았어요" },
+    ) {
+        Text(
+            if (done) "마지막" else "${left}단계 남음",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (done) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+        )
+    }
 }
 
 /** Said by TalkBack when a step opens. */
