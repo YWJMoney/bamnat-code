@@ -130,7 +130,7 @@ const saveSetting = (env, key, value) => run(env, "INSERT OR REPLACE INTO settin
 export const SWITCH_DEFAULT = { autoShip: true, sync: true, phone: true, halt: true, instant: [], urgentMin: 0, flexibleMin: 0 };
 export const loopSwitches = (env) => readSetting(env, "loop_switches", SWITCH_DEFAULT);
 /** [LOOP-07] 정기 출시 열차: 첫 출발일과 주기. */
-export const loopTrain = (env) => readSetting(env, "loop_train", { start: "2026-11-20", days: LOOP.trainDays });
+export const loopTrain = (env) => readSetting(env, "loop_train", { start: "2026-11-23", days: LOOP.trainDays });
 
 /** 다음 정기 출발일(KST 'YYYY-MM-DD'): [start]부터 [days]마다, 오늘 이후 가장 가까운 날. */
 export function nextTrain(train, now) {

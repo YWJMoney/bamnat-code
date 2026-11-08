@@ -221,7 +221,7 @@ test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 �
   // 열쇠로 간 답은 10분 보류예요. 보류가 끝나면 '정기 업데이트에 들어가요'가 가요.
   t.mock.timers.tick(11 * 60e3);
   await fiveMinutes(env);
-  assert.match((await thread(call, q1, 1)).messages.at(-1).text, /1\.39\.1 버전으로 11월 20일 정기 업데이트에 들어가요/);
+  assert.match((await thread(call, q1, 1)).messages.at(-1).text, /1\.39\.1 버전으로 11월 23일 정기 업데이트에 들어가요/);
   const dev = (await call("GET", `/api/admin/dev/${d1}`, undefined, owner)).data;
   assert.equal(dev.item?.releasedIn ?? dev.releasedIn, "1.39.1");
   const list = (await call("GET", "/api/admin/dev?status=doing", undefined, owner)).data;
