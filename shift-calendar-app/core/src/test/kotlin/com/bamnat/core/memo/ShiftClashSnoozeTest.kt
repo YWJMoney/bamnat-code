@@ -56,6 +56,12 @@ class ShiftClashSnoozeTest {
         // No day off ahead (투자, nothing scheduled): tomorrow at the same time.
         assertNull(MemoSnooze.nextRest(today) { false })
         assertEquals(MemoSnooze.Way.TOMORROW, MemoSnooze.later(null))
+        // 1.39 [TASK-39] 다른 때…: the day off first when there is one, then the times.
+        assertEquals(listOf(MemoSnooze.Way.REST, MemoSnooze.Way.MIN10, MemoSnooze.Way.MIN30, MemoSnooze.Way.HOUR1, MemoSnooze.Way.HOUR3,
+            MemoSnooze.Way.TOMORROW), MemoSnooze.choices(rest))
+        assertEquals(MemoSnooze.Way.MIN10, MemoSnooze.choices(null).first())
+        assertEquals(LocalDateTime.of(2026, 11, 9, 14, 33), MemoSnooze.at(MemoSnooze.Way.MIN30, now, was, rest))
+        assertEquals(LocalDateTime.of(2026, 11, 9, 17, 3), MemoSnooze.at(MemoSnooze.Way.HOUR3, now, was, rest))
         assertEquals(LocalDateTime.of(2026, 11, 10, 14, 0), MemoSnooze.at(MemoSnooze.Way.TOMORROW, now, was, null))
         assertEquals(MemoSnooze.Way.REST, MemoSnooze.Way.of("rest"))
     }

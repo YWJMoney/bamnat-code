@@ -90,6 +90,18 @@ class TaskWidgetTest {
         walk(drawn)
         assertTrue("no circle letter: $texts", texts.none { "○" in it || "✓" in it })
         assertTrue("the circle is drawn: $texts", pictures.isNotEmpty())
+        // PC eae4e024: at 2×1 '우유 사기 ·…' cut the time and the count. The title, its time and the number left are each their own.
+        val three = TaskList.of(listOf(
+            Memo(id = 3, date = today, title = "우유 사기", reminder = com.bamnat.core.memo.MemoReminder(today.atTime(21, 0), ring = false, notify = true)),
+            Memo(id = 4, date = today, title = "운동"),
+            Memo(id = 5, date = today, title = "빨래"),
+        ), today)
+        val split = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three) } } }
+        texts.clear()
+        walk(split.remoteViews.apply(context, android.widget.FrameLayout(context)))
+        assertTrue("title alone: $texts", "우유 사기" in texts)
+        assertTrue("time under it: $texts", texts.any { it.endsWith("21:00") || it.endsWith("9:00") })
+        assertTrue("how many left, by ＋: $texts", "3" in texts)
         // The second widget's row is 프로; the first is free whatever the tier.
         assertEquals(com.bamnat.app.tier.Tier.PRO, Feature.MORE_TASK_WIDGETS.minTier)
     }

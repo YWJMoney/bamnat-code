@@ -75,12 +75,15 @@ class QuickTaskActivity : ComponentActivity() {
         val shared = if (intent?.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty().take(MAX_CHARS) else ""
         setContent {
             BamnatTheme {
-                QuickTask(shared, onClose = { finish() }, onSave = { memo ->
+                QuickTask(shared, onClose = { finish() }, onSave = { memo, more ->
                     lifecycleScope.launch {
                         val saved = runCatching { appContainer.memoRepository.save(memo) }.isSuccess
                         if (saved) runCatching { TaskWidget.redraw(applicationContext) }
-                        Toast.makeText(applicationContext, if (saved) "할 일에 적었어요" else "적지 못했어요. 앱에서 다시 적어 주세요", Toast.LENGTH_SHORT).show()
-                        finish()
+                        // 하나 더 keeps the window open and says it in the window; a failed save is always said.
+                        if (!more || !saved) {
+                            Toast.makeText(applicationContext, if (saved) "할 일에 적었어요" else "적지 못했어요. 앱에서 다시 적어 주세요", Toast.LENGTH_SHORT).show()
+                        }
+                        if (!more) finish()
                     }
                 })
             }
@@ -146,8 +149,10 @@ internal fun quickSay(line: MemoTime.Line, day: QuickDay, ring: Boolean, now: Lo
 }
 
 @Composable
-internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo) -> Unit) {
+internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boolean) -> Unit) {
     var text by rememberSaveable { mutableStateOf(shared) }
+    // 1.39 [TASK-39] 적고 하나 더 (두 앱 실사용 2차: 할 일 앱의 넣기 창은 열린 채 남아 이어 적어요): what was just written, said in the window.
+    var written by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     var day by rememberSaveable { mutableStateOf(QuickDay.READ) }
     var ring by rememberSaveable { mutableStateOf(true) }
     val now = remember { Today.dateTime() }
@@ -170,6 +175,10 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo) -> Un
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("할 일 적기", style = MaterialTheme.typography.titleMedium)
+                if (written.isNotEmpty()) {
+                    Text("적었어요: " + written.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary, maxLines = 2)
+                }
                 OutlinedTextField(
                     value = text, onValueChange = { text = it.take(QuickTaskActivity.MAX_CHARS) },
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
@@ -198,8 +207,16 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo) -> Un
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose) { Text("닫기") }
+                    TextButton(onClick = {
+                        quickMemo(text, day, ring, Today.dateTime())?.let { memo ->
+                            onSave(memo, true)
+                            written = written + memo.title
+                            text = ""; day = QuickDay.READ; ring = true
+                            runCatching { focus.requestFocus() }
+                        }
+                    }, enabled = text.isNotBlank()) { Text("적고 하나 더") }
                     Spacer(Modifier.height(1.dp).padding(horizontal = 4.dp))
-                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime())?.let(onSave) }, enabled = text.isNotBlank()) { Text("적기") }
+                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime())?.let { onSave(it, false) } }, enabled = text.isNotBlank()) { Text("적기") }
                 }
             }
         }

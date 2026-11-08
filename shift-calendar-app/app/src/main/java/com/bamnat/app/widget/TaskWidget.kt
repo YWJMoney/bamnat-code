@@ -229,7 +229,9 @@ private fun TaskRow(row: TaskList.Row, today: LocalDate) {
     if (line.hide == true) return
     val check = widgetPart("widget.task.check", states - "today")
     val toggle = actionRunCallback<TaskDoneAction>(actionParametersOf(TaskWidget.MEMO_ID to row.memo.id, TaskWidget.DAY to (row.day?.toString() ?: "")))
-    val faint = if (row.done) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface
+    // A finished row is struck through and pale: in Korean the strike line sits on the ㅡ·ㅗ·ㅜ strokes and hardly shows on its own
+    // (PC c0ca3d9f, 두 앱 실사용 2차), so the paler 테두리 색 says it as well.
+    val faint = if (row.done) GlanceTheme.colors.outline else GlanceTheme.colors.onSurface
     Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp).widgetBox(line), verticalAlignment = Alignment.CenterVertically) {
         // A wide target for a thumb on the home screen: the circle sits in 36 dp.
         // TalkBack reads what the circle does, not "○" (조사 보완 11-07: 위젯 글자 읽기).
@@ -294,10 +296,20 @@ internal fun TaskLine(rows: List<TaskList.Row>) {
                 TaskCircle(false, if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, check)
             }
             val line = widgetPart("widget.task", states)
-            val tail = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { next.kind == TaskList.Kind.LATE }, "남은 $left".takeIf { left > 1 })
-            Text(next.text.ifEmpty { "제목 없는 메모" } + tail.joinToString("") { " · $it" },
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1,
-                modifier = GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day)))
+            // PC eae4e024: in one line '우유 사기 ·…' cut the time and what is left at 2×1. The title gets the line, the time (늦음) goes
+            // small under it, and how many are left sits as a number by ＋, so none of it is cut.
+            val note = listOfNotNull("늦음".takeIf { next.kind == TaskList.Kind.LATE }, next.time?.let { Fmt.time(it) }).joinToString(" · ")
+            Column(GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day))) {
+                Text(next.text.ifEmpty { "제목 없는 메모" },
+                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1)
+                if (note.isNotEmpty()) Text(note, style = TextStyle(color = if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error
+                    else GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(11)), maxLines = 1)
+            }
+            if (left > 1) {
+                Box(GlanceModifier.padding(horizontal = 6.dp).semantics { contentDescription = "남은 할 일 ${left}개" }, contentAlignment = Alignment.Center) {
+                    Text("$left", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12), fontWeight = FontWeight.Medium), maxLines = 1)
+                }
+            }
         } else {
             Text(if (rows.isEmpty()) "오늘 할 일이 없어요" else "오늘 할 일을 다 끝냈어요",
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(13)), maxLines = 1,
