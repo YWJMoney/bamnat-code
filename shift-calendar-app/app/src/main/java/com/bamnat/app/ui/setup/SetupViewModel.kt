@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.setup
 
+import com.bamnat.app.ui.withBar
 import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -110,6 +111,14 @@ class SetupViewModel(
 
     /** [EASE-03] 1.38: the summary's '같은 회사 분들과 이 근무주기 나누기' box; never ticked beforehand. */
     val shareCycle = MutableStateFlow(false)
+
+    /**
+     * 1.39 사용자 2026-11-08 (첫 설정 끝에 '잠을 아래 메뉴에 둘까요?' 한 번 권하기; 8차 PC 1-24: 새 설치는 첫 설정 요약이 마지막 화면이라
+     * 추천 화면의 권하기가 안 보였어요): the place of the bar 잠 takes when the first setup is saved; -1 keeps the bar. Never picked
+     * beforehand. Only the first setup of a new install offers it ([offersSleepBar]).
+     */
+    val sleepSlot = MutableStateFlow(-1)
+    val offersSleepBar: Boolean get() = calendarId == null && !again
 
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
@@ -883,6 +892,9 @@ class SetupViewModel(
                 .onSuccess {
                     // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
                     if (calendarId == null && !again) c.setupTaps.finish(d.style)
+                    // 1.39 사용자 2026-11-08: 잠 in the place picked on the summary ([sleepSlot]).
+                    if (offersSleepBar && sleepSlot.value >= 0) runCatching { putSleepOnBar(sleepSlot.value) }
+                        .onFailure { android.util.Log.w("Setup", "sleep on the bar", it) }
                     // 1.39 [FLOW-03] The month fills over the calendar with its one line ("이번 달 야간 8번 · 첫 알람 내일 06:00").
                     runCatching { fillLine(d) }.getOrNull()?.let { line ->
                         com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN, line))
@@ -917,6 +929,17 @@ class SetupViewModel(
                 }
             _saving.value = false
         }
+    }
+
+    /** 1.39 사용자 2026-11-08: the bar with 잠 in place [index] (one the summary offered: never the home screen's). */
+    private fun putSleepOnBar(index: Int) {
+        val key = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.SLEEP.name
+        c.settingsRepository.update { s ->
+            val bar = com.bamnat.core.layout.TabSlots.resolve(s.tabSlots, s.tabOrder, com.bamnat.app.ui.TabPicks.known)
+            if (index !in com.bamnat.core.layout.TabSlots.swapChoices(bar, key)) s
+            else s.withBar(com.bamnat.core.layout.TabSlots.replace(bar, index, key))
+        }
+        c.telemetry.event("bar_sleep", "setup")
     }
 
     /**
