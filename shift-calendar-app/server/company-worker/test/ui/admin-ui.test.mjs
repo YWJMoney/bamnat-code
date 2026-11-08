@@ -92,8 +92,8 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
   return t;
 }
 
-async function world() {
-  const s = server();
+async function world(extra = {}) {
+  const s = server(extra);
   const { call, env } = s;
   await call("POST", "/api/reports", report(1, { company: "가나다화학" }), from(1));
   for (const [n, kind, text] of [[11, "bug", "알람 소리가 안 나요"], [12, "idea", "달력이 일요일부터면 좋겠어요"], [13, "question", "급여는 어디서 봐요"]]) {
@@ -1995,6 +1995,28 @@ test("[ADM3-50] seven flags on at once are one folded card above 오늘's big ca
   assert.ok(at >= 0 && at < kids.findIndex((k) => k.matches(".card, section")), kids.map((k) => k.className).join(" | "));
   assert.match(t.text("#main .server-sum"), /관리자 앱 빌드/);
   assert.deepEqual(t.errors, []);
+});
+
+// [ADM3-51] 8차 PC 1-21: 머리띠의 서버 판. 배포 번호(버전 메타데이터)가 없는 로컬 서버는 '로컬 서버'와 커밋 자리 '로컬'.
+test("[ADM3-51] the top line says which server runs: local without a deploy, the commit and deploy time on a deploy", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  await t.go("#/home");
+  await t.settle(30);
+  const line = t.$("#deploy-line");
+  assert.ok(line && !line.hidden, "shown");
+  assert.match(t.text("#deploy-line"), /로컬 서버/);
+  assert.match(t.text("#deploy-line"), /회사 1\.39\.\d+ 로컬/);
+  assert.equal(line.getAttribute("href"), "#/server");
+  // 배포된 서버: 커밋과 배포 시각.
+  const s2 = await world({ CF_VERSION_METADATA: { id: "1789720e-0000", tag: "9a99201a1b2c", timestamp: "2026-11-08T14:30:00.000Z" } });
+  const t2 = await signedIn(s2.env);
+  await t2.go("#/home");
+  await t2.settle(30);
+  assert.match(t2.text("#deploy-line"), /지금 도는 서버/);
+  assert.match(t2.text("#deploy-line"), /9a99201a/);
+  assert.doesNotMatch(t2.text("#deploy-line"), /로컬/);
+  assert.deepEqual([...t.errors, ...t2.errors], []);
 });
 
 test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say where each number comes from, a 개선 신호 becomes a 개발사항, 관측 빈틈 marks what needs the policy", async (t) => {

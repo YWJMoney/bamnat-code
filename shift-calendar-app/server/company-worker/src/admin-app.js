@@ -722,12 +722,12 @@ function adminApp(L, BUILD, M) {
       return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
     };
     const part = (label, x) => !x ? "" : !x.ok && !x.version ? `<span class="dl-part bad"><b>${label}</b> 닿지 않음</span>`
-      : `<span class="dl-part"><b>${label}</b> ${esc(x.version ?? "?")}${x.commit ? ` <code>${esc(x.commit)}</code>` : ""}${x.at ? `<small>${esc(when(x.at))} 배포</small>` : ""}</span>`;
+      : `<span class="dl-part"><b>${label}</b> ${esc(x.version ?? "?")}${x.commit ? ` <code>${esc(x.commit)}</code>` : ' <code class="local">로컬</code>'}${x.at ? `<small>${esc(when(x.at))} 배포</small>` : ""}</span>`;
     const live = Boolean(v.company.id);
     const differ = v.share?.version && v.share.version !== v.company.version;
     const title = [`회사 서버 ${v.company.version}${v.company.commit ? ` · 커밋 ${v.company.commit}` : ""}${v.company.at ? ` · ${when(v.company.at)} 배포` : ""}`,
       v.share ? `공유 서버 ${v.share.version ?? "?"}${v.share.commit ? ` · 커밋 ${v.share.commit}` : ""}${v.share.at ? ` · ${when(v.share.at)} 배포` : ""}` : ""].filter(Boolean).join("\n");
-    el.innerHTML = `<span class="dl-tag${live ? "" : " local"}">${live ? "지금 도는 서버" : "배포 번호 없음"}</span>${part("회사", v.company)}${part("공유", v.share)}${differ ? '<span class="pill warn">판 다름</span>' : ""}`;
+    el.innerHTML = `<span class="dl-tag${live ? "" : " local"}">${live ? "지금 도는 서버" : "로컬 서버"}</span>${part("회사", v.company)}${part("공유", v.share)}${differ ? '<span class="pill warn">판 다름</span>' : ""}`;
     el.title = title;
     el.setAttribute("aria-label", title.replace("\n", ", "));
     el.hidden = false;
