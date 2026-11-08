@@ -345,7 +345,34 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
 
     var timesAsked by rememberSaveable(team.id) { mutableStateOf(false) }
     var settingTimes by remember(team.id) { mutableStateOf(false) }
-    if (settingTimes) TeamTimesDialog(team, onDismiss = { settingTimes = false }) { t -> settingTimes = false; scope.launch { store.saveTeam(t) } }
+    // 1.39 [SETUP-21] PC 5차 리더 폰(팀은 주 07–15·야 23–07, 내 달력은 주간 09–18·야간 22–07 그대로): the team's times go to the leader's
+    // own kinds of the same name too. The app's own sample times change at once (said once); a time the leader set by hand is asked.
+    var mineAsk by remember(team.id) { mutableStateOf<List<com.bamnat.core.team.TeamTimes.MineChange>>(emptyList()) }
+    fun span(a: java.time.LocalTime?, b: java.time.LocalTime?) = "${a ?: "–"}–${b ?: "–"}"
+    if (settingTimes) TeamTimesDialog(team, onDismiss = { settingTimes = false }) { t ->
+        settingTimes = false
+        scope.launch {
+            store.saveTeam(t)
+            val changes = runCatching {
+                com.bamnat.core.team.TeamTimes.mine(t, c.scheduleRepository.shiftTypes.first(), com.bamnat.app.data.DefaultShiftTypes.all())
+            }.getOrDefault(emptyList())
+            val now = changes.filter { !it.ask }
+            now.forEach { ch -> runCatching { c.scheduleRepository.saveShiftType(ch.type.copy(start = ch.start, end = ch.end)) } }
+            mineAsk = changes.filter { it.ask }
+            if (mineAsk.isEmpty() && now.isNotEmpty())
+                dialog = "내 달력 근무 시간도 팀과 같게 맞췄어요.\n" + now.joinToString("\n") { "${it.type.name} ${span(it.start, it.end)}" }
+        }
+    }
+    if (mineAsk.isNotEmpty()) AlertDialog(onDismissRequest = { mineAsk = emptyList() }, title = { Text("내 달력 근무 시간도 바꿀까요?") }, text = {
+        Text("직접 정한 시간이 팀 시간과 달라요. 바꾸면 내 근무 알람도 팀 시간에 맞춰 울려요.\n\n" +
+            mineAsk.joinToString("\n") { "${it.type.name} ${span(it.type.start, it.type.end)} → ${span(it.start, it.end)}" })
+    }, confirmButton = {
+        TextButton(onClick = {
+            val list = mineAsk
+            mineAsk = emptyList()
+            scope.launch { list.forEach { ch -> runCatching { c.scheduleRepository.saveShiftType(ch.type.copy(start = ch.start, end = ch.end)) } } }
+        }) { Text("팀 시간으로 바꾸기") }
+    }, dismissButton = { TextButton(onClick = { mineAsk = emptyList() }) { Text("내 달력은 그대로") } })
     Scaffold(topBar = {
         TopAppBar(title = { Text(team.name) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             actions = {
