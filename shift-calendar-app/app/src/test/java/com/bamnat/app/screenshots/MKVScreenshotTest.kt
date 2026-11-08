@@ -359,6 +359,8 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_THEME)
         settle()
+        // 1.39 [MKD-60] 칩 줄은 한 줄로 밀어 보고, 넘치면 ▾로 펼쳐요.
+        repeat(3) { if (shows("칩 모두 펼쳐 보기", exact = true)) { tapText("칩 모두 펼쳐 보기", exact = true); settle() } }
         tapText("작게 보기", exact = true)
         settle()
         assertTrue("이 폰에 기억해요", app.getSharedPreferences("market_view", 0).getBoolean("small", false))

@@ -27,6 +27,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Card
@@ -63,6 +65,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.stateDescription
 import com.bamnat.app.recipe.RecipeClient
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -235,6 +238,8 @@ fun RecipeListScreen(
     onMine: () -> Unit,
     title: String = "장터",
     askCode: Boolean = false,
+    /** [VIL-17] 테마 넘겨 보며 고르기 (마을's 장터), a chip at the head of 테마's 분위기. */
+    onSwipe: (() -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var codeAsk by remember { mutableStateOf(askCode) }
@@ -308,12 +313,19 @@ fun RecipeListScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
+            // 1.39 [MKD-60] (사용자 2026-11-08 "바로 검색창이 젤 위에 있으면 더 좋을거 같은데"): the search box is 장터's first row, with
+            // 만들기 beside it; the 구간 under it, then the 팔로잉 줄 (only when someone is in it). 오늘의 하나 moved to 테마, 넘겨 보기 to a chip.
             item(key = "top") {
-                Column(Modifier.widthIn(max = 640.dp).padding(top = if (onBack == null) 4.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
+                Column(Modifier.widthIn(max = 640.dp).padding(top = if (onBack == null) 8.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.weight(1f),
+                            placeholder = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
+                            shape = RoundedCornerShape(28.dp),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
+                        Spacer(Modifier.width(8.dp))
+                        androidx.compose.material3.FilledTonalIconButton(onClick = onMake, modifier = Modifier.size(52.dp)
+                            .semantics { contentDescription = "스튜디오에서 만들기" }) { Icon(Icons.Filled.Add, null) }
+                    }
                     // PC 확인 1.36 (코드로 찾으면 어느 구간에도 안 나옴): a code typed in the box opens that work, whatever its 구간.
                     com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 })?.let { code ->
                         FilledTonalButton(onClick = { onOpen(code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드 $code 작품 열기") }
@@ -332,16 +344,11 @@ fun RecipeListScreen(
                         }
                         MarketHalf("도구", "하나만 더하기", "🧰", selected = tools, Modifier.weight(1f)) { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) }
                     }
-                    Text(when {
-                        tools -> "입은 테마나 기본 모양은 그대로 두고 부품 하나, 규칙 하나, 단추 하나만 더해요. 눌러서 전후를 직접 해 볼 수 있어요"
-                        featured -> "탭 하나를 위해 만든 꾸미기(모양)와 기능(틀·묶음)이에요. 지금 입은 테마는 그대로 두고 그 탭만 바꿔요"
-                        else -> "달력·가계부·메모·급여까지 모든 화면을 한 벌로 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 탭별 작품으로 바꿀 수 있어요"
-                    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    androidx.compose.material3.OutlinedButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("스튜디오에서 만들기")
-                    }
+                    // 1.39 [MKD-60] the long line under the 구간 (what each one is) is gone: each card says it in a few words (and in
+                    // full to TalkBack).
                 }
             }
+            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
             // 7차 통합 347b7c37 PC 제안 (칩 줄 판이 화면보다 좁아 좌우로 사진이 보여요): the pinned row's ground runs past the list's 16dp side
             // padding to the screen's edges; its chips stay in the 640dp column.
             stickyHeader(key = "chips") { Column(Modifier.fillMaxWidth().layout { m, c ->
@@ -437,13 +444,15 @@ fun RecipeListScreen(
                         ChipRows { screenChips() }
                     }
                     // 1.39 [MKD-45] 테마 분위기: 밝은 · 어두운 · 파스텔 · 선명한 · 차분한 (다시 누르면 풀려요), 테마 구간에서 붙지 않은 머리에만.
-                    if (!featured && !tools && !pinned) ChipRows {
+                    if (!featured && !tools && !pinned) ChipRows(fold = true) {
+                        // 1.39 [MKD-60] 넘겨 보기 (was a row of its own above 장터's search).
+                        onSwipe?.let { go -> androidx.compose.material3.AssistChip(onClick = go, label = { Text("🃏 넘겨 보기") }) }
                         com.bamnat.app.recipe.MarketMood.Mood.entries.forEach { m ->
                             FilterChip(selected = moodNow == m, onClick = { mood = if (moodNow == m) null else m.name }, label = { Text(m.label) })
                         }
                     }
                     // How sorted and whose, under the half chosen. 1.39 [MKD-02] (CLAUDE.md 7항): 좁은 폰에서 오른쪽 칩이 잘려 있는 줄 모르니 줄을 감싸요.
-                    ChipRows {
+                    ChipRows(fold = true) {
                         // 1.39 [MKD-03] '값 칸'·'위젯'·'프로'처럼 장치·종류 이름으로 찾으면 그 칩으로 가는 칩을 맨 앞에.
                         RecipeClient.wordKind(state.query, state.kind)?.let { (k, name) ->
                             androidx.compose.material3.AssistChip(onClick = { vm.query(""); vm.kind(k) }, label = { Text("$name 보기") })
@@ -457,15 +466,16 @@ fun RecipeListScreen(
                         }
                         if (state.query.isNotBlank() && state.elsewhere.isNotEmpty())
                             androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-                        // 1.39 [MKC-04] 테마에는 칩 줄이 따로 없어 '✦ 프로 기능'을 이 줄 맨 앞에.
+                        // 1.39 [MKD-60] 한 줄로 밀어 볼 때 고른 정렬이 바로 보이게 정렬 칩이 먼저예요.
+                        RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
+                        // 1.39 [MKC-04] 테마에는 칩 줄이 따로 없어 '✦ 프로 기능'을 이 줄에.
                         if (!featured && !tools) {
                             val fx = RecipeClient.fxOnly(state.kind)
                             val free = RecipeClient.freeOnly(state.kind)
+                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
                             FxChip(fx) { vm.kind(RecipeClient.withFx(RecipeClient.SCOPE_THEME, !fx)) }
                             FreeChip(free) { vm.kind(RecipeClient.withFree(RecipeClient.SCOPE_THEME, !free)) }
-                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
                         }
-                        RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
                         if (vm.style != null) {
                             androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
                             FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
@@ -591,12 +601,33 @@ fun RecipeListScreen(
     }
 }
 
-/** 1.39 [MKD-02] 장터 칩 줄: 한 줄에 다 안 들어가면 다음 줄로 감싸요(좌우로 밀어야 보이는 칩이 없게). 붙은 머리는 지금처럼 한 줄이에요. */
+/**
+ * 1.39 [MKD-02] 장터 칩 줄: 좌우로 밀어야 보이는 칩이 있는 줄은 펼쳐서 한눈에 볼 수 있어요(CLAUDE.md 7항).
+ * 1.39 [MKD-60] (사용자 2026-11-08 "위에 공간을 불필요하게 차지"): 테마 구간의 분위기·정렬 줄을 늘 감싸 두면 칩이 다섯 줄이 되어 첫 화면에
+ * 작품이 거의 없었어요. 그 두 줄([fold])은 처음엔 한 줄로 밀어 보고, 넘치면 오른쪽 끝 ▾ 단추로 펼쳐요.
+ */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun ChipRows(content: @Composable () -> Unit) {
-    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp)) { content() }
+private fun ChipRows(
+    /** One line to start with (분위기·정렬 줄); the 구간's own chips (탭·꾸미기·도구 종류·화면) stay wrapped, all in sight. */
+    fold: Boolean = false,
+    content: @Composable () -> Unit,
+) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (open || !fold) {
+        androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)) {
+            content()
+            if (fold) IconButton(onClick = { open = false }) { Icon(Icons.Filled.KeyboardArrowUp, "칩 한 줄로 접기") }
+        }
+        return
+    }
+    val scroll = rememberScrollState()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically) { content() }
+        if (scroll.maxValue in 1 until Int.MAX_VALUE) IconButton(onClick = { open = true }) { Icon(Icons.Filled.KeyboardArrowDown, "칩 모두 펼쳐 보기") }
+    }
 }
 
 private const val VIEW_PREFS = "market_view"
@@ -703,6 +734,13 @@ internal fun FxBadge(locked: Boolean) {
     com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp), locked = locked)
 }
 
+/** 1.39 [MKD-60] What each 구간 is, in full (the line that was under the three cards), for TalkBack. */
+private fun about(title: String): String = when (title) {
+    "도구" -> "입은 테마나 기본 모양은 그대로 두고 부품 하나, 규칙 하나, 단추 하나만 더해요. 눌러서 전후를 직접 해 볼 수 있어요"
+    "탭별 작품" -> "탭 하나를 위해 만든 꾸미기(모양)와 기능(틀·묶음)이에요. 지금 입은 테마는 그대로 두고 그 탭만 바꿔요"
+    else -> "달력·가계부·메모·급여까지 모든 화면을 한 벌로 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 탭별 작품으로 바꿀 수 있어요"
+}
+
 /** [MKX-01] One of 장터's two halves, big enough to read at a glance. */
 @Composable
 private fun MarketHalf(title: String, sub: String, emoji: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
@@ -710,11 +748,16 @@ private fun MarketHalf(title: String, sub: String, emoji: String, selected: Bool
     val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
     androidx.compose.material3.Surface(onClick = onClick, color = bg, shape = RoundedCornerShape(16.dp),
         border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        modifier = modifier.heightIn(min = 72.dp).semantics { this.selected = selected }) {
-        // Three across a phone (테마 · 탭별 작품 · 도구): the picture over the words.
-        Column(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(emoji, fontSize = 22.sp)
-            Text(title, style = MaterialTheme.typography.titleSmall, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 1)
+        modifier = modifier.heightIn(min = 52.dp).semantics(mergeDescendants = true) { this.selected = selected; stateDescription = about(title) }) {
+        // Three across a phone (테마 · 탭별 작품 · 도구). 1.39 [MKD-60] (사용자 2026-11-08 "공간을 차지하고 디자인도 별로"): the picture on
+        // the name's line, so the three take two short lines, not three (with a big picture) and a long line under them.
+        Column(Modifier.padding(horizontal = 6.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(emoji, style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.width(4.dp))
+                Text(title, style = MaterialTheme.typography.titleSmall, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 2,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
             Text(sub, style = MaterialTheme.typography.labelSmall, color = fg, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
