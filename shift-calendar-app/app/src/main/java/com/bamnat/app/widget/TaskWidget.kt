@@ -302,7 +302,8 @@ internal fun TaskLine(rows: List<TaskList.Row>, now: java.time.LocalDateTime = T
             val line = widgetPart("widget.task", states)
             // PC eae4e024: in one line '우유 사기 ·…' cut the time and what is left at 2×1. The title gets the line, the time (늦음) goes
             // small under it, and how many are left sits as a number by ＋, so none of it is cut.
-            val note = listOfNotNull("늦음".takeIf { late }, next.time?.let { Fmt.time(it) }).joinToString(" · ")
+            // PC 7차 c92cec3e: at 2×1 '늦음 · 09:…' cut the time. The time comes first ("09:21 · 늦음"); the red says 늦음 even when cut.
+            val note = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { late }).joinToString(" · ")
             Column(GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day))) {
                 Text(next.text.ifEmpty { "제목 없는 메모" },
                     style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1)

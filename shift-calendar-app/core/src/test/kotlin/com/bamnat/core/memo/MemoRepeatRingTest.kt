@@ -85,4 +85,17 @@ class MemoRepeatRingTest {
         assertEquals("빨래", MemoTime.line("쉬는 날마다 빨래", now).title)
         assertEquals(MemoRepeat.Kind.NONE, MemoTime.line("내일 9시 치과", now).repeat)
     }
+
+    /** PC 7차 c92cec3e: '평일마다 8시 출근 도장' written at 13:10 read 20:00; a repeat's bare 8시 is the morning one, 오후 flips it. */
+    @Test fun aRepeatsBareHourIsTheMorningUnlessAfternoonIsPicked() {
+        val at1310 = java.time.LocalDateTime.of(2026, 11, 9, 13, 10)
+        val line = MemoTime.line("평일마다 8시 출근 도장", at1310)
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 10, 8, 0), line.at)
+        assertTrue(line.unmarked)
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 9, 20, 0), MemoTime.line("평일마다 8시 출근 도장", at1310, MemoTime.Half.PM).at)
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 10, 8, 0), MemoTime.line("평일마다 8시 출근 도장", at1310, MemoTime.Half.AM).at)
+        // A one-off bare 8시 at 19시 is still tonight; 오전 written is not 'unmarked'.
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 9, 20, 0), MemoTime.line("8시 약 먹기", at1310.withHour(19)).at)
+        assertFalse(MemoTime.line("평일마다 오전 8시 출근", at1310).unmarked)
+    }
 }

@@ -72,6 +72,38 @@ class MemoScheduleAppTest {
     }
 
     /**
+     * PC 7차 c92cec3e: two memo notices folded into '밤낮 · 2', and yesterday's stayed the next day. Each is its own group summary
+     * (Android does not bundle them) and goes away by itself after its day, at least 6 hours on.
+     */
+    @Test fun memoNoticesAreNotBundledAndDoNotOutliveTheirDay() {
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        Notifications.createChannels(context)
+        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(13, 4))
+        val memos = listOf(
+            Memo(id = 21, title = "보고서", reminder = MemoReminder(at, ring = false, notify = true)),
+            Memo(id = 22, title = "전화", reminder = MemoReminder(at, ring = false, notify = true)),
+        )
+        MemoScheduleAlarm.handle(context, memos, millis(at), now = millis(at) + 30_000)
+        val posted = shadowOf(nm).allNotifications
+        assertEquals(2, posted.size)
+        assertEquals(setOf("bamnat_memo_21", "bamnat_memo_22"), posted.map { it.group }.toSet())
+        assertTrue(posted.all { it.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0 })
+        assertTrue(posted.all { it.timeoutAfter > 0 })
+
+        // A schedule from yesterday still up is taken down when today's shows; today's stay.
+        val yesterday = at.minusDays(1).withHour(13)
+        MemoScheduleAlarm.post(context, Memo(id = 23, title = "어제 보고서"), yesterday)
+        MemoScheduleAlarm.post(context, Memo(id = 24, title = "오늘 전화"), at)
+        assertEquals(setOf("보고서", "전화", "오늘 전화"), shadowOf(nm).allNotifications.map { shadowOf(it).contentTitle.toString() }.toSet())
+
+        // 13:04 stays until midnight; 23:30 stays 6 hours, into the next morning.
+        val dayEnd = millis(LocalDate.now().plusDays(1).atStartOfDay())
+        assertEquals(dayEnd - millis(at), MemoScheduleAlarm.keepFor(at, now = millis(at)))
+        val late = at.withHour(23).withMinute(30)
+        assertEquals(6 * 60 * 60 * 1000L, MemoScheduleAlarm.keepFor(late, now = millis(late)))
+    }
+
+    /**
      * 1.39 [TASK-04][TASK-20][TASK-39] The notice's buttons: 끝내기 · 10분 뒤 · 다른 때…, the last opening the window that offers the
      * next day off first (내일 이 시각 with none ahead).
      */

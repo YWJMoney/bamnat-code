@@ -72,7 +72,12 @@ object MemoTime {
         val title: String, val rest: String, val date: LocalDate?, val at: LocalDateTime?, val read: String,
         /** 1.39 [TASK-44] "매일", "평일마다", "쉬는 날마다" read as the memo's repeat, out of the title. */
         val repeat: MemoRepeat.Kind = MemoRepeat.Kind.NONE,
+        /** PC 7차: the time had no 오전·오후 ("8시"), so [at] is a guess the window lets the user flip ([Half]). */
+        val unmarked: Boolean = false,
     )
+
+    /** PC 7차: 오전 or 오후, for a time written without one. */
+    enum class Half { AM, PM }
 
     /** 1.39 [TASK-44] PC 6차: '매일 오전 9시 24분 …' left '매일' in the title. The repeat words the line reads. */
     private val REPEAT_WORDS = Regex("(매일|날마다|평일마다|평일에는|쉬는\\s*날마다|휴무\\s*날마다|비번\\s*날마다)")
@@ -88,30 +93,33 @@ object MemoTime {
      * title ("치과") so the title says only the thing (할 일 앱 조사 15-2: that app keeps the words in the title). A time with no day is
      * the next such time; a day with no time is that day. The first line is the title, the other lines the body ([Line.rest]).
      */
-    fun line(text: String, now: LocalDateTime): Line {
+    fun line(text: String, now: LocalDateTime, half: Half? = null): Line {
         val lines = text.trim().lines()
         val first = lines.firstOrNull().orEmpty().trim()
         val rest = lines.drop(1).joinToString("\n").trim()
         val today = now.toLocalDate()
         val written = findDate(first, today)
         val time = findTime(first)
+        val again = REPEAT_WORDS.find(first)?.value
+        val unmarked = time != null && Regex(MARKS).find(time.phrase) == null && time.time.hour in 1..11 && time.nextDay == 0L
         val at = time?.let { t ->
-            val base = (written?.first ?: today).atTime(t.time).plusDays(t.nextDay)
-            // "8시 약 먹기" typed at 19시 with no 오전·저녁: tonight's 8시, not tomorrow morning's.
-            val unmarked = Regex(MARKS).find(t.phrase) == null && t.time.hour in 1..11 && t.nextDay == 0L
+            // PC 7차: [half] picked in the window says which 8시 it is.
+            val clock = if (unmarked && half == Half.PM) t.time.plusHours(12) else t.time
+            val base = (written?.first ?: today).atTime(clock).plusDays(t.nextDay)
             when {
                 written != null || base.isAfter(now) -> base
-                unmarked && base.plusHours(12).isAfter(now) -> base.plusHours(12)
+                // "8시 약 먹기" typed at 19시 with no 오전·저녁: tonight's 8시, not tomorrow morning's. Not for a repeat (PC 7차: '평일마다
+                // 8시 출근 도장' at 13:10 read 20:00): a 8시 every day is the morning one unless 오후 is picked.
+                unmarked && half == null && again == null && base.plusHours(12).isAfter(now) -> base.plusHours(12)
                 else -> base.plusDays(1)
             }
         }
-        val again = REPEAT_WORDS.find(first)?.value
         var title = first
         listOfNotNull(again, written?.second, time?.phrase).forEach { title = title.replaceFirst(it, " ") }
         title = title.replace(Regex("\\s+"), " ").trim().trim(',', '.', '·', '-').trim()
         if (title.isEmpty()) title = first
         val read = listOfNotNull(again, written?.second, time?.phrase).joinToString(" ")
-        return Line(title, rest, written?.first ?: at?.toLocalDate(), at, read, again?.let(::repeatOf) ?: MemoRepeat.Kind.NONE)
+        return Line(title, rest, written?.first ?: at?.toLocalDate(), at, read, again?.let(::repeatOf) ?: MemoRepeat.Kind.NONE, unmarked)
     }
 
     private class Time(val time: LocalTime, val nextDay: Long, val phrase: String)

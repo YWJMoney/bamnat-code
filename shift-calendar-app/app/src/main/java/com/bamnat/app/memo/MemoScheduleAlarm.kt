@@ -102,6 +102,12 @@ object MemoScheduleAlarm {
             .setContentText(listOfNotNull("${at.format(time)} 일정", body).joinToString(" · "))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.MEMOS, REQUEST + 1))
             .setAutoCancel(true)
+            // PC 7차 c92cec3e: two memo notices folded into one '밤낮 · 2' bundle, so 끝내기 took two taps to open. Each notice is
+            // its own group (like the 근무표 notices), so Android does not bundle them; a notice clears itself the day after.
+            .setGroup(GROUP + memo.id)
+            .setGroupSummary(true)
+            .setTimeoutAfter(keepFor(at))
+            .setWhen(at.atZone(Today.zone()).toInstant().toEpochMilli())
             // 1.39 [TASK-39] 끝내기 · 10분 뒤 · 다른 때… (두 앱 실사용 2차): 끝내기 finishes the memo on that day for real (the 할 일 앱's
             // Complete left the task open in its list), and 다른 때… opens a small window with the day off's morning first.
             .addAction(0, "끝내기", MemoDoneReceiver.intent(context, memo.id, at.toLocalDate()))
@@ -109,7 +115,34 @@ object MemoScheduleAlarm {
                 MemoSnoozeReceiver.intent(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.MIN10, rest, 0))
             .addAction(0, "다른 때…", MemoLaterActivity.intent(context, memo.id, rest))
             .build()
+        clearPastDays(context)
         Notifications.post(context, noticeId(memo.id), notification)
+    }
+
+    /** Each memo notice's own group, so Android does not fold two of them into one '밤낮 · 2' bundle. */
+    internal const val GROUP = "bamnat_memo_"
+
+    /** A notice for [at] stays until the end of its day, and at least 6 hours (a late-evening one is not gone at midnight). */
+    internal fun keepFor(at: LocalDateTime, now: Long = Today.millis()): Long {
+        val dayEnd = at.toLocalDate().plusDays(1).atStartOfDay(Today.zone()).toInstant().toEpochMilli()
+        return maxOf(dayEnd - now, KEEP_AT_LEAST)
+    }
+
+    private const val KEEP_AT_LEAST = 6 * 60 * 60 * 1000L
+
+    /**
+     * PC 7차 c92cec3e: yesterday's '보고서 1:04' notice was still there the next day. Memo notices posted before today
+     * (and older than [KEEP_AT_LEAST]) are taken down when a new one shows.
+     */
+    internal fun clearPastDays(context: Context, now: Long = Today.millis()) {
+        val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+        val dayStart = Today.date().atStartOfDay(Today.zone()).toInstant().toEpochMilli()
+        runCatching { nm.activeNotifications }.getOrNull().orEmpty()
+            // Only memo notices: the memo channel, no tag (the date notices on that channel carry one), a memo id.
+            .filter { it.tag == null && it.notification.channelId == Notifications.MEMO_CHANNEL_ID && it.id in NOTIFICATION_BASE..NOTIFICATION_BASE + 0x3ff }
+            // A notice's 'when' is its schedule's minute (set in [post]); a schedule of a past day, 6 hours gone, is taken down.
+            .filter { it.notification.`when` in 1 until dayStart && now - it.notification.`when` > KEEP_AT_LEAST }
+            .forEach { nm.cancel(it.tag, it.id) }
     }
 
     internal fun handle(
