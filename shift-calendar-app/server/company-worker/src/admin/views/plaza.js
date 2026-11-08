@@ -320,7 +320,9 @@ export function plazaViews(A) {
     },
     // [ADMX-06]
     // 1.39 [ADM3-45] 비슷한 회사 짝.
-    "similar-merge": ({ from, into, a, b }) => A.confirmBox(`‘${a}’ 회사를 ‘${b}’ 회사에 합칠까요?`, "제보·규칙·참여가 모두 옮겨지고 되돌릴 수 없어요. 예전 이름으로도 찾아져요.", "합치기", async () => {
+    // 1.39 [PAYP-17] (7차 PC) the confirm says what goes along, in numbers, read from the company that goes.
+    "similar-merge": async ({ from, into, a, b }) => A.confirmBox(`‘${a}’ 회사를 ‘${b}’ 회사에 합칠까요?`,
+      A.mergeWords(await api(`/companies/${from}`).catch(() => null)), "합치기", async () => {
       await api(`/companies/${from}/merge`, "POST", { into });
       toast("합쳤어요");
       S.data.similar = await api("/companies/similar").catch(() => S.data.similar);

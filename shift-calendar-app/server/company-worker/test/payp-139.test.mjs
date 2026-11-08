@@ -220,6 +220,8 @@ test("1.39 회사 합치기: who joined the old name, what it uses and its talk 
   const post = await call("POST", "/api/posts", { device: device(9), company: cb, setup: b.data.setup, body: "2공장 야간은 22시부터예요" }, from(9));
   assert.equal(post.status, 201, post.text);
   const h = await signIn(call);
+  // 7차 PC: the merge's confirm says what goes along, from the company page.
+  assert.deepEqual((await call("GET", `/api/admin/companies/${cb}`, undefined, h)).data.carry, { members: 2, uses: 1, posts: 1, fixes: 0 }, "the sender and phone 9");
   assert.equal((await call("POST", `/api/admin/companies/${cb}/merge`, { into: ca }, h)).data.id, ca);
   // Still a member, of the merged company, and its version can still be put in, by either id.
   const page = (await call("GET", `/api/companies/${ca}`, undefined, app(9))).data;
