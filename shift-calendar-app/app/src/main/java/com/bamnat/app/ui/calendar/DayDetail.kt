@@ -508,11 +508,25 @@ private fun DayGroups(
                         // 1.38 [HLTH-01] 계획 대 실제, only while health.compare is on (Phase 3, 꺼진 채).
                         val flagsNow by vm.flagStates.collectAsStateWithLifecycle()
                         val compare = remember(snapshot, settings, log, date, flagsNow) { vm.planVsActual(snapshot, date, settings, log) }
+                        val bodyOpen = groups.isOpen(key, rest.isNotEmpty())
+                        // 1.39 8차 PC 1-23: a new phone starts in 달력만 보기, with no 오늘의 흐름 and so no 수면 기록 on the calendar.
+                        // Today's folded 몸 keeps its one record button beside the title, the way into the night screen and the log.
+                        val sleeping = log.firstOrNull { it.end == null && !it.imported }
+                        val stale = sleeping != null &&
+                            java.time.Duration.between(sleeping.start, now).toMinutes() > com.bamnat.core.sleep.SleepDebt.MAX_SLEEP_MINUTES
+                        val sleepButton: (@Composable () -> Unit)? = if (date != today || !settings.sleepTips || bodyOpen || stale) null else ({
+                            if (sleeping == null) {
+                                TextButton(onClick = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) }) { Text("잠들었어요") }
+                            } else {
+                                TextButton(onClick = { vm.wokeUp() }) { Text("깼어요") }
+                            }
+                        })
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
                             summaryColor = if (rest.isNotEmpty()) cal.warning else null,
-                            open = groups.isOpen(key, rest.isNotEmpty()), onToggle = { groups.toggle(key, rest.isNotEmpty()) },
+                            open = bodyOpen, onToggle = { groups.toggle(key, rest.isNotEmpty()) },
+                            trailing = sleepButton,
                         ) {
                             if (rest.isNotEmpty()) RestWarning(rest)
                             if (settings.sleepTips) {
