@@ -61,6 +61,16 @@ class QuickTaskTest {
         assertEquals("", quickMemo("우유 사기", QuickDay.READ, ring = true, now)!!.repeat)
     }
 
+    /** PC 7차 c92cec3e: '평일마다 8시 출근 도장' at 13:10 read 20:00; it is 08:00, and the window's 오후 chip makes it 20:00. */
+    @Test fun aRepeatsBareHourIsMorningAndTheChipFlipsIt() {
+        val at1310 = now.withHour(13).withMinute(10)
+        val morning = quickMemo("평일마다 8시 출근 도장", QuickDay.READ, ring = true, at1310)!!
+        assertEquals(8, morning.reminder?.at?.hour)
+        val evening = quickMemo("평일마다 8시 출근 도장", QuickDay.READ, ring = true, at1310, com.bamnat.core.memo.MemoTime.Half.PM)!!
+        assertEquals(20, evening.reminder?.at?.hour)
+        assertEquals(at1310.toLocalDate(), evening.date)
+    }
+
     /** PC c0ca3d9f: '오늘' was picked but the line still said 11/9 21:00, and a time gone today was dropped without a word. */
     @Test fun theLineSaysWhereTheChipsPutIt() {
         val fmt = java.time.format.DateTimeFormatter.ofPattern("M/d (E)", java.util.Locale.KOREAN)
@@ -154,6 +164,18 @@ class QuickWindowsTest {
             compose.onNodeWithText("저장", substring = true).performClick()
             assertEquals(com.bamnat.core.memo.MemoRepeat.Kind.DAY, picked.first())
             assertEquals(LocalDateTime.of(2026, 11, 9, 9, 24), (picked[1] as com.bamnat.core.memo.MemoReminder).at)
+        }
+    }
+
+    /** PC 7차 c92cec3e: a bare '8시' shows 오전·오후 chips; 오후 picked is what 적기 saves. */
+    @Test fun theWindowLetsTheHalfBePicked() {
+        val saved = mutableListOf<com.bamnat.core.memo.Memo>()
+        window({ QuickTask("평일마다 8시 출근 도장", onClose = {}, onSave = { m, _ -> saved += m }) }) {
+            compose.onNodeWithText("오전").assertExists()
+            compose.onNodeWithText("오후").performClick()
+            compose.onNodeWithText("적기").performClick()
+            assertEquals(20, saved.single().reminder?.at?.hour)
+            assertEquals("B", saved.single().repeat)
         }
     }
 

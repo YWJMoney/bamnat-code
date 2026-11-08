@@ -103,9 +103,9 @@ class QuickTaskActivity : ComponentActivity() {
 internal enum class QuickDay { READ, TODAY, TOMORROW, NONE }
 
 /** The memo [text] makes with the chips as they stand, or null when there is nothing written. */
-internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDateTime): Memo? {
+internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDateTime, half: MemoTime.Half? = null): Memo? {
     if (text.isBlank()) return null
-    val line = MemoTime.line(text, now)
+    val line = MemoTime.line(text, now, half)
     val date: LocalDate? = quickDate(line, day, now)
     // The time read goes with the day picked (내일 저녁 6시, moved to 오늘, rings 오늘 저녁 6시); no day, no ring.
     // 1.39 [TASK-44] A repeating one ('매일 오전 9시') keeps its time even when today's is gone: it rings on its next day.
@@ -121,6 +121,9 @@ internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDat
         pinned = date == null,
     )
 }
+
+/** PC 7차: the 오전·오후 the window shows for an unmarked time, so 적기 saves the one shown even if the clock moves on meanwhile. */
+private fun MemoTime.Line.half(): MemoTime.Half? = at?.takeIf { unmarked }?.let { if (it.hour >= 12) MemoTime.Half.PM else MemoTime.Half.AM }
 
 /** The day the chips put the line on, as [quickMemo] does. */
 private fun quickDate(line: MemoTime.Line, day: QuickDay, now: LocalDateTime): LocalDate? = when (day) {
@@ -165,7 +168,10 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
     var day by rememberSaveable { mutableStateOf(QuickDay.READ) }
     var ring by rememberSaveable { mutableStateOf(true) }
     val now = remember { Today.dateTime() }
-    val line = remember(text) { MemoTime.line(text, now) }
+    // PC 7차: a time without 오전·오후 ("8시") is a guess; 오전·오후 chips flip it, kept until the time written changes.
+    val timeRead = remember(text) { MemoTime.line(text, now).read }
+    var half by rememberSaveable(timeRead) { mutableStateOf<MemoTime.Half?>(null) }
+    val line = remember(text, half) { MemoTime.line(text, now, half) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val dayFmt = remember { DateTimeFormatter.ofPattern("M/d (E)", Locale.KOREAN) }
@@ -204,6 +210,12 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
                     )
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // PC 7차: 오전·오후 first, where the guess is (the line above says which was read).
+                    line.at?.takeIf { line.unmarked }?.let { at ->
+                        val pm = at.hour >= 12
+                        FilterChip(!pm, { half = MemoTime.Half.AM }, { Text("오전") })
+                        FilterChip(pm, { half = MemoTime.Half.PM }, { Text("오후") })
+                    }
                     val readDay = line.date?.takeIf { it != now.toLocalDate() && it != now.toLocalDate().plusDays(1) }
                     if (readDay != null) FilterChip(day == QuickDay.READ, { day = QuickDay.READ }, { Text(dayFmt.format(readDay)) })
                     FilterChip(day == QuickDay.TODAY || (day == QuickDay.READ && readDay == null && (line.date == null || line.date == now.toLocalDate())),
@@ -217,7 +229,7 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose) { Text("닫기") }
                     TextButton(onClick = {
-                        quickMemo(text, day, ring, Today.dateTime())?.let { memo ->
+                        quickMemo(text, day, ring, Today.dateTime(), half ?: line.half())?.let { memo ->
                             onSave(memo, true)
                             written = written + memo.title
                             text = ""; day = QuickDay.READ; ring = true
@@ -225,7 +237,7 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
                         }
                     }, enabled = text.isNotBlank()) { Text("적고 하나 더") }
                     Spacer(Modifier.height(1.dp).padding(horizontal = 4.dp))
-                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime())?.let { onSave(it, false) } }, enabled = text.isNotBlank()) { Text("적기") }
+                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime(), half ?: line.half())?.let { onSave(it, false) } }, enabled = text.isNotBlank()) { Text("적기") }
                 }
             }
         }
