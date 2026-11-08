@@ -4,6 +4,9 @@ name = "bamnat-company"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 workers_dev = true
+# 1.39 운영 설정 지키기: 대시보드에서 넣은 일반 변수(VAPID_SUBJECT, SHARE_BASE_URL 등)는 저장소에 적지 않아요(운영 값).
+# `npx wrangler deploy`가 그 변수를 지우지 않게 둬요. Secret은 원래 배포로 지워지지 않아요.
+keep_vars = true
 
 # SP1 1.30 [SPD-02] Smart Placement: the Worker runs near the D1 database when that answers faster, so one answer does not cross
 # the sea for each of its reads. A dashboard deploy sets it in Settings > General > Placement (README 5-3).

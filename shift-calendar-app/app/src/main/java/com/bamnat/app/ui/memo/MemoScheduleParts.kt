@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Warning
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
@@ -95,7 +96,7 @@ internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: 
  * when the memo is a schedule already and the written time changed, it offers the new time.
  */
 @Composable
-internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: () -> Unit, onDecline: () -> Unit) {
+internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: () -> Unit, onDecline: () -> Unit, clash: String? = null) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -115,6 +116,7 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
+            clash?.let { ClashLine(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요") }
                 FilledTonalButton(onClick = onAccept) { Text(if (changing) "바꾸기" else "일정으로 넣기") }
@@ -138,6 +140,8 @@ internal fun ScheduleDialog(
     now: () -> LocalDateTime = Today::dateTime,
     /** [MEMO-05] 1.27 AK: '근무에 맞춰' — the next of each shift ahead (출근 1시간 전) and the next day off. */
     shiftTimes: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion> = emptyList(),
+    /** 1.39 [CAL2-20] What a time runs into on the calendar (근무, 야간 뒤 잘 시간), read again as the time changes. */
+    clashOf: (LocalDateTime) -> String? = { null },
 ) {
     val context = LocalContext.current
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }
@@ -166,6 +170,7 @@ internal fun ScheduleDialog(
                     OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") ")) }
                 }
                 if (shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }
+                if (ahead) clashOf(at)?.let { ClashLine(it) }
                 if (!ahead) {
                     Text("지난 시각이에요. 날짜나 시각을 바꿔 주세요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
@@ -227,6 +232,15 @@ internal fun ScheduleDialog(
             time = it
             pickTime = false
         }
+    }
+}
+
+/** 1.39 [CAL2-20] One line: what the time runs into. A warning, the time is kept. */
+@Composable
+internal fun ClashLine(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(Icons.Filled.Warning, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
     }
 }
 

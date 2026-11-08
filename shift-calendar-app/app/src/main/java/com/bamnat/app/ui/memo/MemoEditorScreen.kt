@@ -49,6 +49,9 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -237,6 +240,15 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     if (!loaded) return@TopAppBar
                     IconButton(onClick = vm::undo, enabled = canUndo) { Icon(Icons.AutoMirrored.Filled.Undo, "실행 취소") }
                     IconButton(onClick = vm::redo, enabled = canRedo) { Icon(Icons.AutoMirrored.Filled.Redo, "다시 실행") }
+                    // 1.39 [TASK-02] 끝냄, in sight like 고정 (a repeating memo: the day it was opened from).
+                    val done = memo.isDoneOn(vm.doneDay)
+                    IconButton(onClick = { vm.setDone(!done) }) {
+                        Icon(
+                            if (done) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
+                            if (done) "끝냄 풀기" else "끝냄 표시",
+                            tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = vm::togglePinned) {
                         Icon(
                             if (memo.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
@@ -382,6 +394,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
+            // 1.39 [TASK-02][TASK-05] 끝냄: said in a line with the way back; all lines checked asks once whether the memo is done too.
+            MemoDoneLine(memo, vm.doneDay, onDone = vm::setDone)
             // 1.38 (DB 28판) The days taken off this repeating memo (이 날만 빼기), and a way to put them back.
             if (memo.repeat.isNotEmpty() && memo.skips.isNotEmpty()) {
                 val shown = memo.skips.sorted().take(SKIPS_SHOWN).joinToString(", ") { Fmt.monthDay(it) } +
@@ -523,6 +537,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         else { answering = found; scheduling = true }
                     },
                     onDecline = { vm.keepAsMemo(found) },
+                    // 1.39 [CAL2-20] 근무와 겹치거나 야간 뒤 잘 시간이면 바로 한 줄.
+                    clash = remember(found.at, shiftDays) { com.bamnat.core.memo.ShiftClash.of(found.at, shiftDays)?.text },
                 )
             }
             if (!memo.isChecklist) MemoToolHostSlot(toolHost)
@@ -564,6 +580,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             current = memo.reminder,
             onDismiss = { scheduling = false },
             shiftTimes = remember(shiftDays) { com.bamnat.core.memo.ShiftMemoTime.suggestions(shiftDays, Today.dateTime()) },
+            clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays)?.text },
             onSave = { r ->
                 vm.setReminder(r, answered = answering)
                 scheduling = false
@@ -1095,3 +1112,38 @@ internal fun numberOnly(typed: String): String {
 
 /** 1.38 How many days taken off a repeating memo the editor names before "외 N일". */
 private const val SKIPS_SHOWN = 3
+
+/**
+ * 1.39 [TASK-02] "끝냈어요 · 11월 7일 오후 2:30" with 끝냄 풀기, on a finished memo. [TASK-05] A checklist whose every line is checked
+ * and that is not finished asks "모두 체크했어요. 이 메모도 끝낼까요?" (할 일 앱 리뷰가 바란 하위 할 일 자동 완료, 묻고 나서); 아니요 is
+ * kept for this visit, and a line unchecked again asks again later.
+ */
+@Composable
+internal fun MemoDoneLine(memo: com.bamnat.core.memo.Memo, day: java.time.LocalDate, onDone: (Boolean) -> Unit) {
+    val done = memo.isDoneOn(day)
+    val allChecked = memo.isChecklist && memo.itemCount > 0 && memo.checkedCount == memo.itemCount
+    var declined by rememberSaveable { mutableStateOf(false) }
+    if (!allChecked) declined = false
+    if (done) {
+        val whenText = if (memo.repeat.isNotEmpty()) Fmt.dayTitle(day) + " 몫"
+            else memo.doneAtMillis?.let { Fmt.monthDay(Instant.ofEpochMilli(it).atZone(Today.zone()).toLocalDate()) + " " + savedTime(it) }.orEmpty()
+        Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.CheckCircle, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Text("  끝냈어요" + if (whenText.isNotEmpty()) " · $whenText" else "", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onDone(false) }) { Text("끝냄 풀기") }
+        }
+    } else if (allChecked && !declined) {
+        androidx.compose.material3.Card(
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        ) {
+            Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("모두 체크했어요. 이 메모도 끝낼까요?", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                TextButton(onClick = { declined = true }) { Text("아니요") }
+                TextButton(onClick = { onDone(true) }) { Text("끝내기") }
+            }
+        }
+    }
+}

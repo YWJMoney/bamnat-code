@@ -26,7 +26,10 @@ object QuoteImage {
     private val won = DecimalFormat("#,###")
     private fun w(v: Long) = won.format(v) + "원"
 
-    fun render(q: Quote, sender: String): Bitmap {
+    /** 1.39 [SPREAD-05][SPREAD-11] The line that names the app, also shown beside the send window's switch. */
+    const val MARK_LINE = "밤낮 달력에서 만든 견적서예요."
+
+    fun render(q: Quote, sender: String, mark: Boolean = true): Bitmap {
         val items = q.items.filter { it.name.isNotBlank() || it.unitPrice > 0 }
         val noteLines = q.note.trim().lines().filter { it.isNotBlank() }.take(4)
         val height = (380f + (items.size + 1) * ROW + 4 * 64f + 80f + noteLines.size * 44f + 140f).toInt()
@@ -97,7 +100,8 @@ object QuoteImage {
             c.drawText(ellipsize(n, text, WIDTH - 2 * PAD), PAD, y, text)
         }
         text.textSize = 26f
-        c.drawText("밤낮 달력에서 만든 견적서예요.", PAD, height - 48f, text)
+        // 1.39 [SPREAD-05] The line that names the app goes only while 설정 › 데이터 › '보내는 사진에 밤낮 표시' is on.
+        if (mark) c.drawText(MARK_LINE, PAD, height - 48f, text)
         return bmp
     }
 
@@ -113,7 +117,7 @@ object QuoteImage {
             val dir = File(context.cacheDir, "share/quote").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val file = File(dir, "quote-${q.date}.png")
-            val bmp = render(q, sender)
+            val bmp = render(q, sender, com.bamnat.app.share.ExportMark.on(context))
             file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bmp.recycle()
             file

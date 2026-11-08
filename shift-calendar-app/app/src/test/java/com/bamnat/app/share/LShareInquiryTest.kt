@@ -208,6 +208,20 @@ class LShareInquiryTest {
         assertEquals(Instant.parse("2026-11-03T00:00:00Z").toEpochMilli(), item.atMillis)
     }
 
+    @Test fun aFixOnlyNewsOpensThatVersionsTalk() {
+        // 1.39 발굴 (마을 돌봄 스레드 요청): '보완 요청이 n개 왔어요' about one version carries that version's talk.
+        val fix = PlazaNewsJob.item(JSONObject().put("kind", "fix").put("company", JSONObject().put("id", "c1").put("name", "한빛|병원"))
+            .put("setup", "s1").put("dept", "").put("count", 2).put("at", "2026-11-03T00:00:00Z"))
+        assertEquals("c1", fix.companyId)
+        assertEquals("s1", fix.setup)
+        val talk = com.bamnat.app.NoticeLinks.FixTalk.of(PlazaNewsJob.fixTalk(listOf(fix)))
+        assertEquals(com.bamnat.app.NoticeLinks.FixTalk("c1", "s1", "한빛|병원 · 회사 전체"), talk)
+        // Two versions, or anything else in the news: 광장 as before.
+        assertNull(PlazaNewsJob.fixTalk(listOf(fix, fix.copy(setup = "s2"))))
+        assertNull(PlazaNewsJob.fixTalk(listOf(fix, fix.copy(kind = "adopted"))))
+        assertNull(com.bamnat.app.NoticeLinks.FixTalk.of("c1|"))
+    }
+
     @Test fun theServerCardSaysWhatItFound() {
         val now = Instant.parse("2026-11-03T03:00:00Z")
         val lines = ServerCheck.lines(ServerCheck.Facts(120, null, true, now.minusSeconds(2 * 3600), listOf("문의 사진"), 2,

@@ -43,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.share.MonthImage
 import kotlinx.coroutines.Dispatchers
@@ -76,11 +77,14 @@ fun ImageShareSheet(
     var holidays by rememberSaveable { mutableStateOf(true) }
     var legend by rememberSaveable { mutableStateOf(true) }
     var name by rememberSaveable { mutableStateOf(startName) }
+    // 1.39 [SPREAD-05] The corner '밤낮' is the user's standing choice (설정 › 데이터), not this picture's: switching it here keeps it.
+    val settingsRepo = context.appContainer.settingsRepository
+    var mark by androidx.compose.runtime.remember { mutableStateOf(settingsRepo.current.exportMark) }
     var sending by androidx.compose.runtime.remember { mutableStateOf(false) }
     val notes = androidx.compose.runtime.remember(memos, month) { MonthImage.notes(memos, month) }
     val hasMemo = notes.values.any { it.memo != null }
     val hasSticker = notes.values.any { it.sticker != null }
-    val look = MonthImage.Look(memos = memoOn && hasMemo, stickers = stickers, holidays = holidays, legend = legend, name = name)
+    val look = MonthImage.Look(memos = memoOn && hasMemo, stickers = stickers, holidays = holidays, legend = legend, name = name, mark = mark)
     // The picture as it will go, drawn off the main thread each time a choice changes.
     val preview by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, look, snapshot, month, notes) {
         value = withContext(Dispatchers.Default) {
@@ -114,6 +118,8 @@ fun ImageShareSheet(
                 else "메모를 🎂·✈️ 같은 그림으로 시작하면 날짜 옆에 붙어요", stickers) { stickers = it }
             Pick("공휴일 이름", "날짜 아래 작게 써요", holidays) { holidays = it }
             Pick("근무 이름표", "사진 아래 근무 색과 시간", legend) { legend = it }
+            Pick("밤낮 표시", if (mark) "오른쪽 아래에 작게 ‘${MonthImage.MARK}’. 받은 분이 앱을 찾을 수 있어요"
+                else "표시 없이 보내요. 설정 › 데이터에서도 바꿀 수 있어요", mark) { on -> mark = on; settingsRepo.update { it.copy(exportMark = on) } }
             OutlinedTextField(value = name, onValueChange = { if (it.length <= 12) name = it }, singleLine = true,
                 label = { Text("제목에 넣을 이름 (선택)") }, placeholder = { Text("예: 민지") },
                 supportingText = { Text("‘${name.trim().ifEmpty { "민지" }}의 ${month.monthValue}월 근무표’로 보여요") },

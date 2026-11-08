@@ -136,6 +136,10 @@ class SettingsSearchTest {
         assertFalse("shopCash" in hourlyHelp)
         assertEquals(all.map { it.id }, all.forStyle(null).map { it.id })
         assertTrue(all.forStyle(com.bamnat.core.work.WorkStyle.SHIFT).map { it.id }.containsAll(listOf("pattern", "plazaEntry", "pay")))
+        // 1.39 PC G10: 일근 첫 화면은 알람·연차·추가 근무부터, 교대 순서는 뒤로(빠지지는 않음).
+        val day = all.forStyle(com.bamnat.core.work.WorkStyle.DAY).map { it.id }
+        assertEquals(listOf("alarm", "leave", "extra"), day.take(3))
+        assertTrue(day.indexOf("pattern") > day.indexOf("widget"))
     }
 
     @Test fun workWithNoCompanyFindsNoCompanyRows() {

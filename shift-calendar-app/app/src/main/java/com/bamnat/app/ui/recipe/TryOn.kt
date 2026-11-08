@@ -64,10 +64,12 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.bamnat.app.appContainer
 import com.bamnat.core.layout.TabOrder
 import com.bamnat.core.recipe.LookParts
 import com.bamnat.core.recipe.Recipe
+import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.core.work.WorkStyle
 
 /** The example app at [scale], drawn at its full size and shrunk (taps still land where they are seen). */
@@ -282,12 +284,30 @@ fun TryOnScreen(
     extra: (@Composable ColumnScope.() -> Unit)? = null,
     /** PC 제안 1.36: come from the studio, 담기 says 스튜디오 보관함 and offers the way back to it. */
     onToStudio: (() -> Unit)? = null,
+    /**
+     * [TRY-05] 1.39 실제 화면으로 입어 보기: given the parts ticked and the tab shown, puts them on the real app for a look ([LiveTryOn]);
+     * false when nothing on this phone would change. Null: not offered here.
+     */
+    live: (suspend (Set<String>, String) -> Boolean)? = null,
+    /** [TRY-05] Opened again after a trial: the parts that were ticked and the tab that was shown. */
+    startPicked: Set<String>? = null,
+    startTab: String? = null,
+    /**
+     * [TRY-05] One of mine: its 달력 모양 brings what the cells show too. Someone else's leaves that as I have it, as 입기 does
+     * ([com.bamnat.core.recipe.keepMyCellContent]), so 입으면 shows the cells 입기 leaves.
+     */
+    own: Boolean = false,
+    /** [TRY-06] The 기능 ticked below that [live] puts on with the looks (by name), or null: looks only. */
+    liveWith: String? = null,
     actions: @Composable ColumnScope.(Set<String>) -> Unit,
 ) {
     val c = LocalContext.current.appContainer
     val parts = remember(r) { LookParts.of(r) }
-    var picked by remember(r) { mutableStateOf(parts.map { it.id }.toSet()) }
-    var tab by remember { mutableStateOf(parts.firstOrNull()?.tab?.takeIf { it != LookParts.WIDGET } ?: TabOrder.CALENDAR) }
+    var picked by remember(r) { mutableStateOf(startPicked?.filter { id -> parts.any { it.id == id } }?.toSet() ?: parts.map { it.id }.toSet()) }
+    var tab by remember { mutableStateOf(startTab ?: parts.firstOrNull()?.tab?.takeIf { it != LookParts.WIDGET } ?: TabOrder.CALENDAR) }
+    var liveBusy by remember { mutableStateOf(false) }
+    var liveNote by remember(r) { mutableStateOf<String?>(null) }
+    val liveScope = androidx.compose.runtime.rememberCoroutineScope()
     var split by remember { mutableFloatStateOf(1f) }
     var tapped by remember { mutableStateOf(false) }
     // F-96: what 담기 did stays on the screen (a toast is gone before it is read, and hides under the sheet).
@@ -303,7 +323,7 @@ fun TryOnScreen(
     val mine by produceState(Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = emptyList()), c) {
         value = Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
     }
-    val after = remember(mine, picked, r) { LookParts.layer(mine, LookParts.pick(r, picked)) }
+    val after = remember(mine, picked, r, own) { tryOnAfter(mine, r, picked, own) }
     var onlyChanges by remember { mutableStateOf(false) }
     var changedBlocks by remember { mutableStateOf(0) }
     // [TRY-04] The parts that change on the screen shown, by name.
@@ -328,6 +348,30 @@ fun TryOnScreen(
                 val compare: @Composable () -> Unit = {
                     // 지금 | 반반 | 입으면, and the line to slide.
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        // [TRY-05] 1.39 The example below is drawn apart from the app; this puts the look on the real one, every tab and
+                        // screen (가계부·급여·일감 …) with my own records, as 입기 would leave it.
+                        if (live != null) {
+                            FilledTonalButton(onClick = {
+                                if (liveBusy) return@FilledTonalButton
+                                if (picked.isEmpty() && liveWith == null) { liveNote = "입혀 볼 모양을 아래에서 골라 주세요"; return@FilledTonalButton }
+                                liveBusy = true
+                                liveScope.launch {
+                                    val ok = runCatching { live(picked, tab) }.getOrDefault(false)
+                                    liveBusy = false
+                                    if (!ok) liveNote = "고른 모양은 지금 내 앱과 같아서 바뀌는 곳이 없어요"
+                                }
+                            }, enabled = !liveBusy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(if (liveBusy) "입혀 보는 중…" else if (liveWith != null) "내 앱에서 실제로 써 보기" else "내 앱 실제 화면에 입혀 보기")
+                                    Text(if (liveWith != null) "모양과 $liveWith 함께 · 끝내면 원래대로" else "모든 탭을 내 기록 그대로 · 저장 안 돼요",
+                                        style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                }
+                            }
+                            liveNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 4.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+                            Text("아래는 빠르게 비교하는 예시 화면이에요", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                        }
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(0f to "지금", 0.5f to "반반", 1f to "입으면").forEach { (v, label) ->
                                 com.bamnat.app.ui.components.FilterChip(selected = !onlyChanges && split == v, onClick = { onlyChanges = false; split = v }, label = { Text(label) })
@@ -432,6 +476,10 @@ fun TryOnScreen(
         )
     }
 }
+
+/** [TRY-05] 입으면 of 입어 보기: [r]'s [picked] parts on [mine], what the cells show kept as mine for someone else's (as 입기 does). */
+internal fun tryOnAfter(mine: Recipe, r: Recipe, picked: Set<String>, own: Boolean): Recipe =
+    LookParts.layer(mine, LookParts.pick(r, picked).let { if (own) it else it.keepMyCellContent() })
 
 /** The parts a box item ([com.bamnat.app.recipe.ThemeWardrobe.Kept]) holds, said in a line. */
 internal fun partsLine(ids: List<String>): String = ids.mapNotNull { LookParts.byId(it)?.label }.joinToString(" · ").ifEmpty { "전체" }

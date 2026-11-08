@@ -24,7 +24,10 @@ object StatementImage {
     private val won = DecimalFormat("#,###")
     private fun w(v: Long) = won.format(v) + "원"
 
-    fun render(s: JobStatement.Statement, sender: String): Bitmap {
+    /** 1.39 [SPREAD-05][SPREAD-11] The line that names the app, also shown beside the send window's switch. */
+    const val MARK_LINE = "밤낮 달력에서 만든 내역이에요."
+
+    fun render(s: JobStatement.Statement, sender: String, mark: Boolean = true): Bitmap {
         val withholding = s.withheld > 0
         val height = (360f + (s.lines.size + 1) * ROW + 6 * 64f + 120f).toInt()
         val bmp = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
@@ -90,7 +93,8 @@ object StatementImage {
             y += 64f
         }
         text.textSize = 26f; text.typeface = Typeface.DEFAULT; text.color = MUTED
-        c.drawText("밤낮 달력에서 만든 내역이에요.", PAD, height - 48f, text)
+        // 1.39 [SPREAD-05] The line that names the app goes only while 설정 › 데이터 › '보내는 사진에 밤낮 표시' is on.
+        if (mark) c.drawText(MARK_LINE, PAD, height - 48f, text)
         return bmp
     }
 
@@ -106,7 +110,7 @@ object StatementImage {
             val dir = File(context.cacheDir, "share/statement").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val file = File(dir, "statement-${s.month}.png")
-            val bmp = render(s, sender)
+            val bmp = render(s, sender, com.bamnat.app.share.ExportMark.on(context))
             file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bmp.recycle()
             file

@@ -3,6 +3,7 @@ package com.bamnat.app.ui.recipe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.db.AppliedRecipeEntity
 import com.bamnat.app.recipe.MyRecipes
@@ -32,7 +33,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
-/** [MKX-02] A tab's name as the 기능별 탭 chips say it. */
+/** [MKX-02] A tab's name as the 탭별 작품 chips say it. */
 internal fun tabName(tab: String?): String = com.bamnat.core.recipe.LookParts.tabLabel(tab ?: "")
 
 /** [RCP-21] 나눔 판 목록: the recipes for one kind of work, by tab, with search and 코드로 받기. */
@@ -46,10 +47,14 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     val enabled: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_BROWSE)
 
     companion object {
-        /** The market's three halves (테마 · 기능별 탭 · 규칙·단추). */
         const val TYPING_PAUSE_MS = 500L
-        val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_LOGIC)
-        fun halfName(h: String) = when (h) { RecipeClient.SCOPE_LOGIC -> "규칙·단추"; RecipeClient.SCOPE_TAB -> "기능별 탭"; else -> "테마" }
+        /** The market's three halves. 1.39 [MKC-01] (사용자 2026-11-07): 테마 · 탭별 작품 · 도구 (옛 규칙·단추에 부품까지). */
+        val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_TOOL)
+        fun halfName(h: String) = when {
+            h == RecipeClient.SCOPE_LOGIC || h.startsWith(RecipeClient.SCOPE_TOOL) -> "도구"
+            h.startsWith(RecipeClient.SCOPE_TAB) -> "탭별 작품"
+            else -> "테마"
+        }
 
         /** 1.39 [MKP-01] A list as last seen, for the same 구간·칸·찾기 opened again (while the app runs). */
         private class Kept(val items: List<RecipeItem>, val next: Int?, val at: Long)
@@ -97,8 +102,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         typing = viewModelScope.launch { kotlinx.coroutines.delay(TYPING_PAUSE_MS); load() }
     }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
-    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
-    fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }
+    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간. 1.39 [MKC-01]: 규칙·단추 opens 도구 › 자동 규칙·단추 (all tools).
+    fun kind(k: String?) {
+        val to = when (k) { "skin" -> RecipeClient.SCOPE_THEME; RecipeClient.SCOPE_LOGIC -> RecipeClient.SCOPE_TOOL; else -> k }
+        _state.value = _state.value.copy(kind = to); load()
+    }
 
     /** PC D12: a '다른 구간에 N개' chip: that half, in 새로 (where it was counted). */
     fun jump(half: String) { _state.value = _state.value.copy(kind = half, tab = Tab.NEW); load() }
@@ -178,7 +186,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     }
 
     private fun halfOf(kind: String?): String = when {
-        kind == RecipeClient.SCOPE_LOGIC -> RecipeClient.SCOPE_LOGIC
+        kind == RecipeClient.SCOPE_LOGIC || kind?.startsWith(RecipeClient.SCOPE_TOOL) == true -> RecipeClient.SCOPE_TOOL
         kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_TAB
         else -> RecipeClient.SCOPE_THEME
     }
@@ -339,9 +347,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     }
 
     /** 내 달력에서 미리 보기: what each chosen piece would change here, worked out again when an answer changes. */
-    fun preview() {
-        val r = _state.value.recipe ?: return
-        viewModelScope.launch {
+    fun preview(): kotlinx.coroutines.Job? {
+        val r = _state.value.recipe ?: return null
+        return viewModelScope.launch {
             val answers = RecipeResolve.answers(r, _state.value.answers)
             val lines = r.pieces.associate { p ->
                 p.kind to runCatching { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
@@ -383,21 +391,23 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val s0 = _state.value
         val full = s0.recipe ?: return
         // [TRY-01] Only the look parts ticked; 알람·규칙·메모 틀 as switched on.
-        val r = s0.lookParts?.let { ids ->
+        val r0 = s0.lookParts?.let { ids ->
             val picked = com.bamnat.core.recipe.LookParts.pick(full, ids).pieces
             full.copy(pieces = full.pieces.filter { it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS } + picked)
         } ?: full
         val s = s0
-        s.doc ?: return
+        val shown = s.doc ?: return
         _state.value = s.copy(applying = true)
         viewModelScope.launch {
             // 1.39 [MKP-03] A work shown from its 장터 card goes in once it has been read whole (mine or not, its version now).
             kotlinx.coroutines.withTimeoutOrNull(8_000) { read.await() }
-            val doc = _state.value.doc ?: s.doc
-            if (doc.hash != s.doc.hash) {
+            val doc = _state.value.doc ?: shown
+            if (doc.hash != shown.hash) {
                 _state.value = _state.value.copy(applying = false, message = "그 사이 만든 분이 새 판을 올렸어요. 바뀐 조각을 보고 다시 넣어 주세요")
                 return@launch
             }
+            // [CELL-02] 1.39 Someone else's 달력 모양 changes how my cells look, not what they show (mine as the whole read says).
+            val r = if (doc.mine) r0 else r0.keepMyCellContent()
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
@@ -406,6 +416,15 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val tab = if (looks.isEmpty()) null else com.bamnat.core.recipe.LookParts.onlyTab(lookRecipe)
             if (looks.isNotEmpty() && tab == null) c.wardrobe.beforeWear()
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
+            // 1.39 [FX-01] 프로 문: 규칙·단추 with a 1.39 기능 장치 go in with 프로 or while this work's 하루 써 보기 runs (the 장터's
+            // '하루 써 보기' starts it with FxAccess.start before this). Its looks alone (규칙·단추 꺼 둠) always go in: 모양은 무료.
+            val fx = if (picks.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) com.bamnat.app.logic.FxAccess.partsOf(r) else emptySet()
+            if (fx.isNotEmpty() && !com.bamnat.app.logic.FxAccess.pro(c) &&
+                com.bamnat.app.logic.FxAccess.status(c, code) !is com.bamnat.core.formula.FxTaste.Status.Using) {
+                _state.value = _state.value.copy(applying = false, message = "프로 기능 장치(${com.bamnat.core.formula.FxPro.say(fx)})가 든 작품이에요. " +
+                    "하루 써 보기로 넣어 보거나 프로에서 넣어요. 규칙·단추를 끄면 모양만 지금 넣을 수 있어요")
+                return@launch
+            }
             val counted = c.recipes.countedHere(code)
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.getOrDefault(false)

@@ -74,7 +74,10 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     androidx.compose.runtime.LaunchedEffect(Unit) { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_OPEN.key) }
     var teamOpen by rememberSaveable { mutableStateOf<String?>(null) }
     var teamsList by rememberSaveable { mutableStateOf(false) }
-    var ledgerOpen by rememberSaveable { mutableStateOf(false) }
+    // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 opens the 급여 대장, which reads it.
+    var ledgerOpen by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.staffWaiting) }
+    val staffShared by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(staffShared) { if (staffShared != null) { teamOpen = null; teamsList = false; ledgerOpen = true } }
     if (teamOpen != null || teamsList) {
         BackHandler { teamOpen = null; teamsList = false }
         com.bamnat.app.ui.team.LeaderTeamScreen(calendarId, onBack = { teamOpen = null; teamsList = false }, startTeam = teamOpen)
@@ -158,7 +161,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     }
     if (ledgerOpen) {
         val roster = remember { WorkToolsStore.get(context).current(calendarId).roster }
-        PayrollScreen(roster, now.minusMonths(1)) { ledgerOpen = false }
+        PayrollScreen(roster) { ledgerOpen = false }
     }
 }
 
@@ -191,7 +194,10 @@ private fun TeamGlanceCard(team: Team, now: YearMonth, onOpen: () -> Unit, show:
         nm?.state == MonthState.CONFIRMED, nextBoard?.empty ?: 0, painted = b.cells.size)
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
+    val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }
     SectionCard(title = team.name, trailing = { TextButton(onClick = onOpen) { Text("열기") } }) {
+        // 1.39 [FLOW-23] one number first: who is at work today and how many places are empty.
+        if (today != null && members > 0) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else "짜는 중", Modifier.weight(1f),
                 caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", warning = !g.confirmed && members > 0 && g.painted > 0)

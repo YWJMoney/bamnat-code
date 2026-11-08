@@ -195,7 +195,10 @@ class AppContainer(context: Context) {
     val lookupStats = com.bamnat.app.diag.LookupStats(context.applicationContext,
         allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.LookupStats.policyAllows() })
         .also { com.bamnat.app.company.NetTimings.sink = it::record }
-    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats)
+    /** 1.39 [SETUP-20] 첫 설정 누른 횟수 for 사용 통계 (처리방침 3.12), counted from the first open of a new install. */
+    val setupTaps = com.bamnat.app.diag.SetupTapStats(context.applicationContext,
+        allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.SetupTapStats.policyAllows() })
+    val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats, setupTaps = setupTaps)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
         soonMinutes = { settingsRepository.current.alarmSoonMinutes }, guard = { settingsRepository.current.alarmGuard })
@@ -246,13 +249,20 @@ class AppContainer(context: Context) {
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository,
         shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
         // [ITEM-03] 1.30 BC (결정 D102): 회사 공통 정액 goes to the 광장 while the plaza.fixed_amount row is on.
-        fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }) }
+        fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
+        teamRoster = { teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
         proof = { slipProof() })
+    /** 1.39 [PLZC-10] 근무 태그: what this phone shows in the plazas and the tag a post carries. */
+    val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
+    init {
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomTag = { room -> plazaTags.json(room) }
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomCard = { room -> plazaTags.cardJson(room) }
+    }
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
     /** 1.36 PC 재검토: kinds of day put away per calendar ('안 쓰는 종류'). */
@@ -331,7 +341,8 @@ class AppContainer(context: Context) {
                 ?: com.bamnat.app.data.CompanyShare(schedule, pay, settingsRepository,
                     shared = { keys -> keys.forEach { runCatching { profiles.mark(id, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
                     rosterMonthly = { false },
-                    fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }).also { made = Triple(schedule, pay, it) }
+                    fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
+                    teamRoster = { teams.get(id) }).also { made = Triple(schedule, pay, it) }
         }
         return com.bamnat.app.company.CompanyScope(id,
             com.bamnat.app.company.CompanyStore(files.prefs(appContext, id, files.COMPANY), companyStore),
@@ -516,6 +527,10 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
         // [STAT-08] 1.31 N4: lookup times from 처리방침 3.5's date on (the `stats.lookup` row turns on by itself that day).
         com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
+        // 1.39 [SETUP-20]: 첫 설정 누른 횟수 from 처리방침 3.12's date on (the `stats.setup` row turns on by itself that day).
+        com.bamnat.app.diag.SetupTapStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_SETUP) }
+        // 1.39 [STAT2-02]: 처음 연 날·다시 연 날 counts from 처리방침 3.12's date on (the `stats.life` row turns on by itself that day).
+        com.bamnat.app.diag.UsageStats.lifeAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LIFE) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
@@ -766,6 +781,8 @@ class AppContainer(context: Context) {
         // PC 1차 확인: at start the times that passed while the app was away are caught up (or said as missed); after a change of the
         // rules only what comes from now on counts; a change of the 근무표 registers again (규칙은 근무 시각을 따라요).
         keep("logic") {
+            // [TRY-06] A work's 기능 being tried when the app stopped are put back first (what the user wrote stays), before the rules run.
+            runCatching { com.bamnat.app.recipe.FunctionTrial(this@AppContainer).recover()?.let { com.bamnat.app.ui.recipe.LiveTryOn.tell(it) } }
             // One job (StartupBudgetTest): the rules' own changes, and a changed 근무표 that moves when they run next.
             launch {
                 calendars.active.collectLatest { id ->
@@ -779,6 +796,8 @@ class AppContainer(context: Context) {
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
+                // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
+                com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
                 com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
             }
         }
@@ -872,13 +891,18 @@ class AppContainer(context: Context) {
         keep("sleeping") {
             var openId: Long? = null
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
-            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming) { log, show, next -> Triple(log, show, next) }
-                .collect { (log, show, next) ->
+            // 1.39 [SLEEP-06] While 자는 동안 소리 measures, its notice is the 자는 중 notice (깼어요 and 측정만 끝 side by side
+            // on one card), so the shade does not stack two of them (PC 1.38 최종 사용성 6).
+            val measuring = com.bamnat.app.sleep.SleepRecordService.recording.map { it != null }.distinctUntilChanged()
+            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming, measuring) { log, show, next, rec -> Triple(log, show, next) to rec }
+                .collect { (t, rec) ->
+                    val (log, show, next) = t
                     val now = Today.dateTime()
                     val open = log.firstOrNull {
                         it.end == null && !it.imported && Duration.between(it.start, now).toMinutes() < SleepDebt.MAX_SLEEP_MINUTES
                     }
                     when {
+                        open != null && show && rec -> SleepingNotice.cancel(appContext)
                         open != null && show ->
                             SleepingNotice.show(appContext, open, next?.let { AlarmScheduler.millisToLocal(it.triggerAtMillis) }, now)
                         openId != null -> {
@@ -1021,6 +1045,12 @@ class AppContainer(context: Context) {
                     .distinctUntilChanged { a, b -> a.map { it.id to it.reminder } == b.map { it.id to it.reminder } }
                     .debounce(300)
                     .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
+            }
+            // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
+            keep("taskwidget") {
+                combine(memoRepository.memos, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
+                    .drop(1).debounce(800)
+                    .collect { com.bamnat.app.widget.TaskWidget.redraw(appContext) }
             }
             // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
             keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }

@@ -59,6 +59,11 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
         title = { Text(kind.title) },
         text = {
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 1.39 [FLOW-25] the band that fits, when its yearly plan starts free: 오늘 0원 · the day it turns paid · told before.
+                offers.firstOrNull { it.kind == kind && it.cap == need.band?.cap && it.way == WorkOffer.Way.YEARLY && it.trial }?.let { o ->
+                    if (held == null) Text(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
                 Text(WorkPlanRules.words(kind, need, table), style = MaterialTheme.typography.bodyMedium)
                 Text(
                     (if (kind == WorkPlanKind.TEAM) "팀원은 늘 무료로 자기 근무를 받아요. " else "") +
@@ -120,6 +125,8 @@ private fun BandCard(
             }
             if (held) return@Column
             yearly?.let { o ->
+                if (o.trial) Text(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary)
                 Button(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (o.trial) "1개월 무료로 시작 (연 ${o.price})" else "연 ${o.price}로 구독")
                 }

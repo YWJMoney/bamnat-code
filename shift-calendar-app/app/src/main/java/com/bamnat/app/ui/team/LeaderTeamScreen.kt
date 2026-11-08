@@ -108,10 +108,12 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
     val store = c.phaseThree
     val teams by store.teamList.collectAsStateWithLifecycle(null)
     // 관리 화면 opens one team straight away; its 뒤로 goes back there, not to the team list.
-    var openId by rememberSaveable { mutableStateOf(startTeam) }
+    // 1.39 [READ-31]: a roster shared from 카카오톡·갤러리 and put on a team opens that team with it waiting, as a picked file does.
+    val handed = remember { com.bamnat.app.imports.SharedToManage.takeTeam() }
+    var openId by rememberSaveable { mutableStateOf(handed?.teamId ?: startTeam) }
     var making by rememberSaveable { mutableStateOf(false) }
     // 1.38 가져오기: a team made from a file opens with that file waiting for ① 이름 ② 코드.
-    var madeFrom by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
+    var madeFrom by remember { mutableStateOf(handed?.let { it.grid to it.fromPhoto }) }
     val open = teams?.firstOrNull { it.id == openId }
     // PC 10차(낮음): with two or more teams, 뒤로 from a team goes to the team list first (표 이름 목록), not past it; with one, there is no list to see.
     val several = teams.orEmpty().count { !it.archived } >= 2
@@ -126,6 +128,10 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
             teams.orEmpty().filter { !it.archived }.forEach { t ->
                 SectionCard(title = t.name, trailing = { TextButton(onClick = { openId = t.id }) { Text("열기") } }) {
                     val members by store.members(t.id).collectAsStateWithLifecycle(emptyList())
+                    // 1.39 [FLOW-23] (PC f7f61818 하): the team list says today too, as the 관리 화면 card does.
+                    val nowBoard by store.board(t.id, YearMonth.from(Today.date())).collectAsStateWithLifecycle(null)
+                    val today = remember(nowBoard, t, Today.date()) { nowBoard?.let { com.bamnat.core.team.TeamToday.of(t, it, Today.date()) } }
+                    if (today != null && members.any { it.active } && nowBoard?.cells?.isNotEmpty() == true) TeamTodayHead(today, Modifier.padding(bottom = 4.dp))
                     Text("${members.count { it.active }}명 · 근무 ${t.shifts.count { !it.isOff }}가지", style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -170,6 +176,9 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     // 1.38 사용자 2026-11-06 (사장님처럼 교대가 없는 유형에 주야가 보임): the team takes the kinds in use, not those put away.
     val folded = com.bamnat.app.ui.shifts.foldedHere()
     val kinds = remember(snap, folded) { teamKinds(snap?.shiftTypes.orEmpty(), folded) }
+    // 1.39 G6 [SETUP-18]: with the first setup put off, the calendar's times are the app's samples, not the team's.
+    val appSettings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val ownTimes = appSettings.setupDone || calendarId != com.bamnat.app.data.PersonalCalendar.MAIN
     val pickFile = rememberAnyFilePicker { uri ->
         scope.launch {
             reading = "파일을 읽고 있어요…"
@@ -198,7 +207,8 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             Text(if (people.isEmpty()) "단톡방 명단을 그대로 붙여 넣어도 돼요. '민지 책임'처럼 직급은 따로 나눠요."
                 else "${people.size}명: " + people.take(6).joinToString(", ") { it.name } + if (people.size > 6) " …" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("근무 종류는 내 달력의 것(${kinds.joinToString(" ") { it.label }})을 그대로 써요.",
+            Text("근무 종류는 내 달력의 것(${kinds.joinToString(" ") { it.label }})을 그대로 써요." +
+                if (ownTimes) "" else " 내 근무 설정을 아직 안 해서, 근무 시간은 팀 표에서 한 번 정해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }, confirmButton = {
@@ -206,6 +216,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             val s = snap ?: return@TextButton
             val id = UUID.randomUUID().toString()
             val shifts = teamKinds(s.shiftTypes, folded).sortedBy { it.sortOrder }.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+                .let { if (ownTimes) it else com.bamnat.core.team.TeamTimes.blank(it) }
             scope.launch {
                 c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
                 c.phaseThree.saveMembers(people.mapIndexed { i, p -> TeamMember(UUID.randomUUID().toString(), id, p.name, p.role, p.skill, sort = i) })
@@ -239,7 +250,17 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var editor by remember(team.id, month) { mutableStateOf<TeamEditor?>(null) }
     var board by remember(team.id, month) { mutableStateOf<TeamBoard?>(null) }
     LaunchedEffect(startImport) { startImport?.first?.month?.let { if (it != month) monthText = it.toString() } }
-    LaunchedEffect(saved) { val s = saved ?: return@LaunchedEffect; if (editor == null || board?.members != s.members) { editor = TeamEditor(board?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s); board = editor!!.board } }
+    // 1.39 PC e1240d5a: a file or shared photo of another month moves the month while the last month's board is still on its
+    // way in; that board used to land on this month (머리 11월, 칸 12월) and the import, waiting for this month's board, never
+    // opened. Only this month's board is taken, and one of another month already in hand is replaced.
+    LaunchedEffect(saved, month) {
+        val s = saved?.takeIf { it.month == month } ?: return@LaunchedEffect
+        val here = board?.takeIf { it.month == s.month }
+        if (editor == null || here == null || here.members != s.members) {
+            editor = TeamEditor(here?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s)
+            board = editor!!.board
+        }
+    }
     LaunchedEffect(board) { val b = board ?: return@LaunchedEffect; if (b != saved) { delay(400); store.saveBoard(team.id, b) } }
     // 1.38 검토(데이터 보존): leaving within the 400ms wait used to drop the last cells painted; they are written on the way out.
     val lastBoard by androidx.compose.runtime.rememberUpdatedState(board)
@@ -256,10 +277,14 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
+    // 1.39 [SPREAD-07] The team's links went out for the first time: the one '다른 팀 리더께도' card may come (below the button).
+    LaunchedEffect(linksFor != null) { if (linksFor != null) c.grow.peerDue(com.bamnat.core.guide.Peer.TEAM) }
     // 1.38 [P3-L-15] 병동 전체 보기 (on when this phone holds the team's table link) and 봤어요.
     var ward by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.board(context, team.id)?.url) }
     var wardOn by remember(team.id) { mutableStateOf(ward != null) }
-    var seen by remember(team.id, monthText) { mutableStateOf<Map<String, java.time.Instant?>?>(null) }
+    var seen by remember(team.id, monthText) { mutableStateOf<Map<String, com.bamnat.app.team.TeamReceiveSync.LinkSeen>?>(null) }
+    // 1.39 G2 (PC a483ca15): members whose link the server had lost and 확정 made anew; the links sheet asks to send them those.
+    var freshIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var tiredOn by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.tiredBox(context, team.id) != null) }
     var tired by remember(team.id) { mutableStateOf<com.bamnat.app.share.TiredGot?>(null) }
     var fit by rememberSaveable { mutableStateOf(false) }
@@ -285,6 +310,18 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
+    // 1.39 G2: 빈칸 자동 채우기 asked for 근무별 인원 first; on 저장 the fill goes on with the numbers just saved.
+    var fillAfterNeed by remember { mutableStateOf(false) }
+    suspend fun fill(t: Team) {
+        val now = board ?: return
+        val people = now.members.filter { it.active }
+        val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, people.size)
+        if (!need.allowed) { planAsk = need; return }
+        val prevBoard = prev?.takeIf { p -> p.cells.isNotEmpty() }
+        // 1.38 [P3-X-04]: the 6 months before lean the fill, so nights and weekends even out across months too.
+        val past = com.bamnat.core.team.TeamLedger.past(com.bamnat.core.team.TeamLedger.of(t, now.members, ledgerMonths(store, t, month, 6)))
+        plans = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { TeamAuto.plans(t, now, wishes, settings.rules, prev = prevBoard, past = past) }
+    }
     // 1.38 [P3-L-14] 신청 받기: the round of this month, read again each time the board opens.
     val round = team.ask?.takeIf { it.month == month }
     var asking by remember { mutableStateOf(false) }
@@ -306,6 +343,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.team.TeamCallSync.pull(c, store.teamNow(team.id) ?: team, k.id) } }
     }
 
+    var timesAsked by rememberSaveable(team.id) { mutableStateOf(false) }
+    var settingTimes by remember(team.id) { mutableStateOf(false) }
+    if (settingTimes) TeamTimesDialog(team, onDismiss = { settingTimes = false }) { t -> settingTimes = false; scope.launch { store.saveTeam(t) } }
     Scaffold(topBar = {
         TopAppBar(title = { Text(team.name) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             actions = {
@@ -335,6 +375,13 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 IconButton(onClick = { monthText = month.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             }
+            // 1.39 G6 [SETUP-18] 근무 시간 정하기: asked once on the first open, then a card until every kind of work has its times.
+            val noTimes = com.bamnat.core.team.TeamTimes.missing(team)
+            LaunchedEffect(team.id, noTimes.isNotEmpty()) { if (noTimes.isNotEmpty() && !timesAsked) { timesAsked = true; settingTimes = true } }
+            if (noTimes.isNotEmpty()) TeamTimesCard(noTimes) { settingTimes = true }
+            // 1.39 [FLOW-23] this month's board starts with today: 출근 수·빈자리 and the day's kinds by start time.
+            val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }
+            if (today != null && active.isNotEmpty()) TeamTodayHead(today)
             // 1.38 검토: the whole month at once (사용자 2026-11-04 "좌우로 스크롤해야 보이는 줄은 펼쳐서 한눈에"), colors only when small.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${active.size}명 · ${b.days.size}일", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -444,6 +491,19 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 val charges = active.count { it.skill == Skill.CHARGE }
                 val lines = remember(signs, charges) { TeamCheck.summary(signs, { Fmt.monthDay(it) }, charges) }
                 var all by remember { mutableStateOf(false) }
+                // 1.39 G2 PC 5066b027: with 신청 open the month is mostly empty, and 31 부족 notes pushed the 신청 card down. While a
+                // round is open they fold to one line until asked for.
+                val asking = round?.open(Today.millis()) == true
+                var shown by remember(round?.id) { mutableStateOf(!asking) }
+                if (!shown) {
+                    val danger = lines.count { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("신청을 받는 중이라 접어 뒀어요" + (if (danger > 0) " · 규칙 ${danger}줄" else ""), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { shown = true }) { Text("펼치기") }
+                    }
+                    return@SectionCard
+                }
                 lines.take(if (all) lines.size else 6).forEach { l ->
                     val danger = l.kind == TeamCheck.Kind.RULE || l.kind == TeamCheck.Kind.WEEK_HOURS
                     Text((if (danger) "⚠ " else "· ") + l.text, style = MaterialTheme.typography.bodySmall,
@@ -510,13 +570,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 OutlinedButton(onClick = {
                     scope.launch {
                         // 1.38 PC 11차 (23): with no 근무별 인원 the fill can only put days off ("1안 · 부족 없음" meant nothing), so the
-                        // numbers are asked first.
-                        if (team.need.values.none { it > 0 }) { dialog = "need"; return@launch }
-                        val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, active.size)
-                        if (!need.allowed) { planAsk = need; return@launch }
-                        // 1.38 [P3-X-04]: the 6 months before lean the fill, so nights and weekends even out across months too.
-                        val past = com.bamnat.core.team.TeamLedger.past(com.bamnat.core.team.TeamLedger.of(team, b.members, ledgerMonths(store, team, month, 6)))
-                        plans = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { TeamAuto.plans(team, b, wishes, rules, prev = prevBoard, past = past) }
+                        // numbers are asked first; 1.39 G2 (1.38 최종 PC 제안 ②) and the fill runs as soon as they are saved.
+                        if (team.need.values.none { it > 0 }) { fillAfterNeed = true; dialog = "need"; return@launch }
+                        fill(team)
                     }
                 }, enabled = b.empty > 0) { Text("빈칸 자동 채우기") }
                 OutlinedButton(onClick = { dialog = "need" }) { Text("근무별 인원") }
@@ -526,10 +582,15 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 ImportButton(onClick = pickFile)
             }
             val changes = remember(b, was, state) { if (state.state == MonthState.CONFIRMED) b.changesFrom(TeamBoard(month, b.members, was.mapValues { (k, v) -> com.bamnat.core.team.TeamCell(k.first, k.second, v) })) else emptyList() }
-            Button(onClick = {
+            // 1.39 G2 (PC f7f61818): with links gone and nothing changed, '링크 다시 보내기' next to '새 링크 n개 만들어 보내기' read as two ways
+            // to the same thing; the 봤어요 line's button is the one left.
+            val goneNow = seen?.let { com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, it).gone }.orEmpty()
+            if (!(state.state == MonthState.CONFIRMED && changes.isEmpty() && goneNow.isNotEmpty())) Button(onClick = {
                 scope.launch {
                     // 1.38 PC 11차: a member with no day filled has nothing to share (the server refuses an empty link), so say who
                     // before 확정 instead of confirming and then blaming the internet.
+                    // 1.39 G6 [SETUP-18]: the links carry each day's times (the members' alarms), so they are set before 확정.
+                    if (com.bamnat.core.team.TeamTimes.missing(team).isNotEmpty()) { settingTimes = true; return@launch }
                     val blank = active.filter { b.daysOf(it.id).isEmpty() }
                     if (blank.isNotEmpty()) {
                         dialog = blank.joinToString(", ") { it.name } + "님은 이달 칸이 모두 비어 있어요. 근무나 오프를 칠한 뒤 확정해 주세요. " +
@@ -548,15 +609,20 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     val made = runCatching { links(c, team, b, active, if (state.state == MonthState.CONFIRMED && !again) was else emptyMap()) }
                     // 1.38 [P3-L-15] 병동 전체 보기, when on: the table link follows each 확정.
                     if (made.isSuccess && wardOn) runCatching { com.bamnat.app.team.TeamReceiveSync.putBoard(c, context, team, b, active) }
-                        .onSuccess { ward = it.url }.onFailure { dialog = "병동 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
+                        .onSuccess { ward = it.url }.onFailure { dialog = "팀 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
                     busy = null
                     // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
                     made.onFailure { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "team_links") }
                     made.onSuccess { c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_LINKS.key) }
-                    made.onSuccess { l -> if (state.state == MonthState.CONFIRMED && !again) resent = m.version to l else linksFor = l }.onFailure { e ->
+                    made.onSuccess { l ->
+                        freshIds = l.fresh
+                        // 1.39 G2: a link the server no longer had was made anew, so "팀원 링크는 그대로" would be wrong: the new ones are shown to send.
+                        if (state.state == MonthState.CONFIRMED && !again && l.fresh.isEmpty()) resent = m.version to l.list else linksFor = l.list
+                    }.onFailure { e ->
                         val why = when ((e as? com.bamnat.app.share.ShareLinkException)?.message) {
                             "days" -> "칸이 모두 빈 팀원이 있어 링크를 못 만들었어요. 칠한 뒤 다시 눌러 주세요."
                             "paused", "rate_limited" -> "링크 만들기가 잠시 멈췄어요. 조금 뒤에 다시 눌러 주세요."
+                            "contact" -> (e as com.bamnat.app.share.ShareLinkException).friendly.orEmpty()
                             else -> "링크는 인터넷이 될 때 다시 눌러 주세요."
                         }
                         dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + why
@@ -570,6 +636,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 })
             }
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (linksFor == null) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.TEAM)
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 1.38 같이 쉬는 사람 (경쟁 앱 조사 P3-L-11): off until the leader turns it on — it puts teammates' names in each link.
@@ -584,10 +651,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             // 1.38 [P3-L-15] 병동 전체 보기: one more link with everyone's month and each day's count, only when the leader turns it on.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("병동 전체 표 링크도 같이 보내기", style = MaterialTheme.typography.bodyMedium)
+                    Text("팀 전체 표 링크도 같이 보내기", style = MaterialTheme.typography.bodyMedium)
                     Text("링크 하나에 모두의 한 달과 날마다 근무별 인원이 보여요. 이름이 다 들어가니 팀에서 괜찮을 때 켜요. 확정할 때마다 같은 주소가 새로 바뀌고, 끄면 바로 지워요.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ward?.let { u -> TextButton(onClick = { send(context, "${team.name} ${Fmt.month(month)} 병동 전체 근무표\n$u", "병동 전체 표 보내기") }) { Text("병동 전체 표 보내기") } }
+                    ward?.let { u -> TextButton(onClick = { send(context, "${team.name} ${Fmt.month(month)} 팀 전체 근무표\n$u", "팀 전체 표 보내기") }) { Text("팀 전체 표 보내기") } }
                 }
                 androidx.compose.material3.Switch(checked = wardOn, onCheckedChange = { on ->
                     wardOn = on
@@ -624,18 +691,32 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             }
             // 1.38 [P3-L-15] 봤어요: who opened their link since this 확정, and a resend to the others only.
             if (state.state == MonthState.CONFIRMED && active.any { it.linkId != null }) {
-                LaunchedEffect(team.id, monthText, state.version) { seen = com.bamnat.app.team.TeamReceiveSync.seen(c, active) }
+                // 1.39 G2 (PC a483ca15): read with the members as saved now, and again whenever a link changes, so a link 확정 has just
+                // made anew is never asked by its old address; not while 확정 is still making the links.
+                suspend fun readSeen() = com.bamnat.app.team.TeamReceiveSync.seen(c, store.boardNow(team.id, month).members.filter { it.active })
+                val linkKey = active.joinToString(",") { it.linkId.orEmpty() }
+                LaunchedEffect(team.id, monthText, state.version, linkKey, busy == null) { if (busy == null) seen = readSeen() }
                 seen?.let { got ->
-                    val withLink = active.filter { it.id in got }
-                    val not = withLink.filter { got[it.id] == null }
-                    Text("${state.version}판 링크를 본 사람 ${withLink.size - not.size}/${withLink.size}명" + if (not.isNotEmpty()) " · 아직: " + not.joinToString(", ") { it.name } else " · 모두 봤어요",
-                        style = MaterialTheme.typography.bodyMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (not.isNotEmpty()) OutlinedButton(onClick = {
+                    val line = com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, got)
+                    Text(line.text, style = MaterialTheme.typography.bodyMedium,
+                        color = if (line.gone.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (line.gone.isNotEmpty()) Button(enabled = busy == null, onClick = {
+                            scope.launch {
+                                busy = "새 링크를 만들고 있어요…"
+                                val now = store.boardNow(team.id, month)
+                                val goneIds = line.gone.map { it.id }.toSet()
+                                runCatching { links(c, team, b, now.members.filter { it.active && it.id in goneIds }) }
+                                    .onSuccess { l -> freshIds = l.list.map { it.first.id }.toSet(); linksFor = l.list }
+                                    .onFailure { dialog = "새 링크는 인터넷이 될 때 다시 눌러 주세요." }
+                                busy = null
+                            }
+                        }) { Text("새 링크 ${line.gone.size}개 만들어 보내기") }
+                        if (line.notSeen.isNotEmpty()) OutlinedButton(onClick = {
                             send(context, "${team.name} ${Fmt.month(month)} 근무표가 나왔어요(바뀐 날은 그 날에 적혀 있어요).\n" +
-                                not.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
-                        }) { Text("안 본 ${not.size}명에게만 보내기") }
-                        TextButton(onClick = { scope.launch { seen = com.bamnat.app.team.TeamReceiveSync.seen(c, active) } }) { Text("다시 보기") }
+                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
+                        }) { Text("안 본 ${line.notSeen.size}명에게만 보내기") }
+                        TextButton(enabled = busy == null, onClick = { scope.launch { seen = readSeen() } }) { Text("다시 보기") }
                     }
                 }
             }
@@ -643,7 +724,12 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         }
         when (dialog) {
             null -> Unit
-            "need" -> NeedDialog(team, onDismiss = { dialog = null }) { scope.launch { store.saveTeam(it) }; dialog = null }
+            "need" -> NeedDialog(team, thenFill = fillAfterNeed, onDismiss = { dialog = null; fillAfterNeed = false }) { t ->
+                val go = fillAfterNeed && t.need.values.any { it > 0 }
+                fillAfterNeed = false
+                dialog = null
+                scope.launch { store.saveTeam(t); if (go) fill(t) }
+            }
             "wish" -> WishDialog(team, month, active, wishes, onDismiss = { dialog = null })
             "fair" -> FairDialog(team, b, month, onDismiss = { dialog = null })
             "askEnd" -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text("신청 끝내기") }, text = {
@@ -757,23 +843,36 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     }
     resent?.let { (v, list) ->
         AlertDialog(onDismissRequest = { resent = null }, title = { Text("${v}판으로 다시 확정했어요") }, text = {
-            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. 그보다 옛 판을 쓰는 팀원은 저절로 바뀌지 않으니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
+            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. " +
+                "아이폰 팀원이 링크에서 '캘린더에 넣기'를 해 두었다면 그 캘린더도 몇 시간 안에 따라 바뀌어요. 그 밖의 팀원은 저절로 알지 못하니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { resent = null }) { Text("알겠어요") } },
             dismissButton = { TextButton(onClick = { resent = null; linksFor = list }) { Text("그래도 알리기") } })
     }
     linksFor?.let { list ->
-        AlertDialog(onDismissRequest = { linksFor = null }, title = { Text("팀원 링크") }, text = {
+        val fresh = list.filter { it.first.id in freshIds }
+        AlertDialog(onDismissRequest = { linksFor = null; freshIds = emptySet() }, title = { Text("팀원 링크") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 1.39 G2 (PC a483ca15): the server no longer had these links (기간이 지남·지워짐), so the old addresses do not open.
+                if (fresh.isNotEmpty()) {
+                    Text(fresh.joinToString(", ") { it.first.name } + "님 링크가 서버에 없어서 새로 만들었어요. 예전 링크는 열리지 않으니 새 링크를 꼭 보내 주세요. " +
+                        "밤낮 앱에 예전 링크를 넣어 둔 팀원은 새 링크를 한 번 열어 다시 넣어야 해요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    if (fresh.size < list.size) Button(onClick = { send(context, "${team.name} ${Fmt.month(month)} 근무표 새 링크예요(예전 링크는 열리지 않아요).\n" +
+                        fresh.joinToString("\n") { (m, u) -> "${m.name}: $u" }, "새 링크 보내기") }) { Text("새 링크 ${fresh.size}개만 보내기") }
+                }
                 Text("한 사람씩 보내거나, 모두 한 번에 단톡방에 보낼 수 있어요. 링크마다 그 사람 근무만 보여요.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n병동 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
+                // 1.39 [IOS-07] The leader need not ask an iPhone teammate to install anything.
+                Text("아이폰 팀원도 링크로 바로 봐요. 링크의 '아이폰 캘린더에 넣기'를 누르면 근무가 자기 캘린더에 들어가고, 다시 확정하면 따라 바뀌어요. 출근 알람은 안드로이드 밤낮 앱에서만 울려요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n팀 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
                 list.forEach { (m, url) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(m.name, modifier = Modifier.weight(1f))
+                        Text(m.name + if (m.id in freshIds) " · 새 링크" else "", modifier = Modifier.weight(1f))
                         TextButton(onClick = { send(context, "${team.name} ${Fmt.month(month)} ${m.name} 근무표\n$url", m.name) }) { Text("보내기") }
                     }
                 }
             }
-        }, confirmButton = { TextButton(onClick = { linksFor = null }) { Text("닫기") } })
+        }, confirmButton = { TextButton(onClick = { linksFor = null; freshIds = emptySet() }) { Text("닫기") } })
     }
 }
 
@@ -823,9 +922,12 @@ private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cu
     }
 }
 
+/** What 확정 sent: each member's link, and [fresh] the members who had a link the server no longer has, made anew (a new address). */
+private class Made(val list: List<Pair<TeamMember, String>>, val fresh: Set<String>)
+
 /** 확정: each member a link of their own days only (설계 2-1 "그 사람 근무만"), the same link again after the first time. */
 private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoard, members: List<TeamMember>,
-                          was: Map<Pair<String, LocalDate>, Long> = emptyMap()): List<Pair<TeamMember, String>> {
+                          was: Map<Pair<String, LocalDate>, Long> = emptyMap()): Made {
     // 1.38 [P3-L-15] 다시 확정: each changed day says so on the member's link ("바뀜: D→E").
     val changed = com.bamnat.core.team.TeamReceive.changes(team, b, was)
     val types = team.shifts.map { it.asType() }
@@ -838,8 +940,16 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         val together = com.bamnat.core.team.TeamReceive.merge(
             if (team.showTogether) b.offTogether(m.id) { it in off }.mapValues { (_, n) -> "같이 쉬어요: " + n.joinToString(", ") } else emptyMap(),
             changed[m.id].orEmpty())
+        // 1.39 [IOS-01] (사용자 2026-11-07 결정) A member's link always carries its calendar address, whatever the leader's plan: a
+        // teammate on an iPhone (no 밤낮 app) puts the days in their own calendar from the page, and it follows each 다시 확정.
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
-            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together)
+            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together,
+            feed = com.bamnat.core.time.Today.zone()).apply {
+            // Without the phone's 시간대 이름 (the server reads Asia/Seoul), so only the 'on' mark goes. 처리방침 3.12 names it (총괄 몫).
+            remove("tz")
+            // 1.39 PC (SPREAD 2차): the page speaks to a teammate from the first 확정 (card, preview), not only after a 바뀜.
+            put("team", true)
+        }
         val id = m.linkId
         val token = m.linkToken
         val st = if (id != null && token != null) runCatching {
@@ -853,7 +963,7 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         if (st.id != id) com.bamnat.app.team.TeamReceiveSync.tiredBox(c.appContext, team.id)?.let { bx -> runCatching { c.shareApi.tiredTie(st.id, st.deleteToken, bx.id) } }
     }
     c.phaseThree.saveMembers(updated)
-    return out
+    return Made(out, updated.filter { u -> members.any { it.id == u.id && it.linkId != null && it.linkId != u.linkId } }.map { it.id }.toSet())
 }
 
 private fun send(context: android.content.Context, text: String, title: String) {
@@ -863,7 +973,7 @@ private fun send(context: android.content.Context, text: String, title: String) 
 
 /** [TEAM-15] 근무별 최소 인원: "D 3명". */
 @Composable
-private fun NeedDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) -> Unit) {
+private fun NeedDialog(team: Team, thenFill: Boolean = false, onDismiss: () -> Unit, onSave: (Team) -> Unit) {
     var need by remember { mutableStateOf(team.need) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("근무별 인원") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -878,7 +988,11 @@ private fun NeedDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) -> Unit
                 }
             }
         }
-    }, confirmButton = { TextButton(onClick = { onSave(team.copy(need = need)) }) { Text("저장") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+    }, confirmButton = {
+        // 1.39 G2 (1.38 최종 PC 제안 ②): from 빈칸 자동 채우기 the 안 come up right after 저장, not on a second press.
+        val fills = thenFill && need.values.any { it > 0 }
+        TextButton(onClick = { onSave(team.copy(need = need)) }) { Text(if (fills) "저장하고 채우기" else "저장") }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
 }
 
 /** [TEAM-19] 희망 휴무: pasted lines from members ("[밤낮 희망] 민지 11월 3 7 쉬고"), or typed by the leader; ♡ on the board. */
@@ -1081,3 +1195,54 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
  */
 internal fun teamKinds(types: List<com.bamnat.core.model.ShiftType>, folded: Set<Long>): List<com.bamnat.core.model.ShiftType> =
     types.filter { it.id !in folded }.takeIf { kept -> kept.any { !it.isOff } } ?: types
+
+/** 1.39 G6 [SETUP-18] The kinds of work still without times, and what they are for. */
+@Composable
+private fun TeamTimesCard(missing: List<TeamShift>, onSet: () -> Unit) {
+    val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
+    androidx.compose.material3.Surface(onClick = onSet, shape = MaterialTheme.shapes.medium, color = cal.warningContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("근무 시간이 비어 있어요: ${missing.joinToString(" ") { it.label }}", style = MaterialTheme.typography.titleSmall)
+                Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 확정하기 전에 정해 주세요.", style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = onSet, modifier = Modifier.heightIn(min = 48.dp)) { Text("정하기") }
+        }
+    }
+}
+
+/**
+ * 1.39 G6 [SETUP-18] 근무 시간 정하기: each kind of work's start and end, set once for the team. When the leader's own calendar has
+ * its times by now (the first setup finished meanwhile), they are offered first.
+ */
+@Composable
+private fun TeamTimesDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val mine by c.scheduleRepository.shiftTypes.collectAsStateWithLifecycle(emptyList())
+    val work = team.shifts.filter { !it.isOff }
+    // 1.39 G6 발굴 [SETUP-19] (PC 5c4ad849): the usual times by name already in, so a 3교대 team is one 저장 when they are its own.
+    val suggested = remember(team.id) { com.bamnat.core.team.TeamTimes.suggest(team.shifts) }
+    val times = remember(team.id) { androidx.compose.runtime.mutableStateMapOf<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>().apply {
+        work.forEach { s -> put(s.id, suggested[s.id]?.let { (a, b) -> (s.start ?: a) to (s.end ?: b) } ?: (s.start to s.end)) } } }
+    val fromMine = if (settings.setupDone) work.mapNotNull { s -> mine.firstOrNull { it.id == s.id && it.start != null && it.end != null }?.let { s.id to (it.start to it.end) } }.toMap() else emptyMap()
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("근무 시간 정하기") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. " + (if (suggested.isNotEmpty()) "흔한 시간으로 채워 두었으니 다른 것만 고쳐요. " else "") +
+                "쉬는 날은 시간이 없어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (fromMine.isNotEmpty()) TextButton(onClick = { times.putAll(fromMine) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 달력 근무 시간 가져오기") }
+            work.forEach { s ->
+                val (a, b) = times[s.id] ?: (null to null)
+                Text("${s.label} · ${s.name}", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.bamnat.app.ui.components.TimeField("시작", a, { times[s.id] = it to times[s.id]?.second }, Modifier.weight(1f), empty = "정하기")
+                    com.bamnat.app.ui.components.TimeField("끝", b, { times[s.id] = times[s.id]?.first to it }, Modifier.weight(1f), empty = "정하기",
+                        start = a?.plusHours(8) ?: java.time.LocalTime.of(18, 0))
+                }
+            }
+        }
+    }, confirmButton = {
+        TextButton(onClick = { onSave(com.bamnat.core.team.TeamTimes.set(team, times.toMap())) }) { Text("저장") }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("나중에") } })
+}

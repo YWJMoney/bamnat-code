@@ -12,8 +12,17 @@ import java.time.YearMonth
  * a calendar with one kind of work says "일하는 날 n일". Nothing when no day works (an empty order, a roster left for later).
  */
 object FillMoment {
-    data class Line(val head: String, val rest: String) {
+    data class Line(
+        val head: String,
+        val rest: String,
+        /** 1.39 G6 발굴 [FLOW-33] (PC 5c4ad849 '18:00 지난 뒤에도 첫 알람 오늘 18:00'): the first alarm said, left out once it has rung. */
+        val alarm: LocalDateTime? = null,
+        val restWithoutAlarm: String = rest,
+    ) {
         val text: String get() = if (rest.isEmpty()) head else "$head · $rest"
+
+        /** [rest] as of [now]: without the first alarm once it is past. */
+        fun restAt(now: LocalDateTime): String = if (alarm != null && !alarm.isAfter(now)) restWithoutAlarm else rest
     }
 
     fun of(days: List<ResolvedDay>, today: LocalDate, firstAlarm: LocalDateTime? = null): Line? {
@@ -23,19 +32,21 @@ object FillMoment {
         val span = days.filter { !it.date.isBefore(today) && !it.date.isAfter(end) }
         val work = span.filter { it.isWorkDay && it.shiftType?.isOff != true }
         if (work.isEmpty()) return null
-        val when_ = if (nextToo) "다음 달까지" else "이번 달"
+        // 1.39 G6 발굴 [FLOW-33] (PC 5c4ad849: '이번 달 야간 8번'인데 근무 탭은 10번): counted from today, so it says 남은 unless today is the 1st.
+        val when_ = when {
+            nextToo -> "다음 달까지"
+            today.dayOfMonth == 1 -> "이번 달"
+            else -> "이번 달 남은"
+        }
         val byType = work.groupBy { it.shiftType?.id }.filterKeys { it != null }
         val night = byType.values.filter { group -> group.first().let { d -> d.start != null && d.end != null && !d.end.isAfter(d.start) } }
             .maxByOrNull { it.size }
         val lead = night ?: byType.values.maxByOrNull { it.size }
         val head = if (lead != null && byType.size > 1) "$when_ ${lead.first().shiftType!!.name} ${lead.size}번"
         else "$when_ 일하는 날 ${work.size}일"
-        val rest = buildList {
-            val off = span.count { it.isRestDay }
-            if (off > 0) add("쉬는 날 ${off}일")
-            firstAlarm?.let { add("첫 알람 ${dayWord(it.toLocalDate(), today)} ${"%02d:%02d".format(it.hour, it.minute)}") }
-        }.joinToString(" · ")
-        return Line(head, rest)
+        val off = span.count { it.isRestDay }.takeIf { it > 0 }?.let { "쉬는 날 ${it}일" }
+        val alarm = firstAlarm?.let { "첫 알람 ${dayWord(it.toLocalDate(), today)} ${"%02d:%02d".format(it.hour, it.minute)}" }
+        return Line(head, listOfNotNull(off, alarm).joinToString(" · "), firstAlarm, off.orEmpty())
     }
 
     private fun dayWord(date: LocalDate, today: LocalDate): String = when (date) {

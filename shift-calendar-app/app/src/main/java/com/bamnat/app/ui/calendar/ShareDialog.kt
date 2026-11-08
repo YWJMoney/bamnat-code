@@ -155,6 +155,8 @@ fun ShareDialog(
     val lookOpen = remember { ShareContent.lookInLink(container) }
     // 1.38 [SLEEP-11] 지금 자는 중, for the main calendar's link while `sleep.share` is on.
     val sleepOpen = remember(calendarId) { calendarId == com.bamnat.app.data.PersonalCalendar.MAIN && ShareContent.sleepInLink(container) }
+    // 1.39 G5-N4 계획한 잠 시간, for the main calendar's link from 처리방침 3.12's date (`sleep.plan_share`); off until ticked.
+    val planOpen = remember(calendarId) { calendarId == com.bamnat.app.data.PersonalCalendar.MAIN && ShareContent.sleepPlanInLink(container) }
     val kitFits = remember(style) { com.bamnat.core.recipe.ShareKit.kitFits(style) }
     val lookFrom = remember {
         // 1.38: 3.11's date is not set until 1.38's release (a far placeholder), so no date is said until the owner sets it.
@@ -178,6 +180,7 @@ fun ShareDialog(
             setup = options.setup && setupOpen && employee && companyWork,
             look = options.look && lookOpen, kit = options.kit && lookOpen && kitFits,
             sleepNow = options.sleepNow && sleepOpen,
+            sleepPlan = options.sleepPlan && planOpen,
         )
     }
     // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
@@ -388,6 +391,9 @@ fun ShareDialog(
                     if (sleepOpen) PartRow("지금 자는 중",
                         "자는 동안만 ‘몇 시부터 자는 중 · 몇 시에 일어나요’ 한 줄. 잠 기록·소리는 보내지 않아요. 받는 분 앱에서만 보여요",
                         options.sleepNow) { options = options.copy(sleepNow = it) }
+                    if (planOpen) PartRow("계획한 잠 시간",
+                        "근무에 맞춰 앱이 계획한 잘 시간(예: 오늘 09:00~16:00) 2주치. 실제로 잔 기록·소리는 보내지 않아요. 받는 분 앱에서만 보여요",
+                        options.sleepPlan) { options = options.copy(sleepPlan = it) }
                 }
             }
             val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -693,6 +699,9 @@ internal fun ShareOptions.partNames(kind: MoneyShare = MoneyShare.PAY): List<Str
     "연장·휴무일 근무".takeIf { extras },
     "메모".takeIf { memos },
     kind.label.takeIf { pay },
+    // 1.39 PC c0ca3d9f: the sleep rows were sent but '보내는 것' said 근무 only.
+    "지금 자는 중(잘 때만)".takeIf { sleepNow },
+    "계획한 잠 시간".takeIf { sleepPlan },
 )
 
 /** A figure worked out for the sheet, or [fallback] when the data cannot be read; leaving the sheet still cancels it. */

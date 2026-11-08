@@ -115,7 +115,18 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     // [SETUP-14] These answers survive folding and unfolding.
     var otherTeam by rememberSaveable(source?.anchor) { mutableStateOf(false) }
     val teamAnchor = source?.anchor?.takeIf { source.kind == SetupSource.Kind.FILE }
-    if (teamAnchor != null && !otherTeam) {
+    // [CYC-06] 1.39: a coworker's file that names every 조 (their 모든 조 보기) asks "몇 조예요?" for all of them, so a coworker
+    // on another 조 never has to find today's row; only while the order is still the file's own.
+    val fileTeams = remember(source, d.rotation) {
+        source?.takeIf { it.kind == SetupSource.Kind.FILE }?.takeIf { vm.sourceOrder(d) == d.rotation }
+            ?.let { com.bamnat.app.data.CompanyShare.teamsOf(it.text) }
+            ?.let { com.bamnat.core.setup.TeamAnchors.pickable(it, d.rotation.size) }.orEmpty()
+    }
+    var fileTeamUnknown by rememberSaveable(source?.text?.hashCode()) { mutableStateOf(false) }
+    if (fileTeams.size >= 2 && !fileTeamUnknown) {
+        TeamPick(fileTeams, d.anchor, sender = source?.team, fromFile = true, onPick = vm::answerAnchor,
+            onUnknown = { fileTeamUnknown = true; otherTeam = true; vm.clearToday() })
+    } else if (teamAnchor != null && !otherTeam) {
         TeamQuestion(d, source, teamAnchor, date, today, same = d.anchor == teamAnchor,
             onSame = vm::sameTeam, onOther = {
                 otherTeam = true
@@ -209,13 +220,27 @@ private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, earlyText: Str
 /** [CYC-06] "몇 조예요?": the teams of a public row, each with the day it starts the cycle; or today's shift instead. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TeamPick(teams: List<Pair<String, LocalDate>>, anchor: LocalDate?, onPick: (LocalDate) -> Unit, onUnknown: () -> Unit) {
+private fun TeamPick(
+    teams: List<Pair<String, LocalDate>>,
+    anchor: LocalDate?,
+    onPick: (LocalDate) -> Unit,
+    onUnknown: () -> Unit,
+    /** [CYC-06] 1.39: the 조 of whoever sent the file, marked on its chip; null for a public row. */
+    sender: String? = null,
+    fromFile: Boolean = false,
+) {
     FollowTitle("몇 조예요?")
-    Text("공개 자료에 조마다 시작하는 날이 있어요. 조를 고르면 오늘 근무를 따로 묻지 않아요.", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+        if (fromFile) "보낸 분 휴대폰에 조마다 시작하는 날이 있어요. 내 조를 고르면 오늘 근무를 따로 묻지 않아요."
+        else "공개 자료에 조마다 시작하는 날이 있어요. 조를 고르면 오늘 근무를 따로 묻지 않아요.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         teams.forEach { (name, day) ->
-            FilterChip(selected = anchor == day, onClick = { onPick(day) }, label = { Text(name, style = MaterialTheme.typography.titleSmall) },
+            val theirs = sender != null && com.bamnat.core.imports.DutyCodes.norm(name) == com.bamnat.core.imports.DutyCodes.norm(sender)
+            FilterChip(selected = anchor == day, onClick = { onPick(day) },
+                label = { Text(if (theirs) "$name · 보낸 분" else name, style = MaterialTheme.typography.titleSmall) },
                 modifier = Modifier.heightIn(min = 48.dp))
         }
     }

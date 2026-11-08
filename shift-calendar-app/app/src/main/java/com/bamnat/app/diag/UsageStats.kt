@@ -4,6 +4,7 @@ import android.content.Context
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.serverRequest
+import com.bamnat.core.stats.LifeMarks
 import com.bamnat.core.stats.UsageBook
 import com.bamnat.core.stats.UsageEvent
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,10 @@ class UsageStats(
     private val startup: StartupStats? = null,
     /** [STAT-08] 1.31 N4: lookup times added when [LookupStats.policyAllows]; null sends none. */
     private val lookups: LookupStats? = null,
+    /** 1.39 [SETUP-20] 첫 설정 누른 횟수 added when [SetupTapStats.policyAllows]; null sends none. */
+    private val setupTaps: SetupTapStats? = null,
+    /** 1.39 [STAT2-02] The install day (epoch day in [zone]) for [LifeMarks]; read from the package, never sent. */
+    private val installDay: () -> Long? = { installDayOf(context, zone()) },
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -41,7 +46,19 @@ class UsageStats(
     }
 
     fun record(event: UsageEvent) = synchronized(lock) {
-        prefs.edit().putString(K_BOOK, book().record(event, today()).encode()).apply()
+        val day = today()
+        var book = book().record(event, day)
+        val e = prefs.edit()
+        // 1.39 [STAT2-02] 진입·머묾·회복: the day's first open adds its LIFE_ counts once the `stats.life` row is on (처리방침 3.12).
+        // The last open day stays here only to tell 'came back after a week'; it is never sent and goes with clear().
+        if (event == UsageEvent.OPEN) {
+            val last = prefs.getLong(K_LAST_OPEN, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }
+            if (last == null || last < day) {
+                if (lifeAllowed()) for (mark in LifeMarks.of(installDay(), last, day)) book = book.record(mark, day)
+                e.putLong(K_LAST_OPEN, day)
+            }
+        }
+        e.putString(K_BOOK, book.encode()).apply()
     }
 
     /** What is waiting, for the settings page's "보낼 내용 보기". */
@@ -64,6 +81,7 @@ class UsageStats(
     private fun withStartup(body: JSONObject): JSONObject = body.apply {
         startup?.payload()?.let { put("startup", it) }
         lookups?.payload()?.let { put("lookups", it) } // [STAT-08] 1.31
+        setupTaps?.payload()?.let { put("setup", it) } // 1.39 [SETUP-20]
     }
 
     /** Turning it off forgets everything not sent yet. */
@@ -71,6 +89,7 @@ class UsageStats(
         prefs.edit().clear().apply()
         startup?.clear() // [PERF-16]
         lookups?.clear() // [STAT-08]
+        setupTaps?.clear() // 1.39 [SETUP-20]
     }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
@@ -97,11 +116,22 @@ class UsageStats(
         synchronized(lock) { prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day).apply() }
         startup?.sent() // [PERF-16]
         lookups?.sent() // [STAT-08]
+        setupTaps?.sent() // 1.39 [SETUP-20]
         true
     }
 
-    private companion object {
-        const val K_BOOK = "book"
-        const val K_SENT_DAY = "sent_day"
+    companion object {
+        private const val K_BOOK = "book"
+        private const val K_SENT_DAY = "sent_day"
+        private const val K_LAST_OPEN = "last_open_day"
+
+        /** 1.39 [STAT2-02] Set by [com.bamnat.app.AppContainer] to `flags.on(FlagCatalog.STATS_LIFE)`; off until then. */
+        @Volatile var lifeAllowed: () -> Boolean = { false }
+
+        private fun installDayOf(context: Context, zone: ZoneId): Long? = runCatching {
+            val c = context.applicationContext
+            val first = c.packageManager.getPackageInfo(c.packageName, 0).firstInstallTime
+            if (first <= 0L) null else java.time.Instant.ofEpochMilli(first).atZone(zone).toLocalDate().toEpochDay()
+        }.getOrNull()
     }
 }

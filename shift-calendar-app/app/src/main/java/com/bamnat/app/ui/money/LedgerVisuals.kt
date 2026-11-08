@@ -203,7 +203,7 @@ fun LedgerEmpty(icon: ImageVector, title: String, message: String, modifier: Mod
     kani: com.bamnat.app.ui.components.KaniMood? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (kani != null && com.bamnat.app.ui.components.LocalShowKani.current) com.bamnat.app.ui.components.Kani(kani,
-            night = MaterialTheme.colorScheme.surface.luminance() < 0.5f, size = 72.dp)
+            night = com.bamnat.app.ui.components.isDarkSurface(), size = 72.dp)
         else IconAvatar(icon, MaterialTheme.colorScheme.primary, size = 64.dp)
         Spacer(Modifier.height(14.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)

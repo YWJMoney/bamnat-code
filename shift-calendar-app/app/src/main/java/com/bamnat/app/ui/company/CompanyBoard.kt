@@ -407,6 +407,18 @@ fun TalkSheet(holder: TalkHolder) {
     // 1.36 [VIL-16] 마을 V16: a 자랑 on a kind of work's plaza may carry one of my public recipes.
     var attach by remember(o.setup) { mutableStateOf<Pair<String, String>?>(null) }
     val styleRoom = o.room && o.company.startsWith("style-")
+    // 1.39 [PLZC-04][PLZC-10] a kind of work's room: 근무 태그 under names and 나도요 in place of 공감·비공감.
+    val people = styleRoom && holder.people
+    var tagScope by remember { mutableStateOf(false) }
+    var tagTick by remember { mutableStateOf(0) }
+    val myTag by androidx.compose.runtime.produceState<com.bamnat.core.plaza.PlazaTag?>(null, people, o.company, tagTick) {
+        value = if (people) holder.myTag(o.company) else null
+    }
+    // 1.39 [PLZC-20] 근무 카드 붙이기: my month so far from the calendar of this plaza's kind of work.
+    var withCard by remember(o.setup) { mutableStateOf(false) }
+    val myCard by androidx.compose.runtime.produceState<com.bamnat.core.plaza.WorkCard?>(null, people, o.company) {
+        value = if (people) runCatching { holder.container.plazaTags.card(o.company) }.getOrNull() else null
+    }
     val showable by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), styleRoom, kind) {
         if (styleRoom && kind == "show") value = holder.showable()
     }
@@ -423,6 +435,8 @@ fun TalkSheet(holder: TalkHolder) {
     // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).
     // [J133-99] 빌드 9 확인 ("X·끌어내리기는 묻는데 뒤로 키는 묻지 않고 닫혀요"): read through one held value, so the sheet's state
     // and its back are made once and see the words as they are now (a plain value made a new sheet state at every letter).
+    // 1.39 발굴 2-2: whether a 보완 요청 may open this phone's own pay (read once per talk).
+    val canFix = remember(o.company, o.setup) { holder.canFixOwnPay() }
     val typedNow = androidx.compose.runtime.rememberUpdatedState(text.isNotBlank() || (kind == "proposal" && change != listOf(blankChange())))
     var leaving by remember { mutableStateOf(false) }
     val talkScope = androidx.compose.runtime.rememberCoroutineScope()
@@ -505,9 +519,10 @@ fun TalkSheet(holder: TalkHolder) {
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
-                                company = o.company, setup = o.setup, roomName = if (o.room) o.title else null,
+                                company = o.company, setup = o.setup, roomName = if (o.room) o.title else null, meToo = people,
                                 onRedo = if (talk.past || o.room) null else ({ redoing = p }),
-                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }))
+                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }),
+                                onFixAt = if (o.room || p.kind != "fix" || !canFix) null else holder::openFix)
                             // 1.36 [VIL-09] The reply that helped comes first, marked; the question's writer can pick one.
                             talk.posts.filter { it.parent == p.id }.sortedByDescending { it.id == p.answer }.forEach { r ->
                                 Row {
@@ -515,7 +530,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     Column(Modifier.weight(1f)) {
                                         PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
                                             onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
-                                            helpful = r.id == p.answer,
+                                            helpful = r.id == p.answer, meToo = people,
                                             onHelpful = if (p.kind == "question" && p.mine && !r.mine && r.hidden == null && !talk.past)
                                                 ({ holder.answer(p.id, r.id) { e -> error = e } }) else null)
                                     }
@@ -604,12 +619,30 @@ fun TalkSheet(holder: TalkHolder) {
                 // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
                 // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
                 var rulesAsked by remember { mutableStateOf(false) }
+                var sentHere by remember(o.company, o.setup) { mutableStateOf(false) }
                 // [TOWN-12] PC 확인 a6cab3c8: the rules as a card above the box (the window took the words being written and closed
                 // on a tap outside); the 마을 이름 card [TOWN-03] only once they are agreed, so the two never come one after the other.
                 var rulesOk by remember { mutableStateOf(rules.isAgreed) }
                 if (rulesAsked && !rulesOk) PlazaRulesCard(rules, onAgreed = { rulesOk = true }, modifier = Modifier.padding(top = 8.dp))
-                else if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
+                // PC 4차 c0ca3d9f (중, 보낸 뒤 이름 카드가 커서 시트 안 글이 한 줄만 보였어요): once a post went, the card steps aside
+                // for this sheet; it is asked again the next time the box is used.
+                else if (styleRoom && rulesAsked && !sentHere) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
                     modifier = Modifier.padding(top = 8.dp))
+                // 1.39 [PLZC-10] 3-3: what my post will carry, said by the box; 보일 것 고르기 changes it (on this phone).
+                if (tagScope) PlazaTagScopeDialog(holder.container, o.company, onDismiss = { tagScope = false; tagTick++ })
+                myTag?.let { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                        Text("내 글에 붙는 태그 ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        PlazaTagLine(t, Modifier.weight(1f))
+                        TextButton(onClick = { tagScope = true }) { Text("고르기") }
+                    }
+                }
+                if (replyTo == null && kind != "proposal") myCard?.let { card ->
+                    com.bamnat.app.ui.components.FilterChip(selected = withCard, onClick = { withCard = !withCard },
+                        label = { Text(if (withCard) "📅 근무 카드 붙임 · ${card.line()}" else "📅 이번 달 근무 카드 붙이기", maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                        modifier = Modifier.padding(top = 2.dp))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -627,6 +660,9 @@ fun TalkSheet(holder: TalkHolder) {
                         shape = MaterialTheme.shapes.large,
                         modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
                     )
+                    // 1.39 조사 ⑦ 쓰기 전 한마디: 거친 말이 보이면 보내기 전에 한 번만 묻고(막지 않아요), 폰 밖으로는 아무것도 안 나가요.
+                    var nudge by remember { mutableStateOf<(() -> Unit)?>(null) }
+                    nudge?.let { go -> com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = null }, onSend = { nudge = null; go() }) }
                     IconButton(
                         onClick = {
                             val proposing = kind == "proposal" && replyTo == null
@@ -641,18 +677,24 @@ fun TalkSheet(holder: TalkHolder) {
                                 error = "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
                             } else if (pollDraft.isNotEmpty() && kind == "question" && (poll.size < 2 || poll.toSet().size != poll.size)) {
                                 error = "투표 보기를 서로 다르게 두 개 이상 적어 주세요"
-                            } else rules.ensure {
+                            } else {
+                              val go = { rules.ensure {
                                 rulesOk = true
                                 busy = true
+                                // [PLZC-20] the card goes with this top post only (taken once by the client).
+                                holder.container.plazaTags.cardOnce = if (withCard && parent == null && myCard != null) o.company else null
                                 holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt, poll = poll,
                                     attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->
-                                    busy = false; error = e
+                                    busy = false; error = e; holder.container.plazaTags.cardOnce = null
                                     // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
                                     if (e == null) {
-                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null
+                                        sentHere = true
+                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null; withCard = false
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
                                 }
+                              } }
+                              if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = go else go()
                             }
                         },
                         enabled = !busy && text.trim().length >= 2,
@@ -738,6 +780,10 @@ private fun PostRow(
     onPoll: ((Int?) -> Unit)? = null,
     /** 1.36 [VIL-13] The room's name when this post can be kept (간직하기); null elsewhere. */
     roomName: String? = null,
+    /** 1.39 [PLZC-04][PLZC-10] A kind of work's room with plaza.people on: the writer's 근무 태그, and 나도요 for 공감·비공감. */
+    meToo: Boolean = false,
+    /** 1.39 발굴 2-2: on a 보완 요청, opens the user's own pay where its fields are set; null when theirs is not to be changed here. */
+    onFixAt: ((List<String>) -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -766,9 +812,9 @@ private fun PostRow(
             val name = p.nick ?: "참여자 ${p.who}"
             // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
             val maker = p.maker
-            if (maker != null && !p.mine) Text("$name ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClickLabel = "프로필 보기") { com.bamnat.app.recipe.RecipeLinks.openMaker(maker) }.heightIn(min = 32.dp))
-            else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
+            com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
+                onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } })
+            if (meToo) WriterMarks(p)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
                 "tip" -> { Spacer(Modifier.width(4.dp)); StatusChip("팁", Tone.GOOD) }
@@ -817,6 +863,8 @@ private fun PostRow(
                 }
             }
         }
+        if (meToo) p.tag?.let { PlazaTagLine(it) }
+        if (meToo) p.card?.let { WorkCardLine(it, Modifier.padding(top = 2.dp)) }
         // [COMM-11] I2: one 개인 정보 신고 marks the post 확인 중, dimmed, until an admin looks.
         if (p.review && p.hidden == null) {
             Text("확인 중 · 개인 정보가 있다는 신고가 있어 운영자가 보고 있어요", style = MaterialTheme.typography.labelSmall,
@@ -850,8 +898,20 @@ private fun PostRow(
             if (p.mine) TextButton(onClick = { com.bamnat.app.ui.settings.InquiryLinks.ask(appealStart(p.id)) },
                 contentPadding = PaddingValues(horizontal = 0.dp)) { Text("이의 제기") }
         }
-        // [PLZ-09] A proposal's lines: what, now → as it should be, why.
-        if (p.change.isNotEmpty()) {
+        // 1.39 [PAYP-05] 발굴 2-2: a 보완 요청 says where, no values, and, for one whose pay is their own, opens it right there.
+        if (p.kind == "fix") {
+            val fields = p.change.map { it.field }
+            Text("보완 요청 · 어디가 다른지: " + fields.joinToString(" · ") { com.bamnat.app.company.Plaza.CHANGE_FIELDS[it] ?: it },
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 2.dp))
+            if (onFixAt != null && !p.mine && p.hidden == null && fields.isNotEmpty()) {
+                TextButton(onClick = { onFixAt(fields) }, contentPadding = PaddingValues(horizontal = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("내 급여에서 ${fixFocus(fields).label} 열기")
+                }
+                Text("고친 뒤 ‘회사 설정 보내기’로 새 판을 올리면, 이 판을 쓰는 분께 ‘새 판으로 바꾸기’가 보여요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (p.change.isNotEmpty()) {
+            // [PLZ-09] A proposal's lines: what, now → as it should be, why.
             SoftCard(Modifier.padding(top = 4.dp)) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     p.change.forEach { c ->
@@ -874,7 +934,10 @@ private fun PostRow(
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                 // [COMM-13] Small words, not the rule's big 맞았어요·달라요 buttons: more posts fit, and a post's 공감 is not
                 // read as a vote on the rule (점검 보고서 하 '광장').
-                if (p.mine) {
+                if (meToo) {
+                    if (p.mine) Text("🙋 나도요 ${p.agree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else MeToo(p.agree, p.myVote) { onVote(true) }
+                } else if (p.mine) {
                     Text("공감 ${p.agree} · 비공감 ${p.disagree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     PostReactions(p.agree, p.disagree, p.myVote, onVote)
@@ -954,6 +1017,17 @@ private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (
         }
         Text(if (v.mine == null) "골라야 결과가 보여요 · ${v.total}명 참여" else "${v.total}명 참여 · 다시 누르면 거둬요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.39 [PLZC-31] 근무형태별 결과, after this phone picked too: each 근무형태's leading choice (5명 미만은 합쳐서).
+        if (v.mine != null && v.byForm.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("근무형태별", style = MaterialTheme.typography.labelMedium)
+            v.byForm.forEach { g ->
+                val (i, pct) = g.lead() ?: return@forEach
+                Text("${g.form?.label ?: "그 밖의 근무"} ${g.total}명 · '${v.options.getOrElse(i) { "" }}' $pct%",
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            Text("한 근무형태가 5명이 안 되면 '그 밖의 근무'로 합쳐요. 누가 무엇을 골랐는지는 보이지 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

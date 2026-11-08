@@ -55,4 +55,19 @@ class ChallengesTest {
         assertEquals("끝났어요. 7일 중 7일 지켰어요. 다 지켰어요!", Challenges.words(s))
         assertEquals(run, Challenges.decode(Challenges.encode(run)))
     }
+
+    /** 1.39 G8 [LEDH-31] 칩에서 도전으로. */
+    @Test fun aNightThatBuysFoodOutOffersTheLunchboxWeek() {
+        val night = { l: String -> l == "야간" || l == "야간 다음 날" }
+        fun chip(kind: String, cat: String) = ShiftMoneyChips.Chip(kind, cat, 9_000, 3_000, 6)
+        val rows = ShiftMoneyChips.Rows(emptyList(), listOf(chip("야간", "편의점")))
+        val day = LocalDate.of(2026, 11, 7)
+        assertEquals(Challenges.Kind.NIGHT_LUNCHBOX, Challenges.suggest(rows, null, day, night))
+        assertEquals(Challenges.Kind.LESS_DELIVERY, Challenges.suggest(ShiftMoneyChips.Rows(emptyList(), listOf(chip("쉬는 날", "배달"))), null, day, night))
+        assertEquals(null, Challenges.suggest(ShiftMoneyChips.Rows(emptyList(), listOf(chip("쉬는 날", "택시"))), null, day, night))
+        // A run going says nothing; once its last day has gone by, it is offered again.
+        val run = Challenges.Run(Challenges.Kind.NO_SPEND, day.minusDays(3))
+        assertEquals(null, Challenges.suggest(rows, run, day, night))
+        assertEquals(Challenges.Kind.NIGHT_LUNCHBOX, Challenges.suggest(rows, run, day.plusDays(4), night))
+    }
 }

@@ -26,14 +26,20 @@ data class SleepDebt(val days: Int, val sleptMinutes: Long, val shortMinutes: Lo
         const val WINDOW_DAYS = 7L
         /** Longer than this is a missed "woke up" tap, not a sleep. */
         const val MAX_SLEEP_MINUTES = 16 * 60L
+        /**
+         * 1.39 PC 5차 (eae4e024): a sleep of a few minutes (a try of 잠들었어요·깼어요) made the average '3분'. A sleep shorter
+         * than [TodayFlow.MIN_LOGGED_MINUTES] is not counted, and a day whose sleep adds up to less than this is not a day.
+         */
+        const val MIN_DAY_MINUTES = 30L
 
         fun of(entries: List<SleepEntry>, today: LocalDate, targetMinutes: Int): SleepDebt {
             val from = today.minusDays(WINDOW_DAYS - 1)
             val byDay = entries
                 .filter { e -> e.wakeDate?.let { !it.isBefore(from) && !it.isAfter(today) } == true }
-                .filter { (it.minutes ?: 0) in 1..MAX_SLEEP_MINUTES }
+                .filter { (it.minutes ?: 0) in TodayFlow.MIN_LOGGED_MINUTES..MAX_SLEEP_MINUTES }
                 .groupBy { it.wakeDate!! }
                 .mapValues { (_, list) -> list.sumOf { it.minutes!! } }
+                .filterValues { it >= MIN_DAY_MINUTES }
             val slept = byDay.values.sum()
             val short = byDay.values.sumOf { (targetMinutes - it).coerceAtLeast(0) }
             return SleepDebt(byDay.size, slept, short)

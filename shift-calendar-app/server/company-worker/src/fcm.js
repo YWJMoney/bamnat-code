@@ -81,20 +81,44 @@ export async function fcmTell(env, inquiryIds, now = Date.now()) {
       for (const p of await all(env, `SELECT DISTINCT p.device, p.token FROM push_phones p JOIN inquiries i ON i.device = p.device
         WHERE i.id IN (${part.map(() => "?").join(",")})`, ...part)) seen.set(`${p.device}\u0000${p.token}`, p);
     }
-    const phones = [...seen.values()];
-    if (!phones.length) return 0;
-    const { token, project } = await fcmAccess(env, now);
-    let sent = 0;
-    for (const p of phones) {
-      const res = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(project)}/messages:send`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({ message: { token: p.token, data: { kind: "inquiry" }, android: { priority: "high", ttl: "86400s" } } }),
-      });
-      if (res.ok) sent++;
-      else if (res.status === 404 || res.status === 400) await run(env, "DELETE FROM push_phones WHERE device = ? AND token = ?", p.device, p.token);
+    return await fcmSend(env, [...seen.values()], { kind: "inquiry" }, now);
+  } catch (e) {
+    console.error("fcm", e && e.stack ? e.stack : String(e));
+    return 0;
+  }
+}
+
+/** One wordless data message to each of [phones] ({device, token}); a token Google says is gone is forgotten. */
+async function fcmSend(env, phones, data, now) {
+  if (!phones.length) return 0;
+  const { token, project } = await fcmAccess(env, now);
+  let sent = 0;
+  for (const p of phones) {
+    const res = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(project)}/messages:send`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ message: { token: p.token, data, android: { priority: "high", ttl: "86400s" } } }),
+    });
+    if (res.ok) sent++;
+    else if (res.status === 404 || res.status === 400) await run(env, "DELETE FROM push_phones WHERE device = ? AND token = ?", p.device, p.token);
+  }
+  return sent;
+}
+
+/**
+ * 1.39 [PLZC-41] The phones of [devices] (install hashes) hear "something new in 광장" ({kind}). Never throws; nothing without the
+ * secret or a token.
+ */
+export async function fcmTellDevices(env, devices, kind, now = Date.now()) {
+  const list = [...new Set((devices ?? []).filter(Boolean))].slice(0, 200);
+  if (!env.FCM_SERVICE_ACCOUNT || !list.length) return 0;
+  try {
+    const phones = [];
+    for (let i = 0; i < list.length; i += 90) {
+      const part = list.slice(i, i + 90);
+      phones.push(...(await all(env, `SELECT device, token FROM push_phones WHERE device IN (${part.map(() => "?").join(",")})`, ...part)));
     }
-    return sent;
+    return await fcmSend(env, phones, { kind }, now);
   } catch (e) {
     console.error("fcm", e && e.stack ? e.stack : String(e));
     return 0;

@@ -66,6 +66,21 @@ class M5Test {
         assertEquals(60L, debt.shortMinutes)
     }
 
+    /** 1.39 PC 5차 (eae4e024): a try of 3 minutes made the week's average '3분'. */
+    @Test
+    fun `a sleep of a few minutes is not a day in the average`() {
+        val today = LocalDate.of(2026, 11, 8)
+        val log = listOf(
+            SleepEntry(1, at(7, 23), at(8, 6)),          // 7 h
+            SleepEntry(2, at(6, 6, 1), at(6, 6, 4)),     // 3 min alone on its day: not a day
+            SleepEntry(3, at(8, 13), at(8, 13, 5)),      // 5 min beside a night: left out
+            SleepEntry(4, at(5, 14), at(5, 14, 25)),     // 25 min alone: counted, but a day needs 30
+        )
+        val debt = SleepDebt.of(log, today, targetMinutes = 7 * 60)
+        assertEquals(1, debt.days)
+        assertEquals(7 * 60L, debt.averageMinutes)
+    }
+
     @Test
     fun `strict rules flag a third night and too few days off after nights`() {
         val n = Fixtures.night.id; val o = Fixtures.off.id; val d = Fixtures.day.id

@@ -89,8 +89,24 @@ object NoticeLinks {
         STOP_REPORT,
         /** [RUL-03] 1.36 a button or rule's 메모 틀 열기: a new memo on the day in [payload] from [com.bamnat.app.logic.LogicLinks.template]. */
         LOGIC_MEMO,
+        /** 1.39 [TASK-07] 할 일 위젯: memo `id|yyyy-mm-dd` in [payload] (id 0 is a new one on that day). */
+        MEMO_OPEN,
         /** 1.37 [LEDH-14] 가계부 with 돈 적기 open, from the 돈 적기 widget and the quick settings tile. */
         MONEY_ADD,
+        /** 1.39 발굴 (마을 돌봄 스레드 요청): the talk of the version in [payload] ([FixTalk]), from '보완 요청이 n개 왔어요'. */
+        FIX_TALK,
+    }
+
+    /** 1.39 발굴: which version's talk [Target.FIX_TALK] opens, carried as one string (ids are plain; the title is encoded). */
+    data class FixTalk(val company: String, val setup: String, val title: String) {
+        val payload: String get() = "$company|$setup|" + java.net.URLEncoder.encode(title, "UTF-8")
+
+        companion object {
+            fun of(payload: String?): FixTalk? {
+                val p = payload?.split('|', limit = 3)?.takeIf { it.size == 3 && it[0].isNotBlank() && it[1].isNotBlank() } ?: return null
+                return FixTalk(p[0], p[1], runCatching { java.net.URLDecoder.decode(p[2], "UTF-8") }.getOrDefault(p[2]))
+            }
+        }
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

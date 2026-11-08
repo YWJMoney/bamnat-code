@@ -8,6 +8,8 @@ import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.Cadence
 import com.bamnat.core.pay.CustomRule
 import com.bamnat.core.pay.DatedValue
+import com.bamnat.core.pay.HolidayWeek
+import com.bamnat.core.pay.WeekHoursNudge
 import com.bamnat.core.pay.InsuranceLine
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayItem
@@ -90,7 +92,7 @@ class PayAccuracy139Test {
     @Test fun aOneMonthAllowanceIsPaidInItsMonthOnly() {
         val back = monthly("소급분", 120_000).copy(from = nov, until = nov)
         assertTrue(back.oneMonth)
-        assertEquals("매달 120,000원 (2026년 11월만)", back.describe())
+        assertEquals("2026년 11월 한 번 120,000원", back.describe())
         val p = office.copy(customRules = listOf(back))
         assertEquals(pay(office).total + 120_000, pay(p).total)
         assertEquals(pay(office, nov.plusMonths(1)).total, pay(p, nov.plusMonths(1)).total)
@@ -154,14 +156,44 @@ class PayAccuracy139Test {
     @Test fun accidentInsuranceFollowsTheIndustry() {
         assertEquals(8.0, AccidentRates.kind("retail_food")!!.permille, 0.0)
         assertEquals(35.0, AccidentRates.kind("construction")!!.permille, 0.0)
-        // 2,000,000 × 8.6‰ = 17,200원.
-        assertEquals(17_200L, AccidentRates.premium(2_000_000, "retail_food"))
+        // 1.39 B6: 2,000,000 × (8 + 출퇴근 0.6 + 임금채권 0.9 + 석면 0.06 = 9.56‰) = 19,120원.
+        assertEquals(19_120L, AccidentRates.premium(2_000_000, "retail_food"))
         assertEquals(0L, AccidentRates.premium(2_000_000, null))
-        assertEquals(13_200L, AccidentRates.premium(2_000_000, "custom:6"))
+        assertEquals(15_120L, AccidentRates.premium(2_000_000, "custom:6"))
+        // 국가·지자체 사업은 임금채권부담금이 없어요: 9 + 0.6 + 0.06 = 9.66‰.
+        assertEquals(19_320L, AccidentRates.premium(2_000_000, "public"))
+        assertTrue("임금채권부담금 0.9‰" in AccidentRates.describe(AccidentRates.kind("retail_food")!!))
         assertNull(AccidentRates.kind("custom:abc"))
         // Every 2026 고시 사업종류 is there once.
         assertEquals(28, AccidentRates.KINDS.size)
         assertEquals(AccidentRates.KINDS.size, AccidentRates.KINDS.map { it.code }.toSet().size)
+    }
+
+    /** 1.39 [PAYX-61] 발굴 G3-B7: 건강보험료 월 상한(보건복지부고시 제2025-222호 보수월액보험료 9,183,480원, 근로자·사업주 반씩 4,591,740원). */
+    @Test fun healthHasAMonthlyCeiling() {
+        val on = nov.atDay(1)
+        assertEquals(4_591_740L, TakeHome.healthCap(on))
+        assertNull(TakeHome.healthCap(LocalDate.of(2025, 12, 1)))
+        val r = TakeHome.estimate(200_000_000, TaxMode.INSURANCE_4, on = on)
+        assertEquals(4_591_740L, r.deductions.toMap()["건강보험"])
+        assertTrue(r.notes.any { "월 상한" in it })
+        // An ordinary pay is not touched.
+        val sh = TakeHome.sharesOn(on)
+        assertEquals(WonCut.cut10(3_000_000, sh.health), TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, on = on).deductions.toMap()["건강보험"])
+        // 사업주 몫도 같은 상한.
+        val healthOnly = PayrollLedger.employerInsurance(200_000_000, Insurance(health = true), on)
+        assertEquals(4_591_740L + WonCut.cut10(4_591_740L, sh.careRatio), healthOnly)
+    }
+
+    /** 1.39 [PAYX-63] 발굴 G3-B8: 소급분이 있는 달은 '연말정산 때 맞춰져요' 한 줄. */
+    @Test fun backPaySaysTheYearSettlesItsTax() {
+        val back = monthly("임금인상 소급분", 120_000).copy(from = nov, until = nov)
+        val p = office.copy(customRules = listOf(back))
+        assertTrue(TakeHome.BACK_PAY_NOTE in TakeHome.forProfile(p, nov, pay(p).total).notes)
+        assertFalse(TakeHome.BACK_PAY_NOTE in TakeHome.forProfile(p, nov.plusMonths(1), pay(p, nov.plusMonths(1)).total).notes)
+        // 이름에 '소급'이 없는 한 번 수당(격려금)은 말하지 않아요.
+        val bonus = office.copy(customRules = listOf(monthly("격려금", 100_000).copy(from = nov, until = nov)))
+        assertFalse(TakeHome.BACK_PAY_NOTE in TakeHome.forProfile(bonus, nov, pay(bonus).total).notes)
     }
 
     /** G4 for the 사업주 half too: a 직원 on a small month pays on 28만 원, and so does the 사장님. */
@@ -174,5 +206,29 @@ class PayAccuracy139Test {
         val big = PayrollLedger.employerInsurance(3_000_000, Insurance(health = true), on)
         val hb = WonCut.cut10(3_000_000, sh.health)
         assertEquals(hb + WonCut.cut10(hb, sh.careRatio), big)
+    }
+
+    /** 1.39 [PAYX-62] 발굴 G3-M3: 주 15시간 경계 알림. */
+    @Test fun weekJustUnderFifteenHoursSaysHowMuchMore() {
+        fun wk(from: String, minutes: Int, absent: Boolean = false): HolidayWeek {
+            val d = LocalDate.parse(from)
+            return HolidayWeek(d, d.plusDays(6), minutes, if (minutes >= 900) minOf(minutes, 2400) / 5 else 0, absent)
+        }
+        val today = LocalDate.of(2026, 11, 11)
+        val under = WeekHoursNudge.lines(listOf(wk("2026-11-09", 14 * 60 + 30)), today)
+        assertEquals(1, under.size)
+        assertTrue(under[0], under[0].contains("14시간 30분") && under[0].contains("30분 더 일하면"))
+        val over = WeekHoursNudge.lines(listOf(wk("2026-11-09", 15 * 60 + 30)), today)
+        assertTrue(over[0], over[0].contains("주휴수당을 받아요") && over[0].contains("30분 넘게 줄면"))
+        assertTrue(WeekHoursNudge.lines(listOf(wk("2026-11-09", 15 * 60)), today)[0].contains("조금이라도"))
+        // Far from the line, another week, or a week with 결근: nothing.
+        assertTrue(WeekHoursNudge.lines(listOf(wk("2026-11-09", 8 * 60)), today).isEmpty())
+        assertTrue(WeekHoursNudge.lines(listOf(wk("2026-11-09", 20 * 60)), today).isEmpty())
+        assertTrue(WeekHoursNudge.lines(listOf(wk("2026-11-02", 14 * 60)), today).isEmpty())
+        assertTrue(WeekHoursNudge.lines(listOf(wk("2026-11-09", 14 * 60, absent = true)), today).isEmpty())
+        // Two weeks of the month kept just under 15 hours: said once.
+        val kept = WeekHoursNudge.lines(listOf(wk("2026-11-02", 14 * 60), wk("2026-11-09", 14 * 60 + 30), wk("2026-11-16", 10 * 60)), today)
+        assertEquals(2, kept.size)
+        assertTrue(kept[1], kept[1].contains("2주") && kept[1].contains("바로 아래로 맞춰진"))
     }
 }

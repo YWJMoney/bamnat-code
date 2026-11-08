@@ -241,6 +241,13 @@ fun placeOf(p: String?, default: Alignment = Alignment.TopStart): Alignment = wh
     else -> default
 }
 
+/**
+ * [LINK-01] 1.39 A calendar day's states from what the day really has ([com.bamnat.core.schedule.DayWork]: 쉬는 날의 대근·특근은 일한 날,
+ * 연차·대근·잔업·특근·직접 바꾼 날도 상태로). Every screen that draws a day with a blueprint goes through here.
+ */
+fun dayStates(work: com.bamnat.core.schedule.DayWork, dayOfWeek: java.time.DayOfWeek, holiday: Boolean, inMonth: Boolean, today: Boolean, selected: Boolean): Set<String> =
+    dayStates(work.role?.key, dayOfWeek, holiday, inMonth, today, selected) + work.states
+
 /** The states of a calendar day, as the blueprint names them. */
 fun dayStates(role: String?, dayOfWeek: java.time.DayOfWeek, holiday: Boolean, inMonth: Boolean, today: Boolean, selected: Boolean): Set<String> = buildSet {
     role?.let { add("role.$it") }

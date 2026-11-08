@@ -187,7 +187,7 @@ class RecipePieces(private val c: AppContainer) {
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
                 "accent" to s.accentColor.takeIf { it != 0L }, "textStep" to s.textStep.toLong(), "compact" to s.compact, "clock12" to s.clock12,
                 "tap" to s.phoneDayView.name.lowercase(), "hold" to s.longPress, "dayOrder" to s.dayGroupOrder.joinToString(",").ifEmpty { null },
-                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to s.statsByPayPeriod, "motion" to s.motion.ifEmpty { null })
+                "flow" to s.sleepTips, "rest" to s.restCheck, "payPeriod" to (s.statsPeriod == com.bamnat.app.data.StatsPeriod.PAY).takeIf { it }, "motion" to s.motion.ifEmpty { null })
         }
         // [LAY-01] 1.36 꾸밈 층.
         PieceKind.DECOR -> com.bamnat.core.recipe.Decor.decode(from.decor).takeIf { !it.isDefault }?.values()
@@ -320,7 +320,9 @@ class RecipePieces(private val c: AppContainer) {
                     // PC D6: 내 규칙 뒤에 더해지고, 같은 것은 하나로 둬요 (말없이 합쳐지지 않게).
                     Change("내 규칙·단추는 그대로 두고 뒤에 더해요"),
                     com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).mergeSay(l)?.let { Change(it) },
-                ))
+                ) +
+                    // 1.39 [FX-25] 넣기 전 부딪힘: 같은 때 같은 가계부·값 칸, 뜻이 다른 같은 이름 값 칸, 같은 자리 같은 이름 단추.
+                    com.bamnat.core.formula.LogicClash.check(com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic), l).map { Change("⚠ $it") })
                 .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
@@ -533,8 +535,13 @@ class RecipePieces(private val c: AppContainer) {
      * Puts [values] on calendar [cal]; returns what it replaced (for [restore]) or null when nothing changed. [code] marks what it
      * added (메모 틀) so [restore] takes exactly that away.
      */
-    suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE): JSONObject? {
+    suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE,
+                      /** [TRY-06] Put on by [FunctionTrial] itself. */ trial: Boolean = false): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // [TRY-06] Anything put on for real ends a work's 기능 only being tried first (put back whole), so the two never mix.
+        if (!trial && FunctionTrial.busy(c.appContext)) com.bamnat.app.ui.recipe.LiveTryOn.settle(c)
+        // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
+        if (kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
         return when (kind) {
             PieceKind.SHIFT_LOOK -> {
                 val repo = c.scopeOf(cal).schedule
@@ -752,6 +759,10 @@ class RecipePieces(private val c: AppContainer) {
                         val store = com.bamnat.app.logic.LogicStore(c.appContext)
                         com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.gotOff(it.key) }
                         store.markGot(com.bamnat.core.formula.Logic.from(vals).rules.map { it.key }.filter { it !in had })
+                        // 1.39 [FX-23] 작품마다 하루 써 보기: the new ones remember this work.
+                        val hadB = com.bamnat.core.formula.Logic.decode(now.logic).buttons.map { it.id }.toSet()
+                        val after = com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic)
+                        store.markFrom(code, after.rules.map { it.key }.filter { it !in had }, after.buttons.map { it.id }.filter { it !in hadB })
                         com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                     }
                     JSONObject().put("settings", out)
@@ -1057,7 +1068,8 @@ class RecipePieces(private val c: AppContainer) {
                 (values["dayOrder"] as? String)?.takeIf { com.bamnat.core.recipe.AppFeel.dayOrderProblem(it) == null }?.let { "dayGroupOrder" to it },
                 (values["flow"] as? Boolean)?.let { "sleepTips" to it.toString() },
                 (values["rest"] as? Boolean)?.let { "restCheck" to it.toString() },
-                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to it.toString() },
+                // 1.39 [PAYX-60] Off in an older recipe was only the default: it leaves the 급여 기간 to the pay.
+                (values["payPeriod"] as? Boolean)?.let { "statsByPayPeriod" to (if (it) com.bamnat.app.data.StatsPeriod.PAY else com.bamnat.app.data.StatsPeriod.AUTO).name },
                 (values["motion"] as? String)?.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null }?.let { "motion" to it },
             ).toMap()
             // [FREE-04] What the piece names over the user's own.
@@ -1159,7 +1171,7 @@ class RecipePieces(private val c: AppContainer) {
         "dayGroupOrder" -> s.dayGroupOrder.joinToString(",")
         "sleepTips" -> s.sleepTips.toString()
         "restCheck" -> s.restCheck.toString()
-        "statsByPayPeriod" -> s.statsByPayPeriod.toString()
+        "statsByPayPeriod" -> s.statsPeriod.name
         "motion" -> s.motion
         "memoLook" -> s.memoLook
         "moneyLook" -> s.moneyLook
@@ -1199,7 +1211,7 @@ class RecipePieces(private val c: AppContainer) {
         "dayGroupOrder" -> s.copy(dayGroupOrder = v.split(',').filter { it.isNotEmpty() })
         "sleepTips" -> s.copy(sleepTips = v == "true")
         "restCheck" -> s.copy(restCheck = v == "true")
-        "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
+        "statsByPayPeriod" -> s.copy(statsPeriod = com.bamnat.app.data.StatsPeriod.read(v.takeIf { it != "true" && it != "false" }, v == "true"))
         "motion" -> s.copy(motion = v.takeIf { com.bamnat.core.recipe.Motion.problem(it) == null } ?: s.motion)
         "memoLook" -> s.copy(memoLook = v)
         "logic" -> s.copy(logic = v)
@@ -1250,8 +1262,13 @@ class RecipePieces(private val c: AppContainer) {
     /** [FREE-10] The settings a theme can change ([com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS]); never a record, an alarm or a rule. */
     fun lookSnapshot(): Map<String, String> = LOOK_SETTINGS.associateWith { settingOf(c.settingsRepository.current, it) }
 
+    /** [TRY-05] [s] with the look settings of [look] (as [lookOf] writes them) on it; nothing else changes. */
+    fun withLook(s: com.bamnat.app.data.AppSettings, look: Map<String, String>): com.bamnat.app.data.AppSettings =
+        look.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) }
+
     /** [FREE-10] Puts back a look written by [lookSnapshot]. */
     fun restoreLook(m: Map<String, String>) {
+        com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
         c.settingsRepository.update { s -> m.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) } }
     }
 

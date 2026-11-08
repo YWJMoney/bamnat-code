@@ -210,7 +210,7 @@ internal object HelpFaq {
         // [REST-01] Where the roster check's limits are changed, and how to turn it off.
         HelpTopic(
             "restRules", "근무표 점검", "휴식 점검이 우리 병원 기준과 달라요 · 끄고 싶어요",
-            "달력의 휴식 점검 카드에서 ‘기준 바꾸기’를 누르면 휴식 시간, 나이트 뒤 쉬는 날, 연속 나이트, 연속 근무, 한 달 나이트 수를 바꿔요. " +
+            "달력의 휴식 점검 카드에서 ‘기준 바꾸기’를 누르면 휴식 시간, 야간(나이트) 뒤 쉬는 날, 연속 야간, 연속 근무, 한 달 야간 수를 바꿔요. " +
                 "0으로 두면 그 항목은 보지 않아요. 끄려면 같은 화면 맨 위 ‘근무표 점검’을 끄거나 설정 › 알림과 잠 › 휴식 점검을 꺼요. " +
                 "알려만 주고 저장은 막지 않아요.",
             listOf("휴식 점검", "근무표 점검", "기준", "나이트", "N-O-D", "나오데", "연속 나이트", "끄기", "병원 기준"),
@@ -394,7 +394,7 @@ internal object HelpFaq {
         HelpTopic(
             "recipeCommunity", "마을", "원하는 레시피가 없어요. 만든 분을 따라갈 수도 있나요?",
             "마을 › 공방의 ‘이런 거 있었으면’에 바라는 걸 적으면 다른 분이 ‘만들게요’를 누르고 완성해 드려요. 금액·연락처·링크는 적을 수 없어요. " +
-                "레시피 아래 ‘○○ 프로필’을 누르면 그분이 공개한 테마·기능별 탭·모음을 보고 팔로우할 수 있어요. " +
+                "레시피 아래 ‘○○ 프로필’을 누르면 그분이 공개한 테마·탭별 작품·모음을 보고 팔로우할 수 있어요. " +
                 "요청 판과 팔로우·답 알림은 설정 › 장터·내 레시피에서 따로 끌 수 있어요.",
             listOf("요청", "부탁", "만든 사람", "제작자", "팔로우", "배지", "답 알림", "요청 판"),
             listOf("장터"),
@@ -601,11 +601,21 @@ internal object HelpFaq {
         // ---- 1.26 묶음 AD [GUIDE-09][NAV-05] ----
         HelpTopic(
             "tabOrder", "화면", "달력 말고 다른 화면으로 시작하고 싶어요",
-            "아래 메뉴(달력·돈·메모·근무·급여·설정) 아무거나 길게 누르면 아이콘이 작게 흔들려요. 그대로 끌어 원하는 메뉴를 맨 앞에 두고 다른 곳을 누르면 저장돼요. " +
-                "맨 앞 메뉴가 앱을 켤 때 처음 보이는 화면이고, 뒤로 가기도 거기서 끝나요. 설정 › 화면과 글자 › ‘첫 화면·메뉴 순서’에서 위·아래 버튼으로 바꾸거나 ‘처음 순서로’ 되돌려요.",
+            "아래 메뉴 아무거나 길게 누르면 아이콘이 작게 흔들려요. 그대로 끌어 원하는 메뉴를 맨 앞에 두고 다른 곳을 누르면 저장돼요. " +
+                "맨 앞 메뉴가 앱을 켤 때 처음 보이는 화면이고, 뒤로 가기도 거기서 끝나요. 설정 › 화면과 글자 › ‘$TAB_ORDER_ROW’에서 위·아래 버튼으로 바꾸거나 ‘처음대로’ 되돌려요.",
             listOf("첫 화면", "시작 화면", "메인 화면", "메뉴 순서", "탭 순서", "순서 바꾸기", "달력 말고", "메모부터", "처음 화면", "흔들"),
             listOf("화면 이동", "달력 화면"),
-            "첫 화면·메뉴 순서 열기" to HelpAction.Page(SettingsPage.CALENDAR, TAB_ORDER_ROW),
+            "$TAB_ORDER_ROW 열기" to HelpAction.Page(SettingsPage.CALENDAR, TAB_ORDER_ROW),
+        ),
+        // ---- 1.39 [NAV2-01] ----
+        HelpTopic(
+            "tabSlots", "화면", "아래 메뉴에 자주 쓰는 기능을 두고 싶어요",
+            "아래 막대의 칸 5개에 원하는 화면을 둘 수 있어요. 설정 › 화면과 글자 › ‘$TAB_ORDER_ROW’에서 칸을 눌러 잠·연차·받을 돈·급여 같은 화면으로 바꾸고, " +
+                "⋮ › ‘화면 더해 묶음 만들기’로 한 칸에 여러 화면을 묶어요. 묶은 칸을 누르면 목록이 떠서 한 번에 가요. " +
+                "막대에 없는 탭과 설정은 화면 위 ‘나’ 단추(사람 모양)에 있어요.",
+            listOf("아래 메뉴", "탭 채우기", "탭 바꾸기", "묶음", "모음", "중첩 탭", "탭 안에 탭", "설정 어디", "설정 탭", "나 단추", "자주 쓰는"),
+            listOf("화면 이동"),
+            "$TAB_ORDER_ROW 열기" to HelpAction.Page(SettingsPage.CALENDAR, TAB_ORDER_ROW),
         ),
         // ---- 1.26 묶음 AC [SPAT-02][SPAT-05] ----
         HelpTopic(
@@ -962,6 +972,8 @@ internal object HelpFaq {
         com.bamnat.core.work.WorkStyle.FIELD -> listOf("jobOwed", "jobTax", "bizTax", "platformCut", "unitRules", "incomeKinds")
         com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("shopCash", "shopVat", "bizTax", "receiptScan")
         com.bamnat.core.work.WorkStyle.INVEST -> listOf("investFee", "investCapture", "investCaptureTrust", "investYearEnd")
+        // 1.39 PC G10 확인(일근·사무직 첫 화면에 '교대 순서'·'근무 순서가 하루 밀렸어요'가 먼저): 일근이 자주 묻는 것부터, 근무 주기는 뒤로.
+        com.bamnat.core.work.WorkStyle.DAY -> listOf("alarm", "leave", "extra", "pay", "takeHome", "holidayWork", "phoneCalendar", "widget")
         else -> emptyList()
     }
 

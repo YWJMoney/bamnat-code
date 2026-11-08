@@ -1,4 +1,4 @@
-import { audit, batch, can, json, one, readJson, stmt } from "./index.js";
+import { LIMITS, audit, batch, can, json, one, readJson, stmt } from "./index.js";
 import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
@@ -68,6 +68,8 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
   ops_incident: ["SELECT id, signals FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"],
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
+  // 1.39 [ADM3-42] 지금 잠긴 로그인(네트워크·관리자 계정). 내가 잠겼으면 내 계정에서 풀고, 아니면 누가 맞혀 보는 중일 수 있어요.
+  ops_logins: ["SELECT COUNT(*) AS n FROM counters WHERE key LIKE 'login|%' AND key <> 'login|all' AND count >= ? AND expires > ?", LIMITS.loginFailures, now],
 });
 
 export function opsAlertsFrom(env, got, now = Date.now()) {
@@ -85,10 +87,12 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
   }
   if (got.ops_requests?.[0]?.n) out.push({ key: `requests:${got.ops_requests[0].n}`, kind: "incident", tone: "bad", title: `데이터 요청 ${got.ops_requests[0].n}건 기한 임박·넘김`, meta: "개인정보·환불·법 신고", to: "#/requests" });
   if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: setup.missing.join(" · "), to: "#/server" });
-  const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now)).filter((j) => j.state === "fail" || j.state === "stale");
+  const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now, env)).filter((j) => j.state === "fail" || j.state === "stale");
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
   if (got.ops_reviews?.[0]?.n) out.push({ key: `reviews:${got.ops_reviews[0].n}`, kind: "spike", tone: "warn", title: `답 안 한 낮은 별점 리뷰 ${got.ops_reviews[0].n}개`, meta: "별 1~2개", to: "#/reviews" });
+  if (got.ops_logins?.[0]?.n) out.push({ key: `logins:${got.ops_logins[0].n}`, kind: "spike", tone: "warn", title: `로그인 잠긴 곳 ${got.ops_logins[0].n}곳`,
+    meta: "1시간 뒤 저절로 풀려요. 내가 잠긴 거면 내 계정 › 로그인에서 바로 풀어요", to: "#/account" });
   return out;
 }
 
@@ -134,7 +138,11 @@ export async function story(env, id) {
     }
     if (h.action === "link" || h.action === "unlink") continue;
     const STATUS = { todo: "접수", doing: "개발중", done: "완료", rejected: "반려", handed: "Claude에게 넘김" };
-    const NAMES = { create: "만듦", edit: "고침", assign: "담당 바뀜", delete: "지움", restore: "되살림", reply: "묶인 문의에 답", result: "개발 결과" };
+    const NAMES = { create: "만듦", edit: "고침", assign: "담당 바뀜", delete: "지움", restore: "되살림", reply: "묶인 문의에 답", result: "개발 결과",
+      // 1.39 [LOOP] 자동 순환이 남기는 것.
+      sync: `저장소에서 받음${d.pr ? ` · PR #${d.pr}` : ""}${d.version ? ` · ${d.version}` : ""}`, live: "업데이트 없이 실제로 닿음", phone_told: `고친 판(${d.app ?? ""})으로 연 폰에 안내`,
+      fixed_yes: "문의한 분: 해결됐어요", fixed_no: "문의한 분: 아직이에요(다시 열림)", me_too: "알려진 문제판: 나도 겪어요",
+      tier: `요금 ${d.tier?.[1] ?? ""}${d.note ? ` · ${d.note}` : ""}`, release: `반영 판 ${d.releasedIn?.[1] ?? ""}` };
     const what = h.action === "status" ? `상태 ${STATUS[d.status?.[0]] ?? d.status?.[0] ?? ""} → ${STATUS[d.status?.[1]] ?? d.status?.[1] ?? ""}`
       : h.action === "note" ? `기록 ${String(d.text ?? "").slice(0, 60)}` : NAMES[h.action] ?? h.action;
     if (h.action === "create") continue;

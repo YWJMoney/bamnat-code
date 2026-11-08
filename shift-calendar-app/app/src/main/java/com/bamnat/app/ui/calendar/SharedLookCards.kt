@@ -38,6 +38,7 @@ import com.bamnat.core.recipe.PieceKind
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.RecipeDescribe
 import kotlinx.coroutines.launch
+import com.bamnat.core.recipe.keepMyCellContent
 
 /**
  * 1.37 묶음 E (사용자 2026-11-04 "달력 공유 시 테마와 설정까지"): under a received link's preview, what came with it besides the days.
@@ -139,7 +140,8 @@ private fun KitDialog(
                 .map { RecipeRepository.Pick(it, RecipePieces.Mode.REPLACE) }
             val switching = theirs != null && switchStyle && picks.any { it.kind == PieceKind.COMPANY }
             if (switching) runCatching { c.settingsRepository.update { it.copy(workStyle = theirs) } }
-            val id = runCatching { c.recipes.apply(kit, "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
+            // [CELL-02] 1.39 Their 달력 모양, my cells' content (메모 줄·줄 순서·시간·음력·지출).
+            val id = runCatching { c.recipes.apply(kit.keepMyCellContent(), "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
             val ok = id != null
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 busy = false

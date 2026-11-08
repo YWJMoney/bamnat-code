@@ -500,14 +500,19 @@ test("[STAT-04] links made, pages seen, reports and take-downs are counted per d
   await call(env, "GET", `/s/${made.id}`);
   // [SRV-10] Every KV write is counted as well: two links and their limits, and none for a page seen.
   const { writes, ...first } = JSON.parse(env.SHARES.map.get("stats:2026-10-22"));
-  assert.deepEqual(first, { created: 2, views: 4 });
+  // 1.39 [IOS-06] the same views by kind of phone (this test sends no user agent: "other").
+  assert.deepEqual(first, { created: 2, views: 4, views_other: 4 });
   assert.equal(writes, 5);
   await call(env, "POST", `/api/share/${made.id}/report`, { reason: "spam" });
   await call(env, "DELETE", `/api/admin/share/${made.id}`, undefined, bearer);
   const s = await (await call(env, "GET", "/api/admin/stats?days=7", undefined, bearer)).json();
   assert.equal(s.days.length, 7);
-  const { writes: later, ...today } = s.days.at(-1);
+  const { writes: later, phones: todayPhones, ...today } = s.days.at(-1);
   assert.deepEqual(today, { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
+  assert.equal(todayPhones.views_other, 4);
+  assert.equal(s.phones.views_other, 4);
+  assert.equal(s.phones.views_ios, 0);
+  assert.equal(s.clocks, 0, "a count no day row lists adds up to 0, not null");
   assert.ok(later > writes, String(later));
   assert.equal(s.created, 2);
   assert.equal(s.views, 4);
@@ -663,6 +668,14 @@ test("1.38 [SLEEP-11] a link may say 지금 자는 중 with two times only, and 
   // Nothing rides along, and the times make sense.
   assert.equal(validate({ ...sample, sleepNow: { since, wakeAt, where: "home" } }).error, "sleep_now");
   assert.equal(validate({ ...sample, sleepNow: { since: "x" } }).error, "sleep_now");
+  // 1.39 G5-N4 계획한 잠 시간: pairs of times only, at most 24, none over 16 hours.
+  const from = since + 3600 * 1000, to = from + 7 * 3600 * 1000;
+  assert.deepEqual(validate({ ...sample, sleepPlan: [{ from, to }] }).schedule.sleepPlan, [{ from, to }]);
+  assert.equal(validate({ ...sample, sleepPlan: [{ from, to, note: "x" }] }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: [{ from: to, to: from }] }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: [{ from, to: from + 17 * 3600 * 1000 }] }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: Array.from({ length: 25 }, () => ({ from, to })) }).error, "sleep_plan");
+  assert.equal(validate({ ...sample, sleepPlan: { from, to } }).error, "sleep_plan");
   assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since - 1 } }).error, "sleep_now");
   assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since + 21 * 3600 * 1000 } }).error, "sleep_now");
   assert.equal(validate({ ...sample, sleepNow: [since] }).error, "sleep_now");

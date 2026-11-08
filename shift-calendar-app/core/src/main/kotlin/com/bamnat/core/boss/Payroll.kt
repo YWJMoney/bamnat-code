@@ -175,6 +175,11 @@ data class LedgerLine(
     val warnings: List<LedgerWarning>,
     /** 1.39 [BOSS-12] 산재보험 (사업주만, 공식 대조 G5): 0 for a 사업소득자 or with no 업종 picked. */
     val accident: Long = 0,
+    /**
+     * 1.39 G2 PC 4bd5d745: minutes really worked in each week (from [Workplace.weekStart]) that touches the month, 연장·휴일 included.
+     * The 주휴 weeks cap at 소정근로 (40시간), so a 60-hour week read 40 and the 주 52시간 red never came.
+     */
+    val weekMinutes: List<Int> = emptyList(),
 ) {
     val lines: List<PayLine> get() = pay?.lines.orEmpty().filter { it.amount != 0L }
     val gross: Long get() = lines.sumOf { it.amount }
@@ -307,8 +312,14 @@ object PayrollLedger {
         val worked = pay?.minutes.orEmpty()
         val workDays = days.count { it.isWorkDay || it.extras.isNotEmpty() }
         // 1.38 PC 1차: hours worked on a 휴일 are hours worked too (10월 22일 근무가 160시간으로 보이고 지난달 비교가 거꾸로 말하던 것).
-        val workMinutes = pay?.lines?.filter { it.kind == LineKind.BASE || it.kind == LineKind.EXTRA_HOURS || it.kind == LineKind.HOLIDAY }?.sumOf { it.minutes }
-            ?.takeIf { it > 0 } ?: days.sumOf { it.scheduledMinutes + it.extras.sumOf { e -> e.minutes } }
+        // 1.39 G2 PC 4bd5d745: every minute the engine counted on a working day, 연장 included. The pay lines left 연장 out and
+        // some months only kept 휴일근로 (10월 '22일 · 24시간', so '일한 시간 152시간 늘었어요' against November's 252시간).
+        val workMinutes = worked.filter { s.workingOn(it.date) && it.date.year == month.year && it.date.month == month.month }
+            .sumOf { it.worked }.takeIf { it > 0 } ?: days.sumOf { it.totalMinutes }
+        val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(place.weekStart))
+        val weekMinutes = if (!employed) emptyList() else generateSequence(first) { it.plusWeeks(1) }
+            .takeWhile { !it.isAfter(month.atEndOfMonth()) }
+            .map { from -> (0L..6L).map(from::plusDays).filter(s::workingOn).sumOf { r.resolve(it).totalMinutes } }.toList()
         fun minutesOf(kind: LineKind) = pay?.lines?.filter { it.kind == kind }?.sumOf { it.minutes } ?: 0
         val gross = pay?.total ?: 0
         // [BOSS-11] Only the 4대보험 the law puts them in (G2·G3·G6), not just what was ticked.
@@ -320,9 +331,10 @@ object PayrollLedger {
             staff = s, month = month, pay = pay,
             workDays = workDays, workMinutes = workMinutes,
             overtimeMinutes = minutesOf(LineKind.OVERTIME), nightMinutes = minutesOf(LineKind.NIGHT), holidayMinutes = minutesOf(LineKind.HOLIDAY),
-            employerInsurance = insurance, warnings = emptyList(), accident = accident,
+            employerInsurance = insurance, warnings = emptyList(), accident = accident, weekMinutes = weekMinutes,
         )
-        return line.copy(warnings = warnings(place, line, worked.isEmpty()))
+        val young = young(s, month, days.filter { it.date.year == month.year && it.date.month == month.month }, weekMinutes)
+        return line.copy(warnings = warnings(place, line, worked.isEmpty()) + young)
     }
 
     fun month(place: Workplace, staff: List<StaffMember>, month: YearMonth, work: Collection<StaffWork>): Ledger {
@@ -350,7 +362,42 @@ object PayrollLedger {
             val h = cut.cut10(InsuranceRules.HEALTH_BASE_MIN, sh.health)
             (h + cut.cut10(h, sh.careRatio)) - (health + care)
         } else 0
-        return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment) + floor
+        // 1.39 [PAYX-61] 발굴 G3-B7: 사업주 몫 건강보험료도 월 상한(보건복지부고시 제2025-222호, 반쪽 4,591,740원).
+        val cap = com.bamnat.core.pay.TakeHome.healthCap(on)
+        val ceiling = if (ins.health && cap != null && health > cap) (cap + cut.cut10(cap, sh.careRatio)) - (health + care) else 0
+        return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment) + floor + ceiling
+    }
+
+    /**
+     * 1.39 G2-N2 연소근로자 (근로기준법 제64·69·70조, 5인 미만에도 적용 — 시행령 별표 1): under 18 on the month's first day, a day past
+     * 7시간 or a week past 35시간 (합의해도 하루 8·주 40까지), and any work between 22시 and 06시, which needs their consent and the
+     * 노동부 인가. Under 15 needs a 취직인허증. Nothing is said without a 생년월일.
+     */
+    fun young(s: StaffMember, month: YearMonth, days: List<com.bamnat.core.schedule.ResolvedDay>, weekMinutes: List<Int>): List<LedgerWarning> {
+        val birth = s.birth ?: return emptyList()
+        val on = month.atDay(1)
+        if (!on.isBefore(birth.plusYears(18)) || days.none { it.totalMinutes > 0 }) return emptyList()
+        val age = java.time.Period.between(birth, on).years
+        val out = ArrayList<LedgerWarning>()
+        val longDays = days.count { it.totalMinutes > 7 * 60 }
+        val longWeeks = weekMinutes.count { it > 35 * 60 }
+        if (longDays > 0 || longWeeks > 0) out += LedgerWarning("young-hours", "18세 미만 근로시간을 넘었어요",
+            "만 ${age}세는 하루 7시간·한 주 35시간까지예요(근로기준법 제69조). 서로 합의하면 하루 1시간·한 주 5시간까지만 더할 수 있어요." +
+                listOfNotNull(longDays.takeIf { it > 0 }?.let { "7시간 넘은 날 ${it}일" }, longWeeks.takeIf { it > 0 }?.let { "35시간 넘은 주 ${it}주" })
+                    .joinToString(", ", prefix = " 이번 달: ") + ".")
+        fun night(d: com.bamnat.core.schedule.ResolvedDay): Boolean {
+            val a = d.start ?: return false
+            val b = d.end ?: return false
+            val late = LocalTime.of(22, 0)
+            val early = LocalTime.of(6, 0)
+            return a.isBefore(early) || b.isAfter(late) || !b.isAfter(a) || a.isAfter(late) || (b.isBefore(early) && b != LocalTime.MIDNIGHT)
+        }
+        val nights = days.count { it.totalMinutes > 0 && night(it) }
+        if (nights > 0) out += LedgerWarning("young-night", "18세 미만 밤 근무가 있어요",
+            "밤 10시~아침 6시와 휴일에 일하려면 본인 동의와 고용노동부 인가가 있어야 해요(근로기준법 제70조). 이번 달 ${nights}일이에요.")
+        if (age < 15) out += LedgerWarning("young-permit", "15세 미만은 취직인허증이 필요해요",
+            "만 15세 미만은 고용노동부의 취직인허증이 있어야 일할 수 있어요(근로기준법 제64조).")
+        return out
     }
 
     /** [BOSS-05] 최저임금 미달, 주휴가 빠진 주, 결근, 아직 모르는 5인 여부, the engine's own 확인 필요. */
@@ -372,7 +419,7 @@ object PayrollLedger {
         if (!s.weeklyHolidayPay && s.form == WageForm.HOUR && l.pay?.holidayWeeks.orEmpty().any { it.workedMinutes >= 15 * 60 }) add(LedgerWarning("holiday-off", "주휴수당을 끈 직원이에요",
             "주 15시간 이상 일한 주가 있어요. 그 주는 주휴수당을 줘야 해요(근로기준법 제55조, 시행령 제30조)."))
         // 1.38 [BOSS-10] 주 52시간 (근로기준법 제53조): a week past it is told, for a 5인 이상 place the law caps.
-        if (place.fivePlus != false) l.pay?.holidayWeeks.orEmpty().filter { it.workedMinutes > 52 * 60 }.takeIf { it.isNotEmpty() }?.let { w ->
+        if (place.fivePlus != false) l.weekMinutes.filter { it > 52 * 60 }.takeIf { it.isNotEmpty() }?.let { w ->
             add(LedgerWarning("week52", "주 52시간을 넘은 주가 있어요", "${w.size}주가 한 주 52시간(근로기준법 제53조)을 넘었어요. 근무를 나눠 주세요."))
         }
         if (noWork) add(LedgerWarning("empty", "근무가 없어요", "이번 달 일한 날이 없어요. 평소 근무 요일·시간을 넣거나 근무를 고쳐 주세요."))

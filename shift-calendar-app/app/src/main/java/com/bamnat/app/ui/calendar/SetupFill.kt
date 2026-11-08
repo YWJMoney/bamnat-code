@@ -103,7 +103,8 @@ internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifi
             Column(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
                 Text(numberWithUnit(moment.line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onPrimaryContainer)
-                if (moment.line.rest.isNotEmpty()) Text(moment.line.rest, style = MaterialTheme.typography.bodyMedium,
+                val rest = moment.line.restAt(com.bamnat.core.time.Today.dateTime())
+                if (rest.isNotEmpty()) Text(rest, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer)
             }
             IconButton(onClick = SetupFill::close) { Icon(Icons.Filled.Close, "채워진 달력 안내 닫기", tint = MaterialTheme.colorScheme.onPrimaryContainer) }

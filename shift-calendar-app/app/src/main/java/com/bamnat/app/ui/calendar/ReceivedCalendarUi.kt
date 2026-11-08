@@ -183,15 +183,26 @@ internal fun ReceivedCalendar.summary(): String {
     return if (s.first != null && s.last != null) "${Fmt.monthDay(s.first)}~${Fmt.monthDay(s.last)}" else "근무 없음"
 }
 
-/** [SHR-01] The parts the sharer ticked, in the share sheet's words; null when only shifts came. */
-internal fun SharedSchedule.showsText(): String? =
-    listOfNotNull(
+/**
+ * [SHR-01] The parts the sharer ticked, in the share sheet's words; null when only shifts came. 1.39 PC a483ca15 (메모 없는데
+ * '함께 받은 것: 메모'): as the web page says it, a kind with nothing in it is left out, and a 리더's own notes in the memo place
+ * ("바뀜: …", "같이 쉬어요: …") are named for what they are.
+ */
+internal fun SharedSchedule.showsText(): String? {
+    val notes = days.values.flatMap { d -> d.memo?.split(" · ").orEmpty() }.filter { it.isNotBlank() }
+    val memoNames = if ("memos" !in shows) emptyList() else listOfNotNull(
+        "메모".takeIf { notes.any { !it.startsWith("바뀜: ") && !it.startsWith("같이 쉬어요: ") } },
+        "바뀐 날 표시".takeIf { notes.any { it.startsWith("바뀜: ") } },
+        "같이 쉬는 사람".takeIf { notes.any { it.startsWith("같이 쉬어요: ") } },
+    )
+    return (listOfNotNull(
         "일정".takeIf { "jobs" in shows },
-        "휴가 종류".takeIf { "leaveKinds" in shows },
-        "연장·휴무일 근무".takeIf { "extras" in shows },
-        "메모".takeIf { "memos" in shows },
-        payKind.label.takeIf { "pay" in shows },
-    ).takeIf { it.isNotEmpty() }?.joinToString(", ")
+        "휴가 종류".takeIf { "leaveKinds" in shows && days.values.any { it.leave != null } },
+        "연장·휴무일 근무".takeIf { "extras" in shows && days.values.any { it.extras.isNotEmpty() } },
+    ) + memoNames + listOfNotNull(payKind.label.takeIf { "pay" in shows },
+        // 1.39 PC c0ca3d9f: the preview said '근무와 휴가만' while the plan line showed on the calendar.
+        "지금 자는 중".takeIf { sleepNow != null }, "계획한 잠 시간".takeIf { sleepPlan.isNotEmpty() })).takeIf { it.isNotEmpty() }?.joinToString(", ")
+}
 
 /**
  * [SHR-02] Opening a received link: a look at whose schedule it is and what came with it, then
@@ -618,7 +629,8 @@ fun ReceivedCalendarView(
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
-            schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) }?.let { line ->
+            // 1.39 G5-N4 계획한 잠 시간 when no 지금 자는 중 is said: what the plan says now or within a day.
+            (schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) } ?: sleepPlanLine(schedule.sleepPlan))?.let { line ->
                 Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 4.dp))
             }
@@ -1043,6 +1055,13 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
+}
+
+/** 1.39 G5-N4 "오늘 09:00~16:00 잘 계획이에요" or "지금은 잘 계획 시간이에요 · 16:00까지"; null with nothing within a day. */
+internal fun sleepPlanLine(plan: List<com.bamnat.app.share.SleepPlanWindow>, now: java.time.LocalDateTime = com.bamnat.core.time.Today.dateTime()): String? {
+    if (plan.isEmpty()) return null
+    fun t(ms: Long) = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), com.bamnat.core.time.Today.zone())
+    return com.bamnat.core.sleep.SleepPlanShare.line(plan.map { com.bamnat.core.sleep.SleepPlanShare.Window(t(it.from), t(it.to)) }, now)
 }
 
 /** 1.38 [SLEEP-11] "22:10부터 자는 중 · 6:30에 일어나요"; null once it is stale ([com.bamnat.app.share.SleepNow.shownAt]). */

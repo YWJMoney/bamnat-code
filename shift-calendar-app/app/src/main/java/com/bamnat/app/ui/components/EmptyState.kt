@@ -28,7 +28,7 @@ fun EmptyState(
 ) {
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (LocalShowKani.current) Kani(mood, night = MaterialTheme.colorScheme.surface.luminance() < 0.5f, size = 72.dp)
+        if (LocalShowKani.current) Kani(mood, night = com.bamnat.app.ui.components.isDarkSurface(), size = 72.dp)
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         if (!detail.isNullOrEmpty()) Text(detail, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

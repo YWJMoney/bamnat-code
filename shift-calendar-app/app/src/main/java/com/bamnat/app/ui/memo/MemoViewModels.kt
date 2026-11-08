@@ -38,10 +38,12 @@ import com.bamnat.core.time.Today
 enum class MemoTab(val label: String) { CALENDAR("달력 메모"), GENERAL("일반 메모") }
 
 enum class CalendarFilter(val label: String) {
-    ALL("전체"), UPCOMING("다가오는 일정"), THIS_MONTH("이번 달"), PAST("지난 메모"), CHECKLIST("체크리스트"), PINNED("고정")
+    ALL("전체"), UPCOMING("다가오는 일정"), THIS_MONTH("이번 달"), PAST("지난 메모"), CHECKLIST("체크리스트"),
+    /** 1.39 [FLOW-19] Memos with a photo in them ([Memo.photos]). */
+    PHOTO("사진"), PINNED("고정")
 }
 
-enum class GeneralFilter(val label: String) { ALL("전체"), PINNED("고정"), CHECKLIST("체크리스트"), TEXT("글 메모") }
+enum class GeneralFilter(val label: String) { ALL("전체"), PINNED("고정"), CHECKLIST("체크리스트"), TEXT("글 메모"), PHOTO("사진") }
 
 enum class MemoSort(val label: String) { UPDATED("최근 수정순"), CREATED("최근 작성순"), TITLE("제목순") }
 
@@ -87,6 +89,10 @@ data class MemoListState(
     val shiftOn: (LocalDate) -> com.bamnat.core.model.ShiftType? = { null },
     /** [EASE-22] The schedule each 근무마다 memo goes by, to lay it on its days in the 달력 보기. */
     val shiftsOf: (Memo) -> com.bamnat.core.memo.MemoRepeat.ShiftOf? = { null },
+    /** 1.39 [FLOW-19] 주 띠: the seven days shown, the one picked (only its memos), and how many memos each day has. */
+    val week: List<LocalDate> = emptyList(),
+    val day: LocalDate? = null,
+    val weekCounts: Map<LocalDate, Int> = emptyMap(),
 ) {
     val manyCalendars: Boolean get() = calendars.size > 1
     val activeName: String get() = calendars.firstOrNull { it.id == activeCalendar }?.name ?: com.bamnat.app.data.PersonalCalendar.MAIN_NAME
@@ -95,7 +101,7 @@ data class MemoListState(
         get() = if (tab == MemoTab.CALENDAR) upcoming.sumOf { it.memos.size } + past.sumOf { it.memos.size } else general.size
     val filtering: Boolean
         get() = query.isNotBlank() || tag != null ||
-            (if (tab == MemoTab.CALENDAR) calendarFilter != CalendarFilter.ALL || shift != null else generalFilter != GeneralFilter.ALL)
+            (if (tab == MemoTab.CALENDAR) calendarFilter != CalendarFilter.ALL || shift != null || day != null else generalFilter != GeneralFilter.ALL)
 }
 
 private data class MemoQuery(
@@ -107,6 +113,10 @@ private data class MemoQuery(
     val tag: String? = null,
     /** [MEMO-03] Only the memos of days with this shift. */
     val shift: String? = null,
+    /** 1.39 [FLOW-19] The 주 띠's first day (null: this week), and the one day picked on it. */
+    val weekOf: LocalDate? = null,
+    val day: LocalDate? = null,
+    val weekStart: java.time.DayOfWeek = java.time.DayOfWeek.SUNDAY,
 )
 
 class MemoListViewModel(private val container: AppContainer) : ViewModel() {
@@ -187,9 +197,12 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
         var upcoming = emptyList<MemoDateGroup>()
         var past = emptyList<MemoDateGroup>()
         var generalList = emptyList<Memo>()
+        var weekDays = emptyList<LocalDate>()
+        var weekCounts = emptyMap<LocalDate, Int>()
+        var pickedDay: LocalDate? = null
         if (query.tab == MemoTab.CALENDAR) {
             val month = YearMonth.from(today)
-            val filtered = matching.filter { m ->
+            val byFilter = matching.filter { m ->
                 val d = m.date!!
                 if (shift != null && shiftOf(m, d) != shift) return@filter false
                 when (query.calendarFilter) {
@@ -198,9 +211,15 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
                     CalendarFilter.PAST -> d.isBefore(today)
                     CalendarFilter.THIS_MONTH -> YearMonth.from(d) == month
                     CalendarFilter.CHECKLIST -> m.isChecklist
+                    CalendarFilter.PHOTO -> m.photos.isNotEmpty()
                     CalendarFilter.PINNED -> m.pinned
                 }
             }
+            // 1.39 [FLOW-19] 주 띠: each day's memos after the other filters, and only the picked day's when one is picked.
+            weekDays = com.bamnat.core.schedule.CalendarGrid.weekStartOf(query.weekOf ?: today, query.weekStart).let { s -> (0L..6L).map { s.plusDays(it) } }
+            weekCounts = byFilter.groupingBy { it.date!! }.eachCount().filterKeys { it in weekDays }
+            pickedDay = query.day
+            val filtered = if (pickedDay == null) byFilter else byFilter.filter { it.date == pickedDay }
             val groups = filtered.groupBy { it.date!! }.map { (date, memos) ->
                 MemoDateGroup(date, shiftCalendar(memos, active)?.let { snapshots[it] }?.resolver?.resolve(date), memos.sortedWith(MemoOrdering))
             }
@@ -214,6 +233,7 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
                     GeneralFilter.PINNED -> m.pinned
                     GeneralFilter.CHECKLIST -> m.isChecklist
                     GeneralFilter.TEXT -> !m.isChecklist
+                    GeneralFilter.PHOTO -> m.photos.isNotEmpty()
                 }
             }
             val order = when (query.sort) {
@@ -244,6 +264,9 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             trashCount = trashCount,
             shifts = shifts,
             shift = shift,
+            week = weekDays,
+            day = pickedDay,
+            weekCounts = weekCounts,
             shiftOn = snapshots[active]?.resolver?.let { r -> { d: LocalDate -> r.resolve(d).shiftType } } ?: { _: LocalDate -> null },
             shiftsOf = { m: Memo ->
                 if (com.bamnat.core.memo.MemoRepeat.kindOf(m.repeat) != com.bamnat.core.memo.MemoRepeat.Kind.SHIFT) null
@@ -267,7 +290,7 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun setTab(tab: MemoTab) {
-        q.update { it.copy(tab = tab, tag = null, shift = null) }
+        q.update { it.copy(tab = tab, tag = null, shift = null, day = null, weekOf = null) }
         clearSelection()
         tabPrefs.edit().putString("tab", tab.name).apply()
     }
@@ -288,6 +311,15 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     fun toggleTag(tag: String) = q.update { it.copy(tag = if (it.tag == tag) null else tag) }
     /** [MEMO-03] '야간 날': only the memos of days with that shift. */
     fun toggleShift(name: String) = q.update { it.copy(shift = if (it.shift == name) null else name) }
+    /** 1.39 [FLOW-19] 주 띠: one day's memos only; the same day again shows them all. */
+    fun pickDay(d: LocalDate) = q.update { it.copy(day = if (it.day == d) null else d) }
+    fun clearDay() = q.update { it.copy(day = null) }
+    /** 1.39 [FLOW-19] The week before or after (by weeks), its days' dots; the picked day is let go. */
+    fun moveWeek(by: Long, today: LocalDate = Today.date()) = q.update {
+        val from = com.bamnat.core.schedule.CalendarGrid.weekStartOf(it.weekOf ?: today, it.weekStart).plusWeeks(by)
+        it.copy(weekOf = from.takeIf { f -> f != com.bamnat.core.schedule.CalendarGrid.weekStartOf(today, it.weekStart) }, day = null)
+    }
+    fun setWeekStart(d: java.time.DayOfWeek) { if (q.value.weekStart != d) q.update { it.copy(weekStart = d) } }
 
     fun toggleSelected(id: Long) = selection.update { if (id in it) it - id else it + id }
     fun selectAllVisible() = selection.update { visibleIds }
@@ -336,6 +368,11 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     /** [TAB-02] 누락 점검 N9: a memo changed in a view (보드 칸 옮기기, 표 고르기, 되돌리기) saved as it now reads. */
     fun saveEdited(memo: Memo) {
         viewModelScope.launch { repo.save(memo) }
+    }
+
+    /** 1.39 [TASK-02] 끝냄 from a card: the stored memo (not a repeating one's copy laid on a day) finished or not on [day]. */
+    fun setDone(memo: Memo, day: LocalDate?, done: Boolean) {
+        viewModelScope.launch { repo.get(memo.id)?.let { repo.save(it.withDone(done, day, Today.millis())) } }
     }
 }
 
@@ -521,6 +558,15 @@ class MemoEditorViewModel(
     fun removeTemplate(id: String) = container.memoTemplates.remove(id)
     fun setColor(index: Int) = update { it.copy(colorIndex = index) }
     fun togglePinned() = update { it.copy(pinned = !it.pinned) }
+
+    /**
+     * 1.39 [TASK-02] The day 끝냄 is about: a repeating memo is finished day by day, on the day it was opened from (today from
+     * elsewhere); one that does not repeat is finished once.
+     */
+    val doneDay: LocalDate get() = openedOn ?: Today.date()
+
+    /** 1.39 [TASK-02] 끝냄 표시 / 끝냄 풀기. */
+    fun setDone(done: Boolean) = update { it.withDone(done, doneDay, Today.millis()) }
     /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. [EASE-22] 근무마다 stays as it is. */
     fun setDate(date: LocalDate?) = update {
         val kind = com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat)
@@ -592,15 +638,18 @@ class MemoEditorViewModel(
         (shiftCalendar(listOf(_memo.value), active) ?: active).takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN
     }.distinctUntilChanged()
 
-    /** [MEMO-05] The next 60 days of that calendar, for '다음 야간 때' and the dialog's '근무에 맞춰' chips. */
+    /**
+     * [MEMO-05] The next 60 days of that calendar, for '다음 야간 때' and the dialog's '근무에 맞춰' chips. 1.39 [CAL2-20] From
+     * yesterday, with each shift's end, so a time this morning is checked against last night's 야간 too (those only look ahead).
+     */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val shiftDays: StateFlow<List<com.bamnat.core.memo.ShiftMemoTime.Day>> = shiftCal.flatMapLatest { cal ->
         container.calendars.repository(cal).live.map { snap ->
             val from = Today.date()
-            (0L..60L).mapNotNull { i ->
+            (-1L..60L).mapNotNull { i ->
                 val d = snap.resolver.resolve(from.plusDays(i))
                 val type = d.shiftType ?: return@mapNotNull null
-                com.bamnat.core.memo.ShiftMemoTime.Day(d.date, type.name, d.isWorkDay, d.start)
+                com.bamnat.core.memo.ShiftMemoTime.Day(d.date, type.name, d.isWorkDay, d.start, d.end)
             }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -688,7 +737,9 @@ class MemoEditorViewModel(
     }
 
     fun setItemChecked(index: Int, checked: Boolean) = update { m ->
-        m.copy(checklist = m.checklist.mapIndexed { i, item -> if (i == index) item.copy(checked = checked) else item })
+        val next = m.copy(checklist = m.checklist.mapIndexed { i, item -> if (i == index) item.copy(checked = checked) else item })
+        // 1.39 [TASK-05] A line taken off again means the memo is not finished after all.
+        if (!checked && next.isDoneOn(doneDay)) next.withDone(false, doneDay, Today.millis()) else next
     }
 
     /** Inserts an empty item after [index] and returns its position. */

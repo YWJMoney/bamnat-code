@@ -42,8 +42,19 @@ class NightLookTest {
 
     @Test fun keysRoundTripAndDefault() {
         NightLook.entries.forEach { assertEquals(it, NightLook.of(it.key)) }
-        assertEquals(NightLook.SLEEP_TIME, NightLook.of(null))
-        assertEquals(NightLook.SLEEP_TIME, NightLook.of("??"))
+        // 1.39 (사용자 11-07): 1.38's own behaviour by default, the whole app only when chosen.
+        assertEquals(NightLook.SCREENS, NightLook.of(null))
+        assertEquals(NightLook.SCREENS, NightLook.of("??"))
+    }
+
+    @Test fun screensOnlyLeavesTheAppItsOwnColours() {
+        val l = NightLook.SCREENS
+        val plan = listOf(at(9)..at(16))
+        assertFalse(NightRule.app(l, at(3), sleeping = true, planned = plan, systemDark = true))
+        assertFalse(NightRule.app(l, at(10), sleeping = false, planned = plan, systemDark = false))
+        assertTrue(NightRule.screen(l, at(23), sleeping = false, systemDark = false))
+        assertTrue(NightRule.screen(l, at(14), sleeping = true, systemDark = false))
+        assertFalse(NightRule.screen(l, at(14), sleeping = false, systemDark = true))
     }
 
     @Test fun nightLineSaysWorkAndAlarm() {
@@ -56,6 +67,11 @@ class NightLookTest {
         assertEquals("내일 07:00 주간 · 울릴 알람 없음", NightLine.of(now, work, null, alarmsOn = true).text)
         // 가게·현장·투자: no 근무표 words.
         assertEquals("알람 꺼짐", NightLine.of(now, null, null, alarmsOn = false, shifts = false).text)
+        // One day word for the night screen and the 자는 중 notice: an alarm days away is not "내일".
+        assertEquals("오늘", NightLine.day(at(11, 35), at(13)))
+        assertEquals("내일", NightLine.day(at(11, 35), at(13, day = d.plusDays(1))))
+        assertEquals("모레", NightLine.day(at(11, 35), at(13, day = d.plusDays(2))))
+        assertEquals("11/15", NightLine.day(at(11, 35), at(13, day = d.plusDays(6))))
     }
 }
 
@@ -73,5 +89,16 @@ class SleepHeadTest {
         assertEquals("good", more.tone)
         val none = com.bamnat.core.sleep.SleepHead.of(com.bamnat.core.sleep.SleepDebt(0, 0, 0), 420)
         assertEquals("—", none.value)
+    }
+}
+
+/** 1.39 G5-N3 폴드 탁상 시계: the clock walks so the screen keeps no shape. */
+class NightClockShiftTest {
+    @Test fun walksFifteenPlacesWithinFourDp() {
+        val places = (0 until 60).map { com.bamnat.core.sleep.NightClockShift.of(it) }
+        assertEquals(15, places.toSet().size)
+        assertTrue(places.all { (x, y) -> kotlin.math.abs(x) <= 4 && kotlin.math.abs(y) <= 4 })
+        // Each minute it moves.
+        assertTrue((1 until 60).all { places[it] != places[it - 1] })
     }
 }

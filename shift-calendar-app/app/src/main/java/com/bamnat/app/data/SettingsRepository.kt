@@ -17,6 +17,27 @@ enum class ThemeMode {
     NIGHT_SHIFT,
 }
 
+/**
+ * 1.39 [PAYX-60] Which days 근무 시간·일수 count in a month: the 급여 기간 when the pay has one that is not 1일~말일
+ * (사용자 2026-11-07 '21~20일이면 11월은 10/21~11/20 근무 시간'), unless the user picked 1일~말일 on 통계's chips.
+ */
+enum class StatsPeriod {
+    /** The pay period when the pay has one (21일~20일), else 1일~말일. Before 1.39 the default was 1일~말일. */
+    AUTO,
+    /** Picked on 통계: the pay period. */
+    PAY,
+    /** Picked on 통계: 1일~말일, whatever the pay period. */
+    MONTH;
+
+    /** Whether a month counts over [period] (the pay's 급여 기간). */
+    fun byPay(period: com.bamnat.core.pay.PayPeriod?): Boolean = this != MONTH && period != null && period.endDay != null && !period.isCalendarMonth
+
+    companion object {
+        /** A saved value, or the old switch's: on is [PAY], off is [AUTO] (off was only the default, never a choice). */
+        fun read(v: String?, old: Boolean = false): StatsPeriod = v?.let { runCatching { valueOf(it) }.getOrNull() } ?: if (old) PAY else AUTO
+    }
+}
+
 /** [CAL-03] What a tap on a date does on a phone-sized screen (unfolded, the day is always beside the calendar). */
 enum class PhoneDayView {
     /** The day in short under the calendar; a second tap opens it all in a sheet. As before 1.13. */
@@ -174,8 +195,9 @@ data class AppSettings(
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
     /**
-     * 1.39 [FLOW-14][DSG-07] 밤 색 ([com.bamnat.core.design.NightLook] key): 잘 시간에만 (default) turns the whole app warm and dark
-     * while asleep, in the planned sleep and at 01~05, and the sleep and night screens from 22:00 to 06:00; 끔; 휴대폰 따름.
+     * 1.39 [FLOW-14][DSG-07] 밤 색 ([com.bamnat.core.design.NightLook] key): 수면 화면만 (default, 1.38's behaviour) darkens the
+     * sleep and night screens from 22:00 to 06:00 and while asleep; 잘 시간엔 앱 전체 also the whole app while asleep, in the
+     * planned sleep and at 01~05; 끔; 휴대폰 따름.
      * 1.38's 밤에는 어두운 색 off (sleep_night_look false) reads as 끔.
      */
     val nightLook: String = com.bamnat.core.design.NightLook.DEFAULT.key,
@@ -218,10 +240,12 @@ data class AppSettings(
     val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
     val payDepositNotice: Boolean = true,
+    /** 1.39 [PAYX-62] 알바 주 15시간 경계 알림: 이번 주가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄. In the backup. */
+    val weekHoursNudge: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
     val calendarOnly: Boolean = false,
-    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
-    val statsByPayPeriod: Boolean = false,
+    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. 1.39 [PAYX-60] three ways. */
+    val statsPeriod: StatsPeriod = StatsPeriod.AUTO,
     /** 1.37 [LEDH-06] 가계부 예산·하루 쓸 돈을 월급날~다음 월급날 전날로 봄 (급여일 주기); off is 1일~말일. In the backup. */
     val moneyByPayCycle: Boolean = false,
     /** 1.37 [LEDH-07] 근무 시간 환산: spending of this many won or more says the work it took; 0 is off (결정 4: 5만 원). In the backup. */
@@ -253,6 +277,11 @@ data class AppSettings(
      * is the screen the app opens on. Empty is the usual order (달력 first), so nothing changes for whoever never moved one.
      */
     val tabOrder: List<String> = emptyList(),
+    /**
+     * [NAV2-01] 1.39: the bottom bar's places as the user filled them ([com.bamnat.core.layout.TabSlots], one screen or a 묶음 each).
+     * Empty is the bar [tabOrder] makes, so a phone that never filled one sees the tabs as before (설정 by the 나 button).
+     */
+    val tabSlots: String = "",
     /** [FEAT-07] The user's calendars written to a calendar of their own on the phone (프로); none at first. */
     val phoneCalendars: List<String> = emptyList(),
     /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
@@ -321,6 +350,8 @@ data class AppSettings(
     val alarmSuggest: Boolean = true,
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
     val alarmSuggestMemory: String = "",
+    /** 1.39 [SPREAD-05] A small '밤낮' in the corner of a 근무표·견적서·거래내역서 picture; the user can turn it off. In the backup. */
+    val exportMark: Boolean = true,
 ) {
     /** [SETUP-16] The first setup is finished: the kind of work is chosen and the setup was not put off. */
     val setupDone: Boolean get() = workStyle != null && !setupLater
@@ -366,25 +397,53 @@ class SettingsRepository(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    private val _settings = MutableStateFlow(read())
+    /** What is saved on the phone. */
+    private val _stored = MutableStateFlow(read())
+
+    /**
+     * [TRY-05] 1.39 실제 화면으로 입어 보기 (사용자 2026-11-07 "입혀보기에서 가계부나 급여 일감 등이 실 모습과 100% 동일하게"): a theme's
+     * look laid over the saved settings in memory only, while the user walks the real app with it. Never written: [update] works on
+     * the saved settings, [current] is them, and the look goes when the trial ends or the app is closed.
+     */
+    @Volatile private var trial: ((AppSettings) -> AppSettings)? = null
+    @Volatile private var trialShown = true
+    private val _settings = MutableStateFlow(_stored.value)
+
+    /** What the screens draw: the saved settings, with a theme being tried on over them ([putTrial]). */
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
+    private fun shown(s: AppSettings): AppSettings = trial?.takeIf { trialShown }?.let { f -> runCatching { f(s) }.getOrDefault(s) } ?: s
+
     // Held in a field: SharedPreferences keeps listeners weakly.
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> _settings.value = read() }
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> read().let { _stored.value = it; _settings.value = shown(it) } }
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(listener)
     }
 
-    val current: AppSettings get() = _settings.value
+    /** The saved settings (never a theme only being tried on: what is read here is what is kept, backed up and put back). */
+    val current: AppSettings get() = _stored.value
 
     fun update(transform: (AppSettings) -> AppSettings) {
         synchronized(this) {
             val next = transform(read())
             write(next)
-            _settings.value = next
+            _stored.value = next
+            _settings.value = shown(next)
         }
     }
+
+    /** [TRY-05] Lays [look] over the saved settings on screen (null: none); [shown] false draws the saved ones for a moment (지금 모습). */
+    fun putTrial(look: ((AppSettings) -> AppSettings)?, shown: Boolean = true) {
+        synchronized(this) {
+            trial = look
+            trialShown = shown
+            _settings.value = shown(_stored.value)
+        }
+    }
+
+    /** Whether a theme is being tried on now. */
+    val trying: Boolean get() = trial != null
 
     private fun read(): AppSettings {
         val d = AppSettings()
@@ -475,8 +534,9 @@ class SettingsRepository(context: Context) {
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
+            weekHoursNudge = prefs.getBoolean(K_WEEK_HOURS_NUDGE, d.weekHoursNudge),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
-            statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
+            statsPeriod = StatsPeriod.read(prefs.getString(K_STATS_PERIOD_WAY, null), prefs.getBoolean(K_STATS_PERIOD, false)),
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
@@ -493,6 +553,7 @@ class SettingsRepository(context: Context) {
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
             phoneCalendars = prefs.getString(K_PHONE_CALENDARS, null)?.let(::decodeGroupOrder) ?: d.phoneCalendars,
             tabOrder = prefs.getString(K_TAB_ORDER, null)?.let(::decodeGroupOrder) ?: d.tabOrder,
+            tabSlots = prefs.getString(K_TAB_SLOTS, null) ?: d.tabSlots,
             alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
             shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
             wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
@@ -527,6 +588,7 @@ class SettingsRepository(context: Context) {
             monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
             alarmSuggest = prefs.getBoolean(K_ALARM_SUGGEST, d.alarmSuggest),
             alarmSuggestMemory = prefs.getString(K_ALARM_SUGGEST_MEMORY, null) ?: "",
+            exportMark = prefs.getBoolean(K_EXPORT_MARK, d.exportMark),
         )
     }
 
@@ -611,8 +673,10 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
+            .putBoolean(K_WEEK_HOURS_NUDGE, s.weekHoursNudge)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
-            .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
+            .putString(K_STATS_PERIOD_WAY, s.statsPeriod.name)
+            .putBoolean(K_STATS_PERIOD, s.statsPeriod == StatsPeriod.PAY)
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
             .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
@@ -627,6 +691,7 @@ class SettingsRepository(context: Context) {
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
             .putString(K_TAB_ORDER, s.tabOrder.joinToString(","))
+            .putString(K_TAB_SLOTS, s.tabSlots)
             .putString(K_ALARM_MISSION, s.alarmMission)
             .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
             .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
@@ -661,6 +726,7 @@ class SettingsRepository(context: Context) {
             .putInt(K_MONTH_RECAP, s.monthRecapSeen)
             .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
             .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
+            .putBoolean(K_EXPORT_MARK, s.exportMark)
             .apply()
     }
 
@@ -680,8 +746,10 @@ class SettingsRepository(context: Context) {
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
+        const val K_WEEK_HOURS_NUDGE = "week_hours_nudge"
         const val K_CAL_ONLY = "calendar_only"
         const val K_STATS_PERIOD = "stats_pay_period"
+        const val K_STATS_PERIOD_WAY = "stats_period_way"
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
@@ -689,6 +757,7 @@ class SettingsRepository(context: Context) {
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_PHONE_CALENDARS = "phone_calendars"
         const val K_TAB_ORDER = "tab_order"
+        const val K_TAB_SLOTS = "tab_slots"
         const val K_ALARM_MISSION = "alarm_mission"
         const val K_SHIFT_MISSIONS = "shift_missions"
         const val K_WAKE_CHECK = "wake_check_minutes"
@@ -730,6 +799,7 @@ class SettingsRepository(context: Context) {
         const val K_MONTH_RECAP = "month_recap_seen"
         const val K_ALARM_SUGGEST = "alarm_suggest"
         const val K_ALARM_SUGGEST_MEMORY = "alarm_suggest_memory"
+        const val K_EXPORT_MARK = "export_mark"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

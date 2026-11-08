@@ -49,22 +49,29 @@ export function d1(path = ":memory:") {
       getBookmark: () => `bm-${writes}`,
     };
   }
+  let turn = Promise.resolve();
   const out = {
     db,
     sessions,
     withSession,
     prepare: (sql) => statement(sql),
-    async batch(list) {
-      db.exec("BEGIN");
-      try {
-        const out = [];
-        for (const s of list) out.push(/^\s*(SELECT|WITH)/i.test(s.sql) ? await s.all() : await s.run());
-        db.exec("COMMIT");
-        return out;
-      } catch (e) {
-        db.exec("ROLLBACK");
-        throw e;
-      }
+    // 1.39 [ADM3-43] D1 runs batches sent at the same time one after another, each in its own transaction; here too, so
+    // reads the worker now sends together (지표) do not start a transaction inside another.
+    batch(list) {
+      const next = turn.then(async () => {
+        db.exec("BEGIN");
+        try {
+          const out = [];
+          for (const s of list) out.push(/^\s*(SELECT|WITH)/i.test(s.sql) ? await s.all() : await s.run());
+          db.exec("COMMIT");
+          return out;
+        } catch (e) {
+          db.exec("ROLLBACK");
+          throw e;
+        }
+      });
+      turn = next.catch(() => {});
+      return next;
     },
     /** Every text stored anywhere, for checks that something is never kept. */
     dump() {

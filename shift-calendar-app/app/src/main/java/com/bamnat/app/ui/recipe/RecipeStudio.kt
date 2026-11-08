@@ -79,6 +79,7 @@ import com.bamnat.app.ui.TopLevel
 import com.bamnat.app.ui.calendar.CalendarPart
 import com.bamnat.app.ui.components.asColor
 import com.bamnat.app.ui.components.contentColorOn
+import com.bamnat.app.ui.theme.fillWith
 import com.bamnat.app.ui.memo.MemoPart
 import com.bamnat.app.ui.money.MoneyPart
 import com.bamnat.app.ui.stats.StatsPart
@@ -203,7 +204,14 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
     val resolved = remember(r) { r.pieces.associate { p -> p.kind to runCatching { RecipeResolve.piece(r, p, RecipeResolve.answers(r, emptyMap())) }.getOrDefault(p.values) } }
     val corners = resolved[PieceKind.PHOTO_LOOK]?.get("corners") as? String
     @Suppress("UNCHECKED_CAST")
-    val tabs = TabOrder.of((resolved[PieceKind.LAYOUT]?.get("tabs") as? List<String>).orEmpty())
+    val workTabs = (resolved[PieceKind.LAYOUT]?.get("tabs") as? List<String>).orEmpty()
+    // [TRY-07] 1.39 발굴 (3차 PC: 예시 아래 막대는 6칸, 내 앱은 5칸): the bar as the phone draws it ([com.bamnat.core.layout.TabSlots]):
+    // my own places as they are (a 묶음, another screen: a 화면 배치 does not move them, as on the phone), else the work's 화면 배치
+    // (or my tab order) with 설정 by the 나 button.
+    val myBar by androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    val slots = remember(workTabs, myBar.tabSlots, myBar.tabOrder) {
+        com.bamnat.core.layout.TabSlots.resolve(myBar.tabSlots, workTabs.ifEmpty { myBar.tabOrder }, com.bamnat.app.ui.TabPicks.known)
+    }
     // [BLU-05] 1.36 부품 꾸미기 on the example app: the parts as the phone draws them (앱 전체·단추·카드 through the theme).
     @Suppress("UNCHECKED_CAST")
     val rawParts = remember(resolved) {
@@ -265,21 +273,28 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 if (bar) CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.fillMaxWidth().clip(barShape)) {
                 val barPart = blueprint.style("app.tabs")
-                Row(Modifier.fillMaxWidth().partSpot("app.tabs").background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
+                // 1.39 [MKW-02]: 무늬·그라데이션(paint)만 준 탭 막대도 폰처럼 그 무늬로, 글자는 무늬 평균색에 맞는 색으로.
+                val barPaint = barPart.paint.takeIf { barPart.fill == null }
+                val barGround = (barPart.fill ?: barPaint?.average)?.let { Color(it.toInt()) }
+                CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides (barGround?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: androidx.compose.material3.LocalContentColor.current)) {
+                Row(Modifier.fillMaxWidth().partSpot("app.tabs").then(if (barPaint != null) Modifier.fillWith(barPaint, barShape) else Modifier.background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape)).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly) {
-                    tabs.forEach { key ->
-                        val t = TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
-                        val on = key == tab
+                    slots.forEach { slot ->
+                        val first = com.bamnat.app.ui.TabPicks.of(slot.keys.first(), style) ?: return@forEach
+                        val goes = slot.keys.firstOrNull { k -> TopLevel.entries.any { it.route == k } }
+                        val label = (slot as? com.bamnat.core.layout.TabSlots.Group)?.name ?: first.label
+                        val on = tab in slot.keys
                         val tp = blueprint.style("app.tab", if (on) setOf("sel") else emptySet())
                         val ink = tp.ink?.let { Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
-                        Column(Modifier.partSpot("app.tab").clickable(onClickLabel = "${t.labelFor(style)} 화면 보기") { onTab(key) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        Column(Modifier.partSpot("app.tab").clickable(enabled = goes != null, onClickLabel = "$label 화면 보기") { goes?.let(onTab) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.background(if (on) tp.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, CircleShape).padding(horizontal = 10.dp, vertical = 2.dp)) {
-                                Icon(if (on) t.selectedIcon else t.icon, null, Modifier.size(20.dp), tint = ink)
+                                Icon(if (on) first.selectedIcon else first.icon, null, Modifier.size(20.dp), tint = ink)
                             }
-                            Text(t.labelFor(style), style = com.bamnat.app.ui.parts.PartMods.text(tp.copy(ink = null), MaterialTheme.typography.labelSmall), fontSize = tp.size?.sp ?: 10.sp, maxLines = 1, color = ink)
+                            Text(label, style = com.bamnat.app.ui.parts.PartMods.text(tp.copy(ink = null), MaterialTheme.typography.labelSmall), fontSize = tp.size?.sp ?: 10.sp, maxLines = 1, color = ink)
                         }
                     }
+                }
                 }
                 }
                 }
@@ -397,31 +412,45 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
      *  my own dates and holidays, the days blank, never the example. */
     blankOk: Boolean = false,
     /** PC 확인 1.37 A11: on those blank days, my 일감 (현장) by its 공수 or title. */
-    jobs: List<com.bamnat.core.money.Job>? = null): MyWeeks? {
+    jobs: List<com.bamnat.core.money.Job>? = null,
+    /** [CELL-02] 1.39 My memos by date ([com.bamnat.app.ui.studio.rememberMyDayMemos]); a day's jobs come first among its lines. */
+    memos: Map<java.time.LocalDate, List<String>>? = null): MyWeeks? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
     // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
-    val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
-    val real = remember(snap, days, first, weeks, blankOk, jobs) {
+    // [LINK-01] 1.39 On the week start my calendar keeps (월요일 시작이면 예시도 월요일부터), so the studio and 입어 보기 draw my weeks as they are.
+    val settingsNow by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val weekStart = settingsNow.weekStart
+    val first = remember(today, from, weekStart) { (from ?: today).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart)) }
+    val real = remember(snap, days, first, weeks, blankOk, jobs, memos) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
+        // [CELL-02] What I wrote on the day: its jobs by 업체 (or name), then its memos.
+        fun written(d: java.time.LocalDate): List<String> =
+            jobs.orEmpty().filter { j -> !d.isBefore(j.date) && !d.isAfter(j.endDate ?: j.date) }.map { it.client.ifBlank { it.title }.trim() }.filter { it.isNotEmpty() } +
+                memos?.get(d).orEmpty()
         if (resolved.none { it.shiftType != null }) return@remember if (!blankOk) null else resolved.map { r ->
             val job = jobs?.firstOrNull { j -> !r.date.isBefore(j.date) && !r.date.isAfter(j.endDate ?: j.date) }
-            if (job != null) com.bamnat.app.ui.calendar.SampleDay(com.bamnat.app.ui.studio.jobCell(job), 0xFF8D6E63L,
+            if (job != null) com.bamnat.app.ui.calendar.SampleDay(com.bamnat.app.ui.studio.jobCell(job), 0xFF8D6E63L, written(r.date),
                 holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date))
-            else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
+            else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, written(r.date), holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
         }
         resolved.map { r ->
-            val t = r.shiftType
-            val role = t?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }
-            val item = t?.let { k -> days.firstOrNull { (it["name"] as? String)?.trim() == k.name.trim() } ?: days.firstOrNull { it["role"] == role } }
+            // [LINK-01] 1.39 The day as the phone's calendar has it (쉬는 날의 대근은 그 근무로, 특근만 있는 날은 특근으로, 연차·직접 바꾼 날도).
+            val w = com.bamnat.core.schedule.DayWork.of(r, s.hasPattern)
+            val covered = r.coveredShift?.takeIf { !r.isWorkDay && !it.isOff }
+            val t = covered ?: r.shiftType
+            val onlyExtra = r.extras.firstOrNull()?.takeIf { !r.isWorkDay && covered == null }
+            val role = w.role?.key
+            val item = if (onlyExtra != null) null else t?.let { k -> days.firstOrNull { (it["name"] as? String)?.trim() == k.name.trim() } ?: days.firstOrNull { it["role"] == role } }
             com.bamnat.app.ui.calendar.SampleDay(
-                ((item?.get("emoji") as? String) ?: item?.get("label")?.toString() ?: t?.label).orEmpty(),
-                (item?.get("color") as? Long) ?: t?.colorArgb?.or(0xFF000000L) ?: 0xFF757575L,
-                hours = r.scheduledMinutes.takeIf { it > 0 }?.let { m -> "${m / 60}h" },
-                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = r.isOff, role = role,
+                ((item?.get("emoji") as? String) ?: item?.get("label")?.toString() ?: onlyExtra?.kind?.mark ?: t?.label).orEmpty(),
+                (item?.get("color") as? Long) ?: (onlyExtra?.kind?.colorArgb ?: t?.colorArgb)?.or(0xFF000000L) ?: 0xFF757575L,
+                memos = written(r.date),
+                hours = w.totalMinutes.takeIf { it > 0 }?.let { m -> "${m / 60}h" },
+                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = w.off, role = role, work = w.states,
             )
         }
     }
@@ -449,8 +478,15 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     val weeksN = remember(now) { ((monthStart.dayOfWeek.value % 7) + now.lengthOfMonth() + 6) / 7 }
     val whole = pinned == null
     val myJobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
+    val myMemos = com.bamnat.app.ui.studio.rememberMyDayMemos()
     val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart, blankOk = style != null && !style.usesPattern && style != WorkStyle.HOURLY,
-        jobs = myJobs).takeIf { realOn }
+        jobs = myJobs, memos = myMemos).takeIf { realOn }
+    // [CELL-02] 1.39 My month listed the way my calendar lists it (날짜 칸에 일감·메모를 줄마다), in the theme's look.
+    val mySettings by androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    // [TRY-05] 1.39 PC a483ca15 (입어 보기엔 메모 줄, 입은 달력은 점): the calendar's own choice, on the 달력 모양 this example draws (a theme
+    // of someone else's keeps my 메모 줄 수, [com.bamnat.core.recipe.keepMyCellContent]).
+    val listed = mine != null && com.bamnat.app.ui.calendar.cellListOn(mySettings.cellList, style, mySettings.memoInCells, view,
+        hasMemos = !myMemos.isNullOrEmpty())
     val rows = if (mine != null && whole) weeksN else 2
     val n = rows * 7
     val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST
@@ -495,10 +531,10 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
         if ((view.looks.isNotEmpty() || bp.touches("cal") || com.bamnat.app.ui.parts.LocalPartSpots.current != null) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = if (real != null) rows else 2, onCell = null,
             start = if (real != null) start0 else exFirst, todayDate = if (real != null) today else exFirst.plusDays(2), days = sample,
-            todayColor = (theme["today"] as? Long)?.asColor())
+            todayColor = (theme["today"] as? Long)?.asColor(), listed = listed)
         else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
             rows = if (mine != null) rows else 2, numbers = (0 until (if (mine != null) n else 14)).map { start0.plusDays(it.toLong()).dayOfMonth },
-            todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt())
+            todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt(), listed = listed)
         else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2,
             numbers = (0 until 14).map { exFirst.plusDays(it.toLong()).dayOfMonth })
         if (mine == null) Text("근무를 넣으면 내 달력으로 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

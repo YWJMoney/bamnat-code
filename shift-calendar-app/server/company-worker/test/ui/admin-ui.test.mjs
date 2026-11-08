@@ -120,7 +120,9 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   for (const s of ["home", "desk", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
     "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more",
     // 1.38 [ADM3] 새 화면들.
-    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth"]) {
+    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth",
+    // 1.39 [LOOP] 자동 순환·결정함·요금 판단.
+    "loop", "decide", "tiers"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -396,6 +398,116 @@ test("[ADM3-37] 오늘 › 할 일: 같은 말로 읽히는 문의는 한 줄, �
   assert.equal(bundle.querySelectorAll(".bundle-list p").length, 2);
   assert.match(bundle.closest("li").querySelector(".kind").textContent, /3건/);
   assert.ok(![...u.$$("#main .rows.inbox > li .row-main a")].some((a) => /진동만 와요/.test(a.textContent)), "not a row of its own too");
+  // 1.39 [ADM3-39] 발굴: one answer to the whole bundle, by choice (off by default).
+  const form = bundle.closest("li").querySelector('form[data-form="quick-reply"]');
+  assert.match(form.textContent, /비슷한 문의 2건에도 같은 답 보내기/);
+  assert.equal(form.elements.all.checked, false);
+  form.elements.text.value = "알람 소리 설정을 다음 판에서 고쳐요";
+  form.elements.all.checked = true;
+  form.requestSubmit(form.querySelector('[data-close="1"]'));
+  await u.settle(60);
+  assert.match(u.text("#toast"), /3건에 답하고 닫았어요/);
+  const owner = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=all", undefined, owner)).data.inquiries;
+  const alarms = list.filter((q) => /알람/.test(JSON.stringify(q)));
+  assert.equal(alarms.length, 3);
+  for (const q of alarms) assert.equal(q.status, "closed");
+  assert.ok(!u.$("#main .rows.inbox details.bundle"), "the bundle left the list");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADM3-40] 큐 모드: 비슷한 문의가 큐에 남아 있으면 같은 답을 함께 보내고 큐에서 빼요", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  for (const [n, text] of [[21, "알람 소리가 안 나요 진동만 와요"], [22, "알람이 소리 없이 안 나요"]]) {
+    await call("POST", "/api/inquiries", { v: 1, device: `test-device-000000${n}`, kind: "bug", text, info: { app: "1.38.0 (52)" } }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/inquiries");
+  await u.click('[data-act="queue-start"]');
+  await u.settle(40);
+  let form = u.$('#main form[data-form="reply"]');
+  for (let i = 0; i < 6 && form && !form.elements.alike; i++) {
+    await u.click('[data-act="queue-skip"]');
+    await u.settle(40);
+    form = u.$('#main form[data-form="reply"]');
+  }
+  assert.ok(form?.elements.alike, "an alarm question in the queue offers its alike ones");
+  assert.match(form.textContent, /큐에 남은 비슷한 문의 2건에도 같은 답/);
+  const total = Number(u.text(".queue-bar b").match(/\/(\d+)/)[1]);
+  form.elements.text.value = "알람 소리 설정을 다음 판에서 고쳐요";
+  form.elements.alike.checked = true;
+  form.requestSubmit(form.querySelector('[data-close="1"]'));
+  await u.settle(60);
+  assert.match(u.text("#toast"), /3건에 답하고 닫았어요/);
+  const owner = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=all", undefined, owner)).data.inquiries;
+  for (const q of list.filter((x) => /알람/.test(JSON.stringify(x)))) assert.equal(q.status, "closed");
+  const bar = u.text(".queue-bar b");
+  if (bar) assert.equal(Number(bar.match(/\/(\d+)/)[1]), total - 2, "the two left the queue");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[FAM-04] 가족 프로 이용권: a phone not seen for 60 days says so, a fresh one is 프로 사용 중", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const owner = await signIn(call);
+  for (const [n, name] of [[31, "엄마"], [32, "옛 휴대폰"]]) {
+    const { code } = (await call("POST", "/api/admin/family/code", { name }, owner)).data;
+    await call("POST", "/api/admin-link", { code }, { "x-device": device(n), ...from(n) });
+  }
+  const old = Date.now() - 90 * 864e5;
+  DB.db.prepare("UPDATE admin_devices SET created_at = ?, seen_at = ? WHERE admin_name = ?").run(old, old, "옛 휴대폰");
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  const rows = [...u.$$("#main .rows li")].filter((li) => /엄마|옛 휴대폰/.test(li.textContent));
+  assert.equal(rows.length, 2);
+  assert.match(rows.find((li) => /엄마/.test(li.textContent)).textContent, /프로 사용 중/);
+  const idle = rows.find((li) => /옛 휴대폰/.test(li.textContent)).textContent;
+  assert.match(idle, /60일 넘게 안 보임/);
+  assert.match(idle, /휴대폰을 바꿨다면 끊고 새 코드를/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADM3-42] 로그인 잠금 풀기: the owner's 내 계정 shows a locked PC and unlocks it from the phone", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  const pc = { "x-admin": "1", origin: ORIGIN, ...from(7) };
+  for (let i = 0; i < 5; i++) await call("POST", "/api/admin/login", { password: "not-the-password" }, pc);
+  assert.equal((await call("POST", "/api/admin/login", { password: PASSWORD }, pc)).status, 429);
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  assert.match(u.text("#main [data-lock-line]"), /잠긴 곳 1곳/);
+  await u.click('#main [data-act="login-unlock"]');
+  assert.match(u.text("dialog"), /로그인 잠금을 풀까요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("#toast"), /잠긴 곳 1곳을 풀었어요/);
+  assert.match(u.text("#main [data-lock-line]"), /지금 잠긴 로그인이 없어요/);
+  assert.ok(!u.$('#main [data-act="login-unlock"]'));
+  assert.equal((await call("POST", "/api/admin/login", { password: PASSWORD }, pc)).status, 200);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[ADM3-43] 서버 상태: company counts and versions, an old share server is 판 다름 (not red), a backup without R2 is 꺼짐", async (t) => {
+  const real = globalThis.fetch;
+  const robots = (u) => String(u).endsWith("/robots.txt");
+  globalThis.fetch = async (u) => new Response(robots(u) ? "User-agent: *" : "", { status: robots(u) ? 200 : 404 });
+  t.after(() => { globalThis.fetch = real; });
+  const { call, env, DB } = server({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "x".repeat(32) });
+  await call("POST", "/api/reports", report(1), from(1));
+  DB.db.prepare("INSERT INTO job_runs (step, ok_at, ms, runs, last_at, ver) VALUES ('backup', ?, 3, 5, ?, '1.38.0')").run(Date.now() - 600e3, Date.now() - 600e3);
+  const u = await asOwner(env, t);
+  await u.go("#/server");
+  await u.settle(30);
+  assert.match(u.text("#main"), /회사 1 · 쓰는 규칙 \d+ · 서버 1\.39\.0 · 관리자 앱 빌드/);
+  const share = [...u.$$("#main .tile")].find((x) => /공유 서버/.test(x.textContent));
+  assert.match(share.textContent, /살아 있음 · 판 다름/);
+  assert.ok(!share.classList.contains("hot"));
+  const backup = [...u.$$("#main .rows li")].find((li) => li.querySelector("b")?.textContent === "하루 백업");
+  assert.match(backup.textContent, /꺼짐/);
+  assert.match(backup.textContent, /R2 묶음\(BACKUP\)이 없어 건너뛰어요/);
   assert.deepEqual(u.errors, []);
 });
 
@@ -630,7 +742,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.ok(t.$('.side li[data-hub="ask"].open .subnav a[data-tab="companies"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "ask");
   await t.go("#/home");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "desk", "flow", "cockpit", "incident"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "desk", "decide", "flow", "loop", "cockpit", "incident"]);
   await t.go("#/metrics");
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "insight");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
@@ -1703,4 +1815,35 @@ test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo
   await t1.settle(20);
   assert.match(t1.text("#main"), /볼 사진이 없어요/);
   assert.deepEqual(t1.errors, []);
+});
+
+test("[STAT2-01~04] 숫자 › 한눈에: 정상도 신호, 초기 모드, 진입·머묾 고리·주마다 머묾 표, 더 보기", async (t) => {
+  offline(t);
+  const { call, env, DB } = server();
+  await call("GET", "/api/config");
+  // 처리방침 3.12 in force, so stats.life is on; ten phones came 20 days ago, six opened the next day, three a week later.
+  DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2026-01-01", effective: "2026-01-02", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
+  const put = DB.db.prepare("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, 0)");
+  put.run(day(20), "life_new", 10, 10);
+  put.run(day(19), "life_d1", 6, 6);
+  put.run(day(13), "life_d7", 3, 3);
+  put.run(day(5), "life_back7", 2, 2);
+  DB.db.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.39.0', 4)").run(day(2));
+  const u = await asOwner(env, t);
+  await u.go("#/glance");
+  await u.settle(30);
+  const main = u.text("#main");
+  assert.match(main, /앱 정상도/);
+  assert.ok(u.$("#main .gl-hero"), "the big signal");
+  assert.equal(u.$$("#main .gl-gauge").length, 4);
+  assert.match(main, /초기 모드/, "fewer than 30 phones a day");
+  assert.match(main, /60%/, "1일째 6 of 10");
+  assert.match(main, /30%/, "7일째 3 of 10");
+  assert.equal(u.$$("#main .gl-ring").length, 3);
+  assert.ok(u.$("#main .gl-cohort td[data-label='1일째'].h4"), "주마다 머묾 표 with a heat class");
+  assert.match(main, /회복/);
+  assert.ok([...u.$$("#main .gl-more a")].some((a) => a.getAttribute("href") === "#/metrics"));
+  assert.deepEqual(u.errors, []);
 });

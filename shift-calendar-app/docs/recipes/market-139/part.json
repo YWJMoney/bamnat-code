@@ -1,0 +1,825 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "잡지 표지 달 머리",
+   "summary": "큰 세리프 달 이름과 붉은 가는 밑줄",
+   "desc": "달 이름이 잡지 표지처럼 큰 세리프로 서고, 머리 아래 붉은 가는 줄 하나가 지나가요. 어두운 화면에선 흰 세리프로 바뀌어요.\n적용하면 바뀌는 것:\n· 세리프 큰 달 이름\n· 붉은 밑줄\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "paint": "so.00FFFFFF",
+       "pad": 10,
+       "line": "solid",
+       "lineW": 0.5,
+       "lineC": 4290787627
+      },
+      {
+       "id": "cal.head.title",
+       "font": "dmserif",
+       "size": 30,
+       "weight": 400,
+       "ink": 4280032284,
+       "track": -1
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4290787627,
+       "weight": 800
+      },
+      {
+       "id": "cal.head.title",
+       "on": "dark",
+       "ink": 4294242796
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4290787627,
+    "dir": 2,
+    "emoji": "📰"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "칠판 달 머리",
+   "summary": "녹색 칠판에 분필 붓글씨 달 이름",
+   "desc": "달력 머리가 녹색 칠판이 되고 달 이름은 분필 붓글씨예요. 오늘 단추는 노란 분필이에요.\n적용하면 바뀌는 것:\n· 칠판 머리\n· 분필 글씨\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "paint": "tx.noise.FF2F4A3A.14",
+       "fill": 4281289274,
+       "r": 10,
+       "pad": 12,
+       "out": 6,
+       "line": "solid",
+       "lineW": 6,
+       "lineC": 4287257131
+      },
+      {
+       "id": "cal.head.title",
+       "font": "nanumbrush",
+       "size": 32,
+       "ink": 4294308060
+      },
+      {
+       "id": "cal.head.nav",
+       "ink": 4294308060
+      },
+      {
+       "id": "cal.head.today",
+       "ink": 4294304378,
+       "weight": 800
+      },
+      {
+       "id": "cal.head",
+       "on": "dark",
+       "lineC": 4284299802
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4281289274,
+    "b": 4294304378,
+    "dir": 2,
+    "emoji": "🧑‍🏫"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "손글씨 요일",
+   "summary": "요일을 손글씨로, 일요일은 붉은 펜",
+   "desc": "요일 글자가 다이어리에 적은 손글씨가 되고 일요일만 붉은 펜이에요.\n적용하면 바뀌는 것:\n· 손글씨 요일\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.week.day",
+       "font": "gaegu",
+       "size": 14,
+       "weight": 700
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4292363029
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294965479,
+    "b": 4287458915,
+    "dir": 2,
+    "emoji": "✍️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "도장 쉬는 날 칸",
+   "summary": "쉬는 날에 꽃 도장 같은 동그란 칸",
+   "desc": "쉬는 날 칸이 분홍 도장처럼 동그랗게 찍혀요.\n적용하면 바뀌는 것:\n· 쉬는 날 도장\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "on": "role.off",
+       "fill": 4293417610,
+       "fillA": 18,
+       "r": 48,
+       "line": "dash",
+       "lineW": 1,
+       "lineC": 4293417610
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294963445,
+    "b": 4293417610,
+    "dir": 2,
+    "emoji": "🌸"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "메모 많은 날 점선 칸",
+   "summary": "메모가 셋 넘는 날 파랑 점선",
+   "desc": "메모가 셋 넘게 쌓인 바쁜 날 칸에 파랑 점선이 둘러져요.\n적용하면 바뀌는 것:\n· 바쁜 날 점선\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "메모수 >= 3",
+       "line": "dash",
+       "lineW": 1.5,
+       "lineC": 4280191205
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293128957,
+    "b": 4280191205,
+    "dir": 2,
+    "emoji": "🗂️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "큰 날짜 칸",
+   "summary": "날짜 숫자를 크고 굵게, 왼쪽 위로",
+   "desc": "칸 날짜 숫자가 크고 굵게 왼쪽 위에 서요. 멀리서도 날짜가 먼저 읽혀요.\n적용하면 바뀌는 것:\n· 큰 날짜\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell.date",
+       "size": 16,
+       "weight": 900,
+       "font": "montserrat"
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.cell.date",
+       "on": "today",
+       "size": 17
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4280361249,
+    "dir": 2,
+    "emoji": "🔢"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "떠 있는 유리 탭 막대",
+   "summary": "화면 위에 뜬 둥근 유리 탭 막대",
+   "desc": "아래 탭 막대가 화면에서 살짝 떠 있는 둥근 유리판이 돼요.\n적용하면 바뀌는 것:\n· 떠 있는 유리 막대\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.tabs",
+       "paint": "gl.B3FFFFFF.24",
+       "r": 28,
+       "out": 12,
+       "shadow": 8,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863
+      },
+      {
+       "id": "app.tabs",
+       "on": "dark",
+       "paint": "gl.B31C1E26.24",
+       "lineC": 654311423
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293454582,
+    "b": 4294967295,
+    "dir": 2,
+    "emoji": "🧊"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "밑줄 고른 탭",
+   "summary": "고른 탭 아래 붉은 밑줄",
+   "desc": "고른 탭 글자가 굵어지고 아래 붉은 밑줄이 생겨요.\n적용하면 바뀌는 것:\n· 밑줄 고른 탭\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "deco": "under",
+       "ink": 4290787627,
+       "weight": 900
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4290787627,
+    "dir": 2,
+    "emoji": "➖"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "두꺼운 그림자 카드",
+   "summary": "검은 테에 아래로 밀린 그림자, 투박한 카드",
+   "desc": "카드에 검은 테와 아래로 밀린 단단한 그림자가 생겨요. 스티커처럼 투박한 맛이에요.\n적용하면 바뀌는 것:\n· 투박한 그림자 카드\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.card",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4279308561,
+       "shadow": 6,
+       "shadowC": 4279308561,
+       "r": 12
+      },
+      {
+       "id": "app.card",
+       "on": "dark",
+       "lineC": 4293783021,
+       "shadowC": 4278190080
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4279308561,
+    "dir": 2,
+    "emoji": "🧱"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "그라데이션 단추",
+   "summary": "보라에서 하늘로 번지는 둥근 단추",
+   "desc": "앱 단추가 보라에서 하늘로 번지는 둥근 알약이 돼요.\n적용하면 바뀌는 것:\n· 그라데이션 단추\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.button",
+       "paint": "lg.90.FF7F7FD5,FF86A8E7",
+       "ink": 4294967295,
+       "r": 48,
+       "weight": 800
+      },
+      {
+       "id": "app.button",
+       "on": "dark",
+       "paint": "lg.90.FF5A5AB8,FF5C7FC4"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4286545877,
+    "b": 4287015143,
+    "dir": 2,
+    "emoji": "🔘"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "원고지 쓰기 종이",
+   "summary": "메모 쓰는 화면이 붉은 줄 원고지",
+   "desc": "메모를 쓰는 종이가 옅은 미색에 붉은 줄 원고지가 돼요.\n적용하면 바뀌는 것:\n· 원고지 종이\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.page",
+       "fill": 4294966775,
+       "font": "nanummyeongjo",
+       "ink": 4281019179
+      },
+      {
+       "id": "memo.page.rule",
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293440686
+      },
+      {
+       "id": "memo.page",
+       "on": "dark",
+       "fill": 4280426524,
+       "ink": 4293781210
+      },
+      {
+       "id": "memo.page.rule",
+       "on": "dark",
+       "lineC": 4285217333
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294966775,
+    "b": 4290787627,
+    "dir": 2,
+    "emoji": "📝"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "영수증 가계부 줄",
+   "summary": "가계부 줄마다 영수증 점선",
+   "desc": "가계부 줄 사이에 영수증 점선이 지나가요.\n적용하면 바뀌는 것:\n· 점선 줄\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.row",
+       "line": "dash",
+       "lineW": 1,
+       "lineC": 4290624957,
+       "r": 0
+      },
+      {
+       "id": "money.row",
+       "on": "dark",
+       "lineC": 4284441448
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4288585374,
+    "dir": 2,
+    "emoji": "🧾"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "월급 전 반짝 머리",
+   "summary": "월급 사흘 전 가계부 머리가 반짝",
+   "desc": "다음 월급날이 사흘 안으로 다가오면 가계부 맨 위 머리가 반짝여요.\n적용하면 바뀌는 것:\n· 월급 사흘 전 반짝\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "when": "월급까지 >= 0 그리고 월급까지 <= 3",
+       "motion": "shimmer",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294965473,
+    "b": 4294947584,
+    "dir": 2,
+    "emoji": "💰"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "홀로그램 급여 상자",
+   "summary": "빛이 도는 홀로그램 급여 합계",
+   "desc": "급여 합계 상자가 홀로그램처럼 빛이 도는 무지갯빛이 되고 반짝여요.\n적용하면 바뀌는 것:\n· 홀로그램 합계\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.total",
+       "paint": "sg.50.50.0.FFC9D6FF,FFFBC2EB,FFB5FFFC,FFFFF1A8,FFC9D6FF",
+       "ink": 4280163882,
+       "motion": "shimmer",
+       "r": 22
+      },
+      {
+       "id": "pay.total",
+       "on": "dark",
+       "paint": "sg.50.50.0.FF5A6BB0,FF9A5F8F,FF4F9C98,FFA8963F,FF5A6BB0",
+       "ink": 4294967295
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4291417855,
+    "b": 4293059298,
+    "dir": 2,
+    "emoji": "🪩"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "209시간 경고 상자",
+   "summary": "이달 209시간을 넘으면 합계 상자에 주황 테",
+   "desc": "이달 일한 시간이 209시간을 넘으면 급여 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 주황 테\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294964192,
+    "b": 4294675456,
+    "dir": 2,
+    "emoji": "⏱️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주휴 금색 합계",
+   "summary": "이번 주 15시간을 채우면 합계 글자가 금색",
+   "desc": "이번 주 15시간을 넘기면 급여 합계 글자가 금색으로 바뀌어요(주휴수당을 받을 수 있는 주).\n적용하면 바뀌는 것:\n· 주 15시간 금색\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294951175
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294965473,
+    "b": 4294951175,
+    "dir": 2,
+    "emoji": "🥇"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "크림 종이 위젯",
+   "summary": "홈 화면 위젯이 크림빛 종이색",
+   "desc": "홈 화면 위젯이 크림빛 종이색이 되고 글자는 짙은 갈색이에요. 어두운 화면에선 짙은 갈색 종이에 밝은 글씨예요.\n적용하면 바뀌는 것:\n· 크림 종이 위젯\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294305484,
+       "ink": 4282263331,
+       "r": 18
+      },
+      {
+       "id": "widget",
+       "on": "dark",
+       "fill": 4282002978,
+       "ink": 4294305484
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294305484,
+    "b": 4284301367,
+    "dir": 2,
+    "emoji": "📜"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "먹색 각진 위젯",
+   "summary": "홈 화면 위젯이 먹색에 각진 모서리",
+   "desc": "홈 화면 위젯이 먹색 바탕에 모서리가 거의 각진 단단한 판이 돼요. 밝은 화면에선 먹색, 어두운 화면에선 더 깊은 검정이에요.\n적용하면 바뀌는 것:\n· 먹색 각진 위젯\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4280426524,
+       "ink": 4294242796,
+       "r": 4
+      },
+      {
+       "id": "widget",
+       "on": "dark",
+       "fill": 4279110923
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279505424,
+    "b": 4294242796,
+    "dir": 2,
+    "emoji": "⬛"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "근무 색 위젯 칸",
+   "summary": "홈 화면 위젯 칸이 근무 종류마다 다른 색",
+   "desc": "홈 화면 위젯의 날짜 칸이 주간·저녁·야간·쉬는 날마다 다른 색으로 칠해져요.\n적용하면 바뀌는 것:\n· 근무 색 위젯 칸\n주의할 점: 이 부품 하나만 바뀌어요. 다른 꾸미기와 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294951175,
+       "fillA": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294930499,
+       "fillA": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4282211070,
+       "fillA": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4288585374,
+       "fillA": 25
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4282211070,
+    "dir": 2,
+    "emoji": "🟦"
+   }
+  }
+ }
+]

@@ -60,8 +60,11 @@ class M10NoticeTest {
         // [SCHED-01] 메모 일정 is the ninth, [SHR-12] 근무표 링크 기간 the tenth, [FEAT-18] 잠금 화면 오늘 근무 the eleventh.
         // [INV-08] 투자 알림 the twelfth, [MON-06] 구독 안내 (the trial's question) the thirteenth,
         // [PROV-03] 자동 백업 the fourteenth, [COMM-10] 광장 소식 the fifteenth, [RUL-04] 내 규칙 알림 the sixteenth, 1.36 문의 답 the seventeenth,
-        // 1.38 [P3-B-11] 직원 출퇴근 the eighteenth, 1.39 [TEAM-22] 받은 근무표 바뀜 the nineteenth (하루 안내).
-        assertEquals(19, channels.size)
+        // 1.38 [P3-B-11] 직원 출퇴근 the eighteenth, 1.39 [TEAM-22] 받은 근무표 바뀜 the nineteenth (하루 안내),
+        // 1.39 [SLEEP-06] 자는 중 the twentieth (하루 안내, silent but not folded), 자는 동안 온 알림 the twenty-first (PC 5차).
+        assertEquals(21, channels.size)
+        assertEquals(NotificationManager.IMPORTANCE_LOW, nm.getNotificationChannel(Notifications.NIGHT_QUIET_CHANNEL_ID).importance)
+        assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).group }.name.toString())
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.ROSTER_CHANNEL_ID).group }.name.toString())
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.BACKUP_CHANNEL_ID).group }.name.toString())
         assertEquals("돈과 휴가", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.PRO_CHANNEL_ID).group }.name.toString())
@@ -137,12 +140,22 @@ class M10NoticeTest {
         val sleeping = posted(Notifications.SLEEPING_ID)!!
         assertTrue(sleeping.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals("깼어요", sleeping.actions.single().title.toString())
+        // 1.39 (PC 5c4ad849): not in the folded 무음 group, still without a sound.
+        assertEquals(Notifications.SLEEPING_CHANNEL_ID, sleeping.channelId)
+        assertEquals(NotificationManager.IMPORTANCE_DEFAULT, nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).importance)
+        assertNull(nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).sound)
         assertTrue(sleeping.extras.getString(Notification.EXTRA_TITLE)!!.endsWith("부터 자는 중"))
+        // 1.39 PC c0ca3d9f: a group with no summary was still bundled with D9's notice; it is its own group's summary.
+        assertEquals(Notifications.SLEEPING_GROUP, sleeping.group)
+        assertTrue(sleeping.flags and Notification.FLAG_GROUP_SUMMARY != 0)
         SleepingNotice.woke(context, SleepEntry(1, now.minusHours(7).minusMinutes(30), now), "오늘 19:00 야간")
         val woke = posted(Notifications.SLEEPING_ID)!!
         assertEquals("7시간 30분 잤어요", woke.extras.getString(Notification.EXTRA_TITLE))
         assertEquals("다음: 오늘 19:00 야간", woke.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertTrue(woke.flags and Notification.FLAG_ONGOING_EVENT == 0)
+        // 1.39 G5-B1 (PC 1.38 최종 사용성 6): 깼어요 by a sleepy hand is undone from the notice, the sleep going on.
+        assertEquals(listOf("아직 자요"), woke.actions.map { it.title.toString() })
+        assertTrue(woke.flags and Notification.FLAG_GROUP_SUMMARY != 0)
         // Left open for 16 hours, it was a missed 깼어요: no notice.
         SleepingNotice.show(context, SleepEntry(2, now.minusHours(17), null), null, now)
         assertNull(posted(Notifications.SLEEPING_ID))
@@ -194,5 +207,37 @@ class M10NoticeTest {
         val upgraded = SettingsRepository(context).current
         assertTrue(upgraded.briefing && upgraded.commuteNotice)
         assertFalse(upgraded.bedtimeNotice)
+    }
+
+    /**
+     * PC 5차 (eae4e024): Android 16 folded 자는 중 with D9's 근무표 바뀜 (Aggregate_AlertingSection) whatever their groups, and
+     * 깼어요 was two expands away. While 자는 중 is up, the app's sounding notices go to the quiet section; it stands alone.
+     */
+    @Test fun whileAsleepOtherSoundingNoticesGoQuietSoTheSleepNoticeStandsAlone() {
+        Notifications.createChannels(context)
+        shadowOf(context).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        fun roster(text: String) = androidx.core.app.NotificationCompat.Builder(context, Notifications.ROSTER_CHANNEL_ID)
+            .setSmallIcon(com.bamnat.app.R.drawable.ic_notification).setContentTitle("근무표가 바뀌었어요").setContentText(text).build()
+        val now = LocalDateTime.now().withSecond(0).withNano(0)
+        // Before the sleep: as it was, with its sound.
+        Notifications.post(context, Notifications.ROSTER_ID, roster("12/2 야간"), tag = "a")
+        assertEquals(Notifications.ROSTER_CHANNEL_ID, shadowOf(nm).getNotification("a", Notifications.ROSTER_ID).channelId)
+
+        // 잠들었어요: the one already there moves to the quiet section, with its words.
+        SleepingNotice.show(context, SleepEntry(1, now.minusMinutes(5), null), now.plusHours(7), now)
+        val moved = shadowOf(nm).getNotification("a", Notifications.ROSTER_ID)
+        assertEquals(Notifications.NIGHT_QUIET_CHANNEL_ID, moved.channelId)
+        assertEquals("12/2 야간", moved.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
+        assertEquals(Notifications.SLEEPING_CHANNEL_ID, posted(Notifications.SLEEPING_ID)!!.channelId)
+        // One that comes while asleep goes there too.
+        Notifications.post(context, Notifications.ROSTER_ID, roster("12/3 휴무"), tag = "b")
+        assertEquals(Notifications.NIGHT_QUIET_CHANNEL_ID, shadowOf(nm).getNotification("b", Notifications.ROSTER_ID).channelId)
+
+        // 깼어요: what comes next has its sound again, and 잤어요 is on 자는 중's channel, alone at the top.
+        SleepingNotice.woke(context, SleepEntry(1, now.minusHours(7), now), null)
+        assertEquals(Notifications.SLEEPING_CHANNEL_ID, posted(Notifications.SLEEPING_ID)!!.channelId)
+        Notifications.post(context, Notifications.ROSTER_ID, roster("12/4 주간"), tag = "c")
+        assertEquals(Notifications.ROSTER_CHANNEL_ID, shadowOf(nm).getNotification("c", Notifications.ROSTER_ID).channelId)
+        nm.cancelAll()
     }
 }

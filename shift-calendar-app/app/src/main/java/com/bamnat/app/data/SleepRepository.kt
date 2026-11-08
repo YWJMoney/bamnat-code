@@ -59,6 +59,9 @@ class SleepRepository(
         return SleepEntry(open.id, local(open.startMillis), local(end))
     }
 
+    /** The sleep still going on, if any (1.39 [SLEEP-06]: 자는 동안 소리 stops when it closes). */
+    suspend fun openNow(): SleepEntry? = dao.open()?.toModel()
+
     /** Undoes a "깼어요": the sleep is open again. */
     suspend fun reopen(id: Long) = dao.reopen(id)
 

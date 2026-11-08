@@ -47,6 +47,8 @@ enum class SettingsGo {
     STUDIO_CALENDAR, STUDIO_MONEY, STUDIO_MEMO, STUDIO_STATS,
     /** 1.38 스튜디오 › 팀·가게 관리. */
     STUDIO_MANAGE,
+    /** 1.39 스튜디오 › 위젯 (PC 2afb3a76: 설정 위젯 줄에서 스튜디오 길을 못 찾았어요). */
+    STUDIO_WIDGET,
     /** 1.38 관리 화면: 팀 근무표·급여 대장·명세서를 한곳에 (리더·사장님). */
     MANAGE,
 }

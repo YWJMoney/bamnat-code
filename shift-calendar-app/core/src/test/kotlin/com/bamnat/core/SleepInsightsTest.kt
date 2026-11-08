@@ -98,6 +98,10 @@ class SleepInsightsTest {
     fun aFewLogsAskForMoreAndNothingIsClaimed() {
         val r = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), targetMinutes = 420)
         assertEquals(listOf("more-logs"), r.findings.map { it.key })
+        assertTrue(r.findings.single().text.contains("야간 뒤·쉬는 날"))
+        // 1.39 PC c0ca3d9f 유형별 빈틈: 가게 has no 야간, so its words are its own.
+        val store = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), 420, com.bamnat.core.work.WorkStyle.BUSINESS)
+        assertTrue(store.findings.single().text.contains("일한 날·쉬는 날") && !store.findings.single().text.contains("야간"))
         assertNull(SleepInsights.afterNightAverage(log.take(1), resolver, LocalDate.of(2026, 11, 4)))
         assertTrue(SleepInsights.report(emptyList(), resolver, today, 420).findings.isEmpty())
     }

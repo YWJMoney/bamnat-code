@@ -174,7 +174,6 @@ test("[ADMUX-15] remote files: version, signature checked with the app's keys, a
     if (name.startsWith("alarm-guide")) return new Response("", { status: 404 });
     // The site serves a wages file someone changed after signing.
     if (name === "wages.json") return new Response(String(read(name)).replace("\"format\"", " \"format\""));
-    // [LEDX-24] 1.32: merchants.json is published before its .sig2 (the remote key is kept off this project).
     try { return new Response(read(name)); } catch { return new Response("", { status: 404 }); }
   });
   const { call, DB } = server();
@@ -185,7 +184,8 @@ test("[ADMUX-15] remote files: version, signature checked with the app's keys, a
   let r = (await call("GET", "/api/admin/remote", undefined, owner)).data;
   const f = Object.fromEntries(r.files.map((x) => [x.kind, x]));
   assert.equal(r.files.length, 10);
-  assert.equal(f.merchants.valid, false, "not signed yet: the app keeps the dictionary it ships with");
+  // 2026-11-08: merchants.json got its .sig2 (2026-11-05 key), so all ten but the changed wages check out.
+  assert.equal(f.merchants.valid, true, "signed with a key the app trusts");
   const rates = JSON.parse(read("rates.json"));
   assert.deepEqual([f.rates.version, f.rates.minApp, f.rates.valid], [rates.version, rates.minApp, true]);
   assert.equal(f.wages.valid, false, "a file changed after signing does not check out");

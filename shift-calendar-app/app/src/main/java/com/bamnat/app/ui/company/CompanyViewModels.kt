@@ -174,6 +174,8 @@ data class Phases(
     val sent: Int? = null,
     val team: String? = null,
     val hasPattern: Boolean = false,
+    /** [CYC-06] 1.39: every 조 the file names, with the row each works today, so a coworker picks theirs by name. */
+    val teams: List<Pair<String, Int>> = emptyList(),
 )
 
 /**
@@ -221,7 +223,12 @@ internal suspend fun rotationPhases(c: AppContainer, text: String, fromSender: B
         options.firstOrNull { orderFrom(it.step) == order }?.step
     }
     val team = rotation.optString("team").trim().take(CompanyShare.MAX_TEAM).takeIf { fromSender && it.isNotEmpty() }
-    return Phases(options, n, current, sent, team, snapshot.hasPattern)
+    // [CYC-06] 1.39: the file's 조 with their days: each 조's row today, the first row of the same order.
+    val teams = if (!fromSender) emptyList() else com.bamnat.core.setup.TeamAnchors.pickable(CompanyShare.teamsOf(text), n).mapNotNull { (name, day) ->
+        val order = orderFrom(com.bamnat.core.setup.TeamAnchors.stepOn(day, today, n))
+        options.firstOrNull { orderFrom(it.step) == order }?.let { name to it.step }
+    }.takeIf { it.size >= 2 }.orEmpty()
+    return Phases(options, n, current, sent, team, snapshot.hasPattern, teams)
 }
 
 /** [COMM-01] A company's shared setups, and applying one from today's place in its rotation. */
@@ -403,6 +410,10 @@ class CompanyDetailViewModel(
                     val again = (m.page ?: c.companyApi.company(page.id)).also(c.companySearch::keepPage)
                     _state.value = State.Loaded(again)
                     again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
+                }
+                // 1.39 [PAYP-03] A server that shows no pay way: the pay part is taken now, for the pay alone (never shown).
+                if (withPay && (setup.payPrivate || page.setups.any { it.id == setup.id && it.payPrivate })) {
+                    com.bamnat.app.company.wayText(c, store.device, page.id, setup.copy(payPrivate = true))?.let { text = it }
                 }
                 // [PAYG-03] 1.30 BA: on a pay that has its amounts, the cycle goes in now and the pay waits for its 기본급 on the
                 // pay screen (PendingWay), put in all at once there or not at all; a first pay is made on the amounts screen.
@@ -588,6 +599,8 @@ internal suspend fun payTrial(c: AppContainer, text: String, setup: String, mont
 object TalkSheets {
     val closing = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     fun closeAll() { closing.tryEmit(Unit) }
+    /** 1.39 발굴: a version's talk to open on the screen the notice brought up (마을 › 내 글), taken once. */
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.NoticeLinks.FixTalk?>(null)
 }
 
 class TalkHolder(
@@ -602,6 +615,14 @@ class TalkHolder(
         /** [SPD-16] A post on its way, shown as "나 (보내는 중)". */
         const val SENDING = "보내는 중"
     }
+
+    /** 1.39 [PLZC] plaza.people on (처리방침 3.12): a kind of work's room shows 근무 태그 and 나도요. */
+    val people: Boolean get() = c.flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE)
+
+    /** 1.39 [PLZC-10] The tag my next post in [room] carries (months as 처음 until the server counts), for the write box. */
+    suspend fun myTag(room: String): com.bamnat.core.plaza.PlazaTag? = if (!people) null else runCatching {
+        c.plazaTags.tagFor(room)?.copy(months = if (c.plazaTags.scope().months) 0 else null)
+    }.getOrNull()
     data class Open(
         val company: String, val setup: String, val title: String, val talk: com.bamnat.app.company.Talk? = null, val error: String? = null,
         /** [PLAZA-32][PLAZA-33] 1.27 AI: a company's or a kind of work's room (setup "room"), with its own hint and note. */
@@ -673,6 +694,21 @@ class TalkHolder(
      * [TOWN-05] 1.37: on a company's rule talk, what the votes do, with the adoption terms the app last read (the same as
      * 규칙 광장's 투표 중 line; a proposal is adopted like any rule, server `postVote`).
      */
+    /**
+     * 1.39 발굴 2-2: a 보완 요청's fields open this calendar's own pay where they are set, for one whose pay is their own (it may be the
+     * version the request is on, sent from it); never over a shared way, which is not shown. False when there is no pay to open.
+     */
+    fun canFixOwnPay(): Boolean {
+        val scope = c.companyOf(calendar)
+        return scope.pay.profile.value != null && scope.payWays.way.value?.shared != true
+    }
+
+    /** 1.39 발굴 2-2: closes the talk and opens the pay where [fields] are set ([fixFocus]). */
+    fun openFix(fields: List<String>) {
+        close()
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PAY, fixFocus(fields).key))
+    }
+
     fun voteLine(): String {
         val t = c.termsNow()
         return "글마다 맞아요·달라요로 알려 주세요. ‘고치자는 제안’은 맞아요가 ${t?.agree ?: 75}% 이상이고 ${t?.threshold ?: 3}점이 모이면 " +
@@ -787,7 +823,7 @@ class TalkHolder(
         val o = _open.value ?: return
         scope.launch {
             val error = try {
-                val v = c.companyApi.pollVote(c.companyStore.device, post, choice)
+                val v = c.companyApi.pollVote(c.companyStore.device, post, choice, o.company)
                 val now = _open.value
                 if (now?.setup == o.setup && now.talk != null) {
                     _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map { if (it.id == post) it.copy(poll = v) else it }))
@@ -874,8 +910,12 @@ class TalkHolder(
 }
 
 /** [LIM-03] 1.31: [talkProblem] for a refusal, with when it goes again and why when the server said. */
-fun talkProblem(e: com.bamnat.app.company.CompanyException): String =
-    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e, "글쓰기") else talkProblem(e.code)
+fun talkProblem(e: com.bamnat.app.company.CompanyException): String = when (e.code) {
+    "rate_limited" -> com.bamnat.app.company.RateLimits.of(e, "글쓰기")
+    // 1.39 [CARE-02] 쉬는 중이면 언제까지인지와 어디서 까닭을 보는지.
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(e.untilMillis)
+    else -> talkProblem(e.code)
+}
 
 /** What to say when a post is refused. */
 fun talkProblem(code: String): String = when (code) {
@@ -884,6 +924,7 @@ fun talkProblem(code: String): String = when (code) {
     "email" -> "메일 주소는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
+    "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "rate_limited" -> com.bamnat.app.company.RateLimits.text("글쓰기")
     "own" -> "내 글에는 할 수 없어요"
     "parent" -> "답글을 달 글이 지워졌어요"
@@ -1263,6 +1304,15 @@ class CompanyPayViewModel(
     /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
     private val applied: AppliedSetup? = scope.store.applied.value
     val canPropose: Boolean get() = applied != null
+    /**
+     * 1.39 [PAYP-04] Whether the pay made here uses a shared way that is locked once in (as [com.bamnat.app.company.PendingWays.keptWith]
+     * marks it): its 통상시급 hours, common allowances and bonus are then grouped as the sharer's, never their numbers.
+     */
+    val sharedWay: Boolean get() {
+        if (text?.let { t -> runCatching { JSONObject(t).has("pay") }.getOrDefault(false) } != true) return false
+        val setup = applied?.setup ?: com.bamnat.app.company.PendingWays.of(scope).pending.value?.setup ?: return false
+        return scope.payWays.way.value.let { it == null || it.setup != setup || it.shared }
+    }
     /** [PLAZA-03] What the user changed before the pay was made, so the screen can say their pay uses it. */
     var edited: Boolean by androidx.compose.runtime.mutableStateOf(false)
         private set
@@ -1468,7 +1518,8 @@ class CompanyReportViewModel(
         viewModelScope.launch {
             _sending.value = try {
                 val store = scope.store
-                val setup = scope.share.exportForServer(_cycleOnly.value)
+                // 1.39 [PAYP-08]: a pay way someone else shared goes up as the shifts only; it is not this phone's to put up again.
+                val setup = scope.share.exportForServer(_cycleOnly.value || scope.payWays.way.value?.shared == true)
                 // [PLZD-01][PLZD-02][PLZD-03][PLZD-05] A company the plaza has: the same rule, another shape or other values ask first.
                 if (!topic && !checked) {
                     val v = guard.check(company, dept, setup.toString(), note)

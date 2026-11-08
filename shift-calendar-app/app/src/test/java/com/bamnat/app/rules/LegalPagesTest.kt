@@ -19,6 +19,9 @@ class LegalPagesTest {
     // Gradle runs unit tests in the module directory; the site is the repository root.
     private val site = File("../..")
 
+    /** 1.39 [STAT2-02] The events the page in force names: 3.12's life_* come in when 3.12 is published (then count them all). */
+    private val policyEvents = com.bamnat.core.stats.UsageEvent.entries.size - com.bamnat.core.stats.UsageEvent.POLICY_312.size
+
     @Test fun thePrivacyPolicyCoversProAndAds() {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
@@ -94,7 +97,7 @@ class LegalPagesTest {
         listOf("1-9. 사용 통계 보내기 (선택, 동의한 경우만)", "1-10. 근무표 링크 신고 (선택)").forEach { assertTrue(it, text.contains(it)) }
         // 사용 통계: the setting's name, the events the server takes, the days kept on the phone and on the server.
         assertTrue(text.contains("‘사용 통계 보내기’"))
-        assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
+        assertTrue("이벤트 ${policyEvents}가지", text.contains("${policyEvents}가지 이름만"))
         assertTrue("최근 ${com.bamnat.core.stats.UsageBook.RECENT_DAYS}일", text.contains("최근 ${com.bamnat.core.stats.UsageBook.RECENT_DAYS}일"))
         assertTrue("${com.bamnat.core.stats.UsageBook.MAX_DAYS}일 지나면 버림", text.contains("${com.bamnat.core.stats.UsageBook.MAX_DAYS}일이 지나도록 보내지 못한 날은 버립니다"))
         assertTrue(text.contains("400일 뒤 삭제"))
@@ -117,7 +120,9 @@ class LegalPagesTest {
         val rules = File(site, "community/index.html")
         assertTrue("커뮤니티 운영 규칙 페이지가 있어요", rules.exists())
         val r = rules.readText()
-        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION} · 앱 버전 1.22.0"))
+        // 1.39 [CARE-12]: the page is 운영 규칙 2 (marks 3.12), and says that 6·7항 follow 운영 규칙 1 until its 시행일.
+        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION_CARE} · 앱 버전 1.39.0"))
+        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION}(2026년 11월 21일 시행)"))
         assertTrue(com.bamnat.core.plaza.PlazaRules.URL.endsWith("/community/"))
         assertTrue(r.contains("제44조의2 제5항") && r.contains("30일 안에") && r.contains("‘이 사람 글 안 보기’"))
         assertTrue(r.contains("최대 ${com.bamnat.core.plaza.HideList.MAX}명"))
@@ -152,7 +157,7 @@ class LegalPagesTest {
         assertTrue(text.contains("최대 ${com.bamnat.app.company.InquiryStore.OUTBOX_MAX}개까지"))
         assertTrue(text.contains("요청 번호의 해시와 서버의 첫 답을 24시간만"))
         // Usage events, as many as the app has.
-        assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
+        assertTrue("이벤트 ${policyEvents}가지", text.contains("${policyEvents}가지 이름만"))
         assertTrue(text.contains("공지 열기"))
         assertTrue(text.contains("휴대폰 안에서만 맞춰 보며"))
         // [ALRM-15] 1.31: the settings screen only, no permission to ask directly.

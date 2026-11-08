@@ -122,6 +122,12 @@ internal fun MonthSummaryBar(
     payNeeds: Int = 0,
     /** 1.32 [CALX-06] "9/21~10/20" when the days and hours are the 급여 기간's, as 통계 counts them. */
     rangeLabel: String? = null,
+    /**
+     * 1.39 [PAYX-64] 발굴 G3-M1: when the pay has its own period, the other way of counting one tap away under the card
+     * ("1일~말일로 보기" / "11월 월급분(10/21~11/20)으로 보기"); null hides it.
+     */
+    rangeSwitch: String? = null,
+    onRangeSwitch: (() -> Unit)? = null,
 ) {
     val cal = LocalCalendarColors.current
     val month = overview.month.monthValue
@@ -160,12 +166,13 @@ internal fun MonthSummaryBar(
         CalendarFocus.JOBS, CalendarFocus.SALES -> "장부 탭 열기"
         else -> "가계부 탭 열기"
     }
+    Column(modifier.fillMaxWidth()) {
     Surface(
         onClick = onOpen,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = if (compact) 44.dp else 56.dp)
             // [CAL-06] One stop for TalkBack: the three figures and where the tap goes.
@@ -241,6 +248,13 @@ internal fun MonthSummaryBar(
                 }
             }
         }
+    }
+    // 1.39 [PAYX-64] 발굴 G3-M1: its own button under the card (the card itself opens 근무·급여), so TalkBack reaches it too.
+    if (rangeSwitch != null && onRangeSwitch != null) {
+        androidx.compose.material3.TextButton(onClick = onRangeSwitch, modifier = Modifier.align(Alignment.End)) {
+            Text(rangeSwitch, style = MaterialTheme.typography.labelMedium)
+        }
+    }
     }
 }
 

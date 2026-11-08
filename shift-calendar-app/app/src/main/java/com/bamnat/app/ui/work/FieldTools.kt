@@ -202,6 +202,8 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
                 OutlinedTextField(q.note, { q = q.copy(note = it.take(200)) }, label = { Text("메모 (자재 포함 여부, 계좌 등)") },
                     modifier = Modifier.fillMaxWidth(), minLines = 2)
                 OutlinedTextField(sender, { sender = it.take(30) }, label = { Text("보내는 사람 (선택)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                // 1.39 [SPREAD-11] Whether the picture names 밤낮, chosen next to the sender's name, just above 사진으로 보내기.
+                com.bamnat.app.ui.components.ExportMarkSwitch(com.bamnat.app.share.QuoteImage.MARK_LINE)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

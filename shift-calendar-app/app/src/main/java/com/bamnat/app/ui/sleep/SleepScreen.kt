@@ -85,6 +85,7 @@ import com.bamnat.app.sleep.SleepAutoWatch
 import com.bamnat.app.sleep.SleepRecordService
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.TimePickerDialog
@@ -136,7 +137,7 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         val compare = if (flags[com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE]?.on != true) null else com.bamnat.core.sleep.PlanVsActual.summary(
             com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, today.minusDays(com.bamnat.core.sleep.PlanVsActual.WINDOW_DAYS - 1), today,
                 s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes))
-        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today, compare, snapshot.resolver)
+        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes, s.workStyle), today, compare, snapshot.resolver)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val health = container.healthSleep.state
@@ -167,7 +168,12 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         val work: List<TimelineSpan> = emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val night: StateFlow<Night?> = combine(com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey) { rec, f ->
+    val night: StateFlow<Night?> = combine(
+        com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey,
+        // 1.39 G5-B2: read again once the night is written down, not the moment the microphone stops (that showed the
+        // night before until the screen was opened again).
+        com.bamnat.app.sleep.SleepRecordService.saved,
+    ) { rec, f, _ ->
         rec to (f[com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND]?.on == true)
     }.flatMapLatest { (_, on) ->
         if (!on) kotlinx.coroutines.flow.flowOf(null)
@@ -233,6 +239,28 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
             }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * 1.39 G5-N1 (사용자 결정 1차 14번: 무료) 2주 수면 일지 PDF: the last two weeks' work and sleep, made here and handed to the share
+     * sheet (save, print or send to the clinic); nothing goes to a server.
+     */
+    fun diary(context: android.content.Context, done: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = runCatching {
+                val st = state.value ?: state.filterNotNull().first()
+                val s = settings.value
+                val today = Today.date()
+                val resolver = st.resolver ?: container.scheduleRepository.snapshot.first().resolver
+                val from = today.minusDays(com.bamnat.core.report.SleepDiary.DAYS)
+                val work = (0..com.bamnat.core.report.SleepDiary.DAYS).map { from.plusDays(it) }
+                    .associateWith { com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(it)) }
+                val checks = container.sleepRepository.checks(days = 20).first()
+                val doc = com.bamnat.core.report.SleepDiary.doc(today, st.log, checks, work, s.sleepTargetMinutes, Today.dateTime())
+                com.bamnat.app.report.ReportShare.pdf(context, doc, "수면일지-${today}.pdf")
+            }.isSuccess
+            done(ok)
+        }
+    }
 
     fun markChange(what: String) {
         val day = Today.date()
@@ -505,8 +533,18 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             // 1.39 [FLOW-11] 주 띠로 날 고르기, the day's 잠 이야기 줄, then that day's records.
             SleepDays(s, settings, target) { e -> if (!e.imported) editing = e }
             morning?.takeIf { it.autoShown }?.let { m -> SectionCard(title = null) { SleepAutoSwitch(m.autoOn, vm::setAuto) } }
-            // 1.39 [FLOW-14] 밤 색, the same three choices as 설정 › 화면과 글자.
+            // 1.39 [FLOW-14] 밤 색, the same four choices as 설정 › 화면과 글자.
             SectionCard(title = null) { com.bamnat.app.ui.settings.NightLookRow(settings.nightLook, vm::setNightLook) }
+            // 1.39 G5-N1 2주 수면 일지 PDF (무료), for a doctor or the 사내 보건실.
+            if (s.log.isNotEmpty()) SectionCard(title = "2주 수면 일지") {
+                Text("근무와 잠, 낮잠, 아침 기분을 날마다 한 줄로 PDF 한 장에 담아요. 병원이나 보건실 상담 때 보여 주세요. 휴대폰 안에서 만들어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                var diaryNote by remember { mutableStateOf<String?>(null) }
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                OutlinedButton(onClick = { vm.diary(ctx) { ok -> diaryNote = if (ok) null else "PDF를 만들지 못했어요. 다시 눌러 주세요." } },
+                    modifier = Modifier.padding(top = 8.dp)) { Text("PDF 만들기") }
+                diaryNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
             healthNote(health)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

@@ -69,7 +69,12 @@ class AEScreenshotTest : ScreenshotBase() {
         tab(SETTINGS_TAB, wide)
         tapText("프로", exact = true, across = if (wide) 0.2f else 0.5f)
         // At 200% text the 프로 screen is long: the card is far down.
-        tapText("친구 초대", exact = true, scrolls = 30, across = if (wide) 0.7f else 0.5f)
+        // 1.39 [FX-01] added a line to the 꾸미기 pillar: in landscape a 350dp step can carry the card's title above the screen while
+        // its body shows, so the card is reached by its body and then brought down a little at a time until the title shows.
+        if (!scrolledTo("친구 초대", exact = true, scrolls = 30)) {
+            scrolledTo("내 초대 코드", scrolls = 30)
+            repeat(6) { if (!appears("친구 초대", exact = true, ms = 200)) scrollDown(100, across = if (wide) 0.7f else 0.5f) }
+        }
         reveal("친구 초대", exact = true, across = if (wide) 0.7f else 0.5f)
     }
 

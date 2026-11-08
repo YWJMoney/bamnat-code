@@ -81,9 +81,13 @@ val LocalHubReselect = androidx.compose.runtime.compositionLocalOf { 0 }
 /** [VIL-07] Where 마을 remembers the part last seen (this phone only, not a setting). */
 private const val HUB_PREFS = "village_ui"
 
-/** [VIL-07] The part 마을 first opens on: 장터 for 자영업·투자, whose 광장 is a quiet talk; 광장 for the rest. */
-fun firstSection(style: WorkStyle?): HubSection = when (style) {
-    WorkStyle.BUSINESS, WorkStyle.INVEST -> HubSection.SHARE
+/**
+ * [VIL-07] The part 마을 first opens on: 장터 for 자영업·투자, whose 광장 is a quiet talk; 광장 for the rest. 1.39 [PLZC-07] once
+ * 광장 is people first ([people], plaza.people on), 광장 for everyone.
+ */
+fun firstSection(style: WorkStyle?, people: Boolean = false): HubSection = when {
+    people -> HubSection.TALK
+    style == WorkStyle.BUSINESS || style == WorkStyle.INVEST -> HubSection.SHARE
     else -> HubSection.TALK
 }
 
@@ -122,7 +126,7 @@ fun HubScreen(
 ) {
     // [VIL-07] 1.36 마을 V7: 마을 opens on the part last seen; the first time on the one that fits the kind of work (자영업·투자 have a quiet 광장).
     val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
-    var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style)) }
+    var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style, com.bamnat.app.ui.company.plazaPeopleOn(c))) }
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
     // [TOWN-01] A 소식 notice says which part to open on.
@@ -149,12 +153,13 @@ fun HubScreen(
                     style?.let { Text(RecipeDescribe.short(it) + " 분들과", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp)) }
                     // 1.36 [VIL-06] 마을 V6: one search for 장터·광장·요청, at the top of 마을.
+                    Spacer(Modifier.weight(1f))
                     onSearch?.let {
-                        Spacer(Modifier.weight(1f))
                         androidx.compose.material3.IconButton(onClick = it) {
                             androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Search, "마을에서 찾기")
                         }
                     }
+                    com.bamnat.app.ui.MeButton() // [NAV2-02]
                 }
                 PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
                     HubSection.entries.forEach { s ->
@@ -164,6 +169,8 @@ fun HubScreen(
                 }
             }
         }
+        // 1.39 [CARE-03] 운영자의 안내는 열 때 한 번 창으로, 쉬는 중이면 탭 아래 한 줄(해명하기). 아무 일 없으면 아무것도 없어요.
+        CommunityCareBar(c)
         // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
         val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
         val people: @Composable () -> Unit = {

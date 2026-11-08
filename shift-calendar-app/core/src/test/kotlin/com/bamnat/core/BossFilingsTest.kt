@@ -63,4 +63,14 @@ class BossFilingsTest {
         assertTrue("10월분 급여 없음", due.none { it.key.endsWith(":2026-10") })
         assertEquals(listOf("c"), BossFilings.noHireDate(all, LocalDate.of(2026, 11, 12)).map { it.id })
     }
+
+    /** 1.39 G2 PC ef175fbf: '10월분 급여 지급 916,416원 · 1명' read as a wrong sum without saying 민수 was not in it. */
+    @Test fun aPartialPayLineSaysWhoIsLeftOut() {
+        val c = StaffMember("c", "민수", base = 10_320, weekly = week)
+        val d = StaffMember("d", "지영", base = 10_320, hiredOn = LocalDate.of(2025, 11, 3), weekly = week)
+        val all = listOf(c, d)
+        val due = BossFilings.upcoming(place, all, LocalDate.of(2026, 11, 3), ledgerOf = { m -> PayrollLedger.month(place, all, m, emptyList()) })
+        val pay = due.first { it.kind == BossFilings.Kind.PAY && it.key.endsWith(":2026-10") }
+        assertTrue(pay.detail, pay.detail.startsWith("입사일을 넣은 1명만이에요(민수 빠짐"))
+    }
 }

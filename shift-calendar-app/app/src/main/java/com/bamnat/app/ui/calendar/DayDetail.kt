@@ -44,6 +44,9 @@ import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.outlined.Alarm
@@ -260,6 +263,12 @@ private fun DayGroups(
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     val dayBook = remember(book, date) { book.on(date) }
     val profile by vm.payProfile.collectAsStateWithLifecycle()
+    // 1.39 PC 5c4ad849: the followed 근무표 this day came from, if it did (작업 요약에 '직접 바꿈' 대신).
+    val received by androidx.compose.ui.platform.LocalContext.current.appContainer.received.calendars.collectAsStateWithLifecycle()
+    val linkName = remember(day, received, snapshot) {
+        if (day.source != DaySource.OVERRIDE) null
+        else com.bamnat.app.share.RosterFollower.linkFor(received, day, snapshot.shiftTypes)?.fullName
+    }
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
     // [MON-01] A day's pay is free.
     val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date) {
@@ -286,16 +295,8 @@ private fun DayGroups(
     // only when it says more than the work card (a sleep, money or memo on it).
     val sleepLog by vm.sleepLog.collectAsStateWithLifecycle()
     val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms, settings.dayStartMinutes) {
-        if (!settings.dayStory) null else runCatching {
-            val ring = settings.alarmsEnabled && calendarAlarms
-            val alarmsAround = if (!ring) emptyList() else listOf(date, date.plusDays(1))
-                .flatMap { com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snapshot.resolver, it) }
-            val near = sleepLog.filter { it.start.toLocalDate() in date.minusDays(1)..date }
-            val items = com.bamnat.core.design.DayStoryItems.of(date, snapshot.resolver, alarmsAround, near, tips, dayBook.entries,
-                com.bamnat.core.memo.MemoStory.items(memos, date),
-                dayStartsAt = com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) // 1.39 [FLOW-30]
-            items.takeIf { com.bamnat.core.design.DayStoryItems.worthShowing(com.bamnat.core.design.DayStory.arrange(date, it)) }
-        }.getOrNull()
+        // 1.39 [FLOW-22] worked out in one place (DayStoryPart), as the 달력 아래 하루 이야기 카드 does.
+        dayStoryItems(snapshot, date, settings, calendarAlarms, sleepLog, dayBook.entries, memos, tips)
     }
     val storyShown = story != null
     LaunchedEffect(storyShown) { onStory(storyShown) }
@@ -313,6 +314,12 @@ private fun DayGroups(
                     onOpen = { e -> com.bamnat.core.memo.MemoStory.memoIdOf(e)?.let { onOpenMemo(it, date) } },
                     shiftColor = day.shiftType?.let { Color((it.colorArgb or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primary,
                 )
+                // 1.39 G8 발굴 1-1 (PC 4차: 달력 아래 카드를 찾지 못함): the card starts off, so it is offered here where the story is seen.
+                val onCalendar = remember(settings) { settings.calendarParts().any { it.part == CalendarPart.DAY_STORY && it.shown } }
+                if (!onCalendar) androidx.compose.material3.TextButton(
+                    onClick = { vm.updateSettings { it.withPartShown(CalendarPart.DAY_STORY, true) } },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text("달력 아래에도 두기 (카드 배치에서 뺄 수 있어요)") }
             }
         }
     }
@@ -356,7 +363,7 @@ private fun DayGroups(
                         DayGroup(
                             // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
                             title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
-                            summary = workSummary(day, snapshot),
+                            summary = workSummary(day, snapshot, linkName),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
                         ) {
@@ -509,8 +516,10 @@ private fun DayGroups(
                             if (rest.isNotEmpty()) RestWarning(rest)
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
-                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
-                                    onAsleep = vm::fellAsleep, onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
+                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare, style = settings.workStyle,
+                                    // 1.39 [FLOW-13] (PC 3차 sik-5): 잠들었어요 here opens the night screen too, as on the sleep screen and the date chip.
+                                    onAsleep = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) },
+                                    onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
                             }
                         }
                     }
@@ -627,13 +636,15 @@ private fun DayGroup(
     }
 }
 
-private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
+private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot, link: String? = null): String {
     val name = day.shiftType?.name ?: if (day.isWorkDay) "근무" else "쉬는 날"
     val start = day.start
     val end = day.end
     val time = if (day.isWorkDay && start != null && end != null) " · ${ExtraText.span(start, end)}" else ""
     return when {
         // [READ-37] Without an order every day is put in by hand or from a photo: no "직접 바꿈" on each.
+        // 1.39 PC 5c4ad849: a day put in from a followed 근무표 is not one the user changed by hand.
+        day.source == DaySource.OVERRIDE && link != null -> "$name$time · ${link}대로"
         day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
@@ -1128,7 +1139,8 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
         }
     }
     for (memo in memos) {
-        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo })
+        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo },
+            done = memo.isDoneOn(date), onDone = { vm.setMemoDone(memo, date, it) })
     }
     deleting?.let { m ->
         // 1.38 (DB 28판) A repeating memo asks: 이 날만 빼기 or 반복 전부 지우기.
@@ -1153,7 +1165,7 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit, done: Boolean = false, onDone: (Boolean) -> Unit = {}) {
     // A 1.32 [FIX132-05] A long press copies the memo, all of it or a part, without opening it.
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" },
@@ -1164,20 +1176,30 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
             .clip(MaterialTheme.shapes.medium)
             .background(memoBackground(memo.colorIndex))
             .combinedClickable(onClick = onClick, onLongClick = { copying = true }, onLongClickLabel = "메모 복사")
-            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+            .padding(top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 1.39 [TASK-02] 끝냄 right on the day's list, one tap (할 일 앱처럼 체크), the memo staying where it is, crossed out.
+        IconButton(onClick = { onDone(!done) }) {
+            Icon(
+                if (done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                contentDescription = if (done) "끝냄 풀기" else "끝냄 표시",
+                tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (memo.isChecklist) {
             Icon(Icons.Filled.Checklist, contentDescription = "체크리스트", Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Column(Modifier.weight(1f)) {
+        val crossed = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+        Column(Modifier.weight(1f).then(if (done) Modifier.alpha(0.6f) else Modifier)) {
             if (memo.title.isNotBlank()) {
-                Text(memo.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(memo.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = crossed)
             }
             val preview = memo.preview
             if (preview.isNotBlank()) {
-                Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(preview, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (memo.title.isBlank()) crossed else null)
             }
         }
         if (memo.isChecklist && memo.itemCount > 0) {
@@ -1327,6 +1349,7 @@ private fun SleepSection(
     targetMinutes: Int,
     health: com.bamnat.app.sleep.HealthSleep.State,
     compare: List<com.bamnat.core.sleep.PlanVsActual.Night> = emptyList(),
+    style: com.bamnat.core.work.WorkStyle? = null,
     onAsleep: () -> Unit,
     onAwake: () -> Unit,
     onWokeAt: (java.time.LocalDateTime) -> Unit,
@@ -1394,9 +1417,10 @@ private fun SleepSection(
             }
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
-                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(야간 뒤·쉬는 날)을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
-                else "최근 7일 중 ${debt.days}일 기록 · 평균 ${hoursText(debt.averageMinutes)}" +
-                    if (debt.shortMinutes > 0) " · 목표보다 ${hoursText(debt.shortMinutes)} 부족" else " · 목표만큼 잤어요",
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(${com.bamnat.core.sleep.SleepInsights.groupsWord(style)})을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
+                // 1.39 (PC 5c4ad849): the sleep screen's head, word for word ("평균 7시간 10분 · 목표보다 10분 더 잤어요 ·
+                // 7일 중 5일 적음"); this used to add up each short day ("0시간 30분 부족") while that compared the average.
+                else com.bamnat.core.sleep.SleepHead.of(debt, targetMinutes).let { "평균 ${it.value} · ${it.caption}" },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -1434,8 +1458,6 @@ private fun tipSummary(tips: List<com.bamnat.core.sleep.SleepPlan.Tip>, date: Lo
     tips.firstOrNull { it.kind == com.bamnat.core.sleep.SleepPlan.Kind.SLEEP_AFTER_NIGHT || it.kind == com.bamnat.core.sleep.SleepPlan.Kind.BEDTIME }
         ?.let { "잘 시간 " + sleepTime(it, date) }
         ?: tips.firstOrNull { it.kind == com.bamnat.core.sleep.SleepPlan.Kind.NAP }?.let { "낮잠 " + sleepTime(it, date) }
-
-private fun hoursText(minutes: Long): String = if (minutes % 60 == 0L) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"
 
 private fun sleepTime(tip: com.bamnat.core.sleep.SleepPlan.Tip, date: LocalDate): String {
     fun hm(x: java.time.LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)

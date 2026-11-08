@@ -1,11 +1,15 @@
 // [COMM-04][ADMIN-01] The worker on a plain Node server with SQLite, for the app's round-trip test and
 // to try the developer app at http://localhost:8788/admin/ before deploying:
-//   ADMIN_PASSWORD=<10+ letters> npm run local -- 8788 [--seed] [--db local.sqlite]
+//   ADMIN_PASSWORD=<10+ letters> npm run local -- 8788 [--seed] [--market] [--db local.sqlite]
 // --seed fills it with made-up coworkers' reports, so every screen has something on it.
+// --market (1.39) puts the real 장터's works in too (seedMarket, below).
 import http from "node:http";
 import worker from "../src/index.js";
 import { d1 } from "./d1.mjs";
 import { report, setup } from "./helpers.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const port = Number(args.find((a) => /^\d+$/.test(a)) || 8788);
@@ -102,6 +106,15 @@ async function seed() {
     for (const [event, share] of [["open", 0.9], ["pay_view", 0.35], ["share_made", 0.08], ["plaza_apply", 0.05], ["inquiry", 0.02], ["backup", 0.1]]) {
       const n = Math.max(1, Math.round(phones * share));
       await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
+    }
+  }
+  // 1.39 [STAT2-02] 숫자 › 한눈에: 56 days of made-up 진입·머묾·회복 counts (shown once the 3.12 date is in 기능 관리 › 일정).
+  for (let i = 1; i <= 56; i++) {
+    const day = kst(Date.now() - i * 864e5);
+    const came = 3 + ((i * 5) % 7);
+    for (const [event, n] of [["life_new", came], ["life_d1", Math.round(came * 0.62)], ["life_d7", Math.round(came * 0.38)], ["life_d30", Math.round(came * 0.21)],
+      ["life_back7", i % 3 === 0 ? 2 : 1], ["life_back30", i % 5 === 0 ? 1 : 0]]) {
+      if (n) await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, 0)", day, event, n, n);
     }
   }
   // 1.38 Phase 3 분석판: a few days of 팀·가게 events and made-up 팀·직원 요금제 purchases, so the card has something on it.
@@ -259,6 +272,95 @@ if (args.includes("--seed")) {
   if (await seeded()) console.log("--seed: this --db file already has the examples, so none are added.");
   else await seed();
 }
+
+/**
+ * 1.39 3차 (PC a483ca15: 시험 서버에 장터 작품이 다섯 개뿐이라 장터 로딩·세 구간을 못 봤어요): --market puts in the works made for the
+ * real 장터 (1.36 출시 작품, 1.38 가계부 틀·스튜디오 작품·옛 작품 새 판), opens each batch and hides the ones 1.38 took down, so the
+ * test 장터 looks like the real one. The files are the ones tools/market-seed.mjs writes: market/ beside package.json (the PC zip),
+ * else docs/recipes/ in the repo. Needs ADMIN_PASSWORD. A kept --db that has them already gets none twice.
+ */
+async function seedMarket() {
+  const here = fileURLToPath(new URL("../", import.meta.url));
+  const find = (f) => [join(here, "market", f), join(here, "../../docs/recipes", f)].find((x) => existsSync(x));
+  const login = await worker.fetch(new Request(`http://localhost:${port}/api/admin/login`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.30" },
+    body: JSON.stringify({ password: env.ADMIN_PASSWORD }),
+  }), env);
+  if (!login.ok) return console.log("--market: ADMIN_PASSWORD가 있어야 장터 작품을 넣어요.");
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const admin = (path, body) => worker.fetch(new Request(`http://localhost:${port}/api/admin${path}`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie }, body: JSON.stringify(body),
+  }), env);
+  const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes").first())?.n ?? 0;
+  if (have > 100) return console.log(`--market: 이 --db에는 작품이 이미 ${have}개 있어서 더 넣지 않아요.`);
+  const said = [];
+  for (const f of ["market-136.json", "market-138.json", "market-138-studio.json", "market-138-refresh.json", "market-139.json"]) {
+    const at = find(f);
+    if (!at) { said.push(`${f} 없음`); continue; }
+    const entries = JSON.parse(readFileSync(at, "utf8"));
+    let ok = 0;
+    for (const e of entries) {
+      const r = await admin("/recipes", e);
+      if (r.status < 300) ok++;
+      else console.log(`--market 못 넣음 ${e.recipe?.title}: ${r.status} ${await r.text()}`);
+    }
+    for (const batch of new Set(entries.map((e) => e.batch).filter(Boolean))) await admin("/recipes/release", { batch });
+    said.push(`${f} ${ok}개`);
+  }
+  // 1.38 [STM-09]·1.39 판 정리: 각 판의 정리 계획대로 내려요(지우지 않음, 넣은 분은 코드로 계속 열어요).
+  for (const [f, note] of [["market-138-refresh-plan.json", "1.38 장터 정리"], ["market-139-refresh-plan.json", "1.39 장터 정리"]]) {
+    const plan = find(f);
+    if (!plan) continue;
+    const hide = JSON.parse(readFileSync(plan, "utf8")).hide ?? [];
+    // 항목의 belowApp(그 판 미만 앱에는 계속 보임)마다 한 번씩.
+    for (const below of new Set(hide.map((x) => x.belowApp ?? null))) {
+      const part = hide.filter((x) => (x.belowApp ?? null) === below);
+      const titles = part.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
+      const codes = part.map((x) => x.code).filter(Boolean);
+      for (let i = 0; i < Math.max(titles.length, codes.length); i += 1200) {
+        const r = await admin("/recipes/hide-titles", { titles: titles.slice(i, i + 1200), codes: codes.slice(i, i + 1200), dry: false, note,
+          ...(below ? { belowApp: below } : {}) });
+        const out = await r.json().catch(() => ({}));
+        said.push(`${note} ${out.hidden ?? 0}개 내림${below ? `(앱 ${below} 미만에는 보임)` : ""}${out.missing?.length ? `(못 찾음 ${out.missing.length})` : ""}`);
+      }
+    }
+  }
+  const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
+  console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);
+  await seedMaterials(here, admin);
+}
+
+/**
+ * 1.39 4차 (입혀 보기 스레드: 3차 PC '수 옆 회색 네모'는 시험 서버에 스튜디오 재료가 없어 재료 사진을 쓰는 작품이 빈 자리로 그려진 것):
+ * --market also puts in the studio materials tools/materials/make.py drew (목록.json + webp), as the real server has them: opened,
+ * icons all free, each background pack's first third free (사용자 11-06 재료 잠금). Files: materials/ beside package.json (the PC zip),
+ * else tools/materials/out in the repo.
+ */
+async function seedMaterials(here, admin) {
+  const dir = [join(here, "materials"), join(here, "../../tools/materials/out")].find((x) => existsSync(join(x, "목록.json")));
+  if (!dir) return console.log("--market: 스튜디오 재료(materials/목록.json)가 없어 넣지 않아요.");
+  const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM studio_materials").first().catch(() => null))?.n ?? 0;
+  if (have > 0) return console.log(`--market: 이 --db에는 스튜디오 재료가 이미 ${have}개 있어요.`);
+  const list = JSON.parse(readFileSync(join(dir, "목록.json"), "utf8")).items;
+  const b64 = (f) => readFileSync(join(dir, f)).toString("base64");
+  let ok = 0;
+  for (let i = 0; i < list.length; i += 25) {
+    const items = list.slice(i, i + 25).map((m) => ({
+      kind: m.kind, pack: m.pack, name: m.name, ord: m.ord, webp: b64(m.file),
+      ...(m.thumb ? { thumb: b64(m.thumb) } : {}), ...(Number.isFinite(m.light) ? { light: m.light } : {}),
+    }));
+    const r = await admin("/recipes/materials", { items });
+    if (r.status < 300) ok += items.length;
+    else console.log(`--market 재료 못 넣음 ${i}~: ${r.status} ${await r.text()}`);
+  }
+  for (const pack of new Set(list.map((m) => m.pack))) {
+    const icon = list.find((m) => m.pack === pack)?.kind === "icon";
+    await admin("/recipes/materials/free", { pack, mode: icon ? "all" : "third" });
+  }
+  await admin("/recipes/materials/state", { state: "ok", all: true });
+  console.log(`--market: 스튜디오 재료 ${ok}개(아이콘 모두 무료, 배경은 묶음마다 앞 3분의 1 무료)`);
+}
+if (args.includes("--market")) await seedMarket();
 
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.

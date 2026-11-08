@@ -69,9 +69,10 @@ test("[ADMUX-30][ADM3] five hubs: every pre-1.28 screen has a place, and an admi
   // 1.28 통합계획 2-2, plus 기능별 효과 (AN-D2); 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
   // 1.37 [ADM2-01] 흐름, [ADM2-03] Claude 열쇠.
   // 1.38 [DESK-03] 할 일함·정리함은 운영 장부(desk) 하나로.
-  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "desk", "flow", "cockpit", "incident"],
+  // 1.39 [LOOP] 결정함·자동 순환(오늘), 요금 판단(숫자). 1.39 [STAT2-01] 숫자의 첫 칸 '한눈에'.
+  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "desk", "decide", "flow", "loop", "cockpit", "incident"],
     ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"],
-    ["launch", "flags", "materials", "types", "notices", "chores", "gates"], ["metrics", "health", "money", "errors", "effects"],
+    ["launch", "flags", "materials", "types", "notices", "chores", "gates"], ["glance", "metrics", "health", "money", "errors", "effects", "tiers"],
     ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"]]);
   const tabs = L.HUBS.flatMap((h) => h.tabs);
   assert.equal(new Set(tabs).size, tabs.length, "each tab once");

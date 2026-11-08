@@ -75,10 +75,10 @@ fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit
                 draft.preset?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 HorizontalDivider()
                 Limit("근무 사이 휴식", "${draft.minRestHours}시간", draft.minRestHours, 0..16) { draft = draft.copy(minRestHours = it) }
-                Limit("나이트 뒤 쉬는 날", days(draft.offsAfterNights), draft.offsAfterNights, 0..4) { draft = draft.copy(offsAfterNights = it) }
-                Limit("연속 나이트", days(draft.maxNightsInRow, "까지"), draft.maxNightsInRow, 0..7) { draft = draft.copy(maxNightsInRow = it) }
+                Limit("야간 뒤 쉬는 날", days(draft.offsAfterNights), draft.offsAfterNights, 0..4) { draft = draft.copy(offsAfterNights = it) }
+                Limit("연속 야간", days(draft.maxNightsInRow, "까지"), draft.maxNightsInRow, 0..7) { draft = draft.copy(maxNightsInRow = it) }
                 Limit("연속 근무", days(draft.maxWorkDaysInRow, "까지"), draft.maxWorkDaysInRow, 0..13) { draft = draft.copy(maxWorkDaysInRow = it) }
-                Limit("한 달 나이트", if (draft.maxNightsPerMonth == 0) "안 봐요" else "${draft.maxNightsPerMonth}개까지", draft.maxNightsPerMonth, 0..22) {
+                Limit("한 달 야간", if (draft.maxNightsPerMonth == 0) "안 봐요" else "${draft.maxNightsPerMonth}일까지", draft.maxNightsPerMonth, 0..22) {
                     draft = draft.copy(maxNightsPerMonth = it)
                 }
                 Text("0으로 두면 그 항목은 보지 않아요. 기본값의 근거: ${RestRules.Sources.REST}, ${RestRules.Sources.NIGHTS}, ${RestRules.Sources.WEEK}.",

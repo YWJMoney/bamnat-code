@@ -126,7 +126,9 @@ data class SampleDay(val label: String, val color: Long, val memos: List<String>
     /** [TRY-04] The kind of day (day·night·eve·off…), for a cell pattern by kind; null when not known. */
     val role: String? = null,
     /** PC 확인 V19 1.36: a day with nothing on it yet (공방 카드, 근무 없을 때): an outline only, never a filled cell. */
-    val blank: Boolean = false)
+    val blank: Boolean = false,
+    /** [LINK-01] 1.39 The day's 근무 입력 states (`extra`·`cover`·`leave`·`edited`), as the phone's cells have them. */
+    val work: Set<String> = emptySet())
 
 private val SAMPLE = listOf(
     SampleDay("주", 0xFFEF6C00, listOf("병원 예약", "택배"), "8h"),
@@ -135,6 +137,8 @@ private val SAMPLE = listOf(
     SampleDay("야", 0xFF3949AB, hours = "10h", holiday = "개천절"),
     SampleDay("휴", 0xFF757575, listOf("가족 모임", "장보기", "헬스"), off = true),
     SampleDay("휴", 0xFF757575, off = true),
+    // [LINK-01] 1.39 쉬는 날에 넣은 야간 대근: 작품을 만들 때부터 대근 날이 보이게.
+    SampleDay("야", 0xFF3949AB, listOf("대근"), "10h", role = "night", work = setOf("extra", "cover")),
     SampleDay("주", 0xFFEF6C00, listOf("월급날"), "8h"),
 )
 
@@ -145,7 +149,9 @@ private val SAMPLE = listOf(
 @Composable
 fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell: String? = null, today: Color? = null, rows: Int = 1, start: Int = 6,
     /** [R136-07] Real dates' numbers, one a cell from Sunday, and which cell is today (else the example's 3rd). */
-    numbers: List<Int>? = null, todayAt: Int = 2) {
+    numbers: List<Int>? = null, todayAt: Int = 2,
+    /** [CELL-02] 1.39 Each day's jobs and memos a line each, as my calendar lists them (입어 보기 on my own month). */
+    listed: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val height = when (view.size) { "short" -> 46.dp; "tall" -> 86.dp; "huge" -> 120.dp; else -> 60.dp }
@@ -165,9 +171,9 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                         .then(if (view.grid == "line" || d.blank) Modifier.border(0.6.dp, scheme.outlineVariant, shape) else Modifier)
                         .background(wash, shape)
                         // [LAY-03] The 꾸밈 층 on the example too (this month's day [n], Sunday first).
-                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(n, c, d.role, r) {
+                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(n, c, d.role, d.work, r) {
                             com.bamnat.core.recipe.DecorDay(com.bamnat.core.time.Today.date().monthValue, n, if (c == 0) 7 else c, d.role ?: if (d.off) "off" else "day",
-                                r * 7 + c == todayAt, d.holiday != null)
+                                r * 7 + c == todayAt, d.holiday != null, work = d.work)
                         }),
                 ) {
                     Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp),
@@ -186,6 +192,15 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                         when {
                             view.badge == "line" -> if (!d.off) Box(Modifier.fillMaxWidth().height(3.dp).background(color, RoundedCornerShape(2.dp)))
                             !left -> SampleMark(d, if (view.badge == "small") 12 else 16, cell)
+                        }
+                        if (listed) {
+                            // [CELL-02] As the month itself draws a listing cell: a line each, "+n" where they do not fit.
+                            val dark = com.bamnat.app.ui.components.isDarkSurface()
+                            CellListLines(
+                                d.memos.map { CellLine(it, ink = scheme.onSurface, bar = cal.memoDot, fill = cal.memoDot.copy(alpha = if (dark) 0.22f else 0.12f)) },
+                                d.hours?.let { CellFoot(it, scheme.onSurfaceVariant, false, minor = true) }, (8 + bump).sp, cellMoreColor(), Modifier.weight(1f),
+                            )
+                            return@Column
                         }
                         val custom = !view.isDefault
                         val texts = buildMap {

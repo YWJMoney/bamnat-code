@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.alarm.Notifications
+import com.bamnat.app.appContainer
 import com.bamnat.app.alarm.RingRequest
 import com.bamnat.app.data.ConsentStore
 import com.bamnat.core.consent.ConsentItem
@@ -68,6 +69,65 @@ class MemoScheduleAppTest {
         nm.cancelAll()
         MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 3 * 60 * 60 * 1000L)
         assertTrue(shadowOf(nm).allNotifications.isEmpty())
+    }
+
+    /**
+     * 1.39 [TASK-04][TASK-20][TASK-39] The notice's buttons: 끝내기 · 10분 뒤 · 다른 때…, the last opening the window that offers the
+     * next day off first (내일 이 시각 with none ahead).
+     */
+    @Test fun aNoticeOffersToFinishOrPutItOff() {
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        Notifications.createChannels(context)
+        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
+        val memo = Memo(id = 8, title = "택배 받기", reminder = MemoReminder(at, ring = false, notify = true))
+        val rest = LocalDate.of(2026, 11, 12)
+        MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000, restOf = { rest })
+        val posted = shadowOf(nm).allNotifications.single()
+        assertEquals(listOf("끝내기", "10분 뒤", "다른 때…"), posted.actions.map { it.title.toString() })
+        val done = shadowOf(posted.actions[0].actionIntent).savedIntent
+        assertEquals(MemoDoneReceiver::class.java.name, done.component?.className)
+        assertEquals(8L, done.getLongExtra("memo", -1))
+        assertEquals(at.toLocalDate().toEpochDay(), done.getLongExtra("day", 0))
+        val ten = shadowOf(posted.actions[1].actionIntent).savedIntent
+        assertEquals(MemoSnoozeReceiver::class.java.name, ten.component?.className)
+        assertEquals("m10", ten.getStringExtra("way"))
+        val later = shadowOf(posted.actions[2].actionIntent)
+        assertTrue("다른 때… opens the window", later.isActivityIntent)
+        assertEquals(MemoLaterActivity::class.java.name, later.savedIntent.component?.className)
+        assertEquals(rest.toEpochDay(), later.savedIntent.getLongExtra("rest", 0))
+    }
+
+    /** 1.39 [TASK-39] 끝내기 finishes the memo for real (the 할 일 앱's Complete left it open), a repeating one on that day only. */
+    @Test fun finishingFromTheNoticeFinishesTheMemo() = kotlinx.coroutines.runBlocking<Unit> {
+        val repo = context.appContainer.memoRepository
+        val day = LocalDate.now()
+        val once = repo.save(Memo(date = day, title = "택배 받기", reminder = MemoReminder(day.atTime(15, 0), ring = false, notify = true)))
+        val done = MemoDoneReceiver.finish(context, once.id, day)!!
+        assertTrue(done.isDoneOn(day))
+        assertTrue("in the list too", repo.get(once.id)!!.isDoneOn(day))
+        // A second press leaves it finished, not back to do.
+        assertTrue(MemoDoneReceiver.finish(context, once.id, day)!!.isDoneOn(day))
+        val daily = repo.save(Memo(date = day, title = "물 마시기", repeat = "D",
+            reminder = MemoReminder(day.atTime(9, 0), ring = false, notify = true)))
+        val one = MemoDoneReceiver.finish(context, daily.id, day)!!
+        assertTrue(one.isDoneOn(day))
+        assertTrue("tomorrow is still to do", !one.isDoneOn(day.plusDays(1)))
+        assertNull(MemoDoneReceiver.finish(context, 987_654L, day))
+    }
+
+    /** 1.39 [TASK-39] A way picked in 다른 때… moves the schedule from now; the toast says when. */
+    @Test fun aWayPickedMovesTheSchedule() = kotlinx.coroutines.runBlocking<Unit> {
+        val repo = context.appContainer.memoRepository
+        val day = LocalDate.now()
+        val memo = repo.save(Memo(date = day, title = "약 먹기", reminder = MemoReminder(day.atTime(8, 0), ring = false, notify = true)))
+        val rest = day.plusDays(3)
+        val at = MemoSnoozeReceiver.put(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.REST, rest)!!
+        assertEquals(rest.atTime(com.bamnat.core.memo.ShiftMemoTime.OFF_TIME), at)
+        assertEquals(at, repo.get(memo.id)!!.reminder!!.at)
+        val now = LocalDateTime.of(2026, 11, 8, 14, 3)
+        assertEquals("오후 2:13", laterSaid(now.plusMinutes(10), now))
+        assertEquals("내일 오후 2:00", laterSaid(LocalDateTime.of(2026, 11, 9, 14, 0), now))
+        assertEquals("11/12 (목) 오전 9:00", laterSaid(LocalDateTime.of(2026, 11, 12, 9, 0), now))
     }
 
     @Test fun aMemoScheduleRingsUnderItsOwnWords() {

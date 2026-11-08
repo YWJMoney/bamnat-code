@@ -202,7 +202,7 @@ export function opsViews(A) {
     if (!d) return skeleton(2);
     const marks = S.data.changes?.marks ?? [];
     const v = d.vitals && !d.vitals.error ? d.vitals : null;
-    const tiles = `<div class="tiles core">${tile("가장 새 판", d.latest ?? "—", d.prev ? `앞 판 ${d.prev}` : "")}${tile("서버 오류", d.serverErrors, `${d.days}일 합`, d.serverErrors ? "hot" : "", href("errors"))}
+    const tiles = `<div class="tiles core">${tile("가장 새 판", d.latest ?? "—", d.prev ? `앞 판 ${d.prev}` : "")}${tile("서버 오류", d.serverErrors, `${d.days}일 합${d.groupedErrors !== undefined && d.groupedErrors < d.serverErrors ? ` · 오류 묶음에 ${d.groupedErrors}` : ""}`, d.serverErrors ? "hot" : "", href("errors"))}
       ${tile("비정상 종료", v?.crash != null ? `${(v.crash * 100).toFixed(2)}%` : "—", v ? "Play 기준 1.09%" : "Play 서비스 계정 필요", v?.crash >= 0.0109 ? "hot" : "")}
       ${tile("ANR", v?.anr != null ? `${(v.anr * 100).toFixed(2)}%` : "—", v ? "Play 기준 0.47%" : "", v?.anr >= 0.0047 ? "hot" : "")}</div>`;
     const worse = d.worse.length ? `<section class="card alerts"><ul class="alert-list">${d.worse.map((w) => `<li class="bad"><span><b>${esc(w)}</b></span></li>`).join("")}</ul></section>` : "";
@@ -262,13 +262,29 @@ export function opsViews(A) {
         <pre class="mono err-sample">${esc(g.sample || "")}</pre>${g.note ? `<p class="meta">메모: ${esc(g.note)}</p>` : ""}
         <div class="actions start">${g.status !== "seen" ? `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="seen">보는 중</button>` : ""}
         ${g.status !== "fixed" ? `<button class="btn small primary" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="fixed">고쳤어요</button>` : `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="new">다시 열기</button>`}</div></details></li>`;
-    }).join("")}</ul>` : empty("오류가 없어요", "서버가 500을 내면 주소·이유로 묶여 여기 쌓여요.");
-    return `${tabs}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${list}</section>`;
+    }).join("")}</ul>` : empty(d.loose ? "묶인 오류가 없어요" : "오류가 없어요", "서버가 500을 내면 주소·이유로 묶여 여기 쌓여요.");
+    // 1.39 [ADM3-43] 판 건강의 '서버 오류'와 이 화면이 다르게 보이지 않게: 날마다 센 오류 가운데 묶음에 없는 것.
+    const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요. 오류 묶음을 만들기 전(1.38 전 서버)이거나, 배포 직후 묶음 표가 준비되기 전에 난 것이라 주소·이유를 몰라요. 앞으로 나는 오류는 여기에 묶여요.</p>` : "";
+    return `${tabs}${loose}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${list}</section>`;
   }
 
   // ---- [ADM3-04][ADM3-05][ADM3-19] 서버 상태 판(관리 › 서버 상태 위) ----
 
-  const JOB_TONE = { ok: ["정상", "ok"], fail: ["실패", "bad"], stale: ["멈춤", "warn"], never: ["아직", ""] };
+  const JOB_TONE = { ok: ["정상", "ok"], fail: ["실패", "bad"], stale: ["멈춤", "warn"], never: ["아직", ""], off: ["꺼짐", "off"] };
+
+  /**
+   * 1.39 [ADM3-41][ADM3-43] 공유 서버 칸: 살아 있는지, 걸린 시간, 그리고 회사 서버와 판이 다르면 '판 다름'(빨강 아님).
+   * 1.38 공유 서버는 판을 말하지 않아 '옛 판'으로만 보여요.
+   */
+  function shareTile(d) {
+    const sh = d.share;
+    if (!sh) return tile("공유 서버", "—", "SHARE_BASE_URL 없음");
+    if (!sh.ok) return tile("공유 서버", "답 없음", `${sh.ms}ms`, "hot");
+    const differ = sh.old || (sh.version && d.version && sh.version !== d.version);
+    const note = sh.old ? ` · 판 다름: 공유 서버가 1.39 전 판이에요(회사 서버 ${d.version ?? "?"})`
+      : differ ? ` · 판 다름: 공유 ${sh.version} · 회사 ${d.version}` : sh.version ? ` · ${sh.version}` : "";
+    return tile("공유 서버", differ ? "살아 있음 · 판 다름" : "살아 있음", `${sh.ms}ms${note}`, differ ? "warn" : "");
+  }
 
   function watchBoard() {
     const d = S.data.watch;
@@ -280,9 +296,11 @@ export function opsViews(A) {
       <ul class="rows wrap">${s.items.map((i) => `<li><div class="row"><span class="row-main"><b>${esc(i.what)}</b><small>${esc(i.key)}${i.ok ? "" : ` · 없으면: ${esc(i.lose)}`}</small></span>
         <span class="pill ${i.ok ? "ok" : i.need === "must" ? "bad" : "warn"}">${i.ok ? "있음" : i.need === "must" ? "꼭 필요" : "있으면 좋음"}</span></div></li>`).join("")}</ul>
       <p class="hint">값은 Cloudflare › Workers › bamnat-company › 설정 › 변수 및 비밀에 넣어요. 값은 이 화면에 보이지 않아요.</p></section>`;
-    const jobs = `<section class="card">${head("정기 작업", "매시 단계마다 따로 돌아요")}${d.jobs.length ? `<ul class="rows wrap">${d.jobs.map((j) => {
+    // 1.39 [ADM3-43] 줄마다 마지막으로 돌린 서버 판(지금 판과 다르면 '옛 판'), 할 것이 없어 건너뛰는 단계는 '꺼짐'과 그 이유.
+    const jobs = `<section class="card">${head("정기 작업", `매시 단계마다 따로 돌아요${d.version ? ` · 지금 서버 ${d.version}` : ""}`)}${d.jobs.length ? `<ul class="rows wrap">${d.jobs.map((j) => {
       const [name, tone] = JOB_TONE[j.state] ?? [j.state, ""];
-      return `<li><div class="row"><span class="row-main"><b>${esc(j.name)}</b><small>${j.okAt ? `마지막 성공 ${esc(agoMs(j.okAt))}` : "성공 기록 없음"}${j.ms ? ` · ${j.ms}ms` : ""} · ${j.runs}번 중 실패 ${j.fails}${j.error ? ` · ${esc(j.error)}` : ""}</small></span>
+      const ver = j.ver ? ` · ${esc(j.ver)}${d.version && j.ver !== d.version ? "(옛 판 기록)" : ""}` : d.version && j.runs ? " · 1.39 전 판 기록" : "";
+      return `<li><div class="row"><span class="row-main"><b>${esc(j.name)}</b><small>${j.off ? esc(j.off) : `${j.okAt ? `마지막 성공 ${esc(agoMs(j.okAt))}` : "성공 기록 없음"}${j.ms ? ` · ${j.ms}ms` : ""} · ${j.runs}번 중 실패 ${j.fails}${j.error ? ` · ${esc(j.error)}` : ""}${ver}`}</small></span>
         <span class="pill ${tone}">${name}</span></div></li>`;
     }).join("")}</ul>` : '<p class="hint">아직 돈 적이 없어요. 매시 정각에 돌아요.</p>'}</section>`;
     const t = d.speed.total;
@@ -290,7 +308,7 @@ export function opsViews(A) {
     const tiles = `<div class="tiles core">${tile("응답 중간", t.n ? `${t.p50}ms` : "—", `24시간 ${t.n}번`)}${tile("느린 5%", t.n ? `${t.p95}ms` : "—", `가장 느림 ${t.max}ms`, t.p95 > 1500 ? "hot" : "")}
       ${tile("서버 오류", t.err, t.n ? `${Math.round((t.err / t.n) * 1000) / 10}%` : "", t.err ? "hot" : "", href("errors"))}
       ${tile("DB 크기", d.dbBytes ? bytes(d.dbBytes) : "—", d.dbBytes ? `한도의 ${Math.round(used * 100)}%` : "", used > 0.7 ? "hot" : "")}
-      ${tile("공유 서버", d.share ? (d.share.ok ? "살아 있음" : "답 없음") : "—", d.share ? `${d.share.ms}ms` : "SHARE_BASE_URL 없음", d.share && !d.share.ok ? "hot" : "")}</div>`;
+      ${shareTile(d)}</div>`;
     const slow = d.speed.routes.length ? `<details class="data-table" data-key="slow-routes"><summary>느린 길 ${d.speed.routes.length}개</summary><div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">길</th><th scope="col">번</th><th scope="col">중간</th><th scope="col">느린 5%</th><th scope="col">오류</th></tr></thead>
       <tbody>${d.speed.routes.map((r) => `<tr><th scope="row" class="mono">${esc(r.key)}</th><td>${r.n}</td><td>${r.p50}ms</td><td>${r.p95}ms</td><td>${r.err}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     return `${tiles}${setup}${jobs}<section class="card">${head("응답 속도", "24시간")}${dayBars(d.speed.hours.map((h) => String(h.key)), d.speed.hours.map((h) => h.p95), [], "시간마다 느린 5%", (k) => `${String(k).slice(8, 10)}일 ${String(k).slice(11, 13)}시`)}${slow}</section>`;
@@ -324,7 +342,8 @@ export function opsViews(A) {
 
   // ---- [ADM3-34] 개발사항 이야기 ----
 
-  const STORY_ICON = { ask: "문의", link: "묶음", told: "답", made: "만듦", status: "상태", ship: "출시", note: "기록" };
+  const STORY_ICON = { ask: "문의", link: "묶음", told: "답", made: "만듦", status: "상태", ship: "출시", note: "기록",
+    sync: "저장소", live: "닿음", phone_told: "답", fixed_yes: "해결", fixed_no: "다시", me_too: "나도", tier: "요금", release: "판" };
 
   function storyCard() {
     const d = S.data.story;

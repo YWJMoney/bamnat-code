@@ -463,7 +463,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
             // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()),
-            since = container.recordsTrash.styleChangedOn(activeCalendar.value.id))
+            since = container.recordsTrash.styleChangedOn(activeCalendar.value.id),
+            // 1.39 G6 발굴 [FLOW-32]: 가게 '영업 중·마감까지', 현장 '일하는 중' (the card shows for them once added to the calendar).
+            talk = TodayFlow.WorkTalk.of(settings.workStyle))
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {
@@ -1487,6 +1489,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun deleteMemo(memo: Memo) {
         viewModelScope.launch { memoRepo.delete(memo) }
+    }
+
+    /** 1.39 [TASK-02] 끝냄 from the day: the stored memo finished or not on [day] (a repeating one only that day). */
+    fun setMemoDone(memo: Memo, day: LocalDate, done: Boolean) {
+        viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.save(it.withDone(done, day, com.bamnat.core.time.Today.millis())) } }
     }
 
     /** 1.38 (DB 28판) 이 날만 빼기: [day] comes off repeating [memo]; the undo is offered where deletion's is. */

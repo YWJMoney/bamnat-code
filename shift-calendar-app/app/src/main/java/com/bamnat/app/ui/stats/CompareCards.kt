@@ -43,12 +43,15 @@ import com.bamnat.core.time.Today
  * last month's and the same month a year ago. Without 프로 the card shows the user's own figures blurred.
  */
 @Composable
-internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate) {
+internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
+                         /** 1.39 [PAYX-60] Each month over its 급여 기간 (10/21~11/20 for 11월), as its pay beside it is. */
+                         period: com.bamnat.core.pay.PayPeriod? = null) {
     // [UX-10] 1.25 Z (U7): the last figures from the first frame, worked out again only when the days or pay changed.
-    val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month", snap, month, profile) {
+    val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month:${period?.endDay}", snap, month, profile, period) {
         runCatching {
             withContext(Dispatchers.Default) {
-                listOf(month, month.minusMonths(1), month.minusYears(1)).map { m -> MonthCompare.side(calc.month(m), profile?.let { vm.monthPay(it, snap, m) }) }
+                fun hours(m: YearMonth) = period?.let { calc.month(m, it.start(m), it.end(m)) } ?: calc.month(m)
+                listOf(month, month.minusMonths(1), month.minusYears(1)).map { m -> MonthCompare.side(hours(m), profile?.let { vm.monthPay(it, snap, m) }) }
             }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
     }
@@ -100,13 +103,15 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
 @Composable
 internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
     /** PC 02d6dabf: the pay screen's 도구, where the report is made (this card sits on 근무·급여 itself). */
-    onOpenReport: (() -> Unit)? = null) {
-    val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}", snap, month.year, profile) {
+    onOpenReport: (() -> Unit)? = null,
+    /** 1.39 [PAYX-60] Each month's hours over its 급여 기간, like its pay. */
+    period: com.bamnat.core.pay.PayPeriod? = null) {
+    val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}:${period?.endDay}", snap, month.year, profile, period) {
         runCatching {
             withContext(Dispatchers.Default) {
                 MonthCompare.Year(month.year, (1..12).map { m ->
                     val ym = YearMonth.of(month.year, m)
-                    MonthCompare.side(calc.month(ym), profile?.let { vm.monthPay(it, snap, ym) })
+                    MonthCompare.side(period?.let { calc.month(ym, it.start(ym), it.end(ym)) } ?: calc.month(ym), profile?.let { vm.monthPay(it, snap, ym) })
                 })
             }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
