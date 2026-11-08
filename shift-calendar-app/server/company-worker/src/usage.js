@@ -365,6 +365,13 @@ export async function usage(request, env) {
   }
   const app = body.app;
   if (days.size === 0) return json({ ok: true, skipped });
+  // 1.39 [OBS2-08] 유형별 흐름(stats.kind)과 기능과 머묾(stats.keep): 처리방침 3.12 시행일 전에 온 것은 버려요.
+  const style = kindOf(body.style);
+  const keep = keepRows(body.keep, now);
+  const obsStore = style || keep.length ? await flagStore(env) : null;
+  const kindRowsIn = style && serverEval(obsStore, "stats.kind", now).on
+    ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_"))).map((r) => [r[0], style, r[1]]) : [];
+  const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
   // AM 1.28 [FLAG-30] Which flags were on (only phones with stats.more on send it): per day, the list sent with the day or,
   // once for the bundle, flagsOn at the top for its newest day. '*' counts the phones that sent a list at all.
   const listOf = (v) => {
@@ -397,6 +404,16 @@ export async function usage(request, env) {
     stmts.push(stmt(env, `INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES ${part.map(() => "(?, ?, ?, ?, ?, ?)").join(", ")}
       ON CONFLICT (day, app, event) DO UPDATE SET phones = phones + excluded.phones, total = total + excluded.total, recent = recent + excluded.recent`,
     ...part.flatMap(([day, e, phones, total, recent]) => [day, app, e, phones, total, recent])));
+  }
+  for (let i = 0; i < kindRowsIn.length; i += 20) {
+    const part = kindRowsIn.slice(i, i + 20);
+    stmts.push(stmt(env, `INSERT INTO usage_kinds (day, app, style, event, phones) VALUES ${part.map(() => "(?, ?, ?, ?, 1)").join(", ")}
+      ON CONFLICT (day, app, style, event) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, s, e]) => [day, app, s, e])));
+  }
+  for (let i = 0; i < keepIn.length; i += 20) {
+    const part = keepIn.slice(i, i + 20);
+    stmts.push(stmt(env, `INSERT INTO usage_keep (day, app, event, win, phones) VALUES ${part.map(() => "(?, ?, ?, ?, 1)").join(", ")}
+      ON CONFLICT (day, app, event, win) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, w, e]) => [day, app, e, w])));
   }
   for (let i = 0; i < flagRows.length; i += 25) {
     const part = flagRows.slice(i, i + 25);
@@ -734,3 +751,35 @@ export async function metrics(env, url, now) {
   };
 }
 
+
+// 1.39 시작 [OBS2-08] 유형별 흐름·기능과 머묾 (사용자 2026-11-08 관측 데이터 카드 '유형별·기능 둘만', 처리방침 3.12 1-9항) ----------------------
+
+/** 앱 core KeepMarks.WINDOWS: 바로 전에 연 날 뒤 7일 안, 또는 8~30일 안에 다시 열었어요. */
+export const KEEP_WINDOWS = [7, 30];
+/** 쓴 날이 이보다 오래된 표시는 받지 않아요(휴대폰은 35일까지 기다려요). */
+export const KEEP_MAX_AGE_DAYS = 40;
+
+/** 꾸러미의 `style`: 일하는 방식 여섯 가지 중 하나만, 아니면 null. */
+export function kindOf(style) {
+  return typeof style === "string" && SETUP_STEPS.setup.includes(style) ? style : null;
+}
+
+/**
+ * `keep: [{day, win, events}]` → [day, win, event] 줄. 모양이 틀린 것은 꾸러미를 거절하지 않고 빼요. 진입·머묾(life_*)은 기능이 아니라 빼고,
+ * 같은 줄은 한 번만 세요.
+ */
+export function keepRows(keep, now = Date.now()) {
+  if (!Array.isArray(keep)) return [];
+  const latest = kstDay(now + DAY);
+  const oldest = kstDay(now - KEEP_MAX_AGE_DAYS * DAY);
+  const out = new Map();
+  for (const k of keep.slice(0, 40)) {
+    if (!k || typeof k !== "object" || typeof k.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(k.day)) continue;
+    if (k.day > latest || k.day < oldest || !KEEP_WINDOWS.includes(k.win) || !Array.isArray(k.events)) continue;
+    for (const e of k.events.slice(0, Object.keys(EVENTS).length)) {
+      if (typeof e === "string" && Object.hasOwn(EVENTS, e) && !e.startsWith("life_")) out.set(`${k.day}|${k.win}|${e}`, [k.day, k.win, e]);
+    }
+  }
+  return [...out.values()];
+}
+// 1.39 끝

@@ -107,8 +107,8 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
   2. Play Console → 사용자 및 권한 → 그 서비스 계정 → 앱 권한에 **앱 정보 보기 및 대량 보고서 다운로드(읽기 전용)**.
   켜기 전에는 출시 관문 G0가 "Play 권한 필요"(계정은 있는데 Play가 거절) 또는 "Play Console에서 확인"(계정 없음)으로 보여요. 값은 Play 기준으로 하루이틀 늦게 들어오고, 서버는 6시간마다 한 번만 물어요.
 - **Play 보고서(설치·삭제·스토어 전환·출처·판·별점, 1.39 OBS2-01)**: 같은 서비스 계정이 Play Console의 보고서 저장소(Cloud Storage)를 읽어요. 위 2번 권한(대량 보고서 다운로드)이 그대로 쓰이고, 일반 변수 하나만 넣어요.
-  1. Play Console → 보고서 다운로드 → 통계 → **Cloud Storage URI 복사**(`gs://pubsite_prod_rev_…/stats/…`).
-  2. Cloudflare → bamnat-company → 설정 → 변수 → 일반 변수 `PLAY_REPORTS_BUCKET`에 그 주소(앞의 `gs://pubsite_prod_rev_숫자`만이어도 돼요).
+  1. Play Console → 보고서 다운로드 → 통계 → **Cloud Storage URI 복사**(`gs://pubsite_prod_<개발자 계정 ID>/stats/installs/`, 옛 계정은 `pubsite_prod_rev_…`).
+  2. Cloudflare → bamnat-company → 설정 → 변수 → 일반 변수 `PLAY_REPORTS_BUCKET`에 그 주소(앞의 `gs://pubsite_prod_숫자`만이어도 돼요).
   넣으면 숫자 › 한눈에의 '전체 사용자' 칸이 차요. 서버는 12시간마다 석 달 치 CSV를 읽고 70일 날짜 줄을 남겨요. 없으면 관측 빈틈에 '저장소 연결 필요'로 보여요.
 - **원격 갱신**: 앱이 받는 공개 파일(`https://ywjmoney.github.io/-/remote/v1/`)을 서버가 읽어 서명이 실제로 맞는지 확인해요. 다른 주소를 쓰려면 선택 변수 `REMOTE_BASE_URL`을 넣어요(없어도 돼요). '다시 확인'을 누르면 10분 보관을 건너뛰고 바로 받아요.
 

@@ -2016,14 +2016,45 @@ test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say whe
   assert.match(u.text("#main .ob-tile.voice"), /문의/);
   assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 좋아진 신호");
   assert.match(u.text("#main .ob-better"), /9% → 16%/);
-  assert.ok(u.$$("#main .ob-gap-list li.policy").length >= 3);
-  assert.match(u.text("#main .ob-gaps"), /처리방침 · 사용자 결정/);
+  // [OBS2-09] 할 일만 펼치고, 기다리면 풀리는 것(3.12 시행·1.39 출시)과 정한 것(지운 이유)은 접어요.
+  assert.ok(u.$("#main .ob-gaps details.ob-gap-rest"), "folded");
+  assert.match(u.text("#main .ob-gap-rest summary"), /기다리면 풀리는 것 \d · 정한 것 1/);
+  assert.equal(u.$$("#main .ob-gaps > .ob-gap-list li.decided").length, 0, "정한 것 is not in the open list");
+  assert.match(u.text("#main .ob-gap-rest"), /3\.12/);
+  assert.match(u.text("#main .ob-gaps"), /사용자 결정/);
   await u.click('#main [data-act="obs-signal"][data-do="dev"]');
   await u.settle(40);
   const made = env.DB.db.prepare("SELECT id, title FROM dev_items ORDER BY created_at DESC LIMIT 1").get();
   assert.match(made.title, /앱 삭제가 늘어난 이유/);
   assert.match(u.text("#main .ob-signal"), /개발사항/);
   assert.ok(u.$(`#main .ob-signal a[href*="${made.id}"]`), "a link to the new 개발사항");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[OBS2-08] 유형별 흐름 and 기능과 머묾 show once 처리방침 3.12 is in force: kinds by 7th day, features against everyone", async (t) => {
+  offline(t);
+  const { env } = server();
+  const u = await asOwner(env, t);
+  const db = env.DB.db;
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2025-01-01", effective: "2025-01-02", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600000 - n * 86400000).toISOString().slice(0, 10);
+  const kind = db.prepare("INSERT INTO usage_kinds (day, app, style, event, phones) VALUES (?, '1.39.0', ?, ?, ?)");
+  kind.run(day(20), "SHIFT", "life_new", 40); kind.run(day(13), "SHIFT", "life_d7", 20);
+  kind.run(day(20), "HOURLY", "life_new", 30); kind.run(day(13), "HOURLY", "life_d7", 3);
+  const use = db.prepare("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, ?)");
+  use.run(day(20), "open", 100, 300, 100); use.run(day(20), "pay_view", 40, 60, 40);
+  const keep = db.prepare("INSERT INTO usage_keep (day, app, event, win, phones) VALUES (?, '1.39.0', ?, 7, ?)");
+  keep.run(day(20), "open", 50); keep.run(day(20), "pay_view", 30);
+  await u.go("#/glance");
+  await u.settle(40);
+  assert.match(u.text("#main .ob-kinds"), /교대/);
+  assert.match(u.text("#main .ob-kinds"), /알바/);
+  assert.match(u.text("#main .ob-kinds"), /전체/);
+  assert.match(u.text("#main .ob-keep"), /50%/, "기준: everyone that day");
+  assert.match(u.text("#main .ob-keep"), /\+25%p/, "급여 보기 75% against 50%");
+  assert.ok(!u.$$("#main .ob-gap-list li").some((li) => /유형\(교대/.test(li.textContent)), "by-type is answered");
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });

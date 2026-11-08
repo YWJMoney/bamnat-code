@@ -29,6 +29,10 @@ object FlagCatalog {
     const val STATS_SETUP = "stats.setup"
     /** 1.39 [STAT2-02]: 진입·머묾·회복 (처음 연 날, 1·7·30일째, 7·30일 넘게 쉬다 다시 연 날) as 사용 통계 counts, once 처리방침 3.12 names them. */
     const val STATS_LIFE = "stats.life"
+    /** 1.39 [OBS2-08]: the kind of work chosen (교대·일근·알바·현장·자영업·투자) with the 진입·머묾 counts, once 처리방침 3.12 names it. */
+    const val STATS_KIND = "stats.kind"
+    /** 1.39 [OBS2-08]: which features were used on a day the phone came back to within 7·30 days, once 처리방침 3.12 names it. */
+    const val STATS_KEEP = "stats.keep"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
@@ -437,6 +441,33 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.39 [OBS2-08] (사용자 2026-11-08 관측 데이터 카드 '유형별·기능 둘만', "통계를 통한 완전한 자가 발전"): 진입·머묾(life_*)과 첫 열기를
+     * 고른 일하는 방식별로도 세요. 방식 하나(여섯 가지 중)만 사용 통계 꾸러미에 붙고, 휴대폰 구별·회사·근무표는 없어요. 처리방침 3.12 시행일에
+     * 저절로 켜지고, 그 전에는 붙이지 않아요.
+     */
+    val STATS_KIND_FLAG = Flag(
+        STATS_KIND, "근무 유형별 흐름 보내기",
+        what = "사용 통계를 켠 휴대폰이 진입·머묾 횟수와 함께 고른 일하는 방식(교대·일근·알바·현장·자영업·투자 중 하나)을 보내요. 관리자 앱 › 숫자 › 한눈에서 유형마다 처음 연 날 → 1·7·30일째를 봐요. 회사·근무표·휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 방식을 붙이지 않아요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "OBS2-08", note = "1.39 관측 (사용자 결정 2026-11-08 '유형별·기능 둘만')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 1.39 [OBS2-08] 기능과 머묾: 그날 쓴 기능 이름을, 그 뒤 7일 안(또는 30일 안)에 다시 열었을 때만 '그날·창·이름'으로 보내요
+     * ([com.bamnat.core.stats.KeepMarks]). 서버가 그날 그 기능을 쓴 휴대폰 수로 나눠 '이 기능을 쓴 사람이 다시 오는지'를 봐요.
+     */
+    val STATS_KEEP_FLAG = Flag(
+        STATS_KEEP, "기능 쓴 뒤 다시 왔는지 보내기",
+        what = "사용 통계를 켠 휴대폰이 앱을 다시 열면, 바로 전에 연 날 쓴 기능 이름과 그 날, 7일 안에 왔는지 30일 안에 왔는지만 보내요. 관리자 앱이 기능마다 '쓴 사람이 7일 안에 돌아온 비율'을 전체와 견줘요. 며칠 만인지 정확한 수와 휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.12(1.39 출시 개정, 1-9항)의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.12 1-9항", requirement = "OBS2-08", note = "1.39 관측 (사용자 결정 2026-11-08 '유형별·기능 둘만')"),
+        conditions = listOf(Condition.Date(policy = FIX_REQUEST_POLICY), Condition.Policy(FIX_REQUEST_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -478,7 +509,7 @@ object FlagCatalog {
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG) +
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

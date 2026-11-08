@@ -358,6 +358,8 @@ export async function prune(env, now) {
     // AM 1.28 [FLAG-30]
     stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
+    stmt(env, "DELETE FROM usage_kinds WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // 1.39 [OBS2-08]
+    stmt(env, "DELETE FROM usage_keep WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // 1.39 [OBS2-08]
     stmt(env, "DELETE FROM photo_wrong WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AQ 1.29 [PHOTO-10]
     // 1.36 [INQ-07] A 결제·환불 record keeps its photos (a receipt, a charge) with its words.
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND billing_at IS NULL AND updated_at < ?)",
@@ -860,6 +862,11 @@ const SCHEMA = [
   ...PLAZA_PUSH_SCHEMA,
   ...PLAZA_CHECKIN_SCHEMA,
   ...PLAZA_PICKS_SCHEMA,
+  // 1.39 [OBS2-08] 유형별 흐름과 기능과 머묾(처리방침 3.12, 깃발 stats.kind·stats.keep): 날짜·판·방식(또는 기능·창)별 휴대폰 수만.
+  `CREATE TABLE IF NOT EXISTS usage_kinds (day TEXT NOT NULL, app TEXT NOT NULL, style TEXT NOT NULL, event TEXT NOT NULL, phones INTEGER NOT NULL,
+    PRIMARY KEY (day, app, style, event))`,
+  `CREATE TABLE IF NOT EXISTS usage_keep (day TEXT NOT NULL, app TEXT NOT NULL, event TEXT NOT NULL, win INTEGER NOT NULL, phones INTEGER NOT NULL,
+    PRIMARY KEY (day, app, event, win))`,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -4953,7 +4960,7 @@ function areaFor(path) {
   // 1.39 [ADM3-49] Claude 초안: 종류마다 그 칸 권한을 claude-drafts.js가 봐요.
   if (path === "/drafts") return null;
   // 1.39 [OBS2] 관측: 읽기는 숫자, 신호 처리는 observe.js가(개발사항으로 넘기기는 개발사항 고치기 권한).
-  if (path === "/observe" || path === "/observe/signals") return null;
+  if (path === "/observe" || path === "/observe/signals" || path === "/observe/refresh") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -5245,7 +5252,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.
   if (path === "/glance" && method === "GET") return json(await glance(env, now));
   // 1.39 [OBS2-01~05] 관측 판·개선 신호(observe.js가 숫자·개발사항 권한을 봐요).
-  if (path === "/observe" || path === "/observe/signals") {
+  if (path === "/observe" || path === "/observe/signals" || path === "/observe/refresh") {
     const r = await observeRoute(request, env, path, method, now);
     if (r) return r;
   }
