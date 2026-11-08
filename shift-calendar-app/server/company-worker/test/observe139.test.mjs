@@ -102,7 +102,9 @@ test("[OBS2-05] 관측 빈틈: 연결이 빠진 것은 고치는 법, 새로 모
   assert.ok(keys.includes("sample-small"));
   assert.ok(keys.includes("life-off"));
   assert.match(gaps.find((g) => g.key === "dev-events").title, /4개/);
-  assert.deepEqual(gaps.filter((g) => g.policy).map((g) => g.key), ["by-type", "feature-keep", "why-leave"]);
+  // 사용자 11-08 '유형별·기능 둘만': 둘은 처리방침 3.12로 시행일을 기다리고, 지운 이유만 사용자 결정으로 남아요 [OBS2-08].
+  assert.deepEqual(gaps.filter((g) => g.policy).map((g) => g.key), ["why-leave"]);
+  assert.ok(keys.includes("by-type") && keys.includes("feature-keep"));
 });
 
 test("[OBS2-01][OBS2-04] 관측 판·매시 작업·신호 → 개발사항, Claude 열쇠도; Play 보고서는 서비스 계정 토큰으로 저장소에서 읽어요", async (t) => {

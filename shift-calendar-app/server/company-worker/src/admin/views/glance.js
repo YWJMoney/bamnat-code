@@ -236,6 +236,40 @@ export function glanceViews(A) {
       <ul class="ob-gap-list">${g.map((x) => `<li class="${x.policy ? "policy" : ""}"><b>${esc(x.title)}</b><small>필요: ${esc(x.need)}</small><small>${esc(x.how)}</small>${x.policy ? '<span class="pill">처리방침 · 사용자 결정</span>' : ""}</li>`).join("")}</ul></section>`;
   }
 
+  /**
+   * 1.39 [OBS2-08] 유형별 흐름: 일하는 방식마다 처음 연 휴대폰과 1·7·30일째 머묾(처리방침 3.12, 깃발 stats.kind). 주마다 머묾 표와 같은 색 구간이고,
+   * 좁은 폭에서는 줄마다 카드로 바뀌어요.
+   */
+  function kindsCard(o) {
+    const k = o.kinds;
+    if (!k?.rows?.length) return "";
+    const heat = (v) => (v === null || v === undefined ? "none" : v >= 60 ? "h4" : v >= 40 ? "h3" : v >= 20 ? "h2" : v > 0 ? "h1" : "h0");
+    const cell = (label, x) => `<td data-label="${label}" class="${heat(x?.rate)}">${esc(num(x?.rate, "%"))}${x?.base ? `<small>${x.kept}/${x.base}</small>` : ""}</td>`;
+    const row = (r, all = false) => `<tr${all ? ' class="ob-all-row"' : ""}><th scope="row">${esc(r.name)}</th><td data-label="진입">${r.new}대</td>${cell("1일째", r.d1)}${cell("7일째", r.d7)}${cell("30일째", r.d30)}</tr>`;
+    return `<section class="card ob-kinds" aria-labelledby="ob-kinds-title"><div class="card-head"><h2 id="ob-kinds-title">유형별 흐름</h2><span class="meta">최근 61일 · 사용 통계 켠 휴대폰</span></div>
+      <p class="hint">일하는 방식마다 처음 연 휴대폰이 며칠째 다시 열었는지예요. 한 유형만 낮으면 그 유형의 첫 설정·첫 주를 먼저 봐요.</p>
+      <table class="gl-cohort ob-kind-table"><thead><tr><th scope="col">유형</th><th scope="col">진입</th><th scope="col">1일째</th><th scope="col">7일째</th><th scope="col">30일째</th></tr></thead>
+      <tbody>${k.rows.map((r) => row(r)).join("")}${row(k.all, true)}</tbody></table></section>`;
+  }
+
+  /**
+   * 1.39 [OBS2-08] 기능과 머묾: 그날 그 기능을 쓴 휴대폰이 7일 안에 다시 온 비율을, 그날 연 휴대폰 전체(기준)와 견줘요(처리방침 3.12, 깃발 stats.keep).
+   * 높은 것부터. 같이 간다고 그 기능 덕분이라는 뜻은 아니어서 그렇게 적어 둬요.
+   */
+  function keepCard(o) {
+    const k = o.keep;
+    if (!k?.rows?.length) return "";
+    const day = (x) => (x ? x.slice(5).replace("-", "/") : "");
+    const lift = (v) => (v === null || v === undefined ? '<td data-label="기준과" class="none">–</td>'
+      : `<td data-label="기준과" class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${esc(`${v}%p`)}</td>`);
+    return `<section class="card ob-keep" aria-labelledby="ob-keep-title"><div class="card-head"><h2 id="ob-keep-title">기능과 머묾</h2><span class="meta">${esc(`${day(k.from)} ~ ${day(k.to)}에 쓴 날`)}</span></div>
+      <p class="hint">그 기능을 쓴 휴대폰이 7일 안에 다시 온 비율이에요. 기준은 그날 연 휴대폰 전체 <b>${esc(num(k.base?.rate7, "%"))}</b>. 함께 높다고 그 기능 덕분이라는 뜻은 아니에요.</p>
+      <table class="gl-cohort ob-keep-table"><thead><tr><th scope="col">기능</th><th scope="col">쓴 휴대폰</th><th scope="col">7일 안에</th><th scope="col">기준과</th><th scope="col">30일 안에</th></tr></thead>
+      <tbody>${k.rows.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td data-label="쓴 휴대폰">${r.users}대</td><td data-label="7일 안에">${esc(num(r.rate7, "%"))}</td>${lift(r.lift7)}<td data-label="30일 안에">${esc(num(r.rate30, "%"))}</td></tr>`).join("")}</tbody></table>
+      ${k.small ? `<p class="meta">쓴 휴대폰이 ${OBS_KEEP_MIN}대보다 적은 기능 ${k.small}개는 빼고 보여요.</p>` : ""}</section>`;
+  }
+  const OBS_KEEP_MIN = 20;
+
   const actions = {
     "obs-signal": ({ key, do: what }) => {
       const go = async () => {
@@ -256,7 +290,7 @@ export function glanceViews(A) {
     const d = S.data.glance;
     const o = S.data.observe;
     if (!d) return `<div class="gl-hero skeleton"></div>${skeleton(2)}`;
-    return `<div class="glance">${hero(d)}<div class="ob-cols"><div class="ob-main">${o ? everyone(o) : skeleton(1)}${flow(d)}</div>
+    return `<div class="glance">${hero(d)}<div class="ob-cols"><div class="ob-main">${o ? everyone(o) : skeleton(1)}${flow(d)}${o ? kindsCard(o) + keepCard(o) : ""}</div>
       <div class="ob-side">${o ? signalsCard(o) : ""}${early(d)}${o ? gapsCard(o) : ""}</div></div>${more()}</div>`;
   }
 
