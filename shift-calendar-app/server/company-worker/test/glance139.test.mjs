@@ -104,3 +104,21 @@ test("[STAT2-05] the first 1.39 deploy onto an older database: four isolates at 
     worker.fetch(new Request("https://company.example/api/config"), { DB: Object.create(DB), RATE_SALT: "test-salt" })));
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM audit WHERE action = 'server_deployed'").get().n, 1);
 });
+
+test("[STAT2-05] the same version deployed again: a new Cloudflare version id leaves one more '서버 배포' (실서버 11-08)", async () => {
+  const { call, DB } = server();
+  await call("GET", "/api/config");
+  const { default: worker } = await import("../src/index.js");
+  const deploy = (id) => Promise.all([1, 2, 3].map(() => worker.fetch(new Request("https://company.example/api/config"),
+    { DB: Object.create(DB), RATE_SALT: "test-salt", CF_VERSION_METADATA: { id, tag: "", timestamp: "" } })));
+  const rows = () => DB.db.prepare("SELECT detail FROM audit WHERE action = 'server_deployed' ORDER BY rowid").all();
+  await deploy("b8718f05-0000-4000-8000-000000000001");
+  await deploy("b8718f05-0000-4000-8000-000000000001");
+  assert.equal(rows().length, 1, "the same deploy is one line however many isolates");
+  await deploy("c0ffee11-0000-4000-8000-000000000002");
+  assert.equal(rows().length, 2);
+  assert.match(rows()[1].detail, /1\.39\.\d+ · b8718f05 → 1\.39\.\d+ · c0ffee11/);
+  const { requiredSetup } = await import("../src/ops-watch.js");
+  assert.equal(requiredSetup({}).items.find((i) => i.key === "CF_VERSION_METADATA").ok, false);
+  assert.equal(requiredSetup({ CF_VERSION_METADATA: { id: "x" } }).items.find((i) => i.key === "CF_VERSION_METADATA").ok, true);
+});

@@ -303,6 +303,8 @@ export function requiredSetup(env) {
     { key: "FCM_SERVICE_ACCOUNT", need: "nice", ok: has("FCM_SERVICE_ACCOUNT"), what: "앱 사용자에게 보내는 푸시(문의 답 알림)", lose: "문의 답이 앱을 열 때만 보여요" },
     { key: "BACKUP(R2)", need: "nice", ok: Boolean(env.BACKUP && typeof env.BACKUP.put === "function"), what: "하루 백업을 둘 R2 저장소", lose: "D1 되돌리기(Time Travel)만 쓸 수 있어요" },
     { key: "MAIL_API_KEY·MAIL_FROM", need: "nice", ok: has("MAIL_API_KEY") && has("MAIL_FROM"), what: "초대·확인 메일", lose: "초대 링크를 직접 전해야 해요" },
+    // 1.39 실서버(11-08): 같은 판(1.39.0)을 다시 배포하면 판 이름이 같아 '서버 배포'가 남지 않았어요. 버전 메타데이터를 묶으면 배포 번호가 판 이름에 붙어요.
+    { key: "CF_VERSION_METADATA", need: "nice", ok: Boolean(env.CF_VERSION_METADATA?.id), what: "배포 번호(버전 메타데이터)", lose: "같은 판을 다시 배포하면 사고 › 바꾼 것에 남지 않아요" },
     { key: "SHARE_BASE_URL·SHARE_ADMIN_TOKEN", need: "nice", ok: has("SHARE_BASE_URL") && has("SHARE_ADMIN_TOKEN"), what: "공유 서버 신고·상태 보기", lose: "공유 링크 신고와 공유 서버 상태를 못 봐요" },
   ];
   return { items, missing: items.filter((i) => i.need === "must" && !i.ok).map((i) => i.key) };

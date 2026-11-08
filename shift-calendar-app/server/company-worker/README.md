@@ -21,6 +21,10 @@ Cloudflare 무료 요금제로 충분해요. 공유 링크 서버(`server/share-
 4. **데이터베이스 연결**
    Worker 화면의 바인딩(Bindings) → 바인딩 추가(Add binding) → D1 데이터베이스.
    변수 이름은 `DB`, 데이터베이스는 `bamnat-company`를 골라요.
+4-1. **배포 번호 연결** (1.39)
+   같은 바인딩 화면에서 바인딩 추가 → 버전 메타데이터(Version metadata), 변수 이름은 `CF_VERSION_METADATA`.
+   묶어 두면 판 이름(예: 1.39.0)이 같아도 다시 배포할 때마다 관리자 앱 사고 › 바꾼 것에 '서버 배포 1.39.0 · 배포 번호' 한 줄이 남아요.
+   묶지 않아도 서버는 돌고, 서버 상태에 '배포 번호' 빠짐으로 보여요.
 5. **비밀값 두 개 넣기**
    `bamnat-company` Worker → 설정(Settings) → 런타임 변수(Runtime variables) → 변수 추가(Add variable).
    화면에 따라 변수 및 비밀(Variables and Secrets) → 추가(Add)로 보이기도 해요. 환경은 Production에 체크해 두고,

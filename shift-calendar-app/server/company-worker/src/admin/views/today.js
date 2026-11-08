@@ -18,34 +18,57 @@ export function todayViews(A) {
       <span class="d">${esc(desc)}</span>${has ? L.spark(list, { name: name ?? label }) : ""}</a>`;
   }
 
-  function alertsCard(list) {
+  /**
+   * [shown]: 위 큰 카드(오늘 첫 화면)에 이미 보여 준 줄의 key. 1.39 실서버(11-08 크롬 둘러보기): 위아래에 같은 줄이 두 번 나와서,
+   * 아래에서는 '위에서 본 N개'로 접어 둬요. 개수와 목록은 그대로라 메뉴 숫자와 맞아요.
+   */
+  function alertsCard(list, shown = new Set()) {
     if (!Array.isArray(list)) return "";
     if (!list.length) return `<p class="calm">${icon(P.check)}<span>지금 살필 것이 없어요. 급증·기한 넘김·정할 판이 생기면 여기 먼저 보여요.</span></p>`;
+    const line = (a) => `<li class="${a.tone === "bad" ? "bad" : "warn"}"><a href="${esc(a.to)}"><b>${esc(a.title)}</b>${a.meta ? `<small>${esc(a.meta)}</small>` : ""}</a>${icon(P.chevron)}</li>`;
+    const top = list.filter((a) => !shown.has(`a:${a.key}`));
+    const above = list.filter((a) => shown.has(`a:${a.key}`));
     return `<section class="card alerts" aria-labelledby="alerts-h"><div class="card-head"><h2 id="alerts-h">주의 필요</h2><span class="pill bad">${list.length}</span></div>
-      <ul class="alert-list">${list.map((a) => `<li class="${a.tone === "bad" ? "bad" : "warn"}"><a href="${esc(a.to)}"><b>${esc(a.title)}</b>${a.meta ? `<small>${esc(a.meta)}</small>` : ""}</a>${icon(P.chevron)}</li>`).join("")}</ul></section>`;
+      ${top.length ? `<ul class="alert-list">${top.map(line).join("")}</ul>` : ""}${aboveFold(above.length, `<ul class="alert-list">${above.map(line).join("")}</ul>`, "home:above-alerts")}</section>`;
+  }
+
+  /** 위 카드에서 본 줄을 접어 두는 칸. 펼침은 기기에 남아요. */
+  function aboveFold(n, inner, key) {
+    if (!n) return "";
+    return `<details class="shown-above" data-key="${key}"${S.opened.get(key) ? " open" : ""}><summary>위에서 본 ${n}개</summary>${inner}</details>`;
+  }
+
+  /** 오늘 첫 화면의 셋: 주의 필요(빨강 먼저) 다음 기한이 가까운 할 일. key는 아래 카드가 접을 때 써요. */
+  function heroPicks(t) {
+    const alerts = Array.isArray(t.alerts) ? t.alerts : [];
+    const hide = snoozed();
+    const todo = (t.todo?.items ?? []).filter((x) => !hide[`${x.type}:${x.id}`]);
+    const ordered = [...alerts.filter((a) => a.tone === "bad"), ...alerts.filter((a) => a.tone !== "bad")];
+    const picks = [
+      ...ordered.map((a) => ({ key: `a:${a.key}`, tone: a.tone === "bad" ? "bad" : "warn", to: a.to, title: a.title, meta: a.meta ?? "", due: null })),
+      ...todo.map((x) => ({ key: `${x.type}:${x.id}`, tone: "todo", to: inboxLink(x), title: `${INBOX_NAMES[x.type] ?? x.type} · ${x.title}`, meta: x.company ?? "", due: x })),
+    ].slice(0, 3);
+    return { alerts, todo, picks, shown: new Set(picks.map((p) => p.key)) };
   }
 
   /**
    * 1.39 [ADM3-47] 크롬 둘러보기 디자인 관찰 '첫 화면은 오늘 상태 한 문장 + 할 일 3개': 주의 필요의 수로 한 문장(빨강이 있으면 빨강),
-   * 그 아래 할 일에서 기한이 가장 가까운 셋. 주의 필요 목록과 할 일 전체는 아래 카드에 그대로 있어요. 모양은 숫자 › 한눈에의 큰 신호와 같아요.
+   * 그 아래 먼저 볼 셋(heroPicks). 아래 주의 필요·할 일 카드는 이 셋을 '위에서 본 N개'로 접어요. 모양은 숫자 › 한눈에의 큰 신호와 같아요.
    */
-  function heroCard(t, o, hi) {
-    const alerts = Array.isArray(t.alerts) ? t.alerts : [];
-    const hide = snoozed();
-    const todo = (t.todo?.items ?? []).filter((x) => !hide[`${x.type}:${x.id}`]);
+  function heroCard(t, o, hi, { alerts, todo, picks }) {
     const bad = alerts.filter((a) => a.tone === "bad");
     const tone = bad.length ? "bad" : alerts.length ? "warn" : "ok";
     const line = bad.length ? `바로 볼 것이 ${bad.length}개 있어요` : alerts.length ? `살펴볼 것이 ${alerts.length}개 있어요`
       : todo.length ? `급한 일은 없고, 할 일이 ${todo.length}개예요` : "지금 기다리는 일이 없어요";
     const sum = [can("inquiries") ? `답 대기 ${o.inquiries ?? 0}` : "", can("review") ? `검토 대기 ${L.reviewCount(o)}` : "", o.doneToday ? `오늘 처리 ${o.doneToday}` : ""].filter(Boolean).join(" · ");
-    const line2 = alerts.length ? `${bad[0]?.title ?? alerts[0].title}${alerts.length > 1 ? ` 외 ${alerts.length - 1}개는 아래 '주의 필요'에` : ""}` : "";
-    const picks = todo.slice(0, 3).map((x) => ({ tone: "todo", to: inboxLink(x), title: `${INBOX_NAMES[x.type] ?? x.type} · ${x.title}`, meta: x.company ?? "", due: x }));
-    const rest = todo.length - picks.length;
+    const restA = alerts.length - picks.filter((p) => p.key.startsWith("a:")).length;
+    const restT = todo.length - picks.filter((p) => !p.key.startsWith("a:")).length;
+    const rest = [restA > 0 ? `주의 필요 ${restA}개` : "", restT > 0 ? `할 일 ${restT}개` : ""].filter(Boolean).join(", ");
     return `<section class="gl-hero today-hero ${tone}" aria-labelledby="today-hero-h"><div class="gl-hero-top"><span class="gl-pulse" aria-hidden="true"><span></span></span>
-        <div class="gl-hero-text"><p class="gl-eyebrow">${esc(hi)}, ${esc(S.me.name)}님</p><h2 id="today-hero-h">${esc(line)}</h2>${line2 ? `<p class="gl-sub today-why">${esc(line2)}</p>` : ""}${sum ? `<p class="gl-sub">${esc(sum)}</p>` : ""}</div></div>
+        <div class="gl-hero-text"><p class="gl-eyebrow">${esc(hi)}, ${esc(S.me.name)}님</p><h2 id="today-hero-h">${esc(line)}</h2>${sum ? `<p class="gl-sub">${esc(sum)}</p>` : ""}</div></div>
         ${picks.length ? `<ol class="today-three">${picks.map((p, i) => `<li class="${p.tone}"><a href="${esc(p.to)}"><span class="n" aria-hidden="true">${i + 1}</span>
           <span class="t"><b>${esc(p.title)}</b><span class="sub">${p.due ? dueText(p.due, Date.now()) : ""}${p.meta ? `<small>${esc(p.meta)}</small>` : ""}</span></span>${icon(P.chevron)}</a></li>`).join("")}</ol>` : ""}
-        ${picks.length ? `<p class="today-rest">지금 할 ${picks.length}가지${rest > 0 ? ` · 나머지 ${rest}개는 아래 '할 일'에` : ""}</p>` : ""}</section>`;
+        ${picks.length ? `<p class="today-rest">먼저 볼 ${picks.length}가지${rest ? ` · 아래에 ${rest} 더` : ""}</p>` : ""}</section>`;
   }
 
   function homeView() {
@@ -97,12 +120,13 @@ export function todayViews(A) {
     const people = (o.assigned ?? []).length ? `<section class="card"><h2>누가 몇 건 맡았나</h2><ul class="people">${o.assigned.map((a) =>
       `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul></section>` : "";
     const views = S.prefs.views.filter((v) => String(v.hash).startsWith("#/"));
-    return `${top}${heroCard(t, o, hi)}
+    const hero = heroPicks(t);
+    return `${top}${heroCard(t, o, hi, hero)}
       <p class="hello-who">${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p>
       ${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
       <a class="sort-nudge" href="#/desk">${icon(P.check)}<span><b>운영 장부</b> 문의·개발사항·스튜디오 요구·신고·사진을 한 줄씩. ${can("inquiries") && o.inquiries ? `답 대기 ${o.inquiries}건은 겹침과 보낼 답까지 적어 두었어요. ` : ""}오늘 할 것부터 빠짐없이 처리해요</span>${icon(P.chevron)}</a>
       ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
-      <div class="home-grid"><div class="home-main">${alertsCard(t.alerts)}${todoCard(t.todo)}</div>
+      <div class="home-grid"><div class="home-main">${alertsCard(t.alerts, hero.shown)}${todoCard(t.todo, hero.shown)}</div>
         <div class="home-side">${more}${people}
         ${can("audit") ? `<section class="card"><div class="card-head"><h2>최근 활동</h2><a class="btn small ghost" href="${href("audit")}">모두 보기</a></div>
           ${feed === null ? '<div class="card skeleton short"></div>' : feed.length ? `<ul class="feed">${feed.map(feedItem).join("")}</ul>` : '<p class="hint">아직 활동이 없어요.</p>'}</section>` : ""}
@@ -113,7 +137,7 @@ export function todayViews(A) {
    * [ADMUX-33] 할 일: everything waiting on this admin's areas in one list, nearest deadline first. [ADMX-01] One line
    * per item: what and where on the left, the deadline and the buttons on the right.
    */
-  function todoCard(d) {
+  function todoCard(d, shown = new Set()) {
     const c = d?.counts ?? {};
     const editInq = can("inquiries", "edit");
     const head = `<div class="card-head"><h2>할 일</h2>${S.queue ? "" : editInq && (S.overview?.inquiries ?? 0) ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
@@ -141,8 +165,7 @@ export function todayViews(A) {
           <div class="bundle-list">${more.map((o) => `<p><a href="${inboxLink(o)}">${esc(o.title)}</a>
             <small>${esc(ago(o.at))}${o.assignee ? ` · ${o.mine ? "내가 맡음" : esc(o.assignee.name)}` : ""}</small>${dueText(o, Date.now())}</p>`).join("")}</div>
           <p class="meta">같은 답이면 운영 장부에서 한 개발사항으로 묶거나 한꺼번에 답해요. <a href="#/desk?view=today">운영 장부 열기</a></p></details>`;
-    return `<section class="card todo-card">${head}
-      <ul class="rows inbox">${rows.map((x) => {
+    const row = (x) => {
         const more = bundleOf(x);
         // 1.39 [ADM3-39] 발굴: 묶음의 다른 문의에도 같은 답을 한 번에(다른 사람이 맡은 것은 빼요). 기본은 꺼 둬요.
         const also = more.filter((o) => !o.assignee || o.mine);
@@ -158,7 +181,11 @@ export function todayViews(A) {
           ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
           <a class="btn small${x.type === "inquiry" ? "" : " primary"}" href="${inboxLink(x)}">${x.type === "inquiry" ? "열기" : "보기"}</a>
           <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}" title="이 기기에서 내일 아침까지 숨겨요">내일 볼게요</button></span></div>${bundled(x, more)}${answer}</li>`;
-      }).join("")}</ul>${again}</section>`;
+    };
+    const top = rows.filter((x) => !shown.has(`${x.type}:${x.id}`));
+    const above = rows.filter((x) => shown.has(`${x.type}:${x.id}`));
+    return `<section class="card todo-card">${head}
+      ${top.length ? `<ul class="rows inbox">${top.map(row).join("")}</ul>` : ""}${aboveFold(above.length, `<ul class="rows inbox">${above.map(row).join("")}</ul>`, "home:above-todo")}${again}</section>`;
   }
 
   function feedItem(e) {

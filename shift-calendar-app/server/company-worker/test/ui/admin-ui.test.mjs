@@ -1866,6 +1866,12 @@ test("[ADM3-45~47] 오늘 첫 화면 한 문장 + 할 일 셋, 같은 회사일�
   assert.match(u.text("#main .today-hero h2"), /있어요|없어요|할 일이/);
   assert.ok(u.$$("#main .today-three li").length <= 3);
   assert.ok(u.$("#main .alerts") || u.$("#main .calm"), "주의 필요 is still there in full");
+  // 실서버 11-08 크롬: what the top card shows is folded below as '위에서 본 N개', not shown twice.
+  const shownTop = u.$$("#main .today-three b").map((b) => b.textContent);
+  const below = [...u.$$("#main .alerts > ul.alert-list b"), ...u.$$("#main .todo-card > ul.inbox .row-main a")].map((e) => e.textContent);
+  assert.ok(shownTop.length > 0);
+  assert.deepEqual(below.filter((x) => shownTop.some((top) => top === x || top.endsWith(` · ${x}`))), [], JSON.stringify({ shownTop, below }));
+  assert.match(u.text("#main .shown-above summary"), /위에서 본 \d+개/);
   await u.go("#/companies");
   await u.settle(30);
   assert.match(u.text("#main .similar"), /같은 회사일까요\?/);
