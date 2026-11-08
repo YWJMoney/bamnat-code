@@ -858,7 +858,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                             Text("${i + 1}안 · ${p.filled}칸 · " + (if (p.shortPeople > 0) "부족 ${p.shortPeople}명·${p.short.size}일" else "부족 없음"),
                                 style = MaterialTheme.typography.bodyMedium)
                             Text((if (p.danger > 0) "⚠ " + listOfNotNull(p.overWeeks.takeIf { it > 0 }?.let { "52시간 넘김 ${it}건" }, p.ruleSigns.takeIf { it > 0 }?.let { "규칙 ${it}건" }).joinToString(" · ") + " · "
-                                else "위험 없음 · ") + "최대 연속 ${p.maxRun}일 · 시간 차이 ${p.hourSpread}시간 · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 나이트 차이 ${p.spread}",
+                                else "위험 없음 · ") + "최대 연속 ${p.maxRun}일 · 시간 차이 ${p.hourSpread}시간 · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 야간 차이 ${p.spread}번",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (p.danger > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -1075,7 +1075,7 @@ private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: ()
                 listOf(0 to "이번 달", 3 to "3달", 6 to "6달", 12 to "12달").forEach { (n, l) -> FilterChip(selected = span == n, onClick = { span = n }, label = { Text(l) }) }
             }
             if (span == 0) {
-                Row { listOf("이름", "나이트", "주말", "쉼", "시간").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
+                Row { listOf("이름", "야간", "주말", "쉼", "시간").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
                 val maxN = now.maxOfOrNull { it.nights } ?: 0
                 val minN = now.minOfOrNull { it.nights } ?: 0
                 now.forEach { r ->
@@ -1094,7 +1094,7 @@ private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: ()
                 else {
                     Text("이번 달까지 ${span}달, 한 달 평균이에요. 자동 채우기는 지난 6달을 보고 많이 한 사람에게 덜 넣어요.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row { listOf("이름", "나이트", "주말", "공휴일", "신청 지킴").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
+                    Row { listOf("이름", "야간", "주말", "공휴일", "신청 지킴").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
                     val per = rows.filter { it.months > 0 }.map { it.nights.toDouble() / it.months }
                     val hi = per.maxOrNull() ?: 0.0
                     val lo = per.minOrNull() ?: 0.0

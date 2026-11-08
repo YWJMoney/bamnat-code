@@ -108,8 +108,14 @@ class TaskWidgetTest {
         }
         texts.clear()
         walk(late.remoteViews.apply(context, android.widget.FrameLayout(context)))
-        // PC 7차: '늦음 · 09:…' was cut at 2×1; the time comes first, then 늦음.
-        assertTrue("time first, then 늦음 on the line: $texts", texts.any { it.endsWith(" · 늦음") && (it.startsWith("21:00") || it.startsWith("9:00") || it.startsWith("오후")) })
+        // PC 7차: '늦음 · 09:…' was cut at 2×1; the time comes first, then 늦음. PC 8차: '16:05 · 늦…' at 2×1; narrow, no dot.
+        assertTrue("time first, then 늦음, no dot at 2×1: $texts", texts.any { it.endsWith(" 늦음") && " · " !in it && (it.startsWith("21:00") || it.startsWith("9:00") || it.startsWith("오후")) })
+        val wide = GlanceRemoteViews().compose(context, DpSize(320.dp, 60.dp)) {
+            WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three, today.atTime(21, 30)) } }
+        }
+        texts.clear()
+        walk(wide.remoteViews.apply(context, android.widget.FrameLayout(context)))
+        assertTrue("wider, with the dot: $texts", texts.any { it.endsWith(" · 늦음") })
         val early = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) {
             WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three, today.atTime(20, 30)) } }
         }

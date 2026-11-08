@@ -86,41 +86,95 @@ object MemoScheduleAlarm {
 
     private val time = DateTimeFormatter.ofPattern("a h:mm", Locale.KOREAN)
 
-    /** The notice's id for [memo], so a 미루기 can take it down. */
-    internal fun noticeId(memo: Long): Int = NOTIFICATION_BASE + (memo.toInt() and 0x3ff)
+    /**
+     * PC 8차 de44acdf: Android 16 bundles two of an app's notices that are not in a real group (a group summary with no children
+     * counts as none) into '밤낮 · 2', so 끝내기 took two taps. Memo schedules share one notice ([SLOT]): the newest is shown with
+     * its own buttons and '남은 일정 N개' says what else is waiting; when it is finished or put off, the next one comes back, quietly.
+     * The notice is the one child of its own group ([GROUP], a summary that Android hides with a single child), so it is not
+     * bundled with the app's other notices either.
+     */
+    internal const val SLOT = NOTIFICATION_BASE
+    private const val SUMMARY = NOTIFICATION_BASE - 1
+    internal const val GROUP = "bamnat_memo"
 
     /**
      * 1.39 [TASK-04][TASK-20][TASK-39] [rest] is when to tell on the memo's calendar's next day off (its morning, the afternoon after a
      * 야간; null: none ahead), offered first in 다른 때….
      */
-    fun post(context: Context, memo: Memo, at: LocalDateTime, rest: LocalDateTime? = null) {
-        val body = memo.preview.takeIf { it.isNotBlank() && memo.title.isNotBlank() }
+    fun post(context: Context, memo: Memo, at: LocalDateTime, rest: LocalDateTime? = null) = postAll(context, listOf(Triple(memo, at, rest)))
+
+    /** Memos due together are told with one sound: the queue takes them all, then the newest is shown. */
+    internal fun postAll(context: Context, due: List<Triple<Memo, LocalDateTime, LocalDateTime?>>) {
+        if (due.isEmpty()) return
+        MemoNoticeQueue.prune(context)
+        due.forEach { (memo, at, rest) ->
+            val body = memo.preview.takeIf { it.isNotBlank() && memo.title.isNotBlank() }
+            MemoNoticeQueue.put(context, MemoNoticeQueue.Entry(memo.id, at, rest, label(memo), listOfNotNull("${at.format(time)} 일정", body).joinToString(" · ")))
+        }
+        clearOldNotices(context)
+        // Cancelled first, so the new schedule sounds even when an older one is up in the same notice.
+        Notifications.cancel(context, SLOT)
+        show(context, quiet = false)
+    }
+
+    /** Memo [id]'s notice is done with (끝내기, 미루기): the next waiting one is shown quietly, or the notice goes. */
+    fun dismiss(context: Context, id: Long) {
+        MemoNoticeQueue.remove(context, id)
+        MemoNoticeQueue.prune(context)
+        show(context, quiet = true)
+    }
+
+    private fun show(context: Context, quiet: Boolean) {
+        val waiting = MemoNoticeQueue.all(context)
+        val top = waiting.firstOrNull()
+        if (top == null) {
+            Notifications.cancel(context, SLOT)
+            Notifications.cancel(context, SUMMARY)
+            return
+        }
+        val others = waiting.drop(1)
+        val otherLine = others.joinToString(" · ") { "${it.title}(${it.at.format(time)})" }
+        val keep = keepFor(top.at)
         val notification = NotificationCompat.Builder(context, Notifications.MEMO_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentTitle(label(memo))
-            .setContentText(listOfNotNull("${at.format(time)} 일정", body).joinToString(" · "))
+            .setContentTitle(top.title)
+            .setContentText(top.text)
+            .apply {
+                if (others.isNotEmpty()) {
+                    setSubText("남은 일정 ${others.size}개")
+                    setStyle(NotificationCompat.BigTextStyle().bigText("${top.text}\n남은 일정: $otherLine"))
+                    setNumber(waiting.size)
+                }
+            }
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.MEMOS, REQUEST + 1))
             .setAutoCancel(true)
-            // PC 7차 c92cec3e: two memo notices folded into one '밤낮 · 2' bundle, so 끝내기 took two taps to open. Each notice is
-            // its own group (like the 근무표 notices), so Android does not bundle them; a notice clears itself the day after.
-            .setGroup(GROUP + memo.id)
-            .setGroupSummary(true)
-            .setTimeoutAfter(keepFor(at))
-            .setWhen(at.atZone(Today.zone()).toInstant().toEpochMilli())
+            .setGroup(GROUP)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setSilent(quiet)
+            // PC 7차 c92cec3e: a notice clears itself after its day (at least 6 hours on).
+            .setTimeoutAfter(keep)
+            .setWhen(top.at.atZone(Today.zone()).toInstant().toEpochMilli())
             // 1.39 [TASK-39] 끝내기 · 10분 뒤 · 다른 때… (두 앱 실사용 2차): 끝내기 finishes the memo on that day for real (the 할 일 앱's
             // Complete left the task open in its list), and 다른 때… opens a small window with the day off's morning first.
-            .addAction(0, "끝내기", MemoDoneReceiver.intent(context, memo.id, at.toLocalDate()))
-            .addAction(0, com.bamnat.core.memo.MemoSnooze.label(com.bamnat.core.memo.MemoSnooze.Way.MIN10, rest),
-                MemoSnoozeReceiver.intent(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.MIN10, rest, 0))
-            .addAction(0, "다른 때…", MemoLaterActivity.intent(context, memo.id, rest))
+            .addAction(0, "끝내기", MemoDoneReceiver.intent(context, top.memo, top.at.toLocalDate()))
+            .addAction(0, com.bamnat.core.memo.MemoSnooze.label(com.bamnat.core.memo.MemoSnooze.Way.MIN10, top.rest),
+                MemoSnoozeReceiver.intent(context, top.memo, com.bamnat.core.memo.MemoSnooze.Way.MIN10, top.rest, 0))
+            .addAction(0, "다른 때…", MemoLaterActivity.intent(context, top.memo, top.rest))
             .build()
-        clearPastDays(context)
-        Notifications.post(context, noticeId(memo.id), notification)
+        val summary = NotificationCompat.Builder(context, Notifications.MEMO_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("일정")
+            .setGroup(GROUP)
+            .setGroupSummary(true)
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+            .setSilent(true)
+            .setAutoCancel(true)
+            .setTimeoutAfter(keep)
+            .build()
+        Notifications.post(context, SLOT, notification)
+        Notifications.post(context, SUMMARY, summary)
     }
-
-    /** Each memo notice's own group, so Android does not fold two of them into one '밤낮 · 2' bundle. */
-    internal const val GROUP = "bamnat_memo_"
 
     /** A notice for [at] stays until the end of its day, and at least 6 hours (a late-evening one is not gone at midnight). */
     internal fun keepFor(at: LocalDateTime, now: Long = Today.millis()): Long {
@@ -128,20 +182,14 @@ object MemoScheduleAlarm {
         return maxOf(dayEnd - now, KEEP_AT_LEAST)
     }
 
-    private const val KEEP_AT_LEAST = 6 * 60 * 60 * 1000L
+    internal const val KEEP_AT_LEAST = 6 * 60 * 60 * 1000L
 
-    /**
-     * PC 7차 c92cec3e: yesterday's '보고서 1:04' notice was still there the next day. Memo notices posted before today
-     * (and older than [KEEP_AT_LEAST]) are taken down when a new one shows.
-     */
-    internal fun clearPastDays(context: Context, now: Long = Today.millis()) {
+    /** The one-notice-per-memo notices of the builds before (7400 + memo id) are taken down; the shared one replaces them. */
+    private fun clearOldNotices(context: Context) {
         val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
-        val dayStart = Today.date().atStartOfDay(Today.zone()).toInstant().toEpochMilli()
         runCatching { nm.activeNotifications }.getOrNull().orEmpty()
-            // Only memo notices: the memo channel, no tag (the date notices on that channel carry one), a memo id.
-            .filter { it.tag == null && it.notification.channelId == Notifications.MEMO_CHANNEL_ID && it.id in NOTIFICATION_BASE..NOTIFICATION_BASE + 0x3ff }
-            // A notice's 'when' is its schedule's minute (set in [post]); a schedule of a past day, 6 hours gone, is taken down.
-            .filter { it.notification.`when` in 1 until dayStart && now - it.notification.`when` > KEEP_AT_LEAST }
+            // Only memo notices: the memo channel, no tag (the date notices on that channel carry one), an old memo id.
+            .filter { it.tag == null && it.notification.channelId == Notifications.MEMO_CHANNEL_ID && it.id in SLOT + 1..NOTIFICATION_BASE + 0x3ff }
             .forEach { nm.cancel(it.tag, it.id) }
     }
 
@@ -152,12 +200,12 @@ object MemoScheduleAlarm {
         if (atMillis == 0L || now - atMillis > STALE_AFTER_MILLIS) return
         val at = AlarmScheduler.millisToLocal(atMillis)
         val due = MemoSchedules.dueAt(memos, at, shiftsOf, MemoSnoozeStore.all(context))
-        due.filter { it.reminder?.notify == true }.forEach { post(context, it, at, restOf(it)) }
+        postAll(context, due.filter { it.reminder?.notify == true }.map { Triple(it, at, restOf(it)) })
         val ringing = due.filter { it.reminder?.ring == true }
         if (ringing.isEmpty()) return
         // [ALRM-09] 오늘 남은 알람 모두 끄기: the schedule still shows, quietly, instead of ringing.
         if (com.bamnat.app.alarm.AlarmsOff.isOff(context, now)) {
-            ringing.filter { it.reminder?.notify != true }.forEach { post(context, it, at, restOf(it)) }
+            postAll(context, ringing.filter { it.reminder?.notify != true }.map { Triple(it, at, restOf(it)) })
             return
         }
         val ring = RingRequest(
@@ -252,7 +300,7 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
 
         /** Memo [id]'s schedule moved [way] from now, its notice taken down; the new time, or null when it is gone. */
         suspend fun put(context: Context, id: Long, way: com.bamnat.core.memo.MemoSnooze.Way, rest: LocalDateTime?): LocalDateTime? {
-            Notifications.cancel(context, MemoScheduleAlarm.noticeId(id))
+            MemoScheduleAlarm.dismiss(context, id)
             val repo = context.appContainer.memoRepository
             val memo = repo.get(id) ?: return null
             val r = memo.reminder ?: return null
@@ -316,7 +364,7 @@ class MemoDoneReceiver : BroadcastReceiver() {
 
         /** Memo [id] finished on [day] (never brought back: a second press does nothing), its notice gone; null when it is gone. */
         suspend fun finish(context: Context, id: Long, day: java.time.LocalDate?): Memo? {
-            Notifications.cancel(context, MemoScheduleAlarm.noticeId(id))
+            MemoScheduleAlarm.dismiss(context, id)
             val repo = context.appContainer.memoRepository
             val memo = repo.get(id)?.takeUnless { it.inTrash } ?: return null
             // A 미루기 still waiting on a repeating memo finished now does not ring.

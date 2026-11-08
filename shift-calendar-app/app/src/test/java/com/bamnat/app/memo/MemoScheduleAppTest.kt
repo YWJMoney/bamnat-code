@@ -38,6 +38,9 @@ class MemoScheduleAppTest {
         shadowOf(it.operation).savedIntent.component?.className == MemoScheduleReceiver::class.java.name
     }
 
+    /** The memo notices shown, without the hidden group summary. */
+    private fun shown() = shadowOf(nm).allNotifications.filter { it.flags and android.app.Notification.FLAG_GROUP_SUMMARY == 0 }
+
     @Test fun oneAlarmIsKeptForTheNextScheduleAndNoneWithout() {
         val now = LocalDateTime.now()
         val soon = now.plusHours(2).withSecond(0).withNano(0)
@@ -61,7 +64,7 @@ class MemoScheduleAppTest {
         val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
         val memo = Memo(id = 7, title = "치과", body = "스케일링", reminder = MemoReminder(at, ring = false, notify = true))
         MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000)
-        val posted = shadowOf(nm).allNotifications.single()
+        val posted = shown().single()
         assertEquals(Notifications.MEMO_CHANNEL_ID, posted.channelId)
         assertEquals("치과", shadowOf(posted).contentTitle.toString())
         assertEquals("오후 3:00 일정 · 스케일링", shadowOf(posted).contentText.toString())
@@ -72,10 +75,11 @@ class MemoScheduleAppTest {
     }
 
     /**
-     * PC 7차 c92cec3e: two memo notices folded into '밤낮 · 2', and yesterday's stayed the next day. Each is its own group summary
-     * (Android does not bundle them) and goes away by itself after its day, at least 6 hours on.
+     * PC 7차·8차: two memo notices folded into '밤낮 · 2' (Android 16 bundles an app's notices that are not in a real group), and
+     * yesterday's stayed the next day. Memo schedules share one notice, the one child of its own group: the newest with its buttons,
+     * '남은 일정 N개' for the rest, and after 끝내기 the next one comes back. A schedule of a past day is let go.
      */
-    @Test fun memoNoticesAreNotBundledAndDoNotOutliveTheirDay() {
+    @Test fun memoNoticesShareOneNoticeAndDoNotOutliveTheirDay() = kotlinx.coroutines.runBlocking<Unit> {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         Notifications.createChannels(context)
         val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(13, 4))
@@ -84,17 +88,35 @@ class MemoScheduleAppTest {
             Memo(id = 22, title = "전화", reminder = MemoReminder(at, ring = false, notify = true)),
         )
         MemoScheduleAlarm.handle(context, memos, millis(at), now = millis(at) + 30_000)
-        val posted = shadowOf(nm).allNotifications
-        assertEquals(2, posted.size)
-        assertEquals(setOf("bamnat_memo_21", "bamnat_memo_22"), posted.map { it.group }.toSet())
-        assertTrue(posted.all { it.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0 })
-        assertTrue(posted.all { it.timeoutAfter > 0 })
+        val one = shown().single()
+        assertEquals("남은 일정 1개", one.extras.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT).toString())
+        assertEquals(listOf("끝내기", "10분 뒤", "다른 때…"), one.actions.map { it.title.toString() })
+        assertTrue(one.timeoutAfter > 0)
+        // A real group of its own (summary + this one), so Android does not bundle it with the app's other notices.
+        assertEquals("bamnat_memo", one.group)
+        val summary = shadowOf(nm).allNotifications.single { it.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0 }
+        assertEquals("bamnat_memo", summary.group)
+        val first = shadowOf(one).contentTitle.toString()
+        val firstId = shadowOf(one.actions[0].actionIntent).savedIntent.getLongExtra("memo", -1)
 
-        // A schedule from yesterday still up is taken down when today's shows; today's stay.
-        val yesterday = at.minusDays(1).withHour(13)
-        MemoScheduleAlarm.post(context, Memo(id = 23, title = "어제 보고서"), yesterday)
+        // 끝내기 on it: the other one is shown, alone, with its own buttons.
+        MemoScheduleAlarm.dismiss(context, firstId)
+        val next = shown().single()
+        val second = shadowOf(next).contentTitle.toString()
+        assertEquals(setOf("보고서", "전화"), setOf(first, second))
+        assertNull(next.extras.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT))
+        assertEquals(setOf(21L, 22L) - firstId, setOf(shadowOf(next.actions[0].actionIntent).savedIntent.getLongExtra("memo", -1)))
+        MemoScheduleAlarm.dismiss(context, if (firstId == 21L) 22L else 21L)
+        assertTrue(shadowOf(nm).allNotifications.isEmpty())
+
+        // A schedule from a day before, 6 hours gone, is let go when today's shows; a newer one is shown over an older one.
+        MemoScheduleAlarm.post(context, Memo(id = 23, title = "어제 보고서"), at.minusDays(1).withHour(13))
         MemoScheduleAlarm.post(context, Memo(id = 24, title = "오늘 전화"), at)
-        assertEquals(setOf("보고서", "전화", "오늘 전화"), shadowOf(nm).allNotifications.map { shadowOf(it).contentTitle.toString() }.toSet())
+        val today = shown().single()
+        assertEquals("오늘 전화", shadowOf(today).contentTitle.toString())
+        assertNull("yesterday's is not waiting behind it", today.extras.getCharSequence(android.app.Notification.EXTRA_SUB_TEXT))
+        MemoScheduleAlarm.post(context, Memo(id = 25, title = "약"), at.minusHours(1))
+        assertEquals("the newer schedule stays on top", "오늘 전화", shadowOf(shown().single()).contentTitle.toString())
 
         // 13:04 stays until midnight; 23:30 stays 6 hours, into the next morning.
         val dayEnd = millis(LocalDate.now().plusDays(1).atStartOfDay())
@@ -114,7 +136,7 @@ class MemoScheduleAppTest {
         val memo = Memo(id = 8, title = "택배 받기", reminder = MemoReminder(at, ring = false, notify = true))
         val rest = LocalDateTime.of(2026, 11, 12, 14, 0)
         MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000, restOf = { rest })
-        val posted = shadowOf(nm).allNotifications.single()
+        val posted = shown().single()
         assertEquals(listOf("끝내기", "10분 뒤", "다른 때…"), posted.actions.map { it.title.toString() })
         val done = shadowOf(posted.actions[0].actionIntent).savedIntent
         assertEquals(MemoDoneReceiver::class.java.name, done.component?.className)

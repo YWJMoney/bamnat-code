@@ -284,6 +284,9 @@ internal fun note(row: TaskList.Row, late: Boolean): String? = listOfNotNull(
  * 1.39 [TASK-31] One row: the circle of the next to-do left (late first, as the list goes), its words and time, how many are left,
  * and ＋. With nothing left it says so.
  */
+/** Narrower than this (2×1 on most phones), [TaskLine]'s small line drops its dot. */
+private val NARROW_LINE = 260.dp
+
 @Composable
 internal fun TaskLine(rows: List<TaskList.Row>, now: java.time.LocalDateTime = Today.dateTime()) {
     val context = androidx.glance.LocalContext.current
@@ -303,12 +306,15 @@ internal fun TaskLine(rows: List<TaskList.Row>, now: java.time.LocalDateTime = T
             // PC eae4e024: in one line '우유 사기 ·…' cut the time and what is left at 2×1. The title gets the line, the time (늦음) goes
             // small under it, and how many are left sits as a number by ＋, so none of it is cut.
             // PC 7차 c92cec3e: at 2×1 '늦음 · 09:…' cut the time. The time comes first ("09:21 · 늦음"); the red says 늦음 even when cut.
-            val note = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { late }).joinToString(" · ")
+            // PC 8차 de44acdf: at 2×1 it was '16:05 · 늦…'. Narrow, the dot goes and the letters are a size smaller ("16:05 늦음"), so
+            // both fit at 2×1; the circle is red as well.
+            val narrow = androidx.glance.LocalSize.current.width < NARROW_LINE
+            val note = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { late }).joinToString(if (narrow) " " else " · ")
             Column(GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day))) {
                 Text(next.text.ifEmpty { "제목 없는 메모" },
                     style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1)
                 if (note.isNotEmpty()) Text(note, style = TextStyle(color = if (late) GlanceTheme.colors.error
-                    else GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(11)), maxLines = 1)
+                    else GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(if (narrow && late) 10 else 11)), maxLines = 1)
             }
             if (left > 1) {
                 Box(GlanceModifier.padding(horizontal = 6.dp).semantics { contentDescription = "남은 할 일 ${left}개" }, contentAlignment = Alignment.Center) {
