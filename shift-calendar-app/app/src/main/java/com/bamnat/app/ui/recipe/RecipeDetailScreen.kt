@@ -292,6 +292,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 TryLadder(steps) {
                     liveNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    // 1.39 [NTC-03] 겹치는 알림은 접힌 '자세히 보기'에 묻히지 않게 넣기 단추 아래에도 한 줄 (넣기 창에서 골라요).
+                    s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
+                        Text("⚠ " + p.overlaps.first().say() + " · 넣을 때 바꿀지 골라요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
                     if (tasteRefused) Text("이 작품은 하루 써 보기를 이미 썼어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} ‘자세히 보기’에서 채워 주세요",
                         color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
