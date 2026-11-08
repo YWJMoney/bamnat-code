@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.39 [TASK-07] 할 일: 오늘·늦은·고정한 할 일, 동그라미로 바로 끝내기, ＋로 새 할 일. Home screen only: memo titles are not shown on the lock screen. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_tasks_desc"
+    android:previewLayout="@layout/widget_preview_tasks"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="0" />

@@ -3,7 +3,6 @@ package com.bamnat.app.alarm
 import android.app.AlarmManager
 import android.app.Application
 import android.content.Intent
-import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.ScheduleSnapshot
@@ -37,8 +36,7 @@ class AlarmSelfCheckTest {
 
     @Before fun setUp() {
         // Let the app's own first planning run before this test plans its schedule.
-        Thread.sleep(800)
-        shadowOf(Looper.getMainLooper()).idle()
+        AppSettled.alarms(context as com.bamnat.app.BamnatApp)
         scheduler = AlarmScheduler(context, Telemetry(EventLog(context), SettingsRepository(context)))
     }
 

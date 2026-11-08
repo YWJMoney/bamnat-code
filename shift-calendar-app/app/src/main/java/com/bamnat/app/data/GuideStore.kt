@@ -52,6 +52,25 @@ class GuideStore private constructor(context: Context) {
         return com.bamnat.core.guide.WhatsNew.since(prefs.getInt(K_SEEN_VERSION, currentCode), currentCode)
     }
 
+    /**
+     * 1.38 갈래6: the [com.bamnat.core.guide.WhatsNew.switched] lines whose switch is on and not told yet. A phone that first ran
+     * with the switch already on had it from the start: those are marked told without a word.
+     */
+    fun switchedNew(on: (String) -> Boolean, freshInstall: Boolean): List<com.bamnat.core.guide.WhatsNew.Line> {
+        val told = prefs.getStringSet(K_SWITCHED, null)
+        val now = com.bamnat.core.guide.WhatsNew.switched.filter { (key, _) -> runCatching { on(key) }.getOrDefault(false) }
+        if (told == null) {
+            // The first time this asks: a new phone has whatever is on already; an updated one is told of what is on.
+            prefs.edit().putStringSet(K_SWITCHED, if (freshInstall) now.map { it.first }.toSet() else emptySet()).apply()
+            if (freshInstall) return emptyList()
+        }
+        return now.filter { it.first !in told.orEmpty() }.map { it.second }
+    }
+
+    fun switchedSeen(keys: Collection<String>) {
+        prefs.edit().putStringSet(K_SWITCHED, prefs.getStringSet(K_SWITCHED, emptySet()).orEmpty() + keys).apply()
+    }
+
     fun whatsNewSeen(currentCode: Int) {
         prefs.edit().putInt(K_SEEN_VERSION, currentCode).apply()
     }
@@ -161,6 +180,7 @@ class GuideStore private constructor(context: Context) {
         private const val K_OFF = "off"
         private const val K_ADDED = "added"
         private const val K_SEEN_VERSION = "seen_version"
+        private const val K_SWITCHED = "switched_told"
         private const val K_USED = "used"
         private const val K_NEVER = "never"
         private const val K_TIP_DAY = "tip_day"

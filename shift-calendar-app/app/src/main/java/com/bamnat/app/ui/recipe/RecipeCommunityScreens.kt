@@ -175,7 +175,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 Text("‘이런 레시피 있었으면’을 적으면 좋아요가 모이고, 만들 분이 ‘만들게요’를 눌러 완성하면 그 레시피로 이어져요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (vm.canWrite) Button(onClick = { writing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("요청 쓰기") }
-                else Text("요청 쓰기·좋아요는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
+                else Text("요청 쓰기·좋아요는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall)
                 val items = s.items
                 when {
                     items == null && s.error != null -> { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } }
@@ -233,6 +233,10 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     }
     if (writing) {
         var text by remember { mutableStateOf(draft?.take(200).orEmpty()) }
+        // 1.39 발굴(마을 돌봄): 요청 글도 거친 말이면 올리기 전에 한 번 물어요(막지 않아요).
+        var nudge by remember { mutableStateOf(false) }
+        val go = { vm.write(text) { ok -> if (ok) writing = false } }
+        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
         AlertDialog(
             onDismissRequest = { writing = false },
             title = { Text("이런 레시피 있었으면") },
@@ -242,7 +246,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                     Text("금액·연락처·링크는 적지 않아요 (5~200자)", style = MaterialTheme.typography.bodySmall)
                 }
             },
-            confirmButton = { TextButton(enabled = text.trim().length >= 5, onClick = { vm.write(text) { ok -> if (ok) writing = false } }) { Text("올리기") } },
+            confirmButton = { TextButton(enabled = text.trim().length >= 5, onClick = { if (com.bamnat.core.plaza.PostNudge.needed(text)) nudge = true else go() }) { Text("올리기") } },
             dismissButton = { TextButton(onClick = { writing = false }) { Text("닫기") } },
         )
     }

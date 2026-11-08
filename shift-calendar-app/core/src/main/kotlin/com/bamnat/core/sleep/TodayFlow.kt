@@ -36,7 +36,7 @@ object TodayFlow {
         NEXT,
     }
 
-    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON }
+    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP }
 
     enum class Part { WORK, SLEEP, NAP }
 
@@ -66,7 +66,38 @@ object TodayFlow {
         val line: String?,
         /** When the card may read differently next, so the widget can be redrawn then. */
         val changesAt: LocalDateTime,
+        /** 1.38 [SLEEP-23] For [Action.NAP], when the nap ends (its wake). */
+        val napUntil: LocalDateTime? = null,
+        /** 1.39 G6 발굴 [FLOW-32]: the words for work this card speaks with (가게 '영업 중', 현장 '일하는 중'). */
+        val talk: WorkTalk = WorkTalk.SHIFT,
     )
+
+    /**
+     * 1.39 G6 발굴 [FLOW-32] (PC 5c4ad849 유형별 빈틈 '가게 칸 창 몸 줄 근무 중·다음 근무 10:00 영업'): how the card names work, by kind of work.
+     * A shop opens and closes, field work starts and ends; 교대·일근·알바 go to work and leave it.
+     */
+    data class WorkTalk(
+        val on: String,
+        val untilStart: String,
+        val untilEnd: String,
+        val ifEnd: String,
+        val afterEnd: String,
+        val next: String,
+        val noNext: String,
+        val done: String,
+    ) {
+        companion object {
+            val SHIFT = WorkTalk("근무 중", "출근까지", "퇴근까지", "퇴근하면", "퇴근 뒤", "다음 근무", "다음 근무가 아직 없어요", "오늘 근무는 끝났어요")
+            val SHOP = WorkTalk("영업 중", "영업 시작까지", "마감까지", "마감하면", "마감 뒤", "다음은", "다음 영업일이 아직 없어요", "오늘 영업은 끝났어요")
+            val FIELD = WorkTalk("일하는 중", "일 시작까지", "일 끝까지", "일 끝나면", "일 끝나고", "다음 일", "다음 일이 아직 없어요", "오늘 일은 끝났어요")
+
+            fun of(style: com.bamnat.core.work.WorkStyle?): WorkTalk = when (style) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> SHOP
+                com.bamnat.core.work.WorkStyle.FIELD -> FIELD
+                else -> SHIFT
+            }
+        }
+    }
 
     const val SPAN_HOURS = 24L
     /** A bedtime or a nap takes over the card this long before it. */
@@ -90,6 +121,7 @@ object TodayFlow {
         /** The detail already says the rest is short, so the rest sign need not. */
         val saysShort: Boolean = false,
         val compact: Boolean = false,
+        val napUntil: LocalDateTime? = null,
     )
 
     fun of(
@@ -105,11 +137,24 @@ object TodayFlow {
         rules: com.bamnat.core.schedule.RestRules? = null,
         /** [SLP-16] How long the user's own sleeps after night work have been, from [SleepInsights.afterNightAverage]. */
         afterNightMinutes: Long? = null,
+        /**
+         * 1.37 PC LOW (일근으로 바꾼 첫날 '잘 시간' 카드가 교대 시절 야간 기록 때문에 경고): the day the kind of work last changed.
+         * The work before it was another job's, so neither the sleep after it nor the rest between counts.
+         */
+        since: LocalDate? = null,
+        talk: WorkTalk = WorkTalk.SHIFT,
     ): Card {
         val today = now.toLocalDate()
         val end = now.plusHours(SPAN_HOURS)
         val t = Words(today)
-        val plan = SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(2), alarmsOn, targetMinutes, commuteMinutes)
+        val plan = if (since == null || !since.isAfter(today.minusDays(1))) {
+            SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(2), alarmsOn, targetMinutes, commuteMinutes)
+        } else {
+            // Changed today: the plan starts on the day itself, with nothing of the night before.
+            val dates = generateSequence(minOf(since, today)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(3)) }.toList()
+            SleepSchedule.of(dates.map(resolver::resolve), if (alarmsOn) dates.flatMap { AlarmPlanner.alarmsOn(resolver, it) } else emptyList(),
+                targetMinutes, commuteMinutes)
+        }
         val work = plan.work
         val next = work.firstOrNull { it.from.isAfter(now) }
             ?: (4L..LOOKAHEAD_DAYS).firstNotNullOfOrNull { SleepSchedule.work(resolver.resolve(today.plusDays(it))).firstOrNull() }
@@ -166,7 +211,7 @@ object TodayFlow {
                 }
                 val a = plan.alarms.firstOrNull { it.triggerAt.isAfter(now) && !it.triggerAt.isAfter(end) }
                 val n = next?.takeIf { !it.from.isAfter(end) }
-                val detail = a?.let { "다음 알람 ${t.at(it.triggerAt)}" } ?: n?.let { "다음 근무 ${workLine(it)}" }
+                val detail = a?.let { "다음 알람 ${t.at(it.triggerAt)}" } ?: n?.let { "${talk.next} ${workLine(it)}" }
                 return@run Pick(State.SLEEPING, "${t.hm(open.start)}부터 자는 중", detail, Action.AWAKE, line = "${t.hm(open.start)}부터 자는 중")
             }
             ongoing?.let { w ->
@@ -176,18 +221,18 @@ object TodayFlow {
                     return@run if (now.isBefore(cut)) {
                         Pick(State.ON_SHIFT, "${t.hm(cut)}까지만 커피", "${t.hm(s.from)}에 잠들 수 있게요", line = "커피는 ${t.hm(cut)}까지")
                     } else {
-                        Pick(State.ON_SHIFT, "퇴근하면 ${t.span(s.from, s.to)} 잘 시간",
+                        Pick(State.ON_SHIFT, "${talk.ifEnd} ${t.span(s.from, s.to)} 잘 시간",
                             if (s.short) shortText(s) else "잠들기 ${SleepPlan.CAFFEINE_GAP_HOURS}시간 안이라 커피는 쉬어 가요", line = sleepLine(s), saysShort = s.short)
                     }
                 }
                 val after = next?.takeIf { !it.from.isBefore(w.to) }
                 val bed = plan.sleeps.firstOrNull { !it.from.isBefore(w.to) && (after == null || it.from.isBefore(after.from)) }
                 val detail = when {
-                    bed != null -> "퇴근 뒤 잘 시간 ${t.span(bed.from, bed.to)}" + if (bed.short) " · ${shortText(bed)}" else ""
-                    after != null -> "다음 근무 ${workLine(after)}"
+                    bed != null -> "${talk.afterEnd} 잘 시간 ${t.span(bed.from, bed.to)}" + if (bed.short) " · ${shortText(bed)}" else ""
+                    after != null -> "${talk.next} ${workLine(after)}"
                     else -> null
                 }
-                return@run Pick(State.ON_SHIFT, "근무 중 · ${t.hm(w.to)}까지", detail, line = bed?.let(::sleepLine), saysShort = bed?.short == true)
+                return@run Pick(State.ON_SHIFT, "${talk.on} · ${t.hm(w.to)}까지", detail, line = bed?.let(::sleepLine), saysShort = bed?.short == true)
             }
             work.lastOrNull { !it.to.isAfter(now) && it.overnight }?.let { w ->
                 val s = plan.sleepAfter(w) ?: return@let
@@ -209,7 +254,7 @@ object TodayFlow {
             }
             plan.naps.firstOrNull { n -> !now.isBefore(n.from.minusMinutes(PROMPT_MINUTES)) && now.isBefore(n.to) && !slept(n.from, n.to) }?.let { n ->
                 return@run Pick(State.NAP, "${t.hm(n.from)} 낮잠 ${n.minutes}분", "첫 야간 전 낮잠 시간이에요 · ${t.hm(n.to)}엔 일어나요",
-                    line = "낮잠 ${t.span(n.from, n.to)}")
+                    action = Action.NAP, actionDate = n.to.toLocalDate(), line = "낮잠 ${t.span(n.from, n.to)}", napUntil = n.to)
             }
             val wokeAt = woke?.end
             val sleptMinutes = woke?.minutes ?: 0
@@ -218,7 +263,7 @@ object TodayFlow {
                 val head = n?.let { w ->
                     alarm(w)?.let { a -> "${t.at(a.triggerAt)} 알람 · " + (if (a.triggerAt.toLocalDate() == w.from.toLocalDate()) t.hm(w.from) else t.at(w.from)) + " ${w.name}" }
                         ?: workLine(w)
-                } ?: if (work.none { it.date == today }) "오늘은 쉬는 날" else "오늘 근무는 끝났어요"
+                } ?: if (work.none { it.date == today }) "오늘은 쉬는 날" else talk.done
                 val short = sleptMinutes in MAIN_SLEEP_MINUTES until targetMinutes
                 return@run Pick(State.AWAKE, head, "${t.hours(sleptMinutes)} 잤어요" + if (short) " (목표보다 ${t.hours(targetMinutes - sleptMinutes)} 적어요)" else "",
                     line = "${t.hours(sleptMinutes)} 잤어요")
@@ -243,21 +288,22 @@ object TodayFlow {
             val detail = when {
                 bed != null -> sleepLine(bed) + sleepNote(bed)
                 nap != null -> "${t.hm(nap.from)} 낮잠 ${nap.minutes}분 · ${t.hm(nap.to)}엔 일어나요"
-                next == null -> "다음 근무가 아직 없어요"
-                soon == null -> "다음 근무 ${workLine(next)}"
-                after != null -> "퇴근 뒤 ${sleepLine(after)}${sleepNote(after)}"
+                next == null -> talk.noNext
+                soon == null -> "${talk.next} ${workLine(next)}"
+                after != null -> "${talk.afterEnd} ${sleepLine(after)}${sleepNote(after)}"
                 else -> null
             }
-            Pick(State.NEXT, soon?.let { workLine(it) } ?: "오늘 근무는 끝났어요", detail,
+            Pick(State.NEXT, soon?.let { workLine(it) } ?: talk.done, detail,
                 line = bed?.let(::sleepLine) ?: nap?.let { "낮잠 ${t.span(it.from, it.to)}" } ?: after?.let(::sleepLine),
                 saysShort = (bed ?: after)?.short == true)
         }
 
         val restSign = if (!restCheck) null else {
             val nextDate = next?.date?.takeIf { !it.isAfter(today.plusDays(1)) }
-            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { resolver.resolve(today.plusDays(it)) }, strictRest)
+            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { today.plusDays(it) }
+                .filter { since == null || !it.isBefore(since) }.map(resolver::resolve), strictRest)
             else RestCheck.check(generateSequence(RestCheck.lookbackFrom(today, rules)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(2)) }
-                .map(resolver::resolve).toList(), rules))
+                .filter { since == null || !it.isBefore(since) }.map(resolver::resolve).toList(), rules))
                 .filter { it.date == today || it.date == nextDate }
                 .firstOrNull { !(pick.saysShort && (it.kind == RestCheck.Kind.SHORT_REST || it.kind == RestCheck.Kind.AFTER_NIGHT)) }
                 ?.let { (if (it.date == today) "" else "${t.day(it.date)}· ") + it.text }
@@ -308,7 +354,40 @@ object TodayFlow {
             compact = pick.compact,
             line = pick.line,
             changesAt = changesAt,
+            napUntil = pick.napUntil,
+            talk = talk,
         )
+    }
+
+    /**
+     * 1.38 [FLOW-06] (흐름·디자인 계획 3-3): the card's one number, the time left to what comes next: "퇴근까지" during work,
+     * "알람까지" asleep, else the next work, sleep or nap on the strip ("출근까지 2시간 10분", "잘 시간까지 40분"). None for
+     * a warning (an alarm turned off, a missed wake tap), which leads with its own words, or when nothing comes in 24 hours.
+     */
+    data class Countdown(val label: String, val minutes: Long) {
+        /** "2시간 10분", "2시간", "40분", or "곧" under a minute. */
+        val time: String get() = when {
+            minutes < 1 -> "곧"
+            minutes < 60 -> "${minutes}분"
+            minutes % 60 == 0L -> "${minutes / 60}시간"
+            else -> "${minutes / 60}시간 ${minutes % 60}분"
+        }
+    }
+
+    fun countdown(card: Card): Countdown? {
+        val now = card.from
+        fun left(t: LocalDateTime) = java.time.Duration.between(now, t).toMinutes()
+        return when (card.state) {
+            State.ALARM_OFF, State.FORGOT_WAKE -> null
+            State.SLEEPING -> card.alarms.firstOrNull()?.let { Countdown("알람까지", left(it)) }
+            else -> {
+                val working = card.segments.firstOrNull { it.part == Part.WORK && !it.from.isAfter(now) && it.to.isBefore(card.to) }
+                if (working != null) Countdown(card.talk.untilEnd, left(working.to))
+                else card.segments.firstOrNull { it.from.isAfter(now) }?.let { n ->
+                    Countdown(when (n.part) { Part.WORK -> card.talk.untilStart; Part.SLEEP -> "잘 시간까지"; Part.NAP -> "낮잠까지" }, left(n.from))
+                }
+            }
+        }?.takeIf { it.minutes >= 0 }
     }
 
     /** Times and days as the card says them. */

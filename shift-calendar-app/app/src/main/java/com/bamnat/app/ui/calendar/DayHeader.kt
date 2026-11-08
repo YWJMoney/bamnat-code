@@ -122,7 +122,7 @@ internal fun whenText(alarm: PlannedAlarm, date: LocalDate): String =
     (if (alarm.triggerAt.toLocalDate().isBefore(date)) "전날 " else "") + Fmt.time(alarm.triggerAt.toLocalTime())
 
 /** [DAY-01] One fact about the day in the header: 알람 끔, 직접 바꿈, 메모 2 … */
-private data class DayToken(val text: String, val tone: Tone) {
+private data class DayToken(val text: String, val tone: Tone, val said: String? = null, val struck: Boolean = false) {
     enum class Tone { PLAIN, ACCENT, WARNING, ERROR }
 }
 
@@ -143,13 +143,16 @@ internal fun shiftLine(day: ResolvedDay): String {
 }
 
 /** "야간 대근 · 19:00 – 07:00 (다음날) · 11시간", "잔업 · 근무 뒤 2시간 (19–21)". */
-internal fun extraLine(e: ResolvedExtra): String {
+internal fun extraLine(e: ResolvedExtra, style: com.bamnat.core.work.WorkStyle? = null): String {
     val from = e.from
     val to = e.to
     return when {
-        from == null || to == null -> "${ExtraText.name(e)} · 시각 모름"
-        e.entry.hasTimes || e.covered != null -> "${ExtraText.name(e)} · ${Fmt.timeRange(from.toLocalTime(), to.toLocalTime())} · ${HoursFormat.korean(e.minutes)}"
-        else -> "${e.kind.name} · ${if (e.kind.timing is com.bamnat.core.model.ExtraTiming.BeforeShift) "근무 전" else "근무 뒤"} " +
+        from == null || to == null -> "${ExtraText.name(e, style)} · 시각 모름"
+        // [PAYX-54] 1.38 PC 12.4.1: work in the shift's own hours adds none; the times as typed, and why.
+        e.insideShiftMinutes > 0 -> "${ExtraText.name(e, style)} · ${Fmt.timeRange(e.entry.start ?: from.toLocalTime(), e.entry.end ?: to.toLocalTime())} · " +
+            if (e.minutes <= 0) "근무 시간 안이라 시간은 안 더해요" else "${HoursFormat.korean(e.minutes)} (근무와 겹친 ${HoursFormat.korean(e.insideShiftMinutes)} 뺌)"
+        e.entry.hasTimes || e.covered != null -> "${ExtraText.name(e, style)} · ${Fmt.timeRange(from.toLocalTime(), to.toLocalTime())} · ${HoursFormat.korean(e.minutes)}"
+        else -> "${ExtraText.kindName(e.kind, style)} · ${if (e.kind.timing is com.bamnat.core.model.ExtraTiming.BeforeShift) "근무 전" else "근무 뒤"} " +
             "${HoursFormat.korean(e.minutes)} (${ExtraText.span(from.toLocalTime(), to.toLocalTime())})"
     }
 }
@@ -172,6 +175,8 @@ fun DayHeader(
     onOpen: (() -> Unit)? = null,
     /** [CAL-01] The smaller title, for the preview card and the narrow unfolded panel. */
     compact: Boolean = onOpen != null,
+    /** The first memo's token ("메모 · 도시락"); off while the day's story line (FLOW-08) shows the memos already. */
+    memoToken: Boolean = true,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -245,6 +250,11 @@ fun DayHeader(
         // chips come right under the date, where nothing above them changes height; the day's facts follow.
         // With very large text on a small phone the head is taller than the sheet's top; there the facts stay first so they are not cut.
         val chipsFirst = onOpen == null && LocalDensity.current.fontScale < 1.5f
+        // [EASE-10] 1.38 (오늘근무 비교: 근무 바꾸기 2번): the kinds of work open first (주간·야간·휴무…), one tap changes the day; the
+        // 대근·비상소집·돈 chips are the row under it. Both rows are one line that scrolls sideways, so their height never
+        // changes from day to day and the rows stay where the finger expects them (A17).
+        val headChips = shiftChipsInHead(day, snapshot, settings.workStyle)
+        if (chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(bottom = 4.dp), endSpace = 12.dp)
         if (chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(bottom = 6.dp), endSpace = 12.dp)
         AnimatedContent(
             targetState = day,
@@ -256,16 +266,20 @@ fun DayHeader(
             },
             label = "day-body",
         ) { d ->
-            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp))
+            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp), memoToken)
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
-        if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = 6.dp), endSpace = 76.dp)
+        if (!chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(top = 6.dp), endSpace = 12.dp)
+        if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = if (headChips) 4.dp else 6.dp), endSpace = 76.dp)
+        // [EASE-26] The extra work just put in, made longer or shorter right here (잔업 1시간 30분: 날짜 · 잔업 · −30분).
+        // [EASE-26] Under the calendar only: the opened day has the same ± in its 추가 근무 piece, so its head stays short.
+        if (onOpen != null && day.extras.isNotEmpty()) ExtraNudgeLine(day, vm, Modifier.padding(start = 12.dp, top = 4.dp))
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier) {
+private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, memoToken: Boolean = true) {
     val cal = LocalCalendarColors.current
     val focus = CalendarFocus.of(settings.workStyle)
     val book by vm.moneyBook.collectAsStateWithLifecycle()
@@ -276,11 +290,14 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
     val sales = dayBook.sales?.takeIf { it.sales != 0L || it.costs != 0L }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val holiday = KoreanHolidays.nameOf(day.date)
-        if (settings.showLunar || holiday != null) {
+        // [CYC-04] 1.38 업종 기념일, in the accent colour (not a day off).
+        val orgDay = orgDayName(orgGroupOf(settings), day.date, holiday)
+        if (settings.showLunar || holiday != null || orgDay != null) {
             Row {
                 if (holiday != null) Text(holiday, style = MaterialTheme.typography.labelLarge, color = cal.sunday)
+                if (orgDay != null) Text(orgDay, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 if (settings.showLunar) {
-                    if (holiday != null) Spacer(Modifier.width(8.dp))
+                    if (holiday != null || orgDay != null) Spacer(Modifier.width(8.dp))
                     Text(KoreanLunar.fromSolar(day.date).label, style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -307,26 +324,35 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 Text(focus.emptyDay(day.isWorkDay), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        // [EASE-12] A day changed from its order says what it was: "원래 야간 → 주간", with 되돌리기 right there.
+        if (hasShift && day.source == DaySource.OVERRIDE && snapshot.hasPattern) {
+            val was = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
+            val now = day.shiftType
+            // [EASE-11] PC 3db30e1e: a day off made a working day keeps '대근으로' here too, after the bar is gone.
+            val cover = now?.takeIf { (was == null || was.isOff) && it.hasTimes && !it.isOff }
+            ChangedLine(was, now, onBack = { vm.assign(day.date, com.bamnat.core.model.ShiftOverride.None) },
+                coverWord = cover?.let { vm.coverWord() }, onCover = { cover?.let { vm.coverFromChange(day.date, it, snapshot) } })
+        }
         for (e in day.extras.take(MAX_EXTRA_LINES)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.width(2.dp))
                 ExtraKindMark(e.kind, size = 16.dp)
                 Spacer(Modifier.width(10.dp))
-                Text(extraLine(e), style = MaterialTheme.typography.bodyMedium, maxLines = bigLines(1), overflow = TextOverflow.Ellipsis)
+                Text(extraLine(e, settings.workStyle), style = MaterialTheme.typography.bodyMedium, maxLines = bigLines(1), overflow = TextOverflow.Ellipsis)
             }
         }
         if (day.extras.size > MAX_EXTRA_LINES) {
             Text("외 ${day.extras.size - MAX_EXTRA_LINES}건", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
         }
-        if (day.hasExtraWork) {
+        if (day.hasExtraWork && day.extraMinutes > 0) {
             Text(
                 "이 날 합계 ${HoursFormat.korean(day.totalMinutes)}",
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
                 color = cal.holidayWork,
             )
         }
-        val tokens = dayTokens(day, snapshot, vm, settings)
+        val tokens = dayTokens(day, snapshot, vm, settings, memoToken)
         if (tokens.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (t in tokens) Token(t)
@@ -336,6 +362,86 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
 }
 
 private const val MAX_EXTRA_LINES = 3
+
+/** [EASE-26] "잔업 2시간  −30분 +10분 +30분 +1시간": the last extra work of the day, its length changed with a tap. */
+@Composable
+private fun ExtraNudgeLine(day: ResolvedDay, vm: CalendarViewModel, modifier: Modifier = Modifier) {
+    val i = day.extras.lastIndex
+    val e = day.extras[i]
+    val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
+    // [J133-27] A weekday worker's own word, as the chip says it.
+    val name = ExtraText.name(e, style)
+    MinuteNudges(name, lead = name, modifier = modifier, onNudge = { d ->
+        vm.updateExtra(day.date, i, com.bamnat.core.schedule.MinuteNudge.extra(e.entry, e.start, e.end, d, com.bamnat.app.data.ScheduleRepository.MAX_EXTRA_MINUTES))
+    })
+}
+
+/** [EASE-12] "원래 [야] 야간 → [주] 주간 · 되돌리기": the same meaning as the changed day's mark on the calendar. */
+@Composable
+private fun ChangedLine(was: com.bamnat.core.model.ShiftType?, now: com.bamnat.core.model.ShiftType?, onBack: () -> Unit, coverWord: String? = null, onCover: () -> Unit = {}) {
+    val ink = MaterialTheme.colorScheme.tertiary
+    val wasName = was?.name ?: "쉬는 날"
+    val nowName = now?.name ?: "쉬는 날"
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics(mergeDescendants = true) {
+        contentDescription = "원래 $wasName, 지금 $nowName"
+    }) {
+        Spacer(Modifier.width(2.dp))
+        Text("원래", style = MaterialTheme.typography.bodyMedium, color = ink)
+        Spacer(Modifier.width(6.dp))
+        ShiftBadge(was, size = 16.dp, text = was?.label ?: "휴", outlined = was == null || was.isOff)
+        Spacer(Modifier.width(4.dp))
+        Text(wasName, style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = ink, modifier = Modifier.size(18.dp))
+        ShiftBadge(now, size = 16.dp, text = now?.label ?: "휴", outlined = now == null || now.isOff)
+        Spacer(Modifier.width(4.dp))
+        Text(nowName, style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.weight(0.01f))
+        if (coverWord != null) TextButton(onClick = onCover, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+            modifier = Modifier.semantics { contentDescription = "근무표는 쉬는 날 그대로, ${nowName}을 ${coverWord}${Fmt.ro(coverWord)} 넣기" }) {
+            Text("$coverWord${Fmt.ro(coverWord)}", style = MaterialTheme.typography.labelLarge)
+        }
+        TextButton(onClick = onBack, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
+            Text("되돌리기", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/**
+ * [EASE-10][EASE-11] The day's kinds of work, open in one line: a tap puts it on the day at once (no window first). On a day
+ * the roster gives off, the bar says so and offers 대근 ([CalendarViewModel.assignQuick]); 되돌리기 is on the day's line.
+ */
+@Composable
+private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, endSpace: Dp) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val calendar by c.calendars.active.collectAsStateWithLifecycle()
+    val folded = c.foldedTypes.state.collectAsStateWithLifecycle().value[calendar].orEmpty()
+    val style = settings.workStyle
+    val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
+    if (types.isEmpty()) return
+    val fullLeave = day.leave?.isFullDay == true
+    ChipRow(modifier, start = 12.dp, end = endSpace) {
+        for (t in types) item(key = "shift-${t.id}") {
+            val on = !fullLeave && day.shiftType?.id == t.id
+            FilterChip(
+                selected = on,
+                onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
+                label = { ChipText(t.name) },
+                leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) },
+                // 1.39 PC 5차 (가게 유형 TalkBack '영업, 지금 근무'): said without '근무', which a shop's or a field day's chip is not.
+                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
+            )
+        }
+        if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off") {
+            FilterChip(
+                selected = !day.isWorkDay && day.shiftType == null && !fullLeave,
+                onClick = { if (day.isWorkDay || day.shiftType != null) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Off, snapshot) },
+                label = { ChipText("쉬는 날") },
+            )
+        }
+    }
+}
 private const val MAX_JOB_LINES = 3
 
 /** [CAL-05] "09:00–17:00 욕실 타일 시공 · 3일 중 2일째", with what it pays or what is still owed. */
@@ -345,7 +451,9 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         JobBadge(count = 1, owed = job.unpaid > 0)
         Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
+        // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'09:0/0') the amount goes under the job when both do not fit.
+        com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 168.dp, start = {
+        Column {
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") + " " }.orEmpty()
             // [CAL-52] Two lines before the title is cut ("욕실…" lost "타일 시공" beside 받을 돈 in a day panel).
             Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = bigLines(2), overflow = TextOverflow.Ellipsis)
@@ -359,12 +467,13 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        Spacer(Modifier.width(8.dp))
-        if (job.unpaid > 0) {
-            Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
-        } else if (job.payable > 0) {
-            Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
-        }
+        }, end = {
+            if (job.unpaid > 0) {
+                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+            } else if (job.payable > 0) {
+                Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
+            }
+        })
     }
 }
 
@@ -372,11 +481,12 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
 @Composable
 private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
     val cal = LocalCalendarColors.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // [BIGTXT-01] 1.39 (200%: '매출' alone, its amount cut away) the two parts wrap to the next line instead of being cut.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Storefront, null, tint = cal.income, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text("매출 ${Fmt.won(sales.sales)}", style = MaterialTheme.typography.bodyLarge.merge(NumberStyle), maxLines = 1,
-            modifier = Modifier.weight(1f, fill = false))
+        Text("매출 ${Fmt.won(sales.sales)}", style = MaterialTheme.typography.bodyLarge.merge(NumberStyle), maxLines = 1, softWrap = false)
         if (sales.costs != 0L) {
             Text(" · 남은 돈 ${Fmt.wonShort(sales.net)}", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
                 color = if (sales.net < 0) cal.expense else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
@@ -385,7 +495,7 @@ private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
 }
 
 @Composable
-private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings): List<DayToken> {
+private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, memoToken: Boolean = true): List<DayToken> {
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
     val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
@@ -396,15 +506,20 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     return buildList {
         // [CAL-13] An added calendar kept from ringing says so on each of its days.
         if (alarms.isNotEmpty() && !calendarAlarms) add(DayToken("이 달력 알람 꺼짐", DayToken.Tone.PLAIN))
-        else if (alarms.isNotEmpty() && (day.alarmSkipped || !settings.alarmsEnabled)) add(DayToken("알람 끔", DayToken.Tone.ERROR))
         else if (alarms.isNotEmpty()) {
+            // 1.37 시간 바퀴 PC LOW: turned off, the token keeps its words (struck through) so the rows under it do not jump.
             val first = alarms.first()
-            add(DayToken("알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else "", DayToken.Tone.PLAIN))
+            val text = "알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else ""
+            val off = day.alarmSkipped || !settings.alarmsEnabled
+            add(if (off) DayToken(text, DayToken.Tone.ERROR, said = "$text 꺼짐", struck = true) else DayToken(text, DayToken.Tone.PLAIN))
         }
         if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
-        if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(DayToken("직접 바꿈", DayToken.Tone.ACCENT))
+        // [EASE-12] A changed shift has its own line ("원래 → 새 근무"); the token stays for changed times.
+        // [READ-37] 1.38 PC: on a calendar without an order (매달 근무표) every day is put in by hand or from a photo, so
+        // "직접 바꿈" said nothing on each of them; only a day's own times are worth a word there.
+        if (day.hasCustomTimes) add(DayToken("이 날만 시간 바꿈", DayToken.Tone.ACCENT))
         // [NOTE-06] The first memo's title, cut to one line, and how many more there are.
-        dayMemos.firstOrNull()?.let { first ->
+        if (memoToken) dayMemos.firstOrNull()?.let { first ->
             val title = first.title.ifBlank { first.preview }.lineSequence().firstOrNull().orEmpty().trim()
             val shown = if (title.length > 14) title.take(13) + "…" else title
             val more = if (dayMemos.size > 1) " 외 ${dayMemos.size - 1}" else ""
@@ -430,7 +545,9 @@ private fun Token(t: DayToken) {
         style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
         color = fg,
         maxLines = 1,
-        modifier = Modifier.clip(MaterialTheme.shapes.small).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
+        textDecoration = if (t.struck) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+        modifier = Modifier.clip(MaterialTheme.shapes.small).background(bg).padding(horizontal = 8.dp, vertical = 3.dp)
+            .then(if (t.said != null) Modifier.semantics { contentDescription = t.said } else Modifier),
     )
 }
 
@@ -466,10 +583,15 @@ private fun QuickChips(
             val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day).partition { ExtraText.indexOf(day, it) >= 0 }
             // [CAL-37] The kinds used in the last 60 days first; a new user gets their kind of work's usual order.
             val used = snapshot.entries.filter { !it.date.isBefore(today.minusDays(QuickOrder.DAYS.toLong())) }.flatMap { e -> e.extras.map { it.kindId } }
-            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay })
+            // [PAYX-51] The kind made last comes first until it is first used.
+            val everUsed = snapshot.entries.flatMapTo(HashSet()) { e -> e.extras.map { it.kindId } }
+            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay }, everUsed)
             on + off.take((QUICK_EXTRAS - on.size).coerceAtLeast(0))
         }
     }
+    // 1.39 [WTYP-31] PC 7차: 비상소집 only for a job that is called in (경찰·소방…), or a 비상소집 kind the user made.
+    val payProfile by vm.payProfile.collectAsStateWithLifecycle()
+    val callable = com.bamnat.core.work.Callout.forJob(settings.workStyle, payProfile?.occupation, settings.orgDayGroup, snapshot.kinds)
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
     val log by vm.sleepLog.collectAsStateWithLifecycle()
     // [FLD-01][FLD-02] A day-rate field calendar offers 공수 buttons instead of 일감 적기.
@@ -515,7 +637,7 @@ private fun QuickChips(
         if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
         // 1.32 [WTYP-09] 비번 날 비상소집·동원, one chip (기능 켜고 끄기 `shift.callout`).
         // [SETUP-16] 1.37 PC f42b2eba: without any 근무표 (일근 first setup put off) no day is a 비번 to be called in on.
-        if (!moneyFirst && !day.isWorkDay && (snapshot.hasPattern || !settings.setupLater) && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
+        if (!moneyFirst && !day.isWorkDay && (snapshot.hasPattern || !settings.setupLater) && callable &&
             !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
         ) item { CalloutChip(day, snapshot, vm) }
         // 1.32 [WTYP-11] 희망 오프 on a day to come (기능 켜고 끄기 `shift.wishOff`).
@@ -533,9 +655,7 @@ private fun QuickChips(
                 },
                 label = {
                     // [J133-27] 1.33 (실사용 테스트 "직장인 말은 '야근'인데 칩은 '잔업'"): a weekday worker's own word for it.
-                    val text = if (i >= 0) ExtraText.name(day.extras[i]) else c.label
-                    ChipText(if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && c.kind.id == com.bamnat.core.model.ExtraKind.OVERTIME_ID)
-                        text.replace("잔업", "야근") else text)
+                    ChipText(if (i >= 0) ExtraText.name(day.extras[i], settings.workStyle) else ExtraText.word(c.label, c.kind.id, settings.workStyle))
                 },
                 leadingIcon = {
                     if (i >= 0) Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) else ExtraKindMark(c.kind, size = 18.dp)
@@ -570,7 +690,8 @@ private fun QuickChips(
         if (day.date == today && settings.sleepTips && !moneyFirst) item {
             val asleep = log.firstOrNull { it.end == null } != null
             AssistChip(
-                onClick = { if (asleep) vm.wokeUp() else vm.fellAsleep() },
+                // 1.39 [FLOW-13] 잠들었어요 opens the dark night screen too.
+                onClick = { if (asleep) vm.wokeUp() else { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) } },
                 label = { ChipText(if (asleep) "깼어요" else "잠들었어요") },
                 leadingIcon = { Icon(if (asleep) Icons.Filled.WbSunny else Icons.Filled.Bedtime, null, Modifier.size(18.dp)) },
             )

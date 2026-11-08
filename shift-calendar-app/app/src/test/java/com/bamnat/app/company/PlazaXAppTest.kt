@@ -136,10 +136,14 @@ class PlazaXAppTest {
             api.report("plaza-x-device-0021", "빨간날상사", "", false, "", asExtra)
             api.report("plaza-x-device-0022", "교대상사", "", false, "", shiftNormal)
             // [PLAZA-08] 1.26 (결정 D79): each sender joined its company, so it reads the pay way back.
-            val extraSetup = CompanyClient(base, device = { "plaza-x-device-0021" }).company(api.search("빨간날상사").single().id).setups.single()
-            assertTrue(extraSetup.lines.any { (label, text) -> label == "빨간날 근무" && text == "특근처럼, 밤샘은 시작한 날로" })
-            val normalSetup = CompanyClient(base, device = { "plaza-x-device-0022" }).company(api.search("교대상사").single().id).setups.single()
-            assertTrue(normalSetup.lines.any { (label, text) -> label == "빨간날 근무" && text == "교대제라 상관없음" })
+            // 1.39 [PAYP-01][PAYP-03]: the page says no pay line; the sender takes its version's pay part when putting it in.
+            val extraId = api.search("빨간날상사").single().id
+            val extraPage = CompanyClient(base, device = { "plaza-x-device-0021" }).company(extraId).setups.single()
+            assertTrue(extraPage.lines.none { (label, _) -> label == "빨간날 근무" })
+            val extraSetup = extraPage.copy(text = api.take("plaza-x-device-0021", extraId, extraPage.id)!!)
+            val normalId = api.search("교대상사").single().id
+            val normalPage = CompanyClient(base, device = { "plaza-x-device-0022" }).company(normalId).setups.single()
+            val normalSetup = normalPage.copy(text = api.take("plaza-x-device-0022", normalId, normalPage.id)!!)
             // Another phone: its 주간 has its own id, and the amount a time is its own to fill in.
             val db2 = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
             try {

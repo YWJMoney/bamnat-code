@@ -55,7 +55,7 @@ fun WorkStyle.icon(): ImageVector = when (this) {
 fun WorkStyle.nextStep(company: Boolean = false): String = when (this) {
     WorkStyle.SHIFT -> if (company) "다음: 회사 찾기, 없으면 근무 순서 정하기" else "다음: 근무 순서(패턴) 정하기"
     WorkStyle.DAY -> if (company) "다음: 회사 찾기, 없으면 일하는 요일 정하기" else "다음: 일하는 요일 정하기"
-    WorkStyle.HOURLY -> "다음: 시급 정하기"
+    WorkStyle.HOURLY -> "다음: ‘출근·시급’ 탭에서 시급 넣기"
     WorkStyle.FIELD -> "달력에 일감과 받을 돈을 적어요"
     WorkStyle.BUSINESS -> "달력에 매일 매출과 경비를 적어요"
     WorkStyle.INVEST -> "달력에 매매와 수익을 적어요 · 원금부터 적으면 수익률이 바로 나와요"

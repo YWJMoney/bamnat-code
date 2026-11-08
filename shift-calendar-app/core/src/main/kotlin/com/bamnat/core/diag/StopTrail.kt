@@ -115,6 +115,16 @@ object StopTrail {
     const val START_GRACE_MS = 30_000L
     /** 1.36 PC A21: how long after the screen is made again or changes size (글자 크기, 화면 돌림, 설정 바뀜) the same holds. */
     const val REMADE_GRACE_MS = 10_000L
+    /**
+     * 1.38 PC 9차 (새로 깐 폰에서 시계를 옮긴 뒤 시작 직후 2.7~4.3초 멈춤으로 '멈춰 있던 적' 카드): how long the app had been
+     * running when a [Kind.STALL] or [Kind.NO_DRAW] began (`up=`), by the phone's own uptime, so the start is told apart even
+     * when the wall clock (or the test clock) moved between the [Kind.START] line and the stall.
+     */
+    const val UP_MARK = "up="
+    private val UP = Regex("""(?:^| )up=(\d+)""")
+
+    fun upOf(detail: String): Long? = UP.find(detail)?.groupValues?.get(1)?.toLongOrNull()
+
     /** On a [Kind.STALL] or [Kind.NO_DRAW] line: the screen was being drawn again whole on purpose (`redraw=text`). */
     const val REDRAW_MARK = "redraw="
 
@@ -127,7 +137,7 @@ object StopTrail {
     fun askAboutStuckAt(lines: List<Line>): Long {
         val starts = lines.filter { it.kind == Kind.START }.map { it.atMillis }
         val remades = lines.filter { it.kind == Kind.LAYOUT || it.kind == Kind.MADE && !it.detail.startsWith("first_draw") }.map { it.atMillis }
-        fun expected(l: Line) = REDRAW_MARK in l.detail ||
+        fun expected(l: Line) = REDRAW_MARK in l.detail || upOf(l.detail)?.let { it <= START_GRACE_MS } == true ||
             starts.any { l.atMillis - it in 0..START_GRACE_MS } || remades.any { l.atMillis - it in 0..REMADE_GRACE_MS }
         return (stuckEnds(lines) + lines.filter { it.kind == Kind.NO_DRAW })
             .filterNot(::expected)

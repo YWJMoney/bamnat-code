@@ -75,7 +75,7 @@ private fun rememberInLedger(memo: Memo, prop: MemoProps.Prop?, amount: Long?): 
 internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
     val prop = remember(memo.body) { MemoProps.money(memo) }
     // PC 확인 5c21f3bb ('4500원'이 본문에 있어도 금액이 비어요): with no 금액 칸, the first '…원' in the memo is offered.
-    val amount = prop?.num?.toLong()?.takeIf { it > 0 } ?: remember(memo.title, memo.body) { wonInText(memo.title + "\n" + memo.body) }
+    val amount = prop?.num?.toLong()?.takeIf { it > 0 } ?: remember(memo.title, memo.body) { wonInText(memo.title + "\n" + memo.text) }
     val container = LocalContext.current.appContainer
     val money = container.moneyRepository
     val done = rememberInLedger(memo, prop, amount)

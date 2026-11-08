@@ -19,6 +19,9 @@ class LegalPagesTest {
     // Gradle runs unit tests in the module directory; the site is the repository root.
     private val site = File("../..")
 
+    /** 1.39 [STAT2-02] The events the page in force names: 3.12's life_* come in when 3.12 is published (then count them all). */
+    private val policyEvents = com.bamnat.core.stats.UsageEvent.entries.size - com.bamnat.core.stats.UsageEvent.POLICY_312.size
+
     @Test fun thePrivacyPolicyCoversProAndAds() {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
@@ -94,7 +97,7 @@ class LegalPagesTest {
         listOf("1-9. 사용 통계 보내기 (선택, 동의한 경우만)", "1-10. 근무표 링크 신고 (선택)").forEach { assertTrue(it, text.contains(it)) }
         // 사용 통계: the setting's name, the events the server takes, the days kept on the phone and on the server.
         assertTrue(text.contains("‘사용 통계 보내기’"))
-        assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
+        assertTrue("이벤트 ${policyEvents}가지", text.contains("${policyEvents}가지 이름만"))
         assertTrue("최근 ${com.bamnat.core.stats.UsageBook.RECENT_DAYS}일", text.contains("최근 ${com.bamnat.core.stats.UsageBook.RECENT_DAYS}일"))
         assertTrue("${com.bamnat.core.stats.UsageBook.MAX_DAYS}일 지나면 버림", text.contains("${com.bamnat.core.stats.UsageBook.MAX_DAYS}일이 지나도록 보내지 못한 날은 버립니다"))
         assertTrue(text.contains("400일 뒤 삭제"))
@@ -117,7 +120,9 @@ class LegalPagesTest {
         val rules = File(site, "community/index.html")
         assertTrue("커뮤니티 운영 규칙 페이지가 있어요", rules.exists())
         val r = rules.readText()
-        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION} · 앱 버전 1.22.0"))
+        // 1.39 [CARE-12]: the page is 운영 규칙 2 (marks 3.12), and says that 6·7항 follow 운영 규칙 1 until its 시행일.
+        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION_CARE} · 앱 버전 1.39.0 기준 · 게시일 2026년 11월 9일 · 시행일 2026년 12월 9일"))
+        assertTrue(r.contains("운영 규칙 ${com.bamnat.core.plaza.PlazaRules.VERSION}(2026년 11월 21일 시행)"))
         assertTrue(com.bamnat.core.plaza.PlazaRules.URL.endsWith("/community/"))
         assertTrue(r.contains("제44조의2 제5항") && r.contains("30일 안에") && r.contains("‘이 사람 글 안 보기’"))
         assertTrue(r.contains("최대 ${com.bamnat.core.plaza.HideList.MAX}명"))
@@ -152,7 +157,7 @@ class LegalPagesTest {
         assertTrue(text.contains("최대 ${com.bamnat.app.company.InquiryStore.OUTBOX_MAX}개까지"))
         assertTrue(text.contains("요청 번호의 해시와 서버의 첫 답을 24시간만"))
         // Usage events, as many as the app has.
-        assertTrue("이벤트 ${com.bamnat.core.stats.UsageEvent.entries.size}가지", text.contains("${com.bamnat.core.stats.UsageEvent.entries.size}가지 이름만"))
+        assertTrue("이벤트 ${policyEvents}가지", text.contains("${policyEvents}가지 이름만"))
         assertTrue(text.contains("공지 열기"))
         assertTrue(text.contains("휴대폰 안에서만 맞춰 보며"))
         // [ALRM-15] 1.31: the settings screen only, no permission to ask directly.
@@ -223,7 +228,8 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val c = com.bamnat.core.ops.PolicyConsent
-        assertTrue(c.LAUNCH_EFFECTIVE == java.time.LocalDate.of(2026, 11, 10) && c.LAUNCH_HELD_UNTIL == java.time.LocalDate.of(2026, 11, 24))
+        // 1.38: the app opens on its own day (11-12 by default, 관리자 앱 일정), never before the day the page says (11-10).
+        assertTrue(c.LAUNCH_EFFECTIVE >= java.time.LocalDate.of(2026, 11, 10) && c.LAUNCH_HELD_UNTIL == java.time.LocalDate.of(2026, 11, 24))
         assertTrue(text.contains("처리방침 ${c.LAUNCH_VERSION} · 앱 버전 1.27.0 기준 · 게시일 2026년 10월 27일 · 시행일 2026년 11월 10일"))
         assertTrue(text.contains("원래 알린 날(2026년 11월 24일)까지 결제·광고"))
         assertTrue(text.contains("대표 주기, 맞아요·달라요, 급여 방식 찾기 (선택, 앱 1.27.0부터)"))
@@ -414,7 +420,7 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
-        assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
+        assertTrue(v.effective >= java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
         assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue("3.9 is the newest version line", text.indexOf("처리방침 3.9 ·") < text.indexOf("처리방침 3.8 ·"))
         assertTrue(text.contains("정식 출시 뒤의 개정은 위 기간을 그대로 지킵니다"))
@@ -445,8 +451,12 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.11")!!
-        assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 12, 4))
-        assertTrue(text.contains("처리방침 3.11 · 앱 버전 1.37.0 기준 · 게시일 2026년 11월 4일 · 시행일 2026년 11월 10일"))
+        // 1.38 (사용자 2026-11-07 "처리방침은 오늘 기준으로"): 3.11 is posted and takes effect on 11-07; a phone installed before
+        // waits for its yes or the 30-day notice's end, 12-07.
+        assertEquals(java.time.LocalDate.of(2026, 11, 7), v.posted)
+        assertEquals(java.time.LocalDate.of(2026, 11, 7), v.effective)
+        assertEquals(java.time.LocalDate.of(2026, 12, 7), v.holdEnds)
+        assertTrue(text.contains("처리방침 3.11 ·") && text.contains("게시일 2026년 11월 7일 · 시행일 2026년 11월 7일"))
         assertTrue("3.11 is the newest version line", text.indexOf("처리방침 3.11 ·") < text.indexOf("처리방침 3.10 ·"))
         assertTrue(text.contains("이용자가 ‘내 테마’를 고른 링크만") && text.contains("이용자가 ‘근무 설정’을 고른 링크만"))
         assertTrue(text.contains("공유 서버는 급여 부분이 든 근무 설정을 받지 않음"))

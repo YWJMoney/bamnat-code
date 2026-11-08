@@ -24,6 +24,10 @@ import com.bamnat.core.time.Today
  * [SLP-08] Sleep a watch or the phone measured, read from Health Connect on the phone.
  * Read only and kept in memory: nothing is written to Health Connect or stored by the app, and
  * the read goes to the Health Connect app on the phone, not online.
+ *
+ * 1.38 [SLEEP-09] 헬스 커넥트에 쓰기 (켜기 선택, [HealthSleep.WRITE]): the sleeps 밤낮 knows (taps, 자동, 측정) are written
+ * so other health apps see them; each under its own id, so writing again replaces and never doubles. Ours are left out
+ * when reading back.
  */
 class HealthSleep(private val context: Context, private val clock: () -> Long = Today::millis) {
     enum class State { OFF, UNAVAILABLE, NEEDS_UPDATE, NEEDS_PERMISSION, READY, FAILED }
@@ -88,7 +92,7 @@ class HealthSleep(private val context: Context, private val clock: () -> Long = 
         var page: String? = null
         do {
             val response = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, filter, pageToken = page))
-            response.records.mapTo(out) { r ->
+            response.records.filter { it.metadata.dataOrigin.packageName != context.packageName }.mapTo(out) { r ->
                 val zone = Today.zone()
                 SleepEntry(start = LocalDateTime.ofInstant(r.startTime, zone), end = LocalDateTime.ofInstant(r.endTime, zone), imported = true)
             }
@@ -97,8 +101,44 @@ class HealthSleep(private val context: Context, private val clock: () -> Long = 
         return out
     }
 
+    /** 1.38 [SLEEP-09] Whether writing sleep is allowed. */
+    suspend fun canWrite(): Boolean = sdkStatus() == HealthConnectClient.SDK_AVAILABLE &&
+        runCatching { client.permissionController.getGrantedPermissions().containsAll(WRITE) }.getOrDefault(false)
+
+    /**
+     * 1.38 [SLEEP-09] Writes [sleeps] (finished, the app's own) as sleep sessions; the same sleep again replaces itself
+     * (clientRecordId "bamnat-sleep-<id>"). Returns how many, or -1 when not allowed or it failed.
+     */
+    suspend fun write(sleeps: List<SleepEntry>): Int {
+        if (!canWrite()) return -1
+        val zone = Today.zone()
+        val records = sleeps.filter { it.end != null && !it.imported && it.id > 0 }.map { e ->
+            val start = e.start.atZone(zone); val end = e.end!!.atZone(zone)
+            SleepSessionRecord(
+                startTime = start.toInstant(), startZoneOffset = start.offset,
+                endTime = end.toInstant(), endZoneOffset = end.offset,
+                title = if (e.auto) "밤낮 자동" else "밤낮",
+                metadata = androidx.health.connect.client.records.metadata.Metadata.manualEntry(
+                    clientRecordId = "bamnat-sleep-${e.id}", clientRecordVersion = end.toInstant().toEpochMilli()),
+            )
+        }
+        if (records.isEmpty()) return 0
+        return runCatching { client.insertRecords(records); records.size }.getOrDefault(-1)
+    }
+
+    /**
+     * 1.39 G5 점검 [SLEEP-09]: a sleep deleted in the app goes from Health Connect too, so other apps do not keep a sleep the
+     * user took back. Only the app's own copy (its clientRecordId); nothing when writing is not allowed.
+     */
+    suspend fun forget(id: Long) {
+        if (id <= 0 || !canWrite()) return
+        runCatching { client.deleteRecords(SleepSessionRecord::class, emptyList(), listOf("bamnat-sleep-$id")) }
+    }
+
     companion object {
         const val DAYS = 30L
+        /** 1.38 [SLEEP-09] Asked only when the user turns on 헬스 커넥트에 쓰기. */
+        val WRITE = setOf(HealthPermission.getWritePermission(SleepSessionRecord::class))
         private const val REFRESH_MILLIS = 5 * 60 * 1000L
         private const val MAX_RECORDS = 500
         private const val PROVIDER = "com.google.android.apps.healthdata"

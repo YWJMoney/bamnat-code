@@ -57,7 +57,8 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                 when (step) {
                     is Step.Ask -> "이 정보를 다른 사람이 사용해도 될까요?"
                     is Step.Working -> "나누는 중이에요"
-                    is Step.Made -> "이제 ‘${step.name}’의 대표 주기가 됐어요!"
+                    // 1.38 통합 10차 (올린 뒤에도 '대표 주기가 됐어요!'): a table put up by '우리 회사 근무표 올리기' says it was put up.
+                    is Step.Made -> if (step.pick.firstGiven) "‘${step.name}’ 근무표를 올렸어요" else "이제 ‘${step.name}’의 대표 주기가 됐어요!"
                     is Step.Agreed -> "같은 주기가 이미 있어요"
                     is Step.NeedSite -> "어느 사업장에서 일하세요?"
                     is Step.Waiting -> "나눴어요"
@@ -80,8 +81,12 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Text("‘$company’ 광장에 보내고 있어요")
                     }
-                    is Step.Made -> Text("‘${step.name}’을 찾는 분께 이 주기가 맨 위에 보여요. 맞아요가 쌓이면 더 믿을 수 있게 돼요.",
-                        style = MaterialTheme.typography.bodyLarge)
+                    is Step.Made -> {
+                        Text(if (step.pick.firstGiven) "같은 회사 분이 회사 찾기에서 ‘${step.name}’을 찾으면 지금 바로 맨 위에서 쓸 수 있어요. 맞아요가 쌓이면 더 믿을 수 있게 돼요."
+                            else "회사 찾기에서 ‘${step.name}’을 찾는 분께 바로 맨 위에 보여요. 맞아요가 쌓이면 더 믿을 수 있게 돼요.",
+                            style = MaterialTheme.typography.bodyLarge)
+                        if (step.pick.firstGiven) PublicLaterLine()
+                    }
                     is Step.Agreed -> Text("‘${step.name}’의 대표 주기와 같아서, 새로 올리지 않고 맞아요 한 표를 더했어요.",
                         style = MaterialTheme.typography.bodyLarge)
                     is Step.NeedSite -> {
@@ -95,8 +100,11 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    is Step.Waiting -> Text("‘${step.name}’에는 다른 순서가 대표예요. 같은 곳 분들이 맞아요를 누르면 이 주기가 대표가 돼요.",
-                        style = MaterialTheme.typography.bodyLarge)
+                    is Step.Waiting -> {
+                        Text("‘${step.name}’에는 다른 순서가 대표예요. 같은 곳 분들이 맞아요를 누르면 이 주기가 대표가 돼요.",
+                            style = MaterialTheme.typography.bodyLarge)
+                        if (step.pick.firstGiven) PublicLaterLine()
+                    }
                     is Step.Failed -> Text(step.message, style = MaterialTheme.typography.bodyLarge)
                 }
             }
@@ -114,11 +122,22 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
         },
         dismissButton = {
             when (step) {
-                is Step.Ask -> TextButton(onClick = lead::no) { Text("내 달력에만 쓸게요") }
+                // 1.38 통합 8차: a table put up from '우리 회사 근무표 올리기' may not be in the user's calendar at all.
+                is Step.Ask -> TextButton(onClick = lead::no) { Text(if (step.pick.firstGiven) "올리지 않을게요" else "내 달력에만 쓸게요") }
                 is Step.Working -> Unit
                 is Step.NeedSite -> TextButton(onClick = lead::close) { Text("나누지 않을래요") }
                 else -> TextButton(onClick = lead::close) { Text("닫기") }
             }
         },
     )
+}
+
+/**
+ * 1.38 통합 8차 [CYC-03] ('대표 주기가 됐어요 … 맨 위에 보여요'가 공개 목록에도 바로 보이는 것처럼 읽혀요): coworkers see it now;
+ * the public list (공개 자료) takes it only after the review.
+ */
+@Composable
+private fun PublicLaterLine() {
+    Text("공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요.", style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }

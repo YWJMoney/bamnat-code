@@ -147,13 +147,25 @@ internal object SettingsIndex {
      * [board]: the build has 회사 규칙 광장; [share]: it can make and take links. [company]: [J133-71] the calendar's work has a
      * company (교대·일근, or one already joined), so 회사 찾기·회사 설정 파일 are found; 알바·현장·가게·투자 search without them.
      */
-    fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): List<SettingEntry> =
-        all(board, share, company).filter { fits(it, style) }.map { inWords(it, style) }
+    fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null,
+                /** 1.38 [SLEEP-19] `sleep.auto` and `sleep.sound` open: their switches and cards are found. */
+                sleepAuto: Boolean = true, sleepSound: Boolean = true,
+                /** 1.39 G6 (PC 12.5 가게·현장): 오늘의 흐름 put on the calendar by the user (카드 배치 › 더 보기), so its switch is found. */
+                flowAdded: Boolean = false): List<SettingEntry> =
+        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
 
     /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
-    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry =
-        if (style != com.bamnat.core.work.WorkStyle.HOURLY || "회사 계산 방법" !in e.title) e
-        else e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
+    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry = when {
+        style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
+            e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
+        // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;
+        // where it goes (the row's old name) stays, and the old name still finds it.
+        e.title == "잠금 화면 오늘 근무" || e.title == MOVE_ALL_ALARMS_ROW -> {
+            val word = if (e.title == MOVE_ALL_ALARMS_ROW) com.bamnat.app.ui.shifts.alarmNoun(style) else com.bamnat.app.ui.shifts.lockNoun(style)
+            if (word == "근무") e else e.copy(title = e.title.replace("근무", word), keywords = e.keywords + e.title)
+        }
+        else -> e
+    }
 
     /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
     private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,
@@ -166,19 +178,23 @@ internal object SettingsIndex {
      * [J133-77] 1.33 (유형별 점검: 알바가 '회사'를 찾으면 근태 엑셀이, 가게가 찾으면 연차·급여가 나와요): what the calendar's kind of
      * work has. No kind chosen keeps everything.
      */
-    internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): Boolean {
+    internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?, flowAdded: Boolean = false): Boolean {
+        // 1.39 [PAYX-62] 주 15시간 경계 알림은 알바에만 있어요.
+        if (style != null && style != com.bamnat.core.work.WorkStyle.HOURLY && e.title == com.bamnat.core.pay.WeekHoursNudge.ROW) return false
         if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
-        return e.title !in WAGE_ROWS
+        // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
+        // 1.39 G6: unless the user put it on the calendar themselves.
+        return e.title !in WAGE_ROWS && (flowAdded || e.title != "오늘의 흐름 보기")
     }
 
-    private fun all(board: Boolean, share: Boolean, company: Boolean): List<SettingEntry> = listOfNotNull(
+    private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
         screen(W.title, "일하는 방식", SettingsGo.WORK_STYLE, "근무 형태", "교대", "일근", "시급", "현장", "프리랜서", "자영업", "가게"),
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
             "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
         screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게"),
-        screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산"),
+        screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산", "교육", "교육 시수", "근무별 시수"),
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
         screen(W.title, "한 달 근무 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "듀티표 넣기", "직접 입력", "키패드", "반차", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",
             // [IMPORT-03]
@@ -208,14 +224,23 @@ internal object SettingsIndex {
         row(N, "퇴근 후 잠들기까지", "출퇴근", "씻는 시간", "퇴근"),
         row(N, "워치·휴대폰 수면 기록 함께 보기", "헬스 커넥트", "갤럭시 워치", "삼성 헬스", "워치", "수면 측정"),
         screen(N.title, "수면 기록 보기", SettingsGo.SLEEP, "수면 기록", "잠든 시간", "잠들었어요", "깼어요"),
+        // 1.38 [SLEEP-19] 수면 도약의 새 스위치와 화면.
+        row(N, com.bamnat.app.ui.sleep.SLEEP_AUTO_ROW, "자동 수면", "수면 감지", "잠 자동", "자동 기록", "활동 인식").takeIf { sleepAuto },
+        row(N, HEALTH_WRITE_ROW, "헬스 커넥트", "삼성 헬스", "수면 내보내기", "다른 건강 앱"),
+        row(N, SLEEP_DND_ROW, "방해 금지", "무음", "중요한 알림만", "잘 때 알림 끄기"),
+        screen(N.title, "잠드는 소리", SettingsGo.SLEEP, "백색 소음", "빗소리", "파도", "수면 소리", "자장가", "소음"),
+        screen(N.title, "자는 동안 소리 재기", SettingsGo.SLEEP, "코골이", "잠꼬대", "이갈이", "기침", "녹음", "측정 시작").takeIf { sleepSound },
+        screen(N.title, "깨우는 구간", SettingsGo.SLEEP, "스마트 알람", "얕은 잠", "일찍 깨우기", "스마트 기상").takeIf { sleepSound },
+        screen(N.title, "근무 맞춤 회복 도전", SettingsGo.SLEEP, "도전", "21일", "수면 챌린지"),
         row(N, "휴식 점검", "11시간", "연속 야간", "휴식"),
         // [REST-01] The limits sheet, also opened from the calendar's check card.
-        row(N, "근무표 점검 기준", "병원 기준", "나이트 뒤 쉬는 날", "연속 나이트", "한 달 나이트", "연속 근무", "N-O-D", "나오데", "이브데이", "점검 끄기"),
+        row(N, "근무표 점검 기준", "병원 기준", "야간 뒤 쉬는 날", "연속 야간", "한 달 야간", "나이트 뒤 쉬는 날", "연속 나이트", "한 달 나이트", "연속 근무", "N-O-D", "나오데", "이브데이", "점검 끄기"),
         row(N, "한 주 근무 경고", "64시간", "근무시간 경고", "주 52시간"),
         row(N, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
         // 1.32 [WTYP-16]
         row(N, "퇴근 시각 알림", "지금 퇴근", "퇴근 버튼", "잔업 기록", "야근 기록", "퇴근 알림"),
         row(N, "퇴근 뒤 가계부 정리 알림", "하루 마감", "가계부 알림", "지출 적기 알림", "오늘 쓴 돈", "정리 알림"),
+        row(N, "근무 전 한 줄 예고", "근무 전날 알림", "내일 돈 예고", "근무 날 지출", "야간 지출 예고"),
         // 1.32 [WTYP-12]
         row(N, "연속 근무 경고", "전공의", "연속 24시간", "주 80시간", "평균 72시간", "당직", "36시간"),
         row(N, "하루 브리핑", "커피", "낮잠 알림", "알림"),
@@ -225,15 +250,19 @@ internal object SettingsIndex {
         row(N, "나갈 돈·받을 돈", "고정비", "미수금", "돈 알림", "받을 돈"),
         // D 1.32 [PAYA-05]
         row(N, "급여 입금 비교", "월급 들어옴", "급여 알림", "입금 비교", "월급날 알림"),
+        // 1.39 [PAYX-62] 알바만(fits).
+        row(N, com.bamnat.core.pay.WeekHoursNudge.ROW, "주휴", "주휴수당", "15시간", "주 15시간", "쪼개기"),
         row(N, "연차 사용 촉진 알림", "연차", "휴가 알림", "연차 소멸 안내", "소멸", "사용 촉진"),
         // [LEAVE-06]
         screen(P.title, "연차", SettingsGo.LEAVE, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
+        // 1.39 [NTC-04]
+        row(N, "알림 한눈에", "알림 목록", "겹치는 알림", "중복 알림", "알림 정리", "켜 둔 알림", "알림 규칙", "알림 두 개"),
         row(N, "알람 뒤 오늘 카드", "오늘 카드", "알람 끈 뒤", "이번 주 시간", "52시간"), // [ALRM-16] 1.31
         row(N, "밤낮 소식", "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안", "답장 알림", "문의 답", "신고 결과",
             "받은 근무표 바뀜", "동료 근무 바뀜"), // [COMM-10][SRV-10]
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
-        screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "급여일", "시급", "명세서", "통상임금",
+        screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "시급", "명세서", "통상임금",
             // [SET-03] 1.22 묶음 A·C·D: what is set in the pay settings.
             "부양가족", "자녀 수", "간이세액", "공무원 봉급", "계급", "호봉", "호봉표", "탄력근무", "포괄임금", "연차 세는 기준", "회계연도"),
         row(P, "광장 시세와 내 단가 견주기", "시세", "일당", "시급 비교", "임금표"), // [DAILY-16]
@@ -254,6 +283,8 @@ internal object SettingsIndex {
         row(C, "휴대폰 배경색에 맞추기", "색", "배경화면", "앱 색"),
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),
         row(C, "날짜 칸 아래", "음력", "근무시간 표시", "날짜 밑"),
+        row(C, "날짜 칸에 일감·메모 여러 줄", "칸에 일정", "일정 여러 줄", "메모 잘림", "일감 이름 잘림", "줄마다", "테마 입으면 메모 안 보임"),
+        row(C, "우리 업종 기념일", "기념일", "소방의 날", "경찰의 날", "업종의 날"), // [EASE-04] 1.38
         row(C, CAL_THEME_ROW, "달력 테마", "토요일 색", "일요일 색", "공휴일 색", "오늘 색", "칸 색칠", "근무 날 칸", "꾸미기"), // [RCP-09] 1.34
         row(A, com.bamnat.app.logic.LOGIC_ROW, "규칙", "수식", "조건", "만약", "자동", "단추", "버튼", "이럴 때", "인수인계", "체크 초기화", "메모 틀", "자동 기록"), // [RUL-06] 1.36
         row(C, PHOTO_LOOK_ROW, "사진 꾸미기", "배경 사진", "달력 배경", "머리 그림", "근무 사진", "근무 아이콘", "위젯 사진", "모서리", "버튼 모양", "둥글게", "각지게", "테마 사진"), // [RCX-30] 1.35
@@ -275,6 +306,11 @@ internal object SettingsIndex {
         screen("스튜디오 › 앱 전체 › 부품", "부품 움직임", SettingsGo.STUDIO_PARTS, "움직임", "효과", "부품 효과", "애니메이션", "흔들림", "깜빡임", "부품", "animation"),
         row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
         row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
+        row(C, "밤 색", "밤 모드", "야간 모드", "어두운 색", "붉은 색", "눈부심", "잘 시간", "새벽", "밤에 어둡게", "다크 모드", "수면 화면만"), // 1.39 [FLOW-14][DSG-07]
+        row(C, "칸이 보이기", "칸이", "캐릭터", "마스코트", "그림 친구", "캐릭터 끄기"), // 1.38 [FLOW-26]
+        row(C, "하루 이야기 줄", "하루 이야기", "타임라인", "시간 순서", "하루 흐름", "이야기 줄 끄기", "하루 이야기 카드", "달력 아래 하루 이야기"), // 1.38 [FLOW-08]
+        row(C, "하루 다이얼", "다이얼", "24시간 원", "시계", "하루 원"), // 1.39 [FLOW-28]
+        row(C, "하루 시작 시각", "하루 시작", "새벽 4시", "자정", "날짜 바뀌는 시각", "어제로"), // 1.39 [FLOW-30]
         row(C, "날짜 밑에 그날 쓴 돈", "지출 표시", "쓴 돈", "달력에 지출", "하루 지출"), // E 1.32 [LEDX-07]
         row(C, "지출 히트맵", "히트맵", "많이 쓴 날", "지출 색", "소비 패턴"), // 1.32 [LEDX-23]
         row(C, "큰 지출을 근무 시간으로", "근무 시간 환산", "몇 시간 일한 돈", "시급으로 보기", "공수"), // 1.37 [LEDH-07]
@@ -288,20 +324,23 @@ internal object SettingsIndex {
         row(C, "하루 화면 순서", "순서 바꾸기", "하루 화면"),
         row(D, "백업 저장", "백업", "휴대폰 바꾸기", "옮기기", "암호", "저장"),
         row(D, "백업 안 한 지 30일 알림", "백업 알림", "마지막 백업", "백업 언제", "기록 잃어버림"), // 1.32 [STAB-08]
-        row(D, "사진도 백업", "사진", "영수증 사진", "계약서 사진", "백업 크기"), // [BACK-01]
+        row(D, "사진도 백업", "사진", "영수증 사진", "계약서 사진", "메모 사진", "백업 크기"), // [BACK-01]
         row(D, "파일 불러오기", "복원", "백업 불러오기", "되돌리기"),
         row(D, "최근 지운 기록", "휴지통", "되돌리기", "지운 달력", "실수로 지움", "복구"), // [UNDO-01]
         screen(D.title, "캘린더에서 가져오기", SettingsGo.CALENDAR_IMPORT, "삼성 캘린더", "구글 캘린더", "가져오기", "일정"),
+        row(D, "다른 앱에서 옮기기", "갈아타기", "다른 앱", "옮기기", "근무 앱 캡처", "화면 캡처", "스크린샷", "앱 바꾸기"), // [GROW-05]
         row(D, AUTO_BACKUP_ROW, "자동 백업", "매일 백업", "구글 드라이브", "드라이브", "클라우드", "백업 자동"), // [PROV-03]
         row(D, "캘린더 앱으로 내보내기", "ics", "구글 캘린더", "내보내기"),
         row(D, "휴대폰 캘린더에 근무 쓰기", "구글 캘린더", "삼성 캘린더", "캘린더 연동", "캘린더에 쓰기", "동기화"), // [FEAT-07]
         row(D, GROUP_ROW, "모임 코드", "조 근무표", "동료 근무표 모아", "나란히 보기", "팀 근무표").takeIf { share }, // [SHR-14]
         row(D, CUT_ALL_ROW, "링크 지우기", "공유 끊기", "링크 모두 끊기", "공유 그만", "링크 삭제").takeIf { share }, // [SHR-13]
+        row(D, EXPORT_MARK_ROW, "워터마크", "로고", "밤낮 글자", "사진 표시", "견적서 표시", "표시 끄기"), // 1.39 [SPREAD-05]
         row(V, "개인정보 처리방침", "개인정보", "처리방침"),
         row(V, SENT_ROW, "보낸 정보", "모두 지우기", "정보 삭제", "삭제", "탈퇴", "계정 삭제", "내 정보 지우기", "프로필 지우기", "마을 지우기", "거두기").takeIf { board }, // [PRF-05]
         row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]
         screen(A.title, "서버 연결 점검", SettingsGo.DIAGNOSTICS, "서버 연결", "인터넷", "보내지 못함", "연결 확인", "서버 상태"), // [ALRM-02]
         row(V, "앱 잠금", "잠금", "지문", "얼굴", "비밀번호", "PIN", "생체 인증", "숨기기"),
+        row(V, "금액 가리기", "금액 숨기기", "돈 가리기", "금액 안 보이게", "잔액 숨기기", "월급 가리기", "가리기", "눈 단추"), // 1.38 PC 12.2
         row(V, "알림 허용", "알림 권한", "권한", row = "알림"),
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
@@ -311,7 +350,7 @@ internal object SettingsIndex {
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
         row(V, "이용약관", "약관", "환불 규정", "청약철회", "구독 약관"),
-        row(V, FORGET_ALL_ROW, "모두 지우기", "보낸 정보 지우기", "삭제", "탈퇴", "데이터 지우기", "서버에서 지우기", "문의 지우기"), // 1.36 [INQ-07]
+        row(V, FORGET_ALL_ROW, "모두 지우기", "보낸 정보 지우기", "삭제", "탈퇴", "데이터 지우기", "서버에서 지우기", "문의 지우기", "공유 링크 지우기", "링크 모두 끊기"), // 1.39 [PRIV-06] // 1.36 [INQ-07]
         row(V, "사업자 정보", "사업자", "통신판매업", "사업자등록번호", "판매자", "대표자", "회사 정보", "주소", "전화번호"), // 1.36 [MON-12]
         // [GUIDE-05] Every switch of a feature that can be off, in one place.
         // [ONBOARD-04][SIMPLE-02] The recommended features on one screen, and where each is turned off.
@@ -331,6 +370,9 @@ internal object SettingsIndex {
         screen(W.title, "근무표 사진이 안 읽힐 때", SettingsGo.DUTY_ROSTER, "사진 인식", "인식 안 돼", "어느 줄", "내 조", "사진 위에서 누르기", "무엇을 읽었는지", "기울어진 사진"),
         screen("급여", "명세서·회사 계산 방법 사진", SettingsGo.PAY, "명세서 사진", "두 장", "회사 계산 방법", "취업규칙 사진", "수당표"),
         // 1.25 묶음 AB
+        // [EASE-17][EASE-21] 1.38: the card on top of 설정 › 알람.
+        row(A, GUARD_ROW, "알람 미리 점검", "알람 안 울릴까", "알람 경고", "알람 지키기", "소리 0"), // [ALRM-27]
+        row(A, SKIP_ONCE_ROW, "이번만", "한 번만 끄기", "다음 알람", "다음 알람 건너뛰기", "알람 쉬기", "알람 준비", "알람 안 울림", "알람 믿음"),
         row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
@@ -341,8 +383,11 @@ internal object SettingsIndex {
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
         // ---- 1.25 묶음 X [PLAZA-06] ----
         row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
+        // [EASE-27] 1.38 내 규칙 한눈에.
+        row(W, RULE_CARDS_ROW, "규칙", "내 규칙", "조건", "공휴일 규칙", "알람 조건", "수당 조건", "문장"),
         // ---- 1.26 묶음 AD [NAV-07] ----
-        row(C, TAB_ORDER_ROW, "첫 화면", "메뉴 순서", "시작 화면", "탭", "탭 순서", "메인 화면", "처음 화면", "메뉴 바꾸기", "메모부터"),
+        row(C, TAB_ORDER_ROW, "첫 화면", "메뉴 순서", "시작 화면", "탭", "탭 순서", "메인 화면", "처음 화면", "메뉴 바꾸기", "메모부터",
+            "아래 메뉴", "탭 채우기", "묶음", "모음", "중첩 탭", "탭 안에 탭", "자주 쓰는 기능"),
         // ---- 1.26 묶음 AC [SPAT-02] ----
         screen("${W.title} › 근무 주기", "회사 이름으로 근무주기 찾기", SettingsGo.PATTERN, "회사 근무주기", "공개 자료", "근무주기 검색", "회사 검색",
             "4조 2교대", "3조 2교대", "교대 주기", "처음 제공").takeIf { company },

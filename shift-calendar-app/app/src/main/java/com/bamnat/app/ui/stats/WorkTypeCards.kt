@@ -137,7 +137,10 @@ internal fun WorkTypeMoreCards(
         FeatureCard("pay.tenure", calendarId) { TenureCard(t) }
     }
     // [LEAVE-04] 징검다리 for every kind of work that takes leave.
-    if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {
+    // 12차 빈틈 2: not for a 5인 미만 workplace, which has no 연차 by law (연차 화면 says so). The 연차 화면 still shows it
+    // when the company gave days.
+    val takesLeave = profile?.fiveOrMoreEmployees != false
+    if (takesLeave && (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY)) {
         FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot, style) }
     }
 }
@@ -162,7 +165,7 @@ private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTota
         }
         Spacer(Modifier.height(12.dp))
         // [STAT-07] Not the 야 badge's count (1.23 점검 중-5): work into 22~06시, 대근 included, under its own name.
-        val night: @Composable (Modifier) -> Unit = { StatTile("밤 시간 근무", "${tally.nights}번", it, caption = "22~06시에 걸침 · 대근 포함") }
+        val night: @Composable (Modifier) -> Unit = { StatTile("밤 시간 근무", "${tally.nights}번", it, caption = ShiftMonth.nightCaption(tally)) }
         val pay: @Composable (Modifier) -> Unit = { StatTile("예상 급여", payTotal?.let { p -> Fmt.won(p) } ?: "-", it, caption = "세전") }
         // [VIS-05] With large text the two tiles stand one under the other: half a 320dp phone cut the caption.
         if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
@@ -234,8 +237,7 @@ private fun DayFirstCard(
         (1..month.lengthOfMonth()).mapNotNull { snapshot.resolver.resolve(month.atDay(it)).leave }.filter { it.kind.annual }.sumOf { it.days }
     }
     val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
-    val takeHome = payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
+    val takeHome = payTotal?.takeIf { mode != null }?.let { TakeHome.of(profile, month, it, mode!!, nonTaxable) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -263,7 +265,13 @@ private fun DayFirstCard(
         if (YearMonth.from(today) == month) {
             val week = remember(snapshot, today) { com.bamnat.core.hours.WorkHoursCalculator(snapshot.resolver, java.time.DayOfWeek.MONDAY).week(today) }
             // PC f42b2eba: the same limit as the 주별 근무시간 lines on this screen.
-            (weekLimitHours ?: legalWeekHours(profile))?.let { HoursBar("이번 주 근무", week.totalMinutes, it) }
+            // 1.39 발굴 (PC 5c4ad849 '40시간 / 64시간, 64가 뭔지 말이 없어요'): the limit says where it comes from.
+            val legal = legalWeekHours(profile)
+            (weekLimitHours ?: legal)?.let { limit ->
+                HoursBar("이번 주 근무", week.totalMinutes, limit,
+                    note = if (legal != null && limit == legal) "근로기준법 한 주 한도 ${limit}시간" + (if (limit != 52) " (탄력·특례)" else " (40시간 + 연장 12시간)")
+                    else "내가 정한 '한 주 근무 경고' ${limit}시간 · 설정 › 알림과 잠 › 근무시간 경고에서 바꿔요")
+            }
         }
         com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
             HoursBar("${month.monthValue}월 시간외", summary.extraMinutes, cap)
@@ -278,6 +286,7 @@ private fun DayFirstCard(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            com.bamnat.app.ui.pay.TakeHomeNotes(r, profile, month)
             // [PAYX-23] The pension line is this month's pay, the bill last year's.
             if (mode == TaxMode.INSURANCE_4) Text(TakeHome.PENSION_NOTE, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -307,6 +316,8 @@ private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
         }
         Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.39 [PAYX-59] 만 60세 이상·65세 이후 고용·주 15시간 미만: 그 보험은 떼지 않아요.
+        com.bamnat.app.ui.pay.InsuranceOffRow(profile.insuranceOff) { off -> set { it.copy(insuranceOff = off) } }
     }
 }
 
@@ -332,8 +343,7 @@ private fun PayGapCard(
         value = payTotal?.let { runCatching { takeHome(it, month) }.getOrNull() }
     }
     val fromRecords = learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED
-    val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
+    val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.of(profile, month, it, mode!!, nonTaxable).net }
     val basisLabel = if (fromRecords) "내 ${if (style == WorkStyle.HOURLY) "급여" else "월급"} 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
     val payDate = profile?.period?.payDate(month)
     val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
@@ -394,8 +404,7 @@ private fun PayGapCard(
                     TextButton(onClick = {
                         if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT) || com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
                             val gross = payTotal ?: return@launch
-                            val ded = TakeHome.estimate(gross, mode ?: TaxMode.NONE, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-                                nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).deductions
+                            val ded = TakeHome.of(profile, month, gross, mode ?: TaxMode.NONE, nonTaxable).deductions
                             com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
                                 "bamnat-덜받은돈-$month.pdf")
                         } else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT)
@@ -448,7 +457,9 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
 
 /** 1.32 [WTYP-26] "n / 52시간" with a bar, red past the limit. */
 @Composable
-internal fun HoursBar(label: String, minutes: Int, limitHours: Int) {
+internal fun HoursBar(label: String, minutes: Int, limitHours: Int,
+                      /** 1.39 발굴: what the limit is (법 한도인지, 내가 정한 경고인지), under the bar. */
+                      note: String? = null) {
     val cal = LocalCalendarColors.current
     val over = minutes > limitHours * 60
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).semantics(mergeDescendants = true) {}) {
@@ -462,6 +473,8 @@ internal fun HoursBar(label: String, minutes: Int, limitHours: Int) {
             color = if (over) cal.warning else MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         )
+        if (note != null) Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp))
     }
 }
 

@@ -67,4 +67,13 @@ class FeatureGuideTest {
         val idea = FeatureSearch.ideaText(" 주식 계좌 ", WorkStyle.HOURLY)
         assertTrue(idea, idea.contains("찾던 기능: 주식 계좌") && idea.contains(WorkStyle.HOURLY.label))
     }
+    /** 1.39 8차 PC: '잠' in 설정 찾기 (기능 3개) finds 수면 기록 first for every kind of work, before its parts that start with 잠. */
+    @Test
+    fun sleepFindsTheSleepLogFirst() {
+        for (style in listOf(null) + WorkStyle.entries) {
+            val found = FeatureSearch.search("잠", style, limit = 3).map { it.id }
+            assertEquals("$style: $found", "sleep.log", found.firstOrNull())
+        }
+        assertEquals("sleep.log", FeatureSearch.search("수면", WorkStyle.DAY, limit = 3).firstOrNull()?.id)
+    }
 }

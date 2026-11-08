@@ -1,0 +1,1765 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 레이더 지출 관제",
+   "summary": "관제 모니터처럼 검은 가계부, 근무 다섯 시간어치 넘는 지출은 주황 경보",
+   "desc": "가계부가 관제실 모니터가 되어 금액이 초록 형광으로 떠요. 지출 한 줄이 근무 다섯 시간어치를 넘으면 금액이 주황으로 굵어져요. 쓴 돈을 일한 시간으로 느껴요. 하루 쓴 돈이 많은 날은 날짜 띠 아래 붉은 선이 그어져요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 관제 모니터 가계부\n· 초록 형광 금액\n· 지출 = 근무 시간\n· 많이 쓴 날 붉은 선\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF06100D|fl:pt.grid.FF123326.FF06100D.70.0|cd:FF0B1A15|ik:FFD8FFE9|ac:FF35F08F|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4278917653,
+       "r": 6,
+       "ink": 4292411369
+      },
+      {
+       "id": "money.day",
+       "fill": 4278917653,
+       "r": 6,
+       "padX": 12,
+       "font": "spacemono",
+       "ink": 4292411369,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 6
+      },
+      {
+       "id": "money.amount",
+       "font": "spacemono",
+       "weight": 800,
+       "tshadow": 6,
+       "tshadowC": 4281725071,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "when": "지출근무시간 >= 5",
+       "ink": 4293880832,
+       "weight": 900
+      },
+      {
+       "id": "money.day",
+       "when": "지출 >= 40000",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294922834
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,shiftspend,pace,recent"
+    }
+   ],
+   "cover": {
+    "a": 4278587405,
+    "b": 4281725071,
+    "dir": 2,
+    "emoji": "📡"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "근무별 소비 막대",
+   "summary": "근무별 소비 카드가 맨 위, 많이 쓴 날 붉은 선",
+   "desc": "야간 다음 날과 쉬는 날 소비가 어떻게 다른지 카드로 먼저 보여요. 하루 쓴 돈이 많은 날은 날짜 띠 아래 붉은 선이 그어져요. 지출 한 줄이 근무 다섯 시간어치를 넘으면 금액이 주황으로 굵어져요. 쓴 돈을 일한 시간으로 느껴요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 근무별 소비 먼저\n· 많이 쓴 날 붉은 선\n· 지출 = 근무 시간\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFFFFFF|cd:FFF4F6FB|ik:FF14161F|ac:FF3D5AFE|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294244091,
+       "r": 12,
+       "ink": 4279506463
+      },
+      {
+       "id": "money.day",
+       "fill": 4294244091,
+       "r": 12,
+       "padX": 12,
+       "font": "robotomono",
+       "ink": 4279506463,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "robotomono",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.day",
+       "when": "지출 >= 50000",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "when": "지출근무시간 >= 5",
+       "ink": 4293880832,
+       "weight": 900
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "shiftspend,hero,upcoming"
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4282211070,
+    "dir": 2,
+    "emoji": "🕒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오로라 유리 가계부",
+   "summary": "흐르는 오로라 위 유리 날짜 띠, 들어온 날은 띠가 빛나요",
+   "desc": "가계부 뒤로 오로라가 흐르고 날짜 띠는 김 서린 유리예요. 돈이 들어온 날은 날짜 띠가 초록 테두리로 빛나요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요. 이달 들어온 돈이 쓴 돈보다 많으면 맨 위 머리에 초록 테두리가 둘러져요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 오로라 바탕\n· 유리 날짜 띠\n· 들어온 날 초록 띠\n· 큰 지출 줄 강조\n· 남는 달 초록 테\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF0A0F24|fl:sh.aurora.FF0A0F24,FF1B6B6B,FF3C2B7A.1|cd:FF121A38|ik:FFF0F4FF|ac:FF5EF2C2|ft:gowundodum"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4279376440,
+       "r": 18,
+       "ink": 4293981439
+      },
+      {
+       "id": "money.day",
+       "paint": "gl.80121A38.18",
+       "r": 12,
+       "padX": 12,
+       "font": "comfortaa",
+       "ink": 4293981439,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "comfortaa",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4284412610,
+       "motion": "glow"
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 50000",
+       "fill": 4294933154,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4294933154,
+       "lineA": 50,
+       "r": 10
+      },
+      {
+       "id": "money.head",
+       "when": "이달수입 > 이달지출",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4284412610
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,ahead,budget,recent"
+    }
+   ],
+   "cover": {
+    "a": 4278849316,
+    "b": 4284412610,
+    "dir": 2,
+    "emoji": "🌌"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "돋보기 없는 가계부",
+   "summary": "금액이 크고 줄 간격이 넉넉한, 돋보기 없이 읽는 가계부",
+   "desc": "금액이 크고 줄 사이가 넉넉해 한눈에 읽혀요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요. 돈이 들어온 줄은 초록 기운이 깔려요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 큰 금액\n· 넉넉한 줄\n· 큰 지출 줄 강조\n· 수입 줄 초록\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFFFFFF|cd:FFF6F6F6|ik:FF111111|ac:FF1B3A8C|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "big"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294375158,
+       "r": 10,
+       "ink": 4279308561
+      },
+      {
+       "id": "money.day",
+       "fill": 4294375158,
+       "r": 10,
+       "padX": 12,
+       "font": "notosanskr",
+       "ink": 4279308561,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 10
+      },
+      {
+       "id": "money.amount",
+       "font": "notosanskr",
+       "weight": 800,
+       "size": 18
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 50000",
+       "fill": 4293212469,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293212469,
+       "lineA": 50,
+       "r": 10
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4281245275,
+       "fillA": 16,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,shiftspend,pace,recent"
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4279974540,
+    "dir": 2,
+    "emoji": "🔠"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "에디토리얼 가계부",
+   "summary": "잡지 지면처럼 큰 세리프 금액, 붉은 가는 선만 남긴 가계부",
+   "desc": "금액이 잡지 표지처럼 큰 세리프로 서고 줄 사이엔 붉은 가는 선만 남아요. 이달 쓴 돈이 한 달 예산(넣을 때 정해요)을 넘으면 맨 위 머리에 붉은 테두리가 둘러져요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요.\n누구에게 좋아요: 평일 출근하는 직장인\n적용하면 바뀌는 것:\n· 세리프 금액\n· 붉은 가는 선\n· 예산 넘은 달 붉은 테\n· 큰 지출 줄 강조\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFBFAF6|fl:tx.paper.FFFBFAF6.16|cd:FFFFFFFF|ik:FF1C1C1C|ac:FFC0392B|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 6,
+       "ink": 4280032284
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 6,
+       "padX": 12,
+       "font": "dmserif",
+       "ink": 4280032284,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 6,
+       "line": "solid",
+       "lineW": 0.5,
+       "lineC": 4290787627,
+       "lineA": 40
+      },
+      {
+       "id": "money.amount",
+       "font": "dmserif",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.head",
+       "when": "이달지출 > 칸(\"한 달 예산\", 2000000)",
+       "line": "solid",
+       "lineW": 2.5,
+       "lineC": 4293212469
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4290787627,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4290787627,
+       "lineA": 50,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,budget,upcoming,cardbill"
+    }
+   ],
+   "cover": {
+    "a": 4294703862,
+    "b": 4290787627,
+    "dir": 2,
+    "emoji": "🗓️"
+   },
+   "inputs": [
+    {
+     "label": "한 달 예산",
+     "kind": "money",
+     "min": 0,
+     "default": 2000000,
+     "hint": "이달 쓸 돈의 한도",
+     "id": "i1"
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "카드값 미리 보는 장부",
+   "summary": "다음 카드값·카드 공제 카드 먼저, 큰 지출은 남색 테두리",
+   "desc": "남색 스트랩 줄무늬 머리 아래 카드값 카드가 먼저 서요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요. 월급날이 사흘 안으로 다가오면 맨 위 합계 머리가 반짝여요.\n누구에게 좋아요: 평일 출근하는 직장인\n적용하면 바뀌는 것:\n· 줄무늬 머리\n· 큰 지출 줄 강조\n· 월급 사흘 전 반짝\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFEEF1F7|cd:FFFFFFFF|ik:FF121A2E|ac:FF24408E|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "paint": "pt.stripes.FF24408E.FF1B3170.120.0",
+       "r": 14,
+       "ink": 4294967295
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 12,
+       "padX": 12,
+       "font": "montserrat",
+       "ink": 4279376430,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "montserrat",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4280565902,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4280565902,
+       "lineA": 50,
+       "r": 10
+      },
+      {
+       "id": "money.head",
+       "when": "월급까지 >= 0 그리고 월급까지 <= 3",
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,card25,cardbill,recent"
+    }
+   ],
+   "cover": {
+    "a": 4293849591,
+    "b": 4280565902,
+    "dir": 2,
+    "emoji": "🪪"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "경비 정산 표",
+   "summary": "표 판으로 보는 업무 경비, 큰 지출 줄 강조",
+   "desc": "가계부가 정산 표처럼 줄 맞춰 놓여요. 표 판에서도 큰 지출 줄은 붉은 기운이 깔려요. ‘교통’ 줄은 그 색 테두리로 바로 보여요.\n누구에게 좋아요: 평일 출근하는 직장인\n적용하면 바뀌는 것:\n· 표 판\n· 표 큰 지출 강조\n· 교통 줄 색\n주의할 점: 가계부 모양과 분류·예산 틀을 더해요. 적은 돈 기록은 그대로이고, 분류·예산은 넣은 뒤 내 것으로 고쳐요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFF4F5F7|cd:FFFFFFFF|ik:FF1A1D23|ac:FF2B6CB0|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "tabView",
+     "money": "table"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 8,
+       "ink": 4279901475
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 8,
+       "padX": 12,
+       "font": "robotomono",
+       "ink": 4279901475,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 8
+      },
+      {
+       "id": "money.amount",
+       "font": "robotomono",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.table.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 30000",
+       "fill": 4293212469,
+       "fillA": 14
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"교통\"",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4281035952,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,budget,upcoming,cardbill"
+    },
+    {
+     "kind": "ledger",
+     "costs": [
+      "점심",
+      "카페",
+      "교통",
+      "경조사",
+      "자기계발",
+      "생활",
+      "통신",
+      "구독",
+      "쇼핑"
+     ],
+     "incomes": [
+      "급여",
+      "상여",
+      "부수입"
+     ],
+     "budgets": [
+      {
+       "category": "점심",
+       "amount": 200000
+      },
+      {
+       "category": "카페",
+       "amount": 60000
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294243831,
+    "b": 4281035952,
+    "dir": 2,
+    "emoji": "📋"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "영수증 가계부",
+   "summary": "감열지 영수증처럼 점선으로 끊긴 가계부, 시간어치 지출은 주황",
+   "desc": "가계부 줄마다 영수증 점선이 지나가고 금액은 고정폭 숫자예요. 지출 한 줄이 근무 다섯 시간어치를 넘으면 금액이 주황으로 굵어져요. 쓴 돈을 일한 시간으로 느껴요. 돈이 들어온 줄은 초록 기운이 깔려요.\n누구에게 좋아요: 시간제로 일하는 알바·파트타이머\n적용하면 바뀌는 것:\n· 영수증 점선 줄\n· 고정폭 금액\n· 지출 = 근무 시간\n· 수입 줄 초록\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFF2F1EE|cd:FFFFFFFF|ik:FF222222|ac:FF0F9D58|ft:nanumgothiccoding"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 2,
+       "ink": 4280427042,
+       "line": "dash",
+       "lineW": 1.5,
+       "lineC": 4279213400
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 2,
+       "padX": 12,
+       "font": "vt323",
+       "ink": 4280427042,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 2,
+       "line": "dash",
+       "lineW": 1,
+       "lineC": 4290624957
+      },
+      {
+       "id": "money.amount",
+       "font": "vt323",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "when": "지출근무시간 >= 5",
+       "ink": 4293880832,
+       "weight": 900
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4279213400,
+       "fillA": 16,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,income,ahead,recent"
+    }
+   ],
+   "cover": {
+    "a": 4294111726,
+    "b": 4279213400,
+    "dir": 2,
+    "emoji": "🧾"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "픽셀 코인 가계부",
+   "summary": "8비트 게임 화면 같은 가계부, 무지출 날은 초록 칸",
+   "desc": "가계부 달력 판이 게임 맵처럼 네모 칸으로 서요. 가계부 달력 판에서 한 푼도 안 쓴 지난날은 초록 칸이 돼요. 가계부 달력 판에서 쓴 돈이 많은 날일수록 칸이 노랑 → 주황 → 빨강으로 물들어요.\n누구에게 좋아요: 시간제로 일하는 알바·파트타이머\n적용하면 바뀌는 것:\n· 8비트 달력 판\n· 무지출 날 초록 칸\n· 가계부 달력 열지도\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF1B1B2F|fl:pt.grid.FF24244A.FF1B1B2F.60.0|cd:FF25254A|ik:FFF4F4F4|ac:FF5BFF7A|ft:nanumgothiccoding"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "tabView",
+     "money": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4280624458,
+       "r": 0,
+       "ink": 4294243572
+      },
+      {
+       "id": "money.day",
+       "fill": 4280624458,
+       "r": 0,
+       "padX": 12,
+       "font": "pressstart",
+       "ink": 4294243572,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 0
+      },
+      {
+       "id": "money.amount",
+       "font": "pressstart",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.cal.cell",
+       "r": 0,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4284219258,
+       "lineA": 40
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지난날 그리고 지출 = 0",
+       "fill": 4284219258,
+       "fillA": 40
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지출 >= 30000",
+       "fill": 4294956367,
+       "fillA": 45
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지출 >= 60000",
+       "fill": 4294940672,
+       "fillA": 50
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지출 >= 100000",
+       "fill": 4293212469,
+       "fillA": 50
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,income,ahead,recent"
+    }
+   ],
+   "cover": {
+    "a": 4279966511,
+    "b": 4284219258,
+    "dir": 2,
+    "emoji": "🕹️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "현장 칠판 장부",
+   "summary": "분필로 적은 칠판 가계부, 일감 입금·받을 돈 카드 먼저",
+   "desc": "가계부가 현장 칠판이 되고 금액은 분필 글씨예요. 돈이 들어온 날은 날짜 띠가 초록 테두리로 빛나요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요.\n누구에게 좋아요: 현장·프리랜서로 일감마다 일하는 분\n적용하면 바뀌는 것:\n· 칠판 가계부\n· 분필 금액\n· 들어온 날 초록 띠\n· 큰 지출 줄 강조\n주의할 점: 가계부 모양과 분류·예산 틀을 더해요. 적은 돈 기록은 그대로이고, 분류·예산은 넣은 뒤 내 것으로 고쳐요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFF2F0E6|ac:FFF5E27A|ft:nanumpen"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4281090614,
+       "r": 6,
+       "ink": 4294111462
+      },
+      {
+       "id": "money.day",
+       "fill": 4281090614,
+       "r": 6,
+       "padX": 12,
+       "font": "nanumpen",
+       "ink": 4294111462,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 6
+      },
+      {
+       "id": "money.amount",
+       "font": "nanumpen",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294304378,
+       "motion": "glow"
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4294937189,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4294937189,
+       "lineA": 50,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "work,owed,freelance,hero"
+    },
+    {
+     "kind": "ledger",
+     "costs": [
+      "식대",
+      "유류비",
+      "공구",
+      "작업복",
+      "숙소",
+      "교통",
+      "간식"
+     ],
+     "incomes": [
+      "일당",
+      "공수",
+      "현장 수당"
+     ],
+     "budgets": [
+      {
+       "category": "유류비",
+       "amount": 200000
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280497708,
+    "b": 4294304378,
+    "dir": 2,
+    "emoji": "🏗️"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "일당 봉투 장부",
+   "summary": "누런 봉투 종이에 붓글씨 금액, 들어온 날 띠가 빛나요",
+   "desc": "가계부가 일당 봉투처럼 누런 종이 위에 놓여요. 돈이 들어온 날은 날짜 띠가 초록 테두리로 빛나요. ‘식대’ 줄은 그 색 테두리로 바로 보여요.\n누구에게 좋아요: 현장·프리랜서로 일감마다 일하는 분\n적용하면 바뀌는 것:\n· 봉투 종이 바탕\n· 들어온 날 초록 띠\n· 식대 줄 색\n주의할 점: 가계부 모양과 분류·예산 틀을 더해요. 적은 돈 기록은 그대로이고, 분류·예산은 넣은 뒤 내 것으로 고쳐요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFEFE6D6|cd:FFF7F0E2|ik:FF2E241A|ac:FF8A5A2B|ft:gowundodum"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294439138,
+       "r": 6,
+       "ink": 4281213978
+      },
+      {
+       "id": "money.day",
+       "fill": 4294439138,
+       "r": 6,
+       "padX": 12,
+       "font": "nunito",
+       "ink": 4281213978,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 6
+      },
+      {
+       "id": "money.amount",
+       "font": "nunito",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4287257131,
+       "motion": "glow"
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"식대\"",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4291066412,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "work,owed,freelance,hero"
+    },
+    {
+     "kind": "ledger",
+     "costs": [
+      "식대",
+      "유류비",
+      "공구",
+      "작업복",
+      "숙소",
+      "교통",
+      "간식"
+     ],
+     "incomes": [
+      "일당",
+      "공수",
+      "현장 수당"
+     ],
+     "budgets": [
+      {
+       "category": "유류비",
+       "amount": 200000
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293912278,
+    "b": 4287257131,
+    "dir": 2,
+    "emoji": "✉️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "매출 온도계 장부",
+   "summary": "매출 나눠 보기 카드 먼저, 매출 들어온 날은 띠가 빨갛게 데워져요",
+   "desc": "가계부가 온도계처럼 빨강으로 데워지고 카드·현금·배달 매출 비율이 먼저 보여요. 돈이 들어온 날은 날짜 띠가 초록 테두리로 빛나요. ‘재료’ 줄은 그 색 테두리로 바로 보여요.\n누구에게 좋아요: 작은 가게를 꾸리는 사장님\n적용하면 바뀌는 것:\n· 매출 비율 먼저\n· 들어온 날 초록 띠\n· 재료 줄 색\n주의할 점: 가계부 모양과 분류·예산 틀을 더해요. 적은 돈 기록은 그대로이고, 분류·예산은 넣은 뒤 내 것으로 고쳐요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFAFAF8|cd:FFFFFFFF|ik:FF1B1B1B|ac:FFE8483B|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 12,
+       "ink": 4279966491
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 12,
+       "padX": 12,
+       "font": "rubik",
+       "ink": 4279966491,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 12
+      },
+      {
+       "id": "money.amount",
+       "font": "rubik",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.day",
+       "when": "수입 > 0",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293412923,
+       "motion": "glow"
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"재료\"",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294942531,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,salessplit,cardbill,work"
+    },
+    {
+     "kind": "ledger",
+     "costs": [
+      "재료",
+      "포장재",
+      "임대료",
+      "공과금",
+      "인건비",
+      "카드수수료",
+      "배달수수료",
+      "광고"
+     ],
+     "incomes": [
+      "카드 매출",
+      "현금 매출",
+      "배달 매출",
+      "이체 매출"
+     ],
+     "envelopes": [
+      {
+       "name": "부가세",
+       "emoji": "🧾",
+       "share": 10
+      },
+      {
+       "name": "종합소득세",
+       "emoji": "📮",
+       "share": 5
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294638328,
+    "b": 4293412923,
+    "dir": 2,
+    "emoji": "🌡️"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "카운터 금박 장부",
+   "summary": "먹색 바탕 금박 금액, 표 판으로 보는 매입·매출",
+   "desc": "가계부가 먹색 장부가 되고 금액은 금박 세리프예요. 표 판에서도 큰 지출 줄은 붉은 기운이 깔려요.\n누구에게 좋아요: 작은 가게를 꾸리는 사장님\n적용하면 바뀌는 것:\n· 먹색·금박 표\n· 표 큰 지출 강조\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF121110|fl:lg.160.FF1A1816,FF0D0C0B|cd:FF1C1A18|ik:FFF3EAD7|ac:FFD4AF63|ft:gowunbatang"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "tabView",
+     "money": "table"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4280031768,
+       "r": 4,
+       "ink": 4294175447
+      },
+      {
+       "id": "money.day",
+       "fill": 4280031768,
+       "r": 4,
+       "padX": 12,
+       "font": "playfair",
+       "ink": 4294175447,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 4
+      },
+      {
+       "id": "money.amount",
+       "font": "playfair",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.table.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 200000",
+       "fill": 4293212469,
+       "fillA": 14
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,work,owed,salessplit"
+    }
+   ],
+   "cover": {
+    "a": 4279374096,
+    "b": 4292128611,
+    "dir": 2,
+    "emoji": "🍣"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "캔들 생활비 장부",
+   "summary": "검은 차트 화면에 들어온 줄은 초록, 큰 지출은 빨강",
+   "desc": "가계부가 차트 화면처럼 검고 수입은 초록, 큰 지출은 빨강으로 갈려요. 돈이 들어온 줄은 초록 기운이 깔려요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요.\n누구에게 좋아요: 원칙대로 투자 기록을 남기는 분\n적용하면 바뀌는 것:\n· 차트 화면 가계부\n· 수입 줄 초록\n· 큰 지출 줄 강조\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF0B0E12|fl:pt.grid.FF141B23.FF0B0E12.80.0|cd:FF12171D|ik:FFE8EDF2|ac:FF22C55E|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4279375645,
+       "r": 4,
+       "ink": 4293455346
+      },
+      {
+       "id": "money.day",
+       "fill": 4279375645,
+       "r": 4,
+       "padX": 12,
+       "font": "jetbrainsmono",
+       "ink": 4293455346,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 4
+      },
+      {
+       "id": "money.amount",
+       "font": "jetbrainsmono",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\"",
+       "fill": 4280468830,
+       "fillA": 16,
+       "r": 10
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4293870660,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4293870660,
+       "lineA": 50,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,accounts,ahead,story"
+    }
+   ],
+   "cover": {
+    "a": 4278914578,
+    "b": 4280468830,
+    "dir": 2,
+    "emoji": "🕯️"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "신문 경제면 가계부",
+   "summary": "신문 지면처럼 굵은 제목과 가는 줄, 지난달 이야기 카드 먼저",
+   "desc": "가계부가 경제면처럼 굵은 제목 아래 가는 줄로 정리돼요. 큰 지출 줄은 붉은 기운이 깔려 바로 눈에 띄어요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 신문 지면\n· 큰 지출 줄 강조\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFF4F1EA|fl:tx.paper.FFF4F1EA.16|cd:FFF4F1EA|ik:FF111111|ac:FF111111|ft:notoserifkr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294242794,
+       "r": 0,
+       "ink": 4279308561
+      },
+      {
+       "id": "money.day",
+       "fill": 4294242794,
+       "r": 0,
+       "padX": 12,
+       "font": "dmserif",
+       "ink": 4279308561,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 0,
+       "line": "solid",
+       "lineW": 0.5,
+       "lineC": 4279308561,
+       "lineA": 25
+      },
+      {
+       "id": "money.amount",
+       "font": "dmserif",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 100000",
+       "fill": 4279308561,
+       "fillA": 16,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 4279308561,
+       "lineA": 50,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "story,hero,found,recent"
+    }
+   ],
+   "cover": {
+    "a": 4294242794,
+    "b": 4279308561,
+    "dir": 2,
+    "emoji": "📰"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "네온 영수증",
+   "summary": "네온 분홍 금액, 많이 쓴 날 네온 선",
+   "desc": "금액이 네온 사인처럼 분홍빛으로 번져요. 하루 쓴 돈이 많은 날은 날짜 띠 아래 붉은 선이 그어져요. ‘구독’ 줄은 그 색 테두리로 바로 보여요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 네온 금액\n· 많이 쓴 날 붉은 선\n· 구독 줄 색\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FF17121C|fl:pt.brick.FF2A2030.FF17121C.120.0|cd:FF211A28|ik:FFFBEFFF|ac:FFFF4FB5|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4280359464,
+       "r": 10,
+       "ink": 4294701055
+      },
+      {
+       "id": "money.day",
+       "fill": 4280359464,
+       "r": 10,
+       "padX": 12,
+       "font": "righteous",
+       "ink": 4294701055,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 10
+      },
+      {
+       "id": "money.amount",
+       "font": "righteous",
+       "weight": 800,
+       "tshadow": 8,
+       "tshadowC": 4294922165,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.day",
+       "when": "지출 >= 50000",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294922165
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"구독\"",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4283422975,
+       "r": 10
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,subs,upcoming,repeat"
+    }
+   ],
+   "cover": {
+    "a": 4279702044,
+    "b": 4294922165,
+    "dir": 2,
+    "emoji": "💡"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "무지출 히트맵",
+   "summary": "가계부 달력 판이 운동 잔디처럼, 안 쓴 날이 초록으로 쌓여요",
+   "desc": "가계부 달력 판이 잔디 히트맵처럼 네모 칸으로 놓여요. 가계부 달력 판에서 한 푼도 안 쓴 지난날은 초록 칸이 돼요. 가계부 달력 판에서 쓴 돈이 많은 날일수록 칸이 노랑 → 주황 → 빨강으로 물들어요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 잔디 달력 판\n· 무지출 날 초록 칸\n· 가계부 달력 열지도\n주의할 점: 가계부 모양만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFF6F8F6|cd:FFFFFFFF|ik:FF132017|ac:FF1F9D55|ft:notosanskr"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281109067,
+     "expense": 4291051567,
+     "dayHead": "band"
+    },
+    {
+     "kind": "tabView",
+     "money": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 8,
+       "ink": 4279443479
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 8,
+       "padX": 12,
+       "font": "rubik",
+       "ink": 4279443479,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "r": 8
+      },
+      {
+       "id": "money.amount",
+       "font": "rubik",
+       "weight": 800
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291051567
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281109067
+      },
+      {
+       "id": "money.cal.cell",
+       "r": 4
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지난날 그리고 지출 = 0",
+       "fill": 4280261973,
+       "fillA": 40
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지출 >= 30000",
+       "fill": 4294956367,
+       "fillA": 45
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지출 >= 60000",
+       "fill": 4294940672,
+       "fillA": 50
+      },
+      {
+       "id": "money.cal.cell",
+       "when": "지출 >= 100000",
+       "fill": 4293212469,
+       "fillA": 50
+      }
+     ]
+    },
+    {
+     "kind": "cards",
+     "money": "hero,envelopes,pace"
+    }
+   ],
+   "cover": {
+    "a": 4294375670,
+    "b": 4280261973,
+    "dir": 2,
+    "emoji": "🏋️"
+   }
+  }
+ }
+]

@@ -25,11 +25,17 @@ object BlueprintParts {
         "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
         // [TAB-02] 누락 점검 N9: 메모장 달력 보기.
         "memo.cal", "memo.cal.cell",
+        // [MPH-06] 1.38 메모 쓰기 화면: 종이, 종이 줄, 메모 사진.
+        "memo.page", "memo.page.rule", "memo.photo",
         "money.head", "money.day", "money.row", "money.amount",
         // [TAB-06] 1.36 가계부 판: 달력, 분류 보드, 표.
         "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
         "pay.head", "pay.total", "pay.row",
         "widget", "widget.head", "widget.cell",
+        // 1.39 [FLOW-21] 밤 화면(잘 때 여는 어두운 화면)과 아침 한 장: 바탕(사진도), 날짜, 큰 시계, 내일 근무·알람 줄, 카드, 단추.
+        "night", "night.date", "night.clock", "night.line", "night.card", "night.button", "night.morning",
+        // 1.39 [TASK-07] 할 일 위젯: 할 일 한 줄, 그 앞 동그라미, 머리의 ＋ 단추.
+        "widget.task", "widget.task.check", "widget.task.add",
     )
 
     /** The words the studio shows for each part. */
@@ -45,6 +51,7 @@ object BlueprintParts {
         "cal.band" to "근무 띠 판", "cal.band.slot" to "근무 띠 하루", "cal.line" to "타임라인 판", "cal.line.row" to "타임라인 하루 줄", "cal.line.bar" to "타임라인 근무 막대",
         "cal.weekly" to "주 판", "cal.weekly.day" to "주 판 하루", "cal.year" to "연간 판", "cal.year.month" to "연간 판 한 달",
         "memo.cal" to "메모 달력", "memo.cal.cell" to "메모 달력 칸",
+        "memo.page" to "메모 쓰기 종이", "memo.page.rule" to "메모 종이 줄", "memo.photo" to "메모 사진",
         "memo.prop" to "메모 속성", "memo.board" to "메모 보드", "memo.board.col" to "보드 칸", "memo.board.head" to "보드 칸 머리",
         "memo.table" to "메모 표", "memo.table.head" to "표 머리줄", "memo.table.row" to "표 한 줄",
         "money.cal" to "가계부 달력", "money.cal.cell" to "가계부 달력 칸", "money.board" to "분류 보드", "money.board.col" to "분류 칸",
@@ -52,6 +59,9 @@ object BlueprintParts {
         "money.head" to "가계부 머리", "money.day" to "가계부 날짜 머리", "money.row" to "가계부 한 줄", "money.amount" to "금액",
         "pay.head" to "급여 머리", "pay.total" to "급여 합계", "pay.row" to "급여 한 줄",
         "widget" to "위젯", "widget.head" to "위젯 머리", "widget.cell" to "위젯 칸",
+        "night" to "밤 화면", "night.date" to "밤 화면 날짜", "night.clock" to "밤 화면 시계", "night.line" to "내일 근무·알람 줄",
+        "night.card" to "밤 화면 카드", "night.button" to "잠들었어요·깼어요 단추", "night.morning" to "아침 한 장",
+        "widget.task" to "할 일 한 줄", "widget.task.check" to "할 일 동그라미", "widget.task.add" to "할 일 ＋ 단추",
     )
 
     /**
@@ -101,7 +111,13 @@ object BlueprintParts {
 
     /** The states a line may be for (`on`), in the order they lay over each other. */
     val STATES: List<String> = listOf(
-        "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel",
+        "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other",
+        // 1.39 [LINK-01] 근무 입력 그대로 (com.bamnat.core.schedule.DayWork): 연차·반차, 잔업·특근·대근이 있는 날, 대근, 직접 바꾼 날. Laid right
+        // after the kind of work, so 토·일·공휴일·오늘 still show over them.
+        "leave", "extra", "cover", "edited",
+        "in", "out", "sat", "sun", "holiday", "dim", "today",
+        // 1.39 [TASK-07] 할 일 위젯의 한 줄: 늦은 할 일, 끝낸 할 일 (끝냄이 늦음 위에).
+        "late", "done", "sel",
         // [BLU-12] 어두운 화면: not a state a part asks for, it is laid over the part's own line once for the whole app ([Blueprint.forDark]).
         "dark",
     )

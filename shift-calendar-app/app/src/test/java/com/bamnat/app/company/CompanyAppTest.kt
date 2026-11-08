@@ -199,9 +199,14 @@ class CompanyAppTest {
         assertFalse(setup.adopted)
         assertTrue(setup.lines.isNotEmpty())
         assertTrue(setup.hasPay)
-        // What comes back reads as a company file and asks for the same amounts.
+        // 1.39 [PAYP-01][PAYP-03]: the page has the shifts and that a pay way is there; the pay comes only when it is put in (take).
+        assertTrue(setup.payPrivate)
         assertEquals(8, share.summarize(setup.text).cycleDays)
-        assertEquals(listOf("item:자격수당", "rule:${ExtraKind.SPECIAL_ID}"), share.amountNeeds(setup.text).map { it.key })
+        assertTrue(share.amountNeeds(setup.text).isEmpty())
+        val taken = api.take("app-test-device-0001", page.id, setup.id)!!
+        // What comes back reads as a company file and asks for the same amounts.
+        assertEquals(8, share.summarize(taken).cycleDays)
+        assertEquals(listOf("item:자격수당", "rule:${ExtraKind.SPECIAL_ID}"), share.amountNeeds(taken).map { it.key })
 
         // The same setup again from the same phone counts once.
         assertTrue(api.report("app-test-device-0001", "예시정밀", "생산 2팀", true, "", share.exportForServer()).again)

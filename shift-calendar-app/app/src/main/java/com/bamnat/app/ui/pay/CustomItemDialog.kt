@@ -40,6 +40,9 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
@@ -172,13 +175,23 @@ sealed interface MadeItem {
 }
 
 /** [PAYS-07] What a new item does to the month: the amount it adds (negative when it takes off) and how often it came up. */
-data class ItemEffect(val amount: Long, val times: Int)
+data class ItemEffect(val amount: Long, val times: Int,
+    /** 1.39 [PAYX-56] PC a483ca15: what it takes off 실수령 after tax (사택관리비), which the 급여 total does not show. */
+    val afterTax: Long = 0)
 
 /** The builder's answers; [made] turns them into the item, with a stand-in amount for [probe] so the count shows early. */
 @Stable
 internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var kind by mutableStateOf(kind)
     var name by mutableStateOf("")
+    /**
+     * [PAYX-53] 1.38 PC 12.4.1: the names already in the pay setup, so an item put in with no name gets a number of its own
+     * ("매달 수당 1", "매달 수당 2") instead of "매달 수당 · 매달" that says nothing in the list.
+     */
+    var taken: Set<String> = emptySet()
+    /** [PAYX-53] The first 추가 with an empty name asks for one (한 줄, 이름 칸으로); the second puts it in numbered. */
+    var nameAsked by mutableStateOf(false)
+    fun defaultTitle(k: ItemKind): String = numberedName(k.defaultName, taken)
     var amount by mutableStateOf<Long?>(null)
     var percent by mutableStateOf("")
     var deductWay by mutableStateOf(DeductWay.MONTHLY)
@@ -218,6 +231,41 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     /** The sentence a rule was read from, kept when it is changed. */
     var source: String = ""
 
+    /**
+     * [PAYX-50] 1.38: 고정 연장수당 (연장수당을 미리 주는 매달 수당), the hours it stands for; 0 is not one. Never 통상임금. It came
+     * from the old '수당 추가' window, now one with this builder.
+     */
+    var fixedOtHours by mutableStateOf(0)
+    /** [PAYX-50] 비과세 as the item had it when changed; null guesses from the name (식대·차량유지비). */
+    var taxable by mutableStateOf<Boolean?>(null)
+    /** [PAYX-52] A 매달 rule's own amounts by month, kept when it is changed. */
+    var byMonth: Map<YearMonth, Long> = emptyMap()
+    /**
+     * 1.39 [PAYX-56] A 매달 빠지는 돈 taken off after tax (명세서 공제 칸: 사택관리비·회비); null guesses from the name
+     * ([CustomRule.looksAfterTax]).
+     */
+    var afterTax by mutableStateOf<Boolean?>(null)
+    /** 1.39 [PAYX-57] The 소급분 name turned '이번 달만' on once; the user's own choice after that stays. */
+    var oneMonthGuessed = false
+
+    /** 1.39 [PAYX-57] 이번 달만 (소급분 지급·공제): it starts and ends in the same month. */
+    val oneMonth: Boolean get() = since != null && since == until
+
+    /** 1.39 [PAYX-56] Whether this 빠지는 돈 is taken off after tax, as saved. */
+    fun afterTaxNow(): Boolean = afterTax ?: CustomRule.looksAfterTax(name.trim())
+
+    /** [PAYX-50] A 매달 allowance with an amount (not a rule, not a percent): the one that can be a 고정 연장수당. */
+    val asksFixedOt: Boolean get() = kind == ItemKind.MONTHLY && !asRule && !hasLimits
+
+    private fun item(title: String, value: ValueTimeline, cadence: Cadence): PayItem {
+        val fixed = if (cadence == Cadence.MONTHLY && asksFixedOt) fixedOtHours * 60 else 0
+        return PayItem(
+            id, title.take(20), value, cadence, ordinary = ordinary && fixed == 0, share = itemWho, mine = mine,
+            fixedOvertimeMinutes = fixed,
+            taxable = taxable ?: !(cadence == Cadence.MONTHLY && fixed == 0 && com.bamnat.core.pay.TakeHome.looksNonTaxable(title)),
+        )
+    }
+
     val hasLimits: Boolean get() = minYears > 0 || maxYears > 0 || (cap ?: 0) > 0 || maxTimes > 0 || since != null || until != null
 
     /** The limits on [rule]. */
@@ -225,6 +273,10 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         minTenureMonths = minYears * 12, maxTenureMonths = if (maxYears > minYears) maxYears * 12 else 0,
         capPerMonth = cap?.takeIf { it > 0 && !rule.pay.monthly } ?: 0, maxTimes = if (rule.pay.monthly) 0 else maxTimes,
         from = since, until = until?.takeIf { s -> since == null || !s.isBefore(since) },
+        byMonth = if (rule.pay is RulePay.Monthly) byMonth else emptyMap(),
+        // 1.39 [PAYX-56] 세후 공제 for a 매달 빠지는 돈; [PAYX-57] 비과세 kept for a 매달 수당 held as a rule (이번 달만·기간).
+        afterTax = if (rule.deduct && rule.pay is RulePay.Monthly) afterTaxNow() else null,
+        taxable = if (!rule.deduct && rule.pay is RulePay.Monthly) taxable ?: !com.bamnat.core.pay.TakeHome.looksNonTaxable(rule.name) else true,
     )
 
     /** The share the percent field holds, 50 → 0.5; null when it is not a number above 0. */
@@ -255,19 +307,15 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         val k = kind ?: return null
         val won = amount?.takeIf { it > 0 } ?: if (probe) 1_000L else return null
         val pct = share ?: if (probe) 0.1 else null
-        val title = name.trim().ifEmpty { k.defaultName }
+        val title = name.trim().ifEmpty { defaultTitle(k) }
         fun rule(pay: RulePay, deduct: Boolean = false, whenever: RuleWhen = whenever()) =
             MadeItem.Rule(limited(CustomRule(id, title.take(CustomRule.MAX_NAME), whenever, pay, deduct = deduct, source = source)))
         return when (k) {
             // [PHOTO-06] With limits (근속, 기간, 한도) only a rule can hold them.
-            ItemKind.MONTHLY -> if (asRule || hasLimits) rule(RulePay.Monthly(won), whenever = RuleWhen()) else MadeItem.Item(PayItem(
-                id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))), Cadence.MONTHLY, ordinary = ordinary,
-                share = itemWho, mine = mine,
-            ))
-            ItemKind.PER_DAY -> if (asRule || hasLimits) rule(RulePay.PerTime(won), whenever = RuleWhen(dayKind = RuleDayKind.WORK_DAY)) else MadeItem.Item(PayItem(
-                id, title.take(20), ValueTimeline(listOf(DatedValue(start, won))), Cadence.PER_WORK_DAY, ordinary = ordinary,
-                share = itemWho, mine = mine,
-            ))
+            ItemKind.MONTHLY -> if (asRule || hasLimits) rule(RulePay.Monthly(won), whenever = RuleWhen())
+                else MadeItem.Item(item(title, ValueTimeline(listOf(DatedValue(start, won))), Cadence.MONTHLY))
+            ItemKind.PER_DAY -> if (asRule || hasLimits) rule(RulePay.PerTime(won), whenever = RuleWhen(dayKind = RuleDayKind.WORK_DAY))
+                else MadeItem.Item(item(title, ValueTimeline(listOf(DatedValue(start, won))), Cadence.PER_WORK_DAY))
             ItemKind.PER_SHIFT -> rule(RulePay.PerTime(won))
             ItemKind.PER_HOUR -> rule(RulePay.PerHour(won))
             ItemKind.PREMIUM -> rule(RulePay.OfHourly(pct ?: return null))
@@ -289,8 +337,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     fun madeOrAsked(start: java.time.LocalDate): MadeItem? = made(start) ?: run {
         val k = kind
         if ((k == ItemKind.MONTHLY || k == ItemKind.PER_DAY) && !asRule && !hasLimits && itemWho == ItemShare.PERSONAL && (amount ?: 0) <= 0)
-            MadeItem.Item(PayItem(id, name.trim().ifEmpty { k.defaultName }.take(20), ValueTimeline(),
-                if (k == ItemKind.MONTHLY) Cadence.MONTHLY else Cadence.PER_WORK_DAY, ordinary = ordinary, share = ItemShare.PERSONAL, mine = mine))
+            MadeItem.Item(item(name.trim().ifEmpty { defaultTitle(k) }, ValueTimeline(), if (k == ItemKind.MONTHLY) Cadence.MONTHLY else Cadence.PER_WORK_DAY))
         else null
     }
 
@@ -354,6 +401,8 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
                 who = item.share
                 whoPicked = true
                 mine = item.mine
+                fixedOtHours = item.fixedOvertimeMinutes / 60
+                taxable = item.taxable
                 if (item.isPercent) {
                     percent = ExtraRuleText.number((item.percent ?: 0.0) * 100)
                     basis = item.percentOf
@@ -370,6 +419,10 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
                 name = rule.name
                 source = rule.source
                 asRule = true
+                byMonth = rule.byMonth
+                afterTax = rule.afterTax ?: if (rule.deduct && rule.pay is RulePay.Monthly) false else null
+                if (!rule.deduct && rule.pay is RulePay.Monthly) taxable = rule.taxable
+                oneMonthGuessed = true
                 when (val p = rule.pay) {
                     is RulePay.PerTime -> amount = p.amount
                     is RulePay.PerHour -> amount = p.amount
@@ -425,12 +478,18 @@ internal fun CustomItemDialog(
     editing: CustomRule? = null,
     gap: Long? = null,
     startKind: ItemKind? = null,
-) = CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf)
+    oneWindow: Boolean = false,
+) = CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf,
+    oneWindow = oneWindow, allowUnknownAmount = oneWindow)
 
 /**
  * [ITEM-06][FIN130-08] Whether calendar [calendar]'s pay comes from a company's way (광장): its pay way in use, or a coworkers'
  * setup it uses. That calendar's own, so an added calendar's item never follows 내 달력's company.
  */
+/** 12차 빈틈 3: the word for where the user works, '가게' for an 알바 ([com.bamnat.core.work.WorkStyle.HOURLY]), '회사' otherwise. */
+internal fun workplaceWord(style: com.bamnat.core.work.WorkStyle?): String =
+    if (style == com.bamnat.core.work.WorkStyle.HOURLY) "가게" else "회사"
+
 internal fun payFromCompany(c: com.bamnat.app.AppContainer, calendar: String): Boolean =
     c.companyOf(calendar).let { s -> s.payWays.way.value != null || s.store.applied.value != null }
 
@@ -459,6 +518,13 @@ internal fun CustomItemDialog(
      */
     companyWay: Boolean? = null,
     effectOf: suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?,
+    /**
+     * [PAYX-50] 1.38 (사용자 "그렇게 해줘", 수당 창 둘 합치기): '수당 추가' as one window: the kinds as a row of chips over the form
+     * (매달 first), the same as the 칸 더하기 sheet, in place of the list of kinds a page before.
+     */
+    oneWindow: Boolean = false,
+    /** [PAYX-50] A 사람마다 매달·일한 날마다 수당 can go in with no amount, as 금액 모름 (the old '수당 추가' window let it). */
+    allowUnknownAmount: Boolean = false,
 ) {
     val id = remember { editing?.id ?: editingItem?.id ?: ("rule-" + System.currentTimeMillis().toString(36)) }  // real clock: an id, not a time
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -467,30 +533,40 @@ internal fun CustomItemDialog(
     val fromCompany = companyWay ?: remember(calendar) { runCatching { payFromCompany(context.appContainer, calendar) }.getOrDefault(false) }
     val draft = remember {
         (editing?.let { ItemDraft.of(it) } ?: editingItem?.let { ItemDraft.ofItem(it) }
-            ?: ItemDraft(startKind, id).also { d -> if (startKind != null) prefill(d, gap) })
+            ?: ItemDraft(startKind ?: ItemKind.MONTHLY.takeIf { oneWindow }, id).also { d -> if (d.kind != null) prefill(d, gap) })
             .also { d -> if (keepRule) d.asRule = true; if (editing == null && startName.isNotBlank()) { d.name = startName.take(CustomRule.MAX_NAME); d.source = startName; d.guessFrom(startName) } }
             .also { d -> if (editing == null && editingItem == null) d.mine = fromCompany }
     }
-    val start = profile.period.start(month)
     val isEdit = editing != null || editingItem != null
+    draft.taken = remember(profile) {
+        (profile.items.filterNot { it.id == id }.map { it.name } + profile.customRules.filterNot { it.id == id }.map { it.name }).toSet()
+    }
+    val nameFocus = remember { FocusRequester() }
+    // 12차 빈틈 3: an 알바's workplace is a 가게, not a 회사.
+    val place = remember(calendar) { workplaceWord(runCatching { context.appContainer.scopeOf(calendar).currentSettings().workStyle }.getOrNull()) }
+    // A 1.32 [FIX132-03] A new allowance counts in every month, as the old '수당 추가' made it; a change starts this month.
+    val start = if (isEdit) profile.period.start(month) else com.bamnat.core.pay.BulkEditPlanner.EARLIEST
     val base = remember(profile, editing) { if (editing == null) profile else profile.copy(customRules = profile.customRules.filterNot { it.id == editing.id }) }
     // Only rules count to the limit: 월 고정·일당 go in as pay items.
-    val made = draft.made(start)
+    val made = if (allowUnknownAmount) draft.madeOrAsked(start) else draft.made(start)
     val probe = draft.made(start, probe = true)
     val full = !isEdit && probe is MadeItem.Rule && base.customRules.size >= CustomRule.MAX
     val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { effectOf(base, snapshot, month, it) } }
-    val real = if (made != null && effect != null) effect else null
-    fun back() { if (draft.kind != null && !isEdit) draft.kind = null else onDismiss() }
+    val real = if (made != null && draft.made(start) != null && effect != null) effect else null
+    val huge = rememberHugeCheck()
+    // [PAYX-50] One window has no list of kinds to go back to.
+    val pickBack = draft.kind != null && !isEdit && !oneWindow
+    fun back() { if (pickBack) draft.kind = null else onDismiss() }
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        BackHandler(enabled = draft.kind != null && !isEdit) { back() }
+        BackHandler(enabled = pickBack) { back() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (isEdit) "항목 고치기" else "우리 회사 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        title = { Text(if (isEdit) "항목 고치기" else if (oneWindow) "수당 추가" else "우리 $place 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
-                            if (draft.kind != null && !isEdit) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
+                            if (pickBack) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
                             else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
                         },
                     )
@@ -498,7 +574,16 @@ internal fun CustomItemDialog(
                 bottomBar = {
                     if (draft.kind != null) {
                         EffectBar(month, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
-                            label = if (isEdit) "저장" else "만들기") { made?.let(onSave) }
+                            label = if (isEdit) "저장" else if (oneWindow) "추가" else "만들기",
+                            unknown = made != null && draft.made(start) == null,
+                            // [PAYX-53] 1.38 PC 12.4.1: a name is asked once, on the first 추가 with none.
+                            askName = if (!isEdit && draft.nameAsked && draft.name.isBlank()) draft.kind?.let { draft.defaultTitle(it) } else null,
+                        ) {
+                            if (!isEdit && draft.name.isBlank() && !draft.nameAsked) {
+                                draft.nameAsked = true
+                                runCatching { nameFocus.requestFocus() }
+                            } else made?.let { m -> huge.run(draft.amount) { onSave(m) } }
+                        }
                     }
                 },
             ) { padding ->
@@ -509,7 +594,9 @@ internal fun CustomItemDialog(
                     ) {
                         val k = draft.kind
                         if (k == null) KindStep(gap) { picked -> draft.kind = picked; prefill(draft, gap); draft.guessFrom(draft.name) }
-                        else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null, fromCompany = fromCompany)
+                        else FormStep(draft, k, snapshot, gap, onChangeKind = if (!isEdit) ({ draft.kind = null }) else null, fromCompany = fromCompany,
+                            kindChips = oneWindow && !isEdit, unknownAmount = allowUnknownAmount,
+                            fixedOt = profile.wageType != com.bamnat.core.pay.WageType.HOURLY, nameFocus = nameFocus, month = month)
                         if (full) Text("직접 만든 항목은 ${CustomRule.MAX}개까지예요. 쓰지 않는 항목을 지운 뒤 만들어 주세요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         Spacer(Modifier.height(24.dp))
@@ -550,8 +637,8 @@ private fun GapBanner(gap: Long) {
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Text(
-                if (gap > 0) "회사만 주는 수당이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요."
-                else "회사가 빼는 돈(차감)이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요.",
+                if (gap > 0) "따로 주는 수당이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요."
+                else "따로 빼는 돈(차감)이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
         }
@@ -588,8 +675,22 @@ internal fun ColumnScope.FormStep(
      * kind's banner, so changing it is one tap, not a page back.
      */
     kindChips: Boolean = false,
+    /** [PAYX-50] The amount may be left empty (금액 모름) for a 사람마다 매달·일한 날마다 수당. */
+    unknownAmount: Boolean = false,
+    /** [PAYX-50] 고정 연장수당 is asked: not for 시급 (알바), whose overtime is paid by the hour. */
+    fixedOt: Boolean = false,
+    /** [PAYX-53] Where 추가 with no name puts the cursor. */
+    nameFocus: FocusRequester? = null,
+    /** 1.39 [PAYX-57] The month on screen, for '이번 달만'; null leaves the switch out. */
+    month: YearMonth? = null,
 ) {
     if (gap != null) GapBanner(gap)
+    // 1.39 [PAYX-57] 소급분 is paid (or taken) once: its name turns '이번 달만' on, once.
+    if (month != null && !draft.oneMonthGuessed && CustomRule.looksOneMonth(draft.name) && !draft.hasLimits &&
+        (kind == ItemKind.MONTHLY || kind == ItemKind.DEDUCT && draft.deductWay == DeductWay.MONTHLY)) {
+        draft.oneMonthGuessed = true
+        draft.since = month; draft.until = month
+    }
     if (kindChips) {
         Label("어떻게 주나요?")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -616,7 +717,7 @@ internal fun ColumnScope.FormStep(
         placeholder = { Text(kind.namePlaceholder) },
         supportingText = { Text("명세서에 적힌 이름 그대로 쓰면 다음에 맞춰 보기 쉬워요") },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(if (nameFocus != null) Modifier.focusRequester(nameFocus) else Modifier),
     )
 
     // [ITEM-05] 1.30 BC: who sets the amount, 회사 공통 · 사람마다 · %, for an allowance (a rule stays on the phone).
@@ -642,6 +743,8 @@ internal fun ColumnScope.FormStep(
                 else -> "1회 금액"
             },
             draft.amount, { draft.amount = it },
+            placeholder = if (unknownAmount && !draft.asRule && !draft.hasLimits && (kind == ItemKind.MONTHLY || kind == ItemKind.PER_DAY) &&
+                draft.who != ItemShare.FIXED) "모르면 비워 두세요" else "",
         )
     }
     when (kind) {
@@ -669,7 +772,16 @@ internal fun ColumnScope.FormStep(
             }
         }
         ItemKind.DEDUCT -> {
-            Hint("명세서 지급 칸에서 빠지는 돈만 넣어요. 세금과 4대보험은 넣지 않아도 돼요. 앱은 세금 떼기 전 금액을 계산해요.")
+            Hint("세금과 4대보험은 넣지 않아도 돼요. 앱이 따로 계산해요.")
+            // 1.39 [PAYX-56] 명세서 공제 칸의 돈(사택관리비·회비)은 세금 뒤에 빠져요: 지급 총액·세금 기준은 그대로.
+            if (draft.deductWay == DeductWay.MONTHLY) {
+                Toggle("세금 뗀 뒤 빼요 (명세서 공제 칸)",
+                    if (draft.afterTaxNow()) "사택관리비·기숙사비·회비처럼 명세서 공제 칸에 있는 돈이에요. 지급 총액과 세금은 그대로 두고 실수령에서만 빼요."
+                    else "지각·결근처럼 명세서 지급 칸에서 줄어드는 돈이에요. 지급 총액에서 빼고 세금도 줄어든 금액으로 어림해요.",
+                    draft.afterTaxNow()) { draft.afterTax = it }
+                // [PAYX-52] 1.38 PC 12.1: 사택관리비처럼 달마다 다른 돈.
+                Hint("사택관리비처럼 달마다 금액이 다르면 보통 금액을 넣어 두고, 만든 뒤 급여 화면의 이 줄에서 ‘○월만 금액 다르게’로 그달 금액을 넣어요.")
+            }
             TermLink("차감")
         }
         ItemKind.MONTHLY, ItemKind.PER_DAY -> if (!draft.asRule && !draft.hasLimits) {
@@ -678,14 +790,46 @@ internal fun ColumnScope.FormStep(
                 if (kind == ItemKind.MONTHLY) "매달 모두에게 똑같이 주는 수당이면 켜요. 연장·야간 수당도 함께 올라가요. 모르면 꺼 두세요."
                 else "일한 날마다 받는 수당은 보통 넣지 않아요. 모르면 꺼 두세요.",
                 draft.ordinary,
-            ) { draft.ordinary = it }
+            ) { if (draft.fixedOtHours == 0) draft.ordinary = it }
             TermLink("통상임금")
+            if (fixedOt && draft.asksFixedOt) FixedOtChips(draft)
         }
         else -> Unit
+    }
+    // [PAYX-52] 1.38 PC 12.1: 비과세 for any 매달 수당, not only the names the app knows (식대 등). 1.39 [PAYX-57]: a 매달 수당 kept as a
+    // rule (이번 달만·기간) too, which had lost it.
+    if (kind == ItemKind.MONTHLY && draft.fixedOtHours == 0) {
+        val guess = !com.bamnat.core.pay.TakeHome.looksNonTaxable(draft.name.trim().ifEmpty { kind.defaultName })
+        Toggle("세금 없는 돈 (비과세)", "식대·자가운전보조금·보육수당·연구보조비처럼 명세서에 비과세로 적힌 수당이면 켜요. 종류마다 월 20만 원까지 세금에서 빼고 어림해요(식대가 둘이면 합쳐서 20만 원)." +
+            if (draft.taxable == null && !guess) " 이름을 보고 켜 두었어요." else "",
+            !(draft.taxable ?: guess)) { draft.taxable = !it }
+    }
+    // 1.39 [PAYX-57] 소급분처럼 한 번만 주거나 빼는 돈: 이번 달에만 넣어요(근속·한도·기간을 펼치지 않아도).
+    if (month != null && (kind == ItemKind.MONTHLY || kind == ItemKind.DEDUCT && draft.deductWay == DeductWay.MONTHLY)) {
+        Toggle("${month.monthValue}월만 (소급분처럼 한 번)",
+            if (draft.oneMonth) "${month.year}년 ${month.monthValue}월에만 계산해요. 다른 달에는 없어요." else "켜면 이 달에만 넣어요. 소급분(지급·공제), 한 번 받은 격려금처럼요.",
+            draft.oneMonth) { on -> if (on) { draft.since = month; draft.until = month } else { draft.since = null; draft.until = null } }
     }
 
     if (draft.asksWhen) WhenSection(draft, kind, snapshot)
     LimitsSection(draft, kind)
+}
+
+/**
+ * [PAY-05][PAYX-50] 고정 연장수당: a 매달 수당 that pays some overtime ahead (prepaid), never 통상임금. The app then tells when the real
+ * overtime comes to more. Moved here from the old '수당 추가' window.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FixedOtChips(draft: ItemDraft) {
+    Label("연장수당을 미리 주는 고정 수당인가요?")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf(0, 10, 20, 30, 40, 52).forEach { h ->
+            FilterChip(selected = draft.fixedOtHours == h, onClick = { draft.fixedOtHours = h; if (h > 0) draft.ordinary = false },
+                label = { Text(if (h == 0) "아니요" else "${h}시간분") }, modifier = Modifier.heightIn(min = 48.dp))
+        }
+    }
+    if (draft.fixedOtHours > 0) Hint("통상임금에는 넣지 않아요. 실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.")
 }
 
 /**
@@ -876,25 +1020,44 @@ private fun <T> Set<T>.toggle(v: T): Set<T> = if (v in this) this - v else this 
  */
 @Composable
 private fun EffectBar(
-    month: YearMonth, draft: ItemDraft, effect: ItemEffect?, timesOnly: Int?, gap: Long?, enabled: Boolean, label: String, onSave: () -> Unit,
+    month: YearMonth, draft: ItemDraft, effect: ItemEffect?, timesOnly: Int?, gap: Long?, enabled: Boolean, label: String,
+    /** [PAYX-50] Saved with no amount yet (금액 모름). */
+    unknown: Boolean = false,
+    /** [PAYX-53] The name it gets when none is typed, said over the button once a name was asked. */
+    askName: String? = null,
+    onSave: () -> Unit,
 ) {
+    // [PAYX-53] 1.38 PC 12.4.1: an amount past 1억 (or a month that comes to it) is said here too, not only in the question.
+    val huge = (draft.amount ?: 0) >= HUGE_WON || (effect?.amount?.let { abs(it) } ?: 0) >= HUGE_WON
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val per = draft.kind == ItemKind.PER_SHIFT || draft.kind == ItemKind.PER_DAY || draft.kind == ItemKind.PER_HOUR || draft.kind == ItemKind.PREMIUM ||
                 draft.kind == ItemKind.DEDUCT && draft.deductWay != DeductWay.MONTHLY
             Column(Modifier.semantics(mergeDescendants = true) {}) {
-                Text("${month.monthValue}월 급여에", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 1.39 [PAYX-56] PC a483ca15 사용성: a 세후 공제 is '실수령 −50,000원', not '급여에 +0원'.
+                val takeHomeOnly = effect != null && effect.amount == 0L && effect.afterTax != 0L
+                Text("${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else "급여에"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
+                    takeHomeOnly -> Text("−" + won(abs(effect!!.afterTax)) + " (세금 뗀 뒤 빼요)",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + if (per) " · ${effect.times}번" else "",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = if (effect.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = if (effect.amount < 0 || huge) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
                     timesOnly != null && per -> Text(
                         if (timesOnly == 0) "이번 달엔 맞는 근무가 없어요" else "이번 달 ${timesOnly}번 해당돼요. 금액을 넣어 주세요",
                         style = MaterialTheme.typography.titleSmall,
                     )
+                    unknown -> Text("금액 모름으로 넣어요. 합계에서 빼고 금액을 넣어 달라고 알려 드려요", style = MaterialTheme.typography.titleSmall)
                     else -> Text("금액을 넣으면 바로 계산해요", style = MaterialTheme.typography.titleSmall)
+                }
+                if (huge) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                    Text(
+                        "금액을 확인해 주세요. 1억 원이 넘어요" + if (per && (draft.amount ?: 0) < HUGE_WON) " (한 번 ${won(draft.amount ?: 0)} × ${effect?.times ?: 0}번)" else "",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                    )
                 }
                 if (gap != null && effect != null) {
                     val left = gap - effect.amount
@@ -916,6 +1079,10 @@ private fun EffectBar(
                     }
                 }
             }
+            if (askName != null) Text(
+                "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 비운 채 ‘$label’을 누르면 ‘$askName’(으)로 넣어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+            )
             Button(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(label) }
         }
     }
@@ -938,8 +1105,9 @@ internal fun MakeItemCard(enabled: Boolean, onClick: () -> Unit) {
             Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("우리 회사 항목 만들기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                Text("명세서에 있는데 앱에 없는 수당·가산·차감을 직접 만들어 정확히 맞춰요. 금액은 휴대폰에만 남아요.",
+                Text("수당 추가", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                // [PAYX-50] 1.38: the one way in for 매달·일한 날마다·근무마다·시간당 수당 and 빠지는 돈 (the old '수당 추가' button is this now).
+                Text("매달·일한 날마다·정한 근무마다·시간당 수당과 빠지는 돈까지 한 창에서 넣어요. 명세서에 있는데 앱에 없는 줄도 여기서 맞춰요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
@@ -965,6 +1133,11 @@ internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
 internal fun CustomRuleRow(
     rule: CustomRule, shiftNames: Map<Long, String>, enabled: Boolean,
     onEdit: (() -> Unit)?, onOn: (Boolean) -> Unit, onRemove: () -> Unit,
+    /** [PAYX-52] The month on screen, and its own amount for a 매달 rule (사택관리비); null leaves the button out. */
+    month: YearMonth? = null,
+    onThisMonth: (() -> Unit)? = null,
+    /** 1.39 [PAYX-56] For a 1.38 사택관리비·회비 rule ([CustomRule.mayBeAfterTax]): take it off after tax, one tap. */
+    onAfterTax: ((Boolean) -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled && onEdit != null, onClickLabel = "고치기") { onEdit?.invoke() }.padding(vertical = 6.dp),
@@ -974,8 +1147,25 @@ internal fun CustomRuleRow(
             Text(rule.name, style = MaterialTheme.typography.bodyLarge,
                 color = if (rule.on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
             // The way it is paid (or taken off), and that a tap changes it, as the alarm rows say it.
-            Text(rule.describe(shiftNames) + if (enabled && onEdit != null) " · 눌러서 고치기" else "",
+            // 1.39 [PAYX-56][PAYX-57] 세후 공제 and 비과세 said on the row too.
+            Text(rule.describe(shiftNames) + (if (rule.paidAfterTax) " · 세금 뗀 뒤 빼요" else "") +
+                (if (!rule.deduct && !rule.taxable) " · 비과세" else "") + if (enabled && onEdit != null) " · 눌러서 고치기" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (month != null && onThisMonth != null) {
+                val own = rule.byMonth[month]
+                TextButton(onClick = onThisMonth, enabled = enabled, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+                    modifier = Modifier.heightIn(min = 40.dp)) {
+                    Text(if (own != null) "${month.monthValue}월은 ${won(own)} · 바꾸기" else "${month.monthValue}월만 금액 다르게")
+                }
+            }
+            if (onAfterTax != null && rule.mayBeAfterTax) {
+                Text("명세서 공제 칸에 있는 돈이면 지급 총액에서 빼지 않고 세금 뒤 실수령에서 빼야 명세서와 맞아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Row {
+                    TextButton(onClick = { onAfterTax(true) }, enabled = enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("세금 뗀 뒤 빼기") }
+                    TextButton(onClick = { onAfterTax(false) }, enabled = enabled, modifier = Modifier.heightIn(min = 40.dp)) { Text("지금처럼 두기") }
+                }
+            }
         }
         Switch(checked = rule.on, onCheckedChange = onOn, enabled = enabled,
             modifier = Modifier.semantics { contentDescription = "‘${rule.name}’ ${if (rule.on) "켜짐" else "꺼짐"}" })
@@ -999,3 +1189,7 @@ internal fun waysText(profile: PayProfile, shiftNames: Map<Long, String>, made: 
     }
     return if (lines.isEmpty()) "" else "우리 회사에는 이런 항목이 있어요 (금액은 빼고 적었어요)\n" + lines.joinToString("\n")
 }
+
+/** [PAYX-53] "매달 수당 1", or the next number the setup does not have yet. */
+internal fun numberedName(base: String, taken: Set<String>): String =
+    generateSequence(1) { it + 1 }.map { "$base $it" }.first { it !in taken }

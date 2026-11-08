@@ -32,8 +32,8 @@ class ZFullBackupTest {
     /** Every field that travels set away from its default. */
     private fun sample(s: AppSettings, shiftId: Long) = s.copy(
         weekStart = DayOfWeek.MONDAY, weeklyLimitHours = 60, averageLimitHours = 48, themeMode = ThemeMode.DARK,
-        dynamicColor = true, showHoursInCells = false, showLunar = true, vibrate = false, gradualVolume = false,
-        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
+        dynamicColor = true, showHoursInCells = false, showLunar = true, showKani = false, dayStory = false, dayDial = false, dayStartMinutes = 300, orgDayGroup = "fire", orgDaysOn = false, vibrate = false, gradualVolume = false,
+        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, alarmGuard = false, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
         // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
@@ -43,9 +43,9 @@ class ZFullBackupTest {
         todayShiftNotice = true, briefing = true, commuteNotice = true, bedtimeNotice = true, sleepingNotice = false,
         quietWhileAsleep = false, moneyNotices = false, leaveNotice = false, sleepTargetMinutes = 8 * 60, commuteMinutes = 40,
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
-        calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
+        calendarLayout = "cards:a", statsLayout = "stats:b", manageLayout = "plan,-keep", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
+        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", cellList = "on", rateHint = false, alarmSuggest = false, exportMark = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
         // 1.35 [FREE-03..08] 꾸미기.
@@ -61,13 +61,17 @@ class ZFullBackupTest {
         motion = "tn:fade",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
+        // 1.39 [NAV2-01] 아래 칸과 묶음.
+        tabSlots = "calendar;g|잠·쉼|f:SLEEP+f:LEAVE;memos",
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
         tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
-        payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true,
+        payDepositNotice = false, weekHoursNudge = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
+        // 1.38 [SLEEP-04] 잠드는 소리.
+        noiseMix = "rain:0.60,fan:0.25", noiseTimerMinutes = 60, nightLook = "phone", smartWakeMinutes = 20,
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)
@@ -126,6 +130,27 @@ class ZFullBackupTest {
         // The repeating money lines know how far they were written, read again without restarting the app.
         assertEquals(mapOf(5L to LocalDate.of(2026, 10, 25)), marks.all())
         c.settingsRepository.update { AppSettings() }
+    }
+
+    /** 1.38 [SLEEP-01][SLEEP-03][SLEEP-07][SLEEP-19] 자동 꼬리표, 아침 답과 소리 사건(파일 없이) go to a new phone. */
+    @Test fun sleepSourceMorningAnswersAndEventsComeBack() = runBlocking {
+        val dao = c.database.sleepDao()
+        dao.clear(); dao.clearChecks(); dao.clearEvents()
+        dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = 1_000, endMillis = 25_000_000))
+        dao.insertAuto(30_000_000, 55_000_000)
+        dao.insertCheck(com.bamnat.app.data.db.SleepCheckEntity(startMillis = 30_000_000, endMillis = 55_000_000, mood = 2, tags = "caffeine,noise", note = "더웠음", atMillis = 9))
+        dao.insertEvent(com.bamnat.app.data.db.SleepEventEntity(startMillis = 40_000_000, endMillis = 40_004_000, kind = "snore", level = 0.4f, file = "clip.m4a", keep = true))
+        val file = c.backupManager.export()
+        dao.clear(); dao.clearChecks(); dao.clearEvents()
+
+        c.backupManager.restore(file)
+
+        assertEquals(listOf("tap", "auto"), dao.all().sortedBy { it.startMillis }.map { it.source })
+        val check = dao.allChecks().single()
+        assertEquals(listOf<Any?>(2, "caffeine,noise", "더웠음"), listOf(check.mood, check.tags, check.note))
+        val event = dao.allEvents().single()
+        // The sound itself stays on the old phone; the time and kind travel.
+        assertEquals(listOf<Any?>("snore", null), listOf(event.kind, event.file))
     }
 
     /** [J133B-05] 1.33 빌드 9 확인: a company taken after the backup goes when the backup is put back; the phone's own keys stay. */

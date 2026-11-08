@@ -57,6 +57,9 @@ data class Inquiry(
     /** 1.36 [GRW-01] 스튜디오 요구: 같은 부탁을 한 분 수와 장터에 오르는 수(3), 보낸 때만. */
     val studioAskers: Int = 0,
     val studioGoal: Int = 0,
+    /** 1.39 [LOOP-16] 해결됐나요: 1 해결됐어요, -1 아직이에요, 0 아직 답하지 않음. [askFixed]면 두 단추를 보여요(고친 판 안내를 받은 뒤). */
+    val fixed: Int = 0,
+    val askFixed: Boolean = false,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -165,7 +168,33 @@ interface InquiryApi {
 
     /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
     suspend fun pushPhone(device: String, token: String?): Boolean = false
+
+    /** 1.38 [EASE-31] 밤낮 Q&A: the developer's answers to what is asked often, picked to show in 마을. Empty without a server. */
+    suspend fun qa(): List<PublicQa> = emptyList()
+
+    /** 1.39 [LOOP-16] 고친 판 안내를 받은 문의에 '해결됐어요'(true)·'아직이에요'(false). */
+    suspend fun fixed(device: String, id: String, ok: Boolean): Inquiry = throw CompanyException("not_found")
+
+    /** 1.39 [LOOP-17] 지금 알려진 문제. 서버가 없으면 비어요. */
+    suspend fun known(device: String): List<KnownIssue> = emptyList()
+
+    /** 1.39 [LOOP-17] '나도 겪어요'(on) 또는 되돌리기: 그 뒤의 목록. 누르면 그 문제에 묶인 짧은 문의가 내 문의에 생겨요. */
+    suspend fun knownMe(device: String, id: String, on: Boolean): List<KnownIssue> = known(device)
 }
+
+/**
+ * 1.39 [LOOP-17] 지금 알려진 문제 하나: 여럿이 겪는 것만 서버가 보여 줘요. [state] checking(확인 중)·fixing(고치는 중)·fixed(고침, [version]에서),
+ * [me] 같은 일을 알린 수, [mine] 이 폰이 '나도 겪어요'를 눌렀는지.
+ */
+data class KnownIssue(val id: String, val title: String, val state: String, val version: String?, val me: Int, val mine: Boolean,
+    /** Work types (WorkStyle names) it is shown to; empty = everyone. */
+    val styles: Set<String> = emptySet()) {
+    /** PC 1.39 G10: a problem of another kind of work (a rotation's, on a shop's phone) is not shown; one already pressed always is. */
+    fun showsFor(style: com.bamnat.core.work.WorkStyle?): Boolean = mine || styles.isEmpty() || style == null || style.name in styles
+}
+
+/** 1.38 [EASE-31] One 밤낮 Q&A: the question as the developer put it, and the answer for everyone. */
+data class PublicQa(val id: Long, val question: String, val answer: String, val topicName: String)
 
 class InquiryClient(
     private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
@@ -194,8 +223,38 @@ class InquiryClient(
         inquiry(onceRequest(baseUrl, "/api/inquiries", body, requestId = requestId))
     }
 
+    override suspend fun qa(): List<PublicQa> = serverCall {
+        serverRequest(baseUrl, "GET", "/api/qa").optJSONArray("items").objects().mapNotNull {
+            val q = it.optString("q").trim()
+            val a = it.optString("a").trim()
+            if (q.isEmpty() || a.isEmpty()) null else PublicQa(it.optLong("id"), q, a, it.optString("topicName"))
+        }
+    }
+
     override suspend fun mine(device: String): List<Inquiry> = serverCall {
-        serverRequest(baseUrl, "GET", "/api/inquiries", device = device).optJSONArray("inquiries").objects().map(::inquiry)
+        // 1.39 [LOOP-15] 이 앱의 판: 이미 고친 판이면 서버가 묶인 문의에 바로 안내하고 '반영'으로 보여요(단계적 출시 중에도 이 폰에만).
+        serverRequest(baseUrl, "GET", "/api/inquiries", device = device, headers = mapOf("X-App" to APP))
+            .optJSONArray("inquiries").objects().map(::inquiry)
+    }
+
+    override suspend fun fixed(device: String, id: String, ok: Boolean): Inquiry = serverCall {
+        inquiry(serverRequest(baseUrl, "POST", "/api/inquiries/$id/fixed", JSONObject().put("ok", ok), device, headers = mapOf("X-App" to APP)))
+    }
+
+    override suspend fun known(device: String): List<KnownIssue> = serverCall {
+        knownList(serverRequest(baseUrl, "GET", "/api/known", device = device))
+    }
+
+    override suspend fun knownMe(device: String, id: String, on: Boolean): List<KnownIssue> = serverCall {
+        knownList(serverRequest(baseUrl, "POST", "/api/known/$id/me", JSONObject().put("on", on).put("app", APP), device))
+    }
+
+    private fun knownList(o: JSONObject) = o.optJSONArray("items").objects().mapNotNull {
+        val id = it.optString("id")
+        val title = it.optString("title").trim()
+        if (id.isEmpty() || title.isEmpty()) null
+        else KnownIssue(id, title, it.optString("state", "checking"), it.optStringOrNull("version"), it.optInt("me"), it.optBoolean("mine"),
+            it.optJSONArray("styles")?.let { a -> (0 until a.length()).map { n -> a.optString(n) }.filter(String::isNotEmpty).toSet() }.orEmpty())
     }
 
     override suspend fun more(device: String, id: String, text: String): Inquiry = more(device, id, text, newRequestId())
@@ -301,9 +360,14 @@ class InquiryClient(
         photosSkipped = o.optStringOrNull("photosSkipped"),
         studioAskers = o.optJSONObject("studio")?.optInt("askers") ?: 0,
         studioGoal = o.optJSONObject("studio")?.optInt("goal") ?: 0,
+        fixed = o.optInt("fixed"),
+        askFixed = o.optBoolean("askFixed"),
     )
 
     companion object {
+        /** 1.39 [LOOP-15] 서버에 알리는 이 앱의 판: "1.39.0 (53)". */
+        val APP: String get() = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+
         /** [SRV-08] A random id for one request, kept with it so a retry is the same request. */
         fun newRequestId(): String = java.util.UUID.randomUUID().toString()
 
@@ -332,6 +396,23 @@ class InquiryStore(context: Context) {
         set(v) = prefs.edit().putBoolean("asked", v).apply()
 
     fun seen(id: String): Int = prefs.getInt("seen_$id", 0)
+
+    /** 1.38 [EASE-32] Questions already thanked for in 새로 생긴 것 ("보내 주신 의견으로 고쳤어요"), so each is said once. */
+    fun thanked(id: String): Boolean = id in prefs.getStringSet("thanked", emptySet()).orEmpty()
+
+    fun markThanked(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        prefs.edit().putStringSet("thanked", prefs.getStringSet("thanked", emptySet()).orEmpty() + ids).apply()
+    }
+
+    /**
+     * 1.38 [EASE-32] (오늘근무 분석 P13·P14, R9 응대): the user's own questions whose fix is in the version now installed:
+     * 반영 at [version] or before, not thanked for yet. Each as (id, a short line of what was asked).
+     */
+    fun fixedNow(list: List<Inquiry>, version: String): List<Pair<String, String>> = list
+        .filter { it.stage == "released" && it.version != null && compareVersion(it.version, version) <= 0 && !thanked(it.id) }
+        .map { i -> i.id to (i.messages.firstOrNull { !it.fromDeveloper }?.text.orEmpty().lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim()
+            .let { if (it.length > 40) it.take(39) + "…" else it }.ifEmpty { "보내 주신 의견" }) }
 
     /** After fetching: counts answers the user has not opened yet. */
     fun update(list: List<Inquiry>) {
@@ -453,4 +534,15 @@ data class QueuedInquiry(
             )
         }.getOrNull()
     }
+}
+
+/** 1.38 [EASE-32] "1.38.0" against "1.37.2": numbers part by part; letters after a number are ignored. */
+internal fun compareVersion(a: String, b: String): Int {
+    fun parts(v: String) = v.split('.').map { p -> p.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
+    val x = parts(a); val y = parts(b)
+    for (i in 0 until maxOf(x.size, y.size)) {
+        val d = (x.getOrNull(i) ?: 0).compareTo(y.getOrNull(i) ?: 0)
+        if (d != 0) return d
+    }
+    return 0
 }

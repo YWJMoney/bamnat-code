@@ -131,13 +131,18 @@ enum class FreeTarget(val label: String, val restricted: Boolean = false, val no
 
 // ---- 달력: 칸 디자인과 패턴 ----
 
-private data class SampleCell(val label: String, val color: Long, val role: String, val memo: String? = null, val hours: String? = null, val off: Boolean = false)
+private data class SampleCell(val label: String, val color: Long, val role: String, val memo: String? = null, val hours: String? = null, val off: Boolean = false,
+    /** [LINK-01] 1.39 근무 입력 states (대근·특근·연차·직접 바꾼 날). */
+    val work: Set<String> = emptySet())
 
 private val SAMPLE_CELLS = listOf(
     SampleCell("주", 0xFFEF6C00, "day", "병원 예약", "8h"), SampleCell("주", 0xFFEF6C00, "day", hours = "8h"),
     SampleCell("야", 0xFF3949AB, "night", "인수인계", "10h"), SampleCell("야", 0xFF3949AB, "night", hours = "10h"),
     SampleCell("휴", 0xFF757575, "off", "가족 모임", off = true), SampleCell("휴", 0xFF757575, "off", off = true),
     SampleCell("오", 0xFF00857A, "eve", "택배", "8h"),
+    // [LINK-01] 1.39 쉬는 날의 야간 대근과 특근: 예시에서도 근무 입력이 작품에 보이게.
+    SampleCell("야", 0xFF3949AB, "night", "대근", "10h", work = setOf("extra", "cover")),
+    SampleCell("특", 0xFF0E9F6E, "day", "특근", "8h", work = setOf("extra")),
 )
 
 /**
@@ -152,7 +157,9 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         */
                        start: LocalDate? = null, todayDate: LocalDate? = null, days: List<com.bamnat.app.ui.calendar.SampleDay>? = null,
                        /** PC 확인 W38 1.36 (오늘 색을 바꿔도 예시의 오늘 동그라미가 파랑): the 오늘 colour being made, null for the app's own. */
-                       todayColor: Color? = null) {
+                       todayColor: Color? = null,
+                       /** [CELL-02] 1.39 Each day's jobs and memos a line each, as my calendar lists them (입어 보기 on my own month). */
+                       listed: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val first = start ?: LocalDate.of(2026, 11, 2)
@@ -174,7 +181,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
         for (r in 0 until rows) Row(Modifier.fillMaxWidth().height(height)) {
             for (c in 0 until 7) {
                 val date = first.plusDays((r * 7 + c).toLong())
-                val s = days?.getOrNull(r * 7 + c)?.let { d -> SampleCell(d.label, d.color, d.role ?: if (d.off) "off" else "day", d.memos.firstOrNull(), d.hours, d.off) }
+                val s = days?.getOrNull(r * 7 + c)?.let { d -> SampleCell(d.label, d.color, d.role ?: if (d.off) "off" else "day", d.memos.firstOrNull(), d.hours, d.off, d.work) }
                     ?: SAMPLE_CELLS[(r * 3 + c) % SAMPLE_CELLS.size]
                 val isToday = date == today
                 val look = shown.lookFor(date.toEpochDay(), date.dayOfWeek.value, s.role, isToday)
@@ -186,7 +193,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                 val shape = com.bamnat.app.ui.calendar.cellShape(shown, look)
                 val number = when (date.dayOfWeek) { java.time.DayOfWeek.SUNDAY -> cal.sunday; java.time.DayOfWeek.SATURDAY -> cal.saturday; else -> scheme.onSurface }
                 // [BLU-05] 1.36 부품 꾸미기 in the example too, by the same states as the phone's cells.
-                val states = com.bamnat.app.ui.parts.dayStates(s.role, date.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, true, isToday, false)
+                val states = com.bamnat.app.ui.parts.dayStates(s.role, date.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, true, isToday, false) + s.work
                 // [FXR-03] With the day's values (the studio's own book), so a condition shows in the example as on the phone.
                 val sampleScope = if (blueprint.hasFormulas) com.bamnat.app.logic.LocalDayFacts.current?.scope(date) else null
                 val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", states, sampleScope)
@@ -200,7 +207,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         .background(tint ?: Color.Transparent)
                         .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
                         // [LAY-03] The 꾸밈 층 on the example cells too.
-                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(date, s.role, isToday) { com.bamnat.app.ui.decor.decorDay(date, s.role, isToday) })
+                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(date, s.role, s.work, isToday) { com.bamnat.app.ui.decor.decorDay(date, s.role, isToday, work = s.work) })
                         .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(
@@ -217,6 +224,12 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         },
                         texts = buildMap { s.memo?.let { put("memo", it) }; s.hours?.let { put("hours", it) } },
                         moneyColor = cal.income,
+                        list = if (!listed) null else days?.getOrNull(r * 7 + c)?.let { d ->
+                            com.bamnat.app.ui.calendar.CellListContent(
+                                d.memos.map { com.bamnat.app.ui.calendar.CellLine(it, ink = scheme.onSurface, bar = cal.memoDot, fill = cal.memoDot.copy(alpha = 0.14f)) },
+                                d.hours?.let { com.bamnat.app.ui.calendar.CellFoot(it, scheme.onSurfaceVariant, false, minor = true) },
+                            )
+                        },
                     )
                 }
             }

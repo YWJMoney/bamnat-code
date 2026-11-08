@@ -28,9 +28,11 @@ object WidgetRefresher {
         val placed = runCatching {
             val manager = GlanceAppWidgetManager(app)
             listOf(TodayWidget::class.java, WeekWidget::class.java, MonthWidget::class.java, TeamsWidget::class.java, CountdownWidget::class.java,
-                MoneyWidget::class.java)
+                MoneyWidget::class.java, TaskWidget::class.java)
                 .any { manager.getGlanceIds(it).isNotEmpty() }
         }.getOrDefault(true)
+        // 1.38 [EASE-29] The widget list shows the user's own widgets (Android 15+, once a day), placed or not.
+        runCatching { WidgetPreviews.publish(app) }
         if (!placed) {
             if (notice) scheduleNext(app, null)
             return
@@ -44,6 +46,8 @@ object WidgetRefresher {
             TeamsWidget().updateAll(app)
             CountdownWidget().updateAll(app)
             MoneyWidget.redraw(app)
+            // 1.39 [TASK-07] 날이 바뀌면 오늘 할 일도 바뀌어요.
+            TaskWidget.redraw(app)
         }
         val data = runCatching { WidgetData.load(app) }.getOrNull()
         // [WIDG-05] A countdown on the home screen moves on every 15 minutes; the others wait for the next change.

@@ -263,14 +263,15 @@ class PageCache(
 // it back. PageCacheTest checks each one comes back the same.
 
 internal fun CompanyPage.toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("kind", kind).put("job", job).put("region", region)
-    .put("aliases", JSONArray(aliases)).put("member", member).put("limited", limited)
+    .put("aliases", JSONArray(aliases)).put("member", member).put("limited", limited).put("newer", JSONObject(newer))
     .put("setups", JSONArray(setups.map { s ->
         JSONObject().put("id", s.id).put("status", if (s.adopted) "adopted" else "pending").put("points", s.points).put("persons", s.persons)
             .put("bad", s.bad).put("threshold", s.threshold).put("dept", s.dept).put("version", s.version ?: JSONObject.NULL)
             .put("setup", JSONObject(s.text)).put("lines", JSONArray(s.lines.map { (a, b) -> JSONArray(listOf(a, b)) }))
             .put("trust", s.trust).put("agree", s.agree).put("posts", s.posts).put("uses", s.uses).put("senders", s.senders)
             .put("checked", s.checked).put("by", JSONArray(s.by)).put("checkedLong", s.checkedLong).put("support", s.support)
-            .put("payHidden", s.payHidden).put("stable", s.stable).put("lead", s.lead).put("doubted", s.doubted)
+            .put("payHidden", s.payHidden).put("payPrivate", s.payPrivate).put("fixes", s.fixes).put("myFix", s.myFix ?: JSONObject.NULL)
+            .put("sentAt", s.sentAt?.toString() ?: JSONObject.NULL).put("stable", s.stable).put("lead", s.lead).put("doubted", s.doubted)
             .put("opinion", JSONObject().put("ok", s.opinion.ok).put("bad", s.opinion.bad).put("why", JSONObject(s.opinion.why))
                 .put("mine", s.opinion.mine ?: JSONObject.NULL))
     }))
@@ -299,11 +300,16 @@ internal fun Talk.toJson(): JSONObject = JSONObject()
             .put("attach", p.attach?.let { (code, title) -> JSONObject().put("code", code).put("title", title)
                 .apply { p.attachLook?.let { l -> runCatching { put("look", JSONObject(l)) } } } } ?: JSONObject.NULL)
             .put("poll", p.poll?.let { v -> JSONObject().put("options", JSONArray(v.options)).put("counts", JSONArray(v.counts)).put("mine", v.mine ?: JSONObject.NULL) } ?: JSONObject.NULL)
+            .put("tag", p.tag?.let { t -> JSONObject(t.fields()).apply { t.months?.let { put("m", it) } } } ?: JSONObject.NULL)
+            .put("card", p.card?.let { JSONObject(it.fields()) } ?: JSONObject.NULL)
+            .put("first", p.first).put("helped", p.helped).put("mark", p.mark?.key ?: JSONObject.NULL)
     }))
     .put("mutedUntil", mutedUntil?.toString() ?: JSONObject.NULL).put("past", past).put("hiddenByYou", hiddenByYou)
     .apply { leftPosts?.let { put("left", JSONObject().put("posts", it)) } }
     .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay)) } }
     .apply { topic?.let { put("topic", it) } }
+    .put("more", more)
+    .apply { pulse?.let { put("pulse", JSONObject().put("today", it.today).put("waiting", it.waiting).put("working", it.working)) } }
 
 internal fun Board.toJson(): JSONObject = JSONObject().put("next", next ?: JSONObject.NULL)
     .put("items", JSONArray(items.map { i ->

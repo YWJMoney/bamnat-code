@@ -170,12 +170,17 @@ class SettingsFilesBackup(
             Part("wish_off"),
             // 1.36 [VIL-13] 마을 › 간직한 글: posts kept to read again, only on the phone (the server keeps no list).
             Part("village_saved"),
+            // 1.39 [PLZC-10] 광장 근무 태그에 무엇을 보일지(근무형태·업종·개월·근무 중): 새 휴대폰에서도 같게.
+            Part("plaza_tag"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
             // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
             Part("calendar_start"),
             Part("leave_hire"), // [LEAVE-14]
             Part("pro_trials"), // [MON-13]
+            Part("fx_values"), // 1.39 [FX-03] 값 칸의 숫자
+            Part("fx_taste"), // 1.39 [FX-02] 작품마다 하루 써 보기를 쓴 것 (새로 깔아도 다시 주지 않게)
+            Part("work_plans"), // 1.38 팀 요금제: 무료로 쓴 첫 확정 달 (팀을 지워도, 새로 깔아도 남게)
             Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
             Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays", "folders", "placed")),
         )
@@ -185,9 +190,13 @@ class SettingsFilesBackup(
          * "settings"; a test fails when a new field is in neither.
          */
         val SETTINGS_ON_PHONE = mapOf(
+            "viewAsked" to "처음 달력의 보기 묻기(1.39 CALX-07), 복원한 백업은 그 보기 그대로라 다시 묻지 않아요",
             "hideAmounts" to "금액 가리기는 이 휴대폰을 남에게 보일 때 쓰는 것",
             "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
             "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",
+            "sleepAuto" to "잠 자동으로 잡기(활동 인식 권한)는 새 휴대폰에서 다시 켜요",
+            "sleepDnd" to "방해 금지 접근은 새 휴대폰에서 다시 허용해요",
+            "healthWrite" to "헬스 커넥트 쓰기 허용은 새 휴대폰에서 다시 물어요",
             "previewTier" to "개발용 등급 미리 보기",
             "swapCoversAnswered" to "옛 대근 고치기 질문, 복원한 기록에는 다시 물어요",
             "reviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
@@ -207,6 +216,20 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.
+            "in_app_update" to "Play 인앱 업데이트를 이 판에서 이미 물어봤는지, 이 휴대폰에 깔린 판의 것",
+            "plaza_tag" to "광장 근무 태그 공개 범위(근무 형태·업종·밤낮 쓴 기간·지금 근무 중)는 이 휴대폰에만, 새 휴대폰에서 한 번 다시 골라요(PLZC-10)",
+            "share_forget" to "모두 지우기 때 아직 못 지운 공유 링크(종류:번호), 이 휴대폰이 인터넷이 되면 마저 지움. 지운 뒤 남은 일이라 되살린 폰에 옮기지 않아요",
+            // 1.38 [P3-X-08] 신고·지급 '했어요' 표시: 알림 목록이라 복원 뒤엔 지난 일이 길어야 일주일 다시 보여요.
+            "boss_filed" to "다가올 신고·지급에서 '했어요'를 누른 것, 이 휴대폰의 것",
+            // 1.38 [P3-L-15] 병동 전체 표 링크와 고치는 열쇠: 복원 뒤엔 리더가 한 번 눌러 새로 만들어요(옛 주소는 그 달 끝 60일 뒤 저절로 지워져요).
+            "team_board_links" to "팀 전체 표 링크와 그 고치는 열쇠, 이 휴대폰의 것",
+            // 1.38 [STM-06] 밤낮 재료: 광고로 연 묶음(30일)과 재료 표시, 이 휴대폰에서 본 광고의 것.
+            "studio_materials" to "광고로 30일 연 재료 묶음과 재료 표시, 이 휴대폰의 것",
+            // 1.38 [EASE-29] 홈 화면 위젯 목록에 내 근무 그림을 올린 날: 이 휴대폰의 런처 일이라 옮기지 않아요.
+            "widget_previews" to "홈 화면 위젯 목록에 내 근무 그림을 올린 날(하루 한 번), 이 휴대폰의 것",
+            // 1.39 [MKF-03] 장터 작게 보기(3열·펼침 4열): 이 휴대폰 화면 폭에 맞춘 것이라 옮기지 않아요.
+            "market_view" to "장터 카드를 작게(3열) 볼지, 이 휴대폰 화면에 맞춘 것",
             // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.
             "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
@@ -222,6 +245,10 @@ class SettingsFilesBackup(
             "studio_ui" to "스튜디오에서 자주 연 곳(곳 줄 순서), 이 휴대폰의 것",
             // PC 확인 11825213 사용성 제안: the 메모 tab opens on the 칸 last looked at.
             "memo_list" to "메모 탭에서 마지막으로 본 칸(달력 메모·노트 등), 이 휴대폰의 것",
+            // 1.39 [TASK-44] 반복 메모의 한 번만 미루기(메모 번호 → 시각): 울리면 지워지는 잠깐의 일이라 옮기지 않아요.
+            "memo_snoozes" to "반복 메모를 한 번만 미룬 시각, 울리거나 끝내면 지워지는 이 휴대폰의 것",
+            "memo_notices" to "메모 일정 알림 한 칸에 모아 둔 남은 일정, 알림이 사라지면 지워지는 이 휴대폰의 것",
+            "today_notice_fold" to "규칙의 말을 잠금 화면 오늘 근무 알림에 합친 그날 한 줄, 자정에 지워지는 이 휴대폰의 것",
             // 1.36 [GRW-03][GRW-09] 스튜디오 부탁 풀림을 알린 문의, 작품을 올린 적 있는지(보상 이용권 묻기): this phone's own.
             "studio_solved" to "스튜디오 부탁이 풀렸다고 이 휴대폰에서 이미 알린 문의",
             "maker" to "이 휴대폰에서 작품을 올린 적 있는지(만든 분 보상 이용권을 물을지)",
@@ -248,12 +275,20 @@ class SettingsFilesBackup(
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
+            "alarm_guard" to "알람 지킴이가 오늘 알린 문제(하루 한 번 알리기 위한 표시)일 뿐이에요", // [ALRM-27]
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             // [ALRM-21] 1.35.
             "alarm_soon" to "‘이번 알람 끄기’는 이 휴대폰에 곧 울릴 알람 하나의 것",
             "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
             "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
+            // 1.38 [SLEEP-01] 휴대폰이 본 잠 조각·끈 알람·믿음 횟수는 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요.
+            "sleep_dnd" to "밤낮이 켠 방해 금지 표시는 이 휴대폰의 것",
+            "sleep_auto" to "자동으로 잡은 잠 조각은 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요",
+            "sleep_record" to "지난밤 측정 요약(배터리 사용량)은 이 휴대폰의 것, 소리 사건은 수면 기록으로 가요",
+            "sleep_challenge" to "회복 도전 시작일은 이 휴대폰의 것, 새 휴대폰에서 다시 시작해요",
+            "sleep_tired" to "오늘 팀에 피곤해요를 알렸는지는 하루짜리 표시, 새 휴대폰에서는 다시 알릴 수 있어요",
+            "smart_wake" to "깨우는 구간에서 일찍 울린 알람 표시는 이 휴대폰에서 울린 것",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",
             "calendar_import:chosen" to "고른 휴대폰 캘린더 번호는 이 휴대폰의 것",
             "launch_config" to "회사 서버가 알려 주는 출시 설정, 새 휴대폰이 다시 받아요",
@@ -284,6 +319,7 @@ class SettingsFilesBackup(
             "photo_wrong" to "‘사진이 달라요’를 누른 횟수 중 아직 보내지 않은 것(60일), 이 휴대폰에서만",
             // 1.31 [STAT-08][GUIDE-20]: lookup times waiting to be sent, and whether the first week's 시작 단계 card was put away.
             "lookup_stats" to "조회에 걸린 시간 중 아직 보내지 않은 것(처리방침 3.5 시행 뒤, 동의한 경우), 이 휴대폰에서만",
+            "setup_taps" to "1.39 [SETUP-20] 첫 설정을 마칠 때까지 누른 횟수(새로 깐 이 휴대폰의 한 번뿐, 사용 통계로 한 번 보내고 지움), 다른 휴대폰에 옮기면 그 휴대폰의 첫 설정이 아니에요",
             "start_steps" to "첫 주 ‘시작 3단계’ 카드를 그만 보기로 했는지, 이 휴대폰에서만",
             "share_ask_gate" to "나누기 부탁을 거절한 뒤 다시 묻지 않는 날짜, 이 휴대폰에서만 (J133-17)",
             "first_pay_asked" to "광장 판마다 '첫 급여 방식이 되어 주세요'를 이미 보여 준 기록, 이 휴대폰에서만 (J133-94)",
@@ -293,6 +329,10 @@ class SettingsFilesBackup(
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
             "recipe_remix_seen" to "내 판마다 고쳐 만든 판을 이 휴대폰에서 본 수, 새로 생긴 것만 점으로 알리려고 (LIN-04)",
             "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",
+            // 1.38 갈래8 [LEDH-24][LEDH-29][LEDH-14]: what this phone already showed or took in (the switches are in settings).
+            "bamnat_money_first_fill" to "가계부 ‘첫날 채우기’ 카드를 넘긴 것, 이 휴대폰에서 본 만큼",
+            "bamnat_shift_preview" to "근무 전 한 줄 예고를 마지막으로 알린 날, 같은 날 두 번 알리지 않으려고",
+            "bamnat_watch_money" to "워치에서 적은 돈 최근 50건의 번호, 같은 것을 두 번 적지 않으려고",
         )
     }
 }

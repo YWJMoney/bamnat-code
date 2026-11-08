@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.heightIn
 import com.bamnat.core.work.words
@@ -42,12 +43,15 @@ import com.bamnat.core.time.Today
  * last month's and the same month a year ago. Without 프로 the card shows the user's own figures blurred.
  */
 @Composable
-internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate) {
+internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
+                         /** 1.39 [PAYX-60] Each month over its 급여 기간 (10/21~11/20 for 11월), as its pay beside it is. */
+                         period: com.bamnat.core.pay.PayPeriod? = null) {
     // [UX-10] 1.25 Z (U7): the last figures from the first frame, worked out again only when the days or pay changed.
-    val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month", snap, month, profile) {
+    val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month:${period?.endDay}", snap, month, profile, period) {
         runCatching {
             withContext(Dispatchers.Default) {
-                listOf(month, month.minusMonths(1), month.minusYears(1)).map { m -> MonthCompare.side(calc.month(m), profile?.let { vm.monthPay(it, snap, m) }) }
+                fun hours(m: YearMonth) = period?.let { calc.month(m, it.start(m), it.end(m)) } ?: calc.month(m)
+                listOf(month, month.minusMonths(1), month.minusYears(1)).map { m -> MonthCompare.side(hours(m), profile?.let { vm.monthPay(it, snap, m) }) }
             }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
     }
@@ -99,22 +103,27 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
 @Composable
 internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
     /** PC 02d6dabf: the pay screen's 도구, where the report is made (this card sits on 근무·급여 itself). */
-    onOpenReport: (() -> Unit)? = null) {
-    val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}", snap, month.year, profile) {
+    onOpenReport: (() -> Unit)? = null,
+    /** 1.39 [PAYX-60] Each month's hours over its 급여 기간, like its pay. */
+    period: com.bamnat.core.pay.PayPeriod? = null) {
+    val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}:${period?.endDay}", snap, month.year, profile, period) {
         runCatching {
             withContext(Dispatchers.Default) {
                 MonthCompare.Year(month.year, (1..12).map { m ->
                     val ym = YearMonth.of(month.year, m)
-                    MonthCompare.side(calc.month(ym), profile?.let { vm.monthPay(it, snap, ym) })
+                    MonthCompare.side(period?.let { calc.month(ym, it.start(ym), it.end(ym)) } ?: calc.month(ym), profile?.let { vm.monthPay(it, snap, ym) })
                 })
             }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
     }
+    // Read as state (lint StateFlowValueCalledInComposition): the title follows a change of the kind of work.
+    val settingsNow by vm.settings.collectAsStateWithLifecycle()
     val y = year ?: return
     val now = Today.month()
     ProLock(Feature.WORK_COMPARE, gate) {
         // PC 02d6dabf: named as the tab it sits on (알바 '출근·시급').
-        SectionCard(title = "${y.year}년 ${vm.settings.value.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
+        SectionCard(title = "${y.year}년 ${settingsNow.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
+            yearBars(y, now)?.let { (bars, line) -> com.bamnat.app.ui.components.BarChart(bars, line, height = 96.dp) }
             y.months.forEach { s ->
                 val ahead = s.month.isAfter(now)
                 val color = if (ahead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
@@ -140,4 +149,29 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
             onOpenReport?.let { go -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text("급여 리포트 만들러 가기") } }
         }
     }
+}
+
+/**
+ * 1.39 [FLOW-17] 그래프 규칙 한 벌 on 근무 통계: the year's months as one chart (one colour, the busiest month in 주의 only when it
+ * goes past 52 hours a week on average, the months so far averaged on one dashed line, a tap says the month). Months still ahead
+ * are counted from the roster and say "예상". Null when the year has nothing yet.
+ */
+internal fun yearBars(y: MonthCompare.Year, now: YearMonth): Pair<List<com.bamnat.app.ui.components.ChartBar>, com.bamnat.app.ui.components.Baseline?>? {
+    if (y.months.all { it.worked == 0 }) return null
+    val bars = y.months.map { s ->
+        val weeks = s.month.lengthOfMonth() / 7.0
+        val over = s.worked > 52 * 60 * weeks
+        com.bamnat.app.ui.components.ChartBar(
+            label = "${s.month.monthValue}월" + if (s.month.isAfter(now)) " 예상" else "",
+            value = s.worked / 60.0,
+            tone = if (over) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain,
+            text = if (s.worked == 0) "기록 없음" else HoursFormat.korean(s.worked),
+        )
+    }
+    val past = y.months.filter { !it.month.isAfter(now) && it.worked > 0 }
+    val line = past.takeIf { it.isNotEmpty() }?.let { l ->
+        val avg = l.sumOf { it.worked } / l.size
+        com.bamnat.app.ui.components.Baseline(avg / 60.0, "점선 평균 ${HoursFormat.korean(avg)}")
+    }
+    return bars to line
 }

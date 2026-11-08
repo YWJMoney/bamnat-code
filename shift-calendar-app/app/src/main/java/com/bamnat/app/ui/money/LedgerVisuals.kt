@@ -48,6 +48,7 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.material.icons.outlined.RequestQuote
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Sell
@@ -76,6 +77,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -121,6 +123,7 @@ fun categoryIcon(name: String): ImageVector = when (name) {
     "보험" -> Icons.Outlined.HealthAndSafety
     "반려동물" -> Icons.Outlined.Pets
     "육아" -> Icons.Outlined.ChildCare
+    MoneyCategories.INTEREST, "대출이자" -> Icons.Outlined.RequestQuote
     MoneyCategories.SALARY -> Icons.Outlined.Payments
     "부수입" -> Icons.Outlined.WorkOutline
     "용돈" -> Icons.Outlined.VolunteerActivism
@@ -144,10 +147,12 @@ fun accountIcon(type: AccountType): ImageVector = when (type) {
     AccountType.CHECK, AccountType.CREDIT -> Icons.Outlined.CreditCard
     AccountType.PAY -> Icons.Outlined.AccountBalanceWallet
     AccountType.OTHER -> Icons.Outlined.Savings
+    AccountType.LOAN -> Icons.Outlined.RequestQuote
 }
 
 /** Every category's place in the palette: spending first, then income and transfers, so each keeps its color. */
-private val CATEGORY_ORDER = MoneyCategories.expense + MoneyCategories.income + MoneyCategories.transfer
+// 1.38: 이자·금융 goes last so the colors the other categories already had stay theirs.
+private val CATEGORY_ORDER = (MoneyCategories.expense - MoneyCategories.INTEREST) + MoneyCategories.income + MoneyCategories.transfer + MoneyCategories.INTEREST
 
 @Composable
 @ReadOnlyComposable
@@ -177,7 +182,9 @@ fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = M
 /** A round tinted badge with a picture in it, as tall as a two-line row. */
 @Composable
 fun IconAvatar(icon: ImageVector, tint: Color, size: Dp = 40.dp, modifier: Modifier = Modifier) {
-    Box(modifier.size(size).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+    // 7차 통합 347b7c37 PC 제안 (사진 바탕에서 보라·노랑 아이콘이 노을과 섞여요): on a picture the circle first gets the opaque veil.
+    val ground = if (com.bamnat.app.ui.theme.PhotoGround.on()) com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface) else Color.Transparent
+    Box(modifier.size(size).clip(CircleShape).background(ground).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(size * 0.5f))
     }
 }
@@ -191,9 +198,13 @@ fun ProPill(modifier: Modifier = Modifier, locked: Boolean = false) = com.bamnat
 
 /** [LEDG-15] What an empty part of the ledger says, with the one thing to do next. */
 @Composable
-fun LedgerEmpty(icon: ImageVector, title: String, message: String, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {}) {
+fun LedgerEmpty(icon: ImageVector, title: String, message: String, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {},
+    /** 1.38 [DSG-09] Nothing written yet (not a filter that hides lines): 칸이 shows the way instead of the icon, unless it is turned off. */
+    kani: com.bamnat.app.ui.components.KaniMood? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        IconAvatar(icon, MaterialTheme.colorScheme.primary, size = 64.dp)
+        if (kani != null && com.bamnat.app.ui.components.LocalShowKani.current) com.bamnat.app.ui.components.Kani(kani,
+            night = com.bamnat.app.ui.components.isDarkSurface(), size = 72.dp)
+        else IconAvatar(icon, MaterialTheme.colorScheme.primary, size = 64.dp)
         Spacer(Modifier.height(14.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))

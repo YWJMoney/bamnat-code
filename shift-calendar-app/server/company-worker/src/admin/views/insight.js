@@ -57,18 +57,56 @@ export function insightViews(A) {
         <dt>지금 체험 중(서버 확인)</dt><dd>${f.trials}</dd><dt>지금 유료 구독(서버 확인)</dt><dd>${f.paid}${f.paid ? ` <span class="meta">연간 ${f.yearly ?? 0} · 월간 ${f.paid - (f.yearly ?? 0)}</span>` : ""}</dd><dt>자동 갱신 끈 구독</dt><dd>${f.ending}</dd>
         <dt>1년 이용권(쓰는 중)</dt><dd>${f.passes ?? 0}${f.passesBought ? ` <span class="meta">이 기간 ${f.passesBought}개 삼</span>` : ""}</dd></dl>
       <p class="hint">위 셋은 사용 통계, 아래는 Play 구매 확인으로 센 숫자라 서로 다를 수 있어요. 상품 비중 목표는 연간 60% · 이용권 25% · 월간 15% 안팎이에요. 이용권이 연간을 잠식하면 이용권 가격을 올려요.</p></section>`;
+    // 1.38 Phase 3 분석판: 팀·직원 요금제 by band and how the 팀·가게 features are used (동의한 휴대폰의 하루 횟수만).
+    const p3 = d.phase3;
+    const rate = (a, b) => (b ? `${Math.round((a / b) * 1000) / 10}%` : "–");
+    const phase3 = p3 ? `<section class="card wide"><h2>팀·가게 (Phase 3)</h2>
+      <div class="tiles core">
+        <div class="tile kpi"><span class="k">팀 근무표 확정</span><span class="v">${p3.team.confirms}</span><span class="d">${p3.team.confirmPhones}대 · 팀 만들기 ${p3.team.made} · 링크 ${p3.team.links}</span></div>
+        <div class="tile kpi"><span class="k">급여 대장 닫기</span><span class="v">${p3.shop.closed}</span><span class="d">${p3.shop.closePhones}대 · 명세서 ${p3.shop.slips}</span></div>
+        <div class="tile kpi"><span class="k">팀 무료→유료</span><span class="v">${rate(p3.team.paid, p3.team.confirmPhones)}</span><span class="d">유료 ${p3.team.paid} / 확정한 휴대폰 ${p3.team.confirmPhones}</span></div>
+        <div class="tile kpi"><span class="k">가게 무료→유료</span><span class="v">${rate(p3.shop.paid, p3.shop.closePhones)}</span><span class="d">유료 ${p3.shop.paid} / 대장 닫은 휴대폰 ${p3.shop.closePhones}</span></div>
+      </div>
+      <h3>요금제 구간</h3>${p3.bands.length ? `<div class="table-wrap"><table class="list nums"><thead><tr>${["구간", "월간", "연간", "체험 중", "이용권", "갱신 끔", "이 기간 시작", "이 기간 끝남"].map((h) => `<th scope="col">${h}</th>`).join("")}</tr></thead><tbody>
+        ${p3.bands.map((b) => {
+          const td = (lab, v) => `<td><span class="lab">${lab} </span>${v}</td>`;
+          return `<tr><td class="name">${esc(b.who)} ${b.cap ? `${b.cap}명` : "구간 모름"}</td>${td("월간", b.monthly)}${td("연간", b.yearly)}${td("체험 중", b.trials)}`
+            + `${td("이용권", `${b.passes}${b.passesBought ? ` <small>+${b.passesBought}</small>` : ""}`)}${td("갱신 끔", b.ending)}${td("시작", b.started)}${td("끝남", b.stopped)}</tr>`;
+        }).join("")}</tbody></table></div>`
+        : '<p class="meta">아직 팀·직원 요금제 구매가 없어요.</p>'}
+      <h3>기능 안내 → 결제</h3><dl class="kv"><dt>팀·가게 관리 열기</dt><dd>${p3.funnel.manage}</dd><dt>기능 안내 보임 → 누름</dt><dd>${p3.funnel.hintShown} → ${p3.funnel.hintOpen} (${rate(p3.funnel.hintOpen, p3.funnel.hintShown)})</dd>
+        <dt>요금제 창 → 결제 누름</dt><dd>${p3.funnel.planView} → ${p3.funnel.buyTap} (${rate(p3.funnel.buyTap, p3.funnel.planView)})</dd><dt>이 기간 새 구독·이용권</dt><dd>${p3.funnel.started}</dd><dt>파일·사진 가져오기</dt><dd>${p3.funnel.imports ?? 0}회 · ${p3.funnel.importPhones ?? 0}대</dd>
+        <dt>팀·가게 화면 오류</dt><dd>${p3.errors}</dd></dl>
+      <p class="hint">휴대폰 수는 날마다 센 합이에요(같은 휴대폰이 이틀이면 2). 구간·구독은 Play 구매 확인, 나머지는 사용 통계에 동의한 휴대폰의 하루 횟수라 서로 다를 수 있어요. 팀·가게 이름, 사람 이름, 금액은 받지 않아요.</p></section>` : "";
     const sh = d.shares;
     // [STAT-04] The share server counts views roughly (approximate), so the numbers say 대략.
     const about = (v) => (sh?.approximate !== false ? `대략 ${v}` : v);
     const shares = `<section class="card"><h2>근무표 링크</h2>${sh ? `<dl class="kv"><dt>만든 링크</dt><dd>${about(sh.created)}</dd><dt>페이지 열람</dt><dd>${about(sh.views)}</dd>
-        <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd></dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.</p>`
+        <dt>신고</dt><dd>${sh.reports ?? 0}</dd><dt>내린 링크</dt><dd>${sh.removed ?? 0}</dd>${phonesRows(sh.phones)}</dl><p class="hint">공유 서버가 5분마다 모아 세는 대략의 숫자예요.${sh.phones ? " 아이폰 비율은 iOS 앱을 언제 만들지 정하는 기준이에요(팀·사장님 링크 4주 평균 30%가 안)." : ""}</p>`
       : '<p class="meta">공유 서버가 연결되지 않았어요. 관리 › 서버 상태를 봐 주세요.</p>'}</section>`;
     const events = `<details class="card events" data-key="metrics:events"${S.opened.get("metrics:events") ? " open" : ""}><summary><h2>기능별 <span class="meta">${d.events.length}개</span></h2></summary>
       <p class="hint">비율은 최근 28일 안에 한 번이라도 한 휴대폰의 비율이에요.</p>
       <ul class="rows">${d.events.map((e) => `<li><div class="row"><span class="row-main"><b>${esc(e.label)}</b><small>${esc(e.event)} · ${e.total}번</small></span>
         <span class="row-side"><b>${pct(e.share)}</b></span></div></li>`).join("")}</ul></details>`;
-    return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>` : "")
-      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${remoteCard()}${funnel}${shares}</div>${events}`;
+    // 1.39 [ADM3-43] '하루 평균 활성 1대'가 Play 월간 활성 6과 달라 헷갈렸어요(실서버 점검 11-08): 무엇을 세는지와 Play가 본 수를 나란히.
+    const who = `<p class="meta" data-active-who>활성·휴대폰 수는 설정에서 '사용 통계 보내기'를 켠 휴대폰만 세요.${d.playUsers ? ` Play가 본 하루 사용자는 ${d.playUsers}명이에요(${esc(d.playDay ?? "")}, 모든 휴대폰).` : ""} Play Console › 통계의 월간 활성 사용자는 모든 휴대폰이라 더 커요.</p>`;
+    return head + (kpis.length ? `<div class="tiles core metric-kpis">${kpis.join("")}</div>${who}` : "")
+      + `<div class="grid two">${series}${activeCard(d)}${gatesCard(d)}${inquiryCard(d)}${plazaCard(d)}${photoWrongCard(d) /* AQ 1.29 */}${errorCard(d)}${startupCard(d) /* AO 1.28 */}${lookupCard(d) /* R131 1.31 */}${setupTapsCard(d) /* 1.39 SETUP-20 */}${remoteCard()}${funnel}${shares}${phase3}</div>${events}`;
+  }
+
+  /**
+   * 1.39 [IOS-06] Who opens the links, by kind of phone (공유 서버 stats.phones, people only, no preview robots): 근무표 링크 and
+   * 팀·사장님 링크 apart, each with its iPhone share. Nothing before the share server counts them.
+   */
+  function phonesRows(p) {
+    if (!p) return "";
+    const row = (label, ios, android, other) => {
+      const all = ios + android + other;
+      const of = (n) => pct(Math.round((n * 100) / all));
+      return `<dt>${label}</dt><dd>${all ? `아이폰 ${of(ios)} · 안드로이드 ${of(android)} · 그 밖 ${of(other)} <small>(${all}번)</small>` : "아직 없어요"}</dd>`;
+    };
+    return row("근무표 링크를 연 휴대폰", p.views_ios, p.views_android, p.views_other)
+      + row("팀·사장님 링크를 연 휴대폰", p.team_ios, p.team_android, p.team_other);
   }
 
   /** [STAT-03] 출시 관문, on 지표 and (AN 1.28 [ADMUX-32]) on 출시 › 출시 관문. */
@@ -86,7 +124,7 @@ export function insightViews(A) {
   function gatesView() {
     const d = S.data.gates;
     if (!d) return skeleton(2);
-    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">분석 › 지표</a>로 가요.</p>
+    return `<p class="hint">출시 전에 보는 두 가지예요. 기간을 바꾸거나 다른 숫자를 보려면 <a href="${href("metrics")}">숫자 › 지표</a>로 가요.</p>
       <div class="grid two">${gatesCard(d)}${remoteCard()}</div>`;
   }
 
@@ -108,6 +146,25 @@ export function insightViews(A) {
       ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 시작 시간이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}</section>`;
   }
   // AO 1.28 끝
+
+  // 1.39 [SETUP-20] 첫 설정 누른 횟수 (사용자 결정 2026-11-07, '처음 1분'을 숫자로): per app version and kind of work, the middle
+  // value and 9 in 10 phones, from phones with 사용 통계 once 처리방침 3.12 is in force.
+  const SETUP_STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "가게", INVEST: "투자" };
+  const taps = (n) => (n >= 150 ? "100번 넘음" : `${n}번`);
+  function setupTapsCard(d) {
+    const st = d.startup;
+    if (!st) return "";
+    const rows = st.versions.filter((v) => v.setup).map((v) => {
+      const all = Object.values(v.setup).reduce((n, p) => n + p.phones, 0);
+      const parts = Object.entries(SETUP_STYLE_NAMES).filter(([k]) => v.setup[k])
+        .map(([k, name]) => `${name} 가운데 ${taps(v.setup[k].p50)}(90% ${taps(v.setup[k].p90)}) · ${v.setup[k].phones}대`).join(" · ");
+      return `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${esc(parts)}</small></span>
+        <span class="row-side">${all < st.few ? '<span class="pill">데이터 부족</span>' : ""}<span class="meta">${all}대</span></span></div></li>`;
+    }).join("");
+    return `<section class="card" id="setup-taps-card"><h2>첫 설정 누른 횟수</h2>
+      <p class="hint">처음 깔고 첫 설정을 저장해 달력이 찰 때까지 화면을 누른 횟수예요(일하는 방식마다 가운데 값 · 10대 중 9대가 그 안). 처리방침 3.12 시행 뒤, 사용 통계에 동의한 새 휴대폰만 구간 값으로 한 번 보내요. 무엇을 눌렀는지는 오지 않아요. 판마다 줄면 '처음 1분'이 쉬워진 거예요.</p>
+      ${rows ? `<ul class="rows">${rows}</ul>` : '<p class="meta">아직 받은 횟수가 없어요. 처리방침 3.12가 시행되고 1.39 이상을 새로 깐 휴대폰부터 와요.</p>'}</section>`;
+  }
 
   // R131 1.31 [STAT-08] N4 조회 시간: what consenting phones sent once 처리방침 3.5 is in force, per app version.
   function lookupCard(d) {

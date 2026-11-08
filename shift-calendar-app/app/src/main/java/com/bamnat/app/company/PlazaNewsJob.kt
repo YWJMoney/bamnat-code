@@ -105,17 +105,26 @@ class PlazaNewsJob : JobService() {
             val recipeLines = runCatching { c.recipes.newsLines() }.getOrDefault(emptyList())
             val changes = runCatching { receivedChanges(c) }.getOrDefault(emptyList())
             val digest = runCatching { digest(c) }.getOrNull()
-            val text = BamnatNews.text(digest?.plaza.orEmpty(), digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
+            // 1.38 PC 9차 LOW (알림은 '새 답 2개', 내 글 화면은 '1개'): the server counts a day's answers, the screen what this phone has
+            // not seen; the notice now says the screen's number, and no line when they were all read already.
+            val plaza = sameAnswerCount(c, digest?.plaza.orEmpty())
+            val text = BamnatNews.text(plaza, digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
             if (text == null && recipeLines.isEmpty()) return
-            val plaza = digest?.plaza.orEmpty()
             val target = when {
                 // [TOWN-01] 1.37: only 장터 news opens 장터; only answers to my posts open those posts.
                 text == null -> NoticeLinks.Target.MARKET
                 text.onlyAnswers && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 plaza.isNotEmpty() && plaza.all { it.kind == "replies" } && changes.isEmpty() && (digest?.answers ?: 0) == 0 &&
                     digest?.notices.isNullOrEmpty() && recipeLines.isEmpty() -> NoticeLinks.Target.VILLAGE_POSTS
-                digest?.plaza.isNullOrEmpty() && changes.isNotEmpty() -> NoticeLinks.Target.TODAY
-                digest?.plaza.isNullOrEmpty() && (digest?.answers ?: 0) > 0 && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
+                // 1.39 발굴 2-1·2-3: a newer version of the way in use, or an answer to my 보완 요청: the pay screen's way card has both,
+                // wherever the plaza keeps its company rules.
+                plaza.isNotEmpty() && plaza.all { it.kind == "newer" || it.kind == "fix_answer" } && changes.isEmpty() &&
+                    (digest?.answers ?: 0) == 0 && digest?.notices.isNullOrEmpty() && recipeLines.isEmpty() -> NoticeLinks.Target.PAY
+                // 1.39 발굴 (마을 돌봄 스레드 요청): '보완 요청이 n개 왔어요' about one version opens that version's talk.
+                fixTalk(plaza) != null && changes.isEmpty() && (digest?.answers ?: 0) == 0 && digest?.notices.isNullOrEmpty() &&
+                    recipeLines.isEmpty() -> NoticeLinks.Target.FIX_TALK
+                plaza.isEmpty() && changes.isNotEmpty() -> NoticeLinks.Target.TODAY
+                plaza.isEmpty() && (digest?.answers ?: 0) > 0 && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 else -> NoticeLinks.Target.PLAZA
             }
             val title = when {
@@ -124,18 +133,53 @@ class PlazaNewsJob : JobService() {
                 else -> "밤낮·마을 소식"
             }
             val lines = (text?.lines.orEmpty() + recipeLines).take(MAX_LINES)
+            tell(c, title, lines, target, if (target == NoticeLinks.Target.FIX_TALK) fixTalk(plaza) else null)
+        }
+
+        /**
+         * The one 소식 notice: [lines] added to any still waiting, held through sleep and work. 1.39 [PLZC-41] the 광장 push
+         * ([PlazaPush]) tells through here too, so 답 바로 알림 and the daily 소식 stay one notice in one channel. A waiting line that
+         * starts with [replacing] gives way to the new one (a count that grew).
+         */
+        internal suspend fun tell(c: AppContainer, title: String, lines: List<String>, target: NoticeLinks.Target, payload: String? = null,
+            replacing: String? = null) {
+            if (lines.isEmpty()) return
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             // What waits is the notice as written now (the server's news is read once), added to any still waiting.
             val held = heldOf(prefs)
-            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines ?: emptyList()) + lines).distinct().take(MAX_LINES),
-                if (held != null && held.target != target) NoticeLinks.Target.PLAZA else target)
+            val apart = held != null && (held.target != target || held.payload != payload)
+            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines?.filterNot { replacing != null && it.startsWith(replacing) } ?: emptyList()) + lines).distinct().take(MAX_LINES),
+                if (apart) NoticeLinks.Target.PLAZA else target, payload.takeIf { !apart })
             keep(prefs, all)
             if (com.bamnat.app.sleep.QuietHold.holdIfAsleep(c.appContext, com.bamnat.app.sleep.QuietHold.Source.VILLAGE, Today.dateTime())) return
             postHeld(c.appContext)
         }
 
+        /** 1.38: the 새 답 lines as one, counted as 마을 › 내 글 counts them (unseen on this phone); the server's lines if that cannot be read. */
+        private suspend fun sameAnswerCount(c: AppContainer, items: List<com.bamnat.core.plaza.PlazaNewsItem>): List<com.bamnat.core.plaza.PlazaNewsItem> {
+            val replies = items.filter { it.kind == "replies" }
+            if (replies.isEmpty()) return items
+            val fresh = runCatching { VillageReplies.fresh(c.appContext, c.companyApi.myPosts(c.companyStore.device)).values.sum() }.getOrNull()
+                ?: return items
+            val rest = items.filter { it.kind != "replies" }
+            return if (fresh <= 0) rest else rest + replies.first().copy(count = fresh, company = replies.singleOrNull()?.company)
+        }
+
+        /**
+         * 1.39 발굴: the talk a news of only 보완 요청 opens, as [NoticeLinks.FixTalk.payload]; null when the news is about anything else
+         * or about more than one version (then 광장 opens as before).
+         */
+        internal fun fixTalk(plaza: List<PlazaNewsItem>): String? {
+            if (plaza.isEmpty() || plaza.any { it.kind != "fix" }) return null
+            val one = plaza.map { it.companyId to it.setup }.distinct().singleOrNull() ?: return null
+            val (company, setup) = one
+            if (company.isNullOrBlank() || setup.isNullOrBlank()) return null
+            val i = plaza.first()
+            return NoticeLinks.FixTalk(company, setup, "${i.company ?: "회사"} · ${i.dept?.ifEmpty { null } ?: "회사 전체"}").payload
+        }
+
         /** 1.36 [VIL-05] One 소식 notice at most: what [check] wrote, posted now or when the user is off work and awake. */
-        private data class Held(val title: String, val lines: List<String>, val target: NoticeLinks.Target)
+        private data class Held(val title: String, val lines: List<String>, val target: NoticeLinks.Target, val payload: String? = null)
         private const val K_HELD = "held"
         private const val MAX_LINES = 7
 
@@ -143,12 +187,13 @@ class PlazaNewsJob : JobService() {
             runCatching {
                 val o = JSONObject(raw)
                 Held(o.getString("title"), o.getJSONArray("lines").let { a -> List(a.length()) { a.getString(it) } },
-                    NoticeLinks.Target.valueOf(o.getString("target")))
+                    NoticeLinks.Target.valueOf(o.getString("target")), o.optStringOrNull("payload"))
             }.getOrNull()
         }
 
         private fun keep(prefs: android.content.SharedPreferences, h: Held) {
-            prefs.edit().putString(K_HELD, JSONObject().put("title", h.title).put("lines", org.json.JSONArray(h.lines)).put("target", h.target.name).toString()).apply()
+            prefs.edit().putString(K_HELD, JSONObject().put("title", h.title).put("lines", org.json.JSONArray(h.lines)).put("target", h.target.name)
+                .apply { h.payload?.let { put("payload", it) } }.toString()).apply()
         }
 
         /** Posts the 소식 waiting, if any (from [check] at once, or from [com.bamnat.app.sleep.QuietHold] after work or sleep). */
@@ -162,7 +207,7 @@ class PlazaNewsJob : JobService() {
                 .setContentTitle(h.title)
                 .setContentText(h.lines.first())
                 .setStyle(NotificationCompat.InboxStyle().also { s -> h.lines.forEach(s::addLine) })
-                .setContentIntent(Notifications.open(context, h.target, 2203))
+                .setContentIntent(Notifications.open(context, h.target, 2203, payload = h.payload))
                 .setAutoCancel(true)
                 // [TOWN-08] PC 확인 73f69cbd: Android folded this into one bundle with '오늘 휴무' and a tap opened the calendar.
                 // A group of its own (as its own summary) keeps it apart.
@@ -208,6 +253,7 @@ class PlazaNewsJob : JobService() {
             version = if (i.has("version") && !i.isNull("version")) i.optInt("version") else null, trade = i.optStringOrNull("trade"),
             atMillis = runCatching { Instant.parse(i.optString("at")).toEpochMilli() }.getOrDefault(0L),
             result = i.optStringOrNull("result"), post = i.optStringOrNull("post"), count = i.optInt("count"),
+            companyId = i.optJSONObject("company")?.optStringOrNull("id"), setup = i.optStringOrNull("setup"),
         )
 
         /**
@@ -220,7 +266,7 @@ class PlazaNewsJob : JobService() {
             val lines = mutableListOf<String>()
             for (cal in c.received.calendars.value.filter { !it.gone }) {
                 val got = try {
-                    c.shareApi.readIfChanged(cal.id, cal.etag)
+                    c.shareApi.readQuietly(cal.id, cal.etag)
                 } catch (e: ShareLinkException) {
                     if (e.message == "not_found") c.received.markGone(cal.id, e.removedReason)
                     null
@@ -228,7 +274,9 @@ class PlazaNewsJob : JobService() {
                     null
                 } ?: continue
                 val old = cal.schedule
-                c.received.update(cal.id, got)
+                val after = c.received.update(cal.id, got)
+                // 1.39 [TEAM-22] A followed link's change goes into the user's own days (or is asked) before the old copy is gone.
+                if (after != null) com.bamnat.app.share.RosterFollower.settle(c, cal.id)
                 val new = runCatching { SharedSchedule.parse(got.schedule) }.getOrNull() ?: continue
                 val changed = ReceivedChanges.nextDays(old, new, today)
                 if (changed.isNotEmpty()) lines += "${cal.name} " + changed.take(2).joinToString(", ") +

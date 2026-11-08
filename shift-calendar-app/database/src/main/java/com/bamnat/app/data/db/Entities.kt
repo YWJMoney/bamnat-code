@@ -141,4 +141,10 @@ data class MemoEntity(
     @ColumnInfo(defaultValue = "''") val calendars: String = "",
     /** Version 17 [NOTE-05]. */
     @ColumnInfo(defaultValue = "''") val repeat: String = "",
+    /** Version 28 (1.38 이 날만 빼기): the days taken off a repeating memo, see [com.bamnat.core.memo.MemoRepeat.encodeSkips]. */
+    @ColumnInfo(defaultValue = "''") val skips: String = "",
+    /** Version 33 (1.39 [TASK-02]): when a memo that does not repeat was finished (끝냄); null while it is not. */
+    @ColumnInfo(defaultValue = "NULL") val doneAt: Long? = null,
+    /** Version 33 (1.39 [TASK-02]): the days a repeating memo was finished on, as [com.bamnat.core.memo.MemoRepeat.encodeSkips]. */
+    @ColumnInfo(defaultValue = "''") val doneDays: String = "",
 )

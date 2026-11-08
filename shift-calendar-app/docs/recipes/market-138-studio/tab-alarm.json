@@ -1,0 +1,1316 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오로라 기상",
+   "summary": "야간은 세 시간·한 시간 전 두 번, 소리는 점점 크게",
+   "desc": "야간 전 낮잠에서 깰 시간과 출발 시간을 따로 챙겨요. 근무마다 알람이 주간 1시간 30분·1시간 전, 저녁 1시간 30분 전, 야간 3시간·1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘초록 오로라’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 30분·1시간 전, 저녁 1시간 30분 전, 야간 3시간·1시간 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF08101C|ph:3166212c0c75fc16|dm:25|cd:FF171B22|ik:FFFFFFFF|ac:FF4588D6|ft:gowundodum"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4278586393,
+    "b": 4282747094,
+    "dir": 2,
+    "emoji": "🌌"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "새벽 주간 두 번",
+   "summary": "주간은 두 번, 덧셈 문제를 풀어야 꺼져요",
+   "desc": "새벽 주간에 다시 잠드는 일을 막아요. 근무마다 알람이 주간 1시간 40분·1시간 10분 전, 저녁 1시간 30분 전, 야간 2시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘새벽 별’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 40분·1시간 10분 전, 저녁 1시간 30분 전, 야간 2시간 전\n· 끌 때 간단한 덧셈 문제를 풀어요.\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF483C5E|ph:9fb10552843aeba1|dm:25|cd:FF3C353C|ik:FFFFFFFF|ac:FFF5C4FC|ft:nunito"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        100,
+        70
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "math"
+    }
+   ],
+   "cover": {
+    "a": 4279506748,
+    "b": 4294296828,
+    "dir": 2,
+    "emoji": "🌠"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 낮잠 알람",
+   "summary": "야간 네 시간 전에 낮잠 깨우기",
+   "desc": "야간 전 낮잠을 자고 일어날 때를 맞춰요. 근무마다 알람이 야간 4시간·1시간 30분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘초승달 밤’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 야간 4시간·1시간 30분 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF171633|ph:68ec273aa80e3f92|dm:25|cd:FF1F1F30|ik:FFFFFFFF|ac:FF837ACC|ft:nanummyeongjo"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "night",
+       "before": [
+        240,
+        90
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4279309349,
+    "b": 4286806732,
+    "dir": 2,
+    "emoji": "🌙"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "흔들어 깨우기",
+   "summary": "휴대폰을 흔들어야 꺼지는 교대 알람",
+   "desc": "누운 채로 끄고 다시 잠드는 일을 막아요. 근무마다 알람이 주간 1시간 20분 전, 저녁 1시간 20분 전, 야간 2시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘한밤 도시’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 20분 전, 저녁 1시간 20분 전, 야간 2시간 전\n· 끌 때 휴대폰을 흔들어요.\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF070910|ph:04032c8e4b588944|dm:25|cd:FF16171C|ik:FFFFFFFF|ac:FF7283DF|ft:rubik"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "shake"
+    }
+   ],
+   "cover": {
+    "a": 4278387724,
+    "b": 4285694943,
+    "dir": 2,
+    "emoji": "📳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "부드러운 별빛 기상",
+   "summary": "작게 시작해 점점 커지는 소리, 다시 울림 10분",
+   "desc": "근무마다 알람이 주간 1시간 30분 전, 저녁 1시간 전, 야간 2시간 30분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘별 쏟아지는 밤’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 30분 전, 저녁 1시간 전, 야간 2시간 30분 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 10분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF0F0C22|ph:4b2f13107c7e92ad|dm:25|cd:FF1B1926|ik:FFFFFFFF|ac:FF897BD3|ft:gowundodum"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        150
+       ]
+      }
+     ],
+     "snooze": 10,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4278847764,
+    "b": 4287200211,
+    "dir": 2,
+    "emoji": "⭐"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "병동 교대 알람",
+   "summary": "인수인계 시간까지 넉넉하게, 근무마다 두 번",
+   "desc": "근무마다 알람이 주간 1시간 40분·1시간 전, 저녁 1시간 30분·50분 전, 야간 2시간 30분·1시간 10분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘밤 창 물방울’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 40분·1시간 전, 저녁 1시간 30분·50분 전, 야간 2시간 30분·1시간 10분 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF181C2A|ph:86c5a249602d1edd|dm:25|cd:FF20222A|ik:FFFFFFFF|ac:FF6E85D1|ft:gowundodum"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        100,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90,
+        50
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        150,
+        70
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4280164650,
+    "b": 4285433297,
+    "dir": 2,
+    "emoji": "🩺"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "공장 3교대 알람",
+   "summary": "통근 버스 시간에 맞춘 근무마다 두 번",
+   "desc": "근무마다 알람이 주간 1시간 20분·50분 전, 저녁 1시간 20분·50분 전, 야간 1시간 40분·1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘비 오는 도시’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 20분·50분 전, 저녁 1시간 20분·50분 전, 야간 1시간 40분·1시간 전\n· 다시 울림 5분, 한 번에 5분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF0E171C|ph:9310607e0206be50|dm:25|cd:FF1A2023|ik:FFFFFFFF|ac:FF4091A8|ft:notosanskr"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        100,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 5,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4280234036,
+    "b": 4282421672,
+    "dir": 2,
+    "emoji": "🏭"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "밤바다 기상",
+   "summary": "파도처럼 작게 시작하는 소리, 야간은 두 번",
+   "desc": "근무마다 알람이 주간 1시간 30분 전, 저녁 1시간 10분 전, 야간 3시간·1시간 30분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘밤바다 물결’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 30분 전, 저녁 1시간 10분 전, 야간 3시간·1시간 30분 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF0A1426|ph:d92907cd88db19af|dm:25|cd:FF181E28|ik:FFFFFFFF|ac:FF4E84E2|ft:nunito"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        90
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4278982450,
+    "b": 4283335906,
+    "dir": 2,
+    "emoji": "🌊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "깊은 잠 깨우기",
+   "summary": "덧셈 문제와 5분 울림, 깊이 잠드는 분께",
+   "desc": "깊이 잠들어 알람을 놓치는 분께 맞췄어요. 근무마다 알람이 주간 1시간 30분·1시간 전, 저녁 1시간 30분 전, 야간 2시간 30분·1시간 30분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘한밤 보라’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 30분·1시간 전, 저녁 1시간 30분 전, 야간 2시간 30분·1시간 30분 전\n· 끌 때 간단한 덧셈 문제를 풀어요.\n· 다시 울림 5분, 한 번에 5분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF351E37|ph:3515abe70ac909b8|dm:25|cd:FF312432|ik:FFFFFFFF|ac:FF8375CD|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        150,
+        90
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 5,
+     "vibrate": true,
+     "mission": "math"
+    }
+   ],
+   "cover": {
+    "a": 4283640663,
+    "b": 4286805453,
+    "dir": 2,
+    "emoji": "😪"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "민트 출근 알람",
+   "summary": "출근 80·50분 전, 당직은 두 시간 전",
+   "desc": "근무마다 알람이 출근 1시간 20분·50분 전, 당직 2시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘민트 아침’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 출근 1시간 20분·50분 전, 당직 2시간 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:81f8c48f119ce56a|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF488304|ft:gowundodum"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4288931542,
+    "b": 4282942212,
+    "dir": 2,
+    "emoji": "🌿"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "재택 여유 알람",
+   "summary": "재택 날은 30분 전 한 번, 출근은 두 번",
+   "desc": "근무마다 알람이 출근 1시간 20분·50분 전, 재택 30분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘민트 아침 산’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 출근 1시간 20분·50분 전, 재택 30분 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:c167b48edfd800c2|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF0E846F|ft:nunito"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "other",
+       "before": [
+        30
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4291424998,
+    "b": 4279141487,
+    "dir": 2,
+    "emoji": "🏠"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "당직 대비 알람",
+   "summary": "당직 세 시간·한 시간 전, 흔들어 끄기",
+   "desc": "근무마다 알람이 출근 1시간 10분 전, 당직 3시간·1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘한밤 푸른 산’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 출근 1시간 10분 전, 당직 3시간·1시간 전\n· 끌 때 휴대폰을 흔들어요.\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF111A2E|ph:586918394b2b3567|dm:25|cd:FF1C212D|ik:FFFFFFFF|ac:FF6386D5|ft:gowunbatang"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "shake"
+    }
+   ],
+   "cover": {
+    "a": 4279179312,
+    "b": 4284712661,
+    "dir": 2,
+    "emoji": "🌙"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "새벽 도시 출근",
+   "summary": "먼 출근길에 맞춘 100·70분 전",
+   "desc": "근무마다 알람이 출근 1시간 40분·1시간 10분 전, 당직 2시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘새벽 도시’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 출근 1시간 40분·1시간 10분 전, 당직 2시간 전\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF202131|ph:9b5a703709856191|dm:25|cd:FF25252F|ik:FFFFFFFF|ac:FF707DC9|ft:notosanskr"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        100,
+        70
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4282072931,
+    "b": 4285562313,
+    "dir": 2,
+    "emoji": "🌆"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "덧셈 출근 알람",
+   "summary": "덧셈을 풀어야 꺼지는 출근 알람",
+   "desc": "근무마다 알람이 출근 1시간 10분·40분 전, 당직 1시간 40분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘모눈 공책’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 출근 1시간 10분·40분 전, 당직 1시간 40분 전\n· 끌 때 간단한 덧셈 문제를 풀어요.\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:b8a1f7854d28f1c4|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF6C762D|ft:nanumgothiccoding"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        70,
+        40
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        100
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "math"
+    }
+   ],
+   "cover": {
+    "a": 4294507000,
+    "b": 4285298221,
+    "dir": 2,
+    "emoji": "➕"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "파스텔 오픈 알람",
+   "summary": "오픈 한 시간·30분 전, 야간은 90분 전",
+   "desc": "근무마다 알람이 오픈 1시간·30분 전, 마감 1시간 전, 야간 1시간 30분·40분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘파스텔 빛망울’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 오픈 1시간·30분 전, 마감 1시간 전, 야간 1시간 30분·40분 전\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:3dc7164fe37bfd44|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF7D4FF8|ft:jua"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        60,
+        30
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        90,
+        40
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4293977073,
+    "b": 4286402552,
+    "dir": 2,
+    "emoji": "🌅"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "편의점 야간 알람",
+   "summary": "야간 두 시간·한 시간 전, 흔들어 끄기",
+   "desc": "근무마다 알람이 오픈 1시간 전, 마감 1시간 전, 야간 2시간·1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘네온 핑크’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 오픈 1시간 전, 마감 1시간 전, 야간 2시간·1시간 전\n· 끌 때 휴대폰을 흔들어요.\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF251B33|ph:eb60086d643c7f35|dm:25|cd:FF282230|ik:FFFFFFFF|ac:FF9390DD|ft:rubik"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "shake"
+    }
+   ],
+   "cover": {
+    "a": 4281342520,
+    "b": 4287860957,
+    "dir": 2,
+    "emoji": "🏪"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "카페 오픈 알람",
+   "summary": "오픈 날만 두 번, 마감 날은 한 번",
+   "desc": "근무마다 알람이 오픈 1시간 10분·40분 전, 마감 1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘말랑 체크’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 오픈 1시간 10분·40분 전, 마감 1시간 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:9f3c978c5d37631e|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF946601|ft:jua"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        70,
+        40
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4294634970,
+    "b": 4287915521,
+    "dir": 2,
+    "emoji": "☕"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "학생 알바 알람",
+   "summary": "수업 끝나고 가는 마감 근무 90분 전",
+   "desc": "근무마다 알람이 오픈 1시간 전, 마감 1시간 30분·45분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘레몬 소다’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 오픈 1시간 전, 마감 1시간 30분·45분 전\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:ec1f0643bd00a9b4|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF7A6E11|ft:fredoka"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90,
+        45
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4293718726,
+    "b": 4286213649,
+    "dir": 2,
+    "emoji": "🎒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "배달 출발 알람",
+   "summary": "근무 30분 전 짧게, 다시 울림 3분",
+   "desc": "근무마다 알람이 오픈 40분 전, 마감 40분 전, 야간 50분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘네온 도시’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 오픈 40분 전, 마감 40분 전, 야간 50분 전\n· 다시 울림 3분, 한 번에 2분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF110C19|ph:472c5dc5dc44091c|dm:25|cd:FF1C1920|ik:FFFFFFFF|ac:FFC058DE|ft:rubik"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        40
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        40
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        50
+       ]
+      }
+     ],
+     "snooze": 3,
+     "ring": 2,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4280293672,
+    "b": 4290795742,
+    "dir": 2,
+    "emoji": "🛵"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "벚꽃 기상",
+   "summary": "작게 시작하는 부드러운 기상, 근무마다 한 번",
+   "desc": "근무마다 알람이 주간 1시간 20분 전, 저녁 1시간 10분 전, 야간 2시간 전, 당직 2시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘벚꽃 바람’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 20분 전, 저녁 1시간 10분 전, 야간 2시간 전, 당직 2시간 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:8fc2515e72f81dae|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FFE00B4D|ft:gowundodum"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4294895342,
+    "b": 4292873037,
+    "dir": 2,
+    "emoji": "🌸"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "눈 오는 아침",
+   "summary": "겨울 아침엔 10분 더 일찍",
+   "desc": "눈 오는 날 길이 막힐 때를 생각해 넉넉히 울려요. 근무마다 알람이 주간 1시간 40분·1시간 10분 전, 저녁 1시간 30분 전, 야간 2시간 10분 전, 당직 2시간 10분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘하얀 눈’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 40분·1시간 10분 전, 저녁 1시간 30분 전, 야간 2시간 10분 전, 당직 2시간 10분 전\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:a0d5ec0e135a3f3d|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF3B77C2|ft:quicksand"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        100,
+        70
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        130
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        130
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4292864502,
+    "b": 4282087362,
+    "dir": 2,
+    "emoji": "☃️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "숲속 기상",
+   "summary": "안개 숲처럼 조용히 시작하는 소리",
+   "desc": "근무마다 알람이 주간 1시간 15분 전, 저녁 1시간 15분 전, 야간 1시간 50분 전, 당직 1시간 50분 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘안개 숲 산’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 15분 전, 저녁 1시간 15분 전, 야간 1시간 50분 전, 당직 1시간 50분 전\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:c91eddbc5cd9c9ce|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF2C7463|ft:gowunbatang"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        75
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        75
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        110
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        110
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4292864230,
+    "b": 4281103459,
+    "dir": 2,
+    "emoji": "🌲"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "도시 불빛 기상",
+   "summary": "근무마다 두 번, 다시 울림 5분",
+   "desc": "근무마다 알람이 주간 1시간 30분·1시간 전, 저녁 1시간 30분·1시간 전, 야간 2시간·1시간 전, 당직 2시간·1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘푸른 도시 불빛’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 30분·1시간 전, 저녁 1시간 30분·1시간 전, 야간 2시간·1시간 전, 당직 2시간·1시간 전\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF1B2939|ph:252ec94444112c72|dm:25|cd:FF222A33|ik:FFFFFFFF|ac:FFABD5EC|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120,
+        60
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4279707452,
+    "b": 4289451500,
+    "dir": 2,
+    "emoji": "🌃"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "아침 해 기상",
+   "summary": "분홍 노을 언덕 화면에 덧셈 끄기",
+   "desc": "근무마다 알람이 주간 1시간 20분 전, 저녁 1시간 10분 전, 야간 2시간 전, 당직 2시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘분홍 노을 산’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 20분 전, 저녁 1시간 10분 전, 야간 2시간 전, 당직 2시간 전\n· 소리가 작게 시작해 점점 커져요\n· 끌 때 간단한 덧셈 문제를 풀어요.\n· 다시 울림 5분, 한 번에 3분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:853d904cefcab085|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FFC84A03|ft:jua"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "math"
+    }
+   ],
+   "cover": {
+    "a": 4294883731,
+    "b": 4291316227,
+    "dir": 2,
+    "emoji": "🌄"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "길게 울리는 알람",
+   "summary": "근무마다 두 번, 한 번에 5분 길게 울려요",
+   "desc": "근무마다 알람이 주간 1시간 20분·50분 전, 저녁 1시간 20분·50분 전, 야간 2시간·1시간 전, 당직 2시간·1시간 전에 맞춰져요. 알람 화면엔 밤낮 배경 ‘구름 솜사탕’이 어둡게 깔려 잠 깰 때 눈부시지 않아요.\n적용하면 바뀌는 것:\n· 알람: 주간 1시간 20분·50분 전, 저녁 1시간 20분·50분 전, 야간 2시간·1시간 전, 당직 2시간·1시간 전\n· 다시 울림 5분, 한 번에 5분\n주의할 점: 근무 알람 설정과 알람 화면만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF101018|ph:6c2e2686907aae4e|dm:45|cd:FF1D1D26|ik:FFFFFFFF|ac:FF1A74CD|ft:notosanskr"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        80,
+        50
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120,
+        60
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 5,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4292403962,
+    "b": 4279923917,
+    "dir": 2,
+    "emoji": "🔠"
+   }
+  }
+ }
+]

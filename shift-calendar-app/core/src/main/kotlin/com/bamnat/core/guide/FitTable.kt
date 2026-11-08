@@ -18,7 +18,11 @@ enum class FitSurface(val label: String) {
  * [FIT-01] One part or tool of a [surface] and the kinds of work it suits: those of its [feature] in
  * [FeatureRegistry] when it is one, else its own [own] ([ANY] for every kind).
  */
-data class FitItem(val surface: FitSurface, val id: String, private val own: Set<WorkStyle> = ANY, val feature: String? = null) {
+data class FitItem(
+    val surface: FitSurface, val id: String, private val own: Set<WorkStyle> = ANY, val feature: String? = null,
+    /** 1.39 [FLOW-34] Kinds of work this part is not even offered to under '더 보기' (its words would not fit them). */
+    val never: Set<WorkStyle> = ANY,
+) {
     val styles: Set<WorkStyle> get() = feature?.let { FeatureRegistry.get(it)?.styles } ?: own
 
     /** Kept with the calendar when the user adds it: "CALENDAR_TOOLS:pattern". */
@@ -56,7 +60,8 @@ object FitTable {
     val all: List<FitItem> = listOf(
         // 달력 화면 꾸미기 (the app's CalendarPart ids).
         cal("ask"), cal("journal"),
-        cal("todayFlow", feature = "today.flow"),
+        // 1.39 [FLOW-34] 사용자 결정 11-07 (발굴 G6 1-10): 장 시간·배당일은 '근무'가 아니라 투자에는 더하기 목록에도 두지 않아요.
+        FitItem(FitSurface.CALENDAR_PARTS, "todayFlow", feature = "today.flow", never = setOf(INVEST)),
         cal("todayWork", setOf(FIELD, SHOP, INVEST)),
         cal("summary"),
         cal("counts", PAID),
@@ -64,9 +69,12 @@ object FitTable {
         cal("hours", PAID),
         cal("rest", feature = "shift.restRules"),
         cal("memos"),
+        cal("dayStory"), // 1.39 [FLOW-22]
         // 달력 도구 (the tool sheet).
         tool("edit"),
         tool("teams", feature = "shift.teams"),
+        tool("push", setOf(SHIFT)), // [EASE-25]
+        tool("leaderTeams", feature = "team.leader"), // 1.38 PC 11차
         tool("typeMonth", setOf(SHIFT, HOURLY)),
         tool("share"),
         tool("year"),
@@ -100,11 +108,13 @@ object FitTable {
     /** On the screen: it suits [style], the user added it to this calendar, or the table does not know it. */
     fun visible(surface: FitSurface, id: String, style: WorkStyle?, added: Set<String>): Boolean {
         val item = item(surface, id) ?: return true
+        if ((style ?: WorkStyle.SHIFT) in item.never) return false
         return item.fits(style) || item.key in added
     }
 
     /** What '더 보기' offers: the parts of [surface] that do not suit [style], added or not. */
-    fun others(surface: FitSurface, style: WorkStyle?): List<FitItem> = of(surface).filterNot { it.fits(style) }
+    fun others(surface: FitSurface, style: WorkStyle?): List<FitItem> =
+        of(surface).filterNot { it.fits(style) || (style ?: WorkStyle.SHIFT) in it.never }
 
     /** The ids [style] sees on [surface] with nothing added, in the table's order. */
     fun shown(surface: FitSurface, style: WorkStyle?): List<String> = of(surface).filter { it.fits(style) }.map { it.id }

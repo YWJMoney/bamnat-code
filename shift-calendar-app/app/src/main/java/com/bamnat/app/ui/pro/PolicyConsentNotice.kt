@@ -25,7 +25,7 @@ import com.bamnat.core.ops.PolicyConsent
 /**
  * [PRIV-03] 결정 D84·D111: one ask, on the calendar, to a phone installed before 처리방침 3.1, 3.9 or (1.37) 3.11 was posted. A yes lets
  * 결제·광고 and the 3.2~3.8 features reach this phone from 정식 출시일; without one they wait until the dates first promised
- * (11-24 for 3.1, 11-29 for 3.9, 12-04 for 3.11).
+ * (11-24 for 3.1, 11-29 for 3.9, 12-07 for 3.11, 1.38 사용자 2026-11-07).
  */
 @Composable
 fun PolicyConsentNotice(modifier: Modifier = Modifier) {
@@ -38,7 +38,7 @@ fun PolicyConsentNotice(modifier: Modifier = Modifier) {
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp), highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (thanked) {
-                Text("고마워요. 정식 출시일(11월 10일 예정)부터 새 처리방침·이용약관으로 써요.", style = MaterialTheme.typography.bodyMedium)
+                Text("고마워요. 정식 출시일부터 새 처리방침·이용약관으로 써요.", style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { thanked = false }) { Text("닫기") }
                 return@Column
             }
@@ -47,7 +47,7 @@ fun PolicyConsentNotice(modifier: Modifier = Modifier) {
             PolicyConsent.lines.firstOrNull()?.let { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
             if (open) {
                 PolicyConsent.lines.drop(1).forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
-                Text("동의하지 않으셔도 지금처럼 써요. 그때는 원래 알린 날짜(11월 24일~12월 4일)부터 시행돼요.",
+                Text("동의하지 않으셔도 지금처럼 써요. 그때는 원래 알린 날짜(11월 24일~12월 7일)부터 시행돼요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

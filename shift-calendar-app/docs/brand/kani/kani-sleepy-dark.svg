@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 130" role="img" aria-label="칸이 졸림"><title>칸이 졸림</title>
+<defs><clipPath id="bnight172d"><rect x="21" y="24" width="88" height="88" rx="24"/></clipPath></defs>
+<g fill="none" stroke="#C9D1F5" stroke-width="4" stroke-linecap="round"><path d="M20 80q-9 6-7 15" /><path d="M110 80q9 6 7 15" /></g>
+<ellipse cx="49" cy="116" rx="11" ry="5" fill="#C9D1F5"/><ellipse cx="81" cy="116" rx="11" ry="5" fill="#C9D1F5"/>
+<rect x="21" y="24" width="88" height="88" rx="24" fill="#F7F1E6"/>
+<g clip-path="url(#bnight172d)"><rect x="21" y="24" width="88" height="27" fill="#34418F"/></g>
+<path d="M90 31a7 7 0 1 0 0 12a5.5 5.5 0 1 1 0-12z" fill="#FFE9A8"/>
+<rect x="21" y="24" width="88" height="88" rx="24" fill="none" stroke="#C9D1F5" stroke-width="3.5"/>
+<rect x="44" y="14" width="9" height="20" rx="4.5" fill="#C9D1F5"/><rect x="77" y="14" width="9" height="20" rx="4.5" fill="#C9D1F5"/>
+<ellipse cx="38" cy="88" rx="6.5" ry="3.8" fill="#FF9EA0" opacity=".7"/><ellipse cx="92" cy="88" rx="6.5" ry="3.8" fill="#FF9EA0" opacity=".7"/>
+<g fill="#15192B" stroke="#15192B" stroke-linecap="round" stroke-linejoin="round"><path d="M45 77q6 5 12 0" stroke-width="3.5" fill="none"/><path d="M73 77q6 5 12 0" stroke-width="3.5" fill="none"/><ellipse cx="65" cy="90" rx="3.5" ry="4" stroke="none"/></g>
+<g fill="#7C8BD6" font-family="sans-serif" font-weight="700"><text x="104" y="22" font-size="16">z</text><text x="114" y="12" font-size="11">z</text></g></svg>

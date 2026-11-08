@@ -76,7 +76,7 @@ object SetupDraftCodec {
         .put("alarm", d.alarmMinutes ?: -1)
         .put("alarmByType", JSONObject().apply { d.alarmByType.forEach { (id, m) -> put(id.toString(), m ?: -1) } })
         .putOpt("source", d.source?.let(::sourceJson))
-        .put("later", d.later).put("committing", d.committing)
+        .put("later", d.later).put("committing", d.committing).put("linkTitle", d.linkTitle)
 
     fun decode(o: JSONObject): SetupDraft {
         val d = SetupDraft()
@@ -116,6 +116,7 @@ object SetupDraftCodec {
             source = o.optJSONObject("source")?.let(::source),
             later = o.optBoolean("later"),
             committing = o.optBoolean("committing"),
+            linkTitle = o.optString("linkTitle"),
         )
     }
 

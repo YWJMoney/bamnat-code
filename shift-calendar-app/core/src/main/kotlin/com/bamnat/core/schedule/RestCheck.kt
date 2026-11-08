@@ -73,6 +73,7 @@ object RestCheck {
                     RestRules.Sources.REST)
                 continue
             }
+            if (!rules.sameDayRest && a.date == b.date) continue
             val rest = if (gap == 0L) "쉬지 않고 바로" else "${hours(gap)} 쉬고"
             val end = "%02d:%02d".format(a.to.hour, a.to.minute)
             val nextDay = b.date == a.date.plusDays(1)
@@ -213,7 +214,9 @@ object RestCheck {
             val name = e.covered?.name?.takeUnless { it in e.kind.name }?.let { "$it ${e.kind.name}" } ?: e.kind.name
             val piece = Block(from, to, name, e.covered?.colorArgb ?: e.kind.colorArgb)
             val m = main
-            main = if (nextToShift && m != null && !from.isAfter(m.to) && !to.isBefore(m.from)) {
+            // [PAYX-54] Work inside the shift's hours (교육 during 일근) is the same stretch of work, not a second one.
+            val inShift = m != null && e.insideShiftMinutes > 0 && from.isBefore(m.to) && to.isAfter(m.from)
+            main = if ((nextToShift || inShift) && m != null && !from.isAfter(m.to) && !to.isBefore(m.from)) {
                 m.copy(from = minOf(m.from, from), to = maxOf(m.to, to))
             } else {
                 if (nextToShift && m == null) piece else { out += piece; m }

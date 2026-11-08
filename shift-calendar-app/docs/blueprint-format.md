@@ -49,16 +49,18 @@
 | | `cal.cell.memo` · `cal.cell.money` · `cal.cell.hours` · `cal.cell.spend` · `cal.cell.lunar` · `cal.cell.holiday` | 칸 속 줄: 메모, 번 돈, 근무 시간, 쓴 돈, 음력, 공휴일 이름 |
 | | `cal.foot` | 달력 아래 요약 |
 | 메모장 | `memo.head` · `memo.tags` · `memo.card` · `memo.card.title` · `memo.card.body` · `memo.card.date` | 머리, 꼬리표 줄, 카드와 카드 속 제목·내용·날짜 |
+| 메모 쓰기 (1.38) | `memo.page` · `memo.page.rule` · `memo.photo` | 메모 쓰기 종이(바탕 색·글자), 종이 줄(색·굵기·실선/점선/점, 선을 켜면 종이를 안 고른 메모도 줄 노트), 메모 속 사진(모서리·테두리·그림자·틀) [MPH-06] |
 | 가계부 | `money.head` · `money.day` · `money.row` · `money.amount` | 머리, 날짜 머리, 한 줄, 금액(`on: in`·`out`) |
 | 급여 | `pay.head` · `pay.total` · `pay.row` | 머리, 합계, 한 줄 |
-| 위젯 | `widget` · `widget.head` · `widget.cell` | 위젯 바탕, 머리, 칸 |
+| 위젯 | `widget` · `widget.head` · `widget.cell` · `widget.task` · `widget.task.check` · `widget.task.add` | 위젯 바탕, 머리, 칸, 할 일 한 줄·동그라미·＋ 단추(1.39) |
 
 갈래가 새 부품을 더할 때(예: E의 메모 보드 `memo.board.col`, 달력 판 `cal.band`)는 core `BlueprintParts.IDS`와 서버 `PART_IDS`를 같은 커밋에서 고치고, `CHILDREN`(순서에 쓸 아이 이름)도 함께 적어요.
 
 ## 4. 칸 (모두 선택)
 
-**상태 `on`**: `today`(오늘) · `sat` · `sun` · `holiday`(공휴일) · `dim`(다른 달) · `sel`(고른 것) · `role.day` · `role.eve` · `role.night` · `role.long` · `role.off` · `role.other`(근무 종류, `ShiftRole`) · `in`·`out`(수입·지출)
-- 여러 상태가 맞으면 이 차례로 덮어요: 기본 → `role.*` → `in`·`out` → `sat`·`sun` → `holiday` → `dim` → `today` → **`when` 줄(조건부 꾸미기)** → `sel`.
+**상태 `on`**: `today`(오늘) · `sat` · `sun` · `holiday`(공휴일) · `dim`(다른 달) · `sel`(고른 것) · `role.day` · `role.eve` · `role.night` · `role.long` · `role.off` · `role.other`(근무 종류, `ShiftRole`) · `leave`(연차·반차) · `extra`(잔업·특근·대근이 있는 날) · `cover`(대근) · `edited`(직접 바꾼 날) · `in`·`out`(수입·지출)
+- **1.39 [LINK-01] 근무 입력 그대로**: 하루의 근무 종류와 근무 입력 상태는 core `schedule/DayWork` 한 곳에서 정해요. 쉬는 날(휴·비 같은 쉬는 근무 종류)에 넣은 대근은 대신한 근무(야간 대근이면 `role.night`), 특근만 있는 날은 그 특근의 시각으로 정한 근무(`role.day` 등)예요. 종일 연차·결근은 `role.off`. 달력 칸, 근무 띠·타임라인·주 판의 하루, 위젯 칸, 꾸밈 층(`on`), 수식 값이 모두 같은 판단을 써요. 1.38 이하 앱은 새 상태 줄을 버려요(덧붙이기 규칙).
+- 여러 상태가 맞으면 이 차례로 덮어요: 기본 → `role.*` → `leave`·`extra`·`cover`·`edited` → `in`·`out` → `sat`·`sun` → `holiday` → `dim` → `today` → **`when` 줄(조건부 꾸미기)** → `sel`.
 - **`when`(RUL-02)**: 줄에 수식 조건을 달면 그날 값(근무·메모·꼬리표·지출 등, `FormulaName`)으로 맞을 때만 덮어요. 예: `{"id":"cal.cell","when":"근무종류 = \"야간\" 그리고 꼬리표.포함(\"인수인계\")","line":"solid","lineC":"빨강"}`. 같은 줄 열쇠는 (`id`, `on`, `when`). 그날 값이 없는 화면(그날이 아닌 곳)에서는 `when` 줄을 건너뛰어요. 앱은 `blueprint.style(id, states, LocalDayFacts.current?.scope(date))`로 불러요.
 
 **스타일**
@@ -140,6 +142,7 @@
 - `widget`: 판 전체. 채우기·진하기는 위젯 모양의 바탕색·투명도보다 이기고, 모서리·안 여백·글자 색도 이겨요. 글꼴·기울임·밑줄은 위젯의 모든 글자에 들어가요.
 - `widget.head`: 달 위젯의 달 이름 줄, 주 위젯의 '이번 주 근무'·'다음 주', 오늘 위젯의 날짜 줄. 상태 `holiday`.
 - `widget.cell`: 달 위젯의 날짜 칸, 주 위젯의 하루, 오늘 위젯의 오늘·내일 줄. 달력 칸과 같은 상태(오늘·토·일·공휴일·다른 달·근무 종류).
+- 1.39 [TASK-07] 할 일 위젯: `widget.task`(할 일 한 줄, 상태 `today`·`late` 늦은 할 일·`done` 끝낸 할 일), `widget.task.check`(줄 앞 동그라미 ○/✓, 상태 `late`·`done`), `widget.task.add`(머리의 ＋ 단추). 머리 줄은 `widget.head`. 상태 `late`·`done`은 1.39에 새로 생겼고 상태 순서에서 `today` 다음, `sel` 앞이에요(끝냄이 늦음 위에 덮여요). 1.38 이하 앱은 이 부품·상태를 모르니 이 줄이 든 작품은 1.39부터 읽어요.
 - 홈 화면은 런처가 그려서 선·그림자·글자 테두리·글자 그림자·자간은 위젯에서 그리지 않아요. 굵기는 보통(~400)·중간(500)·굵게(600~)로, 모서리는 안드로이드 12부터 보여요.
 - 스튜디오 '위젯' 영역에 '부품' 도구가 있고, 위젯 예시도 부품대로 그려요. 위젯 편집 화면은 갈래 C가 이 위에 만들어요.
 

@@ -76,34 +76,37 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
     var at by rememberSaveable { mutableIntStateOf(if (ProPaywall.plansFirst) pages.lastIndex else 0) }
     val page = pages[at.coerceIn(0, pages.lastIndex)]
     LaunchedEffect(page) { c.telemetry.event("pro_paywall", "page${page + 1}") }
-    Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Text("${at + 1} / ${pages.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        when (page) {
-            0 -> {
-                Text("밤낮이 이번 달 드린 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                if (ledger.found > 0) Text("올해 밤낮이 찾아 준 돈 ${won(ledger.found)}", style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary)
-                if (ledger.found > 0) Text("명세서와 맞춰 볼 때 계산이 명세서보다 많았던 차이예요. 회사에 물어볼 근거가 돼요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ledgerLine(ledger).takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-                RewardLedger.perDay(yearly?.priceMicros)?.let { Text("프로는 하루 ${it}원에 전부 열려 있어요.", style = MaterialTheme.typography.bodyMedium) }
-            }
-            1 -> {
-                Text("프로가 더해 주는 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                Text(ProPitch.headline(settings.workStyle), style = MaterialTheme.typography.bodyLarge)
-                ProPitch.five(settings.workStyle).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-                Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            else -> {
-                Text("요금제", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                if (plans.isEmpty()) Text("Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.", style = MaterialTheme.typography.bodyMedium)
-                else PlanRows(c, plans, onMessage = {})
-                Text("어떤 요금제도 미리 골라 두지 않아요. 해지는 언제든 Play 스토어에서 하고, 해지해도 낸 기간까지는 프로예요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
+    // 1.39 [FLOW-25] 닫기 늘 보임: the pages scroll, the buttons under them stay put.
+    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("${at + 1} / ${pages.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when (page) {
+                0 -> {
+                    Text("밤낮이 이번 달 드린 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    if (ledger.found > 0) Text("올해 밤낮이 찾아 준 돈 ${won(ledger.found)}", style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                    if (ledger.found > 0) Text("명세서와 맞춰 볼 때 계산이 명세서보다 많았던 차이예요. 회사에 물어볼 근거가 돼요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ledgerLine(ledger).takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                    RewardLedger.perDay(yearly?.priceMicros)?.let { Text("프로는 하루 ${it}원에 전부 열려 있어요.", style = MaterialTheme.typography.bodyMedium) }
+                }
+                1 -> {
+                    Text("프로가 더해 주는 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    Text(ProPitch.headline(settings.workStyle), style = MaterialTheme.typography.bodyLarge)
+                    ProPitch.five(settings.workStyle).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+                    Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                else -> {
+                    Text("요금제", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    if (plans.isEmpty()) Text("Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.", style = MaterialTheme.typography.bodyMedium)
+                    else PlanRows(c, plans, onMessage = {})
+                    Text("어떤 요금제도 미리 골라 두지 않아요. 해지는 언제든 Play 스토어에서 하고, 해지해도 낸 기간까지는 프로예요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
+                }
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -138,8 +141,9 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 if (lines.isNotEmpty()) Text(lines.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             val trial = plan.trial && plan.yearly
-            if (trial) Text("첫 1개월 무료, 그 뒤 ${plan.priceWords}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.39 [FLOW-25] the free month said as money and a date, before the one big button.
+            if (trial) Text(trialHead(Today.date(), plan.priceWords), style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary)
             Button(onClick = {
                 val activity = context.findActivity()
                 if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
@@ -147,16 +151,33 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 Text(if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독")
             }
         }
+        // 1.38 [GROW-04] A안: the 1년 이용권 right beside the yearly plan, "한 번 결제 · 자동 결제 없음" first (no 평생권, 1.36 결정).
+        if (plan.yearly) YearPassRow(c, plan, onMessage)
     }
-    // 841 1년 이용권: after the plans, never for someone subscribed (no double payment); buyable again from 30 days before its end.
+    // With no yearly plan from Play the pass still shows, after the plans.
+    if (plans.none { it.yearly }) YearPassRow(c, null, onMessage)
+}
+
+/**
+ * 841 1년 이용권, never for someone subscribed (no double payment); buyable again from 30 days before its end. 1.38 [GROW-04]: beside
+ * the yearly plan, its price set against the yearly plan's when Play gave both in won, for "한 번에 내고 끝" buyers (오늘근무 리뷰 "한 번에
+ * 2만 원이면 산다", 사용자 관찰/공개 정보).
+ */
+@Composable
+private fun YearPassRow(c: AppContainer, yearly: Plan?, onMessage: (String) -> Unit) {
+    val context = LocalContext.current
+    val passOffer by c.billing.pass.collectAsStateWithLifecycle()
+    val proState by c.proStore.state.collectAsStateWithLifecycle()
     val subscribed = proState.sub?.play()?.entitled(Today.instant()) == true
     val p = passOffer
     if (p != null && !subscribed) {
         val until = proState.yearPassUntil
         val canBuy = com.bamnat.core.tier.YearPass.rebuy(until, Today.instant())
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("1년 이용권 ${p.price} · 자동 결제 없음", style = MaterialTheme.typography.titleSmall)
-            Text("한 번 사면 1년 써요. 1년 뒤 그냥 끝나고, 끝나기 7일 전에 한 번 알려 드려요. 다시 사면 이어져요.",
+            Text("1년 이용권 ${p.price}", style = MaterialTheme.typography.titleSmall)
+            Text("한 번 결제 · 자동 결제 없음", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text("한 번 사면 1년 써요. 1년 뒤 그냥 끝나고, 끝나기 7일 전에 한 번 알려 드려요. 다시 사면 이어져요." +
+                if (yearly != null) " 연 구독은 해마다 저절로 이어지고, 이용권은 내가 다시 살 때만 이어져요." else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (until != null && Today.instant() < until) Text(until.atZone(Today.zone()).toLocalDate().let { "지금 이용권은 ${it.year}년 ${it.monthValue}월 ${it.dayOfMonth}일까지예요." },
                 style = MaterialTheme.typography.bodySmall)

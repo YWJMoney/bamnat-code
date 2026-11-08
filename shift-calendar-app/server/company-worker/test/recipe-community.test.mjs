@@ -339,6 +339,9 @@ test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작�
   assert.match(page.text, /3교대 &amp; 야간 전문/);
   assert.match(page.text, /야간 &lt;b&gt;굵게&lt;\/b&gt;/);
   assert.match(page.text, new RegExp(`bamnat://m/${m}`));
+  // 1.39 [SPREAD-02] The store link says where the install came from, never the maker.
+  assert.match(page.text, /referrer=utm_source%3Dbamnat_share%26utm_medium%3Dmaker%26utm_campaign%3Drecipe/);
+  assert.doesNotMatch(page.text.match(/play\.google\.com[^"]*/)[0], new RegExp(m));
   assert.equal(page.text.includes(device(1)), false);
   await call("POST", "/api/recipes/makers/me", { device: device(1), hidden: true }, from(1));
   assert.equal((await call("GET", `/m/ffffffffffff`)).status, 404);

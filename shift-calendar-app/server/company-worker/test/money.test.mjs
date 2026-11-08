@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, report, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
+import { MONEY } from "../src/money.js";
 import worker, { addMonths, stack, readSub, stopUnconsentedTrials, recheckLapsed } from "../src/index.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -57,8 +58,10 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T01:00:00Z") });
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
-  const { flags, policy, serverTime, ...old } = before;
-  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, notices: [], off: [] });
+  const { flags, policy, serverTime, update, ...old } = before;
+  // 1.39 [LOOP-13] Play 인앱 업데이트 기준: 처음엔 둘 다 0(권하지 않음).
+  assert.deepEqual(update, { urgentMin: 0, flexibleMin: 0 });
+  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, workPlans: MONEY.workPlans, notices: [], off: [] });
   assert.equal(serverTime, "2026-11-20T01:00:00.000Z");
   assert.ok(flags.billing && policy.some((p) => p.version === "3.1"));
 
@@ -276,7 +279,7 @@ test("a trial nobody said 'keep' to is stopped in the last two hours before it t
   const { call, env } = server({ PLAY_SERVICE_ACCOUNT: account });
 
   const a = await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-trial-a" }, phone(1));
-  assert.deepEqual(a.data, { verified: true, state: "ACTIVE", expiry: "2026-12-31T15:30:00.000Z", trial: true, autoRenew: true,
+  assert.deepEqual(a.data, { verified: true, state: "ACTIVE", expiry: "2026-12-31T15:30:00.000Z", trial: true, autoRenew: true, basePlan: "monthly",
     acknowledged: true, consentAt: null, stoppedAt: null });
   await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-trial-b" }, phone(2));
   // Phone 2 says keep, with the price and date it was shown.
@@ -434,4 +437,101 @@ test("a 1년 이용권 is checked with Play's products.get and counts as bought 
   // The buyer may make the one-person share code; the refunded phone may not.
   assert.equal((await call("POST", "/api/passes/share", {}, phone(1))).status < 400, true);
   assert.equal((await call("POST", "/api/passes/share", {}, phone(2))).data.error, "not_bought");
+});
+
+// 1.38 Phase 3 요금: a 팀·직원 요금제 band's 1년 이용권 is checked the same way under its own product; other names are refused.
+test("a work plan's 1년 이용권 is checked under its own product", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2027-01-10T00:00:00Z") });
+  const { account } = await serviceAccount();
+  const real = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    if (String(url) === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "play-token", expires_in: 3600 });
+    const m = String(url).match(/\/purchases\/products\/([a-z0-9_]+)\/tokens\/([^/:]+)$/);
+    if (!m) return new Response("", { status: 404 });
+    asked.push(m[1]);
+    return Response.json({ purchaseState: 0, purchaseTimeMillis: String(Date.parse("2027-01-01T00:00:00Z")), orderId: "GPA.9", acknowledgementState: 1 });
+  };
+  t.after(() => { globalThis.fetch = real; });
+  const { call } = server({ PLAY_SERVICE_ACCOUNT: account });
+  const res = await call("POST", "/api/purchases", { product: "bamnat_team_pass_15", token: "team-pass-token" }, phone(1));
+  assert.equal(res.data.verified, true);
+  assert.equal(res.data.expiry, "2028-01-01T00:00:00.000Z");
+  assert.deepEqual(asked, ["bamnat_team_pass_15"]);
+  // The config carries the bands the app shows.
+  assert.equal(MONEY.workPlans.team[0].cap, 15);
+  assert.equal(MONEY.workPlans.staff.at(-1).monthly, 49900);
+});
+
+// 1.37.1 [FAM-01] 가족 프로 이용권 (사용자 2026-11-07): the owner gives family phones 프로 with no end and cuts it at any time.
+test("[FAM-01] family Pro: the owner's code, approved at once, no limit, cut any time", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-07T00:00:00Z") });
+  const { call } = server();
+  let owner = await signIn(call);
+  const { headers: m } = await member(call, owner);
+  // Only the owner makes family codes and sees the list.
+  assert.equal((await call("POST", "/api/admin/family/code", { name: "엄마" }, m)).status, 403);
+  assert.equal((await call("GET", "/api/admin/family", undefined, m)).status, 403);
+  assert.equal((await call("POST", "/api/admin/family/d0000000000000000", { do: "pause" }, m)).status, 403);
+  assert.equal((await call("POST", "/api/admin/family/code", { name: "  " }, owner)).status, 400);
+  const mom = (await call("POST", "/api/admin/family/code", { name: "엄마" }, owner)).data;
+  assert.match(mom.code, /^\d{6}$/);
+  assert.equal(mom.name, "엄마");
+  assert.equal((await call("GET", "/api/admin/family", undefined, owner)).data.codes.length, 1);
+
+  // The phone puts it in the same '관리자 연결' field: approved at once, no admin approval, no flags.
+  const linked = await call("POST", "/api/admin-link", { code: mom.code }, { ...phone(11), ...from(11) });
+  assert.deepEqual(linked.data, { status: "approved", name: "가족", owner: false, family: true });
+  const p = (await call("GET", "/api/passes", undefined, phone(11))).data.admin;
+  // 1.38 [FAM-02] The nickname stays in the developer app; the phone is told only "가족".
+  assert.deepEqual(p, { status: "approved", name: "가족", owner: false, family: true, previews: [] });
+  // Once only.
+  assert.equal((await call("POST", "/api/admin-link", { code: mom.code }, { ...phone(12), ...from(12) })).status, 404);
+
+  // As many as the owner likes (an admin has two), and they do not show among the admins' phones or the pending badge.
+  for (let n = 12; n < 16; n++) {
+    const c = (await call("POST", "/api/admin/family/code", { name: `가족${n}` }, owner)).data.code;
+    assert.equal((await call("POST", "/api/admin-link", { code: c }, { ...phone(n), ...from(n) })).data.status, "approved");
+  }
+  const list = (await call("GET", "/api/admin/family", undefined, owner)).data;
+  assert.equal(list.phones.length, 5);
+  assert.equal(list.codes.length, 0);
+  assert.equal((await call("GET", "/api/admin/devices", undefined, owner)).data.devices.length, 0);
+  assert.equal((await adminHome(call, owner)).data.admins.phones, 0);
+
+  // No end: still 프로 a year on.
+  t.mock.timers.tick(400 * 24 * 60 * 60 * 1000);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.status, "approved");
+  owner = await signIn(call);
+
+  // A code lasts an hour, and the owner can take one back.
+  const late = (await call("POST", "/api/admin/family/code", { name: "아빠" }, owner)).data.code;
+  t.mock.timers.tick(60 * 60 * 1000 + 1);
+  assert.equal((await call("POST", "/api/admin-link", { code: late }, { ...phone(20), ...from(20) })).data.error, "code");
+  const back = (await call("POST", "/api/admin/family/code", { name: "아빠" }, owner)).data.code;
+  assert.equal((await call("POST", `/api/admin/family/codes/${back}/delete`, {}, owner)).data.codes.length, 0);
+  assert.equal((await call("POST", "/api/admin-link", { code: back }, { ...phone(20), ...from(20) })).data.error, "code");
+
+  // 1.38 [FAM-02] Pause and resume: free while paused, back to 프로 on resume, the same phone; a nickname only the admin app shows.
+  const momId = list.phones.find((d) => d.name === "엄마").id;
+  const paused = (await call("POST", `/api/admin/family/${momId}`, { do: "pause" }, owner)).data;
+  assert.equal(paused.phones.find((d) => d.id === momId).paused, true);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin, null);
+  // 1.39 [FAM-03] The paused phone is told so, apart from [admin] (an older app reads any admin as '승인 기다림').
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.familyPaused, true);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(12))).data.familyPaused, undefined, "only the paused phone");
+  await call("POST", `/api/admin/family/${momId}`, { do: "resume" }, owner);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.status, "approved");
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.familyPaused, undefined);
+  const named = (await call("POST", `/api/admin/family/${momId}`, { do: "name", name: "우리 엄마" }, owner)).data;
+  assert.equal(named.phones.find((d) => d.id === momId).name, "우리 엄마");
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin.name, "가족");
+  assert.equal((await call("POST", `/api/admin/family/${momId}`, { do: "name", name: " " }, owner)).status, 400);
+  assert.equal((await call("POST", `/api/admin/family/${momId}`, { do: "x" }, owner)).status, 400);
+
+  // Cut: the phone is free again at its next check, and the list says so.
+  const momPhone = { id: momId };
+  const after = (await call("POST", `/api/admin/devices/${momPhone.id}/remove`, {}, owner)).data;
+  assert.equal(after.phones.length, 4);
+  assert.equal((await call("GET", "/api/passes", undefined, phone(11))).data.admin, null);
 });

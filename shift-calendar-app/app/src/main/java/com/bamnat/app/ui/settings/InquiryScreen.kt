@@ -878,7 +878,14 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                 Text("개발자가 읽고 답하면 여기에 보여요. 보통 하루 안에 답해요. 설정 탭과 설정 첫 화면에도 표시해 드려요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (i.answers > 0) RateAnswer(i, busy, onMore = { more ->
+            // 1.39 [LOOP-16] 해결됐나요: after the fixed version reached this phone, two presses say if it worked.
+            // PC 1.39 G10 확인: 해결됐나요와 '답이 도움이 됐나요'가 나란히 있으면 헷갈려요. 고친 판 안내를 받은 문의는 해결됐나요만.
+            val fixFlow = i.askFixed || i.fixed != 0
+            if (fixFlow) FixedAsk(i, busy, onMore = { more ->
+                error = null
+                vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
+            }) { ok -> error = null; vm.fixed(i.id, ok) { why -> error = why } }
+            if (i.answers > 0 && !fixFlow) RateAnswer(i, busy, onMore = { more ->
                 error = null
                 vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
             }) { good -> error = null; vm.rate(i.id, good) { why -> error = why } }
@@ -977,6 +984,46 @@ private fun RateAnswer(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {},
         }
     }
 }
+
+/**
+ * 1.39 [LOOP-16] 해결됐나요? shows once the fix is in the version on this phone. 아직이에요 opens the question
+ * again for the developer, so a fix that did not work is not lost behind a 반영 mark.
+ */
+@Composable
+private fun FixedAsk(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {}, onAnswer: (Boolean) -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            when (i.fixed) {
+                1 -> Text("해결됐다고 알려 주셨어요. 고마워요", style = MaterialTheme.typography.bodyMedium)
+                -1 -> {
+                    Text("아직 그대로라고 알려 주셨어요. 개발자가 다시 살펴보고 여기에 답할게요",
+                        style = MaterialTheme.typography.bodyMedium)
+                    // PC 1.39 G10 확인 제안: 어떤 상황인지 한 줄을 바로(선택). 한 번 보내면 접혀요.
+                    val told = i.messages.any { !it.fromDeveloper && it.text.startsWith(STILL) }
+                    if (!told) {
+                        var line by rememberSaveable(i.id + "still") { mutableStateOf("") }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(line, { line = it.take(200) }, Modifier.weight(1f), singleLine = true,
+                                placeholder = { Text("어떤 상황인지 한 줄 (예: 잠금 화면에서만 그래요)") })
+                            TextButton(enabled = line.isNotBlank() && !busy, onClick = { onMore("$STILL ${line.trim()}"); line = "" }) { Text("보내기") }
+                        }
+                    }
+                }
+                else -> {
+                    Text("고친 업데이트가 이 폰에 들어왔어요. 문제가 해결됐나요?", style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(enabled = !busy, onClick = { onAnswer(true) }) { Text("해결됐어요") }
+                        OutlinedButton(enabled = !busy, onClick = { onAnswer(false) }) { Text("아직이에요") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 1.39 [LOOP-16] How the one line after 아직이에요 starts. */
+internal const val STILL = "[아직 그대로]"
 
 /** [INQ-05] How the one line after 아쉬워요 starts, so the admins see what it is. */
 internal const val MISSED = "[아쉬운 점]"
@@ -1183,6 +1230,50 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
 }
 
 /**
+ * 1.39 [LOOP-17] 지금 알려진 문제: problems many people met, with where the fix stands. 나도 겪어요 counts this
+ * phone once and brings the answer when the fixed version ships; pressing again takes it back. Folded to
+ * three rows so it never pushes the help answers far down.
+ */
+@Composable
+private fun KnownIssues(vm: InquiryViewModel) {
+    val all by vm.known.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
+    val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val known = remember(all, style) { all.filter { it.showsFor(style) } }
+    LaunchedEffect(Unit) { vm.loadKnown() }
+    if (known.isEmpty()) return
+    var open by rememberSaveable { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("지금 알려진 문제", style = MaterialTheme.typography.titleSmall)
+            Text("같은 일을 겪으면 ‘나도 겪어요’만 눌러 주세요. 고친 업데이트가 나오면 내 문의로 알려 드려요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            (if (open) known else known.take(3)).forEach { k ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(k.title, style = MaterialTheme.typography.bodyMedium)
+                        Text(knownState(k), style = MaterialTheme.typography.bodySmall,
+                            color = if (k.state == "fixed") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    FilterChip(selected = k.mine, enabled = !busy,
+                        onClick = { error = null; vm.knownMe(k.id, !k.mine) { why -> error = why } },
+                        label = { Text(if (k.mine) "나도 겪어요 ✓" else "나도 겪어요") })
+                }
+            }
+            if (known.size > 3) TextButton(onClick = { open = !open }) { Text(if (open) "접기" else "${known.size - 3}개 더 보기") }
+            error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+internal fun knownState(k: com.bamnat.app.company.KnownIssue): String = when (k.state) {
+    "fixed" -> (k.version?.let { "$it 버전에서 고쳤어요" } ?: "고쳤어요") + " · 업데이트해 주세요"
+    "fixing" -> "고치는 중이에요" + if (k.me > 1) " · ${k.me}명이 겪어요" else ""
+    else -> "확인하고 있어요" + if (k.me > 1) " · ${k.me}명이 겪어요" else ""
+}
+
+/**
  * [UX-05] 도움말: one search over the answers, the settings and 모두의 문의, the answers about the screen
  * it was opened from first, then the rest. A question is always one tap away at the end, with the
  * words searched already in it, so not finding an answer is never a dead end.
@@ -1217,11 +1308,13 @@ private fun HelpHome(
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "기능과 도움말 찾기" },
             // [GUIDE-07] Features, answers and settings by name or other words.
             placeholder = { com.bamnat.app.ui.HintText("무엇을 찾으세요? (예: 주휴, 백업, 알람)", "무엇을 찾으세요?") },
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
             trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
             singleLine = true,
             shape = MaterialTheme.shapes.extraLarge,
         )
+        // 1.39 [LOOP-17] 지금 알려진 문제: before writing, what is already being fixed, and 나도 겪어요 instead of a new question.
+        if (query.isBlank() && vm.online) KnownIssues(vm)
         // [INQ-07] 문의하기 on the first tab, not only behind 내 문의 › 새 문의 쓰기 (점검 보고서 하 '문의').
         // AG 1.27 [INVITE-12] What a 문의 is for, and that it is answered, said above it.
         if (query.isBlank() && vm.online) Text(com.bamnat.app.ui.grow.FEEDBACK_WORDS, style = MaterialTheme.typography.bodySmall,

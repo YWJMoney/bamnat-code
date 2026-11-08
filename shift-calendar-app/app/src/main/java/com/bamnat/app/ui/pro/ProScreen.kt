@@ -104,15 +104,23 @@ val PRO_PILLARS = listOf(
         listOf("끄기 미션(계산 문제·흔들기), 근무마다 다르게", "끈 뒤 ‘일어났나요?’ 묻고 답이 없으면 한 번 더 울림"),
         setOf(Feature.SURE_ALARM)),
     Pillar("더 넓게, 깔끔하게",
-        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "광고 없음"),
-        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.NO_ADS)),
+        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "할 일 위젯 2개째부터(화면마다, 크기마다)", "광고 없음"),
+        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.MORE_TASK_WIDGETS, Feature.NO_ADS)),
     // [FREE-10] 1.35 꾸미기 혜택 (사용자 2026-10-30 "꾸미기 혜택을 추가해서 프로의 장점을 살리는").
     Pillar("내 마음대로 꾸미기",
         listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이",
             // [PRF-12] 1.36 창작자 꾸미기.
-            "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프"),
-        setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
+            "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프",
+            // 1.39 [FX-01] 기능 작품.
+            "기능 작품: 값 칸, 홈 화면 단추 위젯·빠른 설정·바로가기, 단추 달린 알림을 켜고 장터에 올리기"),
+        setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO, Feature.FX_WORKS)),
 )
+
+/**
+ * 1.38 [EASE-33] Beside the ad promise: no account, and the alarm check anyone can run. The store page says the same
+ * (`docs/store-listing.md`); 알람 점검 is in 설정 › 알람.
+ */
+internal const val TRUST_LINE = "로그인·회원가입 없이 바로 써요. 알람이 제시간에 울릴지는 설정 › 알람 › 알람 점검에서 누구나 무료로 확인해요."
 
 /** [MON-04] 무료 vs 프로, row by row. Everything not listed is free. */
 val PRO_COMPARE = listOf(
@@ -148,15 +156,28 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     return listOfNotNull(
         "결제는 Google Play 계정으로 해요. " + (if (prices.isNotEmpty()) "$prices, " else "") + "월 요금제는 매달, 연 요금제는 매년 같은 날 자동으로 결제돼요.",
         if (plans.any { it.trial }) "1개월 무료 체험은 연 요금제를 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
-            "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤봐요." else null,
+            "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤보고, 답이 없으면 3일 전에 해지 단추와 함께 한 번 더 알려요." else null,
         "해지는 언제든 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 이미 낸 기간이 끝날 때까지 프로를 써요.",
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
-            "Google Play 환불 요청이나 설정 › 문의하기로 접수해요.",
+            "Google Play 환불 요청이나 설정 › 도움말과 문의 › 문의하기로 접수해요.",
         "구독하면 이용약관과 개인정보처리방침에 동의하는 거예요.",
         // 1.36 [MON-12] Who sells it, as the 전자상거래법 asks on the screen that sells.
         com.bamnat.app.ui.settings.SellerInfo.SHORT,
     )
 }
+
+/**
+ * 1.39 [FLOW-25] 결제 창 머리 (흐름 디자인 3-12, 체험 혼동이 1점 리뷰의 원인인 앱을 반대로 배움): what a free month costs today, the day
+ * it turns paid and for how much, and that it is said again before then (7일 전 물음과 마지막 날, [TrialConsentPrompt]), in one line.
+ */
+fun trialHead(today: LocalDate, priceWords: String): String {
+    val end = today.plusMonths(1)
+    return "오늘 0원 · ${end.monthValue}월 ${end.dayOfMonth}일부터 $priceWords · 끝나기 7일 전과 하루 전에 알려 드려요"
+}
+
+/** 1.39 [FAM-03] What a family phone's 프로 is, and what a paused one is told. */
+internal const val FAMILY_ON = "가족 프로 이용권으로 프로를 무료로 써요"
+internal const val FAMILY_PAUSED = "가족 프로 이용권을 잠시 멈췄어요. 다시 켜지면 코드를 넣지 않아도 저절로 프로로 돌아와요."
 
 const val TERMS_URL = "https://ywjmoney.github.io/-/terms/"
 const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
@@ -177,6 +198,11 @@ fun ProScreen(onBack: () -> Unit) {
     val plans by c.billing.plans.collectAsStateWithLifecycle()
     val billingState by c.billing.state.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
+    // 1.39 (시험이 찾은 빈틈: 초대 코드가 틀리면 그 말이 화면 맨 위에 떠서 보낸 자리에서는 안 보여요): each message shows under the card
+    // that said it.
+    var messageAt by remember { mutableStateOf("") }
+    val say: (String) -> (String) -> Unit = { at -> { m -> message = m; messageAt = at } }
+    @Composable fun Said(at: String) { if (messageAt == at) message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) } }
     val zone = Today.zone()
     // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
     LaunchedEffect(Unit) { if (c.flags.on(com.bamnat.core.flags.FlagCatalog.BILLING)) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
@@ -199,11 +225,11 @@ fun ProScreen(onBack: () -> Unit) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 StatusCard(gate, pro, zone, settings.workStyle)
                 // 1.36 [PSH-01] 프로 나눔 1인, right under 지금 (PC: 맨 아래에 있어 못 찾았어요).
-                if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = { message = it })
+                if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = say("top"))
                 // 1.36 840 보상 장부: what this phone was given this month, for someone without 프로.
                 if (gate.live && !gate.preview && gate.tier < com.bamnat.app.tier.Tier.PRO) RewardLedgerCard(c, gate, plans)
-                ConsentWaiting(c, pro, onMessage = { message = it })
-                message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                ConsentWaiting(c, pro, onMessage = say("top"))
+                Said("top")
                 // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
                 ProCollectionCard(gate, settings)
 
@@ -230,8 +256,10 @@ fun ProScreen(onBack: () -> Unit) {
                     }
                     Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // G 1.32 [WTYP-01] The ad promise, in words.
-                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                    // 1.38 [EASE-33] The other two promises the store page makes, said here too.
+                    // 1.38 PC 확인(e6dc244a) 제안: a promise read before paying, in the body size and the screen's ink.
+                    Text(TRUST_LINE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                 }
 
                 if (!gate.live || gate.preview) {
@@ -248,14 +276,17 @@ fun ProScreen(onBack: () -> Unit) {
                         if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
                     }
                 } else {
-                    PlansCard(c, gate, pro, plans, billingState, onMessage = { message = it })
+                    PlansCard(c, gate, pro, plans, billingState, onMessage = say("plans"))
+                    Said("plans")
                 }
 
                 // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 and 초대 코드 넣기.
-                InviteCard(c, onMessage = { message = it })
+                InviteCard(c, onMessage = say("invite"))
+                Said("invite")
 
                 if (c.tierApi.enabled) {
-                    PassesCard(c, pro, gate, zone, onMessage = { message = it })
+                    PassesCard(c, pro, gate, zone, onMessage = say("passes"))
+                    Said("passes")
                     AdminCard(c, pro)
                 }
                 // 1.36 PC 재검토 (결제 단추가 아래 탭 자리와 겹쳐 잘못 눌려요): the last buttons scroll clear of the bar at the bottom.
@@ -297,7 +328,19 @@ fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
 @Composable
 private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "지금") {
-        Text(gate.access.reason.words, style = MaterialTheme.typography.titleMedium)
+        // 1.39 [FAM-03] 1.38 최종 PC 제안 5: a family phone is said as one at the top, before the launch too ('모든 기능이 무료' alone
+        // left it to the 관리자 연결 card at the very bottom), and after it not as an admin's phone. An admin's phone the same way.
+        val admin = pro.passes?.admin?.takeIf { it.approved }
+        Text(if (admin?.family == true && gate.access.reason == ProReason.ADMIN) FAMILY_ON else gate.access.reason.words,
+            style = MaterialTheme.typography.titleMedium)
+        if (admin != null && gate.access.reason != ProReason.ADMIN) {
+            Text(if (admin.family) "가족 프로 이용권이 연결돼 있어요. 정식 출시 뒤에도 끝나는 날 없이 프로예요."
+                else "관리자 휴대폰으로 연결돼 있어요. 정식 출시 뒤에도 프로를 무료로 써요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        if (pro.passes?.familyPaused == true) {
+            Text(FAMILY_PAUSED, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
         gate.access.until?.let { until ->
             val day = lastDay(until, zone)
             val words = when (gate.access.reason) {
@@ -466,10 +509,14 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
     SectionCard(title = "관리자 연결") {
         when {
             // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
+            // 1.37.1 [FAM-01] 가족 프로 이용권: said as what it is, not as an admin's phone.
+            admin?.approved == true && admin.family -> Text("가족 프로 이용권으로 프로를 무료로 써요. 끝나는 날은 없어요.", style = MaterialTheme.typography.bodyMedium)
             admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
                 if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
             admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
-            else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요.",
+            // 1.39 [FAM-03] 1.38 최종 PC 제안 4: paused by the owner, said so (the line used to go with no word).
+            pro.passes?.familyPaused == true -> Text("$FAMILY_PAUSED 새 가족 코드를 받았다면 아래에 넣어도 돼요.", style = MaterialTheme.typography.bodyMedium)
+            else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요. 가족 프로 이용권 코드도 여기에 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
@@ -482,6 +529,7 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
                         val state = c.tierApi.link(c.companyStore.device, code)
                         code = ""
                         said = when {
+                            state.approved && state.family -> "연결했어요 · 가족 프로 이용권이에요. 프로를 무료로 써요."
                             state.approved && state.owner -> "연결했어요 · 최고 관리자 코드라 바로 승인됐어요. 프로를 무료로 써요."
                             state.approved -> "연결했어요 · 승인됨. 프로를 무료로 써요."
                             else -> "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
@@ -511,8 +559,9 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
             said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
             if (asking) com.bamnat.app.ui.components.AlertDialog(
                 onDismissRequest = { asking = false },
-                title = { Text("관리자 연결을 끊을까요?") },
-                text = { Text("관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
+                title = { Text(if (admin.family) "가족 프로 이용권을 끊을까요?" else "관리자 연결을 끊을까요?") },
+                text = { Text(if (admin.family) "가족 이용권으로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 쓰려면 새 가족 코드를 받아야 해요."
+                    else "관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
                 confirmButton = {
                     TextButton(onClick = {
                         asking = false

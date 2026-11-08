@@ -321,10 +321,11 @@ test("an earlier version's users count for it, and one the developer turned down
   other.pay.monthlyHours = 209;
   for (const n of [3, 4, 5, 6]) await call("POST", "/api/reports", report(n, { setup: other }), from(n));
   let page = (await call("GET", `/api/companies/${c}`)).data;
-  assert.deepEqual(page.setups.map((s) => [s.status, s.support]), [["adopted", support({ uses: 10, ok: 3, bad: 0 })], ["pending", support({ uses: 0, ok: 4, bad: 0 })]]);
-  assert.ok(page.setups[0].support > page.setups[1].support);
+  // 1.39 [PAYP-02] 맞아요 많은 순: the version four stand behind comes before the rule in use three sent, though more use that one.
+  assert.deepEqual(page.setups.map((s) => [s.status, s.support]), [["pending", support({ uses: 0, ok: 4, bad: 0 })], ["adopted", support({ uses: 10, ok: 3, bad: 0 })]]);
+  assert.ok(page.setups[1].support > page.setups[0].support);
   // Turned down by the developer: however many come, it waits.
-  const grp = page.setups[1].id;
+  const grp = page.setups[0].id;
   DB.db.prepare("UPDATE reports SET status = 'rejected' WHERE grp = ?").run(grp);
   for (let n = 40; n < 55; n++) await call("POST", "/api/reports", report(n, { setup: other }), from(n));
   page = (await call("GET", `/api/companies/${c}`)).data;
@@ -509,4 +510,18 @@ test("without a database the server says so", async () => {
   assert.equal((await call("GET", "/api/companies?q=예시")).status, 503);
   const health = await call("GET", "/api/admin/health");
   assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null } });
+});
+
+test("1.38 PAYX-49: a kind's own 시수 is kept and said, and changes the fingerprint", async () => {
+  const s = setup();
+  s.pay.rules.extra[101] = { ...s.pay.rules.extra[101], basis: "UNIT", hours: 243,
+    adds: [{ key: "overtime", name: "연장 가산", rate: 0.5, on: true, scope: "law", offDays: false }] };
+  const clean = cleanSetup(s);
+  assert.equal(clean.pay.rules.extra[101].hours, 243);
+  assert.equal(cleanSetup(setup()).pay.rules.extra[101].hours, undefined);
+  const lines = Object.fromEntries(words(clean));
+  assert.ok(Object.values(lines).includes("통상시급 (243시간 기준) + 연장 가산 50%"), JSON.stringify(lines));
+  const other = setup();
+  other.pay.rules.extra[101] = { ...s.pay.rules.extra[101], hours: 226 };
+  assert.notEqual(await fingerprint(cleanSetup(other)), await fingerprint(clean));
 });

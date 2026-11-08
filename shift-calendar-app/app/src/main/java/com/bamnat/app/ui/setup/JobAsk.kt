@@ -66,7 +66,14 @@ internal fun JobAsk(
         )
         if (text.isBlank()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                JobDictionary.common.filter { n -> JobDictionary.byName(n)?.style?.let(shown::shows) != false }.forEach { name -> FilterChip(selected = false, onClick = { text = name }, label = { Text(name) }) }
+                JobDictionary.common.filter { n -> JobDictionary.byName(n)?.style?.let(shown::shows) != false }.forEach { name ->
+                    // [EASE-09] 1.38 PC 994c2328 (알바 7번: '편의점 알바' 칩 뒤에 '이렇게 시작할까요?'를 또 눌러요): a chip of a job
+                    // the phone knows starts it at once, as its card below would; one it does not know is typed in.
+                    val job = JobDictionary.byName(name)
+                    FilterChip(selected = false, onClick = {
+                        if (job != null) { focus.clearFocus(); onPick(job.style, job.roster) } else text = name
+                    }, label = { Text(name) })
+                }
             }
         }
         if (text.trim().length >= 2) {

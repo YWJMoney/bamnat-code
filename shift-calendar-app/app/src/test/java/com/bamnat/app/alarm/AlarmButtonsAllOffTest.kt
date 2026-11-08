@@ -296,6 +296,10 @@ class AlarmButtonsAllOffTest {
         } finally {
             db.close()
         }
+        // CI 12차: the app copies the ringing settings for a locked boot on its own, a little after a change (and after any
+        // planning the restore set off). Only once that copy has caught up is this test's own copy the last word.
+        kotlinx.coroutines.withTimeoutOrNull(3_000) { while (BootAlarms.settings(app).buttons != AlarmButtons.Action.SNOOZE) kotlinx.coroutines.delay(20) }
+        AppSettled.quiet(app)
         BootAlarms.save(app, emptyList(), BootAlarms.RingSettings(buttons = AlarmButtons.Action.NONE))
         assertEquals(AlarmButtons.Action.NONE, BootAlarms.settings(app).buttons)
         BootAlarms.save(app, emptyList(), BootAlarms.RingSettings())

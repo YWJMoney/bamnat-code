@@ -86,6 +86,11 @@ data class SetupDraft(
     val later: Boolean = false,
     /** The save has started; on the next start it is finished, never asked again. */
     val committing: Boolean = false,
+    /**
+     * 1.38 PC 12.1 (직원이 받은 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the 근무표 link the setup was filled from, its
+     * title; the summary names it and starts with one press. Empty for any other setup.
+     */
+    val linkTitle: String = "",
 ) {
     val workTypes: List<ShiftType> get() = types.filter { !it.isOff && it.hasTimes }
 
@@ -99,22 +104,44 @@ data class SetupDraft(
     /** A rotation that the steps say, with today on the answered step. */
     val usesRotation: Boolean get() = style == WorkStyle.SHIFT && !rosterMonthly
 
-    /** The steps this draft goes through. */
+    /**
+     * [EASE-07] 1.38: the order (or the week's days) is answered on the times' screen, one screen less. Only a roster painted every
+     * month keeps its own step, since its month to paint needs the whole screen.
+     */
+    val orderWithTimes: Boolean get() = style != null && !(style == WorkStyle.SHIFT && rosterMonthly)
+
+    /**
+     * The steps this draft goes through. [EASE-07] 1.38: no ORDER step where the order is on the times' screen, and no ALARM
+     * step: its choice is on the last screen, already at 출근 1시간 전 (오늘근무 분석 2026-11-05: 교대 첫 설정 13번 → 8번 이하).
+     */
     val steps: List<SetupStep>
         get() = when (style) {
             null, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> listOf(SetupStep.STYLE)
             WorkStyle.SHIFT -> listOfNotNull(
                 SetupStep.STYLE, SetupStep.COMPANY, SetupStep.BUNDLE.takeIf { source == null }, SetupStep.TIMES,
-                // A shared order is asked too, already chosen: a template's is only the usual one for that work.
-                SetupStep.ORDER, SetupStep.TODAY.takeIf { usesRotation }, SetupStep.ALARM, SetupStep.SUMMARY,
+                SetupStep.ORDER.takeIf { !orderWithTimes }, SetupStep.TODAY.takeIf { usesRotation }, SetupStep.SUMMARY,
             )
             // [COMM-05] Weekday work looks for the company too, or starts from a template.
-            WorkStyle.DAY ->
-                listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
+            WorkStyle.DAY -> listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.SUMMARY)
             // [J133-71] 1.33: a part-time job has no company setup to look for; the hours come first.
-            WorkStyle.HOURLY ->
-                listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY)
+            WorkStyle.HOURLY -> listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.SUMMARY)
         }
+
+    /** [EASE-07] Where [step] is answered in this draft: the order on the times' screen, the alarm on the last one. */
+    fun screenOf(step: SetupStep): SetupStep = when {
+        step in steps -> step
+        step == SetupStep.ORDER && orderWithTimes -> SetupStep.TIMES
+        step == SetupStep.ALARM -> SetupStep.SUMMARY
+        else -> step
+    }
+
+    /** [EASE-07] The order (or the days) as the times' screen needs it before going on. */
+    val orderReady: Boolean get() = when {
+        usesRotation -> rotation.any { !isOff(it) }
+        style == WorkStyle.SHIFT -> true
+        style == WorkStyle.HOURLY && noFixedDays -> true
+        else -> weekly.any { !isOff(it) }
+    }
 
     /** "근무 설정 3/6": [step]'s place among [steps], 1-based. */
     val position: Int get() = steps.indexOf(step).coerceAtLeast(0) + 1
@@ -128,13 +155,8 @@ data class SetupDraft(
         SetupStep.STYLE -> style != null
         SetupStep.COMPANY -> true
         SetupStep.BUNDLE -> types.isNotEmpty()
-        SetupStep.TIMES -> timesConfirmed && workTypes.isNotEmpty() && timeProblems().isEmpty()
-        SetupStep.ORDER -> when {
-            usesRotation -> rotation.any { !isOff(it) }
-            style == WorkStyle.SHIFT -> true
-            style == WorkStyle.HOURLY && noFixedDays -> true
-            else -> weekly.any { !isOff(it) }
-        }
+        SetupStep.TIMES -> timesConfirmed && workTypes.isNotEmpty() && timeProblems().isEmpty() && (!orderWithTimes || orderReady)
+        SetupStep.ORDER -> orderReady
         SetupStep.TODAY -> anchor != null && todayConfirmed
         SetupStep.ALARM -> true
         SetupStep.SUMMARY -> true

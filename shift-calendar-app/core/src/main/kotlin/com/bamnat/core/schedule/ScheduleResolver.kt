@@ -34,6 +34,11 @@ data class ResolvedExtra(
     val minutes: Int,
     /** The shift type this work covered (대근), if the user said. */
     val covered: ShiftType?,
+    /**
+     * [PAYX-54] 1.38 PC 12.4.1: minutes of this piece inside the day's own shift (교육 09~13 on an 09~18 일근), taken out of
+     * [minutes]: an hour cannot be worked twice, so it adds no hours, no rest problem and no overtime. 0 when apart.
+     */
+    val insideShiftMinutes: Int = 0,
 ) {
     /** No clock times, so night minutes are unknown and taken as none. */
     val estimated: Boolean get() = from == null
@@ -135,6 +140,16 @@ class ScheduleResolver(
 
     /** Shift type id the pattern gives [date] (null for a day off or no pattern). */
     fun patternShiftIdOn(date: LocalDate): Long? = patternOn(date)?.shiftTypeIdOn(date)
+
+    /**
+     * [EASE-22] The kind of day on [date] as the calendar shows it (a day set by hand first, then the order), without
+     * working out its hours: what a 근무마다 메모 asks for every day of years ahead. Null for nothing scheduled.
+     */
+    fun shiftIdOn(date: LocalDate): Long? = when (val o = entriesByDate[date]?.override ?: ShiftOverride.None) {
+        ShiftOverride.Off -> null
+        is ShiftOverride.Shift -> o.shiftTypeId.takeIf { it in typesById }
+        ShiftOverride.None -> patternShiftIdOn(date)?.takeIf { it in typesById }
+    }
 
     fun resolve(date: LocalDate): ResolvedDay {
         val day = resolveDay(date)
@@ -246,7 +261,7 @@ class ScheduleResolver(
                 val span = Duration.between(from, to).toMinutes().toInt()
                 val brk = (if (e.hasTimes) e.breakMinutes else asCovered!!.breakMinutes).coerceIn(0, span)
                 val brkStart = if (e.hasTimes) e.breakStart else asCovered!!.breakStart
-                ResolvedExtra(e, kind, from, to, brk, brkStart.takeIf { brk > 0 }, span - brk, covered)
+                withinShift(ResolvedExtra(e, kind, from, to, brk, brkStart.takeIf { brk > 0 }, span - brk, covered), shiftFrom, shiftTo)
             } else {
                 val minutes = e.minutes.coerceIn(0, WorkTime.MINUTES_PER_DAY).toLong()
                 var from: LocalDateTime? = null
@@ -259,6 +274,41 @@ class ScheduleResolver(
                     from = a; to = a.plusMinutes(minutes); after = to
                 }
                 ResolvedExtra(e, kind, from, to, 0, null, minutes.toInt(), covered)
+            }
+        }
+    }
+
+    /**
+     * [PAYX-54] 1.38 PC 12.4.1: a piece with its own times that runs into the day's shift keeps only the part outside it.
+     * All inside (교육 09~13 in 09~18): no minutes, its times kept to show. One side out (16~20 after 09~18): cut to
+     * 18~20. Both sides out: the times kept, the minutes less the shift's part.
+     */
+    private fun withinShift(x: ResolvedExtra, shiftFrom: LocalDateTime?, shiftTo: LocalDateTime?): ResolvedExtra {
+        val from = x.from ?: return x
+        val to = x.to ?: return x
+        if (shiftFrom == null || shiftTo == null || !from.isBefore(shiftTo) || !to.isAfter(shiftFrom)) return x
+        val overlap = Duration.between(maxOf(from, shiftFrom), minOf(to, shiftTo)).toMinutes().toInt()
+        if (overlap <= 0) return x
+        val span = Duration.between(from, to).toMinutes().toInt()
+        return when {
+            !from.isBefore(shiftFrom) && !to.isAfter(shiftTo) ->
+                x.copy(breakMinutes = 0, breakStart = null, minutes = 0, insideShiftMinutes = x.minutes)
+            from.isBefore(shiftFrom) && to.isAfter(shiftTo) -> {
+                val paid = (x.minutes - overlap).coerceAtLeast(0)
+                x.copy(minutes = paid, insideShiftMinutes = x.minutes - paid)
+            }
+            else -> {
+                val newFrom = if (from.isBefore(shiftFrom)) from else shiftTo
+                val newTo = if (from.isBefore(shiftFrom)) shiftFrom else to
+                val newSpan = Duration.between(newFrom, newTo).toMinutes().toInt()
+                // The break where it is on the clock, else its share of the part left.
+                val bs = x.breakStart?.let { b -> newFrom.toLocalDate().atTime(b).let { if (it.isBefore(newFrom)) it.plusDays(1) else it } }
+                val brk = if (bs != null) {
+                    Duration.between(maxOf(bs, newFrom), minOf(bs.plusMinutes(x.breakMinutes.toLong()), newTo)).toMinutes().toInt().coerceAtLeast(0)
+                } else if (span > 0) Math.round(x.breakMinutes * newSpan / span.toDouble()).toInt() else 0
+                val paid = (newSpan - brk).coerceAtLeast(0)
+                x.copy(from = newFrom, to = newTo, breakMinutes = brk, breakStart = x.breakStart.takeIf { brk > 0 }, minutes = paid,
+                    insideShiftMinutes = (x.minutes - paid).coerceAtLeast(0))
             }
         }
     }

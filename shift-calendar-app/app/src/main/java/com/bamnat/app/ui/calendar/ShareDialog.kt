@@ -153,9 +153,15 @@ fun ShareDialog(
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
     // 1.37 [SHR-31][SHR-32] 내 테마·근무 설정 in the link from 처리방침 3.11's date; before, the rows say the date once it is set.
     val lookOpen = remember { ShareContent.lookInLink(container) }
+    // 1.38 [SLEEP-11] 지금 자는 중, for the main calendar's link while `sleep.share` is on.
+    val sleepOpen = remember(calendarId) { calendarId == com.bamnat.app.data.PersonalCalendar.MAIN && ShareContent.sleepInLink(container) }
+    // 1.39 G5-N4 계획한 잠 시간, for the main calendar's link from 처리방침 3.12's date (`sleep.plan_share`); off until ticked.
+    val planOpen = remember(calendarId) { calendarId == com.bamnat.app.data.PersonalCalendar.MAIN && ShareContent.sleepPlanInLink(container) }
     val kitFits = remember(style) { com.bamnat.core.recipe.ShareKit.kitFits(style) }
     val lookFrom = remember {
-        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+        // 1.38: 3.11's date is not set until 1.38's release (a far placeholder), so no date is said until the owner sets it.
+        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective
+            ?.takeIf { it < com.bamnat.core.time.Today.date().plusYears(1) }?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
     }
     val setupFrom = remember {
         container.remoteConfig.config.value.calendar.of(com.bamnat.core.ops.PolicyConsent.VERSION)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "정식 출시일"
@@ -173,6 +179,8 @@ fun ShareDialog(
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
             setup = options.setup && setupOpen && employee && companyWork,
             look = options.look && lookOpen, kit = options.kit && lookOpen && kitFits,
+            sleepNow = options.sleepNow && sleepOpen,
+            sleepPlan = options.sleepPlan && planOpen,
         )
     }
     // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
@@ -380,6 +388,12 @@ fun ShareDialog(
                             else "${lookFrom}부터 링크에 함께 담을 수 있어요",
                             options.kit && lookOpen, enabled = lookOpen) { options = options.copy(kit = it) }
                     }
+                    if (sleepOpen) PartRow("지금 자는 중",
+                        "자는 동안만 ‘몇 시부터 자는 중 · 몇 시에 일어나요’ 한 줄. 잠 기록·소리는 보내지 않아요. 받는 분 앱에서만 보여요",
+                        options.sleepNow) { options = options.copy(sleepNow = it) }
+                    if (planOpen) PartRow("계획한 잠 시간",
+                        "근무에 맞춰 앱이 계획한 잘 시간(예: 오늘 09:00~16:00) 2주치. 실제로 잔 기록·소리는 보내지 않아요. 받는 분 앱에서만 보여요",
+                        options.sleepPlan) { options = options.copy(sleepPlan = it) }
                 }
             }
             val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -685,6 +699,9 @@ internal fun ShareOptions.partNames(kind: MoneyShare = MoneyShare.PAY): List<Str
     "연장·휴무일 근무".takeIf { extras },
     "메모".takeIf { memos },
     kind.label.takeIf { pay },
+    // 1.39 PC c0ca3d9f: the sleep rows were sent but '보내는 것' said 근무 only.
+    "지금 자는 중(잘 때만)".takeIf { sleepNow },
+    "계획한 잠 시간".takeIf { sleepPlan },
 )
 
 /** A figure worked out for the sheet, or [fallback] when the data cannot be read; leaving the sheet still cancels it. */
@@ -728,6 +745,8 @@ private fun expiryText(s: ShareLinkState): String =
 
 private fun messageFor(e: Exception, options: ShareOptions): String = when (e.message) {
     "rate_limited" -> com.bamnat.app.company.RateLimits.text("링크 만들기", 3_600, "device")
+    // 1.39 [CARE-09] 7차 PC: a title with a phone number etc. (1.39 server), in the line's own words.
+    "contact" -> com.bamnat.app.share.linkProblem(e) ?: com.bamnat.core.plaza.TeamLinkText.contact(null)
     "not_found", "forbidden" -> "이 링크는 이미 지워졌어요. 링크 끊기를 누른 뒤 새로 만들어 주세요."
     // A server from before 1.10 takes only shifts and leave.
     // [SHR-11] A server from before 1.13 takes no 일정 and no link without shifts.

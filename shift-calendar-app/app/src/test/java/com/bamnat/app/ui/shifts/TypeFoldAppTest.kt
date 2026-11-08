@@ -263,4 +263,64 @@ class TypeFoldAppTest {
         WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
         repo.clearPattern()
     }
+
+    /**
+     * 1.38 사용자 2026-11-06 (가게 영업·사장님처럼 교대가 없는 유형에 주야가 보임): a 자영업 calendar starts with 주간·오후·야간 put away,
+     * a kind the shop uses (영업일 순서, a day) stays, and one the user takes back out is not put away again.
+     */
+    @Test fun dayByDayWorkStartsWithTheShiftKindsPutAway() = runBlocking {
+        val c = app.container
+        val cal = "quiet-test"
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        val types = repo.shiftTypes.first()
+        val day = types.first { it.name == "주간" }
+        val night = types.first { it.name == "야간" }
+        val off = types.first { it.isOff }
+        val shop = repo.saveShiftType(com.bamnat.core.model.ShiftType(0, "영업", "영", 0xFF00A88F, java.time.LocalTime.of(10, 0), java.time.LocalTime.of(21, 0)))
+        val all = repo.shiftTypes.first()
+        // 야간 is on a day the user put in: kept. 영업 and 휴무 are the shop's own.
+        val away = TypeFoldAsk.quietKinds(WorkStyle.BUSINESS, all, emptySet()) { it == night.id }
+        assertEquals(setOf(day.id, all.first { it.name == "오후" }.id), away.toSet())
+        assertTrue(shop !in away && off.id !in away)
+        assertTrue(WorkStyle.entries.filter { it != WorkStyle.SHIFT }.all(TypeFoldAsk::quietStyle))
+        assertTrue(!TypeFoldAsk.quietStyle(WorkStyle.SHIFT) && !TypeFoldAsk.quietStyle(null))
+        // 알바 keeps its own 오전 알바, 일근 its 일근; 교대's 주간 goes for both.
+        repo.addHourlyTypes()
+        val withHourly = repo.shiftTypes.first()
+        val morning = withHourly.first { it.name == "오전 알바" }.id
+        assertTrue(morning !in TypeFoldAsk.quietKinds(WorkStyle.HOURLY, withHourly, emptySet()) { false })
+        assertTrue(day.id in TypeFoldAsk.quietKinds(WorkStyle.HOURLY, withHourly, emptySet()) { false })
+        assertTrue(morning in TypeFoldAsk.quietKinds(WorkStyle.DAY, withHourly, emptySet()) { false })
+        withHourly.filter { it.name.endsWith("알바") }.forEach { repo.deleteShiftType(it.id) }
+        // Once per calendar and kind of work: taken back out, it stays out.
+        assertTrue(!c.foldedTypes.quieted(cal, WorkStyle.BUSINESS))
+        c.foldedTypes.markQuiet(cal, WorkStyle.BUSINESS)
+        assertTrue(c.foldedTypes.quieted(cal, WorkStyle.BUSINESS) && !c.foldedTypes.quieted(cal, WorkStyle.FIELD))
+        // The marks are not folded kinds.
+        assertEquals(null, c.foldedTypes.state.value[cal])
+    }
+
+    /** 1.38 사용자 2026-11-06: the main calendar of a 자영업 puts 주간·오후·야간 away by itself; 교대 again brings them back. */
+    @Test fun quietShiftKindsFoldsTheMainCalendarOnce() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        repo.clearPattern()
+        val names = repo.shiftTypes.first().filter { !it.isOff }.map { it.name }.toSet()
+        c.foldedTypes.unfold(PersonalCalendar.MAIN, repo.shiftTypes.first().map { it.id })
+        TypeFoldAsk.quietShiftKinds(c, PersonalCalendar.MAIN, WorkStyle.BUSINESS)
+        val folded = c.foldedTypes.of(PersonalCalendar.MAIN)
+        assertEquals(repo.shiftTypes.first().filter { it.name in setOf("주간", "오후", "야간") }.map { it.id }.toSet(), folded)
+        assertTrue(names.containsAll(setOf("주간", "오후", "야간")))
+        // Taken back out, the next start leaves it out.
+        val back = folded.first()
+        c.foldedTypes.unfold(PersonalCalendar.MAIN, back)
+        TypeFoldAsk.quietShiftKinds(c, PersonalCalendar.MAIN, WorkStyle.BUSINESS)
+        assertTrue(back !in c.foldedTypes.of(PersonalCalendar.MAIN))
+        // Back to 교대: its own kinds come out.
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.BUSINESS, WorkStyle.SHIFT)
+        assertTrue(c.foldedTypes.of(PersonalCalendar.MAIN).isEmpty())
+    }
 }

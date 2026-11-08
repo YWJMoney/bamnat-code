@@ -147,16 +147,19 @@ fun EntryDialog(
     val accounts = ledger.activeAccounts
     val isNew = initial == null || initial.id == 0L
     val haptics = LocalHapticFeedback.current
-    var kind by rememberSaveable { mutableStateOf(initial?.kind ?: defaultKind) }
+    // 1.38 PC 621c55f4 LOW (돈 적기 시트를 아래로 쓸면 쓰던 금액이 사라져요): a new line closed without 저장 is kept for a while on
+    // this phone's memory, and the next 돈 적기 starts from it with a way to clear it, whichever way the sheet was closed.
+    val draft = remember { if (initial == null) EntryDraft.take(date) else null }
+    var kind by rememberSaveable { mutableStateOf(draft?.kind ?: initial?.kind ?: defaultKind) }
     val categories = remember(ledger, kind) { ledger.categoriesOf(kind) }
     // A cancellation is stored negative (or, from a kept foreign text, still 0 and marked "결제 취소").
     val cancel = (initial?.amount ?: 0) < 0 || initial?.note?.startsWith("결제 취소") == true
-    var digits by rememberSaveable { mutableStateOf(amountDigits(abs(initial?.amount ?: 0))) }
+    var digits by rememberSaveable { mutableStateOf(draft?.digits ?: amountDigits(abs(initial?.amount ?: 0))) }
     var category by rememberSaveable {
-        mutableStateOf(initial?.category ?: Ledger.lastCategory(entries, kind)?.takeIf { it in categories } ?: categories.first())
+        mutableStateOf(draft?.category?.takeIf { it in categories } ?: initial?.category ?: Ledger.lastCategory(entries, kind)?.takeIf { it in categories } ?: categories.first())
     }
-    var categoryTouched by rememberSaveable { mutableStateOf(initial != null) }
-    var place by rememberSaveable { mutableStateOf(initial?.merchant?.ifBlank { initial.note }.orEmpty()) }
+    var categoryTouched by rememberSaveable { mutableStateOf(initial != null || draft != null) }
+    var place by rememberSaveable { mutableStateOf(draft?.place ?: initial?.merchant?.ifBlank { initial.note }.orEmpty()) }
     var day by rememberSaveable { mutableStateOf((initial?.date ?: date).toString()) }
     var account by rememberSaveable { mutableStateOf(initial?.accountId ?: if (isNew) MoneyAccounts.lastUsed(entries, kind, ledger.accounts) else null) }
     var toAccount by rememberSaveable { mutableStateOf(initial?.toAccountId) }
@@ -167,7 +170,10 @@ fun EntryDialog(
         if (!accountTouched && account == null) account = MoneyAccounts.lastUsed(entries, kind, ledger.accounts)
         if (!categoryTouched && place.isBlank()) Ledger.lastCategory(entries, kind)?.takeIf { it in categories }?.let { category = it }
     }
-    var memo by rememberSaveable { mutableStateOf(initial?.memo.orEmpty()) }
+    var memo by rememberSaveable { mutableStateOf(draft?.memo ?: initial?.memo.orEmpty()) }
+    var fromDraft by rememberSaveable { mutableStateOf(draft != null) }
+    // 1.38 (1.37 PC LOW '쓸면 적던 것이 사라져요'): the 한 줄로 적기 text counts as typed too, so a swipe asks first.
+    var line by rememberSaveable { mutableStateOf("") }
     var tagsText by rememberSaveable { mutableStateOf(initial?.tags.orEmpty().joinToString(" ") { "#$it" }) }
     var partsText by rememberSaveable { mutableStateOf(encodeParts(initial?.parts.orEmpty())) }
     var installments by rememberSaveable { mutableIntStateOf(initial?.installments ?: 1) }
@@ -217,10 +223,16 @@ fun EntryDialog(
 
     // 1.37 PC 확인 6a4efc92 (높음): 시트 안에서 위로 가려고 아래로 끌면 시트가 닫히고 금액·날짜·카드가 말없이 사라졌어요. 적은 것이
     // 있으면 끌기·뒤로·바깥 누르기는 먼저 물어요 (FormSheet와 같은 방식). 제목 줄의 닫기는 그대로 바로 닫아요.
-    val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank()
+    val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank() || line.isNotBlank() ||
+        partsText.isNotBlank() || receipt.isNotBlank()
     else amount != abs(initial.amount) || kind != initial.kind || category != initial.category || day != initial.date.toString() ||
         account != initial.accountId || place.trim() != initial.merchant.ifBlank { initial.note }.trim() || memo.trim() != initial.memo.trim()
-    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
+    // Kept whenever the sheet goes without 저장 (a swipe, 뒤로, ✕ or 버리기): 저장 clears it.
+    val close = {
+        if (initial == null && amount > 0) EntryDraft.keep(EntryDraft.Saved(onDay, kind, digits, category, place, memo))
+        onDismiss()
+    }
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = close, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             // Title row: what this is, and the line's own actions while editing.
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -241,12 +253,18 @@ fun EntryDialog(
                         dismissButton = { TextButton(onClick = { askDelete = false }) { Text("취소") } },
                     )
                 }
-                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
+                IconButton(onClick = close) { Icon(Icons.Filled.Close, "닫기") }
             }
             Column(
-                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+                Modifier.weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                if (fromDraft) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("닫기 전에 적던 내용이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = { digits = ""; place = ""; memo = ""; fromDraft = false }) { Text("지우고 새로") }
+                }
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     MoneyKind.entries.forEachIndexed { i, k ->
                         SegmentedButton(
@@ -281,7 +299,6 @@ fun EntryDialog(
                 // 1.37 [LEDH-28] 한 줄로 적기: "점심 9천 카드" fills the amount, place, day, category and card it names.
                 if (isNew && kind != MoneyKind.TRANSFER) {
                     var lineOpen by rememberSaveable { mutableStateOf(false) }
-                    var line by rememberSaveable { mutableStateOf("") }
                     var lineNote by remember { mutableStateOf<String?>(null) }
                     if (!lineOpen) AssistChip(onClick = { lineOpen = true }, label = { Text("한 줄로 적기") })
                     else {
@@ -505,13 +522,13 @@ fun EntryDialog(
             val next: (@Composable (Modifier) -> Unit)? = if (isNew && onSaveAndNext != null) { m ->
                 OutlinedButton(enabled = ready, onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onSaveAndNext(build())
+                    EntryDraft.clear(); onSaveAndNext(build())
                 }, modifier = m.heightIn(min = 48.dp)) { Text(if (short) "하나 더" else "저장하고 하나 더", maxLines = 1) }
             } else null
             val save: @Composable (Modifier) -> Unit = { m ->
                 com.bamnat.app.ui.components.SaveButton(enabled = ready, onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    onSave(build())
+                    EntryDraft.clear(); onSave(build())
                 }, modifier = m.heightIn(min = 48.dp)) { Text("저장") }
             }
             // PC 확인 b4735c07 ("아주 크게"에서 '저장하고 하나 더'가 두 줄로 꺾여요): with big letters the two buttons stack, 저장 first.
@@ -680,5 +697,27 @@ fun CategoryPicker(value: String, options: List<String>, modifier: Modifier = Mo
                     onClick = { onPick(c); open = false })
             }
         }
+    }
+}
+
+/**
+ * 1.38 PC 621c55f4 LOW: the last new line closed without 저장, in memory only (never on disk or in a backup), for
+ * [KEEP_MINUTES], taken once by the next 돈 적기 on the same day.
+ */
+internal object EntryDraft {
+    data class Saved(val day: LocalDate, val kind: MoneyKind, val digits: String, val category: String, val place: String, val memo: String)
+
+    private const val KEEP_MINUTES = 30L
+    private var saved: Saved? = null
+    private var at: Long = 0L
+
+    fun keep(d: Saved) { saved = d; at = com.bamnat.core.time.Today.millis() }
+
+    fun clear() { saved = null }
+
+    fun take(day: LocalDate): Saved? {
+        val d = saved ?: return null
+        saved = null
+        return d.takeIf { it.day == day && com.bamnat.core.time.Today.millis() - at < KEEP_MINUTES * 60_000 }
     }
 }

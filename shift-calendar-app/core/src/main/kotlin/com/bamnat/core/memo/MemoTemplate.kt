@@ -63,7 +63,7 @@ data class MemoTemplate(
         fun fromMemo(memo: Memo, id: String, name: String, asked: Set<String>, choices: Map<String, List<String>> = emptyMap()): MemoTemplate {
             val props = MemoProps.of(memo).associateBy { it.label }
             val asks = ArrayList<TemplateAsk>()
-            val body = if (memo.isChecklist) "" else memo.body.lineSequence().filter { line ->
+            val body = if (memo.isChecklist) "" else memo.text.lineSequence().filter { line ->
                 val label = MemoProps.labelOfLine(line)
                 val p = label?.let { props[it] }
                 if (p != null && label in asked && asks.none { it.label == label }) {
@@ -79,7 +79,7 @@ data class MemoTemplate(
             }.joinToString("\n").trim().take(300)
             return MemoTemplate(
                 id = id,
-                title = name.trim().ifBlank { memo.title.ifBlank { (memo.checklist.firstOrNull()?.text ?: memo.body.lineSequence().firstOrNull()).orEmpty() } }.take(30),
+                title = name.trim().ifBlank { memo.title.ifBlank { (memo.checklist.firstOrNull()?.text ?: memo.text.lineSequence().firstOrNull()).orEmpty() } }.take(30),
                 check = if (memo.isChecklist) memo.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
                 body = body,
                 repeat = memo.repeat.takeIf { it.startsWith("W") || it.startsWith("M") }.orEmpty(),

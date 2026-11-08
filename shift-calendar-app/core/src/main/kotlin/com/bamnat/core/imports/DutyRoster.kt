@@ -8,6 +8,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /*
  * [SHFT-06] A month's duty roster (듀티표) read from a photo on the phone, or from text pasted from
@@ -79,6 +80,11 @@ data class RosterRow(
     val notes: Map<Int, String> = emptyMap(),
     /** [READ-03] Days whose cell stood off its column's middle in the photo: maybe the next day's, so looked at. */
     val unsure: Set<Int> = emptySet(),
+    /**
+     * [READ-41] 1.38 PC 12.3: days the readings gave two different codes for (not merely one reading losing it). Such a cell
+     * stays yellow even when the line's repeat agrees with the pick: the photo may say the other one.
+     */
+    val contested: Set<Int> = emptySet(),
     /** [READ-04] The line of the table it was read from, top to bottom: the order people are listed, and where a tap lands. */
     val line: Int = 0,
     /**
@@ -86,6 +92,18 @@ data class RosterRow(
      * teaches the code book what that word means on their rosters ([RosterLearn]). In memory only, never saved.
      */
     val raw: Map<Int, String> = emptyMap(),
+    /**
+     * [READ-30] 1.38 PC: a 4주 듀티 file's days outside [cells]' month (10/26~31 of a "11월" roster that runs 10/26~11/25), by
+     * date, so they go in too instead of being dropped.
+     */
+    val outside: Map<java.time.LocalDate, DutyCell> = emptyMap(),
+    /**
+     * [READ-41] Where the line stands in the photo, top to bottom (the middle of its words, level), 0 when not known: the
+     * readings of one photo share the photo's pixels, so a line is matched by place when people share a rota.
+     */
+    val y: Int = 0,
+    /** [READ-41] Days the photo had nothing on that the line's repeat filled ([RosterPeriod.fill]): yellow, and said so. */
+    val filled: Set<Int> = emptySet(),
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
 
@@ -174,6 +192,9 @@ class DutyCodes(
         exact[n]?.let { return DutyCell.Shift(it) }
         learned[n]?.let { return it }
         if (aliases.containsKey(n)) return aliases[n] ?: DutyCell.Unknown(token.trim())
+        // [READ-36] 1.38 PC 8차: a one-letter code read a stroke off ("아" for 야, "추" for 주, "취" for 휴): the code it is
+        // nearly, looked at (yellow) like any common code.
+        LOOKALIKE[n]?.let { t -> if (aliases.containsKey(t)) return aliases[t] ?: DutyCell.Unknown(token.trim()) }
         return null
     }
 
@@ -202,9 +223,10 @@ class DutyCodes(
      * [NURS-04] True when [cell] is a kind of work picked from a common code in [token] (주, N, 이브닝) rather than
      * the calendar's own name or short name: the right group, maybe not the user's own kind. Days off never are.
      */
-    fun guessedWork(token: String, cell: DutyCell): Boolean =
-        cell is DutyCell.Shift && types.firstOrNull { it.id == cell.shiftTypeId }?.isOff == false &&
-            codeOf(token).let { !exact.containsKey(it) && !learned.containsKey(it) }
+    fun guessedWork(token: String, cell: DutyCell): Boolean = codeOf(token).let { c ->
+        c in LOOKALIKE && !exact.containsKey(c) && !learned.containsKey(c) ||
+            cell is DutyCell.Shift && types.firstOrNull { it.id == cell.shiftTypeId }?.isOff == false && !exact.containsKey(c) && !learned.containsKey(c)
+    }
 
     /** [ROST-11] The code a token stands for, marks and times taken off: what the code book keeps an answer under. */
     fun codeOf(token: String): String {
@@ -277,6 +299,9 @@ class DutyCodes(
         fun fold(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFKC)
         fun norm(s: String): String = fold(s).replace(STRIP, "").uppercase()
 
+        /** [READ-36] One-letter codes as a photo misreads them, and the code each nearly is. */
+        internal val LOOKALIKE = mapOf("아" to "야", "추" to "주", "츄" to "주", "쥬" to "주", "취" to "휴", "휘" to "휴")
+
         /** [ROST-03] Marks written after a code on rosters: 교육 *, 반 근무 /, 표시 ', 추가 +, △ ○ ※. */
         private const val MARKS = "*/'+△▲○●※#!~`^"
         private val MARKED = Regex("""^([^*/'+△▲○●※#!~`^\s]+)([*/'+△▲○●※#!~`^]+)$""")
@@ -308,6 +333,8 @@ class DutyCodes(
 }
 
 object DutyRoster {
+    /** [READ-32] A 2~5 letter 한글 name and the Latin codes OCR stuck to its end ("최유리ED"). */
+    private val NAME_CODES = Regex("""^([가-힣]{2,5})[A-Za-z]{1,4}$""")
     // [NURS-03] "1", "1일", "01", and a day with its weekday in one cell: "1(월)". "1월" is a month, never a day.
     // [ROST-04] A date in the row of days too, as a spreadsheet copies it (중-7): "10/1", "10.1", "10월1일", "10-1".
     private val DAY_TOKEN = Regex("""^(?:(\d{1,2})\s*[/.\-월]\s*)?(\d{1,2})일?(?:\((?:월|화|수|목|금|토|일)\))?$""")
@@ -353,6 +380,24 @@ object DutyRoster {
             .sortedWith(compareByDescending<RosterRow> { it.cells.size - it.unknown }.thenBy { it.unknown })
             .distinctBy { it.label to it.cells }
         rows = tidy(rows)
+        // [READ-37] 1.38 PC: a ward's row of weekdays under its dates, misread ("으" for 일), and the row of dates with
+        // "이름" beside it came out as two more people ("으 · 16일", "이름|의 · 22일"; 14명 for 12).
+        rows.filterNot(::headerLike).takeIf { it.isNotEmpty() }?.let { rows = it }
+        // [READ-36] 1.38 PC 8차 (조 근무표 사진, "3번째 줄 · 18일"): on a sheet whose lines are named (1조, 2조, 김민지), a short
+        // line with no name that says what a named line says on the same days is a piece of that one read twice, never one
+        // more person. (A nameless line of its own, a 손글씨 name lost, stays.)
+        if (rows.count { it.label.isNotBlank() } >= 2) {
+            val most = rows.maxOf { it.cells.size }
+            fun twice(r: RosterRow) = rows.any { o ->
+                o !== r && o.label.isNotBlank() && r.cells.keys.intersect(o.cells.keys).let { shared ->
+                    shared.size >= 5 && shared.count { r.cells[it] == o.cells[it] } * 10 >= shared.size * 8
+                }
+            }
+            rows.filterNot { it.label.isBlank() && it.cells.size * 10 < most * 7 && twice(it) }.takeIf { it.isNotEmpty() }?.let { rows = it }
+        }
+        // [GROW-05] 1.38: a month calendar's picture (다른 앱 화면 캡처) is one line of the user's own; its weeks are not
+        // several people's lines.
+        if (hint == null) CalendarShot.read(clean, codes)?.let { shot -> if (rows.none { it.cells.size > shot.cells.size }) rows = listOf(shot) }
         hint?.myRow?.let(nearest)?.let { mine ->
             // [READ-04] The user's own line: that one only, read even when short, in order from the 1st when no row of days is known.
             rows = rows.filter { it.line == mine }.ifEmpty {
@@ -419,6 +464,18 @@ object DutyRoster {
     }
 
     /**
+     * [READ-30] 1.38 PC (x03): the kind of work a roster line has most of. A day the roster gives 연차 is a working day taken
+     * off, whatever the user's own order says of it, so a leave on a day the calendar has as a rest day is put on this shift
+     * (the leave then counts and is paid, as the roster means). Null when the line has no work.
+     */
+    fun mainShift(cells: Collection<DutyCell>): Long? =
+        cells.filterIsInstance<DutyCell.Shift>().groupingBy { it.shiftTypeId }.eachCount().maxByOrNull { it.value }?.key
+
+    /** [READ-30] [cell]'s leave on [entry], a rest day on the calendar, made a day of [shiftTypeId] work taken off. */
+    fun leaveOnRest(entry: DayEntry, cell: DutyCell.Leave, shiftTypeId: Long): DayEntry =
+        entry.copy(override = ShiftOverride.Shift(shiftTypeId), leave = cell.leave)
+
+    /**
      * [ROST-02] What [cells] would overwrite on a calendar whose days are [entries]: days with leave, or with a
      * kind of work the user changed by hand, that the roster puts something else on (하 '덮어쓰기 안내').
      */
@@ -435,8 +492,18 @@ object DutyRoster {
      */
     fun monthIn(text: String, near: LocalDate): YearMonth? {
         val t = DutyCodes.fold(text)
-        Regex("""(20\d{2})\s*[년.\-/]\s*(\d{1,2})\s*월?""").find(t)?.let { m ->
+        // [READ-37] 1.38 PC: "7병동 2026년 11월" read as July. The words of a title come in reading order only roughly (a
+        // tilted photo puts "2026년" before "7병동"), so "2026년 7…" is never a month unless 월 follows it; "11월" is.
+        Regex("""(20\d{2})\s*년\s*(\d{1,2})\s*월""").find(t)?.let { m ->
             runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()?.let { return it }
+        }
+        Regex("""(?<!\d)(20\d{2})\s*[.\-/]\s*(\d{1,2})(?!\d)""").find(t)?.let { m ->
+            runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()?.let { return it }
+        }
+        // A year and, apart from it, a month ("2026년" … "11월"): the first "n월" that is not a day's date ("11월 3일").
+        Regex("""(20\d{2})\s*년""").find(t)?.let { y ->
+            Regex("""(?<![\d.])(\d{1,2})\s*월(?!\s*\d{1,2}\s*일)""").findAll(t).map { it.groupValues[1].toInt() }.firstOrNull { it in 1..12 }
+                ?.let { return YearMonth.of(y.groupValues[1].toInt(), it) }
         }
         val month = Regex("""(?<!\d)(\d{1,2})\s*월\s*(?:근무|듀티|근무표|DUTY|스케줄|일정|당직)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)?.toInt()
             ?: t.lines().firstNotNullOfOrNull { line ->
@@ -505,6 +572,28 @@ object DutyRoster {
         return fit.copy(first = first, last = last)
     }
 
+    /** [READ-37] Words over a table's names column: a line beginning with one is the table's head, not a person. */
+    private val HEAD_WORDS = listOf("이름", "성명", "요일", "날짜", "일자", "NAME", "DATE", "DAY")
+
+    /**
+     * [READ-37] A line read as a person's that is the table's head: hardly any of its cells a duty, and most of them a
+     * weekday, a misread one (one or two Hangul letters no code knows) or a number; or "이름"·"요일" at its start and
+     * fewer than half its cells duties. A line of 주·야·비·휴 is all duties and stays.
+     */
+    internal fun headerLike(row: RosterRow): Boolean {
+        val n = row.cells.size
+        if (n == 0) return false
+        fun text(d: Int, c: DutyCell) = row.raw[d] ?: (c as? DutyCell.Unknown)?.raw.orEmpty()
+        val duties = row.cells.count { (d, c) -> c !is DutyCell.Unknown && DutyCodes.norm(text(d, c)) !in WEEKDAYS }
+        val heads = row.cells.count { (d, c) ->
+            val t = DutyCodes.norm(text(d, c))
+            t in WEEKDAYS || c is DutyCell.Unknown && !c.leave && t.isNotEmpty() &&
+                (t.length <= 2 && t.all { it in '가'..'힣' } || t.all(Char::isDigit))
+        }
+        val label = DutyCodes.norm(row.label)
+        return duties * 4 < n && heads * 2 >= n || HEAD_WORDS.any { label.startsWith(it) } && duties * 2 < n
+    }
+
     private fun isWeekdayRow(row: List<Placed>): Boolean =
         row.size >= MIN_DAYS && row.count { DutyCodes.norm(it.text) in WEEKDAYS } * 10 >= row.size * 7
 
@@ -526,17 +615,32 @@ object DutyRoster {
             var fit = first.second
             // The columns again, from where this line's own cells stand.
             val own = RosterGeometry.leastSquares(read.positions)
-            if (own != null && read.positions.size >= 5 && own.second in start.b * 0.8..start.b * 1.25) {
+            if (start.knots.isNotEmpty()) {
+                // [READ-33] Uneven columns: the row of days' places moved and stretched to this line's cells (x = α + β·x(d)).
+                val pairs = read.positions.map { (d, x) -> start.x(d) to x }
+                if (pairs.size >= 5) {
+                    val mx = pairs.sumOf { it.first } / pairs.size; val my = pairs.sumOf { it.second } / pairs.size
+                    val sxx = pairs.sumOf { (p, _) -> (p - mx) * (p - mx) }
+                    val beta = if (sxx > 0) pairs.sumOf { (p, q) -> (p - mx) * (q - my) } / sxx else 1.0
+                    val alpha = my - beta * mx
+                    if (beta in 0.8..1.25) {
+                        val refit = start.copy(a = alpha + beta * start.a, b = beta * start.b, knots = start.knots.map { (d, x) -> d to alpha + beta * x })
+                        readLine(row, refit, codes).first.let { again -> if (again.cells.size >= read.cells.size) { read = again; fit = refit } }
+                    }
+                }
+            } else if (own != null && read.positions.size >= 5 && own.second in start.b * 0.8..start.b * 1.25) {
                 val refit = start.copy(a = own.first, b = own.second, c = 0.0)
                 readLine(row, refit, codes).first.let { again -> if (again.cells.size >= read.cells.size) { read = again; fit = refit } }
             }
             // [READ-13] 1.27: columns that narrow along the row (seen from one side): bent to where this line's cells stand.
-            RosterGeometry.bent(fit, read.positions)?.let { bent ->
+            if (fit.knots.isEmpty()) RosterGeometry.bent(fit, read.positions)?.let { bent ->
                 readLine(row, bent, codes).first.let { again -> if (again.cells.size >= read.cells.size && again.unsure.size <= read.unsure.size) { read = again; fit = bent } }
             }
             if (read.cells.size >= min) {
                 carried[h] = fit
-                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i, raw = read.raws)
+                val ys = row.map { it.y }.sorted()
+                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i, raw = read.raws,
+                    y = ys[ys.size / 2].toInt())
             }
         }
         return out
@@ -574,9 +678,23 @@ object DutyRoster {
                 }
                 continue
             }
+            val read = codes.read(w.text)
+            // [READ-32] 1.38 PC (스캔 PDF "최유리ED", 7일부터): when the date row was read from a later day on, the first days'
+            // codes stand left of it. Each is put on the day its place says, counted back from the first day read, and
+            // looked at (yellow); never taken into the name.
+            if (leftOfDays && read != null && fit.first > 1 && label.any { it in '가'..'힣' }) {
+                val back = (firstX - w.x) / fit.step(fit.first)
+                val d = fit.first - back.roundToInt()
+                if (d in 1 until fit.first && abs(back - back.roundToInt()) <= 0.45 && d !in cells) {
+                    cells[d] = read.first
+                    guessed += d
+                    off[d] = 1.0
+                    raws[d] = w.text.trim()
+                }
+                continue
+            }
             val near = if (leftOfDays) null else fit.day(w.x)
             val aligned = near != null && near.second <= 0.45
-            val read = codes.read(w.text)
             val cell = read?.first ?: if (codes.looksLikeCode(w.text) && aligned) DutyCell.Unknown(w.text.trim()) else null
             when {
                 cell != null && aligned -> {
@@ -598,6 +716,8 @@ object DutyRoster {
             }
         }
         if (label.isBlank()) label.append(rightLabel)
+        // [READ-32] 1.38 PC: "이수진D", "정다은N": a 한글 name with Latin codes stuck at its end is the name alone.
+        NAME_CODES.matchEntire(label.toString())?.groupValues?.get(1)?.let { name -> label.setLength(0); label.append(name) }
         // [READ-03] A cell far from its column's middle may be the next day's: one to look at.
         val unsure = off.filter { (d, miss) -> miss > 0.3 && d in cells }.keys
         // [READ-13] 1.27: a line written in 한글 codes (주·야·비·휴) with one Latin word ("OF" for 야, the bench's dim 조 표)
@@ -714,7 +834,7 @@ object DutyRoster {
                 guessed = first.guessed + second.guessed.filter { it !in first.cells },
                 notes = second.notes + first.notes,
                 unsure = first.unsure + second.unsure.filter { it !in first.cells },
-                line = n.line, raw = second.raw + first.raw)
+                line = n.line, raw = second.raw + first.raw, y = n.y)
             out[out.indexOf(n)] = merged
             out.remove(u)
         }
@@ -754,7 +874,7 @@ object DutyRoster {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
             RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
                 parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes },
-                parts.flatMap { it.unsure }.toSet(), line = parts.first().line,
+                parts.flatMap { it.unsure }.toSet(), line = parts.first().line, y = parts.first().y,
                 // [READ-19] 1.27: the words as read, for 고친 것 배우기 (two halves of one person kept them apart).
                 raw = parts.reversed().fold(emptyMap()) { acc, r -> acc + r.raw })
         }
@@ -762,7 +882,7 @@ object DutyRoster {
         // Two blank lines whose days do not overlap are one person's two halves.
         val joined = if (blank.size == 2 && blank[0].cells.keys.intersect(blank[1].cells.keys).isEmpty()) {
             listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap(), blank[0].guessed + blank[1].guessed, blank[0].notes + blank[1].notes,
-                blank[0].unsure + blank[1].unsure, line = blank[0].line, raw = blank[0].raw + blank[1].raw))
+                blank[0].unsure + blank[1].unsure, line = blank[0].line, raw = blank[0].raw + blank[1].raw, y = blank[0].y))
         } else blank
         return named + joined
     }

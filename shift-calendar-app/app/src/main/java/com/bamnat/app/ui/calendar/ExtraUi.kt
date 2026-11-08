@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.asColor
 import com.bamnat.app.ui.components.contentColorOn
@@ -33,9 +35,10 @@ val LocalExtraKinds = compositionLocalOf { ExtraKinds() }
 
 /** [EXTRA-01] A square with the kind's mark (잔·특·대 or the company's own) in the kind's colour. */
 @Composable
-fun ExtraKindMark(kind: ExtraKind, size: Dp = 16.dp, modifier: Modifier = Modifier) {
+fun ExtraKindMark(kind: ExtraKind, size: Dp = 16.dp, modifier: Modifier = Modifier, asIs: Boolean = false) {
     val color = kind.colorArgb.asColor()
-    val mark = kind.mark
+    // 1.39 [WTYP-30] PC 7차: 일근's built-in 잔업 is 야근, so its mark is '야' too ([asIs] keeps the kind's own, as its editor does).
+    val mark = if (asIs) kind.mark else ExtraText.mark(kind, ExtraText.styleHere())
     // Sized to the square, not the font setting, so it always fits [VIS-01].
     val fs = with(LocalDensity.current) { (size * if (mark.length > 1) 0.42f else 0.6f).toSp() }
     Box(modifier.size(size).clip(RoundedCornerShape(size / 4)).background(color), contentAlignment = Alignment.Center) {
@@ -144,12 +147,32 @@ object ExtraText {
         e.entry.kindId == choice.entry.kindId && e.entry.coveredShiftId == choice.entry.coveredShiftId
     }
 
-    /** The piece's name to say back: "야간 대근", "잔업 2시간", "특근". */
-    fun name(e: ResolvedExtra): String = when {
+    /**
+     * The piece's name to say back: "야간 대근", "잔업 2시간", "특근". With [style] 일근 the built-in 잔업 is "야근", the
+     * weekday worker's own word ([J133-27]), the same on the chip, the 추가 근무 line and its rows (1.39 [WTYP-30] PC 6차).
+     */
+    fun name(e: ResolvedExtra, style: com.bamnat.core.work.WorkStyle? = null): String = when {
         e.covered != null -> coverName(e.kind, e.covered)
-        namesHours(e) -> "${e.kind.name} ${HoursFormat.korean(e.minutes)}"
-        else -> e.kind.name
+        namesHours(e) -> "${kindName(e.kind, style)} ${HoursFormat.korean(e.minutes)}"
+        else -> kindName(e.kind, style)
     }
+
+    /** The calendar's kind of work, for [name] and [kindName] where a screen has no settings at hand (1.39 [WTYP-30]). */
+    @androidx.compose.runtime.Composable
+    fun styleHere(): com.bamnat.core.work.WorkStyle? =
+        androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings
+            .collectAsStateWithLifecycle().value.workStyle
+
+    /** [kind]'s one-letter mark: '야' for a weekday worker's built-in 잔업 still marked '잔' ([WTYP-30]). */
+    fun mark(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String =
+        if (style == com.bamnat.core.work.WorkStyle.DAY && kind.id == ExtraKind.OVERTIME_ID && kind.mark == "잔") "야" else kind.mark
+
+    /** [kind]'s name, "야근" for a weekday worker's built-in 잔업 ([J133-27]). */
+    fun kindName(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String = word(kind.name, kind.id, style)
+
+    /** [text] with 잔업 said "야근" when it is the built-in 잔업 of a weekday worker ([J133-27]). */
+    fun word(text: String, kindId: Long, style: com.bamnat.core.work.WorkStyle?): String =
+        if (style == com.bamnat.core.work.WorkStyle.DAY && kindId == ExtraKind.OVERTIME_ID) text.replace("잔업", "야근") else text
 
     /** Whether [name] already says how long the piece is, as "잔업 2시간" does. */
     fun namesHours(e: ResolvedExtra): Boolean = e.covered == null && !e.entry.hasTimes

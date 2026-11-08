@@ -33,6 +33,8 @@ data class BackupSummary(
     val calendars: Int = 0,
     /** [BACK-01] Photos in the file and about how many bytes they take. */
     val photos: Int = 0, val photoBytes: Long = 0,
+    /** 1.38 PC 9차: 팀 근무표 and 사업장 (팀·팀원·직원), so the restore says it replaces them too. */
+    val teams: Int = 0, val teamMembers: Int = 0, val places: Int = 0, val staff: Int = 0,
 )
 
 class BackupException(message: String) : Exception(message)
@@ -197,7 +199,9 @@ class BackupManager(
             money.allAccounts().forEach { a ->
                 put(JSONObject().put("id", a.id).put("name", a.name).put("type", a.type).put("last4", a.last4)
                     .putOpt("payDay", a.payDay).putOpt("closeDay", a.closeDay).putOpt("payFrom", a.payFromId)
-                    .put("opening", a.opening).put("color", a.color).put("order", a.sortOrder).put("hidden", a.hidden).put("remind", a.remind))
+                    .put("opening", a.opening).put("color", a.color).put("order", a.sortOrder).put("hidden", a.hidden).put("remind", a.remind)
+                    // 1.38 [LEDH-25][LEDH-27] (version 26). Older apps ignore these keys.
+                    .put("rate", a.rate).put("monthlyPay", a.monthlyPay).put("perfTiers", a.perfTiers).put("perfSkip", a.perfSkip))
             }
         })
         into.put("budgets", JSONArray().apply {
@@ -255,11 +259,14 @@ class BackupManager(
     /** The backup as one JSON text, without the photos (those go in the file of [exportFile]). */
     suspend fun export(): String = db.withTransaction { exportNow().toString(1) }
 
+    /** 1.38 [P3-01] The backup as it goes in a file sealed with a password: [export] plus the 사업장·직원 rows ([PhaseThreeBackup]). */
+    suspend fun exportSealed(): String = db.withTransaction { exportNow(sealed = true).toString(1) }
+
     /** [REL-15] The backup and the photo files that go with it, read in one transaction. */
-    private suspend fun exportWithPhotos(): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
-        val root = exportNow()
+    private suspend fun exportWithPhotos(sealed: Boolean = false): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
+        val root = exportNow(sealed)
         // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
-        val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c) } }.orEmpty() else emptyList()
+        val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c, memoPhotoNames(root)) } }.orEmpty() else emptyList()
         root.toString(1) to files
     }
 
@@ -268,7 +275,8 @@ class BackupManager(
      * when there is one. Photos stream from their files; [out] stays open.
      */
     suspend fun exportFile(out: java.io.OutputStream, password: CharArray? = null) {
-        val (json, files) = exportWithPhotos()
+        // 1.38 [P3-01] Only a file sealed with a password carries the 사업장·직원 rows.
+        val (json, files) = exportWithPhotos(sealed = password != null)
         if (password == null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackupArchive.write(out, json, files) }
             return
@@ -284,7 +292,7 @@ class BackupManager(
 
     /** [PROV-03][REL-15] [exportFile] with a key kept by 자동 백업; the file opens with the password the key came from. */
     suspend fun exportFileWithKey(out: java.io.OutputStream, key: ByteArray, salt: ByteArray, iterations: Int) {
-        val (json, files) = exportWithPhotos()
+        val (json, files) = exportWithPhotos(sealed = true)
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, iterations) }
     }
 
@@ -441,7 +449,7 @@ class BackupManager(
         }
     }
 
-    private suspend fun exportNow(): JSONObject {
+    private suspend fun exportNow(sealed: Boolean = false): JSONObject {
         val root = JSONObject()
             .put("app", APP_ID)
             .put("format", FORMAT_VERSION)
@@ -480,7 +488,11 @@ class BackupManager(
                     .putOpt("remindAsked", m.remindAsked)
                     // [NOTE-01] Version 16. [MEMO-01] Without it the memo is 내 달력's; ",*," is every calendar.
                     .putOpt("calendars", m.calendars.ifEmpty { null })
-                    .putOpt("repeat", m.repeat.ifEmpty { null }),
+                    .putOpt("repeat", m.repeat.ifEmpty { null })
+                    // 1.38 DB 28판 이 날만 빼기. An older app ignores it and the memo comes back on those days too.
+                    .putOpt("skips", m.skips.ifEmpty { null })
+                    // 1.39 DB 33판 끝냄. An older app ignores them and the memo is not finished there.
+                    .putOpt("doneAt", m.doneAt).putOpt("doneDays", m.doneDays.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
@@ -488,7 +500,23 @@ class BackupManager(
         putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
-            db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
+            db.sleepDao().all().forEach { l ->
+                put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)
+                    // 1.38 [SLEEP-01] Only a sleep the phone noticed says so; a tap stays as before.
+                    .apply { if (l.source != com.bamnat.app.data.db.SleepLogEntity.SOURCE_TAP) put("source", l.source) })
+            }
+        })
+        // 1.38 [SLEEP-03][SLEEP-07] 아침 한 장 and the night's sounds (counts and times; the clips stay on this phone).
+        root.put("sleepChecks", JSONArray().apply {
+            db.sleepDao().allChecks().forEach { c ->
+                put(JSONObject().put("start", c.startMillis).put("end", c.endMillis).putOpt("mood", c.mood).put("tags", c.tags)
+                    .putOpt("note", c.note).put("at", c.atMillis))
+            }
+        })
+        root.put("sleepEvents", JSONArray().apply {
+            db.sleepDao().allEvents().forEach { e ->
+                put(JSONObject().put("start", e.startMillis).put("end", e.endMillis).put("kind", e.kind).put("level", e.level.toDouble()))
+            }
         })
         payStore?.let { putPay(it, root) }
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
@@ -496,6 +524,9 @@ class BackupManager(
         // [FIT-02] Parts and tools added to a calendar they do not suit.
         guide?.let { root.put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
+        // 1.38 [P3-01] 리더 팀 근무표 always; 사업장·직원 only in a sealed file.
+        PhaseThreeBackup.putTeams(db, root, sealed)
+        if (sealed) PhaseThreeBackup.putWorkplaces(db, root)
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
@@ -508,27 +539,35 @@ class BackupManager(
             JSONObject()
                 .put("weekStart", s.weekStart.name).put("weeklyLimit", s.weeklyLimitHours)
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
-                .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
+                .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar).put("kani", s.showKani).put("dayStory", s.dayStory)
+                .put("dayDial", s.dayDial).put("dayStart", s.dayStartMinutes)
+                .put("orgDayGroup", s.orgDayGroup).put("orgDaysOn", s.orgDaysOn)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
-                .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmsOn", s.alarmsEnabled)
+                .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmGuard", s.alarmGuard).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
-                .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
+                // 1.38 [LEDH-24]
+                .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour).put("moneyChallenge", s.moneyChallenge)
+                .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("manageLayout", s.manageLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
                 .put("tabOrder", s.tabOrder.joinToString(","))
+                // [NAV2-01] Added in 1.39: the bottom bar's places (screens and 묶음).
+                .put("tabSlots", s.tabSlots)
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
                 // [ALRM-08] Added in 1.25 (AB).
                 .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
-                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
+                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("cellList", s.cellList).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
+                // 1.39 [SPREAD-05] 보내는 사진에 밤낮 표시.
+                .put("exportMark", s.exportMark)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
                 .put("restDayCompared", s.restDayCompared)
                 .put("restCheck", s.restCheck)
@@ -541,6 +580,7 @@ class BackupManager(
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
+                .put("noiseMix", s.noiseMix).put("noiseTimer", s.noiseTimerMinutes).put("nightLook", s.nightLook).put("smartWake", s.smartWakeMinutes) // 1.38 [SLEEP-04][DSG-07]
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
@@ -568,6 +608,10 @@ class BackupManager(
         return receipts to contracts
     }
 
+    /** [MPH-03] 1.38 The photos the backup's memos (the trash's too) put in their bodies. */
+    private fun memoPhotoNames(root: JSONObject): Set<String> =
+        root.optJSONArray("memos").objects().flatMapTo(LinkedHashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.optString("body")) }
+
     /** [BACK-01] What the photos would add to a backup made now: shown beside 사진도 백업. */
     suspend fun photoSize(): BackupPhotos.Size {
         val p = photos ?: return BackupPhotos.Size(0, 0)
@@ -583,7 +627,9 @@ class BackupManager(
             })
         }
         val (receipts, contracts) = photoNames(root)
-        return p.size(receipts, contracts)
+        // [MPH-03] 1.38 메모 사진 too.
+        val memoNames = db.memoDao().getAll().flatMapTo(LinkedHashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.body) }
+        return p.size(receipts, contracts, memoNames)
     }
 
     /** Reads a backup without changing anything. Throws [BackupException] for a file that is not ours. */
@@ -605,6 +651,10 @@ class BackupManager(
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
             photos = stagedFor(json)?.photos?.size ?: BackupPhotos.count(root.optJSONObject("photos")).count,
             photoBytes = stagedFor(json)?.photos?.values?.sumOf { it.length() } ?: BackupPhotos.count(root.optJSONObject("photos")).bytes,
+            teams = root.optJSONObject(PhaseThreeBackup.TEAMS)?.optJSONArray("teams")?.length() ?: 0,
+            teamMembers = root.optJSONObject(PhaseThreeBackup.TEAMS)?.optJSONArray("members")?.length() ?: 0,
+            places = root.optJSONObject(PhaseThreeBackup.WORKPLACES)?.optJSONArray("places")?.length() ?: 0,
+            staff = root.optJSONObject(PhaseThreeBackup.WORKPLACES)?.optJSONArray("staff")?.length() ?: 0,
         )
     }
 
@@ -765,6 +815,8 @@ class BackupManager(
                 payDay = o.optIntOrNull("payDay"), closeDay = o.optIntOrNull("closeDay"), payFromId = o.optLongOrNull("payFrom"),
                 opening = o.optLong("opening"), color = o.optInt("color"), sortOrder = o.optInt("order"), hidden = o.optBoolean("hidden"),
                 remind = o.optBoolean("remind", true),
+                rate = o.optDouble("rate", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0, monthlyPay = o.optLong("monthlyPay").coerceAtLeast(0),
+                perfTiers = o.optString("perfTiers"), perfSkip = o.optString("perfSkip"),
             )
         }
         val budgets = from.optJSONArray("budgets")?.objects()?.map { o -> MoneyBudgetEntity(o.optString("category"), o.optLong("amount")) }
@@ -899,10 +951,24 @@ class BackupManager(
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
                 calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
                 repeat = o.optString("repeat"),
+                skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("skips"))),
+                doneAt = if (o.isNull("doneAt") || !o.has("doneAt")) null else o.getLong("doneAt"),
+                doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("doneDays"))),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
-            com.bamnat.app.data.db.SleepLogEntity(startMillis = o.getLong("start"), endMillis = if (o.has("end") && !o.isNull("end")) o.getLong("end") else null)
+            com.bamnat.app.data.db.SleepLogEntity(startMillis = o.getLong("start"), endMillis = if (o.has("end") && !o.isNull("end")) o.getLong("end") else null,
+                source = o.optString("source", com.bamnat.app.data.db.SleepLogEntity.SOURCE_TAP))
+        }
+        // 1.38 [SLEEP-03][SLEEP-07] An older backup has none: the phone's own stay.
+        val sleepChecks = root.optJSONArray("sleepChecks")?.objects()?.map { o ->
+            com.bamnat.app.data.db.SleepCheckEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"),
+                mood = if (o.has("mood") && !o.isNull("mood")) o.getInt("mood") else null, tags = o.optString("tags"),
+                note = o.optStringOrNull("note"), atMillis = o.optLong("at"))
+        }
+        val sleepEvents = root.optJSONArray("sleepEvents")?.objects()?.map { o ->
+            com.bamnat.app.data.db.SleepEventEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"), kind = o.getString("kind"),
+                level = o.optDouble("level").toFloat())
         }
         val money = readMoney(root)
         // Read before anything changes, so a broken pay part leaves the phone as it was.
@@ -913,11 +979,17 @@ class BackupManager(
             val back = added.map { it.cal.id }.toSet()
             calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
         }
+        // 1.38 [P3-01] Read before anything changes; a backup without them leaves the phone's own.
+        val leaderTeams = PhaseThreeBackup.readTeams(root)
+        val workplaces = PhaseThreeBackup.readWorkplaces(root)
         writing.set(true)
         db.withTransaction {
+            PhaseThreeBackup.write(db, leaderTeams, workplaces)
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
+            sleepChecks?.let { list -> db.sleepDao().clearChecks(); list.forEach { db.sleepDao().insertCheck(it) } }
+            sleepEvents?.let { list -> db.sleepDao().clearEvents(); list.forEach { db.sleepDao().insertEvent(it) } }
             db.memoDao().clear()
             writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
@@ -993,12 +1065,19 @@ class BackupManager(
                     dynamicColor = o.optBoolean("dynamicColor", s.dynamicColor),
                     showHoursInCells = o.optBoolean("cellHours", s.showHoursInCells),
                     showLunar = o.optBoolean("lunar", s.showLunar),
+                    showKani = o.optBoolean("kani", s.showKani),
+                    dayStory = o.optBoolean("dayStory", s.dayStory),
+                    dayDial = o.optBoolean("dayDial", s.dayDial),
+                    dayStartMinutes = o.optInt("dayStart", s.dayStartMinutes).coerceIn(0, 12 * 60),
+                    orgDayGroup = o.optString("orgDayGroup", s.orgDayGroup),
+                    orgDaysOn = o.optBoolean("orgDaysOn", s.orgDaysOn),
                     // Sound files from another phone usually do not exist here.
                     vibrate = o.optBoolean("vibrate", s.vibrate),
                     gradualVolume = o.optBoolean("gradual", s.gradualVolume),
                     snoozeMinutes = o.optInt("snooze", s.snoozeMinutes).coerceIn(1, 60),
                     ringMinutes = o.optInt("ring", s.ringMinutes).coerceIn(1, 60),
                     alarmSoonMinutes = o.optInt("alarmSoon", s.alarmSoonMinutes).coerceIn(0, 30),
+                    alarmGuard = o.optBoolean("alarmGuard", s.alarmGuard), // [ALRM-27]
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
                     // [SETUP-01] A backup from before the question with a pattern in it is shift work, as on the phone.
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle
@@ -1024,14 +1103,20 @@ class BackupManager(
                     leaveTimeNotice = o.optBoolean("leaveTimeNotice", s.leaveTimeNotice),
                     stretchLimitHours = o.optInt("stretchLimit", s.stretchLimitHours).coerceIn(0, 48),
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
+                    weekHoursNudge = o.optBoolean("weekHoursNudge", s.weekHoursNudge),
                     calendarOnly = o.optBoolean("calendarOnly", false),
-                    statsByPayPeriod = o.optBoolean("statsPayPeriod", false),
+                    viewAsked = true, // 1.39 [CALX-07] a restored backup brings its own view: not asked again
+                    statsPeriod = StatsPeriod.read(o.optString("statsPeriod").ifEmpty { null }, o.optBoolean("statsPayPeriod", false)),
                     moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
+                    shiftPreviewNotice = o.optBoolean("shiftPreview", s.shiftPreviewNotice),
+                    shiftPreviewHour = o.optInt("shiftPreviewHour", s.shiftPreviewHour).coerceIn(0, 23),
+                    moneyChallenge = o.optString("moneyChallenge", s.moneyChallenge).takeIf { it.isEmpty() || com.bamnat.core.money.Challenges.decode(it) != null }.orEmpty(),
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),
+                    manageLayout = o.optString("manageLayout", s.manageLayout),
                     hideDayAlarmNotice = o.optBoolean("hideDayAlarmNotice", s.hideDayAlarmNotice),
                     dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
@@ -1039,6 +1124,8 @@ class BackupManager(
                     phoneCalendars = o.optStringOrNull("phoneCalendars")?.let(::decodeGroupOrder) ?: s.phoneCalendars,
                     // [NAV-05] Added in 1.26; an older backup keeps this phone's order.
                     tabOrder = o.optStringOrNull("tabOrder")?.let(::decodeGroupOrder) ?: s.tabOrder,
+                    // [NAV2-01] Added in 1.39; an older backup keeps this phone's bar.
+                    tabSlots = if (o.has("tabSlots")) o.optString("tabSlots", "") else s.tabSlots,
                     // [PROV-06][PROV-07] Added in 1.20. Shift ids are the backup's own, restored with its shifts.
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
@@ -1057,6 +1144,7 @@ class BackupManager(
                     calView = o.optString("calView", s.calView),
                     accentColor = o.optLong("accentColor", s.accentColor),
                     longPress = o.optString("longPress", s.longPress).takeIf { it in com.bamnat.core.recipe.AppFeel.HOLDS } ?: s.longPress,
+                    cellList = o.optString("cellList", s.cellList).takeIf { it in AppSettings.CELL_LISTS } ?: s.cellList,
                     memoLook = o.optString("memoLook", s.memoLook), logic = o.optString("logic", s.logic), decor = o.optString("decor", s.decor), moneyLook = o.optString("moneyLook", s.moneyLook),
                     screenLooks = o.optString("screenLooks", s.screenLooks), payLooks = o.optString("payLooks", s.payLooks),
                     parts = o.optString("parts", s.parts).takeIf { com.bamnat.core.recipe.Blueprint.problem(it) == null } ?: s.parts,
@@ -1065,6 +1153,7 @@ class BackupManager(
                     tabViews = o.optString("tabViews", s.tabViews),
                     rateHint = o.optBoolean("rateHint", s.rateHint),
                     alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),
+                    exportMark = o.optBoolean("exportMark", s.exportMark),
                     restDayCompared = o.optBoolean("restDayCompared", s.restDayCompared),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
@@ -1084,6 +1173,12 @@ class BackupManager(
                     moneyNotices = o.optBoolean("moneyNotices", s.moneyNotices),
                     leaveNotice = o.optBoolean("leaveNotice", s.leaveNotice),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
+                    noiseMix = o.optString("noiseMix", s.noiseMix),
+                    noiseTimerMinutes = o.optInt("noiseTimer", s.noiseTimerMinutes).coerceIn(0, 8 * 60),
+                    // 1.39 [FLOW-14] 밤 색; a 1.38 backup carries only 밤에는 어두운 색 (on/off).
+                    nightLook = o.optString("nightLook").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.design.NightLook.of(it).key }
+                        ?: if (o.has("sleepNightLook") && !o.optBoolean("sleepNightLook", true)) com.bamnat.core.design.NightLook.OFF.key else s.nightLook,
+                    smartWakeMinutes = o.optInt("smartWake", s.smartWakeMinutes).coerceIn(0, 30),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22; older backups keep what this phone has.
                     shareUsageStats = o.optBoolean("usageStats", s.shareUsageStats),

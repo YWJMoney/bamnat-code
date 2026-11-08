@@ -20,6 +20,8 @@ enum class FlowKind(val label: String, val incoming: Boolean) {
     FIXED_IN("들어올 돈", true),
     FIXED_OUT("고정 지출", false),
     CARD_BILL("카드값", false),
+    /** 1.38 [LEDH-25] A loan's monthly payment, from the account it is paid from. */
+    LOAN("대출 갚기", false),
 }
 
 /** One known movement of money on [date]; [amount] is positive coming in and negative going out. */
@@ -115,7 +117,7 @@ object MoneyAhead {
     private const val MIN_LEARN_DAYS = 14
 
     /** Account types whose money can be spent this month: not 적금·상품권 (기타) and not cards. */
-    fun spendable(a: MoneyAccount): Boolean = !a.hidden && a.keepsBalance && a.type != AccountType.OTHER
+    fun spendable(a: MoneyAccount): Boolean = !a.hidden && a.keepsBalance && a.type != AccountType.OTHER && !a.isLoan
 
     /** [LEDH-01] The money in spendable accounts now, or null when there is none to count. */
     /**
@@ -185,7 +187,24 @@ object MoneyAhead {
             val due = r.due!!
             if (due.isBefore(today) || due.isAfter(until)) null else MoneyFlow(due, r.left, FlowKind.OWED, r.name)
         }
-        val all = (payFlows + fixed + jobs + owed + extra.filter { !it.date.isBefore(today) && !it.date.isAfter(until) })
+        // 1.38 [LEDH-25] Each loan's monthly payment on its day, while something is owed, unless a repeating line already pays it.
+        val balances = MoneyAccounts.balances(book.accounts, book.entries)
+        val loans = book.accounts.filter { it.isLoan && !it.hidden && it.monthlyPay > 0 && it.payDay != null }.flatMap { loan ->
+            if (book.fixed.any { f -> f.name.contains(loan.name) }) return@flatMap emptyList()
+            var owedLeft = Debts.left(loan, balances)
+            var m = Debts.firstMonth(loan, today)
+            val out = mutableListOf<MoneyFlow>()
+            while (owedLeft > 0) {
+                val d = m.atDay(loan.payDay!!.coerceAtMost(m.lengthOfMonth()))
+                if (d.isAfter(until)) break
+                val pay = minOf(loan.monthlyPay, owedLeft + Debts.split(owedLeft, loan.rate, loan.monthlyPay).first)
+                out += MoneyFlow(d, -pay, FlowKind.LOAN, loan.name)
+                owedLeft -= Debts.split(owedLeft, loan.rate, pay).second
+                m = m.plusMonths(1)
+            }
+            out
+        }
+        val all = (payFlows + fixed + jobs + owed + loans + extra.filter { !it.date.isBefore(today) && !it.date.isAfter(until) })
             .sortedWith(compareBy<MoneyFlow>({ it.date }, { it.amount < 0 }))
         return all to (replacePay && book.fixed.any(::isPayLine))
     }

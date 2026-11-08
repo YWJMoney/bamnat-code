@@ -150,6 +150,7 @@ class AlarmActivity : ComponentActivity() {
                 val quiet by AlarmService.quiet.collectAsStateWithLifecycle()
                 val allOffWaits by AlarmService.allOffAfterMission.collectAsStateWithLifecycle()
                 val inCall by AlarmService.inCall.collectAsStateWithLifecycle()
+                val stage by AlarmService.wakeStage.collectAsStateWithLifecycle()
                 if (current != null && inMission && mission != AlarmMission.NONE) {
                     MissionScreen(
                         mission = mission,
@@ -163,8 +164,9 @@ class AlarmActivity : ComponentActivity() {
                     )
                 } else if (current != null) {
                     RingingScreen(
-                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else "${current.shiftName} 근무",
-                        subtitle = AlarmService.describe(current),
+                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.work(current.shiftName),
+                        // 1.38 [SLEEP-08] "얕은 잠이라 12분 일찍 깨웠어요" under the same words when it came early.
+                        subtitle = listOfNotNull(AlarmService.describe(current), com.bamnat.app.sleep.SmartWake.earlyLine(this, current, AlarmService.ringStartedAt.takeIf { it > 0L } ?: Today.millis())).joinToString("\n"),
                         snoozeMinutes = snoozeMinutes,
                         dismissLabel = if (mission == AlarmMission.NONE) "알람 끄기" else "알람 끄기 · ${mission.label}",
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },
@@ -178,12 +180,34 @@ class AlarmActivity : ComponentActivity() {
                         },
                         hint = AlarmButtons.hint(buttons, mission != AlarmMission.NONE),
                         inCall = inCall,
+                        shift = ringShift(current, Today.date()),
+                        // [EASE-19] With a mission 끄기 opens the mission, so the shortcut is left out.
+                        onToday = if (mission == AlarmMission.NONE) ({ dismissAndOpenToday() }) else null,
+                        stage = stage,
                     )
                 }
               }
               }
             }
         }
+    }
+
+    /**
+     * [EASE-19] 끄고 오늘 보기: the alarm off, then the app on today. Over the lock screen the phone asks to unlock first
+     * (this screen stays until then); if the user backs out of that, the alarm keeps ringing here to be turned off.
+     */
+    private fun dismissAndOpenToday() {
+        val open = {
+            AlarmService.dismiss(this)
+            runCatching { startActivity(com.bamnat.app.NoticeLinks.intent(this, com.bamnat.app.NoticeLinks.Target.TODAY)) }
+            Unit
+        }
+        val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        if (keyguard?.isKeyguardLocked == true) {
+            keyguard.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() { open() }
+            })
+        } else open()
     }
 
     companion object {

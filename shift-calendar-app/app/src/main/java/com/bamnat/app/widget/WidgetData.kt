@@ -108,7 +108,8 @@ class WidgetData(
                 TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
                     settings.restCheck, settings.strictRest,
                     rules = com.bamnat.core.schedule.RotationSpeed.of(com.bamnat.core.schedule.PatternTimeline.current(snapshot.patterns, now.toLocalDate()),
-                        snapshot.shiftTypes).adjust(settings.rules))
+                        snapshot.shiftTypes).adjust(settings.rules),
+                    since = container.recordsTrash.styleChangedOn(PersonalCalendar.MAIN))
             }
             // [CAL-11] Field and shop work fill the widgets from the money book, read on the phone only.
             val book = if (focus == CalendarFocus.SHIFTS || focus == CalendarFocus.INVEST) null else container.calendars.money(PersonalCalendar.MAIN).book.first()
@@ -135,7 +136,11 @@ class WidgetData(
             val overtime = if (settings.workStyle == null || settings.workStyle == WorkStyle.DAY || settings.workStyle == WorkStyle.SHIFT) {
                 com.bamnat.core.work.WorkTypeChecks.capHours(com.bamnat.app.data.WorkTypePrefs.get(context).of(PersonalCalendar.MAIN).overtimeCapHours,
                     container.payStore.profile.value)?.let { cap ->
-                    WidgetFigures.Overtime(WorkHoursCalculator(snapshot.resolver, settings.weekStart).month(YearMonth.from(today)).extraMinutes, cap)
+                    // 1.39 [PAYX-60] Over the same days as 통계 (the 급여 기간 when the pay has one).
+                    val calc = WorkHoursCalculator(snapshot.resolver, settings.weekStart)
+                    val period = container.payStore.profile.value?.period?.takeIf { settings.statsPeriod.byPay(it) }
+                    val used = period?.let { val m = it.monthOf(today); calc.month(m, it.start(m), it.end(m)) } ?: calc.month(YearMonth.from(today))
+                    WidgetFigures.Overtime(used.extraMinutes, cap)
                 }
             } else null
             val shopDays = if (settings.workStyle == WorkStyle.BUSINESS && book != null) {
@@ -186,7 +191,7 @@ class WidgetData(
             settings: com.bamnat.app.data.AppSettings): List<String>? {
             val mine = snapshot.resolver.resolve(today).shiftType?.takeIf { !it.isOff } ?: return null
             val rotation = com.bamnat.app.ui.calendar.rotationOf(snapshot, today) ?: return null
-            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation)
+            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation, com.bamnat.app.ui.calendar.offIds(snapshot))
             return com.bamnat.core.schedule.CoverFinder.find(roster, rotation, snapshot.typesById, today, mine.id)
                 .candidates.map { it.team.name }
         }
@@ -212,7 +217,7 @@ class WidgetData(
         /** [DAILY-03] 내 달력's teams today and tomorrow, as 모든 조 보기 shows them. */
         private fun teamsToday(container: com.bamnat.app.AppContainer, snapshot: com.bamnat.app.data.ScheduleSnapshot, today: LocalDate): List<TeamToday>? {
             val rotation = com.bamnat.app.ui.calendar.rotationOf(snapshot, today) ?: return null
-            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation)
+            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation, com.bamnat.app.ui.calendar.offIds(snapshot))
             return teamLines(roster, rotation, snapshot.typesById, today)
         }
 

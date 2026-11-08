@@ -51,7 +51,7 @@ internal fun BaseNeededCard(
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
                 BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month, Modifier.padding(12.dp),
-                    companyHours = companyHours, companyName = companyName)
+                    companyHours = companyHours, companyName = companyName, hideHours = LocalPayLocked.current)
             }
             Button(onClick = { base?.takeIf(BaseAsk::ready)?.let { onSave(it, hours) } }, enabled = BaseAsk.ready(base),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(action) }

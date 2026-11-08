@@ -172,6 +172,18 @@ class PayStore(
             .let { "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute) }
     }
 
+    /**
+     * 1.39 [PAYP-04] 직접 만들기 from someone else's shared way: the setup emptied with no way back to it, and the 7 days of changes made
+     * on it go too, so the calculation the pay screen never showed cannot come back unlocked through '고친 기록'.
+     */
+    suspend fun leaveShared() = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            write(null, keepUndo = false)
+            _undo.value = null
+            writeHistory(emptyList())
+        }
+    }
+
     /** [PAYIN-06] 1.37 B6: the setup emptied to make it again from the start; the old one kept 7 days to bring back. */
     suspend fun restart() = save(null, why = RESTART)
 
@@ -283,6 +295,8 @@ object PayCodec {
         // [PAYR-04] 간이세액표 가족·자녀 수, left out at 1·0.
         .apply { if (p.taxFamily != 1) put("taxFamily", p.taxFamily) }
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
+        // 1.39 [PAYX-59] 떼지 않는 4대보험, left out when none.
+        .apply { if (p.insuranceOff.isNotEmpty()) put("insuranceOff", JSONArray(p.insuranceOff.map { it.name })) }
         // [PHOTO-11] 1.29: 명세서로 맞춘 통상시급 (원 아래 두 자리), left out when not set.
         .apply { p.ordinaryHourly?.let { put("ordinaryHourly", it) } }
         // [HOURLY-01] 1.30: where 통상시급 and 기준 시간 came from, left out when not known.
@@ -330,6 +344,9 @@ object PayCodec {
         taxChosen = o.optBoolean("taxChosen", false),
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
         taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
+        insuranceOff = o.optJSONArray("insuranceOff")?.let { a ->
+            (0 until a.length()).mapNotNull { n -> com.bamnat.core.pay.InsuranceLine.entries.firstOrNull { it.name == a.optString(n) } }.toSet()
+        }.orEmpty(),
         ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },
         ordinarySource = o.optString("ordinarySource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
         hoursSource = o.optString("hoursSource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
@@ -385,6 +402,11 @@ object PayCodec {
             .put("from", w.from?.toString() ?: JSONObject.NULL).put("to", w.to?.toString() ?: JSONObject.NULL)
             .put("over", w.overMinutes).put("min", w.minMinutes)
             .put("pay", pay)
+            // [PAYX-52] A version before 1.38 reads the usual amount for every month.
+            .also { o -> if (r.byMonth.isNotEmpty()) o.put("byMonth", JSONObject().apply { r.byMonth.forEach { (m, v) -> put(m.toString(), v) } }) }
+            // 1.39 [PAYX-56] 세후 공제 or not, left out while guessed from the name; [PAYX-57] 비과세 rule, left out when taxed.
+            .also { o -> r.afterTax?.let { o.put("afterTax", it) } }
+            .also { o -> if (!r.taxable) o.put("taxable", false) }
     }
 
     /** A rule this version cannot read (a newer kind of pay) is dropped rather than failing the file. */
@@ -429,6 +451,12 @@ object PayCodec {
             capPerMonth = limits?.optLong("cap", 0)?.coerceAtLeast(0) ?: 0,
             maxTimes = limits?.optInt("times", 0)?.coerceIn(0, 31) ?: 0,
             from = month("since"), until = month("until"),
+            byMonth = o.optJSONObject("byMonth")?.let { b ->
+                b.keys().asSequence().mapNotNull { k -> runCatching { java.time.YearMonth.parse(k) to b.getLong(k).coerceAtLeast(0) }.getOrNull() }
+                    .toMap()
+            }.orEmpty().takeIf { pay is RulePay.Monthly }.orEmpty(),
+            afterTax = if (o.has("afterTax") && !o.isNull("afterTax")) o.optBoolean("afterTax") else null,
+            taxable = o.optBoolean("taxable", true),
         )
     }.getOrNull()
 
@@ -564,6 +592,8 @@ object PayCodec {
         .put("unit", e.unit.name).put("unitMin", e.unitMinutes).put("adds", premiums(e.premiums))
         // [PAYX-21] Left out when off so older files stay the same.
         .apply { if (e.tiersFromDayStart) put("tiersFromDay", true) }
+        // 1.38 [PAYX-49] 이 일만의 시수, left out when it follows the profile's.
+        .apply { e.monthlyHours?.let { put("hours", it) } }
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
         // A basis this version does not know (a newer file) is paid by law rather than guessed.
@@ -582,6 +612,7 @@ object PayCodec {
         unitMinutes = e.optInt("unitMin", 8 * 60).coerceIn(30, 24 * 60),
         premiums = e.optJSONArray("adds")?.let(::premiums).orEmpty(),
         tiersFromDayStart = e.optBoolean("tiersFromDay", false),
+        monthlyHours = e.optInt("hours", 0).takeIf { it in ExtraRule.HOURS_RANGE },
     )
 
     private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)

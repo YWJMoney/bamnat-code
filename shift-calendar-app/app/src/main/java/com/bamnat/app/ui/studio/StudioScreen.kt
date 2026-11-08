@@ -135,8 +135,10 @@ import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.recipe.WidgetLook
 import com.bamnat.core.work.WorkStyle
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.ui.calendar.calendarLineSettled
 import com.bamnat.app.ui.calendar.calendarParts
 import com.bamnat.app.ui.calendar.withPartMoved
+import com.bamnat.app.ui.calendar.withPartHome
 import com.bamnat.app.ui.calendar.withPartShown
 import com.bamnat.core.recipe.BlueprintParts
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -163,6 +165,8 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     SETTINGS("설정", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
+    /** 1.38 팀·가게 관리 (리더·사장님): 카드 순서·숨김, 색·배경은 설정 화면과 함께. 기능이 켜진 휴대폰에서만 보여요. */
+    MANAGE("팀·가게 관리", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
@@ -184,6 +188,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.DECOR, Tool.BOX)
         ALARM -> listOf(Tool.COLORS)
+        MANAGE -> listOf(Tool.CARDS, Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
@@ -211,7 +216,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
-    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET)
+    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET, MANAGE)
 
     companion object {
         fun of(tab: String): Area = when (tab) {
@@ -305,8 +310,11 @@ internal fun AppSettings.sameLinesAs(base: AppSettings): AppSettings {
     fun <T> same(a: String, b: String, all: List<T>, id: (T) -> String): Boolean = a == b ||
         com.bamnat.core.layout.PageLayout.decode(a).arrange(all, id).map { it.part to it.shown } ==
             com.bamnat.core.layout.PageLayout.decode(b).arrange(all, id).map { it.part to it.shown }
+    // [EASE-01] The calendar's line with no order of its own is the month-first one (CALENDAR_FIRST), as the calendar shows it.
+    val sameCalendar = calendarLayout == base.calendarLayout ||
+        calendarParts().map { it.part to it.shown } == base.calendarParts().map { it.part to it.shown }
     return copy(
-        calendarLayout = if (same(calendarLayout, base.calendarLayout, CalendarPart.entries.toList()) { it.id }) base.calendarLayout else calendarLayout,
+        calendarLayout = if (sameCalendar) base.calendarLayout else calendarLayout,
         moneyLayout = if (same(moneyLayout, base.moneyLayout, MoneyPart.entries.toList()) { it.id }) base.moneyLayout else moneyLayout,
         memoLayout = if (same(memoLayout, base.memoLayout, MemoPart.entries.toList()) { it.id }) base.memoLayout else memoLayout,
         statsLayout = if (same(statsLayout, base.statsLayout, StatsPart.entries.toList()) { it.id }) base.statsLayout else statsLayout,
@@ -329,10 +337,11 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
         fun fits(p: CalendarPart) = com.bamnat.core.guide.FitTable.visible(FitSurface.CALENDAR_PARTS, p.id, style, added)
         fun aboveIn(d: AppSettings, p: CalendarPart) = com.bamnat.app.ui.calendar.calendarAbove(d.calendarParts().map { it.part })(p)
         PageCards("달력", ids, CalendarPart.entries.associate { it.id to it.labelFor(style) }, skip.map { it.id }.toSet(),
-            { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLayout }, { d, l -> d.copy(calendarLayout = l) },
+            // 1.39 [FLOW-22] PC 4차 (＋ 카드 넣기에 하루 이야기가 없음): the line as the calendar reads it, a card that starts off included.
+            { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLineSettled() }, { d, l -> d.copy(calendarLayout = l) },
             moveFn = { d, id, by -> CalendarPart.byId(id)?.let { p -> d.withPartMoved(p, by) { q -> fits(q) } } ?: d },
-            showFn = { d, id, shown -> CalendarPart.byId(id)?.let { p -> d.withPartShown(p, shown).let { x -> x.copy(calendarLayout = StudioEdit.showCard(x.calendarLayout, ids, id, shown)) } } ?: d },
-            hiddenFn = { d -> d.calendarParts().filter { it.part !in skip && fits(it.part) && !StudioEdit.cardShown(d.calendarLayout, ids, it.part.id) }.map { it.part.id } },
+            showFn = { d, id, shown -> CalendarPart.byId(id)?.let { p -> d.withPartShown(p, shown).let { x -> x.copy(calendarLayout = StudioEdit.showCard(x.calendarLineSettled(), ids, id, shown)) } } ?: d },
+            hiddenFn = { d -> d.calendarParts().filter { it.part !in skip && fits(it.part) && !StudioEdit.cardShown(d.calendarLineSettled(), ids, it.part.id) }.map { it.part.id } },
             aboveFn = { d, id -> CalendarPart.byId(id)?.let { aboveIn(d, it) } ?: true },
             across = { d, id ->
                 val p = CalendarPart.byId(id)
@@ -352,6 +361,9 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
                         val i = order.indexOf(p)
                         if (i > 0 && order[i - 1] == CalendarPart.COUNTS) x = x.withPartMoved(p, -1) { q -> fits(q) }
                     }
+                    // [EASE-01] Back on the side the month-first line has it: at its own place there.
+                    val home = com.bamnat.app.ui.calendar.calendarAbove(com.bamnat.app.ui.calendar.CALENDAR_FIRST)(p)
+                    if (aboveIn(x, p) == home) x = x.withPartHome(p)
                     x
                 }
             })
@@ -384,8 +396,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.ALL) }
-    var tool by rememberSaveable { mutableStateOf(Tool.SEED) }
+    // 1.38 PC 19차 LOW (다시 열면 화면 고르기가 늘 '앱 전체'): with nothing asked for, the studio opens on the screen picked last.
+    val studioPrefsEarly = LocalContext.current.let { ctx -> remember { ctx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) } }
+    var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } }
+        ?: studioPrefsEarly.getString("lastArea", null)?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.ALL) }
+    var tool by rememberSaveable { mutableStateOf(if (Tool.SEED in area.tools || area == Area.ALL) Tool.SEED else area.tools.first()) }
     var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
     // [LAY-09] 고급 보기 for the whole studio (부품 숫자 칸·여러 부품·색 변수, 꾸밈 층 숫자 칸, 층 나무), and the item the 층 나무 opens.
     var studioAdvanced by rememberSaveable { mutableStateOf(false) }
@@ -489,12 +504,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true
         sel = null; quick = null; if (panelMode != PanelMode.TOOL) panel = false
         areaUses = AreaRank.used(areaUses, a.name)
-        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).apply() }
+        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).putString("lastArea", a.name).apply() }
     }
     // [CNV-04] A tool of an area in the 더 보기 판, the example staying in view above it.
-    fun openTool(a: Area, t: Tool) {
+    /** 1.38: ‘＋ 아이콘·사진’ asks the 꾸밈 층 to open on 넣기 (판 접고 아이콘 칸), scrolled into view; any other way in sets it back to 0. */
+    var decorAdd by remember { mutableIntStateOf(0) }
+    fun openTool(a: Area, t: Tool, addIcons: Boolean = false) {
         if (a != area) { area = a; lookIndex = 0; if (a.detailOnly) detail = true }
         tool = if (t in a.tools) t else a.tools.first()
+        decorAdd = if (addIcons) decorAdd + 1 else 0
+        // 8차 통합 e690bef6 PC (작은 판에서 '＋ 아이콘·사진'을 누르면 아이콘 첫 줄이 화면 밖): it opens the panel big.
+        if (addIcons && !panelBig) setPanelBig(true)
         panelMode = PanelMode.TOOL; panel = true
     }
     fun openPanel(m: PanelMode) { panelMode = m; panel = true }
@@ -714,7 +734,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
-                                Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) }
+                                val manageOn = com.bamnat.app.ui.work.rememberManageOn()
+                                // 1.39 PC 2afb3a76 (스튜디오에서 위젯으로 가는 길을 못 찾았어요): 위젯 has no screen of its own (no target) and had
+                                // dropped out of this list with 1.37's canvas; it is one of the screens again.
+                                Area.entries.filter { (it.target != null || it == Area.WIDGET) && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
                                     .forEach { a -> DropdownMenuItem({ Text(a.labelFor(vm.style)) }, onClick = { open = false; pick(a) }) }
                                 HorizontalDivider()
                                 listOf(Area.ALL, Area.FEATURES, Area.RULES).forEach { a ->
@@ -744,6 +767,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         if (!detail && toAdd.page !== PageCards.NONE)
                             FilterChip(selected = panel && panelMode == PanelMode.CARDS, onClick = { openPanel(PanelMode.CARDS) },
                                 label = { Text("＋ 카드 넣기" + if (toAdd.hidden.isEmpty()) "" else " ${toAdd.hidden.size}") })
+                        // 1.38 PC 스튜디오 확인 (재료까지 5단계): 꾸밈 층의 넣기(아이콘·밤낮 재료·사진)로 바로.
+                        if (Tool.DECOR in area.tools)
+                            FilterChip(selected = false, onClick = { openTool(area, Tool.DECOR, addIcons = true) }, label = { Text("＋ 아이콘·사진") })
                         // PC 확인 1.37 A5 (앱 전체에서 보관함이 화면 밖): with something kept, 보관함 comes first.
                         area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.sortedBy { if (it == Tool.BOX && kept.isNotEmpty()) 0 else 1 }.forEach { t ->
                             FilterChip(selected = panel && panelMode == PanelMode.TOOL && t == tool, onClick = { openTool(area, t) },
@@ -835,6 +861,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                             Area.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { openTool(Area.PAY, Tool.PAY_LOOK) }
                                             Area.ALARM -> AlarmSample { openTool(Area.ALARM, Tool.COLORS) }
                                             Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook), vm.style)
+                                            Area.MANAGE -> com.bamnat.app.ui.work.ManageSample(d.manageLayout) { openTool(Area.MANAGE, Tool.CARDS) }
                                             else -> ScreenSample(t) { openTool(area, Tool.COLORS) }
                                         }
                                     }
@@ -845,7 +872,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         }
                     }
-                    if (sel == null && !hintSeen) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                    // PC 확인 1.37 A18: over a 판 opened big the hint would hide the strip of example left.
+                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
                         modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
                             else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))
@@ -1048,7 +1076,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                         Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
                                             if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
                                         }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null },
-                                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) })
+                                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) }, addAsk = decorAdd)
                                         // [MAT-05] 1.36 앱 전체 글꼴: every screen's text, 화면마다 따로는 ‘색·배경’에서.
                                         Tool.FONT -> {
                                             val all = looks.looks[ScreenLooks.ALL] ?: ScreenLook()
@@ -1153,11 +1181,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             Column {
                                 Text(when (v) { null -> "테마 전체"; featuresOnly -> "기능만 (" + s.extras.keys.sortedBy { it.ordinal }.joinToString(", ") { it.label } + ")"
                                     else -> "${com.bamnat.app.ui.recipe.tabName(v)} 탭만" }, style = MaterialTheme.typography.bodyLarge)
-                                Text(if (v == featuresOnly) "장터 ‘기능별’에 올라가요. 모양은 빠지고 기능 ${s.extras.size}개만 가요"
-                                    else if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                Text(if (v == featuresOnly) "장터 ‘탭별 작품 › 기능’에 올라가요. 모양은 빠지고 기능 ${s.extras.size}개만 가요"
+                                    else if (v != null) "장터 ‘탭별 작품’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
                                     (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
                                     // PC 확인 1.36 (한 화면만 바꾸고 테마 전체로 올리면 장터 어디에도 안 보임): one screen changed is one tab in 장터, said.
-                                    else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
+                                    else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘탭별 작품 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
                                     else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개가" else "이") + " 함께 가요",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -1343,6 +1371,8 @@ private fun CardsTool(area: Area, style: WorkStyle?, d: com.bamnat.app.data.AppS
         }
         Area.STATS -> PartsEditor("통계 카드", StatsPart.entries.filter { fitsHere(FitSurface.STATS_PARTS, it.id, style) }.map { Triple(it.id, it.label, it.movable) },
             d.statsLayout.ifEmpty { null }) { line -> change { it.copy(statsLayout = line.orEmpty()) } }
+        Area.MANAGE -> PartsEditor("팀·가게 관리 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
+            note = "할 일은 늘 맨 위에 있어요. 이 순서는 이 휴대폰에만 남고 테마·레시피에는 들어가지 않아요") { line -> change { it.copy(manageLayout = line.orEmpty()) } }
         else -> Unit
     }
 }
@@ -1394,7 +1424,11 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
         com.bamnat.app.ui.components.FoldRow("studio.widget4") {
             // PC 확인 W3 1.36: each chip says how big the widget is.
             listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
-                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1").forEach { (cls, label) ->
+                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1",
+                // 1.39 [TASK-07] 할 일 위젯 (처음 하나는 무료).
+                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2",
+                // 1.39 [TASK-31] 할 일 한 줄 (같은 할 일 위젯, 처음 놓은 하나가 무료).
+                com.bamnat.app.widget.TaskLineWidgetReceiver::class.java to "할 일 한 줄 · 2×1").forEach { (cls, label) ->
                 androidx.compose.material3.AssistChip(onClick = {
                     if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
                 }, label = { Text(label) })
@@ -1498,6 +1532,44 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             }
                         }
                     }
+                    // 1.39 [TASK-07] 할 일 위젯: 머리와 ＋, 늦은·오늘·끝낸 할 일 한 줄씩, 각 줄 앞 동그라미 (부품 widget.task·check·add).
+                    WidgetKind.TASKS -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) { Head("할 일 2개 · 늦은 것 1개") }
+                            val plus = bp.style("widget.task.add")
+                            if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
+                                MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
+                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(RoundedCornerShape(16.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), RoundedCornerShape(16.dp)))
+                                    .padding(horizontal = 12.dp, vertical = 2.dp))
+                        }
+                        TASK_SAMPLE.forEach { (words, late, done) ->
+                            val states = setOfNotNull("late".takeIf { late }, "done".takeIf { done }, "today".takeIf { !late })
+                            val line = bp.style("widget.task", states)
+                            if (line.hide == true) return@forEach
+                            val check = bp.style("widget.task.check", states - "today")
+                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
+                                verticalAlignment = Alignment.CenterVertically) {
+                                // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
+                                val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
+                                    color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
+                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
+                                Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
+                                        contentDescription = null, tint = circle.color,
+                                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { circle.fontSize.toDp() }.coerceIn(10.dp, 40.dp)))
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    com.bamnat.app.ui.parts.PartText(words, face.over(line),
+                                        MaterialTheme.typography.bodyMedium.copy(color = if (done) ink.copy(alpha = 0.6f) else ink, fontSize = (14 * scale).sp,
+                                            textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null), Modifier)
+                                    if (late) Text("늦음 · 어제", style = MaterialTheme.typography.labelSmall.copy(fontSize = (11 * scale).sp), color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1505,7 +1577,10 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
 }
 
 /** [LAY-12] The home screen's widgets, as the studio's widget example shows them. */
-private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯") }
+private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯"), TASKS("할 일 위젯") }
+
+/** 1.39 [TASK-07] The 할 일 widget's example rows: the words, and whether each is late, finished or neither. */
+private val TASK_SAMPLE = listOf(Triple("서류 내기", true, false), Triple("택배 받기", false, false), Triple("약 먹기", false, true))
 
 private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
 
@@ -1541,8 +1616,8 @@ private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area:
     // what is 담아 두기'd there comes back here, in 보관함, to lay on.
     if (onMarket != null) OutlinedButton(onClick = onMarket, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text(if (area.marketKind.startsWith(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB) && area.marketKind != com.bamnat.app.recipe.RecipeClient.SCOPE_TAB)
-            "장터 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
-        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘기능별 탭’에서 찾기")
+            "장터 ‘탭별 작품 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
+        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘탭별 작품’에서 찾기")
     }
     // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
     val kept = remember(kept0) { kept0.sortedByDescending { it.id } }
@@ -1608,7 +1683,7 @@ private fun FeaturesTool(vm: StudioViewModel, extras: Map<com.bamnat.core.recipe
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HistorySheet(s: StudioViewModel.State, onBack: (Int) -> Unit, onDismiss: () -> Unit) {
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("바꾼 기록", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -1638,7 +1713,7 @@ private fun HistorySheet(s: StudioViewModel.State, onBack: (Int) -> Unit, onDism
 @Composable
 private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: Recipe, now: Recipe, onGo: (String) -> Unit, onDismiss: () -> Unit) {
     val parts = remember(before, now) { LookParts.changed(before, now).mapNotNull { LookParts.byId(it) } }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("바꾼 곳", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })

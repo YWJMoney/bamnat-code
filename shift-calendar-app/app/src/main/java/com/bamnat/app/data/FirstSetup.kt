@@ -38,6 +38,8 @@ class FirstSetup(
     private val today: () -> LocalDate = Today::date,
     /** 1.36 PC C3: where the day of the first setup is kept (null in tests that do not ask). */
     private val prefs: android.content.SharedPreferences? = null,
+    /** 1.38 통합 8차: the app's versionCode, kept with the day so a setup made on an older app is told apart by version, not date. */
+    private val versionCode: Int = com.bamnat.app.BuildConfig.VERSION_CODE,
 ) {
     private val lock = Mutex()
 
@@ -65,9 +67,14 @@ class FirstSetup(
         }
         val saved = schedule.applySetup(marked, today())
         keepCompany(company(), marked, used)
-        settings.update { it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
+        settings.update {
+            it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT,
+                longPress = firstHold(it, style),
+                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장 휴무일 근무 지정.
+                extraKinds = if (style == WorkStyle.DAY) it.extraKinds.forDayWork() else it.extraKinds)
+        }
         drafts.clear()
-        prefs?.edit()?.putString(DAY_KEY, today().toString())?.apply()
+        prefs?.edit()?.putString(DAY_KEY, today().toString())?.putInt(VERSION_KEY, versionCode)?.apply()
         _saved.value = saved
         saved
     }
@@ -77,6 +84,12 @@ class FirstSetup(
      * setup only its own pay sheet asks; the others wait for the next day.
      */
     fun quietToday(): Boolean = prefs?.getString(DAY_KEY, null) == today().toString()
+
+    /** The day the first setup was saved on this phone (kept since 1.36), or null. */
+    fun day(): java.time.LocalDate? = prefs?.getString(DAY_KEY, null)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+
+    /** The app's versionCode the first setup was saved with (kept since 1.38), or null for a setup made before. */
+    fun version(): Int? = prefs?.takeIf { it.contains(VERSION_KEY) }?.getInt(VERSION_KEY, 0)
 
     /** A save the app was closed in the middle of is finished, never asked again. */
     suspend fun finishInterrupted() {
@@ -142,3 +155,14 @@ class FirstSetup(
 }
 
 private const val DAY_KEY = "first_setup_day"
+private const val VERSION_KEY = "first_setup_version"
+
+/**
+ * [CELL-06] 1.39 발굴 (일정 앱에서 온 일근·알바: 날짜를 길게 누르면 바로 한 줄 적기) The 날짜를 길게 누르면 a first setup leaves: 메모 쓰기
+ * for 일근 and 알바, whose days are mostly the same and whose calendar is mostly what they write on it; the quick menu (근무 바꾸기) for
+ * the rest. Only a first setup (no kind of work chosen yet; a setup put off was already in use) and only while the choice is still the app's own: a setup done
+ * again, or one the user changed in 설정 › 달력 보기, keeps what it has.
+ */
+internal fun firstHold(before: AppSettings, style: WorkStyle): String =
+    if (before.workStyle == null && before.longPress == "menu" && style in setOf(WorkStyle.DAY, WorkStyle.HOURLY)) "memo"
+    else before.longPress

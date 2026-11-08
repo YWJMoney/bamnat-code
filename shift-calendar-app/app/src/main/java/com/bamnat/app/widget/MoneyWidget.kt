@@ -47,7 +47,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * 1.37 [LEDH-14] 오늘 쓸 돈 + 돈 적기: what can be spent today (as 가계부's 앞으로의 돈 counts it, from 내 달력's accounts and the next
- * pay or 입금), what was spent today, and one tap to 돈 적기. Home screen only, and 금액 숨기기 hides the amounts here too.
+ * pay or 입금), what was spent today, and one tap to 돈 적기 (＋; the rest opens 가계부). Home screen only, and 금액 숨기기 hides the amounts here too.
  */
 class MoneyWidget : GlanceAppWidget() {
     override val sizeMode: androidx.glance.appwidget.SizeMode = androidx.glance.appwidget.SizeMode.Exact
@@ -58,7 +58,10 @@ class MoneyWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val first = runCatching { load(context) }.getOrNull() ?: Line(null, 0, false)
-        val open = actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.MONEY_ADD))
+        // 1.38 PC 사용성 제안: the body opens 가계부 (to see today's lines), only ＋ opens 돈 적기. Each keeps its own data so the two
+        // PendingIntents are not taken for one.
+        val open = actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.MONEY).setData(android.net.Uri.parse("bamnat-widget://money/open")))
+        val add = actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.MONEY_ADD).setData(android.net.Uri.parse("bamnat-widget://money/add")))
         provideContent {
             val stamp = androidx.glance.currentState(STAMP) ?: 0L
             var line by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(first) }
@@ -67,7 +70,7 @@ class MoneyWidget : GlanceAppWidget() {
                 Box(
                     GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(widgetCorner()).padding(12.dp).clickable(open),
                     contentAlignment = Alignment.CenterStart,
-                ) { MoneyContent(line) }
+                ) { MoneyContent(line, add) }
             }
         }
     }
@@ -123,7 +126,7 @@ class MoneyWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 @Composable
-private fun MoneyContent(line: MoneyWidget.Line) {
+internal fun MoneyContent(line: MoneyWidget.Line, add: androidx.glance.action.Action? = null) {
     val short = LocalSize.current.height < 90.dp
     fun won(v: Long) = if (line.hidden) Fmt.MASK + "원" else Fmt.won(v)
     val main = line.perDay?.let { won(it) } ?: "통장 잔액이나 예산을 적으면 보여요"
@@ -143,7 +146,7 @@ private fun MoneyContent(line: MoneyWidget.Line) {
         }
         Spacer(GlanceModifier.width(8.dp))
         Box(
-            GlanceModifier.height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp).padding(horizontal = 12.dp),
+            GlanceModifier.height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp).padding(horizontal = 12.dp).let { m -> if (add != null) m.clickable(add) else m },
             contentAlignment = Alignment.Center,
         ) {
             Text(if (short) "＋ 적기" else "＋ 돈 적기",

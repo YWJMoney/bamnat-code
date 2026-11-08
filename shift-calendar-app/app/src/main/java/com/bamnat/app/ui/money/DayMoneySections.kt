@@ -93,8 +93,9 @@ fun JobsSection(date: LocalDate, jobs: List<Job>, actions: MoneyActions) {
 @Composable
 fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
     val cal = LocalCalendarColors.current
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
+    // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'디…'만 보임) the amount goes under the job's name when both do not fit.
+    com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp), minStart = 120.dp, start = {
+        Column {
             Text(job.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") }
             val span = if (job.days > 1) "${Fmt.shortDate(job.date)}~${Fmt.shortDate(job.lastDate)} (${job.days}일)" else null
@@ -107,6 +108,7 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+    }, end = {
         Column(horizontalAlignment = Alignment.End) {
             Text(Fmt.won(job.payable), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             when {
@@ -117,7 +119,7 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
                 else -> Text("받을 돈 ${Fmt.won(job.unpaid)}", style = MaterialTheme.typography.labelSmall, color = cal.warning)
             }
         }
-    }
+    })
 }
 
 /** [WORK-03] The shop's day: sales, costs and what is left. */

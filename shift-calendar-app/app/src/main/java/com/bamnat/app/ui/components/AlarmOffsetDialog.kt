@@ -31,9 +31,11 @@ import java.time.LocalTime
 
 /**
  * [ALRM-06] 1.25 Z (U14): when a shift's alarm rings, on the same hour and minute wheels as every other time in the app.
- * "울릴 시각" turns the clock (06:30); "시작 몇 시간 전" turns hours and minutes before the start (1시간 30분). Both say the
+ * "울릴 시각" turns the clock (06:30); "시작 기준" (1.37 "시작 몇 시간 전") turns hours and minutes before the start (1시간 30분),
+ * or [ALRM-28] after it. Both say the
  * other underneath, and the shortcuts below set the common ones in one tap. It replaced chips and a ± stepper, which
- * the user found "너무 기초적이고 불편".
+ * the user found "너무 기초적이고 불편". [EASE-18] 1.38: "울릴 시각" also picks the day, 전날·당일·다음날, so an alarm can ring
+ * after the start too (a nap after a 야간, stored below zero).
  */
 @Composable
 fun AlarmOffsetDialog(
@@ -49,34 +51,69 @@ fun AlarmOffsetDialog(
     shortcuts: List<Int> = ALARM_SHORTCUTS,
     onPick: (Int) -> Unit,
 ) {
-    var minutes by rememberSaveable { mutableIntStateOf(initialMinutes.coerceIn(0, AlarmOffsets.MAX_MINUTES)) }
+    // [EASE-18] 1.38: the clock time and which day (전날·당일·다음날) are kept, and the minutes before the start follow;
+    // a time more than a day from the start either way has none (and 완료 waits).
+    val first = initialMinutes.coerceIn(AlarmOffsets.MIN_MINUTES, AlarmOffsets.MAX_MINUTES)
+    var ringMin by rememberSaveable { mutableIntStateOf(AlarmOffsets.ringAt(start, first).let { it.hour * 60 + it.minute }) }
+    var day by rememberSaveable { mutableIntStateOf(AlarmOffsets.dayOf(start, first)) }
     var byClock by rememberSaveable { mutableIntStateOf(1) }
     // Bumped when a shortcut or the other tab sets the value, so the wheels jump to it.
     var jump by rememberSaveable { mutableIntStateOf(0) }
-    val ring = AlarmOffsets.ringAt(start, minutes)
-    val taken = minutes in existing
+    val ring = LocalTime.of(ringMin / 60, ringMin % 60)
+    val picked: Int? = AlarmOffsets.offsetFor(start, ring, day)
+    val minutes = picked ?: 0
+    fun setMinutes(m: Int) {
+        val v = m.coerceIn(AlarmOffsets.MIN_MINUTES, AlarmOffsets.MAX_MINUTES)
+        val r = AlarmOffsets.ringAt(start, v)
+        ringMin = r.hour * 60 + r.minute
+        day = AlarmOffsets.dayOf(start, v)
+    }
+    val taken = picked != null && picked in existing
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
+          ScrollMoreColumn {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     SegmentedButton(selected = byClock == 1, onClick = { byClock = 1; jump++ },
                         shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("울릴 시각") }
                     SegmentedButton(selected = byClock == 0, onClick = { byClock = 0; jump++ },
-                        shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("시작 몇 시간 전") }
+                        shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("시작 기준") }
                 }
                 Text(
-                    if (taken) "이미 있는 알람이에요" else alarmLine(start, minutes),
+                    when {
+                        picked == null -> "근무 시작과 하루 넘게 떨어진 때는 맞출 수 없어요"
+                        taken -> "이미 있는 알람이에요"
+                        else -> alarmLine(start, minutes)
+                    },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (taken) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (taken || picked == null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
                 // [TIME-03] What 완료 will change, as in the other time windows (PC a9bcce14: only this one lacked it).
                 TimeChangeLine(
-                    if (minutes == initialMinutes) null
-                    else timeChangeNote(null, AlarmOffsets.ringAt(start, initialMinutes), ring)
-                        ?: "시작 ${Fmt.offset(initialMinutes)} → ${Fmt.offset(minutes)}으로 바뀌어요",
+                    if (picked == null || minutes == first) null
+                    else timeChangeNote(null, AlarmOffsets.ringAt(start, first), ring)
+                        ?: Fmt.startOffset(minutes).let { "${Fmt.startOffset(first)} → $it${Fmt.ro(it)} 바뀌어요" },
                 )
+                if (byClock == 1) {
+                    // [EASE-18] Which day it rings: 전날 for an early start, 다음날 for a nap after a 야간.
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        for ((i, d) in listOf(-1, 0, 1).withIndex()) {
+                            SegmentedButton(selected = day == d, onClick = { day = d },
+                                shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(AlarmOffsets.dayWord(d)) }
+                        }
+                    }
+                } else {
+                    // [ALRM-28] 1.38: hours after the start too (a nap after a 야간), not only from '울릴 시각'.
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        SegmentedButton(selected = minutes >= 0, onClick = { if (minutes < 0) { setMinutes(-minutes); jump++ } },
+                            shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("시작 전") }
+                        SegmentedButton(selected = minutes < 0, onClick = { if (minutes >= 0) { setMinutes(-(minutes.coerceAtLeast(60))); jump++ } },
+                            shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("시작 뒤") }
+                    }
+                }
                 Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * 5), contentAlignment = Alignment.Center) {
                     Box(
                         Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT).clip(MaterialTheme.shapes.medium)
@@ -86,41 +123,50 @@ fun AlarmOffsetDialog(
                         // A new wheel for each tab, so it starts on the value the other tab left.
                         androidx.compose.runtime.key("clock") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                WheelHalf(count = 24, value = ring.hour, jump = jump, label = "시",
-                                    onValue = { h -> minutes = AlarmOffsets.offsetFor(start, LocalTime.of(h, AlarmOffsets.ringAt(start, minutes).minute)) })
-                                WheelHalf(count = 60, value = ring.minute, jump = jump, label = "분",
-                                    onValue = { m -> minutes = AlarmOffsets.offsetFor(start, LocalTime.of(AlarmOffsets.ringAt(start, minutes).hour, m)) })
+                                WheelHalf(count = 24, value = ringMin / 60, jump = jump, label = "시",
+                                    onValue = { h -> ringMin = h * 60 + ringMin % 60 })
+                                WheelHalf(count = 60, value = ringMin % 60, jump = jump, label = "분",
+                                    onValue = { m -> ringMin = ringMin / 60 * 60 + m })
                             }
                         }
                     } else {
-                        androidx.compose.runtime.key("before") {
+                        // [ALRM-28] The wheels turn the distance from the start; the switch above says before or after.
+                        val sign = if (minutes < 0) -1 else 1
+                        val gap = kotlin.math.abs(minutes)
+                        androidx.compose.runtime.key("before", sign) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                WheelHalf(count = 24, value = minutes / 60, jump = jump, label = "시간", cyclic = false,
-                                    onValue = { h -> minutes = (h * 60 + minutes % 60).coerceAtMost(AlarmOffsets.MAX_MINUTES) })
-                                WheelHalf(count = 60, value = minutes % 60, jump = jump, label = "분",
-                                    onValue = { m -> minutes = (minutes / 60 * 60 + m).coerceAtMost(AlarmOffsets.MAX_MINUTES) })
+                                WheelHalf(count = 24, value = gap / 60, jump = jump, label = "시간", cyclic = false,
+                                    onValue = { h -> setMinutes(sign * (h * 60 + kotlin.math.abs(minutes) % 60).coerceAtMost(AlarmOffsets.MAX_MINUTES)) })
+                                WheelHalf(count = 60, value = gap % 60, jump = jump, label = "분",
+                                    onValue = { m -> setMinutes(sign * (kotlin.math.abs(minutes) / 60 * 60 + m).coerceAtMost(AlarmOffsets.MAX_MINUTES)) })
                             }
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (m in shortcuts) {
-                        FilterChip(selected = minutes == m, enabled = m !in existing, onClick = { minutes = m; jump++ },
-                            label = { Text(Fmt.offset(m)) })
+                        FilterChip(selected = picked == m, enabled = m !in existing, onClick = { setMinutes(m); jump++ },
+                            label = { Text(Fmt.offset(m), maxLines = 1, softWrap = false) })
                     }
                 }
             }
+          }
         },
-        confirmButton = { TextButton(onClick = { onPick(minutes) }, enabled = !taken) { Text(confirmLabel) } },
+        confirmButton = { TextButton(onClick = { picked?.let(onPick) }, enabled = picked != null && !taken) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
 
-/** "06:30에 울려요 · 시작 1시간 30분 전", "전날 23:30에 울려요 · …", "시작 시각에 울려요". */
+/** "06:30에 울려요 · 시작 1시간 30분 전", "전날 23:30에 울려요 · …", "다음날 14:00에 울려요 · 시작 16시간 뒤", "시작 시각에 울려요". */
 internal fun alarmLine(start: LocalTime, minutes: Int): String {
     if (minutes == 0) return "${Fmt.time(start)} 시작 시각에 울려요"
-    val ring = AlarmOffsets.ringAt(start, minutes)
-    return (if (AlarmOffsets.dayBefore(start, minutes)) "전날 " else "") + "${Fmt.time(ring)}에 울려요 · 시작 ${Fmt.offset(minutes)}"
+    return "${alarmClock(start, minutes)}에 울려요 · " + Fmt.startOffset(minutes)
+}
+
+/** [EASE-18] When a shift's alarm rings, with the day when it is not the shift's own: "06:30", "전날 23:30", "다음날 14:00". */
+fun alarmClock(start: LocalTime, minutes: Int): String {
+    val d = AlarmOffsets.dayOf(start, minutes)
+    return (if (d == 0) "" else AlarmOffsets.dayWord(d) + " ") + Fmt.time(AlarmOffsets.ringAt(start, minutes))
 }
 
 /** The common ones, one tap each. */

@@ -4,6 +4,8 @@ import android.content.Context
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.company.CompanyException
 import com.bamnat.app.company.serverRequest
+import com.bamnat.core.stats.KeepMarks
+import com.bamnat.core.stats.LifeMarks
 import com.bamnat.core.stats.UsageBook
 import com.bamnat.core.stats.UsageEvent
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +29,12 @@ class UsageStats(
     private val startup: StartupStats? = null,
     /** [STAT-08] 1.31 N4: lookup times added when [LookupStats.policyAllows]; null sends none. */
     private val lookups: LookupStats? = null,
+    /** 1.39 [SETUP-20] 첫 설정 누른 횟수 added when [SetupTapStats.policyAllows]; null sends none. */
+    private val setupTaps: SetupTapStats? = null,
+    /** 1.39 [STAT2-02] The install day (epoch day in [zone]) for [LifeMarks]; read from the package, never sent. */
+    private val installDay: () -> Long? = { installDayOf(context, zone()) },
+    /** 1.39 [OBS2-08] The kind of work chosen (WorkStyle name) for `style`, sent only while [kindAllowed]; null before setup. */
+    private val style: () -> String? = { null },
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -41,7 +49,27 @@ class UsageStats(
     }
 
     fun record(event: UsageEvent) = synchronized(lock) {
-        prefs.edit().putString(K_BOOK, book().record(event, today()).encode()).apply()
+        val day = today()
+        var book = book().record(event, day)
+        val e = prefs.edit()
+        // 1.39 [STAT2-02] 진입·머묾·회복: the day's first open adds its LIFE_ counts once the `stats.life` row is on (처리방침 3.12).
+        // The last open day stays here only to tell 'came back after a week'; it is never sent and goes with clear().
+        if (event == UsageEvent.OPEN) {
+            val last = prefs.getLong(K_LAST_OPEN, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }
+            if (last == null || last < day) {
+                if (lifeAllowed()) for (mark in LifeMarks.of(installDay(), last, day)) book = book.record(mark, day)
+                // 1.39 [OBS2-08] 기능과 머묾: the features of the last open day came back within 7·30 days (깃발 stats.keep, 처리방침 3.12).
+                if (keepAllowed()) {
+                    val seen = book.seen
+                    KeepMarks.of(last, day) { d -> seen.filterValues { d in it }.keys }?.let { mark ->
+                        val waiting = KeepMarks.decode(prefs.getString(K_KEEP, null), day - KeepMarks.KEEP_DAYS)
+                        e.putString(K_KEEP, KeepMarks.encode((waiting + mark).takeLast(KeepMarks.MAX_MARKS)))
+                    }
+                }
+                e.putLong(K_LAST_OPEN, day)
+            }
+        }
+        e.putString(K_BOOK, book.encode()).apply()
     }
 
     /** What is waiting, for the settings page's "보낼 내용 보기". */
@@ -64,6 +92,19 @@ class UsageStats(
     private fun withStartup(body: JSONObject): JSONObject = body.apply {
         startup?.payload()?.let { put("startup", it) }
         lookups?.payload()?.let { put("lookups", it) } // [STAT-08] 1.31
+        setupTaps?.payload()?.let { put("setup", it) } // 1.39 [SETUP-20]
+        // 1.39 [OBS2-08] 유형별 흐름과 기능과 머묾, each behind its own row of 처리방침 3.12.
+        if (kindAllowed()) style()?.let { put("style", it) }
+        if (keepAllowed()) keepPayload()?.let { put("keep", it) }
+    }
+
+    /** 1.39 [OBS2-08] `keep: [{day, win, events}]` for the marks waiting, or null when none. */
+    private fun keepPayload(): org.json.JSONArray? {
+        val marks = KeepMarks.decode(prefs.getString(K_KEEP, null), today() - KeepMarks.KEEP_DAYS)
+        if (marks.isEmpty()) return null
+        return org.json.JSONArray().apply {
+            for (m in marks) put(JSONObject().put("day", LocalDate.ofEpochDay(m.day).toString()).put("win", m.window).put("events", org.json.JSONArray(m.events)))
+        }
     }
 
     /** Turning it off forgets everything not sent yet. */
@@ -71,6 +112,7 @@ class UsageStats(
         prefs.edit().clear().apply()
         startup?.clear() // [PERF-16]
         lookups?.clear() // [STAT-08]
+        setupTaps?.clear() // 1.39 [SETUP-20]
     }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
@@ -86,6 +128,8 @@ class UsageStats(
         if (!allowed || baseUrl.isBlank()) return@withContext false
         val day = today()
         if (prefs.getLong(K_SENT_DAY, Long.MIN_VALUE) >= day) return@withContext false
+        // 1.39 [OBS2-08] The marks this bundle carries; a mark added while it goes waits for the next one.
+        val keepAt = synchronized(lock) { prefs.getString(K_KEEP, null) }
         val body = synchronized(lock) { book().bundle(day, BuildConfig.VERSION_NAME) { LocalDate.ofEpochDay(it).toString() } }
             ?: return@withContext false
         try {
@@ -94,14 +138,34 @@ class UsageStats(
             // A bad bundle would fail every day; it is dropped. No connection is tried tomorrow.
             if (e.code == "offline" || e.code == "rate_limited" || e.code.startsWith("http_5")) return@withContext false
         }
-        synchronized(lock) { prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day).apply() }
+        synchronized(lock) {
+            val e = prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day)
+            if (prefs.getString(K_KEEP, null) == keepAt) e.remove(K_KEEP)
+            e.apply()
+        }
         startup?.sent() // [PERF-16]
         lookups?.sent() // [STAT-08]
+        setupTaps?.sent() // 1.39 [SETUP-20]
         true
     }
 
-    private companion object {
-        const val K_BOOK = "book"
-        const val K_SENT_DAY = "sent_day"
+    companion object {
+        private const val K_BOOK = "book"
+        private const val K_SENT_DAY = "sent_day"
+        private const val K_LAST_OPEN = "last_open_day"
+        private const val K_KEEP = "keep"
+
+        /** 1.39 [STAT2-02] Set by [com.bamnat.app.AppContainer] to `flags.on(FlagCatalog.STATS_LIFE)`; off until then. */
+        @Volatile var lifeAllowed: () -> Boolean = { false }
+        /** 1.39 [OBS2-08] Set by [com.bamnat.app.AppContainer] to the `stats.kind` row; off until then. */
+        @Volatile var kindAllowed: () -> Boolean = { false }
+        /** 1.39 [OBS2-08] Set by [com.bamnat.app.AppContainer] to the `stats.keep` row; off until then. */
+        @Volatile var keepAllowed: () -> Boolean = { false }
+
+        private fun installDayOf(context: Context, zone: ZoneId): Long? = runCatching {
+            val c = context.applicationContext
+            val first = c.packageManager.getPackageInfo(c.packageName, 0).firstInstallTime
+            if (first <= 0L) null else java.time.Instant.ofEpochMilli(first).atZone(zone).toLocalDate().toEpochDay()
+        }.getOrNull()
     }
 }

@@ -117,7 +117,7 @@ import kotlinx.coroutines.launch
 internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
     "not_found" -> "볼 수 없는 프로필이에요"
     "nick_length" -> "이름은 2~12자로 정해 주세요"
-    "taken" -> "이미 다른 분이 쓰는 이름이에요"
+    "taken" -> com.bamnat.app.ui.village.VillageName.TAKEN
     "nick" -> "쓸 수 없는 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as com.bamnat.app.company.CompanyException).retryAfter ?: 86_400).let { w ->
         "오늘은 여기까지 할 수 있어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 해 주세요"
@@ -477,7 +477,7 @@ fun MakerScreen(
                         if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("아직 작품이 없어요", style = MaterialTheme.typography.titleSmall)
-                            Text("스튜디오에서 만든 테마나 기능별 탭을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
+                            Text("스튜디오에서 만든 테마나 탭별 작품을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             FilledTonalButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("첫 작품 만들기") }
                         }
@@ -486,7 +486,7 @@ fun MakerScreen(
                 // 테마 | 기능별 탭 | 모음
                 PrimaryTabRow(selectedTabIndex = part) {
                     Tab(part == 0, { part = 0 }, text = { Text("테마 ${p.themes.size}") })
-                    Tab(part == 1, { part = 1 }, text = { Text("기능별 탭 ${p.tabRecipes.size}") })
+                    Tab(part == 1, { part = 1 }, text = { Text("탭별 작품 ${p.tabRecipes.size}") })
                     Tab(part == 2, { part = 2 }, text = { Text("모음 ${p.sets.size}") })
                 }
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -499,11 +499,11 @@ fun MakerScreen(
                                 tabs.forEach { t -> FilterChip(tabFilter == t, { tabFilter = t }, label = { Text(marketTabLabel(t, viewerStyle(vm.c))) }) }
                             }
                             Grid(p.tabRecipes.filter { tabFilter == null || it.tabs.firstOrNull() == tabFilter }.sortedByDescending { it.code in p.pins }, p.pins,
-                                empty = if (mine) "탭 하나만 바꾼 작품은 여기 모여요" else "아직 올린 기능별 탭이 없어요", onOpen)
+                                empty = if (mine) "탭 하나만 바꾼 작품은 여기 모여요" else "아직 올린 탭별 작품이 없어요", onOpen)
                         }
                         else -> {
                             if (mine) {
-                                Text("내 테마 하나에 기능별 탭을 묶어 두면, 받는 분이 한 번에 입어 보고 차례로 넣어요", style = MaterialTheme.typography.bodySmall,
+                                Text("내 테마 하나에 탭별 작품을 묶어 두면, 받는 분이 한 번에 입어 보고 차례로 넣어요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (vm.canWrite && p.recipes.size >= 2) FilledTonalButton(onClick = { newSet = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("모음 만들기") }
                                 else if (p.recipes.size < 2) Text("작품이 2개 이상이면 모음을 만들 수 있어요", style = MaterialTheme.typography.bodySmall)
@@ -674,7 +674,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
         // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 넣은 분
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Count(p.themes.size, "테마")
-            Count(p.tabRecipes.size, "기능별 탭")
+            Count(p.tabRecipes.size, "탭별 작품")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
             Count(p.followingCount, "팔로잉", if (mine) ({ onPeople("following") }) else null)
             Count(p.users, "넣은 분")
@@ -684,7 +684,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
                 if (p.following) OutlinedButton(onClick = onFollowMenu, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (p.quiet) "팔로잉 ✓ · 알림 꺼짐" else "팔로잉 ✓")
                 } else Button(onClick = { vm.follow(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("팔로우") }
-            } else Text("팔로우는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
+            } else Text("팔로우는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -821,7 +821,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkSt
                 OutlinedTextField(title, { title = it.take(40) }, label = { Text("이름 (예: ${setExample(style)})") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(summary, { summary = it.take(100) }, label = { Text("한 줄 설명 (안 써도 돼요)") }, modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("${RecipeText.graphemes(summary.trim())}/80") }, isError = RecipeText.graphemes(summary.trim()) > 80)
-                Text("테마 하나 + 기능별 탭 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
+                Text("테마 하나 + 탭별 작품 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
                 works.forEach { r ->
                     val on = r.code in picked
                     Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - r.code else picked + r.code }.heightIn(min = 48.dp),
@@ -829,7 +829,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkSt
                         Checkbox(on, { picked = if (on) picked - r.code else picked + r.code })
                         Column(Modifier.weight(1f)) {
                             Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(if (r.scope == "tab") "기능별 탭 · " + marketTabLabel(r.tabs.firstOrNull() ?: "", style) else "테마",
+                            Text(if (r.scope == "tab") "탭별 작품 · " + marketTabLabel(r.tabs.firstOrNull() ?: "", style) else "테마",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -939,7 +939,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                 } else TextButton(onClick = onPro) { Text("프로 꾸미기 알아보기") }
                 if (p.coverPending != null) Text("올린 그림은 운영자가 본 뒤 다른 분께 보여요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!vm.canWrite) Text("소개는 정식 출시일(11월 10일 예정)부터 저장돼요", style = MaterialTheme.typography.bodySmall)
+                if (!vm.canWrite) Text("소개는 정식 출시일부터 저장돼요", style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
@@ -1189,6 +1189,9 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
     val reselectAt = remember { reselect }
     LaunchedEffect(reselect) { vm.load(force = reselect > reselectAt) }
     if (!s.loaded) return
+    // 1.39 [MKD-60] (사용자 2026-11-08 장터 윗부분): with no one followed and no 이달의 제작자 the row was a lone '🔍 찾아보기' circle (the
+    // same as 마을's 🔍 at the top) and 내 프로필 (the '나' button); it shows only when there are makers in it.
+    if (s.following.isEmpty() && s.month.isEmpty()) return
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         if (s.following.isEmpty() && s.month.isNotEmpty()) Text("이달의 제작자", style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(horizontal = 16.dp).semantics { heading() })
@@ -1196,7 +1199,7 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             s.me?.let { m -> StripFace(m.copy(nick = m.nick), "내 프로필", m.fresh) { onMaker(m.maker) } }
             (s.following.ifEmpty { s.month }).forEach { m -> StripFace(m, m.nick ?: "이름 없는 분", m.fresh) { onMaker(m.maker) } }
-            if (s.following.isNotEmpty() || s.month.isEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
+            if (s.following.isNotEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
                 // PC 확인 5c21f3bb: '🔍 찾아보기' opened the 팔로잉 새 작품 (empty with no one followed), not a search.
                 onClick = if (s.following.isEmpty()) onFind ?: onAll else onAll),
                 horizontalAlignment = Alignment.CenterHorizontally) {

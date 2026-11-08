@@ -45,11 +45,15 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
         id.startsWith("cal.weekly") -> "weekly"
         id.startsWith("cal.year") -> "year"
         id.startsWith("memo.cal") -> "memoCal"
+        // [MPH-06] 1.38 메모 쓰기 종이·종이 줄·메모 사진.
+        id.startsWith("memo.page") || id == "memo.photo" -> "memoPage"
         id == "memo.prop" || id.startsWith("memo.board") -> "memoBoard"
         id.startsWith("memo.table") -> "memoTable"
         id.startsWith("money.cal") -> "moneyCal"
         id.startsWith("money.board") -> "moneyBoard"
         id.startsWith("money.table") -> "moneyTable"
+        // 1.39 [FLOW-21] 밤 화면·아침 한 장.
+        id == "night" || id.startsWith("night.") -> "night"
         else -> return
     }
     CompositionLocalProvider(LocalBlueprint provides bp) {
@@ -67,10 +71,12 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
                 "weekly" -> WeeklySample()
                 "year" -> YearSample()
                 "memoCal" -> MemoCalSample()
+                "memoPage" -> com.bamnat.app.ui.memo.MemoPageSample()
                 "memoBoard" -> MemoBoardSample()
                 "memoTable" -> MemoTableSample()
                 "moneyCal" -> MoneyCalSample()
                 "moneyBoard" -> MoneyBoardSample()
+                "night" -> NightSample()
                 else -> MoneyTableSample()
             }
         }
@@ -78,7 +84,8 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
 }
 
 private val BOARD_NAMES = mapOf("band" to "근무 띠 판", "line" to "타임라인 판", "weekly" to "주 판", "year" to "연간 판", "memoCal" to "메모 달력",
-    "memoBoard" to "메모 보드", "memoTable" to "메모 표", "moneyCal" to "가계부 달력", "moneyBoard" to "가계부 분류 보드", "moneyTable" to "가계부 표")
+    "memoBoard" to "메모 보드", "memoTable" to "메모 표", "moneyCal" to "가계부 달력", "moneyBoard" to "가계부 분류 보드", "moneyTable" to "가계부 표",
+    "night" to "밤 화면·아침 한 장")
 
 private val SHIFTS = listOf("주" to Color(0xFF42A5F5), "주" to Color(0xFF42A5F5), "야" to Color(0xFF5E35B1), "야" to Color(0xFF5E35B1),
     "비" to Color(0xFF90A4AE), "휴" to Color(0xFFEF9A9A), "휴" to Color(0xFFEF9A9A))
@@ -264,5 +271,45 @@ private fun MemoCalSample() {
                 }
             }
         }
+    }
+}
+
+/** 1.39 [FLOW-21] 밤 화면 예시: the dark screen's date, clock, tomorrow's line, a card and the button, then 아침 한 장, with the draft's night parts. */
+@Composable
+private fun NightSample() {
+    val bp = LocalBlueprint.current
+    val ground = bp.style("night")
+    // The night palette only (not NightSurface, which also turns the status bar icons light).
+    MaterialTheme(colorScheme = com.bamnat.app.ui.theme.NightPalette.scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+        Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background, RoundedCornerShape(10.dp))
+            .then(PartMods.box(ground, RoundedCornerShape(10.dp))).padding(10.dp),
+            horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("11월 7일 금요일", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = PartMods.text(bp.style("night.date"), MaterialTheme.typography.labelLarge))
+            val clock = bp.style("night.clock")
+            Text("23:40", color = MaterialTheme.colorScheme.onSurface,
+                style = PartMods.text(clock, com.bamnat.app.ui.theme.NumberStyle.copy(fontSize = androidx.compose.ui.unit.TextUnit(40f, androidx.compose.ui.unit.TextUnitType.Sp), fontWeight = FontWeight.Light)),
+                modifier = PartMods.box(clock, RoundedCornerShape(12.dp)))
+            val line = bp.style("night.line")
+            Text("내일 07:00 주간 · 알람 06:00 켜짐", color = line.ink?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.onSurface,
+                style = PartMods.text(line.copy(ink = null), MaterialTheme.typography.bodyMedium))
+            Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(12.dp))
+                .then(PartMods.box(bp.style("night.card"), RoundedCornerShape(12.dp))).padding(8.dp)) {
+                Text("잠드는 소리 · 빗소리 30분", style = MaterialTheme.typography.bodySmall)
+            }
+            val button = bp.style("night.button")
+            val buttonFill = button.fillColor ?: MaterialTheme.colorScheme.primary
+            Box(Modifier.fillMaxWidth().heightIn(min = 40.dp).background(buttonFill, PartMods.shapeOf(button, RoundedCornerShape(20.dp))),
+                contentAlignment = androidx.compose.ui.Alignment.Center) {
+                Text("잠들었어요", color = button.ink?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.onPrimary,
+                    style = PartMods.text(button.copy(ink = null), MaterialTheme.typography.titleSmall))
+            }
+        }
+    }
+    val morning = bp.style("night.morning")
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp))
+        .then(PartMods.box(morning, PartMods.shapeOf(morning, RoundedCornerShape(12.dp)))).padding(10.dp)) {
+        Text("잘 잤어요? · 아침 한 장", style = PartMods.text(morning, MaterialTheme.typography.titleSmall))
+        Text("6시간 40분 · 😴 🙂 😀", style = PartMods.text(morning, MaterialTheme.typography.bodySmall))
     }
 }

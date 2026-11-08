@@ -31,6 +31,20 @@ class ReceivedCalendarsTest {
         now.plus(Duration.ofDays(days)), now,
     )
 
+    /** 1.38 PC 12.4.1 [P3-L-19] The link the setup started from stays the user's own through updates and a reload. */
+    @Test fun theLinkTheWorkComesFromStaysMarked() {
+        val s = store()
+        s.put("AAAAAAAAAAAAAAAA", share("간호2팀"), mine = true)
+        s.put("BBBBBBBBBBBBBBBB", share("민지"))
+        s.put("AAAAAAAAAAAAAAAA", share("간호2팀"))
+        val again = store()
+        assertEquals("AAAAAAAAAAAAAAAA", again.mine()?.id)
+        assertEquals("받은 근무표 · 간호2팀 · 11월 근무표", again.mine()?.mineLine(short = true))
+        assertTrue(again.mine()!!.mineLine().startsWith("간호2팀에서 받아요 · 11월 근무표를 받았어요"))
+        again.markGone("AAAAAAAAAAAAAAAA")
+        assertEquals("받은 근무표 · 링크가 끊겼어요", again.mine()?.mineLine(short = true))
+    }
+
     /** [SHR-12] The tag is kept with the copy, and an unchanged look only moves when it was checked. */
     @Test fun keepsTheTagAndTouches() {
         val s = store()

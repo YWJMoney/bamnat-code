@@ -27,6 +27,21 @@ data class RosterResult(
 )
 
 object RosterReader {
+    /** [READ-30] Dates as the user reads them: "10월 26~31일", "10월 30일, 12월 1~2일". */
+    fun span(dates: Collection<LocalDate>): String = dates.sorted().groupBy { YearMonth.from(it) }.entries.joinToString(", ") { (m, ds) ->
+        val runs = mutableListOf<IntRange>()
+        for (d in ds.map { it.dayOfMonth }) if (runs.isNotEmpty() && runs.last().last == d - 1) runs[runs.size - 1] = runs.last().first..d else runs += d..d
+        "${m.monthValue}월 " + runs.joinToString(",") { if (it.first == it.last) "${it.first}" else "${it.first}~${it.last}" } + "일"
+    }
+
+    /** [READ-34] A file whose words read as a payslip: a 지급 총액 and at least three amount lines. */
+    fun isPayslip(sheets: List<Sheets.Sheet>): Boolean = sheets.any { sh ->
+        val r = com.bamnat.core.pay.PayslipReader.read(sh.rows.joinToString("\n") { it.joinToString(" ") })
+        r.gross != null && r.lines.count { it.amount != null } >= 3
+    }
+
+    const val PAYSLIP_HERE = "이 파일은 근무표가 아니라 급여명세서예요. 급여 화면의 '명세서로 채우기'에서 'PDF로 받은 명세서 고르기'로 넣으면 모든 줄을 그대로 읽어요."
+
     const val NOTHING = "날짜 줄(1 2 3 …)과 근무 줄을 찾지 못했어요. 표 전체가 반듯하게 나오게 다시 찍어 보세요."
 
     suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
@@ -65,24 +80,65 @@ object RosterReader {
 
     const val TAPPED_NOTHING = "누른 곳에서 근무를 찾지 못했어요. 내 이름이나 근무 글자 위를 눌러 주세요."
 
-    suspend fun file(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate): RosterResult {
-        val result = runCatching {
-            val (_, sheet) = SheetFiles.read(context, uri)
-            RosterSheet.read(sheet, codes, near = near)
+    /**
+     * [IMPORT-03][READ-30] A roster file: [AnyFile] tells a table (.xlsx·.xls·.ods·HTML·CSV), a PDF (its text read as the table,
+     * or a scanned one read page by page as photos) and a picture apart, whatever the file's name says.
+     */
+    suspend fun file(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
+        val opened = runCatching { com.bamnat.app.imports.AnyFile.open(context, uri) }
+        opened.exceptionOrNull()?.let { e ->
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            return RosterResult(emptyList(), null, RosterFrom.FILE, (e as? Sheets.SheetException)?.message ?: FILE_FAILED)
         }
-        val read = result.getOrNull() ?: return RosterResult(emptyList(), null, RosterFrom.FILE,
-            (result.exceptionOrNull() as? Sheets.SheetException)?.message
-                ?: if (result.isFailure) "이 파일은 읽지 못했어요. 엑셀(.xlsx)이나 CSV로 저장한 파일을 골라 주세요."
-                else "날짜와 근무를 찾지 못했어요. 첫 줄에 1 2 3 … 날짜가 있거나, 날짜·근무 열이 있는 표면 돼요.")
+        return when (val o = opened.getOrThrow()) {
+            is com.bamnat.app.imports.AnyFile.Opened.Picture -> photo(context, o.uri, codes, near, progress)
+            is com.bamnat.app.imports.AnyFile.Opened.Pages -> pages(context, o.pages, codes, near, progress)
+            is com.bamnat.app.imports.AnyFile.Opened.Table -> table(o.sheets, codes, near, o.fromPdf)
+        }
+    }
+
+    /** [READ-30] Sheets read as a roster: the sheet that holds it, the month most of its days are in. */
+    fun table(sheets: List<Sheets.Sheet>, codes: DutyCodes, near: LocalDate, fromPdf: Boolean = false): RosterResult {
+        val read = runCatching { RosterSheet.readBook(sheets, codes, near = near) }.getOrNull()
+            ?: return RosterResult(emptyList(), null, RosterFrom.FILE, when {
+                // [READ-34] 1.38: a payslip shared from 카카오톡 lands here (a shared PDF opens 한 달 근무 넣기): said where it goes.
+                isPayslip(sheets) -> PAYSLIP_HERE
+                fromPdf -> "PDF에서 날짜와 근무를 찾지 못했어요. 표가 든 쪽인지 봐 주세요."
+                else -> "날짜와 근무를 찾지 못했어요. 첫 줄에 1 2 3 … 날짜가 있거나, 날짜·근무 열이 있는 표면 돼요."
+            })
         // The month the file has most days of.
         val month = read.people.flatMap { p -> p.days.map { YearMonth.from(it.date) } }
             .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
         val rows = read.people.map { p ->
             val days = p.days.filter { YearMonth.from(it.date) == month }
-            RosterRow(p.name, days.associate { it.date.dayOfMonth to it.cell }, notes = days.mapNotNull { d -> d.note?.let { d.date.dayOfMonth to it } }.toMap())
+            // [READ-30] 1.38 PC: a 4주 듀티's days in the next or last month go in with it, not dropped.
+            val outside = p.days.filter { YearMonth.from(it.date) != month }.associate { it.date to it.cell }
+            RosterRow(p.name, days.associate { it.date.dayOfMonth to it.cell }, notes = days.mapNotNull { d -> d.note?.let { d.date.dayOfMonth to it } }.toMap(), outside = outside)
         }.filter { it.cells.isNotEmpty() }
         return RosterResult(rows, month, RosterFrom.FILE, NOTHING.takeIf { rows.isEmpty() })
     }
+
+    /** [READ-32] A scanned PDF: each page read as a photo, the lines of all pages together (a name on two pages once). */
+    private suspend fun pages(context: Context, pages: List<android.graphics.Bitmap>, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit): RosterResult {
+        val scans = mutableListOf<RosterScanner.Scan>()
+        try {
+            for ((i, page) in pages.withIndex()) {
+                scans += RosterScanner.scanPicture(context, page, codes) { n, m -> progress(i * 10 + n, pages.size * 10) }
+            }
+        } finally {
+            pages.forEach { if (!it.isRecycled) it.recycle() }
+        }
+        val words = scans.flatMap { it.words }
+        val month = DutyRoster.monthIn(words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
+        val rows = scans.flatMap { it.read.rows }.distinctBy { DutyCodes.norm(it.label).ifEmpty { it.hashCode().toString() } }
+        // [READ-32] 1.38 PC: a scan read thinly says what reads every cell instead.
+        val days = (month ?: YearMonth.from(near)).lengthOfMonth()
+        val thin = rows.isNotEmpty() && rows.maxOf { it.cells.size } < days * 0.8
+        return RosterResult(rows, month, RosterFrom.FILE, if (rows.isEmpty()) "스캔한 PDF에서 근무표를 찾지 못했어요. 표가 반듯하게 나온 쪽인지 봐 주세요." else null, scans.firstOrNull(),
+            advice = if (thin) "스캔한 PDF라 다 읽지 못했어요. 원래 엑셀 파일이나 엑셀에서 'PDF로 저장'한 파일을 주시면 모든 칸을 정확히 읽어요." else null)
+    }
+
+    private const val FILE_FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·사진 파일을 골라 주세요."
 
     fun text(text: String, codes: DutyCodes, near: LocalDate): RosterResult {
         val rows = DutyRoster.readText(text, codes)

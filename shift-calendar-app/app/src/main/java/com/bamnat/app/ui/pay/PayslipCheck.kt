@@ -73,6 +73,32 @@ internal fun PhotoThumb(photo: Bitmap, modifier: Modifier = Modifier.fillMaxWidt
 }
 
 /**
+ * [READ-41] 1.38 PC 11차: 무엇을 읽었는지 보기 for a payslip or rules photo, the lines as the phone read them (in memory only),
+ * so a line the screen lost can be told from a line the photo lost.
+ */
+@Composable
+internal fun ReadTextButton(text: String) {
+    if (text.isBlank()) return
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("무엇을 읽었는지 보기") }
+    if (open) Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("무엇을 읽었는지", style = MaterialTheme.typography.titleMedium)
+                Text("사진에서 읽은 글 그대로예요. 여기에 없는 줄은 사진에서 못 읽은 줄이에요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(text.trim(), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { open = false }) { Text("닫기") } }
+            }
+        }
+    }
+}
+
+/**
  * [READ-18] 1.27 순번 447: the lines read from a payslip, "사진과 내용이 같은가요?" under them. '네, 같아요' takes them as looked
  * at; '다른 곳이 있어요' makes each line a button that fixes only that line ([SlipLineEditor], under it), with 줄 더하기. Lines read
  * two ways ([unsure], by index) are yellow until looked at. [onChange] gets the payslip and the lines still to look at.
@@ -194,6 +220,23 @@ internal fun SlipCheck(
             }
         }
         netIdx.forEach { i -> key(i) { cell(i, read.lines[i]) } }
+        // [READ-38] 1.38 PC 10차 (사용성, 줄이 빠진 사진: '칸 더하기'가 카드 아래라 내려야 보임): when the lines fall short of the
+        // totals the payslip states, the gap is said first, with one tap to the missing line, its amount already in.
+        if (editing != -1) listOfNotNull(
+            read.missingEarning?.let { Triple("지급", SlipRole.ALLOWANCE, it) },
+            read.missingDeduction?.let { Triple("공제", SlipRole.DEDUCTION, it) },
+        ).forEach { (side, role, gap) ->
+            Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("$side 줄이 ${won(gap)}만큼 덜 읽혔어요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Text("사진에서 안 읽힌 줄이 있어요. 그 줄 이름만 넣으면 돼요(여러 줄이면 금액을 나눠 넣어요).",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    OutlinedButton(onClick = { preset = SlipLine("", role, gap); editing = -1 }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("빠진 $side 줄 더하기 (${won(gap)})")
+                    }
+                }
+            }
+        }
         SlipSums(read)
         // [PHOTO-31] 1.30 AW: the line is fixed in the list, not in a window over it; [PAYIN-02] under the two sides.
         Column(Modifier.bringIntoViewRequester(editorAt)) {

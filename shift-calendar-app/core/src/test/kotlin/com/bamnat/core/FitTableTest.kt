@@ -37,16 +37,16 @@ class FitTableTest {
     /** The whole table, kind × screen, as people will see it with nothing added. */
     @Test fun everyKindOfWorkSeesItsOwnList() {
         val expected = mapOf(
-            WorkStyle.SHIFT to "ask,journal,todayFlow,summary,counts,dayCard,hours,rest,memos",
-            WorkStyle.DAY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos",
-            WorkStyle.HOURLY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos",
-            WorkStyle.FIELD to "ask,journal,todayWork,summary,dayCard,memos",
-            WorkStyle.BUSINESS to "ask,journal,todayWork,summary,dayCard,memos",
-            WorkStyle.INVEST to "ask,journal,todayWork,summary,dayCard,memos",
-        )
+            WorkStyle.SHIFT to "ask,journal,todayFlow,summary,counts,dayCard,hours,rest,memos,dayStory",
+            WorkStyle.DAY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos,dayStory",
+            WorkStyle.HOURLY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos,dayStory",
+            WorkStyle.FIELD to "ask,journal,todayWork,summary,dayCard,memos,dayStory",
+            WorkStyle.BUSINESS to "ask,journal,todayWork,summary,dayCard,memos,dayStory",
+            WorkStyle.INVEST to "ask,journal,todayWork,summary,dayCard,memos,dayStory",
+        ) // 1.39 [FLOW-22] dayStory: in the list, off on the calendar until the user adds it (CalendarLayout)
         for ((style, parts) in expected) assertEquals("$style", parts, FitTable.shown(FitSurface.CALENDAR_PARTS, style).joinToString(","))
         val tools = mapOf(
-            WorkStyle.SHIFT to "edit,teams,typeMonth,share,year,receive,pattern,newCalendar,customize,viewSettings,help",
+            WorkStyle.SHIFT to "edit,teams,push,leaderTeams,typeMonth,share,year,receive,pattern,newCalendar,customize,viewSettings,help", // [EASE-25] push, 1.38 leaderTeams (shown only with team.leader on)
             WorkStyle.DAY to "edit,share,year,receive,pattern,newCalendar,customize,viewSettings,help",
             WorkStyle.HOURLY to "edit,typeMonth,share,year,receive,newCalendar,customize,viewSettings,help",
             // [FIT-05] 1.36: 가족·연인 근무표는 투자·가게 달력도 받아요.
@@ -70,5 +70,16 @@ class FitTableTest {
         assertTrue(FitTable.visible(FitSurface.CALENDAR_PARTS, "a-part-from-a-later-version", WorkStyle.INVEST, emptySet()))
         FitTable.all.mapNotNull { it.feature }.forEach { assertNotNull(it, FeatureRegistry.get(it)) }
         assertEquals("keys are unique", FitTable.all.size, FitTable.all.map { it.key }.toSet().size)
+    }
+
+    /** 1.39 [FLOW-34] 사용자 결정 11-07: 투자에는 오늘의 흐름을 더하기 목록에도 두지 않고, 예전에 더했어도 안 보여요. 가게·현장은 그대로 더할 수 있어요. */
+    @Test fun investIsNotOfferedTheTodayFlow() {
+        assertFalse(FitTable.others(FitSurface.CALENDAR_PARTS, WorkStyle.INVEST).any { it.id == "todayFlow" })
+        assertFalse(FitTable.visible(FitSurface.CALENDAR_PARTS, "todayFlow", WorkStyle.INVEST, setOf("CALENDAR_PARTS:todayFlow")))
+        for (style in listOf(WorkStyle.BUSINESS, WorkStyle.FIELD)) {
+            assertTrue(FitTable.others(FitSurface.CALENDAR_PARTS, style).any { it.id == "todayFlow" })
+            assertTrue(FitTable.visible(FitSurface.CALENDAR_PARTS, "todayFlow", style, setOf("CALENDAR_PARTS:todayFlow")))
+        }
+        assertTrue(FitTable.visible(FitSurface.CALENDAR_PARTS, "todayFlow", WorkStyle.SHIFT, emptySet()))
     }
 }

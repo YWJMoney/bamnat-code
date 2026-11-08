@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.guide
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.DatePicker
 import com.bamnat.app.ui.components.DatePickerDialog
@@ -77,6 +79,11 @@ fun AskArea(
     today: LocalDate = Today.date(),
     /** Above a feature's own screen: only what the card itself answers, not "open this screen". */
     inCardOnly: Boolean = false,
+    /**
+     * 1.38 통합 9차 (업데이트로 온 폰에서 며칠 뒤 '급여를 알려 주시면…' 큰 카드가 달력 위를 차지해요): above the month, one line
+     * with its question; a tap answers in place (or opens the screen that asks it).
+     */
+    compact: Boolean = false,
 ) {
     // Not on the example: what it would ask is the example's, not the user's.
     if (calendar == com.bamnat.app.data.PersonalCalendar.EXAMPLE) return
@@ -101,8 +108,22 @@ fun AskArea(
         if (current.isNew && !folded) c.asks.set(calendar, AskScheduler.shown(c.asks.of(calendar), current, today))
     }
     val scope = rememberCoroutineScope()
+    val question = Questions.of(current.missing.key, hasPay = pay != null)
+    var opened by rememberSaveable(current.missing.key) { mutableStateOf(false) }
+    if (compact && !opened) {
+        AskLine(
+            question = question,
+            onOpen = {
+                val a = question.answer
+                if (a is Answer.Open) FeatureRegistry.get(a.feature)?.let(FeatureLinks::open) else opened = true
+            },
+            onLater = { c.asks.set(calendar, AskScheduler.later(c.asks.of(calendar), current.missing.key, today)) },
+            modifier = modifier,
+        )
+        return
+    }
     AskCard(
-        question = Questions.of(current.missing.key, hasPay = pay != null),
+        question = question,
         reward = current.reward,
         onAnswer = { value -> scope.launch { if (c.answers.answer(calendar, current.missing.key, value)) answered++ } },
         onOpen = { feature -> FeatureRegistry.get(feature)?.let(FeatureLinks::open) },
@@ -155,6 +176,35 @@ internal fun AskCard(
         }
     }
 }
+
+/**
+ * 1.38 통합 9차: the question card as one line over the calendar: the question, where a tap goes, and 나중에 (X). The answer
+ * itself is a tap away, so the month stays in view.
+ */
+@Composable
+internal fun AskLine(question: Question, onOpen: () -> Unit, onLater: () -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val go = (question.answer as? Answer.Open)?.label ?: "답하기"
+    Surface(shape = MaterialTheme.shapes.extraLarge, color = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer,
+        modifier = modifier.fillMaxWidth()) {
+        Row(Modifier.heightIn(min = 48.dp).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).heightIn(min = 48.dp).clickable(onClickLabel = go, onClick = onOpen), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.HelpOutline, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(shortQuestion(question.text),
+                    style = MaterialTheme.typography.bodyMedium, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(" $go ›", style = MaterialTheme.typography.labelLarge, color = scheme.primary, maxLines = 1)
+            }
+            androidx.compose.material3.IconButton(onClick = onLater) {
+                Icon(Icons.Filled.Close, "나중에", modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+/** "기본급이 얼마인가요? 명세서 사진이면 저절로 채워져요" → "기본급이 얼마인가요?": the question alone, for one line. */
+internal fun shortQuestion(text: String): String = if ("? " in text) text.substringBefore("? ") + "?" else text
 
 /** [EASY-05][EASY-08] The answer of [question]: chips, a number, a date or the screen that asks it. Also the profile's edit sheet. */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)

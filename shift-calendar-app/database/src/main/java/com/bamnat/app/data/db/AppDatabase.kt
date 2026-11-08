@@ -28,8 +28,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppliedRecipeEntity::class, RecipeDraftEntity::class,
         // 1.37 [LEDH-11][LEDH-13] Version 25: 모으기·세금 봉투.
         EnvelopeEntity::class, EnvelopeMoveEntity::class,
+        // 1.38 [P3-01] Version 27: Phase 3 리더 팀 근무표와 사장님 급여 대장 (꺼진 채).
+        TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
+        WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
+        // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
+        SleepCheckEntity::class, SleepEventEntity::class,
     ],
-    version = 25,
+    version = 33,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,6 +53,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun leaveNoticeDao(): LeaveNoticeDao
     abstract fun taxDao(): TaxDao
     abstract fun recipeDao(): RecipeDao
+    abstract fun teamDao(): TeamDao
+    abstract fun payrollDao(): PayrollDao
 
     companion object {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
@@ -66,7 +73,46 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
+                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
+                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
             )
+
+        /**
+         * 1.38 [P3-01] Version 27 (Phase 3 설계 1-3): 팀(team·team_member·team_cell·team_month·team_wish)과 사업장(workplace·staff·staff_work·
+         * payroll_month·payroll_line), new tables only.
+         */
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderName` TEXT NOT NULL, " +
+                    "`shifts` TEXT NOT NULL, `need` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_member` (`id` TEXT NOT NULL, `teamId` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                    "`role` TEXT NOT NULL, `skill` TEXT NOT NULL, `colorArgb` INTEGER, `sort` INTEGER NOT NULL, `linkId` TEXT, `linkToken` TEXT, " +
+                    "`active` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_member_teamId` ON `team_member` (`teamId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_cell` (`teamId` TEXT NOT NULL, `memberId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                    "`shiftId` INTEGER NOT NULL, `source` TEXT NOT NULL, `locked` INTEGER NOT NULL, PRIMARY KEY(`memberId`, `epochDay`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_cell_teamId_epochDay` ON `team_cell` (`teamId`, `epochDay`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_month` (`teamId` TEXT NOT NULL, `month` TEXT NOT NULL, `state` TEXT NOT NULL, " +
+                    "`version` INTEGER NOT NULL, `confirmedAt` INTEGER, `confirmed` TEXT NOT NULL, PRIMARY KEY(`teamId`, `month`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_wish` (`teamId` TEXT NOT NULL, `memberId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                    "`kind` TEXT NOT NULL, `receivedAt` INTEGER NOT NULL, `via` TEXT NOT NULL, PRIMARY KEY(`memberId`, `epochDay`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_wish_teamId_epochDay` ON `team_wish` (`teamId`, `epochDay`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `workplace` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `fivePlus` INTEGER, `payday` INTEGER, " +
+                    "`legalBreaks` INTEGER NOT NULL, `weekStart` INTEGER NOT NULL, `teamId` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff` (`id` TEXT NOT NULL, `workplaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `form` TEXT NOT NULL, " +
+                    "`base` INTEGER NOT NULL, `allowances` TEXT NOT NULL, `hiredOn` INTEGER, `leftOn` INTEGER, `birth` INTEGER, `job` TEXT NOT NULL, " +
+                    "`insurance` TEXT NOT NULL, `weeklyHolidayPay` INTEGER NOT NULL, `weekly` TEXT NOT NULL, `memberId` TEXT, `sort` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_staff_workplaceId` ON `staff` (`workplaceId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff_work` (`staffId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, `kind` TEXT NOT NULL, " +
+                    "`startMinute` INTEGER, `endMinute` INTEGER, PRIMARY KEY(`staffId`, `epochDay`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `payroll_month` (`workplaceId` TEXT NOT NULL, `month` TEXT NOT NULL, `state` TEXT NOT NULL, " +
+                    "`rateVersion` TEXT NOT NULL, `closedAt` INTEGER, PRIMARY KEY(`workplaceId`, `month`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `payroll_line` (`workplaceId` TEXT NOT NULL, `month` TEXT NOT NULL, `staffId` TEXT NOT NULL, " +
+                    "`gross` INTEGER NOT NULL, `items` TEXT NOT NULL, `method` TEXT NOT NULL, `deduct` TEXT NOT NULL, `net` INTEGER, `paidAt` INTEGER, " +
+                    "`slipSentAt` INTEGER, PRIMARY KEY(`workplaceId`, `month`, `staffId`))")
+            }
+        }
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -355,6 +401,94 @@ abstract class AppDatabase : RoomDatabase() {
          * Version 22 (1.32 조사 대조): 할부 수수료율 [LEDX-17], 현금영수증 발행한 현금 매출 [TAXP-14] and 시간외 인정 시간
          * [WTYP-24]. Only new columns with defaults: every row of version 21 keeps its meaning (무이자, 0원, 인정 시간 없음).
          */
+        /**
+         * Version 26 (1.38 [LEDH-25][LEDH-27]): 대출·빌린 돈의 이자율·매달 갚는 돈, 카드의 전월 실적 구간·실적에서 빠지는 분류.
+         * Only new columns with defaults: every account of version 25 keeps its meaning (이자 없음, 구간 없음).
+         * Version 27 is 1.38 Phase 3's (팀·사업장 표); it migrates on top of this.
+         */
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `money_accounts` ADD COLUMN `rate` REAL NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `money_accounts` ADD COLUMN `monthlyPay` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `money_accounts` ADD COLUMN `perfTiers` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_accounts` ADD COLUMN `perfSkip` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * Version 28 (1.38 갈래 2, 이 날만 빼기): the days taken off a repeating memo. Only a new column with a default: every memo of
+         * version 27 keeps its meaning (no day taken off).
+         */
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `skips` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * Version 29 (1.38 갈래 7, 경쟁 앱 조사 P3-B-12·P3-L-11): a 사업장's 계산 단위 and a team's 같이 쉬는 사람. Only new columns with
+         * defaults: every 사업장 and team of version 28 keeps its meaning (1분 단위; links name no one else, as before).
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `minuteUnit` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `showTogether` INTEGER NOT NULL DEFAULT 0")
+                // [P3-B-11] 출퇴근 링크
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockId` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockToken` TEXT DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff_punch` (`staffId` TEXT NOT NULL, `at` INTEGER NOT NULL, `kind` TEXT NOT NULL, PRIMARY KEY(`staffId`, `at`))")
+            }
+        }
+
+        /** 1.38 (DB 30, 갈래7) [P3-L-14] 신청 받기 and [P3-X-01] 결원 메우기: the team's round and asks as JSON. "" for every team so far. */
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `ask` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `swap` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team_member` ADD COLUMN `hiredOn` INTEGER")
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `contract` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * 1.38 (DB 31, 수면 갈래) [SLEEP-01][SLEEP-03][SLEEP-07]: where a sleep came from ("tap" for every sleep so far), 아침 한 장
+         * answers and the night's sounds. A new column with a default and new tables only: every row of version 30 keeps its meaning.
+         */
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sleep_logs` ADD COLUMN `source` TEXT NOT NULL DEFAULT 'tap'")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sleep_checks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startMillis` INTEGER NOT NULL, " +
+                    "`endMillis` INTEGER NOT NULL, `mood` INTEGER, `tags` TEXT NOT NULL DEFAULT '', `note` TEXT, `atMillis` INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_checks_endMillis` ON `sleep_checks` (`endMillis`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sleep_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startMillis` INTEGER NOT NULL, " +
+                    "`endMillis` INTEGER NOT NULL, `kind` TEXT NOT NULL, `level` REAL NOT NULL, `file` TEXT, `keep` INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_events_startMillis` ON `sleep_events` (`startMillis`)")
+            }
+        }
+
+        /**
+         * 1.39 (DB 32, 급여·수당 갈래 G3) [BOSS-12] 산재보험 사업종류 of a 사업장. A new nullable column only: every 사업장 of version 31
+         * keeps its meaning (업종을 아직 안 골라 산재를 계산하지 않음).
+         */
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `industry` TEXT")
+            }
+        }
+
+        /**
+         * Version 33 (1.39 [TASK-02][TASK-05]): 메모 끝냄. A memo that does not repeat keeps when it was finished, a repeating one the
+         * days it was finished on. Every memo of version 32 is not finished, as it was.
+         */
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneAt` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneDays` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         /** Version 25 (1.37 [LEDH-11][LEDH-13]): 모으기·세금 봉투. Only new tables: every row of version 24 keeps its meaning. */
         val MIGRATION_24_25 = object : Migration(24, 25) {
             override fun migrate(db: SupportSQLiteDatabase) {

@@ -68,17 +68,16 @@ class SetupFlowTest {
         assertEquals(SetupStep.BUNDLE, draft.step)
         vm.pickBundle(ShiftBundles.TWO)
         assertEquals(SetupStep.TIMES, draft.step)
-        vm.confirmTimes()
-        assertEquals(SetupStep.ORDER, draft.step)
+        // [EASE-07] The order is on the times' screen, the most usual one already picked.
+        assertTrue(draft.rotation.isNotEmpty())
         vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.TODAY, draft.step)
         val night = draft.types.first { it.name == "야간" }.id
         val follow = TodayQuestion.followUp(draft.rotation, night, draft::isOff) as FollowUp.RunDay
         vm.answerToday(today, follow.steps[1])
         vm.confirmToday()
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.next()
+        // [EASE-07] The alarm is a card on the summary, not a step of its own.
         assertEquals(SetupStep.SUMMARY, draft.step)
     }
 
@@ -140,8 +139,9 @@ class SetupFlowTest {
         val vm = vm()
         vm.pickStyle(WorkStyle.HOURLY)
         assertEquals(SetupStep.TIMES, draft.step)
+        // [EASE-07] The days are on the times' screen: with none picked it stays there.
         vm.confirmTimes()
-        assertEquals(SetupStep.ORDER, draft.step)
+        assertEquals(SetupStep.TIMES, draft.step)
         vm.later()
         val s = c.settingsRepository.current
         assertEquals(WorkStyle.HOURLY, s.workStyle)
@@ -153,12 +153,10 @@ class SetupFlowTest {
         // 1.37 PC f42b2eba MED-b: only the 알바 shifts, no 교대 first ones left beside them ('근무 6가지').
         assertEquals(listOf("오전 알바", "오후 알바", "저녁 알바"), c.scheduleRepository.shiftTypes.first().map { it.name })
 
-        // 이어서 하기 → 요일 → 알람 → 저장.
+        // 이어서 하기 → 시간과 요일 → 저장.
         c.setupDrafts.save(draft.copy(later = false))
         vm.setNoFixedDays(true)
-        vm.next()
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.SUMMARY, draft.step)
         vm.save()
         waitFor("the save") { !c.settingsRepository.current.setupLater && c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
@@ -289,8 +287,7 @@ class SetupFlowTest {
         vm.paint(listOf(today.plusDays(2)))
         // No order and no today question for a roster.
         vm.next()
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.next()
+        assertEquals(SetupStep.SUMMARY, draft.step)
         vm.save()
         waitFor("the save") { c.settingsRepository.current.workStyle != null && c.setupDrafts.draft.value == null }
         assertTrue(c.settingsRepository.current.rosterMonthly)
@@ -313,13 +310,49 @@ class SetupFlowTest {
         waitFor("the roster read") { vm.roster.value != null && draft.painted.isNotEmpty() }
         val nov = java.time.YearMonth.of(2026, 11)
         assertEquals(nov, vm.paintMonth.value)
-        assertEquals((1..8).filter { it != 6 }.map { nov.atDay(it) }.toSet(), draft.painted.keys)
+        // [READ-30] 1.38: the 연차 day is painted too, with the line's main work, so the leave counts on it.
+        assertEquals((1..8).map { nov.atDay(it) }.toSet(), draft.painted.keys)
+        assertEquals(draft.types.first { it.name == "데이" }.id, draft.painted[nov.atDay(6)])
         assertEquals(draft.types.first { it.name == "데이" }.id, draft.painted[nov.atDay(1)])
         // O is the bundle's own 오프, as painting it by hand would be.
         assertEquals(draft.types.first { it.isOff }.id, draft.painted[nov.atDay(7)])
         // One undo takes the whole line back.
         vm.undoPaint()
         assertTrue(draft.painted.isEmpty())
+    }
+
+    /** 1.38 통합 11차: 월·수·금 13~18시 with the usual 30 minutes' break is 13시간 30분 a week, and the summary says the break decides 주휴. */
+    @Test fun theSummarySaysTheBreakTakesTheWeekUnderFifteenHours() {
+        fun week(breakMinutes: Int, days: Int) = SetupDraft(style = WorkStyle.HOURLY,
+            types = listOf(com.bamnat.core.model.ShiftType(1, "오후 알바", "후", 0xFF000000, java.time.LocalTime.of(13, 0), java.time.LocalTime.of(18, 0),
+                breakMinutes = breakMinutes)),
+            weekly = List(7) { i -> if (i % 2 == 0 && i / 2 < days) 1L else null })
+        val note = weeklyHolidayNote(week(30, 3))!!
+        assertTrue(note, note.startsWith("쉬는 시간을 빼면 주 13시간 30분이라"))
+        assertTrue(note, "1시간 30분 모자라요" in note)
+        assertEquals("주 15시간 일해요 · 주 15시간 이상이라 주휴수당을 받아요", weeklyHolidayNote(week(0, 3)))
+        assertTrue(weeklyHolidayNote(week(0, 2))!!.startsWith("주 10시간이라"))
+        assertNull(weeklyHolidayNote(week(30, 3).copy(style = WorkStyle.DAY)))
+    }
+
+    /** 1.38 통합 11차: a shop's calendar opens every day at once (was '쉬는 날' everywhere until 영업일 was set). */
+    @Test fun aShopIsOpenEveryDayFromTheSetup() = runBlocking {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.BUSINESS)
+        waitFor("the shop days") { c.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.shop != null }
+        waitFor("the 영업 days") { runBlocking { c.scheduleRepository.snapshot.first().resolver.resolve(today).shiftType?.name == "영업" } }
+        assertEquals("영업", c.scheduleRepository.snapshot.first().resolver.resolve(today.plusDays(3)).shiftType?.name)
+    }
+
+    /** 1.38 D3: the summary's 올리기 box starts unticked even for a table made by '우리 회사 근무표 올리기'; ticking it puts it up. */
+    @Test fun anUploadInTheSetupStartsUnticked() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.SHIFT)
+        val made = com.bamnat.core.plaza.PublicCycles.provided("예시정밀", "4조2교대")
+        vm.pickPublic(made, "DDNNOOOO")
+        assertFalse(vm.shareCycle.value)
+        vm.pickPublic(made.copy(id = "row1"), "DDNNOOOO")
+        assertFalse(vm.shareCycle.value)
     }
 
     @Test fun aTemplateStartsTheShiftsAndTheUsersOwnOrderIsStillAsked() = runBlocking {
@@ -331,16 +364,14 @@ class SetupFlowTest {
         assertEquals(SetupSource.Kind.TEMPLATE, draft.source?.kind)
         val names = draft.types.associate { it.id to it.name }
         assertEquals(listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "휴무", "휴무"), draft.rotation.map { names[it] })
-        vm.confirmTimes()
-        // A template's order is only the usual one: shown, already chosen, to be confirmed.
-        assertEquals(SetupStep.ORDER, draft.step)
+        // A template's order is only the usual one: shown on the times' screen, already chosen, to be confirmed.
         assertEquals(draft.rotation, vm.sourceOrder(draft))
         vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.TODAY, draft.step)
         vm.answerToday(today, 0)
         vm.confirmToday()
-        vm.next()
+        assertEquals(SetupStep.SUMMARY, draft.step)
         vm.save()
         waitFor("the save") { c.settingsRepository.current.workStyle != null && c.setupDrafts.draft.value == null }
         assertEquals("주간", c.scheduleRepository.snapshot.first().resolver.resolve(today).shiftType?.name)
@@ -371,19 +402,21 @@ class SetupFlowTest {
         assertEquals(SetupStep.TIMES, draft.step)
         assertEquals("A조", draft.source?.team)
         vm.confirmTimes()
-        assertEquals(SetupStep.ORDER, draft.step)
-        vm.next()
         assertEquals(SetupStep.TODAY, draft.step)
         // Same 조: the coworker's start date as it is; today is the first night.
         vm.sameTeam()
         assertEquals(today.minusDays(2), draft.anchor)
-        assertEquals("오늘(10/18)은 야간 첫째 날이에요. 모레부터 휴무 4일이에요.", todaySentence(draft, today, today))
+        assertEquals("오늘(10/18)은 야간 첫째 날이에요. 모레(10/20)부터 휴무 4일이에요.", todaySentence(draft, today, today))
+        // 1.38 통합 7차: in the small hours (asked about 어제) today's own shift is said too, and the change with its date.
+        val small = todaySentence(draft, today.plusDays(2), today.plusDays(3))!!
+        assertTrue(small, small.startsWith("어제(10/20)는 휴무 첫째 날이에요. 오늘(10/21)은 휴무예요."))
+        assertTrue(small, small.contains("10/24"))
         // Another 조: asked like any other order.
         vm.clearToday()
         vm.answerToday(today, 0)
         assertEquals(today, draft.anchor)
         vm.confirmToday()
-        assertEquals(SetupStep.ALARM, draft.step)
+        assertEquals(SetupStep.SUMMARY, draft.step)
     }
 
     @Test fun aCoworkersFileInSettingsStartsFromTheSendersRow() = runBlocking {
@@ -425,15 +458,15 @@ class SetupFlowTest {
     @Test fun fixingAnAnswerGoesBackToTheSummary() {
         val vm = vm()
         twoShiftToSummary(vm)
+        // [EASE-07] The alarm is answered on the summary itself.
         vm.fix(SetupStep.ALARM)
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.setAlarm(30)
-        vm.next()
         assertEquals(SetupStep.SUMMARY, draft.step)
-        // A new order needs today again before the summary.
+        vm.setAlarm(30)
+        // A new order (on the times' screen) needs today again before the summary.
         vm.fix(SetupStep.ORDER)
+        assertEquals(SetupStep.TIMES, draft.step)
         vm.pickPreset(vm.presets(draft).first { it.codes == "DDNNOOOO" })
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.TODAY, draft.step)
         vm.answerToday(today, 0)
         vm.confirmToday()
@@ -443,5 +476,104 @@ class SetupFlowTest {
         vm.pickStyle(WorkStyle.SHIFT)
         assertEquals(SetupStep.SUMMARY, draft.step)
         assertEquals(30, draft.alarmMinutes)
+    }
+
+    /** 1.38 통합 8차 (09:41에 소방 당번으로 첫 설정하면 '지금은 새벽이라'): the note says why by the shift; '새벽' only before 6. */
+    @Test fun theEarlyNoteSaysTheShiftNotTheDawn() {
+        val day = java.time.LocalDate.of(2026, 11, 6)
+        val duty = com.bamnat.core.model.ShiftType(id = 1, name = "당번", label = "당", colorArgb = 0,
+            start = java.time.LocalTime.of(9, 0), end = java.time.LocalTime.of(9, 0))
+        assertEquals("밤을 넘기는 근무는 시작한 날로 쳐요. 어제(11/5) 09:00에 시작한 당번이 막 끝났어요.", earlyNote(duty to false, 9, day))
+        assertEquals("밤을 넘기는 근무는 시작한 날로 쳐요. 어제(11/5) 09:00에 시작한 당번이 아직 이어지고 있어요.", earlyNote(duty to true, 8, day))
+        assertEquals("지금은 새벽이라, 어젯밤 시작한 근무는 어제(11/5) 근무로 쳐요.", earlyNote(duty to true, 5, day))
+    }
+
+    /** 1.38 PC 12.1: a new phone opened from a 근무표 link (a coworker's or a 팀 리더's) starts from it in one press. */
+    @Test fun aLinkStartsTheCalendarWithItsOwnWorkAndDays() = runBlocking {
+        fun day(d: Int, type: Long?) = com.bamnat.app.share.SharedDay(today.plusDays(d.toLong()), type, null, null, null, emptyList(), null)
+        val schedule = com.bamnat.app.share.SharedSchedule(
+            "3병동 김간호",
+            listOf(
+                com.bamnat.app.share.SharedType(1, "데이", "D", 0xFF2196F3, "07:00-15:00", false, null),
+                com.bamnat.app.share.SharedType(2, "나이트", "N", 0xFF673AB7, "22:00-07:00", false, null),
+                com.bamnat.app.share.SharedType(3, "오프", "O", 0xFF9E9E9E, null, true, null),
+            ),
+            mapOf(today to day(0, 1), today.plusDays(1) to day(1, 2), today.plusDays(2) to day(2, 3), today.minusMonths(2) to day(-61, 1)),
+            emptyList(), emptySet(),
+        )
+        val d = LinkStart.draft(schedule, today)!!
+        // Nothing asked again: the names are checked on the summary.
+        assertEquals(SetupStep.SUMMARY, d.step)
+        assertTrue(d.rosterMonthly)
+        assertEquals("3병동 김간호", d.linkTitle)
+        // A month before this one is not the new calendar's.
+        assertEquals(3, d.painted.size)
+        assertEquals(d, com.bamnat.app.data.SetupDraftCodec.decode(com.bamnat.app.data.SetupDraftCodec.encode(d)))
+        c.setupDrafts.save(d)
+        val vm = vm()
+        assertEquals(SetupStep.SUMMARY, draft.step)
+        vm.save()
+        waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        assertTrue(c.settingsRepository.current.rosterMonthly)
+        val snap = c.scheduleRepository.snapshot.first()
+        assertEquals("데이", snap.resolver.resolve(today).shiftType?.name)
+        assertEquals("나이트", snap.resolver.resolve(today.plusDays(1)).shiftType?.name)
+        assertEquals("오프", snap.resolver.resolve(today.plusDays(2)).shiftType?.name)
+    }
+
+    @Test fun aLinkWithoutTimesAsksTheTimesOnly() {
+        val schedule = com.bamnat.app.share.SharedSchedule(
+            "팀", listOf(com.bamnat.app.share.SharedType(1, "주간", "주", 0xFF2196F3, null, false, null)),
+            emptyMap(), emptyList(), emptySet(),
+        )
+        val d = LinkStart.draft(schedule, today)!!
+        assertEquals(SetupStep.TIMES, d.step)
+        assertFalse(d.timesConfirmed)
+    }
+
+    /** PC 12.2: back on the bundle's page, the card already picked goes on again. */
+    @Test fun thePickedBundleGoesOnAgainAfterBack() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.SHIFT)
+        vm.next()
+        vm.pickBundle(ShiftBundles.TWO)
+        assertEquals(SetupStep.TIMES, draft.step)
+        vm.back()
+        assertEquals(SetupStep.BUNDLE, draft.step)
+        vm.pickBundle(ShiftBundles.TWO)
+        assertEquals(SetupStep.TIMES, draft.step)
+        vm.back(); vm.back()
+        assertEquals(SetupStep.COMPANY, draft.step)
+        vm.back()
+        assertEquals(SetupStep.STYLE, draft.step)
+        vm.pickStyle(WorkStyle.SHIFT)
+        assertEquals(SetupStep.COMPANY, draft.step)
+    }
+
+    /**
+     * 1.37 MED-2 (1.39 G6): in the first setup 일근 → 알바 with its 토·일 → 일근 again starts 일근 from 월~금, not from the
+     * 알바's 토·일.
+     */
+    @Test fun dayWorkAfterHourlyInTheSetupIsMondayToFridayAgain() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.DAY)
+        assertEquals(listOf(true, true, true, true, true, false, false), draft.weekly.map { it != null })
+        vm.back()
+        vm.pickStyle(WorkStyle.HOURLY)
+        val shift = draft.types.first { !it.isOff }.id
+        (0..6).forEach { vm.setWeekly(it, shift.takeIf { _ -> it >= 5 }) }
+        assertEquals(listOf(false, false, false, false, false, true, true), draft.weekly.map { it != null })
+        while (draft.step != SetupStep.STYLE) vm.back()
+        vm.pickStyle(WorkStyle.DAY)
+        assertEquals(listOf(true, true, true, true, true, false, false), draft.weekly.map { it != null })
+    }
+
+    /** [FLOW-03] The line said when the filled calendar first shows: from the draft about to be saved. */
+    @Test fun theFillLineCountsTheDraftsDays() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.DAY)
+        val line = vm.fillLine(draft)!!
+        assertTrue(line.text, line.head.contains("일하는 날"))
+        assertTrue(line.text, line.rest.contains("쉬는 날"))
     }
 }

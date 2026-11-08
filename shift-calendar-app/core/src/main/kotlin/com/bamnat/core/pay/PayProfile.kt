@@ -319,6 +319,8 @@ data class PayProfile(
      * 기본급 is cut to ([CompanyRules.proration]); days after it are not paid.
      */
     val leaveDate: LocalDate? = null,
+    /** 1.38 휴직 (사장님 대장): days inside the job that are not paid, 무급 휴직; the month's 기본급 is cut for them like a 퇴사 month. */
+    val unpaidDays: Set<LocalDate> = emptySet(),
     /**
      * [PAYX-25] 생산직 등 근로자 (소득세법 시행령 제17조 제1항: 공장·광산 생산직, 운전원, 경비·청소·돌봄·미용 등 단순노무): its
      * 연장·야간·휴일 수당 may be 비과세 under the limits of [TakeHome.productionFree].
@@ -328,12 +330,18 @@ data class PayProfile(
     val previousYearPay: Long? = null,
     /** [LEDG-29] The 가계부 counts pay as the take-home that arrives on the pay day ([PayIncome]) instead of the month's 세전. */
     val ledgerTakeHome: Boolean = false,
+    /**
+     * 1.39 [PAYX-59] 4대보험 lines the worker is not in (공식 대조 G2·G3·G6: 만 60세 이상 국민연금, 주 15시간 미만, 65세 이후 고용의
+     * 고용보험). The user picks them (the app has no 생년월일); [TakeHome] leaves them out of 예상 실수령 and says why.
+     */
+    val insuranceOff: Set<InsuranceLine> = emptySet(),
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
 
     /** [PAYX-24] Employed on [date]: on or after [hireDate] and on or before [leaveDate]. */
-    fun employed(date: LocalDate): Boolean = hireDate?.let { !date.isBefore(it) } != false && leaveDate?.let { !date.isAfter(it) } != false
+    fun employed(date: LocalDate): Boolean = hireDate?.let { !date.isBefore(it) } != false && leaveDate?.let { !date.isAfter(it) } != false &&
+        date !in unpaidDays
 
     /**
      * [PAYX-31] The amount [item]'s percent is of in [month]: 기본급, plus the fixed monthly allowances (not standing in

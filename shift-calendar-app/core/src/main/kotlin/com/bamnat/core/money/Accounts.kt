@@ -12,6 +12,8 @@ enum class AccountType(val label: String, val hint: String) {
     CREDIT("신용카드", "쓴 돈이 결제일에 한 번에 나가요"),
     PAY("페이·충전", "페이 머니, 교통카드 충전"),
     OTHER("기타", "적금, 상품권 등"),
+    /** 1.38 [LEDH-25] 빚: its balance is below zero by what is still owed; a transfer to it pays it down. */
+    LOAN("대출·빌린 돈", "남은 원금을 적으면 다 갚는 달과, 더 갚으면 줄어드는 이자를 보여 줘요"),
 }
 
 /**
@@ -39,12 +41,20 @@ data class MoneyAccount(
     val hidden: Boolean = false,
     /** A credit card's bill three days ahead and on the day, like the fixed costs [LEDG-05]. */
     val remind: Boolean = true,
+    /** 1.38 [LEDH-25] 대출·빌린 돈: 연 이자율(%)과 매달 갚는 돈. 0이면 이자 없음·정하지 않음. */
+    val rate: Double = 0.0,
+    val monthlyPay: Long = 0,
+    /** 1.38 [LEDH-27] 카드의 전월 실적 구간(원, 작은 것부터)과 실적에 들지 않는 분류. */
+    val perfTiers: List<Long> = emptyList(),
+    val perfSkip: List<String> = emptyList(),
 ) {
     val isCredit: Boolean get() = type == AccountType.CREDIT
     val isCard: Boolean get() = type == AccountType.CREDIT || type == AccountType.CHECK
     /** Money sits in it, so it has a balance; a card only moves money from elsewhere. */
     val keepsBalance: Boolean get() = !isCard
     val hasBill: Boolean get() = isCredit && payDay != null
+    /** 1.38 [LEDH-25] A loan: kept as a balance below zero, never money to spend. */
+    val isLoan: Boolean get() = type == AccountType.LOAN
 
     /** "신한 Deep (1234)" */
     val label: String get() = if (last4.isNotBlank() && !name.contains(last4)) "$name ($last4)" else name
@@ -222,7 +232,11 @@ object NetWorth {
 
     fun on(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, date: LocalDate): Point {
         val until = entries.filter { !it.date.isAfter(date) }
-        val have = MoneyAccounts.balances(accounts, until).values.sum()
+        val balances = MoneyAccounts.balances(accounts, until)
+        // 1.38 [LEDH-25] A loan is owed, not had.
+        val loans = accounts.filter { it.isLoan }.map { it.id }.toSet()
+        val have = balances.filterKeys { it !in loans }.values.sum()
+        val loanOwed = balances.filterKeys { it in loans }.values.sumOf { (-it).coerceAtLeast(0) }
         val credit = accounts.filter { it.isCredit }.map { it.id }.toSet()
         var owe = 0L
         for (e in until) {
@@ -233,7 +247,7 @@ object NetWorth {
                 e.kind == MoneyKind.TRANSFER && e.toAccountId in credit -> owe -= e.amount
             }
         }
-        return Point(date, have, owe.coerceAtLeast(0))
+        return Point(date, have, owe.coerceAtLeast(0) + loanOwed)
     }
 
     /** Today and the last [months] month-ends before it, oldest first; empty with no account that holds money. */

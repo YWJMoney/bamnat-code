@@ -45,6 +45,17 @@ class SetupTest {
         assertEquals(today, TodayQuestion.questionDate(at(3), ShiftBundles.weekday.map { it.type }))
     }
 
+    /** 1.38 통합 8차: the shift that makes the question yesterday's is named, so the note says it instead of '새벽'. */
+    @Test fun `the shift that makes it yesterday is the one ending latest that is still on or just ended`() {
+        val duty = ShiftBundles.byKey(ShiftBundles.DUTY)!!.shifts.map { it.type }
+        val because = TodayQuestion.becauseOf(at(9, 41), duty)!!
+        assertTrue(because.end!!.hour == 9)
+        assertNull(TodayQuestion.becauseOf(at(10, 30), duty))
+        val two = twoShift().types
+        assertEquals("야간", TodayQuestion.becauseOf(at(3), two)?.name)
+        assertNull(TodayQuestion.becauseOf(at(8), two))
+    }
+
     @Test fun `the second night of a 2-day night run puts step 0 three days back`() {
         val d = twoShift("DDNNOOOO")
         val night = d.types.first { it.name == "야간" }.id
@@ -123,18 +134,35 @@ class SetupTest {
     }
 
     @Test fun `only the steps that apply are shown`() {
-        val s = SetupStep.entries
+        // [EASE-07] 1.38: the order is on the times' screen and the alarm on the last one.
+        val s = listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.BUNDLE, SetupStep.TIMES, SetupStep.TODAY, SetupStep.SUMMARY)
         assertEquals(s, SetupDraft(style = WorkStyle.SHIFT).steps)
-        assertEquals(s - SetupStep.TODAY, SetupDraft(style = WorkStyle.SHIFT, rosterMonthly = true).steps)
+        // A roster painted every month keeps its own painting step.
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.BUNDLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.SUMMARY),
+            SetupDraft(style = WorkStyle.SHIFT, rosterMonthly = true).steps)
         val shared = SetupDraft(style = WorkStyle.SHIFT, rotation = listOf(-1L, null), source = SetupSource(SetupSource.Kind.TEMPLATE, "{}"))
-        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.ORDER, SetupStep.TODAY, SetupStep.ALARM, SetupStep.SUMMARY),
-            shared.steps)
-        assertEquals(6, SetupDraft(style = WorkStyle.DAY).steps.size)
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.TODAY, SetupStep.SUMMARY), shared.steps)
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.COMPANY, SetupStep.TIMES, SetupStep.SUMMARY), SetupDraft(style = WorkStyle.DAY).steps)
         // [J133-71] 알바 has no company step.
-        assertEquals(listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.ORDER, SetupStep.ALARM, SetupStep.SUMMARY),
-            SetupDraft(style = WorkStyle.HOURLY).steps)
+        assertEquals(listOf(SetupStep.STYLE, SetupStep.TIMES, SetupStep.SUMMARY), SetupDraft(style = WorkStyle.HOURLY).steps)
         assertEquals(listOf(SetupStep.STYLE), SetupDraft(style = WorkStyle.FIELD).steps)
         assertEquals(3, SetupDraft(style = WorkStyle.SHIFT, step = SetupStep.BUNDLE).position)
+        // A 고치기 of the order or the alarm opens the screen they are on now.
+        assertEquals(SetupStep.TIMES, SetupDraft(style = WorkStyle.SHIFT).screenOf(SetupStep.ORDER))
+        assertEquals(SetupStep.ORDER, SetupDraft(style = WorkStyle.SHIFT, rosterMonthly = true).screenOf(SetupStep.ORDER))
+        assertEquals(SetupStep.SUMMARY, SetupDraft(style = WorkStyle.DAY).screenOf(SetupStep.ALARM))
+    }
+
+    @Test fun `the times screen asks for the order too`() {
+        val d = twoShift().copy(step = SetupStep.TIMES, timesConfirmed = true)
+        assertTrue(d.canLeave())
+        assertFalse(d.copy(rotation = emptyList()).canLeave())
+        val week = SetupDraft(style = WorkStyle.DAY).withShifts(null, ShiftBundles.weekday).copy(timesConfirmed = true)
+        assertTrue(week.canLeave(SetupStep.TIMES))
+        assertFalse(week.copy(weekly = List(7) { null }).canLeave(SetupStep.TIMES))
+        val hourly = SetupDraft(style = WorkStyle.HOURLY).withShifts(null, ShiftBundles.hourly).copy(timesConfirmed = true)
+        assertFalse(hourly.canLeave(SetupStep.TIMES))
+        assertTrue(hourly.copy(noFixedDays = true).canLeave(SetupStep.TIMES))
     }
 
     @Test fun `times and today must be answered before going on`() {

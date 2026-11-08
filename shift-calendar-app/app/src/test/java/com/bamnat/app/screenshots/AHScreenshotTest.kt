@@ -179,6 +179,30 @@ class AHScreenshotTest : ScreenshotBase() {
         assertTrue(appears("이제 ‘(주)예시정밀’의 대표 주기가 됐어요!", exact = true))
     }
 
+    /**
+     * 1.38 통합 8차 [CYC-03]: a table put up from '우리 회사 근무표 올리기' (처음 제공) is seen at once by coworkers in 회사 찾기 and in
+     * the public list only after the review; the ask's way out does not say '내 달력' (it may not be in it).
+     */
+    @Test fun anUploadSaysThePublicListComesAfterTheReview() = shoot("1106b_ah_lead_made_upload", PHONE_393) {
+        val up = pick.copy(firstGiven = true)
+        dialog(LeadShare.Step.Ask(up))
+        assertTrue(appears("올리지 않을게요", exact = true))
+        dialog(LeadShare.Step.Made(up, "(주)예시정밀", "c1"))
+        // 1.38 통합 10차: a table put up says it was put up, not '대표 주기가 됐어요!'.
+        assertTrue(appears("‘(주)예시정밀’ 근무표를 올렸어요", exact = true))
+        assertTrue(gone("대표 주기가 됐어요", exact = false))
+        assertTrue(appears("지금 바로 맨 위에서 쓸 수 있어요", exact = false))
+        assertTrue(appears("공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요.", exact = true))
+        // Not in the public list before the review: the list is the reviewed file only.
+        assertTrue(com.bamnat.core.plaza.PublicCycles.search("(주)예시정밀").none { it.company == "(주)예시정밀" })
+    }
+
+    /** A row picked from the public list says nothing of a review. */
+    @Test fun aPublicRowSaysNoReview() = shoot("1106c_ah_lead_made_public", PHONE_393) {
+        dialog(LeadShare.Step.Made(pick, "(주)예시정밀", "c1"))
+        assertTrue(gone("검토 뒤", exact = false))
+    }
+
     @Test fun anotherLeadsSoTheSiteIsAsked() = shoot("1107_ah_lead_site", PHONE_393_NIGHT) {
         dialog(LeadShare.Step.NeedSite(pick, "(주)예시정밀", "주주휴휴야야휴휴"))
         assertTrue(appears("어느 사업장에서 일하세요?", exact = true))

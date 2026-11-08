@@ -21,6 +21,12 @@ data class PayWay(
     /** true 맞아요, false 달라요, null not said yet; [why] where it differs (order·time·pay·other). */
     val vote: Boolean? = null,
     val why: String? = null,
+    /**
+     * 1.39 [PAYP-04] (사용자 2026-11-07 "좋아요가 많은 급여정보를 사용했을때 급여탭에서 수정이 불가능하게하고 볼수도 없게"): a way put in from
+     * 1.39 on is someone else's: its calculation is neither shown nor changed on the pay screen, only the user's own amounts are.
+     * A way put in before 1.39 stays as it was (the user may have seen and changed it already; 결정 ①, 2026-11-07).
+     */
+    val shared: Boolean = false,
 )
 
 /**
@@ -65,12 +71,12 @@ class PayWayStore internal constructor(private val prefs: SharedPreferences) {
         runCatching {
             val o = JSONObject(s)
             PayWay(o.getString("companyId"), o.getString("company"), o.optString("dept"), o.getString("setup"),
-                if (o.has("vote")) o.getBoolean("vote") else null, o.optString("why").ifEmpty { null })
+                if (o.has("vote")) o.getBoolean("vote") else null, o.optString("why").ifEmpty { null }, shared = o.optBoolean("shared"))
         }.getOrNull()
     }
 
     private fun write(w: PayWay): String = JSONObject().put("companyId", w.companyId).put("company", w.company).put("dept", w.dept)
-        .put("setup", w.setup).apply { w.vote?.let { put("vote", it) }; w.why?.let { put("why", it) } }.toString()
+        .put("setup", w.setup).apply { w.vote?.let { put("vote", it) }; w.why?.let { put("why", it) }; if (w.shared) put("shared", true) }.toString()
 
     companion object {
         const val FILE = "pay_way"

@@ -25,25 +25,26 @@ class PublicCyclesTest {
     private val all = PublicCycles.all
 
     @Test fun everyRowOfTheResearchIsRead() {
-        assertEquals(154, all.size)
-        assertEquals(154, all.map { it.id }.toSet().size)
+        assertEquals(161, all.size)
+        assertEquals(161, all.map { it.id }.toSet().size)
         val f = RemoteFiles.bundled(RemoteFiles.CYCLES)!!
         assertEquals("cycles", f.kind)
         assertTrue(RemoteFiles.CYCLES in RemoteFiles.KINDS)
-        // The same 154 rows (148 of 2026-10-25 + 6 checked in 1.38 [CYC-01]) as the CSV the file was built from, column by column.
+        // The same 161 rows (148 of 2026-10-25 + 6 checked in 1.38 [CYC-01] + 7 [CYC-05]) as the CSV the file was built from, column by column.
         val csv = File("../tools/data/company-cycles.csv").readLines(Charsets.UTF_8).drop(1).filter { it.isNotBlank() }
-        assertEquals(154, csv.size)
+        assertEquals(161, csv.size)
         all.zip(csv).forEach { (c, line) -> assertTrue("${c.id} ${c.display}", line.startsWith(c.display.let { if (',' in it) "\"$it" else it })) }
     }
 
     @Test fun convertedAndFormOnlyCountsAreThePlans() {
         // 계획/1.26-AC-개발계획.md 2장: 36 spelled out, 28 filled with the usual order of a count, 84 형태만 (6 monthly rosters).
         // [CYC-01] 1.38 added 4 spelled out (관제·교정 변형 4부제·소방 당비비·서울교통공사), 1 usual (교정 4부제), 1 roster (병원).
-        assertEquals(40, all.count { it.orderState == OrderState.EXACT })
+        // [CYC-05] 1.38 added 5 spelled out (지구대·검역·세관·SR·대구 택시 8부제) and 2 형태만 (서울 구급대·서울 택시).
+        assertEquals(45, all.count { it.orderState == OrderState.EXACT })
         assertEquals(29, all.count { it.orderState == OrderState.USUAL })
-        assertEquals(85, all.count { it.orderState == OrderState.NONE })
+        assertEquals(87, all.count { it.orderState == OrderState.NONE })
         assertEquals(7, all.count { it.roster })
-        assertEquals(144, all.count { it.shifts.isNotEmpty() })
+        assertEquals(149, all.count { it.shifts.isNotEmpty() })
         all.forEach { c ->
             // Every working code of an order has a shift with times.
             c.codes.filter { it in "DENX" }.forEach { code -> assertTrue("${c.id} $code", c.shifts.any { it.code == code }) }
@@ -63,6 +64,21 @@ class PublicCyclesTest {
         val cctv = all.first { it.company == "광진구 CCTV 통합관제센터" }
         assertEquals("DNBO", cctv.codes)
         assertEquals(listOf("08:00", "18:00"), cctv.shifts.map { it.start.toString() })
+    }
+
+    @Test fun theRowsOfCyc05ReadAsTheirSources() {
+        // 경북매일 2020-02-20: 주간·야간·비번·휴무, 야간 17시~다음날 8시.
+        val police = all.first { it.company == "포항남부경찰서 상대지구대" }
+        assertEquals("DNBO", police.codes)
+        assertEquals(LocalTime.of(17, 0), police.shifts.first { it.code == 'N' }.start)
+        assertFalse(police.shifts.first { it.code == 'N' }.usual)
+        // 파이낸셜뉴스 2015-08-05: 24시간 일하면 이틀 쉼. 서울신문 2017-11-20: 세관은 24시간 근무 후 하루 쉼.
+        assertEquals("XBO", all.first { it.industry == "공항 검역" }.codes)
+        assertEquals("XB", all.first { it.industry == "세관" }.codes)
+        // 매일신문 2004-01-14: 8부제, 이레 일하고 하루 쉼. 서울 2인 1차는 순서 없음.
+        assertEquals("DDDDDDDO", all.first { it.company == "대구 법인택시" }.codes)
+        assertEquals(OrderState.NONE, all.first { it.company == "서울 법인택시" }.orderState)
+        assertEquals(2, all.count { it.industry == "택시" })
     }
 
     @Test fun ordersReadAsTheSourceSaysThem() {
@@ -106,7 +122,8 @@ class PublicCyclesTest {
         assertTrue("포스코 광양", PublicCycles.search("포스코 광양").let { r -> r.isNotEmpty() && r.all { "광양" in it.site } })
         // The form as written, with or without a space; a row moving to 4조2교대 (3조2교대 → 4조2교대 예정) is found too.
         val four = PublicCycles.search("4조 2교대")
-        assertEquals(43, four.count { it.formKey == "4조2교대" })
+        // [CYC-05] +3 in 1.38 (상대지구대·서울 구급대·SR).
+        assertEquals(46, four.count { it.formKey == "4조2교대" })
         assertTrue(four.all { it.formKey == "4조2교대" || "4조2교대" in PublicCycles.norm(it.form + it.display) })
         assertEquals(four, PublicCycles.search("4조2교대"))
         assertEquals(all.count { it.industry == "발전" }, PublicCycles.search("", industry = "발전").size)
@@ -115,6 +132,70 @@ class PublicCyclesTest {
         assertTrue(PublicCycles.search("없는회사이름").isEmpty())
         assertEquals("제조", PublicCycles.industries.first())
         assertEquals("4조2교대", PublicCycles.forms.first().first)
+    }
+
+    @Test fun industryGroupsGatherTheRowsAndSayTheirDays() {
+        // [CYC-09] Every row is in some group; most are in a named one, and a chip's rows are the search's.
+        val counts = com.bamnat.core.plaza.IndustryGroups.counts(all)
+        assertEquals(all.size, counts.sumOf { it.second })
+        val other = counts.firstOrNull { it.first == com.bamnat.core.plaza.IndustryGroups.OTHER }?.second ?: 0
+        assertTrue("그 밖의 업종 $other", other <= 5)
+        assertEquals(com.bamnat.core.plaza.IndustryGroups.OTHER, counts.last().first.takeIf { other > 0 } ?: com.bamnat.core.plaza.IndustryGroups.OTHER)
+        fun g(i: String) = com.bamnat.core.plaza.IndustryGroups.of(i).key
+        assertEquals("coast", g("해양경찰"))
+        assertEquals("police", g("경찰"))
+        assertEquals("semi", g("반도체 소재·화학"))
+        assertEquals("chem", g("화학·환경"))
+        assertEquals("steel", g("철강 물류"))
+        assertEquals("airport", g("공항 보안"))
+        assertEquals("maker", g("의료용품"))
+        assertEquals("hospital", g("요양병원"))
+        assertEquals("transit", g("택시"))
+        val fire = PublicCycles.search("", group = "fire")
+        assertEquals(all.count { it.industry == "소방" }, fire.size)
+        // [CYC-04] The days the law names, never on another date.
+        assertEquals("소방의 날", com.bamnat.core.plaza.IndustryGroups.dayOn("fire", LocalDate.of(2026, 11, 9))?.name)
+        assertEquals("경찰의 날", com.bamnat.core.plaza.IndustryGroups.dayOn("police", LocalDate.of(2027, 10, 21))?.name)
+        assertEquals(null, com.bamnat.core.plaza.IndustryGroups.dayOn("fire", LocalDate.of(2026, 11, 10)))
+        assertEquals(null, com.bamnat.core.plaza.IndustryGroups.dayOn("semi", LocalDate.of(2026, 11, 9)))
+        assertEquals(null, com.bamnat.core.plaza.IndustryGroups.dayOn(null, LocalDate.of(2026, 11, 9)))
+        assertTrue(com.bamnat.core.plaza.IndustryGroups.ALL.all { it.note.isNotBlank() })
+    }
+
+    @Test fun theOrderAsSaidFindsItsRows() {
+        // [CYC-10] 순서로 찾기: any day first, spaces and · ignored; a name is not an order.
+        val dnbo = PublicCycles.search("주야비휴")
+        assertTrue(dnbo.size >= 5)
+        assertTrue(dnbo.all { it.codes.length == 4 && PublicCycles.sameRotation(it.codes, "DNBO") })
+        assertEquals(dnbo.toSet(), PublicCycles.search("야 비 휴 주").toSet())
+        assertEquals(dnbo.toSet(), PublicCycles.search("주·야·비·휴").toSet())
+        assertTrue(PublicCycles.search("당비휴").any { it.industry == "공항 검역" })
+        // 012815b6 PC 1차: "당비비" is how 소방 says 당·비·휴 (a 비 after a 비 is a day off), so it finds the same rows.
+        val xbo = PublicCycles.search("당비비")
+        assertTrue(xbo.isNotEmpty())
+        assertEquals(PublicCycles.search("당비휴").toSet(), xbo.toSet())
+        assertTrue(xbo.any { it.group.key == "fire" })
+        assertTrue(PublicCycles.sameRotation("XBOO", "XBBB"))
+        assertTrue(PublicCycles.sameRotation("DNBO", "DNBB"))
+        assertFalse(PublicCycles.sameRotation("DNBO", "DDNB"))
+        assertEquals(null, PublicCycles.orderCodes("휴휴"))
+        assertEquals(null, PublicCycles.orderCodes("포스코"))
+        assertEquals("포스코", PublicCycles.search("ㅍㅅㅋ").first().company)
+        // An old source is marked by its year.
+        assertEquals(22, PublicCycles.yearsOld(all.first { it.company == "대구 법인택시" }, LocalDate.of(2026, 11, 6)))
+    }
+
+    @Test fun controlRoomVariantsAreAmongTheCandidates() {
+        // [CYC-08] 상황실·소방 변형: 4조1교대 당비비비·주당비휴, 3조2교대 주야비, 5조3교대 주주야비휴.
+        val duty = PublicCycles.provided("어느 상황실", "4조1교대")
+        assertEquals(listOf("XBOO", "DXBO", "XBO"), CycleOrders.candidates(duty).map { it.codes })
+        assertEquals("당비휴휴", CycleOrders.spoken("XBOO"))
+        assertTrue(CycleOrders.candidates(PublicCycles.provided("가나", "3조2교대")).any { it.codes == "DNB" })
+        assertTrue(CycleOrders.candidates(PublicCycles.provided("가나", "5조3교대")).any { it.codes == "DDNBO" })
+        assertTrue("4조1교대" in PublicCycles.PROVIDE_FORMS)
+        assertEquals("4조 1교대", PublicCycles.formName("4조1교대"))
+        // [CYC-06] No public row says its teams yet: the field is empty, not made up.
+        assertTrue(all.all { it.teams.isEmpty() })
     }
 
     @Test fun formOnlyRowsGetTheUsualOrdersOfTheirForm() {
@@ -130,6 +211,16 @@ class PublicCyclesTest {
         assertEquals("DNNO", CycleOrders.set("DDNO", 1, 'N'))
         assertEquals("DDNOO", CycleOrders.set("DDNO", 4, 'O'))
         assertEquals(listOf('D', 'N', 'O'), CycleOrders.choices(c, "DDOONNOO"))
+    }
+
+    /** 1.38 통합 11차: every row of the file has work to put in, even with no order and no time (병원이 근무표 짬). */
+    @Test fun everyRowHasWorkEvenWithoutAnOrder() {
+        all.forEach { c ->
+            val plan = PublicSetup.plan(c, c.codes)
+            assertTrue("${c.id} ${c.display}: only 휴무", plan.types.any { !it.isOff })
+        }
+        val ward = all.first { it.roster && it.shifts.isEmpty() && it.formKey == "3교대" }
+        assertEquals(listOf("주간", "오후", "야간", "휴무"), PublicSetup.plan(ward, "").types.map { it.name })
     }
 
     @Test fun aRowBecomesTheShiftsAndOrderOfACompanyFile() {

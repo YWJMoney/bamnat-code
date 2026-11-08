@@ -1,11 +1,15 @@
 // [COMM-04][ADMIN-01] The worker on a plain Node server with SQLite, for the app's round-trip test and
 // to try the developer app at http://localhost:8788/admin/ before deploying:
-//   ADMIN_PASSWORD=<10+ letters> npm run local -- 8788 [--seed] [--db local.sqlite]
+//   ADMIN_PASSWORD=<10+ letters> [SHARE_BASE_URL=http://127.0.0.1:8790] npm run local -- 8788 [--seed] [--market] [--db local.sqlite]
 // --seed fills it with made-up coworkers' reports, so every screen has something on it.
+// --market (1.39) puts the real 장터's works in too (seedMarket, below).
 import http from "node:http";
 import worker from "../src/index.js";
 import { d1 } from "./d1.mjs";
 import { report, setup } from "./helpers.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const port = Number(args.find((a) => /^\d+$/.test(a)) || 8788);
@@ -14,6 +18,9 @@ const env = { DB: d1(file), RATE_SALT: "local", ADMIN_PASSWORD: process.env.ADMI
 // 1.36 [SEC-11] Play Integrity on the PC: INTEGRITY_MODE=watch or require to see the app ask (no PLAY_SERVICE_ACCOUNT here, so
 // the server answers not_set and the app shows why it cannot post).
 if (process.env.INTEGRITY_MODE) env.INTEGRITY_MODE = process.env.INTEGRITY_MODE;
+// 1.39 PC 6차 (G7 F절): the share server's address, so 서버 상태 asks its /api/health (set SHARE_BASE_URL=http://127.0.0.1:8790).
+if (process.env.SHARE_BASE_URL) env.SHARE_BASE_URL = process.env.SHARE_BASE_URL;
+if (process.env.SHARE_ADMIN_TOKEN) env.SHARE_ADMIN_TOKEN = process.env.SHARE_ADMIN_TOKEN; // the share server started with the same value
 if (!env.ADMIN_PASSWORD) console.log("ADMIN_PASSWORD is not set: the developer app shows what is missing.");
 
 const send = (path, body, ip, method = "POST") => worker.fetch(new Request(`http://localhost:${port}${path}`, {
@@ -63,6 +70,8 @@ async function seed() {
     }), env);
   }
   await send("/api/reports", report(8, { company: "사아자물류", setup: odd, verified: true }), "10.0.0.8");
+  // 1.39 [ADM3-45] 같은 회사일까요?: 이름만 조금 다른 회사 하나(사람과 글 › 회사 맨 위에 짝으로 보여요).
+  await send("/api/reports", report(15, { company: "사아자물류 평택센터", setup: odd }), "10.0.0.15");
   if (login.ok) await seedAdmins(login.headers.get("set-cookie").split(";")[0]);
   // A way the app cannot set yet.
   await send("/api/reports", report(9, {
@@ -97,13 +106,38 @@ async function seed() {
     const day = kst(Date.now() - i * 864e5);
     const phones = 30 + ((i * 7) % 23) + (i < 29 ? 8 : 0);
     const newer = i < 10 ? Math.round(phones * 0.7) : 0;
-    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
-    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
+    await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
+    await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
     for (const [event, share] of [["open", 0.9], ["pay_view", 0.35], ["share_made", 0.08], ["plaza_apply", 0.05], ["inquiry", 0.02], ["backup", 0.1]]) {
       const n = Math.max(1, Math.round(phones * share));
-      await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
+      await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
     }
   }
+  // 1.39 [STAT2-02] 숫자 › 한눈에: 56 days of made-up 진입·머묾·회복 counts (shown once the 3.12 date is in 기능 관리 › 일정).
+  for (let i = 1; i <= 56; i++) {
+    const day = kst(Date.now() - i * 864e5);
+    const came = 3 + ((i * 5) % 7);
+    for (const [event, n] of [["life_new", came], ["life_d1", Math.round(came * 0.62)], ["life_d7", Math.round(came * 0.38)], ["life_d30", Math.round(came * 0.21)],
+      ["life_back7", i % 3 === 0 ? 2 : 1], ["life_back30", i % 5 === 0 ? 1 : 0]]) {
+      if (n) await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0', ?, ?, ?, 0)", day, event, n, n);
+    }
+  }
+  // 1.38 Phase 3 분석판: a few days of 팀·가게 events and made-up 팀·직원 요금제 purchases, so the card has something on it.
+  for (let i = 1; i <= 20; i++) {
+    const day = kst(Date.now() - i * 864e5);
+    for (const [event, n] of [["manage_open", 6], ["team_made", i % 4 === 0 ? 1 : 0], ["team_confirm", i % 3 === 0 ? 2 : 0], ["team_links", i % 3 === 0 ? 2 : 0],
+      ["ledger_closed", i % 7 === 0 ? 1 : 0], ["slip_sent", i % 7 === 0 ? 3 : 0], ["plan_view_team", 2], ["plan_view_staff", 1], ["plan_buy_tap", i % 2],
+      ["manage_hint_shown", 5], ["manage_hint_open", 1]]) {
+      if (n) await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.38.0', ?, ?, ?, ?)", day, event, n, n, n);
+    }
+  }
+  for (const [i, product, plan, trial, renew] of [[1, "bamnat_team", "c15-yearly", 1, 1], [2, "bamnat_team", "c15-monthly", 0, 1], [3, "bamnat_team", "c30-yearly", 0, 1],
+    [4, "bamnat_team", "c50-monthly", 0, 0], [5, "bamnat_staff", "c5-yearly", 0, 1], [6, "bamnat_staff", "c10-monthly", 0, 1]]) {
+    await run(`INSERT OR IGNORE INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
+      VALUES (?, ?, 'seed', ?, ?, 'ACTIVE', ?, ?, ?, ?, ?)`, `seed-sub-${i}`, `seed-device-s${i}`, product, plan, Date.now() + 20 * 864e5, trial, renew, Date.now() - i * 2 * 864e5, Date.now());
+  }
+  await run(`INSERT OR IGNORE INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product)
+    VALUES ('seed-pass-1', 'seed-device-p1', '', 'ACTIVE', ?, ?, ?, 'bamnat_team_pass_15')`, Date.now() - 5 * 864e5, Date.now(), Date.now());
   if (login.ok) await seedVersions(login.headers.get("set-cookie").split(";")[0], a);
   // [ADMUX-14] Four weeks of questions with their first answers and the askers' word, and the plaza spread over them.
   const kinds = ["bug", "question", "idea", "bug", "other"];
@@ -112,8 +146,10 @@ async function seed() {
     const id = `seedQ${String(i).padStart(17, "0")}`;
     const kind = kinds[i % kinds.length];
     const app = i < 8 ? "1.24.0 (35)" : "1.23.0 (34)";
-    await run(`INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
+    // A second --seed on a kept database (--db): the made-up rows are there already, so they are kept, not added twice.
+    const made = await run(`INSERT OR IGNORE INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
       id, `seed-device-q${i}`, kind, JSON.stringify({ app }), at, at, i % 4 === 0 ? -1 : i % 3 === 0 ? null : 1);
+    if (!made.meta?.changes) continue;
     await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, `지난 문의 ${i + 1}`, at);
     await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', '확인했어요', 'owner', ?)", id, at + ((i * 97) % 600 + 20) * 60e3);
   }
@@ -123,7 +159,7 @@ async function seed() {
     await run("INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", a.company.id, a.setup, `seed-device-u${i}`, Date.now() - (i % 25 + 1) * 864e5);
   }
   // [ADMUX-16] A few requests the server could not answer.
-  for (const i of [3, 11, 12]) await run("INSERT INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
+  for (const i of [3, 11, 12]) await run("INSERT OR IGNORE INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
   await seedRecipes(run);
   console.log("seeded: 5 market works without days (알바 2·현장·가게·교대), 3 자랑 글 with a card, 이달의 주제 for 알바·가게·교대, 예시정밀 v1·v2 and a third version waiting, 2 waiting elsewhere, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 26 questions, 56 days of usage");
 }
@@ -229,7 +265,107 @@ async function seedAdmins(cookie) {
   await asOwner("/invites", { email: "seojin@example.com", perms: reviewer, note: "문의 답변" });
 }
 
-if (args.includes("--seed")) await seed();
+// 1.38 [ADM3-36] PC 13차: --seed on a --db file that already has the examples does not add them again.
+async function seeded() {
+  try {
+    return Boolean((await env.DB.prepare("SELECT COUNT(*) AS n FROM reports").first())?.n);
+  } catch {
+    return false;
+  }
+}
+if (args.includes("--seed")) {
+  if (await seeded()) console.log("--seed: this --db file already has the examples, so none are added.");
+  else await seed();
+}
+
+/**
+ * 1.39 3차 (PC a483ca15: 시험 서버에 장터 작품이 다섯 개뿐이라 장터 로딩·세 구간을 못 봤어요): --market puts in the works made for the
+ * real 장터 (1.36 출시 작품, 1.38 가계부 틀·스튜디오 작품·옛 작품 새 판), opens each batch and hides the ones 1.38 took down, so the
+ * test 장터 looks like the real one. The files are the ones tools/market-seed.mjs writes: market/ beside package.json (the PC zip),
+ * else docs/recipes/ in the repo. Needs ADMIN_PASSWORD. A kept --db that has them already gets none twice.
+ */
+async function seedMarket() {
+  const here = fileURLToPath(new URL("../", import.meta.url));
+  const find = (f) => [join(here, "market", f), join(here, "../../docs/recipes", f)].find((x) => existsSync(x));
+  const login = await worker.fetch(new Request(`http://localhost:${port}/api/admin/login`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.30" },
+    body: JSON.stringify({ password: env.ADMIN_PASSWORD }),
+  }), env);
+  if (!login.ok) return console.log("--market: ADMIN_PASSWORD가 있어야 장터 작품을 넣어요.");
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const admin = (path, body) => worker.fetch(new Request(`http://localhost:${port}/api/admin${path}`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie }, body: JSON.stringify(body),
+  }), env);
+  const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes").first())?.n ?? 0;
+  if (have > 100) return console.log(`--market: 이 --db에는 작품이 이미 ${have}개 있어서 더 넣지 않아요.`);
+  const said = [];
+  for (const f of ["market-136.json", "market-138.json", "market-138-studio.json", "market-138-refresh.json", "market-139.json"]) {
+    const at = find(f);
+    if (!at) { said.push(`${f} 없음`); continue; }
+    const entries = JSON.parse(readFileSync(at, "utf8"));
+    let ok = 0;
+    for (const e of entries) {
+      const r = await admin("/recipes", e);
+      if (r.status < 300) ok++;
+      else console.log(`--market 못 넣음 ${e.recipe?.title}: ${r.status} ${await r.text()}`);
+    }
+    for (const batch of new Set(entries.map((e) => e.batch).filter(Boolean))) await admin("/recipes/release", { batch });
+    said.push(`${f} ${ok}개`);
+  }
+  // 1.38 [STM-09]·1.39 판 정리: 각 판의 정리 계획대로 내려요(지우지 않음, 넣은 분은 코드로 계속 열어요).
+  for (const [f, note] of [["market-138-refresh-plan.json", "1.38 장터 정리"], ["market-139-refresh-plan.json", "1.39 장터 정리"]]) {
+    const plan = find(f);
+    if (!plan) continue;
+    const hide = JSON.parse(readFileSync(plan, "utf8")).hide ?? [];
+    // 항목의 belowApp(그 판 미만 앱에는 계속 보임)마다 한 번씩.
+    for (const below of new Set(hide.map((x) => x.belowApp ?? null))) {
+      const part = hide.filter((x) => (x.belowApp ?? null) === below);
+      const titles = part.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
+      const codes = part.map((x) => x.code).filter(Boolean);
+      for (let i = 0; i < Math.max(titles.length, codes.length); i += 1200) {
+        const r = await admin("/recipes/hide-titles", { titles: titles.slice(i, i + 1200), codes: codes.slice(i, i + 1200), dry: false, note,
+          ...(below ? { belowApp: below } : {}) });
+        const out = await r.json().catch(() => ({}));
+        said.push(`${note} ${out.hidden ?? 0}개 내림${below ? `(앱 ${below} 미만에는 보임)` : ""}${out.missing?.length ? `(못 찾음 ${out.missing.length})` : ""}`);
+      }
+    }
+  }
+  const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
+  console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);
+  await seedMaterials(here, admin);
+}
+
+/**
+ * 1.39 4차 (입혀 보기 스레드: 3차 PC '수 옆 회색 네모'는 시험 서버에 스튜디오 재료가 없어 재료 사진을 쓰는 작품이 빈 자리로 그려진 것):
+ * --market also puts in the studio materials tools/materials/make.py drew (목록.json + webp), as the real server has them: opened,
+ * icons all free, each background pack's first third free (사용자 11-06 재료 잠금). Files: materials/ beside package.json (the PC zip),
+ * else tools/materials/out in the repo.
+ */
+async function seedMaterials(here, admin) {
+  const dir = [join(here, "materials"), join(here, "../../tools/materials/out")].find((x) => existsSync(join(x, "목록.json")));
+  if (!dir) return console.log("--market: 스튜디오 재료(materials/목록.json)가 없어 넣지 않아요.");
+  const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM studio_materials").first().catch(() => null))?.n ?? 0;
+  if (have > 0) return console.log(`--market: 이 --db에는 스튜디오 재료가 이미 ${have}개 있어요.`);
+  const list = JSON.parse(readFileSync(join(dir, "목록.json"), "utf8")).items;
+  const b64 = (f) => readFileSync(join(dir, f)).toString("base64");
+  let ok = 0;
+  for (let i = 0; i < list.length; i += 25) {
+    const items = list.slice(i, i + 25).map((m) => ({
+      kind: m.kind, pack: m.pack, name: m.name, ord: m.ord, webp: b64(m.file),
+      ...(m.thumb ? { thumb: b64(m.thumb) } : {}), ...(Number.isFinite(m.light) ? { light: m.light } : {}),
+    }));
+    const r = await admin("/recipes/materials", { items });
+    if (r.status < 300) ok += items.length;
+    else console.log(`--market 재료 못 넣음 ${i}~: ${r.status} ${await r.text()}`);
+  }
+  for (const pack of new Set(list.map((m) => m.pack))) {
+    const icon = list.find((m) => m.pack === pack)?.kind === "icon";
+    await admin("/recipes/materials/free", { pack, mode: icon ? "all" : "third" });
+  }
+  await admin("/recipes/materials/state", { state: "ok", all: true });
+  console.log(`--market: 스튜디오 재료 ${ok}개(아이콘 모두 무료, 배경은 묶음마다 앞 3분의 1 무료)`);
+}
+if (args.includes("--market")) await seedMarket();
 
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.
@@ -251,7 +387,9 @@ http.createServer(async (req, res) => {
   // 1.36 [GRW-02][GRW-03][GRW-05] POST /__test/tick: the hourly work now (스튜디오 요구 묶음 → 장터, 승격 사다리), so a phone test needn't wait.
   if (testClock && req.method === "POST" && req.url.startsWith("/__test/tick")) {
     const waits = [];
-    await worker.scheduled({ cron: "17 * * * *", scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
+    // 1.38 [ADM3-05] ?cron=5 runs the five-minute work instead (보류가 끝난 Claude 답 보내기).
+    const cron = new URL(req.url, "http://x").searchParams.get("cron") === "5" ? "*/5 * * * *" : "17 * * * *";
+    await worker.scheduled({ cron, scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
     await Promise.all(waits);
     res.writeHead(204);
     res.end();

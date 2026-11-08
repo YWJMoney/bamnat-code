@@ -149,8 +149,11 @@ internal fun rotationOf(snapshot: ScheduleSnapshot, today: LocalDate): WorkPatte
         ?: snapshot.patterns.lastOrNull { it is WorkPattern.Rotation } as? WorkPattern.Rotation
 
 /** [CREW-02] The roster on screen: the saved one put back on my calendar, or one guessed from the rotation. */
-internal fun rosterFor(saved: TeamRoster?, rotation: WorkPattern.Rotation): TeamRoster =
-    (saved ?: TeamRoster.suggest(rotation)).anchored(rotation.steps.size)
+internal fun rosterFor(saved: TeamRoster?, rotation: WorkPattern.Rotation, off: Set<Long> = emptySet()): TeamRoster =
+    (saved ?: TeamRoster.suggest(rotation, off = off)).anchored(rotation.steps.size)
+
+/** 1.39 PC c0ca3d9f: the day-off kinds of [snap] (휴무·오프·비번), no one's shift when the order is split into 조. */
+internal fun offIds(snap: ScheduleSnapshot): Set<Long> = snap.shiftTypes.filter { it.isOff }.mapTo(HashSet()) { it.id }
 
 /**
  * [CREW-08] 1.31 N1 (상세리뷰 N1 '우리 회사 오늘 근무'): today's line for every team of [snap]'s rotation, mine first:
@@ -159,7 +162,7 @@ internal fun rosterFor(saved: TeamRoster?, rotation: WorkPattern.Rotation): Team
  */
 internal fun teamsTodayLine(snap: ScheduleSnapshot, saved: TeamRoster?, today: LocalDate): String? {
     val rotation = rotationOf(snap, today) ?: return null
-    val roster = rosterFor(saved, rotation)
+    val roster = rosterFor(saved, rotation, offIds(snap))
     if (roster.teams.size < 2 || !rotation.covers(today)) return null
     val ordered = listOf(roster.mine) + roster.teams.filterNot { it == roster.mine }
     return ordered.joinToString(" · ") { team ->
@@ -172,7 +175,7 @@ private enum class TeamsView(val label: String) { WEEK("2주"), MONTH("한 달")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Unit, startDay: LocalDate? = null) {
+fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Unit, startDay: LocalDate? = null, onOpenLeader: (() -> Unit)? = null) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val rosters by vm.rosters.collectAsStateWithLifecycle()
     val rests by vm.rest.collectAsStateWithLifecycle()
@@ -187,6 +190,8 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
             title = { Text("모든 조") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             actions = {
+                // 1.38 [P3-02] The leader's own team roster, once `team.leader` is on.
+                if (onOpenLeader != null) TextButton(onClick = onOpenLeader) { Text("내 팀 짜기") }
                 if (snapshot?.let { rotationOf(it, today) } != null) {
                     TextButton(onClick = { editing = true }) {
                         Icon(Icons.Outlined.Tune, null, Modifier.padding(end = 4.dp)); Text("조 설정")
@@ -209,7 +214,7 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
         // [J133-46] Stepping past the month's last day turns the table's month with it.
         LaunchedEffect(picked) { picked?.let { if (view == TeamsView.MONTH && YearMonth.from(it) != month) month = YearMonth.from(it) } }
         val saved = rosters[vm.calendarId]
-        val roster = remember(saved, rotation) { rosterFor(saved, rotation) }
+        val roster = remember(saved, rotation, snap.shiftTypes) { rosterFor(saved, rotation, offIds(snap)) }
         val guessed = saved == null
         val restMinutes = rests[vm.calendarId] ?: CoverFinder.DEFAULT_REST_MINUTES
         BoxWithConstraints(Modifier.padding(padding).fillMaxSize()) {
@@ -280,7 +285,7 @@ fun TeamsPanel(calendarId: String, snap: ScheduleSnapshot, month: YearMonth, sel
     val rests by vm.rest.collectAsStateWithLifecycle()
     val today = rememberToday()
     val rotation = rotationOf(snap, today) ?: return
-    val roster = remember(rosters[calendarId], rotation) { rosterFor(rosters[calendarId], rotation) }
+    val roster = remember(rosters[calendarId], rotation, snap.shiftTypes) { rosterFor(rosters[calendarId], rotation, offIds(snap)) }
     var shown by rememberSaveable(month) { mutableStateOf(month) }
     var picked by rememberSaveable(selected, stateSaver = DateSaver) { mutableStateOf<LocalDate?>(null) }
     Column(modifier) {

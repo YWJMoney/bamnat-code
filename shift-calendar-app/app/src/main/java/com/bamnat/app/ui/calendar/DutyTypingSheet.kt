@@ -39,10 +39,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -143,21 +141,25 @@ fun DutyTypingPanel(
     guard: TypingGuard = remember { TypingGuard() },
 ) {
     val types = snap.shiftTypes
+    // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): no key for a kind put away ('안 쓰는 종류'); one this month already has stays.
+    val folded = com.bamnat.app.ui.shifts.foldedHere()
+    val keyTypes = remember(types, folded, initial) {
+        val inMonth = initial.values.mapNotNull { (it as? ShiftOverride.Shift)?.shiftTypeId }.toSet()
+        types.filter { it.id !in folded || it.id in inMonth }
+    }
     val offType = types.firstOrNull { it.isOff }
-    // What each day holds now; typed days are kept apart so only they are saved. [CAL-30] Kept through a
-    // fold or a turn of the phone (I 리뷰 P12): a whole month typed must never vanish with the configuration.
-    val typed = rememberSaveable(month, saver = TypedSaver) { mutableStateMapOf<LocalDate, ShiftOverride>().apply { putAll(initial) } }
-    val toCheck = rememberSaveable(month, saver = DatesSaver) { mutableStateListOf<LocalDate>().apply { addAll(doubtful.filter { YearMonth.from(it) == month }.sorted()) } }
-    var cursor by rememberSaveable(month) {
-        mutableIntStateOf(toCheck.firstOrNull()?.dayOfMonth ?: (initial.keys.maxOfOrNull { it.dayOfMonth } ?: 0).plus(1).coerceAtMost(month.lengthOfMonth()))
-    }
-    // [CAL-36] Each key and each copy can be taken back, a step at a time (I 리뷰 I8).
-    val history = remember(month) { mutableStateListOf<Map<LocalDate, ShiftOverride>>() }
-    fun checkpoint() {
-        history.add(typed.toMap())
-        if (history.size > MAX_UNDO) history.removeAt(0)
-    }
     val days = month.lengthOfMonth()
+    // [EASE-13] 1.38: the keypad's rules are core's [PaintPad] (the same pad the leader's team roster paints with, P3-02).
+    // Typed days are kept apart so only they are saved. [CAL-30] Kept through a fold or a turn of the phone (I 리뷰 P12):
+    // a whole month typed must never vanish with the configuration. [CAL-36] Each key and each copy is one step back.
+    var pad by rememberSaveable(month, stateSaver = PadSaver) {
+        mutableStateOf(com.bamnat.core.imports.PaintPad.open(days,
+            initial.filterKeys { YearMonth.from(it) == month }.mapKeys { it.key.dayOfMonth },
+            doubtful.filter { YearMonth.from(it) == month }.map { it.dayOfMonth }.toSet()))
+    }
+    val typed: Map<LocalDate, ShiftOverride> = remember(pad.cells, month) { pad.cells.mapKeys { month.atDay(it.key) } }
+    val toCheck: List<LocalDate> = pad.toCheck.map(month::atDay)
+    val cursor = pad.cursor
     // [NAV-04] Typed days (a photo's read ones too) are asked about before they go; nothing typed closes at once.
     androidx.compose.runtime.SideEffect { guard.typed = typed.size }
     androidx.activity.compose.BackHandler(enabled = typed.isNotEmpty()) { guard.asking = true }
@@ -175,15 +177,8 @@ fun DutyTypingPanel(
         ShiftOverride.None -> snap.resolver.patternOn(date)?.shiftTypeIdOn(date)?.let(snap.typesById::get)
         null -> snap.resolver.resolve(date).shiftType
     }
-    fun put(o: ShiftOverride) {
-        checkpoint()
-        val date = month.atDay(cursor)
-        typed[date] = o
-        val wasDoubt = toCheck.remove(date)
-        // [NURS-04] Fixing the photo's doubtful days: on to the next of them, else the next day.
-        val next = if (wasDoubt) toCheck.firstOrNull { it.isAfter(date) } ?: toCheck.firstOrNull() else null
-        if (next != null) cursor = next.dayOfMonth else if (cursor < days) cursor++
-    }
+    // [NURS-04] Fixing the photo's doubtful days: on to the next of them, else the next day ([PaintPad.put]).
+    fun put(o: ShiftOverride) { pad = pad.put(o) }
     // The days around the month count too: a night on the 31st needs days off on the 1st and 2nd.
     val checked = (-2..days + 2).map { i -> month.atDay(1).plusDays(i - 1L) }.map { it to shiftOf(it) }
     val warnings = DutyCheck.check(checked, rules).filter { YearMonth.from(it.date) == month }
@@ -205,13 +200,11 @@ fun DutyTypingPanel(
                 Text("사진에서 확실하지 않은 칸 ${toCheck.size}개가 남았어요. 노란 칸을 근무표와 맞춰 눌러 주세요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
             }
-            MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet(), weekStart) { cursor = it }
+            MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet(), weekStart) { pad = pad.tap(it) }
             // [ROST-08] Sideways, so three buttons never squeeze under a big font.
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (lastMonth.isNotEmpty()) OutlinedButton(onClick = {
-                    checkpoint()
-                    typed.putAll(lastMonth)
-                    cursor = days
+                    pad = pad.putAll(lastMonth.mapKeys { it.key.dayOfMonth })
                 }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.ContentCopy, null)
                     Text(" ${previous.monthValue}월 그대로", maxLines = 1)
@@ -219,26 +212,20 @@ fun DutyTypingPanel(
                 // [ROST-08] 이 순서 반복: D D E E N N O O typed, the same order to the month's end (리뷰 개선 다).
                 val rest = com.bamnat.core.imports.MonthFill.repeat(typed.filterKeys { YearMonth.from(it) == month }.mapKeys { it.key.dayOfMonth }, cursor, days)
                 if (rest != null) OutlinedButton(onClick = {
-                    checkpoint()
-                    rest.forEach { (d, o) -> typed[month.atDay(d)] = o }
-                    cursor = days
+                    pad = pad.putAll(rest)
                 }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.Repeat, null)
                     Text(" 이 순서 반복", maxLines = 1)
                 }
                 Spacer(Modifier.width(4.dp))
-                TextButton(onClick = {
-                    val back = history.removeAt(history.lastIndex)
-                    typed.clear()
-                    typed.putAll(back)
-                }, enabled = history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
+                TextButton(onClick = { pad = pad.undo() }, enabled = pad.canUndo, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null)
                     Text(" 되돌리기")
                 }
             }
             // The keypad: every kind of day, then back-to-pattern and moving the mark.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                types.forEach { t ->
+                keyTypes.forEach { t ->
                     FilledTonalButton(onClick = { put(ShiftOverride.Shift(t.id)) },
                         modifier = Modifier.heightIn(min = 52.dp).semantics { contentDescription = "${t.name} 넣기" }) {
                         ShiftBadge(t, size = 22.dp, outlined = t.isOff)
@@ -250,16 +237,27 @@ fun DutyTypingPanel(
                     Icon(Icons.Filled.Autorenew, null)
                     Text(" ${snap.backWord}")
                 }
+                // [EASE-13] ✕ 지우기 (the day as it was, and on) and » 건너뛰기 (on, the day untouched), beside the keys.
+                OutlinedButton(onClick = { pad = pad.erase() }, enabled = typed.containsKey(month.atDay(cursor)) || month.atDay(cursor) in toCheck,
+                    modifier = Modifier.heightIn(min = 52.dp).semantics { contentDescription = "${month.monthValue}월 ${cursor}일 넣은 것 지우기" }) {
+                    Text("✕ 지우기", maxLines = 1)
+                }
+                OutlinedButton(onClick = { pad = pad.skip() }, enabled = cursor < days || toCheck.size > 1,
+                    modifier = Modifier.heightIn(min = 52.dp).semantics { contentDescription = "${cursor}일 건너뛰기" }) {
+                    Text("» 건너뛰기", maxLines = 1)
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { if (cursor > 1) cursor-- }) {
+                TextButton(onClick = { pad = pad.step(-1) }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null); Text("앞 날")
                 }
-                TextButton(onClick = { if (cursor < days) cursor++ }) {
+                TextButton(onClick = { pad = pad.step(1) }) {
                     Text("다음 날"); Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { checkpoint(); typed.remove(month.atDay(cursor)) }, enabled = typed.containsKey(month.atDay(cursor))) { Text("이 날 넣은 것 빼기") }
+                // [EASE-15] What the photo's reading needed: "사진에서 3칸 고쳤어요".
+                if (doubtful.isNotEmpty() && pad.fixedCount > 0) Text("사진에서 ${pad.fixedCount}칸 고쳤어요",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (warnings.isNotEmpty()) {
                 Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp)).padding(12.dp),
@@ -283,7 +281,25 @@ fun DutyTypingPanel(
     }
 }
 
-private const val MAX_UNDO = 60
+/** [EASE-13] The pad as numbers, through a fold or a turn: its cells, mark and days to check (its undo steps start again). */
+internal val PadSaver = androidx.compose.runtime.saveable.Saver<com.bamnat.core.imports.PaintPad<ShiftOverride>, List<Long>>(
+    save = { p ->
+        listOf(p.days.toLong(), p.cursor.toLong(), p.cells.size.toLong()) + p.cells.flatMap { (d, o) -> listOf(d.toLong(), overrideCode(o)) } +
+            listOf(p.doubtful.size.toLong()) + p.doubtful.map { it.toLong() } +
+            listOf(p.firstDoubtful.size.toLong()) + p.firstDoubtful.map { it.toLong() } +
+            listOf(p.start.size.toLong()) + p.start.flatMap { (d, o) -> listOf(d.toLong(), overrideCode(o)) }
+    },
+    restore = { l ->
+        var i = 3
+        fun pairs(n: Int) = (0 until n).associate { l[i + it * 2].toInt() to overrideOf(l[i + it * 2 + 1]) }.also { i += n * 2 }
+        fun ints(n: Int) = (0 until n).map { l[i + it].toInt() }.toSet().also { i += n }
+        val cells = pairs(l[2].toInt())
+        val doubt = ints(l[i++].toInt())
+        val first = ints(l[i++].toInt())
+        val start = pairs(l[i++].toInt())
+        com.bamnat.core.imports.PaintPad(l[0].toInt(), cells, l[1].toInt(), doubt, first, start)
+    },
+)
 
 /** [CAL-30] A typed day as one number: a shift's id, −1 for a day off, −2 for back to the pattern. */
 internal fun overrideCode(o: ShiftOverride): Long = when (o) {
@@ -297,16 +313,6 @@ internal fun overrideOf(code: Long): ShiftOverride = when (code) {
     -2L -> ShiftOverride.None
     else -> ShiftOverride.Shift(code)
 }
-
-internal val TypedSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<LocalDate, ShiftOverride>, Long>(
-    save = { m -> m.flatMap { (d, o) -> listOf(d.toEpochDay(), overrideCode(o)) } },
-    restore = { l -> mutableStateMapOf<LocalDate, ShiftOverride>().apply { l.chunked(2).forEach { (d, c) -> put(LocalDate.ofEpochDay(d), overrideOf(c)) } } },
-)
-
-internal val DatesSaver = listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<LocalDate>, Long>(
-    save = { l -> l.map { it.toEpochDay() } },
-    restore = { l -> mutableStateListOf<LocalDate>().apply { addAll(l.map(LocalDate::ofEpochDay)) } },
-)
 
 @Composable
 private fun MonthCells(

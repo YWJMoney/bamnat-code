@@ -8,6 +8,62 @@
     "freeFeatures": [],
     "adQuietDays": 3,
     "trialAskDays": 7,
+    "workPlans": {
+      "team": [
+        {
+          "cap": 15,
+          "monthly": 7900,
+          "yearly": 47000,
+          "pass": 54000
+        },
+        {
+          "cap": 30,
+          "monthly": 9900,
+          "yearly": 59000,
+          "pass": 68000
+        },
+        {
+          "cap": 50,
+          "monthly": 14900,
+          "yearly": 89000,
+          "pass": 102000
+        },
+        {
+          "cap": 100,
+          "monthly": 19900,
+          "yearly": 119000,
+          "pass": 137000
+        }
+      ],
+      "staff": [
+        {
+          "cap": 5,
+          "monthly": 9900,
+          "yearly": 59000,
+          "pass": 68000
+        },
+        {
+          "cap": 10,
+          "monthly": 14900,
+          "yearly": 89000,
+          "pass": 102000
+        },
+        {
+          "cap": 20,
+          "monthly": 24900,
+          "yearly": 149000,
+          "pass": 171000
+        },
+        {
+          "cap": 50,
+          "monthly": 49900,
+          "yearly": 299000,
+          "pass": 344000
+        }
+      ],
+      "freeStaff": 3,
+      "freeTeamMonths": 1
+    },
     "notices": [],
     "off": [
       "PLAZA_WRITE"
@@ -81,7 +137,7 @@
       {
         "version": "3.1",
         "posted": "2026-10-27",
-        "effective": "2026-11-10",
+        "effective": "2026-11-12",
         "heldUntil": "2026-11-24"
       },
       {
@@ -129,17 +185,21 @@
       {
         "version": "3.9",
         "posted": "2026-10-31",
-        "effective": "2026-11-10",
+        "effective": "2026-11-12",
         "heldUntil": "2026-11-29"
       },
       {
         "version": "3.11",
-        "posted": "2026-11-04",
-        "effective": "2026-11-10",
-        "heldUntil": "2026-12-04"
+        "posted": "2026-11-07",
+        "effective": "2026-11-07",
+        "heldUntil": "2026-12-07"
       }
     ],
-    "serverTime": "2026-11-12T03:00:00.000Z"
+    "serverTime": "2026-11-12T03:00:00.000Z",
+    "update": {
+      "urgentMin": 0,
+      "flexibleMin": 0
+    }
   },
   "ownerPasses": {
     "until": null,

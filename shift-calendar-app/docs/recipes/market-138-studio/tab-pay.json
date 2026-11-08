@@ -1,0 +1,3915 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 수당 오로라",
+   "summary": "목표 급여를 넘으면 상자가 금빛, 야간 많은 달은 수당 줄이 굵게",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘초록 오로라’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요). 이달 야간이 많으면 야간 수당 줄이 굵게 보여요.\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n· 야간 많은 달 수당 줄\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF08101C|ph:3166212c0c75fc16|dm:15|cd:FF171B22|ik:FFF0F0F5|ac:FF4588D6|ft:gowundodum",
+     "pay": "SHIFT~tt:xl|pl:FF171B22|mn:FF4588D6|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowundodum",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF4588D6,FF171B22",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "orbitron"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "57bb392916950948",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278586393,
+    "b": 4282747094,
+    "dir": 2,
+    "emoji": "🌌"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3500000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "교대 급여 별밤",
+   "summary": "별밤 배경, 근무 종류별 시간 카드 먼저",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘별 쏟아지는 밤’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 야간이 많으면 야간 수당 줄이 굵게 보여요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 야간 많은 달 수당 줄\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF0F0C22|ph:4b2f13107c7e92ad|dm:15|cd:FF1B1926|ik:FFF0F0F5|ac:FF897BD3|ft:nunito",
+     "pay": "SHIFT~tt:xl|pl:FF1B1926|mn:FF897BD3|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nunito",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF897BD3,FF1B1926",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "poppins"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "99d84aa24ed52c62",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278847764,
+    "b": 4287200211,
+    "dir": 2,
+    "emoji": "⭐"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "209시간 경고판",
+   "summary": "이달 209시간을 넘으면 급여 상자에 주황 테두리",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘한밤 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF070910|ph:04032c8e4b588944|dm:15|cd:FF16171C|ik:FFF0F0F5|ac:FF7283DF|ft:ibmplexsanskr",
+     "pay": "SHIFT~tt:xl|pl:FF16171C|mn:FF7283DF|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF16171C|mn:FF7283DF|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "ibmplexsanskr",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF7283DF,FF16171C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "bebasneue"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "d4b28e8c839d985d",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278387724,
+    "b": 4285694943,
+    "dir": 2,
+    "emoji": "⚠️"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 달빛 명세",
+   "summary": "명조 글씨로 정갈하게, 야간 수당 줄 강조",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘초승달 밤’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 야간이 많으면 야간 수당 줄이 굵게 보여요.\n적용하면 바뀌는 것:\n· 야간 많은 달 수당 줄\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF171633|ph:68ec273aa80e3f92|dm:15|cd:FF1F1F30|ik:FFF0F0F5|ac:FF837ACC|ft:nanummyeongjo",
+     "pay": "SHIFT~tt:xl|pl:FF1F1F30|mn:FF837ACC|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nanummyeongjo",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF837ACC,FF1F1F30",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "playfair"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "8f37047bac96d019",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279309349,
+    "b": 4286806732,
+    "dir": 2,
+    "emoji": "🌙"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "병동 급여 노트",
+   "summary": "밤 창 물방울, 이달·지난달 견주기 카드",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘밤 창 물방울’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 야간이 많으면 야간 수당 줄이 굵게 보여요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 야간 많은 달 수당 줄\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF181C2A|ph:86c5a249602d1edd|dm:15|cd:FF20222A|ik:FFF0F0F5|ac:FF6E85D1|ft:gowundodum",
+     "pay": "SHIFT~tt:xl|pl:FF20222A|mn:FF6E85D1|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowundodum",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF6E85D1,FF20222A",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3200000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "c022a999f77a1251",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280164650,
+    "b": 4285433297,
+    "dir": 2,
+    "emoji": "🩺"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3200000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "공장 3교대 급여",
+   "summary": "비 오는 도시, 근무 종류별 카드와 209시간 경고",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘비 오는 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요. 이달 야간이 많으면 야간 수당 줄이 굵게 보여요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n· 야간 많은 달 수당 줄\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF0E171C|ph:9310607e0206be50|dm:15|cd:FF1A2023|ik:FFF0F0F5|ac:FF4091A8|ft:notosanskr",
+     "pay": "SHIFT~tt:xl|pl:FF1A2023|mn:FF4091A8|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "notosanskr",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF4091A8,FF1A2023",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "oswald"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "f7195a51c1a7ae96",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280234036,
+    "b": 4282421672,
+    "dir": 2,
+    "emoji": "🏭"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "소방 당번 급여",
+   "summary": "해넘이 능선, 굵은 숫자 급여 상자",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘주황 해넘이’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF4B2436|ph:25ea63906c71fa4b|dm:15|cd:FF3C2732|ik:FFF0F0F5|ac:FFF5848C|ft:notosanskr",
+     "pay": "SHIFT~tt:xl|pl:FF3C2732|mn:FFF5848C|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "notosanskr",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFF5848C,FF3C2732",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "anton"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 4000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "1b71af14d2e9acf7",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4283573584,
+    "b": 4294280332,
+    "dir": 2,
+    "emoji": "🚒"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 4000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "교대 연간 흐름",
+   "summary": "한 해 급여 흐름과 세 달 견주기",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘한밤 푸른 산’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF111A2E|ph:586918394b2b3567|dm:15|cd:FF1C212D|ik:FFF0F0F5|ac:FF6386D5|ft:gowundodum",
+     "pay": "SHIFT~tt:xl|pl:FF1C212D|mn:FF6386D5|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,year,three"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowundodum",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF6386D5,FF1C212D",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "502467f1d754a6ff",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279179312,
+    "b": 4284712661,
+    "dir": 2,
+    "emoji": "📈"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3500000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "금빛 월급 대시보드",
+   "summary": "목표 급여 넘으면 금빛, 비교·연간 카드",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘금빛 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요). 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF15100C|ph:1c38771d38b072d5|dm:15|cd:FF1E1B19|ik:FFF0F0F5|ac:FFB57C33|ft:montserrat",
+     "pay": "DAY~tt:xl|pl:FF1E1B19|mn:FFB57C33|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "compare,year,trend"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "montserrat",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFB57C33,FF1E1B19",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "playfair"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "6163e50ff18238c5",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279832581,
+    "b": 4290083891,
+    "dir": 2,
+    "emoji": "💼"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3500000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야근 수당 확인",
+   "summary": "209시간을 넘는 달 주황 테두리, 주마다 시간",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘푸른 시간 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF0D1427|ph:615304fe4c84782c|dm:15|cd:FF191E29|ik:FFF0F0F5|ac:FF6688D0|ft:ibmplexsanskr",
+     "pay": "DAY~tt:xl|pl:FF191E29|mn:FF6688D0|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "ibmplexsanskr",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF6688D0,FF191E29",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "oswald"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fa49f4a1c64c6f62",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279115331,
+    "b": 4284909776,
+    "dir": 2,
+    "emoji": "🌆"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "민트 월급 노트",
+   "summary": "민트 아침 배경, 지난달과 견주기",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘민트 아침’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF2FCF3|ph:81f8c48f119ce56a|dm:0|cd:FFFFFFFF|ik:FF14181C|ac:FF488304|ft:gowundodum",
+     "pay": "DAY~tt:xl|pl:FFFFFFFF|mn:FF488304|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowundodum",
+       "weight": 700,
+       "ink": 4279506972
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF488304,FF14181C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "dbd9f7420ac4ceab",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4288931542,
+    "b": 4282942212,
+    "dir": 2,
+    "emoji": "🌿"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "당직 수당 노트",
+   "summary": "당직이 많은 달 야간 줄 굵게",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘푸른 새벽 산’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 야간이 많으면 야간 수당 줄이 굵게 보여요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 야간 많은 달 수당 줄\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFE4E9F1|ph:3130ba1f9c5cd906|dm:0|cd:FFFFFFFF|ik:FF141429|ac:FF226EE4|ft:notosanskr",
+     "pay": "DAY~tt:xl|pl:FFFFFFFF|mn:FF226EE4|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "notosanskr",
+       "weight": 700,
+       "ink": 4279505961
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF226EE4,FF141429",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "57bb392916950948",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4289118188,
+    "b": 4280446692,
+    "dir": 2,
+    "emoji": "🌙"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "연봉 한 판",
+   "summary": "한 해 급여를 한 판에, 세 달 견주기",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘오래된 종이’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF7F3ED|ph:5003874b393425d2|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF917133|ft:nanummyeongjo",
+     "pay": "DAY~tt:xl|pl:FFFFFFFF|mn:FF917133|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "year,three,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nanummyeongjo",
+       "weight": 700,
+       "ink": 4279899164
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF917133,FF1A141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "playfair"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "4062db633eaf6f5e",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292528816,
+    "b": 4287721779,
+    "dir": 2,
+    "emoji": "📜"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3500000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "출근 도시 급여",
+   "summary": "새벽 도시, 주마다 일한 시간과 급여",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘새벽 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF202131|ph:9b5a703709856191|dm:15|cd:FF25252F|ik:FFF0F0F5|ac:FF707DC9|ft:notosanskr",
+     "pay": "DAY~tt:xl|pl:FF25252F|mn:FF707DC9|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay,tiles"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "notosanskr",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF707DC9,FF25252F",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "7f79996862a714ec",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282072931,
+    "b": 4285562313,
+    "dir": 2,
+    "emoji": "🌇"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주휴수당 금빛",
+   "summary": "이번 주 15시간을 넘으면 합계가 금색, 주휴·야간 계산까지",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘파스텔 빛망울’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건). 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n누구에게 좋아요: 주휴수당을 챙기고 싶은 알바\n적용하면 바뀌는 것:\n· 주 15시간 금색 합계\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFAF8FC|ph:3dc7164fe37bfd44|dm:0|cd:FFFFFFFF|ik:FF16142D|ac:FF7D4FF8|ft:jua",
+     "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FF7D4FF8|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay,tiles"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "jua",
+       "weight": 700,
+       "ink": 4279637037
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF7D4FF8,FF16142D",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "fredoka"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 1500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "75e229ccbd507c44",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293977073,
+    "b": 4286402552,
+    "dir": 2,
+    "emoji": "🪙"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    },
+    {
+     "id": "i2",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 1500000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "편의점 야간 급여",
+   "summary": "야간 50% 가산, 이번 주 15시간이면 금색",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘네온 핑크’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건). 이달 야간이 많으면 야간 수당 줄이 굵게 보여요.\n적용하면 바뀌는 것:\n· 주 15시간 금색 합계\n· 야간 많은 달 수당 줄\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF251B33|ph:eb60086d643c7f35|dm:15|cd:FF282230|ik:FFF0F0F5|ac:FF9390DD|ft:rubik",
+     "pay": "HOURLY~tt:xl|pl:FF282230|mn:FF9390DD|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "rubik",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF9390DD,FF282230",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "righteous"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "cc0d874f27859360",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4281342520,
+    "b": 4287860957,
+    "dir": 2,
+    "emoji": "🏪"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "카페 알바 급여",
+   "summary": "말랑 체크 배경, 주마다 시간과 급여",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘말랑 체크’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건).\n적용하면 바뀌는 것:\n· 주 15시간 금색 합계\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFEFBF6|ph:9f3c978c5d37631e|dm:0|cd:FFFFFFFF|ik:FF1B141C|ac:FF946601|ft:jua",
+     "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FF946601|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "jua",
+       "weight": 700,
+       "ink": 4279964700
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF946601,FF1B141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "b2f70e63d8d50e48",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294634970,
+    "b": 4287915521,
+    "dir": 2,
+    "emoji": "☕"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "레몬 시급 계산기",
+   "summary": "시급만 넣으면 이달 예상 급여를 큰 숫자로",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘레몬 소다’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요). 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n· 주 15시간 금색 합계\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF9F9ED|ph:ec1f0643bd00a9b4|dm:0|cd:FFFFFFFF|ik:FF16141C|ac:FF7A6E11|ft:fredoka",
+     "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FF7A6E11|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,tiles"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "fredoka",
+       "weight": 700,
+       "ink": 4279637020
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF7A6E11,FF16141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "fredoka"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 1200000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "a4888ad49f51eba1",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293718726,
+    "b": 4286213649,
+    "dir": 2,
+    "emoji": "🍋"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    },
+    {
+     "id": "i2",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 1200000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "배달 알바 급여",
+   "summary": "네온 도시, 근무 종류별 시간과 급여",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘네온 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건). 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 주 15시간 금색 합계\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF110C19|ph:472c5dc5dc44091c|dm:15|cd:FF1C1920|ik:FFF0F0F5|ac:FFC058DE|ft:rubik",
+     "pay": "HOURLY~tt:xl|pl:FF1C1920|mn:FFC058DE|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,pay,weeks"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "rubik",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFC058DE,FF1C1920",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "bungee"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 1500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "82ebb60104a7094a",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280293672,
+    "b": 4290795742,
+    "dir": 2,
+    "emoji": "🛵"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    },
+    {
+     "id": "i2",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 1500000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "파스텔 시급 노트",
+   "summary": "분홍 물방울, 손글씨 급여 노트",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘분홍 물방울’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건).\n적용하면 바뀌는 것:\n· 주 15시간 금색 합계\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFCF3F8|ph:c4cba0efe6191da2|dm:0|cd:FFFFFFFF|ik:FF26141C|ac:FFD5296D|ft:gaegu",
+     "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FFD5296D|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,weeks"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gaegu",
+       "weight": 700,
+       "ink": 4280685596
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFD5296D,FF26141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "6d14b9f91ae4c3c2",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294498275,
+    "b": 4292159853,
+    "dir": 2,
+    "emoji": "💗"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "알바 목표 저금",
+   "summary": "목표 급여를 넘으면 금빛, 세 달 견주기",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘파스텔 물결 선’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요). 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n· 주 15시간 금색 합계\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFEFCFA|ph:c928d2dc8ccfd208|dm:0|cd:FFFFFFFF|ik:FF22141C|ac:FFBD590F|ft:jua",
+     "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FFBD590F|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,three"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "jua",
+       "weight": 700,
+       "ink": 4280423452
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFBD590F,FF22141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 1000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "7f84cd4ef5eda2e4",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294570987,
+    "b": 4290599183,
+    "dir": 2,
+    "emoji": "🐷"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    },
+    {
+     "id": "i2",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 1000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주말 알바 급여",
+   "summary": "주말만 일해도 주마다 시간과 급여를 한눈에",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘여름 뭉게구름’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이번 주 15시간을 넘으면 합계 상자 글자가 금색으로 바뀌어요(주휴수당 조건).\n적용하면 바뀌는 것:\n· 주 15시간 금색 합계\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFEDF7FE|ph:6edf0bd97d0e1cc8|dm:0|cd:FFFFFFFF|ik:FF141424|ac:FF0C72CA|ft:nunito",
+     "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FF0C72CA|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "hourly",
+     "wage": {
+      "input": "i1"
+     },
+     "five": true,
+     "weeklyPay": true,
+     "legalBreaks": true,
+     "night": 50,
+     "breakPay": "UNPAID",
+     "rounding": "AT_END",
+     "tax": "NONE"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nunito",
+       "weight": 700,
+       "ink": 4279505956
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF0C72CA,FF141424",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이번주근무시간 >= 15",
+       "ink": 4294956367
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "32704d199b5e6ce5",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4289060604,
+    "b": 4279005898,
+    "dir": 2,
+    "emoji": "☀️"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "시급",
+     "kind": "money",
+     "default": 10320,
+     "min": 0,
+     "hint": "내 시급으로 바꿔요"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "근무 시간 타일",
+   "summary": "타일 카드로 이달 근무 시간·야간·휴일을 한 판에",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘멤피스’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFDFCF9|ph:eddfd2af29120c0b|dm:0|cd:FFFFFFFF|ik:FF1C141C|ac:FF9C6B00|ft:jua",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF9C6B00|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF9C6B00|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF9C6B00|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "tiles,weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "jua",
+       "weight": 700,
+       "ink": 4280030236
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF9C6B00,FF1C141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "5bb83d8acc9d3a67",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294570471,
+    "b": 4288441088,
+    "dir": 2,
+    "emoji": "🧩"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "세 달 견주기",
+   "summary": "이달과 지난 두 달을 나란히",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘푸른 유리’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF8FBFF|ph:4462c0f7076c542d|dm:0|cd:FFFFFFFF|ik:FF14142A|ac:FF096AE8|ft:ibmplexsanskr",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF096AE8|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF096AE8|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF096AE8|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,three,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "ibmplexsanskr",
+       "weight": 700,
+       "ink": 4279505962
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF096AE8,FF14142A",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "502467f1d754a6ff",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292733948,
+    "b": 4278807272,
+    "dir": 2,
+    "emoji": "📊"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "한 해 근무 흐름",
+   "summary": "한 해 급여 흐름을 단풍 배경 위에",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘단풍 바람’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFEF9F3|ph:fd7f0b0e4de0d943|dm:0|cd:FFFFFFFF|ik:FF1D141C|ac:FFA3600C|ft:gowunbatang",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FFA3600C|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FFA3600C|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FFA3600C|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "year,trend,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowunbatang",
+       "weight": 700,
+       "ink": 4280095772
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFA3600C,FF1D141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "79b9f40174f944f2",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294766042,
+    "b": 4288897036,
+    "dir": 2,
+    "emoji": "🍁"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "유리 급여 상자",
+   "summary": "민트 유리, 큰 급여 상자 하나",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘민트 유리’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF9FEFC|ph:fa2c618b90b41658|dm:0|cd:FFFFFFFF|ik:FF14161C|ac:FF0B7A50|ft:quicksand",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF0B7A50|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF0B7A50|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF0B7A50|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "quicksand",
+       "weight": 700,
+       "ink": 4279506460
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF0B7A50,FF14161C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "35150b53ff9453de",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293197051,
+    "b": 4278942288,
+    "dir": 2,
+    "emoji": "💎"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오로라 급여",
+   "summary": "보라 오로라, 목표 급여 금빛",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘보라 오로라’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요). 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF120C25|ph:ecc257b3d18c9e75|dm:15|cd:FF1C1927|ik:FFF0F0F5|ac:FF8C70DB|ft:poppins",
+     "pay": "SHIFT~tt:xl|pl:FF1C1927|mn:FF8C70DB|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF1C1927|mn:FF8C70DB|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FF1C1927|mn:FF8C70DB|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "monoton",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF8C70DB,FF1C1927",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "33d26432ca7036ea",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279306535,
+    "b": 4287394011,
+    "dir": 2,
+    "emoji": "🔮"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "바다 급여 노트",
+   "summary": "민트 물결, 주마다 시간",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘민트 물결’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFE0EFEC|ph:4aa698cfb206e3a1|dm:0|cd:FFFFFFFF|ik:FF14161C|ac:FF087C56|ft:nunito",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF087C56|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF087C56|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF087C56|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nunito",
+       "weight": 700,
+       "ink": 4279506460
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF087C56,FF14161C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "5cb75e571c5fde0c",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293394166,
+    "b": 4278746198,
+    "dir": 2,
+    "emoji": "🐠"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "벚꽃 월급날",
+   "summary": "벚꽃 배경, 목표 급여 넘으면 금빛",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘벚꽃 바람’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFEFBFD|ph:8fc2515e72f81dae|dm:0|cd:FFFFFFFF|ik:FF28141C|ac:FFE00B4D|ft:gowundodum",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FFE00B4D|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FFE00B4D|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FFE00B4D|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowundodum",
+       "weight": 700,
+       "ink": 4280816668
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFE00B4D,FF28141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 2800000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "25d9aabb5e923ead",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294895342,
+    "b": 4292873037,
+    "dir": 2,
+    "emoji": "🌸"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 2800000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "겨울 보너스",
+   "summary": "하얀 겨울 빛, 한 해 흐름 카드",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘하얀 겨울 빛’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF9FAFC|ph:8cc7a06d0e91b4a4|dm:0|cd:FFFFFFFF|ik:FF141527|ac:FF3175D9|ft:quicksand",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF3175D9|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF3175D9|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF3175D9|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "year,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "quicksand",
+       "weight": 700,
+       "ink": 4279506215
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF3175D9,FF141527",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "e2c78203b7104f89",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293849847,
+    "b": 4281431513,
+    "dir": 2,
+    "emoji": "🎁"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "모눈 급여표",
+   "summary": "모눈 위 표처럼, 주마다 시간과 급여",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘모눈 공책’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFDFEFD|ph:b8a1f7854d28f1c4|dm:0|cd:FFFFFFFF|ik:FF14151C|ac:FF6C762D|ft:nanumgothiccoding",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF6C762D|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF6C762D|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF6C762D|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay,kinds"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nanumgothiccoding",
+       "weight": 700,
+       "ink": 4279506204
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF6C762D,FF14151C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "13738b73f92c6fec",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294507000,
+    "b": 4285298221,
+    "dir": 2,
+    "emoji": "📐"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "큰 숫자 급여",
+   "summary": "급여 숫자를 아주 크게, 한눈에",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘구름 솜사탕’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFAFAF9|ph:6c2e2686907aae4e|dm:0|cd:FFFFFFFF|ik:FF141525|ac:FF1A74CD|ft:notosanskr",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF1A74CD|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF1A74CD|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF1A74CD|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "notosanskr",
+       "weight": 700,
+       "ink": 4279506213
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF1A74CD,FF141525",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "anton"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "e7b1e0149d4d6599",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292403962,
+    "b": 4279923917,
+    "dir": 2,
+    "emoji": "🔢"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "네온 급여판",
+   "summary": "자정 보라 도시, 목표 급여 네온 금빛",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘자정 보라 도시’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요). 이달 야간이 많으면 야간 수당 줄이 굵게 보여요.\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n· 야간 많은 달 수당 줄\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF130F1E|ph:6f29802f3729bd6c|dm:15|cd:FF1D1B24|ik:FFF0F0F5|ac:FF9076CF|ft:rubik",
+     "pay": "SHIFT~tt:xl|pl:FF1D1B24|mn:FF9076CF|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF1D1B24|mn:FF9076CF|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FF1D1B24|mn:FF9076CF|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "rubik",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF9076CF,FF1D1B24",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "orbitron"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "502467f1d754a6ff",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280687921,
+    "b": 4287657679,
+    "dir": 2,
+    "emoji": "🌃"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "숲속 월급",
+   "summary": "안개 숲, 지난달과 견주기",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘안개 숲 산’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFE9EDEC|ph:c91eddbc5cd9c9ce|dm:0|cd:FFFFFFFF|ik:FF14151C|ac:FF2C7463|ft:gowunbatang",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF2C7463|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF2C7463|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF2C7463|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "gowunbatang",
+       "weight": 700,
+       "ink": 4279506204
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF2C7463,FF14151C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "99accb57ded663e8",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292864230,
+    "b": 4281103459,
+    "dir": 2,
+    "emoji": "🌲"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "노을 급여",
+   "summary": "노을 구름, 세 달 견주기",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘노을 구름’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF3E2E5|ph:ffc80b9119b32b7a|dm:0|cd:FFFFFFFF|ik:FF23141C|ac:FFC2460D|ft:nunito",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FFC2460D|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FFC2460D|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FFC2460D|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,three"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nunito",
+       "weight": 700,
+       "ink": 4280488988
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFC2460D,FF23141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "f2e9691b4d2b7ded",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4287721891,
+    "b": 4290921997,
+    "dir": 2,
+    "emoji": "🌅"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "테라조 급여",
+   "summary": "초록 테라조, 근무 종류별 카드",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘초록 테라조’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 야간이 많으면 야간 수당 줄이 굵게 보여요.\n적용하면 바뀌는 것:\n· 야간 많은 달 수당 줄\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF4F7F5|ph:7315b21bc757c398|dm:0|cd:FFFFFFFF|ik:FF1C141C|ac:FF9D6C23|ft:nunito",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF9D6C23|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF9D6C23|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF9D6C23|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nunito",
+       "weight": 700,
+       "ink": 4280030236
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF9D6C23,FF1C141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "이달야간 >= 6",
+       "weight": 800,
+       "ink": 4281944491
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fac87e3c62001133",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292206806,
+    "b": 4288506915,
+    "dir": 2,
+    "emoji": "🌿"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "크래프트 급여 봉투",
+   "summary": "급여 봉투처럼 크래프트지 위에",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘크래프트지’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF2E8DE|ph:196259958c1ad041|dm:0|cd:FFFFFFFF|ik:FF1B141C|ac:FF966A39|ft:nanumpen",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF966A39|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFFFFFF|mn:FF966A39|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFFFFFF|mn:FF966A39|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "nanumpen",
+       "weight": 700,
+       "ink": 4279964700
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF966A39,FF1B141C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "d5c285ee6c63a03c",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4291405178,
+    "b": 4288047673,
+    "dir": 2,
+    "emoji": "✉️"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "은하 급여",
+   "summary": "은하수 배경, 한 해 흐름",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘은하수’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF12142C|ph:57369e68cec7d9e1|dm:15|cd:FF1D1E2C|ik:FFF0F0F5|ac:FF737ACA|ft:poppins",
+     "pay": "SHIFT~tt:xl|pl:FF1D1E2C|mn:FF737ACA|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF1D1E2C|mn:FF737ACA|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FF1D1E2C|mn:FF737ACA|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "year,three,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "poppins",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF737ACA,FF1D1E2C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "orbitron"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3200000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "01ec07a12e60e9e1",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278716693,
+    "b": 4285758154,
+    "dir": 2,
+    "emoji": "🪐"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3200000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "물속 햇살 급여",
+   "summary": "물속 햇살, 주마다 시간과 209시간 경고",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘물속 햇살’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 일한 시간이 209시간을 넘으면 합계 상자에 주황 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 209시간 넘은 달\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF1E4E5F|ph:4920095c5e2395d4|dm:15|cd:FF233C3C|ik:FFF0F0F5|ac:FF62CCE0|ft:fredoka",
+     "pay": "SHIFT~tt:xl|pl:FF233C3C|mn:FF62CCE0|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF233C3C|mn:FF62CCE0|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FF233C3C|mn:FF62CCE0|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "fredoka",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF62CCE0,FF233C3C",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달근무시간 > 209",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294675456
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "f931a44ea6a9f0a0",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4284073691,
+    "b": 4284665056,
+    "dir": 2,
+    "emoji": "🐳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "금빛 축제 급여",
+   "summary": "목표 급여를 넘는 달은 축제처럼 금빛",
+   "desc": "근무·급여 화면에 밤낮 배경 ‘금빛 축제’이 깔리고, 이달 급여가 큰 글씨 그라데이션 상자에 떠요. 이달 예상 급여가 목표를 넘으면 합계 상자가 금빛으로 빛나요(목표는 넣을 때 정해요).\n적용하면 바뀌는 것:\n· 목표 급여 금빛\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF312412|ph:e25bc5c36c83c104|dm:15|cd:FF2F271D|ik:FFF0F0F5|ac:FFAB793A|ft:rubik",
+     "pay": "SHIFT~tt:xl|pl:FF2F271D|mn:FFAB793A|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF2F271D|mn:FFAB793A|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FF2F271D|mn:FFAB793A|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "rubik",
+       "weight": 700,
+       "ink": 4293980405
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFAB793A,FF2F271D",
+       "r": 20,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "shrikhand"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4294937216
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4285132974
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "3961416bffabdacf",
+       "at": "bg.stats",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282396441,
+    "b": 4289427770,
+    "dir": 2,
+    "emoji": "🎉"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "min": 0,
+     "default": 3000000,
+     "hint": "이달 받고 싶은 급여"
+    }
+   ]
+  }
+ }
+]

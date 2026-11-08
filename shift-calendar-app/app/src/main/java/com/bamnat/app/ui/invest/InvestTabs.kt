@@ -200,13 +200,13 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
 
 /** [INV-03][INV-10][INV-20] Every record of a month, newest first; a tap opens it to change, copy or delete. */
 @Composable
-internal fun RecordsTab(state: InvestState, open: (InvestSheet) -> Unit) {
-    var month by rememberSaveable { mutableStateOf(YearMonth.from(state.today).toString()) }
+internal fun RecordsTab(state: InvestState, open: (InvestSheet) -> Unit, month: String, onMonth: (String) -> Unit) {
+    // 1.39 [CALX-08] The month is kept by the screen, which also turns it on a sideways swipe.
     val ym = YearMonth.parse(month)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { month = ym.minusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-        com.bamnat.app.ui.calendar.MonthJumpTitle(ym, { month = it.toString() }, Modifier.weight(1f)) // 1.32 [WTYP-21]
-        IconButton(onClick = { month = ym.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+    Row(com.bamnat.app.ui.theme.PhotoGround.head(), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { onMonth(ym.minusMonths(1).toString()) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+        com.bamnat.app.ui.calendar.MonthJumpTitle(ym, { onMonth(it.toString()) }, Modifier.weight(1f)) // 1.32 [WTYP-21]
+        IconButton(onClick = { onMonth(ym.plusMonths(1).toString()) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
     }
     val days = (state.trades.keys + state.cash.keys).filter { YearMonth.from(it) == ym }.sortedDescending()
     if (days.isEmpty()) Text("${ym.monthValue}월에 적은 기록이 없어요", style = MaterialTheme.typography.bodyMedium,

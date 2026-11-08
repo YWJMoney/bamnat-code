@@ -37,6 +37,11 @@ data class LaunchConfig(
     val freeFeatures: Set<Feature> = emptySet(),
     val adQuietDays: Int = AdRules.QUIET_DAYS,
     val trialAskDays: Int = TrialConsent.ASK_BEFORE.toDays().toInt(),
+    /**
+     * 1.38 Phase 3 요금 (사용자 2026-11-05 20:22): the 팀·직원 요금제 bands, their shown prices and the free taste, from the server so
+     * they move without an update (Play Console holds the real price).
+     */
+    val workPlans: com.bamnat.core.tier.WorkPlanTable = com.bamnat.core.tier.WorkPlanTable.DEFAULT,
     val fetchedAt: Instant? = null,
     /** [SRV-04] The developer app's notices, shown one at a time over the calendar. */
     val notices: List<AppNotice> = emptyList(),
@@ -51,6 +56,9 @@ data class LaunchConfig(
     /** [FLAG-04] The phone's time since boot when the answer came, and which boot (to carry [serverTime] forward). */
     val fetchedElapsed: Long? = null,
     val fetchedBoot: Int? = null,
+    /** 1.39 [LOOP-13] Play 인앱 업데이트: below [updateUrgentMin] at once, below [updateFlexibleMin] behind the app; 0 = never. */
+    val updateUrgentMin: Int = 0,
+    val updateFlexibleMin: Int = 0,
 ) {
     /**
      * [FLAG-06] The overrides the phone evaluates: the server's [flags], or, from a 1.27 server, its switch read as
@@ -72,7 +80,7 @@ data class LaunchConfig(
 
     fun toJson(): JSONObject = JSONObject().put("billingLive", billingLive).put("launchedAt", launchedAt?.toString() ?: JSONObject.NULL)
         .put("thanksMonths", thanksMonths).put("freeFeatures", JSONArray(freeFeatures.map { it.name }))
-        .put("adQuietDays", adQuietDays).put("trialAskDays", trialAskDays).put("fetchedAt", fetchedAt?.toString() ?: JSONObject.NULL)
+        .put("adQuietDays", adQuietDays).put("trialAskDays", trialAskDays).put("workPlans", workPlansJson(workPlans)).put("fetchedAt", fetchedAt?.toString() ?: JSONObject.NULL)
         .put("notices", JSONArray(notices.map { n ->
             JSONObject().put("id", n.id).put("title", n.title).put("body", n.body).put("level", if (n.important) "important" else "info")
                 .put("from", Instant.ofEpochMilli(n.from).toString()).put("until", Instant.ofEpochMilli(n.until).toString())
@@ -90,8 +98,38 @@ data class LaunchConfig(
         .put("policy", FlagJson.toJson(policy))
         .put("serverTime", serverTime?.toString() ?: JSONObject.NULL)
         .put("fetchedElapsed", fetchedElapsed ?: JSONObject.NULL).put("fetchedBoot", fetchedBoot ?: JSONObject.NULL)
+        .put("update", JSONObject().put("urgentMin", updateUrgentMin).put("flexibleMin", updateFlexibleMin))
 
     companion object {
+        /** 1.38 Phase 3 요금: the table as the server sends it (`workPlans`). */
+        fun workPlansJson(t: com.bamnat.core.tier.WorkPlanTable): JSONObject {
+            fun bands(l: List<com.bamnat.core.tier.PlanBand>) = JSONArray(l.map { JSONObject().put("cap", it.cap).put("monthly", it.monthly).put("yearly", it.yearly).put("pass", it.pass) })
+            return JSONObject().put("team", bands(t.team)).put("staff", bands(t.staff)).put("freeStaff", t.freeStaff).put("freeTeamMonths", t.freeTeamMonths)
+        }
+
+        /**
+         * A missing or odd table keeps the app's own: a band needs a cap of 1..1000 and prices of 0..10,000,000 원, caps rising; a list
+         * that is empty or wrong falls back to the default list of its kind.
+         */
+        fun workPlansOf(o: JSONObject?): com.bamnat.core.tier.WorkPlanTable {
+            val d = com.bamnat.core.tier.WorkPlanTable.DEFAULT
+            o ?: return d
+            fun bands(k: String, fallback: List<com.bamnat.core.tier.PlanBand>): List<com.bamnat.core.tier.PlanBand> {
+                val a = o.optJSONArray(k) ?: return fallback
+                val l = (0 until a.length()).mapNotNull { i ->
+                    val b = a.optJSONObject(i) ?: return@mapNotNull null
+                    val cap = b.optInt("cap", 0); val m = b.optLong("monthly", -1); val y = b.optLong("yearly", -1); val p = b.optLong("pass", -1)
+                    if (cap !in 1..1000 || listOf(m, y, p).any { it !in 0..10_000_000 }) null else com.bamnat.core.tier.PlanBand(cap, m, y, p)
+                }.sortedBy { it.cap }
+                return if (l.isEmpty() || l.size != a.length() || l.map { it.cap }.distinct().size != l.size) fallback else l
+            }
+            return com.bamnat.core.tier.WorkPlanTable(
+                team = bands("team", d.team), staff = bands("staff", d.staff),
+                freeStaff = o.optInt("freeStaff", d.freeStaff).coerceIn(0, 100),
+                freeTeamMonths = o.optInt("freeTeamMonths", d.freeTeamMonths).coerceIn(0, 12),
+            )
+        }
+
         /** The server's answer read strictly: a wrong shape is an error, so the last good answer stays. */
         fun parse(o: JSONObject, now: Instant): LaunchConfig {
             // [FLAG-06] A 1.27 server always sends billingLive; a 1.28 one sends flags (and billingLive for older apps).
@@ -107,6 +145,7 @@ data class LaunchConfig(
                 freeFeatures = names.mapNotNull { n -> Feature.entries.firstOrNull { it.name == n } }.filter { it.minTier > Tier.FREE }.toSet(),
                 adQuietDays = o.optInt("adQuietDays", AdRules.QUIET_DAYS).coerceIn(0, 30),
                 trialAskDays = o.optInt("trialAskDays", TrialConsent.ASK_BEFORE.toDays().toInt()).coerceIn(1, 30),
+                workPlans = workPlansOf(o.optJSONObject("workPlans")),
                 fetchedAt = now,
                 notices = o.optJSONArray("notices")?.let { a -> (0 until a.length()).map { notice(a.getJSONObject(it)) } }.orEmpty().take(AppNoticesMax),
                 // A switch of a newer server is skipped; this app has nothing of it to pause.
@@ -117,6 +156,9 @@ data class LaunchConfig(
                 // Kept by the store, not sent by the server: only a saved answer has them.
                 fetchedElapsed = if (!o.has("fetchedElapsed") || o.isNull("fetchedElapsed")) null else o.getLong("fetchedElapsed"),
                 fetchedBoot = if (!o.has("fetchedBoot") || o.isNull("fetchedBoot")) null else o.getInt("fetchedBoot"),
+                // An older server sends none: nothing is asked.
+                updateUrgentMin = o.optJSONObject("update")?.optInt("urgentMin", 0)?.coerceAtLeast(0) ?: 0,
+                updateFlexibleMin = o.optJSONObject("update")?.optInt("flexibleMin", 0)?.coerceAtLeast(0) ?: 0,
             )
         }
 

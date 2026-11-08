@@ -79,6 +79,8 @@ internal fun ScanButtons(
      * only), so the lines are typed while looking at it; null when there is none to show.
      */
     onEmpty: ((android.graphics.Bitmap?) -> Unit)? = null,
+    /** [READ-41] What the PDF button says: a 체결 캡처 is no 명세서 (PC 10차). */
+    pdfLabel: String = "PDF로 받은 명세서 고르기",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -99,31 +101,37 @@ internal fun ScanButtons(
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     DisposableEffect(Unit) { onDispose { if (last?.second == true || current?.second == true) PayslipScanner.clear(context) } }
 
-    fun read(uri: Uri, taken: Boolean, scanned: Boolean, turn: Int = 0) {
+    fun read(uri: Uri, taken: Boolean, scanned: Boolean, turn: Int = 0, pdf: Boolean = false) {
         reading = true
         error = null
         advice = null
         straighten = false
         step = null
         preparing = null
-        current = Triple(uri, taken, scanned)
+        // [READ-34] A PDF is read again from the same button, not turned or shown as a photo.
+        current = Triple(uri, taken, scanned).takeIf { !pdf }
         job = scope.launch {
             try {
-                val scan = PayslipScanner.scan(context, uri, scanned = scanned, turn = turn,
-                    preparing = { p -> preparing = p ?: -1 }) { n, m -> preparing = null; step = n to m }
-                last = Triple(uri, taken, scanned)
+                val scan = if (pdf) PayslipScanner.scanPdf(context, uri) { n, m -> step = n to m }
+                    else PayslipScanner.scan(context, uri, scanned = scanned, turn = turn,
+                        preparing = { p -> preparing = p ?: -1 }) { n, m -> preparing = null; step = n to m }
+                last = Triple(uri, taken, scanned).takeIf { !pdf }
                 lastTurn = scan.turn
                 val quality = scan.quality
                 val retake = quality?.takeIf { it.retake }?.line
                 straighten = !scanned && scannerReady && quality != null && (quality.retake || quality.issues.any { it in STRAIGHTEN })
                 // W7: which step failed, said plainly: here no letters at all (the amounts are looked for after).
-                if (scan.text.isBlank()) error = "사진에서 글자를 하나도 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
+                if (scan.text.isBlank() && pdf) error = "PDF에서 글자를 찾지 못했어요. 암호가 걸렸거나 그림만 든 PDF면 화면을 캡처해 ‘사진 고르기’로 넣어 주세요."
+                else if (scan.text.isBlank()) error = "사진에서 글자를 하나도 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
                 else {
                     advice = retake ?: quality?.issues?.firstOrNull { straighten && it in STRAIGHTEN }?.text
                     if (onScan != null) onScan(scan) else onText(scan.text)
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: com.bamnat.core.imports.Sheets.SheetException) {
+                // [READ-34] A PDF too big, locked or broken: said as it is.
+                error = e.message
             } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
                 error = e.message
                 context.appContainer.telemetry.event("ocr_fail", "not_ready")
@@ -162,6 +170,8 @@ internal fun ScanButtons(
     }
 
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) read(uri, taken = false, scanned = false) }
+    // [READ-34] 1.38: a payslip the company gave as PDF (ERP·급여 프로그램·노무 사이트), read from its own letters.
+    val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) read(uri, taken = false, scanned = false, pdf = true) }
     var shot by remember { mutableStateOf<Uri?>(null) }
     val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val uri = shot
@@ -185,6 +195,9 @@ internal fun ScanButtons(
                 }
             },
         )
+        if (onScan != null) TextButton(onClick = { pickPdf.launch(arrayOf("application/pdf")) }, enabled = !reading, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(pdfLabel)
+        }
         if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
             Text(

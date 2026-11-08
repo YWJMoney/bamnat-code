@@ -92,7 +92,10 @@ class SendGuard(private val c: AppContainer, val calendar: String = com.bamnat.a
      * company's rules over the user's pay before the 기본급, nor the way marked in use before it.
      */
     suspend fun useSame(v: Same, verified: Boolean = false): CompanyShare.Applied? {
-        val s = v.setup
+        // 1.39 [PAYP-03] A 1.39 page has no pay part; it is taken from the server only now, as the way goes in.
+        val s = if (v.withPay && v.setup.payPrivate)
+            runCatching { wayText(c, scope.store.device, v.page.id, v.setup) }.getOrNull()?.let { v.setup.copy(text = it) } ?: v.setup
+        else v.setup
         val store = scope.store
         val payWaits = v.withPay && scope.pay.profile.value != null && hasPay(s.text)
         val result = when {

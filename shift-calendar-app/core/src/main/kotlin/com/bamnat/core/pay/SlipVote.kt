@@ -88,6 +88,23 @@ object SlipVote {
                 }?.let { renamed[i] = it }
                 // The kind as the whole name says (야간수 read as a 수당, 야간수당 is 야간).
                 renamed[i]?.let { lines[i] = lines[i].copy(name = it.name, role = it.role) }
+                // [READ-38] 1.38 사용자 사진: the name most readings agree on, letter for letter ("불링희 여주공장" once, "볼링회
+                // 여수공장" twice): the same amount on the same side, a name a few strokes from this one. Its kind stays.
+                if (renamed[i] == null) {
+                    val mineJ = SlipLexicon.jamo(mine)
+                    val near = others.mapNotNull { r ->
+                        r.lines.firstOrNull { o ->
+                            val t = o.name.filter { it.isLetter() }
+                            o.amount == line.amount && side(o) == side(line) && t.isNotEmpty() &&
+                                SlipLexicon.distance(SlipLexicon.jamo(t), mineJ) <= maxOf(2, mineJ.length / 3)
+                        }?.name
+                    }
+                    val votes = (near + line.name).groupingBy { it.filter(Char::isLetter) }.eachCount()
+                    val top = votes.maxByOrNull { it.value }
+                    if (top != null && top.key != mine && top.value > (votes[mine] ?: 0)) {
+                        near.firstOrNull { it.filter(Char::isLetter) == top.key }?.let { lines[i] = lines[i].copy(name = it) }
+                    }
+                }
             }
             // Read by one way only: nothing backs it up but the payslip's own sums (checked below).
             if (theirs.isEmpty()) { unsure += i; return@forEachIndexed }

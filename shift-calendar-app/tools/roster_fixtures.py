@@ -100,8 +100,13 @@ def rotation(year, month, people, pattern, rng, leave=None):
 
 
 def horizontal(rng, year, month, people, pattern, *, cell=64, size=26, lines=True, weekday=True, title=True,
-               face="NanumGothic-Regular.ttf", leave=None, shade=True, halves=False, label_extra=None, day_fmt="{d}"):
-    """People down, days across (간호 듀티표, 교대 조 표, 엑셀 캡처)."""
+               face="NanumGothic-Regular.ttf", leave=None, shade=True, halves=False, label_extra=None, day_fmt="{d}",
+               title_text=None, corner=None):
+    """People down, days across (간호 듀티표, 교대 조 표, 엑셀 캡처).
+
+    [READ-37] title_text: the sheet's own title ("7병동 2026년 11월"); corner: the words over the names column in the
+    row of days and of weekdays ("이름", "요일"), as a ward's roster has them.
+    """
     truth = rotation(year, month, people, pattern, rng, leave)
     days = calendar.monthrange(year, month)[1]
     blocks = [range(1, 16), range(16, days + 1)] if halves else [range(1, days + 1)]
@@ -113,7 +118,7 @@ def horizontal(rng, year, month, people, pattern, *, cell=64, size=26, lines=Tru
     s = Sheet(width, height, face)
     y0 = 60
     if title:
-        s.text((width // 2, y0 + 30), f"{year}년 {month}월 근무표", int(size * 1.4))
+        s.text((width // 2, y0 + 30), title_text or f"{year}년 {month}월 근무표", int(size * 1.4))
         y0 += 90
     first = calendar.weekday(year, month, 1)
     for block in blocks:
@@ -124,6 +129,10 @@ def horizontal(rng, year, month, people, pattern, *, cell=64, size=26, lines=Tru
             for k, d in enumerate(block):
                 if (first + d - 1) % 7 >= 5:
                     s.fill((x0 + k * cell, ys[0], x0 + (k + 1) * cell, ys[-1]), (255, 232, 232))
+        if corner:
+            s.text((60 + 14, ys[0] + row_h // 2), corner[0], size, anchor="lm")
+            if weekday and len(corner) > 1:
+                s.text((60 + 14, ys[1] + row_h // 2), corner[1], int(size * 0.8), anchor="lm")
         for k, d in enumerate(block):
             cx = x0 + k * cell + cell // 2
             s.text((cx, ys[0] + row_h // 2), day_fmt.format(d=d, m=month), size)

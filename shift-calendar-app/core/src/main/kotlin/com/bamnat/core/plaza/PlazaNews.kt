@@ -18,6 +18,9 @@ data class PlazaNewsItem(
     val post: String? = null,
     /** [PLAZA-09] For room: how many other versions came in, in a company this phone joined. */
     val count: Int = 0,
+    /** 1.39 발굴: the company and version a fix, newer or thanks line is about, so its notice can open that version's talk. */
+    val companyId: String? = null,
+    val setup: String? = null,
 )
 
 /**
@@ -48,12 +51,21 @@ object PlazaNews {
                 else -> null
             }
             "unmuted" -> "글쓰기 제한이 끝났어요. 다시 글을 쓸 수 있어요."
+            // 1.39 [CARE-04] 마을 돌봄: 안내·쉬기·풀림·끝남.
+            "care" -> CommunityCare.newsLine(i.result)
             // [PLAZA-09] 결정 D79: members hear of changes until the company's setup settles.
             "room" -> "${i.company ?: "참여한 회사"} 광장에 다르게 쓰는 판이 ${i.count.coerceAtLeast(1)}개 올라왔어요. 눌러서 바뀐 값만 봐요."
             // [PLAZA-35] AI 1.27: new posts in 회사 정보 광장, n of them in one line a day.
             "room_posts" -> "${i.company ?: "참여한 회사"} 정보 광장에 새 글이 ${i.count.coerceAtLeast(1)}개 올라왔어요."
             // 1.36 [VIL-09] PC 확인 V1: answers to what I wrote in a room (질문이면 도움 됐어요를 고를 수 있어요).
             "replies" -> "${i.company?.takeIf { it.isNotBlank() } ?: "광장"}에 쓴 내 글에 새 답이 ${i.count.coerceAtLeast(1)}개 달렸어요."
+            // 1.39 [PAYP-06] To the senders of a shared pay way: where coworkers say it differs. To the writer: the sender answered.
+            "fix" -> "내가 나눈 ${i.company ?: "회사"} 급여 방식에 보완 요청이 ${i.count.coerceAtLeast(1)}개 왔어요. 어디가 다른지 보고 고치거나 답해 주세요."
+            "fix_answer" -> "${i.company ?: "회사"} 급여 방식에 보낸 보완 요청에 답이 왔어요."
+            // 1.39 발굴 2-1: the way in use has a newer version from one who sent it; the pay screen offers it.
+            "newer" -> "쓰고 있는 ${where.ifEmpty { "회사" }} 급여 방식을 올린 분이 고친 판을 새로 올렸어요. 급여 화면에서 새 판으로 바꿀 수 있어요."
+            // 1.39 발굴 3-5: once a month, to one who shared a way others use.
+            "thanks" -> "지금 ${i.count.coerceAtLeast(1)}명이 내가 나눈 ${i.company ?: "회사"} 급여 방식으로 계산하고 있어요. 고마워요!"
             else -> null
         }
     }

@@ -186,12 +186,16 @@ enum class JobStatus(val label: String, val code: Int) {
 }
 
 object MoneyCategories {
+    /** 1.38 [LEDH-25] Where a loan's interest goes ('이번 달 갚기'), and other 금융 수수료. */
+    const val INTEREST = "이자·금융"
+
     /**
      * Spending categories; the first eleven match the 살림왕 parser so M2 can fill them [LEDG-02].
      * [LEDG-14] 생활·의류·미용·보험·반려동물·육아 came in 1.15, before 기타, which stays last.
+     * 1.38 [LEDH-25] 이자·금융 (대출 이자, 수수료) came with 빚 갚기.
      */
     val expense = listOf("식비", "카페", "편의점", "배달", "장보기·쇼핑", "교통", "자동차", "의료", "통신", "공과금", "구독",
-        "주거", "경조사", "교육", "여가", "생활", "의류·미용", "보험", "반려동물", "육아", OTHER)
+        "주거", "경조사", "교육", "여가", "생활", "의류·미용", "보험", "반려동물", "육아", INTEREST, OTHER)
     val income = listOf(SALARY, "부수입", "용돈", "상여", "환급", "이자", "판매", OTHER)
     val transfer = listOf("저축", "카드값", "내 계좌", "투자", "대출 상환", OTHER)
 

@@ -1,0 +1,282 @@
+{
+ "panels": [
+  {
+   "name": "09-현장",
+   "theme": "night",
+   "label": "현장 · 일당",
+   "title": "어느 현장 며칠,\n<g>일당까지 달력에</g>",
+   "sub": "일한 날·현장·일당을 적으면 이번 달 번 돈이 한눈에",
+   "image": "screens/store_09_field.png",
+   "main": {
+    "crop": [
+     0,
+     445,
+     1080,
+     1800
+    ],
+    "width": 940,
+    "top": 650
+   },
+   "orbitY": 1350,
+   "pops": [
+    {
+     "image": "screens/store_09b_field_sum.png",
+     "crop": [
+      45,
+      745,
+      990,
+      270
+     ],
+     "width": 960,
+     "left": 60,
+     "top": 1560
+    }
+   ],
+   "badges": [
+    {
+     "text": "현장·일당을 칸마다",
+     "left": 40,
+     "top": 905
+    },
+    {
+     "text": "받을 돈까지 챙겨요",
+     "left": 520,
+     "top": 1395
+    }
+   ]
+  },
+  {
+   "name": "10-가족",
+   "theme": "day",
+   "label": "가족과 근무 나누기",
+   "title": "아빠 지금 자요?\n<g>링크 하나로 알아요</g>",
+   "sub": "받은 근무표로 같이 쉬는 날과 자는 중을 한눈에",
+   "image": "screens/store_10b_family_top.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 860,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "pops": [
+    {
+     "image": "screens/store_10b_family_top.png",
+     "crop": [
+      30,
+      1855,
+      1020,
+      95
+     ],
+     "width": 980,
+     "left": 50,
+     "top": 1560,
+     "tag": ""
+    }
+   ],
+   "badges": []
+  },
+  {
+   "name": "11-공휴일",
+   "theme": "night",
+   "label": "2027 공휴일",
+   "title": "설 연휴에 일해도\n<g>휴일 수당까지</g>",
+   "sub": "공휴일·대체공휴일이 든 달력에 내 근무를 채워요",
+   "image": "screens/store_11_holiday.png",
+   "main": {
+    "crop": [
+     0,
+     140,
+     1080,
+     2260
+    ],
+    "width": 860,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "pops": [
+    {
+     "image": "screens/store_11b_holiday_pay.png",
+     "crop": [
+      0,
+      540,
+      1080,
+      400
+     ],
+     "width": 940,
+     "left": 70,
+     "top": 1500,
+     "tag": ""
+    }
+   ],
+   "badges": [
+    {
+     "text": "설 연휴·대체공휴일 표시",
+     "left": 330,
+     "top": 1060
+    }
+   ]
+  },
+  {
+   "name": "12-연차",
+   "theme": "day",
+   "label": "연차 관리",
+   "title": "남은 연차,\n<g>세지 않아도 돼요</g>",
+   "sub": "입사일만 넣으면 생기는 날·쓴 날·없어지는 날까지",
+   "image": "screens/store_12_leave.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 860,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "pops": [
+    {
+     "inplace": true,
+     "crop": [
+      45,
+      215,
+      990,
+      420
+     ],
+     "scale": 1.1
+    }
+   ],
+   "badges": [
+    {
+     "text": "없어지기 전에 알림",
+     "left": 480,
+     "top": 1700
+    },
+    {
+     "text": "반차·보상휴가도",
+     "left": 50,
+     "top": 1820
+    }
+   ]
+  },
+  {
+   "name": "13-수면",
+   "theme": "night",
+   "label": "수면 기록",
+   "title": "오늘 몇 시에 잘까,\n<g>내 하루에 맞춰</g>",
+   "sub": "잔 시간과 아침 기분을 남기고 잠드는 소리를 켜요",
+   "image": "screens/store_13_sleep.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 860,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "pops": [
+    {
+     "inplace": true,
+     "crop": [
+      45,
+      215,
+      990,
+      420
+     ],
+     "scale": 1.08
+    },
+    {
+     "crop": [
+      45,
+      1790,
+      990,
+      450
+     ],
+     "width": 900,
+     "left": 90,
+     "top": 1440,
+     "tag": ""
+    }
+   ]
+  },
+  {
+   "name": "14-가계부",
+   "theme": "day",
+   "label": "가계부",
+   "title": "카드 쓰면\n<g>가계부가 알아서</g>",
+   "sub": "결제 알림을 켜면 분류까지 저절로 적혀요",
+   "image": "screens/store_14_ledger.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 860,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "pops": [
+    {
+     "crop": [
+      45,
+      1300,
+      990,
+      870
+     ],
+     "width": 920,
+     "left": 80,
+     "top": 1330,
+     "tag": "결제 알림으로 적힘"
+    }
+   ]
+  },
+  {
+   "name": "15-메모",
+   "theme": "night",
+   "label": "메모장",
+   "title": "사진 넣은 메모,\n<g>할 일까지 한 곳에</g>",
+   "sub": "날짜에 적으면 달력에 보이고 알림까지",
+   "image": "screens/store_15b_memo_list.png",
+   "main": {
+    "crop": [
+     0,
+     0,
+     1080,
+     2400
+    ],
+    "width": 860,
+    "top": 690
+   },
+   "orbitY": 1250,
+   "pops": [
+    {
+     "inplace": true,
+     "crop": [
+      45,
+      1000,
+      990,
+      445
+     ],
+     "scale": 1.1
+    }
+   ],
+   "badges": [
+    {
+     "text": "체크리스트 메모",
+     "left": 520,
+     "top": 1800
+    }
+   ]
+  }
+ ]
+}

@@ -106,6 +106,11 @@ abstract class ScreenshotBase {
     fun seed() = runBlocking<Unit> {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        // A search one shot left open must not open the next shot's 회사 찾기 with its name and chips.
+        com.bamnat.app.ui.company.PublicBrowse.reset()
+        // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
+        // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
+        com.bamnat.app.ui.calendar.SetupFill.close()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -407,6 +412,9 @@ abstract class ScreenshotBase {
             touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
         }
 
+        /** 1.39 [MKD-42] Whether [text] is reached by scrolling down to it (no tap), as a long page puts it below the first screen. */
+        fun scrolledTo(text: String, exact: Boolean = false, scrolls: Int = 8): Boolean = runCatching { reach(text, exact, false, scrolls, 0.5f) }.isSuccess
+
         /**
          * [TAB-04] The calendar's 목록 판, as '달력 판 고르기 > 목록' picks it. The menu is Compose's DropdownMenu, a popup window [find]
          * does not read, so the button is checked and the pick written the way the menu writes it.
@@ -552,8 +560,21 @@ abstract class ScreenshotBase {
          * [NAV-06] 1.26 AD: holds a finger on the tab in place [from] for [hold] frames (40 is a long press), then drags it
          * slowly to place [to], along the bar (or the rail when [wide]), where [tab] would tap.
          */
-        fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) = gesture { w, h, d ->
-            fun at(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / TABS to h - 40 * d  /* [RCX-29] six since 광장 */
+        fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) {
+            // [NAV2-02] Where the tabs are drawn (the rail has the 나 button above them since 1.39), the old guess without a bar.
+            val drawn = barTabs(wide).map { it.boundsInWindow.center }
+            dragTabAt(from, to, wide, hold, drawn)
+        }
+
+        private fun dragTabAt(from: Int, to: Int, wide: Boolean, hold: Int, drawn: List<Offset>) = gesture { w, h, d ->
+            fun guess(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / TABS to h - 40 * d  /* [RCX-29] six since 광장 */
+            fun at(i: Float): Pair<Float, Float> {
+                if (drawn.size <= maxOf(from, to)) return guess(i)
+                val lo = drawn[kotlin.math.floor(i).toInt().coerceIn(0, drawn.lastIndex)]
+                val hi = drawn[kotlin.math.ceil(i).toInt().coerceIn(0, drawn.lastIndex)]
+                val f = i - kotlin.math.floor(i)
+                return (lo.x + (hi.x - lo.x) * f) to (lo.y + (hi.y - lo.y) * f)
+            }
             List(hold + 1) { at(from.toFloat()) } + (1..30).map { k -> at(from + (to - from) * k / 30f) } + listOf(at(to.toFloat()))
         }
 
@@ -565,6 +586,13 @@ abstract class ScreenshotBase {
          * tab under the finger must read as chosen afterwards, or it is tapped again, at most [TAB_TRIES] times.
          */
         fun tab(index: Int, wide: Boolean) {
+            // [NAV2-02] 1.39 설정 waits by the 나 button unless a place of the bar holds it: opened the way that menu opens it.
+            if (index == SETTINGS_TAB && nodes().none { n -> n.config.getOrNull(SemanticsProperties.Role) == Role.Tab &&
+                    n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text } == "설정" }) {
+                scenario.onActivity { com.bamnat.app.ui.settings.SettingsLinks.home() }
+                settle()
+                return
+            }
             var at = 0f to 0f
             repeat(TAB_TRIES) {
                 // 1.35 [RCX-29]: the bar's own tabs where they are drawn (six since 광장), the old guess only without a bar.
@@ -583,7 +611,7 @@ abstract class ScreenshotBase {
             if (tabs.isEmpty()) return tabs
             val bar = if (wide) tabs.minOf { it.boundsInWindow.left }.let { left -> tabs.filter { it.boundsInWindow.left <= left + 1f }.sortedBy { it.boundsInWindow.top } }
                 else tabs.maxOf { it.boundsInWindow.bottom }.let { low -> tabs.filter { it.boundsInWindow.bottom >= low - 1f }.sortedBy { it.boundsInWindow.left } }
-            return bar.takeIf { it.size == TABS }.orEmpty()
+            return bar.takeIf { it.size >= 2 }.orEmpty()
         }
 
         /** Whether the tab at ([x], [y]) is the chosen one; null when no tab is there (a screen without the bar). */
@@ -830,8 +858,9 @@ abstract class ScreenshotBase {
         { it.copy(period = com.bamnat.core.pay.PayPeriod(endDay = 20, payDay = 25), rules = it.rules.copy(holidayByShiftStart = true)) }
     /** 4조 2교대 from its template, the user's own 주주휴휴야야휴휴, today the second night. */
     internal fun Screen.setupToToday() {
-        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("네, 시간이 맞아요")
-        tapText("4조 2교대 8일 (주휴야휴)"); tapText("다음", exact = true)
+        // [EASE-07] The order is picked on the times' screen (the template's usual one is in already).
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("순서가 달라요 · 다른 순서 고르기")
+        tapText("4조 2교대 8일 (주휴야휴)"); tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
     }
 
@@ -976,8 +1005,8 @@ abstract class ScreenshotBase {
         const val REACH_WAIT_NANOS = 5_000_000_000L
         /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
         const val TAB_TRIES = 3
-        /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5). */
-        const val TABS = 6
+        /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5); [NAV2-01] 1.39 five places, 설정 by the 나 button. */
+        const val TABS = 5
         const val SETTINGS_TAB = 5
         /** [QA-08] Once more, for a screen that has drawn nothing at all yet. */
         const val EMPTY_WAIT_NANOS = 15_000_000_000L
@@ -1290,12 +1319,13 @@ abstract class ScreenshotBase {
         // As the app opens it: with the way to 회사 설정 보내기.
         payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onShareWay = {}) }.invoke(this)
         // 1.27 AJ: two cards under the total ('이것만 넣으면', '명세서와 맞춰 보기') put it further down.
-        tapText("우리 회사 항목 만들기", exact = true, scrolls = 14)
-        tapText("빠지는 돈 (차감)", exact = true)
+        // [PAYX-50] 1.38: '수당 추가' is the one window, its kinds as chips.
+        tapText("수당 추가", exact = true, scrolls = 14)
+        tapText("빠지는 돈", exact = true)
         typeInto("이름 (선택)", "기숙사비")
         typeInto("한 달 금액", "50000")
         repeat(2) { settle() }
-        tapText("만들기", exact = true)
+        tapText("추가", exact = true)
         reveal("만들었어요", exact = false)
     }
 

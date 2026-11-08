@@ -50,6 +50,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
@@ -121,7 +123,11 @@ import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L) {
+fun ShiftTypesScreen(
+    vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L,
+    /** [PAYX-51] To '교육' and its 시수 in 연장 휴무일 근무 지정, from the editor of a day named 교육·연수·LMS. */
+    onOpenSchooling: (() -> Unit)? = null,
+) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<ShiftType?>(null) }
     // [DAILY-08] Opened for one shift type: its editor first, once.
@@ -229,7 +235,9 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             if (away.isNotEmpty()) {
                 item(key = "folded-head") {
                     Row(
-                        Modifier.fillMaxWidth().clickable { foldedOpen = !foldedOpen }.padding(top = 12.dp, bottom = 4.dp),
+                        // 1.37 PC MED-2 사용성 제안 ('안 쓰는 종류 3개'를 펼칠 길이 안 보임): the whole line is the button, at least 48dp, with its arrow.
+                        Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 56.dp)
+                            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = if (foldedOpen) "접기" else "펼쳐 보기") { foldedOpen = !foldedOpen },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -240,7 +248,10 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text(if (foldedOpen) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text(if (foldedOpen) "접기" else "펼쳐 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        androidx.compose.material3.Icon(
+                            if (foldedOpen) androidx.compose.material.icons.Icons.Filled.KeyboardArrowUp else androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
+                            null, tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 if (foldedOpen) items(away, key = { "folded-${it.id}" }) { type ->
@@ -269,6 +280,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             initial = type,
             showPremium = vm.isShiftCalendar,
             noun = dayKindNoun(vm.workStyle),
+            onOpenSchooling = onOpenSchooling?.let { go -> { editing = null; go() } },
             onDismiss = { editing = null },
             onSave = {
                 vm.save(it)
@@ -505,7 +517,8 @@ private fun alarmSummary(type: ShiftType): String {
 @Composable
 private fun AlarmSpecRow(
     alarm: AlarmSpec,
-    ringsAt: LocalTime,
+    /** "06:30", "전날 23:30", "다음날 14:00". */
+    ringsAt: String,
     onEdit: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onRemove: () -> Unit,
@@ -526,7 +539,7 @@ private fun AlarmSpecRow(
                 .padding(vertical = 4.dp),
         ) {
             Text("근무 ${Fmt.offset(alarm.offsetMinutes)}", style = MaterialTheme.typography.bodyLarge)
-            Text("${Fmt.time(ringsAt)}에 울려요 · 눌러서 바꾸기", style = MaterialTheme.typography.bodySmall,
+            Text("${ringsAt}에 울려요 · 눌러서 바꾸기", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = alarm.enabled, onCheckedChange = onToggle)
@@ -556,6 +569,9 @@ private fun OffsetPickerDialog(
     )
 }
 
+/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장 휴무일 근무 지정. */
+private val SCHOOLING = Regex("교육|연수|LMS", RegexOption.IGNORE_CASE)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ShiftTypeEditorDialog(
@@ -569,6 +585,8 @@ fun ShiftTypeEditorDialog(
     showPremium: Boolean = false,
     /** 1.36 PC 재검토: "일정" on a 현장 calendar. */
     noun: String = "근무",
+    /** [PAYX-51] The 교육 시수 note's button; null leaves only the note. */
+    onOpenSchooling: (() -> Unit)? = null,
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
@@ -710,6 +728,7 @@ fun ShiftTypeEditorDialog(
                                     step = 10,
                                     max = 12 * 60,
                                     dialogTitle = "휴게 시간",
+                                    format = com.bamnat.core.hours.HoursFormat::breakText,
                                 )
                             }
                             // 순번 285: 근로기준법 제54조 asks for 30 minutes from 4 hours and an hour from 8; say so, never block.
@@ -753,6 +772,19 @@ fun ShiftTypeEditorDialog(
                         // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
                         if (showPremium) ShiftPremiumSection(timed, onChange = { draft = draft.copy(premiumPercent = it) },
                             onBreakPaid = { draft = draft.copy(breakPaid = it) })
+                        // 1.38 [PAYX-49] PC 11차 ("근무 추가 양식에 인정 시수 칸이 없어요"): a 교육 paid on its own 시수 is extra work,
+                        // whose 시수 is set with its pay; a kind of day only names the day. Said where the user looks for it.
+                        if (SCHOOLING.containsMatchIn(draft.name)) {
+                            Text(
+                                "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장 휴무일 근무 지정에서 '교육'을 더해 " +
+                                    "급여와 가산 › 시수를 정해요. 근무 종류에는 시수 칸이 없어요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                            )
+                            // [PAYX-51] 1.38 PC 12차: one tap there, '교육' made when there is none.
+                            if (onOpenSchooling != null) TextButton(onClick = onOpenSchooling) { Text("교육 시수 정하러 가기") }
+                        }
 
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -773,7 +805,8 @@ fun ShiftTypeEditorDialog(
                                 })
                             }
                             if (draft.alarmEnabled && !canPost) {
-                                WarningLine("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications)
+                                WarningLine("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications,
+                                    picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM)
                             }
                             if (draft.alarmEnabled) {
                                 Spacer(Modifier.height(4.dp))
@@ -781,7 +814,7 @@ fun ShiftTypeEditorDialog(
                                 for (alarm in sorted) {
                                     AlarmSpecRow(
                                         alarm = alarm,
-                                        ringsAt = start.minusMinutes(alarm.offsetMinutes.toLong()),
+                                        ringsAt = com.bamnat.app.ui.components.alarmClock(start, alarm.offsetMinutes), // [EASE-18] 전날·다음날
                                         onEdit = { editingAlarm = alarm },
                                         onToggle = { on ->
                                             draft = draft.copy(alarms = draft.alarms.map { if (it == alarm) it.copy(enabled = on) else it })
@@ -805,7 +838,7 @@ fun ShiftTypeEditorDialog(
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                 SoundPickerRow(
                                     sound = draft.alarmSoundUri,
-                                    defaultLabel = "기본 알람음 (설정 › 알람 › 소리)",
+                                    defaultLabel = "기본 알람음 (설정 › 알람 › 알람음)",
                                     onPicked = { draft = draft.copy(alarmSoundUri = it) },
                                 )
                             }
@@ -836,6 +869,8 @@ fun ShiftTypeEditorDialog(
                         AnimatedVisibility(styling) {
                             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("색상", style = MaterialTheme.typography.labelLarge)
+                                // PC 267560dd: 화면 읽기 said "색 1~12"; each swatch is said in words.
+                                val paletteNames = remember { com.bamnat.app.ui.settings.colorNames(ShiftPalette) }
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     ShiftPalette.forEachIndexed { i, c ->
                                         val selected = c == draft.colorArgb
@@ -845,7 +880,7 @@ fun ShiftTypeEditorDialog(
                                                 .size(48.dp)
                                                 .clip(CircleShape)
                                                 .clickable(onClickLabel = "이 색 고르기") { draft = draft.copy(colorArgb = c) }
-                                                .semantics { contentDescription = "색 ${i + 1}"; this.selected = selected },
+                                                .semantics { contentDescription = paletteNames[i]; this.selected = selected },
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Box(

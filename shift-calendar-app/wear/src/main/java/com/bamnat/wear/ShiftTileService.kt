@@ -78,6 +78,11 @@ class ShiftTileService : TileService() {
                 col.addContent(space(4f))
                 col.addContent(text(it, 12f, AMBER))
             }
+            // 1.38 [SLEEP-14] 오늘 잘 시간, as the phone's 오늘의 흐름 says it.
+            p.sleepLine.takeIf { it.isNotBlank() }?.let {
+                col.addContent(space(2f))
+                col.addContent(text(it, 12f, LIGHT, lines = 1))
+            }
             WatchDays.weekText(p)?.let {
                 col.addContent(space(2f))
                 col.addContent(text(it, 11f, GREY))

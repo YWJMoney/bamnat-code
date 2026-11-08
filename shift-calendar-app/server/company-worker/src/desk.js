@@ -17,6 +17,8 @@ import { DAY, HOUR } from "./units.js";
 export const DESK = {
   /** 열쇠: 기한(일), 한 번에 살아 있는 수, 하루 요청·바꾸기 한도. */
   keyDays: 90,
+  /** 1.39 [LOOP-05] 저장소 동기화 열쇠(GitHub 비밀값에 넣어 두는 것): 1년, 한 번에 하나. */
+  syncKeyDays: 365,
   keysAlive: 3,
   keyDaily: 3000,
   keyWrites: 400,
@@ -33,9 +35,15 @@ export const DESK = {
   news: 80,
   /** 넘김 기록을 몇 개까지 보여 줄지. */
   handoffLog: 10,
+  /** 1.38 [DESK-09] Claude 열쇠로 보낸 답: 이만큼 '보류 중'으로 두었다가 가요(그 사이 취소·고치기), 하루 이만큼까지. */
+  hold: 10 * 60 * 1000,
+  claudeAnswersDay: 30,
 };
 
 export const DESK_SCHEMA = [
+  // 1.38 [DESK-09] 열쇠로 보낸 답의 10분 보류: 그동안은 문의 대화에 없고(앱에 안 보여요), 시간이 되면 답으로 들어가요.
+  `CREATE TABLE IF NOT EXISTS held_replies (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL, text TEXT NOT NULL, by TEXT NOT NULL,
+    actor_id TEXT, close INTEGER NOT NULL DEFAULT 0, template INTEGER, at INTEGER NOT NULL, until INTEGER NOT NULL)`,
   // 1.37 [ADM2-10] 넘김 묶음: 'Claude에게 넘기기'를 복사한 때(cut)와 그 글에 든 문의·개발사항, 결과를 반영한 때와 요약.
   `CREATE TABLE IF NOT EXISTS handoffs (id TEXT PRIMARY KEY, at INTEGER NOT NULL, cut INTEGER NOT NULL, by TEXT NOT NULL,
     asks TEXT NOT NULL DEFAULT '[]', items TEXT NOT NULL DEFAULT '[]', result_at INTEGER, result TEXT NOT NULL DEFAULT '')`,
@@ -103,12 +111,17 @@ async function shipTargets(env, v) {
   return [...out.values()];
 }
 
+/** 1.38 [ADM3-14] 출시 날 점검표: [v]가 나간 뒤에도 아직 답을 기다리는 묶인 문의. */
+export const shipWaiting = (env, v) => shipTargets(env, v);
+
 /** 1.37 [ADM2-10] 묶인 문의에 '고친 판이 나왔어요'를 보냈다고 적어요(판을 저장할 때 다시 보내지 않게). */
 export async function markTold(env, item, inquiries, now) {
   if (!inquiries.length) return;
   for (let i = 0; i < inquiries.length; i += 90) {
     const part = inquiries.slice(i, i + 90);
     await run(env, `UPDATE dev_links SET told_at = ? WHERE item_id = ? AND told_at IS NULL AND inquiry_id IN (${part.map(() => "?").join(", ")})`, now, item, ...part);
+    // 1.39 [LOOP-16] '아직이에요' 뒤 다시 고친 판 안내: 해결됐나요를 다시 물어요.
+    await run(env, `UPDATE inquiries SET fixed = 0, fixed_at = NULL WHERE fixed = -1 AND id IN (${part.map(() => "?").join(", ")})`, ...part).catch(() => null);
   }
 }
 
@@ -147,27 +160,32 @@ async function ship(request, env, now, answer) {
   const body = await readJson(request, 2048);
   const v = String(body.version ?? "").trim();
   if (!/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(v)) refuse("version", "version");
+  return json(await shipNow(env, v, { dry: body.dry === true, notify: body.notify === true, notice: body.notice !== false }, now, answer));
+}
+
+/** 1.39 [LOOP-02] 나간 판 저장 본체: 관리자 단추와 Play 자동 감지(loop.js)가 함께 써요. [by]는 기록에 남는 이름. */
+export async function shipNow(env, v, { dry = false, notify = false, notice: post = true, by } = {}, now, answer) {
   const was = await shippedVersion(env);
   const [targets, fresh] = await Promise.all([shipTargets(env, v), newlyOut(env, v, was?.v)]);
   const notice = newsNotice(v, fresh, now);
   // 1.37 [ADM2-10] 판을 저장하기 전에 볼 것: 개발사항마다 미리 써 둔 출시 답·공지 한 줄이 있는지, 문의에 갈 답, 올라갈 공지.
   const items = fresh.map((d) => ({ id: d.id, title: d.title, releasedIn: d.released_in, asks: d.asks, shipReply: Boolean(d.ship_reply), news: d.news || null }));
-  if (body.dry === true) {
+  if (dry) {
     const byItem = new Map();
     for (const t of targets) byItem.set(t.item, { item: t.item, title: t.title, n: (byItem.get(t.item)?.n ?? 0) + 1, text: t.text });
-    return json({ version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20),
-      replies: [...byItem.values()].slice(0, 20), fresh: items.slice(0, 40), notice: notice ? { title: notice.title, body: notice.body, days: DESK.newsDays } : null });
+    return { version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20),
+      replies: [...byItem.values()].slice(0, 20), fresh: items.slice(0, 40), notice: notice ? { title: notice.title, body: notice.body, days: DESK.newsDays } : null };
   }
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: now, by: env.actor?.name ?? "" }));
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: now, by: by ?? env.actor?.name ?? "" }));
   let answered = 0;
-  if (body.notify === true) for (const t of targets) {
+  if (notify) for (const t of targets) {
     if (await answer(env, t.inquiry, t.text, now)) answered++;
     await markTold(env, t.item, [t.inquiry], now);
   }
   // 공지는 따로 끄지 않는 한 올려요(notice: false면 안 올림).
-  const noticeId = notice && body.notice !== false ? await postNotice(env, notice) : null;
-  await audit(env, now, "shipped_version", v, [answered && `문의 ${answered}건에 업데이트 안내`, noticeId && "업데이트 소식 공지"].filter(Boolean).join(" · "));
-  return json({ version: v, was: was?.v ?? null, answered, notice: noticeId ? { id: noticeId, title: notice.title } : null });
+  const noticeId = notice && post ? await postNotice(env, notice) : null;
+  await audit(env, now, "shipped_version", v, [by && `${by}`, answered && `문의 ${answered}건에 업데이트 안내`, noticeId && "업데이트 소식 공지"].filter(Boolean).join(" · "));
+  return { version: v, was: was?.v ?? null, answered, notice: noticeId ? { id: noticeId, title: notice.title } : null };
 }
 
 // ---- 흐름(관제)과 운영 숫자 [ADM2-01][ADM2-05] ----
@@ -195,8 +213,11 @@ export async function flow(env, now) {
     all(env, `SELECT i.id, i.kind, i.created_at, i.rating, (SELECT MIN(m.at) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS first
       FROM inquiries i WHERE i.created_at > ?`, now - DESK.weeks * 7 * DAY),
     slaTargets(env),
-    one(env, "SELECT COUNT(*) AS n, MAX(last_at) AS last FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ?", now).catch(() => ({ n: 0, last: null })),
+    one(env, "SELECT COUNT(*) AS n, MAX(last_at) AS last FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ? AND scope = 'ops'", now).catch(() => ({ n: 0, last: null })),
   ]);
+  // 1.38 [ADM2-07] 처리 속도: 문의가 들어온 때부터 고친 판이 나갔다고 알린 때(dev_links.told_at)까지, 60일.
+  const toldRows = await all(env, `SELECT l.told_at, i.created_at FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE l.told_at IS NOT NULL AND l.told_at > ?`, now - 60 * DAY).catch(() => []);
   const stage = (key, name, list, at, hint, act) => {
     const oldest = list.length ? Math.min(...list.map(at)) : null;
     const wait = oldest === null ? 0 : now - oldest;
@@ -210,11 +231,11 @@ export async function flow(env, now) {
   const built = devs.filter((d) => d.status === "done" && !isOut(d.released_in, shipped));
   const notify = linkedWaiting.filter((r) => isOut(r.released_in, shipped));
   const stages = [
-    stage("answer", "새 문의", fresh, (q) => q.created_at, "정리함에서 나눠 답하거나 개발사항으로 넘겨요", { route: "sort", label: "정리함 열기" }),
+    stage("answer", "새 문의", fresh, (q) => q.created_at, "운영 장부에서 나눠 답하거나 개발사항으로 넘겨요", { route: "sort", label: "운영 장부 열기" }),
     stage("todo", "개발 대기", todo, (d) => d.created_at, "Claude에게 넘기기로 복사하거나, 열쇠가 있으면 Claude가 직접 가져가요", { route: "sort", label: "Claude에게 넘기기" }),
     stage("handed", "Claude에게 넘김", handed, (d) => d.handed_at, "Claude가 개발을 시작하면 개발중으로 바뀌어요", { route: "dev", label: "개발사항 보기" }),
     stage("doing", "개발 중", doing, (d) => d.updated_at, "PR·디버그 빌드·PC 확인 중이에요", { route: "dev", label: "개발사항 보기" }),
-    stage("built", "고침 · 출시 전", built, (d) => d.updated_at, "Play에 올린 뒤 '나간 판'을 저장하면 앱에 반영이 떠요", { act: "flow-ship", label: "나간 판 저장" }),
+    stage("built", "고침 · 출시 전", built, (d) => d.updated_at, "Play 100% 출시를 서버가 보면 1시간 뒤 스스로 저장하고 답해요(서비스 계정이 없으면 '나간 판 저장')", { act: "flow-ship", label: "나간 판 저장" }),
     stage("notify", "출시됨 · 답 남음", notify, (r) => r.updated_at, "고친 판이 나갔는데 아직 답을 기다리는 문의예요", { route: "inquiries", label: "문의 보기" }),
   ];
   // 30일 숫자: 첫 답까지 걸린 시간, 답 목표 지킴, 도움이 됐어요, 개발 걸린 날.
@@ -238,6 +259,11 @@ export async function flow(env, now) {
     slaKept: judged.length ? Math.round((kept / judged.length) * 100) : null,
     helpful: rated.length ? Math.round((rated.filter((q) => q.rating === 1).length / rated.length) * 100) : null,
     devDays: r1(median(doneDevs)),
+    // 1.38 [ADM2-07] 고친 판이 문의한 분께 닿기까지(중앙값, 일)와 지금 밀린 건수(모든 단계 합, 그중 막힌 단계의 건수).
+    fixDays: r1(median(toldRows.map((r) => (r.told_at - r.created_at) / DAY))),
+    fixedTold: toldRows.length,
+    backlog: stages.reduce((n, x) => n + x.n, 0),
+    backlogStuck: stages.filter((x) => x.stuck).reduce((n, x) => n + x.n, 0),
     inMonth: month.length,
     answeredMonth: month.filter((q) => q.first).length,
     weeks,
@@ -255,15 +281,38 @@ const keyHash = (key) => sha256(`opskey|${key}`);
 const keyDayOf = (now) => new Date(now + 9 * HOUR).toISOString().slice(0, 10);
 
 /** 열쇠로 할 수 있는 것: 문의·개발사항 읽기·답·상태·묶기, 장부, 나간 판. 이 밖은 모두 막아요. */
-const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
-  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/];
+const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/servers$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
+  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/,
+  // 1.38 [DESK-02] 운영 장부(줄·CSV·기록): 열쇠의 권한(문의·개발사항) 안의 줄만 보여요.
+  /^\/ledger$/, /^\/ledger\.csv$/, /^\/ledger\/log$/,
+  // 1.38 [ADM3-18][ADM3-31] 스토어 리뷰 읽기(초안만 적고 보내기는 사람), Claude 조종석, 사람 옆 패널(결제 칸 없이), 개발사항 이야기.
+  /^\/reviews$/, /^\/cockpit$/, /^\/person$/, /^\/story\/d[A-Za-z0-9]{15}$/,
+  // 1.39 [LOOP-08][LOOP-09][LOOP-11][LOOP-12] 자동 순환: 흐름 칸, 점수 순 개발 대기열, 결정함, 요금 판단 관측치, 믿을수록 더 맡기기.
+  /^\/loop$/, /^\/loop\/queue$/, /^\/loop\/decide$/, /^\/loop\/tiers$/, /^\/loop\/autonomy$/, /^\/loop\/tier\/d[A-Za-z0-9]{15}$/,
+  // 1.39 [ADM3-49] 제보 검토·보상·회사 합치기 초안(사용자 11-08 '클로드 열쇠로 제보 검토 보상 초안까지'): 검토함·회사·판·보상 읽기와 초안 목록.
+  /^\/queue$/, /^\/companies$/, /^\/companies\/similar$/, /^\/companies\/[A-Za-z0-9]{12}$/, /^\/versions$/, /^\/rewards$/, /^\/drafts$/,
+  // 1.39 [OBS2-04] 관측 판과 개선 신호(사용자 11-08 '통계를 통한 완전한 자가 발전'): Claude가 신호를 개발사항으로 넘기고 효과를 확인해요.
+  /^\/observe$/, /^\/observe\/signals$/];
 const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/, /^\/inquiries\/sort\/apply$/, /^\/inquiries\/handoff\/(mark|result)$/,
-  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/];
-export const keyAllows = (path, method) => (method === "GET" ? KEY_GET : method === "POST" ? KEY_POST : []).some((r) => r.test(path));
+  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/,
+  // 1.38 [DESK-02][DESK-03] 장부 줄의 상태(보는 중·기다림·끝, 이유와 함께)·되돌리기·한 줄 요약.
+  /^\/ledger\/(state|undo|summary)$/,
+  /^\/reviews\/[A-Za-z0-9_:.-]{4,120}\/draft$/,
+  // 1.39 [LOOP-09] 결정함의 Claude 초안(최고 관리자 확인 문의에 보낼 답을 적어 두기만, 보내기는 사람).
+  /^\/loop\/drafts$/,
+  // 1.39 [ADM3-49] 추천만 적어요. 채택·거절·되돌리기(/groups/…), 보상 지급(/rewards/<id>), 회사 합치기(/companies/<id>/merge)는 이 목록에 없어 막혀요.
+  /^\/drafts$/,
+  // 1.39 [OBS2-04] 개선 신호를 개발사항으로 넘기기·지켜보기·아님(보내는 것이 아니라 안쪽 기록).
+  /^\/observe\/signals$/, /^\/observe\/refresh$/];
+// 1.39 [LOOP-05] 저장소 동기화 열쇠(GitHub Action): 이 한 길만.
+const SYNC_POST = [/^\/dev\/sync$/];
+export const keyAllows = (path, method, scope = "ops") => (scope === "sync" ? (method === "POST" ? SYNC_POST : [])
+  : method === "GET" ? KEY_GET : method === "POST" ? KEY_POST : []).some((r) => r.test(path));
 
 /** 'Claude' 관리자: 문의와 개발사항만, 처리까지. 기록에는 'Claude'로 남아요. */
-const keyActorOf = (row) => ({ id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id,
-  perms: { inquiries: "edit", dev: "edit", devStatus: "edit" } });
+const keyActorOf = (row) => (row.scope === "sync"
+  ? { id: `key:${row.id}`, name: "저장소 동기화", email: "", owner: false, key: row.id, sync: true, perms: { dev: "edit", devStatus: "edit" } }
+  : { id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id, perms: { inquiries: "edit", dev: "edit", devStatus: "edit", metrics: "view", review: "view", companies: "view", rewards: "view" } });
 
 /**
  * Authorization: Bearer bko_… 로 온 부름. 열쇠가 아니면 null(쿠키 로그인으로), 맞지 않거나 막힌 길이면 Response, 맞으면 { actor }.
@@ -275,7 +324,7 @@ export async function keySession(request, env, path, method, now) {
   const key = auth.slice(7).trim();
   const row = KEY.test(key) ? await one(env, "SELECT * FROM admin_keys WHERE hash = ?", await keyHash(key)) : null;
   if (!row || row.revoked_at || row.expires_at <= now) return json({ error: "key" }, 401);
-  if (!keyAllows(path, method)) return json({ error: "key_scope" }, 403);
+  if (!keyAllows(path, method, row.scope ?? "ops")) return json({ error: "key_scope" }, 403);
   const day = keyDayOf(now);
   const n = row.day === day ? row.n + 1 : 1;
   const writes = (row.day === day ? row.writes : 0) + (method === "GET" ? 0 : 1);
@@ -291,24 +340,28 @@ export function keyView(d) {
 }
 
 async function keyList(env, now) {
-  const rows = await all(env, "SELECT id, label, created_at, expires_at, revoked_at, last_at, day, n, writes FROM admin_keys ORDER BY created_at DESC LIMIT 20");
+  const rows = await all(env, "SELECT id, label, scope, created_at, expires_at, revoked_at, last_at, day, n, writes FROM admin_keys ORDER BY created_at DESC LIMIT 20");
   const day = keyDayOf(now);
   return { limits: { days: DESK.keyDays, alive: DESK.keysAlive, daily: DESK.keyDaily, writes: DESK.keyWrites },
-    keys: rows.map((r) => ({ id: r.id, label: r.label, createdAt: iso(r.created_at), expiresAt: iso(r.expires_at), revokedAt: r.revoked_at ? iso(r.revoked_at) : null,
+    keys: rows.map((r) => ({ id: r.id, label: r.label, scope: r.scope ?? "ops", createdAt: iso(r.created_at), expiresAt: iso(r.expires_at), revokedAt: r.revoked_at ? iso(r.revoked_at) : null,
       lastAt: r.last_at ? iso(r.last_at) : null, alive: !r.revoked_at && r.expires_at > now, today: r.day === day ? r.n : 0 })) };
 }
 
 async function keyMake(request, env, now) {
   const body = await readJson(request, 1024);
-  const label = String(body.label ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || "Claude";
-  const alive = await one(env, "SELECT COUNT(*) AS n FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ?", now);
-  if (alive.n >= DESK.keysAlive) return json({ error: "too_many", most: DESK.keysAlive }, 409);
+  // 1.39 [LOOP-05] scope "sync": GitHub Action이 dev-status를 보내는 열쇠(POST /dev/sync만, 1년). 기본은 Claude 운영 열쇠.
+  const scope = body.scope === "sync" ? "sync" : "ops";
+  const label = String(body.label ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || (scope === "sync" ? "GitHub 동기화" : "Claude");
+  const alive = await one(env, "SELECT COUNT(*) AS n FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ? AND scope = ?", now, scope);
+  const most = scope === "sync" ? 1 : DESK.keysAlive;
+  if (alive.n >= most) return json({ error: "too_many", most }, 409);
+  const days = scope === "sync" ? DESK.syncKeyDays : DESK.keyDays;
   const key = `bko_${randomId(40)}`;
   const id = `k${randomId(15)}`;
-  await run(env, "INSERT INTO admin_keys (id, hash, label, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", id, await keyHash(key), label, now, now + DESK.keyDays * DAY);
-  await audit(env, now, "ops_key_make", label, `${DESK.keyDays}일`);
+  await run(env, "INSERT INTO admin_keys (id, hash, label, created_at, expires_at, scope) VALUES (?, ?, ?, ?, ?, ?)", id, await keyHash(key), label, now, now + days * DAY, scope);
+  await audit(env, now, scope === "sync" ? "sync_key_make" : "ops_key_make", label, `${days}일`);
   // 열쇠는 이때 한 번만 보여요. 서버에는 해시만 남아요.
-  return json({ id, key, label, expiresAt: iso(now + DESK.keyDays * DAY) });
+  return json({ id, key, label, scope, expiresAt: iso(now + days * DAY) });
 }
 
 async function keyRevoke(env, id, now) {
@@ -336,6 +389,7 @@ async function desk(env, now) {
       "답은 쉬운 존댓말, 결론부터. '고쳤어요'는 나간 판(shipped) 이하로 고친 것에만.",
       "환불·결제·보상, 법·안전 신고, 개인정보 요청, 크게 화난 민원, 약관·처리방침 질문, 회사 이름이 나오는 회사 방식, 큰 방향 개선은 보내지 말고 사용자에게 물어요.",
       "지우기·사용자 제한·스위치·공지·관리자 계정은 이 열쇠로 할 수 없어요.",
+      "1.38 운영 장부: GET /api/admin/ledger?view=claude(Claude 차례)·owner(최고 관리자 확인)·today·late. 줄마다 key(type:id)·번호(K-0001)·겹침 후보·단계·답·담당·기한. 처리한 줄은 POST /ledger/state {keys, state:'done', reason}로 끝내고(이유: answered·duplicate·fixed·dev·wontfix·spam·nothing·handled), 한 줄 요약은 POST /ledger/summary {key, text}.",
     ],
     shipped,
     flow: { stages: f.stages, metrics: f.metrics, next: f.next },

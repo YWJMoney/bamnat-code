@@ -67,6 +67,53 @@ class AlarmService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        // Leaving is looked at a moment later: 끄기 on the screen closes it before the ring has stopped.
+        onScreen = { shown -> handler.postDelayed({ screenChanged(shown) }, if (shown) 0L else 800L) }
+    }
+
+    /**
+     * 1.39 [ALRM-31] (PC 5c4ad849 사용성 제안 '근무 알람 화면: 헤드업 알림이 큰 시계를 가려요'): with the ringing screen in front,
+     * the ringing notice goes on quietly in the shade (same buttons, no pop-up over the clock); when the screen is left while it
+     * still rings and the phone is in use, the notice pops up again so 끄기 and 다시 울림 stay at hand.
+     */
+    private fun screenChanged(shown: Boolean) {
+        val ring = _ringing.value ?: return
+        if (inCallNow) return
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        runCatching {
+            val nm = NotificationManagerCompat.from(this)
+            if (shown) {
+                nm.cancel(Notifications.ALARM_AGAIN_ID)
+                nm.notify(Notifications.ALARM_NOTIFICATION_ID, quietNotice(ring))
+            } else if (screenShownAt != 0L && screenHiddenAt >= screenShownAt && (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive) {
+                nm.notify(Notifications.ALARM_NOTIFICATION_ID, buildNotification(ring))
+            }
+        }
+    }
+
+    /** [ALRM-31] The ringing notice without its pop-up: on the quiet 알람 상태 channel, no sound of its own, no full screen. */
+    private fun quietNotice(ring: RingRequest): android.app.Notification {
+        val full = buildNotification(ring)
+        return NotificationCompat.Builder(this, Notifications.STATUS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setContentTitle(ring.title)
+            .setContentText(describe(ring))
+            .setContentIntent(full.contentIntent)
+            .setDeleteIntent(full.deleteIntent)
+            .setColorized(true)
+            .setColor(0xFFFF6B5E.toInt())
+            .apply { full.actions.orEmpty().forEach { a -> addAction(NotificationCompat.Action.Builder(0, a.title, a.actionIntent).setAuthenticationRequired(false).build()) } }
+            .build()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
@@ -121,6 +168,8 @@ class AlarmService : Service() {
                 val how = intent?.getStringExtra(EXTRA_HOW)?.takeIf { it.isNotEmpty() }
                 // [ALRM-09] 오늘 모두 끄기 on a mission alarm, now that the mission is done (or was given up after 5 minutes).
                 val allOff = intent?.action == ACTION_DISMISS && ring != null && _allOffAfterMission.value && how != null
+                // 1.38 [SLEEP-08] An early ring in its 깨우는 구간, turned off: its on-time ring is off now too, quietly.
+                if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) com.bamnat.app.sleep.SmartWake.offEarly(this, ring)
                 if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) {
                     appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull(how, if (allOff) "all_off" else null, offDetail(ring)).joinToString(" "))
                     // [PROV-07] A few minutes on, 일어났나요?; once per alarm, never for a memo's schedule.
@@ -128,6 +177,12 @@ class AlarmService : Service() {
                     if (minutes > 0 && !ring.recheck && ring.label == null && !allOff && !AlarmsOff.isOff(this)) WakeCheck.schedule(this, ring, minutes)
                     // [ALRM-16] 1.31 N3: the day at a glance, after a shift alarm (not a memo's schedule).
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
+                    // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
+                    if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
+                    // 1.39 [SLEEP-06] The morning alarm off: 자는 동안 소리 stops too, so the microphone does not run into the day.
+                    if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepRecordService.stop(this)
+                    // 1.39 [FX-21] 규칙 '근무 알람을 끄면'.
+                    if (ring.label == null && !ring.recheck) runCatching { com.bamnat.app.logic.LogicRunner.onAlarmOff(appContainer) }
                 }
                 if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()
@@ -203,6 +258,8 @@ class AlarmService : Service() {
         phoneLater = null
         // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it.
         if (_ringing.value == null) _since.value = Today.millis()
+        // 1.38 [SLEEP-08] PC 12차: whether this ring came early is told by when it began, not by the clock while it is shown.
+        ringStartedAt = Today.millis()
         _ringing.value = ring
         if (!ring.recheck && !BootAlarms.isLocked(this)) WakeCheck.cancel(this)
         // [ALRM-22] A call already on: nothing sounds or opens over it; the ring starts when the call ends.
@@ -231,6 +288,8 @@ class AlarmService : Service() {
                 if (!reached && watchFirst) handler.post { if (phoneLater === later) { handler.removeCallbacks(later); later.run() } }
             }
         }
+        // 1.39 [FLOW-15] 깨우는 단계: the watch first is 1 (진동); the phone's sound comes in at phoneOutputs.
+        _stage.value = if (watchFirst) 1 else 0
         if (!watchFirst) phoneOutputs(ring)
         listenForPowerButton()
         if (!inCallNow) handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
@@ -263,10 +322,19 @@ class AlarmService : Service() {
         }
     }
 
+    /** [EASE-21] When the hold for a call began, 0 when not holding; how long it has held decides whether it still may. */
+    private var holdSince = 0L
+
     private fun callActive(): Boolean {
         val mode = runCatching { getSystemService(AudioManager::class.java)?.mode }.getOrNull() ?: return false
-        return mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION ||
-            (Build.VERSION.SDK_INT >= 30 && mode == AudioManager.MODE_CALL_SCREENING)
+        val now = Today.millis()
+        val held = if (holdSince == 0L) 0L else now - holdSince
+        val holds = holdsForCall(mode, held)
+        holdSince = if (holds) (if (holdSince == 0L) now else holdSince) else 0L
+        if (!holds && held > 0 && mode != AudioManager.MODE_NORMAL && !BootAlarms.isLocked(this)) {
+            appContainer.telemetry.event("alarm_call_hold_end", "mode=$mode held=${held / 1000}s")
+        }
+        return holds
     }
 
     private fun holdForCall(ring: RingRequest) {
@@ -314,6 +382,8 @@ class AlarmService : Service() {
         if (sound != AppSettings.SILENT_SOUND) {
             requestFocus()
             playSound(candidateUris(sound), settings.gradualVolume)
+            // 1.39 [FLOW-15] A sound that grows is 2 (소리 작게) until it is full; a full sound after the watch is 3.
+            _stage.value = if (settings.gradualVolume) 2 else if (_stage.value > 0) 3 else 0
         }
         if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
     }
@@ -478,6 +548,7 @@ class AlarmService : Service() {
             val mp = player ?: return
             volume = (volume + RAMP_INCREMENT).coerceAtMost(1f)
             if (quietUntil == 0L) runCatching { mp.setVolume(volume, volume) }
+            if (volume >= 1f && _stage.value > 0) _stage.value = 3
             if (volume < 1f) handler.postDelayed(this, RAMP_STEP_MILLIS)
         }
     }
@@ -541,7 +612,9 @@ class AlarmService : Service() {
         _allOffAfterMission.value = false
         _ringing.value = null
         _since.value = null
+        _stage.value = 0
         inCallNow = false
+        holdSince = 0L
         _inCall.value = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)
@@ -550,9 +623,11 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
+        onScreen = null
         stopOutputs()
         _ringing.value = null
         _since.value = null
+        _stage.value = 0
         super.onDestroy()
     }
 
@@ -608,9 +683,20 @@ class AlarmService : Service() {
         /** The alarm currently ringing, observed by [AlarmActivity]. */
         val ringing: StateFlow<RingRequest?> = _ringing.asStateFlow()
 
+        /** 1.38 [SLEEP-08] When the ring now ringing began; a ring that replaced another starts its own. */
+        @Volatile var ringStartedAt: Long = 0L
+            private set
+
         private val _since = MutableStateFlow<Long?>(null)
         /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
         val ringingSince: StateFlow<Long?> = _since.asStateFlow()
+
+        private val _stage = MutableStateFlow(0)
+        /**
+         * 1.39 [FLOW-15] 깨우는 단계 for the ringing screen's three dots: 1 진동 (the watch first), 2 소리 작게 (점점 크게 is growing),
+         * 3 소리 크게; 0 when this ring has no steps (full sound at once), and the dots are not shown.
+         */
+        val wakeStage: StateFlow<Int> = _stage.asStateFlow()
 
         private val _inCall = MutableStateFlow(false)
         /** [ALRM-22] The ring waits for a call to end. */
@@ -618,6 +704,23 @@ class AlarmService : Service() {
 
         /** [ALRM-22] How often a ringing alarm looks for a call. */
         private const val CALL_CHECK_MILLIS = 1_500L
+
+        /** [EASE-21] A voice or video call in an app (메신저 통화) holds the alarm this long at most. */
+        const val APP_CALL_HOLD_MILLIS = 3 * 60_000L
+        /** [EASE-21] Any call holds it this long at most: a phone left in call mode after the call must not keep it quiet. */
+        const val CALL_HOLD_MILLIS = 30 * 60_000L
+
+        /**
+         * [EASE-21] 1.38 (오늘근무 리뷰 '통화 중 오판' 사례): whether the alarm keeps quiet for a call, from the phone's audio
+         * [mode] and how long it has already [heldMillis]. A phone call (ringing, in a call, screening) holds up to
+         * [CALL_HOLD_MILLIS]; the mode apps use for their calls is also what some apps leave on after a call or for voice
+         * messages, so it holds only [APP_CALL_HOLD_MILLIS]. After that the alarm rings, even if the phone still says "call".
+         */
+        internal fun holdsForCall(mode: Int, heldMillis: Long): Boolean = when (mode) {
+            AudioManager.MODE_RINGTONE, AudioManager.MODE_IN_CALL, AudioManager.MODE_CALL_SCREENING -> heldMillis < CALL_HOLD_MILLIS
+            AudioManager.MODE_IN_COMMUNICATION -> heldMillis < APP_CALL_HOLD_MILLIS
+            else -> false
+        }
 
         private val _quiet = MutableStateFlow(false)
         /** [ALRM-08] A button quieted a mission alarm for a while. */
@@ -640,14 +743,18 @@ class AlarmService : Service() {
          * banner's 끄기 and 다시 울림 stay for every later time.
          */
         fun openScreenOnce(ring: RingRequest): Boolean {
-            val key = ring.triggerAtMillis to ring.isSnooze
+            // 1.38 [SLEEP-08] An early ring in its 깨우는 구간 is its own: left ringing out, the on-time ring opens the screen again.
+            val key = (if (Today.millis() < ring.triggerAtMillis) -ring.triggerAtMillis else ring.triggerAtMillis) to ring.isSnooze
             if (openedFor == key || screenShownAt != 0L && screenHiddenAt < screenShownAt) return false
             openedFor = key
             return true
         }
 
-        fun screenShown(now: Long = Today.millis()) { screenShownAt = now }
-        fun screenHidden(now: Long = Today.millis()) { screenHiddenAt = now }
+        /** [ALRM-31] The running service's answer to the ringing screen coming and going. */
+        @Volatile private var onScreen: ((Boolean) -> Unit)? = null
+
+        fun screenShown(now: Long = Today.millis()) { screenShownAt = now; onScreen?.invoke(true) }
+        fun screenHidden(now: Long = Today.millis()) { screenHiddenAt = now; onScreen?.invoke(false) }
         /** The ringing screen is gone: the next ring starts from nothing. */
         fun screenGone() { screenShownAt = 0L; screenHiddenAt = 0L }
 
@@ -698,13 +805,28 @@ class AlarmService : Service() {
                 // [SCHED-01] A memo's schedule: when it is.
                 // [PROV-07] 일어났나요? had no answer.
                 ring.recheck -> "끈 뒤 답이 없어 다시 울려요"
+                // PC 267560dd: the test said "14:08 일정"; it says what it is for.
+                ring.label == AlarmScheduler.TEST_NAME -> if (ring.isSnooze) "시험 알람 · 다시 울림" else "소리와 화면이 잘 나오는지 보는 알람이에요"
                 ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
                 ring.label != null -> "$start 일정"
                 ring.isSnooze && work -> "$start 근무 시작 · 다시 울림"
                 ring.isSnooze -> "다시 울림"
                 ring.custom && work -> "$start 근무 시작 · 이 날 알람"
                 ring.custom -> "이 날 알람"
+                // [EASE-18] One after the start says so (다음날 낮잠).
+                // PC 267560dd: "19:00 근무 시작" read as tonight on a nap alarm the next day; it says the shift began yesterday.
+                ring.offsetMinutes < 0 -> startedLine(ring, start) + " · ${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람"
                 else -> "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
+            }
+        }
+
+        /** "어제 19:00에 시작한 근무" when the alarm comes on a later day than the shift began, else "19:00 근무 시작". */
+        internal fun startedLine(ring: RingRequest, start: String): String {
+            val ringDay = AlarmScheduler.millisToLocal(ring.triggerAtMillis).toLocalDate()
+            return when (java.time.temporal.ChronoUnit.DAYS.between(ring.shiftDate, ringDay)) {
+                0L -> "$start 근무 시작"
+                1L -> "어제 ${start}에 시작한 근무"
+                else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 ${start}에 시작한 근무"
             }
         }
 

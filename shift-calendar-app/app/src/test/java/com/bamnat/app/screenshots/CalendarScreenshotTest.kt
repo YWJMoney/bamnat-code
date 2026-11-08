@@ -308,6 +308,53 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun calListShift() = shoot("302_folded_list_view", FOLDED) { pickListBoard() }
     // [CAL-06] What every mark means, in the calendar's own kind of work.
     @Test fun calLegendShift() = shoot("305_folded_legend_shift", FOLDED) { tapText("달력 표시 안내", exact = true, scrolls = 0) }
+    /** [EASE-04] 1.38 (통합 7차): the 급여일 and 업종 기념일 marks are said, and told apart from 공휴일. */
+    @Test fun calLegendSaysPayAndOrgDays() {
+        val c = app.container
+        runBlocking {
+            c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile().copy(period = com.bamnat.core.pay.PayPeriod(payDay = 25)), keepUndo = false)
+        }
+        c.settingsRepository.update { it.copy(orgDayGroup = "fire", orgDaysOn = true) }
+        try {
+            shoot("305b_folded_legend_pay_org", FOLDED) {
+                assertTrue("the 월급날 cell says 급여", appears("급여일"))
+                tapText("달력 표시 안내", exact = true, scrolls = 0)
+                assertTrue(appears("업종 기념일", exact = true))
+                assertTrue(appears("공휴일과 달리 쉬는 날은 아니에요"))
+                reveal("왼쪽 위 '급여' 글자")
+            }
+        } finally {
+            runBlocking { c.payStore.save(null, keepUndo = false) }
+            c.settingsRepository.update { it.copy(orgDayGroup = "", orgDaysOn = true) }
+        }
+    }
+    /** [EASE-04] With no 월급날 and no 업종, the sheet says each is off and opens the place it is turned on. */
+    @Test fun calLegendSaysWhereToTurnOn() = shoot("305c_folded_legend_turn_on", FOLDED) {
+        tapText("달력 표시 안내", exact = true, scrolls = 0)
+        assertTrue(appears("켜러 가기", exact = true))
+        assertTrue(appears("켜면 소방의 날 같은 날이"))
+        // 1.38 통합 10차: with no pay set, the 월급날 comes with the pay setup, and the row says so (was '월급날 넣기' to a screen without it).
+        reveal("급여 설정하기", exact = true)
+        assertTrue(appears("급여를 설정하면 월급날도 넣을 수 있어요", exact = false))
+        assertTrue(gone("월급날 넣기", exact = true))
+    }
+    /** 1.38 통합 8차 (안내의 '설정 › 근무·급여 › 월급날·정산 기간'이 실제 자리와 달라요): '월급날 넣기' opens the 월급날 itself. */
+    @Test fun calLegendOpensThePayday() {
+        val c = app.container
+        runBlocking {
+            c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile().copy(period = com.bamnat.core.pay.PayPeriod()), keepUndo = false)
+        }
+        try {
+            shoot("305d_folded_legend_opens_payday", FOLDED) {
+                tapText("달력 표시 안내", exact = true, scrolls = 0)
+                reveal("월급날 넣기", exact = true)
+                tapText("월급날 넣기", exact = true)
+                assertTrue("the 월급날 card of the rules is on screen", appears("정산 기간과 월급날"))
+            }
+        } finally {
+            runBlocking { c.payStore.save(null, keepUndo = false) }
+        }
+    }
     /** [CAL-09] A long press starts a range; the next tap ends it. */
     @Test fun calPaintRange() = shoot("308_folded_paint_range", FOLDED) {
         tapText("빠른 입력", exact = true)

@@ -51,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -81,12 +82,35 @@ internal fun OrderStep(vm: SetupViewModel, d: SetupDraft) {
     when {
         d.usesRotation -> RotationOrder(vm, d)
         d.style == WorkStyle.SHIFT -> RosterPaint(vm, d)
-        d.style == WorkStyle.HOURLY -> HourlyDays(vm, d)
+        else -> OrderPart(vm, d, header = true)
+    }
+}
+
+/**
+ * [EASE-07] 1.38: the order, or the days of the week, on the times' screen (one screen less). With [header] it is a screen of its
+ * own (a step kept from an older draft); without, its questions are said as small titles over the times.
+ */
+@Composable
+internal fun OrderPart(vm: SetupViewModel, d: SetupDraft, header: Boolean = false) {
+    when {
+        d.usesRotation -> RotationOrder(vm, d, header)
+        d.style == WorkStyle.HOURLY -> HourlyDays(vm, d, header)
         else -> {
-            StepHeader("어느 요일에 일하세요?", "쉬는 요일은 비워 두세요. 어떤 주만 다르면 달력에서 그날만 바꾸면 돼요.")
+            // 1.37 PC LOW-3: the example says this kind of work's own day (일근), not 교대's 주간.
+            if (header) StepHeader("어느 요일에 일하세요?", "쉬는 요일은 비워 두세요. 어떤 주만 다르면 달력에서 그날만 바꾸면 돼요.")
+            else PartTitle("일하는 요일", "쉬는 요일은 비워 두세요. 어떤 주만 다르면 달력에서 그날만 바꾸면 돼요.")
             WeekDays(d, onSet = vm::setWeekly)
             HolidaysOffRow(d.holidaysOff, vm::setHolidaysOff)
         }
+    }
+}
+
+/** [EASE-07] A question inside a screen: smaller than the screen's own, with its one line. */
+@Composable
+internal fun PartTitle(title: String, line: String? = null) {
+    Column(Modifier.padding(top = 4.dp).semantics { heading() }) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -94,8 +118,9 @@ internal fun OrderStep(vm: SetupViewModel, d: SetupDraft) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
-    StepHeader("근무가 어떤 순서로 돌아가요?", "회사 근무표에서 한 바퀴만 보면 돼요. 오늘이 어디쯤인지는 다음에 물어요.")
+private fun RotationOrder(vm: SetupViewModel, d: SetupDraft, header: Boolean = true) {
+    if (header) StepHeader("근무가 어떤 순서로 돌아가요?", "회사 근무표에서 한 바퀴만 보면 돼요. 오늘이 어디쯤인지는 다음에 물어요.")
+    else PartTitle("근무 순서", "회사 근무표에서 한 바퀴만 보면 돼요. 오늘이 어디쯤인지는 다음에 물어요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
     val shared = remember(d.source) { vm.sourceOrder(d) }
     val presets = remember(d.bundle, d.roles, d.types) { vm.presets(d).map { it to PatternPresets.toSteps(it, d.roles) } }
@@ -103,11 +128,18 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
     var custom by rememberSaveable {
         mutableStateOf(d.rotation.isNotEmpty() && d.rotation != shared && presets.none { it.second == d.rotation })
     }
-    if (shared != null) {
-        val source = d.source
+    // [EASE-07] On the times' screen an order already picked (the company's, or the bundle's most usual one) is shown alone,
+    // the others one tap away, so the times stay in sight.
+    val picked = d.rotation.isNotEmpty() && !custom
+    var others by rememberSaveable { mutableStateOf(header || !picked) }
+    val source = d.source
+    val publicRow = remember(source) { source?.takeIf { it.kind == com.bamnat.core.setup.SetupSource.Kind.PUBLIC }?.id?.let(com.bamnat.core.plaza.PublicCycles::byId) }
+    if (shared != null && (others || d.rotation == shared)) {
         OrderCard(
             title = when {
                 source?.kind == com.bamnat.core.setup.SetupSource.Kind.TEMPLATE -> "${source.name} 순서"
+                // [EASE-06] A public row that gave only "6근2휴": the usual order for it, said so.
+                publicRow != null && publicRow.orderState != com.bamnat.core.plaza.OrderState.EXACT -> "흔한 순서 · 공개 자료엔 ‘${publicRow.orderText.substringBefore(" (").take(16)}’까지만"
                 source?.name.isNullOrBlank() -> "받은 설정의 순서"
                 else -> "${source?.name} 순서"
             },
@@ -120,7 +152,7 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
             },
         )
     }
-    presets.filter { it.second != shared }.forEach { (p, steps) ->
+    presets.filter { it.second != shared && (others || it.second == d.rotation) }.forEach { (p, steps) ->
         OrderCard(
             title = p.name,
             steps = steps,
@@ -132,6 +164,30 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
             },
         )
     }
+    // [GROW-05] 1.38 다른 앱에서 옮기기: the month view of the app used before, captured, gives the order. Shown before the
+    // other orders fold away (#189): someone coming from another app takes this way first.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val capturing by vm.captureReading.collectAsStateWithLifecycle()
+    val capture = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) { custom = true; vm.orderFromCapture(context, uri) }
+    }
+    ChoiceCard(
+        title = if (capturing) "캡처를 읽는 중이에요…" else "다른 앱 화면 캡처로 가져오기",
+        // 1.39 [FLOW-29] 조건은 미리: the picture is read only with the month's dates (four weeks or more) and a 근무 on 7 days or more.
+        subtitle = "쓰던 근무 앱이나 캘린더의 한 달 화면을 캡처해 고르면 순서와 오늘 근무를 찾아요. " +
+            "날짜가 ${com.bamnat.core.imports.CalendarShot.MIN_DAYS}칸 넘게, 근무 글자가 ${com.bamnat.core.imports.CalendarShot.MIN_CELLS}칸 넘게 보여야 읽혀요. 사진은 휴대폰 안에서만 읽어요",
+        icon = Icons.Filled.PhotoCamera,
+        selected = false,
+        onClick = { if (!capturing) capture.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+    )
+    if (!others) {
+        TextButton(onClick = { others = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("순서가 달라요 · 다른 순서 고르기")
+        }
+        return
+    }
     ChoiceCard(
         title = "직접 만들기",
         subtitle = "근무를 하루씩 눌러 순서를 만들어요",
@@ -139,7 +195,10 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
         selected = custom,
         onClick = { custom = true },
     )
-    if (custom) RotationEditor(d, types, onChange = vm::setRotation)
+    if (custom) {
+        val today = remember(d.types) { vm.questionDate(d) }
+        RotationEditor(d, types, onChange = vm::setRotation, today = today, realToday = vm.today, onToday = { step -> vm.answerToday(today, step) })
+    }
 }
 
 /** One order to pick: its days as badges, how often it comes round and the week's average. */
@@ -161,9 +220,19 @@ internal fun orderLine(steps: List<Long?>, types: Map<Long, ShiftType>): String 
 /** [SETUP-02] An order typed a day at a time; a day tapped is changed by the next shift tapped. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RotationEditor(d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit) {
+private fun RotationEditor(
+    d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit,
+    today: java.time.LocalDate, onToday: (Int) -> Unit = {}, realToday: java.time.LocalDate = today,
+) {
     var picked by rememberSaveable { mutableStateOf<Int?>(null) }
     val steps = d.rotation
+    // [EASE-14] Where today is in the order, kept while the order is typed (a change of the order clears the setup's answer,
+    // so a start chosen here is put back after each key).
+    var todayStep by rememberSaveable { androidx.compose.runtime.mutableIntStateOf(todayStepOf(d.anchor, d.rotation.size, today)) }
+    var startChosen by rememberSaveable { mutableStateOf(d.anchor != null) }
+    androidx.compose.runtime.LaunchedEffect(steps) {
+        if (startChosen && steps.isNotEmpty() && d.anchor == null) onToday(Math.floorMod(todayStep, steps.size))
+    }
     val choices: List<Long?> = d.types.map { it.id } + if (d.types.none { it.isOff }) listOf<Long?>(null) else emptyList()
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -219,6 +288,8 @@ private fun RotationEditor(d: SetupDraft, types: Map<Long, ShiftType>, onChange:
             }
             if (steps.isNotEmpty()) {
                 Text(orderLine(steps, types), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                // [EASE-14] The order repeated over the months at once, and today's place in it.
+                OrderPreview(steps, types, today, todayStep, onToday = { s -> todayStep = s; startChosen = true; onToday(s) }, realToday = realToday)
             }
         }
     }
@@ -285,28 +356,53 @@ private fun WeekDays(d: SetupDraft, onSet: (Int, Long?) -> Unit) {
         )
         return
     }
-    WEEK.forEachIndexed { i, day ->
-        val current = d.weekly.getOrNull(i)
+    // 1.37 PC MED-2 사용성 제안 (알바 출근 요일: 칩 4개가 한 줄에 빽빽하고 '저녁 알바'가 안 보임): a row of the seven days for each
+    // kind of shift, as for one, so every kind is in sight; a day takes one kind (another tapped on it takes its place).
+    work.forEach { t ->
+        val color = t.colorArgb.asColor()
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(Fmt.dayOfWeekShort(day), style = MaterialTheme.typography.titleMedium, modifier = Modifier.labelWidth(32.dp))
-            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                work.forEach { t ->
-                    FilterChip(
-                        selected = current == t.id,
-                        onClick = { onSet(i, if (current == t.id) null else t.id) },
-                        label = { Text(t.name) },
-                        leadingIcon = { ShiftBadge(t, size = 18.dp) },
+            ShiftBadge(t, size = 20.dp)
+            Text("${t.name} ${hoursOf(t)}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp).weight(1f),
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text("${d.weekly.count { it == t.id }}일", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            WEEK.forEachIndexed { i, day ->
+                val on = d.weekly.getOrNull(i) == t.id
+                val other = d.weekly.getOrNull(i)?.takeIf { it != t.id && !d.isOff(it) }?.let(d::type)
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .then(if (other != null) Modifier.border(2.dp, other.colorArgb.asColor().copy(alpha = 0.6f), CircleShape) else Modifier)
+                        .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
+                        .semantics {
+                            contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${t.name} " + when {
+                                on -> "일해요"
+                                other != null -> "아니고 ${other.name}"
+                                else -> "쉼"
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        Fmt.dayOfWeekShort(day),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (on) contentColorOn(color) else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                FilterChip(selected = d.isOff(current), onClick = { onSet(i, null) }, label = { Text("쉼") })
             }
         }
     }
+    Text("한 요일에는 한 가지만 넣어요. 다른 줄에서 같은 요일을 누르면 그쪽으로 옮겨요.", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
-private fun HourlyDays(vm: SetupViewModel, d: SetupDraft) {
-    StepHeader("일하는 요일이 정해져 있나요?", "정해져 있으면 달력에 미리 채워 둘게요.")
+private fun HourlyDays(vm: SetupViewModel, d: SetupDraft, header: Boolean = true) {
+    if (header) StepHeader("일하는 요일이 정해져 있나요?", "정해져 있으면 달력에 미리 채워 둘게요.")
+    else PartTitle("일하는 요일이 정해져 있나요?", "정해져 있으면 달력에 미리 채워 둘게요.")
     ChoiceCard(
         title = "네, 정해져 있어요",
         subtitle = "요일마다 일하는 시간대를 골라요",
@@ -452,6 +548,7 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
         when (val s = if (shared != null) com.bamnat.app.IncomingRoster.take() else null) {
             is com.bamnat.app.IncomingRoster.Shared.Photo -> vm.readRosterPhoto(context, s.uri)
             is com.bamnat.app.IncomingRoster.Shared.Text -> vm.readRosterText(s.text)
+            is com.bamnat.app.IncomingRoster.Shared.File -> vm.readRosterFile(context, s.uri)
             null -> Unit
         }
     }
@@ -462,8 +559,8 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
             label = { Text("사진으로") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)) })
         // [READ-15] 1.27: straightened by Google's scanner on the phone.
         com.bamnat.app.imports.ScannerButton(onImage = { vm.readRosterPhoto(context, it) }, onError = { vm.say(it) }, enabled = !reading)
-        FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.TYPES) },
-            label = { Text("엑셀·CSV") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
+        FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.ROSTER_TYPES) },
+            label = { Text("엑셀·PDF") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
     }
     // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): at once a card that says it is reading, how far, for how long, with 취소;
@@ -522,12 +619,33 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
     fixing?.let { day ->
         com.bamnat.app.ui.imports.CellDialog(month.atDay(day), d.types, onDismiss = { fixing = null }) { cell -> vm.fixRosterDay(month.atDay(day), cell); fixing = null }
     }
+    // [READ-36] 1.38 PC 8차: the sheet says 주·야·비·휴 and the setup 데이·나이트·오프: its own letters offered as the kinds, once.
+    val sheetKinds by vm.sheetKinds.collectAsStateWithLifecycle()
+    sheetKinds?.let { kinds ->
+        androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("근무표의 글자로 근무 종류를 맞출까요?", style = MaterialTheme.typography.titleSmall)
+                Text(kinds.joinToString(" · ") { k -> "${k.type.name}(${k.type.label})" + (k.type.start?.let { s -> " ${s.hour}~${k.type.end?.hour ?: ""}시" } ?: "") },
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("지금은 ${d.types.joinToString("·") { it.name }}로 들어가요. 맞추면 비번과 휴무도 따로 남아요. " +
+                    (if (vm.sheetKindsKeepTimes(kinds)) "시간은 고른 시간 그대로예요. " else "근무표에 시간이 없어 흔한 시간으로 넣어요. ") + "시간은 근무 시간 단계에서 바꿀 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.bamnat.app.ui.components.Button(onClick = vm::useSheetKinds) { Text("글자대로 맞추기") }
+                    androidx.compose.material3.TextButton(onClick = vm::keepKinds) { Text("지금 그대로") }
+                }
+            }
+        }
+    }
     // [SETUP-15] A code the setup's kinds do not cover: asked here, one at a time, so it goes in with the setup.
     val asks by vm.rosterAsks.collectAsStateWithLifecycle()
     asks.firstOrNull()?.let { (ask, days) ->
         androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
             androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("‘${ask.raw}’(${days.size}일)는 무엇인가요?", style = MaterialTheme.typography.titleSmall,
+                // [READ-36] 1.38 PC 8차: "(1일)" read as the 1st; the days themselves are said ("21일", "3·10·17일 외 2칸").
+                val sorted = days.map { it.dayOfMonth }.sorted()
+                val where = sorted.take(4).joinToString("·") + "일" + if (sorted.size > 4) " 외 ${sorted.size - 4}칸" else ""
+                Text("‘${ask.raw}’로 읽은 칸($where)은 무엇인가요?", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (!ask.leave) d.types.forEach { t ->

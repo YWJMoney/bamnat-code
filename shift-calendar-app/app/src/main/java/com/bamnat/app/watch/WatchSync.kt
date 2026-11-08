@@ -53,7 +53,7 @@ object WatchSync {
         val view = if (chosenId == null) snap else shown ?: c.calendars.repository(chosenId).snapshot.first()
         val days = WatchDays.of(from, until, view.resolver::resolve)
         val alarmAt = next?.let { LocalDateTime.ofInstant(Instant.ofEpochMilli(it.triggerAtMillis), Today.zone()) }
-        val label = next?.plan?.let { p -> if (p.shiftName.isNotBlank()) "${p.shiftName} 근무" else "알람" }.orEmpty()
+        val label = next?.plan?.let { p -> if (p.shiftName.isNotBlank()) com.bamnat.core.alarm.AlarmWords.work(p.shiftName) else "알람" }.orEmpty()
         val name = c.calendars.get(chosenId ?: PersonalCalendar.MAIN)?.name ?: PersonalCalendar.MAIN_NAME
         // [WEAR-03] This week's hours against 주 52시간, what an 알바 can write now, and whether today has an alarm to turn off.
         val week = com.bamnat.core.hours.WorkHoursCalculator(view.resolver, java.time.DayOfWeek.MONDAY, settings.limits).week(today)
@@ -64,7 +64,16 @@ object WatchSync {
             null -> WatchPayload.Clock.NONE
         }
         val alarmToday = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snap.resolver, today).any { it.triggerAt.isAfter(nowTime) }
-        fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent,
+        // 1.38 [LEDH-14] 워치로 돈 적기: the main 가계부's most used spending categories of the last 60 days.
+        val moneyCategories = runCatching { com.bamnat.app.watch.WatchMoneyIn.categories(c.calendars.money(PersonalCalendar.MAIN).book.first(), today) }.getOrDefault(emptyList())
+        // 1.38 [SLEEP-14] 워치 타일의 오늘 잘 시간: the same line as the 오늘의 흐름 widget.
+        val sleepLine = runCatching {
+            if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false || snap.isEmpty) null
+            else com.bamnat.core.sleep.TodayFlow.of(nowTime, snap.resolver, settings.alarmsEnabled,
+                com.bamnat.core.sleep.SleepMerge.merge(c.sleepRepository.recent(days = 2).first(), c.healthSleep.sleeps.value),
+                settings.sleepTargetMinutes, settings.commuteMinutes, settings.restCheck, settings.strictRest).line
+        }.getOrNull().orEmpty()
+        fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent, moneyCategories = moneyCategories, sleepLine = sleepLine,
             weekStart = settings.weekStart.value, weekMinutes = week.totalMinutes, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
             clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF)
         val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))
@@ -101,6 +110,8 @@ class WatchRequestService : WearableListenerService() {
             // [WEAR-06] 1.31 N2: 끄기 and 다시 울림 pressed on the watch while the phone's alarm rings.
             WatchDays.RING_OFF_PATH -> com.bamnat.app.alarm.AlarmService.fromWatch(applicationContext, snooze = false)
             WatchDays.RING_SNOOZE_PATH -> com.bamnat.app.alarm.AlarmService.fromWatch(applicationContext, snooze = true)
+            // 1.38 [LEDH-14] 워치로 돈 적기.
+            WatchDays.MONEY_PATH -> c.appScope.launch { WatchMoneyIn.write(applicationContext, String(event.data)) }
             // [WEAR-03] An 알바's 출근·퇴근 from the watch, written as the home widget's button writes it (I 리뷰 N7 d).
             WatchDays.CLOCK_PATH -> c.appScope.launch {
                 val snap = c.scheduleRepository.snapshot.first()
@@ -119,5 +130,38 @@ class WatchRequestService : WearableListenerService() {
 
     companion object {
         const val SYNC_PATH = "/bamnat/sync"
+    }
+}
+
+/**
+ * 1.38 [LEDH-14] 워치로 돈 적기, the phone's side: a line from the watch is written to the main 가계부 as spending today (or the day
+ * the watch says), once even when it came twice. It is saved as typed by hand ([MoneySource.MANUAL]) with the note "워치에서 적음".
+ */
+object WatchMoneyIn {
+    private const val PREFS = "bamnat_watch_money"
+    private const val K_SEEN = "seen"
+
+    fun categories(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate): List<String> {
+        val shown = book.categoriesOf(com.bamnat.core.money.MoneyKind.EXPENSE).toSet()
+        val used = book.entries.asSequence().filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE && !it.date.isBefore(today.minusDays(60)) && it.category in shown }
+            .groupingBy { it.category }.eachCount().entries.sortedByDescending { it.value }.map { it.key }.take(com.bamnat.core.work.WatchMoney.MAX_CATEGORIES)
+        return (used + com.bamnat.core.work.WatchMoney.FALLBACK.filter { it in shown }).distinct().take(com.bamnat.core.work.WatchMoney.MAX_CATEGORIES)
+    }
+
+    suspend fun write(context: Context, text: String) {
+        val line = com.bamnat.core.work.WatchMoney.decode(text) ?: return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val seen = prefs.getString(K_SEEN, "").orEmpty().split(',').filter { it.isNotBlank() }
+        if (line.id in seen) return
+        prefs.edit().putString(K_SEEN, (seen + line.id).takeLast(50).joinToString(",")).apply()
+        val c = context.appContainer
+        val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(line.atMillis), Today.zone()).takeIf { !it.toLocalDate().isAfter(Today.date()) } ?: Today.dateTime()
+        val money = c.calendars.money(PersonalCalendar.MAIN)
+        val book = money.book.first()
+        val category = line.category.takeIf { it in book.categoriesOf(com.bamnat.core.money.MoneyKind.EXPENSE) } ?: com.bamnat.core.money.MoneyCategories.OTHER
+        money.save(com.bamnat.core.money.MoneyEntry(date = at.toLocalDate(), kind = com.bamnat.core.money.MoneyKind.EXPENSE, amount = line.amount,
+            category = category, note = "워치에서 적음", time = at.toLocalTime().withSecond(0).withNano(0),
+            accountId = com.bamnat.core.money.MoneyAccounts.lastUsed(book.entries, com.bamnat.core.money.MoneyKind.EXPENSE, book.accounts)))
+        runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(context) }
     }
 }

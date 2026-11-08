@@ -21,11 +21,12 @@ import androidx.compose.ui.unit.dp
  * again failed ([stale]) one line says the screen is the last one seen, with 다시 시도. Nothing at all otherwise.
  */
 @Composable
-fun RefreshLine(refreshing: Boolean, stale: Boolean, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+fun RefreshLine(refreshing: Boolean, stale: Boolean, onRetry: () -> Unit, modifier: Modifier = Modifier, seenAt: String? = null) {
     when {
         refreshing -> LinearProgressIndicator(modifier.fillMaxWidth().semantics { contentDescription = "새로 불러오는 중" })
         stale -> Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("최근 본 내용이에요. 인터넷이 되면 새로 불러와요.", style = MaterialTheme.typography.bodySmall,
+            // 1.38 (장터 그림 LOW, PC 제안 '○시에 읽은 목록 · 다시 시도'): when known, the time the shown list was read.
+            Text(if (seenAt != null) "${seenAt}에 읽은 목록이에요. 인터넷이 되면 새로 불러와요." else "최근 본 내용이에요. 인터넷이 되면 새로 불러와요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f).padding(end = 8.dp))
             TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 시도") }
         }

@@ -21,10 +21,11 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("도구")
         tapText("카드 배치", exact = true)
         tapText("255h", exact = true)
-        assertTrue("the card's bar", appears("달력 아래로 보내기", exact = true))
+        // [EASE-01] 1.38: 요약 starts under the month, so its bar offers to take it up.
+        assertTrue("the card's bar", appears("달력 위로 올리기", exact = true))
         tapText("고르기 끝", exact = true)
         assertTrue("let go", appears("화면: 달력 ▾", exact = true))
-        assertTrue(gone("달력 아래로 보내기", exact = true))
+        assertTrue(gone("달력 위로 올리기", exact = true))
     } }
 
     /** PC 확인 1.37 A1: 요약을 달력 아래로 보냈다 올리면 하루 카드가 말없이 숨겨졌어요. */
@@ -34,8 +35,8 @@ class CnvScreenshotTest : ScreenshotBase() {
         val chips = listOf("＋ 카드 넣기") + (1..5).map { "＋ 카드 넣기 $it" }
         val before = chips.firstOrNull { shows(it, exact = true) }
         tapText("255h", exact = true)
-        tapText("달력 아래로 보내기", exact = true)
         tapText("달력 위로 올리기", exact = true)
+        tapText("달력 아래로 보내기", exact = true)
         tapText("고르기 끝", exact = true)
         assertTrue("화면: 달력 ▾ again", appears("화면: 달력 ▾", exact = true))
         org.junit.Assert.assertEquals("no card hidden by the move", before, chips.firstOrNull { shows(it, exact = true) })
@@ -60,13 +61,17 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("＋ 카드 넣기", prefix = true)
         tapText("빈 판으로", prefix = true)
         assertTrue("the summary is put away", gone("255h", exact = true))
-        // Put back one by one (each 넣기 picks the card it put back, so the panel opens again each time) until 요약 is there.
+        // Put back one by one (each 넣기 picks the card it put back) until none is left hidden.
         var n = 0
-        while (!shows("255h", exact = true) && n++ < 8) {
+        while (n++ < 12) { // 1.39 [FLOW-22] one card more (하루 이야기)
+            if (!shows("넣기", exact = true) && shows("고르기 끝", exact = true)) tapText("고르기 끝", exact = true)
+            if (shows("＋ 카드 넣기", exact = true)) break
+            if (!shows("넣기", exact = true)) tapText("＋ 카드 넣기", prefix = true)
             tapText("넣기", exact = true)
         }
-        assertTrue("and back", appears("255h", exact = true))
-        tapText("고르기 끝", exact = true)
+        // All back: the chip counts no hidden card (요약 stands under the month, past the example's edge on a phone).
+        assertTrue("and back", appears("＋ 카드 넣기", exact = true))
+        if (shows("고르기 끝", exact = true)) tapText("고르기 끝", exact = true)
         tapText("크게", exact = true)
         reveal("내 틀로 담기", exact = true)
         tapText("내 틀로 담기", exact = true)

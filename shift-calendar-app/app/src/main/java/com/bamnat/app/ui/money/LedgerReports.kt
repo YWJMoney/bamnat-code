@@ -82,6 +82,8 @@ fun LedgerReportsPane(
     month: YearMonth,
     snapshot: com.bamnat.app.data.ScheduleSnapshot? = null,
     onMessage: (String) -> Unit = {},
+    /** 1.39 [FLOW-18] The shown month's category budgets, for the 잘 쓴 곳·많이 쓴 곳 chips. */
+    budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
 ) {
     if (analysis == null) return
     val places = remember(book, month) { MoneyStats.places(book.entries, month) }
@@ -92,7 +94,7 @@ fun LedgerReportsPane(
         // [MON-04] Locked, the user's own analysis shows blurred under the lock.
         com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory)
+                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory, budgetLines, today)
                 PaceCard(r, budget, today)
                 InOutCard(m, style)
             }
@@ -121,9 +123,9 @@ fun LedgerReportsPane(
             gate.canTry(Feature.MONEY_STATS) -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 돈을 적은 뒤 처음 열면 그날부터 7일 무료라, 기록이 없는 지금은 아껴 둬요."
             else -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 광고 한 편으로 7일 열 수도 있어요."
         }
-        if (lead == null) LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+        if (lead == null) LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.", kani = com.bamnat.app.ui.components.KaniMood.Point)
         else Column {
-            LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+            LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.", kani = com.bamnat.app.ui.components.KaniMood.Point)
             Text(lead, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
         }
@@ -184,7 +186,8 @@ private fun ProNote() {
 
 /** [LEDG-10] Where the money went, as a ring and a list; a tap shows that category's lines. */
 @Composable
-private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit) {
+private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
+    today: LocalDate = com.bamnat.core.time.Today.date()) {
     val cal = LocalCalendarColors.current
     val shown = r.categories.take(7)
     val rest = r.categories.drop(7)
@@ -192,6 +195,18 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit) {
     val slices = shown.map { Slice(it.category, it.amount, categoryColor(it.category)) } +
         listOfNotNull(rest.takeIf { it.isNotEmpty() }?.let { l -> Slice("그 밖에", l.sumOf { it.amount }, other) })
     SectionCard(title = "분류별 지출", trailing = { ProPill() }) {
+        // 1.39 [FLOW-18] 잘 쓴 곳(초록)·많이 쓴 곳(주황) 칩 두 줄, above the ring and the list; a tap shows that category's lines.
+        val chips = remember(r, budgetLines, today) { com.bamnat.core.money.MonthChips.of(r, budgetLines, today) }
+        if (!chips.isEmpty) {
+            val word = { v: Long -> wonBrief(v) + "원" }
+            com.bamnat.app.ui.components.ToneChipRows(
+                "잘 쓴 곳", chips.good.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hideShort(c.words(word))) { onCategory(c.category) } },
+                "많이 쓴 곳", chips.caution.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hideShort(c.words(word))) { onCategory(c.category) } },
+            )
+            com.bamnat.app.ui.components.ToneChipNote(
+                if (YearMonth.from(today) == r.month) "예산이 있으면 예산과, 없으면 지난달 같은 때까지와 견줘요." else "예산이 있으면 예산과, 없으면 지난달과 견줘요.")
+            Spacer(Modifier.height(12.dp))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
             Donut(slices, Fmt.won(r.spent), "나간 돈")
         }

@@ -179,6 +179,8 @@ android {
             it.outputs.dir(layout.buildDirectory.dir("screenshots"))
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
+            // 1.39 [MKP-06] -Pbamnat.marketChars=all: MarketCharsTest draws every 출시 작품 and writes the letters it saw.
+            (findProperty("bamnat.marketChars") as String?)?.let { v -> it.systemProperty("bamnat.marketChars", v) }
             when (testSet) {
                 "api" -> apiLevels.forEach { c -> it.filter.includeTestsMatching(c) }
                 "unit" -> {
@@ -233,6 +235,8 @@ dependencies {
     implementation("com.bamnat:core")
     // [OPS-20] Google Play in-app review, asked once at a happy moment.
     implementation("com.google.android.play:review-ktx:2.0.2")
+    // 1.39 [LOOP-13] Play 인앱 업데이트 (사용자 결정 11-07): when, from the server's update numbers (review/InAppUpdate).
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
     // [PAYS-05][PAYX-04] Payslip, receipt, rule and roster photos read on the phone. [PERF-04] 결정 D52: the Korean
     // model is not bundled (15~25 MB less); Google Play services downloads it to the phone (pay/OcrModel), nothing is sent.
     implementation("com.google.android.gms:play-services-mlkit-text-recognition-korean:16.0.1")

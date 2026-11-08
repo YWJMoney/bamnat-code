@@ -67,6 +67,8 @@ internal fun ToolScreen(
     action: String? = null,
     actionEnabled: Boolean = true,
     onAction: () -> Unit = {},
+    /** 1.39 [CALX-08] Put on the body before it scrolls, e.g. [com.bamnat.app.ui.monthSwipe]. */
+    bodyModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -81,7 +83,7 @@ internal fun ToolScreen(
                 },
             ) { padding ->
                 Column(
-                    Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
+                    Modifier.fillMaxSize().padding(padding).imePadding().then(bodyModifier).verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     content = content,
                 )
@@ -144,7 +146,7 @@ internal fun Double.asField(): String = when {
 /** A date chosen with the system date picker; [clearable] adds 지우기. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun DateField(label: String, date: LocalDate?, onChange: (LocalDate?) -> Unit, clearable: Boolean = true, modifier: Modifier = Modifier) {
+internal fun DateField(label: String, date: LocalDate?, onChange: (LocalDate?) -> Unit, clearable: Boolean = true, modifier: Modifier = Modifier, years: Boolean = false) {
     var open by rememberSaveable { mutableStateOf(false) }
     Row(
         modifier.fillMaxWidth().clickable(role = Role.Button) { open = true }.padding(vertical = 6.dp),
@@ -168,7 +170,10 @@ internal fun DateField(label: String, date: LocalDate?, onChange: (LocalDate?) -
                 }) { Text("확인") }
             },
             dismissButton = { TextButton(onClick = { open = false }) { Text("취소") } },
-        ) { DatePicker(state = state) }
+        ) {
+            if (years) com.bamnat.app.ui.components.YearJump(state)
+            DatePicker(state = state)
+        }
     }
 }
 

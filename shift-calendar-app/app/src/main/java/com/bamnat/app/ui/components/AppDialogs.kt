@@ -17,6 +17,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -75,6 +78,20 @@ fun Dialog(onDismissRequest: () -> Unit, properties: DialogProperties = DialogPr
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest, properties = properties, content = keep(d, content))
 }
 
+/** The current context with a Korean locale, for Material parts that word themselves (the date picker). */
+@Composable
+private fun koreanContext(): android.content.Context {
+    val base = androidx.compose.ui.platform.LocalContext.current
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    return remember(base, config) {
+        if (config.locales[0]?.language == "ko") base
+        else object : android.content.ContextWrapper(base) {
+            private val res = base.createConfigurationContext(android.content.res.Configuration(config).apply { setLocale(java.util.Locale.KOREA) }).resources
+            override fun getResources(): android.content.res.Resources = res
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DatePickerDialog(
@@ -98,7 +115,18 @@ fun DatePickerDialog(
         tonalElevation = tonalElevation,
         colors = colors,
         properties = properties,
-    ) { CompositionLocalProvider(LocalDensity provides d) { content() } }
+    ) {
+        // 1.38 PC 11차: Material's dialog puts content in a Box, so a row above the picker (YearJump) was drawn under it.
+        // 1.39 PC 5차: on a phone set to English the picker said "Select date"·"January 2000" in an app that is Korean
+        // everywhere else; the picker reads its words from the context's resources and its month names from the
+        // configuration's locale, so both are Korean here (localeFilters keeps only ko, which Material ships).
+        val ko = koreanContext()
+        CompositionLocalProvider(
+            LocalDensity provides d,
+            androidx.compose.ui.platform.LocalContext provides ko,
+            androidx.compose.ui.platform.LocalConfiguration provides ko.resources.configuration,
+        ) { androidx.compose.foundation.layout.Column { content() } }
+    }
 }
 
 @Composable
@@ -121,5 +149,34 @@ fun DropdownMenu(
     val d = LocalDensity.current
     androidx.compose.material3.DropdownMenu(expanded, onDismissRequest, modifier, offset, scrollState ?: rememberScrollState(), properties) {
         CompositionLocalProvider(LocalDensity provides d) { content() }
+    }
+}
+
+/**
+ * 1.38 PC 10차 (53): 입사일처럼 지난 해를 고를 때 달을 몇십 번 넘기지 않게, 올해·1년 전…을 한 번에 펼쳐요.
+ * It moves what the picker shows to the same month in that year, and the day already picked to the same day of that year.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun YearJump(state: androidx.compose.material3.DatePickerState, back: Int = 5) {
+    val now = com.bamnat.core.time.Today.date()
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        (0..back).forEach { y ->
+            val shown = java.time.LocalDate.ofEpochDay(state.displayedMonthMillis / 86_400_000L).year
+            val year = now.year - y
+            FilterChip(selected = shown == year, onClick = {
+                val month = java.time.LocalDate.ofEpochDay(state.displayedMonthMillis / 86_400_000L).withYear(year).withDayOfMonth(1)
+                state.displayedMonthMillis = month.toEpochDay() * 86_400_000L
+                // 1.39 G2 PC 4bd5d745: the day picked moves to that year too. Only the calendar moved, so '고르기' kept this year's date
+                // (입사일 2026.11.7 for 2025.11.7) and the ledger and 신고 일정 followed the wrong year.
+                state.selectedDateMillis?.let { java.time.LocalDate.ofEpochDay(it / 86_400_000L) }?.let { picked ->
+                    val moved = picked.withYear(year).toEpochDay() * 86_400_000L
+                    if (state.selectableDates.isSelectableDate(moved)) state.selectedDateMillis = moved
+                }
+            }, label = { androidx.compose.material3.Text(if (y == 0) "올해" else "${y}년 전 ($year)") })
+        }
     }
 }

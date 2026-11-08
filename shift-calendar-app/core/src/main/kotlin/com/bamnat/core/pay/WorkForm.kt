@@ -56,7 +56,10 @@ object WorkForms {
         val nurseNames = working.map { it.label.uppercase() }.containsAll(listOf("D", "E", "N")) ||
             working.map { it.name }.containsAll(listOf("데이", "이브닝", "나이트"))
         if (working.size >= 3 && working.any(::night)) return if (nurseNames) WorkForm.NURSE else WorkForm.THREE_SHIFT
-        if (working.size == 2 && working.all { span(it) >= 11 * 60 } && working.any(::night)) {
+        // 1.39 PC 5차: a rotation that runs just two kinds, one of them at night, is 2교대 whatever the hours (8시간 주·야로 도는
+        // 3조 2교대 '주주야야비휴'가 3교대로 보이던 것). Without an order, two long kinds still say it.
+        val twoInOrder = inOrder.isNotEmpty() && working.all { it.id in inOrder }
+        if (working.size == 2 && (twoInOrder || working.all { span(it) >= 11 * 60 }) && working.any(::night)) {
             return if ((pattern as? WorkPattern.Rotation)?.steps?.size == 8) WorkForm.FOUR_TEAM else WorkForm.TWO_SHIFT
         }
         if (working.size == 1 && !night(working.single())) return WorkForm.OFFICE
@@ -100,7 +103,7 @@ object PayStory {
                 val hourly = Math.round(PayCalculator.ordinaryWage(p, month).total.toDouble() / p.monthlyHours.coerceAtLeast(1))
                 add("월 기본급 ${won(amount)}, 통상시급 ${won(hourly)}(한 달 ${p.monthlyHours}시간)으로 셈해요")
             }
-            WageType.HOURLY -> add("시급 ${won(amount)}으로 일한 시간만큼" + if (r.weeklyHolidayPay) ", 주 15시간 넘으면 주휴수당도" else "")
+            WageType.HOURLY -> add("시급 ${won(amount)}으로 일한 시간만큼" + if (r.weeklyHolidayPay) ", 주 15시간 이상이면 주휴수당도" else "")
             WageType.DAILY -> add("일당 ${won(amount)}, 하루 ${PayCalculator.hours(p.dailyHours)} 기준")
         }
         val premiums = p.fiveOrMoreEmployees && !r.supervisoryApproved

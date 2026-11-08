@@ -22,7 +22,7 @@ class NightSummaryTest {
         )
         assertEquals(330_000L, NightSummary.allowance(p))
         assertNull(NightSummary.allowance(pay(PayLine(LineKind.BASE, "기본급", 3_000_000, ""))))
-        assertEquals("이달 나이트 7개 · 나이트 수당 약 330,000원", NightSummary.line(7, 330_000))
-        assertEquals("이달 나이트 7개", NightSummary.line(7, null))
+        assertEquals("이달 야간 7일 · 야간 수당 약 330,000원", NightSummary.line(7, 330_000))
+        assertEquals("이달 야간 7일", NightSummary.line(7, null))
     }
 }

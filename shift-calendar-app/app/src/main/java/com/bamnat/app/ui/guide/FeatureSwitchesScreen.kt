@@ -106,7 +106,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
     val waits: (AppFeature) -> String? = { f -> if (!isOn(f)) null else profile?.facts?.let { com.bamnat.core.profile.FactText.startsWith(it, f.id) } }
     val ask: (AppFeature) -> Unit = { f -> asking = profile?.facts?.let { com.bamnat.core.profile.FactText.waiting(it, f.id).firstOrNull() } }
     val toggle: (AppFeature, Boolean) -> Unit = { f, on ->
-        message = if (FeatureSwitches.set(c, f, active, on)) null else "‘${f.name}’은 켜는 곳에서 켜요. 그 화면을 열었어요"
+        message = if (FeatureSwitches.set(c, f, active, on)) null else "‘${f.name}’${com.bamnat.core.text.Josa.eunneun(f.name)} 켜는 곳에서 켜요. 그 화면을 열었어요"
     }
 
     Scaffold(topBar = {
@@ -120,7 +120,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("쓰지 않는 기능은 꺼 두면 화면에서 사라져요. 언제든 여기서 다시 켤 수 있어요.",
+                Text("쓰지 않는 기능은 꺼 두면 화면에서 사라져요. 적은 기록은 지우지 않으니 언제든 여기서 다시 켜면 그대로 보여요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [ONBOARD-04][SIMPLE-02] The recommended features and their permissions, on one screen.
                 SectionCard(title = "추천 기능 한 번에 켜기") {

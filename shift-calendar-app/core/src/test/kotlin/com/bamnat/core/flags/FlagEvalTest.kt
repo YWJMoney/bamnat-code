@@ -105,8 +105,8 @@ class FlagEvalTest {
         val s = FlagEval.state(FlagCatalog.BILLING_FLAG, p, confirmed)
         assertFalse(s.on)
         assertEquals(Check.Status.UNMET, s.checks.first().status)
-        // The same phone, the server's clock carried forward past 11-10 (offline, by the time since), opens it.
-        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p.copy(serverNow = kst(2026, 11, 10, 0, 0)), confirmed).on)
+        // The same phone, the server's clock carried forward past 11-12 (1.38 기본 출시일) (offline, by the time since), opens it.
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p.copy(serverNow = kst(2026, 11, 12, 0, 0)), confirmed).on)
     }
 
     @Test fun aLegalRowWithNoServerTimeWaits() {
@@ -162,13 +162,13 @@ class FlagEvalTest {
         assertFalse(FlagEval.state(FlagCatalog.ADS_FLAG, phone(kst(2026, 11, 1)), confirmed).on)
     }
 
-    /** [PRIV-05] 결정 D111: 3.2 brought to 정식 출시일 (3.9, 11-10); a tester without a 3.9 yes waits until 11-29. */
+    /** [PRIV-05] 결정 D111: 3.2 brought to 정식 출시일 (3.9, 11-12); a tester without a 3.9 yes waits until 11-29. */
     @Test fun statsMoreWaitsForPolicy39AndItsOwnYes() {
         val f = FlagCatalog.STATS_MORE_FLAG
         assertEquals(Risk.LEGAL, f.risk)
-        val after = phone(kst(2026, 11, 10), agreed = setOf("3.9")).copy(consents = mapOf("usage" to true, "usage.stats.more" to true))
+        val after = phone(kst(2026, 11, 12), agreed = setOf("3.9")).copy(consents = mapOf("usage" to true, "usage.stats.more" to true))
         assertTrue(FlagEval.state(f, after).on)
-        assertFalse("before 정식 출시일", FlagEval.state(f, after.copy(serverNow = kst(2026, 11, 9))).on)
+        assertFalse("before 정식 출시일", FlagEval.state(f, after.copy(serverNow = kst(2026, 11, 11))).on)
         assertFalse("no extra yes", FlagEval.state(f, after.copy(consents = mapOf("usage" to true))).on)
         assertFalse("usage stats off", FlagEval.state(f, after.copy(consents = mapOf("usage" to false, "usage.stats.more" to true))).on)
         assertFalse("a tester who said no to 3.9", FlagEval.state(f, after.copy(agreed = setOf("3.1"))).on)
@@ -181,9 +181,9 @@ class FlagEvalTest {
         val f = FlagCatalog.STATS_LOOKUP_FLAG
         assertEquals(Risk.LEGAL, f.risk)
         val yes = mapOf("usage" to true, "usage.stats.more" to true, "usage.stats.lookup" to true)
-        val p = phone(kst(2026, 11, 10), agreed = setOf("3.9"))
+        val p = phone(kst(2026, 11, 12), agreed = setOf("3.9"))
         assertTrue(FlagEval.state(f, p.copy(consents = yes)).on)
-        assertFalse("before 정식 출시일", FlagEval.state(f, phone(kst(2026, 11, 9), agreed = setOf("3.9")).copy(consents = yes)).on)
+        assertFalse("before 정식 출시일", FlagEval.state(f, phone(kst(2026, 11, 11), agreed = setOf("3.9")).copy(consents = yes)).on)
         assertFalse("no extra yes", FlagEval.state(f, p.copy(consents = mapOf("usage" to true))).on)
         assertFalse("a yes given before the words named it", FlagEval.state(f, p.copy(consents = yes - "usage.stats.lookup")).on)
     }
@@ -192,8 +192,8 @@ class FlagEvalTest {
     /** [PHOTO-09] 1.29 통합: 3.3 is in the calendar (게시 10-28, 시행 11-27, the same day as 3.2): off the day before, on that day. */
     @Test fun photoWrongWaitsForPolicy39() {
         val f = FlagCatalog.PHOTO_WRONG_FLAG
-        assertFalse(FlagEval.state(f, phone(kst(2026, 11, 9), agreed = setOf("3.9"))).on)
-        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 10), agreed = setOf("3.9"))).on)
+        assertFalse(FlagEval.state(f, phone(kst(2026, 11, 11), agreed = setOf("3.9"))).on)
+        assertTrue(FlagEval.state(f, phone(kst(2026, 11, 12), agreed = setOf("3.9"))).on)
         assertFalse("a tester without a 3.9 yes", FlagEval.state(f, phone(kst(2026, 11, 28))).on)
         assertTrue(FlagEval.state(f, phone(kst(2026, 11, 29))).on)
     }
@@ -242,7 +242,12 @@ class FlagEvalTest {
                 else if (f.key == FlagCatalog.STATS_LOOKUP) "1.31.0" /* 1.31 N4 */
                 else if (f.key == FlagCatalog.DIAG_OBSERVE) "1.32.1" /* 1.32.1 STAB-10 */
                 else if (f.key == FlagCatalog.SHARE_SETUP) "1.33.0" /* 1.33 SHR-20 */
-                else if (f.key == FlagCatalog.SHARE_LOOK) "1.37.0" /* 1.37 SHR-31 */ else "1.28.0"))
+                else if (f.key == FlagCatalog.SHARE_LOOK) "1.37.0" /* 1.37 SHR-31 */
+                // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
+                else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP, FlagCatalog.STATS_LIFE, FlagCatalog.STATS_KIND, FlagCatalog.STATS_KEEP)) "1.39.0"
+                else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
+            // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
+            if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
             if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any { it is Condition.Date && it.policy != null })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }

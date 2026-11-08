@@ -46,4 +46,4 @@ internal val DarkSettingsTones = SettingsTones(
 /** [VIS-06] The tones of the theme on screen (the phone's dynamic colours included, by how dark the page is). */
 @Composable
 fun settingsTones(): SettingsTones =
-    if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) DarkSettingsTones else LightSettingsTones
+    if (com.bamnat.app.ui.components.isDarkSurface()) DarkSettingsTones else LightSettingsTones

@@ -10,10 +10,15 @@ import java.util.Base64
  * up to [MAX_BYTES] in all; a photo already on the phone is never written over by a restore.
  *
  *     "photos": { "receipts": { "<name>.jpg": "<base64>" }, "contracts": { "<calendar id>": { "<name>.jpg": "<base64>" } } }
+ *
+ * [MPH-03] 1.38 메모 사진 (files/memo-photos) go in too, as "photos/memos/<name>.jpg" (format 3) or "memos" (format 2), after the
+ * receipts and contracts and within the same [MAX_BYTES].
  */
 class BackupPhotos(
     /** files/receipts, shared by every calendar's ledger ([com.bamnat.app.ui.money.ReceiptFiles]). */
     private val receipts: File,
+    /** [MPH-03] files/memo-photos ([com.bamnat.app.ui.memo.MemoPhotoFiles]); null where memo photos are not kept. */
+    private val memos: File? = null,
     /** A calendar's contract photo folder ([WorkToolsStore.photoDir]). */
     private val contracts: (String) -> File,
 ) {
@@ -31,8 +36,13 @@ class BackupPhotos(
         byCalendar.mapValues { (id, names) -> names.filter(::safe).distinct().map { File(contracts(id), it) }.filter { it.isFile } }
             .filterValues { it.isNotEmpty() }
 
-    fun size(receiptNames: Collection<String>, contractNames: Map<String, Collection<String>>): Size {
-        val files = receiptFiles(receiptNames) + contractFiles(contractNames).values.flatten()
+    private fun memoFiles(names: Collection<String>): List<File> {
+        val dir = memos ?: return emptyList()
+        return names.filter(::safe).distinct().map { File(dir, it) }.filter { it.isFile }
+    }
+
+    fun size(receiptNames: Collection<String>, contractNames: Map<String, Collection<String>>, memoNames: Collection<String> = emptyList()): Size {
+        val files = receiptFiles(receiptNames) + contractFiles(contractNames).values.flatten() + memoFiles(memoNames)
         return Size(files.size, files.sumOf { it.length() })
     }
 
@@ -40,13 +50,14 @@ class BackupPhotos(
      * [REL-15] The photo files a backup of format 3 carries, as [BackupArchive] entries, up to [MAX_BYTES] in all
      * like [export].
      */
-    fun files(receiptNames: Collection<String>, contractNames: Map<String, Collection<String>>): List<BackupArchive.Photo> {
+    fun files(receiptNames: Collection<String>, contractNames: Map<String, Collection<String>>, memoNames: Collection<String> = emptyList()): List<BackupArchive.Photo> {
         var left = MAX_BYTES
         fun fits(f: File) = (f.length() <= left).also { if (it) left -= f.length() }
         return receiptFiles(receiptNames).filter(::fits).map { BackupArchive.Photo(BackupArchive.RECEIPTS + it.name, it) } +
             contractFiles(contractNames).flatMap { (id, files) ->
                 files.filter(::fits).map { BackupArchive.Photo("${BackupArchive.CONTRACTS}$id/${it.name}", it) }
-            }
+            } +
+            memoFiles(memoNames).filter(::fits).map { BackupArchive.Photo(BackupArchive.MEMOS + it.name, it) }
     }
 
     /**
@@ -58,6 +69,7 @@ class BackupPhotos(
         for ((entry, file) in waiting) {
             val (dir, name) = when {
                 entry.startsWith(BackupArchive.RECEIPTS) -> receipts to entry.removePrefix(BackupArchive.RECEIPTS)
+                entry.startsWith(BackupArchive.MEMOS) -> (memos ?: continue) to entry.removePrefix(BackupArchive.MEMOS)
                 entry.startsWith(BackupArchive.CONTRACTS) -> entry.removePrefix(BackupArchive.CONTRACTS).split('/')
                     .takeIf { it.size == 2 && safe(it[0]) }?.let { contracts(it[0]) to it[1] } ?: continue
                 else -> continue
@@ -116,6 +128,7 @@ class BackupPhotos(
         }
         o.optJSONObject("receipts")?.let { write(receipts, it) }
         o.optJSONObject("contracts")?.let { c -> for (id in c.keys()) if (safe(id)) c.optJSONObject(id)?.let { write(contracts(id), it) } }
+        memos?.let { dir -> o.optJSONObject("memos")?.let { write(dir, it) } }
         return n
     }
 
@@ -131,6 +144,7 @@ class BackupPhotos(
             fun add(names: JSONObject) { for (k in names.keys()) { count++; bytes += names.optString(k).length * 3L / 4 } }
             o.optJSONObject("receipts")?.let(::add)
             o.optJSONObject("contracts")?.let { c -> for (id in c.keys()) c.optJSONObject(id)?.let(::add) }
+            o.optJSONObject("memos")?.let(::add)
             return Size(count, bytes)
         }
     }

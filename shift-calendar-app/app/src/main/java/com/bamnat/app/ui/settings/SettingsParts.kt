@@ -148,9 +148,13 @@ internal fun SwitchRow(
 
 /** A line under a setting that says it will not work as set, with one button that fixes it. */
 @Composable
-internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?) {
+internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?,
+    /** 1.39 [FLOW-05] A permission asked here for the first time: what it gives, drawn small in place of the mark. */
+    picture: com.bamnat.app.ui.components.PermissionResult? = null) {
     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+        if (picture != null) com.bamnat.app.ui.components.PermissionPicture(picture, accent = MaterialTheme.colorScheme.error,
+            ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
+        else Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
         if (onFix != null) TextButton(onClick = onFix) { Text(fixLabel) }
@@ -280,4 +284,35 @@ internal fun GroupRow(
 @Composable
 internal fun Note(text: String, modifier: Modifier = Modifier) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
+}
+
+/**
+ * [CYC-04] 1.38 업종 기념일: on or off, and which work's days (소방의 날, 경찰의 날…). Picking a public cycle of that 업종 sets
+ * the group by itself; here it can be changed or turned off.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@androidx.compose.runtime.Composable
+internal fun OrgDayRows(group: String, on: Boolean, onChange: (group: String, on: Boolean) -> Unit) {
+    val picked = com.bamnat.core.plaza.IndustryGroups.byKey(group)?.takeIf { it.days.isNotEmpty() }
+    SwitchRow(
+        "우리 업종 기념일",
+        when {
+            picked == null -> "아래에서 업종을 고르면 소방의 날·경찰의 날처럼 법에 정한 그 업종의 날이 날짜 밑에 보여요"
+            on -> "${picked.days.joinToString(", ") { "${it.name}(${it.month}월 ${it.day}일)" }}이 날짜 밑에 보여요. 쉬는 날은 아니에요"
+            else -> "꺼져 있어요. 켜면 ${picked.days.first().name}이 날짜 밑에 보여요"
+        },
+        on && picked != null,
+    ) { v -> onChange(group, v) }
+    androidx.compose.foundation.layout.FlowRow(
+        androidx.compose.ui.Modifier.padding(horizontal = 16.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        com.bamnat.core.plaza.IndustryGroups.WITH_DAYS.forEach { g ->
+            com.bamnat.app.ui.components.FilterChip(
+                selected = g.key == picked?.key,
+                onClick = { if (g.key == picked?.key) onChange("", on) else onChange(g.key, true) },
+                label = { androidx.compose.material3.Text(g.name) },
+            )
+        }
+    }
 }

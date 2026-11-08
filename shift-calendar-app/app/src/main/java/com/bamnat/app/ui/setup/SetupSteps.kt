@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EditCalendar
@@ -76,7 +77,20 @@ import java.time.LocalTime
 
 // ---- 1. how the user works ----
 
-internal data class StyleChoice(val style: WorkStyle, val roster: Boolean, val title: String, val subtitle: String, val icon: ImageVector)
+internal data class StyleChoice(val style: WorkStyle, val roster: Boolean, val title: String, val subtitle: String, val icon: ImageVector) {
+    /** 1.39 [FLOW-01] The kind's own colour for its big picture: night blue for shifts, sun for weekdays, and so on. */
+    val color: androidx.compose.ui.graphics.Color get() = androidx.compose.ui.graphics.Color(
+        when {
+            style == WorkStyle.SHIFT && roster -> 0xFF7E57C2
+            style == WorkStyle.SHIFT -> 0xFF3F5BD0
+            style == WorkStyle.DAY -> 0xFFD98E00
+            style == WorkStyle.HOURLY -> 0xFF00A88F
+            style == WorkStyle.FIELD -> 0xFFE0662B
+            style == WorkStyle.BUSINESS -> 0xFFD6457A
+            else -> 0xFF2D8FD0
+        },
+    )
+}
 
 /** Shift work is asked as two answers, since a roster painted every month is set up differently. */
 internal val STYLE_CHOICES = listOf(
@@ -115,7 +129,7 @@ internal fun StyleStep(
         StepHeader("어떤 일로 둘러볼까요?", "고른 일의 예시 달력이 열려요. 둘러보는 동안 적은 건 이 휴대폰 밖으로 나가지 않아요.")
         STYLE_CHOICES.filter { (it.style != WorkStyle.SHIFT || !it.roster) && shown.shows(it.style) }.forEach { c ->
             ChoiceCard(title = c.title.substringBefore(" · ").let { if (c.style == WorkStyle.SHIFT) "교대 근무" else it },
-                subtitle = shown.mark(c.style, c.subtitle.substringBefore(" · ")), icon = c.icon, selected = false, onClick = { onBrowse(c.style) })
+                subtitle = shown.mark(c.style, c.subtitle.substringBefore(" · ")), icon = c.icon, picture = c.color, selected = false, onClick = { onBrowse(c.style) })
         }
         TextButton(onClick = { browsing = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 정보로 바로 시작할게요") }
         return
@@ -133,6 +147,7 @@ internal fun StyleStep(
             title = c.title,
             subtitle = shown.mark(c.style, c.subtitle),
             icon = c.icon,
+            picture = c.color,
             selected = d.style == c.style && (c.style != WorkStyle.SHIFT || d.rosterMonthly == c.roster),
             onClick = { onPick(c.style, c.roster) },
         )
@@ -184,6 +199,8 @@ internal fun CompanyStep(
             else -> "공개 자료에 회사 근무주기가 있으면 그대로 가져와요. 회사 이름은 몰라도 괜찮아요."
         },
     )
+    // [EASE-16] 1.38: a roster that comes every month (간호) is read from its photo, the biggest way in on this page.
+    if (d.style == WorkStyle.SHIFT && d.rosterMonthly && d.source == null) RosterPhotoFirst(vm)
     // Typed here and sent on: the draft would put the cursor back on every letter.
     var name by rememberSaveable { mutableStateOf(d.companyName) }
     val focus = LocalFocusManager.current
@@ -226,6 +243,16 @@ internal fun CompanyStep(
         SourceCard(source, d, onChange = vm::clearSource)
         return
     }
+    // [EASE-06][CYC-07] 1.38: without a name, the public rows by 업종 → 회사 → 직무 (교대 근무; weekday work has few rows).
+    var orderFor by remember { mutableStateOf<com.bamnat.core.plaza.PublicCycle?>(null) }
+    if (onSearch != null && name.isBlank() && d.style == WorkStyle.SHIFT) {
+        com.bamnat.app.ui.company.CycleBrowser(onPick = vm::pickPublic, onNeedsOrder = { orderFor = it })
+    }
+    orderFor?.let { row ->
+        com.bamnat.app.ui.company.PublicApplySheet(row, onDismiss = { orderFor = null }, onPay = {}, onShare = {},
+            pick = { codes -> orderFor = null; vm.pickPublic(row, codes) },
+            calendar = vm.calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+    }
     Spacer(Modifier.size(4.dp))
     Text("비슷한 근무로 빠르게 시작하기", style = MaterialTheme.typography.titleSmall)
     Text(
@@ -238,6 +265,49 @@ internal fun CompanyStep(
         ChoiceCard(title = t.name, subtitle = t.summary, selected = false, onClick = { vm.pickTemplate(t) })
     }
     FileCard("동료가 보낸 회사 설정 파일이 있어요", "근무 시간과 순서를 그대로 가져와요", onOpenFile)
+    // 1.38 통합 8차 (PC가 업종 목록 끝까지 내려도 '우리 회사 근무표 올리기'를 못 찾음): [CYC-03][CYC-09] the same button as at the
+    // end of 회사 찾기's public list, at the end of this list too; what is made opens like a public row.
+    if (onSearch != null) {
+        var uploading by rememberSaveable { mutableStateOf(false) }
+        OutlinedButton(onClick = { uploading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("우리 회사 근무표 올리기")
+        }
+        if (uploading) {
+            com.bamnat.app.ui.company.UploadCycleDialog(name.trim(), onDismiss = { uploading = false }) { n, formKey ->
+                uploading = false
+                orderFor = com.bamnat.core.plaza.PublicCycles.provided(n, formKey)
+            }
+        }
+    }
+}
+
+/**
+ * [EASE-16] "근무표 사진으로 한 번에": the month's roster photo picked here, read on the phone while the times are checked, and
+ * waiting on the painting step. Without a company the usual 3교대 (데이·이브닝·나이트·오프) is the start; codes the roster
+ * has besides are asked there one at a time.
+ */
+@Composable
+private fun RosterPhotoFirst(vm: SetupViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.rosterPhotoFirst(context, uri)
+    }
+    androidx.compose.material3.ElevatedCard(
+        onClick = { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text("근무표 사진으로 한 번에", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("이번 달 근무표 사진 한 장이면 달력이 다 차요. 틀린 칸만 눌러 고쳐요. 사진은 휴대폰 안에서만 읽어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+    }
 }
 
 /** Where the shifts came from, with a way back to choosing. */
@@ -363,16 +433,25 @@ private fun BundleBadges(shifts: List<BundleShift>) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
+    // [EASE-07] 1.38: the order (or the days) and the times on one screen, one '네, 맞아요' for both.
+    val withOrder = d.orderWithTimes
     StepHeader(
-        when (d.style) {
-            WorkStyle.HOURLY -> "일하는 시간대가 맞나요?"
-            else -> "근무 시간이 맞나요?"
+        when {
+            !withOrder -> "근무 시간이 맞나요?"
+            d.usesRotation -> "근무 순서와 시간이 맞나요?"
+            d.style == WorkStyle.HOURLY -> "일하는 요일과 시간대를 알려 주세요"
+            else -> "일하는 요일과 시간이 맞나요?"
         },
-        when (d.style) {
-            WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필(이름·색 고치기)을 누르고 맨 아래 ‘이 근무 종류 삭제’로 지워요."
+        when {
+            d.style == WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필(이름·색 고치기)을 누르고 맨 아래 ‘이 근무 종류 삭제’로 지워요."
+            withOrder -> "회사 근무표와 다르면 순서를 바꾸거나 시각을 눌러 바로 고쳐요."
             else -> "회사 근무표와 다르면 시각을 눌러 바로 고쳐요."
         },
     )
+    if (withOrder) {
+        OrderPart(vm, d)
+        PartTitle(if (d.style == WorkStyle.HOURLY) "일하는 시간대" else "근무 시간")
+    }
     // [SETUP-14] Kept by id through folding and unfolding; a new shift is the next id, made again.
     var editingId by rememberSaveable { mutableStateOf<Long?>(null) }
     val editing = editingId?.let { id -> d.types.firstOrNull { it.id == id } ?: vm.newType().takeIf { it.id == id } }
@@ -451,6 +530,7 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
                     step = 10,
                     max = 4 * 60,
                     dialogTitle = "${t.name} 쉬는 시간",
+                    format = com.bamnat.core.hours.HoursFormat::breakText,
                 )
             }
             if (LocalDensity.current.fontScale >= 1.5f) {

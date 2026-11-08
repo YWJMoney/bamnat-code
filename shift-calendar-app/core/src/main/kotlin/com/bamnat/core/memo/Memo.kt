@@ -32,7 +32,30 @@ data class Memo(
     val calendars: Set<String> = emptySet(),
     /** [NOTE-05] How a dated memo comes back ("M25" every month on the 25th, "W2" every Tuesday); empty for once. */
     val repeat: String = "",
+    /**
+     * 1.38 (DB 28판) The days a repeating memo was taken off ("이 날만 빼기"): it does not come back on these, its own date
+     * included. Kept as it is when the repeat changes, so turning a repeat off and on again does not bring them back.
+     */
+    val skips: Set<LocalDate> = emptySet(),
+    /**
+     * 1.39 (DB 33판) [TASK-02] 끝냄: when a memo that does not repeat was finished; null while it is not. A repeating memo is
+     * finished day by day, in [doneDays] (its own date included), so 매일 '약 먹기' done today is still to do tomorrow.
+     */
+    val doneAtMillis: Long? = null,
+    val doneDays: Set<LocalDate> = emptySet(),
 ) {
+    /** 1.39 [TASK-02] Finished on [day] (its own date for one that does not repeat). */
+    fun isDoneOn(day: LocalDate?): Boolean =
+        if (repeat.isNotEmpty() && day != null) day in doneDays else doneAtMillis != null
+
+    /** 1.39 [TASK-02] Finished as it is shown: on its [date] (a repeating memo laid on a day carries that day). */
+    val isDone: Boolean get() = isDoneOn(date)
+
+    /** 1.39 [TASK-02] This memo finished ([done]) or not on [day], at [now]. */
+    fun withDone(done: Boolean, day: LocalDate?, now: Long): Memo =
+        if (repeat.isNotEmpty() && day != null) copy(doneDays = if (done) doneDays + day else doneDays - day)
+        else copy(doneAtMillis = if (done) doneAtMillis ?: now else null)
+
     /** [MEMO-01] Written for every calendar, now and later ones too. */
     val onEveryCalendar: Boolean get() = MemoCalendars.EVERY in calendars
 
@@ -47,19 +70,25 @@ data class Memo(
 
     val inTrash: Boolean get() = deletedAtMillis != null
 
+    /** [MPH-04] 1.38 The body's words, without the photo lines ([MemoPhotos]): what a preview, a search or a share shows. */
+    val text: String get() = MemoPhotos.plain(body)
+
+    /** [MPH-04] The photos in the body, by file name. */
+    val photos: List<String> get() = MemoPhotos.names(body)
+
     /** Calendar memos belong to a date; general memos do not. */
     val isCalendarMemo: Boolean get() = date != null
 
     /** #tags written anywhere in the memo, without the '#', in order of first use. */
     val tags: List<String>
-        get() = (sequenceOf(title, body) + checklist.asSequence().map { it.text })
+        get() = (sequenceOf(title, text) + checklist.asSequence().map { it.text })
             .flatMap { TAG.findAll(it).map { m -> m.groupValues[1] } }
             .distinct()
             .toList()
 
     /** Letters in the text, used for the word count in the editor. */
     val characterCount: Int
-        get() = title.length + body.length + checklist.sumOf { it.text.length }
+        get() = title.length + text.length + checklist.sumOf { it.text.length }
 
     val isBlank: Boolean
         get() = title.isBlank() && body.isBlank() && checklist.none { it.text.isNotBlank() }
@@ -69,7 +98,8 @@ data class Memo(
         get() = when {
             isChecklist -> checklist.filter { it.text.isNotBlank() }
                 .joinToString(" · ") { (if (it.checked) "✓ " else "") + it.text }
-            else -> body.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+            else -> text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+                ?: if (MemoPhotos.has(body)) "사진 ${MemoPhotos.count(body)}장" else ""
         }
 
     val checkedCount: Int get() = checklist.count { it.checked && it.text.isNotBlank() }
@@ -81,7 +111,7 @@ data class Memo(
         if (words.isEmpty()) return true
         return words.all { w ->
             title.contains(w, ignoreCase = true) ||
-                body.contains(w, ignoreCase = true) ||
+                text.contains(w, ignoreCase = true) ||
                 checklist.any { it.text.contains(w, ignoreCase = true) }
         }
     }
@@ -223,4 +253,7 @@ object ChecklistCodec {
 
 /** Memo ordering used everywhere: pinned first, then most recently edited. */
 val MemoOrdering: Comparator<Memo> =
-    compareByDescending<Memo> { it.pinned }.thenByDescending { it.updatedAtMillis }.thenByDescending { it.id }
+    compareByDescending<Memo> { it.pinned }
+        // 1.39 [TASK-02] A finished memo that does not repeat steps down, under the ones still to do.
+        .thenBy { it.repeat.isEmpty() && it.doneAtMillis != null }
+        .thenByDescending { it.updatedAtMillis }.thenByDescending { it.id }

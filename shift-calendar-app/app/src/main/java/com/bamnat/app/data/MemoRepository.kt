@@ -15,10 +15,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flatMapLatest
 import java.time.LocalDate
 import com.bamnat.core.time.Today
 
 /** Memos that were just moved to the trash, offered for undo until consumed. */
+/** 1.38 [day] taken off repeating memo [memo] (이 날만 빼기). */
+data class SkippedDay(val memo: Memo, val day: LocalDate)
+
 data class DeletedMemos(val memos: List<Memo>) {
     val label: String
         get() = if (memos.size == 1) {
@@ -34,6 +38,11 @@ class MemoRepository(
     private val clock: () -> Long = Today::millis,
     /** [MEMO-02] Which calendars share memos (설정 › 메모 공유), gone calendars already left out; none by default. */
     val sharing: Flow<MemoSharing> = flowOf(MemoSharing.SEPARATE),
+    /**
+     * [EASE-22] The kind of day on each date of calendar [calendar] (its live schedule), for 근무마다 메모; null where it is not
+     * known (tests, a calendar not there), and such a memo then shows on its own date only.
+     */
+    private val shiftsOf: (calendar: String) -> Flow<MemoRepeat.ShiftOf?> = { flowOf(null) },
 ) {
     private val dao = db.memoDao()
 
@@ -52,14 +61,37 @@ class MemoRepository(
      * [NOTE-01][MEMO-01] The memos of [date] that show on calendar [calendar] (its own, ones for every
      * calendar, and those of calendars it shares memos with); [NOTE-05] repeating ones that come back that day too.
      */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun memosOn(date: LocalDate, calendar: String): Flow<List<Memo>> =
-        combine(memos, sharing) { list, sh -> list.filter { it.showsOn(calendar, sh) && MemoRepeat.occursOn(it, date) } }
+        memosFor(calendar).flatMapLatest { list ->
+            shiftLookup(list, calendar).map { shifts -> list.filter { MemoRepeat.occursOn(it, date, shifts(it)) } }
+        }
 
     /** [NOTE-01][MEMO-01] Dates with a memo that shows on calendar [calendar]; [NOTE-05] each day a repeating one comes back on. */
-    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = combine(memos, sharing) { list, sh ->
-        val (from, to) = repeatWindow()
-        MemoRepeat.expand(list.filter { it.showsOn(calendar, sh) }, from, to).mapNotNullTo(HashSet()) { it.date }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = memosFor(calendar).flatMapLatest { list ->
+        shiftLookup(list, calendar).map { shifts ->
+            val (from, to) = repeatWindow()
+            MemoRepeat.expand(list, from, to, shifts).mapNotNullTo(HashSet()) { it.date }
+        }
     }.flowOn(kotlinx.coroutines.Dispatchers.Default) // [SPD-25] 1.31 I4: four years of repeats, never on the main thread
+
+    /**
+     * [EASE-22] For the 근무마다 memos among [list] seen on calendar [calendar]: the schedule of the calendar each goes by
+     * ([calendarOf]), following it as it changes (a day changed by hand, 하루 밀기), so the memo moves with its shift.
+     * Any other memo gets null. No such memo: no schedule is read at all.
+     */
+    fun shiftLookup(list: List<Memo>, calendar: String): Flow<(Memo) -> MemoRepeat.ShiftOf?> {
+        val cals = list.filter { MemoRepeat.followsSchedule(it.repeat) }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
+        if (cals.isEmpty()) return flowOf { _: Memo -> null }
+        return combine(cals.map { c -> shiftsOf(c).map { c to it } }) { pairs ->
+            val byCal = pairs.toMap()
+            val lookup: (Memo) -> MemoRepeat.ShiftOf? = { m ->
+                if (MemoRepeat.followsSchedule(m.repeat)) byCal[calendarOf(m, calendar)] else null
+            }
+            lookup
+        }
+    }
 
     /** [MEMO-01] Every memo calendar [calendar] sees, for its link and its views. */
     fun memosFor(calendar: String): Flow<List<Memo>> = combine(memos, sharing) { list, sh -> list.filter { it.showsOn(calendar, sh) } }
@@ -139,6 +171,31 @@ class MemoRepository(
         if (offerUndo) _lastDeleted.value = DeletedMemos(memos.toList())
     }
 
+    private val _lastSkipped = MutableStateFlow<SkippedDay?>(null)
+    /** 1.38 이 날만 빼기: the day most recently taken off a repeating memo, offered for undo until consumed. */
+    val lastSkipped: StateFlow<SkippedDay?> = _lastSkipped.asStateFlow()
+
+    /**
+     * 1.38 (DB 28판) Takes [day] off repeating memo [memo]: it stays on every other day it comes back on. With [memo] given as the
+     * editor holds it, what was typed is kept too. Offers undo through [lastSkipped].
+     */
+    suspend fun skipDay(memo: Memo, day: LocalDate): Memo {
+        val stored = save(memo.copy(skips = memo.skips + day))
+        _lastSkipped.value = SkippedDay(stored, day)
+        return stored
+    }
+
+    /** Puts the day of [lastSkipped] back on its memo, as the memo now is. */
+    suspend fun undoSkip() {
+        val skipped = _lastSkipped.value ?: return
+        _lastSkipped.value = null
+        get(skipped.memo.id)?.let { now -> save(now.copy(skips = now.skips - skipped.day)) }
+    }
+
+    fun consumeLastSkipped() {
+        _lastSkipped.value = null
+    }
+
     suspend fun undoDelete() {
         val deleted = _lastDeleted.value ?: return
         _lastDeleted.value = null
@@ -159,11 +216,21 @@ class MemoRepository(
 
     suspend fun emptyTrash() = dao.emptyTrash()
 
+    /** [MPH-03] 1.38 Every photo the memos put in their bodies, the trash's too (what 메모 사진 정리 keeps). */
+    suspend fun photoNames(): Set<String> = dao.getAll().flatMapTo(HashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.body) }
+
     /** Removes memos that have been in the trash longer than [TRASH_DAYS] days. */
     suspend fun purgeOldTrash() = dao.purgeTrash(clock() - TRASH_DAYS * DAY_MILLIS)
 
     companion object {
         /** [NOTE-05] The days repeating memos are laid out on: a year back to three years on. */
+        /**
+         * [EASE-22][MEMO-01] The calendar whose kinds of day a memo seen on [viewing] goes by: [viewing] itself when the memo is
+         * its own or every calendar's, else the one calendar it was written on (as the memo editor reads its 근무).
+         */
+        fun calendarOf(memo: Memo, viewing: String): String =
+            if (memo.onEveryCalendar || viewing in memo.owners) viewing else memo.owners.singleOrNull() ?: viewing
+
         fun repeatWindow(today: LocalDate = Today.date()): Pair<LocalDate, LocalDate> =
             today.minusYears(1).withDayOfMonth(1) to today.plusYears(3)
 

@@ -144,7 +144,61 @@ object PayslipScanner {
         }
         val (tilt, keystone) = OcrRows.lean(firstLines)
         val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
+        if (com.bamnat.app.BuildConfig.DEBUG) dump(boxes)
         put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
+    }
+
+    /**
+     * [READ-41] Debug builds only: each reading's words with their boxes, in the shape of a slip-screen `.tsv` fixture, so a
+     * payslip read wrongly on the emulator can be replayed here exactly (`adb logcat -s BamnatOcr`). Nothing in release.
+     */
+    private fun dump(reads: List<List<OcrLine>>) {
+        reads.forEachIndexed { i, ws ->
+            android.util.Log.d("BamnatOcr", "# slip read $i of ${reads.size}")
+            ws.chunked(20).forEach { part ->
+                android.util.Log.d("BamnatOcr", part.joinToString("\n") { w ->
+                    "word\t${w.left}\t${w.top}\t${w.right}\t${w.bottom}\t${"%.2f".format(java.util.Locale.ROOT, w.angle)}\t${w.text}"
+                })
+            }
+        }
+    }
+
+    /**
+     * [READ-34] 1.38 (사용자 2026-11-06 "기술적인 부분은 만들어서 넣을 수 있는 거 아니야?"): a payslip PDF from the company's ERP, a
+     * 급여 프로그램 or a 노무 site. With its letters in it, those are read as they are ([PdfText]): no OCR, so nothing to misread
+     * (정답 묶음 83/83). A scanned PDF's pages are read as photos. Each page is a page of one payslip ([combine]). All on the phone;
+     * the copies a scan needs are in the app's cache and deleted at once.
+     */
+    suspend fun scanPdf(context: Context, uri: Uri, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+        val bytes = com.bamnat.app.imports.AnyFile.bytes(context, uri, com.bamnat.app.imports.AnyFile.MAX_PDF)
+        val shown = runCatching { com.bamnat.app.imports.AnyFile.render(context, bytes).let { pages ->
+            pages.drop(1).forEach { it.recycle() }
+            pages.firstOrNull()?.let { ImagePrep.forScreen(it).first }
+        } }.getOrNull()
+        val text = com.bamnat.core.imports.PdfText.pages(bytes)?.map { page -> page.map { OcrLine(it.text, it.left, it.top, it.right, it.bottom) } }
+            ?.filter { it.isNotEmpty() }
+        if (!text.isNullOrEmpty()) {
+            val templates = runCatching { com.bamnat.app.data.ReadFixBook.get(context).templates() }.getOrDefault(emptyList())
+            return@withContext text.map { words -> put(listOf(OcrRows.join(words)), null, null, listOf(words), templates) }
+                .reduce(::combine).let { s -> Scan(s.text, s.texts, s.slip, s.fills, shown, null, s.boxes, s.pages) }
+        }
+        // A scan: its pages as photos (at most AnyFile.MAX_PAGES), read the way a photo is.
+        val pages = com.bamnat.app.imports.AnyFile.render(context, bytes)
+        val dir = File(context.cacheDir, "scan").apply { mkdirs() }
+        try {
+            pages.mapIndexed { i, bmp ->
+                val f = File(dir, "payslip-pdf-$i.jpg")
+                try {
+                    f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                    bmp.recycle()
+                    scan(context, Uri.fromFile(f), scanned = true) { n, m -> progress(i * 10 + n, pages.size * 10) }
+                } finally {
+                    f.delete()
+                }
+            }.reduce(::combine)
+        } finally {
+            pages.forEach { if (!it.isRecycled) it.recycle() }
+        }
     }
 
     /** A 1.32 [FIX132-01] The last turn that made a photo read well on this phone (a phone that always saves them one way). */

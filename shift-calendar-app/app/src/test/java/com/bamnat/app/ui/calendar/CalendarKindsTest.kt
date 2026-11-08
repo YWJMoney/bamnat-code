@@ -73,6 +73,45 @@ class CalendarKindsTest {
         assertEquals(CalendarFocus.SALES, vm.focus.value)
     }
 
+    /** 1.37 시간 바퀴 PC LOW: a changed day put back to its own day off does not ask 알람을 끌까요? again; made a day off, it does. */
+    @Test fun aDayPutBackToItsDayOffIsNotAskedAboutAlarms() {
+        val vm = CalendarViewModel(c)
+        val day = LocalDate.of(2026, 11, 9)
+        runBlocking { c.scheduleRepository.setOverride(day, ShiftOverride.Shift(dayShiftId())) }
+        settle()
+        vm.assign(day, ShiftOverride.None)
+        settle()
+        assertNull(vm.restAlarms.value)
+
+        runBlocking { c.scheduleRepository.setOverride(day, ShiftOverride.Shift(dayShiftId())) }
+        settle()
+        vm.assign(day, ShiftOverride.Off)
+        settle()
+        assertEquals(listOf(day), vm.restAlarms.value?.days?.map { it.date })
+        vm.closeRestAlarms()
+    }
+
+    /** [ALRM-29] A day off whose alarms were turned off, made a working day: its shift's alarm is turned on again and said. */
+    @Test fun aDayOffMadeWorkTurnsItsAlarmBackOn() {
+        val vm = CalendarViewModel(c)
+        val msgs = messagesOf(vm)
+        val day = LocalDate.of(2026, 11, 10)
+        val shiftId = dayShiftId() // made first: the list below is read after the defaults exist
+        val id = runBlocking {
+            val t = c.scheduleRepository.shiftTypes.first().first { it.id == shiftId }
+            c.scheduleRepository.saveShiftType(t.copy(alarmEnabled = true, alarms = listOf(com.bamnat.core.model.AlarmSpec(60))))
+            c.settingsRepository.update { it.copy(alarmsEnabled = true) }
+            c.scheduleRepository.setOverride(day, ShiftOverride.Off)
+            c.scheduleRepository.updateDays(listOf(day)) { it.copy(alarmSkipped = true) }
+            t.id
+        }
+        settle()
+        vm.assign(day, ShiftOverride.Shift(id))
+        settle()
+        assertFalse("turned on again", stored(day)?.alarmSkipped == true)
+        assertTrue(msgs.last().message, msgs.last().message.contains("꺼 뒀던") && msgs.last().message.endsWith("알람을 켰어요"))
+    }
+
     @Test fun leaveIsPaintedOnWorkingDaysOnlyAndUndoTakesBackOnlyTheLeave() {
         val vm = CalendarViewModel(c)
         val work = LocalDate.of(2026, 11, 2)
@@ -190,6 +229,51 @@ class CalendarKindsTest {
         vm.setCalendarAlarms(false)
         settle()
         assertTrue(vm.calendarAlarmsOn.value)
+    }
+
+    /** 1.39 [SHOP-12] 7차 PC 식당: 영업 날은 처음부터 알람이 없고, 칸 창에서 한 번에 켜요(문 열기 1시간 전, 되돌리기). */
+    @Test fun aShopsOpenDayAlarmIsTurnedOnInOneTap() {
+        val id = runBlocking {
+            c.scheduleRepository.saveShiftType(com.bamnat.core.model.ShiftType(0, "영업", "영", 0xFF27AE60,
+                java.time.LocalTime.of(10, 0), java.time.LocalTime.of(22, 0), alarms = emptyList()))
+        }
+        val before = runBlocking { c.scheduleRepository.shiftTypes.first() }.first { it.id == id }
+        assertFalse(before.alarmEnabled)
+        val vm = CalendarViewModel(c)
+        val got = messagesOf(vm)
+        settle()
+        vm.turnOnTypeAlarm(before)
+        settle()
+        val on = runBlocking { c.scheduleRepository.shiftTypes.first() }.first { it.id == id }
+        assertTrue(on.alarmEnabled)
+        assertEquals(listOf(60), on.alarms.map { it.offsetMinutes })
+        assertEquals("영업 날마다 09:00에 알람이 울려요", got.last().message)
+        vm.runUndo(got.last())
+        settle()
+        assertFalse(runBlocking { c.scheduleRepository.shiftTypes.first() }.first { it.id == id }.alarmEnabled)
+    }
+
+    /**
+     * 1.39 [SETUP-22] 7차 PC 리더: 첫 설정을 '나중에'로 미룬 뒤 근무 주기나 팀을 넣으면, 달력 맨 위
+     * '근무 설정을 마저 해 주세요'는 끝난 것으로 쳐서 사라져요. 아무것도 넣지 않았으면 그대로 남아요.
+     */
+    @Test fun aSetupPutOffEndsOnceTheCalendarHasAPattern() {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, setupLater = true) }
+        c.setupDrafts.save(com.bamnat.core.setup.SetupDraft(style = WorkStyle.SHIFT, later = true))
+        val vm = CalendarViewModel(c)
+        settle()
+        assertTrue(c.settingsRepository.current.setupLater)
+        assertTrue(c.setupDrafts.draft.value?.later == true)
+        runBlocking {
+            val shift = dayShiftId()
+            c.scheduleRepository.setFirstPattern(com.bamnat.core.model.WorkPattern.Weekly(LocalDate.of(2026, 11, 2),
+                java.time.DayOfWeek.entries.associateWith { shift }), LocalDate.of(2026, 11, 2))
+        }
+        settle()
+        assertFalse(c.settingsRepository.current.setupLater)
+        assertTrue(c.settingsRepository.current.setupDone)
+        assertNull(c.setupDrafts.draft.value)
+        vm.hashCode()
     }
 
     @Test fun changesOnADaySayThemselvesWithUndo() {

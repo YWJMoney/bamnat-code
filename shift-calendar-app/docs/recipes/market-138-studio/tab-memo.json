@@ -1,0 +1,6112 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "SBAR 인수인계 보드",
+   "summary": "인수인계를 근무별 보드로, 끝낸 건 흐리게",
+   "desc": "메모장에 밤낮 배경 ‘하얀 줄 노트’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(인수인계·교대 전달)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 제목에 ‘급함’이 들어간 메모는 제목이 빨갛고 굵어요.\n누구에게 좋아요: 근무마다 인수인계를 쓰는 간호·돌봄 교대 근무자\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 급함 제목 빨갛게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFEFDFA|ph:6b695a43b7de816c|dm:0|cd:FFFFFFFF|ik:FF19141C|ac:FF896F13|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4294901242
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "교대 전달",
+       "emoji": "🔁",
+       "check": [
+        "특이 사항",
+        "남은 일",
+        "물품·재고",
+        "다음 근무자 확인"
+       ],
+       "body": "{근무} {근무시작}~{근무끝}"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "shift"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4279833628
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287196947
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card.title",
+       "when": "포함(제목, \"급함\")",
+       "ink": 4292030255,
+       "weight": 900
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "c022a999f77a1251",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294703085,
+    "b": 4287196947,
+    "dir": 2,
+    "emoji": "🩺"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "교대 전달 노트",
+   "summary": "특이 사항·남은 일·재고를 한 장에",
+   "desc": "메모장에 밤낮 배경 ‘노란 줄 노트’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(교대 전달·근무 준비물)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFFFDF5|ph:5ec922a10a069142|dm:0|cd:FFFFFFFF|ik:FF18141C|ac:FF856B00|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4294966773
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "교대 전달",
+       "emoji": "🔁",
+       "check": [
+        "특이 사항",
+        "남은 일",
+        "물품·재고",
+        "다음 근무자 확인"
+       ],
+       "body": "{근무} {근무시작}~{근무끝}"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "shift"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nanumpen",
+       "ink": 4279768092
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4286933760
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "13738b73f92c6fec",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294899671,
+    "b": 4286933760,
+    "dir": 2,
+    "emoji": "🔁"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "회의록 표",
+   "summary": "회의록을 마감 순 표로, 마감 있는 건 빨간 테두리",
+   "desc": "메모장에 밤낮 배경 ‘모눈 공책’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(회의록·프로젝트)를 메모 + 에서 바로 써요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 마감 메모 빨간 테두리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFDFEFD|ph:b8a1f7854d28f1c4|dm:0|cd:FFFFFFFF|ik:FF14151C|ac:FF6C762D|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "ibmplexsanskr",
+     "date": true,
+     "bg": 4294835965
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "회의록",
+       "emoji": "🗒️",
+       "body": "{날짜} ({요일})\n참석: \n정한 것: \n할 사람: ",
+       "asks": [
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      },
+      {
+       "title": "프로젝트",
+       "emoji": "🚀",
+       "body": "목표: \n이번 주 할 것: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "준비",
+          "하는 중",
+          "검토",
+          "끝"
+         ]
+        },
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "p:마감"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "ibmplexsanskr",
+       "ink": 4279506204
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4285298221
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fa49f4a1c64c6f62",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294507000,
+    "b": 4285298221,
+    "dir": 2,
+    "emoji": "🗒️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "프로젝트 칸반",
+   "summary": "준비·하는 중·검토·끝 네 칸 보드",
+   "desc": "메모장에 밤낮 배경 ‘푸른 유리’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(프로젝트·아이디어)를 메모 + 에서 바로 써요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 보드 한 칸에 메모가 5개를 넘으면 그 칸 머리가 주황이 돼요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 마감 메모 빨간 테두리\n· 꽉 찬 칸 주황 머리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "DAY",
+    "FIELD",
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF8FBFF|ph:4462c0f7076c542d|dm:0|cd:FFFFFFFF|ik:FF14142A|ac:FF096AE8|ft:rubik"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "rubik",
+     "date": true,
+     "bg": 4294507519
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "프로젝트",
+       "emoji": "🚀",
+       "body": "목표: \n이번 주 할 것: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "준비",
+          "하는 중",
+          "검토",
+          "끝"
+         ]
+        },
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      },
+      {
+       "title": "아이디어",
+       "emoji": "💡",
+       "body": "떠오른 것: \n다음 한 걸음: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "씨앗",
+          "키우는 중",
+          "열매"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "p:상태"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "rubik",
+       "ink": 4279505962
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "rubik"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4278807272
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.board.head",
+       "when": "칸수 > 5",
+       "fill": 4294959282,
+       "ink": 4293284096
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "eff96a53844035e7",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292733948,
+    "b": 4278807272,
+    "dir": 2,
+    "emoji": "🚀"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "현장 일지철",
+   "summary": "현장 일지·안전 점검·사진 메모를 한 철에",
+   "desc": "메모장에 밤낮 배경 ‘크래프트지’이 깔리고 카드가 유리처럼 비쳐요. 틀 3개(현장 일지·안전 점검·현장 사진 메모)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF2E8DE|ph:196259958c1ad041|dm:0|cd:FFFFFFFF|ik:FF1B141C|ac:FF966A39|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4294109406
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "현장 일지",
+       "emoji": "📒",
+       "body": "{날짜} · {근무시간}시간\n현장: \n공정: \n투입 인원: ",
+       "check": [
+        "오늘 한 일",
+        "자재 들어온 것",
+        "내일 할 일",
+        "사진 찍기"
+       ]
+      },
+      {
+       "title": "안전 점검",
+       "emoji": "🦺",
+       "check": [
+        "안전모·안전화",
+        "추락 방지",
+        "장비 점검",
+        "물·그늘 쉬는 곳"
+       ]
+      },
+      {
+       "title": "현장 사진 메모",
+       "emoji": "📷",
+       "check": [
+        "작업 전",
+        "작업 중",
+        "작업 후",
+        "자재 영수증"
+       ],
+       "body": "{날짜} · {근무시간}시간"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nanumpen",
+       "ink": 4279964700
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4288047673
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "518723a787ed3373",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4291405178,
+    "b": 4288047673,
+    "dir": 2,
+    "emoji": "📒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "받을 돈 장부",
+   "summary": "받을 돈 메모를 상태별 보드로",
+   "desc": "메모장에 밤낮 배경 ‘오래된 종이’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(받을 돈)를 메모 + 에서 바로 써요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 마감 메모 빨간 테두리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "FIELD",
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF7F3ED|ph:5003874b393425d2|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF917133|ft:nanummyeongjo"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanummyeongjo",
+     "date": true,
+     "bg": 4294439917
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "받을 돈",
+       "emoji": "💸",
+       "body": "일감: \n금액: \n받을 날: \n상태: 받기 전",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "받기 전",
+          "일부",
+          "다 받음"
+         ]
+        },
+        {
+         "label": "받을 날",
+         "type": "date"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "p:상태"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nanummyeongjo",
+       "ink": 4279899164
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanummyeongjo"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287721779
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "441dd3cf4afc8f75",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292528816,
+    "b": 4287721779,
+    "dir": 2,
+    "emoji": "💸"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "가게 오픈·마감 노트",
+   "summary": "오픈·마감·재고 틀을 꼬리표 보드로",
+   "desc": "메모장에 밤낮 배경 ‘리넨 천’이 깔리고 카드가 유리처럼 비쳐요. 틀 3개(오픈 준비·마감·재고 점검)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFAF8F5|ph:e397ad685cac593c|dm:0|cd:FFFFFFFF|ik:FF19141C|ac:FF8C6935|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4294637813
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "오픈 준비",
+       "emoji": "🌅",
+       "check": [
+        "간판·조명",
+        "포스 켜기",
+        "재료 확인",
+        "청소 마무리"
+       ]
+      },
+      {
+       "title": "마감",
+       "emoji": "🔒",
+       "check": [
+        "시재 맞추기",
+        "청소",
+        "재료 정리",
+        "쓰레기",
+        "문단속"
+       ],
+       "body": "오늘 매출 {원(수입)} · 이달 {원(이달수입)}"
+      },
+      {
+       "title": "재고 점검",
+       "emoji": "📋",
+       "check": [
+        "주재료",
+        "부재료",
+        "포장재",
+        "소모품"
+       ],
+       "body": "오늘 매출 {원(수입)}",
+       "repeat": "W1"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "tag"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4279833628
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287392053
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "cc0d874f27859360",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293517782,
+    "b": 4287392053,
+    "dir": 2,
+    "emoji": "🔑"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "단골 수첩",
+   "summary": "단골 이름과 좋아하는 것, 다음에 챙길 것",
+   "desc": "메모장에 밤낮 배경 ‘테라조’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(단골 기록)를 메모 + 에서 바로 써요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 글이 긴 메모는 살짝 큰 카드로 보여요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n· 긴 메모 크게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF8F6F4|ph:d8712bc06a8ad2f9|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF906A37|ft:gaegu"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294506228
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "단골 기록",
+       "emoji": "🤝",
+       "body": "이름: \n좋아하는 것: \n다음에 챙길 것: ",
+       "asks": [
+        {
+         "label": "방문 수",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "gallery"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gaegu",
+       "ink": 4279899164
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287654455
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "1551030b3df14b10",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293320405,
+    "b": 4287654455,
+    "dir": 2,
+    "emoji": "🤝"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "매매 일지 표",
+   "summary": "감정 점수 높은 날부터 보는 매매 일지 표",
+   "desc": "메모장에 밤낮 배경 ‘자정 보라 도시’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(매매 일지·관심 목록)를 메모 + 에서 바로 써요. 제목에 ‘손절’이 들어간 메모는 제목이 빨갛고 굵어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 손절 제목 빨갛게\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF130F1E|ph:6f29802f3729bd6c|dm:15|cd:FF1D1B24|ik:FFF0F0F5|ac:FF9076CF|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280097572,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "ibmplexsanskr",
+     "date": true,
+     "bg": 4279439134
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "매매 일지",
+       "emoji": "📈",
+       "body": "{날짜} · 이달 쓴 돈 {원(이달지출)}\n산·판 이유: \n원칙 지켰나: \n마음: ",
+       "asks": [
+        {
+         "label": "감정 점수",
+         "type": "star"
+        },
+        {
+         "label": "원칙 지킴",
+         "type": "check"
+        }
+       ]
+      },
+      {
+       "title": "관심 목록",
+       "emoji": "👀",
+       "body": "이름: \n지켜보는 이유: \n살 조건: ",
+       "asks": [
+        {
+         "label": "관심도",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "-p:감정 점수"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C1D1B24.26",
+       "pad": 8,
+       "font": "ibmplexsanskr",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A61D1B24.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287657679
+      },
+      {
+       "id": "memo.card.title",
+       "when": "포함(제목, \"손절\")",
+       "ink": 4292030255,
+       "weight": 900
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "502467f1d754a6ff",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280687921,
+    "b": 4287657679,
+    "dir": 2,
+    "emoji": "📈"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "배당 정원",
+   "summary": "배당 기록과 리밸런싱 점검을 한 정원에",
+   "desc": "메모장에 밤낮 배경 ‘깊은 숲’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(배당 기록·리밸런싱 점검)를 메모 + 에서 바로 써요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF474D38|ph:d31e37be3a179482|dm:15|cd:FF3C3C33|ik:FFF0F0F5|ac:FFCCB072|ft:gowunbatang"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4282137651,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowunbatang",
+     "date": true,
+     "bg": 4282862904
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "배당 기록",
+       "emoji": "🌳",
+       "body": "어디서: \n금액: \n다시 넣을 곳: ",
+       "asks": [
+        {
+         "label": "금액",
+         "type": "num"
+        }
+       ]
+      },
+      {
+       "title": "리밸런싱 점검",
+       "emoji": "⚖️",
+       "check": [
+        "목표 비중과 차이",
+        "현금 비중",
+        "산 이유 그대로인가",
+        "다음 분기 계획"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "-p:금액"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C3C3C33.26",
+       "pad": 8,
+       "font": "gowunbatang",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A63C3C33.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowunbatang"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4291604594
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "6e2ecc1eda7fde8a",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4288319843,
+    "b": 4291604594,
+    "dir": 2,
+    "emoji": "🌳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "투자 공부 노트",
+   "summary": "공부 기록과 관심 목록을 밤 노트에",
+   "desc": "메모장에 밤낮 배경 ‘밤 줄 노트’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(공부 기록·관심 목록)를 메모 + 에서 바로 써요. 글이 긴 메모는 살짝 큰 카드로 보여요. 지난 날짜의 메모는 조금 흐려져요.\n적용하면 바뀌는 것:\n· 긴 메모 크게\n· 지난 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF12151E|ph:00d7d8a775629173|dm:15|cd:FF1D1E23|ik:FFF0F0F5|ac:FF6A7DC6|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280098339,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4279375134
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "공부 기록",
+       "emoji": "🎓",
+       "body": "읽은 것: \n배운 것 한 줄: \n시간: ",
+       "asks": [
+        {
+         "label": "시간",
+         "type": "num"
+        }
+       ]
+      },
+      {
+       "title": "관심 목록",
+       "emoji": "👀",
+       "body": "이름: \n지켜보는 이유: \n살 조건: ",
+       "asks": [
+        {
+         "label": "관심도",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C1D1E23.26",
+       "pad": 8,
+       "font": "nanumpen",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A61D1E23.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4285169094
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "4fc89d3a38b63705",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280165169,
+    "b": 4285169094,
+    "dir": 2,
+    "emoji": "🎓"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "알바 출근 가방",
+   "summary": "출근 체크와 근무 회고, 오늘 메모는 테두리",
+   "desc": "메모장에 밤낮 배경 ‘말랑 체크’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(근무 준비물·근무 회고)를 메모 + 에서 바로 써요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFEFBF6|ph:9f3c978c5d37631e|dm:0|cd:FFFFFFFF|ik:FF1B141C|ac:FF946601|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294900726
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4279964700
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287915521
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "50545b44ee7f0e03",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294634970,
+    "b": 4287915521,
+    "dir": 2,
+    "emoji": "🧢"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 잠 기록",
+   "summary": "야간 뒤 잠 기록을 잠 점수 표로",
+   "desc": "메모장에 밤낮 배경 ‘초승달 밤’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(잠 기록·수면 기록)를 메모 + 에서 바로 써요. 지난 날짜의 메모는 조금 흐려져요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 지난 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF171633|ph:68ec273aa80e3f92|dm:15|cd:FF1F1F30|ik:FFF0F0F5|ac:FF837ACC|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280229680,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4279703091
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "잠 기록",
+       "emoji": "🛌",
+       "body": "{근무} 끝 {근무끝}\n잠든 시각: \n깬 시각: ",
+       "asks": [
+        {
+         "label": "잠 점수",
+         "type": "star"
+        },
+        {
+         "label": "잔 시간",
+         "type": "num"
+        }
+       ]
+      },
+      {
+       "title": "수면 기록",
+       "emoji": "😴",
+       "body": "{근무} 끝 {근무끝} · 이번 주 야간 {이번주야간}번\n잔 시간: \n깬 횟수: ",
+       "asks": [
+        {
+         "label": "잠 점수",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "-p:잠 점수"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C1F1F30.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A61F1F30.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4286806732
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "972e60ab0c6a3cf7",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279309349,
+    "b": 4286806732,
+    "dir": 2,
+    "emoji": "🛌"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "출근 준비물 체크",
+   "summary": "준비물 체크, 다 챙긴 건 흐리게",
+   "desc": "메모장에 밤낮 배경 ‘새벽 도시’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(근무 준비물)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF202131|ph:9b5a703709856191|dm:15|cd:FF25252F|ik:FFF0F0F5|ac:FF707DC9|ft:notosanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280624431,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "notosanskr",
+     "date": true,
+     "bg": 4280295729
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C25252F.26",
+       "pad": 8,
+       "font": "notosanskr",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A625252F.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "notosanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4285562313
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "7a2b868069369420",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282072931,
+    "b": 4285562313,
+    "dir": 2,
+    "emoji": "🎒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "자격증 공부방",
+   "summary": "과목·범위·틀린 것, 시험일까지",
+   "desc": "메모장에 밤낮 배경 ‘점 노트’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(자격증 공부·공부 기록)를 메모 + 에서 바로 써요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 마감 메모 빨간 테두리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFDFCFB|ph:630dbe6d7c4fef65|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF906937|ft:gaegu"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294835451
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "자격증 공부",
+       "emoji": "📖",
+       "body": "과목: \n오늘 범위: \n틀린 것: ",
+       "asks": [
+        {
+         "label": "공부 시간",
+         "type": "num"
+        },
+        {
+         "label": "시험일",
+         "type": "date"
+        }
+       ]
+      },
+      {
+       "title": "공부 기록",
+       "emoji": "🎓",
+       "body": "읽은 것: \n배운 것 한 줄: \n시간: ",
+       "asks": [
+        {
+         "label": "시간",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "p:시험일"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gaegu",
+       "ink": 4279899164
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287654199
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "7bde5e5905f8b1da",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294439917,
+    "b": 4287654199,
+    "dir": 2,
+    "emoji": "📖"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "불렛저널",
+   "summary": "할 일·하는 중·끝, 점 노트 위의 불렛저널",
+   "desc": "메모장에 밤낮 배경 ‘점 노트’이 깔리고 카드가 유리처럼 비쳐요. 틀 3개(할 일·주간 계획·이달 목표)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 마감 메모 빨간 테두리\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFDFCFB|ph:630dbe6d7c4fef65|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF906937|ft:gaegu"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294835451
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "할 일",
+       "emoji": "✅",
+       "body": "상태: 할 일\n우선: 보통\n마감: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "할 일",
+          "하는 중",
+          "끝"
+         ]
+        },
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      },
+      {
+       "title": "주간 계획",
+       "emoji": "🗓️",
+       "check": [
+        "월",
+        "화",
+        "수",
+        "목",
+        "금",
+        "주말"
+       ],
+       "body": "이번 주 근무 {이번주근무시간}시간"
+      },
+      {
+       "title": "이달 목표",
+       "emoji": "🎯",
+       "check": [
+        "돈",
+        "몸",
+        "일",
+        "나"
+       ],
+       "body": "{월}월 · 이달 쓴 돈 {원(이달지출)}"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "p:상태"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gaegu",
+       "ink": 4279899164
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287654199
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "28cba263686e281e",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294439917,
+    "b": 4287654199,
+    "dir": 2,
+    "emoji": "📍"
+   }
+  },
+  "showcase": true
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "감사 일기장",
+   "summary": "하루 세 가지 고마운 것, 라벤더 언덕 위에",
+   "desc": "메모장에 밤낮 배경 ‘라벤더 언덕’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(감사 일기·하루 일기)를 메모 + 에서 바로 써요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요. 지난 날짜의 메모는 조금 흐려져요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n· 지난 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFEDE9F5|ph:8e12690246d98e55|dm:0|cd:FFFFFFFF|ik:FF18142C|ac:FF8743F3|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4293782005
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "감사 일기",
+       "emoji": "🙏",
+       "body": "{날짜} {요일}\n고마운 것 세 가지:\n1. \n2. \n3. "
+      },
+      {
+       "title": "하루 일기",
+       "emoji": "🌙",
+       "body": "{날짜} {요일} · {근무}\n기분: \n고마운 것: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4279768108
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287054835
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "112c04a0d78b139f",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293714429,
+    "b": 4287054835,
+    "dir": 2,
+    "emoji": "🙏"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "기분 날씨 일기",
+   "summary": "맑음·구름·비·번개로 마음 날씨를 모아요",
+   "desc": "메모장에 밤낮 배경 ‘노을 구름’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(기분 날씨·하루 일기)를 메모 + 에서 바로 써요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF3E2E5|ph:ffc80b9119b32b7a|dm:0|cd:FFFFFFFF|ik:FF23141C|ac:FFC2460D|ft:nunito"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nunito",
+     "date": true,
+     "bg": 4294173413
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "기분 날씨",
+       "emoji": "🌦️",
+       "body": "오늘 마음 날씨: \n왜 그랬을까: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "pick",
+         "choices": [
+          "맑음",
+          "구름",
+          "비",
+          "번개"
+         ]
+        }
+       ]
+      },
+      {
+       "title": "하루 일기",
+       "emoji": "🌙",
+       "body": "{날짜} {요일} · {근무}\n기분: \n고마운 것: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "p:기분"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nunito",
+       "ink": 4280488988
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nunito"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4290921997
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "32704d199b5e6ce5",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4287721891,
+    "b": 4290921997,
+    "dir": 2,
+    "emoji": "🌦️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "장보기 목록",
+   "summary": "장보기 체크, 다 산 목록은 흐리게",
+   "desc": "메모장에 밤낮 배경 ‘초록 테라조’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(장보기)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF4F7F5|ph:7315b21bc757c398|dm:0|cd:FFFFFFFF|ik:FF1C141C|ac:FF9D6C23|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294244341
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "장보기",
+       "emoji": "🛒",
+       "check": [
+        "채소",
+        "과일",
+        "달걀·우유",
+        "고기·생선",
+        "생활용품"
+       ],
+       "body": "이달 쓴 돈 {원(이달지출)}"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4280030236
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4288506915
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "714e2d6af080ea29",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292206806,
+    "b": 4288506915,
+    "dir": 2,
+    "emoji": "🛒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "습관 정원",
+   "summary": "물·걷기·스트레칭, 매일 체크하는 습관",
+   "desc": "메모장에 밤낮 배경 ‘초록 잎’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(습관 체크)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF8FCF6|ph:75e735c663e2206f|dm:0|cd:FFFFFFFF|ik:FF14161C|ac:FF457A18|ft:nunito"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nunito",
+     "date": true,
+     "bg": 4294507766
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "습관 체크",
+       "emoji": "🌱",
+       "check": [
+        "물 여덟 잔",
+        "걷기 30분",
+        "스트레칭",
+        "일찍 자기"
+       ],
+       "asks": [
+        {
+         "label": "오늘 기분",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nunito",
+       "ink": 4279506460
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nunito"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4282743320
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "dbd9f7420ac4ceab",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293720292,
+    "b": 4282743320,
+    "dir": 2,
+    "emoji": "🌱"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "운동 일지",
+   "summary": "운동 시간과 힘든 정도를 표로",
+   "desc": "메모장에 밤낮 배경 ‘안개 숲 산’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(운동 기록)를 메모 + 에서 바로 써요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요. 지난 날짜의 메모는 조금 흐려져요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n· 지난 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFE9EDEC|ph:c91eddbc5cd9c9ce|dm:0|cd:FFFFFFFF|ik:FF14151C|ac:FF2C7463|ft:rubik"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "rubik",
+     "date": true,
+     "bg": 4293520876
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "운동 기록",
+       "emoji": "🏃",
+       "body": "운동: \n시간: \n느낌: ",
+       "asks": [
+        {
+         "label": "운동 시간",
+         "type": "num"
+        },
+        {
+         "label": "힘든 정도",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "-p:운동 시간"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "rubik",
+       "ink": 4279506204
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "rubik"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4281103459
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "d4ef8be5a3b99a0d",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292864230,
+    "b": 4281103459,
+    "dir": 2,
+    "emoji": "🏃"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "식단 노트",
+   "summary": "아침·점심·저녁·간식 체크",
+   "desc": "메모장에 밤낮 배경 ‘민트 아침’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(식단 기록)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF2FCF3|ph:81f8c48f119ce56a|dm:0|cd:FFFFFFFF|ik:FF14181C|ac:FF488304|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4294114547
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "식단 기록",
+       "emoji": "🥗",
+       "check": [
+        "아침",
+        "점심",
+        "저녁",
+        "간식"
+       ],
+       "body": "{근무} · 물 몇 잔: "
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4279506972
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4282942212
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "2d1d5e865204dd39",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4288931542,
+    "b": 4282942212,
+    "dir": 2,
+    "emoji": "🥗"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "약 먹기 알림장",
+   "summary": "아침·점심·저녁 약 체크, 근무 시작 시각과 함께",
+   "desc": "메모장에 밤낮 배경 ‘민트 유리’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(약 먹기)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF9FEFC|ph:fa2c618b90b41658|dm:0|cd:FFFFFFFF|ik:FF14161C|ac:FF0B7A50|ft:notosanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "notosanskr",
+     "date": true,
+     "bg": 4294573820
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "약 먹기",
+       "emoji": "💊",
+       "check": [
+        "아침 약",
+        "점심 약",
+        "저녁 약"
+       ],
+       "body": "{근무} 근무 날 · 근무 시작 {근무시작}"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "notosanskr",
+       "ink": 4279506460
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "notosanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4278942288
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "6c06c8d0920baf73",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293197051,
+    "b": 4278942288,
+    "dir": 2,
+    "emoji": "💊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "반려동물 수첩",
+   "summary": "밥·물·산책·약, 몸무게 기록",
+   "desc": "메모장에 밤낮 배경 ‘파스텔 물결 선’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(반려동물)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFEFCFA|ph:c928d2dc8ccfd208|dm:0|cd:FFFFFFFF|ik:FF22141C|ac:FFBD590F|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294900986
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "반려동물",
+       "emoji": "🐾",
+       "check": [
+        "밥",
+        "물",
+        "산책",
+        "약·영양제"
+       ],
+       "asks": [
+        {
+         "label": "몸무게",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4280423452
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4290599183
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "c2536446b468223a",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294570987,
+    "b": 4290599183,
+    "dir": 2,
+    "emoji": "🐾"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "청소 당번표",
+   "summary": "설거지·빨래·분리수거 체크",
+   "desc": "메모장에 밤낮 배경 ‘말랑 체크’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(청소 당번)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFEFBF6|ph:9f3c978c5d37631e|dm:0|cd:FFFFFFFF|ik:FF1B141C|ac:FF946601|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294900726
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "청소 당번",
+       "emoji": "🧹",
+       "check": [
+        "설거지",
+        "빨래",
+        "분리수거",
+        "화장실",
+        "청소기"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4279964700
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287915521
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "8f4e4f9f5e75efab",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294634970,
+    "b": 4287915521,
+    "dir": 2,
+    "emoji": "🧹"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "요리 노트",
+   "summary": "재료·순서·다음엔, 맛 별점 갤러리",
+   "desc": "메모장에 밤낮 배경 ‘리넨 천’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(요리 노트)를 메모 + 에서 바로 써요. 글이 긴 메모는 살짝 큰 카드로 보여요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 긴 메모 크게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFAF8F5|ph:e397ad685cac593c|dm:0|cd:FFFFFFFF|ik:FF19141C|ac:FF8C6935|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4294637813
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "요리 노트",
+       "emoji": "🍳",
+       "body": "재료: \n순서: \n다음엔: ",
+       "asks": [
+        {
+         "label": "맛",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "gallery"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nanumpen",
+       "ink": 4279833628
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287392053
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "89f6eb59fc51c66b",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293517782,
+    "b": 4287392053,
+    "dir": 2,
+    "emoji": "🍳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "여행 준비물",
+   "summary": "여권·충전기·상비약, 출발일까지",
+   "desc": "메모장에 밤낮 배경 ‘물속 햇살’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(여행 준비)를 메모 + 에서 바로 써요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 마감 메모 빨간 테두리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF1E4E5F|ph:4920095c5e2395d4|dm:15|cd:FF233C3C|ik:FFF0F0F5|ac:FF62CCE0|ft:quicksand"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280499260,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "quicksand",
+     "date": true,
+     "bg": 4280176223
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "여행 준비",
+       "emoji": "🧳",
+       "check": [
+        "여권·신분증",
+        "충전기",
+        "상비약",
+        "숙소 확인",
+        "교통편"
+       ],
+       "asks": [
+        {
+         "label": "출발",
+         "type": "date"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "p:출발"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C233C3C.26",
+       "pad": 8,
+       "font": "quicksand",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A6233C3C.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "quicksand"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4284665056
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fce15e94d586087d",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4284073691,
+    "b": 4284665056,
+    "dir": 2,
+    "emoji": "🧳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "독서 서재",
+   "summary": "읽은 쪽과 별점, 다 읽은 책은 흐리게",
+   "desc": "메모장에 밤낮 배경 ‘오래된 종이’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(독서 기록)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF7F3ED|ph:5003874b393425d2|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF917133|ft:nanummyeongjo"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanummyeongjo",
+     "date": true,
+     "bg": 4294439917
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "독서 기록",
+       "emoji": "📚",
+       "body": "읽은 쪽: 0\n전체 쪽: 300\n별점: ",
+       "asks": [
+        {
+         "label": "별점",
+         "type": "star"
+        },
+        {
+         "label": "읽은 쪽",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "gallery"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "playfair",
+       "ink": 4279899164
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanummyeongjo"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287721779
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "4062db633eaf6f5e",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292528816,
+    "b": 4287721779,
+    "dir": 2,
+    "emoji": "📚"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "위시리스트",
+   "summary": "갖고 싶은 정도 높은 순, 정말 필요한가 한 번 더",
+   "desc": "메모장에 밤낮 배경 ‘파스텔 빛망울’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(사고 싶은 것)를 메모 + 에서 바로 써요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFAF8FC|ph:3dc7164fe37bfd44|dm:0|cd:FFFFFFFF|ik:FF16142D|ac:FF7D4FF8|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294637820
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "사고 싶은 것",
+       "emoji": "🛍️",
+       "body": "물건: \n값: \n정말 필요한가: ",
+       "asks": [
+        {
+         "label": "얼마나 갖고 싶나",
+         "type": "star"
+        },
+        {
+         "label": "값",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "-p:얼마나 갖고 싶나"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4279637037
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4286402552
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "966d8c36b9e96a4d",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293977073,
+    "b": 4286402552,
+    "dir": 2,
+    "emoji": "🛍️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "아이디어 씨앗",
+   "summary": "씨앗·키우는 중·열매 세 칸 보드",
+   "desc": "메모장에 밤낮 배경 ‘레몬 소다’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(아이디어)를 메모 + 에서 바로 써요. 보드 한 칸에 메모가 6개를 넘으면 그 칸 머리가 주황이 돼요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 꽉 찬 칸 주황 머리\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF9F9ED|ph:ec1f0643bd00a9b4|dm:0|cd:FFFFFFFF|ik:FF16141C|ac:FF7A6E11|ft:nunito"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nunito",
+     "date": true,
+     "bg": 4294572525
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "아이디어",
+       "emoji": "💡",
+       "body": "떠오른 것: \n다음 한 걸음: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "씨앗",
+          "키우는 중",
+          "열매"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "p:상태"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nunito",
+       "ink": 4279637020
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nunito"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4286213649
+      },
+      {
+       "id": "memo.board.head",
+       "when": "칸수 > 6",
+       "fill": 4294959282,
+       "ink": 4293284096
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "4b19ca4af5d86b61",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293718726,
+    "b": 4286213649,
+    "dir": 2,
+    "emoji": "💡"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "부업 장부",
+   "summary": "일감·번 돈·든 시간을 번 돈 순 표로",
+   "desc": "메모장에 밤낮 배경 ‘햇살 유리’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(부업 기록)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFFFBF6|ph:31cc25264d66ee12|dm:0|cd:FFFFFFFF|ik:FF1C141C|ac:FF9E6508|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "ibmplexsanskr",
+     "date": true,
+     "bg": 4294966262
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "부업 기록",
+       "emoji": "💼",
+       "body": "일감: \n번 돈: \n든 시간: ",
+       "asks": [
+        {
+         "label": "번 돈",
+         "type": "num"
+        },
+        {
+         "label": "시간",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "-p:번 돈"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "ibmplexsanskr",
+       "ink": 4280030236
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4288570632
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fa49f4a1c64c6f62",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294898910,
+    "b": 4288570632,
+    "dir": 2,
+    "emoji": "💼"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "노란 포스트잇 벽",
+   "summary": "노란 줄 노트에 포스트잇처럼 붙는 메모",
+   "desc": "메모장에 밤낮 배경 ‘노란 줄 노트’이 깔리고 카드가 유리처럼 비쳐요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 색 1번 메모는 그 색 띠가 왼쪽에 생겨요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n· 색 1번 띠\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFFFDF5|ph:5ec922a10a069142|dm:0|cd:FFFFFFFF|ik:FF18141C|ac:FF856B00|ft:gaegu"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 6,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294966773
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gaegu",
+       "ink": 4279768092
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4286933760
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "색번호 = 1",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "1d586b422ec1ee70",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294899671,
+    "b": 4286933760,
+    "dir": 2,
+    "emoji": "📌"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "칠판 수업 노트",
+   "summary": "칠판 모눈 위에 분필 같은 글씨",
+   "desc": "메모장에 밤낮 배경 ‘칠판 모눈’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(공부 기록)를 메모 + 에서 바로 써요. 제목에 ‘시험’이 들어간 메모는 제목이 빨갛고 굵어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 시험 제목 빨갛게\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF18221F|ph:ebd3df8c04e02bdc|dm:15|cd:FF202624|ik:FFF0F0F5|ac:FF399778|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280296996,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4279771679
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "공부 기록",
+       "emoji": "🎓",
+       "body": "읽은 것: \n배운 것 한 줄: \n시간: ",
+       "asks": [
+        {
+         "label": "시간",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C202624.26",
+       "pad": 8,
+       "font": "permanentmarker",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A6202624.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4281964408
+      },
+      {
+       "id": "memo.card.title",
+       "when": "포함(제목, \"시험\")",
+       "ink": 4292030255,
+       "weight": 900
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "28cba263686e281e",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280826163,
+    "b": 4281964408,
+    "dir": 2,
+    "emoji": "🧑‍🏫"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "크래프트 다이어리",
+   "summary": "크래프트지 위 손글씨, 날짜별 달력 판",
+   "desc": "메모장에 밤낮 배경 ‘크래프트지’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(하루 일기)를 메모 + 에서 바로 써요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요. 글이 긴 메모는 살짝 큰 카드로 보여요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n· 긴 메모 크게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF2E8DE|ph:196259958c1ad041|dm:0|cd:FFFFFFFF|ik:FF1B141C|ac:FF966A39|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4294109406
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "하루 일기",
+       "emoji": "🌙",
+       "body": "{날짜} {요일} · {근무}\n기분: \n고마운 것: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nanumpen",
+       "ink": 4279964700
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4288047673
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "c5a797421b9ade5b",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4291405178,
+    "b": 4288047673,
+    "dir": 2,
+    "emoji": "📔"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "리넨 한 줄 일기",
+   "summary": "리넨 천 위에 하루 한 줄, 지난 날은 흐리게",
+   "desc": "메모장에 밤낮 배경 ‘리넨 천’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(하루 일기)를 메모 + 에서 바로 써요. 지난 날짜의 메모는 조금 흐려져요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 지난 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFAF8F5|ph:e397ad685cac593c|dm:0|cd:FFFFFFFF|ik:FF19141C|ac:FF8C6935|ft:gowunbatang"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowunbatang",
+     "date": true,
+     "bg": 4294637813
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "하루 일기",
+       "emoji": "🌙",
+       "body": "{날짜} {요일} · {근무}\n기분: \n고마운 것: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "list"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowunbatang",
+       "ink": 4279833628
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowunbatang"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287392053
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "275fab8b74bb9e50",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293517782,
+    "b": 4287392053,
+    "dir": 2,
+    "emoji": "🕯️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "밤 줄 노트",
+   "summary": "어두운 줄 노트, 밤에 눈이 편한 메모장",
+   "desc": "메모장에 밤낮 배경 ‘밤 줄 노트’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(잠 기록)를 메모 + 에서 바로 써요. 지난 날짜의 메모는 조금 흐려져요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 지난 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF12151E|ph:00d7d8a775629173|dm:15|cd:FF1D1E23|ik:FFF0F0F5|ac:FF6A7DC6|ft:nanumpen"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280098339,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4279375134
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "잠 기록",
+       "emoji": "🛌",
+       "body": "{근무} 끝 {근무끝}\n잠든 시각: \n깬 시각: ",
+       "asks": [
+        {
+         "label": "잠 점수",
+         "type": "star"
+        },
+        {
+         "label": "잔 시간",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C1D1E23.26",
+       "pad": 8,
+       "font": "nanumpen",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A61D1E23.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4285169094
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "57bb392916950948",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280165169,
+    "b": 4285169094,
+    "dir": 2,
+    "emoji": "🌙"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "하얀 줄 노트",
+   "summary": "깨끗한 줄 노트에 손글씨 메모",
+   "desc": "메모장에 밤낮 배경 ‘하얀 줄 노트’이 깔리고 카드가 유리처럼 비쳐요. 글이 긴 메모는 살짝 큰 카드로 보여요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 긴 메모 크게\n· 고정 메모 금테\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFEFDFA|ph:6b695a43b7de816c|dm:0|cd:FFFFFFFF|ik:FF19141C|ac:FF896F13|ft:gaegu"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294901242
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gaegu",
+       "ink": 4279833628
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287196947
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fd8b352f96745bda",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294703085,
+    "b": 4287196947,
+    "dir": 2,
+    "emoji": "📓"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "모눈 기획 노트",
+   "summary": "모눈 위에 기획·할 일 표",
+   "desc": "메모장에 밤낮 배경 ‘모눈 공책’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(프로젝트·할 일)를 메모 + 에서 바로 써요. 마감 칸을 적은 메모는 빨간 테두리로 눈에 띄어요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 마감 메모 빨간 테두리\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFDFEFD|ph:b8a1f7854d28f1c4|dm:0|cd:FFFFFFFF|ik:FF14151C|ac:FF6C762D|ft:nanumgothiccoding"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumgothiccoding",
+     "date": true,
+     "bg": 4294835965
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "프로젝트",
+       "emoji": "🚀",
+       "body": "목표: \n이번 주 할 것: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "준비",
+          "하는 중",
+          "검토",
+          "끝"
+         ]
+        },
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      },
+      {
+       "title": "할 일",
+       "emoji": "✅",
+       "body": "상태: 할 일\n우선: 보통\n마감: ",
+       "asks": [
+        {
+         "label": "상태",
+         "type": "pick",
+         "choices": [
+          "할 일",
+          "하는 중",
+          "끝"
+         ]
+        },
+        {
+         "label": "마감",
+         "type": "date"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table",
+     "memoSort": "p:마감"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "nanumgothiccoding",
+       "ink": 4279506204
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumgothiccoding"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4285298221
+      },
+      {
+       "id": "memo.card",
+       "when": "아님 비었나(칸(\"마감\"))",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "13738b73f92c6fec",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294507000,
+    "b": 4285298221,
+    "dir": 2,
+    "emoji": "📐"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "벚꽃 편지지",
+   "summary": "벚꽃 편지지에 쓰는 메모, 고정은 금테",
+   "desc": "메모장에 밤낮 배경 ‘벚꽃 바람’이 깔리고 카드가 유리처럼 비쳐요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 색 2번 메모는 그 색 띠가 왼쪽에 생겨요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n· 색 2번 띠\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFEFBFD|ph:8fc2515e72f81dae|dm:0|cd:FFFFFFFF|ik:FF28141C|ac:FFE00B4D|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4294900733
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4280816668
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4292873037
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "색번호 = 2",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4293943954
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "25d9aabb5e923ead",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294895342,
+    "b": 4292873037,
+    "dir": 2,
+    "emoji": "🌸"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "비 오는 창가 메모",
+   "summary": "빗방울 창 너머 조용한 메모장",
+   "desc": "메모장에 밤낮 배경 ‘비 온 창’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(기분 날씨)를 메모 + 에서 바로 써요. 지난 날짜의 메모는 조금 흐려져요. 글이 긴 메모는 살짝 큰 카드로 보여요.\n적용하면 바뀌는 것:\n· 지난 메모 흐리게\n· 긴 메모 크게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF374E5D|ph:4b3aa3b90fb819ab|dm:15|cd:FF323C3C|ik:FFF0F0F5|ac:FF4486BC|ft:nanummyeongjo"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4281482300,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanummyeongjo",
+     "date": true,
+     "bg": 4281814621
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "기분 날씨",
+       "emoji": "🌦️",
+       "body": "오늘 마음 날씨: \n왜 그랬을까: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "pick",
+         "choices": [
+          "맑음",
+          "구름",
+          "비",
+          "번개"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C323C3C.26",
+       "pad": 8,
+       "font": "nanummyeongjo",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A6323C3C.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanummyeongjo"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4282681020
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "293e292abdaa30de",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4281553517,
+    "b": 4282681020,
+    "dir": 2,
+    "emoji": "🌧️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오로라 일기",
+   "summary": "분홍 오로라 아래 감사·기분 일기",
+   "desc": "메모장에 밤낮 배경 ‘분홍 오로라’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(감사 일기·기분 날씨)를 메모 + 에서 바로 써요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF140D21|ph:d7f683a865e28fe4|dm:15|cd:FF1E1A25|ik:FFF0F0F5|ac:FF9B74D4|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280162853,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4279504161
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "감사 일기",
+       "emoji": "🙏",
+       "body": "{날짜} {요일}\n고마운 것 세 가지:\n1. \n2. \n3. "
+      },
+      {
+       "title": "기분 날씨",
+       "emoji": "🌦️",
+       "body": "오늘 마음 날씨: \n왜 그랬을까: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "pick",
+         "choices": [
+          "맑음",
+          "구름",
+          "비",
+          "번개"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "cal"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C1E1A25.26",
+       "pad": 8,
+       "font": "gowundodum",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A61E1A25.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4288378068
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "33d26432ca7036ea",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279109916,
+    "b": 4288378068,
+    "dir": 2,
+    "emoji": "💗"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "바다 엽서",
+   "summary": "새벽 바다 엽서처럼 큰 카드 갤러리",
+   "desc": "메모장에 밤낮 배경 ‘새벽 바다’이 깔리고 카드가 유리처럼 비쳐요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 글이 긴 메모는 살짝 큰 카드로 보여요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n· 긴 메모 크게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF353A50|ph:2c3c6f3195e08be1|dm:15|cd:FF31343C|ik:FFF0F0F5|ac:FFD7DBF5|ft:quicksand"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4281414716,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "quicksand",
+     "date": true,
+     "bg": 4281678416
+    },
+    {
+     "kind": "tabView",
+     "memo": "gallery"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C31343C.26",
+       "pad": 8,
+       "font": "quicksand",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A631343C.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "quicksand"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4292336629
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card.body",
+       "when": "길이(내용) >= 80",
+       "size": 13
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "573ab3dc26806434",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4281352037,
+    "b": 4292336629,
+    "dir": 2,
+    "emoji": "🐚"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "숲속 메모장",
+   "summary": "안개 숲 배경, 색 1번 메모는 초록 띠",
+   "desc": "메모장에 밤낮 배경 ‘안개 숲 산’이 깔리고 카드가 유리처럼 비쳐요. 색 1번 메모는 그 색 띠가 왼쪽에 생겨요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 색 1번 띠\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFE9EDEC|ph:c91eddbc5cd9c9ce|dm:0|cd:FFFFFFFF|ik:FF14151C|ac:FF2C7463|ft:gowunbatang"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowunbatang",
+     "date": true,
+     "bg": 4293520876
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gowunbatang",
+       "ink": 4279506204
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowunbatang"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4281103459
+      },
+      {
+       "id": "memo.card",
+       "when": "색번호 = 1",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4282622023
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fac87e3c62001133",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292864230,
+    "b": 4281103459,
+    "dir": 2,
+    "emoji": "🍃"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "도시 밤 노트",
+   "summary": "한밤 도시, 급함 메모는 빨간 제목",
+   "desc": "메모장에 밤낮 배경 ‘한밤 도시’이 깔리고 카드가 유리처럼 비쳐요. 제목에 ‘급함’이 들어간 메모는 제목이 빨갛고 굵어요. 지난 날짜의 메모는 조금 흐려져요.\n적용하면 바뀌는 것:\n· 급함 제목 빨갛게\n· 지난 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF070910|ph:04032c8e4b588944|dm:15|cd:FF16171C|ik:FFF0F0F5|ac:FF7283DF|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4279637788,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "ibmplexsanskr",
+     "date": true,
+     "bg": 4278651152
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C16171C.26",
+       "pad": 8,
+       "font": "ibmplexsanskr",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A616171C.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4285694943
+      },
+      {
+       "id": "memo.card.title",
+       "when": "포함(제목, \"급함\")",
+       "ink": 4292030255,
+       "weight": 900
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날 그리고 아님 고정",
+       "alpha": 70
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "77910db6541c5516",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278387724,
+    "b": 4285694943,
+    "dir": 2,
+    "emoji": "🌃"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "멤피스 스크랩북",
+   "summary": "멤피스 무늬에 큰 카드 갤러리",
+   "desc": "메모장에 밤낮 배경 ‘멤피스’이 깔리고 카드가 유리처럼 비쳐요. 색 3번 메모는 그 색 띠가 왼쪽에 생겨요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 색 3번 띠\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFDFCF9|ph:eddfd2af29120c0b|dm:0|cd:FFFFFFFF|ik:FF1C141C|ac:FF9C6B00|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294835449
+    },
+    {
+     "kind": "tabView",
+     "memo": "gallery"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4280030236
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4288441088
+      },
+      {
+       "id": "memo.card",
+       "when": "색번호 = 3",
+       "line": "solid",
+       "lineW": 3,
+       "lineC": 4286470082
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "c3f2b225f8d89513",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294570471,
+    "b": 4288441088,
+    "dir": 2,
+    "emoji": "🎨"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "테라조 식탁 메모",
+   "summary": "테라조 식탁 위 장보기·요리 노트",
+   "desc": "메모장에 밤낮 배경 ‘테라조’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(장보기·요리 노트)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF8F6F4|ph:d8712bc06a8ad2f9|dm:0|cd:FFFFFFFF|ik:FF1A141C|ac:FF906A37|ft:gaegu"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294506228
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "장보기",
+       "emoji": "🛒",
+       "check": [
+        "채소",
+        "과일",
+        "달걀·우유",
+        "고기·생선",
+        "생활용품"
+       ],
+       "body": "이달 쓴 돈 {원(이달지출)}"
+      },
+      {
+       "title": "요리 노트",
+       "emoji": "🍳",
+       "body": "재료: \n순서: \n다음엔: ",
+       "asks": [
+        {
+         "label": "맛",
+         "type": "star"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "gaegu",
+       "ink": 4279899164
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287654455
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "ac8860a16827c40e",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293320405,
+    "b": 4287654455,
+    "dir": 2,
+    "emoji": "🍽️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "유니콘 꿈 노트",
+   "summary": "라벤더 꿈 위의 귀여운 메모, 이달 목표 틀",
+   "desc": "메모장에 밤낮 배경 ‘라벤더 꿈’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(이달 목표)를 메모 + 에서 바로 써요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요.\n적용하면 바뀌는 것:\n· 고정 메모 금테\n· 끝낸 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF8F1FC|ph:793d10923f67b1be|dm:0|cd:FFFFFFFF|ik:FF19142A|ac:FF894AE9|ft:jua"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "jua",
+     "date": true,
+     "bg": 4294504956
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "이달 목표",
+       "emoji": "🎯",
+       "check": [
+        "돈",
+        "몸",
+        "일",
+        "나"
+       ],
+       "body": "{월}월 · 이달 쓴 돈 {원(이달지출)}"
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "jua",
+       "ink": 4279833642
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "jua"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4287187689
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "21f0b84fe9eb72f0",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292655603,
+    "b": 4287187689,
+    "dir": 2,
+    "emoji": "🦄"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "성탄 카드 메모",
+   "summary": "성탄 불빛 아래 선물 목록",
+   "desc": "메모장에 밤낮 배경 ‘성탄 불빛’이 깔리고 카드가 유리처럼 비쳐요. 틀 1개(사고 싶은 것)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF292F22|ph:297d22ec2467747c|dm:15|cd:FF2A2D26|ik:FFF0F0F5|ac:FFDDC7A3|ft:gowundodum"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4280954150,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gowundodum",
+     "date": true,
+     "bg": 4280889122
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "사고 싶은 것",
+       "emoji": "🛍️",
+       "body": "물건: \n값: \n정말 필요한가: ",
+       "asks": [
+        {
+         "label": "얼마나 갖고 싶나",
+         "type": "star"
+        },
+        {
+         "label": "값",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C2A2D26.26",
+       "pad": 8,
+       "font": "lobster",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A62A2D26.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gowundodum"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4292724643
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "e2c78203b7104f89",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282799421,
+    "b": 4292724643,
+    "dir": 2,
+    "emoji": "🎁"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "큰 글씨 메모장",
+   "summary": "제목·본문 글씨를 키운 눈 편한 메모장",
+   "desc": "메모장에 밤낮 배경 ‘구름 솜사탕’이 깔리고 카드가 유리처럼 비쳐요. 제목에 ‘중요’이 들어간 메모는 제목이 빨갛고 굵어요. 고정한 메모는 금색 테두리로 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 중요 제목 빨갛게\n· 고정 메모 금테\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFAFAF9|ph:6c2e2686907aae4e|dm:0|cd:FFFFFFFF|ik:FF141525|ac:FF1A74CD|ft:notosanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "none",
+     "corner": 18,
+     "lines": 6,
+     "title": "l",
+     "bold": true,
+     "font": "notosanskr",
+     "date": true,
+     "bg": 4294638329
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.A8FFFFFF.26",
+       "pad": 8,
+       "font": "notosanskr",
+       "ink": 4279506213
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.C4FFFFFF.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 2164260863,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "notosanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4279923917
+      },
+      {
+       "id": "memo.card.title",
+       "when": "포함(제목, \"중요\")",
+       "ink": 4292030255,
+       "weight": 900
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "fd8b352f96745bda",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292403962,
+    "b": 4279923917,
+    "dir": 2,
+    "emoji": "🔍"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주간 계획 보드",
+   "summary": "월~주말 칸 주간 계획, 이번 주 근무 시간과 함께",
+   "desc": "메모장에 밤낮 배경 ‘푸른 시간 도시’이 깔리고 카드가 유리처럼 비쳐요. 틀 2개(주간 계획·이달 목표)를 메모 + 에서 바로 써요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 오늘 날짜 메모는 포인트 색 테두리가 둘러져요.\n적용하면 바뀌는 것:\n· 끝낸 메모 흐리게\n· 오늘 메모 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FF0D1427|ph:615304fe4c84782c|dm:15|cd:FF191E29|ik:FFF0F0F5|ac:FF6688D0|ft:ibmplexsanskr"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4279836201,
+     "border": "none",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "ibmplexsanskr",
+     "date": true,
+     "bg": 4279047207
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "주간 계획",
+       "emoji": "🗓️",
+       "check": [
+        "월",
+        "화",
+        "수",
+        "목",
+        "금",
+        "주말"
+       ],
+       "body": "이번 주 근무 {이번주근무시간}시간"
+      },
+      {
+       "title": "이달 목표",
+       "emoji": "🎯",
+       "check": [
+        "돈",
+        "몸",
+        "일",
+        "나"
+       ],
+       "body": "{월}월 · 이달 쓴 돈 {원(이달지출)}"
+      }
+     ]
+    },
+    {
+     "kind": "tabView",
+     "memo": "table"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "paint": "gl.8C191E29.26",
+       "pad": 8,
+       "font": "ibmplexsanskr",
+       "ink": 4293980405
+      },
+      {
+       "id": "memo.card",
+       "paint": "gl.A6191E29.22",
+       "r": 18,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": 872415231,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4284909776
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282339765
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "photo": "d381b3bde0c3193d",
+       "at": "bg.memo",
+       "x": 880,
+       "y": 70,
+       "w": 52,
+       "h": 52,
+       "rot": 8
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279115331,
+    "b": 4284909776,
+    "dir": 2,
+    "emoji": "🗓️"
+   }
+  }
+ }
+]

@@ -290,9 +290,12 @@ fun PayslipFillDialog(
             scan?.takeIf { it.text == text && photo != null }?.let { s -> MorePageButton(s) { both -> scan = both; text = both.text; analyse() } }
             // [PHOTO-09] Read from a photo: '사진이 달라요'.
             if (scan != null) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.PAYSLIP, onAsk = onDismiss)
+            // [READ-41] PC 11차: what the photo was read as, line by line, as the roster's 무엇을 읽었는지 보기 shows it.
+            scan?.let { s -> ReadTextButton(s.text) }
         },
         rulesExtras = {
             if (scanSecond != null || scan != null && r.lines.isEmpty()) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.RULES, onAsk = onDismiss)
+            (scanSecond ?: scan?.takeIf { r.lines.isEmpty() })?.let { s -> ReadTextButton(s.text) }
         },
     )
 }

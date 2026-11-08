@@ -28,6 +28,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusEvent
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
@@ -47,7 +50,25 @@ private const val MAX_DIGITS = 10
 /** Longest job one booking covers; longer work is several bookings (one per stage). */
 private const val MAX_JOB_DAYS = 60
 
+/** [JOBDAYS-01] 1.39 A work period this long (or longer) is asked about once before it is saved. */
+private const val LONG_JOB_DAYS = 15
+
 /** Whole won typed as digits and shown with thousands separators [LEDG-01]. */
+/**
+ * 1.38 PC 확인 (대출 더하기 칸 넷이 자판에 가려 다음 칸이 안 보임): when this field takes focus, it is scrolled above the keyboard
+ * once the keyboard has come up. For fields in a scrolling sheet.
+ */
+@Composable
+fun Modifier.aboveKeyboard(): Modifier {
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return this.then(Modifier.bringIntoViewRequester(bring).onFocusEvent { f ->
+        if (f.isFocused) scope.launch { kotlinx.coroutines.delay(KEYBOARD_SETTLE_MS); bring.bringIntoView() }
+    })
+}
+
+private const val KEYBOARD_SETTLE_MS = 350L
+
 @Composable
 fun AmountField(
     label: String,
@@ -60,10 +81,18 @@ fun AmountField(
     allowZero: Boolean = false,
     enabled: Boolean = true,
 ) {
+    // 1.38 PC 8차: a String value lost the cursor (맨 앞으로) whenever the screen put other digits in (지우면 기본값이 돌아올 때),
+    // and typing went in front of them (12000 → 1,200,010,320). The field keeps its own cursor; digits from outside put it at the end.
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))) }
+    val shown = if (field.text == digits) field else androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))
     OutlinedTextField(
         enabled = enabled,
-        value = digits,
-        onValueChange = { v -> onChange(amountInput(v, allowZero)) },
+        value = shown,
+        onValueChange = { v ->
+            val kept = amountInput(v.text, allowZero)
+            field = if (kept == v.text) v else androidx.compose.ui.text.input.TextFieldValue(kept, androidx.compose.ui.text.TextRange(kept.length))
+            onChange(kept)
+        },
         label = { Text(label) },
         textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
         suffix = { Text("원") },
@@ -108,6 +137,8 @@ fun JobDialog(
     var remind by rememberSaveable { mutableStateOf(initial?.remindMinutes) }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
     var days by rememberSaveable { mutableIntStateOf(initial?.days ?: 1) }
+    // [JOBDAYS-01] 1.39 '60일 맞나요?' before a long period the user has just set is saved.
+    var askLong by rememberSaveable { mutableStateOf(false) }
     var costs by rememberSaveable { mutableStateOf(amountDigits(initial?.costs ?: 0)) }
     var withholding by rememberSaveable { mutableStateOf(initial?.withholding ?: false) }
     // [FLD-03] 가계약·확정·완료·취소; [FLD-09] the day the money is promised.
@@ -185,7 +216,7 @@ fun JobDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = title.isNotBlank() || amount.toAmount() > 0, onClick = {
+            val save = {
                 onSave(
                     Job(
                         id = initial?.id ?: 0, date = initial?.date ?: date, title = title.trim().ifEmpty { "일감" },
@@ -197,7 +228,20 @@ fun JobDialog(
                         status = status, units = initial?.units, due = due?.let(LocalDate::parse),
                     ),
                 )
+            }
+            TextButton(enabled = title.isNotBlank() || amount.toAmount() > 0, onClick = {
+                if (days >= LONG_JOB_DAYS && days != initial?.days) askLong = true else save()
             }) { Text("저장") }
+            if (askLong) {
+                val start = initial?.date ?: date
+                AlertDialog(
+                    onDismissRequest = { askLong = false },
+                    title = { Text("작업 기간이 ${days}일 맞나요?") },
+                    text = { Text("${Fmt.shortDate(start)}부터 ${Fmt.shortDate(start.plusDays(days - 1L))}까지 달력의 ${days}일에 이 일감이 들어가요.") },
+                    confirmButton = { TextButton(onClick = { askLong = false; save() }) { Text("맞아요, 저장") } },
+                    dismissButton = { TextButton(onClick = { askLong = false }) { Text("기간 고치기") } },
+                )
+            }
         },
         dismissButton = {
             Row {

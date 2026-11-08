@@ -76,6 +76,7 @@ internal fun ExtrasContent(
     showAmounts: Boolean,
     onOpenExtraKinds: () -> Unit,
 ) {
+    val extraStyle = ExtraText.styleHere()
     val cal = LocalCalendarColors.current
     // The piece open for changes; a piece just added opens so its hours can be checked.
     var editing by rememberSaveable(day.date) { mutableStateOf<Int?>(null) }
@@ -131,7 +132,8 @@ internal fun ExtrasContent(
                             editing = day.extras.size
                             vm.addExtra(day.date, c.entry, c.name)
                         },
-                        label = { ChipText(c.label) },
+                        // 1.39 [WTYP-30] PC 7차: before anything is put in too, 일근 sees 야근.
+                        label = { ChipText(ExtraText.word(c.label, c.kind.id, extraStyle)) },
                         leadingIcon = { ExtraKindMark(c.kind, size = 18.dp) },
                     )
                 }
@@ -140,7 +142,9 @@ internal fun ExtrasContent(
         if (day.extras.isEmpty()) {
             Text(
                 if (day.isRestDay) "쉬는 날 일했다면 여기서 넣어 주세요. 근무표는 그대로 두고 일한 시간만 더해져서 급여가 맞게 계산돼요."
-                else "근무 뒤 잔업이나 같은 날 대근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.",
+                else if (snapshot.kinds.visible().none { it.timing is com.bamnat.core.model.ExtraTiming.AsShift })
+                    "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 특근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요."
+                else "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 같은 날 대근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -168,7 +172,8 @@ private fun ExtraRow(
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
-    val name = ExtraText.name(extra)
+    // 1.39 [WTYP-30] PC 6차: 일근 says 야근 here as on the chip above.
+    val name = ExtraText.name(extra, vm.settings.collectAsStateWithLifecycle().value.workStyle)
     Column(
         Modifier
             .fillMaxWidth()
@@ -226,6 +231,7 @@ private fun ExtraRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onDone: () -> Unit) {
+    val kindWord = ExtraText.kindName(extra.kind, vm.settings.collectAsStateWithLifecycle().value.workStyle)
     val e = extra.entry
     val update: (ExtraEntry) -> Unit = { vm.updateExtra(day.date, index, it) }
     var picking by remember { mutableStateOf<String?>(null) }
@@ -272,8 +278,11 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                     step = 10,
                     max = (span - 10).coerceAtLeast(0),
                     dialogTitle = "휴게 시간",
+                    format = com.bamnat.core.hours.HoursFormat::breakText,
                 )
             }
+            // [EASE-26] The end a little later or earlier with a tap.
+            MinuteNudges(kindWord, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, from, to, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
             Text(
                 "일한 시간 ${HoursFormat.korean(extra.minutes)}" + if (WorkTime.isOvernight(from, to)) " · 끝은 다음 날" else "",
                 style = MaterialTheme.typography.bodySmall,
@@ -294,9 +303,11 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                     onChange = { m -> update(e.copy(minutes = m)) },
                     step = 30,
                     max = ScheduleRepository.MAX_EXTRA_MINUTES,
-                    dialogTitle = "${extra.kind.name} 시간",
+                    dialogTitle = "$kindWord 시간",
                 )
             }
+            // [EASE-26] 10분·30분·1시간 more, or 30분 less, with a tap.
+            MinuteNudges(kindWord, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, null, null, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
             // Clock times make night minutes exact; the start follows the shift when there is one.
             TextButton(onClick = {
                 val start = from ?: LocalTime.of(9, 0)

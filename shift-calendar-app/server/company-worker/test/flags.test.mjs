@@ -15,7 +15,13 @@ const L = adminLib();
 /** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
   "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */, "share.look" /* 1.37 SHR-31 */,
-  "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */];
+  "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */,
+  "team.leader", "boss.payroll", "health.compare" /* 1.38 Phase 3, on from 정식 출시일 */,
+  "sleep.auto", "sleep.sound", "sleep.share" /* 1.38 SLEEP-01·06·11, same launch day */,
+  "plaza.fix_request" /* 1.39 PAYP-05, on from 처리방침 3.12 */,
+  "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
+  "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */,
+  "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
@@ -59,6 +65,7 @@ test("[FLAG-22] /api/config: 1.27 apps read the same fields; 1.28 apps read flag
   assert.deepEqual([cfg.freeFeatures, cfg.off, cfg.launchedAt], [[], [], null]);
   assert.equal(cfg.serverTime, new Date(NOW).toISOString());
   // Only what the server overrides: the flags waiting on a confirmation (unconfirmed yet), nothing for the rest.
+  // 1.38 Phase 3 rows open on the launch policy's day (사용자 C안), so they wait on no confirmation here.
   assert.deepEqual(Object.keys(cfg.flags).sort(), ["ads", "billing"]);
   assert.deepEqual(cfg.flags.billing, { force: null, why: "", conditions: null, until: null, minApp: null, maxApp: null, confirmed: {} });
   assert.deepEqual(cfg.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-27", heldUntil: null });
@@ -146,13 +153,13 @@ async function browser(n = 1) {
 }
 
 test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins hear of it; at midnight it turns on, the launch is written once", async (t) => {
-  const eve = Date.parse("2026-11-09T14:00:00Z"); // 11월 9일 23시(한국)
+  const eve = Date.parse("2026-11-11T14:00:00Z"); // 11월 11일 23시(한국)
   t.mock.timers.enable({ apis: ["Date"], now: eve });
   const { call, env } = server(await vapidKeys());
   const owner = await signIn(call);
-  // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
+  // [PRIV-05] 3.9 shares 11-12 with 3.1: move it later here so only 결제·광고 speak.
   await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
-  // 1.37 3.11 (share.look) also starts on 11-10: move it later too.
+  // 1.37 3.11 (share.look) also starts on 11-12: move it later too.
   await call("POST", "/api/admin/policy", { version: "3.11", posted: "2026-11-04", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   const b = await browser(1);
   assert.equal((await call("POST", "/api/admin/me/push", { subscription: b.subscription, kinds: ["flags"] }, owner)).data.ready, true);
@@ -169,7 +176,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   assert.deepEqual((await titles()).sort(), ["내일 결제(프로 구독)이(가) 저절로 켜져요", "내일 광고(보상형)이(가) 저절로 켜져요"]);
   let list = (await call("GET", "/api/admin/flags", undefined, owner)).data;
   const billing = list.flags.find((f) => f.key === "billing");
-  assert.deepEqual([billing.state, billing.next, billing.daysLeft], ["waiting", "2026-11-10", 1]);
+  assert.deepEqual([billing.state, billing.next, billing.daysLeft], ["waiting", "2026-11-12", 1]);
   await cron(env, eve);
   assert.deepEqual(await titles(), [], "told once");
   assert.equal((await call("GET", "/api/config")).data.billingLive, false);
@@ -180,7 +187,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   assert.deepEqual((await titles()).sort(), ["결제(프로 구독)이(가) 켜졌어요", "광고(보상형)이(가) 켜졌어요"]);
   const cfg = (await call("GET", "/api/config")).data;
   assert.equal(cfg.billingLive, true);
-  assert.equal(cfg.launchedAt, "2026-11-09T15:00:00.000Z");
+  assert.equal(cfg.launchedAt, "2026-11-11T15:00:00.000Z");
   const home = (await adminHome(call, owner)).data;
   assert.deepEqual(home.flagAlerts.map((a) => a.key).sort(), ["ads", "billing"]);
   t.mock.timers.tick(DAY + 1000);
@@ -190,7 +197,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   await call("POST", "/api/admin/flags/billing/force", { force: "off", why: "결제 오류" }, owner);
   assert.equal((await call("GET", "/api/config")).data.billingLive, false);
   await call("POST", "/api/admin/flags/billing/force", { force: null }, owner);
-  assert.equal((await call("GET", "/api/config")).data.launchedAt, "2026-11-09T15:00:00.000Z");
+  assert.equal((await call("GET", "/api/config")).data.launchedAt, "2026-11-11T15:00:00.000Z");
   const log = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries.map((e) => e.action);
   assert.equal(log.filter((a) => a === "launch_recorded").length, 1);
   assert.ok(log.includes("flag_auto_on"));
@@ -198,7 +205,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   const detail = (await call("GET", "/api/admin/flags/billing", undefined, owner)).data;
   const off = detail.history.find((h) => h.action === "flag_force_off");
   assert.deepEqual([off.before, off.after.force, off.why, off.actor], [null, "off", "결제 오류", "최고 관리자"]);
-  assert.equal(detail.launchedAt, Date.parse("2026-11-09T15:00:00Z"));
+  assert.equal(detail.launchedAt, Date.parse("2026-11-11T15:00:00Z"));
   list = (await call("GET", "/api/admin/flags", undefined, owner)).data;
   assert.equal(list.flags.find((f) => f.key === "billing").state, "on");
 });

@@ -16,6 +16,11 @@ import { insightViews } from "./admin/views/insight.js";
 import { workViews } from "./admin/views/work.js";
 // 1.37 [ADM2-01][ADM2-03] 흐름(관제)과 Claude 운영 열쇠.
 import { flowViews } from "./admin/views/flow.js";
+import { ledgerViews } from "./admin/views/ledger.js";
+// 1.38 [ADM3] 사고·Claude 조종석·스토어 리뷰·데이터 요청·백업·출시 점검표·판 건강·돈·오류 묶음·서버 상태 판·사람 옆 패널·개발 이야기.
+import { opsViews } from "./admin/views/ops.js";
+import { loopViews } from "./admin/views/loop.js";
+import { glanceViews } from "./admin/views/glance.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -72,7 +77,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews}, ops: ${opsViews}, loop: ${loopViews}, glance: ${glanceViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -247,6 +252,11 @@ function adminApp(L, BUILD, M) {
   const DEV_NAMES = L.DEV_NAMES;
   const DEV_TONES = { todo: "info", doing: "warn", done: "ok", rejected: "bad" };
   const DEV_TO = { todo: "접수로", doing: "개발중으로", done: "완료로", rejected: "반려로" };
+  // 1.39 [LOOP-08] 전달 길·크기(서버 loop.js LOOP.routes·sizes와 같은 이름).
+  const DEV_ROUTES = { server: "서버", remote: "원격 자료", flag: "기능 스위치", app: "정기 앱 업데이트", hotfix: "긴급 앱 업데이트" };
+  const DEV_SIZES = { fix: "고침", polish: "다듬기", feature: "새 기능" };
+  const TIER_NAMES = { free: "무료", pro: "프로", pass: "묶음 7일권", trial: "체험 뒤 프로", later: "더 논의" };
+  const DEV_STYLES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** [ADMIN-11] What 반려 usually says, one tap each; the admin can still type their own. */
   const REJECT_REASONS = ["이미 있는 기능이에요", "지금 계획과 맞지 않아요", "기술적으로 어려워요", "같은 항목이 있어요", "더 많은 요청을 기다려요"];
   /** [ADMIN-11] The answer to linked questions when an item is 완료 or 반려, ready to send after a read. */
@@ -296,7 +306,8 @@ function adminApp(L, BUILD, M) {
   // ---- [ADMUX-03] this device's choices, kept in the browser only ----
 
   const PREF_KEY = "bamnat-admin-prefs";
-  const PREFS = { theme: "system", size: "normal", tabs: [], sound: false, next: true, views: [], loginMode: "account", v: 2 };
+  // 1.38 [ADM3-01] 1인 관리자라 로그인 첫 칸은 최고 관리자예요(초대받은 관리자는 한 번 고르면 이 기기가 기억해요).
+  const PREFS = { theme: "system", size: "normal", tabs: [], sound: false, next: true, views: [], loginMode: "owner", v: 2 };
   function readPrefs() {
     try {
       const v = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}");
@@ -368,6 +379,7 @@ function adminApp(L, BUILD, M) {
     metricFrom: "", metricTo: "", inboxView: "all", versionShow: "conflict", postPick: null, ratePick: null,
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
+    deskView: "today", deskGroup: "", deskV: "", deskQuery: "", ledgerPick: null,
     inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
     // [ADMIN-16] 문의 찾기·정렬, 여러 개 고르기. [ADMIN-17] 활동 기록 거르기. 토론·보상 찾기.
     inquiryQuery: "", inquirySort: "default", inquiryPick: null, postQuery: "", rewardQuery: "",
@@ -397,6 +409,8 @@ function adminApp(L, BUILD, M) {
   const can = (area, level = "view") => L.can(S.me, area, level);
   const visible = (n) => (n.owner ? S.me?.owner : n.area ? can(n.area) : true);
   const wide = () => matchMedia("(min-width:1024px)").matches;
+  // 1.38 [ADM3] 두 칸(목록 옆에 열린 것)은 갤럭시 폴드를 가로로 편 화면(~840px)부터.
+  const twoPane = () => matchMedia("(min-width:840px)").matches;
   /** [ADMUX-02] A screen's address; a list keeps the filters it has now, so 뒤로 lands where the admin was. */
   const href = (name, id) => L.routeHash(name, id ?? null, id ? {} : paramsOf(name));
   const routeKey = () => `${S.route.name}/${S.route.id ?? ""}`;
@@ -431,6 +445,14 @@ function adminApp(L, BUILD, M) {
     home: { view: "inboxView" },
     versions: { show: "versionShow" },
     flags: { show: "flagShow", q: "flagQuery", view: "flagView" },
+    // 1.38 [DESK-02] 운영 장부의 보기·종류·판·찾기.
+    desk: { view: "deskView", group: "deskGroup", v: "deskV", q: "deskQuery" },
+    // 1.38 [ADM3] 스토어 리뷰·데이터 요청·오류 묶음의 보기, 판 건강·돈의 기간.
+    reviews: { show: "reviewsShow" },
+    requests: { show: "requestsShow" },
+    errors: { show: "errorsShow" },
+    health: { days: "healthDays" },
+    money: { days: "moneyDays" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -588,6 +610,9 @@ function adminApp(L, BUILD, M) {
     if (path(location.hash) !== path(href(S.route.name, S.route.id))) syncUrl();
   }
 
+  /** 1.38 [ADM3-36] Where each list was left, by screen name (this tab only). */
+  const scrollMemo = {};
+
   function go(name, id) {
     const next = href(name, id);
     if (location.hash === next) load();
@@ -600,6 +625,46 @@ function adminApp(L, BUILD, M) {
   let badgesAt = 0;
   const BADGES_FRESH = 15000;
   const countsKey = () => JSON.stringify(Object.fromEntries(Object.entries(S.overview ?? {}).filter(([, v]) => typeof v === "number" || (v && typeof v === "object" && "waiting" in v))));
+
+  /**
+   * 1.39 실서버(11-08 크롬): 회사 서버를 새로 올려도 '새로 열기'를 눌러야 새 화면이 나왔어요. 앱 파일은 서비스 워커가 기기에
+   * 두었다가 먼저 보여 주기 때문이에요. 새 빌드를 알면 서비스 워커부터 새로 받게 한 뒤 다시 열고([freshReload]), 글을 쓰는
+   * 중이거나 창·큐 모드가 열려 있지 않으면 빌드마다 한 번 저절로 그렇게 해요([autoReload]). 그래도 옛 빌드면 띠만 남아요.
+   */
+  let reloading = false;
+  async function freshReload() {
+    reloading = true;
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration("/admin/");
+      if (reg) {
+        await reg.update().catch(() => {});
+        if (reg.installing || reg.waiting) {
+          await new Promise((ok) => {
+            navigator.serviceWorker.addEventListener("controllerchange", ok, { once: true });
+            setTimeout(ok, 4000);
+          });
+        }
+      }
+    } catch {
+      // 서비스 워커가 없으면 그냥 다시 열어요.
+    }
+    location.reload();
+  }
+  function busyTyping() {
+    const a = document.activeElement;
+    return dialog.open || Boolean(S.queue) || Boolean(a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)));
+  }
+  function autoReload(build) {
+    if (reloading || !S.newBuild || busyTyping()) return;
+    const key = `admin:auto-reload:${build}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      return;
+    }
+    freshReload();
+  }
 
   /**
    * [ADMUX-37] The menu numbers and who is signed in (/badges): never waited for by a screen. Within 15 seconds of
@@ -617,6 +682,7 @@ function adminApp(L, BUILD, M) {
       if (!("flagAlerts" in b)) S.overview.flagAlerts = [];
       S.me = b.me;
       S.newBuild = Boolean(b.build && b.build !== BUILD);
+      autoReload(b.build);
       if (S.phase !== "app") return;
       const home = S.route.name === "home" && JSON.stringify(S.overview.flagAlerts) !== alerts;
       if (home || JSON.stringify([S.me?.perms, S.me?.owner, S.me?.name]) !== before) render({ keepScroll: true });
@@ -627,6 +693,44 @@ function adminApp(L, BUILD, M) {
     } catch {
       badgesAt = 0;
     }
+  }
+
+  /**
+   * 1.39 머리띠의 '지금 도는 서버 판'(사용자 11-08 '현재 출시된 서버가 몇 버젼인지 위쪽에 보여지게'): 회사·공유 서버의 판, 커밋,
+   * 배포 시각을 한 줄로. 처음 한 번과 새로 고침, 그리고 10분마다(배포는 드물어서) 읽어요. 누르면 서버 상태로 가요.
+   */
+  let serversAt = 0;
+  async function loadServers(force = false) {
+    if (!force && Date.now() - serversAt < 10 * 60000) return;
+    serversAt = Date.now();
+    try {
+      S.servers = await api("/servers");
+    } catch {
+      serversAt = 0;
+      return;
+    }
+    paintDeployLine();
+  }
+  function paintDeployLine() {
+    const el = document.getElementById("deploy-line");
+    const v = S.servers;
+    if (!el || !v?.company) return;
+    const when = (t) => {
+      if (!t) return "";
+      const d = new Date(t);
+      const two = (n) => String(n).padStart(2, "0");
+      return `${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`;
+    };
+    const part = (label, x) => !x ? "" : !x.ok && !x.version ? `<span class="dl-part bad"><b>${label}</b> 닿지 않음</span>`
+      : `<span class="dl-part"><b>${label}</b> ${esc(x.version ?? "?")}${x.commit ? ` <code>${esc(x.commit)}</code>` : ' <code class="local">로컬</code>'}${x.at ? `<small>${esc(when(x.at))} 배포</small>` : ""}</span>`;
+    const live = Boolean(v.company.id);
+    const differ = v.share?.version && v.share.version !== v.company.version;
+    const title = [`회사 서버 ${v.company.version}${v.company.commit ? ` · 커밋 ${v.company.commit}` : ""}${v.company.at ? ` · ${when(v.company.at)} 배포` : ""}`,
+      v.share ? `공유 서버 ${v.share.version ?? "?"}${v.share.commit ? ` · 커밋 ${v.share.commit}` : ""}${v.share.at ? ` · ${when(v.share.at)} 배포` : ""}` : ""].filter(Boolean).join("\n");
+    el.innerHTML = `<span class="dl-tag${live ? "" : " local"}">${live ? "지금 도는 서버" : "로컬 서버"}</span>${part("회사", v.company)}${part("공유", v.share)}${differ ? '<span class="pill warn">판 다름</span>' : ""}`;
+    el.title = title;
+    el.setAttribute("aria-label", title.replace("\n", ", "));
+    el.hidden = false;
   }
 
   /** [ADMUX-37] What the screens share and rarely changes (/basics): 채택 settings, answer targets, reason words. */
@@ -650,6 +754,7 @@ function adminApp(L, BUILD, M) {
     };
     const jobs = [];
     refreshBadges();
+    loadServers();
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
@@ -657,7 +762,12 @@ function adminApp(L, BUILD, M) {
       if (name === "flow") jobs.push(api("/flow").then(keep((d) => { S.data.flow = d; })));
       if (name === "keys") jobs.push(api("/keys").then(keep((d) => { S.data.keys = d; })));
       // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
-      if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
+      // 1.38 [DESK-02][DESK-03] 운영 장부: 보기·종류·판·찾기로 거른 줄, 그리고 정리함에 있던 넘길 글(넘기기 칸).
+      if (name === "desk") {
+        const p = new URLSearchParams({ view: S.deskView || "today", ...(S.deskGroup ? { group: S.deskGroup } : {}), ...(S.deskV ? { v: S.deskV } : {}), ...(S.deskQuery ? { q: S.deskQuery } : {}) });
+        jobs.push(api(`/ledger?${p}`).then(keep((d) => { S.data.ledger = d; S.data.sort = { auto: d.auto ?? { fixed: false, known: false } }; })));
+        if (can("inquiries")) jobs.push(api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
+      }
       // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
       if (name === "growth") {
         const t = S.growthTab ?? "needs";
@@ -668,24 +778,33 @@ function adminApp(L, BUILD, M) {
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
-      if (name === "inquiries" && (!id || wide())) jobs.push(loadInquiries(n));
+      if (name === "inquiries" && (!id || twoPane())) jobs.push(loadInquiries(n));
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
       // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
-      if (name === "sort") jobs.push(api("/inquiries/sort").then(keep((d) => { S.data.sort = d; })), api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
       if (name === "companies" && !id) jobs.push(api(companiesPath()).then(keep((d) => { S.data.list = d; })));
+      // 1.39 [ADM3-45] 이름이 비슷한 회사 짝(합칠까요?): 목록을 기다리게 하지 않아요.
+      if (name === "companies" && !id && can("companies", "edit")) api("/companies/similar").then(keep((d) => { S.data.similar = d; if (S.route.name === "companies" && !S.route.id) render({ keepScroll: true }); })).catch(() => {});
       if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then(keep((d) => { S.data.company = d; })));
       if (name === "community") {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
         const q = S.postQuery ? `&q=${encodeURIComponent(S.postQuery)}` : "";
-        if (!id && S.postFilter === "limits") jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })));
+        // 1.39 [CARE-05] 경고·쉬기: 신고 누적 제한과 마을 돌봄(경고·의견 쉬기·마을 쉬기)을 한 판에. 사람 찾기를 했으면 그 사람도.
+        if (!id && S.postFilter === "limits") {
+          jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })), api("/care").then(keep((d) => { S.data.care = d; })));
+          if (S.careQuery) {
+            jobs.push(api(`/care/person?${S.careQuery.by}=${encodeURIComponent(S.careQuery.q)}`)
+              .then(keep((d) => { S.data.carePerson = d; }), (e) => { S.data.carePerson = { error: e?.data?.error ?? "not_found" }; }));
+          }
+        }
         // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
         else if (!id && S.postFilter === "village") {
-          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })));
+          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })),
+            api("/plaza/picks").then(keep((d) => { S.data.picks = d; })), api("/plaza/effect").then(keep((d) => { S.data.plazaEffect = d; })));
         }
         else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
@@ -719,12 +838,18 @@ function adminApp(L, BUILD, M) {
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         // 1.36 [MKS-01] 출시 대기 묶음.
         if (t === "waiting") jobs.push(api("/recipes/release").then(keep((d) => { S.data.recipeRelease = d; })).catch(() => {}));
+        // 1.38 [STM-10] 밤낮 재료(스튜디오 색 아이콘·배경) 묶음도 출시 대기에서.
+        if (t === "waiting") jobs.push(api("/recipes/materials").then(keep((d) => { S.data.materials = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
       }
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
       // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
       if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
+      // 1.37.1 [FAM-01] 가족 프로 이용권 (최고 관리자만).
+      if (name === "account" && S.me?.owner) jobs.push(api("/family").then(keep((d) => { S.data.family = d; })).catch(() => {}));
+      // 1.39 [ADM3-42] 로그인 잠금(최고 관리자만).
+      if (name === "account" && S.me?.owner) jobs.push(api("/login-locks").then(keep((d) => { S.data.loginLocks = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -736,6 +861,27 @@ function adminApp(L, BUILD, M) {
       if (name === "types") jobs.push(api("/types").then(keep((d) => { S.data.types = d; })));
       // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과: each flag's share of phones and problems before and after it turned on.
       if (name === "effects") jobs.push(api("/effects").then(keep((d) => { S.data.effects = d; })));
+      // 1.38 [ADM3] 새 화면들이 읽을 길(ops.js opsLoads). 관리 › 서버 상태는 /server 옆에 /watch/health도.
+      for (const [path, k] of V.opsLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
+      // 1.39 [LOOP] 자동 순환·결정함·요금 판단(loop.js loopLoads).
+      for (const [path, k] of V.loopLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
+      // 1.39 [STAT2-01] 숫자 › 한눈에(glance.js glanceLoads).
+      for (const [path, k] of V.glanceLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
+      // [ADM3-11] 문의 하나를 열면 그 휴대폰(사람 옆 패널), [ADM3-34] 개발사항 하나를 열면 이야기: 화면을 기다리게 하지 않아요.
+      if (name === "inquiries" && id && can("inquiries") && S.data.person?.for !== id) {
+        S.data.person = { for: id, loading: true };
+        api(`/person?inquiry=${encodeURIComponent(id)}`).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
+          .then(() => { if (S.route.name === "inquiries" && S.route.id === id) render({ keepScroll: true }); });
+      }
+      // 1.38 [ADM3-10] 장부 맨 위 단계 막대(흐름 한 줄).
+      if (name === "desk" && can("inquiries")) {
+        api("/flow").then(keep((d) => { S.data.flowStrip = d; if (S.route.name === "desk") render({ keepScroll: true }); })).catch(() => {});
+      }
+      // PC 1.39 G10 2차: 다시 열면 옛 이야기가 먼저 보였어요. 들어올 때마다 새로 읽어요(그동안은 옛 것을 숨김).
+      if (name === "dev" && id && can("dev")) {
+        if (!quiet && S.data.story?.id === id) S.data.story = null;
+        api(`/story/${encodeURIComponent(id)}`).then(keep((d) => { S.data.story = d; if (S.route.name === "dev" && S.route.id === id) render({ keepScroll: true }); })).catch(() => {});
+      }
       const results = await Promise.allSettled(jobs);
       const failed = results.find((r) => r.status === "rejected" && !r.reason?.quiet);
       if (seq.current("load", n)) {
@@ -859,6 +1005,7 @@ function adminApp(L, BUILD, M) {
         </aside>
         <div class="content">
           <header class="top">
+            <a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a>
             <div class="bar" id="bar"></div>
             <nav class="hubtabs" id="hubtabs" hidden></nav>
             <div id="progress" class="progress${S.busy ? " on" : ""}"></div>
@@ -920,7 +1067,8 @@ function adminApp(L, BUILD, M) {
     if (!banners) return;
     banners.innerHTML = `${S.online ? "" : '<div class="offline" role="status">인터넷 연결이 끊겼어요. 다시 연결되면 저절로 새로 고쳐요.</div>'}
       ${S.stale ? '<div class="banner warn" role="status">연결이 끊겨 이 기기에 저장된 내용을 보여요. 바꾸는 일은 연결된 뒤에 해 주세요.</div>' : ""}
-      ${S.newBuild ? '<div class="banner" role="status">관리자 앱이 새로 나왔어요.<button class="btn small" data-act="reload">새로 열기</button></div>' : ""}`;
+      ${S.newBuild ? '<div class="banner" role="status">관리자 앱이 새로 나왔어요.<button class="btn small" data-act="reload">새로 열기</button></div>' : ""}
+      ${V.incidentBanner?.() ?? ""}`;
   }
 
   /**
@@ -1060,15 +1208,14 @@ function adminApp(L, BUILD, M) {
    */
   const VIEWS = {
     home: () => V.homeView(),
-    // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
-    work: () => V.workView(),
+    // 1.38 [DESK-02][DESK-03] 운영 장부(정리함·할 일함을 하나로), [GRW-04] 스튜디오 요구.
+    desk: () => V.stageStrip() + V.ledgerView(),
     // 1.37 [ADM2-01] 흐름, [ADM2-03] 운영 열쇠.
     flow: () => V.flowView(),
     keys: () => V.keysView(),
     growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
-    sort: () => sortView(),
     templates: () => templatesView(),
     sla: () => slaView(),
     review: () => V.reviewView(),
@@ -1092,6 +1239,23 @@ function adminApp(L, BUILD, M) {
     account: () => accountView(),
     settings: () => movedView(),
     more: () => moreView(),
+    // 1.38 [ADM3] 새 화면들(src/admin/views/ops.js).
+    incident: () => V.opsViews.incident(),
+    cockpit: () => V.opsViews.cockpit(),
+    reviews: () => V.opsViews.reviews(),
+    requests: () => V.opsViews.requests(),
+    backup: () => V.opsViews.backup(),
+    launch: () => V.opsViews.launch(),
+    health: () => V.opsViews.health(),
+    money: () => V.opsViews.money(),
+    errors: () => V.opsViews.errors(),
+    materials: () => V.materialsTab(materialsView),
+    // 1.39 [LOOP] 자동 순환(src/admin/views/loop.js).
+    loop: () => V.loopViews.loop(),
+    decide: () => V.loopViews.decide(),
+    tiers: () => V.loopViews.tiers(),
+    // 1.39 [STAT2-01] 숫자 › 한눈에(src/admin/views/glance.js).
+    glance: () => V.glanceView(),
   };
 
   function view() {
@@ -1108,8 +1272,11 @@ function adminApp(L, BUILD, M) {
   function hasData() {
     const { name, id } = S.route;
     const d = S.data;
+    if (V.opsHas[name]) return Boolean(V.opsHas[name]());
+    if (V.loopHas[name]) return Boolean(V.loopHas[name]());
+    if (V.glanceHas[name]) return Boolean(V.glanceHas[name]());
     return Boolean({
-      home: d.today, work: d.work, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, desk: d.ledger, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -1155,13 +1322,26 @@ function adminApp(L, BUILD, M) {
         <button class="btn small ghost" data-act="post-pick-all">${n === d.posts.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
         ${[["show", "문제없음·다시 보이기"], ["hide", "가리기"], ["delete", "지우기"]].map(([k, label]) =>
           `<button class="btn small${k === "delete" ? " danger" : k === "show" ? " primary" : ""}" data-act="post-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}</div>` : "";
+    // 1.39 발굴 2-4: 보완 요청 by version (the server sends the one with the most open first), a line over each version's.
+    if (S.postFilter === "fix" && !talk) {
+      let at = "";
+      const rows = d.posts.map((p) => {
+        const key = `${p.company.id}/${p.setup}`;
+        const head = key === at ? "" : `<h3 class="span">${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}
+          <span class="pill${p.open ? " warn" : " ok"}">${p.open ? `열린 요청 ${p.open}` : "모두 답함"}</span></h3>`;
+        at = key;
+        return head + postCard(p, edit, talk, picking);
+      });
+      return head + tools + `<p class="hint">같은 판의 요청을 묶어, 열린 요청이 많은 판부터 보여요. 판의 계산 줄은 운영 › 회사 판 보기에서 봐요.
+        7일 넘게 답이 없으면 판을 살펴 고치거나 내려요.</p><div class="grid">${rows.join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
+    }
     return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
   /** 커뮤니티의 보기 칸: 신고·가려짐·모든 글·광장·임금표·쓰기 제한·마을 운영 (1.36 [VIL-21]). */
   function communityTabs() {
-    return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["rates", "임금표"],
-      ["limits", "쓰기 제한"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
+    return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["fix", "보완 요청"], ["rates", "임금표"],
+      ["limits", "경고·쉬기"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
   }
 
   /**
@@ -1177,7 +1357,7 @@ function adminApp(L, BUILD, M) {
     const edit = can("community", "edit");
     const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
       <p class="hint">유형 광장 맨 위에 보이는 이번 주 이야기 주제예요. 쓸 거리가 없을 때 문을 열어 줘요(60자까지, 비우면 숨겨요). 월요일(한국 시간)마다 저절로 비어요.
-      신고된 글은 ‘신고됨’, 신고가 쌓인 사람은 ‘쓰기 제한’, 레시피 신고는 레시피 › 검토 대기에서 봐요.</p>`;
+      신고된 글은 ‘신고됨’, 신고가 쌓인 사람과 경고·쉬기는 ‘경고·쉬기’, 레시피 신고는 레시피 › 검토 대기에서 봐요.</p>`;
     if (!d) return head + skeleton();
     const [, m, dd] = d.week.split("-").map(Number);
     return head + `<h3>이번 주 이야기 주제</h3><p class="meta">${m}월 ${dd}일(월)부터 이번 주</p><div class="grid">${d.items.map((x) => `<article class="card">
@@ -1186,7 +1366,57 @@ function adminApp(L, BUILD, M) {
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
       ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
-    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit);
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit) + `<hr class="split">` + picksView(edit) + `<hr class="split">` + plazaEffectView();
+  }
+
+  /**
+   * 1.39 [PLZC-33] 광장 효과: per kind of work's plaza, sums only. 처리방침 3.12 (plaza.people) 전후를 하루 글 수로 비교하고,
+   * 1.40 광장 논의(docs/plans/1.40-이후-논의/광장.md)를 이 숫자로 시작해요.
+   */
+  function plazaEffectView() {
+    const d = S.data.plazaEffect;
+    if (!d) return skeleton(1);
+    const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
+    const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 오늘 처음 쓴 분은 ${d.back}일 뒤부터 들어가요.</p>
+      <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
+        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
+      ${d.items.map((x) => {
+        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${n(x.answeredPct, "%")}`],
+          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", n(x.tagged, "%")], ["나도요", x.metoo], ["근무 카드", x.cards],
+          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${n(x.cameBackPct, "%")}`], ["오늘 출근", x.checkinToday]];
+        return `<tr><td class="name">${esc(x.name)}</td>${cells.map(([l, v]) => `<td class="n"><span class="lab">${l} </span>${v}</td>`).join("")}</tr>`;
+      }).join("")}
+      </tbody></table></div>`;
+  }
+
+  const FORM_NAMES = { THREE_SHIFT: "3교대", TWO_SHIFT: "2교대", FOUR_TEAM: "4조 2교대", NURSE: "간호 듀티", ON_CALL: "당직", DAY_ON_DAY_OFF: "격일",
+    PUBLIC: "공무원 교대", OFFICE: "주5일 낮", PART_TIME: "시급 파트타임", DAILY: "일당" };
+  const cut = (t, n) => (t.length > n ? `${t.slice(0, n)}…` : t);
+
+  /**
+   * 1.39 [PLZC-22] 광장 답 모음: per kind of work's plaza, the picks (앱 광장 '선배 답 모음'과 도움말에 보여요) and answers worth picking
+   * (질문한 분이 '도움 됐어요'를 누른 답, 나도요 3+), newest 120일.
+   */
+  function picksView(edit) {
+    const d = S.data.picks;
+    if (!d) return skeleton(1);
+    const card = (x) => `<article class="card">
+      <div class="head"><h3>${esc(x.name)}</h3><span class="pill${x.picks.length ? " ok" : ""}">모음 ${x.picks.length}</span>
+        <span class="pill${x.candidates.length ? " info" : ""}">후보 ${x.candidates.length}</span></div>
+      ${x.picks.length ? `<ul class="plain">${x.picks.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.title)}</b>
+        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
+        : '<p class="meta">아직 고른 답이 없어요</p>'}
+      ${x.candidates.length ? `<h4>넣을 만한 답</h4><ul class="plain">${x.candidates.map((c) => `<li>
+        <p class="meta">Q. ${esc(cut(c.question, 80))}${c.form ? ` · ${esc(FORM_NAMES[c.form] ?? c.form)}` : ""}</p>
+        <p>A. ${esc(cut(c.body, 160))} <span class="meta">${c.chosen ? "질문한 분이 도움 됐어요 · " : ""}나도요 ${c.agree}</span></p>
+        ${edit ? `<div class="actions"><input id="pick-title-${esc(c.answer)}" type="text" maxlength="40" placeholder="모음 제목 (예: 야간 뒤 바로 잠드는 법)">
+          <button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
+    </article>`;
+    return `<h3>광장 답 모음</h3><p class="hint">도움이 된 답을 골라 제목을 붙이면 앱 그 유형 광장 맨 위 ‘📚 선배 답 모음’에 보여요.
+      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
+      <div class="grid">${d.items.map(card).join("")}</div>`;
   }
 
   const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
@@ -1217,6 +1447,89 @@ function adminApp(L, BUILD, M) {
       ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
   }
 
+  // ---- 1.39 [CARE-05] 마을 돌봄: 경고 → 의견 쉬기 → 마을 쉬기, 사람 찾기, 해명 ----
+
+  const CARE_FIND = [["post", "글 번호", "p로 시작하는 16자"], ["recipe", "작품 코드", "8자"], ["inquiry", "문의 번호", "문의 화면 주소 끝"], ["mark", "휴대폰 표시", "6자 이상"]];
+  const careKind = (x) => (x.kind === "warn" ? (x.by === "auto" ? "안내(저절로)" : "경고") : `${x.kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${x.days}일`);
+  const careNextText = (n) => (n?.kind === "warn" ? "부드러운 경고" : n ? `${n.kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${n.days}일` : "");
+
+  function careLine(x, edit) {
+    const state = x.liftedAt ? '<span class="pill">거둠</span>' : x.active ? '<span class="pill warn">지금</span>'
+      : x.kind === "warn" ? `<span class="pill${x.seen ? " ok" : ""}">${x.seen ? "읽음" : "안 읽음"}</span>` : '<span class="pill">끝남</span>';
+    const can = edit && !x.liftedAt && (x.active || x.kind === "warn");
+    return `<li><div class="row"><span class="row-main"><b>${esc(careKind(x))} · ${esc(x.reasonText)}</b>
+      <small>사용자 ${esc(x.who)} · ${esc(day(x.at))}${x.until ? `부터 ${esc(day(x.until))}까지` : ""}${x.by === "auto" ? " · 서버가 저절로" : ""}${x.ref ? ` · ${esc(x.ref)}` : ""}</small>
+      ${x.note ? `<small>앱에 보이는 한 줄: ${esc(x.note)}</small>` : ""}</span>
+      <span class="row-side">${state}${can ? ` <button class="btn small ghost" data-act="care-lift" data-id="${esc(x.id)}" data-key="${x.kind}">${x.kind === "warn" ? "거두기" : "풀기"}</button>` : ""}</span></div></li>`;
+  }
+
+  function carePersonCard(p, c, edit) {
+    if (p.error) return `<p class="note warn">${p.error === "ambiguous" ? "그 휴대폰 표시로 여러 사람이 나와요. 더 길게 넣어 주세요." : "찾는 사람이 없어요. 번호를 다시 봐 주세요."}</p>`;
+    const now = p.notes.find((x) => x.active);
+    const reasons = Object.entries(c.rules.reasons).filter(([k]) => !k.startsWith("auto_"));
+    const severe = c.rules.severe;
+    const pick = p.next?.days ?? 3;
+    const form = edit && c.on ? `<form data-form="care-act"><h4>다음 할 일 (추천: ${esc(careNextText(p.next))})</h4>
+      <label class="field stack"><span>이유</span><select name="reason" required><option value="">골라 주세요</option>${reasons.map(([k, v]) =>
+        `<option value="${k}">${esc(v)}${severe.includes(k) ? " (바로 쉬기 가능)" : ""}</option>`).join("")}</select></label>
+      <label class="field stack"><span>앱에 보일 한 줄</span><input name="note" maxlength="200" placeholder="고르면 좋아요. 이름·연락처는 쓰지 않아요"></label>
+      <label class="field stack"><span>쉬는 기간</span><select name="days">${c.rules.days.map((n) => `<option value="${n}"${n === pick ? " selected" : ""}>${n}일</option>`).join("")}</select></label>
+      <p class="hint">쉬기는 ${c.rules.warnWithinDays}일 안에 경고가 먼저 간 사람에게만 걸려요(개인 정보·성적인 내용·불법 정보는 바로). 읽기·테마 입기·문의(해명)는 쉬는 동안에도 돼요.</p>
+      <div class="actions"><button class="btn${p.next?.kind === "warn" ? " primary" : ""}" type="submit" data-kind="warn">경고 보내기</button>
+        <button class="btn${p.next?.kind === "opinion" ? " primary" : ""}" type="submit" data-kind="opinion">의견 쉬기</button>
+        <button class="btn danger" type="submit" data-kind="community">마을 쉬기</button></div></form>`
+      : edit ? '<p class="hint">마을 돌봄이 켜지면 여기서 경고·쉬기를 걸 수 있어요.</p>' : "";
+    return `<article class="card"><div class="head"><h3>사용자 ${esc(p.who)}</h3>${now ? `<span class="pill warn">${esc(careKind(now))} 중</span>` : ""}</div>
+      <p class="meta">글 ${p.posts} · 가려진 글 ${p.hiddenPosts} · 180일 안 가려짐 ${p.strikes}${p.limit ? ` · 신고 누적 제한 ${p.limit.step}단계(${esc(day(p.limit.until))}까지)` : ""}</p>
+      ${p.notes.length ? `<ul class="rows">${p.notes.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">경고·쉬기 기록이 없어요.</p>'}
+      ${form}</article>`;
+  }
+
+  function careSection(edit) {
+    const c = S.data.care;
+    if (!c) return skeleton(1);
+    const banner = c.on
+      ? '<p class="note ok">마을 돌봄이 켜져 있어요. 운영자가 확인해 가린 글만 세고, 쉬기 전에 늘 경고가 먼저 가요. 받은 분은 앱에서 해명할 수 있어요.</p>'
+      : '<p class="note warn">마을 돌봄은 아직 꺼져 있어요. 처리방침 3.12 시행일(기능 관리 › 일정)에 저절로 켜져요. 그 전에는 1.36 신고 누적 제한만 돌고, 이미 건 쉬기는 끝날 때까지 그대로예요.</p>';
+    const q = S.careQuery ?? { by: "post", q: "" };
+    const find = `<form class="toolbar" data-form="care-find"><select name="by" aria-label="무엇으로 찾을까요">${CARE_FIND.map(([k, l]) =>
+      `<option value="${k}"${q.by === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <input name="q" type="search" required maxlength="64" value="${esc(q.q)}" placeholder="${esc(CARE_FIND.find(([k]) => k === q.by)?.[2] ?? "")}" aria-label="찾을 번호" autocomplete="off">
+      <button class="btn primary" type="submit">사람 찾기</button>${S.careQuery ? '<button class="btn ghost" type="button" data-act="care-clear">지우기</button>' : ""}</form>`;
+    const person = S.careQuery ? (S.data.carePerson ? carePersonCard(S.data.carePerson, c, edit) : skeleton(1)) : "";
+    const holds = c.holds.length ? `<ul class="rows">${c.holds.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">지금 쉬는 사람이 없어요.</p>';
+    const unread = c.warnings.filter((x) => !x.seen && !x.liftedAt).length;
+    // 1.39 발굴: 앱이 '48시간 안에 답해요'라고 약속하니 기다리는 해명을 남은 시간 순으로, 30일이 지나면 세지 않는 '확인 전' 가려짐 수도.
+    const waiting = c.appeals ?? [];
+    const left = (h) => h < 0 ? `<span class="pill bad">${-h}시간 늦음</span>` : `<span class="pill${h < 12 ? " warn" : ""}">${h}시간 남음</span>`;
+    const appeals = waiting.length ? `<h4>답을 기다리는 해명 ${waiting.length}</h4><ul class="rows">${waiting.map((a) => `<li class="item"><a class="row-main" href="${href("inquiries", a.inquiry)}">
+      <span>${a.kind === "post" ? "가려진 글 다시 보여 주세요" : a.kind === "limit" ? "신고 누적 쓰기 제한 해명" : "경고·쉬기 해명"} · ${esc(ago(a.at))}</span></a>${left(a.hoursLeft)}</li>`).join("")}</ul>` : "";
+    const u = c.unconfirmed ?? { n: 0 };
+    const unconfirmed = c.on && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
+      <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
+    return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
+      <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
+      ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
+      ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
+  }
+
+  /** 1.39 [CARE-10] 문의 하나가 해명이면: 무엇에 대한 해명인지와 받아들이기·그대로 두기. 답은 아래 답 칸으로 따로 가요. */
+  function appealCard(q, edit) {
+    const a = q.appeal;
+    const ab = a.about ?? {};
+    const post = ab.kind === "post";
+    const what = post ? `가려진 글 다시 보여 주세요(지금 ${ab.status === "hidden" ? "가려짐" : "보임"})` : ab.kind === "limit" ? `신고 누적 쓰기 제한${ab.step ? ` ${ab.step}단계` : ""}${ab.until ? `(${day(ab.until)}까지)` : ""}`
+      : ab.kind === "gone" ? "지난 기록(지워짐)" : `${careKind(ab)} · ${ab.reasonText ?? ""}`;
+    const state = a.result === "accepted" ? '<span class="pill ok">받아들여 풀어 줌</span>' : a.result === "kept" ? '<span class="pill">그대로 둠</span>' : '<span class="pill warn">결정 전</span>';
+    return `<div class="card"><div class="card-head"><h2>${post ? "다시 보여 주세요" : "해명"}</h2>${state}</div>
+      <p class="meta">무엇에 대한 해명: <b>${esc(what)}</b> · 사용자 ${esc(a.who)} · ${esc(ago(a.at))}${ab.note ? ` · 남긴 한 줄: ${esc(ab.note)}` : ""}</p>
+      ${post ? `<blockquote>${esc(ab.body ?? "")}</blockquote><p class="meta">가린 이유: ${esc(S.overview?.hideReasons?.[ab.hideReason] ?? ab.hideReason ?? "")}
+        · <button type="button" class="linkish" data-act="care-post" data-id="${esc(ab.id)}">이 사람 기록 보기</button></p>` : ""}
+      <p class="hint">${post ? "받아들이면 글이 다시 보이고, 그 글로 생긴 신고·셈·제한도 함께 빠져요." : "읽고 받아들이면 그 경고·쉬기가 바로 풀리고 앞으로 세지 않아요."} 결정하면 답 칸에 답 초안이 채워지니 다듬어 보내 주세요. 앱은 48시간 안에 답이 온다고 약속해요.</p>
+      ${edit && !a.result ? `<div class="actions"><button class="btn primary" data-act="appeal-decide" data-id="${esc(q.id)}" data-key="accepted">${post ? "받아들이고 다시 보이기" : "받아들이고 풀기"}</button>
+        <button class="btn" data-act="appeal-decide" data-id="${esc(q.id)}" data-key="kept">그대로 두기</button></div>` : ""}</div>`;
+  }
+
   /**
    * 1.36 [LIM-10] 신고 누적 쓰기 제한: no one has a daily cap; posts or recipes hidden by reports (or here) restrict the writer for a
    * while, each time more strictly. Who is restricted now or was in 30 days, the rules in words, and 풀기.
@@ -1227,8 +1540,11 @@ function adminApp(L, BUILD, M) {
     const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>`;
     if (!d) return head + skeleton();
     const r = d.rules;
+    // 1.39 [CARE-02] 마을 돌봄이 켜지면 운영자가 확인한 가려짐만 세어요(서버 WRITE_LIMITS_V2).
     const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
-    const rules = `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
+    const rules = r.care ? `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 운영자가 확인해 가린 글·작품·이야기만 세요(신고만으로 가려진 것은 확인 전까지 세지 않아요).
+      ${r.windowDays}일 안에 1번이면 부드러운 안내, 2번이면 경고가 앱에 가고, ${r.strikes}번째부터 제한이 걸려요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}.
+      제한이 끝난 뒤 ${r.windowDays}일 안에 또 확인되면 바로 다음 단계예요. ${r.forgetDays}일 동안 조용하면 한 단계 내려가고, 해명을 받아들이면 그 건은 빠져요.</p>` : `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
       제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
       가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
     // 1.36 PC 6차: 풀거나 끝난 제한은 아래 '최근 30일에 끝난 제한'으로 접혀서, 지금 제한 중인 목록이 바로 비어요.
@@ -1241,7 +1557,7 @@ function adminApp(L, BUILD, M) {
     </article>`;
     const list = nowItems.length ? `<div class="grid">${nowItems.map(card).join("")}</div>`
       : empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
-    return head + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
+    return head + careSection(edit) + `<hr class="split"><h3>신고 누적 쓰기 제한</h3>` + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
   }
 
   /**
@@ -1287,6 +1603,8 @@ function adminApp(L, BUILD, M) {
     return `<article class="card${on ? " picked" : ""}">
       <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
+      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}${p.answered === true ? ' <span class="pill ok">올린 분이 답함</span>'
+        : p.answered === false && Date.now() - Date.parse(p.at) > 7 * 86400000 ? ' <span class="pill bad">7일 넘게 답 없음</span>' : ""}</p>` : ""}
       <blockquote>${esc(p.body)}</blockquote>
       ${Array.isArray(p.poll) && p.poll.length ? `<p class="meta">투표 보기: ${p.poll.map((o) => esc(String(o))).join(" · ")}</p>` : ""}
       ${p.attach ? `<p class="meta">붙인 작품 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(p.attach)}">${esc(p.attach)}</button></p>` : ""}
@@ -1297,6 +1615,7 @@ function adminApp(L, BUILD, M) {
         ${edit ? `${p.status === "hidden" || p.flags ? `<button class="btn" data-act="post-show" data-id="${p.id}">${p.status === "hidden" ? "다시 보이기" : "문제없음"}</button>` : ""}
           ${p.status === "hidden" ? "" : `<button class="btn" data-act="post-hide" data-id="${p.id}">가리기</button>`}
           <button class="btn" data-act="post-mute" data-id="${p.id}">30일 쓰기 막기</button>
+          <button class="btn ghost" data-act="care-from-post" data-id="${p.id}">경고·쉬기</button>
           <button class="btn danger" data-act="post-delete" data-id="${p.id}">지우기</button>` : ""}
       </div>
     </article>`;
@@ -1461,6 +1780,10 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
     if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
+    // 1.38 [DESK-09] Claude 답 10분 보류.
+    if (e.action === "inquiry_reply_held") return `${by}가 답을 썼어요(${e.detail || "10분 보류"} 뒤 보내요)`;
+    if (e.action === "inquiry_reply_sent") return `보류한 ${by} 답이 보내졌어요`;
+    if (e.action === "inquiry_reply_cancel") return `${by} 답을 보내기 전에 취소했어요`;
     return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
   }
 
@@ -1469,7 +1792,7 @@ function adminApp(L, BUILD, M) {
     const detail = !q || q.id !== S.route.id ? skeleton(2) : inquiryDetail(q);
     // [ADMIN-16] On a wide screen the list stays beside the open question.
     const list = S.data.inquiries?.inquiries;
-    if (!wide() || !list?.length) return detail;
+    if (!twoPane() || !list?.length) return detail;
     return `<div class="split"><nav class="pane-list card" aria-label="문의 목록"><ul class="rows">${list.map((x) => inquiryRow(x, { compact: true })).join("")}</ul>
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
@@ -1496,23 +1819,27 @@ function adminApp(L, BUILD, M) {
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
-          <div class="thread">${thread}</div>
+          <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
+            <span class="bubble-meta admin">${esc(h.by)} · <b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
+            <button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
+        ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <input type="hidden" name="template" value="">
+          ${queueAhead(q.id).length ? `<label class="switch"><input type="checkbox" name="alike"><span class="track" aria-hidden="true"></span><span>큐에 남은 비슷한 문의 ${queueAhead(q.id).length}건에도 같은 답(큐에서 빠져요)</span></label>` : ""}
           <div class="chips" role="group" aria-label="자주 쓰는 답">${list.map((t, i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}" title="${esc(t.text.slice(0, 120))}">${i < 9 ? `<span class="kbd">${i + 1}</span> ` : ""}${esc(t.label)}</button>`).join("")}
             <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
-          <p class="saved" id="reply-saved" aria-live="polite"></p>
-          <div class="actions"><span class="count" id="reply-count">0/2000</span>
+          <div class="actions"><span class="count-box"><span class="count" id="reply-count">0/2000</span><span class="saved" id="reply-saved" aria-live="polite"></span></span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
         </form>` : ""}
       </section>
       <aside>
+        ${V.personPanel()}
         ${editable ? `<section class="card"><h2>상태</h2>
           <p class="meta">${q.assignee ? (q.assignee.id === S.me.id ? "내가 맡았어요." : `${esc(q.assignee.name)}님이 맡았어요.`) : "아직 아무도 맡지 않았어요. 답하면 내가 맡아요."}</p>
           <div class="actions start">${q.assignee?.id === S.me.id ? '<button class="btn" data-act="inquiry-assign" data-to="">맡기 취소</button>'
@@ -1627,86 +1954,12 @@ function adminApp(L, BUILD, M) {
 
   // ---- 개발사항 [ADMIN-10][ADMIN-11] ----
 
-  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계") ----
+  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계"), 1.38 [DESK-03]부터 운영 장부 안 ----
   // Every waiting question already sorted by the server into what it is (이미 고침, 개발 목록에 있음, 전에 답한 것과 같음, 자주
   // 쓰는 답, 새 문제 …) with its answer written; one tap does a card, one tap does a whole pile. Above it, 자동 대응 (owner)
   // and Claude에게 넘기기: the 개발사항 not handed over yet as one text, and 개발 결과 붙여 넣기 for what comes back.
 
-  const PILE_HELP = {
-    fixed: ["이미 고친 문제예요", "고친 버전보다 오래된 앱에서 온 문의예요. 업데이트 안내로 답해요."],
-    known: ["개발 목록에 있는 내용이에요", "같은 개발사항에 묶고, 진행 중이라고 답해요. 고치면 한 번에 알려요."],
-    again: ["고친 뒤 다시 생겼어요", "고친 버전 이후의 앱에서 온 문의예요. 개발사항을 다시 접수해요."],
-    declined: ["반려한 요청과 같아요", "반려 이유로 답해요."],
-    answered: ["전에 답한 문의와 같아요", "그때 보낸 답을 다시 보내요. 고쳐서 보내도 돼요."],
-    faq: ["자주 쓰는 답으로 충분해요", "저장해 둔 답을 보내요."],
-    new: ["새 문제·개선이에요", "비슷한 문의끼리 묶었어요. 개발사항으로 넘기면 다음 개발에 들어가요."],
-  };
-  const PILE_DO = { fixed: "답 보내기", known: "묶고 답하기", again: "다시 접수하고 답하기", declined: "답 보내기", answered: "이 답 보내기", faq: "이 답 보내기", new: "개발사항으로 넘기기" };
-  const PILE_TONE = { fixed: "good", known: "info", again: "bad", declined: "", answered: "info", faq: "info", new: "warn" };
-
-  function sortView() {
-    const d = S.data.sort;
-    if (!d) return skeleton(3);
-    const owner = S.me?.owner;
-    const order = ["new", "again", "fixed", "known", "answered", "faq", "declined"];
-    const strip = `<div class="pile-strip" role="list">${order.map((k) => d.counts[k] ? `<a role="listitem" class="pile-card ${PILE_TONE[k]}" href="#pile-${k}" data-act="sort-jump" data-key="${k}">
-        <span class="pile-n">${d.counts[k]}</span><span class="pile-name">${esc(d.names[k])}</span></a>`
-      : `<span role="listitem" class="pile-card zero"><span class="pile-n">0</span><span class="pile-name">${esc(d.names[k])}</span></span>`).join("")}</div>`;
-    const auto = `<div class="card auto-card"><div class="auto-head"><b>자동 대응</b>
-        <small>${owner ? "켜 두면 문의가 들어오는 순간 서버가 묶고 답해요. 답에는 ‘자동 정리’가 이름으로 붙어요." : "최고 관리자가 켜고 꺼요."}</small></div>
-      ${["fixed", "known"].map((k) => `<label class="switch"><input type="checkbox" data-act="sort-auto" data-key="${k}"${d.auto[k] ? " checked" : ""}${owner ? "" : " disabled"}>
-        <span class="track" aria-hidden="true"></span><span>${esc(d.names[k])}</span></label>`).join("")}</div>`;
-    const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
-      : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
-    // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
-    const n = (S.data.handoff?.items?.length ?? 0) + (S.data.handoff?.asks ?? 0);
-    const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
-        <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
-    return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
-      ${strip.replace("</div>", `${go}</div>`)}<div class="sort-top" id="sort-tools">${auto}${handoffCard()}</div>${body}</div>`;
-  }
-
-  function pileSection(k, items) {
-    const [title, help] = PILE_HELP[k];
-    const all = k === "new" || items.length < 2 ? "" : `<button class="btn small primary" data-act="sort-pile" data-key="${k}">${items.length}건 모두 ${esc(PILE_DO[k])}</button>`;
-    return `<section class="pile" id="pile-${k}" aria-labelledby="pile-${k}-h"><div class="pile-head"><div><h3 id="pile-${k}-h">${esc(title)} <span class="pill ${PILE_TONE[k]}">${k === "new" ? items.reduce((n, g) => n + g.group.length, 0) : items.length}</span></h3>
-        <small>${esc(help)}</small></div>${all}</div><ul class="rows">${items.map((x) => sortCard(k, x)).join("")}</ul></section>`;
-  }
-
-  function sortCard(k, x) {
-    const m = x.match;
-    const meta = [esc(KIND_NAMES[x.kind] ?? x.kind), esc(x.topicName ?? ""), x.app ? `앱 ${esc(String(x.app).split(" ")[0])}` : "", esc(ago(x.at)), x.same ? `나도 그래요 ${x.same}` : ""]
-      .filter(Boolean).join(" · ");
-    const matched = m ? `<small class="match">≈ ${m.type === "dev" ? `<a href="${href("dev", m.id)}">개발사항 ‘${esc(m.title)}’</a> · ${esc(DEV_NAMES[m.status] ?? "")}${m.releasedIn ? ` ${esc(m.releasedIn)}` : ""}`
-      : m.type === "inquiry" ? `<a href="${href("inquiries", m.id)}">전에 답한 문의 ‘${esc(m.title)}’</a>` : `자주 쓰는 답 ‘${esc(m.title)}’`} · 비슷함 ${Math.round(m.score * 100)}%</small>` : "";
-    const others = k === "new" && x.others?.length ? `<details><summary>같은 내용 ${x.others.length}건 더</summary><ul class="mini">${x.others.map((o) =>
-      `<li><a href="${href("inquiries", o.id)}">${esc(o.preview)}</a> <small>${esc(o.app ? String(o.app).split(" ")[0] : "")}</small></li>`).join("")}</ul></details>` : "";
-    const title = k === "new" ? `<label class="sort-field"><span>개발사항 제목</span><input id="sort-title-${x.id}" value="${esc(x.title)}" maxlength="100"></label>` : "";
-    const reply = `<label class="sort-field"><span>${k === "new" ? "함께 보낼 답 (비우면 답 없이 넘겨요)" : "보낼 답"}</span><textarea id="sort-reply-${x.id}" rows="3">${esc(x.reply ?? "")}</textarea></label>`;
-    return `<li class="sort-card"><div class="sort-ask"><b><a href="${href("inquiries", x.id)}">${esc(x.preview)}</a></b><small>${meta}</small>${matched}${others}</div>
-      <div class="sort-answer">${title}${reply}
-      <div class="actions"><button class="btn small primary" data-act="sort-do" data-key="${k}" data-id="${x.id}">${esc(k === "new" && x.group.length > 1 ? `${x.group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
-        ${k === "new" ? `<button class="btn small" data-act="sort-reply-only" data-id="${x.id}">답만 보내기</button>` : ""}
-        <button class="btn small ghost" data-act="sort-skip" data-id="${x.id}">빼 두기</button></div></div></li>`;
-  }
-
-  /** The action of one card as the server takes it (sortApply). */
-  function sortAction(k, x) {
-    const text = document.getElementById(`sort-reply-${x.id}`)?.value?.trim() ?? x.reply;
-    if (k === "new") {
-      const title = document.getElementById(`sort-title-${x.id}`)?.value?.trim() || x.title;
-      return { do: "dev", ids: x.group, title, body: [x.preview, ...(x.others ?? []).map((o) => o.preview)].map((t) => `- ${t}`).join("\n").slice(0, 4000), ...(text ? { text } : {}) };
-    }
-    if (k === "known") return { do: "reply", id: x.id, item: x.match.id, text };
-    if (k === "again") return { do: "reopen", id: x.id, item: x.match.id, text };
-    return { do: "reply", id: x.id, text };
-  }
-
-  async function sortApply(actions, done) {
-    const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (r) => [r.replied && `답 ${r.replied}건`, r.linked && `묶음 ${r.linked}건`,
-      r.created?.length && `개발사항 ${r.created.length}개`, r.reopened && `다시 접수 ${r.reopened}개`, r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || done);
-    if (r) { S.data.sort = null; S.data.handoff = null; render({ keepScroll: true }); load(); }
-  }
+  // 1.38 [DESK-03] 정리함의 일곱 묶음과 카드는 운영 장부(src/admin/views/ledger.js)의 줄로 들어갔어요. 여기엔 넘기기·결과 붙여 넣기 칸만 남아요.
 
   /** [INBOX-05][INBOX-06] Claude에게 넘기기 and 개발 결과 붙여 넣기. */
   function handoffCard() {
@@ -1802,6 +2055,7 @@ function adminApp(L, BUILD, M) {
             <button class="btn" data-act="dev-assign" data-to="${mine ? "" : "me"}">${mine ? "맡기 취소" : d.assignee ? "내가 넘겨받기" : "내가 맡기"}</button>
             <button class="btn" data-act="dev-edit">고치기</button>` : ""}
             <button class="btn" data-act="dev-copy-one">${icon(P.copy)}복사</button>`}</div></div>
+      ${V.storyCard()}
       ${status ? `<section class="card"><h2>처리</h2><p class="hint">누르면 바로 바뀌고 기록에 남아요. 반려는 이유를 함께 남겨요.</p>
         <div class="chips" role="group" aria-label="처리 상태">${Object.keys(DEV_NAMES).map((k) =>
           `<button type="button" class="chip pick" data-act="dev-status-set" data-status="${k}" aria-pressed="${d.status === k}">${DEV_NAMES[k]}</button>`).join("")}</div>
@@ -1814,6 +2068,17 @@ function adminApp(L, BUILD, M) {
         <p class="hint">나간 판을 저장하는 날 쓰여요. 출시 답은 연결된 문의에 자동으로 가고, 공지 한 줄은 앱의 ‘업데이트 소식’ 공지에 실려요.</p>
         <label for="dev-ship-reply">출시 답</label><textarea id="dev-ship-reply" name="shipReply" maxlength="1000" placeholder="기다려 주셔서 고마워요. 말씀해 주신 … 를 고친 업데이트가 나왔어요.">${esc(d.shipReply ?? "")}</textarea>
         <label for="dev-news">공지 한 줄</label><input id="dev-news" name="news" maxlength="80" placeholder="잠금 화면에서도 알람 소리가 제대로 나요" value="${esc(d.news ?? "")}">
+        <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
+      ${edit && d.status !== "rejected" ? `<form class="card mini" data-form="dev-loop" data-since="${d.updatedAt}"><div class="card-head"><h2>전달 길과 알려진 문제</h2>
+          ${d.track ? `<span class="pill">${esc(d.track)}</span>` : ""}</div>
+        <p class="hint">전달 길은 고친 것이 사용자에게 닿는 길이에요. 서버·원격 자료·기능 스위치는 앱 업데이트 없이 닿는 때 바로 답이 가요. 알려진 문제 제목은 앱 문의하기 위 ‘지금 알려진 문제’에 보이는 쉬운 말이에요(문의 원문·이름은 쓰지 않아요).</p>
+        <label for="dev-route">전달 길</label><select id="dev-route" name="route"><option value="">정하지 않음</option>${Object.entries(DEV_ROUTES).map(([k, v]) => `<option value="${k}"${d.route === k ? " selected" : ""}>${v}</option>`).join("")}</select>
+        <label for="dev-size">크기</label><select id="dev-size" name="size"><option value="">정하지 않음</option>${Object.entries(DEV_SIZES).map(([k, v]) => `<option value="${k}"${d.size === k ? " selected" : ""}>${v}</option>`).join("")}</select>
+        <label for="dev-public-title">알려진 문제 제목</label><input id="dev-public-title" name="publicTitle" maxlength="60" placeholder="예: 잠금 화면에서 알람 소리가 작아요" value="${esc(d.publicTitle ?? "")}">
+        <fieldset><legend>보일 근무 유형 <small>(고르지 않으면 모두)</small></legend>${Object.entries(DEV_STYLES).map(([k, v]) =>
+          `<label class="chk"><input type="checkbox" name="styles" value="${k}"${(d.styles ?? []).includes(k) ? " checked" : ""}><span>${v}</span></label>`).join("")}</fieldset>
+        <label for="dev-known">알려진 문제판에</label><select id="dev-known" name="known">${[["0", "여럿이 겪을 때만 보이기"], ["1", "늘 보이기"], ["-1", "보이지 않기"]].map(([k, v]) =>
+          `<option value="${k}"${String(d.known ?? 0) === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
       <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
         ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
@@ -1838,7 +2103,10 @@ function adminApp(L, BUILD, M) {
     const what = {
       create: () => "만들었어요",
       edit: () => [x.title ? `제목: ${L.wordDiff(x.title[0] ?? "", x.title[1] ?? "")}` : "", x.shipReply ? `출시 답을 적었어요<blockquote>${esc(x.shipReply[1] || "(지움)")}</blockquote>` : "",
-        x.news ? `공지 한 줄: ${was(x.news[0], x.news[1])}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
+        x.news ? `공지 한 줄: ${was(x.news[0], x.news[1])}` : "", x.publicTitle ? `알려진 문제 제목: ${was(x.publicTitle[0], x.publicTitle[1])}` : "",
+        x.route ? `전달 길: ${was(DEV_ROUTES[x.route[0]] ?? "", DEV_ROUTES[x.route[1]] ?? "")}` : "", x.size ? `크기: ${was(DEV_SIZES[x.size[0]] ?? "", DEV_SIZES[x.size[1]] ?? "")}` : "",
+        x.styles ? `보일 유형: ${was(x.styles[0].split(",").map((k) => DEV_STYLES[k] ?? k).join("·") || "모두", x.styles[1].split(",").map((k) => DEV_STYLES[k] ?? k).join("·") || "모두")}` : "",
+        x.known ? `알려진 문제판: ${["보이지 않기", "여럿이 겪을 때만", "늘 보이기"][x.known[1] + 1]}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
       status: () => `처리: ${was(DEV_NAMES[x.status?.[0]], DEV_NAMES[x.status?.[1]])}${x.bulk > 1 ? ` <span class="meta">(${x.bulk}개 한 번에)</span>` : ""}${x.reason ? `<blockquote>${esc(x.reason)}</blockquote>` : ""}`,
       assign: () => `맡은 사람: ${was(x.assignee?.[0], x.assignee?.[1])}`,
       note: () => `<blockquote>${esc(x.text)}</blockquote>`,
@@ -1848,7 +2116,18 @@ function adminApp(L, BUILD, M) {
       delete: () => "지웠어요",
       restore: () => "되살렸어요",
       reply: () => `연결된 문의 ${x.count}건에 답했어요${x.close ? "(닫음)" : ""}<blockquote>${esc(x.text)}</blockquote>`,
-    }[h.action]?.() ?? esc(h.action);
+      // 1.39 [LOOP] 자동 순환이 남기는 것(PC 2차: 영어 이름이 그대로 보였음).
+      handoff: () => "Claude에게 넘겼어요",
+      result: () => "개발 결과를 받았어요",
+      sync: () => `저장소에서 받았어요${x.pr ? ` · PR #${esc(x.pr)}` : ""}${x.version ? ` · ${esc(x.version)}` : ""}${x.fields?.length ? ` <span class="meta">(${esc(x.fields.length)}칸)</span>` : ""}`,
+      live: () => `업데이트 없이 실제로 닿았어요${x.route ? ` · ${esc(DEV_ROUTES[x.route] ?? x.route)}` : ""}`,
+      phone_told: () => `고친 판${x.app ? `(${esc(x.app)})` : ""}으로 연 폰에 바로 안내했어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
+      fixed_yes: () => `문의한 분이 '해결됐어요'를 눌렀어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
+      fixed_no: () => `문의한 분이 '아직이에요'를 눌렀어요(다시 열림)${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
+      me_too: () => "알려진 문제판에서 '나도 겪어요'",
+      tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
+    }[h.action]?.() ?? "바뀐 것이 있어요";
+    if (h.action === "status" && x.why) return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}<blockquote>${esc(x.why)}</blockquote></span></li>`;
     return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}</span></li>`;
   }
 
@@ -1908,6 +2187,8 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="tpl-topic">주제(이 주제의 문의에서 먼저 보여요)</label><div class="field"><select id="tpl-topic" name="topic"><option value="">모든 문의</option>
         ${Object.entries(names).map(([k, label]) => `<option value="${k}"${topic === k ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></div></div>
       <div class="fieldset"><label for="tpl-text">내용</label><textarea id="tpl-text" name="text" maxlength="2000" required>${esc(typed)}</textarea></div>
+      <div class="fieldset"><label for="tpl-q">마을 밤낮 Q&A에 공개할 묻는 말(비우면 공개 안 함)</label><input id="tpl-q" name="publicQ" maxlength="80" placeholder="예: 위젯 날짜가 안 바뀌어요" value="${esc(t?.publicQ ?? "")}">
+        <small class="hint">적으면 이 답이 앱 마을 › 광장 위 '밤낮 Q&A'에 누구나 보게 올라가요. {앱버전}은 '최신 버전'으로 바뀌어요. 한 사람에게만 맞는 말은 빼 주세요.</small></div>
       <div class="actions"><button class="btn" type="button" data-act="${t ? "templates" : "close"}">${t ? "목록으로" : "닫기"}</button><button class="btn primary" type="submit">${t ? "저장" : "넣기"}</button></div></form>`, "wide");
   }
 
@@ -2004,7 +2285,7 @@ function adminApp(L, BUILD, M) {
       </section>
       ${edit ? `<section class="card">
         <h2>다른 회사에 합치기</h2>
-        <p class="hint">같은 회사가 다른 이름으로 두 번 생겼을 때 써요. 제보와 규칙이 모두 옮겨지고 이 이름은 다른 이름으로 남아요.</p>
+        <p class="hint">같은 회사가 다른 이름으로 두 번 생겼을 때 써요. 제보·규칙·참여한 분·쓰는 사람 수·토론(보완 요청 포함)이 모두 옮겨지고 이 이름은 다른 이름으로 남아요.</p>
         <form data-form="merge-search"><div class="field"><input name="q" placeholder="합칠 회사 이름" required aria-label="합칠 회사 이름">
           <button class="btn" type="submit">찾기</button></div></form>
         <div id="merge-results"></div>
@@ -2042,13 +2323,14 @@ function adminApp(L, BUILD, M) {
     const edit = can("rewards", "edit");
     const segs = [["owed", "드릴 보상"], ["paid", "지급함"], ["void", "취소"]].map(([key, label]) => seg("reward-tab", key, S.rewardTab, label, counts[key])).join("");
     const body = !r || r.status !== S.rewardTab ? skeleton() : !r.rewards.length ? empty(S.rewardTab === "owed" ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
-      : `<ul class="rows">${r.rewards.map((w) => `<li class="item">
+      : `${S.rewardTab === "owed" && edit ? L.draftEmpty(r.rewards) : ""}<ul class="rows">${r.rewards.map((w) => `<li class="item">
         <div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
           <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
           ${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
-          ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}</div>
+          ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}
+          ${L.draftNote(w.draft, w.draft?.months ? `${w.draft.months}개월` : "")}</div>
         ${edit ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
-          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${w.months}">지급하기</button>`
+          <button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${w.draft?.pick === "paid" && w.draft.months ? w.draft.months : w.months}">지급하기${w.draft?.pick === "paid" && w.draft.months && w.draft.months !== w.months ? `(${w.draft.months}개월)` : ""}</button>`
           : `<button class="btn" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}
       </li>`).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
     // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
@@ -2160,6 +2442,49 @@ function adminApp(L, BUILD, M) {
         <div class="actions">${d.status === "approved" ? "" : `<button class="btn small primary" data-act="phone" data-id="${d.id}" data-key="approve">승인</button>`}
           <button class="btn small danger" data-act="phone" data-id="${d.id}" data-key="remove">끊기</button></div></li>`).join("")}</ul>`
         : '<p class="hint">연결된 휴대폰이 없어요.</p>'}`;
+  }
+
+  /**
+   * 1.37.1 [FAM-01] 가족 프로 이용권: the owner gives 프로 to family phones with no end, and cuts any of them at any time.
+   * The code goes in the same place as an admin's (밤낮 앱 › 설정 › 프로 › '관리자 연결'), so no app update is needed.
+   */
+  /** 1.39 [FAM-04] 발굴: a family phone not seen for 60 days is likely a phone given up (바꾼 휴대폰), still holding 프로. */
+  const familyIdle = (d) => Date.now() - Date.parse(d.seenAt ?? d.createdAt) > 60 * 864e5;
+
+  /**
+   * 1.39 [ADM3-42] 로그인 잠금 풀기(최고 관리자만, 사용자 11-07 22:14·22:37). PC가 잠겨도 휴대폰에 로그인해 있으면
+   * 1시간을 기다리지 않고 여기서 풀어요. 잠긴 곳이 없으면 한 줄만, 있으면 몇 곳·언제 풀리는지와 단추.
+   */
+  function lockLine() {
+    const k = S.data.loginLocks;
+    if (!k) return "";
+    const busy = k.locked || k.tries || k.wide;
+    if (!busy) return '<p class="hint" data-lock-line>지금 잠긴 로그인이 없어요. 다른 곳에서 여러 번 틀려 잠기면 여기서 바로 풀 수 있어요.</p>';
+    const parts = [k.locked ? `잠긴 곳 ${k.locked}곳` : "", k.tries ? `틀린 적 있는 곳 ${k.tries}곳` : "", k.wide ? "여러 곳에서 많이 틀려 전체가 조심 중" : ""].filter(Boolean);
+    return `<div class="note warn" data-lock-line><b>${esc(parts.join(" · "))}</b>${k.until ? `<br>${esc(clock(k.until))}에 저절로 풀려요.` : ""}
+      <br>내가 잠긴 거면 풀어요. 모르는 곳이면 비밀번호를 바꾸는 게 먼저예요.</div>
+      <div class="actions start"><button class="btn primary" data-act="login-unlock">로그인 잠금 풀기</button></div>`;
+  }
+
+  function familyCard() {
+    const f = S.data.family;
+    const phones = f?.phones ?? [];
+    const codes = f?.codes ?? [];
+    const on = phones.filter((d) => !d.paused).length;
+    return `<section class="card"><div class="card-head"><h2>가족 프로 이용권</h2>${phones.length ? `<span class="pill ok">${on}대 사용 중</span>` : ""}</div>
+      <p class="hint">가족 휴대폰에 프로를 끝나는 날 없이 무료로 줘요. 닉네임을 적고 코드를 만들어 보내면, 가족이 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 1시간 안에 넣어요. 승인 없이 바로 열려요. 정지하면 다시 켤 때까지 무료가 되고, 끊으면 새 코드가 있어야 해요. 닉네임은 이 화면에만 보이고 그 휴대폰에는 '가족'으로만 보여요. 몇 대든 줄 수 있어요.</p>
+      <form class="inline-form" data-form="family-code"><div class="fieldset"><label for="family-name">닉네임(관리자 앱에서만 보여요)</label>
+        <input id="family-name" name="name" maxlength="20" required placeholder="예: 엄마" autocomplete="off"></div>
+        <div class="actions start"><button class="btn primary" type="submit">가족 코드 만들기</button></div></form>
+      ${codes.length ? `<h3 class="section">아직 안 넣은 코드</h3><ul class="rows">${codes.map((c) => `<li class="item"><div class="row-main"><b>${esc(c.name)} · ${esc(c.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</b>
+        <small>${esc(clock(c.expiresAt))}까지</small></div><div class="actions"><button class="btn small" data-act="family-code-delete" data-id="${esc(c.code)}">취소</button></div></li>`).join("")}</ul>` : ""}
+      ${phones.length ? `<h3 class="section">가족 휴대폰</h3><ul class="rows">${phones.map((d) => `<li class="item"><div class="row-main"><b>${esc(d.name)}</b>
+        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}${familyIdle(d) ? " · 휴대폰을 바꿨다면 끊고 새 코드를 보내 주세요" : ""}</small></div>
+        ${d.paused ? '<span class="pill warn">정지</span>' : familyIdle(d) ? '<span class="pill warn">60일 넘게 안 보임</span>' : '<span class="pill ok">프로 사용 중</span>'}
+        <div class="actions"><button class="btn small" data-act="family-set" data-id="${d.id}" data-key="${d.paused ? "resume" : "pause"}" data-name="${esc(d.name)}">${d.paused ? "다시 켜기" : "정지"}</button>
+          <button class="btn small" data-act="family-rename" data-id="${d.id}" data-name="${esc(d.name)}">닉네임</button>
+          <button class="btn small danger" data-act="family-remove" data-id="${d.id}" data-name="${esc(d.name)}">끊기</button></div></li>`).join("")}</ul>`
+        : f ? '<p class="hint">아직 연결된 가족 휴대폰이 없어요.</p>' : ""}</section>`;
   }
 
   /**
@@ -2279,8 +2604,10 @@ function adminApp(L, BUILD, M) {
         : e.target ? ` <span class="meta">${esc(e.target)}</span>` : "";
       const who = e.actorId ? `<button class="who link" data-act="audit-who" data-id="${esc(e.actorId)}" title="이 사람이 한 일만 보기">${esc(e.actor || "관리자")}</button>`
         : `<span class="who">${esc(e.actor || "앱 사용자·시스템")}</span>`;
+      // 1.38 [ADM3-07] 되돌릴 수 있는 일은 그 화면으로 한 번에.
+      const undo = L.undoPlace(e.action, e.target);
       out.push(`<li><span class="when">${esc(clock(e.at))}</span><span><b>${esc(ACTION_NAMES[e.action] ?? e.action)}</b>${about}
-        ${e.detail ? `<span class="meta">${esc(e.detail)}</span>` : ""}</span>${who}</li>`);
+        ${e.detail ? `<span class="meta">${esc(e.detail)}</span>` : ""}${undo ? ` <a class="undo-link" href="${esc(undo.to)}">${esc(undo.label)}</a>` : ""}</span>${who}</li>`);
     }
     out.push("</ul></section>");
     return `${filters}<p class="hint">누가 언제 무엇을 했는지 남아요. 이름을 누르면 그 사람이 한 일만 보여요. 1년 지난 기록은 지워져요.</p>${out.join("")}
@@ -2389,11 +2716,11 @@ function adminApp(L, BUILD, M) {
 
   // ---- [SRV-05] 공유 링크 신고 ----
 
-  const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
+  const SHARE_REASONS = { scam: "돈·계좌 요구(사기 의심)", personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -2432,8 +2759,8 @@ function adminApp(L, BUILD, M) {
     } catch { return ""; }
   }
 
-  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름).
-  const RECIPE_SECTIONS = { theme: "테마", tab: "탭 하나", part: "부품", logic: "규칙·단추" };
+  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름). 1.39 [MKC-01] 테마 · 탭별 작품 · 도구(부품·규칙·단추).
+  const RECIPE_SECTIONS = { theme: "테마", tab: "탭별 작품", part: "도구 · 부품", logic: "도구 · 규칙·단추" };
   const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
 
   function recipesView() {
@@ -2457,6 +2784,8 @@ function adminApp(L, BUILD, M) {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
+      // 1.39 판 정리
+      retired: "새 판이 나와 장터에서 내린 운영자 작품이에요. 목록·찾기·추천에는 안 나오지만 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 지우지 않아요. 아래에 정리 계획(market-…-refresh-plan.json)을 붙여 넣어 몇 개인지 먼저 보고 숨기거나, 잘못 숨긴 것을 한 번에 되돌려요.",
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
       // [RCX-32]
@@ -2476,7 +2805,7 @@ function adminApp(L, BUILD, M) {
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
         ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림" }[r.hidden] ?? r.hidden)}</small>` : ""}
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
@@ -2487,10 +2816,12 @@ function adminApp(L, BUILD, M) {
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) : "";
+    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
+      : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
-      <textarea name="recipe" rows="8" required></textarea>
+      <textarea name="recipe" rows="8"${tab === "waiting" ? "" : " required"}></textarea>
+      ${tab === "waiting" ? `<label>또는 파일로 (docs/recipes/market-….json, 휴대폰에서 긴 글을 붙여 넣기 어려울 때) <input type="file" name="file" accept=".json,application/json"></label>` : ""}
       ${tab === "showcase" ? `<p class="hint">showcase-recipes.json 전체를 붙여 넣으면 30개가 한 번에 올라가요. 하나만 붙여 넣어도 보여주기로 올라가요.</p><input type="hidden" name="showcase" value="on">`
         : tab === "waiting" ? "" : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
       ${recipeHoldFields(tab === "waiting")}
@@ -2520,7 +2851,83 @@ function adminApp(L, BUILD, M) {
       <p class="hint">파일 안의 항목에 hold·batch·minApp·replace가 있으면 그것이 먼저예요.</p></fieldset>`;
   }
 
+  /** 1.38 [STM-10] 밤낮 재료 묶음: 몇 개·공개 상태·무료 수, 공개·숨기기, 무료·광고 나누기(광고로 연 묶음은 30일, 프로는 모두). */
+  function materialsView(d, edit) {
+    if (!d) return "";
+    if (!d.items.length) return `<h3>밤낮 재료</h3><p class="hint">넣은 재료가 없어요. 아래 ‘재료 파일 올리기’로 넣어요.</p>${edit ? materialUploadForm() : ""}`;
+    const packs = new Map();
+    for (const m of d.items) {
+      const p = packs.get(m.pack) ?? { kind: m.kind, n: 0, ok: 0, waiting: 0, hidden: 0, free: 0 };
+      p.n++; p[m.state] = (p[m.state] ?? 0) + 1; if (m.free) p.free++;
+      packs.set(m.pack, p);
+    }
+    const c = d.counts ?? {};
+    const freeOf = (p) => (p.free === p.n ? "all" : p.free === 0 ? "none" : "third");
+    const row = ([name, p]) => `<li><form data-form="material-free" data-key="${esc(name)}" class="row"><span class="row-main"><b>${esc(name)}</b>
+        <small>${p.n}개 · 공개 ${p.ok}${p.waiting ? ` · 대기 ${p.waiting}` : ""}${p.hidden ? ` · 숨김 ${p.hidden}` : ""} · 무료 ${p.free}</small></span>
+        ${edit ? `<span class="row-side inline"><select name="mode" aria-label="${esc(name)} 무료·광고">${[["all", "모두 무료"], ["third", "3분의 1 무료"], ["none", "모두 광고·프로"]]
+          .map(([k, l]) => `<option value="${k}"${freeOf(p) === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+          <button class="btn small" type="submit">바꾸기</button>
+          ${p.ok < p.n ? `<button class="btn small primary" type="button" data-act="material-state" data-id="${esc(name)}" data-key="ok">공개</button>`
+            : `<button class="btn small" type="button" data-act="material-state" data-id="${esc(name)}" data-key="hidden">숨기기</button>`}</span>` : ""}</form></li>`;
+    const group = (kind, label) => {
+      const list = [...packs].filter(([, p]) => p.kind === kind);
+      return list.length ? `<details data-key="materials-${kind}"><summary>${label} ${list.length}묶음 · ${list.reduce((n, [, p]) => n + p.n, 0)}개</summary><ul class="rows">${list.map(row).join("")}</ul></details>` : "";
+    };
+    return `<h3>밤낮 재료</h3><p class="hint">공개 ${c.ok ?? 0} · 대기 ${c.waiting ?? 0} · 숨김 ${c.hidden ?? 0}. 스튜디오 › 꾸밈 › 넣기의 ‘밤낮 재료’ 칸이에요. 무료가 아닌 재료는 광고 한 편으로 그 묶음을 30일 열거나 프로로 모두 써요.</p>
+      ${group("icon", "색 아이콘")}${group("bg", "배경")}${edit ? materialUploadForm() : ""}`;
+  }
+
+  /**
+   * 1.39 E11 재료 파일 올리기: the files `tools/materials-seed.mjs --files` writes (재료-01.json …), picked here with this login, so the real
+   * server gets its materials without a password in any tool. They go in as 대기 (공개는 위 묶음마다); the same picture again only renames.
+   */
+  function materialUploadForm() {
+    return `<form data-form="material-upload" class="card"><h3>재료 파일 올리기</h3>
+      <p class="hint">tools/materials-seed.mjs --files로 만든 재료-01.json … 을 모두 골라요. 대기로 들어가고, 공개는 위 묶음마다 해요. 같은 그림을 다시 올리면 이름·순서만 바뀌어요.</p>
+      <input type="file" name="files" accept=".json,application/json" multiple required>
+      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>`;
+  }
+
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
+  /**
+   * 1.39 판 정리: 계획 파일({"hide":[{title, why}]}, 제목 목록 줄마다, 코드)을 붙여 넣거나 골라 '몇 개인지 보기'(dry) → 숨기기, 또는 되돌리기.
+   * [last] 마지막으로 본 결과(찾은 수·없는 제목)를 보여 줘요.
+   */
+  function recipeRetireView(last) {
+    const said = last ? `<p class="hint" data-retire-said>${esc(last.say)}${last.missing?.length ? ` · 못 찾은 것 ${last.missing.length}개: ${esc(last.missing.slice(0, 20).join(", "))}${last.missing.length > 20 ? " …" : ""}` : ""}</p>` : "";
+    return `<form data-form="recipe-retire" class="card"><h3>판 정리 붙여 넣기</h3>
+      <p class="hint">정리 계획 JSON 전체, 또는 제목(이나 작품 코드)을 한 줄에 하나씩. 운영자 작품만 찾고 사용자 작품은 건드리지 않아요. 한 번에 1,200개까지.</p>
+      <textarea name="plan" rows="6" required></textarea>
+      <label>또는 파일로 <input type="file" name="file" accept=".json,.txt,application/json,text/plain"></label>
+      <label>메모 <input name="note" maxlength="200" placeholder="1.39 장터 정리"></label>
+      <label>옛 앱에는 남기기: 이 앱 판 미만에는 계속 보여요(계획 파일의 belowApp이 먼저) <input name="below" inputmode="numeric" pattern="\\d{1,6}" placeholder="53"></label>
+      <div class="actions"><button class="btn" type="submit" name="go" value="dry">몇 개인지 보기</button>
+        <button class="btn primary" type="submit" name="go" value="hide">숨기기</button>
+        <button class="btn" type="submit" name="go" value="show">되돌리기</button></div>${said}</form>`;
+  }
+
+  /**
+   * The titles and codes in what was pasted (a plan file {hide:[{title, code?, belowApp?}]}, a list of strings, or lines), grouped by
+   * belowApp (작품 갈래: '그 판 미만 앱에는 계속 보임'); [below] is for those that say none.
+   */
+  function retireGroups(text, below) {
+    const groups = new Map();
+    const add = (x, b) => {
+      const t = String(x ?? "").trim();
+      if (!t) return;
+      const k = Number.isInteger(b) && b > 0 ? b : below;
+      if (!groups.has(k)) groups.set(k, { belowApp: k, titles: [], codes: [] });
+      (/^[2-9A-HJ-NP-Z]{8}$/.test(t) ? groups.get(k).codes : groups.get(k).titles).push(t);
+    };
+    let j = null;
+    try { j = JSON.parse(text); } catch { j = null; }
+    const list = Array.isArray(j) ? j : Array.isArray(j?.hide) ? j.hide : null;
+    if (list) for (const x of list) { if (typeof x === "string") add(x); else add(x?.code || x?.title, x?.belowApp); }
+    else for (const line of String(text).split(/\r?\n/)) add(line);
+    return [...groups.values()];
+  }
+
   function recipeReleaseView(d, edit) {
     if (!d) return skeleton(1);
     if (!d.items.length) return `<p class="hint">출시 대기 중인 작품이 없어요.</p>`;
@@ -2642,11 +3049,12 @@ function adminApp(L, BUILD, M) {
     if (!d.connected) return empty("공유 서버가 연결되지 않았어요", "Worker 설정에 SHARE_BASE_URL과 SHARE_ADMIN_TOKEN을 넣으면 신고된 근무표 링크가 여기 보여요.");
     if (!d.reports.length) return empty("신고된 링크가 없어요", "근무표 링크 페이지와 앱의 받은 달력에서 신고하면 여기 모여요.");
     const edit = can("shares", "edit");
-    return `<p class="hint">링크를 열어 확인하고, 운영 규칙에 어긋나면 내려요. 내린 링크는 근무표가 바로 지워지고 "운영 규칙에 따라 내려졌어요"로 보여요. 신고한 사람은 남지 않아요.</p>
-      <ul class="rows">${d.reports.map((r) => `<li><div class="row"><span class="row-main"><b>신고 ${r.count}건</b>
+    return `<p class="hint">근무표 링크와 1.39부터 팀·사장님 링크(병동 표·근무 신청·결원·바꾸기·근로계약서·출퇴근)의 신고가 모여요. 링크를 열거나 내용을 보고, 운영 규칙에 어긋나면 내려요. 돈·계좌 요구는 바로 내려 주세요. 내린 링크는 근무표가 바로 지워지고 "운영 규칙에 따라 내려졌어요"로 보여요. 신고한 사람은 남지 않아요.</p>
+      <ul class="rows">${d.reports.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.name ?? "근무표 링크")} · 신고 ${r.count}건</b>
         <small>${Object.entries(r.reasons ?? {}).map(([k, n]) => `${esc(SHARE_REASONS[k] ?? k)} ${n}`).join(" · ")}</small><small>마지막 신고 ${esc(ago(r.last))}</small></span>
-        <span class="row-side"><a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">열어 보기</a>
-        ${edit ? `<button class="btn small danger" data-act="share-remove" data-id="${esc(r.id)}">내리기</button>` : ""}</span></div></li>`).join("")}</ul>`;
+        <span class="row-side">${r.url ? `<a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">열어 보기</a>`
+          : `<button class="btn small" data-act="share-peek" data-id="${esc(r.id)}" data-key="${esc(r.kind)}">내용 보기</button>`}
+        ${edit ? `<button class="btn small danger" data-act="share-remove" data-id="${esc(r.id)}" data-key="${esc(r.kind ?? "s")}">내리기</button>` : ""}</span></div></li>`).join("")}</ul>`;
   }
 
   // ---- settings, account, more ----
@@ -2700,6 +3108,8 @@ function adminApp(L, BUILD, M) {
         <p class="hint" data-doubt>대표에서 빠지는 기준: 맞아요·달라요가 ${S.overview?.doubt?.votes ?? 5}표 이상이고 달라요가 ${S.overview?.doubt?.share ?? 40}%를 넘으면 앱의 대표 주기에서 빠지고 같은 사업장의 다음 판이 대표가 돼요. 다음 판이 채택 조건을 채우면 지지로 이기지 않아도 채택돼요.</p>
         ${stepper("rewardMonths", "채택 보상", s.rewardMonths, "개월", edit)}
         <p class="hint">채택된 정보를 보낸 분께 드릴 프로 이용 기간이에요. 0개월이면 보상을 기록하지 않아요.</p>
+        ${stepper("askMonths", "요청 반영 보상", s.askMonths ?? s.rewardMonths, "개월", edit)}
+        <p class="hint">회사 방식 요청에 '앱에 넣을게요'로 답할 때 보낸 분께 드릴 프로 기간이에요. 채택 보상과 따로 정해요. 문의·제안의 '쓰면 쌓이는 날'은 관리 › 보상 › 보상 규칙에서 정해요.</p>
         ${stepper("adoptPersons", "채택에 필요한 사람", s.adoptPersons ?? 3, "명", edit)}
         <p class="hint">점수와 비율을 채워도 서로 다른 휴대폰이 이만큼은 돼야 자동으로 채택해요(결정 D32). 임금표 시세도 같아요.</p>
         ${stepper("amendPersons", "쓰는 규칙 고치기", s.amendPersons ?? 3, "명", edit)}
@@ -2730,10 +3140,12 @@ function adminApp(L, BUILD, M) {
     if (!list) return skeleton(2);
     const names = S.topicNames ?? {};
     const edit = can("inquiries", "edit");
-    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.</p>
+    const shown = list.filter((x) => x.publicQ).length;
+    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.
+        '묻는 말'을 적은 답은 앱 마을의 밤낮 Q&A에 공개돼요(지금 ${shown}개).</p>
         ${edit ? `<button class="btn primary" data-act="templates">${icon(P.plus)}새 답</button>` : ""}</div>
-      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}</b>
-        <small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
+      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}${x.publicQ ? ' <span class="pill ok">마을 공개</span>' : ""}</b>
+        ${x.publicQ ? `<small>묻는 말: ${esc(x.publicQ)}</small>` : ""}<small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
         <div class="actions"><button type="button" class="btn small" data-act="template-copy" data-id="${x.id}">${icon(P.copy)}복사</button>
         ${edit ? `<button type="button" class="btn small" data-act="template-edit" data-id="${x.id}">고치기</button>
         <button type="button" class="btn small danger" data-act="template-remove" data-id="${x.id}">지우기</button>` : ""}</div></li>`).join("")}</ul>`
@@ -2773,8 +3185,11 @@ function adminApp(L, BUILD, M) {
 
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
-        <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
+    // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
+    const watch = Boolean(S.me?.owner && S.data.watch);
+    // 1.39 PC 6차 H1: 무엇이 돌고 있는지(회사·규칙 수, 서버 판, 관리자 앱 빌드)는 맨 위 한 줄로. 전에는 맨 아래에 있었어요.
+    const sum = `<p class="meta server-sum">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p>`;
+    return `${sum}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
   }
 
   /**
@@ -2783,9 +3198,9 @@ function adminApp(L, BUILD, M) {
    */
   function movedView() {
     const rows = [
-      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "광장 › 채택 규칙"],
+      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "관리 › 채택 규칙"],
       ["rewards", "친구 초대 보상 규칙", "관리 › 보상"],
-      ["sla", "문의 답 목표", "문의 › 답 목표"],
+      ["sla", "문의 답 목표", "관리 › 답 목표"],
       ["account", "이 기기(화면 색·글자 크기·아래 탭·소리)·이 기기 알림·앱으로 설치·단축키", "관리 › 내 계정·이 기기"],
       ["server", "서버 상태", "관리 › 서버 상태"],
       ["flags", "기능 스위치·정식 출시(결제·광고 조건과 정식 출시일)", "출시 › 기능 관리"],
@@ -2841,7 +3256,8 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="pref-theme">화면 색</label><div class="field"><select id="pref-theme" data-change="pref-theme">${opt("system", "기기 설정을 따라요", p.theme)}${opt("light", "밝게", p.theme)}${opt("dark", "어둡게", p.theme)}</select></div></div>
       <div class="fieldset"><label for="pref-size">글자 크기</label><div class="field"><select id="pref-size" data-change="pref-size">${opt("small", "작게", p.size)}${opt("normal", "보통", p.size)}${opt("large", "크게", p.size)}${opt("xlarge", "아주 크게", p.size) /* AT 1.29 */}</select></div></div>
       ${bottom.more ? `<p class="label">휴대폰 아래 탭(오늘 말고 3개까지, 나머지는 더 보기)</p>
-      <div class="chips" role="group" aria-label="아래 탭">${items.map((h) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${h.key}"${bottom.tabs.includes(h.key) ? " checked" : ""}> ${esc(h.label)}</label>`).join("")}</div>` : ""}
+      <div class="chips" role="group" aria-label="아래 탭">${items.map((h) => `<label class="chip pick"><input type="checkbox" data-change="pref-tab" value="${h.key}"${bottom.tabs.includes(h.key) ? " checked" : ""}> ${esc(h.label)}</label>`).join("")}</div>`
+        : `<p class="label">휴대폰 아래 탭</p><p class="hint">허브 ${list.length}개가 모두 아래 탭에 있어요. 모든 탭을 한 번에 보려면 맨 위 메뉴(더 보기)를 눌러요.</p>`}
       <label class="switch"><input type="checkbox" data-change="pref-sound"${p.sound ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>새 문의가 오면 작은 소리</span></label>
       <label class="switch"><input type="checkbox" data-change="pref-next"${p.next ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>문의를 닫으면 다음 문의 열기</span></label>
       <p class="label">저장한 보기</p>
@@ -2866,6 +3282,7 @@ function adminApp(L, BUILD, M) {
         ${m.owner ? '<p class="hint">Cloudflare의 ADMIN_PASSWORD로 로그인했어요. 모든 화면을 쓰고 관리자를 초대·승인해요.</p>'
           : `<dl class="kv"><dt>메일</dt><dd>${esc(m.email)}</dd></dl><p class="label">권한</p><div class="perm-sum">${permPills(m.perms, m.areas ?? {})}</div>`}
       </section>
+      ${V.passkeyCard()}
       ${can("audit") ? `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p>
         <div class="actions start"><a class="btn" href="${L.routeHash("audit", null, { actor: "me" })}">내 활동 기록 보기</a></div></section>`
         : `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p></section>`}
@@ -2880,10 +3297,12 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
         <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
         <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
+      ${m.owner ? familyCard() : ""}
       ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
-          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div></section>
+          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
+        ${m.owner ? lockLine() : ""}</section>
       ${pushCard()}
       ${prefsCard()}
       <section class="card"><h2>앱으로 설치</h2>
@@ -2930,7 +3349,8 @@ function adminApp(L, BUILD, M) {
     const list = hubs();
     const bottom = L.bottomHubs(list, S.prefs.tabs, "more");
     const o = S.overview ?? {};
-    const rest = list.filter((h) => !bottom.tabs.includes(h.key));
+    // 1.38 [ADM3] 허브가 다섯이면 모두 아래 막대에 있어서, #/more는 모든 탭을 한 번에 보는 메뉴예요.
+    const rest = bottom.more ? list.filter((h) => !bottom.tabs.includes(h.key)) : list;
     return `${rest.map((h) => `<h2 class="section">${icon(P[h.icon])}${esc(h.label)}${L.hubBadge(h, o, S.me) ? `<span class="count">${L.hubBadge(h, o, S.me)}</span>` : ""}</h2>
       <ul class="rows">${h.tabs.map((t) => `<li><a class="row" href="${href(t)}"><span class="row-main"><b>${esc(tabName(t))}</b></span>
         ${L.tabBadge(t, o, S.me) ? `<i class="badge">${L.tabBadge(t, o, S.me)}</i>` : ""}${icon(P.chevron)}</a></li>`).join("")}</ul>`).join("")}
@@ -2956,6 +3376,7 @@ function adminApp(L, BUILD, M) {
         <p class="error" role="alert">${esc(S.error)}</p>
         <button class="btn primary wide" type="submit"${usable ? "" : " disabled"}>로그인</button>
         ${S.needCode ? '<button class="btn ghost wide" type="button" data-act="login-restart">비밀번호부터 다시</button>' : ""}
+        ${!S.needCode && V.passkeyOk() ? '<button class="btn wide" type="button" data-act="passkey-login">지문·얼굴(패스키)로 들어오기</button>' : ""}
       </form>
       ${owner ? "" : '<p class="alt">계정은 최고 관리자가 보낸 초대 링크로만 만들 수 있어요.</p>'}
       ${owner && h && !(h.database && h.password && h.salt) ? `<section class="card"><h2>서버 준비</h2>${healthList()}</section>` : ""}
@@ -3027,23 +3448,35 @@ function adminApp(L, BUILD, M) {
     dialog.querySelector("input:not([type=radio]):not([type=hidden]):not([readonly]),textarea")?.focus();
   }
 
+  /**
+   * 1.39 [PAYP-17] (7차 PC) What a merge carries, in numbers, for its confirm: the company page's [c] (companyInfo, its `carry`).
+   */
+  function mergeWords(c) {
+    const k = c?.carry ?? {};
+    const n = (v) => Number(v) || 0;
+    const talk = `토론 글 ${n(k.posts)}개${n(k.fixes) ? `(보완 요청 ${n(k.fixes)}개 포함)` : ""}`;
+    return `참여한 분 ${n(k.members ?? c?.members)}명, 쓰는 사람 ${n(k.uses)}명, ${talk}도 제보·규칙과 함께 옮겨져요. 되돌릴 수 없고, 예전 이름으로도 찾아져요.`;
+  }
+
   function confirmBox(title, text, label, then, tone = "danger") {
     pendingConfirm = then;
     openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2><p>${esc(text)}</p>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn ${tone}" type="submit">${esc(label)}</button></div></form>`);
   }
 
-  function openReject(company, setup) {
+  function openReject(company, setup, pick = "") {
     const reasons = Object.entries(S.overview?.reasons ?? {});
+    // 1.39 [ADM3-49] Claude가 거절을 추천했으면 그 이유를 먼저 골라 둬요.
+    const first = reasons.some(([key]) => key === pick) ? pick : reasons[0]?.[0];
     openDialog(`<form data-form="reject" data-company="${company}" data-setup="${setup}"><h2>거절할까요?</h2><p>보낸 분 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${key === first ? " checked" : ""}>
         <span>${esc(text)}</span></label>`).join("")}</div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">거절하기</button></div></form>`);
   }
 
   function openAnswer(id) {
     const answers = Object.entries(S.overview?.answers ?? {});
-    const months = S.overview?.settings?.rewardMonths ?? 0;
+    const months = S.overview?.settings?.askMonths ?? S.overview?.settings?.rewardMonths ?? 0;
     openDialog(`<form data-form="answer" data-id="${id}"><h2>어떻게 답할까요?</h2><p>보낸 분 앱에 이 답이 보여요.</p>
       <div class="radios">${answers.map(([key, text], i) => `<label class="radio"><input type="radio" name="answer" value="${key}"${i === 0 ? " checked" : ""}>
         <span>${esc(text)}</span></label>`).join("")}</div>
@@ -3167,7 +3600,7 @@ function adminApp(L, BUILD, M) {
   }
 
   function openShortcuts() {
-    // AN 1.28 [ADMUX-36] 1~6 are the hubs, always the same number whatever the admin sees.
+    // AN 1.28 [ADMUX-36] (1.38 [ADM3]: 1~5) the numbers are the hubs, always the same number whatever the admin sees.
     const shown = new Set(hubs().map((h) => h.key));
     openDialog(`<div class="box"><h2>단축키</h2>
       <div class="keys">${L.KEYS.map(([k, what]) => `<span class="kbd">${esc(k)}</span><span>${esc(what)}</span>`).join("")}
@@ -3220,6 +3653,29 @@ function adminApp(L, BUILD, M) {
     load();
   }
 
+  /**
+   * 1.39 [ADM3-40] 발굴 2-1: 큐 모드 knows the 오늘 › 할 일 bundles (ADM3-37), so one answer can go to the alike questions still
+   * ahead in the queue. id → the others of its bundle that are in the queue.
+   */
+  function queueAlike(today, ids) {
+    const inQueue = new Set(ids);
+    const out = {};
+    for (const x of today?.todo?.items ?? []) {
+      if (x.type !== "inquiry" || !x.others?.length) continue;
+      const group = [x.id, ...x.others].filter((id) => inQueue.has(id));
+      for (const id of group) if (group.length > 1) out[id] = group.filter((o) => o !== id);
+    }
+    return out;
+  }
+
+  /** The alike questions of the open one that the queue has not reached yet (answered ones drop out as the queue goes). */
+  const queueAhead = (id) => {
+    const qm = S.queue;
+    if (!qm?.alike?.[id]) return [];
+    const ahead = new Set(qm.ids.slice(qm.at + 1));
+    return qm.alike[id].filter((o) => ahead.has(o));
+  };
+
   /** [ADMUX-04] 큐 모드: the next waiting question, or the end of the queue. */
   function queueNext(skip = false) {
     const qm = S.queue;
@@ -3227,7 +3683,7 @@ function adminApp(L, BUILD, M) {
     qm.at += 1;
     if (skip) qm.skipped += 1;
     if (qm.at >= qm.ids.length) {
-      const n = qm.ids.length - qm.skipped;
+      const n = qm.ids.length - qm.skipped + (qm.extra ?? 0);
       S.queue = null;
       toast(`큐를 마쳤어요. ${n}건 처리${qm.skipped ? `, ${qm.skipped}건 건너뜀` : ""}`);
       go("inquiries");
@@ -3500,7 +3956,7 @@ function adminApp(L, BUILD, M) {
 
   const FLAG_STATE = { forced_off: ["bad", "강제로 끔"], forced_on: ["info", "강제로 켬"], on: ["ok", "켜짐"], waiting: ["warn", "대기"], off: ["", "꺼짐"] };
   const FLAG_SHOW = [["all", "전체"], ["waiting", "대기"], ["on", "켜짐"], ["forced_off", "강제로 끔"], ["cleanup", "정리 대상"]];
-  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능" };
+  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능", phase3: "Phase 3(출시일에 함께 켜짐 · 날짜는 일정에서)" };
   /** 1.22's 기능 스위치 by their flag (운영 screen's card links each to its flag). */
   const SWITCH_FLAGS = { PLAZA_WRITE: "plaza.write", COMPANY_REPORT: "company.report", INQUIRY_PHOTOS: "inquiry.photos", SHARE_CREATE: "share.create",
     USAGE_STATS: "usage.stats", PLAZA_NEWS: "plaza.news" };
@@ -3790,7 +4246,10 @@ function adminApp(L, BUILD, M) {
     openDialog(`<form data-form="flag-cond" data-key="${esc(key)}"><h2>${esc(r.name)}의 켜지는 조건</h2>
       <p>한 줄에 조건 하나, 모두 채우면 켜져요. 'or'로 이으면 그중 하나면 돼요. 저장하면 휴대폰은 앱에 든 조건 대신 이 조건을 써요.</p>
       <div class="fieldset"><label for="flag-cond">조건</label><textarea id="flag-cond" name="conditions" spellcheck="false" aria-describedby="flag-cond-out">${esc(text)}</textarea>
-        <span class="help">예: date >= 2026-11-10 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
+        <span class="help">예: date >= 2026-11-12 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
+      <div class="rollout-pick"><p class="label">단계 출시 (1.38 [ADM3-17])</p><p class="hint">휴대폰 몇 %에 먼저 켤지 누르면 조건에 한 줄로 들어가요(같은 휴대폰은 늘 같은 쪽). 문제 신고가 늘면 숫자 › 판 건강과 사고 화면이 먼저 알려 줘요.</p>
+        <div class="chips" role="group" aria-label="단계 출시 비율">${[1, 10, 25, 50, 100].map((n) => `<button type="button" class="chip pick" data-act="flag-rollout" data-key="${n}">${n === 100 ? "모두(비율 빼기)" : `${n}%`}</button>`).join("")}
+        <button type="button" class="chip pick" data-act="flag-minapp">이 앱 판 이상만</button></div></div>
       <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
       <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
       <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}
@@ -3841,13 +4300,30 @@ function adminApp(L, BUILD, M) {
   // ---- home [ADMUX-27][FLAG-28] ----
 
   /** A legal flag that turned on in the last 24 hours: at the top of 홈, with a one-tap force off (결정 D99). */
+  /**
+   * 1.39 PC 6차 J1: '결제(프로 구독)가'처럼 이름 끝 글자(괄호 앞)의 받침으로 이·가를 골라요. 한글이 아니면 '이(가)'.
+   */
+  const igaSuffix = (w) => {
+    const c = String(w ?? "").replace(/\s*\([^()]*\)\s*$/, "").trim().slice(-1).charCodeAt(0);
+    if (!(c >= 0xac00 && c <= 0xd7a3)) return "이(가)";
+    return (c - 0xac00) % 28 === 0 ? "가" : "이";
+  };
   function flagAlertCard() {
     const list = S.overview?.flagAlerts ?? [];
     if (!list.length) return "";
-    return list.map((a) => `<section class="card flag-alert" role="status"><div class="card-head"><h2>${esc(a.name)}이(가) 켜졌어요</h2><span class="pill bad">${esc(ago(a.since))}</span></div>
-      <p class="hint">법적 기능이 조건을 채워 저절로 켜졌어요. 24시간 동안 여기 보여요. 결제·광고에 문제가 보이면 바로 강제로 꺼 주세요.</p>
-      <div class="actions start">${can("flagOff", "edit") ? `<button class="btn danger" data-act="flag-force" data-key="${esc(a.key)}" data-force="off" data-why="켜진 뒤 문제가 보여 홈에서 바로 껐어요">강제로 끄기</button>` : ""}
-        <a class="btn" href="${flagLink(a.key)}">자세히</a></div></section>`).join("");
+    const off = (a) => (can("flagOff", "edit") ? `<button class="btn danger${list.length > 1 ? " small" : ""}" data-act="flag-force" data-key="${esc(a.key)}" data-force="off" data-why="켜진 뒤 문제가 보여 홈에서 바로 껐어요">강제로 끄기</button>` : "");
+    const hint = '<p class="hint">법적 기능이 조건을 채워 저절로 켜졌어요. 24시간 동안 여기 보여요. 결제·광고에 문제가 보이면 바로 강제로 꺼 주세요.</p>';
+    if (list.length === 1) {
+      const [a] = list;
+      return `<section class="card flag-alert" role="status"><div class="card-head"><h2>${esc(a.name)}${igaSuffix(a.name)} 켜졌어요</h2><span class="pill bad">${esc(ago(a.since))}</span></div>
+      ${hint}<div class="actions start">${off(a)}<a class="btn" href="${flagLink(a.key)}">자세히</a></div></section>`;
+    }
+    // 1.39 PC 6차 J1(폭 380): 일곱 장이 쌓여 오늘의 큰 카드가 두 화면 아래로 밀렸어요. 여럿이면 한 장으로 접어요.
+    const key = "home:flag-alerts";
+    return `<section class="card flag-alert" role="status"><details data-key="${key}"${S.opened.get(key) ? " open" : ""}>
+      <summary class="card-head"><h2>기능 ${list.length}개가 저절로 켜졌어요</h2><span class="pill bad">${esc(ago(list[0].since))}</span><span class="more">${S.opened.get(key) ? "접기" : "펼치기"}</span></summary>
+      ${hint}<ul class="rows flag-alert-list">${list.map((a) => `<li><div class="row"><span class="row-main"><b>${esc(a.name)}${igaSuffix(a.name)} 켜졌어요</b><small>${esc(ago(a.since))}</small></span>
+        <span class="row-side">${off(a)}<a class="btn small" href="${flagLink(a.key)}">자세히</a></span></div></li>`).join("")}</ul></details></section>`;
   }
 
   // ---- 분석 › 기능별 효과 (1.28 통합) [ADMUX-40][FLAG-30] ----
@@ -3909,6 +4385,37 @@ function adminApp(L, BUILD, M) {
       }, "primary");
     },
     "flag-cond": ({ key }) => openFlagConditions(key),
+    // 1.38 [ADM3-01] 패스키로 들어오기.
+    "passkey-login": async () => {
+      S.error = "";
+      try {
+        if (await V.passkeyAssert()) await enter();
+      } catch (e) {
+        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
+          : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
+          : e.name === "NotAllowedError" || e.name === "AbortError" ? "" : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
+        render();
+      }
+    },
+    // 1.38 [ADM3-17] 단계 출시: 'rollout N%' 한 줄을 넣거나 바꾸고(100이면 빼요), '이 앱 판 이상만'은 'app >= 번호' 한 줄.
+    "flag-rollout": ({ key }) => {
+      const box = document.getElementById("flag-cond");
+      if (!box) return;
+      const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:rollout|비율)\s+\d+/i.test(l));
+      if (Number(key) < 100) lines.push(`rollout ${Number(key)}%`);
+      box.value = lines.join("\n");
+      flagInput(box);
+    },
+    "flag-minapp": () => {
+      const box = document.getElementById("flag-cond");
+      const n = window.prompt("이 앱 판 번호(versionCode)부터 켜요. 예: 52", "");
+      if (!box || n === null) return;
+      if (!/^\d{1,6}$/.test(n.trim())) return toast("숫자만 적어 주세요");
+      const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:app|앱)\s*>=\s*\d+/i.test(l));
+      lines.push(`app >= ${n.trim()}`);
+      box.value = lines.join("\n");
+      flagInput(box);
+    },
     "flag-range": ({ key }) => openFlagRange(key),
     "flag-check": ({ name, done }) => {
       const label = S.data.flag?.manualNames?.[name] ?? name;
@@ -4026,30 +4533,23 @@ function adminApp(L, BUILD, M) {
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
-    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함.
-    "sort-do": ({ key, id }) => {
-      const x = S.data.sort?.piles[key]?.find((i) => i.id === id);
-      if (x) sortApply([sortAction(key, x)], "처리했어요");
-    },
-    "sort-reply-only": ({ id }) => {
-      const x = S.data.sort?.piles.new.find((i) => i.id === id);
-      const text = document.getElementById(`sort-reply-${id}`)?.value?.trim();
-      if (!x || !text) return toast("보낼 답을 적어 주세요");
-      sortApply([{ do: "reply", id, text }], "답했어요");
+    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
+    // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
+    "held-cancel": ({ id }) => confirmBox("이 답을 보내지 않을까요?", "보낸 분께 가지 않고, 기록에 취소로 남아요.", "보내지 않기", async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    }),
+    "held-edit": async ({ id }) => {
+      const h = (S.data.inquiry?.held ?? []).find((x) => String(x.id) === String(id));
+      if (!h) return;
+      const text = window.prompt("보낼 답을 고쳐요 (보내는 때는 그대로예요)", h.text);
+      if (text === null || !text.trim() || text.trim() === h.text) return;
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { text }), "고쳤어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     },
     // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
     // 1.35 [ADMHE-01] A phone's list toolbar: search and 큐 모드 in one line, the rest behind 정렬·더.
     "tools-toggle": () => { S.toolsOpen = !S.toolsOpen; render({ keepScroll: true }); },
-    "sort-jump": ({ key }) => document.getElementById(key === "tools" ? "sort-tools" : `pile-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    "sort-skip": ({ id }) => sortApply([{ do: "skip", id }], "정리함에서 뺐어요"),
-    "sort-pile": ({ key }) => {
-      const items = S.data.sort?.piles[key] ?? [];
-      if (!items.length) return;
-      // Read the cards now: what the admin changed in them is what goes, not what the server first wrote.
-      const actions = items.map((x) => sortAction(key, x));
-      confirmBox(`${items.length}건 모두 ${PILE_DO[key]}`, "카드마다 적힌 답이 그대로 가요. 보낸 답은 되돌릴 수 없어요.", PILE_DO[key],
-        () => sortApply(actions, "처리했어요"), "primary");
-    },
     "sort-auto": async ({ key }, el) => {
       // The click is default-prevented, so the box springs back: the state is drawn again from the answer.
       const on = el.checked;
@@ -4083,10 +4583,13 @@ function adminApp(L, BUILD, M) {
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
     ...FLAG_ACTIONS,
-    refresh: () => load(),
+    refresh: () => {
+      loadServers(true);
+      return load();
+    },
     close: () => dialog.close(),
     shortcuts: () => openShortcuts(),
-    reload: () => location.reload(),
+    reload: () => freshReload(),
     palette: () => openPalette(),
     "palette-go": ({ i }) => paletteGo(Number(i)),
     "theme-next": () => {
@@ -4123,11 +4626,11 @@ function adminApp(L, BUILD, M) {
     },
     // [ADMUX-04] 큐 모드
     "queue-start": async () => {
-      const r = await act(() => api("/inquiries?status=open&sort=sla&limit=100"));
+      const [r, today] = await Promise.all([act(() => api("/inquiries?status=open&sort=sla&limit=100")), api("/today").catch(() => null)]);
       const ids = (r?.inquiries ?? []).filter((q) => q.waiting && !(q.assignee && q.assignee.id !== S.me.id)).map((q) => q.id);
       if (!r) return;
       if (!ids.length) return toast("지금 답할 문의가 없어요. 다른 관리자가 맡은 것은 빼요");
-      S.queue = { ids, at: 0, skipped: 0 };
+      S.queue = { ids, at: 0, skipped: 0, alike: queueAlike(today, ids) };
       S.data.inquiries = { ...r, inquiries: r.inquiries.filter((q) => ids.includes(q.id)) };
       go("inquiries", ids[0]);
     },
@@ -4326,7 +4829,11 @@ function adminApp(L, BUILD, M) {
       if (d) S.data.push = d;
       render({ keepScroll: true });
     },
-    "template-edit": ({ id }) => openTemplates(id),
+    "template-edit": async ({ id }) => {
+      // 1.38 [EASE-31] 정리함 '자주 쓰는 답으로 충분' 카드에서도 열려요: 목록을 아직 안 읽었으면 먼저 읽어요.
+      if (!(S.templates ?? []).some((x) => String(x.id) === String(id))) await loadTemplates();
+      openTemplates(id);
+    },
     "login-mode": ({ key }) => {
       // [ADMUX-03] The sign-in screen opens on the way chosen last time.
       S.prefs.loginMode = key;
@@ -4342,7 +4849,7 @@ function adminApp(L, BUILD, M) {
     // [ADMUX-01] 채택 puts a rule in front of every user, so it is asked once.
     adopt: ({ company, setup }) => confirmBox("이 제보를 채택할까요?", "바로 회사 찾기에 나오고 같은 회사를 쓰는 분들 앱에 들어가요. 나중에 규칙을 내릴 수는 있어요.", "채택",
       () => act(() => api(`/groups/${company}/${setup}/adopt`, "POST"), "채택했어요. 이제 회사 찾기에 나와요").then(() => load()), "primary"),
-    reject: ({ company, setup }) => openReject(company, setup),
+    reject: ({ company, setup, reason }) => openReject(company, setup, reason),
     answer: ({ id }) => openAnswer(id),
     "new-company": () => openNewCompany(),
     "remove-alias": async ({ name }) => {
@@ -4352,7 +4859,7 @@ function adminApp(L, BUILD, M) {
     },
     "withdraw-rule": ({ id }) => confirmBox("이 규칙을 내릴까요?", "회사 찾기에서 바로 빠져요. 나중에 다시 올릴 수 있어요.", "내리기", () => setRule(id, true)),
     "restore-rule": ({ id }) => setRule(id, false),
-    "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, "제보와 규칙이 모두 옮겨지고 되돌릴 수 없어요.", "합치기", async () => {
+    "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, mergeWords(S.data.company), "합치기", async () => {
       const c = await api(`/companies/${S.route.id}/merge`, "POST", { into: id });
       S.data.company = c;
       toast("합쳤어요");
@@ -4364,9 +4871,64 @@ function adminApp(L, BUILD, M) {
       S.ratePick = null;
       S.data.rates = null;
       S.data.limits = null;
+      S.data.care = null;
       S.data.village = null;
       S.data.contests = null;
+      S.data.picks = null;
+      S.data.plazaEffect = null;
       refilter("posts");
+    },
+    // 1.39 [CARE-05]
+    "care-from-post": ({ id }) => {
+      S.careQuery = { by: "post", q: id };
+      S.data.carePerson = null;
+      S.postFilter = "limits";
+      S.postPick = null;
+      S.data.limits = null;
+      S.data.care = null;
+      refilter("posts");
+    },
+    "care-clear": () => {
+      S.careQuery = null;
+      S.data.carePerson = null;
+      render({ keepScroll: true });
+    },
+    "care-lift": ({ id, key }) => confirmBox(key === "warn" ? "이 경고를 거둘까요?" : "지금 풀까요?",
+      key === "warn" ? "거둔 경고는 다음 단계를 셀 때 빠져요." : "바로 다시 쓸 수 있고, 앱의 밤낮 소식에 ‘풀렸어요’가 가요. 기록은 남아 다음 단계를 셀 때 써요.",
+      key === "warn" ? "거두기" : "풀기", async () => {
+        await act(() => api(`/care/${id}/lift`, "POST", {}), key === "warn" ? "거뒀어요" : "풀었어요");
+        S.data.care = null;
+        S.data.carePerson = null;
+        load();
+      }, "primary"),
+    "appeal-decide": async ({ id, key }) => {
+      const done = await act(() => api(`/care/appeal/${id}`, "POST", { result: key }), key === "accepted" ? "풀었어요. 답을 보내 주세요" : "그대로 두기로 했어요. 답을 보내 주세요");
+      if (!done) return;
+      const post = S.data.inquiry?.appeal?.about?.kind === "post";
+      const text = post ? (key === "accepted"
+        ? "말씀 고마워요. 다시 살펴보니 가릴 글이 아니었어요. 글을 다시 보이게 했고, 이 일로 생긴 기록도 모두 지웠어요. 불편을 드려 미안해요."
+        : "말씀 고마워요. 꼼꼼히 다시 봤지만 이 글은 광장 운영 원칙에 어긋나서 가린 채로 두기로 했어요. 다른 글은 평소처럼 쓸 수 있어요.")
+        : key === "accepted"
+        ? "해명 고마워요. 다시 살펴보니 이번 일은 저희가 너무 엄하게 봤어요. 경고·쉬기를 바로 풀었고, 이번 건은 앞으로 세지 않아요. 불편을 드려 미안해요."
+        : "해명 고마워요. 꼼꼼히 다시 봤지만 이번 건은 광장 운영 원칙에 어긋나서 그대로 두기로 했어요. 쉬기는 정해진 날에 저절로 끝나고, 그 뒤에는 평소처럼 쓸 수 있어요. 함께 편한 마을이 되도록 부탁드려요.";
+      writeDraft("reply", text);
+      S.data.inquiry = null;
+      load();
+    },
+    "care-post": ({ id }) => {
+      S.careQuery = { by: "post", q: id };
+      S.data.carePerson = null;
+      S.postFilter = "limits";
+      S.data.limits = null;
+      S.data.care = null;
+      go("community");
+    },
+    "share-peek": async ({ id, key }) => {
+      const d = await act(() => api(`/shares/${key}/${id}`));
+      if (!d) return;
+      openDialog(`<div><h2>${esc(d.name)} 내용</h2><p class="hint">링크 주소와 열쇠는 보이지 않아요. 사람들이 적은 글만 600자까지예요.</p>
+        <blockquote>${esc(d.text || "(적은 글이 없어요)")}</blockquote>
+        <div class="actions"><button class="btn" type="button" data-act="close">닫기</button></div></div>`);
     },
     "limit-lift": ({ id }) => confirmBox("이 사람의 쓰기 제한을 지금 풀까요?", "단계는 그대로 남아서, 다시 제한되면 이번보다 한 단계 더 줄어요.", "풀기", async () => {
       await act(() => api(`/write-limits/${id}/lift`, "POST", {}), "풀었어요");
@@ -4402,6 +4964,19 @@ function adminApp(L, BUILD, M) {
       S.data.contests = null;
       load();
     },
+    // 1.39 [PLZC-22] 광장 답 모음 넣기·빼기.
+    "pick-add": async ({ id }) => {
+      const title = document.getElementById(`pick-title-${id}`)?.value?.trim() ?? "";
+      if (!title) return toast("모음 제목을 적어 주세요");
+      await act(() => api("/plaza/picks", "POST", { answer: id, title }), `‘${title}’을 답 모음에 넣었어요. 앱 광장에 보여요`);
+      S.data.picks = null;
+      load();
+    },
+    "pick-remove": async ({ id }) => {
+      await act(() => api(`/plaza/picks/${id}`, "DELETE"), "답 모음에서 뺐어요");
+      S.data.picks = null;
+      load();
+    },
     "topic-clear": async ({ id }) => {
       await act(() => api("/village/topics", "POST", { room: id, text: "" }), "내렸어요");
       S.data.village = null;
@@ -4428,8 +5003,8 @@ function adminApp(L, BUILD, M) {
     step: ({ key, d }) => {
       const s = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? { adoptPoints: 3, rewardMonths: 3 }) };
       const RANGES = { adoptPoints: [2, 20, 1], adoptAgree: [50, 100, 5], adoptPersons: [2, 10, 1], amendPersons: [2, 10, 1],
-        rewardCapMonths: [1, 24, 1], rewardCapDays: [30, 365, 30] };
-      const DEFAULT = { adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90 };
+        rewardCapMonths: [1, 24, 1], rewardCapDays: [30, 365, 30], askMonths: [0, 24, 1] };
+      const DEFAULT = { adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90, askMonths: s.rewardMonths ?? 3 };
       const [lo, hi, by] = RANGES[key] ?? [0, 24, 1];
       s[key] = Math.min(hi, Math.max(lo, (s[key] ?? DEFAULT[key]) + Number(d) * by));
       S.draft = s;
@@ -4660,6 +5235,33 @@ function adminApp(L, BUILD, M) {
       document.getElementById("second-on-code")?.focus();
     },
     "phone-previews": ({ id }) => openPreviews(id),
+    // 1.39 [FAM-04] 발굴: 폴드에서 코드와 넣는 곳을 문자·카톡으로 바로 보내요(받는 분이 설정 경로를 묻지 않게).
+    "share-family": ({ id }) => navigator.share?.({ title: "밤낮 가족 프로 이용권",
+      text: `밤낮 앱 › 설정 › 프로 › '관리자 연결'에 ${id.replace(/(\d{3})(\d{3})/, "$1 $2")}을 1시간 안에 넣어 주세요. 끝나는 날 없이 프로가 열려요.` }).catch(() => {}),
+    "copy-family": ({ id }) => navigator.clipboard?.writeText(id).then(() => toast("복사했어요"), () => toast("복사하지 못했어요")),
+    // 1.37.1 [FAM-01]
+    "family-remove": ({ id, name }) => confirmBox(`${name} 휴대폰의 프로를 끊을까요?`, "그 휴대폰은 다음 확인 때부터 무료가 돼요. 다시 주려면 새 가족 코드를 만들어요.", "끊기", async () => {
+      const d = await act(() => api(`/devices/${id}/remove`, "POST", {}), "끊었어요");
+      if (d) { S.data.family = d; render({ keepScroll: true }); }
+    }),
+    "family-set": ({ id, key, name }) => {
+      const go = async () => {
+        const d = await act(() => api(`/family/${id}`, "POST", { do: key }), key === "pause" ? "정지했어요" : "다시 켰어요. 다음 확인 때부터 프로예요");
+        if (d) { S.data.family = d; render({ keepScroll: true }); }
+      };
+      if (key === "pause") confirmBox(`${name} 휴대폰을 정지할까요?`, "다음 확인 때부터 무료가 되고, 다시 켜기를 누르면 같은 휴대폰이 바로 프로로 돌아와요.", "정지", go);
+      else go();
+    },
+    "family-rename": ({ id, name }) => {
+      openDialog(`<form class="box" data-form="family-rename" data-id="${esc(id)}"><h2>닉네임 바꾸기</h2>
+        <div class="fieldset"><label for="family-nick">닉네임(관리자 앱에서만 보여요)</label><input id="family-nick" name="name" maxlength="20" required value="${esc(name)}" autocomplete="off"></div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">바꾸기</button></div></form>`);
+      document.getElementById("family-nick")?.focus();
+    },
+    "family-code-delete": async ({ id }) => {
+      const d = await act(() => api(`/family/codes/${id}/delete`, "POST", {}), "코드를 취소했어요");
+      if (d) { S.data.family = d; render({ keepScroll: true }); }
+    },
     "link-code": async () => {
       const r = await act(() => api("/me/link-code", "POST", {}));
       if (!r) return;
@@ -4865,6 +5467,11 @@ function adminApp(L, BUILD, M) {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
       load();
     }),
+    // 1.38 [STM-10] 밤낮 재료 묶음: 공개·숨기기, 무료·광고 나누기.
+    "material-state": async ({ id, key }) => {
+      await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`);
+      load();
+    },
     "recipe-do": async ({ id, key }) => {
       await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
       load();
@@ -4882,8 +5489,11 @@ function adminApp(L, BUILD, M) {
       <p>만든 분 앱에 이 메모가 보여요. 고쳐서 다시 올리면 검토로 돌아와요.</p><textarea name="note" rows="3" maxlength="200" required></textarea>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">돌려주기</button></div></form>`),
     // [SRV-05]
-    "share-remove": ({ id }) => confirmBox("이 링크를 내릴까요?", "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
-      const d = await act(() => api(`/shares/${id}/remove`, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
+    "share-remove": ({ id, key }) => confirmBox("이 링크를 내릴까요?", key && key !== "s"
+      ? "내용이 바로 지워지고 되돌릴 수 없어요. 링크를 연 사람에게는 ‘운영 규칙에 따라 내려졌어요’와 돈·계좌를 요구하지 않는다는 안내가 보여요."
+      : "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
+      const path = key && key !== "s" ? `/shares/${key}/${id}/remove` : `/shares/${id}/remove`;
+      const d = await act(() => api(path, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
       if (d) S.data.shares = d;
       render({ keepScroll: true });
     }),
@@ -4921,6 +5531,13 @@ function adminApp(L, BUILD, M) {
       }
       signedOut(true);
     },
+    // 1.39 [ADM3-42] 모든 로그인 잠금과 틀린 횟수를 0으로. 활동 기록에 '로그인 잠금 풀기'로 남아요.
+    "login-unlock": () => confirmBox("로그인 잠금을 풀까요?", "잠긴 곳과 틀린 횟수가 모두 0이 돼요. 바로 다시 로그인할 수 있어요. 내가 모르는 곳에서 틀린 거라면 먼저 비밀번호를 바꿔 주세요.", "풀기", async () => {
+      const r = await act(() => api("/login-locks/clear", "POST"), (d) => (d.locked ? `잠긴 곳 ${d.locked}곳을 풀었어요` : "로그인 잠금을 풀었어요"));
+      if (!r) return;
+      S.data.loginLocks = { locked: 0, tries: 0, wide: false, until: null };
+      render({ keepScroll: true });
+    }, "primary"),
     "logout-all": () => confirmBox("모든 기기에서 로그아웃할까요?", "이 기기를 포함해 이 계정으로 로그인한 모든 기기가 다시 로그인해야 해요.", "로그아웃", async () => {
       await api("/me/logout-all", "POST");
       signedOut(true);
@@ -4993,7 +5610,7 @@ function adminApp(L, BUILD, M) {
         }
         const left = e.data?.left;
         S.error = e.message === "wrong" ? `${S.prefs.loginMode === "owner" ? "비밀번호가" : "메일이나 비밀번호가"} 달라요. ${left}번 더 틀리면 1시간 동안 잠겨요.`
-          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+          : e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
           : e.message === "pending" ? "최고 관리자의 승인을 기다리고 있어요. 승인되면 로그인할 수 있어요."
           : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
           : e.message === "not_set" ? "최고 관리자 비밀번호가 아직 없어요. 아래 서버 준비를 봐 주세요."
@@ -5088,6 +5705,39 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCX-08]
+    // 1.38 [STM-10] 밤낮 재료 묶음의 무료·광고 나누기.
+    "material-free": async (form) => {
+      const mode = String(new FormData(form).get("mode") ?? "");
+      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`);
+      load();
+    },
+    // 1.39 E11 재료 파일 올리기: 25개씩(서버 한 번에 받는 수) 나눠, 몇 개째인지 단추에 보이며 넣어요.
+    "material-upload": async (form) => {
+      const picked = [...(form.querySelector('input[type="file"]')?.files ?? [])];
+      if (!picked.length) return;
+      const items = [];
+      for (const file of picked) {
+        let doc;
+        try { doc = JSON.parse(await file.text()); } catch { toast(`${file.name}을 읽지 못했어요`); return; }
+        if (doc?.kind !== "bamnat-materials" || !Array.isArray(doc.items)) { toast(`${file.name}은 재료 파일이 아니에요`); return; }
+        items.push(...doc.items);
+      }
+      const button = form.querySelector('button[type="submit"]');
+      const label = button?.textContent;
+      S.uploading = true;
+      let done = 0;
+      const failed = [];
+      for (let i = 0; i < items.length; i += 25) {
+        if (button) button.textContent = `올리는 중 ${Math.min(i + 25, items.length)}/${items.length} · 창을 닫지 마세요`;
+        const chunk = items.slice(i, i + 25);
+        try { await api("/recipes/materials", "POST", { items: chunk }); done += chunk.length; }
+        catch { failed.push(`${i + 1}~${i + chunk.length}`); }
+      }
+      S.uploading = false;
+      if (button && label != null) button.textContent = label;
+      toast(`재료 ${done}개를 대기로 넣었어요${failed.length ? ` · 못 넣은 것 ${failed.join(", ")}번째 (같은 파일을 다시 올리면 돼요)` : ""}`);
+      if (done) { form.reset(); load(); }
+    },
     "recipe-picks": async (form) => {
       const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
@@ -5118,10 +5768,52 @@ function adminApp(L, BUILD, M) {
       await act(() => api("/recipes/release", "POST", body), how === "schedule" ? "공개를 예약했어요. 그때 저절로 나와요(한 시간 안)" : "예약을 풀었어요");
       load();
     },
+    // 1.39 판 정리: 붙여 넣은 계획을 먼저 세어 보고(dry), 숨기기·되돌리기는 몇 개인지 묻고 해요.
+    "recipe-retire": async (form, submitter) => {
+      const go = submitter?.value ?? "dry";
+      const f = new FormData(form);
+      const file = form.querySelector('input[name="file"]')?.files?.[0];
+      const below = Number(f.get("below"));
+      const groups = retireGroups(file ? await file.text() : String(f.get("plan") ?? ""), Number.isInteger(below) && below > 0 ? below : null);
+      const asked = groups.reduce((n, g) => n + g.titles.length + g.codes.length, 0);
+      if (!asked) { toast("정리 계획이나 제목을 붙여 넣어 주세요"); return; }
+      const note = String(f.get("note") ?? "").trim() || "판 정리";
+      const path = go === "show" ? "/recipes/show-titles" : "/recipes/hide-titles";
+      // belowApp마다 한 번씩 보내고 합쳐요.
+      const send = async (dry) => {
+        const sum = { found: 0, done: 0, missing: [] };
+        for (const g of groups) {
+          for (let i = 0; i < Math.max(g.titles.length, g.codes.length); i += 1200) {
+            const r = await api(path, "POST", { titles: g.titles.slice(i, i + 1200), codes: g.codes.slice(i, i + 1200), note, dry, ...(g.belowApp ? { belowApp: g.belowApp } : {}) });
+            sum.found += r.found ?? 0; sum.done += r.hidden ?? r.shown ?? 0; sum.missing.push(...(r.missing ?? []));
+          }
+        }
+        return sum;
+      };
+      // Not through act(): it empties the form, and the pasted plan is needed again for 숨기기.
+      let dry;
+      try { dry = await send(true); } catch (e) { fail(e); return; }
+      const keep = groups.filter((g) => g.belowApp).map((g) => g.belowApp);
+      const old = go === "hide" && keep.length ? ` · 앱 판 ${[...new Set(keep)].join("·")} 미만에는 계속 보여요` : "";
+      const say = (n, what) => `${asked}개 가운데 ${n}개 ${what}${old}`;
+      S.recipeRetire = { say: say(dry.found, go === "show" ? "되돌릴 수 있어요" : go === "hide" ? "숨길 수 있어요" : "찾았어요"), missing: dry.missing };
+      if (go === "dry" || !dry.found) { render({ keepScroll: true }); return; }
+      confirmBox(go === "show" ? `${dry.found}개를 장터에 다시 보일까요?` : `${dry.found}개를 장터에서 내릴까요?`,
+        go === "show" ? "목록·찾기·추천에 다시 나와요." : "목록·찾기·추천에서 빠져요. 지우지 않고, 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 여기서 한 번에 되돌릴 수 있어요." + old,
+        go === "show" ? "되돌리기" : "숨기기", async () => {
+          const r = await act(() => send(false), (x) => go === "show" ? `${x?.done ?? 0}개를 다시 보였어요` : `${x?.done ?? 0}개를 내렸어요`);
+          if (r) S.recipeRetire = { say: say(r.done, go === "show" ? "다시 보였어요" : "내렸어요"), missing: r.missing };
+          S.data.recipes = null; load();
+        }, go === "show" ? "primary" : "danger");
+    },
     "recipe-upload": async (form) => {
       const f = new FormData(form);
       let parsed;
-      try { parsed = JSON.parse(String(f.get("recipe") ?? "")); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
+      // 1.39 E11: 출시 대기 also takes the market file itself (a phone cannot paste 1.5 MB well).
+      const file = form.querySelector('input[name="file"]')?.files?.[0];
+      const text = file ? await file.text() : String(f.get("recipe") ?? "");
+      if (!text.trim()) { toast("레시피 글을 붙여 넣거나 파일을 골라 주세요"); return; }
+      try { parsed = JSON.parse(text); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
       // One recipe, or docs/recipes/starter-recipes.json whole ([{publicData, recipe}, …]): each goes up on its own.
       const list = Array.isArray(parsed) ? parsed : [{ recipe: parsed, publicData: f.get("publicData") === "on", showcase: f.get("showcase") === "on" }];
       // 1.36 [MKS-01] 출시 대기: the form's settings unless the file's entry says its own.
@@ -5148,6 +5840,29 @@ function adminApp(L, BUILD, M) {
       if (button && label != null) button.textContent = label;
       toast(`${done}개 올렸어요${failed.length ? ` · 못 올린 것 ${failed.length}개: ${failed.slice(0, 3).join(", ")}` : ""}`);
       if (done) { form.reset(); S.data.recipes = null; load(); }
+    },
+    // 1.39 [CARE-05] 사람 찾기와 경고·쉬기.
+    "care-find": (form) => {
+      const data = new FormData(form);
+      const q = String(data.get("q") ?? "").trim();
+      if (!q) return;
+      S.careQuery = { by: String(data.get("by")), q };
+      S.data.carePerson = null;
+      render({ keepScroll: true });
+      load();
+    },
+    "care-act": async (form, submitter) => {
+      const data = new FormData(form);
+      const kind = submitter?.dataset.kind ?? "warn";
+      const body = { [S.careQuery.by]: S.careQuery.q, reason: data.get("reason"), note: String(data.get("note") ?? "").trim() || undefined };
+      const r = kind === "warn"
+        ? await act(() => api("/care/warn", "POST", body), "경고를 보냈어요. 앱이 마을을 열 때 한 번 보여요")
+        : await act(() => api("/care/hold", "POST", { ...body, scope: kind, days: Number(data.get("days")) }),
+          (x) => `${kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${x.days}일을 걸었어요`);
+      if (!r) return;
+      S.data.care = null;
+      S.data.carePerson = null;
+      load();
     },
     "hide-post": (form) => {
       const mute = form.dataset.mute === "1";
@@ -5204,8 +5919,16 @@ function adminApp(L, BUILD, M) {
       const close = submitter?.dataset.close === "1";
       const template = Number(form.elements.template?.value) || undefined;
       const id = S.route.id;
-      const q = await act(() => api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) }),
-        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
+      const alike = form.elements.alike?.checked ? queueAhead(id) : [];
+      const q = await act(async () => {
+        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) });
+        const sent = [];
+        for (const o of alike) await api(`/inquiries/${o}/reply`, "POST", { text, ...(close ? { close: true } : {}) }).then(() => sent.push(o), () => {});
+        if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
+        return { first, sent: sent.length, missed: alike.length - sent.length };
+      }, (r) => `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`)
+        .then((r) => r?.first);
       if (!q) return;
       typingSent = 0;
       S.data.inquiry = q;
@@ -5214,7 +5937,10 @@ function adminApp(L, BUILD, M) {
       const next = neighbours().next;
       if (close && S.prefs.next && next) return go("inquiries", next);
       render();
-      window.scrollTo(0, document.body.scrollHeight);
+      // 1.38 [ADM3-36] PC 13차: the page used to go to its very end, which on a folded phone is 함께 온 정보 under the talk;
+      // the answer just sent is shown instead.
+      const mine = [...document.querySelectorAll("#main .bubble.admin")].pop();
+      if (mine) mine.scrollIntoView({ block: "center" });
       load({ quiet: true });
     },
     // AN 1.28 [ADMUX-33] 바로 답하기 on 오늘's 할 일: the same answer as on the question, without opening it.
@@ -5222,8 +5948,15 @@ function adminApp(L, BUILD, M) {
       const text = form.elements.text.value.trim();
       if (!text) return toast(ERRORS.text);
       const close = submitter?.dataset.close === "1";
-      const q = await act(() => api(`/inquiries/${form.dataset.id}/reply`, "POST", { text, ...(close ? { close: true } : {}) }),
-        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      // 1.39 [ADM3-39] '비슷한 문의 N건에도 같은 답': the lead first, then each of the bundle with the same words.
+      const others = form.elements.all?.checked ? (form.dataset.others || "").split(",").filter(Boolean) : [];
+      const body = { text, ...(close ? { close: true } : {}) };
+      const q = await act(async () => {
+        const first = await api(`/inquiries/${form.dataset.id}/reply`, "POST", body);
+        let missed = 0; // the lead is answered already, so one that fails does not undo it (pressing again would answer the lead twice)
+        for (const id of others) await api(`/inquiries/${id}/reply`, "POST", body).catch(() => missed++);
+        return { first, missed };
+      }, (r) => `${others.length ? `${others.length + 1 - r.missed}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보냈어요, 그 문의에서 다시 답해 주세요)` : ""}`);
       if (q) load({ quiet: true });
     },
     "inquiry-note": async (form) => {
@@ -5235,7 +5968,7 @@ function adminApp(L, BUILD, M) {
     },
     "template-add": async (form) => {
       const id = form.dataset.id;
-      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value };
+      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: form.elements.publicQ?.value ?? "" };
       const r = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", body), id ? "고쳤어요" : "넣었어요. 답 칸 아래에서 바로 써요");
       if (!r) return;
       S.templates = r.templates;
@@ -5303,6 +6036,12 @@ function adminApp(L, BUILD, M) {
       const v = form.elements.v.value.trim();
       await devSave({ releasedIn: v || null, since: S.data.dev.updatedAt }, v ? `${v}에 반영으로 적었어요` : "반영 버전을 지웠어요");
     },
+    "dev-loop": async (form) => {
+      const k = form.elements.known.value;
+      await devSave({ route: form.elements.route.value, size: form.elements.size.value, publicTitle: form.elements.publicTitle.value.trim(),
+        styles: [...form.querySelectorAll('input[name="styles"]:checked')].map((x) => x.value),
+        known: k === "1" ? true : k === "-1" ? false : null, since: S.data.dev.updatedAt }, "전달 길과 알려진 문제를 저장했어요");
+    },
     "dev-ship-note": async (form) => {
       await devSave({ shipReply: form.elements.shipReply.value, news: form.elements.news.value, since: S.data.dev.updatedAt }, "출시 안내를 저장했어요");
     },
@@ -5353,6 +6092,22 @@ function adminApp(L, BUILD, M) {
         render({ keepScroll: true });
         load({ quiet: true });
       }
+    },
+    "family-rename": async (form) => {
+      const d = await act(() => api(`/family/${form.dataset.id}`, "POST", { do: "name", name: form.elements.name.value }), "닉네임을 바꿨어요");
+      if (!d) return;
+      dialog.close();
+      S.data.family = d;
+      render({ keepScroll: true });
+    },
+    "family-code": async (form) => {
+      const r = await act(() => api("/family/code", "POST", { name: form.elements.name.value }));
+      if (!r) return;
+      form.reset();
+      openDialog(`<div class="box"><h2>${esc(r.name)} 가족 코드</h2><p class="code-big" aria-label="가족 코드">${esc(r.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
+        <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣으면 바로 프로가 열려요.</p>
+        <div class="actions">${navigator.share ? `<button class="btn primary" data-act="share-family" data-id="${esc(r.code)}">${icon(P.share)}보내기</button>` : ""}<button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
+      load({ quiet: true });
     },
     password: async (form) => {
       const r = await act(() => api("/me/password", "POST", { current: form.elements.current.value, next: form.elements.next.value }), "비밀번호를 바꿨어요");
@@ -5594,6 +6349,8 @@ function adminApp(L, BUILD, M) {
     rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
     // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
     flags: () => ["flagQuery", "flags", async () => {}],
+    // 1.38 [DESK-02] 운영 장부: 번호·글·개발사항으로.
+    desk: () => ["deskQuery", "ledger", () => load({ quiet: true })],
   };
 
   /**
@@ -5602,16 +6359,24 @@ function adminApp(L, BUILD, M) {
    */
   const A = {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
-    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
+    confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A), ...M.flow(A) };
-  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions, ...M.flow(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms, ...M.flow(A).forms } });
+  const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
+  const V = Object.assign({}, ...groups);
+  Object.assign(V, { actions: Object.assign({}, ...groups.map((g) => g.actions ?? {})), forms: Object.assign({}, ...groups.map((g) => g.forms ?? {})) });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
+  // [LOOP-32] 화면 묶음이 주는 즉시 저장 칸(data-change).
+  for (const g of groups) Object.assign(CHANGES, g.changes ?? {});
+  // 1.38 [DESK-02] 장부의 판 고르기(select)는 바꿀 때만.
+  CHANGES["ledger-v"] = (t) => V.actions["ledger-v"]({}, t);
 
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
     if (e.target instanceof HTMLDetailsElement && e.target.dataset.key) S.opened.set(e.target.dataset.key, e.target.open);
+    // 1.39 PC 7차 1-8: 펼치기 ↔ 접기 말도 바로 바꿔요(다시 그리기를 기다리지 않고).
+    const more = e.target instanceof HTMLDetailsElement ? e.target.querySelector(":scope>summary .more") : null;
+    if (more && (more.textContent === "펼치기" || more.textContent === "접기")) more.textContent = e.target.open ? "접기" : "펼치기";
   }, true);
 
   /**
@@ -5654,7 +6419,8 @@ function adminApp(L, BUILD, M) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
         const saved = document.getElementById("reply-saved");
-        if (saved) saved.textContent = t.value ? "적는 중인 답은 이 기기에 저장돼요" : "";
+        // 1.38 [ADM3-36] PC 13차: said beside the count, so the line never pushes 답하기 under the bottom tabs.
+        if (saved) saved.textContent = t.value ? "이 기기에 저장 중" : "";
         pingTyping(Boolean(t.value.trim()));
       }
     }
@@ -5854,7 +6620,7 @@ function adminApp(L, BUILD, M) {
         if (detail) return document.getElementById("reply")?.focus();
         return load();
       case "close":
-        if (S.route.name === "work" && V.workKey("done")) return stop();
+        if (S.route.name === "desk" && V.ledgerKey("done")) return stop();
         if (detail && editInq && S.data.inquiry?.status !== "closed") return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
       case "reject":
@@ -5863,17 +6629,17 @@ function adminApp(L, BUILD, M) {
         return;
       // 1.36 [GRW-07] w 기다림, h 기록 (할 일함).
       case "wait":
-        if (S.route.name === "work" && V.workKey("wait")) stop();
+        if (S.route.name === "desk" && V.ledgerKey("wait")) stop();
         return;
       case "history":
-        if (S.route.name === "work" && V.workKey("log")) stop();
+        if (S.route.name === "desk" && V.ledgerKey("log")) stop();
         return;
       // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
       case "next":
         stop();
         return nextWaiting();
       case "skip":
-        if (S.route.name === "work" && V.workKey("seeing")) return stop();
+        if (S.route.name === "desk" && V.ledgerKey("seeing")) return stop();
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);
         return;
@@ -5885,8 +6651,9 @@ function adminApp(L, BUILD, M) {
           stop();
           return ACTIONS.template({ i: a.n - 1 });
         }
-        // AN 1.28 [ADMUX-36] 1~6 are the hubs everywhere else, always the same number; a hub opens on its last tab.
-        const hub = L.HUBS[a.n - 1] && hubs().find((h) => h.key === L.HUBS[a.n - 1].key);
+        // AN 1.28 [ADMUX-36] (1.38 [ADM3]: 1~5) the numbers are the hubs everywhere else, always the same number; a hub opens on its last tab.
+        // 1.38 [ADM3-36] PC 13차: by the hubs this admin sees, in their order, so 1~3 work for an admin with three hubs.
+        const hub = hubs()[a.n - 1];
         if (!detail && hub) {
           stop();
           go(lastTab[hub.key] && hub.tabs.includes(lastTab[hub.key]) ? lastTab[hub.key] : hub.tabs[0]);
@@ -5962,6 +6729,8 @@ function adminApp(L, BUILD, M) {
     if (moved && before.name === "inquiries" && before.id) pingTyping(false);
     // [ADMUX-10] A sheet or a question box belongs to the screen it was opened on (점검 보고서 중-14).
     if (moved && dialog.open && !S.relogin) dialog.close();
+    // 1.38 [ADM3-36] PC 13차: a list keeps where it was when the admin comes back from another hub or a question.
+    if (moved && !before.id) scrollMemo[before.name] = window.scrollY;
     S.route = next;
     applyParams(next);
     // AN 1.28 [ADMUX-35] An old address shows as the new one.
@@ -5974,7 +6743,7 @@ function adminApp(L, BUILD, M) {
       // 큐 모드 ends once the admin goes somewhere else than a question of the queue.
       if (S.queue && !(next.name === "inquiries" && S.queue.ids.includes(next.id))) S.queue = null;
       render();
-      window.scrollTo(0, 0);
+      window.scrollTo(0, next.id ? 0 : scrollMemo[next.name] ?? 0);
       document.getElementById("title")?.focus({ preventScroll: true });
     }
     load();
@@ -6048,6 +6817,7 @@ function adminApp(L, BUILD, M) {
     S.overview = { ...b };
     S.me = b.me;
     S.newBuild = Boolean(b.build && b.build !== BUILD);
+    autoReload(b.build);
     S.phase = "app";
     S.route = readRoute();
     applyParams(S.route);

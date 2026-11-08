@@ -67,6 +67,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,6 +78,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -282,6 +284,14 @@ fun MonthGrid(
     cutDays: Set<LocalDate> = emptySet(),
     /** 1.32 [WTYP-11] 희망 오프 days: a small ♡ at the top right. */
     wishDays: Set<LocalDate> = emptySet(),
+    /** [EASE-04] 1.38 월급날 (근무·급여 › 규칙): a small '급여' at the top left. */
+    payDays: Set<LocalDate> = emptySet(),
+    /** [CELL-01] 1.39 Each day's memos, one title each, when the cells list them; null keeps the one line under the badge. */
+    memoLists: Map<LocalDate, List<CellMemo>>? = null,
+    /** [CELL-03] 1.39 Days with nothing to list keep the plain cell (a month listed at its plain height, for its memo days). */
+    listEmptyDays: Boolean = true,
+    /** 1.39 [FLOW-03] Right after the first setup: how much of the month has come in (0 to 1), read while drawing ([SetupFill]). */
+    fill: (() -> Float)? = null,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -389,7 +399,8 @@ fun MonthGrid(
                         isSelected = date == selected || remember(date) { derivedStateOf { date in dragged } }.value,
                         hasMemo = date in memoDates,
                         money = if (inMonth) cells.days[date] else null,
-                        memoText = memoTexts[date],
+                        memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
+                        memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                         showHours = showHours,
                         showLunar = showLunar,
                         onClick = { onDayClick(date) },
@@ -407,6 +418,7 @@ fun MonthGrid(
                         wishOff = date in wishDays,
                         fieldJobs = cells.field[date],
                         cardDue = date in cardDue,
+                        payDay = date in payDays,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
                         hourly = hourly,
@@ -416,6 +428,11 @@ fun MonthGrid(
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight().then(
                             if (date in marked) Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.small) else Modifier,
+                        ).then(
+                            if (fill == null) Modifier
+                            else fillShare(date, today, firstCell.plusDays(GRID_ROWS * 7L - 1)).let { share ->
+                                Modifier.graphicsLayer { alpha = fillAlpha(fill(), share).let { a -> 0.15f + 0.85f * a } }
+                            },
                         ),
                         weekNote = if (date.dayOfWeek == DayOfWeek.MONDAY && week.overLimit) {
                             "이 주 ${HoursFormat.korean(week.totalMinutes)}, ${weeklyLimitHours}시간 넘음"
@@ -462,6 +479,10 @@ fun WeekStrip(
     showMoney: Boolean = false,
     showSpend: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
+    /** [CELL-01] 1.39 As [MonthGrid]'s. */
+    memoLists: Map<LocalDate, List<CellMemo>>? = null,
+    /** [CELL-03] 1.39 Days with nothing to list keep the plain cell (a month listed at its plain height, for its memo days). */
+    listEmptyDays: Boolean = true,
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     hourly: HourlyCells? = null,
     /** [DAYW-01] As in [MonthGrid]. */
@@ -487,7 +508,8 @@ fun WeekStrip(
                 isSelected = date == selected,
                 hasMemo = date in memoDates,
                 money = cells.days[date],
-                memoText = memoTexts[date],
+                memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
+                memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                 showHours = showHours,
                 showLunar = showLunar,
                 onClick = { onDayClick(date) },
@@ -548,6 +570,8 @@ private fun DayCell(
     fieldJobs: List<com.bamnat.core.money.Job>? = null,
     /** [SHOP-02] A card deposit is expected this day. */
     cardDue: Boolean = false,
+    /** [EASE-04] 1.38 The month's pay arrives this day. */
+    payDay: Boolean = false,
     hourly: HourlyCells? = null,
     holidayWeekDone: Boolean = false,
     /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
@@ -556,7 +580,11 @@ private fun DayCell(
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
     /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
     marked: Set<LocalDate> = emptySet(),
+    /** [CELL-01] 1.39 The day's memo titles when the cells list their jobs and memos; null for the plain cell. */
+    memoList: List<CellMemo>? = null,
 ) {
+    // 1.39 [WTYP-30] PC 6차: 일근 says 야근 in the long-press menu and for TalkBack too.
+    val extraStyle = ExtraText.styleHere()
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
@@ -568,17 +596,15 @@ private fun DayCell(
     val hold = LocalDayHold.current
     val custom = !view.isDefault
     // [FREE-01][FREE-02] 1.35 칸 디자이너: this day's own look by the pattern (N칸·요일·근무), today's own if there is one.
-    val cellLook = remember(view, day.date, day.shiftType, day.coveredShift, isToday) {
-        val kind = day.shiftType ?: day.coveredShift
-        view.lookFor(day.date.toEpochDay(), day.date.dayOfWeek.value,
-            kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }, isToday)
+    // [LINK-01] 1.39 What every 작품 surface reads of this day (쉬는 날의 대근·특근은 일한 날로, 연차·직접 바꾼 날도), worked out once.
+    val dayWork = remember(day, snapshot.hasPattern) { com.bamnat.core.schedule.DayWork.of(day, snapshot.hasPattern) }
+    val cellLook = remember(view, day.date, dayWork, isToday) {
+        view.lookFor(day.date.toEpochDay(), day.date.dayOfWeek.value, dayWork.role?.key, isToday)
     }
     val shape = cellShape(view, cellLook)
     // [LAY-03] 1.36 꾸밈 층: the decorations that stand on this day (its date, kind of work, today, a holiday).
-    val decorDay = remember(day.date, day.shiftType, day.coveredShift, isToday, inMonth) {
-        val kind = day.shiftType ?: day.coveredShift
-        com.bamnat.app.ui.decor.decorDay(day.date, kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key },
-            isToday, dim = !inMonth)
+    val decorDay = remember(day.date, dayWork, isToday, inMonth) {
+        com.bamnat.app.ui.decor.decorDay(day.date, dayWork.role?.key, isToday, dim = !inMonth, work = dayWork.states)
     }
     // [CAL-01] Date 14sp and the line under it 11sp, growing with the font setting only as far as the cell holds.
     val density = LocalDensity.current
@@ -587,14 +613,12 @@ private fun DayCell(
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
+    // [CYC-04] 1.38: the day the law names for the user's work (소방의 날…), not red and never over a red day.
+    val orgDay = orgDayName(LocalOrgDayGroup.current, date, holidayName)
     // [BLU-05] 1.36 부품 꾸미기: the cell's states (근무 종류·토·일·공휴일·다른 달·오늘·고름) and its parts, over the looks above.
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val partStates = remember(blueprint, day.shiftType, day.coveredShift, date, holidayName, inMonth, isToday, isSelected) {
-        val kind = day.shiftType ?: day.coveredShift
-        com.bamnat.app.ui.parts.dayStates(
-            kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key },
-            date.dayOfWeek, holidayName != null, inMonth, isToday, isSelected,
-        )
+    val partStates = remember(blueprint, dayWork, date, holidayName, inMonth, isToday, isSelected) {
+        com.bamnat.app.ui.parts.dayStates(dayWork, date.dayOfWeek, holidayName != null, inMonth, isToday, isSelected)
     }
     // [RUL-02] 1.36 조건부 꾸미기: lines with a 수식 read this day's values (근무·메모·꼬리표·지출), only when the blueprint has one.
     val dayFacts = com.bamnat.app.logic.LocalDayFacts.current
@@ -635,6 +659,7 @@ private fun DayCell(
         append(Fmt.dayTitle(date))
         if (isToday) append(", 오늘")
         holidayName?.let { append(", ").append(it) }
+        orgDay?.let { append(", ").append(it) }
         // [CAL-05] A field or shop day without work is not a day off: it says what the day has, or that it is empty.
         val shiftWords = when {
             day.isWorkDay -> (type?.name ?: "근무") + " " + HoursFormat.korean(day.scheduledMinutes)
@@ -646,16 +671,23 @@ private fun DayCell(
         shiftWords?.let { append(", ").append(it) }
         day.leave?.let { append(", ").append(it.label) }
         for (e in day.extras) {
-            append(", ").append(ExtraText.name(e))
+            append(", ").append(ExtraText.name(e, extraStyle))
             if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
         }
-        if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) append(", 직접 바꿈")
+        if (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes) append(", 직접 바꿈")
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
-        if (hasMemo) append(", 메모 있음")
+        // [CELL-03] 1.39 A listing cell cuts long lines with '…': its button reads each memo whole.
+        if (!memoList.isNullOrEmpty()) append(", 메모 ").append(memoList.joinToString(", ") { m ->
+            m.text + (if (m.done) " 끝냄" else "") + (m.clash?.let { " ($it)" } ?: "") })
+        else if (hasMemo) append(", 메모 있음")
         fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
         fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
+        // [CELL-03] The jobs a listing cell shows by name, read by name too.
+        if (memoList != null && focus != CalendarFocus.SHIFTS && !fieldJobs.isNullOrEmpty())
+            append(", ").append(fieldJobs.joinToString(", ") { it.client.ifBlank { it.title }.trim() })
         if (cardDue) append(", 카드 입금 예정")
+        if (payDay) append(", 급여일")
         span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
         money?.let { m ->
             if (m.jobs > 0 && (span == null || m.jobs > 1)) append(", 일감 ${m.jobs}건")
@@ -753,9 +785,16 @@ private fun DayCell(
                 LeaveMark(fullLeave, size = size)
             } else if (covered != null && day.isWorkDay && type != null) {
                 // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
-                    ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                // 1.38 R 760 (달력이 먼저 오며 320dp에서 보이게 된 칸: 두 칩이 칸보다 넓어 '야'가 눌림): where two do not fit, the covered
+                // shift's badge with the day's own shift as a dot of its colour beside it (both are read out with the day).
+                BoxWithConstraints {
+                    if (maxWidth >= size * 0.82f * 2 + 22.dp) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        ColorDot(type.colorArgb.asColor(), size = 6.dp)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    }
                 }
             } else if (covered != null) {
                 // [EXTRA-01] A 대근 on a day off: the covered shift's badge.
@@ -775,16 +814,105 @@ private fun DayCell(
                 Spacer(Modifier.height(size))
             }
         }
-        if (custom || cellParts != null) CustomCellBody(
+        // [CELL-01][CELL-02] 1.39 What a listing cell shows under its date: the red day, the jobs, the memos, then one line at the foot.
+        val list: CellListContent? = if (memoList == null) null else run {
+            val dark2 = isDarkSurface()
+            // [CELL-02] The red day where the user's 줄 순서 puts it: before the memos (the app's own order) or after them.
+            val redDay = (holidayName ?: orgDay)?.let { CellLine(it, ink = if (holidayName != null) cal.sunday else scheme.primary) }
+            val redLast = view.lines.indexOf("holiday") > view.lines.indexOf("memo")
+            val items = buildList {
+                if (!redLast) redDay?.let(::add)
+                if (focus == CalendarFocus.JOBS || jobFirst) addAll(jobLines(fieldJobs, dark2, scheme.onSurface))
+                // [CELL-04] Each memo in the colour the user gave it (the memo list's own colour), a finished checklist struck and faded.
+                memoList.forEach { m ->
+                    val own = if (m.color > 0) com.bamnat.app.ui.components.memoBackground(m.color) else null
+                    // [CELL-07] A schedule that runs into a shift or the sleep after a night: its bar and words in the warning colour.
+                    add(CellLine(m.text, ink = (if (m.clash != null && !m.done) scheme.error else scheme.onSurface).copy(alpha = if (m.done) 0.5f else 1f),
+                        bar = if (m.clash != null && !m.done) scheme.error else cal.memoDot,
+                        fill = own ?: cal.memoDot.copy(alpha = if (dark2) 0.22f else 0.12f), struck = m.done))
+                }
+                if (redLast) redDay?.let(::add)
+            }
+            val moneyText = (if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
+                ?.let { Fmt.wonShort(it) }) ?: hourly?.payText(day)
+            val investText = invest?.footer(date)
+            val unitsText = if (focus == CalendarFocus.JOBS) fieldUnitsText(fieldJobs) else null
+            val spendText = if (showSpend && focus == CalendarFocus.SHIFTS) money?.expense?.takeIf { it > 0 }?.let { "−" + Fmt.wonShort(it) } else null
+            val foot = when {
+                investText != null && invest != null -> CellFoot(investText, com.bamnat.app.ui.invest.investFooterColor(invest, date), true)
+                unitsText != null && moneyText != null -> CellFoot("$unitsText·$moneyText", if ((money?.income ?: 0L) < 0) cal.expense else cal.income, true)
+                unitsText != null -> CellFoot(unitsText, scheme.onSurface, true)
+                moneyText != null -> CellFoot(moneyText, if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income, true)
+                spendText != null -> CellFoot(spendText, cal.expense, false)
+                day.extraMinutes > 0 -> CellFoot("+" + HoursFormat.short(day.extraMinutes), cal.holidayWork, true)
+                showLunar -> CellFoot(remember(date) { KoreanLunar.fromSolar(date).short }, scheme.onSurfaceVariant, false, minor = true)
+                showHours && day.scheduledMinutes > 0 -> CellFoot(HoursFormat.short(day.scheduledMinutes), scheme.onSurfaceVariant, false, minor = true)
+                else -> null
+            }
+            CellListContent(items, foot)
+        }
+        if (list != null && !custom && cellParts == null) {
+            // [CELL-01] 1.39 The date with the day's mark beside it, then its jobs and memos a line each (two or three where there is room).
+            val items = list.lines
+            val foot = list.foot
+            val hasMark = when {
+                jobFirst -> fieldJobs.isNullOrEmpty()
+                fullLeave != null || covered != null || badgeKind != null -> true
+                hourly != null && hourlyRange != null -> true
+                invest != null && invest.trades(date) > 0 && (type == null || type.isOff) -> true
+                else -> (type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))
+            }
+            // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
+            val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
+                !(hourly != null && hourlyRange != null) && !(invest != null && invest.trades(date) > 0 && type.isOff)
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+            // [CELL-03] 1.39 (320dp·큰 글자에서 날짜 옆 '야'가 잘림): the shift's badge sits beside the date only where both fit; else on
+            // its own line at the plain cell's size.
+            val beside = maxWidth >= 50.dp && density.fontScale < 1.3f
+            val markOwnLine = hasMark && (!plainShift || !beside)
+            Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        // At least 20dp round, wider with a big font so today's "14" stays inside its circle.
+                        Modifier.defaultMinSize(20.dp, 20.dp).clip(RoundedCornerShape(10.dp)).background(if (isToday) look.today ?: scheme.primary else Color.Transparent)
+                            .padding(horizontal = 2.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            date.dayOfMonth.toString(),
+                            style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                            fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
+                            color = if (isToday) look.today?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: scheme.onPrimary else numberColor,
+                            fontSize = dateSize, lineHeight = dateSize, maxLines = 1, softWrap = false,
+                            modifier = Modifier.dayLine(weekendLine),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (day.alarmSkipped) Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff, modifier = Modifier.size(10.dp))
+                    else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern)
+                        .firstOrNull()?.let { CornerMark(it, dot = true) }
+                    if (wishOff) Spacer(Modifier.width(8.dp))
+                    if (hasMark && plainShift && beside) Box(Modifier.padding(start = 1.dp)) {
+                        ShiftBadge(type = type, text = type!!.label, size = 18.dp, outlined = type.isOff, showIcon = false)
+                    }
+                }
+                // Wider marks (대근 둘, 특근, 연차, 알바 시간…) take their own line under the date instead of being squeezed beside it.
+                if (markOwnLine) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) { dayMark(if (beside) 18.dp else 22.dp) }
+                CellListLines(items, foot, footerSize, cellMoreColor(), Modifier.weight(1f))
+            }
+            }
+        } else if (custom || cellParts != null) CustomCellBody(
             parts = cellParts,
             view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null } ?: cellFillGround(cellLook), date = date, isToday = isToday, numberColor = numberColor, weekendLine = weekendLine, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
-            marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
+            marks = remember(day, jobs, snapshot.hasPattern) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
                 ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
-            dayMark = dayMark,
+            // [CELL-02] The jobs are lines of their own when the cell lists them, so their marks are not drawn twice.
+            dayMark = if (list != null && jobFirst && !fieldJobs.isNullOrEmpty()) ({ _ -> }) else dayMark,
             texts = cellTexts(day, focus, memoText, showMoney, showSpend, showHours, showLunar, money, sales, hourly, invest, fieldJobs),
             moneyColor = if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income,
+            list = list,
         ) else {
         // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
@@ -816,7 +944,7 @@ private fun DayCell(
                 // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
                 // is still read out and shown under the calendar.
                 val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null
-                val marks = remember(day, jobCorner) { cornerMarks(day, jobCorner) }
+                val marks = remember(day, jobCorner, snapshot.hasPattern) { cornerMarks(day, jobCorner, snapshot.hasPattern) }
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
                 val topStart = if (alarmOff) null else marks.getOrNull(1)
@@ -829,6 +957,7 @@ private fun DayCell(
                 topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it, dots) } }
                 if (invest?.hasEvent(date) == true && topStart == null && !alarmOff) com.bamnat.app.ui.invest.InvestEventDot(Modifier.align(Alignment.TopStart))
                 else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
+                else if (payDay && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart), "급여")
                 else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
             }
             dayMark(22.dp)
@@ -863,6 +992,10 @@ private fun DayCell(
                 if (holidayName != null && memoText == null) {
                     // [CAL-52] Hangul stands taller than the digits beside it: a little smaller, it fits the same line.
                     HolidayLabel(holidayName, footerSize * HOLIDAY_SCALE, cal.sunday, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
+                } else if (orgDay != null && memoText == null && investText == null && unitsText == null && moneyText == null &&
+                    spendText == null && extraMinutes <= 0) {
+                    // [CYC-04] Where the line would only say hours or the lunar date: the day's name, in the plain accent colour.
+                    HolidayLabel(orgDay, footerSize * HOLIDAY_SCALE, scheme.primary, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
                 } else Text(
                     footer,
                     fontSize = footerSize,
@@ -935,7 +1068,7 @@ private fun DayCell(
             // [SCHED-03] I 리뷰 I5: the order drifted (a team moved a day) — restart it from here.
             if (usesShifts && snapshot.resolver.patternOn(date) is WorkPattern.Rotation) {
                 DropdownMenuItem(
-                    text = { Text("이 날부터 순서 다시 맞추기") },
+                    text = { Text("이 날부터 하루 밀기·순서 맞추기") }, // [EASE-25]
                     leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
@@ -947,7 +1080,7 @@ private fun DayCell(
             for (c in choices) {
                 val i = ExtraText.indexOf(day, c)
                 DropdownMenuItem(
-                    text = { Text(if (i >= 0) "${ExtraText.name(day.extras[i])} 빼기" else c.label) },
+                    text = { Text(if (i >= 0) "${ExtraText.name(day.extras[i], extraStyle)} 빼기" else ExtraText.word(c.label, c.kind.id, extraStyle)) },
                     leadingIcon = { ExtraKindMark(c.kind, size = 20.dp) },
                     trailingIcon = { if (i >= 0) Icon(Icons.Filled.Check, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Extra(c)) },
@@ -1045,7 +1178,7 @@ internal sealed interface Corner {
 }
 
 /** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
-private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = buildList {
+private fun cornerMarks(day: ResolvedDay, job: Boolean? = null, pattern: Boolean = true): List<Corner> = buildList {
     day.entry?.attendance?.let { add(Corner.Attend(it)) }
     job?.let { add(Corner.Job(it)) }
     // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
@@ -1053,7 +1186,8 @@ private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = 
     val kindIsBadge = !day.isWorkDay && day.coveredShift == null && kinds.isNotEmpty() && day.leave == null
     (if (kindIsBadge) kinds.drop(1) else kinds).forEach { add(Corner.Kind(it)) }
     day.leave?.takeIf { !it.isFullDay }?.let { add(Corner.PartLeave(it)) }
-    if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(Corner.Changed)
+    // [READ-37] 1.38 PC: without an order (매달 근무표) every day is put in by hand or from a photo: no dot on each one.
+    if (day.source == DaySource.OVERRIDE && pattern || day.hasCustomTimes) add(Corner.Changed)
 }
 
 @Composable
@@ -1108,6 +1242,12 @@ private fun cellTexts(
     if (showLunar) put("lunar", KoreanLunar.fromSolar(date).short)
 }
 
+/** [CELL-01][CELL-03] A day's memo titles when its cell lists, or null for the plain cell. */
+private fun dayList(lists: Map<LocalDate, List<CellMemo>>?, emptyToo: Boolean, focus: CalendarFocus, jobs: List<com.bamnat.core.money.Job>?, date: LocalDate): List<CellMemo>? {
+    val memos = lists?.let { it[date].orEmpty() } ?: return null
+    return memos.takeIf { emptyToo || it.isNotEmpty() || focus != CalendarFocus.SHIFTS && !jobs.isNullOrEmpty() }
+}
+
 /**
  * [CVW-01] A day cell drawn the way 달력 모양 says: the date's place, the mark's size or a bar, then the lines in order. [FREE-01] With a
  * cell look ([cellLook]) the date may sit in any of nine places, at its own size, weight, shape and colour, and the mark beside it, under
@@ -1121,6 +1261,8 @@ internal fun CustomCellBody(
     numberColor: Color, weekendLine: Color? = null, dateSize: androidx.compose.ui.unit.TextUnit,
     footerSize: androidx.compose.ui.unit.TextUnit, todayColor: Color?, holidayName: String?, hasMemo: Boolean, alarmOff: Boolean, marks: List<Corner>,
     barColor: Color?, dayMark: @Composable (Dp) -> Unit, texts: Map<String, String>, moneyColor: Color,
+    /** [CELL-02] 1.39 The day's jobs and memos a line each (in this look's colours) in place of the lines below, or null. */
+    list: CellListContent? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
@@ -1153,7 +1295,7 @@ internal fun CustomCellBody(
         onFill != null -> onFill
         else -> numberColor
     }
-    val memoShown = texts.containsKey("memo")
+    val memoShown = list != null || texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
     val markShape = mp.takeIf { it.corners.any { c -> c != null } }?.shape(RoundedCornerShape(4.dp))
     // [BLU-05] The mark's line goes round the badge itself, in the shift's colour unless the blueprint gives one (PC 3차: 옅은 회색이 네모를 따라).
@@ -1210,8 +1352,14 @@ internal fun CustomCellBody(
             if (markPlace == "side" && place[1] != 'r' && mark != "line") drawMark()
         }
     }
-    val linesBlock: @Composable () -> Unit = {
-        for (id in parts?.order?.filter { it in view.lines } ?: view.lines) {
+    // [CELL-02] On a strong ground (칸 전체 채우기, a dark 꾸밈 사진) the list's lines take the ground's ink, as the look's own lines do.
+    val listLines = remember(list, onFill) {
+        list?.let { l -> if (onFill == null) l.lines else l.lines.map { it.copy(ink = onFill.copy(alpha = it.ink.alpha), fill = it.fill?.let { _ -> onFill.copy(alpha = 0.14f) }) } }
+    }
+    val listFoot = list?.foot?.let { f -> if (onFill != null) f.copy(color = onFill) else f }
+    val linesBlock: @Composable (Modifier) -> Unit = { m ->
+        if (list != null) CellListLines(listLines.orEmpty(), listFoot, parts?.lines?.get("memo")?.size?.sp ?: footerSize, onFill ?: cellMoreColor(), m)
+        else for (id in parts?.order?.filter { it in view.lines } ?: view.lines) {
             val t = texts[id] ?: continue
             val lp = parts?.lines?.get(id) ?: com.bamnat.core.recipe.PartStyle.NONE
             if (lp.hide == true) continue
@@ -1253,17 +1401,17 @@ internal fun CustomCellBody(
         val inner = Modifier.fillMaxSize().padding(horizontal = cp.padH?.dp ?: pad ?: 3.dp, vertical = cp.padV?.dp ?: pad ?: 2.dp)
         when (cp.dir) {
             "row" -> Row(inner, horizontalArrangement = cp.arrangement(), verticalAlignment = cp.vertical(Alignment.Top)) {
-                order.forEach { k -> Box(Modifier.weight(1f, fill = false)) { if (k == "lines") Column { linesBlock() } else blocks.getValue(k)() } }
+                order.forEach { k -> Box(Modifier.weight(1f, fill = false)) { if (k == "lines") Column { linesBlock(Modifier.fillMaxHeight()) } else blocks.getValue(k)() } }
             }
             "stack" -> Box(inner) {
                 order.forEach { k ->
                     val at = placeOf(parts.lines[k]?.place ?: when (k) { "date" -> dp.place; "mark" -> mp.place; else -> null },
                         when (k) { "date" -> Alignment.TopCenter; "mark" -> Alignment.Center; else -> Alignment.BottomCenter })
-                    Box(Modifier.align(at)) { if (k == "lines") Column { linesBlock() } else blocks.getValue(k)() }
+                    Box(Modifier.align(at)) { if (k == "lines") Column { linesBlock(Modifier) } else blocks.getValue(k)() }
                 }
             }
             else -> Column(inner, horizontalAlignment = cp.horizontal(horizontal), verticalArrangement = cp.verticalArrangement()) {
-                order.forEach { k -> if (k == "lines") linesBlock() else blocks.getValue(k)() }
+                order.forEach { k -> if (k == "lines") linesBlock(if (list != null) Modifier.weight(1f) else Modifier) else blocks.getValue(k)() }
             }
         }
         if (markPlace == "bottom") Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { drawMark() }
@@ -1276,25 +1424,24 @@ internal fun CustomCellBody(
     ) {
         when (place[0]) {
             'b' -> {
-                linesBlock()
-                Spacer(Modifier.weight(1f))
+                if (list != null) linesBlock(Modifier.weight(1f)) else { linesBlock(Modifier); Spacer(Modifier.weight(1f)) }
                 if (markPlace == "below") drawMark()
                 dateBlock()
             }
             'm' -> {
-                Spacer(Modifier.weight(1f))
+                // A list fills the room under the date instead of the date floating in the middle.
+                if (list == null) Spacer(Modifier.weight(1f))
                 dateBlock()
                 if (markPlace == "below") drawMark()
-                linesBlock()
-                Spacer(Modifier.weight(1f))
+                if (list != null) linesBlock(Modifier.weight(1f)) else { linesBlock(Modifier); Spacer(Modifier.weight(1f)) }
             }
             else -> {
                 dateBlock()
                 if (markPlace == "below") drawMark()
-                linesBlock()
+                linesBlock(if (list != null) Modifier.weight(1f) else Modifier)
             }
         }
-        if (markPlace == "bottom") { Spacer(Modifier.weight(1f)); drawMark() }
+        if (markPlace == "bottom") { if (list == null) Spacer(Modifier.weight(1f)); drawMark() }
     }
 }
 

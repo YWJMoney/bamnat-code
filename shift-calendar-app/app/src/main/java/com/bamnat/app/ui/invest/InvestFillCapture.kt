@@ -149,7 +149,7 @@ internal fun FillCaptureSheet(
                         Text("  $line", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                ScanButtons(onScan = { vm.takeCapture(it.text, it.fills) })
+                ScanButtons(onScan = { vm.takeCapture(it.text, it.fills) }, pdfLabel = "받은 PDF 고르기")
                 got?.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 if (got == null || got.fills.isEmpty()) return@Column
                 if (got.putQuietly > 0 || got.same > 0) Text(

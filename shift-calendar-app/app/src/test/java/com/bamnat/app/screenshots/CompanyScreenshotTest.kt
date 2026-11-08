@@ -456,18 +456,43 @@ class CompanyScreenshotTest : ScreenshotBase() {
         scrollUp(800)
         settle()
     }
-    // [ONBOARD-05] 사용 통계 at the end of the first-start screen: unticked; only a tick turns it on (D42).
+    // [ONBOARD-05] 사용 통계: off until chosen (D42). [EASE-05] 1.38: on the first setup's summary, not a page before it.
+    // 1.39 [OBS2-06] 두 단추 카드: 보기 전에도, 그냥 지나가도 꺼짐. '보낼 내용 보기'는 고르기 전에 무엇이 가는지 말해요.
     @Test fun foldedRecommendedUsageStats() = shoot("526_folded_recommended_usage_stats", FOLDED,
-        recommended(setOf(ConsentItem.CALENDAR)) {
-            reveal("개발자에게 사용 통계 보내기 (선택)", exact = true)
+        newPhone {
+            setupToToday(); tapText("회사 근무표와 같아요")
+            reveal("앱을 고치는 데 도움을 주실래요? (선택)", exact = true)
             assertFalse(app.container.settingsRepository.current.shareUsageStats)
         })
-    @Test fun recommendedUsageStatsOnlyWithATick() = shoot("527_folded_recommended_stats_then_setup", FOLDED,
-        recommended(setOf(ConsentItem.CALENDAR)) {
-            tapText("개발자에게 사용 통계 보내기 (선택)", exact = true)
-            tapText("허용은 나중에 할게요")
-            assertTrue("ticked, it is on", app.container.settingsRepository.current.shareUsageStats)
+    @Test fun recommendedUsageStatsOnlyWithAYes() = shoot("527_folded_recommended_stats_then_setup", FOLDED,
+        newPhone {
+            setupToToday(); tapText("회사 근무표와 같아요")
+            reveal("보낼게요", exact = true)
+            tapText("보낼게요", exact = true)
+            assertTrue("chose yes, it is on", app.container.settingsRepository.current.shareUsageStats)
+            reveal("사용 통계를 보내요. 고마워요", exact = true)
         })
+    @Test fun recommendedUsageStatsNoStaysOff() = shoot("527b_folded_recommended_stats_no", FOLDED,
+        newPhone {
+            setupToToday(); tapText("회사 근무표와 같아요")
+            reveal("보내지 않을래요", exact = true)
+            tapText("보내지 않을래요", exact = true)
+            assertFalse(app.container.settingsRepository.current.shareUsageStats)
+            reveal("사용 통계를 보내지 않아요", exact = true)
+        })
+    @Test fun recommendedUsageStatsWhatGoes() = shoot("527c_folded_recommended_stats_what", FOLDED,
+        newPhone {
+            setupToToday(); tapText("회사 근무표와 같아요")
+            reveal("보낼 내용 보기", exact = true)
+            tapText("보낼 내용 보기", exact = true)
+            reveal("보내지 않는 것")
+            assertFalse("looking is not a yes", app.container.settingsRepository.current.shareUsageStats)
+        })
+    private fun newPhone(then: Screen.() -> Unit): Screen.() -> Unit {
+        app.container.consentStore.forget()
+        app.container.consentStore.availableForTest = setOf(ConsentItem.CALENDAR)
+        return fresh(null, then)
+    }
     @Test fun foldedSettingsNoticesAndSleep() = shoot("529_folded_settings_notices_sleep", FOLDED) {
         settingsPage("알림과 잠"); reveal("휴식 점검", exact = true)
     }

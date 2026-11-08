@@ -263,7 +263,7 @@ object RuleText {
      * [PHOTO-12] Rows of a 계산 방법 table that explain rather than set a rule: a rule for 사무직 only (보상휴가), and what the
      * payslip's 미공제 lines mean. Neither a rule nor a '직접 넣기' row.
      */
-    private val EXPLAIN = Regex("""사무직限|사무직한정|사무직만|보상휴가로부여|이전미공제|다음공제예정|미공제된금액|원천징수비율""")
+    private val EXPLAIN = Regex("""사무[직작]限|사무직한정|사무직만|보상[휴류유후]가(로부여|금액)|이전미공제|다음공제예정|미공제된금액|원천징수비율""")
 
     private fun readSentence(line: String, kinds: List<ExtraKind>, shiftTypes: List<ShiftType>, fiveOrMore: Boolean): List<RuleFinding> {
         val c = line.replace(" ", "")
@@ -295,11 +295,16 @@ object RuleText {
      * (휴가보상 해당일수 × …) is left for the user ('직접 넣기').
      */
     private fun formulaRow(line: String, c: String): List<RuleFinding>? {
-        val at = Regex("해당(시간|일수)|(근로|근무)시간수?(?=\\d|×|x)").find(c) ?: return null
-        if (!Regex("통상임금|통상시급|기준급|시급|시수").containsMatchIn(c)) return null
+        // [READ-38] 1.38 사용자 사진(모니터의 계산 방법 표): 해당 read as 해탕, "× 1.5 × (" as "체15 8", "× 0.5" as "/05".
+        val at = Regex("해[당탕닿땅댱]\\s*(시간|일수|시)|(근로|근무)시간수?(?=\\d|×|x)").find(c) ?: return null
+        if (!Regex("통상[임엄][금긍극]|통상시급|기준급|시급|시수").containsMatchIn(c)) return null
         if (at.value.endsWith("일수")) return emptyList()
-        val head = c.substring(0, at.range.first)
-        val times = timesRe.find(c.substring(at.range.last + 1))?.groupValues?.get(1)?.toDouble() ?: return null
+        // [READ-38] 1.38 PC 10차 (사용자 사진, 휴일 8시간 넘는 몫이 빠짐): 휴일 read as 휴밀·휴닐, 연장 as 연잠·언장·연정; a 휴밀연장
+        // read 연장 alone would have been a wrong 연장 100%.
+        val head = c.substring(0, at.range.first).replace(Regex("^[휴유후흐흑육훼][일밀닐길]"), "휴일").replace(Regex("^[아얀야]간"), "야간")
+            .replace(Regex("[연언][장잠정잔]"), "연장")
+        val rest = c.substring(at.range.last + 1)
+        val times = timesRe.find(rest)?.groupValues?.get(1)?.toDouble() ?: garbledTimes(rest) ?: return emptyList()
         val (target, over8h) = when {
             head.contains("휴일") && head.contains("연장") -> PremiumTarget.HOLIDAY to true
             head.contains("야간") || head.contains("심야") -> PremiumTarget.NIGHT to false
@@ -310,6 +315,32 @@ object RuleText {
         val premium = (if (times < 1.0) times else times - 1.0).coerceIn(0.0, Premium.MAX_RATE)
         return listOf(RuleFinding(line, RuleChange.Premium(target, premium, over8h), 0.85))
     }
+
+    /**
+     * [READ-38] The 배율 of a 계산 방법 row whose × and dot the photo lost: the first number before (통상임금 / 시수), read the way
+     * such a table writes it: "15" is 1.5, "05" is 0.5, "2" is 2, "25" is 2.5 (a number after it, "158", is the × and the
+     * bracket read as a digit). Only the 배율 such a table uses (0.5, 1.5, 2, 2.5, 3); anything else is null, so the row is
+     * left for the user rather than read wrong.
+     */
+    internal fun garbledTimes(rest: String): Double? {
+        // A 2 between its × marks read as the letter z ("× z ×").
+        val seg = rest.split(Regex("통상|기준급|시급|시수|\\(")).first().replace(Regex("(?<=[×xX*\\s])[zZ](?=[×xX*\\s]|$)"), "2")
+        val digits = Regex("""\d+(?:\.\d+)?""").findAll(seg).map { it.value }.toList()
+        for (d in digits) {
+            val v = when {
+                '.' in d -> d.toDoubleOrNull()
+                d.startsWith("0") && d.length >= 2 -> "0.${d[1]}".toDouble()
+                d.length == 1 -> d.toDouble()
+                d[0] in '1'..'3' && d[1] == '5' -> "${d[0]}.5".toDouble()
+                d[0] in '2'..'3' -> d[0].toString().toDouble()
+                else -> null
+            }
+            if (v != null && v in GARBLED_TIMES) return v
+        }
+        return null
+    }
+
+    private val GARBLED_TIMES = setOf(0.5, 1.5, 2.0, 2.5, 3.0)
 
     /**
      * [PHOTO-12] "통상임금  기본급, 직책수당, 자격수당, 기술전수교육수당 등 … 임금 일체": what counts in 통상임금, named. Read as which
@@ -362,7 +393,7 @@ object RuleText {
                 val v = m.groupValues[4].replace(",", "").toDouble()
                 val pay: RulePay = when (m.groupValues[5]) {
                     "%" -> if ("통상임금" in c) RulePay.OfOrdinaryMonthly(v / 100) else RulePay.OfBaseMonthly(v / 100)
-                    "만원" -> RulePay.Monthly((v * 10_000).toLong())
+                    "만원" -> RulePay.Monthly(Math.round(v * 10_000)) // [P3-ACC] 1.13 × 10,000 is 11,299.99… as a Double
                     else -> RulePay.Monthly(v.toLong())
                 }
                 Triple(years, end, pay)

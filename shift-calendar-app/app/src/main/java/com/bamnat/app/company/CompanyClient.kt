@@ -91,6 +91,18 @@ data class SharedSetup(
      * too much today). [text] then has the shifts and their order only.
      */
     val payHidden: Boolean = false,
+    /**
+     * 1.39 [PAYP-01] (사용자 2026-11-07 "급여 계산식은 보여지지 않게"): a server from 1.39 never sends a version's pay to this app, member or
+     * not; [payHidden] is then true as well, so every screen treats it as a pay way it does not see, and putting the way in takes the
+     * pay part on its own ([CompanyApi.take]) into the pay, where it is not shown either ([com.bamnat.app.company.PayWay.shared]).
+     */
+    val payPrivate: Boolean = false,
+    /** 1.39 [PAYP-05] 보완 요청 not yet answered by those who sent this version. */
+    val fixes: Int = 0,
+    /** 1.39 발굴 2-3: this phone's own 보완 요청 on it: "open", "answered" (one who sent it replied), or null for none. */
+    val myFix: String? = null,
+    /** 1.39 발굴 4-3: when it was last sent (or adopted), for the card's 근거 line; null from a server before it. */
+    val sentAt: Instant? = null,
     /** [PLAZA-09] 안정: three phones or more on it and nothing else sent or adopted for 30 days. */
     val stable: Boolean = false,
     /** [PLAZA-14] 1.27 AH: its department's 대표 주기; [doubted] when too many said 달라요 for it to lead (AH-D7). */
@@ -184,6 +196,11 @@ data class CompanyPage(
     /** [PLAZA-08] This phone joined the company and sees its pay ways; [limited] when it read too much today. */
     val member: Boolean = false,
     val limited: Boolean = false,
+    /**
+     * 1.39 발굴 2-1: for a version this phone uses, the newer one of its department one of its senders sent since (on this page), by
+     * the older one's id: the pay screen offers it, as the way in use does not follow by itself.
+     */
+    val newer: Map<String, String> = emptyMap(),
 )
 
 /** What a setup needs to be adopted and what adoption earns, said before anyone sends [COMM-03]. */
@@ -274,13 +291,33 @@ data class TalkPost(
     val attach: Pair<String, String>? = null,
     /** PC 확인 V27: that recipe's look as the server sent it (lookOf), kept as written; null without one. */
     val attachLook: String? = null,
+    /** 1.39 [PLZC-10] 근무 태그, on a kind of work's plaza once plaza.people is on; null on older posts. */
+    val tag: com.bamnat.core.plaza.PlazaTag? = null,
+    /** 1.39 [PLZC-15] The writer's first post in any kind of work's plaza (첫 글). */
+    val first: Boolean = false,
+    /** 1.39 [PLZC-16] How many of the writer's answers someone else's question picked (도움 n), beside a 마을 이름. */
+    val helped: Int = 0,
+    /** 1.39 [PLZC-40] 🏅 이달의 제작자·⭐ 인기 제작자 beside a 마을 이름 (the same as on 장터's cards). */
+    val mark: com.bamnat.core.plaza.MakerMark? = null,
+    /** 1.39 [PLZC-20] 근무 카드 the writer attached (this month so far, numbers only). */
+    val card: com.bamnat.core.plaza.WorkCard? = null,
 )
 
 /** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
-data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int? = null) {
+data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int? = null,
+    /** 1.39 [PLZC-31] 근무형태별 결과: groups of 5 or more ([PollSplit.form] null: 그 밖의 근무). */
+    val byForm: List<PollSplit> = emptyList()) {
     val total: Int get() = counts.sum()
     /** The share of [i] in whole percent, 0 before anyone voted. */
     fun percent(i: Int): Int = if (total == 0) 0 else Math.round(counts.getOrElse(i) { 0 } * 100f / total)
+}
+
+/** 1.39 [PLZC-31] One 근무형태's votes on a poll (null: the others together). */
+data class PollSplit(val form: com.bamnat.core.pay.WorkForm?, val counts: List<Int>) {
+    val total: Int get() = counts.sum()
+    /** The choice most of them picked, and its share in whole percent. */
+    fun lead(): Pair<Int, Int>? = counts.indices.maxByOrNull { counts[it] }?.takeIf { total > 0 }
+        ?.let { it to Math.round(counts[it] * 100f / total) }
 }
 
 /**
@@ -294,7 +331,32 @@ data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int?
 data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0,
     val leftPosts: Int? = null, val limit: WriteLimit? = null,
     /** 1.36 [VIL-11] 이번 주 이야기 주제 the operator set for a kind of work's plaza. */
-    val topic: String? = null)
+    val topic: String? = null,
+    /** 1.39 [PLZC-03] Older posts are left to read ([CompanyApi.talkBefore]); [older]: this is such a page. */
+    val more: Boolean = false,
+    val older: Boolean = false,
+    /** 1.39 [PLZC-12] The room's head line: today's posts, questions waiting, writers at work lately. */
+    val pulse: Pulse? = null)
+
+/** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza; [checkin] [PLZC-21] 오늘 출근 where the room has it. */
+data class Pulse(val today: Int, val waiting: Int, val working: Int, val checkin: Checkin? = null)
+
+/** 1.39 [PLZC-22] 선배 답 모음: an answer the operator picked, with its question; [form] the question's 근무형태 when it had one. */
+data class PlazaPick(val id: String, val title: String, val form: com.bamnat.core.pay.WorkForm?, val question: String, val answer: String)
+
+internal fun plazaPicksOf(o: JSONObject): List<PlazaPick> = o.optJSONArray("items").objects().mapNotNull { p ->
+    val id = p.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+    PlazaPick(id, p.optString("title"), p.optString("form").takeIf { it.isNotEmpty() }
+        ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"))
+}.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
+
+/** 1.39 [PLZC-21] 오늘 출근: today's taps by kind (day·night in 교대, go·rain in 현장) and this phone's own. */
+data class Checkin(val counts: Map<String, Int>, val mine: String? = null)
+
+internal fun checkinOf(o: JSONObject?): Checkin? = o?.let {
+    val counts = it.optJSONObject("counts") ?: return null
+    Checkin(counts.keys().asSequence().associateWith { k -> counts.optInt(k) }, it.optString("mine").ifEmpty { null })
+}
 
 /**
  * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
@@ -503,7 +565,12 @@ class CompanyException(
     val retryAfter: Int? = null,
     /** "device" (this phone did it often), "network" (many phones on the same Wi-Fi) or "reads"; null when not said. */
     val why: String? = null,
+    /** 1.39 [CARE-02] With "muted": when 쉬기 ends (ISO), so the app can say the day. */
+    val until: String? = null,
 ) : IOException(code) {
+    /** [until] as epoch millis, or null. */
+    val untilMillis: Long? get() = until?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+
     /** [SRV-07] No connection, a busy or broken server, a sign-in page: worth sending again later. */
     val retryable: Boolean get() = code in RETRY || code.startsWith("http_5")
 
@@ -575,6 +642,8 @@ interface CompanyApi {
         Board(emptyList(), null)
     /** [COMM-06] The talk on one rule set; this install's own posts are marked. */
     suspend fun talk(device: String, company: String, setup: String): Talk = Talk(emptyList())
+    /** 1.39 [PLZC-03] 더 불러오기: a kind of work's plaza ([room]) before [before], a page of top posts with their answers. */
+    suspend fun talkBefore(device: String, room: String, before: java.time.Instant): Talk = Talk(emptyList())
     /** Posts in it; the new post's id comes back. */
     suspend fun post(device: String, company: String, setup: String, body: String): String = throw CompanyException("offline")
     suspend fun deletePost(device: String, id: String) = Unit
@@ -593,7 +662,8 @@ interface CompanyApi {
     /** 1.36 [VIL-09] 도움 됐어요: the writer of question [id] picks [reply] (null takes it back). */
     suspend fun postAnswer(device: String, id: String, reply: String?): String? = throw CompanyException("offline")
     /** 1.36 [VIL-10] One choice on poll [id] ([choice] null takes it back); the poll as it stands comes back. */
-    suspend fun pollVote(device: String, id: String, choice: Int?): Poll = throw CompanyException("offline")
+    /** [room] the plaza it is in: in a kind of work's plaza my 근무형태 goes with the vote (1.39 [PLZC-31]). */
+    suspend fun pollVote(device: String, id: String, choice: Int?, room: String? = null): Poll = throw CompanyException("offline")
     /** 1.36 [VIL-06] 마을 검색: the kinds of work's plazas' posts and the requests with [q]. */
     suspend fun villageSearch(q: String): VillageFound = VillageFound(emptyList(), emptyList())
     /** 1.36 [VIL-19] 이달의 주제 공모 for a kind of work ([style] the recipes' key, SHIFT…). */
@@ -602,6 +672,24 @@ interface CompanyApi {
     suspend fun enterContest(device: String, style: String, code: String, on: Boolean): Unit = throw CompanyException("offline")
     /** 1.36 [VIL-13] My newest posts and replies in the plazas. */
     suspend fun myPosts(device: String): List<MyPost> = throw CompanyException("offline")
+
+    /** 1.39 [PLZC-22] 선배 답 모음 of a kind of work's plaza ([room]); empty before plaza.people. */
+    suspend fun plazaPicks(room: String): List<PlazaPick> = emptyList()
+
+    /** 1.39 [PLZC-21] 오늘 출근 한 번 누르기 in [room] ([kind] null takes it back); today's counts come back. */
+    suspend fun plazaCheckin(device: String, room: String, kind: String?): Checkin = throw CompanyException("offline")
+
+    /** 1.39 [PLZC-41] 같은 근무 새 질문 알림: watch [form] in [room] (교대·일근 광장), or stop with null. */
+    suspend fun plazaWatch(device: String, room: String, form: String?) = Unit
+
+    /** 1.39 [CARE-03] 마을을 열 때 한 번: 읽지 않은 안내, 지금 쉬기, 해명 상태. 서버가 모르면 빈 것. */
+    suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = com.bamnat.core.plaza.CareStanding()
+
+    /** 1.39 [CARE-03] 안내를 '확인했어요'. */
+    suspend fun careSeen(device: String, id: String) = Unit
+
+    /** 1.39 [CARE-10] 해명(또는 가려진 글 '다시 보여 주세요', target "post:<id>"): 나만 보는 문의가 돼요. 문의 번호를 돌려줘요. */
+    suspend fun careAppeal(device: String, target: String, text: String): String = throw CompanyException("offline")
     /** 1.36 [VIL-16] A 자랑 with one of my public recipes ([code]) on it. */
     suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String =
         throw CompanyException("offline")
@@ -610,6 +698,12 @@ interface CompanyApi {
         throw CompanyException("offline")
     /** [PLZ-08] This phone uses (applied) a rule set, or stopped; how many use it comes back. */
     suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = 0
+
+    /**
+     * 1.39 [PAYP-03] The pay part of version [setup] of [company] (a whole company file, named for it), for a phone that joined it and is
+     * putting that way in now; null when the version has none any more. Never shown: it goes into the pay alone.
+     */
+    suspend fun take(device: String, company: String, setup: String): String? = null
     /** [PLAZA-07] The same for one calendar: using a company's setup joins the company for it. */
     suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = use(device, company, setup, on)
     /** [PLZ-08] The name this phone is shown by on the plaza; empty for none. */
@@ -666,6 +760,21 @@ class CompanyClient(
     private val proof: () -> com.bamnat.core.pay.SlipProof? = { null },
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
+
+    /**
+     * 1.39 [PLZC-10] 근무 태그: what a post in a kind of work's plaza ([room] `style-…`) carries, worked out from the calendar
+     * when it is sent; null for none (깃발 plaza.people off, or a company's room). Set by the container.
+     */
+    @Volatile var roomTag: (suspend (room: String) -> JSONObject?)? = null
+    @Volatile var roomCard: (suspend (room: String) -> JSONObject?)? = null
+
+    private suspend fun JSONObject.tagged(company: String, setup: String): JSONObject = apply {
+        if (setup == com.bamnat.core.plaza.StylePlaza.ROOM && company.startsWith("style-")) {
+            runCatching { roomTag?.invoke(company) }.getOrNull()?.let { put("tag", it) }
+            // 1.39 [PLZC-20] 근무 카드 on a top post, when the box asked for it.
+            if (!has("parent") && has("body")) runCatching { roomCard?.invoke(company) }.getOrNull()?.let { put("card", it) }
+        }
+    }
 
     // AS 1.29 [SRCH-06] A read the screen may stop waiting for (a new letter typed, a time limit) returns at once.
     override suspend fun search(query: String): List<CompanyHit> = readCall {
@@ -830,6 +939,11 @@ class CompanyClient(
             headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
     }
 
+    override suspend fun talkBefore(device: String, room: String, before: java.time.Instant): Talk = serverCall {
+        talkOf(exchange("GET", "/api/companies/$room/setups/room/posts?before=" + URLEncoder.encode(before.toString(), "UTF-8"), device = device,
+            headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
+    }
+
     override suspend fun post(device: String, company: String, setup: String, body: String, parent: String?, kind: String,
         change: List<ChangeLine>, proposal: JSONObject?): String = serverCall {
         val o = JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()).put("kind", kind)
@@ -838,7 +952,9 @@ class CompanyClient(
             o.put("change", JSONArray(change.map { JSONObject().put("field", it.field).put("now", it.now.trim()).put("want", it.want.trim()).put("why", it.why.trim()) }))
             proposal?.let { o.put("proposal", it) }
         }
-        request("POST", "/api/posts", o).getString("id")
+        // 1.39 [PAYP-05] 보완 요청: where it differs, no values.
+        if (kind == "fix") o.put("change", JSONArray(change.map { JSONObject().put("field", it.field) }))
+        request("POST", "/api/posts", o.tagged(company, setup)).getString("id")
     }
 
     override suspend fun postVote(device: String, id: String, ok: Boolean?): PostVote = serverCall {
@@ -863,18 +979,48 @@ class CompanyClient(
         myPostsOf(exchange("GET", "/api/posts/mine", device = device).json)
     }
 
-    override suspend fun pollVote(device: String, id: String, choice: Int?): Poll = serverCall {
-        pollOf(request("POST", "/api/posts/$id/poll", JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)).getJSONObject("poll"))
+    override suspend fun plazaPicks(room: String): List<PlazaPick> = serverCall {
+        plazaPicksOf(exchange("GET", "/api/plaza/picks?room=" + URLEncoder.encode(room, "UTF-8")).json)
+    }
+
+    override suspend fun plazaCheckin(device: String, room: String, kind: String?): Checkin = serverCall {
+        val o = JSONObject().put("device", device).put("room", room).put("kind", kind ?: JSONObject.NULL)
+        checkinOf(request("POST", "/api/plaza/checkin", o, device)) ?: Checkin(emptyMap())
+    }
+
+    override suspend fun plazaWatch(device: String, room: String, form: String?) = serverCall {
+        val o = JSONObject().put("device", device).put("room", room).apply { form?.let { put("form", it) } }
+        request(if (form != null) "POST" else "DELETE", "/api/plaza/watch", o, device)
+        Unit
+    }
+
+    override suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = serverCall {
+        careStandingOf(exchange("GET", "/api/community/standing", device = device).json)
+    }
+
+    override suspend fun careSeen(device: String, id: String) = serverCall {
+        request("POST", "/api/community/standing/seen", JSONObject().put("device", device).put("id", id))
+        Unit
+    }
+
+    override suspend fun careAppeal(device: String, target: String, text: String): String = serverCall {
+        request("POST", "/api/community/appeal", JSONObject().put("device", device).put("target", target).put("text", text.trim())).getString("inquiry")
+    }
+
+    override suspend fun pollVote(device: String, id: String, choice: Int?, room: String?): Poll = serverCall {
+        val o = JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)
+        if (choice != null && room != null) o.tagged(room, com.bamnat.core.plaza.StylePlaza.ROOM)
+        pollOf(request("POST", "/api/posts/$id/poll", o).getJSONObject("poll"))
     }
 
     override suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String = serverCall {
         request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
-            .put("kind", "show").put("attach", code)).getString("id")
+            .put("kind", "show").put("attach", code).tagged(company, setup)).getString("id")
     }
 
     override suspend fun postPoll(device: String, company: String, setup: String, body: String, poll: List<String>): String = serverCall {
         request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
-            .put("kind", "question").put("poll", JSONArray(poll.map { it.trim() }))).getString("id")
+            .put("kind", "question").put("poll", JSONArray(poll.map { it.trim() })).tagged(company, setup)).getString("id")
     }
 
     override suspend fun postAnswer(device: String, id: String, reply: String?): String? = serverCall {
@@ -882,6 +1028,14 @@ class CompanyClient(
     }
 
     override suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = use(device, company, setup, on, "")
+
+    override suspend fun take(device: String, company: String, setup: String): String? = serverCall {
+        try {
+            request("POST", "/api/companies/$company/setups/$setup/take", JSONObject().put("device", device)).optStringOrNull("text")
+        } catch (e: CompanyException) {
+            if (e.code == "no_pay" || e.code == "not_found" || e.code == "http_404") null else throw e
+        }
+    }
 
     override suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = serverCall {
         val body = JSONObject().put("device", device).put("company", company).put("setup", setup)
@@ -946,8 +1100,8 @@ class CompanyClient(
         if (o.has("myVote") && !o.isNull("myVote")) o.getBoolean("myVote") else null)
 
     override suspend fun post(device: String, company: String, setup: String, body: String): String = serverCall {
-        request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()))
-            .getString("id")
+        request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
+            .tagged(company, setup)).getString("id")
     }
 
     override suspend fun deletePost(device: String, id: String) = serverCall {
@@ -1127,17 +1281,20 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
     /** 1.36 [INQ-07] Of [inquiries], the 결제·환불 ones gone from the phone that the law keeps with the developer. */
     val inquiriesKept: Int = 0,
     /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
-    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0) {
+    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0,
+    /** 1.39 [PRIV-06] 공유 서버: links cut with this phone's keys, and those left for want of a connection. */
+    val links: Int = 0, val linksLeft: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
             "보낸 규칙 $reports".takeIf { reports > 0 }, "맞았어요·달라요 $votes".takeIf { votes > 0 },
             "토론 글 $posts".takeIf { posts > 0 }, "문의 $inquiries".takeIf { inquiries > 0 },
             "작품 ${recipes}개".takeIf { recipes > 0 }, "모음 ${sets}개".takeIf { sets > 0 }, "프로필".takeIf { profile },
-            "팔로우 $follows".takeIf { follows > 0 },
+            "팔로우 $follows".takeIf { follows > 0 }, "공유 링크 ${links}개".takeIf { links > 0 },
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
-        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept
+        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
+        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left
     }
 }
 
@@ -1210,7 +1367,11 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
             by = s.optJSONArray("by").strings(),
             checkedLong = s.optBoolean("checkedLong"),
             support = s.optInt("support"),
-            payHidden = s.optBoolean("payHidden"),
+            payHidden = s.optBoolean("payHidden") || s.optBoolean("payPrivate"),
+            payPrivate = s.optBoolean("payPrivate"),
+            fixes = s.optInt("fixes"),
+            myFix = s.optStringOrNull("myFix"),
+            sentAt = s.optStringOrNull("sentAt")?.let { runCatching { Instant.parse(it) }.getOrNull() },
             stable = s.optBoolean("stable"),
             lead = s.optBoolean("lead"),
             doubted = s.optBoolean("doubted"),
@@ -1220,6 +1381,7 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
     },
     member = o.optBoolean("member"),
     limited = o.optBoolean("limited"),
+    newer = o.optJSONObject("newer")?.let { n -> n.keys().asSequence().associateWith { n.optString(it) }.filterValues { it.isNotEmpty() } }.orEmpty(),
 )
 
 /** [PLAZA-09] A member's room (`/room`, or the `room` of a [CompanyBundle]). */
@@ -1270,7 +1432,13 @@ internal fun boardOf(o: JSONObject): Board = Board(
 internal fun pollOf(o: JSONObject): Poll {
     val options = (0 until (o.optJSONArray("options")?.length() ?: 0)).map { o.getJSONArray("options").getString(it) }
     val counts = options.indices.map { o.optJSONArray("counts")?.optInt(it) ?: 0 }
-    return Poll(options, counts, if (o.has("mine") && !o.isNull("mine")) o.getInt("mine") else null)
+    // A 근무형태 this app does not know (a newer server's) is left out rather than shown as 그 밖의 근무.
+    val byForm = o.optJSONArray("byForm").objects().mapNotNull { g ->
+        val f = g.optString("f").takeIf { g.has("f") && !g.isNull("f") && it.isNotEmpty() }
+        val form = f?.let { name -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == name } ?: return@mapNotNull null }
+        PollSplit(form, options.indices.map { g.optJSONArray("counts")?.optInt(it) ?: 0 })
+    }
+    return Poll(options, counts, if (o.has("mine") && !o.isNull("mine")) o.getInt("mine") else null, byForm)
 }
 
 internal fun talkOf(o: JSONObject): Talk = Talk(
@@ -1294,6 +1462,11 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             poll = p.optJSONObject("poll")?.let(::pollOf)?.takeIf { it.options.size >= 2 },
             attach = p.optJSONObject("attach")?.let { a -> a.optString("code").takeIf { it.isNotEmpty() }?.let { it to a.optString("title") } },
             attachLook = p.optJSONObject("attach")?.optJSONObject("look")?.toString(),
+            tag = p.optJSONObject("tag")?.let { t -> com.bamnat.core.plaza.PlazaTag.of { k -> t.opt(k)?.takeIf { it != JSONObject.NULL } } },
+            first = p.optBoolean("first", false),
+            helped = p.optInt("helped", 0).coerceIn(0, 100_000),
+            card = p.optJSONObject("card")?.let { c -> com.bamnat.core.plaza.WorkCard.of { k -> c.opt(k) } },
+            mark = com.bamnat.core.plaza.MakerMark.of(p.optString("mark", "").ifEmpty { null }),
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
@@ -1302,6 +1475,9 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
     leftPosts = o.optJSONObject("left")?.takeIf { it.has("posts") }?.optInt("posts"),
     limit = WriteLimit.of(o),
     topic = o.optStringOrNull("topic"),
+    more = o.optBoolean("more"),
+    older = o.optBoolean("older"),
+    pulse = o.optJSONObject("pulse")?.let { Pulse(it.optInt("today"), it.optInt("waiting"), it.optInt("working"), checkinOf(it.optJSONObject("checkin"))) },
 )
 
 internal fun termsOf(o: JSONObject) =
@@ -1460,6 +1636,8 @@ private fun exchangeOnce(
         conn.readTimeout = 15_000
         conn.setRequestProperty("Accept", "application/json")
         device?.let { conn.setRequestProperty("X-Device", it) }
+        // 1.39 [PAYP-01] This app shows no one's pay way: the server sends none, and the way is taken when it is put in.
+        conn.setRequestProperty(PAY_PRIVATE_HEADER, "1")
         session?.headers(method)?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (body != null) {
@@ -1481,7 +1659,7 @@ private fun exchangeOnce(
             val err = runCatching { JSONObject(text) }.getOrNull()
             val retry = err?.optInt("retryAfter")?.takeIf { it > 0 } ?: conn.getHeaderField("Retry-After")?.trim()?.toIntOrNull()
             throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"),
-                retry, err?.optStringOrNull("why"))
+                retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"))
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))
@@ -1502,6 +1680,9 @@ private fun exchangeOnce(
 
 /** [SPD-19] How long a connection may take to open. */
 internal const val CONNECT_MS = 6_000
+
+/** 1.39 [PAYP-01] Says the app shows no shared pay way; the server then sends none (it is taken at putting it in). */
+internal const val PAY_PRIVATE_HEADER = "X-Pay-Private"
 
 /** [SPD-27] 1.31 R6: reads what is left of an answer and closes its stream, so the connection can be used again. */
 internal fun drain(conn: HttpURLConnection) {
@@ -1561,3 +1742,25 @@ internal fun JSONArray?.lines(): List<String> = if (this == null) emptyList() el
 }
 
 internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
+
+
+/** 1.39 [CARE-03] `GET /api/community/standing`: 없는 칸은 비워 둬요(옛 서버는 404라 [CompanyApi.careStanding]이 빈 것을 줘요). */
+internal fun careStandingOf(o: JSONObject): com.bamnat.core.plaza.CareStanding {
+    fun ms(s: String?): Long? = s?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+    fun appeal(x: JSONObject): String? = x.optJSONObject("appeal")?.let { a -> if (a.isNull("result")) "" else a.optString("result") }
+    fun note(x: JSONObject, hold: Boolean) = com.bamnat.core.plaza.CareNote(
+        id = x.getString("id"), reason = x.optString("reason", "other"), note = x.optStringOrNull("note"), by = x.optString("by", "operator"),
+        about = x.optStringOrNull("about"), scope = if (hold) x.optString("scope", "opinion") else null,
+        days = x.optInt("days").takeIf { it > 0 }, untilMillis = ms(x.optStringOrNull("until")), appeal = appeal(x),
+    )
+    return com.bamnat.core.plaza.CareStanding(
+        warning = o.optJSONObject("warning")?.let { note(it, false) },
+        hold = o.optJSONObject("hold")?.let { note(it, true) },
+        limitAppeal = when {
+            !o.has("limitAppeal") -> null
+            o.isNull("limitAppeal") -> "none"
+            else -> o.optJSONObject("limitAppeal")?.let { a -> if (a.isNull("result")) "" else a.optString("result") } ?: "none"
+        },
+        answerHours = o.optInt("answerHours", com.bamnat.core.plaza.CommunityCare.ANSWER_HOURS),
+    )
+}

@@ -23,6 +23,8 @@ data class ShiftMonth(
     val counts: List<ShiftCount>,
     val nights: Int,
     val swaps: List<SwapDay>,
+    /** 1.39 [STAT-09] PC 6차: [nights] that were a 대근, so the screen says '대근 포함' only when there was one. */
+    val nightCovers: Int = 0,
 ) {
     /** Days swapped with someone (근무 교환). */
     val swapped: List<SwapDay> get() = swaps.filter { !it.cover }
@@ -52,7 +54,7 @@ data class ShiftMonth(
                     else -> emptyList()
                 }
             }
-            return ShiftMonth(month, counts, nights, swaps)
+            return ShiftMonth(month, counts, nights, swaps, nightCovers(days))
         }
 
         /**
@@ -79,6 +81,14 @@ data class ShiftMonth(
             val own = if (d.isWorkDay && d.start != null && d.end != null && NightShift.crosses(d.start, d.end)) 1 else 0
             own + d.extras.count { e -> isCover(e.kind) && e.start != null && e.end != null && NightShift.crosses(e.start!!, e.end!!) }
         }
+
+        /** The 대근 among [nightTimes]: a cover that runs into 22~06시. */
+        fun nightCovers(days: Collection<ResolvedDay>): Int = days.sumOf { d ->
+            d.extras.count { e -> isCover(e.kind) && e.start != null && e.end != null && NightShift.crosses(e.start!!, e.end!!) }
+        }
+
+        /** "22~06시에 걸침", with "· 대근 2번 포함" only when a 대근 was one of them (1.39 [STAT-09] PC 6차). */
+        fun nightCaption(m: ShiftMonth): String = "22~06시에 걸침" + if (m.nightCovers > 0) " · 대근 ${m.nightCovers}번 포함" else ""
 
         /** A 대근: the built-in kind or any kind that is a whole shift worked for someone else. */
         fun isCover(kind: ExtraKind): Boolean = kind.id == ExtraKind.COVER_ID || kind.timing is ExtraTiming.AsShift

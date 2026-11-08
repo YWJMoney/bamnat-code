@@ -20,14 +20,20 @@ class ZPartsTest {
         val fits = listOf(
             ToolFit(teams = true, receive = true),
             ToolFit(teams = true, receive = true, viewingReceived = true),
+            ToolFit(teams = true, receive = true, hasShiftTypes = false),
             ToolFit(teams = true, receive = true, hasShiftTypes = false, teamsReady = false),
         )
-        val ids = fits.map { f -> CalendarToolSlots.build(f).map { it.id } }
+        val ids = fits.take(3).map { f -> CalendarToolSlots.build(f).map { it.id } }
         assertEquals("a received calendar or no shifts yet moves no tile", 1, ids.distinct().size)
+        // [EASE-04] 1.38: with no order (매달 근무표) 이번 달 전부 넣기 comes first, the order tools after 근무 주기 설정.
+        val noOrder = CalendarToolSlots.build(fits[3]).map { it.id }
+        assertEquals(CalendarToolSlots.TYPE_MONTH, noOrder[1])
+        assertEquals(listOf(CalendarToolSlots.PATTERN, CalendarToolSlots.TEAMS, CalendarToolSlots.PUSH),
+            noOrder.subList(noOrder.indexOf(CalendarToolSlots.PATTERN), noOrder.indexOf(CalendarToolSlots.PATTERN) + 3))
         val viewing = CalendarToolSlots.build(fits[1]).associateBy { it.id }
         assertFalse(viewing.getValue(CalendarToolSlots.CUSTOMIZE).enabled)
         assertEquals("받은 달력을 보는 중", viewing.getValue(CalendarToolSlots.CUSTOMIZE).note)
-        val empty = CalendarToolSlots.build(fits[2]).associateBy { it.id }
+        val empty = CalendarToolSlots.build(fits[3]).associateBy { it.id }
         assertEquals("근무 종류를 먼저 만들어요", empty.getValue(CalendarToolSlots.TYPE_MONTH).note)
         assertEquals("근무 순서를 정하면 써요", empty.getValue(CalendarToolSlots.TEAMS).note)
         // The ways to settings and help come last, apart: never in a tool's place.

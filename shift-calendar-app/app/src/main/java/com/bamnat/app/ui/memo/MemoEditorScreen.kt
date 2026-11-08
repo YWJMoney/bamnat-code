@@ -49,6 +49,9 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -57,6 +60,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import android.widget.Toast
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.DatePicker
 import com.bamnat.app.ui.components.DatePickerDialog
 import com.bamnat.app.ui.components.DropdownMenu
@@ -90,9 +94,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.bamnat.app.ui.parts.fillColor
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
-import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.LocalEdgeScroll
 import com.bamnat.app.ui.components.edgeScrollViewport
 import com.bamnat.app.ui.components.rememberSelectionDrag
@@ -152,7 +157,51 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" }, shareText(memo)) { copying = false }
     val bodyTools = remember { MemoBodyTools() }
-    val background = memoBackground(memo.colorIndex)
+    // [MPH-02] 1.38 A chosen photo's or board's tools, fixed above the keyboard bar.
+    val toolHost = remember { MemoToolHost() }
+    // [MPH-01] 1.38 사진 넣기: at the caret of the field typed in last, or at the end of the words.
+    // [MPH-07] A 자유 판's '+ 사진' sends the photos to that board instead (its block index).
+    var boardTarget by remember { mutableStateOf<Int?>(null) }
+    val (photoPicker, photoMenu) = rememberMemoPhotoPicker(
+        left = { com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO - com.bamnat.core.memo.MemoPhotos.count(vm.memo.value.body) },
+        onBoard = if (memo.isChecklist) null else { ->
+            boardTarget = null
+            val into = bodyTools.insertBoard
+            if (into != null) into() else vm.setBody(com.bamnat.core.memo.MemoPhotos.insertBoard(vm.memo.value.body, null).text)
+        },
+        onOpen = { boardTarget = null },
+    ) { names ->
+        boardTarget?.let { at ->
+            val now = vm.memo.value.body
+            val b = com.bamnat.core.memo.MemoPhotos.parse(now).getOrNull(at) as? com.bamnat.core.memo.MemoPhotos.Board
+            if (b != null) {
+                val added = names.mapIndexed { k, name ->
+                    val n = b.items.size + k
+                    com.bamnat.core.memo.MemoPhotos.BoardItem(com.bamnat.core.memo.MemoPhotos.BoardKind.PHOTO, name,
+                        x = 300 + (n % 4) * 120, y = 300 + (n % 3) * 150, w = 450)
+                }
+                vm.setBody(com.bamnat.core.memo.MemoPhotos.updateBoard(now, at, b.copy(items = b.items + added)))
+            }
+            return@rememberMemoPhotoPicker
+        }
+        val into = bodyTools.insertPhoto
+        if (into != null && !memo.isChecklist) into(names)
+        else if (!vm.addPhotos(names)) Toast.makeText(context, "메모 하나에 사진은 ${com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", Toast.LENGTH_LONG).show()
+    }
+    bodyTools.onPhoto = photoPicker.open
+    // [MPH-06] 1.38 스튜디오 부품 '메모 쓰기 종이'(memo.page): a theme's paper colour for a memo left in the app's colour.
+    val pagePart = com.bamnat.app.ui.parts.partStyle("memo.page")
+    val background = (if (memo.colorIndex == 0) pagePart.fillColor else null)
+        ?: memoBackground(memo.colorIndex)
+    val bodyStyle = com.bamnat.app.ui.parts.PartMods.text(pagePart, MaterialTheme.typography.bodyLarge)
+    val paperLook = memoPaperLook(com.bamnat.core.memo.MemoPhotos.paper(memo.body))
+    var choosingPaper by remember { mutableStateOf(false) }
+    if (choosingPaper) MemoPaperDialog(
+        current = com.bamnat.core.memo.MemoPhotos.paper(memo.body),
+        themed = com.bamnat.app.ui.parts.partStyle("memo.page.rule").line.let { it != null && it != "none" },
+        onPick = { k -> vm.setBody(com.bamnat.core.memo.MemoPhotos.withPaper(memo.body, k)); choosingPaper = false },
+        onDismiss = { choosingPaper = false },
+    )
     // [UX-11] 1.25 Z (U10): the line being typed is kept in view by moving this scroll only, never the window.
     val bodyScroll = rememberScrollState()
     val follow = remember { CaretFollow() }
@@ -191,6 +240,15 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     if (!loaded) return@TopAppBar
                     IconButton(onClick = vm::undo, enabled = canUndo) { Icon(Icons.AutoMirrored.Filled.Undo, "실행 취소") }
                     IconButton(onClick = vm::redo, enabled = canRedo) { Icon(Icons.AutoMirrored.Filled.Redo, "다시 실행") }
+                    // 1.39 [TASK-02] 끝냄, in sight like 고정 (a repeating memo: the day it was opened from).
+                    val done = memo.isDoneOn(vm.doneDay)
+                    IconButton(onClick = { vm.setDone(!done) }) {
+                        Icon(
+                            if (done) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
+                            if (done) "끝냄 풀기" else "끝냄 표시",
+                            tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = vm::togglePinned) {
                         Icon(
                             if (memo.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
@@ -219,6 +277,12 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 onClick = { menu = false; toLedger = true },
                                 enabled = !memo.isBlank,
                             )
+                            // [MPH-05] 1.38 메모 종이.
+                            DropdownMenuItem(
+                                text = { Text("종이(줄 노트·모눈·점)") },
+                                leadingIcon = { Icon(Icons.Outlined.Description, null) },
+                                onClick = { menu = false; choosingPaper = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text("색상") },
                                 leadingIcon = { Icon(Icons.Filled.Palette, null) },
@@ -229,8 +293,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 leadingIcon = { Icon(Icons.Filled.Share, null) },
                                 onClick = {
                                     menu = false
-                                    val send = Intent(Intent.ACTION_SEND)
-                                        .setType("text/plain")
+                                    // [MPH-04] 1.38 A memo with photos shares them too, as pictures beside the words.
+                                    val send = MemoPhotoFiles.shareIntent(context, memo.photos)
                                         .putExtra(Intent.EXTRA_SUBJECT, memo.title)
                                         .putExtra(Intent.EXTRA_TEXT, shareText(memo))
                                     runCatching { context.startActivity(Intent.createChooser(send, "메모 공유")) }
@@ -306,10 +370,13 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 )
                 // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it. Second in the row
                 // (PC 확인 bad7d860: last, it sat past the screen's edge and was not found).
+                // [MPH-01] 1.38 사진 넣기, in sight next to the schedule chip.
+                MemoPhotoChip(com.bamnat.core.memo.MemoPhotos.count(memo.body), photoPicker, photoMenu)
                 MemoToLedgerChip(memo)
                 AssistChip(
                     onClick = { showDatePicker = true },
-                    label = { Text(if (date != null) Fmt.fullDate(date) else "날짜 붙이기") },
+                    // This year's date without the year ("11월 7일 (토)"), so the chips after it stay in sight.
+                    label = { Text(if (date == null) "날짜 붙이기" else if (date.year == com.bamnat.core.time.Today.date().year) Fmt.dayTitle(date) else Fmt.fullDate(date)) },
                     leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
                     trailingIcon = if (date != null) {
                         { Icon(Icons.Filled.Close, "날짜 떼기", Modifier.size(18.dp).clickable { vm.setDate(null) }) }
@@ -317,11 +384,27 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         null
                     },
                 )
+                // [NOTE-05] A memo can come back every week, month or year, [EASE-22] or every 야간; [EASE-23] one with no date
+                // gets the day to start from, and says so. Right after the date, before the shift label (1.38 PC 확인 9b028f4c:
+                // after the label it sat past the screen's edge and took a swipe to find).
+                val shiftTypes by vm.shiftTypes.collectAsStateWithLifecycle()
+                val say: (String?) -> Unit = { it?.let { line -> Toast.makeText(context, line, Toast.LENGTH_LONG).show() } }
+                MemoRepeatChip(date, memo.repeat, { say(vm.setRepeat(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
                 if (date != null) ShiftLabel(day)
-                // [NOTE-05] A dated memo can come back every week, month or year.
-                if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
+            }
+            // 1.39 [TASK-02][TASK-05] 끝냄: said in a line with the way back; all lines checked asks once whether the memo is done too.
+            MemoDoneLine(memo, vm.doneDay, onDone = vm::setDone)
+            // 1.38 (DB 28판) The days taken off this repeating memo (이 날만 빼기), and a way to put them back.
+            if (memo.repeat.isNotEmpty() && memo.skips.isNotEmpty()) {
+                val shown = memo.skips.sorted().take(SKIPS_SHOWN).joinToString(", ") { Fmt.monthDay(it) } +
+                    if (memo.skips.size > SKIPS_SHOWN) " 외 ${memo.skips.size - SKIPS_SHOWN}일" else ""
+                Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("뺀 날: $shown", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = vm::clearSkips) { Text("다시 넣기") }
+                }
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
@@ -369,23 +452,63 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.size(8.dp))
                 if (memo.isChecklist) {
                     // [J135-07] F-65: a list started from a template keeps the answers whole here, above the list.
-                    if (memo.body.isNotBlank()) {
+                    if (com.bamnat.core.memo.MemoPhotos.has(memo.body)) {
+                        // [MPH-01] 1.38 A checklist's photos, above its list.
+                        MemoBlocksBody(
+                            body = memo.body, onBody = vm::setBody, textStyle = MaterialTheme.typography.bodyMedium, trailingField = false,
+                            current = { vm.memo.value.body },
+                            field = { _, text, onText, _, _ ->
+                                if (text.isNotBlank()) PlainField(value = text, onValueChange = onText, placeholder = "메모",
+                                    textStyle = MaterialTheme.typography.bodyMedium, singleLine = false)
+                            },
+                            sideField = { _, text, onText, mod ->
+                                PlainField(value = text, onValueChange = onText, placeholder = "사진 옆에 쓸 글",
+                                    textStyle = MaterialTheme.typography.bodyMedium, singleLine = false, modifier = mod)
+                            },
+                        )
+                        Spacer(Modifier.size(8.dp))
+                    } else if (memo.body.isNotBlank()) {
                         PlainField(value = memo.body, onValueChange = vm::setBody, placeholder = "메모",
                             textStyle = MaterialTheme.typography.bodyMedium, singleLine = false)
                         Spacer(Modifier.size(8.dp))
                     }
                     ChecklistEditor(memo = memo, vm = vm)
-                } else CompositionLocalProvider(LocalEdgeScroll provides edge) {
-                    MemoBodyField(
-                        value = memo.body,
-                        onValueChange = vm::setBody,
-                        placeholder = "내용을 적어 보세요",
-                        textStyle = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.heightIn(min = 240.dp),
-                        autoFocus = memo.id == 0L && memo.title.isEmpty(),
-                        tools = bodyTools,
-                        follow = follow,
-                        onCaret = onCaret,
+                } else CompositionLocalProvider(LocalEdgeScroll provides edge, LocalMemoToolHost provides toolHost) {
+                    // [MPH-01][MPH-02] 1.38 The body as its words and photos; without photos it is the one field it always was.
+                    MemoBlocksBody(
+                        body = memo.body,
+                        onBody = vm::setBody,
+                        textStyle = bodyStyle,
+                        current = { vm.memo.value.body },
+                        onBoardPhoto = { at -> photoPicker.pick(); boardTarget = at },
+                        field = { _, text, onText, first, last ->
+                            MemoBodyField(
+                                value = text,
+                                onValueChange = onText,
+                                placeholder = if (first && last) "내용을 적어 보세요" else if (last && text.isEmpty()) "이어서 쓰기" else "",
+                                textStyle = bodyStyle,
+                                paper = paperLook,
+                                modifier = if (last) Modifier.heightIn(min = if (first) 240.dp else 120.dp) else Modifier,
+                                autoFocus = first && memo.id == 0L && memo.title.isEmpty(),
+                                tools = bodyTools,
+                                follow = follow,
+                                onCaret = onCaret,
+                            )
+                        },
+                        sideField = { _, text, onText, mod ->
+                            MemoBodyField(
+                                value = text,
+                                onValueChange = onText,
+                                placeholder = "사진 옆에 쓸 글",
+                                textStyle = bodyStyle,
+                                paper = paperLook,
+                                modifier = mod,
+                                tools = bodyTools,
+                                follow = follow,
+                                onCaret = onCaret,
+                                takesPhotos = false,
+                            )
+                        },
                     )
                 }
             }
@@ -414,12 +537,15 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         else { answering = found; scheduling = true }
                     },
                     onDecline = { vm.keepAsMemo(found) },
+                    // 1.39 [CAL2-20] 근무와 겹치거나 야간 뒤 잘 시간이면 바로 한 줄.
+                    clash = remember(found.at, shiftDays) { com.bamnat.core.memo.ShiftClash.of(found.at, shiftDays)?.text },
                 )
             }
+            if (!memo.isChecklist) MemoToolHostSlot(toolHost)
             if (!memo.isChecklist) MemoBodyToolbar(bodyTools)
             // [RUL-05] 1.36 사용자 "메모장 및 모든 곳에서": {근무}·{이번주야간} 같은 수식이 있으면 그날 값으로 어떻게 읽히는지.
             com.bamnat.app.logic.MemoFormulaPreview(memo, Modifier.padding(horizontal = 20.dp))
-            val chars = if (memo.isChecklist) memo.checklist.sumOf { it.text.length } else memo.body.length
+            val chars = if (memo.isChecklist) memo.checklist.sumOf { it.text.length } else memo.text.length
             Text(
                 "${chars}자" + if (memo.isChecklist) " · 완료 ${memo.checkedCount}/${memo.itemCount}" else "",
                 style = MaterialTheme.typography.labelSmall,
@@ -449,15 +575,25 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     }
 
     if (scheduling) {
+        var pickedRepeat by remember { mutableStateOf<com.bamnat.core.memo.MemoRepeat.Kind?>(null) }
         ScheduleDialog(
             initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime()),
             current = memo.reminder,
             onDismiss = { scheduling = false },
             shiftTimes = remember(shiftDays) { com.bamnat.core.memo.ShiftMemoTime.suggestions(shiftDays, Today.dateTime()) },
+            clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays)?.text },
+            // 1.39 [TASK-44] PC 6차: 반복 here too (the chip by the date was not found); 쉬는 날 where the calendar has days off.
+            repeat = memo.repeat,
+            onRepeat = { kind -> pickedRepeat = kind },
+            restRepeat = shiftDays.any { !it.work },
             onSave = { r ->
+                pickedRepeat?.let { vm.setRepeat(it, from = r.at.toLocalDate()) }
+                pickedRepeat = null
                 vm.setReminder(r, answered = answering)
                 scheduling = false
-                Toast.makeText(context, "${scheduleText(r.at)}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
+                val again = com.bamnat.core.memo.MemoRepeat.label(vm.memo.value.repeat).let { if (it.isEmpty()) "" else "$it " }
+                val at = if (again.isEmpty()) scheduleText(r.at) else again + scheduleText(r.at).substringAfter(") ")
+                Toast.makeText(context, "${at}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
             },
         )
     }
@@ -465,15 +601,22 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     if (showLast) lastSame?.let { (label, memos) -> LastShiftDialog(label, memos) { showLast = false } }
 
     if (confirmDelete) {
-        ConfirmDialog(
-            title = "메모를 지울까요?",
-            message = "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.",
-            confirmLabel = "삭제",
-            destructive = true,
+        val deleteTypes by vm.shiftTypes.collectAsStateWithLifecycle()
+        // 1.38 (DB 28판) A repeating memo asks: 이 날만 빼기 (the day it was opened from) or 반복 전부 지우기.
+        MemoDeleteDialog(
+            memo = memo,
+            day = vm.openedOn,
+            shiftName = { id -> deleteTypes.firstOrNull { it.id == id }?.name },
+            plainTitle = "메모를 지울까요?",
+            plainMessage = "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.",
             onDismiss = { confirmDelete = false },
-            onConfirm = {
+            onDeleteAll = {
                 confirmDelete = false
                 vm.delete(onBack)
+            },
+            onSkipDay = { d ->
+                confirmDelete = false
+                vm.skipDay(d, onBack)
             },
         )
     }
@@ -550,7 +693,7 @@ private fun PlainField(
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun MemoBodyField(
+internal fun MemoBodyField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
@@ -561,7 +704,16 @@ private fun MemoBodyField(
     follow: CaretFollow? = null,
     /** [UX-11] The caret's line in the field ([LayoutCoordinates]) to keep in view; animated when typing moved it. */
     onCaret: ((androidx.compose.ui.layout.LayoutCoordinates, androidx.compose.ui.geometry.Rect, Boolean) -> Unit)? = null,
+    /** [MPH-01] 1.38 False for the words beside a photo: a photo put in from there goes after it instead. */
+    takesPhotos: Boolean = true,
+    /** [MPH-05] 1.38 메모 종이: lines behind the words, at their line height. */
+    paper: MemoPaperLook? = null,
 ) {
+    val paperStep = with(androidx.compose.ui.platform.LocalDensity.current) {
+        (if (textStyle.fontSize.isSp) textStyle.fontSize.toPx() else 16.sp.toPx()) * 1.5f
+    }
+    @Suppress("NAME_SHADOWING") val onValueChange by androidx.compose.runtime.rememberUpdatedState(onValueChange)
+    val me = remember { Any() }
     val focus = remember { FocusRequester() }
     if (autoFocus) {
         LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -595,8 +747,8 @@ private fun MemoBodyField(
             onDispose { follow.again = null }
         }
     }
-    if (tools != null) {
-        // [NOTE-07] The bar's taps change the text where the caret is, like typing would.
+    if (tools != null && focused) {
+        // [NOTE-07] The bar's taps change the text where the caret is, like typing would. [MPH-01] Only the field typed in owns it.
         tools.onAction = { action ->
             val at = com.bamnat.core.memo.ListContinuation.Edit(field.text, field.selection.end)
             val edit = when (action) {
@@ -609,7 +761,25 @@ private fun MemoBodyField(
             field = androidx.compose.ui.text.input.TextFieldValue(done.text, androidx.compose.ui.text.TextRange(done.cursor))
             if (field.text != value) onValueChange(field.text)
         }
-        LaunchedEffect(focused) { tools.editing = focused }
+        // [MPH-01] 1.38 A photo goes in at the caret, on a line of its own.
+        tools.insertPhoto = if (!takesPhotos) null else { names ->
+            val done = com.bamnat.core.memo.MemoPhotos.insertAll(field.text, field.selection.end, names)
+            field = androidx.compose.ui.text.input.TextFieldValue(done.text, androidx.compose.ui.text.TextRange(done.caret))
+            onValueChange(done.text)
+        }
+        tools.insertBoard = if (!takesPhotos) null else { ->
+            val done = com.bamnat.core.memo.MemoPhotos.insertBoard(field.text, field.selection.end)
+            field = androidx.compose.ui.text.input.TextFieldValue(done.text, androidx.compose.ui.text.TextRange(done.caret))
+            onValueChange(done.text)
+        }
+    }
+    if (tools != null) {
+        LaunchedEffect(focused) {
+            if (focused) { tools.owner = me; tools.editing = true } else if (tools.owner === me) tools.editing = false
+        }
+        DisposableEffect(tools) {
+            onDispose { if (tools.owner === me) { tools.owner = null; tools.editing = false; tools.insertPhoto = null; tools.insertBoard = null; tools.onAction = null } }
+        }
     }
     val color = MaterialTheme.colorScheme.onSurface
     drag.Toolbar { BasicTextField(
@@ -651,7 +821,8 @@ private fun MemoBodyField(
                 drag.focused = it.isFocused
                 if (!it.isFocused) drag.reset()
             }
-            .onGloballyPositioned { coords = it; drag.text = it },
+            .onGloballyPositioned { coords = it; drag.text = it }
+            .memoPaper(paper, { layout }, paperStep),
         textStyle = textStyle.copy(color = color),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -788,7 +959,8 @@ private fun shareText(memo: Memo): String = buildString {
     if (memo.isChecklist) {
         memo.checklist.filter { it.text.isNotBlank() }.forEach { appendLine((if (it.checked) "☑ " else "☐ ") + it.text) }
     } else {
-        append(memo.body)
+        // [MPH-04] 1.38 The words only; the photos go with the share as pictures (MemoPhotoFiles.shareIntent).
+        append(memo.text)
     }
 }.trimEnd()
 
@@ -945,4 +1117,42 @@ internal fun numberOnly(typed: String): String {
         }
     }
     return sb.toString()
+}
+
+/** 1.38 How many days taken off a repeating memo the editor names before "외 N일". */
+private const val SKIPS_SHOWN = 3
+
+/**
+ * 1.39 [TASK-02] "끝냈어요 · 11월 7일 오후 2:30" with 끝냄 풀기, on a finished memo. [TASK-05] A checklist whose every line is checked
+ * and that is not finished asks "모두 체크했어요. 이 메모도 끝낼까요?" (할 일 앱 리뷰가 바란 하위 할 일 자동 완료, 묻고 나서); 아니요 is
+ * kept for this visit, and a line unchecked again asks again later.
+ */
+@Composable
+internal fun MemoDoneLine(memo: com.bamnat.core.memo.Memo, day: java.time.LocalDate, onDone: (Boolean) -> Unit) {
+    val done = memo.isDoneOn(day)
+    val allChecked = memo.isChecklist && memo.itemCount > 0 && memo.checkedCount == memo.itemCount
+    var declined by rememberSaveable { mutableStateOf(false) }
+    if (!allChecked) declined = false
+    if (done) {
+        val whenText = if (memo.repeat.isNotEmpty()) Fmt.dayTitle(day) + " 몫"
+            else memo.doneAtMillis?.let { Fmt.monthDay(Instant.ofEpochMilli(it).atZone(Today.zone()).toLocalDate()) + " " + savedTime(it) }.orEmpty()
+        Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.CheckCircle, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Text("  끝냈어요" + if (whenText.isNotEmpty()) " · $whenText" else "", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onDone(false) }) { Text("끝냄 풀기") }
+        }
+    } else if (allChecked && !declined) {
+        androidx.compose.material3.Card(
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        ) {
+            Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("모두 체크했어요. 이 메모도 끝낼까요?", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+                TextButton(onClick = { declined = true }) { Text("아니요") }
+                TextButton(onClick = { onDone(true) }) { Text("끝내기") }
+            }
+        }
+    }
 }

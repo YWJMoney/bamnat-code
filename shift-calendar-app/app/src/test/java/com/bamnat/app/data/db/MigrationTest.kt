@@ -195,6 +195,42 @@ class MigrationTest {
         }
     }
 
+    /** 1.39 [TASK-02] Version 32 memos arrive not finished, and can be finished once (one that does not repeat) or day by day. */
+    @Test
+    fun version32MemosArriveNotFinishedAndCanBeFinished() = runBlocking {
+        val name = "migration-32.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 32)
+        sql.execSQL(
+            "INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, deletedAt, " +
+                "remindAt, remindRing, remindNotify, remindAsked, calendars, repeat, skips) " +
+                "VALUES (1, 20000, '약 먹기', '', '', 0, 0, 0, 1, 2, NULL, NULL, 0, 0, NULL, '', 'D', ''), " +
+                "(2, 20000, '택배', '', '', 0, 0, 0, 1, 2, NULL, NULL, 0, 0, NULL, '', '', '')",
+        )
+        sql.version = 32
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val daily = db.memoDao().get(1)!!.toModel()
+            val once = db.memoDao().get(2)!!.toModel()
+            assertNull(once.doneAtMillis)
+            assertTrue(daily.doneDays.isEmpty())
+            val day = java.time.LocalDate.ofEpochDay(20003)
+            db.memoDao().update(daily.withDone(true, day, 99).toEntity())
+            db.memoDao().update(once.withDone(true, day, 99).toEntity())
+            val d = db.memoDao().get(1)!!.toModel()
+            assertTrue("매일 메모는 그날만 끝냄", d.isDoneOn(day))
+            assertTrue(!d.isDoneOn(day.plusDays(1)))
+            assertEquals(99L, db.memoDao().get(2)!!.toModel().doneAtMillis)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     /** [RECV-01][IMPORT-01] Version 13 data stays as it was; the new tables arrive empty. */
     @Test
     fun version13KeepsEverythingAndAddsOwed() = runBlocking {
@@ -428,6 +464,153 @@ class MigrationTest {
             assertEquals(com.bamnat.core.leave.EntryKind.CARRY, row.kind)
             assertEquals(2.5, row.days, 1e-9)
             assertEquals(java.time.LocalDate.of(2026, 12, 31), row.expires)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
+     * 1.38 [P3-01] A version 25 phone goes up through 26 (가계부) to 27 (Phase 3) with its data as it was, and the new 팀·사업장
+     * tables start empty and take rows: a team with its cells and a 사업장 with a staff member and a changed day.
+     */
+    /** 1.38 [SLEEP-01][SLEEP-03][SLEEP-07] (DB 31): taps stay taps, and the morning answers and sound events start empty. */
+    @Test
+    fun version30SleepGoesTo31() = runBlocking {
+        val name = "migration-30-31.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 30)
+        sql.execSQL("INSERT INTO sleep_logs (id, startMillis, endMillis) VALUES (1, 1000, 25000000)")
+        sql.version = 30
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val dao = db.sleepDao()
+            assertEquals(SleepLogEntity.SOURCE_TAP, dao.all().single().source)
+            assertTrue(dao.allChecks().isEmpty() && dao.allEvents().isEmpty())
+            dao.insertAuto(30_000_000, 50_000_000)
+            assertEquals(listOf(SleepLogEntity.SOURCE_TAP, SleepLogEntity.SOURCE_AUTO), dao.all().sortedBy { it.id }.map { it.source })
+            dao.insertCheck(SleepCheckEntity(startMillis = 1000, endMillis = 25_000_000, mood = 4, tags = "caffeine", note = null, atMillis = 1))
+            assertEquals(4, dao.allChecks().single().mood)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun version25GoesUpThrough26To27() = runBlocking {
+        val name = "migration-25-27.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 25)
+        sql.execSQL("INSERT INTO money_accounts (id, name, type, last4, payDay, closeDay, payFromId, opening, color, sortOrder, hidden, remind) " +
+            "VALUES (1, '신한 Deep', 'CREDIT', '1234', 14, NULL, NULL, 0, 0, 0, 0, 1)")
+        sql.version = 25
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            assertEquals(AppDatabase.MIGRATIONS.last().endVersion, db.openHelper.writableDatabase.version) // 27, and on (28)
+            assertEquals("신한 Deep", db.moneyDao().allAccounts().single().name)
+            assertTrue(db.teamDao().teams().isEmpty() && db.payrollDao().workplaces().isEmpty())
+            db.teamDao().upsertTeam(TeamEntity("t", "7병동 A팀", "", "[]", "", 1, false))
+            assertEquals("30판 신청 받기는 처음엔 없음", "", db.teamDao().teams().single().ask)
+            assertEquals("30판 결원 요청도 처음엔 없음", "", db.teamDao().teams().single().calls)
+            assertEquals("30판 바꾸기 요청도 처음엔 없음", "", db.teamDao().teams().single().swap)
+            db.teamDao().upsertMembers(listOf(TeamMemberEntity("m", "t", "민지", "책임", "CHARGE", null, 0, null, null, true)))
+            db.teamDao().replaceMonth("t", 20759, 20788, listOf(TeamCellEntity("t", "m", 20760, 1, "MANUAL", false)))
+            assertEquals(1L, db.teamDao().cells("t", 20759, 20788).single().shiftId)
+            db.payrollDao().upsertWorkplace(WorkplaceEntity("p", "우리 카페", true, 10, true, 1, null, 1))
+            assertEquals("29판 계산 단위 기본은 1분", 1, db.payrollDao().workplaces().single().minuteUnit)
+            assertEquals("30판 대타 요청은 처음엔 없음", "", db.payrollDao().workplaces().single().calls)
+            assertEquals("32판 산재 업종은 처음엔 안 고름", null, db.payrollDao().workplaces().single().industry)
+            db.payrollDao().upsertStaff(StaffEntity("s", "p", "준호", "HOUR", 10_320, "[]", null, null, null, "", "{}", true, "{}", null, 0))
+            db.payrollDao().upsertWork(StaffWorkEntity("s", 20760, "ABSENT", null, null))
+            assertEquals("ABSENT", db.payrollDao().work().single().kind)
+            assertEquals("29판 출퇴근 링크는 처음엔 없음", null, db.payrollDao().staff().single().clockId)
+            db.payrollDao().insertPunches(listOf(StaffPunchEntity("s", 1_000L, "IN"), StaffPunchEntity("s", 1_000L, "IN")))
+            assertEquals("같은 기록은 한 번", 1, db.payrollDao().punches().size)
+            db.payrollDao().deleteStaff("s")
+            assertTrue("직원을 지우면 출퇴근 기록도", db.payrollDao().punches().isEmpty())
+            assertTrue(db.payrollDao().work().isEmpty())
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
+     * 1.38 [LEDH-25][LEDH-27] A version 25 account comes through version 26 (and on, through 1.38 Phase 3's 27) as it was:
+     * 이자 없음, 매달 갚는 돈 없음, 실적 구간 없음. A loan and a card's 실적 구간 then save and read back.
+     */
+    @Test
+    fun version25AccountsKeepTheirMeaning() = runBlocking {
+        val name = "migration-25.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 25)
+        sql.execSQL("INSERT INTO money_accounts (id, name, type, last4, payDay, closeDay, payFromId, opening, color, sortOrder, hidden, remind) " +
+            "VALUES (1, '신한 Deep', 'CREDIT', '1234', 14, NULL, NULL, 0, 0, 0, 0, 1)")
+        sql.execSQL("INSERT INTO envelopes (id, name, target, dueEpochDay, kind, sharePercent, emoji, sortOrder, closed, createdEpochDay) " +
+            "VALUES (1, '여행', 1200000, NULL, 0, 0, '', 0, 0, NULL)")
+        sql.version = 25
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val card = db.moneyDao().allAccounts().single().toModel()
+            assertEquals(14, card.payDay)
+            assertEquals(0.0, card.rate, 0.0)
+            assertEquals(0L, card.monthlyPay)
+            assertTrue(card.perfTiers.isEmpty() && card.perfSkip.isEmpty())
+            assertEquals("여행", db.moneyDao().allEnvelopes().single().name)
+            db.moneyDao().insertAccount(card.copy(id = 2, name = "전세 대출", type = com.bamnat.core.money.AccountType.OTHER,
+                opening = -50_000_000, rate = 3.9, monthlyPay = 400_000).toEntity())
+            db.moneyDao().insertAccount(card.copy(id = 3, perfTiers = listOf(500_000, 300_000), perfSkip = listOf("세금")).toEntity())
+            val back = db.moneyDao().allAccounts().map { it.toModel() }.associateBy { it.id }
+            assertEquals(3.9, back.getValue(2).rate, 1e-9)
+            assertEquals(400_000L, back.getValue(2).monthlyPay)
+            assertEquals(listOf(300_000L, 500_000L), back.getValue(3).perfTiers)
+            assertEquals(listOf("세금"), back.getValue(3).perfSkip)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
+     * 1.38 갈래 2 (DB 28판, 이 날만 빼기): a version 27 repeating memo comes through as it was, with no day taken off; a day
+     * taken off then saves, reads back and keeps the memo off that day only.
+     */
+    @Test
+    fun version27MemosKeepTheirMeaning() = runBlocking {
+        val name = "migration-27.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 27)
+        sql.execSQL("INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, " +
+            "deletedAt, remindAt, remindRing, remindNotify, remindAsked, calendars, repeat) " +
+            "VALUES (1, 20760, '분리수거', '', '', 0, 0, 0, 1, 1, NULL, NULL, 0, 0, NULL, '', 'W2')")
+        sql.version = 27
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val memo = db.memoDao().getAll().single().toModel()
+            assertEquals("W2", memo.repeat)
+            assertTrue(memo.skips.isEmpty())
+            val start = java.time.LocalDate.ofEpochDay(20760)
+            val off = start.plusWeeks(1)
+            db.memoDao().update(memo.copy(skips = setOf(off)).toEntity())
+            val back = db.memoDao().getAll().single().toModel()
+            assertEquals(setOf(off), back.skips)
+            assertEquals(listOf(start, start.plusWeeks(2)), com.bamnat.core.memo.MemoRepeat.datesIn(back, start, start.plusWeeks(2)))
         } finally {
             db.close()
             context.deleteDatabase(name)

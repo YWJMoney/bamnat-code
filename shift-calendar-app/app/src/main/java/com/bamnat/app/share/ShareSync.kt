@@ -68,6 +68,9 @@ class ShareSync(
             c.featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.ICS_FEED) }.distinctUntilChanged(),
             // 1.36: links kept open while 프로 lasts, and back to 90 days at most when it ends.
             c.featureGate.state.map { it.keepsLinks }.distinctUntilChanged(),
+            // 1.38 [SLEEP-11] 지금 자는 중: a sleep that opens or ends, and the next alarm while it is open.
+            combine(c.sleepRepository.recent(days = 2).map { l -> l.firstOrNull { it.end == null && !it.imported }?.id }.distinctUntilChanged(),
+                c.alarmScheduler.upcoming.map { it?.triggerAtMillis }.distinctUntilChanged()) { a, b -> a to b },
         ) + ShareLinkKey.all(PersonalCalendar.MAIN).map { c.shareLinksOf(it).link }
         combine(reads) { Unit }.debounce(DEBOUNCE_MILLIS).collect {
             // [PROV-04] Each of a calendar's links, the first first.
@@ -90,6 +93,8 @@ class ShareSync(
         store.expire()
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
+        // [TRY-06] A work only being tried never goes out; once it is put back, the change sends what is there.
+        if (com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return@withLock Result.Same
         // 1.36: 프로 keeps every link open while it lasts; after it ends a kept link closes within 90 days.
         send(store, link, ShareLinkPayload.keepOpen(link, clock(), c.featureGate.state.value.keepsLinks))
     }
@@ -128,6 +133,28 @@ class ShareSync(
             }
         }
         c.telemetry.event("share_link_cut_all", if (left == 0) "done" else "left")
+        left
+    }
+
+    /**
+     * 1.39 [PRIV-06] 모두 지우기 마저: only the calendar links named by their server ids, the ones a 모두 지우기 could not reach.
+     * A link made since then is not among them and stays. The ids still here come back.
+     */
+    suspend fun cutOnly(ids: Set<String>): Set<String> = lock.withLock {
+        val left = mutableSetOf<String>()
+        for (key in allLinks()) {
+            val store = c.shareLinksOf(key)
+            val link = store.link.value ?: continue
+            if (link.id !in ids) continue
+            try {
+                c.shareApi.delete(link)
+                store.clear()
+            } catch (e: IOException) {
+                left += link.id
+            } catch (e: ShareLinkException) {
+                left += link.id
+            }
+        }
         left
     }
 

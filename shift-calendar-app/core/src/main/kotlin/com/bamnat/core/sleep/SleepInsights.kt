@@ -29,6 +29,21 @@ object SleepInsights {
         val nap: Boolean get() = minutes < TodayFlow.MAIN_SLEEP_MINUTES
     }
 
+    /**
+     * 1.38 [SLEEP-02] The sleeps of one rest between two works, joined: a split sleep after a night (4 hours, up, 2 more)
+     * or a nap after the main sleep counts as one rest, not as a short sleep and a nap. Two sleeps are one rest when no
+     * work starts between them and they are at most [BLOCK_GAP_HOURS] apart. Its context is that of its longest sleep.
+     */
+    data class Block(val nights: List<Night>) {
+        val minutes: Long get() = nights.sumOf { it.minutes }
+        val start: LocalDateTime get() = nights.minOf { it.entry.start }
+        val main: Night get() = nights.maxBy { it.minutes }
+        val context: Context get() = main.context
+        val split: Boolean get() = nights.size > 1
+        /** A rest too short to be the main sleep of the day: a nap on its own. */
+        val nap: Boolean get() = minutes < TodayFlow.MAIN_SLEEP_MINUTES
+    }
+
     data class Group(val context: Context, val count: Int, val averageMinutes: Long, val averageBedtime: Int?) {
         /** Enough sleeps for the average to mean something. */
         val enough: Boolean get() = count >= MIN_FOR_AVERAGE
@@ -50,7 +65,10 @@ object SleepInsights {
         val findings: List<Finding>,
         /** Days with a log in the window. */
         val loggedDays: Int,
+        /** 1.38 [SLEEP-02] The rests, newest first; [splitRests] of them were more than one sleep. */
+        val blocks: List<Block> = emptyList(),
     ) {
+        val splitRests: Int get() = blocks.count { it.split && !it.nap }
         fun group(c: Context): Group? = groups.firstOrNull { it.context == c }
         val isEmpty: Boolean get() = nights.isEmpty()
     }
@@ -69,17 +87,36 @@ object SleepInsights {
     const val SPREAD_MINUTES = 75L
 
     /** The context of each finished sleep, newest first; an open sleep or a missed wake tap is left out. */
-    fun nights(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, days: Long = WINDOW_DAYS): List<Night> {
+    fun nights(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, days: Long = WINDOW_DAYS): List<Night> =
+        nightsAndWork(log, resolver, today, days).first
+
+    private fun nightsAndWork(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, days: Long): Pair<List<Night>, List<SleepSchedule.Work>> {
         val from = today.minusDays(days - 1)
         val done = log.filter { e ->
             e.end != null && (e.minutes ?: 0) in TodayFlow.MIN_LOGGED_MINUTES..SleepDebt.MAX_SLEEP_MINUTES &&
                 e.wakeDate!!.let { !it.isBefore(from) && !it.isAfter(today) }
         }
-        if (done.isEmpty()) return emptyList()
+        if (done.isEmpty()) return emptyList<Night>() to emptyList()
         val first = done.minOf { it.start.toLocalDate() }.minusDays(1)
         val last = done.maxOf { it.end!!.toLocalDate() }.plusDays(1)
         val work = resolver.resolveRange(first, last).flatMap { SleepSchedule.work(it) }
-        return done.sortedByDescending { it.start }.map { e -> Night(e, contextOf(e.start, e.end!!, work)) }
+        return done.sortedByDescending { it.start }.map { e -> Night(e, contextOf(e.start, e.end!!, work)) } to work
+    }
+
+    /** 1.38 [SLEEP-02] Two sleeps further apart than this are two rests even with no work between them. */
+    const val BLOCK_GAP_HOURS = 3L
+
+    /** 1.38 [SLEEP-02] [nights] joined into rests between works, newest first. */
+    fun blocks(nights: List<Night>, work: List<SleepSchedule.Work>): List<Block> {
+        val out = ArrayList<MutableList<Night>>()
+        for (n in nights.sortedBy { it.entry.start }) {
+            val cur = out.lastOrNull()
+            val end = cur?.maxOf { it.entry.end!! }
+            val joins = cur != null && end != null && !n.entry.start.isAfter(end.plusHours(BLOCK_GAP_HOURS)) &&
+                work.none { w -> w.from.isAfter(end.minusMinutes(1)) && w.from.isBefore(n.entry.start) }
+            if (joins) cur!!.add(n) else out.add(mutableListOf(n))
+        }
+        return out.map { Block(it.sortedByDescending { n -> n.entry.start }) }.sortedByDescending { it.start }
     }
 
     internal fun contextOf(start: LocalDateTime, end: LocalDateTime, work: List<SleepSchedule.Work>): Context {
@@ -91,23 +128,37 @@ object SleepInsights {
         return if (work.any { it.date == day } || before.isNotEmpty() || after != null) Context.WORK_DAY else Context.DAY_OFF
     }
 
-    fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int): Report {
-        val nights = nights(log, resolver, today)
-        val main = nights.filterNot { it.nap }
+    /**
+     * 1.39 PC c0ca3d9f 유형별 빈틈 (가게에 '야간 뒤·쉬는 날'): the kinds of day the averages split into, in the words of the work.
+     * 야간 뒤 is said to 교대 only (사용자 2026-11-06), as the sleep screen's 이렇게 쓰여요 does.
+     */
+    fun groupsWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+        null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 뒤·쉬는 날"
+        com.bamnat.core.work.WorkStyle.INVEST -> "평일·쉬는 날"
+        else -> "일한 날·쉬는 날"
+    }
+
+    fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int,
+               style: com.bamnat.core.work.WorkStyle? = null): Report {
+        val (nights, work) = nightsAndWork(log, resolver, today, WINDOW_DAYS)
+        val blocks = blocks(nights, work)
+        // [SLEEP-02] Averages are per rest: a split sleep counts whole, a nap on its own is left out.
+        val mainRests = blocks.filterNot { it.nap }
+        val main = mainRests.map { it.main }
         val groups = Context.entries.mapNotNull { c ->
-            val list = main.filter { it.context == c }
+            val list = mainRests.filter { it.context == c }
             if (list.isEmpty()) null
-            else Group(c, list.size, list.sumOf { it.minutes } / list.size, averageClock(list.map { it.entry.start }))
+            else Group(c, list.size, list.sumOf { it.minutes } / list.size, averageClock(list.map { it.start }))
         }
         val week = SleepDebt.of(log, today, targetMinutes)
         val weekBefore = SleepDebt.of(log, today.minusDays(SleepDebt.WINDOW_DAYS), targetMinutes)
         val spread = spread(main.filter { it.context != Context.AFTER_NIGHT }.map { it.entry.start })
         val loggedDays = nights.mapNotNull { it.entry.wakeDate }.toSet().size
-        val report = Report(nights, groups, week, weekBefore, spread, nights.count { it.nap }, emptyList(), loggedDays)
-        return report.copy(findings = findings(report, targetMinutes))
+        val report = Report(nights, groups, week, weekBefore, spread, blocks.count { it.nap }, emptyList(), loggedDays, blocks)
+        return report.copy(findings = findings(report, targetMinutes, style))
     }
 
-    private fun findings(r: Report, target: Int): List<Finding> = buildList {
+    private fun findings(r: Report, target: Int, style: com.bamnat.core.work.WorkStyle? = null): List<Finding> = buildList {
         if (r.isEmpty) return@buildList
         val night = r.group(Context.AFTER_NIGHT)
         if (night != null && night.enough && target - night.averageMinutes >= SHORT_MINUTES) {
@@ -146,7 +197,7 @@ object SleepInsights {
         }
         if (r.loggedDays < 5) {
             add(Finding("more-logs", Tone.NOTE, "기록이 쌓이면 더 알려 드려요",
-                "근무별로 2번 넘게 기록하면 야간 뒤·쉬는 날 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
+                "근무별로 2번 넘게 기록하면 ${groupsWord(style)} 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
         }
     }
 
@@ -154,9 +205,23 @@ object SleepInsights {
      * [SLP-16] What the user's own sleep after a night shift was, for 오늘의 흐름 on the way home:
      * the average of the last [WINDOW_DAYS] days, or null with fewer than two.
      */
-    fun afterNightAverage(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate): Long? =
-        nights(log, resolver, today).filter { !it.nap && it.context == Context.AFTER_NIGHT }
+    fun afterNightAverage(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate): Long? {
+        val (nights, work) = nightsAndWork(log, resolver, today, WINDOW_DAYS)
+        return blocks(nights, work).filter { !it.nap && it.context == Context.AFTER_NIGHT }
             .takeIf { it.size >= MIN_FOR_AVERAGE }?.let { list -> list.sumOf { it.minutes } / list.size }
+    }
+
+    /**
+     * 1.38 [SLEEP-02] How much the user slept in the [hours] before [workStart], every sleep counted (naps and split
+     * sleep too): "출근 전 24시간 동안 6시간 40분".
+     */
+    fun sleptBefore(log: List<SleepEntry>, workStart: LocalDateTime, hours: Long = 24): Long {
+        val from = workStart.minusHours(hours)
+        return log.filter { it.end != null && (it.minutes ?: 0) <= SleepDebt.MAX_SLEEP_MINUTES }.sumOf { e ->
+            val a = maxOf(e.start, from); val b = minOf(e.end!!, workStart)
+            if (b.isAfter(a)) java.time.Duration.between(a, b).toMinutes() else 0L
+        }
+    }
 
     /** Mean clock time, minutes after midnight, on a circle so 23:30 and 00:30 average to 00:00. */
     internal fun averageClock(times: List<LocalDateTime>): Int? {
@@ -192,4 +257,35 @@ object SleepInsights {
     }
 
     private const val DAY = 24 * 60
+}
+
+/**
+ * 1.39 사용자 2026-11-08 ("잠 앱을 배워 만들었는데 사용자 패턴 카드가 하나도 없어요"): the pattern cards wait for enough records, so
+ * a new log showed none and said nothing of them. What is still to come, each with how many more it takes, so the screen tells
+ * what the taps will open: 근무별 평균 ([SleepInsights.MIN_FOR_AVERAGE] of a kind of day), 내 기록에서 찾은 것 ([SleepCauses.MIN_TIMES]
+ * mornings answered) and the week against the one before ([WEEK_DAYS] days logged). One that is open already is left out.
+ */
+object SleepUnlocks {
+    const val WEEK_DAYS = 7
+
+    data class Unlock(val key: String, val title: String, val line: String, val have: Int, val need: Int)
+
+    fun of(report: SleepInsights.Report, answeredMornings: Int, style: com.bamnat.core.work.WorkStyle?): List<Unlock> = buildList {
+        if (report.groups.none { it.enough }) {
+            val have = report.groups.maxOfOrNull { it.count } ?: 0
+            val left = SleepInsights.MIN_FOR_AVERAGE - have
+            add(Unlock("groups", "근무별 평균", "같은 종류 날 잠을 ${left}번 더 적으면 ${SleepInsights.groupsWord(style)} 평균을 따로 보여 줘요",
+                have, SleepInsights.MIN_FOR_AVERAGE))
+        }
+        if (answeredMornings < SleepCauses.MIN_TIMES) {
+            val left = SleepCauses.MIN_TIMES - answeredMornings
+            add(Unlock("causes", "내 기록에서 찾은 것", "깬 뒤 아침 한 장에 ${left}번 더 답하면 피곤한 아침과 함께 온 것(늦은 카페인·야식…)을 찾아 줘요",
+                answeredMornings, SleepCauses.MIN_TIMES))
+        }
+        if (report.loggedDays < WEEK_DAYS) {
+            val left = WEEK_DAYS - report.loggedDays
+            add(Unlock("week", "한 주 흐름", "${left}일 더 적으면 최근 7일 평균과 목표를 견주고, 잠드는 시각이 들쭉날쭉한지 알려 줘요",
+                report.loggedDays, WEEK_DAYS))
+        }
+    }
 }

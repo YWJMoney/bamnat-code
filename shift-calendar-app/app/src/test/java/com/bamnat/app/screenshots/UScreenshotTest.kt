@@ -125,7 +125,7 @@ class UScreenshotTest : ScreenshotBase() {
     }
     @Test fun setupUnknownCode() = shoot("820_u_setup_unknown_code", FOLDED) {
         setup(pick = true).invoke(this)
-        reveal("‘교육’(1일)는 무엇인가요?")
+        reveal("‘교육’로 읽은 칸(")
     }
 
     // ---- payslip and company rules, two photos ----

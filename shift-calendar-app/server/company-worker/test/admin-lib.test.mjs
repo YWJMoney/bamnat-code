@@ -63,12 +63,17 @@ const OWNER = { owner: true, perms: {} };
 const ASKER = { owner: false, perms: { inquiries: "edit" } };
 const PLAZA = { owner: false, perms: { review: "edit", community: "view", companies: "view" } };
 
-test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees only the hubs and tabs they may use", () => {
-  assert.deepEqual(L.HUBS.map((h) => h.label), ["오늘", "문의", "광장", "출시", "분석", "관리"]);
+test("[ADMUX-30][ADM3] five hubs: every pre-1.28 screen has a place, and an admin sees only the hubs and tabs they may use", () => {
+  // 1.38 [ADM3] 6 → 5: 문의·광장은 '사람과 글', 분석은 '숫자'.
+  assert.deepEqual(L.HUBS.map((h) => h.label), ["오늘", "사람과 글", "출시", "숫자", "관리"]);
   // 1.28 통합계획 2-2, plus 기능별 효과 (AN-D2); 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
   // 1.37 [ADM2-01] 흐름, [ADM2-03] Claude 열쇠.
-  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "flow", "work"], ["inquiries", "sort", "growth", "dev", "templates", "sla"], ["review", "versions", "community", "recipes", "companies", "shares", "adopt"],
-    ["flags", "types", "notices", "chores", "gates"], ["metrics", "effects", "audit"], ["admins", "keys", "rewards", "server", "account"]]);
+  // 1.38 [DESK-03] 할 일함·정리함은 운영 장부(desk) 하나로.
+  // 1.39 [LOOP] 결정함·자동 순환(오늘), 요금 판단(숫자). 1.39 [STAT2-01] 숫자의 첫 칸 '한눈에'.
+  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "desk", "decide", "flow", "loop", "cockpit", "incident"],
+    ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"],
+    ["launch", "flags", "materials", "types", "notices", "chores", "gates"], ["glance", "metrics", "health", "money", "errors", "effects", "tiers"],
+    ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"]]);
   const tabs = L.HUBS.flatMap((h) => h.tabs);
   assert.equal(new Set(tabs).size, tabs.length, "each tab once");
   for (const t of tabs) assert.ok(L.TABS[t]?.label, `${t} has a name`);
@@ -76,10 +81,15 @@ test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees 
   for (const old of ["home", "inbox", "review", "inquiries", "dev", "companies", "versions", "community", "rewards", "shares", "ops", "metrics", "admins", "audit", "settings"]) {
     assert.ok(L.hubOf(old), `${old} has a hub`);
   }
-  assert.deepEqual(L.visibleHubs(OWNER).map((h) => h.key), ["today", "ask", "plaza", "release", "insight", "manage"]);
-  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home", "flow", "work"]], ["ask", ["inquiries", "sort", "growth", "templates"]], ["manage", ["account"]]]);
-  assert.deepEqual(L.visibleHubs(PLAZA).map((h) => h.key), ["today", "plaza", "manage"]);
-  assert.deepEqual(L.visibleHubs(PLAZA).find((h) => h.key === "plaza").tabs, ["review", "versions", "community", "recipes", "companies"]);
+  assert.deepEqual(L.visibleHubs(OWNER).map((h) => h.key), ["today", "ask", "release", "insight", "manage"]);
+  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home", "desk", "flow", "cockpit"]], ["ask", ["inquiries", "reviews", "growth", "templates"]], ["manage", ["account"]]]);
+  // 1.38 [DESK-03] 옛 주소: 할 일함은 열린 것 모두, 정리함은 Claude 차례의 문의로.
+  assert.equal(L.migrateHash("#/work"), "#/desk?view=open");
+  assert.equal(L.migrateHash("#/sort"), "#/desk?view=claude&group=ask");
+  assert.deepEqual(L.visibleHubs(PLAZA).map((h) => h.key), ["today", "ask", "release", "manage"]);
+  assert.deepEqual(L.visibleHubs(PLAZA).find((h) => h.key === "ask").tabs, ["review", "community", "recipes", "versions", "companies"]);
+  // 1.38 [ADM3] 주인만: 사고·데이터 요청·돈·오류 묶음·백업.
+  for (const t of ["incident", "requests", "money", "errors", "backup"]) assert.ok(L.tabVisible(t, OWNER) && !L.tabVisible(t, ASKER), t);
   // 1.28 통합: 기능 관리·근무 유형 follow the flags area (the server gives it to 1.27 운영 보기 admins, SINCE.flags), so
   // 운영 alone no longer opens them; 설정 alone opens 보상 for 친구 초대 (AN-D4).
   assert.ok(L.tabVisible("flags", { perms: { flags: "view" } }) && !L.tabVisible("flags", { perms: { ops: "edit", flags: "none" } }));
@@ -89,18 +99,20 @@ test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees 
 });
 
 test("[ADMUX-30] the phone's bottom tabs: 오늘 and three hubs, then 더 보기; all of them when they fit", () => {
-  const all = L.visibleHubs(OWNER);
-  assert.deepEqual(L.bottomHubs(all), { tabs: ["today", "ask", "plaza", "release"], lit: "today", back: false, more: true });
-  assert.deepEqual(L.bottomHubs(all, ["insight", "ask"], "audit"), { tabs: ["today", "insight", "ask", "plaza"], lit: "insight", back: false, more: true });
-  assert.deepEqual(L.bottomHubs(all, [], "admins"), { tabs: ["today", "ask", "plaza", "release"], lit: "more", back: true, more: true });
+  // 1.38 [ADM3] 다섯이면 모두 들어가요(더 보기 없음).
+  assert.deepEqual(L.bottomHubs(L.visibleHubs(OWNER), [], "audit"), { tabs: ["today", "ask", "release", "insight", "manage"], lit: "manage", back: false, more: false });
+  // 여섯 이상(앞으로 허브가 늘면): 오늘과 셋, 그리고 더 보기.
+  const all = [...L.visibleHubs(OWNER), { key: "extra", label: "더", tabs: ["x"] }];
+  assert.deepEqual(L.bottomHubs(all), { tabs: ["today", "ask", "release", "insight"], lit: "today", back: false, more: true });
+  assert.deepEqual(L.bottomHubs(all, ["manage", "ask"], "audit"), { tabs: ["today", "manage", "ask", "release"], lit: "manage", back: false, more: true });
+  assert.deepEqual(L.bottomHubs(all, [], "admins"), { tabs: ["today", "ask", "release", "insight"], lit: "more", back: true, more: true });
   assert.deepEqual(L.bottomHubs(all, [], "more").lit, "more");
   assert.deepEqual(L.bottomHubs(L.visibleHubs(ASKER), [], "templates"), { tabs: ["today", "ask", "manage"], lit: "ask", back: false, more: false });
 });
 
 test("[ADMUX-34] badges count only what the admin must do, each thing once, and 더 보기 is only its hubs", () => {
   const o = { inquiries: 2, devTodo: 3, pending: 4, asks: 1, flagged: 0, flaggedPosts: 2, versionConflicts: 1, opsLeft: 5, owed: 1, admins: { waiting: 1, phones: 1 } };
-  assert.equal(L.hubBadge("ask", o, OWNER), 5);
-  assert.equal(L.hubBadge("plaza", o, OWNER), 7, "여러 판 is on its tab, not added again");
+  assert.equal(L.hubBadge("ask", o, OWNER), 12, "여러 판 is on its tab, not added again");
   assert.equal(L.tabBadge("versions", o, OWNER), 1);
   assert.equal(L.hubBadge("release", o, OWNER), 5);
   assert.equal(L.hubBadge("insight", o, OWNER), 0);
@@ -108,9 +120,15 @@ test("[ADMUX-34] badges count only what the admin must do, each thing once, and 
   assert.equal(L.hubBadge("today", o, OWNER), 0, "오늘 does not count the others again");
   // Without 처리 (devStatus) 접수 is not this admin's to clear; numbers of areas they cannot see are not theirs.
   assert.equal(L.hubBadge("ask", o, ASKER), 2);
-  assert.equal(L.hubBadge("plaza", o, ASKER), 0);
-  assert.deepEqual(L.waiting("plaza", o, OWNER).map((x) => `${x.label} ${x.n}`), ["검토 5", "여러 판 1", "신고 글 2"]);
-  assert.deepEqual(L.waiting("today", o, OWNER).map((x) => `${x.label} ${x.n}`), ["문의 5", "광장 7", "출시 5", "관리 3"]);
+  assert.equal(L.hubBadge("release", o, ASKER), 0);
+  assert.deepEqual(L.waiting("ask", o, OWNER).map((x) => `${x.label} ${x.n}`), ["답 대기 2", "개발사항 접수 3", "검토 5", "신고 글 2", "여러 판 1"]);
+  assert.deepEqual(L.waiting("today", o, OWNER).map((x) => `${x.label} ${x.n}`), ["사람과 글 12", "출시 5", "관리 3"]);
+  // 1.38 [ADM3] 새 숫자: 사고는 오늘에, 새 오류는 숫자에, 데이터 요청·스토어 리뷰는 사람과 글에.
+  const n = { incidentOpen: 1, errorsNew: 2, requestsOpen: 3, reviewsWaiting: 4, releaseOpen: 1 };
+  assert.equal(L.hubBadge("today", n, OWNER), 1);
+  assert.equal(L.hubBadge("insight", n, OWNER), 2);
+  assert.equal(L.hubBadge("ask", n, OWNER), 7);
+  assert.equal(L.hubBadge("release", n, OWNER), 0, "열린 점검표는 탭에만");
 });
 
 test("[ADMUX-35] old addresses go to the new places with their filters, and this device's choices move once", () => {
@@ -122,7 +140,7 @@ test("[ADMUX-35] old addresses go to the new places with their filters, and this
   assert.equal(go("#/review?show=asks"), "#/review?show=asks");
   assert.equal(go("#/companies/abc"), "#/companies/abc");
   const p = L.migratePrefs({ theme: "dark", tabs: ["inbox", "audit", "ops", "review"], views: [{ name: "내 것", hash: "#/inbox?view=mine" }, { name: "답함", hash: "#/inquiries?status=answered" }] });
-  assert.deepEqual(p.tabs, ["insight", "release", "plaza"]);
+  assert.deepEqual(p.tabs, ["manage", "release", "ask"]);
   assert.deepEqual(p.views.map((v) => v.hash), ["#/home?view=mine", "#/inquiries?status=answered"]);
   assert.equal(p.v, 2);
   assert.equal(p.theme, "dark");
@@ -379,4 +397,16 @@ test("[ADMX-01][ADMX-12] the stylesheet no longer hides the numbers on a phone, 
   assert.match(css, /\.tiles\.core\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   const app = await adminFile("/admin/app.js").text();
   for (const f of ["todayViews", "plazaViews", "insightViews"]) assert.ok(app.includes(`function ${f}(A)`), f);
+});
+
+test("[CYC-03] a 제보 with an order becomes one line of the public cycle table", () => {
+  const g = { company: { name: "예시물산" }, dept: "2공장", lines: [["근무", "주간 07:00~19:00 휴게 60분 · 야간 19:00~07:00 · 휴무(쉬는 날)"], ["순서 4일", "주간 야간 빈 날 휴무"]] };
+  assert.equal(L.cycleCsvRow(g, new Date(2026, 10, 6)),
+    "예시물산 [2공장] · (업종),예시물산,(업종),2공장,4조2교대,순서:DNOO,주 07:00-19:00 / 야 19:00-07:00,2026-11 밤낮 제보,밤낮 제보 (관리자 확인),,,");
+  const duty = { company: { name: "가" }, lines: [["근무", "당번 09:00~09:00 · 비번(쉬는 날) · 휴무(쉬는 날)"], ["순서 3일", "당번 비번 휴무"]] };
+  assert.match(L.cycleCsvRow(duty), /,3조1교대,순서:XBO,당 09:00-09:00,/);
+  const six = { company: { name: "다, 주식회사" }, lines: [["근무", "주간 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00 · 휴무(쉬는 날)"], ["순서 8일", "주간 주간 오후 오후 야간 야간 휴무 휴무"]] };
+  assert.match(L.cycleCsvRow(six), /^"다, 주식회사 \[현장\] · \(업종\)","다, 주식회사",.*,4조3교대,순서:DDEENNOO,주 06:00-14:00 \/ 오후 14:00-22:00 \/ 야 22:00-06:00,/);
+  // No order (a monthly roster or weekdays only): nothing to copy.
+  assert.equal(L.cycleCsvRow({ company: { name: "나" }, lines: [["근무", "주간 06:00~14:00"]] }), null);
 });

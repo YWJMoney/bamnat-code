@@ -56,6 +56,10 @@ data class WatchPayload(
     val alarmToday: Boolean = false,
     /** [WEAR-06] 1.31 N2: the phone rings shift alarms on the watch too (워치 진동 알람), so the watch asks for its notices. */
     val ringOnWatch: Boolean = false,
+    /** 1.38 [LEDH-14] 워치로 돈 적기: the spending categories the phone used most lately, for the watch's chips (empty: none sent). */
+    val moneyCategories: List<String> = emptyList(),
+    /** 1.38 [SLEEP-14] The next sleep as the phone's 오늘의 흐름 says it ("잘 시간 08:00–15:00", "낮잠 15:00–16:30"), or empty. */
+    val sleepLine: String = "",
 ) {
     enum class Clock { NONE, IN, OUT }
 }
@@ -143,7 +147,7 @@ object WatchDays {
         // [WEAR-01][WEAR-03] Fields 6 on are new in 1.23; an older watch reads the first six and ignores them.
         val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString(),
             p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0",
-            if (p.ringOnWatch) "1" else "0")
+            if (p.ringOnWatch) "1" else "0", p.moneyCategories.joinToString(",") { clean(it).replace(",", " ") }, clean(p.sleepLine))
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
@@ -172,7 +176,9 @@ object WatchDays {
             weekLimitMinutes = head.getOrNull(8)?.toIntOrNull()?.takeIf { it > 0 } ?: 52 * 60,
             clock = head.getOrNull(9)?.let { c -> WatchPayload.Clock.entries.firstOrNull { it.name == c } } ?: WatchPayload.Clock.NONE,
             alarmToday = head.getOrNull(10) == "1",
-            ringOnWatch = head.getOrNull(11) == "1")
+            ringOnWatch = head.getOrNull(11) == "1",
+            moneyCategories = head.getOrNull(12)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.take(WatchMoney.MAX_CATEGORIES).orEmpty(),
+            sleepLine = head.getOrNull(13).orEmpty())
     }
 
     /**
@@ -241,6 +247,8 @@ object WatchDays {
     const val RING_STOP_PATH = "/bamnat/ring/stop"
     const val RING_OFF_PATH = "/bamnat/sync/ring-off"
     const val RING_SNOOZE_PATH = "/bamnat/sync/ring-snooze"
+    /** 1.38 [LEDH-14] 워치로 돈 적기: one line of spending from the watch ([WatchMoney.encode]). */
+    const val MONEY_PATH = "/bamnat/sync/money"
 
     private val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
 
@@ -248,3 +256,32 @@ object WatchDays {
 }
 
 private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+
+/**
+ * 1.38 [LEDH-14] 워치로 돈 적기 (조사 D1): the watch picks an amount (dial or ±) and a category and sends one line to the phone, which
+ * writes it like 돈 적기 (지출, 오늘, 지금 시각). Watch and phone only (Data Layer message), never a server. [id] lets the phone write
+ * a line the watch sent twice only once.
+ */
+object WatchMoney {
+    const val MAX_CATEGORIES = 5
+    const val MAX_AMOUNT = 10_000_000L
+    /** The watch's ± steps. */
+    val STEPS = listOf(1_000L, 10_000L)
+    /** When the phone sent none: the most common everyday ones. */
+    val FALLBACK = listOf("식비", "카페", "편의점", "교통", "기타")
+
+    data class Line(val id: String, val amount: Long, val category: String, val atMillis: Long)
+
+    fun encode(l: Line): String = listOf(l.id.filter { it.isLetterOrDigit() || it == '-' }.take(40), l.amount.toString(),
+        l.category.replace('\t', ' ').replace('\n', ' ').take(20), l.atMillis.toString()).joinToString("\t")
+
+    /** What [encode] wrote, or null when it does not read or the amount is out of range. */
+    fun decode(text: String): Line? {
+        val f = text.split('\t')
+        if (f.size < 4) return null
+        val amount = f[1].toLongOrNull()?.takeIf { it in 1..MAX_AMOUNT } ?: return null
+        val at = f[3].toLongOrNull() ?: return null
+        val id = f[0].takeIf { it.isNotBlank() } ?: return null
+        return Line(id, amount, f[2].trim().ifBlank { "기타" }, at)
+    }
+}

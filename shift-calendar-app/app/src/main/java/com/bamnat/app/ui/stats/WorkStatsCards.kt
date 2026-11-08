@@ -175,6 +175,8 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                     " · 남은 돈 ${Fmt.won(statement.unpaid)}", style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(value = sender, onValueChange = { sender = it.take(30) }, singleLine = true,
                     label = { Text("보내는 사람 (선택)") }, modifier = Modifier.fillMaxWidth())
+                // 1.39 [SPREAD-11] Whether the picture names 밤낮, chosen here as it is sent.
+                com.bamnat.app.ui.components.ExportMarkSwitch(com.bamnat.app.share.StatementImage.MARK_LINE)
                 Text("사진으로 만들어 메신저로 보낼 수 있어요. 이 휴대폰에서만 만들어져요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -185,17 +187,18 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                 val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
                     if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
+                    // 1.38 PC 5차(사진으로 보내기와 같은 구조): closing at the tap ended this dialog's scope and the file was never
+                    // shared. The dialog closes once the share window has been asked for.
                     scope.launch {
                         runCatching {
                             com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
                                 "bamnat-거래내역서-${statement.month}.pdf")
                         }
+                        onDismiss()
                     }
-                    onDismiss()
                 }) { Text(if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) "PDF (프로)" else "PDF") }
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) } }
-                    onDismiss()
+                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) }; onDismiss() }
                 }) { Text("사진으로 보내기") }
             }
         },

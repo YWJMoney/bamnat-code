@@ -272,6 +272,9 @@ object HoursFormat {
         }
     }
 
+    /** 12차 빈틈 5 (PC 12차): a break of no minutes reads '없음', not '0시간'. */
+    fun breakText(minutes: Int): String = if (minutes <= 0) "없음" else korean(minutes)
+
     /** Compact "8h" / "7.5h" for calendar cells. */
     fun short(minutes: Int): String {
         if (minutes % 60 == 0) return "${minutes / 60}h"

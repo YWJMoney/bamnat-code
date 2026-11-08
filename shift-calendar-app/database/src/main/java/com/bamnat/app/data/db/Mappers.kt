@@ -196,6 +196,9 @@ fun MemoEntity.toModel() = Memo(
     reminderAsked = remindAsked,
     calendars = com.bamnat.core.memo.MemoCalendars.decode(calendars),
     repeat = repeat,
+    skips = com.bamnat.core.memo.MemoRepeat.decodeSkips(skips),
+    doneAtMillis = doneAt,
+    doneDays = com.bamnat.core.memo.MemoRepeat.decodeSkips(doneDays),
 )
 
 /** [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. */
@@ -223,4 +226,7 @@ fun Memo.toEntity() = MemoEntity(
     remindAsked = reminderAsked,
     calendars = com.bamnat.core.memo.MemoCalendars.encode(calendars),
     repeat = repeat,
+    skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(skips),
+    doneAt = doneAtMillis,
+    doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(doneDays),
 )

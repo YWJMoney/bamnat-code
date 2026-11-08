@@ -43,6 +43,42 @@ data class ShareLinkState(
     val from: YearMonth? = null,
 )
 
+/**
+ * 1.38 [SLEEP-11] 지금 자는 중 as a link carries it: when the sleep began and the next alarm, in epoch millis. The receiver shows it only
+ * while it is fresh ([shownAt]): not once the wake is 2 hours past, nor 16 hours after the start.
+ */
+data class SleepNow(val since: Long, val wakeAt: Long? = null) {
+    fun shownAt(now: Long): Boolean =
+        now - since in 0..FRESH_MILLIS && (wakeAt == null || now <= wakeAt + PAST_WAKE_MILLIS)
+
+    companion object {
+        const val FRESH_MILLIS = 16 * 3_600_000L
+        const val PAST_WAKE_MILLIS = 2 * 3_600_000L
+
+        fun of(o: JSONObject?): SleepNow? {
+            if (o == null) return null
+            val since = o.optLong("since", 0L).takeIf { it > 0 } ?: return null
+            return SleepNow(since, o.optLong("wakeAt", 0L).takeIf { it > since })
+        }
+    }
+}
+
+/**
+ * 1.39 G5-N4 계획한 잠 시간 as a link carries it: one planned sleep's start and end (epoch millis). Only the plan the app made from
+ * the work, never what was slept; sent only with [ShareOptions.sleepPlan].
+ */
+data class SleepPlanWindow(val from: Long, val to: Long) {
+    companion object {
+        /** The link's list, skipping anything that is not a from before a to at most 16 hours on. */
+        fun list(a: org.json.JSONArray?): List<SleepPlanWindow> =
+            if (a == null) emptyList() else (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val from = o.optLong("from", 0L); val to = o.optLong("to", 0L)
+                SleepPlanWindow(from, to).takeIf { from > 0 && to > from && to - from <= com.bamnat.core.sleep.SleepPlanShare.MAX_HOURS * 3_600_000L }
+            }.take(com.bamnat.core.sleep.SleepPlanShare.MAX)
+    }
+}
+
 /** [SHR-01] What a link carries besides the shifts; all off until the sharer ticks them. */
 data class ShareOptions(
     val leaveKinds: Boolean = false,
@@ -60,6 +96,10 @@ data class ShareOptions(
     val look: Boolean = false,
     /** 1.37 [SHR-32] The sharer's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), never 급여 규칙 or an amount; from 3.11. */
     val kit: Boolean = false,
+    /** 1.38 [SLEEP-11] 지금 자는 중: while a sleep is open the link says since when and the next alarm, nothing else (`sleep.share`). */
+    val sleepNow: Boolean = false,
+    /** 1.39 G5-N4 계획한 잠 시간: two weeks of the planned sleep's from~to, nothing else (`sleep.plan_share`, off by default). */
+    val sleepPlan: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */
     val shows: List<String>
@@ -76,8 +116,9 @@ data class ShareOptions(
     val sendsSetup: Boolean get() = setup && audience == ShareAudience.COWORKER
 
     companion object {
-        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false, look: Boolean = false, kit: Boolean = false) =
-            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit)
+        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false, look: Boolean = false, kit: Boolean = false,
+               sleepNow: Boolean = false, sleepPlan: Boolean = false) =
+            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit, sleepNow, sleepPlan)
 
         /**
          * [SHR-20] 1.33 (계획 690~694): what each way sends at first. 동료: the 연장·휴무일 근무 and the company setup, never
@@ -189,7 +230,7 @@ object ShareLinkPayload {
     /** The title, else the body's first line or a checklist's first item, never the rest of it. */
     private fun Memo.firstLine(): String {
         fun first(text: String) = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
-        return first(title) ?: if (isChecklist) checklist.firstOrNull { it.text.isNotBlank() }?.text.orEmpty() else first(body).orEmpty()
+        return first(title) ?: if (isChecklist) checklist.firstOrNull { it.text.isNotBlank() }?.text.orEmpty() else first(text).orEmpty()
     }
 
     const val MEMO_CHARS = 80
@@ -261,6 +302,10 @@ object ShareLinkPayload {
         look: String? = null,
         /** 1.37 [SHR-32] The 근무 설정 as a recipe's text ([ShareContent.kitFile]); sent only with [ShareOptions.kit]. */
         kit: String? = null,
+        /** 1.38 [SLEEP-11] The open sleep's start and the next alarm (epoch millis); sent only with [ShareOptions.sleepNow]. */
+        sleepNow: SleepNow? = null,
+        /** 1.39 G5-N4 The planned sleeps not over yet (epoch millis); sent only with [ShareOptions.sleepPlan]. */
+        sleepPlan: List<SleepPlanWindow> = emptyList(),
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -338,6 +383,14 @@ object ShareLinkPayload {
             // 1.37 [SHR-31][SHR-32] A server from before 1.37 refuses neither: it drops what it does not know.
             if (options.look && look != null && look.length <= LOOK_CHARS) put("look", look)
             if (options.kit && kit != null && kit.length <= KIT_CHARS) put("kit", kit)
+            if (options.sleepNow && sleepNow != null) put("sleepNow", JSONObject().apply {
+                put("since", sleepNow.since)
+                if (sleepNow.wakeAt != null && sleepNow.wakeAt > sleepNow.since) put("wakeAt", sleepNow.wakeAt)
+            })
+            // 1.39 G5-N4 A server from before 1.39 drops what it does not know.
+            if (options.sleepPlan && sleepPlan.isNotEmpty()) put("sleepPlan", JSONArray().apply {
+                sleepPlan.take(com.bamnat.core.sleep.SleepPlanShare.MAX).forEach { w -> put(JSONObject().put("from", w.from).put("to", w.to)) }
+            })
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->
@@ -498,11 +551,12 @@ class ShareLinkStore(
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty(),
-        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false), prefs.getBoolean("look", false), prefs.getBoolean("kit", false))
+        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false), prefs.getBoolean("look", false), prefs.getBoolean("kit", false),
+        prefs.getBoolean("sleepNow", false), prefs.getBoolean("sleepPlan", false))
 
     fun saveOptions(o: ShareOptions) {
         if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).putString("audience", o.audience?.key).putBoolean("setup", o.setup)
-            .putBoolean("look", o.look).putBoolean("kit", o.kit).apply()
+            .putBoolean("look", o.look).putBoolean("kit", o.kit).putBoolean("sleepNow", o.sleepNow).putBoolean("sleepPlan", o.sleepPlan).apply()
     }
 
     /**
@@ -524,6 +578,8 @@ data class ReceivedShare(
     val updatedAt: Instant?,
     /** [SHR-12] The server's tag for this version, asked with next time so an unchanged link is not downloaded again. */
     val etag: String? = null,
+    /** 1.38 [P3-L-18] The leader turned on 피곤해요 합계 for this link: the member's app may offer 피곤해요 팀에 알리기 ([ShareApi.tiredSay]). */
+    val tired: Boolean = false,
 )
 
 /** [MKT-09][SHR-02] The link server; tests and screenshots use a fake. */
@@ -541,6 +597,12 @@ interface ShareApi {
      */
     suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id)
 
+    /**
+     * 1.39 G2: [readIfChanged] for a check the user did not ask for (받은 근무표 따라가기 every 6 hours, 하루 한 번 소식), so the sharer's
+     * 봤어요 is not set by it.
+     */
+    suspend fun readQuietly(id: String, etag: String?): ReceivedShare? = readIfChanged(id, etag)
+
     /** [SRV-05] Reports a received link to the developer ([ShareReport] reasons); nobody learns who sent it. */
     suspend fun report(id: String, reason: String) {}
 
@@ -555,7 +617,120 @@ interface ShareApi {
 
     /** [SHR-14] Takes [own] out of [code]. */
     suspend fun groupLeave(code: String, own: ShareLinkState) {}
+
+    /** 1.38 [P3-B-11] A staff member's 출퇴근 링크: [name] and [place] are all the page shows. */
+    suspend fun clockCreate(name: String, place: String): ClockLink = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-B-11] The presses on link [id] so far (the server keeps about two months); "not_found" once cut or run out. */
+    suspend fun clockRead(id: String, token: String): List<ClockPress> = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-B-11] Cuts the link (퇴사·끊기). A link the server no longer has counts as cut. */
+    suspend fun clockDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-L-13] Opens a 근무 신청 round: a link per name in [names], in that order. */
+    suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
+                          leave: List<Double?> = emptyList()): AskMade =
+        throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-L-13] What the members asked so far; "not_found" once the round is gone. */
+    suspend fun askRead(id: String, token: String): AskGot = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-L-13] 마감·다시 열기 ([closed]) or a new 마감 시각 ([closesAt], epoch millis; null for none). */
+    suspend fun askChange(id: String, token: String, closed: Boolean? = null, closesAt: Long? = null, clearCloses: Boolean = false) {}
+
+    /** 1.38 [P3-L-13] Ends the round: the members' requests on the server go with it. Gone already counts as done. */
+    suspend fun askDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-X-01] A yes/no ask to [people] (결원 메우기), open [hours]. */
+    suspend fun callCreate(team: String, title: String, detail: String, people: List<String>, hours: Int): CallMade = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-01] The answers so far by person index (true: 들어갈 수 있어요), who opened it, and who was chosen. */
+    suspend fun callRead(id: String, token: String): CallGot = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-01] Who the leader chose (person index), so every page says so; null takes it back. */
+    suspend fun callTake(id: String, token: String, taken: Int?) {}
+
+    suspend fun callDelete(id: String, token: String) {}
+
+    /**
+     * 1.38 [P3-X-02] 바꾸기 요청 links for [month]: each person's row of labels ([labels], "" for none) and who may trade which day
+     * ([ok]: person index → day of month → person indexes), worked out on this phone.
+     */
+    suspend fun swapCreate(team: String, month: java.time.YearMonth, people: List<String>, labels: List<List<String>>, ok: Map<Int, Map<Int, List<Int>>>): CallMade =
+        throw ShareLinkException("unsupported")
+
+    suspend fun swapRead(id: String, token: String): SwapGot = throw ShareLinkException("unsupported")
+
+    /** New rows and trades after the board changed, and/or the leader's word on asks ([decide]: person, day, approved). */
+    suspend fun swapChange(id: String, token: String, labels: List<List<String>>? = null, ok: Map<Int, Map<Int, List<Int>>>? = null,
+                           decide: List<Triple<Int, Int, Boolean>> = emptyList(), closed: Boolean? = null) {}
+
+    suspend fun swapDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-X-06] A 근로계약서 for [staff] to read and sign by typing their name; open [days] (30 at most). */
+    suspend fun signCreate(place: String, staff: String, title: String, items: List<com.bamnat.core.boss.StaffContract.Item>, days: Int): SignMade =
+        throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-06] Whether it was opened and signed; "not_found" once it is gone. */
+    suspend fun signRead(id: String, token: String): SignGot = throw ShareLinkException("unsupported")
+
+    suspend fun signDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-L-15] When the link was opened since its last change (null: not yet). The first ask turns it on for that link. */
+    suspend fun seen(id: String, token: String): Instant? = null
+
+    /** 1.38 [P3-L-15] 병동 전체 보기: the month's table, a row of labels per name ("" for none). */
+    suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
+        throw ShareLinkException("unsupported")
+
+    suspend fun boardUpdate(id: String, token: String, team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) {}
+
+    suspend fun boardDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-L-18] 피곤해요 합계 받기: a team's box of counts per day, no names. */
+    suspend fun tiredCreate(team: String): TiredBox = throw ShareLinkException("unsupported")
+
+    /** The last 7 days (today first); a count is null under [TiredGot.min] people. */
+    suspend fun tiredRead(id: String, token: String): TiredGot = throw ShareLinkException("unsupported")
+
+    suspend fun tiredDelete(id: String, token: String) {}
+
+    /** The leader ties a member's link to the box, or unties it with null. */
+    suspend fun tiredTie(linkId: String, linkToken: String, box: String?) {}
+
+    /**
+     * The member's app, from a received link whose [ReceivedShare.tired] is true: one more 피곤해요 today (KST), counted once a
+     * day however often it is pressed. Nothing but the press goes: no mood, sleep time or name. Throws not_found when untied.
+     */
+    suspend fun tiredSay(shareId: String) {}
 }
+
+data class TiredBox(val id: String, val token: String)
+data class TiredGot(val min: Int, val days: List<Pair<java.time.LocalDate, Int?>>)
+
+data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
+data class SignGot(val seenAt: Instant?, val signedName: String?, val signedAt: Instant?)
+
+/** 1.38 [P3-X-02] One read: asks by person index ([p] asked [q] about day [d]), and who opened their link. */
+data class SwapGot(val asks: List<SwapAsk>, val seen: Set<Int>, val closed: Boolean)
+data class SwapAsk(val p: Int, val q: Int, val d: Int, val state: String, val at: Instant)
+
+data class CallMade(val id: String, val token: String, val urls: List<String>, val expiresAt: Instant)
+data class CallGot(val answers: Map<Int, Boolean>, val seen: Set<Int>, val taken: Int?)
+
+/** 1.38 [P3-L-13] A round opened: its [id] and key, and each member's link in the order asked. */
+data class AskMade(val id: String, val token: String, val urls: List<String>)
+
+/** 1.38 [P3-L-13] One read of a round: requests by member index ([AskWish.m]), the members' lines and who opened their link. */
+data class AskGot(val wishes: List<AskWish>, val notes: Map<Int, String>, val seen: Set<Int>, val closed: Boolean)
+
+data class AskWish(val m: Int, val date: java.time.LocalDate, val kind: com.bamnat.core.team.WishKind, val shiftId: Long?, val at: Instant)
+
+/** 1.38 [P3-B-11] A 출퇴근 링크 made for one staff member. */
+data class ClockLink(val id: String, val url: String, val token: String)
+
+/** 1.38 [P3-B-11] One press: [inside] true for 출근, at the server's time. */
+data class ClockPress(val at: Instant, val inside: Boolean)
 
 /** [SRV-05] Why a link is reported: the share server's codes and the words for them. */
 enum class ShareReport(val code: String, val label: String) {
@@ -577,7 +752,15 @@ class ShareLinkException(
     message: String,
     /** [SHR-13] Why the developer took the link down, when the share server says (410 removed). */
     val removedReason: String? = null,
-) : IOException(message)
+    /** 1.39 [CARE-09] With "contact": phone, link, account or messenger (team links take none of them, against scams). */
+    val why: String? = null,
+    /** 1.39 [CARE-09] 7차 PC: the refused line as sent (40 chars) and its field, so the app says whose line and where to fix it. */
+    val text: String? = null,
+    val key: String? = null,
+) : IOException(message) {
+    /** What to tell the person for a refusal this file knows the words for, or null. */
+    val friendly: String? get() = if (message == "contact") com.bamnat.core.plaza.TeamLinkText.contact(why, text, key) else null
+}
 
 class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) : ShareApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
@@ -610,14 +793,18 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     override suspend fun read(id: String): ReceivedShare = readIfChanged(id, null)!!
 
-    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = withContext(Dispatchers.IO) {
-        val reply = request("GET", "/api/share/$id", null, null, etag)
+    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = readAt(id, etag, quiet = false)
+
+    override suspend fun readQuietly(id: String, etag: String?): ReceivedShare? = readAt(id, etag, quiet = true)
+
+    private suspend fun readAt(id: String, etag: String?, quiet: Boolean): ReceivedShare? = withContext(Dispatchers.IO) {
+        val reply = request("GET", "/api/share/$id", null, null, etag, quiet)
         if (reply.code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext null
         val o = reply.body
         readable {
             ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
                 o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() },
-                reply.etag)
+                reply.etag, o.optBoolean("tired", false))
         }
     }
 
@@ -647,18 +834,248 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         Unit
     }
 
+    override suspend fun clockCreate(name: String, place: String): ClockLink = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/clock", JSONObject().put("name", name).put("place", place), null).body
+        readable { ClockLink(o.getString("id"), o.getString("url"), o.getString("token")) }
+    }
+
+    override suspend fun clockRead(id: String, token: String): List<ClockPress> = withContext(Dispatchers.IO) {
+        val a = request("GET", "/api/clock/$id", null, token).body.optJSONArray("punches") ?: org.json.JSONArray()
+        (0 until a.length()).mapNotNull { i ->
+            val p = a.optJSONObject(i) ?: return@mapNotNull null
+            val at = runCatching { Instant.parse(p.optString("at")) }.getOrNull() ?: return@mapNotNull null
+            when (p.optString("k")) { "in" -> ClockPress(at, true); "out" -> ClockPress(at, false); else -> null }
+        }
+    }
+
+    override suspend fun clockDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/clock/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
+                                   leave: List<Double?>): AskMade =
+        withContext(Dispatchers.IO) {
+            val r = JSONObject().put("weekdayCap", rules.weekdayCap).put("weekendCap", rules.weekendCap).put("perPerson", rules.perPerson)
+                .put("closesAt", rules.closesAt ?: JSONObject.NULL).put("kinds", org.json.JSONArray(rules.kinds.map { it.name })).put("firstCome", rules.firstCome)
+                .put("holidays", org.json.JSONArray(rules.holidays.sorted().map { it.toString() })).put("blocked", org.json.JSONArray(rules.blocked.sorted().map { it.toString() }))
+                .put("showNames", rules.showNames)
+            val body = JSONObject().put("team", team).put("month", month.toString()).put("rules", r)
+                .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", it.label.take(4)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
+                .put("members", org.json.JSONArray(names))
+            if (leave.any { it != null }) body.put("leave", org.json.JSONArray(leave.map { it ?: JSONObject.NULL }))
+            val o = request("POST", "/api/ask", body, null).body
+            readable {
+                val m = o.getJSONArray("members")
+                AskMade(o.getString("id"), o.getString("token"), (0 until m.length()).map { m.getJSONObject(it).getString("url") })
+            }
+        }
+
+    override suspend fun askRead(id: String, token: String): AskGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/ask/$id", null, token).body
+        readable {
+            val w = o.optJSONArray("wishes") ?: org.json.JSONArray()
+            val wishes = (0 until w.length()).mapNotNull { i ->
+                val x = w.optJSONObject(i) ?: return@mapNotNull null
+                val kind = com.bamnat.core.team.WishKind.entries.firstOrNull { it.name == x.optString("k") } ?: return@mapNotNull null
+                val date = runCatching { java.time.LocalDate.parse(x.optString("d")) }.getOrNull() ?: return@mapNotNull null
+                AskWish(x.optInt("m", -1), date, kind, if (x.has("s")) x.optLong("s") else null, runCatching { Instant.parse(x.optString("at")) }.getOrElse { Today.instant() })
+            }
+            val n = o.optJSONArray("notes") ?: org.json.JSONArray()
+            val notes = (0 until n.length()).mapNotNull { n.optJSONObject(it) }.associate { it.optInt("m", -1) to it.optString("note") }
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            AskGot(wishes, notes, (0 until s.length()).map { s.optInt(it, -1) }.toSet(), o.optBoolean("closed"))
+        }
+    }
+
+    override suspend fun askChange(id: String, token: String, closed: Boolean?, closesAt: Long?, clearCloses: Boolean) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+        closed?.let { body.put("closed", it) }
+        if (clearCloses) body.put("closesAt", JSONObject.NULL) else closesAt?.let { body.put("closesAt", it) }
+        request("PUT", "/api/ask/$id", body, token)
+        Unit
+    }
+
+    override suspend fun askDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/ask/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun callCreate(team: String, title: String, detail: String, people: List<String>, hours: Int): CallMade = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/call", JSONObject().put("team", team).put("title", title).put("detail", detail)
+            .put("people", org.json.JSONArray(people)).put("hours", hours), null).body
+        readable {
+            val p = o.getJSONArray("people")
+            CallMade(o.getString("id"), o.getString("token"), (0 until p.length()).map { p.getJSONObject(it).getString("url") }, Instant.parse(o.getString("expiresAt")))
+        }
+    }
+
+    override suspend fun callRead(id: String, token: String): CallGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/call/$id", null, token).body
+        readable {
+            val a = o.optJSONArray("answers") ?: org.json.JSONArray()
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            CallGot((0 until a.length()).mapNotNull { a.optJSONObject(it) }.associate { it.optInt("p", -1) to (it.optString("a") == "yes") },
+                (0 until s.length()).map { s.optInt(it, -1) }.toSet(), if (o.isNull("taken")) null else o.optInt("taken"))
+        }
+    }
+
+    override suspend fun callTake(id: String, token: String, taken: Int?) = withContext(Dispatchers.IO) {
+        request("PUT", "/api/call/$id", JSONObject().put("taken", taken ?: JSONObject.NULL), token)
+        Unit
+    }
+
+    override suspend fun callDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/call/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun signCreate(place: String, staff: String, title: String, items: List<com.bamnat.core.boss.StaffContract.Item>, days: Int): SignMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/sign", JSONObject().put("place", place).put("staff", staff).put("title", title).put("days", days)
+                .put("items", org.json.JSONArray().apply { items.forEach { put(JSONObject().put("t", it.title).put("b", it.body)) } }), null).body
+            readable { SignMade(o.getString("id"), o.getString("token"), o.getString("url"), Instant.parse(o.getString("expiresAt"))) }
+        }
+
+    override suspend fun signRead(id: String, token: String): SignGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/sign/$id", null, token).body
+        readable {
+            val sg = o.optJSONObject("signed")
+            SignGot(o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse),
+                sg?.optString("name"), sg?.optString("at")?.takeIf { it.isNotEmpty() }?.let(Instant::parse))
+        }
+    }
+
+    override suspend fun seen(id: String, token: String): Instant? = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/share/$id/seen", null, token).body
+        readable { o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse) }
+    }
+
+    private fun boardBody(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =
+        JSONObject().put("team", team).put("month", month.toString()).put("names", org.json.JSONArray(names))
+            .put("labels", org.json.JSONArray().apply { labels.forEach { put(org.json.JSONArray(it)) } }).put("colors", JSONObject(colors as Map<*, *>))
+
+    override suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/board", boardBody(team, month, names, labels, colors), null).body
+            readable { SignMade(o.getString("id"), o.getString("token"), o.getString("url"), Instant.parse(o.getString("expiresAt"))) }
+        }
+
+    override suspend fun boardUpdate(id: String, token: String, team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =
+        withContext(Dispatchers.IO) { request("PUT", "/api/board/$id", boardBody(team, month, names, labels, colors), token); Unit }
+
+    override suspend fun boardDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try { request("DELETE", "/api/board/$id", null, token) } catch (e: ShareLinkException) { if (e.message != "not_found") throw e }
+        Unit
+    }
+
+    override suspend fun tiredCreate(team: String): TiredBox = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/tired", JSONObject().put("team", team), null).body
+        readable { TiredBox(o.getString("id"), o.getString("token")) }
+    }
+
+    override suspend fun tiredRead(id: String, token: String): TiredGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/tired/$id", null, token).body
+        readable {
+            val a = o.getJSONArray("days")
+            TiredGot(o.optInt("min", 3), (0 until a.length()).map { i ->
+                val d = a.getJSONObject(i)
+                java.time.LocalDate.parse(d.getString("d")) to (if (d.isNull("n")) null else d.getInt("n"))
+            })
+        }
+    }
+
+    override suspend fun tiredDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try { request("DELETE", "/api/tired/$id", null, token) } catch (e: ShareLinkException) { if (e.message != "not_found") throw e }
+        Unit
+    }
+
+    override suspend fun tiredTie(linkId: String, linkToken: String, box: String?) = withContext(Dispatchers.IO) {
+        request("PUT", "/api/share/$linkId/tired", JSONObject().put("box", box ?: JSONObject.NULL), linkToken); Unit
+    }
+
+    override suspend fun tiredSay(shareId: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$shareId/tired", null, null); Unit
+    }
+
+    override suspend fun signDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/sign/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    private fun swapBody(labels: List<List<String>>?, ok: Map<Int, Map<Int, List<Int>>>?): JSONObject = JSONObject().apply {
+        labels?.let { l -> put("labels", org.json.JSONArray().apply { l.forEach { put(org.json.JSONArray(it)) } }) }
+        ok?.let { o -> put("ok", JSONObject().apply { o.forEach { (p, days) -> put(p.toString(), JSONObject().apply { days.forEach { (d, qs) -> put(d.toString(), org.json.JSONArray(qs)) } }) } }) }
+    }
+
+    override suspend fun swapCreate(team: String, month: java.time.YearMonth, people: List<String>, labels: List<List<String>>, ok: Map<Int, Map<Int, List<Int>>>): CallMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/swap", swapBody(labels, ok).put("team", team).put("month", month.toString()).put("people", org.json.JSONArray(people)), null).body
+            readable {
+                val p = o.getJSONArray("people")
+                CallMade(o.getString("id"), o.getString("token"), (0 until p.length()).map { p.getJSONObject(it).getString("url") }, Instant.parse(o.getString("expiresAt")))
+            }
+        }
+
+    override suspend fun swapRead(id: String, token: String): SwapGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/swap/$id", null, token).body
+        readable {
+            val a = o.optJSONArray("asks") ?: org.json.JSONArray()
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            SwapGot((0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
+                SwapAsk(it.optInt("p", -1), it.optInt("q", -1), it.optInt("d"), it.optString("state"), runCatching { Instant.parse(it.optString("at")) }.getOrElse { Today.instant() })
+            }, (0 until s.length()).map { s.optInt(it, -1) }.toSet(), o.optBoolean("closed"))
+        }
+    }
+
+    override suspend fun swapChange(id: String, token: String, labels: List<List<String>>?, ok: Map<Int, Map<Int, List<Int>>>?,
+                                    decide: List<Triple<Int, Int, Boolean>>, closed: Boolean?) = withContext(Dispatchers.IO) {
+        val body = swapBody(labels, ok)
+        if (decide.isNotEmpty()) body.put("decide", org.json.JSONArray().apply {
+            decide.forEach { (p, d, yes) -> put(JSONObject().put("p", p).put("d", d).put("state", if (yes) "done" else "denied")) }
+        })
+        closed?.let { body.put("closed", it) }
+        request("PUT", "/api/swap/$id", body, token)
+        Unit
+    }
+
+    override suspend fun swapDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/swap/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
     private fun group(o: JSONObject): ShareGroup = readable { ShareGroup.parse(o) }
 
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
-    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
+    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null, quiet: Boolean = false): Reply {
         // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
         if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
         // [SRV-30] 1.36: at s.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
-        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag) }
+        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag, quiet) }
     }
 
-    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?): Reply {
+    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?, quiet: Boolean = false): Reply {
         // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true
@@ -668,6 +1085,9 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             conn.readTimeout = 15_000
             token?.let { conn.setRequestProperty("X-Delete-Token", it) }
             etag?.let { conn.setRequestProperty("If-None-Match", it) }
+            if (quiet) conn.setRequestProperty("X-Bamnat-Quiet", "1")
+            // 1.39 [CARE-09] 앱 판: 공유 서버가 연락처 걸러내기를 1.39 앱부터만 해요(옛 앱은 예전처럼).
+            conn.setRequestProperty("X-Bamnat-App", BuildConfig.VERSION_CODE.toString())
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -687,7 +1107,10 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 val err = runCatching { JSONObject(text) }.getOrNull()
                 val word = err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code"
                 throw ShareLinkException(if (word == "removed") "not_found" else word,
-                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200))
+                    err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200),
+                    err?.optString("why")?.takeIf { word == "contact" && it.isNotBlank() },
+                    err?.optString("text")?.takeIf { word == "contact" && it.isNotBlank() }?.take(40),
+                    err?.optString("key")?.takeIf { word == "contact" && it.isNotBlank() })
             }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
@@ -721,3 +1144,6 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         const val MAX_REPLY_BYTES = 256 * 1024
     }
 }
+
+/** 1.39 [CARE-09] 7차 PC: the person's words for a refused team or schedule link (contact words), or null for any other failure. */
+fun linkProblem(e: Throwable): String? = (e as? ShareLinkException)?.friendly
