@@ -226,6 +226,11 @@
             android:name=".memo.MemoSnoozeReceiver"
             android:exported="false" />
 
+        <!-- 1.39 [TASK-39] 끝내기 on a memo's schedule notice: the memo is finished for real, in the list and on the 할 일 위젯. -->
+        <receiver
+            android:name=".memo.MemoDoneReceiver"
+            android:exported="false" />
+
         <!-- [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 알람 and 바로 기록 from its notice. -->
         <receiver
             android:name=".invest.InvestAlarmReceiver"
@@ -352,6 +357,14 @@
             android:exported="false"
             android:isolatedProcess="true"
             android:process=":fontprobe" />
+
+        <!-- 1.39 [TASK-39] 다른 때… on a memo's schedule notice: a small window that asks when to tell again. Only our notice opens it. -->
+        <activity
+            android:name=".memo.MemoLaterActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bamnat.Quick" />
 
         <!-- 1.39 [TASK-38][TASK-32] 할 일 적기: a small window over any screen (widget ＋, tile), and 'Share → 밤낮 할 일로 적기' for a
              text from another app. Nothing is saved until 적기; no permission is needed. -->

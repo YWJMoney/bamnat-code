@@ -69,12 +69,10 @@ object MemoScheduleAlarm {
     internal fun noticeId(memo: Long): Int = NOTIFICATION_BASE + (memo.toInt() and 0x3ff)
 
     /**
-     * 1.39 [TASK-04][TASK-20] [rest] is the memo's calendar's next day off (null: none ahead), for the third button:
-     * 10분 뒤 · 1시간 뒤 · 쉬는 날(11/12) (or 내일).
+     * 1.39 [TASK-04][TASK-20][TASK-39] [rest] is the memo's calendar's next day off (null: none ahead), offered first in 다른 때….
      */
     fun post(context: Context, memo: Memo, at: LocalDateTime, rest: java.time.LocalDate? = null) {
         val body = memo.preview.takeIf { it.isNotBlank() && memo.title.isNotBlank() }
-        val later = com.bamnat.core.memo.MemoSnooze.later(rest)
         val notification = NotificationCompat.Builder(context, Notifications.MEMO_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -82,11 +80,12 @@ object MemoScheduleAlarm {
             .setContentText(listOfNotNull("${at.format(time)} 일정", body).joinToString(" · "))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.MEMOS, REQUEST + 1))
             .setAutoCancel(true)
-            .apply {
-                listOf(com.bamnat.core.memo.MemoSnooze.Way.MIN10, com.bamnat.core.memo.MemoSnooze.Way.HOUR1, later).forEachIndexed { i, way ->
-                    addAction(0, com.bamnat.core.memo.MemoSnooze.label(way, rest), MemoSnoozeReceiver.intent(context, memo.id, way, rest, i))
-                }
-            }
+            // 1.39 [TASK-39] 끝내기 · 10분 뒤 · 다른 때… (두 앱 실사용 2차): 끝내기 finishes the memo on that day for real (the 할 일 앱's
+            // Complete left the task open in its list), and 다른 때… opens a small window with the day off's morning first.
+            .addAction(0, "끝내기", MemoDoneReceiver.intent(context, memo.id, at.toLocalDate()))
+            .addAction(0, com.bamnat.core.memo.MemoSnooze.label(com.bamnat.core.memo.MemoSnooze.Way.MIN10, rest),
+                MemoSnoozeReceiver.intent(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.MIN10, rest, 0))
+            .addAction(0, "다른 때…", MemoLaterActivity.intent(context, memo.id, rest))
             .build()
         Notifications.post(context, noticeId(memo.id), notification)
     }
@@ -154,14 +153,10 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
         val id = intent.getLongExtra(EXTRA_MEMO, -1L)
         val way = com.bamnat.core.memo.MemoSnooze.Way.of(intent.getStringExtra(EXTRA_WAY)) ?: return
         val rest = intent.getLongExtra(EXTRA_REST, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(java.time.LocalDate::ofEpochDay)
-        Notifications.cancel(context, MemoScheduleAlarm.noticeId(id))
         val pending = goAsync()
         container.appScope.launch {
             try {
-                val memo = container.memoRepository.get(id) ?: return@launch
-                val r = memo.reminder ?: return@launch
-                val at = com.bamnat.core.memo.MemoSnooze.at(way, Today.dateTime(), r.at, rest)
-                container.memoRepository.save(memo.copy(reminder = r.copy(at = at)))
+                put(context, id, way, rest)
             } finally {
                 pending.finish()
             }
@@ -183,11 +178,64 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
 
+        /** Memo [id]'s schedule moved [way] from now, its notice taken down; the new time, or null when it is gone. */
+        suspend fun put(context: Context, id: Long, way: com.bamnat.core.memo.MemoSnooze.Way, rest: java.time.LocalDate?): LocalDateTime? {
+            Notifications.cancel(context, MemoScheduleAlarm.noticeId(id))
+            val repo = context.appContainer.memoRepository
+            val memo = repo.get(id) ?: return null
+            val r = memo.reminder ?: return null
+            val at = com.bamnat.core.memo.MemoSnooze.at(way, Today.dateTime(), r.at, rest)
+            repo.save(memo.copy(reminder = r.copy(at = at)))
+            return at
+        }
+
         /** The next day off on the calendar [memo] goes by (a day with a kind of day that is a rest day), or null. */
         suspend fun nextRest(container: com.bamnat.app.AppContainer, memo: Memo): java.time.LocalDate? = runCatching {
             val cal = com.bamnat.app.data.MemoRepository.calendarOf(memo, container.calendars.active.value)
             val resolver = container.calendars.repository(cal).live.first().resolver
             com.bamnat.core.memo.MemoSnooze.nextRest(Today.date()) { d -> resolver.resolve(d).let { it.shiftType != null && it.isRestDay } }
         }.getOrNull()
+    }
+}
+
+/**
+ * 1.39 [TASK-39] 끝내기 on a memo's schedule notice: the memo is finished on the notice's day (a repeating one that day only), in the
+ * memo list and on the 할 일 위젯 at once. The 할 일 앱 seen in 실사용 2차 took its notice's Complete away but left the task open.
+ */
+class MemoDoneReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val container = context.appContainer
+        val id = intent.getLongExtra(EXTRA_MEMO, -1L)
+        val day = intent.getLongExtra(EXTRA_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(java.time.LocalDate::ofEpochDay)
+        val pending = goAsync()
+        container.appScope.launch {
+            try {
+                finish(context, id, day)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    companion object {
+        private const val EXTRA_MEMO = "memo"
+        private const val EXTRA_DAY = "day"
+        private const val REQUEST_BASE = 0x48000
+
+        fun intent(context: Context, memo: Long, day: java.time.LocalDate): PendingIntent = PendingIntent.getBroadcast(
+            context, REQUEST_BASE + (memo.toInt() and 0x3ff),
+            Intent(context, MemoDoneReceiver::class.java).putExtra(EXTRA_MEMO, memo).putExtra(EXTRA_DAY, day.toEpochDay()),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        /** Memo [id] finished on [day] (never brought back: a second press does nothing), its notice gone; null when it is gone. */
+        suspend fun finish(context: Context, id: Long, day: java.time.LocalDate?): Memo? {
+            Notifications.cancel(context, MemoScheduleAlarm.noticeId(id))
+            val repo = context.appContainer.memoRepository
+            val memo = repo.get(id)?.takeUnless { it.inTrash } ?: return null
+            val saved = if (memo.isDoneOn(day)) memo else repo.save(memo.withDone(true, day, Today.millis()))
+            runCatching { com.bamnat.app.widget.TaskWidget.redraw(context) }
+            return saved
+        }
     }
 }

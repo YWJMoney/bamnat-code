@@ -229,7 +229,9 @@ private fun TaskRow(row: TaskList.Row, today: LocalDate) {
     if (line.hide == true) return
     val check = widgetPart("widget.task.check", states - "today")
     val toggle = actionRunCallback<TaskDoneAction>(actionParametersOf(TaskWidget.MEMO_ID to row.memo.id, TaskWidget.DAY to (row.day?.toString() ?: "")))
-    val faint = if (row.done) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface
+    // A finished row is struck through and pale: in Korean the strike line sits on the ㅡ·ㅗ·ㅜ strokes and hardly shows on its own
+    // (PC c0ca3d9f, 두 앱 실사용 2차), so the paler 테두리 색 says it as well.
+    val faint = if (row.done) GlanceTheme.colors.outline else GlanceTheme.colors.onSurface
     Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp).widgetBox(line), verticalAlignment = Alignment.CenterVertically) {
         // A wide target for a thumb on the home screen: the circle sits in 36 dp.
         // TalkBack reads what the circle does, not "○" (조사 보완 11-07: 위젯 글자 읽기).

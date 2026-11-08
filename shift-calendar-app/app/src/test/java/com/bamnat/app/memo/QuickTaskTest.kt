@@ -2,6 +2,8 @@ package com.bamnat.app.memo
 
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.setContent
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -74,6 +76,48 @@ class QuickTaskTest {
             assertEquals("3층 회의실", saved.body)
             assertEquals(Today.date().plusDays(2), saved.date)
             assertFalse(saved.pinned)
+        }
+    }
+}
+
+/** 1.39 [TASK-39] 적고 하나 더 and 다른 때…: the two small windows on their own. */
+@RunWith(AndroidJUnit4::class)
+class QuickWindowsTest {
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
+    @get:Rule val compose = createEmptyComposeRule()
+
+    /** [content] drawn in a plain window of ours (the 한 줄 창's own activity, its content replaced). */
+    private fun window(content: @androidx.compose.runtime.Composable () -> Unit, test: () -> Unit) {
+        ActivityScenario.launch(QuickTaskActivity::class.java).use { s ->
+            s.onActivity { a -> a.setContent { com.bamnat.app.ui.theme.BamnatTheme { content() } } }
+            compose.waitForIdle()
+            test()
+        }
+    }
+
+    /** 1.39 [TASK-39] 적고 하나 더: the window stays, empty, says what was written, and 적기 still closes. */
+    @Test fun oneMoreKeepsTheWindowOpen() {
+        val saved = mutableListOf<Pair<String, Boolean>>()
+        var closed = false
+        window({ QuickTask("우유 사기", onClose = { closed = true }, onSave = { m, more -> saved += m.title to more }) }) {
+        compose.onNodeWithText("적고 하나 더").performClick()
+        assertEquals(listOf("우유 사기" to true), saved)
+        compose.onNodeWithText("적었어요: 우유 사기").assertExists()
+        assertFalse(closed)
+        compose.onNodeWithText("적고 하나 더").assertIsNotEnabled()
+        compose.onNodeWithText("적기").assertIsNotEnabled()
+        }
+    }
+
+    /** 다른 때…: the day off's morning first, then 10분·30분·1시간·3시간 뒤 and 내일 이 시각; nothing moves until one is picked. */
+    @Test fun laterOffersTheDayOffFirst() {
+        val picked = mutableListOf<com.bamnat.core.memo.MemoSnooze.Way>()
+        window({ MemoLater(java.time.LocalDate.of(2026, 11, 12), onClose = {}, onPick = { picked += it }) }) {
+        compose.onNodeWithText("쉬는 날(11/12) 아침").assertExists()
+        compose.onNodeWithText("3시간 뒤").assertExists()
+        assertTrue(picked.isEmpty())
+        compose.onNodeWithText("내일 이 시각").performClick()
+        assertEquals(listOf(com.bamnat.core.memo.MemoSnooze.Way.TOMORROW), picked)
         }
     }
 }
