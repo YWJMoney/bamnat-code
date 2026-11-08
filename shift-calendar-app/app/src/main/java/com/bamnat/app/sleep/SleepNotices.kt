@@ -106,12 +106,15 @@ object SleepingNotice {
             .addAction(SleepActions.awake(context))
             .setTimeoutAfter(left)
             .build()
+        // PC 5차: Android 16 bundles it with any other sounding notice of the app, whatever the group; those go quiet.
+        Notifications.quietOthers(context)
         Notifications.post(context, Notifications.SLEEPING_ID, notification)
     }
 
     fun woke(context: Context, slept: SleepEntry, next: String?) {
         val minutes = slept.minutes ?: return cancel(context)
-        val notification = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
+        // PC 5차: on 자는 중's channel, in the top section the night left to it alone (the quiet one holds 오늘 근무).
+        val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setSilent(true)
