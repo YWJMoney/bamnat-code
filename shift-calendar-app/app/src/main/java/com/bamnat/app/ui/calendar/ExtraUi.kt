@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.asColor
 import com.bamnat.app.ui.components.contentColorOn
@@ -153,6 +155,12 @@ object ExtraText {
         namesHours(e) -> "${kindName(e.kind, style)} ${HoursFormat.korean(e.minutes)}"
         else -> kindName(e.kind, style)
     }
+
+    /** The calendar's kind of work, for [name] and [kindName] where a screen has no settings at hand (1.39 [WTYP-30]). */
+    @androidx.compose.runtime.Composable
+    fun styleHere(): com.bamnat.core.work.WorkStyle? =
+        androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings
+            .collectAsStateWithLifecycle().value.workStyle
 
     /** [kind]'s name, "야근" for a weekday worker's built-in 잔업 ([J133-27]). */
     fun kindName(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String = word(kind.name, kind.id, style)
