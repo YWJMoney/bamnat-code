@@ -583,6 +583,8 @@ private fun DayCell(
     /** [CELL-01] 1.39 The day's memo titles when the cells list their jobs and memos; null for the plain cell. */
     memoList: List<CellMemo>? = null,
 ) {
+    // 1.39 [WTYP-30] PC 6차: 일근 says 야근 in the long-press menu and for TalkBack too.
+    val extraStyle = ExtraText.styleHere()
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
@@ -669,7 +671,7 @@ private fun DayCell(
         shiftWords?.let { append(", ").append(it) }
         day.leave?.let { append(", ").append(it.label) }
         for (e in day.extras) {
-            append(", ").append(ExtraText.name(e))
+            append(", ").append(ExtraText.name(e, extraStyle))
             if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
         }
         if (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes) append(", 직접 바꿈")
@@ -1078,7 +1080,7 @@ private fun DayCell(
             for (c in choices) {
                 val i = ExtraText.indexOf(day, c)
                 DropdownMenuItem(
-                    text = { Text(if (i >= 0) "${ExtraText.name(day.extras[i])} 빼기" else c.label) },
+                    text = { Text(if (i >= 0) "${ExtraText.name(day.extras[i], extraStyle)} 빼기" else ExtraText.word(c.label, c.kind.id, extraStyle)) },
                     leadingIcon = { ExtraKindMark(c.kind, size = 20.dp) },
                     trailingIcon = { if (i >= 0) Icon(Icons.Filled.Check, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Extra(c)) },

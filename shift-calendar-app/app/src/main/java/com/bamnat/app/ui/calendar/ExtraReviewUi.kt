@@ -105,7 +105,7 @@ private fun ReviewDayRow(entry: DayEntry, snapshot: ScheduleSnapshot, onOpen: ()
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                     ExtraKindMark(e.kind, size = 14.dp)
                     Spacer(Modifier.width(6.dp))
-                    Text(extraLine(e), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(extraLine(e, ExtraText.styleHere()), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

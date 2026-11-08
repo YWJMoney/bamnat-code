@@ -175,6 +175,8 @@ private fun DayRow(
     val date = row.date
     val type = day.shiftType
     val isToday = date == today
+    // 1.39 [WTYP-30] 일근 says 야근 in the list as in the day sheet.
+    val extraStyle = ExtraText.styleHere()
     val red = row.holiday != null || date.dayOfWeek == DayOfWeek.SUNDAY
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     val dateColor = when {
@@ -187,7 +189,7 @@ private fun DayRow(
     val showShift = focus == CalendarFocus.SHIFTS || day.isWorkDay || (type != null && !type.isOff) || day.leave != null
     val lines = buildList {
         if (showShift) add(shiftLine(day))
-        day.extras.forEach { add(extraLine(it)) }
+        day.extras.forEach { add(extraLine(it, extraStyle)) }
         row.jobs.forEach { j ->
             add((j.start?.let { Fmt.time(it) + " " } ?: "") + j.title +
                 (if (j.days > 1) " · ${j.days}일 중 ${(date.toEpochDay() - j.date.toEpochDay()).toInt() + 1}일째" else "") +
