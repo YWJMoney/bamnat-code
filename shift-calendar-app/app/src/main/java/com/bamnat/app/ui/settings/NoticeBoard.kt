@@ -83,7 +83,8 @@ object NoticeBoard {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier) {
+fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
+                    /** 9차 PC 확인(하): inside a card already titled '알림 한눈에' the line says only the counts. */ titled: Boolean = true) {
     val c = LocalContext.current.appContainer
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     var tick by remember { mutableIntStateOf(0) }
@@ -112,7 +113,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier) {
     Column(modifier.focusMark("알림 한눈에").fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open = !open }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("알림 한눈에", style = MaterialTheme.typography.titleSmall)
+                if (titled) Text("알림 한눈에", style = MaterialTheme.typography.titleSmall)
                 Text(listOfNotNull("켜 둔 ${onOwn.size + onRules.size}개", "더 켤 수 있는 ${offOwn.size + offRules.size}개",
                     "겹침 ${overlaps.size}".takeIf { overlaps.isNotEmpty() }).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
