@@ -445,6 +445,12 @@ class MemoEditorViewModel(
     /** [RUL-04] This visit changed and saved the memo. */
     private var savedSomething = false
 
+    /**
+     * 1.39 [TASK-39] The memo as last read or saved here, so a time moved or a 끝내기 from its notice (or the 할 일 위젯's circle)
+     * while the editor is open is kept, not written over by the next save ([com.bamnat.core.memo.MemoOutside]). PC 6차.
+     */
+    private var base: Memo? = null
+
     init {
         // [RUL-03] A button or rule opened this new memo with a 메모 틀.
         if (memoId == 0L) com.bamnat.app.logic.LogicLinks.takeTemplate()?.let { title ->
@@ -458,8 +464,27 @@ class MemoEditorViewModel(
                 repo.get(memoId)?.let { stored ->
                     _memo.value = stored
                     _savedAt.value = stored.updatedAtMillis
+                    base = stored
                 }
                 _loaded.value = true
+                watchOutside(memoId)
+            }
+        }
+    }
+
+    /** Shows a time or 끝냄 changed outside the editor at once, as [save] keeps it. */
+    private fun watchOutside(id: Long) {
+        viewModelScope.launch {
+            repo.memos.map { list -> list.firstOrNull { it.id == id } }.distinctUntilChanged().collect { stored ->
+                if (stored == null) return@collect
+                saveMutex.withLock {
+                    val b = base ?: return@withLock
+                    // A list read before this editor's own last save is older than what it holds.
+                    if (stored.updatedAtMillis < b.updatedAtMillis) return@withLock
+                    val kept = com.bamnat.core.memo.MemoOutside.keep(_memo.value, b, stored)
+                    if (kept != _memo.value) _memo.value = kept
+                    base = com.bamnat.core.memo.MemoOutside.seen(b, stored)
+                }
             }
         }
     }
@@ -797,9 +822,17 @@ class MemoEditorViewModel(
     private suspend fun save() {
         saveMutex.withLock {
             if (deleted || !dirty) return
+            // 1.39 [TASK-39] A time moved or 끝내기 pressed from the notice since this editor read the memo stays.
+            val outside = base?.let { b -> if (_memo.value.id != 0L) repo.get(_memo.value.id)?.let { b to it } else null }
+            if (outside != null) {
+                _memo.value = com.bamnat.core.memo.MemoOutside.keep(_memo.value, outside.first, outside.second)
+            }
             val current = _memo.value
             if (current.id == 0L && current.isBlank) return
             val stored = repo.save(current)
+            val firstSave = base == null
+            base = stored
+            if (firstSave) watchOutside(stored.id)
             dirty = false
             // Keep the id (for new memos) without overwriting text typed during the save.
             _memo.value = _memo.value.copy(id = stored.id, createdAtMillis = stored.createdAtMillis,

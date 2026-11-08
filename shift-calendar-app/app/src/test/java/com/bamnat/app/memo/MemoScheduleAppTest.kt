@@ -130,6 +130,34 @@ class MemoScheduleAppTest {
         assertEquals("11/12 (목) 오전 9:00", laterSaid(LocalDateTime.of(2026, 11, 12, 9, 0), now))
     }
 
+    /**
+     * 1.39 [TASK-39] PC 6차: with the memo open in its editor, '10분 뒤' on the notice and then one letter typed there kept the
+     * old 9:35 and lost the 9:45 notice. The editor now keeps a time (or a 끝내기) changed from outside while it was open.
+     */
+    @Test fun theEditorKeepsATimeMovedFromTheNotice() = kotlinx.coroutines.runBlocking<Unit> {
+        val repo = context.appContainer.memoRepository
+        val day = LocalDate.now()
+        val memo = repo.save(Memo(date = day, title = "약 먹기", reminder = MemoReminder(day.atTime(9, 35), ring = false, notify = true)))
+        val vm = com.bamnat.app.ui.memo.MemoEditorViewModel(context.appContainer, memo.id, null, false)
+        val looper = shadowOf(android.os.Looper.getMainLooper())
+        fun until(what: () -> Boolean) {
+            repeat(200) { if (what()) return; looper.idleFor(java.time.Duration.ofMillis(50)); Thread.sleep(10) }
+            throw AssertionError("기다려도 오지 않았어요")
+        }
+        until { vm.loaded.value }
+        val moved = MemoSnoozeReceiver.put(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.MIN10, null)!!
+        until { vm.memo.value.reminder?.at == moved }
+        vm.setTitle("약 먹기!")
+        until { kotlinx.coroutines.runBlocking { repo.get(memo.id)!!.title } == "약 먹기!" }
+        assertEquals(moved, repo.get(memo.id)!!.reminder!!.at)
+        // A 끝내기 from the notice, then a letter: still done.
+        MemoDoneReceiver.finish(context, memo.id, day)
+        until { vm.memo.value.doneAtMillis != null }
+        vm.setTitle("약 먹기!!")
+        until { kotlinx.coroutines.runBlocking { repo.get(memo.id)!!.title } == "약 먹기!!" }
+        assertTrue(repo.get(memo.id)!!.doneAtMillis != null)
+    }
+
     @Test fun aMemoScheduleRingsUnderItsOwnWords() {
         val ring = RingRequest("", LocalDate.now(), LocalTime.of(15, 0), 0, null, 1L, custom = true, label = "치과")
         assertEquals("치과", ring.title)

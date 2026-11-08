@@ -102,6 +102,25 @@ class TaskWidgetTest {
         assertTrue("title alone: $texts", "우유 사기" in texts)
         assertTrue("time under it: $texts", texts.any { it.endsWith("21:00") || it.endsWith("9:00") })
         assertTrue("how many left, by ＋: $texts", "3" in texts)
+        // PC 6차: today's 9:21 gone by showed no 늦음 in either widget. Past its time it says 늦음 by the time, in both.
+        val late = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) {
+            WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three, today.atTime(21, 30)) } }
+        }
+        texts.clear()
+        walk(late.remoteViews.apply(context, android.widget.FrameLayout(context)))
+        assertTrue("늦음 on the line: $texts", texts.any { it.startsWith("늦음") })
+        val early = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) {
+            WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three, today.atTime(20, 30)) } }
+        }
+        texts.clear()
+        walk(early.remoteViews.apply(context, android.widget.FrameLayout(context)))
+        assertTrue("not yet: $texts", texts.none { "늦음" in it })
+        val first = three.first { it.text == "우유 사기" }
+        assertTrue(note(first, TaskList.overdue(first, today.atTime(21, 30)))!!.startsWith("늦음 · "))
+        assertEquals(null, note(three.first { it.text == "운동" }, false))
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) {
+            WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskContent(three, today, today.atTime(21, 30)) } }
+        }.remoteViews)
         // The second widget's row is 프로; the first is free whatever the tier.
         assertEquals(com.bamnat.app.tier.Tier.PRO, Feature.MORE_TASK_WIDGETS.minTier)
     }
