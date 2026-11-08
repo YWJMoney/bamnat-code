@@ -169,7 +169,8 @@ private fun ExtraRow(
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
-    val name = ExtraText.name(extra)
+    // 1.39 [WTYP-30] PC 6차: 일근 says 야근 here as on the chip above.
+    val name = ExtraText.name(extra, vm.settings.collectAsStateWithLifecycle().value.workStyle)
     Column(
         Modifier
             .fillMaxWidth()
@@ -227,6 +228,7 @@ private fun ExtraRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onDone: () -> Unit) {
+    val kindWord = ExtraText.kindName(extra.kind, vm.settings.collectAsStateWithLifecycle().value.workStyle)
     val e = extra.entry
     val update: (ExtraEntry) -> Unit = { vm.updateExtra(day.date, index, it) }
     var picking by remember { mutableStateOf<String?>(null) }
@@ -277,7 +279,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 )
             }
             // [EASE-26] The end a little later or earlier with a tap.
-            MinuteNudges(extra.kind.name, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, from, to, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
+            MinuteNudges(kindWord, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, from, to, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
             Text(
                 "일한 시간 ${HoursFormat.korean(extra.minutes)}" + if (WorkTime.isOvernight(from, to)) " · 끝은 다음 날" else "",
                 style = MaterialTheme.typography.bodySmall,
@@ -298,11 +300,11 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                     onChange = { m -> update(e.copy(minutes = m)) },
                     step = 30,
                     max = ScheduleRepository.MAX_EXTRA_MINUTES,
-                    dialogTitle = "${extra.kind.name} 시간",
+                    dialogTitle = "$kindWord 시간",
                 )
             }
             // [EASE-26] 10분·30분·1시간 more, or 30분 less, with a tap.
-            MinuteNudges(extra.kind.name, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, null, null, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
+            MinuteNudges(kindWord, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, null, null, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
             // Clock times make night minutes exact; the start follows the shift when there is one.
             TextButton(onClick = {
                 val start = from ?: LocalTime.of(9, 0)

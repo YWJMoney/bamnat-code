@@ -143,16 +143,16 @@ internal fun shiftLine(day: ResolvedDay): String {
 }
 
 /** "야간 대근 · 19:00 – 07:00 (다음날) · 11시간", "잔업 · 근무 뒤 2시간 (19–21)". */
-internal fun extraLine(e: ResolvedExtra): String {
+internal fun extraLine(e: ResolvedExtra, style: com.bamnat.core.work.WorkStyle? = null): String {
     val from = e.from
     val to = e.to
     return when {
-        from == null || to == null -> "${ExtraText.name(e)} · 시각 모름"
+        from == null || to == null -> "${ExtraText.name(e, style)} · 시각 모름"
         // [PAYX-54] 1.38 PC 12.4.1: work in the shift's own hours adds none; the times as typed, and why.
-        e.insideShiftMinutes > 0 -> "${ExtraText.name(e)} · ${Fmt.timeRange(e.entry.start ?: from.toLocalTime(), e.entry.end ?: to.toLocalTime())} · " +
+        e.insideShiftMinutes > 0 -> "${ExtraText.name(e, style)} · ${Fmt.timeRange(e.entry.start ?: from.toLocalTime(), e.entry.end ?: to.toLocalTime())} · " +
             if (e.minutes <= 0) "근무 시간 안이라 시간은 안 더해요" else "${HoursFormat.korean(e.minutes)} (근무와 겹친 ${HoursFormat.korean(e.insideShiftMinutes)} 뺌)"
-        e.entry.hasTimes || e.covered != null -> "${ExtraText.name(e)} · ${Fmt.timeRange(from.toLocalTime(), to.toLocalTime())} · ${HoursFormat.korean(e.minutes)}"
-        else -> "${e.kind.name} · ${if (e.kind.timing is com.bamnat.core.model.ExtraTiming.BeforeShift) "근무 전" else "근무 뒤"} " +
+        e.entry.hasTimes || e.covered != null -> "${ExtraText.name(e, style)} · ${Fmt.timeRange(from.toLocalTime(), to.toLocalTime())} · ${HoursFormat.korean(e.minutes)}"
+        else -> "${ExtraText.kindName(e.kind, style)} · ${if (e.kind.timing is com.bamnat.core.model.ExtraTiming.BeforeShift) "근무 전" else "근무 뒤"} " +
             "${HoursFormat.korean(e.minutes)} (${ExtraText.span(from.toLocalTime(), to.toLocalTime())})"
     }
 }
@@ -338,7 +338,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 Spacer(Modifier.width(2.dp))
                 ExtraKindMark(e.kind, size = 16.dp)
                 Spacer(Modifier.width(10.dp))
-                Text(extraLine(e), style = MaterialTheme.typography.bodyMedium, maxLines = bigLines(1), overflow = TextOverflow.Ellipsis)
+                Text(extraLine(e, settings.workStyle), style = MaterialTheme.typography.bodyMedium, maxLines = bigLines(1), overflow = TextOverflow.Ellipsis)
             }
         }
         if (day.extras.size > MAX_EXTRA_LINES) {
@@ -370,7 +370,7 @@ private fun ExtraNudgeLine(day: ResolvedDay, vm: CalendarViewModel, modifier: Mo
     val e = day.extras[i]
     val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
     // [J133-27] A weekday worker's own word, as the chip says it.
-    val name = ExtraText.name(e).let { if (style == com.bamnat.core.work.WorkStyle.DAY && e.kind.id == com.bamnat.core.model.ExtraKind.OVERTIME_ID) it.replace("잔업", "야근") else it }
+    val name = ExtraText.name(e, style)
     MinuteNudges(name, lead = name, modifier = modifier, onNudge = { d ->
         vm.updateExtra(day.date, i, com.bamnat.core.schedule.MinuteNudge.extra(e.entry, e.start, e.end, d, com.bamnat.app.data.ScheduleRepository.MAX_EXTRA_MINUTES))
     })
@@ -652,9 +652,7 @@ private fun QuickChips(
                 },
                 label = {
                     // [J133-27] 1.33 (실사용 테스트 "직장인 말은 '야근'인데 칩은 '잔업'"): a weekday worker's own word for it.
-                    val text = if (i >= 0) ExtraText.name(day.extras[i]) else c.label
-                    ChipText(if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY && c.kind.id == com.bamnat.core.model.ExtraKind.OVERTIME_ID)
-                        text.replace("잔업", "야근") else text)
+                    ChipText(if (i >= 0) ExtraText.name(day.extras[i], settings.workStyle) else ExtraText.word(c.label, c.kind.id, settings.workStyle))
                 },
                 leadingIcon = {
                     if (i >= 0) Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) else ExtraKindMark(c.kind, size = 18.dp)
