@@ -305,6 +305,8 @@ export function requiredSetup(env) {
     { key: "MAIL_API_KEY·MAIL_FROM", need: "nice", ok: has("MAIL_API_KEY") && has("MAIL_FROM"), what: "초대·확인 메일", lose: "초대 링크를 직접 전해야 해요" },
     // 1.39 실서버(11-08): 같은 판(1.39.0)을 다시 배포하면 판 이름이 같아 '서버 배포'가 남지 않았어요. 버전 메타데이터를 묶으면 배포 번호가 판 이름에 붙어요.
     { key: "CF_VERSION_METADATA", need: "nice", ok: Boolean(env.CF_VERSION_METADATA?.id), what: "배포 번호(버전 메타데이터)", lose: "같은 판을 다시 배포하면 사고 › 바꾼 것에 남지 않아요" },
+    // 1.39 [OBS2-01] Play 보고서 저장소: 설치·삭제·스토어 전환·출처·판·별점(관측 판의 '전체 사용자').
+    { key: "PLAY_REPORTS_BUCKET", need: "nice", ok: has("PLAY_REPORTS_BUCKET"), what: "Play 보고서(설치·삭제·스토어 전환·출처)", lose: "숫자 › 한눈에의 전체 사용자 칸이 비어요" },
     { key: "SHARE_BASE_URL·SHARE_ADMIN_TOKEN", need: "nice", ok: has("SHARE_BASE_URL") && has("SHARE_ADMIN_TOKEN"), what: "공유 서버 신고·상태 보기", lose: "공유 링크 신고와 공유 서버 상태를 못 봐요" },
   ];
   return { items, missing: items.filter((i) => i.need === "must" && !i.ok).map((i) => i.key) };

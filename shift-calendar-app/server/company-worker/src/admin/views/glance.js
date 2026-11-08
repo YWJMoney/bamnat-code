@@ -1,3 +1,5 @@
+// 1.39 [OBS2-01~05] 관측(사용자 11-08 '사용자 유입 이탈 등 모든 상황을 관측', '통계를 통한 완전한 자가 발전'): 정상도 아래에 전체 사용자(Play·서버),
+// 개선 신호(숫자 → 개발사항 → 고친 뒤 확인), 관측 빈틈(답 못 하는 질문·더 모을 데이터)을 더해 두 칸으로(src/observe.js).
 // 1.39 [STAT2-01~05] 숫자 › 한눈에 #/glance (사용자 2026-11-08 "통계쪽 혁신 … 정상도 사용자 이탈 회복 진입 등 모든 것을 전반적으로,
 // 레이아웃도 디자인 전문가 입장에서 최정상급"). 다른 화면 묶음처럼 글(String(fn))로 브라우저에 가고, 앱이 나눠 주는 것(A)으로 불려요.
 // 위에서 아래로 한 번 읽으면 끝나게:
@@ -7,7 +9,7 @@
 //   4. 더 보기: 지표·판 건강·오류 묶음·돈·서버 상태로.
 // style 속성 없이(CSP) 막대·고리는 SVG 속성으로 그려요. 폴드 접힘(380)·펼침(840)·웹(1440) 모두 한 줄 흐름이 접혀 내려와요.
 export function glanceViews(A) {
-  const { S, L, esc, href, skeleton } = A;
+  const { S, L, esc, href, skeleton, api, act, load, can, confirmBox } = A;
 
   const TONE = {
     ok: ["정상이에요", "지금 볼 문제가 없어요."],
@@ -114,13 +116,151 @@ export function glanceViews(A) {
     return `<nav class="gl-more" aria-label="더 보기">${links.map(([k, t, s]) => `<a href="${href(k)}"><b>${esc(t)}</b><small>${esc(s)}</small></a>`).join("")}</nav>`;
   }
 
-  function glanceView() {
-    const d = S.data.glance;
-    if (!d) return `<div class="gl-hero skeleton"></div>${skeleton(2)}`;
-    return `<div class="glance">${hero(d)}${early(d)}${flow(d)}${more()}</div>`;
+
+  // ---- 1.39 [OBS2-01~05] 관측: 전체 사용자(Play·서버), 개선 신호, 관측 빈틈 ----
+
+  const PLAY_STATE = { off: "Play 서비스 계정 없음", nobucket: "Play 보고서 저장소 연결 필요", denied: "Play 보고서 권한 필요", unreachable: "Play에 닿지 못했어요" };
+  const SOURCE_NAMES = { "utm:bamnat_web": "웹 계산기·달력", "utm:bamnat_share": "받은 근무표 링크", "utm:bamnat_invite": "친구 초대" };
+  const sourceName = (s) => SOURCE_NAMES[s] ?? (/search/i.test(s) ? "Play 검색" : /explore|browse/i.test(s) ? "Play 둘러보기"
+    : /referr|third/i.test(s) ? "외부 링크" : s.startsWith("utm:") ? `링크 ${s.slice(4)}` : s);
+  const md = (x) => (x ? x.slice(5).replace("-", "/") : "—");
+  const signed = (n) => (n > 0 ? `+${n}` : String(n));
+
+  /** 전체 사용자 칸 하나: 무엇, 큰 숫자, 풀이, 작은 줄 그림, 출처(어디서 왔고 언제까지). */
+  function tile(cls, label, big, note, extra, source) {
+    return `<div class="ob-tile ${cls}"><span class="gl-k">${esc(label)}</span><b>${big}</b><small>${note}</small>${extra}<span class="ob-src">${esc(source)}</span></div>`;
   }
 
-  const loads = { glance: () => [["/glance", "glance"]] };
+  function everyone(o) {
+    const p = o.play;
+    const rows = p.days ?? [];
+    const on = p.state === "ok" || p.stale;
+    const sum = (k) => rows.reduce((n, r) => n + (r[k] ?? 0), 0);
+    const has = (k) => rows.some((r) => r[k] !== null && r[k] !== undefined);
+    const playSrc = on ? `Play 보고서 · ${md(p.lastDay)}까지(1~2일 늦음)${p.stale ? " · 지난 값" : ""}` : PLAY_STATE[p.state] ?? "Play 숫자 없음";
+    const need = o.gaps.find((g) => g.key.startsWith("play-"));
+    const missing = (label, cls) => tile(`${cls} need`, label, "—", esc(need ? need.how : "아직 숫자가 없어요"), "", playSrc);
+    const tiles = [];
+    // Play 보고서가 아예 없으면 빈 칸 넷 대신 한 줄로: 무엇이 비었고 무엇을 하면 채워지는지.
+    if (!on) tiles.push(`<div class="ob-tile need wide"><span class="gl-k">유입 · 설치 − 삭제 · 판별 설치 기기 · 별점</span><b>연결 필요</b>
+      <small>${esc(need ? `${need.title}. ${need.how}` : "Play 보고서를 아직 받지 못했어요.")}</small><span class="ob-src">${esc(playSrc)}</span></div>`);
+    // 유입: 스토어 방문 → 설치와 출처.
+    if (on && has("visitors")) {
+      const vis = sum("visitors");
+      const acq = sum("acq");
+      const conv = vis ? Math.round((acq / vis) * 1000) / 10 : null;
+      const top = (p.sources ?? []).slice(0, 4);
+      const src = top.length ? `<ul class="ob-sources">${top.map((x) => `<li><span>${esc(sourceName(x.source))}</span><b>${x.acq}</b><small>방문 ${x.visitors}</small></li>`).join("")}</ul>` : "";
+      tiles.push(tile("in", "유입 · 스토어 방문 → 설치", `${acq}<small>대</small>`, `방문 ${vis} · 전환 ${conv === null ? "—" : `${conv}%`} · 28일`,
+        L.spark(rows.map((r) => r.acq), { name: "스토어 설치" }) + src, playSrc));
+    } else if (on) tiles.push(missing("유입 · 스토어 방문 → 설치", "in"));
+    // 설치·삭제: 늘고 있는지 줄고 있는지.
+    if (on && has("installs")) {
+      const ins = sum("installs");
+      const uns = sum("uninstalls");
+      const base = [...rows].reverse().find((r) => r.base !== null && r.base !== undefined)?.base ?? null;
+      tiles.push(tile(`out ${ins - uns < 0 ? "minus" : "plus"}`, "설치 − 삭제", `${signed(ins - uns)}<small>대</small>`,
+        `설치 ${ins} · 삭제 ${uns}${base === null ? "" : ` · 지금 설치된 기기 ${base}`} · 28일`,
+        `${L.spark(rows.map((r) => r.uninstalls), { name: "하루 삭제" })}<small class="ob-cap">선은 하루 삭제</small>`, playSrc));
+    } else if (on) tiles.push(missing("설치 − 삭제", "out"));
+    // 하루 사용자: Play가 본 사용자(늦음)와 서버 요청(늦지 않음).
+    const pu = o.active.play ?? [];
+    const cf = o.active.config ?? [];
+    const lastUsers = pu.at(-1)?.n ?? null;
+    const lastCfg = cf.at(-1)?.n ?? null;
+    tiles.push(tile("keep", "하루 사용자", `${lastUsers === null ? "—" : lastUsers}<small>명</small>`,
+      `Play가 본 사용자(Android 진단 켠 휴대폰)${pu.at(-1)?.day ? ` · ${md(pu.at(-1).day)}` : ""}`,
+      `${L.spark(pu.map((x) => x.n), { name: "하루 사용자" })}<div class="ob-sub"><span class="gl-k">앱 → 서버 요청</span><b>${lastCfg === null ? "—" : lastCfg}</b><small>어제 · 휴대폰 구별 없이 센 요청 수(14일)</small>${L.spark(cf.map((x) => x.n), { name: "서버 요청" })}</div>`,
+      o.quality.vitals?.error ? "Play vitals 권한 필요" : "Play vitals · 서버"));
+    // 판: 어느 판에 몇 대가 있는지.
+    const v = p.versions;
+    if (on && v?.rows?.length) {
+      const total = v.rows.reduce((n, r) => n + r.n, 0) || 1;
+      const bars = v.rows.slice(0, 4).map((r, i) => {
+        const share = Math.round((r.n / total) * 1000) / 10;
+        return `<li class="${i ? "" : "top"}"><span>${esc(String(r.code))}</span><svg class="gl-meter" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="gl-track" width="100" height="6" rx="3"/><rect class="gl-fill" width="${Math.max(2, share)}" height="6" rx="3"/></svg><b>${share}%</b></li>`;
+      }).join("");
+      tiles.push(tile("ver", "판별 설치 기기", `${Math.round((v.rows[0].n / total) * 100)}<small>% 최신 판</small>`, `${esc(String(v.rows[0].code))} · ${md(v.day)}`, `<ul class="ob-vers">${bars}</ul>`, playSrc));
+    } else if (on) tiles.push(missing("판별 설치 기기", "ver"));
+    // 별점.
+    const rated = rows.filter((r) => r.rating);
+    const total = [...rows].reverse().find((r) => r.total)?.total ?? null;
+    if (on && (rated.length || total)) {
+      const week = rated.slice(-7);
+      const avg = week.length ? Math.round((week.reduce((n, r) => n + r.rating, 0) / week.length) * 10) / 10 : null;
+      tiles.push(tile("star", "별점", `${total === null ? "—" : `★ ${Math.round(total * 100) / 100}`}`, `최근 7일 평균 ${avg === null ? "—" : `★ ${avg}`} · 리뷰 ${o.voice.reviews.n}개`, "", playSrc));
+    } else tiles.push(tile("star", "별점", o.voice.reviews.stars === null ? "—" : `★ ${o.voice.reviews.stars}`, `받은 리뷰 ${o.voice.reviews.n}개 · 이번 주 ${o.voice.reviews.week}`, "", "스토어 리뷰(답글용으로 받은 것)"));
+    // 목소리: 사람이 직접 말해 준 것(문의·리뷰)과 찾다가 못 찾은 말. 숫자로 안 보이는 불편이 여기서 먼저 보여요.
+    const vo = o.voice;
+    const miss = (vo.misses ?? []).slice(0, 3);
+    tiles.push(tile("voice", "목소리", `${vo.inquiries.week}<small>건 문의 · 7일</small>`, `28일 문의 ${vo.inquiries.n} · 이번 주 리뷰 ${vo.reviews.week}`,
+      miss.length ? `<ul class="ob-sources">${miss.map((m) => `<li><span>'${esc(m.word)}' 못 찾음</span><b>${m.n}</b><small>${esc(m.placeName ?? "")}</small></li>`).join("")}</ul>` : "",
+      "문의·스토어 리뷰·찾았는데 없던 말"));
+    return `<section class="card ob-all" aria-labelledby="ob-all-title"><div class="card-head"><h2 id="ob-all-title">전체 사용자</h2><span class="meta">동의와 상관없이 모든 휴대폰 · Play와 서버</span></div>
+      <div class="ob-tiles">${tiles.join("")}</div></section>`;
+  }
+
+  const SIGNAL_STATE = { new: ["새 신호", "warn"], watch: ["지켜보는 중", "info"], dev: ["개발사항", "ok"], dismiss: ["아님", ""] };
+
+  /** [OBS2-04] 개선 신호: 숫자에서 찾은 문제 → 개발사항 → 고친 뒤 숫자로 확인. */
+  function signalsCard(o) {
+    const list = o.signals ?? [];
+    const open = list.filter((s) => !s.cleared && s.state !== "dismiss");
+    const better = list.filter((s) => s.cleared);
+    const devOk = can("dev", "edit");
+    const row = (s) => {
+      const [label, tone] = SIGNAL_STATE[s.state] ?? SIGNAL_STATE.new;
+      const btns = s.state === "dev"
+        ? `<a class="btn small" href="${href("dev", s.devId)}">개발사항 보기</a>`
+        : `${devOk ? `<button class="btn small primary" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
+           ${s.state === "watch" ? "" : `<button class="btn small" data-act="obs-signal" data-key="${esc(s.key)}" data-do="watch">지켜보기</button>`}
+           <button class="btn small ghost" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dismiss">아님</button>`;
+      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
+        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${esc(String(s.now ?? s.value ?? "—"))}${esc(s.unit ?? "")}</b> · 기준 ${esc(String(s.base ?? "—"))}${esc(s.unit ?? "")}${s.state === "dev" ? ` · 고치면 사흘 뒤 '좋아짐'으로 옮겨요` : ""}</p>
+        <div class="actions start">${btns}</div></li>`;
+    };
+    const done = better.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>좋아진 신호 ${better.length}개</summary><ul>${better.map((s) =>
+      `<li><b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 ` : ""}${esc(String(s.value ?? "—"))}${esc(s.unit ?? "")} → ${esc(String(s.after ?? "—"))}${esc(s.unit ?? "")}</small></li>`).join("")}</ul></details>` : "";
+    return `<section class="card ob-signals" aria-labelledby="ob-sig-title"><div class="card-head"><h2 id="ob-sig-title">개선 신호</h2>${open.length ? `<span class="pill warn">${open.length}</span>` : ""}</div>
+      <p class="hint">숫자에서 찾은 문제예요. 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 그 숫자가 돌아오면 '좋아진 신호'로 옮겨요.</p>
+      ${open.length ? `<ul class="ob-signal-list">${open.map(row).join("")}</ul>` : `<p class="empty-line">지금 찾은 문제가 없어요. 매시 ${o.found?.length ?? 0}가지 숫자를 기준과 견줘요${o.play.state === "ok" ? "" : "(Play 보고서가 연결되면 늘어요)"}.</p>`}
+      ${done}</section>`;
+  }
+
+  /** [OBS2-05] 관측 빈틈: 아직 답하지 못하는 질문과 그 답에 필요한 것. */
+  function gapsCard(o) {
+    const g = o.gaps ?? [];
+    if (!g.length) return "";
+    return `<section class="card ob-gaps" aria-labelledby="ob-gap-title"><div class="card-head"><h2 id="ob-gap-title">관측 빈틈</h2><span class="meta">${g.length}가지</span></div>
+      <p class="hint">지금 숫자로 답하지 못하는 질문이에요. 처리방침이 필요한 것은 사용자가 정해요.</p>
+      <ul class="ob-gap-list">${g.map((x) => `<li class="${x.policy ? "policy" : ""}"><b>${esc(x.title)}</b><small>필요: ${esc(x.need)}</small><small>${esc(x.how)}</small>${x.policy ? '<span class="pill">처리방침 · 사용자 결정</span>' : ""}</li>`).join("")}</ul></section>`;
+  }
+
+  const actions = {
+    "obs-signal": ({ key, do: what }) => {
+      const go = async () => {
+        if (await act(() => api("/observe/signals", "POST", { key, act: what }), what === "dev" ? (r) => `개발사항 ${r.signal.devId}을 만들었어요` : what === "watch" ? "지켜볼게요" : "아님으로 두었어요")) {
+          await load({ quiet: true });
+        }
+      };
+      if (what === "dismiss") return confirmBox("이 신호를 '아님'으로 둘까요?", "30일 동안 같은 신호를 다시 띄우지 않아요. 활동 기록에 남아요.", "아님으로", go, "primary");
+      return go();
+    },
+  };
+
+  /**
+   * 1.39 [OBS2] 한 장: 정상도 아래를 두 칸으로. 왼쪽(넓은 칸)은 전체 사용자 → 사용 통계 표본 흐름, 오른쪽은 개선 신호 → 초기 모드 →
+   * 관측 빈틈. 넓은 화면(1100 이상)에서 반이 비던 것을 채우고, 좁으면 위에서 아래로 그 순서로 내려와요.
+   */
+  function glanceView() {
+    const d = S.data.glance;
+    const o = S.data.observe;
+    if (!d) return `<div class="gl-hero skeleton"></div>${skeleton(2)}`;
+    return `<div class="glance">${hero(d)}<div class="ob-cols"><div class="ob-main">${o ? everyone(o) : skeleton(1)}${flow(d)}</div>
+      <div class="ob-side">${o ? signalsCard(o) : ""}${early(d)}${o ? gapsCard(o) : ""}</div></div>${more()}</div>`;
+  }
+
+  const loads = { glance: () => [["/glance", "glance"], ["/observe", "observe"]] };
   const has = { glance: () => S.data.glance };
-  return { glanceView, glanceLoads: loads, glanceHas: has };
+  return { glanceView, glanceLoads: loads, glanceHas: has, actions };
 }

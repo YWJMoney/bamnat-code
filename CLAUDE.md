@@ -135,6 +135,8 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 
 **1.39부터 자동 순환(G10, `shift-calendar-app/docs/plans/1.39-G10-자동순환.md`)**: 서버가 Play 프로덕션 트랙을 읽어 100% 출시를 보면 1시간 보류 뒤 5항의 '나간 판 저장'을 스스로 해요(관리자 앱 › 자동 순환에서 취소·끄기). 개발 PR은 `shift-calendar-app/ops/dev-status.jsonl`에 그 개발사항 줄(d 번호나 추적 번호, status, size, route, done이면 news·shipReply)을 같이 고치고 `python3 tools/dev_status.py check`를 통과시켜요(문의로 생긴 고침, 곧 d 번호 + size fix의 done 줄엔 그 문제를 재현한 시험 이름 `test`, LOOP-21). **문의 원문·개인정보와 요금(tier)은 그 파일에 적지 않아요**(요금은 사용자 논의 뒤 최고 관리자만, Claude는 `tierAsk`로 제안만). route `server`로 done이면 `python3 tools/dev_status.py build`로 `dev-built.js`도 갱신해요.
 
+**1.39부터 숫자도 개발로(OBS2, 사용자 2026-11-08 '통계를 통한 완전한 자가 발전')**: 관리자 앱 숫자 › 한눈에의 '개선 신호'(삭제 급증·전환 하락·새 판 멈춤·찾았는데 없던 말 등)를 문의처럼 처리해요. 열쇠로 `GET /api/admin/observe`, `POST /api/admin/observe/signals {key, act:"dev"|"watch"|"dismiss"}`. 개발사항이 된 신호는 고친 뒤 숫자가 돌아오면 '좋아진 신호'로 옮겨져요. 개발사항마다 효과를 잴 이벤트(`events`)를 적고, 새로 모아야 할 데이터는 '관측 빈틈'에서 찾아 처리방침이 걸리면 사용자에게 카드로 물어요(`shift-calendar-app/docs/ops-desk.md` 개선 신호 절).
+
 ## 4. 출시 파일 만들기와 자가 점검
 
 - 서명은 클라우드에서만, 프로젝트에 올라온 업로드 키로 해요. 키는 권한을 좁힌 임시 폴더에 풀어 쓰고 끝나면 지워요. 비밀번호는 환경 변수로만 넘기고 출력하지 않아요.
