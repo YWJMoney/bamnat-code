@@ -82,4 +82,15 @@ class CommunityCareTest {
         org.junit.Assert.assertTrue(CommunityCare.warningBody(warn, badgeRest = true).contains(CommunityCare.BADGE_REST_WARN))
         org.junit.Assert.assertFalse(CommunityCare.warningBody(first, badgeRest = true).contains("표식"))
     }
+
+    /** 1.39 [CARE-09] 7차 PC: 결원 링크 거절이 '인터넷이 될 때 다시'가 아니라 누구 이름의 무엇인지와 고칠 곳을 말해요. */
+    @Test fun teamLinkRefusalNamesTheLineAndWhereToFixIt() {
+        val s = TeamLinkText.contact("phone", "유나 010-1234-5678", "people")
+        assertEquals("‘유나 010-1234-5678’에 전화번호가 있어 링크에 넣을 수 없어요. 팀원·직원 이름에서 빼고 다시 보내 주세요. 링크로 돈을 요구하는 사기를 막으려는 거예요.", s)
+        assertTrue(TeamLinkText.contact("link", "문의 https://bit.ly/x", "title").contains("제목(이름)에서 빼고"))
+        assertTrue(TeamLinkText.contact("messenger", "주간 오픈채팅", "type").contains("근무 이름에서"))
+        assertTrue(TeamLinkText.contact("account", "110-123-456789", "zzz").contains("그 줄에서"))
+        // An older server (no text) keeps the general words.
+        assertEquals(TeamLinkText.contact("phone"), TeamLinkText.contact("phone", null, "people"))
+    }
 }

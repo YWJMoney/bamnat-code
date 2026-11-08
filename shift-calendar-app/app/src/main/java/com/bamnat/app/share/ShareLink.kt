@@ -754,9 +754,12 @@ class ShareLinkException(
     val removedReason: String? = null,
     /** 1.39 [CARE-09] With "contact": phone, link, account or messenger (team links take none of them, against scams). */
     val why: String? = null,
+    /** 1.39 [CARE-09] 7차 PC: the refused line as sent (40 chars) and its field, so the app says whose line and where to fix it. */
+    val text: String? = null,
+    val key: String? = null,
 ) : IOException(message) {
     /** What to tell the person for a refusal this file knows the words for, or null. */
-    val friendly: String? get() = if (message == "contact") com.bamnat.core.plaza.TeamLinkText.contact(why) else null
+    val friendly: String? get() = if (message == "contact") com.bamnat.core.plaza.TeamLinkText.contact(why, text, key) else null
 }
 
 class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) : ShareApi {
@@ -1105,7 +1108,9 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 val word = err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code"
                 throw ShareLinkException(if (word == "removed") "not_found" else word,
                     err?.optString("reason")?.takeIf { word == "removed" && it.isNotBlank() }?.take(200),
-                    err?.optString("why")?.takeIf { word == "contact" && it.isNotBlank() })
+                    err?.optString("why")?.takeIf { word == "contact" && it.isNotBlank() },
+                    err?.optString("text")?.takeIf { word == "contact" && it.isNotBlank() }?.take(40),
+                    err?.optString("key")?.takeIf { word == "contact" && it.isNotBlank() })
             }
             return Reply(code, if (text.isBlank()) JSONObject() else readable { JSONObject(text) }, conn.getHeaderField("ETag"))
         } finally {
@@ -1139,3 +1144,6 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         const val MAX_REPLY_BYTES = 256 * 1024
     }
 }
+
+/** 1.39 [CARE-09] 7차 PC: the person's words for a refused team or schedule link (contact words), or null for any other failure. */
+fun linkProblem(e: Throwable): String? = (e as? ShareLinkException)?.friendly
