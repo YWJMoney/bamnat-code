@@ -203,8 +203,10 @@ object FeatureRegistry {
             tip = "야간 근무 수고했어요. ‘연간 건강 지표’에서 야간 비율과 쉰 시간을 볼 수 있어요"),
         f("shift.nightDark", "SHFT-05", "야간 근무 중 어둡게", "야간 근무 시간에는 화면을 저절로 어둡게 바꿔요",
             setOf(SHIFT), "설정 › 화면과 글자 › 테마", at(Place.SETTINGS_CALENDAR, "테마"), "다크 모드", "어둡게", "야간 모드", "눈부심"),
+        // 1.39 사용자 2026-11-08 (수면은 밤낮의 핵심, 찾기 쉽게): every kind of work sleeps, so 기능 목록 and 설정 검색 show it to all
+        // (it was 교대 only, and an office worker searching '잠' found no feature).
         f("sleep.log", "SLP-16", "수면 기록", "잠든 시간과 깬 시간을 적고 근무별 평균을 봐요",
-            setOf(SHIFT), "달력 › 오늘의 흐름 › 수면 기록", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
+            ALL, "달력 › 오늘의 흐름 › 수면 기록", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
         // 1.38 수면 도약 [SLEEP-19]: what is new on 수면 기록, found by what people call it.
         f("sleep.noise", "SLEEP-04", "잠드는 소리", "백색·분홍·갈색 소음, 빗소리·선풍기·파도를 섞어 틀고, 정한 시간에 서서히 꺼져요",
             ALL, "설정 › 알림과 잠 › 수면 기록 보기 › 잠드는 소리", at(Place.SLEEP), "백색 소음", "빗소리", "수면 소리", "자장가", "잠 안 와요",

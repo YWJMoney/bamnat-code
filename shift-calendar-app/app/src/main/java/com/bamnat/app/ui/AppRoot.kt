@@ -2236,7 +2236,15 @@ private fun AppNavHost(
         composable(Routes.NIGHT) {
             val vm = appViewModel { com.bamnat.app.ui.sleep.NightViewModel(it) }
             com.bamnat.app.ui.sleep.NightScreen(vm = vm, onClose = { nav.popFrom(Routes.NIGHT) },
-                onAlarms = { NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK) })
+                onAlarms = { NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK) },
+                // 1.39 사용자 2026-11-08 (수면 기록 찾기 쉽게): 깼어요 opens 수면 기록, where last night's 아침 한 장 waits, instead of going
+                // back to the calendar; opened from 수면 기록 it is the same screen again.
+                onWoke = {
+                    if (nav.currentBackStackEntry?.destination?.route == Routes.NIGHT) nav.navigate(Routes.SLEEP) {
+                        popUpTo(Routes.NIGHT) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                })
         }
         composable(Routes.OWED) {
             val calendar by container.calendars.active.collectAsStateWithLifecycle()
