@@ -194,7 +194,9 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
 
     /** 1.38 [SLEEP-10][SLEEP-13][SLEEP-20] 적응 한 줄, 원인 찾기, 회복 도전. */
     data class Extras(val adapt: com.bamnat.core.sleep.ShiftAdapt.Step?, val causes: List<com.bamnat.core.sleep.SleepCauses.Finding>,
-        val challenge: com.bamnat.core.sleep.RecoveryChallenge.Progress?)
+        val challenge: com.bamnat.core.sleep.RecoveryChallenge.Progress?,
+        /** 1.39 사용자 2026-11-08: mornings answered (아침 한 장 기분), for what 내 기록에서 찾은 것 still waits on. */
+        val answered: Int = 0)
 
     private val challengeStart = kotlinx.coroutines.flow.MutableStateFlow(SleepChallengeStore.start(container.appContext))
 
@@ -208,7 +210,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
             com.bamnat.core.sleep.RecoveryChallenge.progress(from, com.bamnat.core.sleep.PlanVsActual.nights(st?.log.orEmpty(), snapshot.resolver,
                 from, today, s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes), today)
         }
-        Extras(com.bamnat.core.sleep.ShiftAdapt.stepFor(today, work), com.bamnat.core.sleep.SleepCauses.find(checks), challenge)
+        Extras(com.bamnat.core.sleep.ShiftAdapt.stepFor(today, work), com.bamnat.core.sleep.SleepCauses.find(checks), challenge,
+            answered = checks.count { it.mood != null })
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 1.38 [SLEEP-22] 바꾼 것 전후: the day the user marked and what they changed, with the 7 days on each side. */
@@ -517,10 +520,17 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",
                 com.bamnat.app.ui.components.KaniMood.Point)
             else if (r.loggedDays < 7) HowItWorks(settings.workStyle)
+            // 1.39 사용자 2026-11-08 (패턴 카드가 하나도 없어요): what the records will open, and how many more each takes, from the first day.
+            val unlocks = remember(r, extras?.answered, settings.workStyle) {
+                com.bamnat.core.sleep.SleepUnlocks.of(r, extras?.answered ?: 0, settings.workStyle)
+            }
+            if (unlocks.isNotEmpty()) UnlocksCard(unlocks)
             SleepHeadCard(r, target)
             // 1.38 [SLEEP-10][SLEEP-13][SLEEP-20]
             extras?.adapt?.let { AdaptCard(it) }
-            if (r.findings.isNotEmpty()) Findings(r.findings)
+            // '기록이 쌓이면 더 알려 드려요' says what the card above says, with numbers.
+            val findings = if (unlocks.isEmpty()) r.findings else r.findings.filter { it.key != "more-logs" }
+            if (findings.isNotEmpty()) Findings(findings)
             extras?.let { CausesCard(it.causes) }
             Groups(r, target)
             s.compare?.let { PlanCompare(it) }
@@ -638,6 +648,23 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
 }
 
 /** [SLP-16] What the taps are for, said where the user first wonders. */
+/** 1.39 사용자 2026-11-08: the pattern cards still to come, each with its count and a bar, so a new log says what it will open. */
+@Composable
+private fun UnlocksCard(unlocks: List<com.bamnat.core.sleep.SleepUnlocks.Unlock>) {
+    SectionCard(title = "기록이 쌓이면 열려요") {
+        unlocks.forEachIndexed { i, u ->
+            if (i > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(u.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text("${u.have}/${u.need}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            androidx.compose.material3.LinearProgressIndicator(progress = { (u.have.toFloat() / u.need).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+            Text(u.line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 private fun HowItWorks(style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {

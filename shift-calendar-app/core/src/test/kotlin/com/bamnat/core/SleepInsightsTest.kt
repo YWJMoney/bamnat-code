@@ -123,4 +123,22 @@ class SleepInsightsTest {
         val enough = TodayFlow.of(at(4, 7, 20), resolver, alarmsOn = true, afterNightMinutes = 400)
         assertEquals("지난 야간 뒤엔 평균 6시간 40분 잤어요", enough.detail)
     }
+    /** 1.39 사용자 2026-11-08 (패턴 카드가 하나도 없어요): an empty log already says what it will open and how many more each takes. */
+    @Test
+    fun anEmptyLogSaysWhatItWillOpen() {
+        val empty = SleepInsights.report(emptyList(), resolver, LocalDate.of(2026, 11, 4), targetMinutes = 420)
+        val none = com.bamnat.core.sleep.SleepUnlocks.of(empty, answeredMornings = 0, style = null)
+        assertEquals(listOf("groups", "causes", "week"), none.map { it.key })
+        assertEquals(listOf(0 to 2, 0 to 5, 0 to 7), none.map { it.have to it.need })
+        assertTrue(none[0].line.contains("2번 더") && none[0].line.contains("야간 뒤·쉬는 날"))
+        // One night after a 야간: one more of a kind; 3 mornings answered: 2 more.
+        val one = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), targetMinutes = 420)
+        val some = com.bamnat.core.sleep.SleepUnlocks.of(one, answeredMornings = 3, style = com.bamnat.core.work.WorkStyle.BUSINESS)
+        assertTrue(some[0].line.contains("1번 더") && some[0].line.contains("일한 날·쉬는 날"))
+        assertTrue(some[1].line.contains("2번 더"))
+        // All open: nothing left to say.
+        val full = SleepInsights.report(log, resolver, LocalDate.of(2026, 11, 12), targetMinutes = 420)
+        val left = com.bamnat.core.sleep.SleepUnlocks.of(full, answeredMornings = 5, style = null).map { it.key }
+        assertTrue("groups" !in left && "causes" !in left)
+    }
 }

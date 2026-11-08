@@ -123,4 +123,18 @@ class TabSlotsTest {
         assertTrue(TabOrder.SETTINGS in TabSlots.missing(TabSlots.onBar(seven, wide = false)))
         assertFalse(TabOrder.SETTINGS in TabSlots.missing(TabSlots.onBar(seven, wide = true)))
     }
+    /** 1.39 사용자 결정 2026-11-08: 첫 설정 끝 '잠을 아래 메뉴에 둘까요?' — 달력(첫 화면) 말고 네 칸 중 하나와 바꿔요. */
+    @Test fun sleepOffersEveryPlaceButHomeAndTakesTheOneChosen() {
+        val sleep = TabSlots.FEATURE + "SLEEP"
+        val bar = TabSlots.resolve("", emptyList(), known)
+        assertEquals(listOf(1, 2, 3, 4), TabSlots.swapChoices(bar, sleep))
+        val made = TabSlots.replace(bar, 2, sleep)
+        assertEquals(listOf("calendar", "money", sleep, "stats", "plaza").map(::One), made)
+        // 메모 went under the 나 button, and 잠 is not offered again.
+        assertTrue("memos" in TabSlots.missing(made))
+        assertEquals(emptyList<Int>(), TabSlots.swapChoices(made, sleep))
+        // Home moved to 메모: 메모 stays, 달력 may go.
+        val memosFirst = TabSlots.fromOrder(listOf("memos", "calendar", "money", "stats", "plaza", "settings"))
+        assertEquals(listOf(1, 2, 3, 4), TabSlots.swapChoices(memosFirst, sleep))
+    }
 }

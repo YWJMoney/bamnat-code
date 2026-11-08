@@ -28,7 +28,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Info
+import com.bamnat.app.ui.withBar
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
@@ -101,6 +103,11 @@ fun RecommendedScreen(
     var watch by rememberSaveable { mutableStateOf(!firstStart && start.healthSleep) }
     // [ONBOARD-05] Usage statistics go to a server: their own yes, never ticked beforehand (D42).
     var stats by rememberSaveable { mutableStateOf(false) }
+    // 1.39 사용자 결정 2026-11-08 (수면은 밤낮의 핵심, 첫 설정 끝에 한 번 권하기): which place of the bar 잠 takes; -1 keeps the bar.
+    val sleepKey = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.SLEEP.name
+    val bar = remember(start) { com.bamnat.core.layout.TabSlots.resolve(start.tabSlots, start.tabOrder, com.bamnat.app.ui.TabPicks.known) }
+    val sleepSwaps = remember(bar, firstStart) { if (firstStart) com.bamnat.core.layout.TabSlots.swapChoices(bar, sleepKey) else emptyList() }
+    var sleepSlot by rememberSaveable { mutableIntStateOf(-1) }
 
     // Read again when the user comes back from a settings screen or a system question.
     var refresh by remember { mutableIntStateOf(0) }
@@ -157,7 +164,14 @@ fun RecommendedScreen(
 
     val save: (Boolean) -> Unit = { ask ->
         val chosen = on.mapNotNull(RecommendedFeature::ofKey).toSet()
-        container.settingsRepository.update { RecommendedSettings.apply(it, chosen).let { s -> if (watch) s else s.copy(healthSleep = false) } }
+        container.settingsRepository.update {
+            RecommendedSettings.apply(it, chosen).let { s -> if (watch) s else s.copy(healthSleep = false) }.let { s ->
+                if (sleepSlot !in sleepSwaps) s
+                else s.withBar(com.bamnat.core.layout.TabSlots.replace(
+                    com.bamnat.core.layout.TabSlots.resolve(s.tabSlots, s.tabOrder, com.bamnat.app.ui.TabPicks.known), sleepSlot, sleepKey))
+            }
+        }
+        if (sleepSlot in sleepSwaps) container.telemetry.event("bar_sleep", "setup")
         container.consentStore.setSleepDevice(if (watch) SleepDevice.WEARS else SleepDevice.NONE)
         if (firstStart && stats) container.setUsageStats(true)
         val asks = if (ask) RecommendedPlan.asks(available, granted, watch) else emptyList()
@@ -229,6 +243,10 @@ fun RecommendedScreen(
                         plan.leftOff?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     } else Notice(Icons.Filled.CheckCircle, "이미 켜져 있어요: ${plan.alreadyOn}." + (plan.leftOff?.let { " $it" } ?: ""))
 
+                    // 1.39 사용자 2026-11-08 ("잠 기능도 첫 설정에서 '이런 것도 돼요'로 알려 줘"): every first setup, with the bar question.
+                    if (firstStart) SleepBarOffer(bar, sleepSwaps, style, sleepSlot,
+                        soundOn = remember { runCatching { container.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false) }) { sleepSlot = it }
+
                     val asks = RecommendedPlan.shown(available, watch)
                     if (asks.isNotEmpty()) Section("허용할 것") {
                         Text(if (firstStart) "아래 버튼을 누르면 휴대폰이 차례로 물어요. 하나를 거절해도 다음으로 넘어가요."
@@ -263,6 +281,57 @@ private fun Section(title: String, content: @Composable () -> Unit) {
             content()
         }
     }
+}
+
+/**
+ * 1.39 사용자 결정 2026-11-08: '잠을 아래 메뉴에 둘까요?' once, at the end of the first setup. Nothing is picked beforehand (the bar
+ * stays as it is unless a place is chosen); the place chosen becomes 잠 and its screen waits under the 나 button.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SleepBarOffer(bar: List<com.bamnat.core.layout.TabSlots.Slot>, swaps: List<Int>, style: WorkStyle?, chosen: Int, soundOn: Boolean, onPick: (Int) -> Unit) {
+    Section("잠도 밤낮이 챙겨요") {
+        SleepPromo.lines(style, soundOn).forEach { line ->
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Outlined.Bedtime, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 2.dp, end = 8.dp).size(16.dp))
+                Text(line, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        Text("잠 기록과 소리는 이 휴대폰 안에만 남아요. 일정에 맞춘 참고용이고 진단이 아니에요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (swaps.isEmpty()) return@Section
+        HorizontalDivider()
+        Text("아래 메뉴에 ‘잠’을 둘까요?", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text("고른 칸이 ‘잠’이 되고, 그 칸의 화면은 위쪽 ‘나’ 단추에서 열려요. 나중에 ‘나 › 아래 메뉴 고치기’에서 바꿔요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.FilterChip(selected = chosen < 0, onClick = { onPick(-1) },
+                label = { Text("두지 않기") })
+            swaps.forEach { i ->
+                val name = bar[i].let { s ->
+                    (s as? com.bamnat.core.layout.TabSlots.Group)?.name
+                        ?: com.bamnat.app.ui.TabPicks.of(s.keys.first(), style)?.label ?: s.keys.first()
+                }
+                androidx.compose.material3.FilterChip(selected = chosen == i, onClick = { onPick(i) },
+                    label = { Text("$name 대신") },
+                    leadingIcon = if (chosen == i) ({ Icon(Icons.Outlined.Bedtime, null, Modifier.size(18.dp)) }) else null)
+            }
+        }
+    }
+}
+
+/**
+ * 1.39 사용자 2026-11-08: what 잠 does, in the words of the kind of work (야간 is said to 교대 only, 오늘의 흐름 to work in shifts and
+ * hours); 소리 재기 only while its flag is open.
+ */
+internal object SleepPromo {
+    fun lines(style: WorkStyle?, soundOn: Boolean): List<String> = listOfNotNull(
+        "‘잠들었어요’·‘깼어요’ 두 번이면 잔 시간이 쌓이고, ${com.bamnat.core.sleep.SleepInsights.groupsWord(style)} 평균을 따로 보여 줘요",
+        "근무에 맞춰 오늘 잘 시간과 낮잠 때를 달력 위 한 줄로 알려 줘요".takeIf { style == null || style.usesPayEngine },
+        "잠드는 소리: 빗소리·파도·소음을 섞어 틀고, 정한 시간에 서서히 꺼져요",
+        "자는 동안 코골이·잠꼬대를 휴대폰 안에서만 재고, 아침에 들어 봐요".takeIf { soundOn },
+        "깬 뒤 아침 한 장에 답하면 피곤한 아침과 함께 온 것(늦은 카페인·야식…)을 내 기록에서 찾아 줘요",
+    )
 }
 
 /** A feature: its name, what it does, why it is fine on, and its switch; the whole row toggles. */
