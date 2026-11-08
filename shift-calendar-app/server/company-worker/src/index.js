@@ -59,6 +59,7 @@
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
 import { glance } from "./glance.js";
+import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
 import { similarCompanies, skipSimilar } from "./company-similar.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
@@ -4944,6 +4945,8 @@ function areaFor(path) {
   // 요금 판단(관측치)은 숫자를 보는 사람이: 숫자 허브 안이에요.
   if (path === "/loop/tiers" || path.startsWith("/loop/tier/")) return "metrics";
   if (path === "/loop" || path.startsWith("/loop/")) return "dev";
+  // 1.39 [ADM3-49] Claude 초안: 종류마다 그 칸 권한을 claude-drafts.js가 봐요.
+  if (path === "/drafts") return null;
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -5086,6 +5089,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   let m = path.match(/^\/admins\/(a[A-Za-z0-9]{15})(\/remove)?$/);
   if (m && method === "POST") return m[2] ? removeAdmin(env, m[1], now) : updateAdmin(request, env, m[1], now);
   if (path === "/queue" && method === "GET") return json(await queue(env));
+  // 1.39 [ADM3-49] 제보 검토·보상·회사 합치기의 Claude 추천(적기만, 정하기는 사람).
+  if (path === "/drafts") return draftRoute(request, env, method, now);
   m = path.match(/^\/groups\/([A-Za-z0-9]{12})\/([0-9a-f]{16})\/(adopt|reject|reopen)$/);
   if (m && method === "POST") return m[3] === "reopen" ? reopen(env, m[1], m[2], now) : decide(request, env, m[1], m[2], m[3], now);
   m = path.match(/^\/asks\/([A-Za-z0-9]{22})$/);
@@ -6281,7 +6286,7 @@ export async function queue(env) {
   const doubted = `WITH f AS (SELECT r.id FROM rules r WHERE r.withdrawn = 0 AND r.superseded = 0
     AND EXISTS (SELECT 1 FROM votes v WHERE v.company_id = r.company_id AND v.grp = r.grp AND v.ok = 0) ORDER BY r.id LIMIT 30),
     fg AS (SELECT DISTINCT r.company_id, r.grp FROM rules r JOIN f ON f.id = r.id)`;
-  const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows] =
+  const [settingRows, groups, companyRows, reports, votes, posts, ruleRows, rejected, flaggedRows, flaggedReports, flaggedVotes, askRows, draftRows] =
     (await batch(env, [
       env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
       env.DB.prepare(`${waiting} SELECT * FROM g`),
@@ -6309,6 +6314,8 @@ export async function queue(env) {
         JOIN fg ON fg.company_id = v.company_id AND fg.grp = v.grp`),
       env.DB.prepare(`SELECT p.id, p.company_id, p.dept, p.note, p.verified, p.setup, p.created_at, c.name
         FROM reports p JOIN companies c ON c.id = p.company_id WHERE p.status = 'ask' ORDER BY p.created_at LIMIT 60`),
+      // 1.39 [ADM3-49] 묶음마다 Claude 추천(같은 한 번에).
+      env.DB.prepare(`${waiting} SELECT d.key, d.text, d.by, d.at FROM loop_drafts d WHERE d.key IN (SELECT 'group:' || company_id || ':' || grp FROM g)`),
     ])).map((r) => r.results);
   const { adoptPoints, adoptAgree } = readSettings(settingRows);
   const companiesById = new Map(companyRows.map((c) => [c.id, c]));
@@ -6369,6 +6376,12 @@ export async function queue(env) {
     id: a.id, company: { id: a.company_id, name: a.name }, dept: a.dept, note: a.note, verified: a.verified === 1, at: iso(a.created_at),
     lines: describe(JSON.parse(a.setup)),
   }));
+  // 1.39 [ADM3-49] 묶음마다 Claude 추천이 있으면 함께.
+  const drafts = draftMap(draftRows);
+  for (const g of out) {
+    const d = drafts.get(groupDraftKey(g.company.id, g.setup));
+    if (d) g.draft = d;
+  }
   return { groups: out, flagged, asks };
 }
 
@@ -6399,6 +6412,7 @@ async function decide(request, env, companyId, grp, action, now) {
   if (action === "adopt") {
     const rule = await adopt(env, companyId, grp, "admin", now);
     await audit(env, now, "adopt", `${companyId}/${grp}`, rule);
+    await settleDraft(env, groupDraftKey(companyId, grp), "adopt", now);
     return json({ ok: true, rule });
   }
   const body = await readJson(request, 1024);
@@ -6406,6 +6420,7 @@ async function decide(request, env, companyId, grp, action, now) {
   await run(env, "UPDATE reports SET status = 'rejected', reason = ?, decided_at = ? WHERE company_id = ? AND grp = ? AND status = 'pending'",
     reason, now, companyId, grp);
   await audit(env, now, "reject", `${companyId}/${grp}`, reason);
+  await settleDraft(env, groupDraftKey(companyId, grp), "reject", now);
   return json({ ok: true });
 }
 
@@ -6611,6 +6626,8 @@ async function merge(request, env, id, now) {
     await settle(env, into.id, g.grp, now);
   }
   await audit(env, now, "merge", from.id, into.id);
+  await settleDraft(env, mergeDraftKey(from.id, into.id), "merge", now);
+  await settleDraft(env, mergeDraftKey(into.id, from.id), "merge", now);
   return companyInfo(env, into.id);
 }
 
@@ -6653,6 +6670,8 @@ async function rewards(env, status, params = new URLSearchParams()) {
   // [INVITE-06] How invites went, beside the rewards they gave, in the same trip as the counts.
   const [counts, invites] = await rewardCounts(env, !params.get("after"), Date.now());
   const { items, next } = sqlPage(rows, pg);
+  // 1.39 [ADM3-49] 드릴 보상의 Claude 지급 초안.
+  const drafts = wanted === "owed" ? await draftsFor(env, items.map((w) => rewardDraftKey(w.id))) : new Map();
   return {
     invites,
     status: wanted,
@@ -6666,6 +6685,7 @@ async function rewards(env, status, params = new URLSearchParams()) {
       invite: w.rule_id === "invite",
       dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
       version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
+      ...(drafts.get(rewardDraftKey(w.id)) ? { draft: drafts.get(rewardDraftKey(w.id)) } : {}),
     })),
   };
 }
@@ -6694,6 +6714,7 @@ async function setReward(request, env, id, now) {
   await run(env, "UPDATE rewards SET status = ?, months = ?, memo = COALESCE(?, memo), paid_at = ?, deferred = ? WHERE id = ?",
     body.status, months, note, paidAt, wasDeferred, id);
   await audit(env, now, `reward_${body.status}`, id, `${months}개월${deferred ? " 미룸" : ""}${memo ? ` ${memo}` : ""}`);
+  if (r.status === "owed" && body.status !== "owed") await settleDraft(env, rewardDraftKey(id), body.status, now);
   return json({ ok: true, months, deferred: Boolean(deferred) });
 }
 

@@ -288,14 +288,18 @@ const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/
   // 1.38 [ADM3-18][ADM3-31] 스토어 리뷰 읽기(초안만 적고 보내기는 사람), Claude 조종석, 사람 옆 패널(결제 칸 없이), 개발사항 이야기.
   /^\/reviews$/, /^\/cockpit$/, /^\/person$/, /^\/story\/d[A-Za-z0-9]{15}$/,
   // 1.39 [LOOP-08][LOOP-09][LOOP-11][LOOP-12] 자동 순환: 흐름 칸, 점수 순 개발 대기열, 결정함, 요금 판단 관측치, 믿을수록 더 맡기기.
-  /^\/loop$/, /^\/loop\/queue$/, /^\/loop\/decide$/, /^\/loop\/tiers$/, /^\/loop\/autonomy$/, /^\/loop\/tier\/d[A-Za-z0-9]{15}$/];
+  /^\/loop$/, /^\/loop\/queue$/, /^\/loop\/decide$/, /^\/loop\/tiers$/, /^\/loop\/autonomy$/, /^\/loop\/tier\/d[A-Za-z0-9]{15}$/,
+  // 1.39 [ADM3-49] 제보 검토·보상·회사 합치기 초안(사용자 11-08 '클로드 열쇠로 제보 검토 보상 초안까지'): 검토함·회사·판·보상 읽기와 초안 목록.
+  /^\/queue$/, /^\/companies$/, /^\/companies\/similar$/, /^\/companies\/[A-Za-z0-9]{12}$/, /^\/versions$/, /^\/rewards$/, /^\/drafts$/];
 const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/, /^\/inquiries\/sort\/apply$/, /^\/inquiries\/handoff\/(mark|result)$/,
   /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/,
   // 1.38 [DESK-02][DESK-03] 장부 줄의 상태(보는 중·기다림·끝, 이유와 함께)·되돌리기·한 줄 요약.
   /^\/ledger\/(state|undo|summary)$/,
   /^\/reviews\/[A-Za-z0-9_:.-]{4,120}\/draft$/,
   // 1.39 [LOOP-09] 결정함의 Claude 초안(최고 관리자 확인 문의에 보낼 답을 적어 두기만, 보내기는 사람).
-  /^\/loop\/drafts$/];
+  /^\/loop\/drafts$/,
+  // 1.39 [ADM3-49] 추천만 적어요. 채택·거절·되돌리기(/groups/…), 보상 지급(/rewards/<id>), 회사 합치기(/companies/<id>/merge)는 이 목록에 없어 막혀요.
+  /^\/drafts$/];
 // 1.39 [LOOP-05] 저장소 동기화 열쇠(GitHub Action): 이 한 길만.
 const SYNC_POST = [/^\/dev\/sync$/];
 export const keyAllows = (path, method, scope = "ops") => (scope === "sync" ? (method === "POST" ? SYNC_POST : [])
@@ -304,7 +308,7 @@ export const keyAllows = (path, method, scope = "ops") => (scope === "sync" ? (m
 /** 'Claude' 관리자: 문의와 개발사항만, 처리까지. 기록에는 'Claude'로 남아요. */
 const keyActorOf = (row) => (row.scope === "sync"
   ? { id: `key:${row.id}`, name: "저장소 동기화", email: "", owner: false, key: row.id, sync: true, perms: { dev: "edit", devStatus: "edit" } }
-  : { id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id, perms: { inquiries: "edit", dev: "edit", devStatus: "edit", metrics: "view" } });
+  : { id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id, perms: { inquiries: "edit", dev: "edit", devStatus: "edit", metrics: "view", review: "view", companies: "view", rewards: "view" } });
 
 /**
  * Authorization: Bearer bko_… 로 온 부름. 열쇠가 아니면 null(쿠키 로그인으로), 맞지 않거나 막힌 길이면 Response, 맞으면 { actor }.

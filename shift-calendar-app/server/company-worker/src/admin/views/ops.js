@@ -96,7 +96,10 @@ export function opsViews(A) {
     const key = d.keys.find((k) => k.alive);
     const state = `<div class="tiles core">${tile("보류 중인 답", d.held.length, "10분 안에 멈출 수 있어요", d.held.length ? "hot" : "")}${tile("오늘 Claude가 한 일", d.today, d.reads ? `고친 일 · 읽기 ${d.reads}번 따로` : "활동 기록 'Claude'")}
       ${tile("열쇠", key ? "켜짐" : "없음", key ? `${esc(key.label)}${key.lastAt ? ` · ${agoMs(key.lastAt)}` : ""}` : "관리 › Claude 열쇠", key ? "" : "hot", href("keys"))}
-      ${tile("Claude 차례", "장부", "Claude가 볼 줄만 모아 보기", "", L.routeHash("desk", null, { view: "claude" }))}</div>`;
+      ${tile("Claude 차례", "장부", "Claude가 볼 줄만 모아 보기", "", L.routeHash("desk", null, { view: "claude" }))}
+      ${d.drafts ? tile("제보·보상 추천", d.drafts.agree === null ? `${d.drafts.open}개` : `${d.drafts.agree}%`,
+        d.drafts.agree === null ? "사람이 정하면 맞았는지 세요" : `정한 ${d.drafts.done}건 중 같음 ${d.drafts.same} · 열린 추천 ${d.drafts.open}${d.drafts.gate.ready ? " · 더 맡길지 여쭐 때예요" : ` · ${d.drafts.gate.least}건·${d.drafts.gate.agree}%면 더 맡길지 여쭤요`}`,
+        d.drafts.gate.ready ? "hot" : "", href("review")) : ""}</div>`;
     const held = d.held.length ? `<ul class="rows">${d.held.map((h) => `<li><div class="row held-row"><span class="row-main"><small>${esc(h.ask || "(질문 글 없음)")}</small>
         <b>${esc(h.text)}</b><small>${esc(left(h.until))} 뒤 보내요${h.close ? " · 보내고 닫기" : ""}</small></span>
         <span class="row-side"><a class="btn small" href="${L.routeHash("inquiries", h.inquiry, {})}">열기</a>

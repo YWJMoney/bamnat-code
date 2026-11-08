@@ -1238,5 +1238,7 @@ a.gl-gauge:hover{border-color:var(--g)}
 .shown-above{margin:.35rem 0 0}.shown-above>summary{cursor:pointer;list-style:none;font-size:.82rem;font-weight:700;color:var(--muted);padding:.35rem .1rem}
 .shown-above>summary::before{content:"▸ ";color:var(--faint)}.shown-above[open]>summary::before{content:"▾ "}
 .shown-above .alert-list,.shown-above .rows{opacity:.85}
+.claude-draft{margin:.5rem 0;padding:.6rem .75rem;border-radius:var(--r);background:var(--accent-soft);border:1px solid var(--line)}
+.claude-draft p{margin:.15rem 0}.claude-draft .why{font-size:.88rem}.claude-draft .meta a{color:var(--accent)}
 .hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
 `;
