@@ -309,6 +309,8 @@ export const hourlySteps = (env) => [
  */
 export async function prune(env, now) {
   const invite = await inviteSettings(env);
+  // 1.39 [PAYP-17] 합친 회사의 옛 이름에 남은 참여·쓰는 사람·토론을 합친 회사로(이미 합쳐진 회사도).
+  await carryMerged(env);
   // 1.34 [RCP-33] a hidden recipe nobody restored goes after 90 days (처리방침 3.8).
   await pruneRecipes(recipeDeps, env, now);
   await batch(env, [
@@ -6600,6 +6602,34 @@ async function removeAlias(request, env, id, now) {
 }
 
 /** One company found under two names: everything moves to [into] and the name stays as another name. */
+/**
+ * 1.39 [PAYP-17] (사용자 11-08 '회사 합쳐줘' 때 찾음): what a merge carries besides reports and rules — who joined, who uses which
+ * version, the talk (보완 요청 too) and 광장 결과. Before, a phone that had joined the old name was no member of the merged company:
+ * no '이 급여 방식 쓰기', no talk, its posts out of sight.
+ */
+const carryStmts = (env, from, into) => [
+  stmt(env, "UPDATE members SET company_id = ? WHERE company_id = ?", into, from),
+  stmt(env, "UPDATE OR IGNORE uses SET company_id = ? WHERE company_id = ?", into, from),
+  stmt(env, "DELETE FROM uses WHERE company_id = ?", from),
+  stmt(env, "UPDATE posts SET company_id = ? WHERE company_id = ?", into, from),
+  stmt(env, "UPDATE plaza_results SET company_id = ? WHERE company_id = ?", into, from),
+];
+
+/**
+ * [PAYP-17] Companies merged before a merge carried these (실서버 11-08 평택칠러공장): each hour (prune), what still sits under a merged
+ * name goes to the company it became. Nothing to do once carried; a chain was already pointed at its end by [merge].
+ */
+export async function carryMerged(env) {
+  const left = await all(env, `SELECT c.id, c.merged_into FROM companies c WHERE c.merged_into IS NOT NULL AND (
+      EXISTS (SELECT 1 FROM members m WHERE m.company_id = c.id) OR EXISTS (SELECT 1 FROM uses u WHERE u.company_id = c.id)
+      OR EXISTS (SELECT 1 FROM posts p WHERE p.company_id = c.id) OR EXISTS (SELECT 1 FROM plaza_results r WHERE r.company_id = c.id))`);
+  for (const c of left) {
+    const into = await follow(env, c.merged_into);
+    if (into && into.id !== c.id) await batch(env, carryStmts(env, c.id, into.id));
+  }
+  return left.length;
+}
+
 async function merge(request, env, id, now) {
   const body = await readJson(request, 1024);
   const from = await one(env, "SELECT * FROM companies WHERE id = ?", id);
@@ -6618,6 +6648,7 @@ async function merge(request, env, id, now) {
     stmt(env, "UPDATE OR IGNORE votes SET company_id = ? WHERE company_id = ?", into.id, from.id),
     stmt(env, "DELETE FROM votes WHERE company_id = ?", from.id),
     stmt(env, "UPDATE rules SET company_id = ? WHERE company_id = ?", into.id, from.id),
+    ...carryStmts(env, from.id, into.id),
     stmt(env, "UPDATE companies SET merged_into = ? WHERE id = ? OR merged_into = ?", into.id, from.id, from.id),
   );
   await batch(env, stmts);

@@ -3,7 +3,7 @@
 // versions go by 맞아요, 보완 요청 reaches the versions' senders, and a recipe others read carries no company pay part. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sortByOk, TAKES_PER_DAY } from "../src/index.js";
+import { sortByOk, TAKES_PER_DAY, carryMerged } from "../src/index.js";
 import { sharedPayOut } from "../src/recipes.js";
 import { server, report, setup, device, from, signIn } from "./helpers.mjs";
 
@@ -205,4 +205,51 @@ test("[발굴 3-5] once a month, a sender hears how many other phones count with
   assert.deepEqual(said.map((i) => [i.company.name, i.count]), [["고마운정밀", 2]]);
   // Asked again the same day after it went: not again.
   assert.deepEqual(await news(Date.now() - 600_000), []);
+});
+
+test("1.39 회사 합치기: who joined the old name, what it uses and its talk go along, so 이 급여 방식 쓰기 still works", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const a = await call("POST", "/api/reports", report(1, { company: "가림정밀" }), from(1));
+  const b = await call("POST", "/api/reports", report(2, { company: "가림정밀공업", dept: "2공장" }), from(2));
+  const [ca, cb] = [a.data.company.id, b.data.company.id];
+  assert.notEqual(ca, cb);
+  // Phone 9 joined the second name, uses its version and talked there.
+  assert.equal((await call("POST", "/api/members", { device: device(9), company: cb, cal: "app" }, app(9))).data.joined, true);
+  await call("POST", "/api/uses", { device: device(9), company: cb, setup: b.data.setup, cal: "app" }, from(9));
+  const post = await call("POST", "/api/posts", { device: device(9), company: cb, setup: b.data.setup, body: "2공장 야간은 22시부터예요" }, from(9));
+  assert.equal(post.status, 201, post.text);
+  const h = await signIn(call);
+  assert.equal((await call("POST", `/api/admin/companies/${cb}/merge`, { into: ca }, h)).data.id, ca);
+  // Still a member, of the merged company, and its version can still be put in, by either id.
+  const page = (await call("GET", `/api/companies/${ca}`, undefined, app(9))).data;
+  assert.equal(page.member, true);
+  for (const id of [ca, cb]) {
+    const took = await call("POST", `/api/companies/${id}/setups/${b.data.setup}/take`, { device: device(9) }, from(9));
+    assert.equal(took.status, 200, took.text);
+    assert.equal(took.data.company.id, ca);
+  }
+  assert.ok(page.setups.find((s) => s.id === b.data.setup).uses >= 1, "its use counts at the merged company");
+  const talk = (await call("GET", `/api/companies/${ca}/setups/${b.data.setup}/posts`, undefined, app(9))).data;
+  assert.ok(JSON.stringify(talk).includes("22시부터"), "the talk came along");
+});
+
+test("[PAYP-17] a company merged before merges carried members, uses and talk gets them on the next hourly tidy", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB, env } = server({ plaza: true });
+  const a = await call("POST", "/api/reports", report(1, { company: "평택칠러공장" }), from(1));
+  const b = await call("POST", "/api/reports", report(2, { company: "LG전자(칠러)", dept: "2공장" }), from(2));
+  const [ca, cb] = [a.data.company.id, b.data.company.id];
+  await call("POST", "/api/members", { device: device(9), company: cb, cal: "app" }, app(9));
+  await call("POST", "/api/uses", { device: device(9), company: cb, setup: b.data.setup, cal: "app" }, from(9));
+  const h = await signIn(call);
+  await call("POST", `/api/admin/companies/${cb}/merge`, { into: ca }, h);
+  // As the server before PAYP-17 left it: members and uses still under the old name.
+  await DB.prepare("UPDATE members SET company_id = ? WHERE company_id = ?").bind(cb, ca).run();
+  await DB.prepare("UPDATE uses SET company_id = ? WHERE company_id = ?").bind(cb, ca).run();
+  assert.equal((await call("POST", `/api/companies/${ca}/setups/${b.data.setup}/take`, { device: device(9) }, from(9))).status, 403);
+  assert.equal(await carryMerged(env), 1);
+  const took = await call("POST", `/api/companies/${ca}/setups/${b.data.setup}/take`, { device: device(9) }, from(9));
+  assert.equal(took.status, 200, took.text);
+  assert.equal(await carryMerged(env), 0, "nothing left the second time");
 });

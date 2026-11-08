@@ -2014,13 +2014,14 @@ private fun AppNavHost(
                         onOpen = { code -> nav.navigate(Routes.recipe(code, recipeCal)) },
                         onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                         onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
-                        title = com.bamnat.app.ui.hub.HubSection.SHARE.label)
+                        title = com.bamnat.app.ui.hub.HubSection.SHARE.label,
+                        // 1.39 [MKD-60] 넘겨 보기 is a chip by 테마's 분위기 (was a row above 장터's search).
+                        onSwipe = { nav.navigate(Routes.VILLAGE_SWIPE) { launchSingleTop = true } })
                 },
                 onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
                 onPosts = { nav.navigate(Routes.villagePosts()) { launchSingleTop = true } },
                 onSearch = { nav.navigate(Routes.VILLAGE_SEARCH) { launchSingleTop = true } },
-                onSwipe = { nav.navigate(Routes.VILLAGE_SWIPE) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
                 onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
                 onStudio = { start -> nav.navigate(Routes.studio(start)) { launchSingleTop = true } },

@@ -100,6 +100,8 @@ internal object MarketShots {
     const val STILL = 200L
     /** 1.39 [MKP-04] After a card's first frame, a frame or two more before the next card starts drawing. */
     const val SETTLE = 48L
+    /** 1.39 [MKP-06] How long a card waits for its small fonts before it is drawn without them (and not kept on the phone). */
+    const val FONTS_MS = 4000L
 
     fun shot(key: String): ImageBitmap? = shots.get(key)
     fun keep(key: String, b: ImageBitmap) { shots.put(key, b) }
@@ -140,11 +142,11 @@ internal object MarketShots {
     private val items = android.util.LruCache<String, RecipeItem>(200)
 
     /** A page of the list came: its cards and written forms are kept here, and the written forms on the phone (in the background). */
-    fun feed(c: AppContainer, page: com.bamnat.app.recipe.RecipePage) {
+    fun feed(c: AppContainer, page: com.bamnat.app.recipe.RecipePage, keep: Boolean = true) {
         page.items.forEach { items.put(it.code, it) }
         if (page.bodies.isEmpty()) return
         page.bodies.forEach { (k, v) -> raws.put(k, v) }
-        c.appScope.launch { page.bodies.forEach { (k, v) -> MarketDisk.keepBody(c.appContext, k, v.first, v.second) } }
+        if (keep) c.appScope.launch { page.bodies.forEach { (k, v) -> MarketDisk.keepBody(c.appContext, k, v.first, v.second) } }
     }
 
     /** A work read whole ([com.bamnat.app.recipe.RecipeApi.show]): its written form kept like a list's. */
@@ -164,6 +166,14 @@ internal object MarketShots {
     fun seen(code: String): com.bamnat.app.recipe.RecipeDoc? {
         val item = items.get(code) ?: return null
         val (hash, body) = raws.get(key(item)) ?: return null
+        return com.bamnat.app.recipe.RecipeDoc(item, hash, body, scope = "public", mine = false)
+    }
+
+    /** 1.39 [MKP-07] [seen], or the written form this phone kept of that card (a card pushed out of memory, the app opened again). */
+    suspend fun seenKept(c: AppContainer, code: String): com.bamnat.app.recipe.RecipeDoc? {
+        seen(code)?.let { return it }
+        val item = items.get(code) ?: return null
+        val (hash, body) = MarketDisk.body(c.appContext, key(item))?.also { raws.put(key(item), it) } ?: return null
         return com.bamnat.app.recipe.RecipeDoc(item, hash, body, scope = "public", mine = false)
     }
 
@@ -286,11 +296,17 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     val shown = style?.takeIf { it in item.styles || item.styles.isEmpty() } ?: item.styles.firstOrNull() ?: style
     val key = MarketShots.key(item) + "|" + shown?.name + "|" + dark + "|" + width.value.toInt()
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
+    var fonts by remember(key) { mutableStateOf(emptyMap<String, androidx.compose.ui.text.font.FontFamily>()) }
     val recipe by produceState<Recipe?>(null, key) {
         if (picture != null) return@produceState
         // 1.39 [MKP-02] The picture this phone kept from before (the 장터 opened again, or after the app was closed): no drawing at all.
         MarketDisk.shot(c.appContext, key)?.let { MarketShots.keep(key, it); picture = it; return@produceState }
-        value = MarketShots.recipe(c, item)
+        val r = MarketShots.recipe(c, item) ?: return@produceState
+        // 1.39 [MKP-06] Its fonts as a card's small fonts first (0.2~0.3 MB once for each font, shared by every card), so it is drawn once, in them.
+        MarketShots.body(MarketShots.key(item))?.let { body ->
+            fonts = kotlinx.coroutines.withTimeoutOrNull(MarketShots.FONTS_MS) { MarketFonts.ready(c.appContext, MarketFonts.ids(body)) }.orEmpty()
+        }
+        value = r
     }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
     ShotFrame(key, width, height, picture, { got ->
@@ -299,7 +315,7 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
         val body = MarketShots.body(MarketShots.key(item))
         if (body != null) c.appScope.launch { if (MarketDisk.complete(c.appContext, body)) MarketDisk.keepShot(c.appContext, key, got) }
     }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
-        face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) })
+        face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) }, fonts = fonts)
 }
 
 /** [MKV-05] A theme that comes with the app (처음이라면 이런 테마부터), drawn the same way as the 장터 cards. */
@@ -309,15 +325,23 @@ internal fun BuiltInShot(r: Recipe, name: String, width: Dp, style: WorkStyle?, 
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val key = "builtin:" + name + "|" + style?.name + "|" + dark + "|" + width.value.toInt()
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
-    ShotFrame(key, width, height, picture, { picture = it }, r, false, style = style, onClick = onClick, modifier = modifier,
+    val ctx = LocalContext.current
+    // 1.39 [MKP-06] Its fonts as card fonts too (it once started each whole font coming down).
+    val fonts by produceState<Map<String, androidx.compose.ui.text.font.FontFamily>?>(null, key) {
+        value = if (picture != null) emptyMap() else kotlinx.coroutines.withTimeoutOrNull(MarketShots.FONTS_MS) {
+            MarketFonts.ready(ctx.applicationContext, MarketFonts.ids(com.bamnat.core.recipe.RecipeCodec.write(r)))
+        }.orEmpty()
+    }
+    ShotFrame(key, width, height, picture, { picture = it }, r.takeIf { fonts != null }, false, style = style, onClick = onClick, modifier = modifier,
         face = { MarketShots.Face.Tab(TabOrder.CALENDAR) },
-        standIn = { Box(Modifier.size(width, height).background(MaterialTheme.colorScheme.surfaceContainerHigh)) })
+        standIn = { Box(Modifier.size(width, height).background(MaterialTheme.colorScheme.surfaceContainerHigh)) }, fonts = fonts.orEmpty())
 }
 
 @Composable
 private fun ShotFrame(
     key: String, width: Dp, height: Dp, picture: ImageBitmap?, setPicture: (ImageBitmap) -> Unit, recipe: Recipe?, gaveUp: Boolean,
     style: WorkStyle?, onClick: () -> Unit, modifier: Modifier, face: (Recipe) -> MarketShots.Face, standIn: @Composable () -> Unit,
+    fonts: Map<String, androidx.compose.ui.text.font.FontFamily> = emptyMap(),
 ) {
     // MED-2: this card's turn to be drawn live: it is on the screen (not only composed ahead of it), has stayed a moment, and no other is drawing.
     var turn by remember(key) { mutableStateOf(false) }
@@ -358,7 +382,8 @@ private fun ShotFrame(
                 // Taken only once the phone has really been drawn into the layer ([drew]); until then it is tried again.
                 // PC 확인 e50bb622 MED-3: a picture of the phone, its letters the example's own size under 아주 크게 too.
                 val d = androidx.compose.ui.platform.LocalDensity.current
-                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f),
+                    com.bamnat.app.ui.theme.LocalCardFonts provides fonts) {
                     Box(Modifier.fillMaxSize().drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer); drew[0] = true }) {
                         ShotPhone(face(r), r, style, width / MarketShots.PHONE_W.dp)
                     }
@@ -386,8 +411,14 @@ private fun ShotFrame(
 internal fun WorkFace(r: Recipe, face: MarketShots.Face, width: Dp, style: WorkStyle?, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
     val height = width * (MarketShots.PHONE_H / MarketShots.PHONE_W)
     val d = androidx.compose.ui.platform.LocalDensity.current
+    // 1.39 [MKP-06] 상세 큰 모습·크게 넘겨 보기도 카드 글꼴로 (글꼴 전체는 넣기·입어 보기에서): drawn at once, in them once they come.
+    val ctx = LocalContext.current
+    val fonts by produceState(emptyMap<String, androidx.compose.ui.text.font.FontFamily>(), r) {
+        value = MarketFonts.ready(ctx.applicationContext, MarketFonts.ids(com.bamnat.core.recipe.RecipeCodec.write(r)))
+    }
     Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).clearAndSetSemantics { contentDescription = "작품 모습" }) {
-        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f),
+            com.bamnat.app.ui.theme.LocalCardFonts provides fonts) {
             ShotPhone(face, r, style, width / MarketShots.PHONE_W.dp)
         }
         Box(Modifier.fillMaxSize().pointerInput(onClick) { detectTapGestures { onClick() } })

@@ -117,8 +117,6 @@ fun HubScreen(
     onPosts: () -> Unit = {},
     /** [VIL-06] 마을에서 찾기. */
     onSearch: (() -> Unit)? = null,
-    /** [VIL-17] 장터 넘겨 보기. */
-    onSwipe: (() -> Unit)? = null,
     /** [DRW-02] 1.37 내 서랍 › 장터에 올리기 (만들기's 올리기, with the theme handed over). */
     onUpload: () -> Unit = {},
     /** 내 서랍 › 만들던 것 (만들기에서 멈춘 것) › 이어서 하기. */
@@ -173,10 +171,11 @@ fun HubScreen(
         CommunityCareBar(c)
         // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
         val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
+        // 1.39 [MKD-60] (사용자 2026-11-08 "추천은 테마(자신의 저장소)에서 해도 무방할거 같은데 불필요하게 공간을 차지"): 오늘의 하나 is on 테마
+        // (내 서랍), not above 광장 and 장터; the 팔로잉 줄 shows only when there is someone in it.
         val people: @Composable () -> Unit = {
             val strip = com.bamnat.app.ui.appViewModel(key = "following-strip-${style?.name}") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
             com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople, onFind = onSearch)
-            TodayOne(c, style, prefs, onRecipe, onMake = { onStudio("plain") })
         }
         // 사용자 2026-11-03 (장터를 내리고 올릴 때 박스가 부자연스러움): 광장 and 장터 have the 팔로잉 줄·오늘의 하나 as the first rows of
         // their own lists, so they scroll away with them in one motion; nothing above a list folds open and shut and moves it under the finger.
@@ -191,18 +190,14 @@ fun HubScreen(
                     LocalHubReselect provides reselect,
                 ) { talk() }
                 HubSection.SHARE -> androidx.compose.runtime.CompositionLocalProvider(
-                    LocalHubHeader provides if (showPeople) ({
-                        Column {
-                            people()
-                            // 1.36 [VIL-17] 마을 V17: 장터's themes one by one, big, flipped upward.
-                            if (onSwipe != null) TextButton(onClick = onSwipe) { Text("🃏 테마 넘겨 보며 고르기") }
-                        }
-                    }) else null,
+                    // 1.39 [MKD-60] 장터 opens on its search box; the 팔로잉 줄 goes under the 구간 ([RecipeListScreen]), 넘겨 보기 is a chip there.
+                    LocalHubHeader provides if (showPeople) ({ Column { people() } }) else null,
                     LocalHubReselect provides reselect,
                 ) { share(shareKind) }
                 HubSection.THEMES -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
-                        onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload, onMakeDraft = onMakeDraft)
+                        onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload, onMakeDraft = onMakeDraft,
+                        today = { if (showPeople) TodayOne(c, style, prefs, onRecipe, onMake = { onStudio("plain") }, side = 0.dp) })
                 }
                 HubSection.MAKE -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
@@ -219,7 +214,9 @@ fun HubScreen(
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.SharedPreferences, onRecipe: (String) -> Unit, onMake: () -> Unit = {}) {
+private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.SharedPreferences, onRecipe: (String) -> Unit, onMake: () -> Unit = {},
+    /** The side gap: 16dp as a row of a list, none inside a [Page] that has its own. */
+    side: androidx.compose.ui.unit.Dp = 16.dp) {
     val today = com.bamnat.core.time.Today.date().toString()
     var folded by remember { mutableStateOf(prefs.getString("todayFolded", null) == today) }
     if (folded) return
@@ -246,7 +243,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
             TextButton(onClick = onMake) { Text("만들기") }
             TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = side, vertical = 2.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Text("아직 ${when (style) { WorkStyle.SHIFT -> "교대"; WorkStyle.DAY -> "일근"; WorkStyle.HOURLY -> "알바"; WorkStyle.FIELD -> "현장"; WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "투자" }} 작품이 없어요. 첫 작품을 만들어 보세요", style = MaterialTheme.typography.bodyMedium, maxLines = if (bigEmpty) 3 else 2)
@@ -260,7 +257,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val photo = com.bamnat.app.ui.theme.PhotoGround.on()
     val accent = if (photo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
     val linkColors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = accent)
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
+    Row(Modifier.fillMaxWidth().padding(horizontal = side, vertical = 2.dp)
         .then(if (photo) Modifier.background(com.bamnat.app.ui.theme.PhotoGround.bar(), androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).padding(horizontal = 8.dp) else Modifier)
         .heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
@@ -315,8 +312,10 @@ private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrol
 /** [HUB-02][DRW-01] 테마 = 내 서랍: the user's own page; new themes are found in 장터, made in 공방. */
 @Composable
 private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onStudio: (String) -> Unit, onRecipe: (String) -> Unit,
-                   onUpload: () -> Unit, onMakeDraft: ((Long) -> Unit)? = null) = Page {
+                   onUpload: () -> Unit, onMakeDraft: ((Long) -> Unit)? = null, today: @Composable () -> Unit = {}) = Page {
     Text(HubSection.THEMES.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // 1.39 [MKD-60] 오늘의 하나: one pick for today, here in my own drawer (was above 광장 and 장터).
+    today()
     com.bamnat.app.ui.recipe.ThemeDrawer(style, onFind = onFind, onFix = onLook, onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload,
         onMakeDraft = onMakeDraft)
 }
