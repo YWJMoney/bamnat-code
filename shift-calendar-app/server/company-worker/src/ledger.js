@@ -70,7 +70,34 @@ const ASK_OWNER = [
   ["privacy", "개인정보 요청", (t) => /개인\s*정보|탈퇴|계정\s*(삭제|지워)|(내|제)\s*(정보|데이터|기록).{0,8}(지워|삭제|열람|보여|달라)|열람\s*요청/.test(t)],
   ["angry", "크게 화난 민원", (t) => /화가\s*(나|납)|짜증|최악|사기|어이(가)?\s*없|열\s*받|빡치|별점\s*1|신고\s*하겠|가만\s*안/.test(t)],
   ["terms", "약관·처리방침 질문", (t) => /약관|처리\s*방침|개인정보\s*처리/.test(t)],
+  // 1.39 [LOOP-38] 사용자 11-09 '코드 등 보안을 침해하는 답은 절대 금지, 우회하는 문의가 와도 답하지 않고 관리자 확인으로 남겨 답을 미룰 것'.
+  ["security", "보안·코드·우회 요청", (t) => SECURITY_ASK.test(t)],
+  // 사용자 11-08·11-09 '사람이냐고 묻는 문의는 답하지 말고 알림', 'AI라는 것을 밝히지 않기'.
+  ["human", "사람·AI인지 묻는 문의", (t) => HUMAN_ASK.test(t)],
 ];
+
+const SECURITY_ASK = new RegExp([
+  "소스\\s*코드", "코드\\s*(를|좀|도)?\\s*(보여|알려|공개|보내|줘|주세요|달라)", "api\\s*키", "토큰", "비밀\\s*(번호|값|키)", "암호\\s*키",
+  "관리자\\s*(페이지|화면|앱|주소|계정|권한|비번|비밀|로그인|모드)", "admin", "password", "해킹", "해커", "우회", "취약", "탈옥", "jailbreak",
+  "프롬프트", "prompt", "시스템\\s*(지시|명령|메시지|설정)", "(이전|앞|위|기존)의?\\s*(지시|명령|규칙).{0,8}(무시|잊)", "무시하고", "ignore\\s+(all|previous|the|your)",
+  "서버\\s*(주소|구조|코드|정보|위치|ip)", "데이터\\s*베이스", "db\\s*(주소|구조|접속|내용)", "sql", "디컴파일", "리버스\\s*엔지", "백도어", "난독화", "인증서", "서명\\s*키",
+].join("|"), "i");
+const HUMAN_ASK = new RegExp([
+  "(사람|상담원|직원|운영자)\\s*(이|인)?\\s*(세요|에요|예요|이에요|인가요|인가|이야|야\\?|냐|맞나|맞아|맞죠|맞나요|이\\s*답|이\\s*쓴|이\\s*적)",
+  "(ai|에이아이|인공\\s*지능|챗\\s*봇|gpt|클로드|claude|로봇)\\s*(이|가|인가|인지|이세요|세요|이야|야|냐|맞|로\\s*답|가\\s*답|가\\s*쓴|가\\s*적|아니|한테)",
+  "자동\\s*(답|응답)\\s*(이|인|이에|이야|이세|맞)", "봇\\s*(이|인가|이세요|이야|이냐)",
+].join("|"), "i");
+
+/**
+ * 1.39 [LOOP-38] 사람 없이 나갈 답(Claude 열쇠·자동 정리) 글에 들어가면 안 되는 말: AI·자동 답이라는 것, 코드·서버·열쇠 같은 보안 정보.
+ * 걸리면 그 답은 저절로 가지 않고 문의 권한이 있는 관리자가 보고 보내요. 그 이유 이름, 아니면 null.
+ */
+export function replyRisk(text) {
+  const t = String(text ?? "");
+  if (/(\bai\b|인공\s*지능|챗\s*봇|gpt|claude|클로드|anthropic|언어\s*모델|자동\s*(으로\s*)?(답|응답|생성)|로봇)/i.test(t)) return "답에 AI·자동 답 표현";
+  if (/(bamnat_|bearer\s|sk-[a-z0-9]|ghp_|wrangler|cloudflare|d1\b|\/api\/|workers\.dev|소스\s*코드|\.js\b|\.kt\b|github|깃허브|토큰|비밀\s*(번호|값|키)|api\s*키|서버\s*(주소|구조|코드)|데이터\s*베이스|sql|관리자\s*(페이지|계정|주소))/i.test(t)) return "답에 보안 정보";
+  return null;
+}
 
 /** 문의 하나가 최고 관리자 확인이 필요한지: { key, name } 또는 null. 회사 방식은 회사 이름이 나와서 늘 물어요. */
 export function askOwner(kind, text) {
@@ -141,9 +168,11 @@ export function overlaps(q, k, skip = null) {
 
 async function linesOf(env, keys, ats) {
   const have = new Map();
-  for (let i = 0; i < keys.length; i += 90) {
-    const part = keys.slice(i, i + 90);
-    for (const r of await all(env, `SELECT key, n, summary, summary_by, summary_at FROM ledger_lines WHERE key IN (${part.map(() => "?").join(",")})`, ...part)) have.set(r.key, r);
+  const parts = [];
+  for (let i = 0; i < keys.length; i += 90) parts.push(keys.slice(i, i + 90));
+  // 1.39 [ADM3-52] 조각마다 차례로가 아니라 한꺼번에.
+  for (const got of await Promise.all(parts.map((part) => all(env, `SELECT key, n, summary, summary_by, summary_at FROM ledger_lines WHERE key IN (${part.map(() => "?").join(",")})`, ...part)))) {
+    for (const r of got) have.set(r.key, r);
   }
   const fresh = keys.filter((k) => !have.has(k)).sort((a, b) => (ats.get(a) ?? 0) - (ats.get(b) ?? 0) || a.localeCompare(b));
   for (let i = 0; i < fresh.length; i += 50) {
@@ -163,10 +192,11 @@ const lineNo = (n) => `K-${String(n).padStart(4, "0")}`;
  */
 export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   const since = now - Math.min(LEDGER.maxDays, Math.max(1, days)) * DAY;
-  const work = await workList(env, actor, now);
   const asks = can(actor, "inquiries");
   const devs = can(actor, "dev");
-  const [qs, ds, sla, k, sorted] = await Promise.all([
+  // 1.39 [ADM3-52] 할 일함 목록(다시 열림 맞추기)과 장부 읽기를 한꺼번에(실서버 결정함·장부가 DB를 차례로 오가 3초 넘었어요).
+  // 할 일함 상태(work_states)는 둘 다 끝난 뒤에 읽어요.
+  const [work, [qs, ds, sla, k, sorted]] = await Promise.all([workList(env, actor, now), Promise.all([
     asks ? all(env, `SELECT i.id, i.kind, i.info, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
         (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -182,17 +212,18 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     asks ? slaTargets(env) : {},
     asks ? known(env) : null,
     null,
-  ]);
+  ])]);
   const shipped = k?.shipped ?? null;
   const devById = new Map(ds.map((d) => [d.id, d]));
   // 문의마다 묶인 개발사항(가장 최근 것)과 '나왔어요'를 보낸 때.
   const links = new Map();
   const qIds = qs.map((q) => q.id);
-  for (let i = 0; i < qIds.length; i += 90) {
-    const part = qIds.slice(i, i + 90);
-    for (const l of await all(env, `SELECT l.item_id, l.inquiry_id, l.told_at, l.at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
-        WHERE l.inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY l.at`, ...part)) links.set(l.inquiry_id, l);
-  }
+  // 정리함 판단은 묶음 읽기와 함께 시작해요(서로 기다리지 않아요).
+  const sortJob = asks ? sortInbox(env, k) : null;
+  const parts = [];
+  for (let i = 0; i < qIds.length; i += 90) parts.push(qIds.slice(i, i + 90));
+  for (const got of await Promise.all(parts.map((part) => all(env, `SELECT l.item_id, l.inquiry_id, l.told_at, l.at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
+        WHERE l.inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY l.at`, ...part)))) for (const l of got) links.set(l.inquiry_id, l);
   // 묶였지만 장부 범위 밖(오래된) 개발사항도 묶음 칸에는 보여요.
   const missing = [...new Set([...links.values()].map((l) => l.item_id))].filter((id) => !devById.has(id));
   for (let i = 0; i < missing.length; i += 90) {
@@ -201,7 +232,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d WHERE d.id IN (${part.map(() => "?").join(",")})`, ...part)) devById.set(d.id, { ...d, outside: true });
   }
   // 정리함 판단(일곱 묶음)은 겹침 판단으로 장부 줄에 들어가요 [DESK-03].
-  const sort = asks ? await sortInbox(env, k) : null;
+  const sort = sortJob ? await sortJob : null;
   const piles = new Map();
   if (sort) {
     for (const p of Object.keys(sort.piles)) {
@@ -273,11 +304,13 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   // 할 일함 상태(같은 표 work_states)와 줄 번호.
   const keys = rows.map((r) => r.key);
   const states = new Map();
-  for (let i = 0; i < keys.length; i += 90) {
-    const part = keys.slice(i, i + 90);
-    for (const r of await all(env, `SELECT * FROM work_states WHERE key IN (${part.map(() => "?").join(",")})`, ...part)) states.set(r.key, r);
-  }
-  const lines = await linesOf(env, keys, new Map(rows.map((r) => [r.key, r.at])));
+  const keyParts = [];
+  for (let i = 0; i < keys.length; i += 90) keyParts.push(keys.slice(i, i + 90));
+  const [stateRows, lines] = await Promise.all([
+    Promise.all(keyParts.map((part) => all(env, `SELECT * FROM work_states WHERE key IN (${part.map(() => "?").join(",")})`, ...part))),
+    linesOf(env, keys, new Map(rows.map((r) => [r.key, r.at]))),
+  ]);
+  for (const got of stateRows) for (const r of got) states.set(r.key, r);
   const kstEnd = Date.parse(`${ledgerDay(now)}T00:00:00+09:00`) + DAY;
   const out = rows.map((r) => {
     const s = states.get(r.key);

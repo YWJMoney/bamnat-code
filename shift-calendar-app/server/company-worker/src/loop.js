@@ -55,6 +55,20 @@ export const LOOP = {
   /** 요금: 사람(최고 관리자)만 정해요. later = 더 논의. */
   tiers: { free: "무료", pro: "프로", pass: "묶음 7일권(광고로 열기)", trial: "처음 며칠 무료 뒤 프로", later: "더 논의" },
   sizes: { fix: "고침", polish: "다듬기", feature: "새 기능" },
+  /**
+   * [LOOP-35] 요금을 물을지 가르는 기준(사용자 2026-11-09 '기존 기능의 오류나 개선은 동일하게 무료, 새 기능에 한해서만 무료·프로를 묻기').
+   * 고침·다듬기는 기존 기능이라 묻지 않고 그 기능과 같은 요금(무료면 무료)으로 가요. 서버로만 닿는 새 기능은 관리자·운영용이라 묻지 않아요.
+   * 최고 관리자는 항목마다 기준을 직접 바꿀 수 있어요(자동 판단이 틀릴 때).
+   */
+  basis: { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용", unknown: "분류 전" },
+  /** 요금 칸마다 무엇이 되는지(관리자 앱 고르는 단추 옆 설명). */
+  tierHelp: {
+    free: "모든 사용자가 바로 써요. 한 번 무료로 연 것은 다시 잠그지 않아요.",
+    pro: "1년 이용권(자동 결제 없음)이 있는 사람만 써요. 무료 사용자에게는 미리보기와 안내만 보여요.",
+    pass: "광고를 보면 7일 동안 열려요. 프로를 맛보게 하는 길이라 무료 사용자도 쓸 수는 있어요.",
+    trial: "처음 며칠은 모두 쓰고, 그 뒤에는 프로만 써요. 습관이 되면 값어치가 큰 기능에 맞아요.",
+    later: "지금 정하지 않고 다음 논의로 미뤄요. 정하기 전에는 이 기능의 스위치를 켤 수 없어요.",
+  },
   routes: { server: "서버", remote: "원격 자료", flag: "기능 스위치", app: "정기 앱 업데이트", hotfix: "긴급 앱 업데이트" },
   /** 알려진 문제를 보일 근무 유형(앱 WorkStyle). */
   styles: { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" },
@@ -91,6 +105,10 @@ export const LOOP_COLUMNS = [
   "ALTER TABLE dev_items ADD COLUMN tier_note TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN tier_ask TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN tier_why TEXT NOT NULL DEFAULT ''",
+  // [LOOP-35] 요금 기준을 사람이 정했으면 new·existing·internal(빈칸 = 크기·전달 길로 자동).
+  "ALTER TABLE dev_items ADD COLUMN basis TEXT NOT NULL DEFAULT ''",
+  // [LOOP-36] 관리자가 직접 넣은 것(또는 사용자 말을 Claude가 옮긴 것): 'admin'이면 1순위.
+  "ALTER TABLE dev_items ADD COLUMN origin TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN public_title TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN known INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE dev_items ADD COLUMN pr INTEGER",
@@ -98,6 +116,10 @@ export const LOOP_COLUMNS = [
   "ALTER TABLE dev_items ADD COLUMN test TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN check_text TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN live_at INTEGER",
+  // [LOOP-39] 출시 2주 뒤 숫자로 본 효과: better·same·worse·none, 잰 때, 근거(JSON).
+  "ALTER TABLE dev_items ADD COLUMN effect TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE dev_items ADD COLUMN effect_at INTEGER",
+  "ALTER TABLE dev_items ADD COLUMN effect_note TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE inquiries ADD COLUMN fixed INTEGER",
   "ALTER TABLE inquiries ADD COLUMN fixed_at INTEGER",
   "ALTER TABLE inquiries ADD COLUMN via TEXT",
@@ -498,7 +520,7 @@ export function impact(d) {
 
 /** Claude가 한 바퀴에 가져갈 순서: 끝나지 않은 개발사항을 점수 순으로. */
 export async function devQueue(env, limit = 60) {
-  const rows = await all(env, `SELECT d.id, d.title, d.status, d.track, d.size, d.route, d.tier, d.handed_at, d.created_at, d.updated_at,
+  const rows = await all(env, `SELECT d.id, d.title, d.status, d.track, d.size, d.route, d.tier, d.basis, d.origin, d.handed_at, d.created_at, d.updated_at,
       (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks,
       (SELECT COALESCE(SUM(i.same), 0) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS same,
       (SELECT COUNT(DISTINCT json_extract(i.info, '$.app')) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND json_valid(i.info)) AS versions,
@@ -509,9 +531,11 @@ export async function devQueue(env, limit = 60) {
   return rows.map((d) => {
     const urgent = URGENT.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
     const x = { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status], track: d.track, size: d.size, route: d.route, tier: d.tier,
-      handed: Boolean(d.handed_at), asks: d.asks, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at) };
+      handed: Boolean(d.handed_at), asks: d.asks, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at),
+      first: d.origin === "admin", basis: basisOf(d).key };
     return { ...x, score: impact(x) };
-  }).sort((a, b) => b.score - a.score || a.createdAt.localeCompare(b.createdAt)).slice(0, limit);
+  // [LOOP-36] 사용자가 직접 넣은 것이 늘 먼저(점수와 상관없이), 그 안에서는 점수 순.
+  }).sort((a, b) => Number(b.first) - Number(a.first) || b.score - a.score || a.createdAt.localeCompare(b.createdAt)).slice(0, limit);
 }
 
 // ---- [LOOP-05] 저장소 → 서버 동기화 ----
@@ -639,15 +663,59 @@ async function tellLater(env, row, route, now, answer) {
 
 // ---- [LOOP-09][LOOP-10] 결정함과 요금 ----
 
-/** 요금을 정할 개발사항: 새 기능인데 아직 정하지 않았거나 '더 논의'인 것(반려 빼고). */
+/** [LOOP-35] 요금을 물을 새 기능(SQL, 개발사항 별칭 d): 사람이 '새 기능'으로 정했거나, 자동이면 크기 '새 기능'이고 서버로만 닿지 않는 것. */
+export const ASK_TIER_SQL = "(d.basis = 'new' OR (d.basis = '' AND d.size = 'feature' AND d.route != 'server'))";
+
+/** [LOOP-35] 요금 기준 하나: 무엇으로 봤는지(key), 사람이 정했는지(auto false), 왜 그렇게 봤는지(why). */
+export function basisOf(r) {
+  const size = LOOP.sizes[r.size] ?? "";
+  if (r.basis && Object.hasOwn(LOOP.basis, r.basis) && r.basis !== "unknown") {
+    return { key: r.basis, name: LOOP.basis[r.basis], auto: false, why: "최고 관리자가 직접 정했어요" };
+  }
+  if (r.size === "fix" || r.size === "polish") {
+    return { key: "existing", name: LOOP.basis.existing, auto: true, why: `크기가 '${size}'이라 이미 있는 기능을 고치거나 다듬는 일이에요. 그 기능과 같은 요금 그대로 가요(묻지 않아요).` };
+  }
+  if (r.size === "feature" && r.route === "server") {
+    return { key: "internal", name: LOOP.basis.internal, auto: true, why: "새 기능이지만 서버로만 닿아요(관리자 앱·운영·통계). 앱 사용자가 돈을 내고 쓰는 기능이 아니라 묻지 않아요." };
+  }
+  if (r.size === "feature") {
+    return { key: "new", name: LOOP.basis.new, auto: true, why: "크기가 '새 기능'이고 앱 사용자에게 닿아요. 처음 생기는 기능이라 무료·프로를 정해야 해요." };
+  }
+  return { key: "unknown", name: LOOP.basis.unknown, auto: true, why: "크기(고침·다듬기·새 기능)가 아직 정해지지 않았어요. 크기를 정하면 저절로 나뉘어요." };
+}
+
+/** [LOOP-35] 요금이 실제로 어떻게 되는지: 정한 값, 아니면 기준에서 나온 값. */
+export function tierEffective(r, basis = basisOf(r)) {
+  if (r.tier && Object.hasOwn(LOOP.tiers, r.tier)) return { key: r.tier, name: LOOP.tiers[r.tier], decided: r.tier !== "later" };
+  if (basis.key === "existing") return { key: "same", name: "무료(기존과 같음)", decided: true };
+  if (basis.key === "internal") return { key: "none", name: "요금 없음(운영용)", decided: true };
+  return { key: "", name: basis.key === "new" ? "아직 안 정함" : "분류 전", decided: false };
+}
+
+/** 요금을 정할 개발사항: 물을 새 기능인데 아직 정하지 않았거나 '더 논의'인 것(반려 빼고). */
 export async function tierPending(env) {
   return all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
-    WHERE d.deleted_at IS NULL AND d.size = 'feature' AND d.status != 'rejected' AND d.tier IN ('', 'later') ORDER BY d.updated_at DESC LIMIT 100`).catch(() => []);
+    WHERE d.deleted_at IS NULL AND ${ASK_TIER_SQL} AND d.status != 'rejected' AND d.tier IN ('', 'later') ORDER BY d.origin = 'admin' DESC, d.updated_at DESC LIMIT 100`).catch(() => []);
 }
 
 /** [LOOP-10] 스위치를 켜기 전에: 이 기능 스위치에 묶인 새 기능이 요금이 정해지지 않았으면 그 개발사항 하나. */
 export async function tierGate(env, flagKey) {
-  return one(env, `SELECT id, title, tier FROM dev_items WHERE deleted_at IS NULL AND size = 'feature' AND flag = ? AND tier IN ('', 'later') AND status != 'rejected' LIMIT 1`, flagKey).catch(() => null);
+  return one(env, `SELECT d.id, d.title, d.tier FROM dev_items d WHERE d.deleted_at IS NULL AND ${ASK_TIER_SQL} AND d.flag = ? AND d.tier IN ('', 'later') AND d.status != 'rejected' LIMIT 1`, flagKey).catch(() => null);
+}
+
+/** [LOOP-35] POST /loop/basis/<id> {basis: new|existing|internal|"" (자동), note}: 최고 관리자만. 자동 판단이 틀린 것을 바로잡아요. */
+export async function setBasis(request, env, id, now) {
+  if (!env.actor?.owner || env.actor?.key) return json({ error: "no_permission", area: "owner" }, 403);
+  const body = await readJson(request, 2048);
+  const basis = body.basis === "" || body.basis === null ? "" : ["new", "existing", "internal"].includes(body.basis) ? body.basis : refuse("basis", "basis");
+  const note = plainText(body.note, 300, "note");
+  const row = await one(env, "SELECT * FROM dev_items WHERE id = ? AND deleted_at IS NULL", id);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (basis === (row.basis ?? "")) return null;
+  await batch(env, [stmt(env, "UPDATE dev_items SET basis = ?, updated_at = ? WHERE id = ?", basis, Math.max(now, row.updated_at + 1), id),
+    devEvent(env, id, now, "basis", { basis: [row.basis || "", basis], note })]);
+  await audit(env, now, "loop_basis", row.title, `${basis ? LOOP.basis[basis] : "자동"}${note ? ` · ${note}` : ""}`);
+  return null;
 }
 
 /** POST /dev/<id>/tier {tier, note}: 최고 관리자만(사용자 2026-11-07 "무료 프로는 사용자 논의를 거쳐야지만"). */
@@ -700,20 +768,51 @@ export async function tierObservation(env, d, now) {
   };
 }
 
-/** GET /loop/tiers: 요금을 정할 것과 정한 것, 각각 관측치와 함께. */
-export async function tierBoard(env, now) {
+/** [LOOP-35] 요금 판단 화면의 고르기 칸: 정할 것·정한 새 기능·기존 기능(무료 그대로)·운영용·분류 전. */
+export const TIER_VIEWS = { ask: "정할 것", decided: "정한 새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용", unknown: "분류 전", all: "모두" };
+const tierView = (b, t) => (b.key === "new" ? (t.decided ? "decided" : "ask") : b.key);
+
+/**
+ * GET /loop/tiers?view=: 개발사항마다 요금 기준(새 기능만 묻고 기존 기능 고침·다듬기는 무료 그대로)과 정한 값, 새 기능은 관측치까지.
+ * 끝난 지 오래된 것(완료 뒤 60일)은 빼요.
+ */
+export async function tierBoard(env, now, params = new URLSearchParams()) {
+  const view = Object.hasOwn(TIER_VIEWS, params.get("view") ?? "") ? params.get("view") : "ask";
   const rows = await all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
-    WHERE d.deleted_at IS NULL AND d.size = 'feature' AND d.status != 'rejected' ORDER BY (d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 60`).catch(() => []);
+    WHERE d.deleted_at IS NULL AND d.status != 'rejected' AND (d.status != 'done' OR d.updated_at > ?)
+    ORDER BY d.origin = 'admin' DESC, (d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 300`, now - 60 * DAY).catch(() => []);
   const store = await flagStore(env).catch(() => null);
+  const counts = Object.fromEntries(Object.keys(TIER_VIEWS).map((k) => [k, 0]));
   const out = [];
   for (const d of rows) {
-    const on = d.flag && store ? serverEval(store, d.flag, now).on : null;
+    const b = basisOf(d);
+    const t = tierEffective(d, b);
+    const v = tierView(b, t);
+    counts[v]++;
+    counts.all++;
+    if (view !== "all" && view !== v) continue;
+    const asked = b.key === "new";
+    // 목록에 없는 스위치 이름(오타·지운 스위치)이어도 화면이 깨지지 않게.
+    let on = null;
+    try {
+      on = d.flag && store ? serverEval(store, d.flag, now).on : null;
+    } catch {
+      on = null;
+    }
     out.push({ id: d.id, title: d.title, track: d.track, status: d.status, statusName: DEV.statuses[d.status], flag: d.flag || null, flagOn: on,
+      preview: [...String(d.body ?? "")].slice(0, 200).join(""), size: d.size || null, sizeName: LOOP.sizes[d.size] ?? null, route: d.route || null, routeName: LOOP.routes[d.route] ?? null,
+      first: d.origin === "admin", basis: b, view: v, effective: t,
       tier: d.tier || null, tierName: d.tier ? LOOP.tiers[d.tier] : null, tierBy: d.tier_by || null, tierAt: d.tier_at ? iso(d.tier_at) : null, tierNote: d.tier_note,
-      ask: d.tier_ask || null, askName: d.tier_ask ? LOOP.tiers[d.tier_ask] : null, why: d.tier_why, onBeforeTier: Boolean(on && (!d.tier || d.tier === "later")),
-      observe: await tierObservation(env, d, now) });
+      ask: d.tier_ask || null, askName: d.tier_ask ? LOOP.tiers[d.tier_ask] : null, why: d.tier_why, onBeforeTier: Boolean(asked && on && (!d.tier || d.tier === "later")),
+      // 관측치는 요금을 물을 새 기능에만(기존 기능·운영용은 물을 일이 없어요). 아래에서 한꺼번에 읽어요.
+      observe: null, _d: asked ? d : null });
   }
-  return { tiers: LOOP.tiers, items: out };
+  // [ADM3-52] 항목마다 차례로 읽으면 DB를 그만큼 오가요: 한꺼번에.
+  await Promise.all(out.map(async (x) => {
+    if (x._d) x.observe = await tierObservation(env, x._d, now).catch(() => null);
+    delete x._d;
+  }));
+  return { tiers: LOOP.tiers, tierHelp: LOOP.tierHelp, basisNames: LOOP.basis, views: TIER_VIEWS, view, counts, items: out };
 }
 
 /** 결정함: 최고 관리자 확인 문의(Claude 초안과 함께)와 요금을 정할 새 기능. */
@@ -749,18 +848,22 @@ export async function waitingFlags(env) {
 }
 
 export async function decideBox(env, actor, now, ledgerQuery) {
-  const led = await ledgerQuery(env, actor, now, new URLSearchParams("view=owner")).catch(() => ({ items: [] }));
+  // [ADM3-52] 서로 기다릴 일이 없는 읽기는 한꺼번에(실서버 결정함 p50 3.2초였어요).
+  const [led, tiers, back, halts, waits] = await Promise.all([
+    ledgerQuery(env, actor, now, new URLSearchParams("view=owner")).catch(() => ({ items: [] })),
+    actor?.owner ? tierPending(env) : [],
+    // [LOOP-16] '아직이에요'로 다시 열린 개발사항(아직 끝나지 않은 것)과 [LOOP-03] 최근 7일 출시 멈춤 권장(PC 1.39 G10 확인: 결정함에 안 보였음).
+    all(env, `SELECT d.id, d.title, d.track, d.status, COUNT(*) AS n, MAX(h.at) AS last FROM dev_history h
+      JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
+      WHERE h.action = 'fixed_no' GROUP BY d.id ORDER BY last DESC LIMIT 20`).catch(() => []),
+    all(env, "SELECT target, detail, at FROM audit WHERE action = 'loop_halt_advice' AND at > ? ORDER BY at DESC LIMIT 5", now - 7 * DAY).catch(() => []),
+    // [LOOP-19] 급함 문의는 맨 위에(문의 권한이 있는 사람에게만 제목까지).
+    can(actor, "inquiries") ? waitingFlags(env) : { urgent: [] },
+  ]);
   const asks = (led.items ?? []).filter((r) => r.type === "inquiry");
   const drafts = asks.length ? await all(env, `SELECT * FROM loop_drafts WHERE key IN (${asks.map(() => "?").join(",")})`, ...asks.map((r) => r.key)) : [];
   const byKey = new Map(drafts.map((x) => [x.key, x]));
-  const tiers = actor?.owner ? await tierPending(env) : [];
-  // [LOOP-16] '아직이에요'로 다시 열린 개발사항(아직 끝나지 않은 것)과 [LOOP-03] 최근 7일 출시 멈춤 권장(PC 1.39 G10 확인: 결정함에 안 보였음).
-  const back = await all(env, `SELECT d.id, d.title, d.track, d.status, COUNT(*) AS n, MAX(h.at) AS last FROM dev_history h
-      JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
-      WHERE h.action = 'fixed_no' GROUP BY d.id ORDER BY last DESC LIMIT 20`).catch(() => []);
-  const halts = await all(env, "SELECT target, detail, at FROM audit WHERE action = 'loop_halt_advice' AND at > ? ORDER BY at DESC LIMIT 5", now - 7 * DAY).catch(() => []);
-  // [LOOP-19] 급함 문의는 맨 위에(문의 권한이 있는 사람에게만 제목까지).
-  const urgent = can(actor, "inquiries") ? (await waitingFlags(env)).urgent.slice(0, 20) : [];
+  const urgent = waits.urgent.slice(0, 20);
   return {
     urgent: urgent.map((r) => ({ id: r.id, title: titleFrom(r.first ?? ""), topic: r.topic ?? null, at: iso(r.created_at) })),
     back: back.map((d) => ({ id: d.id, title: d.title, track: d.track || null, status: d.status, statusName: DEV.statuses[d.status], times: d.n, at: iso(d.last) })),
@@ -771,6 +874,98 @@ export async function decideBox(env, actor, now, ledgerQuery) {
       later: d.tier === "later", note: d.tier_note })),
     tierNames: LOOP.tiers,
   };
+}
+
+// ---- [LOOP-39] 숫자 → 개발 → 효과 한 줄 (사용자 11-09 승인 '혁신 두 가지' 둘째) ----
+//
+// 고친 것이 실제로 닿은 뒤(서버·원격·스위치는 live_at, 앱은 그 판 이상이 나간 날) 2주가 지나면, 그 개발사항의 숫자를 앞뒤 2주로 견줘
+// '좋아졌어요·그대로예요·나빠졌어요'를 스스로 적어요. 잴 이벤트(events)가 있으면 그 이벤트를 쓴 휴대폰 비율, 없으면 묶인 문의가
+// 나간 뒤에도 다시 왔는지('아직이에요'·새로 묶인 문의)와 '해결됐어요'로 봐요. 나빠졌으면 최고 관리자 오늘 화면 주의 필요에 떠요.
+
+export const EFFECT = {
+  days: 14,
+  /** 이벤트 비율이 이만큼(%) 넘게 오르내려야 좋아짐·나빠짐. */
+  move: 10,
+  /** 앞뒤 각각 이만큼 휴대폰·날(사용 통계를 켠 폰)이 있어야 이벤트로 판정해요. */
+  phoneDays: 30,
+  names: { better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" },
+  tones: { better: "ok", same: "warn", worse: "bad", none: "" },
+  /** 한 번에 보는 수(매시). */
+  batch: 20,
+};
+
+/** 개발사항 [d]가 사용자에게 닿은 때(ms) 또는 null. [ships]는 '나간 판' 기록 [{ v, at }] 오래된 것부터. */
+export function reachedAt(d, ships) {
+  if (["server", "remote", "flag"].includes(d.route) && d.live_at) return d.live_at;
+  const want = version(d.released_in ?? "");
+  if (!want) return d.live_at ?? null;
+  return ships.find((s) => version(s.v) && compareVersions(version(s.v), want) >= 0)?.at ?? null;
+}
+
+/** 이벤트 비율과 다시 온 문의로 판정 한 줄. 순수 함수라 시험에서 바로 봐요. */
+export function effectVerdict({ events, before, after, beforeDays, afterDays, back = 0, yes = 0, asks = 0 }) {
+  const enough = events && beforeDays >= EFFECT.phoneDays && afterDays >= EFFECT.phoneDays;
+  const rb = enough ? before / beforeDays : null;
+  const ra = enough ? after / afterDays : null;
+  const pct = enough ? (rb ? Math.round(((ra - rb) / rb) * 100) : ra > 0 ? 100 : 0) : null;
+  let effect;
+  if (pct !== null) effect = pct >= EFFECT.move ? "better" : pct <= -EFFECT.move ? "worse" : "same";
+  else if (back > 0) effect = "same";
+  else if (yes > 0 || asks > 0) effect = "better";
+  else effect = "none";
+  // 숫자는 좋아져도 같은 문의가 다시 오면 '그대로'예요.
+  if (effect === "better" && back > 0 && back >= yes) effect = "same";
+  const why = [pct !== null ? `${events} 쓰는 비율 ${pct > 0 ? "+" : ""}${pct}%` : events ? "사용 통계가 모자라요" : "",
+    asks ? `묶인 문의 ${asks}건` : "", yes ? `해결됐어요 ${yes}` : "", back ? `다시 옴 ${back}` : ""].filter(Boolean).join(" · ");
+  return { effect, pct, why };
+}
+
+/** 매시: 닿은 지 2주가 지난 개발사항의 효과를 적어요. 적은 수. */
+export async function effectTick(env, now = Date.now()) {
+  const rows = await all(env, `SELECT id, title, route, released_in, live_at, events, size, updated_at FROM dev_items
+    WHERE deleted_at IS NULL AND status = 'done' AND effect = '' AND updated_at > ? ORDER BY updated_at LIMIT 200`, now - 180 * DAY).catch(() => []);
+  if (!rows.length) return 0;
+  const ships = (await all(env, "SELECT target AS v, MIN(at) AS at FROM audit WHERE action = 'shipped_version' GROUP BY target").catch(() => []))
+    .filter((s) => version(s.v)).sort((a, b) => a.at - b.at);
+  let n = 0;
+  for (const d of rows) {
+    if (n >= EFFECT.batch) break;
+    const at = reachedAt(d, ships);
+    if (!at || at + EFFECT.days * DAY > now) continue;
+    const span = EFFECT.days * DAY;
+    const events = String(d.events ?? "").split(",").filter(Boolean);
+    const [base, used, links, hist] = (await batch(env, [
+      stmt(env, "SELECT SUM(CASE WHEN day < ? THEN phones ELSE 0 END) AS b, SUM(CASE WHEN day >= ? THEN phones ELSE 0 END) AS a FROM usage_days WHERE day >= ? AND day < ?",
+        kstDay(at), kstDay(at), kstDay(at - span), kstDay(at + span)),
+      events.length ? stmt(env, `SELECT SUM(CASE WHEN day < ? THEN phones ELSE 0 END) AS b, SUM(CASE WHEN day >= ? THEN phones ELSE 0 END) AS a FROM usage_events
+        WHERE day >= ? AND day < ? AND event IN (${events.map(() => "?").join(",")})`, kstDay(at), kstDay(at), kstDay(at - span), kstDay(at + span), ...events)
+        : stmt(env, "SELECT 0 AS b, 0 AS a"),
+      stmt(env, `SELECT COUNT(*) AS asks, SUM(i.created_at > ?) AS late, SUM(i.fixed = 1) AS yes FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ?`, at + DAY, d.id),
+      stmt(env, "SELECT COUNT(*) AS n FROM dev_history WHERE item_id = ? AND action = 'fixed_no' AND at > ?", d.id, at),
+    ]).catch(() => [{ results: [{}] }, { results: [{}] }, { results: [{}] }, { results: [{}] }])).map((r) => r.results?.[0] ?? {});
+    const v = effectVerdict({ events: events.join(","), before: used.b ?? 0, after: used.a ?? 0, beforeDays: base.b ?? 0, afterDays: base.a ?? 0,
+      back: (links.late ?? 0) + (hist.n ?? 0), yes: links.yes ?? 0, asks: links.asks ?? 0 });
+    const note = { from: iso(at), days: EFFECT.days, pct: v.pct, why: v.why };
+    const r = await run(env, "UPDATE dev_items SET effect = ?, effect_at = ?, effect_note = ? WHERE id = ? AND effect = ''", v.effect, now, JSON.stringify(note), d.id).catch(() => null);
+    if (!r?.meta?.changes) continue;
+    await batch(env, [devEvent(loopActor(env, "효과 판정"), d.id, now, "effect", { effect: v.effect, why: v.why })]).catch(() => null);
+    await audit(env, now, "dev_effect", d.title, `${EFFECT.names[v.effect]}${v.why ? ` · ${v.why}` : ""}`).catch(() => null);
+    n++;
+  }
+  return n;
+}
+
+/** 개발사항 화면의 효과 한 줄(아직이면 언제 재는지). */
+export function effectOf(r) {
+  if (r.status !== "done") return null;
+  if (!r.effect) return { key: "", name: "출시 2주 뒤에 재요", tone: "", why: "" };
+  let note = {};
+  try {
+    note = JSON.parse(r.effect_note || "{}");
+  } catch {
+    note = {};
+  }
+  return { key: r.effect, name: EFFECT.names[r.effect] ?? r.effect, tone: EFFECT.tones[r.effect] ?? "", why: note.why ?? "", from: note.from ?? null, at: r.effect_at ? iso(r.effect_at) : null };
 }
 
 // ---- [LOOP-12] 믿을수록 더 맡기기 ----
@@ -890,23 +1085,25 @@ export async function scoreCard(env, most = 6) {
 
 /** GET /loop: 흐름 화면의 자동 순환 칸. */
 export async function loopState(env, now) {
-  const [sw, train, track, ships, syncs, shipped, urgent] = await Promise.all([
+  // [ADM3-52] 아래 읽기도 모두 한꺼번에(실서버 자동 순환 p50 3.2초였어요).
+  const [sw, train, track, ships, syncs, shipped, urgent, notLive, keys, scores, auto, rewards] = await Promise.all([
     loopSwitches(env), loopTrain(env), readSetting(env, "play_track", {}),
     all(env, "SELECT * FROM loop_ships ORDER BY seen_at DESC LIMIT 6").catch(() => []),
     all(env, "SELECT * FROM loop_syncs ORDER BY id DESC LIMIT 8").catch(() => []),
     shippedVersion(env),
     one(env, `SELECT COUNT(*) AS n FROM inquiries i WHERE i.status = 'open' AND i.kind IN ('bug', 'problem')
       AND (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) = 'user'`).catch(() => ({ n: 0 })),
+    all(env, `SELECT id, title, route, remote, flag FROM dev_items WHERE deleted_at IS NULL AND status = 'done' AND live_at IS NULL AND route IN ('server', 'remote', 'flag') LIMIT 30`).catch(() => []),
+    all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []),
+    scoreCard(env), autonomy(env), rewardRules(env),
   ]);
-  const notLive = await all(env, `SELECT id, title, route, remote, flag FROM dev_items WHERE deleted_at IS NULL AND status = 'done' AND live_at IS NULL AND route IN ('server', 'remote', 'flag') LIMIT 30`).catch(() => []);
-  const keys = await all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []);
   return {
     now: iso(now), switches: sw, train: { ...train, next: nextTrain(train, now) }, play: { ready: Boolean(playReady(env)), ...track, at: track.at ? iso(track.at) : null },
     shipped, ships: ships.map((s) => ({ version: s.version, status: s.status, seenAt: iso(s.seen_at), until: iso(s.until), doneAt: s.done_at ? iso(s.done_at) : null, by: s.by, result: s.result })),
     syncs: syncs.map((s) => ({ at: iso(s.at), sha: s.sha, version: s.version, pr: s.pr, n: s.n, result: JSON.parse(s.result || "{}") })),
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
-    urgentWaiting: urgent?.n ?? 0, scores: await scoreCard(env), autonomy: await autonomy(env), rewards: await rewardRules(env), routes: LOOP.routes, sizes: LOOP.sizes,
+    urgentWaiting: urgent?.n ?? 0, scores, autonomy: auto, rewards, routes: LOOP.routes, sizes: LOOP.sizes,
   };
 }
 
@@ -915,7 +1112,7 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
   if (path === "/loop" && method === "GET") return json(await loopState(env, now));
   if (path === "/loop/queue" && method === "GET") return json({ items: await devQueue(env, Math.min(200, Number(url.searchParams.get("limit")) || 60)) });
   if (path === "/loop/decide" && method === "GET") return json(await decideBox(env, env.actor, now, ledgerQuery));
-  if (path === "/loop/tiers" && method === "GET") return json(await tierBoard(env, now));
+  if (path === "/loop/tiers" && method === "GET") return json(await tierBoard(env, now, url.searchParams));
   if (path === "/loop/autonomy" && method === "GET") return json(await autonomy(env));
   if (path === "/loop/check" && method === "GET") return json(await loopCheck(env, now, { play: url.searchParams.get("play") === "1" && !env.actor?.key }));
   let m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/(cancel|now|live)$/);
@@ -985,6 +1182,11 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
     await run(env, "INSERT OR REPLACE INTO loop_drafts (key, text, why, by, at) VALUES (?, ?, ?, ?, ?)", key, text, why, actorName(env), now);
     await audit(env, now, "loop_draft", key.slice(8), why);
     return json({ key, draft: { text, why } });
+  }
+  m = path.match(/^\/loop\/basis\/(d[A-Za-z0-9]{15})$/);
+  if (m && method === "POST") {
+    const r = await setBasis(request, env, m[1], now);
+    return r ?? json({ ok: true });
   }
   m = path.match(/^\/loop\/tier\/(d[A-Za-z0-9]{15})$/);
   if (m && method === "GET") {

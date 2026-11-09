@@ -3,7 +3,7 @@
 //   오늘 › 자동 순환 #/loop: Play 출시 감지·1시간 보류 안내(취소·지금), 업데이트 없이 고친 것, 저장소 동기화, 정기 출시 열차, 멈춤 스위치,
 //                          믿을수록 더 맡기기, 쓰면 쌓이는 날 규칙, 영향도 순 개발 대기열 [LOOP-01~08][LOOP-12][LOOP-14]
 //   오늘 › 결정함 #/decide: 최고 관리자 확인 문의(Claude 초안)와 요금을 정할 새 기능 [LOOP-09]
-//   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만) [LOOP-10][LOOP-11]
+//   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만), 요금 기준(새 기능만 묻기)·고르기 칸 [LOOP-10][LOOP-11][LOOP-35]
 export function loopViews(A) {
   const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl } = A;
 
@@ -197,7 +197,7 @@ export function loopViews(A) {
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
     return `${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
       <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
-        <p class="hint">버그 고침·이미 있는 기능 다듬기·알람·달력 기본은 묻지 않고 무료예요. 새 기능만 여기서 정하고, 정하기 전에는 기능 스위치를 켤 수 없어요.</p></section>`;
+        <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section>`;
   }
 
   // ---- 숫자 › 요금 판단 ----
@@ -215,18 +215,51 @@ export function loopViews(A) {
     return `<dl class="lines">${lines.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>${o.note ? `<p class="note">${esc(o.note)}</p>` : ""}`;
   }
 
+  // [LOOP-35] 사용자 11-09 '설명이 너무 부족해, 기존 기능의 오류나 개선은 무료, 새 기능만 묻기, 필터링': 기준 설명·고르기 칸·항목마다 왜 묻는지.
+  const VIEW_HINTS = {
+    ask: "무료·프로를 정해야 하는 새 기능이에요. 정하기 전에는 이 기능의 스위치를 켤 수 없어요.",
+    decided: "무료·프로를 이미 정한 새 기능이에요. 다시 정할 수 있어요(무료로 연 것은 잠그지 않아요).",
+    existing: "이미 있는 기능을 고치거나 다듬는 일이라 묻지 않아요. 그 기능의 요금 그대로(무료면 무료) 가요.",
+    internal: "관리자 앱·운영·통계처럼 서버로만 닿는 일이라 앱 사용자에게 요금이 없어요.",
+    unknown: "크기(고침·다듬기·새 기능)가 아직 없어서 나누지 못한 것이에요. 개발사항에서 크기를 정하면 저절로 나뉘어요.",
+    all: "모든 개발사항(반려와 오래전 완료는 빼고)을 요금 기준과 함께 봐요.",
+  };
+  const BASIS_TONES = { new: "warn", existing: "ok", internal: "", unknown: "" };
+  const basisCriteria = () => `<details class="card how" data-key="loop-tier-criteria"${S.opened.get("loop-tier-criteria") ? " open" : ""}><summary><b>무엇을 묻고 무엇을 묻지 않나요</b><span class="meta">기준</span></summary>
+    <ol class="steps"><li><b>기존 기능 고침·다듬기 → 묻지 않아요.</b> 크기가 '고침'(오류·버그) 또는 '다듬기'(이미 있는 기능을 더 편하게)면 그 기능과 같은 요금 그대로예요. 무료 기능을 고쳤으면 무료예요.</li>
+      <li><b>운영·관리자용 → 묻지 않아요.</b> 새 기능이어도 전달 길이 '서버'(관리자 앱·운영·통계)면 앱 사용자가 쓰는 기능이 아니라 요금이 없어요.</li>
+      <li><b>새 기능 → 여기서 정해요.</b> 크기가 '새 기능'이고 앱으로 닿는(앱 업데이트·기능 스위치·원격 자료) 것만 무료·프로를 물어요. 최고 관리자만 정해요(사용자 논의 뒤).</li>
+      <li><b>자동 판단이 틀리면</b> 항목의 '기준 바꾸기'로 새 기능·기존 기능·운영용 중 하나로 직접 정해요. 크기는 Claude가 개발 계획(dev-status)에 적어요.</li></ol>
+    <dl class="lines">${Object.entries(S.data.loopTiers?.tierHelp ?? {}).map(([k, v]) => `<div><dt>${esc(S.data.loopTiers.tiers[k] ?? k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl></details>`;
+
   function tiersView() {
     const d = S.data.loopTiers;
     if (!d) return skeleton(2);
-    if (!d.items.length) return empty("새 기능이 아직 없어요", "저장소에서 크기 '새 기능'으로 온 개발사항이 여기 모여요.");
-    return `<p class="hint">새 기능마다 요청·쓰는 수·스위치를 켠 앞뒤를 모아 둬요. 무료·프로는 최고 관리자만 정하고(사용자 논의 뒤), 나중에 다시 정할 수 있어요. 무료로 연 것을 다시 잠그지는 않는 것이 원칙이에요.</p>
-      ${d.items.map((x) => `<section class="card">${head(x.title, `${x.statusName ?? ""}${x.track ? ` · ${x.track}` : ""}`, x.tier ? `<span class="pill ${x.tier === "later" ? "warn" : "ok"}">${esc(x.tierName)}</span>` : '<span class="pill warn">아직 안 정함</span>')}
+    const view = d.view ?? "ask";
+    const chips = `<div class="chips" role="group" aria-label="요금 기준으로 고르기">${Object.entries(d.views ?? {}).map(([k, name]) =>
+      `<button type="button" class="chip pick" data-act="loop-tier-view" data-key="${k}" aria-pressed="${view === k}">${esc(name)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
+    const top = `<p class="hint">새 기능만 무료·프로를 물어요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료) 가요. ${esc(VIEW_HINTS[view] ?? "")}</p>${chips}${basisCriteria()}`;
+    if (!d.items.length) return top + empty(view === "ask" ? "지금 정할 새 기능이 없어요" : "이 칸에 해당하는 개발사항이 없어요", view === "ask" ? "새 기능이 생기면 여기에 모여요. 기존 기능 고침·다듬기는 여기 오지 않아요." : "");
+    const card = (x) => {
+      const asked = x.basis.key === "new";
+      const pill = `<span class="pill ${x.effective.decided ? (x.tier === "later" ? "warn" : "ok") : BASIS_TONES[x.basis.key] ?? ""}">${esc(x.effective.name)}</span>`;
+      const meta = [x.first ? "1순위(직접 넣음)" : "", x.statusName, x.track, x.sizeName ? `크기 ${x.sizeName}` : "크기 없음", x.routeName ? `전달 ${x.routeName}` : ""].filter(Boolean).join(" · ");
+      const basisLine = `<p class="note${asked ? " warn" : ""}"><b>${esc(x.basis.name)}${x.basis.auto ? " (자동)" : ""}</b> — ${esc(x.basis.why)}</p>`;
+      const pick = owner() && asked ? `<div class="actions start">${Object.entries(d.tiers).map(([k, name]) => `<button class="btn small${x.tier === k ? " primary" : ""}" type="button" data-act="loop-tier" data-id="${esc(x.id)}" data-tier="${k}"
+          title="${esc(d.tierHelp?.[k] ?? "")}">${esc(name)}${x.ask === k ? " · Claude 제안" : ""}</button>`).join("")}</div>
+        <p class="hint">${esc(d.tierHelp?.[x.tier || x.ask || "later"] ?? "")}</p>` : "";
+      return `<section class="card">${head(x.title, meta, pill)}
+        ${x.preview ? `<p class="dev-body">${esc(x.preview)}</p>` : ""}
+        ${basisLine}
         ${x.onBeforeTier ? '<p class="note warn">요금을 정하기 전에 스위치가 켜져 있어요(날짜 조건 등). 먼저 정해 주세요.</p>' : ""}
-        ${x.ask ? `<p><b>Claude 제안</b> ${esc(x.askName)}${x.why ? ` — ${esc(x.why)}` : ""}</p>` : ""}
+        ${asked && x.ask ? `<p><b>Claude 제안</b> ${esc(x.askName)}${x.why ? ` — ${esc(x.why)}` : ""}</p>` : ""}
         ${x.tierBy ? `<p class="meta">${esc(x.tierBy)} · ${esc(when(x.tierAt))}${x.tierNote ? ` · ${esc(x.tierNote)}` : ""}</p>` : ""}
-        ${obsLines(x.observe)}
-        ${owner() ? `<div class="actions">${Object.entries(d.tiers).map(([k, name]) => `<button class="btn small${x.tier === k ? " primary" : ""}" type="button" data-act="loop-tier" data-id="${esc(x.id)}" data-tier="${k}">${esc(name)}</button>`).join("")}</div>` : ""}
-      </section>`).join("")}`;
+        ${x.observe ? `<details><summary>정하는 데 쓸 숫자(요청·쓰는 수·스위치 앞뒤)</summary>${obsLines(x.observe)}</details>` : ""}
+        ${pick}
+        <div class="actions start">${owner() ? `<button class="btn small ghost" type="button" data-act="loop-basis" data-id="${esc(x.id)}">기준 바꾸기</button>` : ""}<a class="btn small ghost" href="${href("dev", x.id)}">개발사항 열기</a></div>
+      </section>`;
+    };
+    return top + d.items.map(card).join("");
   }
 
   // ---- 길·다 왔는지·단추 ----
@@ -234,7 +267,7 @@ export function loopViews(A) {
   const loads = {
     loop: () => [["/loop", "loopState"], ["/loop/queue", "loopQueue"], ["/loop/check", "loopCheck"]],
     decide: () => [["/loop/decide", "loopDecide"]],
-    tiers: () => [["/loop/tiers", "loopTiers"]],
+    tiers: () => [[`/loop/tiers?view=${S.tierView || "ask"}`, "loopTiers"]],
   };
   const has = { loop: () => S.data.loopState, decide: () => S.data.loopDecide, tiers: () => S.data.loopTiers };
   const views = { loop: () => loopView(), decide: () => decideView(), tiers: () => tiersView() };
@@ -277,9 +310,27 @@ export function loopViews(A) {
     "loop-tier": ({ id, tier }) => {
       const names = S.data.loopTiers?.tiers ?? {};
       openDialog(`<form data-form="loop-tier" data-id="${esc(id)}" data-tier="${esc(tier)}"><h2>${esc(names[tier] ?? tier)}(으)로 정할까요?</h2>
-        <p>${tier === "later" ? "정하지 않고 더 논의해요. 그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있어요."}</p>
+        <p>${esc(S.data.loopTiers?.tierHelp?.[tier] ?? "")}</p>
+        <p class="hint">${tier === "later" ? "그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있지만, 무료로 연 것을 다시 잠그지는 않아요."}</p>
         <label for="lt-note">메모(무엇을 보고 정했는지)</label><input id="lt-note" name="note" maxlength="300">
         <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">정하기</button></div></form>`);
+    },
+    "loop-tier-view": ({ key }) => {
+      S.tierView = key;
+      reload("loopTiers");
+    },
+    // [LOOP-35] 자동 판단(크기·전달 길)이 틀린 것을 최고 관리자가 바로잡아요.
+    "loop-basis": ({ id }) => {
+      const x = S.data.loopTiers?.items.find((i) => i.id === id);
+      if (!x) return;
+      const names = S.data.loopTiers.basisNames ?? {};
+      const opts = [["", `자동(크기·전달 길로: 지금 ${x.basis.auto ? x.basis.name : "—"})`], ["new", `${names.new} — 무료·프로를 물어요`],
+        ["existing", `${names.existing} — 묻지 않고 원래 요금 그대로`], ["internal", `${names.internal} — 앱 사용자 요금 없음`]];
+      openDialog(`<form data-form="loop-basis" data-id="${esc(id)}"><h2>요금 기준 바꾸기</h2><p>${esc(x.title)}</p>
+        <p class="hint">새 기능만 무료·프로를 물어요. 이미 있는 기능을 고치거나 다듬는 일이면 '기존 기능'으로 두면 묻지 않아요.</p>
+        <fieldset>${opts.map(([k, label]) => `<label class="chk"><input type="radio" name="basis" value="${k}"${(x.basis.auto ? "" : x.basis.key) === k ? " checked" : ""}><span>${esc(label)}</span></label>`).join("")}</fieldset>
+        <label for="lb-note">이유(기록에 남아요)</label><input id="lb-note" name="note" maxlength="300" placeholder="예: 이미 있는 급여 계산을 넓히는 일이에요">
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
     },
     "loop-draft-send": ({ id, key }) => {
       const x = S.data.loopDecide?.asks.find((a) => a.key === key);
@@ -307,6 +358,11 @@ export function loopViews(A) {
       const f = new FormData(form);
       const body = Object.fromEntries(REWARD_NAMES.map(([k]) => [k, Number(f.get(k) || 0)]));
       if (await act(() => api("/loop/rewards", "POST", body), "보상 규칙을 저장했어요")) reload("loopState");
+    },
+    "loop-basis": async (form) => {
+      dialog.close();
+      const f = new FormData(form);
+      if (await act(() => api(`/loop/basis/${form.dataset.id}`, "POST", { basis: String(f.get("basis") ?? ""), note: String(f.get("note") ?? "") }), "기준을 바꿨어요")) reload("loopTiers", "loopDecide");
     },
     "loop-tier": async (form) => {
       dialog.close();

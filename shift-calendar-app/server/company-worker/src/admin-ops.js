@@ -27,6 +27,8 @@ export const OPS_SCHEMA = [...WATCH_SCHEMA, ...RELEASE_SCHEMA, ...KEEP_SCHEMA, .
 
 /** index.js areaFor가 먼저 묻는 곳: 이 길이면 그 권한(undefined면 이 모듈 길이 아님). null은 로그인만, "owner"는 주인만. */
 export function opsArea(path) {
+  // 1.39 [ADM3-52] 응답 속도는 숫자를 보는 사람·Claude 열쇠도 읽어요(주소·건수·걸린 시간뿐, 개인 정보 없음). 로딩 개선을 숫자로 재려고.
+  if (path === "/watch/speed") return "metrics";
   if (path.startsWith("/watch/") || path === "/money" || path.startsWith("/money/") || path === "/data-requests" || path.startsWith("/data-requests/")
     || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/")) return "owner";
   if (path === "/person") return "inquiries";
@@ -173,6 +175,7 @@ export async function story(env, id) {
       // 1.39 [LOOP] 자동 순환이 남기는 것.
       sync: `저장소에서 받음${d.pr ? ` · PR #${d.pr}` : ""}${d.version ? ` · ${d.version}` : ""}`, live: "업데이트 없이 실제로 닿음", phone_told: `고친 판(${d.app ?? ""})으로 연 폰에 안내`,
       fixed_yes: "문의한 분: 해결됐어요", fixed_no: "문의한 분: 아직이에요(다시 열림)", me_too: "알려진 문제판: 나도 겪어요",
+      effect: `효과 판정: ${({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" })[d.effect] ?? ""}${d.why ? ` · ${d.why}` : ""}`,
       tier: `요금 ${d.tier?.[1] ?? ""}${d.note ? ` · ${d.note}` : ""}`, release: `반영 판 ${d.releasedIn?.[1] ?? ""}` };
     const what = h.action === "status" ? `상태 ${STATUS[d.status?.[0]] ?? d.status?.[0] ?? ""} → ${STATUS[d.status?.[1]] ?? d.status?.[1] ?? ""}`
       : h.action === "note" ? `기록 ${String(d.text ?? "").slice(0, 60)}` : NAMES[h.action] ?? h.action;

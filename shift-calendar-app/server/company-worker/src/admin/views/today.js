@@ -71,6 +71,27 @@ export function todayViews(A) {
         ${picks.length ? `<p class="today-rest">먼저 볼 ${picks.length}가지${rest ? ` · 아래에 ${rest} 더` : ""}</p>` : ""}</section>`;
   }
 
+  /**
+   * 1.39 [LOOP-40] 사용자 11-09 승인 '열면 끝나 있는 관리자 앱': 지난 12시간 동안 사람 없이 끝난 일을 한 장으로. 사람 손이 필요한 것은
+   * 위 큰 카드(주의 필요)로만 오고, 여기는 '끝났어요'만 보여요. 효과 판정은 개발사항 이름과 한 줄.
+   */
+  function nightCard(n) {
+    if (!n) return "";
+    const lines = Array.isArray(n.lines) ? n.lines : [];
+    const fx = Array.isArray(n.effects) ? n.effects : [];
+    if (!lines.length && !fx.length) return `<p class="calm night-calm">${icon(P.check)}<span>지난 ${esc(n.hours ?? 12)}시간 동안 저절로 끝난 일은 없어요. 사람 손이 필요한 것은 위에 먼저 보여요.</span></p>`;
+    const key = "home:night";
+    const open = S.opened.get(key) ?? true;
+    const line = (l) => `<li>${l.to ? `<a href="${esc(l.to)}">${esc(l.text)}</a>` : esc(l.text)}</li>`;
+    const tone = { better: "ok", same: "warn", worse: "bad", none: "" };
+    return `<details class="card night" data-key="${key}"${open ? " open" : ""}><summary><h2>지난 ${esc(n.hours ?? 12)}시간 저절로 끝난 일</h2>
+        <span class="pill ok">${lines.reduce((a, l) => a + (l.n ?? 0), 0)}</span></summary>
+      ${lines.length ? `<ul class="feed">${lines.map(line).join("")}</ul>` : ""}
+      ${fx.length ? `<h3>출시 2주 뒤 효과</h3><ul class="feed">${fx.map((e) => `<li><a href="${href("dev", e.id)}">${esc(e.title)}</a>
+        <span class="pill ${tone[e.effect] ?? ""}">${esc(e.name)}</span>${e.why ? ` <small>${esc(e.why)}</small>` : ""}</li>`).join("")}</ul>` : ""}
+      <p class="hint">사람이 봐야 할 문의(환불·법·개인정보·보안·'사람이냐' 등)는 자동으로 답하지 않고 위 '주의 필요'에 남아요.</p></details>`;
+  }
+
   function homeView() {
     const t = S.data.today;
     const top = flagAlertCard();
@@ -121,7 +142,7 @@ export function todayViews(A) {
       `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul></section>` : "";
     const views = S.prefs.views.filter((v) => String(v.hash).startsWith("#/"));
     const hero = heroPicks(t);
-    return `${top}${heroCard(t, o, hi, hero)}
+    return `${top}${heroCard(t, o, hi, hero)}${nightCard(t.night)}
       <p class="hello-who">${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p>
       ${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
       <a class="sort-nudge" href="#/desk">${icon(P.check)}<span><b>운영 장부</b> 문의·개발사항·스튜디오 요구·신고·사진을 한 줄씩. ${can("inquiries") && o.inquiries ? `답 대기 ${o.inquiries}건은 겹침과 보낼 답까지 적어 두었어요. ` : ""}오늘 할 것부터 빠짐없이 처리해요</span>${icon(P.chevron)}</a>

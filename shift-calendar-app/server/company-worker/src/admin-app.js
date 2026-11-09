@@ -257,7 +257,22 @@ function adminApp(L, BUILD, M) {
   const DEV_SIZES = { fix: "고침", polish: "다듬기", feature: "새 기능" };
   // 1.39 [LOOP-34] 개발사항이 어디서 왔는지(사용자 11-09 '어떤 내용을 개발할 것인지 관리자가 알 수 있게').
   const DEV_SOURCES = { inquiry: "문의", idea: "개선 요청", repo: "개발 계획", signal: "숫자 신호", claude: "Claude", admin: "직접" };
-  const DEV_SOURCE_TONES = { inquiry: "info", idea: "gold", repo: "", signal: "warn", claude: "", admin: "" };
+  const DEV_SOURCE_TONES = { inquiry: "info", idea: "gold", repo: "", signal: "warn", claude: "", admin: "bad" };
+  // 1.39 [LOOP-35] 요금 기준(loop.js LOOP.basis와 같은 이름)과 뜻.
+  const DEV_KINDS = { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용", unknown: "분류 전" };
+  const DEV_KIND_HELP = { "": "모든 종류", new: "무료·프로를 물어요(숫자 › 요금 판단)", existing: "묻지 않고 원래 요금 그대로(무료면 무료)",
+    internal: "서버로만 닿는 관리자·운영 일, 요금 없음", unknown: "크기가 없어 아직 나누지 못했어요" };
+  // 1.39 [LOOP-35][LOOP-36] 사용자 11-09 '설명이 너무 부족해': 칸마다 무슨 뜻인지 한곳에.
+  const DEV_GUIDE = [
+    ["1순위", "최고 관리자가 이 화면에서 직접 넣은 것(또는 최고 관리자 말을 Claude가 옮겨 넣은 것)이에요. 다른 관리자가 넣은 것은 출처 '직접'이지만 보통 순서예요. 끝날 때까지 목록·자동 순환 대기열·Claude 넘김 글 맨 위에 와요. 항목에서 내릴 수 있어요."],
+    ["출처", "문의(문제 신고)·개선 요청(제안)·개발 계획(저장소 dev-status)·숫자 신호(관측)·Claude·직접 가운데 어디서 왔는지예요."],
+    ["크기", "고침 = 이미 있는 기능의 오류, 다듬기 = 이미 있는 기능을 더 편하게, 새 기능 = 처음 생기는 기능. 크기로 요금을 물을지가 정해져요."],
+    ["요금", "새 기능만 무료·프로를 물어요(최고 관리자, 숫자 › 요금 판단). 고침·다듬기는 원래 요금 그대로(무료면 무료), 서버로만 닿는 운영 일은 요금이 없어요."],
+    ["전달 길", "고친 것이 사용자에게 닿는 길: 서버·원격 자료·기능 스위치는 앱 업데이트 없이 바로, 정기·긴급 앱 업데이트는 판이 나가야 닿아요."],
+    ["상태", "접수 → 개발중 → 완료(반영 판을 적으면 판이 나간 날 묶인 문의에 답이 가요) 또는 반려(이유를 남겨요)."],
+  ];
+  const devGuide = () => `<details class="card how" data-key="dev-guide"${S.opened?.get?.("dev-guide") ? " open" : ""}><summary><b>칸마다 뜻</b><span class="meta">1순위·출처·크기·요금·전달 길·상태</span></summary>
+    <dl class="lines">${DEV_GUIDE.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl></details>`;
   const TIER_NAMES = { free: "무료", pro: "프로", pass: "묶음 7일권", trial: "체험 뒤 프로", later: "더 논의" };
   const DEV_STYLES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** [ADMIN-11] What 반려 usually says, one tap each; the admin can still type their own. */
@@ -383,7 +398,7 @@ function adminApp(L, BUILD, M) {
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
     deskView: "today", deskGroup: "", deskV: "", deskQuery: "", ledgerPick: null,
-    inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devFrom: "", devPick: null, templates: null,
+    inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devFrom: "", devKind: "", tierView: "ask", devPick: null, templates: null,
     // [ADMIN-16] 문의 찾기·정렬, 여러 개 고르기. [ADMIN-17] 활동 기록 거르기. 토론·보상 찾기.
     inquiryQuery: "", inquirySort: "default", inquiryPick: null, postQuery: "", rewardQuery: "",
     audit: { actor: "", kind: "", from: "", to: "" },
@@ -437,7 +452,9 @@ function adminApp(L, BUILD, M) {
   const BIND = {
     inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
       kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */, billing: "inquiryBilling" /* 1.36 [INQ-07] */ },
-    dev: { status: "devStatus", who: "devWho", q: "devQuery", from: "devFrom" },
+    dev: { status: "devStatus", who: "devWho", q: "devQuery", from: "devFrom", kind: "devKind" },
+    // 1.39 [LOOP-35] 숫자 › 요금 판단의 고르기 칸(정할 것·정한 새 기능·기존 기능·운영용·분류 전).
+    tiers: { view: "tierView" },
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
     rewards: { status: "rewardTab", q: "rewardQuery" },
@@ -486,7 +503,39 @@ function adminApp(L, BUILD, M) {
   /** [ADMUX-01] GET answers by path with their ETag: an unchanged list comes back as 304 and no body. */
   const etags = new Map();
 
+  // ---- 1.39 [ADM3-52] 열면 바로(사용자 11-09 '관리자 앱 로딩이 너무 느려, 로딩 속도 혁신') ----
+  // 서비스 워커가 GET마다 남겨 둔 마지막 답(bamnat-admin-api)으로 먼저 그리고, 그 사이 새 답을 받아 바꿔 그려요.
+  // 로그아웃하면 지워지고(forget), 7일보다 오래된 답은 쓰지 않아요. 고치기(POST)는 늘 서버로 가요.
+  const PEEK_MAX = 7 * 24 * 3600e3;
+  async function peek(path) {
+    try {
+      if (!("caches" in window)) return null;
+      const hit = await (await caches.open("bamnat-admin-api")).match(new URL(`/api/admin${path}`, location.origin).href);
+      if (!hit) return null;
+      const at = Date.parse(hit.headers.get("date") ?? "");
+      if (!at || Date.now() - at > PEEK_MAX) return null;
+      return await hit.json();
+    } catch {
+      return null;
+    }
+  }
+  /** 이 화면이 읽는 것을 휴대폰에 남은 답으로 먼저 채워요(없는 것은 조용히 건너뛰고, 네트워크는 쓰지 않아요). */
+  async function warm() {
+    if (S.phase !== "app") return;
+    S.warming = true;
+    try {
+      await load({ quiet: true });
+    } finally {
+      S.warming = false;
+    }
+  }
+
   async function api(path, method = "GET", body, { signal } = {}) {
+    if (S.warming && method === "GET") {
+      const kept = await peek(path);
+      if (kept) return kept;
+      throw Object.assign(new Error("cache"), { quiet: true, data: {} });
+    }
     S.busy++;
     progress();
     try {
@@ -674,6 +723,7 @@ function adminApp(L, BUILD, M) {
    * the last answer nothing is asked unless [force]. A change of permissions draws the menu again.
    */
   async function refreshBadges(force = false) {
+    if (S.warming) return;
     if (S.phase !== "app" || (!force && Date.now() - badgesAt < BADGES_FRESH)) return;
     badgesAt = Date.now();
     try {
@@ -704,6 +754,7 @@ function adminApp(L, BUILD, M) {
    */
   let serversAt = 0;
   async function loadServers(force = false) {
+    if (S.warming) return;
     if (!force && Date.now() - serversAt < 10 * 60000) return;
     serversAt = Date.now();
     try {
@@ -924,7 +975,7 @@ function adminApp(L, BUILD, M) {
 
   async function loadDev(n, more = false) {
     const after = more && S.data.devList?.next ? `&after=${S.data.devList.next}` : "";
-    const d = await api(`/dev?status=${S.devStatus}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${S.devWho}` : ""}${S.devFrom ? `&from=${S.devFrom}` : ""}${after}`);
+    const d = await api(`/dev?status=${S.devStatus}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${S.devWho}` : ""}${S.devFrom ? `&from=${S.devFrom}` : ""}${S.devKind ? `&kind=${S.devKind}` : ""}${after}`);
     if (n !== undefined && !seq.current("load", n)) return;
     S.data.devList = more ? { ...d, items: [...S.data.devList.items, ...d.items] } : d;
   }
@@ -1823,8 +1874,8 @@ function adminApp(L, BUILD, M) {
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
-            <span class="bubble-meta admin">${esc(h.by)} · <b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
-            <button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
+            <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? "<b>사람이 보내야 해요</b>(환불·법·개인정보·화남·약관·회사 방식은 저절로 가지 않아요)" : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
+            <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
@@ -2010,9 +2061,13 @@ function adminApp(L, BUILD, M) {
       <div class="chips" role="group" aria-label="어디서 왔는지">${[["", "출처 모두", null], ...Object.entries(DEV_SOURCES).map(([k, v]) => [k, v, d?.sources?.[k] ?? 0])]
         .filter(([key, , n]) => key === "" || n || S.devFrom === key).map(([key, label, n]) =>
         `<button type="button" class="chip pick" data-act="dev-from" data-key="${key}" aria-pressed="${S.devFrom === key}">${esc(label)}${n ? ` ${n}` : ""}</button>`).join("")}</div>
+      <div class="chips" role="group" aria-label="요금 기준">${[["", "종류 모두", null], ...Object.entries(DEV_KINDS).map(([k, v]) => [k, v, d?.kinds?.[k] ?? 0])]
+        .filter(([key, , n]) => key === "" || n || S.devKind === key).map(([key, label, n]) =>
+        `<button type="button" class="chip pick" data-act="dev-kind" data-key="${key}" aria-pressed="${S.devKind === key}" title="${esc(DEV_KIND_HELP[key] ?? "")}">${esc(label)}${n ? ` ${n}` : ""}</button>`).join("")}</div>
       <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="dev-who" data-key="${key}" aria-pressed="${S.devWho === key}">${label}</button>`).join("")}</div>
-      <p class="hint">무엇을 개발할지 모이는 곳이에요. 문의·개선 요청에서 "개발사항에 추가"로 올리거나, 숫자 신호·저장소 개발 계획·Claude가 올리거나, 여기서 바로 만들어요. 할 일은 개발중이 먼저, 그다음 문의 수가 많은 순이에요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p>`;
+      ${devGuide()}
+      <p class="hint">무엇을 개발할지 모이는 곳이에요. 문의·개선 요청에서 "개발사항에 추가"로 올리거나, 숫자 신호·저장소 개발 계획·Claude가 올리거나, 여기서 바로 만들어요. <b>최고 관리자가 여기서 직접 만든 것은 1순위</b>라 끝날 때까지 맨 위에 있고 Claude도 먼저 개발해요${d?.firsts ? `(지금 ${d.firsts}개)` : ""}. 그다음은 개발중, 문의 수가 많은 순이에요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p>`;
     return head + `<div id="dev-list">${devRows()}</div>`;
   }
 
@@ -2027,10 +2082,13 @@ function adminApp(L, BUILD, M) {
     const row = (x) => {
       const inner = `<span class="row-main"><b>${esc(x.title)}</b>
           <small>${[x.links ? `문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}` : "", [DEV_SIZES[x.size], DEV_ROUTES[x.route]].filter(Boolean).join(" · "),
-            x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
+            // 1.39 [LOOP-35] 요금은 작은 줄에(알약이 많으면 제목이 잘려서): 새 기능인데 아직 안 정한 것만 눈에 띄게.
+            x.pay && x.basis?.key !== "unknown" ? (x.basis?.key === "new" && !x.pay.decided ? "요금 정할 것" : x.basis?.key === "internal" ? "운영용(요금 없음)" : `요금 ${esc(x.pay.name)}`) : "",
+            x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", x.effect?.key ? `효과 ${esc(x.effect.name)}` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
             x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ")}</small>
           ${x.preview ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
-        ${x.source ? `<span class="pill ${DEV_SOURCE_TONES[x.source] ?? ""}">${esc(DEV_SOURCES[x.source] ?? x.source)}</span>` : ""}
+        ${x.first && !x.deletedAt && (x.status === "todo" || x.status === "doing") ? '<span class="pill bad" title="관리자가 직접 넣은 것: 가장 먼저 개발해요">1순위</span>'
+          : x.source ? `<span class="pill ${DEV_SOURCE_TONES[x.source] ?? ""}">${esc(DEV_SOURCES[x.source] ?? x.source)}</span>` : ""}
         <span class="pill ${DEV_TONES[x.status]}">${x.deletedAt ? "지움" : DEV_NAMES[x.status]}</span>`;
       return picking ? `<li><label class="row${S.devPick.has(x.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick="${x.id}"${S.devPick.has(x.id) ? " checked" : ""}>${inner}</label></li>`
         : `<li><a class="row" href="${href("dev", x.id)}">${inner}${icon(P.chevron)}</a></li>`;
@@ -2054,16 +2112,24 @@ function adminApp(L, BUILD, M) {
     const mine = d.assignee?.id === S.me.id;
     return `<div class="cols"><section>
       <div class="card"><div class="card-head"><h2>${esc(d.title)}</h2><span class="pill ${DEV_TONES[d.status]}">${DEV_NAMES[d.status]}</span></div>
-        <p class="meta">${d.source ? `<span class="pill ${DEV_SOURCE_TONES[d.source] ?? ""}">${esc(DEV_SOURCES[d.source] ?? d.source)}</span> ` : ""}${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.releasedIn ? ` · ${esc(d.releasedIn)}에 반영` : ""}${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
+        <p class="meta">${d.first ? '<span class="pill bad">1순위</span> ' : ""}${d.source ? `<span class="pill ${DEV_SOURCE_TONES[d.source] ?? ""}">${esc(DEV_SOURCES[d.source] ?? d.source)}</span> ` : ""}${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.releasedIn ? ` · ${esc(d.releasedIn)}에 반영` : ""}${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
         ${d.body ? `<p class="dev-body">${esc(d.body)}</p>` : '<p class="meta">내용이 없어요.</p>'}
         ${d.status === "rejected" && d.reason ? `<p class="note bad">반려 이유: ${esc(d.reason)}</p>` : ""}
         ${d.deletedAt ? `<p class="note warn">${esc(moment(d.deletedAt))}에 지운 항목이에요. 기록은 그대로 남아 있어요.${S.me.owner ? "" : " 되살리기는 최고 관리자가 해요."}</p>` : ""}
         <div class="actions">${d.deletedAt ? (S.me.owner ? '<button class="btn primary" data-act="dev-restore">되살리기</button>' : "")
           : `${edit ? `<button class="btn danger" data-act="dev-delete">지우기</button>
             <button class="btn" data-act="dev-assign" data-to="${mine ? "" : "me"}">${mine ? "맡기 취소" : d.assignee ? "내가 넘겨받기" : "내가 맡기"}</button>
-            <button class="btn" data-act="dev-edit">고치기</button>` : ""}
+            <button class="btn" data-act="dev-edit">고치기</button>
+            <button class="btn" data-act="dev-first" data-on="${d.first ? "" : "1"}" title="1순위는 목록·자동 순환·Claude 넘김에서 가장 먼저 개발해요">${d.first ? "1순위 내리기" : "1순위로 올리기"}</button>` : ""}
             <button class="btn" data-act="dev-copy-one">${icon(P.copy)}복사</button>`}</div></div>
       ${V.storyCard()}
+      ${d.effect ? `<section class="card"><div class="card-head"><h2>효과</h2><span class="pill ${esc(d.effect.tone)}">${esc(d.effect.name)}</span></div>
+        <p class="hint">${d.effect.key ? `${d.effect.from ? `${esc(moment(d.effect.from))}에 닿은 뒤 2주 숫자를 앞 2주와 견줬어요. ` : ""}${esc(d.effect.why || "")}`
+          : "사용자에게 닿은 지 2주가 지나면 잴 이벤트(events)를 쓴 휴대폰 비율과 다시 온 문의로 '좋아졌어요·그대로예요·나빠졌어요'를 스스로 적어요."}</p></section>` : ""}
+      ${d.basis ? `<section class="card"><div class="card-head"><h2>요금</h2><span class="pill ${d.basis.key === "new" && !d.pay?.decided ? "warn" : "ok"}">${esc(d.pay?.name ?? "")}</span></div>
+        <p><b>${esc(d.basis.name)}${d.basis.auto ? " (자동)" : ""}</b> — ${esc(d.basis.why)}</p>
+        <p class="hint">새 기능만 무료·프로를 물어요. 크기를 고침·다듬기로 바꾸면 묻지 않고 원래 요금 그대로 가요.${S.me.owner ? " 기준을 직접 바꾸거나 요금을 정하는 곳은 숫자 › 요금 판단이에요." : " 요금은 최고 관리자가 정해요."}</p>
+        ${S.me.owner || can("metrics") ? `<div class="actions start"><a class="btn small" href="${href("tiers")}">요금 판단 열기</a></div>` : ""}</section>` : ""}
       ${status ? `<section class="card"><h2>처리</h2><p class="hint">누르면 바로 바뀌고 기록에 남아요. 반려는 이유를 함께 남겨요.</p>
         <div class="chips" role="group" aria-label="처리 상태">${Object.keys(DEV_NAMES).map((k) =>
           `<button type="button" class="chip pick" data-act="dev-status-set" data-status="${k}" aria-pressed="${d.status === k}">${DEV_NAMES[k]}</button>`).join("")}</div>
@@ -2114,6 +2180,7 @@ function adminApp(L, BUILD, M) {
         x.news ? `공지 한 줄: ${was(x.news[0], x.news[1])}` : "", x.publicTitle ? `알려진 문제 제목: ${was(x.publicTitle[0], x.publicTitle[1])}` : "",
         x.route ? `전달 길: ${was(DEV_ROUTES[x.route[0]] ?? "", DEV_ROUTES[x.route[1]] ?? "")}` : "", x.size ? `크기: ${was(DEV_SIZES[x.size[0]] ?? "", DEV_SIZES[x.size[1]] ?? "")}` : "",
         x.styles ? `보일 유형: ${was(x.styles[0].split(",").map((k) => DEV_STYLES[k] ?? k).join("·") || "모두", x.styles[1].split(",").map((k) => DEV_STYLES[k] ?? k).join("·") || "모두")}` : "",
+        x.first ? `1순위: ${x.first[1] ? "올림(직접 넣은 것으로)" : "내림"}` : "",
         x.known ? `알려진 문제판: ${["보이지 않기", "여럿이 겪을 때만", "늘 보이기"][x.known[1] + 1]}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
       status: () => `처리: ${was(DEV_NAMES[x.status?.[0]], DEV_NAMES[x.status?.[1]])}${x.bulk > 1 ? ` <span class="meta">(${x.bulk}개 한 번에)</span>` : ""}${x.reason ? `<blockquote>${esc(x.reason)}</blockquote>` : ""}`,
       assign: () => `맡은 사람: ${was(x.assignee?.[0], x.assignee?.[1])}`,
@@ -2133,6 +2200,8 @@ function adminApp(L, BUILD, M) {
       fixed_yes: () => `문의한 분이 '해결됐어요'를 눌렀어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
       fixed_no: () => `문의한 분이 '아직이에요'를 눌렀어요(다시 열림)${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
       me_too: () => "알려진 문제판에서 '나도 겪어요'",
+      effect: () => `출시 2주 뒤 효과: <b>${esc(({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" })[x.effect] ?? "")}</b>${x.why ? ` · ${esc(x.why)}` : ""}`,
+      basis: () => `요금 기준: ${was({ new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[0]] ?? "자동", { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[1]] ?? "자동")}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
       tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
     }[h.action]?.() ?? "바뀐 것이 있어요";
     if (h.action === "status" && x.why) return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}<blockquote>${esc(x.why)}</blockquote></span></li>`;
@@ -4543,6 +4612,11 @@ function adminApp(L, BUILD, M) {
   const ACTIONS = {
     // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
+    // 1.39 [LOOP-37] 보류 중인 Claude 답을 사람이 읽고 지금 보내요(사람이 봐야 할 문의는 이 단추로만 가요).
+    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { send: true }), "보냈어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    }, "primary"),
     "held-cancel": ({ id }) => confirmBox("이 답을 보내지 않을까요?", "보낸 분께 가지 않고, 기록에 취소로 남아요.", "보내지 않기", async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
@@ -5113,6 +5187,10 @@ function adminApp(L, BUILD, M) {
       S.devFrom = key;
       refilter("devList");
     },
+    "dev-kind": ({ key }) => {
+      S.devKind = key;
+      refilter("devList");
+    },
     "dev-new": () => openDevNew(),
     "dev-pick": () => {
       // [ADMIN-10] 여러 개 고르기 (일괄 복사·처리) is for the owner and admins given 처리.
@@ -5135,6 +5213,7 @@ function adminApp(L, BUILD, M) {
       else devBulk(status);
     },
     "dev-edit": () => openDevEdit(),
+    "dev-first": ({ on }) => devSave({ first: Boolean(on) }, on ? "1순위로 올렸어요" : "1순위에서 내렸어요"),
     "dev-assign": ({ to }) => devSave({ assignee: to || null }, to ? "내가 맡았어요" : "맡기를 취소했어요"),
     "dev-status-set": ({ status }) => {
       if (status === S.data.dev.status) return;
@@ -6758,7 +6837,11 @@ function adminApp(L, BUILD, M) {
       window.scrollTo(0, next.id ? 0 : scrollMemo[next.name] ?? 0);
       document.getElementById("title")?.focus({ preventScroll: true });
     }
-    load();
+    // 1.39 [ADM3-52] 처음 여는 화면도 휴대폰에 남은 답으로 먼저 그리고 새 답으로 바꿔요.
+    (moved ? warm().catch(() => {}) : Promise.resolve()).then(() => {
+      if (moved && S.phase === "app") render({ keepScroll: true });
+      load();
+    });
     schedule();
   });
   window.addEventListener("online", () => {
@@ -6823,19 +6906,24 @@ function adminApp(L, BUILD, M) {
    * Opens the app. AN 1.28 [ADMUX-37] Who is signed in and the menu numbers come first (/badges, light), the frame
    * is drawn, then the screen asks for its own data; the shared words come beside it.
    */
-  async function enter() {
-    const b = await api("/badges");
-    badgesAt = Date.now();
+  async function enter(kept = null) {
+    // 1.39 [ADM3-52] 휴대폰에 남은 메뉴 숫자·내 정보가 있으면 서버를 기다리지 않고 바로 그려요(새 숫자는 load가 곧 받아요).
+    const b = kept ?? await api("/badges");
+    badgesAt = kept ? 0 : Date.now();
     S.overview = { ...b };
     S.me = b.me;
-    S.newBuild = Boolean(b.build && b.build !== BUILD);
-    autoReload(b.build);
+    // 남은 답의 build는 옛 판일 수 있어요: 새 판 알림·자동 새로 고침은 서버의 새 답으로만.
+    if (!kept) {
+      S.newBuild = Boolean(b.build && b.build !== BUILD);
+      autoReload(b.build);
+    }
     S.phase = "app";
     S.route = readRoute();
     applyParams(S.route);
     if (!location.hash) history.replaceState(null, "", `/admin/${href(S.route.name)}`);
     else fixAddress();
     render();
+    if (kept) await warm();
     load({ quiet: true });
     schedule();
     loadBasics().then(() => { if (S.phase === "app") render({ keepScroll: true }); }).catch(() => {});
@@ -6873,6 +6961,10 @@ function adminApp(L, BUILD, M) {
     // What the server still lacks only shows on the login screen, so it is not waited for before signing in.
     const checked = health().then((h) => { S.health = h; return h; });
     try {
+      // 1.39 [ADM3-52] 전에 들어온 적이 있으면 /session·/badges를 기다리지 않고 남은 답으로 바로 열어요. 로그인이 끝났으면
+      // 첫 새 답이 401이라 그 화면 위에 다시 로그인 창이 떠요(쓰던 화면은 그대로).
+      const kept = await peek("/badges");
+      if (kept?.me) return await enter(kept);
       // [ADMUX-11] Asked first, so a signed-out start shows the login without a 401 in the console.
       if (!(await api("/session")).signedIn) throw new Error("login");
       await enter();

@@ -10,8 +10,10 @@ keep_vars = true
 
 # SP1 1.30 [SPD-02] Smart Placement: the Worker runs near the D1 database when that answers faster, so one answer does not cross
 # the sea for each of its reads. A dashboard deploy sets it in Settings > General > Placement (README 5-3).
+# 1.39 [ADM3-52] 사용자 카드 2026-11-09 '한국 가까이에서 돌기': Smart Placement가 서버를 미국 시카고(remote-ORD)에 두어 APAC D1을
+# 한 번 오갈 때마다 0.2초쯤 걸렸어요(결정함 3초). 서울 리전으로 고정해 사용자(한국)와 D1(APAC) 가까이에서 돌아요.
 [placement]
-mode = "smart"
+region = "aws:ap-northeast-2"
 
 # Clears network hashes, spent limits and old questions on time even when nobody sends anything.
 [triggers]
