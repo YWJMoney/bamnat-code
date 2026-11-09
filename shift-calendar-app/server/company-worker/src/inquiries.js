@@ -1,6 +1,7 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { SORTING, autoAnswer, compareVersions, grams, likeness, version } from "./inbox.js";
+import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, version } from "./inbox.js";
+import { replyRisk } from "./ledger.js";
 import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
@@ -652,10 +653,14 @@ export async function holdReply(env, row, text, body, now) {
   // 1.39 [LOOP-12] 믿을수록 더 맡기기: 이 답의 종류(정리함 더미)를 최고 관리자가 '바로 보내기'로 켰으면 보류 없이 가요.
   const pile = typeof body.pile === "string" && Object.hasOwn(LOOP.piles, body.pile) ? body.pile : "";
   const kind = pile ? (await one(env, "SELECT kind FROM inquiries WHERE id = ?", row.id))?.kind : null;
-  const instant = await instantOk(env, pile, kind, text);
+  // 1.39 [LOOP-37] 사람이 봐야 할 문의(최고 관리자 확인과 같은 기준)에 Claude가 적은 답은 시간이 지나도 저절로 가지 않아요:
+  // 문의 권한이 있는 관리자가 '지금 보내기'(또는 고치기·보내지 않기)를 눌러야 가요.
+  // 1.39 [LOOP-38] 답 글에 AI·자동 답 표현이나 보안 정보가 있어도 사람이 보고 보내요.
+  const person = (await needsPerson(env, row.id)) || replyRisk(text);
+  const instant = !person && await instantOk(env, pile, kind, text);
   await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
-    actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, instant ? now : now + DESK.hold, pile);
-  await audit(env, now, "inquiry_reply_held", row.id, instant ? `바로 보내기(${LOOP.piles[pile]})` : `${Math.round(DESK.hold / 60000)}분 보류`);
+    actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, instant ? now : person ? HELD_FOR_PERSON : now + DESK.hold, pile);
+  await audit(env, now, "inquiry_reply_held", row.id, instant ? `바로 보내기(${LOOP.piles[pile]})` : person ? `사람이 보내기(${person})` : `${Math.round(DESK.hold / 60000)}분 보류`);
   if (instant) await releaseHeld(env, now);
   return true;
 }
@@ -663,7 +668,8 @@ export async function holdReply(env, row, text, body, now) {
 /** 1.38 [DESK-09] The answers held for [id], for the admin view: each with when it goes. */
 export async function heldOf(env, id) {
   const rows = await all(env, "SELECT id, text, by, close, until FROM held_replies WHERE inquiry_id = ? ORDER BY id", id).catch(() => []);
-  return rows.map((r) => ({ id: r.id, text: r.text, by: r.by, close: r.close === 1, until: iso(r.until) }));
+  // 1.39 [LOOP-37] person: 사람이 봐야 할 문의라 누가 보내기를 눌러야 가요.
+  return rows.map((r) => ({ id: r.id, text: r.text, by: r.by, close: r.close === 1, person: r.until >= HELD_FOR_PERSON, until: r.until >= HELD_FOR_PERSON ? null : iso(r.until) }));
 }
 
 /** 1.38 [DESK-09] Held answers whose time came go into their threads as answers, and the askers hear at once. */
@@ -689,11 +695,22 @@ export async function releaseHeld(env, now) {
   return told.length;
 }
 
+/** 1.39 [LOOP-37] 사람이 보내야 하는 보류 답의 '때'(저절로 오지 않는 먼 날). */
+export const HELD_FOR_PERSON = Date.parse("9999-01-01T00:00:00Z");
+
 /** 1.38 [DESK-09] A person (never the key) takes a held answer back, or changes its words; its time stays. */
 export async function heldChange(env, inquiryId, heldId, body, now) {
   if (env.actor?.key) throw new Refuse("no_permission", "held", 403);
   const h = await one(env, "SELECT * FROM held_replies WHERE id = ? AND inquiry_id = ?", heldId, inquiryId);
   if (!h) return json({ error: "gone" }, 404);
+  // 1.39 [LOOP-37] 사람이 보내야 하는 답(또는 기다리는 답)을 지금 보내요.
+  if (body.send === true) {
+    if (!can(env.actor, "inquiries", "edit")) throw new Refuse("no_permission", "held", 403);
+    await run(env, "UPDATE held_replies SET until = ? WHERE id = ?", now, h.id);
+    await audit(env, now, "inquiry_reply_approve", inquiryId, h.by);
+    await releaseHeld(env, now);
+    return null;
+  }
   if (body.cancel === true) {
     await run(env, "DELETE FROM held_replies WHERE id = ?", h.id);
     await audit(env, now, "inquiry_reply_cancel", inquiryId, h.by);

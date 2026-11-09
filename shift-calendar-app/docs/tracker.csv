@@ -2408,3 +2408,5 @@ POLC-01,"1.39.1: 1.39.0 전에 설치한 폰에도 처리방침 3.12 동의 카�
 LOOP-35,"사용자 2026-11-09: 개발사항·무료/프로 고르는 곳 설명을 충분히, 기존 기능의 오류·개선은 무료 그대로·새 기능만 무료/프로를 묻고, 기준이 보이고 걸러 볼 수 있게",1.39,진행 중,,"server loop.js basisOf·ASK_TIER_SQL·tierBoard view·/loop/basis, 관리자 앱 요금 판단·개발사항 종류 칩·칸마다 뜻. 시험 loop.test [LOOP-35]. 코드 고침, 배포 전"
 LOOP-36,"사용자 2026-11-09: 관리자가 직접 개발사항에 넣은 것은 1순위·최우선",1.39,진행 중,,"server dev_items.origin, devList·devQueue·handoff 순서, 1순위 올리기·내리기. 시험 loop.test [LOOP-36]. 코드 고침, 배포 전"
 ADM3-52,"사용자 2026-11-09: 관리자 앱 로딩이 너무 느려 로딩 속도 혁신",1.39,진행 중,,"admin-app.js peek·warm(서비스 워커에 남은 답으로 먼저 그림), 서버 server-timing, /watch/speed 숫자·열쇠 읽기. 1초 늦춘 로컬에서 다시 열기 3.4초→0.1초. 코드 고침, 배포 전"
+LOOP-37,"사용자 2026-11-09: 권한 관리자·최고 관리자가 봐야 할 것은 자동으로 답하지 않기",1.39,진행 중,,"server needsPerson(askOwner 기준), holdReply 사람 보내기 보류, 자동 정리·출시 안내 건너뜀, held send. 시험 loop.test [LOOP-37]. 코드 고침, 배포 전"
+LOOP-38,"사용자 2026-11-09: 코드 등 보안 답 금지, AI임을 밝히지 않기, 우회 문의는 관리자 확인으로 보류",1.39,진행 중,,"server askOwner security·human, replyRisk(답 글 AI·보안 표현), desk 규칙·넘길 글. 시험 loop.test [LOOP-38]. 코드 고침, 배포 전"

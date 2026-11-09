@@ -1874,8 +1874,8 @@ function adminApp(L, BUILD, M) {
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
-            <span class="bubble-meta admin">${esc(h.by)} · <b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
-            <button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
+            <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? "<b>사람이 보내야 해요</b>(환불·법·개인정보·화남·약관·회사 방식은 저절로 가지 않아요)" : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
+            <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
@@ -4608,6 +4608,11 @@ function adminApp(L, BUILD, M) {
   const ACTIONS = {
     // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
+    // 1.39 [LOOP-37] 보류 중인 Claude 답을 사람이 읽고 지금 보내요(사람이 봐야 할 문의는 이 단추로만 가요).
+    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { send: true }), "보냈어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    }, "primary"),
     "held-cancel": ({ id }) => confirmBox("이 답을 보내지 않을까요?", "보낸 분께 가지 않고, 기록에 취소로 남아요.", "보내지 않기", async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
