@@ -1208,7 +1208,8 @@ export async function devCreate(request, env, now) {
   const id = `d${randomId(15)}`;
   const a = env.actor;
   // 1.39 [LOOP-36] 사용자 11-09 '내가 직접 개발사항에 넣은 것은 1순위': 사람이 문의 없이 바로 만든 것, 또는 사용자 말을 옮기는 Claude 열쇠가 origin "admin"으로 만든 것.
-  const origin = (!a.key && !a.auto && !inquiry) || (a.key && !a.sync && body.origin === "admin") ? "admin" : "";
+  // 사용자 카드(11-09): 최고 관리자 것만. 다른 관리자가 직접 넣은 것은 출처 '직접'이지만 보통 순서예요.
+  const origin = (a.owner && !a.key && !a.auto && !inquiry) || (a.key && !a.sync && body.origin === "admin") ? "admin" : "";
   await batch(env, [
     stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at, origin)
       VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL, ?)`, id, title, text, a.id, actorName(env), now, now, origin),
@@ -1263,7 +1264,8 @@ export async function devUpdate(env, row, body, now) {
   }
   // 1.39 [LOOP-36] 1순위(직접 넣은 것) 올리기·내리기: 사람, 또는 사용자 말을 옮기는 Claude 열쇠(저장소 동기화 열쇠는 못 해요).
   if (body.first !== undefined) {
-    if (env.actor?.sync) refuse("first", "first");
+    // 사용자 카드(11-09 '최고 관리자 것만'): 최고 관리자나 사용자 말을 옮기는 Claude 열쇠만.
+    if (env.actor?.sync || !(env.actor?.owner || env.actor?.key)) throw new Refuse("no_permission", "first", 403);
     const v = body.first === true ? "admin" : body.first === false ? "" : refuse("first", "first");
     if (v !== (row.origin ?? "")) [edit.first, set.origin] = [[Boolean(row.origin), Boolean(v)], v];
   }

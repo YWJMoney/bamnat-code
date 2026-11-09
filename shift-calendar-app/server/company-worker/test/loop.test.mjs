@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import worker from "../src/index.js";
-import { server, device, signIn } from "./helpers.mjs";
+import { server, device, signIn, from, ORIGIN } from "./helpers.mjs";
 import { impact, laterWords, nextTrain, releaseName } from "../src/loop.js";
 import { keyAllows } from "../src/desk.js";
 import { waitingNote } from "../src/inquiries.js";
@@ -700,4 +700,18 @@ test("[LOOP-36] 관리자가 직접 넣은 개발사항은 1순위: 목록·자�
   const hist = (await call("GET", `/api/admin/dev/${relayed.id}`, undefined, owner)).data.history;
   assert.ok(hist.some((h) => h.action === "edit" && h.detail.first?.[1] === false));
   assert.equal((await call("POST", `/api/admin/dev/${asked}`, { first: true }, { authorization: `Bearer ${sync.key}`, "x-admin": "1" })).status, 403);
+  // 사용자 카드(11-09 '최고 관리자 것만'): 다른 관리자가 직접 넣은 것은 '직접'이지만 1순위가 아니고, 1순위를 올리지도 못해요.
+  const APP = { "x-admin": "1", origin: ORIGIN };
+  const perms = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "view", rewards: "none", settings: "none", community: "none", takedown: "none", ops: "none", metrics: "none", shares: "none", audit: "none", flags: "none", flagOff: "none" };
+  const inv = await call("POST", "/api/admin/invites", { email: "ops@example.com", perms }, owner);
+  await call("POST", "/api/admin/join", { token: inv.data.link.split("#")[1], name: "운영", password: "ops-member-2026" }, { ...APP, ...from(41) });
+  const id = (await call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === "ops@example.com").id;
+  await call("POST", `/api/admin/admins/${id}`, { status: "active" }, owner);
+  const res = await call("POST", "/api/admin/login", { email: "ops@example.com", password: "ops-member-2026" }, { ...APP, ...from(41) });
+  const other = { cookie: res.headers.get("set-cookie").split(";")[0], ...APP };
+  const theirs = (await call("POST", "/api/admin/dev", { title: "운영 관리자가 넣은 것" }, other)).data;
+  assert.equal(theirs.first, false);
+  assert.equal(theirs.source, "admin");
+  assert.equal((await call("POST", `/api/admin/dev/${theirs.id}`, { first: true }, other)).status, 403);
+  assert.equal((await call("POST", `/api/admin/dev/${theirs.id}`, { first: true }, owner)).status, 200);
 });
