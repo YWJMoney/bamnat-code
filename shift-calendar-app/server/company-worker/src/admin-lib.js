@@ -240,7 +240,7 @@ export function adminLib() {
   /** The filters each screen keeps in the address, with what they are when left out. */
   const FILTERS = {
     inquiries: { status: "open", who: "", topic: "", q: "", sort: "default", kind: "", copied: "", sender: "" /* AT 1.29 [ADMCP-02] */ },
-    dev: { status: "open", who: "", q: "" },
+    dev: { status: "open", who: "", q: "", from: "" },
     review: { show: "all" },
     community: { show: "flagged", q: "" },
     rewards: { status: "owed", q: "" },
@@ -348,7 +348,7 @@ export function adminLib() {
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
     // 1.35 [INBOX-01] 정리함은 1.38 [DESK-03]부터 운영 장부 안이에요(옛 주소 #/sort는 장부로).
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
-    dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
+    dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev 개발 대기열 개발 목록 개발 계획 개선 요청 출처" },
     templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },
     sla: { label: "답 목표", area: "settings", old: "설정 답 목표 SLA" },
     review: { label: "검토", area: "review", badge: (o) => reviewCount(o), old: "제보 앱에 없는 방식 달라요 review" },

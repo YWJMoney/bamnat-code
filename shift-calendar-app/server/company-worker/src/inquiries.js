@@ -1386,7 +1386,8 @@ export async function devList(env, params) {
   const [rows, countRows] = (await batch(env, [
     // Only links to questions still kept count.
     stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
-        (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting
+        (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting,
+        (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.kind = 'idea') AS ideas
       FROM dev_items d
       WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
           AND (?1 = 'all' OR d.status = ?1 OR (?1 = 'open' AND d.status IN ('todo', 'doing')))))
@@ -1403,9 +1404,24 @@ export async function devList(env, params) {
   const rank = { doing: 0, todo: 1, done: 2, rejected: 3 };
   const open = (r) => r.status === "todo" || r.status === "doing";
   rows.sort((a, b) => (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
+  // 1.39 [LOOP-34] 어디서 왔는지(문의·개선 요청·저장소 계획·숫자 신호·Claude·직접)로 세고 골라 봐요.
+  const sources = Object.fromEntries(Object.keys(DEV_SOURCES).map((k) => [k, 0]));
+  for (const r of rows) sources[devSource(r)]++;
+  const from = Object.hasOwn(DEV_SOURCES, params.get("from") ?? "") ? params.get("from") : "";
+  const shown = from ? rows.filter((r) => devSource(r) === from) : rows;
   // [ADMIN-16] A page at a time, after sorting all of the view.
-  const { items, next } = paged(rows, page(params));
-  return { counts, statuses: DEV.statuses, items: items.map(devItem), next, total: rows.length };
+  const { items, next } = paged(shown, page(params));
+  return { counts, statuses: DEV.statuses, sources, sourceNames: DEV_SOURCES, items: items.map(devItem), next, total: shown.length };
+}
+
+/** 1.39 [LOOP-34] 개발사항이 어디서 왔는지. 관리자가 무엇을 왜 개발하는지 한눈에 보게(사용자 11-09). */
+export const DEV_SOURCES = { inquiry: "문의", idea: "개선 요청", repo: "개발 계획", signal: "숫자 신호", claude: "Claude", admin: "직접" };
+export function devSource(r) {
+  if (String(r.body ?? "").startsWith("관측 신호")) return "signal";
+  if ((r.links ?? 0) > 0) return (r.ideas ?? 0) * 2 >= r.links ? "idea" : "inquiry";
+  if (r.created_by_name === "저장소" || r.track) return "repo";
+  if (r.created_by_name === "Claude") return "claude";
+  return "admin";
 }
 
 export const devItem = (r) => ({
@@ -1428,6 +1444,7 @@ export const devItem = (r) => ({
   styles: String(r.styles ?? "").split(",").filter(Boolean),
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
+  source: devSource(r),
   createdBy: { id: r.created_by, name: r.created_by_name },
   assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
   createdAt: iso(r.created_at),
@@ -1445,7 +1462,7 @@ export async function devView(env, row) {
   ])).map((r) => r.results);
   const read = can(env.actor, "inquiries");
   return {
-    ...devItem({ ...row, links: links.filter((l) => l.kind).length, waiting: links.filter((l) => l.status === "open").length }),
+    ...devItem({ ...row, links: links.filter((l) => l.kind).length, waiting: links.filter((l) => l.status === "open").length, ideas: links.filter((l) => l.kind === "idea").length }),
     statuses: DEV.statuses,
     inquiries: read ? links.filter((l) => l.kind).map((l) => ({
       id: l.inquiry_id, kind: l.kind, status: l.status, preview: [...(l.first ?? "")].slice(0, 160).join(""),

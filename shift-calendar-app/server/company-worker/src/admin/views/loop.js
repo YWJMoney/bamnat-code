@@ -152,7 +152,7 @@ export function loopViews(A) {
   function queueCard() {
     const q = S.data.loopQueue?.items;
     if (!q) return skeleton(1);
-    return `<section class="card">${head("개발 대기열", "영향도 순 · Claude가 이 순서로 가져가요")}
+    return `<section class="card">${head("개발 대기열", "영향도 순 · Claude가 이 순서로 가져가요", `<a class="btn small" href="${href("dev")}">개발사항 전체</a>`)}
       ${q.length ? `<ol class="rows">${q.slice(0, 12).map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>문의 ${x.asks} · 같아요 ${x.same}${x.again ? ` · 다시 생김 ${x.again}` : ""}${x.urgent ? " · 급함" : ""}${x.track ? ` · ${esc(x.track)}` : ""}</small></span>
         <span class="pill ${x.urgent || x.again ? "bad" : "info"}">${x.score}점</span>${icon(P.chevron)}</a></li>`).join("")}</ol>`

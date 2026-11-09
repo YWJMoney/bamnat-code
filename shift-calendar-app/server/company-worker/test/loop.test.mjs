@@ -575,3 +575,31 @@ test("[LOOP-13] /api/config의 update: 최고 관리자가 정한 versionCode �
   assert.equal(train.next, "2026-11-20");
   assert.equal((await call("POST", "/api/admin/loop/train", { start: "2026-11-20", days: 3 }, owner)).data.error, "days");
 });
+
+test("[LOOP-34] 개발사항 출처: 문의·개선 요청·개발 계획·숫자 신호·직접으로 세고 골라 봐요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const admin = await signIn(call);
+  const bug = await ask(call, 1, "알람이 안 울려요");
+  const idea = await ask(call, 2, "달력에 주 번호를 보여 주세요", "idea");
+  const fromBug = await item(call, admin, "알람 안 울림", [bug]);
+  const fromIdea = await item(call, admin, "주 번호", [idea]);
+  const own = (await call("POST", "/api/admin/dev", { title: "관리자가 바로 만든 것" }, admin)).data.id;
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, admin)).data;
+  await call("POST", "/api/admin/dev/sync", { version: "1.39.0", sha: "a".repeat(40), items: [{ track: "PAYX-65", title: "실제 근무 유형별 급여", status: "todo", size: "feature", route: "app" }] },
+    { authorization: `Bearer ${sync.key}`, "x-admin": "1" });
+  let list = (await call("GET", "/api/admin/dev?status=open", undefined, admin)).data;
+  const by = Object.fromEntries(list.items.map((x) => [x.title, x.source]));
+  assert.equal(by["알람 안 울림"], "inquiry");
+  assert.equal(by["주 번호"], "idea");
+  assert.equal(by["관리자가 바로 만든 것"], "admin");
+  assert.equal(by["실제 근무 유형별 급여"], "repo");
+  assert.deepEqual(list.sources, { inquiry: 1, idea: 1, repo: 1, signal: 0, claude: 0, admin: 1 });
+  assert.equal(list.sourceNames.repo, "개발 계획");
+  list = (await call("GET", "/api/admin/dev?status=open&from=idea", undefined, admin)).data;
+  assert.deepEqual(list.items.map((x) => x.id), [fromIdea]);
+  assert.equal(list.total, 1);
+  assert.equal(list.sources.inquiry, 1, "고른 출처와 상관없이 모두 세요");
+  assert.equal((await call("GET", `/api/admin/dev/${fromBug}`, undefined, admin)).data.source, "inquiry");
+  assert.equal((await call("GET", `/api/admin/dev/${own}`, undefined, admin)).data.source, "admin");
+});
