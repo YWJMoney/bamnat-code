@@ -37,7 +37,8 @@ jobs:
       run:
         working-directory: shift-calendar-app
     env:
-      BAMNAT_API: ${{ vars.BAMNAT_API }}
+      # 1.39 [LOOP-34] Variables에 BAMNAT_API가 없어 1.39.0 합치기 때 보내지 못했어요(11-08). 없으면 실제 회사 서버로.
+      BAMNAT_API: ${{ vars.BAMNAT_API || 'https://api.bamnat.app' }}
       BAMNAT_SYNC_KEY: ${{ secrets.BAMNAT_SYNC_KEY }}
     steps:
       - uses: actions/checkout@v4

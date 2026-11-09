@@ -255,6 +255,9 @@ function adminApp(L, BUILD, M) {
   // 1.39 [LOOP-08] 전달 길·크기(서버 loop.js LOOP.routes·sizes와 같은 이름).
   const DEV_ROUTES = { server: "서버", remote: "원격 자료", flag: "기능 스위치", app: "정기 앱 업데이트", hotfix: "긴급 앱 업데이트" };
   const DEV_SIZES = { fix: "고침", polish: "다듬기", feature: "새 기능" };
+  // 1.39 [LOOP-34] 개발사항이 어디서 왔는지(사용자 11-09 '어떤 내용을 개발할 것인지 관리자가 알 수 있게').
+  const DEV_SOURCES = { inquiry: "문의", idea: "개선 요청", repo: "개발 계획", signal: "숫자 신호", claude: "Claude", admin: "직접" };
+  const DEV_SOURCE_TONES = { inquiry: "info", idea: "gold", repo: "", signal: "warn", claude: "", admin: "" };
   const TIER_NAMES = { free: "무료", pro: "프로", pass: "묶음 7일권", trial: "체험 뒤 프로", later: "더 논의" };
   const DEV_STYLES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** [ADMIN-11] What 반려 usually says, one tap each; the admin can still type their own. */
@@ -380,7 +383,7 @@ function adminApp(L, BUILD, M) {
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
     deskView: "today", deskGroup: "", deskV: "", deskQuery: "", ledgerPick: null,
-    inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
+    inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devFrom: "", devPick: null, templates: null,
     // [ADMIN-16] 문의 찾기·정렬, 여러 개 고르기. [ADMIN-17] 활동 기록 거르기. 토론·보상 찾기.
     inquiryQuery: "", inquirySort: "default", inquiryPick: null, postQuery: "", rewardQuery: "",
     audit: { actor: "", kind: "", from: "", to: "" },
@@ -434,7 +437,7 @@ function adminApp(L, BUILD, M) {
   const BIND = {
     inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
       kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */, billing: "inquiryBilling" /* 1.36 [INQ-07] */ },
-    dev: { status: "devStatus", who: "devWho", q: "devQuery" },
+    dev: { status: "devStatus", who: "devWho", q: "devQuery", from: "devFrom" },
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
     rewards: { status: "rewardTab", q: "rewardQuery" },
@@ -921,7 +924,7 @@ function adminApp(L, BUILD, M) {
 
   async function loadDev(n, more = false) {
     const after = more && S.data.devList?.next ? `&after=${S.data.devList.next}` : "";
-    const d = await api(`/dev?status=${S.devStatus}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${S.devWho}` : ""}${after}`);
+    const d = await api(`/dev?status=${S.devStatus}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${S.devWho}` : ""}${S.devFrom ? `&from=${S.devFrom}` : ""}${after}`);
     if (n !== undefined && !seq.current("load", n)) return;
     S.data.devList = more ? { ...d, items: [...S.data.devList.items, ...d.items] } : d;
   }
@@ -2004,9 +2007,12 @@ function adminApp(L, BUILD, M) {
         ${edit && !picking ? `<button class="btn primary" data-act="dev-new">${icon(P.plus)}새 개발사항</button>` : ""}
         ${can("devStatus", "edit") ? `<button class="btn" data-act="dev-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>` : ""}
         ${picking ? "" : csvButton("dev", d?.items)}</div>
+      <div class="chips" role="group" aria-label="어디서 왔는지">${[["", "출처 모두", null], ...Object.entries(DEV_SOURCES).map(([k, v]) => [k, v, d?.sources?.[k] ?? 0])]
+        .filter(([key, , n]) => key === "" || n || S.devFrom === key).map(([key, label, n]) =>
+        `<button type="button" class="chip pick" data-act="dev-from" data-key="${key}" aria-pressed="${S.devFrom === key}">${esc(label)}${n ? ` ${n}` : ""}</button>`).join("")}</div>
       <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="dev-who" data-key="${key}" aria-pressed="${S.devWho === key}">${label}</button>`).join("")}</div>
-      <p class="hint">문의에서 "개발사항에 추가"로 올리거나 여기서 바로 만들어요. 문의 수가 많은 것이 위에 와요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p>`;
+      <p class="hint">무엇을 개발할지 모이는 곳이에요. 문의·개선 요청에서 "개발사항에 추가"로 올리거나, 숫자 신호·저장소 개발 계획·Claude가 올리거나, 여기서 바로 만들어요. 할 일은 개발중이 먼저, 그다음 문의 수가 많은 순이에요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p>`;
     return head + `<div id="dev-list">${devRows()}</div>`;
   }
 
@@ -2020,9 +2026,11 @@ function adminApp(L, BUILD, M) {
     }
     const row = (x) => {
       const inner = `<span class="row-main"><b>${esc(x.title)}</b>
-          <small>${[`문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}`, `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
+          <small>${[x.links ? `문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}` : "", [DEV_SIZES[x.size], DEV_ROUTES[x.route]].filter(Boolean).join(" · "),
+            x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
             x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ")}</small>
           ${x.preview ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
+        ${x.source ? `<span class="pill ${DEV_SOURCE_TONES[x.source] ?? ""}">${esc(DEV_SOURCES[x.source] ?? x.source)}</span>` : ""}
         <span class="pill ${DEV_TONES[x.status]}">${x.deletedAt ? "지움" : DEV_NAMES[x.status]}</span>`;
       return picking ? `<li><label class="row${S.devPick.has(x.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick="${x.id}"${S.devPick.has(x.id) ? " checked" : ""}>${inner}</label></li>`
         : `<li><a class="row" href="${href("dev", x.id)}">${inner}${icon(P.chevron)}</a></li>`;
@@ -2046,7 +2054,7 @@ function adminApp(L, BUILD, M) {
     const mine = d.assignee?.id === S.me.id;
     return `<div class="cols"><section>
       <div class="card"><div class="card-head"><h2>${esc(d.title)}</h2><span class="pill ${DEV_TONES[d.status]}">${DEV_NAMES[d.status]}</span></div>
-        <p class="meta">${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.releasedIn ? ` · ${esc(d.releasedIn)}에 반영` : ""}${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
+        <p class="meta">${d.source ? `<span class="pill ${DEV_SOURCE_TONES[d.source] ?? ""}">${esc(DEV_SOURCES[d.source] ?? d.source)}</span> ` : ""}${esc(d.createdBy.name)}님이 ${esc(moment(d.createdAt))}에 추가 · 문의 ${d.links}건${d.releasedIn ? ` · ${esc(d.releasedIn)}에 반영` : ""}${d.assignee ? ` · ${mine ? "내가 맡음" : `${esc(d.assignee.name)}님이 맡음`}` : ""}</p>
         ${d.body ? `<p class="dev-body">${esc(d.body)}</p>` : '<p class="meta">내용이 없어요.</p>'}
         ${d.status === "rejected" && d.reason ? `<p class="note bad">반려 이유: ${esc(d.reason)}</p>` : ""}
         ${d.deletedAt ? `<p class="note warn">${esc(moment(d.deletedAt))}에 지운 항목이에요. 기록은 그대로 남아 있어요.${S.me.owner ? "" : " 되살리기는 최고 관리자가 해요."}</p>` : ""}
@@ -5099,6 +5107,10 @@ function adminApp(L, BUILD, M) {
     },
     "dev-who": ({ key }) => {
       S.devWho = key;
+      refilter("devList");
+    },
+    "dev-from": ({ key }) => {
+      S.devFrom = key;
       refilter("devList");
     },
     "dev-new": () => openDevNew(),
