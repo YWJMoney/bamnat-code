@@ -503,7 +503,39 @@ function adminApp(L, BUILD, M) {
   /** [ADMUX-01] GET answers by path with their ETag: an unchanged list comes back as 304 and no body. */
   const etags = new Map();
 
+  // ---- 1.39 [ADM3-52] 열면 바로(사용자 11-09 '관리자 앱 로딩이 너무 느려, 로딩 속도 혁신') ----
+  // 서비스 워커가 GET마다 남겨 둔 마지막 답(bamnat-admin-api)으로 먼저 그리고, 그 사이 새 답을 받아 바꿔 그려요.
+  // 로그아웃하면 지워지고(forget), 7일보다 오래된 답은 쓰지 않아요. 고치기(POST)는 늘 서버로 가요.
+  const PEEK_MAX = 7 * 24 * 3600e3;
+  async function peek(path) {
+    try {
+      if (!("caches" in window)) return null;
+      const hit = await (await caches.open("bamnat-admin-api")).match(new URL(`/api/admin${path}`, location.origin).href);
+      if (!hit) return null;
+      const at = Date.parse(hit.headers.get("date") ?? "");
+      if (!at || Date.now() - at > PEEK_MAX) return null;
+      return await hit.json();
+    } catch {
+      return null;
+    }
+  }
+  /** 이 화면이 읽는 것을 휴대폰에 남은 답으로 먼저 채워요(없는 것은 조용히 건너뛰고, 네트워크는 쓰지 않아요). */
+  async function warm() {
+    if (S.phase !== "app") return;
+    S.warming = true;
+    try {
+      await load({ quiet: true });
+    } finally {
+      S.warming = false;
+    }
+  }
+
   async function api(path, method = "GET", body, { signal } = {}) {
+    if (S.warming && method === "GET") {
+      const kept = await peek(path);
+      if (kept) return kept;
+      throw Object.assign(new Error("cache"), { quiet: true, data: {} });
+    }
     S.busy++;
     progress();
     try {
@@ -691,6 +723,7 @@ function adminApp(L, BUILD, M) {
    * the last answer nothing is asked unless [force]. A change of permissions draws the menu again.
    */
   async function refreshBadges(force = false) {
+    if (S.warming) return;
     if (S.phase !== "app" || (!force && Date.now() - badgesAt < BADGES_FRESH)) return;
     badgesAt = Date.now();
     try {
@@ -721,6 +754,7 @@ function adminApp(L, BUILD, M) {
    */
   let serversAt = 0;
   async function loadServers(force = false) {
+    if (S.warming) return;
     if (!force && Date.now() - serversAt < 10 * 60000) return;
     serversAt = Date.now();
     try {
@@ -2048,12 +2082,13 @@ function adminApp(L, BUILD, M) {
     const row = (x) => {
       const inner = `<span class="row-main"><b>${esc(x.title)}</b>
           <small>${[x.links ? `문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}` : "", [DEV_SIZES[x.size], DEV_ROUTES[x.route]].filter(Boolean).join(" · "),
+            // 1.39 [LOOP-35] 요금은 작은 줄에(알약이 많으면 제목이 잘려서): 새 기능인데 아직 안 정한 것만 눈에 띄게.
+            x.pay && x.basis?.key !== "unknown" ? (x.basis?.key === "new" && !x.pay.decided ? "요금 정할 것" : x.basis?.key === "internal" ? "운영용(요금 없음)" : `요금 ${esc(x.pay.name)}`) : "",
             x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
             x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ")}</small>
           ${x.preview ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
-        ${x.first && !x.deletedAt && (x.status === "todo" || x.status === "doing") ? '<span class="pill bad" title="관리자가 직접 넣은 것: 가장 먼저 개발해요">1순위</span>' : ""}
-        ${x.source ? `<span class="pill ${DEV_SOURCE_TONES[x.source] ?? ""}">${esc(DEV_SOURCES[x.source] ?? x.source)}</span>` : ""}
-        ${x.pay ? `<span class="pill ${x.basis?.key === "new" && !x.pay.decided ? "warn" : ""}" title="${esc(x.basis?.why ?? "")}">${esc(x.pay.name)}</span>` : ""}
+        ${x.first && !x.deletedAt && (x.status === "todo" || x.status === "doing") ? '<span class="pill bad" title="관리자가 직접 넣은 것: 가장 먼저 개발해요">1순위</span>'
+          : x.source ? `<span class="pill ${DEV_SOURCE_TONES[x.source] ?? ""}">${esc(DEV_SOURCES[x.source] ?? x.source)}</span>` : ""}
         <span class="pill ${DEV_TONES[x.status]}">${x.deletedAt ? "지움" : DEV_NAMES[x.status]}</span>`;
       return picking ? `<li><label class="row${S.devPick.has(x.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick="${x.id}"${S.devPick.has(x.id) ? " checked" : ""}>${inner}</label></li>`
         : `<li><a class="row" href="${href("dev", x.id)}">${inner}${icon(P.chevron)}</a></li>`;
@@ -6793,7 +6828,11 @@ function adminApp(L, BUILD, M) {
       window.scrollTo(0, next.id ? 0 : scrollMemo[next.name] ?? 0);
       document.getElementById("title")?.focus({ preventScroll: true });
     }
-    load();
+    // 1.39 [ADM3-52] 처음 여는 화면도 휴대폰에 남은 답으로 먼저 그리고 새 답으로 바꿔요.
+    (moved ? warm().catch(() => {}) : Promise.resolve()).then(() => {
+      if (moved && S.phase === "app") render({ keepScroll: true });
+      load();
+    });
     schedule();
   });
   window.addEventListener("online", () => {
@@ -6858,19 +6897,24 @@ function adminApp(L, BUILD, M) {
    * Opens the app. AN 1.28 [ADMUX-37] Who is signed in and the menu numbers come first (/badges, light), the frame
    * is drawn, then the screen asks for its own data; the shared words come beside it.
    */
-  async function enter() {
-    const b = await api("/badges");
-    badgesAt = Date.now();
+  async function enter(kept = null) {
+    // 1.39 [ADM3-52] 휴대폰에 남은 메뉴 숫자·내 정보가 있으면 서버를 기다리지 않고 바로 그려요(새 숫자는 load가 곧 받아요).
+    const b = kept ?? await api("/badges");
+    badgesAt = kept ? 0 : Date.now();
     S.overview = { ...b };
     S.me = b.me;
-    S.newBuild = Boolean(b.build && b.build !== BUILD);
-    autoReload(b.build);
+    // 남은 답의 build는 옛 판일 수 있어요: 새 판 알림·자동 새로 고침은 서버의 새 답으로만.
+    if (!kept) {
+      S.newBuild = Boolean(b.build && b.build !== BUILD);
+      autoReload(b.build);
+    }
     S.phase = "app";
     S.route = readRoute();
     applyParams(S.route);
     if (!location.hash) history.replaceState(null, "", `/admin/${href(S.route.name)}`);
     else fixAddress();
     render();
+    if (kept) await warm();
     load({ quiet: true });
     schedule();
     loadBasics().then(() => { if (S.phase === "app") render({ keepScroll: true }); }).catch(() => {});
@@ -6908,6 +6952,10 @@ function adminApp(L, BUILD, M) {
     // What the server still lacks only shows on the login screen, so it is not waited for before signing in.
     const checked = health().then((h) => { S.health = h; return h; });
     try {
+      // 1.39 [ADM3-52] 전에 들어온 적이 있으면 /session·/badges를 기다리지 않고 남은 답으로 바로 열어요. 로그인이 끝났으면
+      // 첫 새 답이 401이라 그 화면 위에 다시 로그인 창이 떠요(쓰던 화면은 그대로).
+      const kept = await peek("/badges");
+      if (kept?.me) return await enter(kept);
       // [ADMUX-11] Asked first, so a signed-out start shows the login without a 401 in the console.
       if (!(await api("/session")).signedIn) throw new Error("login");
       await enter();

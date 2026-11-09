@@ -5036,6 +5036,12 @@ export async function admin(request, env, url) {
     res = new Response(res.body, res);
     res.headers.set("set-cookie", session.renewed);
   }
+  // 1.39 [ADM3-52] 서버 안에서 걸린 시간(브라우저 개발자 도구·관리자 앱이 네트워크와 나눠 봐요).
+  try {
+    res.headers.set("server-timing", `app;dur=${Date.now() - now}`);
+  } catch {
+    // 바꿀 수 없는 머리(드묾)는 그대로 둬요.
+  }
   return res;
 }
 

@@ -27,6 +27,8 @@ export const OPS_SCHEMA = [...WATCH_SCHEMA, ...RELEASE_SCHEMA, ...KEEP_SCHEMA, .
 
 /** index.js areaFor가 먼저 묻는 곳: 이 길이면 그 권한(undefined면 이 모듈 길이 아님). null은 로그인만, "owner"는 주인만. */
 export function opsArea(path) {
+  // 1.39 [ADM3-52] 응답 속도는 숫자를 보는 사람·Claude 열쇠도 읽어요(주소·건수·걸린 시간뿐, 개인 정보 없음). 로딩 개선을 숫자로 재려고.
+  if (path === "/watch/speed") return "metrics";
   if (path.startsWith("/watch/") || path === "/money" || path.startsWith("/money/") || path === "/data-requests" || path.startsWith("/data-requests/")
     || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/")) return "owner";
   if (path === "/person") return "inquiries";
