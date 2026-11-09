@@ -81,7 +81,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
-import { DEV, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
@@ -106,7 +106,7 @@ import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
-import { LOOP_COLUMNS, LOOP_SCHEMA, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
+import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
@@ -299,6 +299,7 @@ export const hourlySteps = (env) => [
   ["play", () => playTick(env, Date.now())],
   ["ship", () => shipTick(env, Date.now(), loopAnswer)],
   ["live", () => liveTick(env, Date.now(), loopAnswer)],
+  ["effect", () => effectTick(env, Date.now())], // 1.39 [LOOP-39] 출시 2주 뒤 효과 판정
   ["watch", () => flushWatch(env, Date.now(), true).then(() => pruneWatch(env, Date.now()))], // 1.38 [ADM3-19]
   ...opsSteps(env, () => playVitals(env, Date.now())),
   // 1.39 [OBS2-01][OBS2-04] Play 보고서(12시간마다 새로)와 개선 신호 합치기.
@@ -681,6 +682,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS inquiry_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL,
     sender TEXT NOT NULL, text TEXT NOT NULL, by TEXT, at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS inquiry_messages_inquiry ON inquiry_messages (inquiry_id, id)",
+  // 1.39 [LOOP-40] 오늘 화면의 밤사이 답 수(지난 12시간).
+  "CREATE INDEX IF NOT EXISTS inquiry_messages_at ON inquiry_messages (at)",
   // [ADMIN-02] 나도 그래요 (kind same) and 신고 (kind flag) on a public question, once per install each.
   `CREATE TABLE IF NOT EXISTS inquiry_marks (inquiry_id TEXT NOT NULL, device TEXT NOT NULL, kind TEXT NOT NULL,
     reason TEXT, at INTEGER NOT NULL, PRIMARY KEY (inquiry_id, device, kind))`,
@@ -6240,6 +6243,8 @@ async function today(env, actor, now) {
   }
   // 1.38 [ADM3] 주인의 주의 필요(설정·정기 작업·새 오류·데이터 요청·사고·낮은 별점)도 같은 batch로.
   if (actor.owner) Object.assign(q, OPS_ALERT_SQL(now));
+  // 1.39 [LOOP-40] 열면 끝나 있는 관리자 앱: 지난 12시간 동안 저절로 끝난 일과 사람 손이 필요한 것만(같은 batch).
+  Object.assign(q, nightQueries(actor, now));
   // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
   Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
     metrics: can(actor, "metrics") }, start));
@@ -6266,8 +6271,68 @@ async function today(env, actor, now) {
   out.alerts = alertsFrom({ trend: out.trend, todo: out.todo.items, now, versions: got.versionConflicts?.[0]?.n ?? 0, shape: got.ax_shape?.[0]?.n ?? 0 });
   // 1.38 [ADM3-04][ADM3-05][ADM3-13][ADM3-16][ADM3-32] 주인에게는 설정 빠짐·정기 작업·새 오류·데이터 요청·사고가 맨 위에.
   if (actor.owner) out.alerts = [...opsAlertsFrom(env, got, now), ...out.alerts];
+  const night = nightFrom(got, now);
+  out.night = night.summary;
+  out.alerts = [...night.alerts, ...out.alerts];
   if (got.versionConflicts) out.versionConflicts = got.versionConflicts[0].n;
   return out;
+}
+
+/** [LOOP-40] '밤사이'로 보는 시간. */
+const NIGHT_SPAN = 12 * HOUR;
+const EFFECT_WORDS = { better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" };
+
+/** [LOOP-40] 지난 12시간 사람 없이 끝난 일(Claude·자동 정리 답, 고친 판 안내, 자동 개발 기록, 효과 판정)과 사람이 보내야 할 답. */
+function nightQueries(actor, now) {
+  const since = now - NIGHT_SPAN;
+  const q = {};
+  if (can(actor, "inquiries")) {
+    q.night_sent = ["SELECT COUNT(*) AS n FROM inquiry_messages WHERE sender = 'admin' AND at >= ? AND by IN ('Claude', '자동 정리')", since];
+    q.night_told = ["SELECT COUNT(*) AS n FROM dev_links WHERE told_at >= ?", since];
+    q.night_skip = ["SELECT COUNT(*) AS n FROM audit WHERE action = 'inquiry_auto_skip' AND at >= ?", since];
+    q.night_person = ["SELECT COUNT(*) AS n, MIN(inquiry_id) AS first FROM held_replies WHERE until >= ?", HELD_FOR_PERSON];
+    q.night_held = ["SELECT COUNT(*) AS n FROM held_replies WHERE until < ?", HELD_FOR_PERSON];
+  }
+  if (can(actor, "dev")) {
+    q.night_dev = [`SELECT action, COUNT(*) AS n FROM dev_history WHERE at >= ? AND (actor_id LIKE 'key:%' OR actor_id = '')
+      AND action IN ('create', 'status', 'sync', 'live', 'phone_told', 'effect') GROUP BY action`, since];
+    q.night_effect = ["SELECT id, title, effect, effect_note FROM dev_items WHERE deleted_at IS NULL AND effect_at >= ? ORDER BY effect_at DESC LIMIT 20", now - 14 * DAY];
+  }
+  if (actor.owner) q.night_ship = ["SELECT target FROM audit WHERE action = 'shipped_version' AND at >= ? ORDER BY id DESC LIMIT 3", since];
+  return q;
+}
+
+function nightFrom(got, now) {
+  const n = (k) => got[k]?.[0]?.n ?? 0;
+  const dev = Object.fromEntries((got.night_dev ?? []).map((r) => [r.action, r.n]));
+  const since = now - NIGHT_SPAN;
+  const effects = (got.night_effect ?? []).map((r) => {
+    let why = "";
+    try {
+      why = JSON.parse(r.effect_note || "{}").why ?? "";
+    } catch {
+      why = "";
+    }
+    return { id: r.id, title: r.title, effect: r.effect, name: EFFECT_WORDS[r.effect] ?? r.effect, why };
+  });
+  const lines = [];
+  const add = (k, text, to, count) => count && lines.push({ key: k, text, n: count, ...(to ? { to } : {}) });
+  add("sent", `문의에 답이 갔어요 ${n("night_sent")}건(Claude·자동 정리)`, "#/inquiries?status=answered", n("night_sent"));
+  add("told", `고친 판이 나왔다고 알렸어요 ${n("night_told")}건`, null, n("night_told"));
+  add("dev", `개발사항이 저절로 만들어지거나 넘어갔어요 ${(dev.create ?? 0) + (dev.status ?? 0) + (dev.sync ?? 0)}건`, "#/dev", (dev.create ?? 0) + (dev.status ?? 0) + (dev.sync ?? 0));
+  add("live", `업데이트 없이 고친 것이 닿았어요 ${(dev.live ?? 0) + (dev.phone_told ?? 0)}건`, null, (dev.live ?? 0) + (dev.phone_told ?? 0));
+  add("effect", `출시 2주 뒤 효과를 쟀어요 ${dev.effect ?? 0}건`, null, dev.effect ?? 0);
+  for (const s of got.night_ship ?? []) lines.push({ key: `ship:${s.target}`, text: `${s.target} 판이 나간 것을 저장하고 안내했어요`, n: 1 });
+  add("held", `10분 뒤 저절로 갈 Claude 답 ${n("night_held")}건(그 사이 고치거나 멈출 수 있어요)`, "#/desk", n("night_held"));
+  add("skip", `사람이 봐야 해서 자동으로 답하지 않은 문의 ${n("night_skip")}건`, null, n("night_skip"));
+  const alerts = [];
+  const person = got.night_person?.[0];
+  if (person?.n) alerts.push({ key: `person-held:${person.n}`, kind: "late", tone: "bad", title: `사람이 보내야 할 답 ${person.n}개`,
+    meta: "환불·법·개인정보·보안·'사람이냐' 같은 문의라 저절로 가지 않아요. 읽고 보내기·고치기·보내지 않기를 골라요", to: `#/inquiries/${encodeURIComponent(person.first)}` });
+  const worse = effects.filter((e) => e.effect === "worse");
+  if (worse.length) alerts.push({ key: `effect-worse:${worse.map((e) => e.id).join(",")}`, kind: "spike", tone: "warn", title: `고친 뒤 숫자가 나빠진 개발사항 ${worse.length}개`,
+    meta: worse.map((e) => `${e.title}${e.why ? ` (${e.why})` : ""}`).join(" · ").slice(0, 160), to: `#/dev/${encodeURIComponent(worse[0].id)}` });
+  return { summary: { since: iso(since), hours: NIGHT_SPAN / HOUR, lines, effects: effects.slice(0, 6), person: person?.n ?? 0 }, alerts };
 }
 
 /** [ADMUX-37] What the screens share and rarely changes: the 채택 settings, the answer targets and the reason words. */

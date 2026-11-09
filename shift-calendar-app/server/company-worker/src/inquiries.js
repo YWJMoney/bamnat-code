@@ -9,7 +9,7 @@ import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { LOOP, WAITING_SQL, basisOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -1486,6 +1486,8 @@ export const devItem = (r) => ({
   first: r.origin === "admin",
   basis: basisOf(r),
   pay: tierEffective(r),
+  // 1.39 [LOOP-39] 출시 2주 뒤 숫자로 본 효과.
+  effect: effectOf(r),
   createdBy: { id: r.created_by, name: r.created_by_name },
   assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
   createdAt: iso(r.created_at),

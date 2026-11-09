@@ -2084,7 +2084,7 @@ function adminApp(L, BUILD, M) {
           <small>${[x.links ? `문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}` : "", [DEV_SIZES[x.size], DEV_ROUTES[x.route]].filter(Boolean).join(" · "),
             // 1.39 [LOOP-35] 요금은 작은 줄에(알약이 많으면 제목이 잘려서): 새 기능인데 아직 안 정한 것만 눈에 띄게.
             x.pay && x.basis?.key !== "unknown" ? (x.basis?.key === "new" && !x.pay.decided ? "요금 정할 것" : x.basis?.key === "internal" ? "운영용(요금 없음)" : `요금 ${esc(x.pay.name)}`) : "",
-            x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
+            x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", x.effect?.key ? `효과 ${esc(x.effect.name)}` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
             x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ")}</small>
           ${x.preview ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
         ${x.first && !x.deletedAt && (x.status === "todo" || x.status === "doing") ? '<span class="pill bad" title="관리자가 직접 넣은 것: 가장 먼저 개발해요">1순위</span>'
@@ -2123,6 +2123,9 @@ function adminApp(L, BUILD, M) {
             <button class="btn" data-act="dev-first" data-on="${d.first ? "" : "1"}" title="1순위는 목록·자동 순환·Claude 넘김에서 가장 먼저 개발해요">${d.first ? "1순위 내리기" : "1순위로 올리기"}</button>` : ""}
             <button class="btn" data-act="dev-copy-one">${icon(P.copy)}복사</button>`}</div></div>
       ${V.storyCard()}
+      ${d.effect ? `<section class="card"><div class="card-head"><h2>효과</h2><span class="pill ${esc(d.effect.tone)}">${esc(d.effect.name)}</span></div>
+        <p class="hint">${d.effect.key ? `${d.effect.from ? `${esc(moment(d.effect.from))}에 닿은 뒤 2주 숫자를 앞 2주와 견줬어요. ` : ""}${esc(d.effect.why || "")}`
+          : "사용자에게 닿은 지 2주가 지나면 잴 이벤트(events)를 쓴 휴대폰 비율과 다시 온 문의로 '좋아졌어요·그대로예요·나빠졌어요'를 스스로 적어요."}</p></section>` : ""}
       ${d.basis ? `<section class="card"><div class="card-head"><h2>요금</h2><span class="pill ${d.basis.key === "new" && !d.pay?.decided ? "warn" : "ok"}">${esc(d.pay?.name ?? "")}</span></div>
         <p><b>${esc(d.basis.name)}${d.basis.auto ? " (자동)" : ""}</b> — ${esc(d.basis.why)}</p>
         <p class="hint">새 기능만 무료·프로를 물어요. 크기를 고침·다듬기로 바꾸면 묻지 않고 원래 요금 그대로 가요.${S.me.owner ? " 기준을 직접 바꾸거나 요금을 정하는 곳은 숫자 › 요금 판단이에요." : " 요금은 최고 관리자가 정해요."}</p>
@@ -2197,6 +2200,7 @@ function adminApp(L, BUILD, M) {
       fixed_yes: () => `문의한 분이 '해결됐어요'를 눌렀어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
       fixed_no: () => `문의한 분이 '아직이에요'를 눌렀어요(다시 열림)${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
       me_too: () => "알려진 문제판에서 '나도 겪어요'",
+      effect: () => `출시 2주 뒤 효과: <b>${esc(({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" })[x.effect] ?? "")}</b>${x.why ? ` · ${esc(x.why)}` : ""}`,
       basis: () => `요금 기준: ${was({ new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[0]] ?? "자동", { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[1]] ?? "자동")}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
       tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
     }[h.action]?.() ?? "바뀐 것이 있어요";

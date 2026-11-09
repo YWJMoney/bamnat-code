@@ -116,6 +116,10 @@ export const LOOP_COLUMNS = [
   "ALTER TABLE dev_items ADD COLUMN test TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN check_text TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN live_at INTEGER",
+  // [LOOP-39] 출시 2주 뒤 숫자로 본 효과: better·same·worse·none, 잰 때, 근거(JSON).
+  "ALTER TABLE dev_items ADD COLUMN effect TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE dev_items ADD COLUMN effect_at INTEGER",
+  "ALTER TABLE dev_items ADD COLUMN effect_note TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE inquiries ADD COLUMN fixed INTEGER",
   "ALTER TABLE inquiries ADD COLUMN fixed_at INTEGER",
   "ALTER TABLE inquiries ADD COLUMN via TEXT",
@@ -870,6 +874,98 @@ export async function decideBox(env, actor, now, ledgerQuery) {
       later: d.tier === "later", note: d.tier_note })),
     tierNames: LOOP.tiers,
   };
+}
+
+// ---- [LOOP-39] 숫자 → 개발 → 효과 한 줄 (사용자 11-09 승인 '혁신 두 가지' 둘째) ----
+//
+// 고친 것이 실제로 닿은 뒤(서버·원격·스위치는 live_at, 앱은 그 판 이상이 나간 날) 2주가 지나면, 그 개발사항의 숫자를 앞뒤 2주로 견줘
+// '좋아졌어요·그대로예요·나빠졌어요'를 스스로 적어요. 잴 이벤트(events)가 있으면 그 이벤트를 쓴 휴대폰 비율, 없으면 묶인 문의가
+// 나간 뒤에도 다시 왔는지('아직이에요'·새로 묶인 문의)와 '해결됐어요'로 봐요. 나빠졌으면 최고 관리자 오늘 화면 주의 필요에 떠요.
+
+export const EFFECT = {
+  days: 14,
+  /** 이벤트 비율이 이만큼(%) 넘게 오르내려야 좋아짐·나빠짐. */
+  move: 10,
+  /** 앞뒤 각각 이만큼 휴대폰·날(사용 통계를 켠 폰)이 있어야 이벤트로 판정해요. */
+  phoneDays: 30,
+  names: { better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" },
+  tones: { better: "ok", same: "warn", worse: "bad", none: "" },
+  /** 한 번에 보는 수(매시). */
+  batch: 20,
+};
+
+/** 개발사항 [d]가 사용자에게 닿은 때(ms) 또는 null. [ships]는 '나간 판' 기록 [{ v, at }] 오래된 것부터. */
+export function reachedAt(d, ships) {
+  if (["server", "remote", "flag"].includes(d.route) && d.live_at) return d.live_at;
+  const want = version(d.released_in ?? "");
+  if (!want) return d.live_at ?? null;
+  return ships.find((s) => version(s.v) && compareVersions(version(s.v), want) >= 0)?.at ?? null;
+}
+
+/** 이벤트 비율과 다시 온 문의로 판정 한 줄. 순수 함수라 시험에서 바로 봐요. */
+export function effectVerdict({ events, before, after, beforeDays, afterDays, back = 0, yes = 0, asks = 0 }) {
+  const enough = events && beforeDays >= EFFECT.phoneDays && afterDays >= EFFECT.phoneDays;
+  const rb = enough ? before / beforeDays : null;
+  const ra = enough ? after / afterDays : null;
+  const pct = enough ? (rb ? Math.round(((ra - rb) / rb) * 100) : ra > 0 ? 100 : 0) : null;
+  let effect;
+  if (pct !== null) effect = pct >= EFFECT.move ? "better" : pct <= -EFFECT.move ? "worse" : "same";
+  else if (back > 0) effect = "same";
+  else if (yes > 0 || asks > 0) effect = "better";
+  else effect = "none";
+  // 숫자는 좋아져도 같은 문의가 다시 오면 '그대로'예요.
+  if (effect === "better" && back > 0 && back >= yes) effect = "same";
+  const why = [pct !== null ? `${events} 쓰는 비율 ${pct > 0 ? "+" : ""}${pct}%` : events ? "사용 통계가 모자라요" : "",
+    asks ? `묶인 문의 ${asks}건` : "", yes ? `해결됐어요 ${yes}` : "", back ? `다시 옴 ${back}` : ""].filter(Boolean).join(" · ");
+  return { effect, pct, why };
+}
+
+/** 매시: 닿은 지 2주가 지난 개발사항의 효과를 적어요. 적은 수. */
+export async function effectTick(env, now = Date.now()) {
+  const rows = await all(env, `SELECT id, title, route, released_in, live_at, events, size, updated_at FROM dev_items
+    WHERE deleted_at IS NULL AND status = 'done' AND effect = '' AND updated_at > ? ORDER BY updated_at LIMIT 200`, now - 180 * DAY).catch(() => []);
+  if (!rows.length) return 0;
+  const ships = (await all(env, "SELECT target AS v, MIN(at) AS at FROM audit WHERE action = 'shipped_version' GROUP BY target").catch(() => []))
+    .filter((s) => version(s.v)).sort((a, b) => a.at - b.at);
+  let n = 0;
+  for (const d of rows) {
+    if (n >= EFFECT.batch) break;
+    const at = reachedAt(d, ships);
+    if (!at || at + EFFECT.days * DAY > now) continue;
+    const span = EFFECT.days * DAY;
+    const events = String(d.events ?? "").split(",").filter(Boolean);
+    const [base, used, links, hist] = (await batch(env, [
+      stmt(env, "SELECT SUM(CASE WHEN day < ? THEN phones ELSE 0 END) AS b, SUM(CASE WHEN day >= ? THEN phones ELSE 0 END) AS a FROM usage_days WHERE day >= ? AND day < ?",
+        kstDay(at), kstDay(at), kstDay(at - span), kstDay(at + span)),
+      events.length ? stmt(env, `SELECT SUM(CASE WHEN day < ? THEN phones ELSE 0 END) AS b, SUM(CASE WHEN day >= ? THEN phones ELSE 0 END) AS a FROM usage_events
+        WHERE day >= ? AND day < ? AND event IN (${events.map(() => "?").join(",")})`, kstDay(at), kstDay(at), kstDay(at - span), kstDay(at + span), ...events)
+        : stmt(env, "SELECT 0 AS b, 0 AS a"),
+      stmt(env, `SELECT COUNT(*) AS asks, SUM(i.created_at > ?) AS late, SUM(i.fixed = 1) AS yes FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ?`, at + DAY, d.id),
+      stmt(env, "SELECT COUNT(*) AS n FROM dev_history WHERE item_id = ? AND action = 'fixed_no' AND at > ?", d.id, at),
+    ]).catch(() => [{ results: [{}] }, { results: [{}] }, { results: [{}] }, { results: [{}] }])).map((r) => r.results?.[0] ?? {});
+    const v = effectVerdict({ events: events.join(","), before: used.b ?? 0, after: used.a ?? 0, beforeDays: base.b ?? 0, afterDays: base.a ?? 0,
+      back: (links.late ?? 0) + (hist.n ?? 0), yes: links.yes ?? 0, asks: links.asks ?? 0 });
+    const note = { from: iso(at), days: EFFECT.days, pct: v.pct, why: v.why };
+    const r = await run(env, "UPDATE dev_items SET effect = ?, effect_at = ?, effect_note = ? WHERE id = ? AND effect = ''", v.effect, now, JSON.stringify(note), d.id).catch(() => null);
+    if (!r?.meta?.changes) continue;
+    await batch(env, [devEvent(loopActor(env, "효과 판정"), d.id, now, "effect", { effect: v.effect, why: v.why })]).catch(() => null);
+    await audit(env, now, "dev_effect", d.title, `${EFFECT.names[v.effect]}${v.why ? ` · ${v.why}` : ""}`).catch(() => null);
+    n++;
+  }
+  return n;
+}
+
+/** 개발사항 화면의 효과 한 줄(아직이면 언제 재는지). */
+export function effectOf(r) {
+  if (r.status !== "done") return null;
+  if (!r.effect) return { key: "", name: "출시 2주 뒤에 재요", tone: "", why: "" };
+  let note = {};
+  try {
+    note = JSON.parse(r.effect_note || "{}");
+  } catch {
+    note = {};
+  }
+  return { key: r.effect, name: EFFECT.names[r.effect] ?? r.effect, tone: EFFECT.tones[r.effect] ?? "", why: note.why ?? "", from: note.from ?? null, at: r.effect_at ? iso(r.effect_at) : null };
 }
 
 // ---- [LOOP-12] 믿을수록 더 맡기기 ----

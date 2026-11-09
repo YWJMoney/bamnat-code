@@ -771,3 +771,68 @@ test("[LOOP-37][LOOP-38] 사람이 봐야 할 문의·보안·AI 질문은 자�
   assert.ok(desk.rules.some((r) => /AI·자동 답이라는 말/.test(r)));
   assert.match(desk.handoff, /관리자 확인으로 남겨요/);
 });
+
+test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤트 비율, 없으면 다시 온 문의", async () => {
+  const { effectVerdict, effectTick, reachedAt } = await import("../src/loop.js");
+  assert.equal(effectVerdict({ events: "a", before: 30, after: 60, beforeDays: 300, afterDays: 300 }).effect, "better");
+  assert.equal(effectVerdict({ events: "a", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "worse");
+  assert.equal(effectVerdict({ events: "a", before: 60, after: 62, beforeDays: 300, afterDays: 300 }).effect, "same");
+  assert.equal(effectVerdict({ events: "a", before: 30, after: 60, beforeDays: 300, afterDays: 300, back: 2, yes: 1 }).effect, "same");
+  assert.equal(effectVerdict({ events: "", asks: 3, yes: 2 }).effect, "better");
+  assert.equal(effectVerdict({ events: "", asks: 3, back: 1 }).effect, "same");
+  assert.equal(effectVerdict({ events: "", asks: 0 }).effect, "none");
+  assert.equal(effectVerdict({ events: "a", before: 1, after: 2, beforeDays: 5, afterDays: 5 }).pct, null);
+  // 앱 판은 그 판 이상이 나간 날, 서버는 실제로 닿은 날.
+  assert.equal(reachedAt({ route: "", released_in: "1.39.0" }, [{ v: "1.38.0", at: 1 }, { v: "1.39.1", at: 5 }]), 5);
+  assert.equal(reachedAt({ route: "server", live_at: 9, released_in: "" }, []), 9);
+
+  const { call, env } = server();
+  const owner = await signIn(call);
+  const now = Date.now();
+  const at = now - 15 * DAY;
+  const id = (await call("POST", "/api/admin/dev", { title: "위젯 글씨 크기" }, owner)).data.id;
+  await call("POST", `/api/admin/dev/${id}`, { status: "done" }, owner);
+  const db = env.DB.db;
+  db.prepare("UPDATE dev_items SET route = 'server', live_at = ?, events = 'widget_size' WHERE id = ?").run(at, id);
+  for (let i = 1; i <= 14; i++) {
+    for (const [day, used] of [[kst(at - i * DAY), 2], [kst(at + (i - 1) * DAY), 6]]) {
+      db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, '1.39.0 (53)', 10)").run(day);
+      db.prepare("INSERT OR REPLACE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.39.0 (53)', 'widget_size', ?, ?, 0)").run(day, used, used);
+    }
+  }
+  // 아직 2주가 안 된 것은 재지 않아요.
+  const young = (await call("POST", "/api/admin/dev", { title: "어제 고친 것" }, owner)).data.id;
+  await call("POST", `/api/admin/dev/${young}`, { status: "done" }, owner);
+  db.prepare("UPDATE dev_items SET route = 'server', live_at = ? WHERE id = ?").run(now - DAY, young);
+  assert.equal(await effectTick(env, now), 1);
+  const d = (await call("GET", `/api/admin/dev/${id}`, undefined, owner)).data;
+  assert.equal(d.effect.key, "better");
+  assert.match(d.effect.why, /widget_size 쓰는 비율 \+200%/);
+  assert.equal((await call("GET", `/api/admin/dev/${young}`, undefined, owner)).data.effect.key, "");
+  assert.equal(await effectTick(env, now), 0);
+  // 오늘 화면: 효과 판정이 '저절로 끝난 일'에, 나빠진 것은 주의 필요에.
+  db.prepare("UPDATE dev_items SET effect = 'worse' WHERE id = ?").run(id);
+  const t = (await call("GET", "/api/admin/today", undefined, owner)).data;
+  assert.ok(t.night.lines.some((l) => l.key === "effect"));
+  assert.ok(t.night.effects.some((e) => e.id === id && e.name === "나빠졌어요"));
+  assert.ok(t.alerts.some((a) => a.key.startsWith("effect-worse:")));
+});
+
+test("[LOOP-40] 오늘 화면은 밤사이 저절로 끝난 일과 사람이 보내야 할 답만", async () => {
+  const { call, env } = server();
+  const owner = await signIn(call);
+  const key = (await call("POST", "/api/admin/keys", { label: "Claude" }, owner)).data.key;
+  const claude = { authorization: `Bearer ${key}`, "x-admin": "1" };
+  const { releaseHeld } = await import("../src/inquiries.js");
+  const easy = await ask(call, 1, "위젯 글씨가 작아요");
+  await call("POST", `/api/admin/inquiries/${easy}/reply`, { text: "설정 › 위젯에서 키울 수 있어요. 밤낮 운영팀 드림" }, claude);
+  await releaseHeld(env, Date.now() + 11 * 60 * 1000);
+  const hard = await ask(call, 2, "결제한 거 환불해 주세요", "other");
+  await call("POST", `/api/admin/inquiries/${hard}/reply`, { text: "확인해 볼게요" }, claude);
+  const t = (await call("GET", "/api/admin/today", undefined, owner)).data;
+  assert.equal(t.night.lines.find((l) => l.key === "sent")?.n, 1);
+  assert.equal(t.night.person, 1);
+  const a = t.alerts.find((x) => x.key.startsWith("person-held:"));
+  assert.equal(a.tone, "bad");
+  assert.equal(a.to, `#/inquiries/${hard}`);
+});
