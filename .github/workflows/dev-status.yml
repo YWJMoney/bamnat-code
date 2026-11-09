@@ -25,7 +25,7 @@ jobs:
       run:
         working-directory: shift-calendar-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 tools/dev_status.py check
       - run: python3 tools/test_dev_status.py
 
@@ -41,7 +41,7 @@ jobs:
       BAMNAT_API: ${{ vars.BAMNAT_API || 'https://api.bamnat.app' }}
       BAMNAT_SYNC_KEY: ${{ secrets.BAMNAT_SYNC_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 서버로 보내기
         run: |
           if [ -z "$BAMNAT_API" ] || [ -z "$BAMNAT_SYNC_KEY" ]; then
