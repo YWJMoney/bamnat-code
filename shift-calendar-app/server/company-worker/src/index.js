@@ -6147,7 +6147,9 @@ const BADGE_SQL = {
   decideBack: ["dev", `SELECT COUNT(DISTINCT d.id) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL
       AND d.status IN ('todo', 'doing') WHERE h.action = 'fixed_no'`],
   decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > (CAST(strftime('%s', 'now') AS INTEGER) - 7 * 86400) * 1000"],
-  decideTiers: ["owner", "SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND size = 'feature' AND status != 'rejected' AND tier IN ('', 'later')"],
+  // [LOOP-35] loop.js ASK_TIER_SQL과 같은 기준: 기존 기능 고침·다듬기와 서버로만 닿는 운영용은 묻지 않아요.
+  decideTiers: ["owner", `SELECT COUNT(*) AS n FROM dev_items d WHERE d.deleted_at IS NULL AND (d.basis = 'new' OR (d.basis = '' AND d.size = 'feature' AND d.route != 'server'))
+      AND d.status != 'rejected' AND d.tier IN ('', 'later')`],
 };
 
 // AN 1.28 시작

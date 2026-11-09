@@ -434,7 +434,7 @@ export async function handoff(env, params, now) {
   const [items, waitingOnes, k] = await Promise.all([
     all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
       WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') ${everything ? "" : "AND d.handed_at IS NULL"}
-      ORDER BY asks DESC, d.created_at LIMIT ${SORTING.handoff}`),
+      ORDER BY d.origin = 'admin' DESC, asks DESC, d.created_at LIMIT ${SORTING.handoff}`),
     waiting(env),
     known(env),
   ]);
@@ -476,7 +476,7 @@ export async function handoff(env, params, now) {
       FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? ORDER BY i.created_at LIMIT 8`, d.id);
     const versions = [...new Set(linked.map((a) => JSON.parse(a.info).app).filter(Boolean).map((v) => String(v).split(" ")[0]))];
     out.push(`### ${d.id} · ${d.title}`);
-    out.push(`- 상태: ${DEV.statuses[d.status]} · 문의 ${d.asks}건${versions.length ? ` · 앱 ${versions.join(", ")}` : ""}${d.handed_at ? " · 전에 넘김" : ""}`);
+    out.push(`- 상태: ${DEV.statuses[d.status]} · 문의 ${d.asks}건${versions.length ? ` · 앱 ${versions.join(", ")}` : ""}${d.handed_at ? " · 전에 넘김" : ""}${d.origin === "admin" ? " · 1순위(관리자가 직접 넣음, 먼저 개발)" : ""}`);
     // A body made in 정리함 is the questions' own words: said once, in the 문의 lines under it.
     const said = linked.map((a) => oneLine(a.first, 1000));
     const body = String(d.body ?? "").split(/\n+/).map((l) => l.replace(/^[-*]\s*/, "").replace(/\s+/g, " ").trim()).filter((l) => l && !said.some((t) => t.startsWith(l.slice(0, 60))));

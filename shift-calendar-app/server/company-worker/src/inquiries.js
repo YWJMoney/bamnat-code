@@ -8,7 +8,7 @@ import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { LOOP, WAITING_SQL, styleList, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { LOOP, WAITING_SQL, basisOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -1207,9 +1207,11 @@ export async function devCreate(request, env, now) {
   }
   const id = `d${randomId(15)}`;
   const a = env.actor;
+  // 1.39 [LOOP-36] 사용자 11-09 '내가 직접 개발사항에 넣은 것은 1순위': 사람이 문의 없이 바로 만든 것, 또는 사용자 말을 옮기는 Claude 열쇠가 origin "admin"으로 만든 것.
+  const origin = (!a.key && !a.auto && !inquiry) || (a.key && !a.sync && body.origin === "admin") ? "admin" : "";
   await batch(env, [
-    stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
-      VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, a.id, actorName(env), now, now),
+    stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at, origin)
+      VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL, ?)`, id, title, text, a.id, actorName(env), now, now, origin),
     devEvent(env, id, now, "create", { title, body: cut(text) }),
     ...(inquiry ? [stmt(env, "INSERT INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, ?, ?)", id, inquiry, actorName(env), now),
       devEvent(env, id, now, "link", { inquiry })] : []),
@@ -1258,6 +1260,12 @@ export async function devUpdate(env, row, body, now) {
   if (body.styles !== undefined) {
     const v = styleList(body.styles);
     if (v !== (row.styles ?? "")) [edit.styles, set.styles] = [[row.styles ?? "", v], v];
+  }
+  // 1.39 [LOOP-36] 1순위(직접 넣은 것) 올리기·내리기: 사람, 또는 사용자 말을 옮기는 Claude 열쇠(저장소 동기화 열쇠는 못 해요).
+  if (body.first !== undefined) {
+    if (env.actor?.sync) refuse("first", "first");
+    const v = body.first === true ? "admin" : body.first === false ? "" : refuse("first", "first");
+    if (v !== (row.origin ?? "")) [edit.first, set.origin] = [[Boolean(row.origin), Boolean(v)], v];
   }
   for (const [key, names] of [["route", LOOP.routes], ["size", LOOP.sizes]]) {
     if (body[key] === undefined) continue;
@@ -1403,25 +1411,35 @@ export async function devList(env, params) {
   // Still to do: most asked for first. Finished: newest first.
   const rank = { doing: 0, todo: 1, done: 2, rejected: 3 };
   const open = (r) => r.status === "todo" || r.status === "doing";
-  rows.sort((a, b) => (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
+  // 1.39 [LOOP-36] 직접 넣은 것(1순위)은 끝나지 않은 동안 늘 맨 위예요.
+  const first = (r) => (open(r) && r.origin === "admin" ? 0 : 1);
+  rows.sort((a, b) => first(a) - first(b) || (["all", "open"].includes(status) ? rank[a.status] - rank[b.status] : 0) || (open(a) && open(b) ? b.links - a.links : 0) || b.updated_at - a.updated_at);
   // 1.39 [LOOP-34] 어디서 왔는지(문의·개선 요청·저장소 계획·숫자 신호·Claude·직접)로 세고 골라 봐요.
   const sources = Object.fromEntries(Object.keys(DEV_SOURCES).map((k) => [k, 0]));
   for (const r of rows) sources[devSource(r)]++;
   const from = Object.hasOwn(DEV_SOURCES, params.get("from") ?? "") ? params.get("from") : "";
-  const shown = from ? rows.filter((r) => devSource(r) === from) : rows;
+  // 1.39 [LOOP-35] 요금 기준(새 기능·기존 기능 고침·다듬기·운영용·분류 전)으로도 세고 골라 봐요.
+  const kinds = Object.fromEntries(Object.keys(LOOP.basis).map((k) => [k, 0]));
+  for (const r of rows) kinds[basisOf(r).key]++;
+  const kind = Object.hasOwn(LOOP.basis, params.get("kind") ?? "") ? params.get("kind") : "";
+  const shown = rows.filter((r) => (!from || devSource(r) === from) && (!kind || basisOf(r).key === kind));
   // [ADMIN-16] A page at a time, after sorting all of the view.
   const { items, next } = paged(shown, page(params));
-  return { counts, statuses: DEV.statuses, sources, sourceNames: DEV_SOURCES, items: items.map(devItem), next, total: shown.length };
+  return { counts, statuses: DEV.statuses, sources, sourceNames: DEV_SOURCES, kinds, kindNames: LOOP.basis, firsts: rows.filter((r) => first(r) === 0).length,
+    items: items.map(devItem), next, total: shown.length };
 }
 
 /** 1.39 [LOOP-34] 개발사항이 어디서 왔는지. 관리자가 무엇을 왜 개발하는지 한눈에 보게(사용자 11-09). */
 export const DEV_SOURCES = { inquiry: "문의", idea: "개선 요청", repo: "개발 계획", signal: "숫자 신호", claude: "Claude", admin: "직접" };
 export function devSource(r) {
+  // 1.39 [LOOP-36] 직접 넣은 것은 문의를 나중에 묶거나 저장소가 추적 번호를 붙여도 '직접'이에요(1순위가 흔들리지 않게).
+  if (r.origin === "admin") return "admin";
   if (String(r.body ?? "").startsWith("관측 신호")) return "signal";
   if ((r.links ?? 0) > 0) return (r.ideas ?? 0) * 2 >= r.links ? "idea" : "inquiry";
   if (r.created_by_name === "저장소" || r.track) return "repo";
   if (r.created_by_name === "Claude") return "claude";
-  return "admin";
+  // 1.39 전에 사람이 만든 것(origin 칸이 생기기 전)도 직접이에요.
+  return String(r.created_by ?? "").startsWith("key:") || r.created_by_name === "자동" ? "claude" : "admin";
 }
 
 export const devItem = (r) => ({
@@ -1445,6 +1463,10 @@ export const devItem = (r) => ({
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   source: devSource(r),
+  // 1.39 [LOOP-36] 1순위: 직접 넣은 것. [LOOP-35] 요금 기준과 실제 요금.
+  first: r.origin === "admin",
+  basis: basisOf(r),
+  pay: tierEffective(r),
   createdBy: { id: r.created_by, name: r.created_by_name },
   assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
   createdAt: iso(r.created_at),

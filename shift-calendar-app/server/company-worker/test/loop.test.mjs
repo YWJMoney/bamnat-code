@@ -430,7 +430,9 @@ test("[LOOP-10][LOOP-11] 요금을 정하지 않은 새 기능은 스위치를 �
   assert.equal((await call("POST", "/api/admin/flags/free.MONEY_STATS/force", { force: "on", why: "열기" }, owner)).status, 409);
   assert.equal((await call("POST", `/api/admin/loop/tier/${d}`, { tier: "free", note: "사용자 결정" }, owner)).status, 200);
   assert.equal((await call("POST", "/api/admin/flags/free.MONEY_STATS/force", { force: "on", why: "열기" }, owner)).status, 200);
-  const board = (await call("GET", "/api/admin/loop/tiers", undefined, owner)).data.items[0];
+  // [LOOP-35] 기본 칸은 '정할 것'이라, 정한 새 기능은 '정한 새 기능' 칸에서 봐요.
+  assert.equal((await call("GET", "/api/admin/loop/tiers", undefined, owner)).data.items.length, 0);
+  const board = (await call("GET", "/api/admin/loop/tiers?view=decided", undefined, owner)).data.items[0];
   assert.equal(board.tier, "free");
   assert.equal(board.flagOn, true);
   assert.equal(board.observe.flag.key, "free.MONEY_STATS");
@@ -602,4 +604,100 @@ test("[LOOP-34] 개발사항 출처: 문의·개선 요청·개발 계획·숫�
   assert.equal(list.sources.inquiry, 1, "고른 출처와 상관없이 모두 세요");
   assert.equal((await call("GET", `/api/admin/dev/${fromBug}`, undefined, admin)).data.source, "inquiry");
   assert.equal((await call("GET", `/api/admin/dev/${own}`, undefined, admin)).data.source, "admin");
+});
+
+test("[LOOP-35] 요금은 새 기능만 물어요: 고침·다듬기는 원래 요금 그대로, 서버로만 닿는 새 기능은 운영용; 기준은 최고 관리자가 바꾸고 칸마다 걸러 봐요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const owner = await signIn(call);
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, owner)).data;
+  await call("POST", "/api/admin/dev/sync", { items: [
+    { track: "TIER-01", title: "알람 소리 고침", status: "doing", size: "fix", route: "app" },
+    { track: "TIER-02", title: "달력 칸 더 크게", status: "doing", size: "polish", route: "app" },
+    { track: "TIER-03", title: "관리자 앱 관측", status: "doing", size: "feature", route: "server" },
+    { track: "TIER-04", title: "근무별 돈 칩", status: "doing", size: "feature", route: "flag", flag: "pro.MONEY_CHIP", tierAsk: "pro", tierWhy: "가계부 위 더하기" },
+    { track: "TIER-05", title: "실제 근무 유형별 급여", status: "todo", size: "feature", route: "app" },
+    { track: "TIER-06", title: "크기 없는 것", status: "todo" },
+  ] }, { authorization: `Bearer ${sync.key}`, "x-admin": "1" });
+  let board = (await call("GET", "/api/admin/loop/tiers", undefined, owner)).data;
+  assert.equal(board.view, "ask");
+  assert.deepEqual(board.items.map((x) => x.track).sort(), ["TIER-04", "TIER-05"]);
+  assert.deepEqual(board.counts, { ask: 2, decided: 0, existing: 2, internal: 1, unknown: 1, all: 6 });
+  assert.match(board.tierHelp.free, /다시 잠그지 않아요/);
+  assert.ok(board.items.every((x) => x.observe && x.basis.key === "new" && x.basis.auto));
+  const existing = (await call("GET", "/api/admin/loop/tiers?view=existing", undefined, owner)).data.items;
+  assert.equal(existing[0].effective.name, "무료(기존과 같음)");
+  assert.equal(existing[0].observe, null, "묻지 않는 것은 관측치도 읽지 않아요");
+  assert.match(existing[0].basis.why, /묻지 않아요/);
+  const internal = (await call("GET", "/api/admin/loop/tiers?view=internal", undefined, owner)).data.items;
+  assert.equal(internal[0].track, "TIER-03");
+  // 결정함·메뉴 숫자도 같은 기준이에요.
+  const box = (await call("GET", "/api/admin/loop/decide", undefined, owner)).data;
+  assert.deepEqual(box.tiers.map((x) => x.track).sort(), ["TIER-04", "TIER-05"]);
+  assert.equal((await call("GET", "/api/admin/badges", undefined, owner)).data.decideTiers, 2);
+  // 최고 관리자가 '이미 있는 급여 계산을 넓히는 일'로 바로잡으면 묻지 않아요; 열쇠는 못 바꿔요.
+  const payx = board.items.find((x) => x.track === "TIER-05").id;
+  const k = (await call("POST", "/api/admin/keys", { label: "Claude" }, owner)).data;
+  assert.equal((await call("POST", `/api/admin/loop/basis/${payx}`, { basis: "existing" }, { authorization: `Bearer ${k.key}`, "x-admin": "1" })).status, 403);
+  assert.equal((await call("POST", `/api/admin/loop/basis/${payx}`, { basis: "existing", note: "기존 급여 계산을 넓힘" }, owner)).status, 200);
+  board = (await call("GET", "/api/admin/loop/tiers", undefined, owner)).data;
+  assert.deepEqual(board.items.map((x) => x.track), ["TIER-04"]);
+  assert.equal(board.counts.existing, 3);
+  const item = (await call("GET", `/api/admin/dev/${payx}`, undefined, owner)).data;
+  assert.equal(item.basis.key, "existing");
+  assert.equal(item.basis.auto, false);
+  assert.equal(item.pay.name, "무료(기존과 같음)");
+  assert.ok(item.history.some((h) => h.action === "basis" && h.detail.note === "기존 급여 계산을 넓힘"));
+  // 운영용으로 본 서버 일도 '새 기능'으로 바꾸면 물어요. 모르는 값은 막아요.
+  const obs = internal[0].id;
+  assert.equal((await call("POST", `/api/admin/loop/basis/${obs}`, { basis: "new" }, owner)).status, 200);
+  assert.equal((await call("GET", "/api/admin/loop/tiers", undefined, owner)).data.counts.ask, 2);
+  assert.equal((await call("POST", `/api/admin/loop/basis/${obs}`, { basis: "gold" }, owner)).data.error, "basis");
+  // 개발사항 목록도 같은 기준으로 세고 걸러요.
+  const list = (await call("GET", "/api/admin/dev?status=open&kind=existing", undefined, owner)).data;
+  assert.deepEqual(list.items.map((x) => x.track).sort(), ["TIER-01", "TIER-02", "TIER-05"]);
+  assert.deepEqual(list.kinds, { new: 2, existing: 3, internal: 0, unknown: 1 });
+});
+
+test("[LOOP-36] 관리자가 직접 넣은 개발사항은 1순위: 목록·자동 순환 대기열·Claude 넘김 글 맨 위, 내리고 올릴 수 있어요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const owner = await signIn(call);
+  const q1 = await ask(call, 1, "알람이 안 울려요");
+  const q2 = await ask(call, 2, "알람이 안 울려요 저도");
+  const asked = await item(call, owner, "문의 많은 알람", [q1, q2]);
+  const k = (await call("POST", "/api/admin/keys", { label: "Claude" }, owner)).data;
+  const key = { authorization: `Bearer ${k.key}`, "x-admin": "1" };
+  const byClaude = (await call("POST", "/api/admin/dev", { title: "Claude가 찾은 것" }, key)).data;
+  assert.equal(byClaude.first, false);
+  assert.equal(byClaude.source, "claude");
+  t.mock.timers.tick(60e3);
+  const mine = (await call("POST", "/api/admin/dev", { title: "내가 넣은 급여 개선" }, owner)).data;
+  assert.equal(mine.first, true);
+  assert.equal(mine.source, "admin");
+  // 사용자 말을 옮기는 Claude 열쇠는 origin "admin"으로 1순위를 만들 수 있어요(동기화 열쇠는 못 해요).
+  const relayed = (await call("POST", "/api/admin/dev", { title: "사용자가 말한 것", origin: "admin" }, key)).data;
+  assert.equal(relayed.first, true);
+  let list = (await call("GET", "/api/admin/dev?status=open", undefined, owner)).data;
+  assert.deepEqual(list.items.slice(0, 2).map((x) => x.title).sort(), ["내가 넣은 급여 개선", "사용자가 말한 것"]);
+  assert.equal(list.firsts, 2);
+  assert.equal(list.items[2].id, asked, "그다음은 문의 수 순");
+  const queue = (await call("GET", "/api/admin/loop/queue", undefined, owner)).data.items;
+  assert.ok(queue[0].first && queue[1].first);
+  assert.ok(queue.findIndex((x) => x.id === asked) > 1, "점수가 높아도 직접 넣은 것 뒤");
+  const handoff = (await call("GET", "/api/admin/inquiries/handoff", undefined, owner)).data;
+  const text = handoff.text ?? "";
+  assert.ok(text.indexOf("내가 넣은 급여 개선") < text.indexOf("문의 많은 알람"));
+  assert.match(text, /1순위\(관리자가 직접 넣음/);
+  // 내리면 보통 순서로, 기록에 남아요. 저장소가 추적 번호를 붙여도 1순위는 그대로예요.
+  assert.equal((await call("POST", `/api/admin/dev/${relayed.id}`, { first: false }, owner)).status, 200);
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, owner)).data;
+  await call("POST", "/api/admin/dev/sync", { items: [{ id: mine.id, track: "PAYX-99", status: "doing", size: "feature", route: "app" }] }, { authorization: `Bearer ${sync.key}`, "x-admin": "1" });
+  list = (await call("GET", "/api/admin/dev?status=open", undefined, owner)).data;
+  assert.equal(list.items[0].id, mine.id);
+  assert.equal(list.items[0].source, "admin");
+  assert.equal(list.firsts, 1);
+  const hist = (await call("GET", `/api/admin/dev/${relayed.id}`, undefined, owner)).data.history;
+  assert.ok(hist.some((h) => h.action === "edit" && h.detail.first?.[1] === false));
+  assert.equal((await call("POST", `/api/admin/dev/${asked}`, { first: true }, { authorization: `Bearer ${sync.key}`, "x-admin": "1" })).status, 403);
 });
