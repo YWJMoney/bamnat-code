@@ -800,9 +800,14 @@ export async function tierBoard(env, now, params = new URLSearchParams()) {
       first: d.origin === "admin", basis: b, view: v, effective: t,
       tier: d.tier || null, tierName: d.tier ? LOOP.tiers[d.tier] : null, tierBy: d.tier_by || null, tierAt: d.tier_at ? iso(d.tier_at) : null, tierNote: d.tier_note,
       ask: d.tier_ask || null, askName: d.tier_ask ? LOOP.tiers[d.tier_ask] : null, why: d.tier_why, onBeforeTier: Boolean(asked && on && (!d.tier || d.tier === "later")),
-      // 관측치는 요금을 물을 새 기능에만(기존 기능·운영용은 물을 일이 없어요).
-      observe: asked ? await tierObservation(env, d, now) : null });
+      // 관측치는 요금을 물을 새 기능에만(기존 기능·운영용은 물을 일이 없어요). 아래에서 한꺼번에 읽어요.
+      observe: null, _d: asked ? d : null });
   }
+  // [ADM3-52] 항목마다 차례로 읽으면 DB를 그만큼 오가요: 한꺼번에.
+  await Promise.all(out.map(async (x) => {
+    if (x._d) x.observe = await tierObservation(env, x._d, now).catch(() => null);
+    delete x._d;
+  }));
   return { tiers: LOOP.tiers, tierHelp: LOOP.tierHelp, basisNames: LOOP.basis, views: TIER_VIEWS, view, counts, items: out };
 }
 
@@ -839,18 +844,22 @@ export async function waitingFlags(env) {
 }
 
 export async function decideBox(env, actor, now, ledgerQuery) {
-  const led = await ledgerQuery(env, actor, now, new URLSearchParams("view=owner")).catch(() => ({ items: [] }));
+  // [ADM3-52] 서로 기다릴 일이 없는 읽기는 한꺼번에(실서버 결정함 p50 3.2초였어요).
+  const [led, tiers, back, halts, waits] = await Promise.all([
+    ledgerQuery(env, actor, now, new URLSearchParams("view=owner")).catch(() => ({ items: [] })),
+    actor?.owner ? tierPending(env) : [],
+    // [LOOP-16] '아직이에요'로 다시 열린 개발사항(아직 끝나지 않은 것)과 [LOOP-03] 최근 7일 출시 멈춤 권장(PC 1.39 G10 확인: 결정함에 안 보였음).
+    all(env, `SELECT d.id, d.title, d.track, d.status, COUNT(*) AS n, MAX(h.at) AS last FROM dev_history h
+      JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
+      WHERE h.action = 'fixed_no' GROUP BY d.id ORDER BY last DESC LIMIT 20`).catch(() => []),
+    all(env, "SELECT target, detail, at FROM audit WHERE action = 'loop_halt_advice' AND at > ? ORDER BY at DESC LIMIT 5", now - 7 * DAY).catch(() => []),
+    // [LOOP-19] 급함 문의는 맨 위에(문의 권한이 있는 사람에게만 제목까지).
+    can(actor, "inquiries") ? waitingFlags(env) : { urgent: [] },
+  ]);
   const asks = (led.items ?? []).filter((r) => r.type === "inquiry");
   const drafts = asks.length ? await all(env, `SELECT * FROM loop_drafts WHERE key IN (${asks.map(() => "?").join(",")})`, ...asks.map((r) => r.key)) : [];
   const byKey = new Map(drafts.map((x) => [x.key, x]));
-  const tiers = actor?.owner ? await tierPending(env) : [];
-  // [LOOP-16] '아직이에요'로 다시 열린 개발사항(아직 끝나지 않은 것)과 [LOOP-03] 최근 7일 출시 멈춤 권장(PC 1.39 G10 확인: 결정함에 안 보였음).
-  const back = await all(env, `SELECT d.id, d.title, d.track, d.status, COUNT(*) AS n, MAX(h.at) AS last FROM dev_history h
-      JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
-      WHERE h.action = 'fixed_no' GROUP BY d.id ORDER BY last DESC LIMIT 20`).catch(() => []);
-  const halts = await all(env, "SELECT target, detail, at FROM audit WHERE action = 'loop_halt_advice' AND at > ? ORDER BY at DESC LIMIT 5", now - 7 * DAY).catch(() => []);
-  // [LOOP-19] 급함 문의는 맨 위에(문의 권한이 있는 사람에게만 제목까지).
-  const urgent = can(actor, "inquiries") ? (await waitingFlags(env)).urgent.slice(0, 20) : [];
+  const urgent = waits.urgent.slice(0, 20);
   return {
     urgent: urgent.map((r) => ({ id: r.id, title: titleFrom(r.first ?? ""), topic: r.topic ?? null, at: iso(r.created_at) })),
     back: back.map((d) => ({ id: d.id, title: d.title, track: d.track || null, status: d.status, statusName: DEV.statuses[d.status], times: d.n, at: iso(d.last) })),
@@ -980,23 +989,25 @@ export async function scoreCard(env, most = 6) {
 
 /** GET /loop: 흐름 화면의 자동 순환 칸. */
 export async function loopState(env, now) {
-  const [sw, train, track, ships, syncs, shipped, urgent] = await Promise.all([
+  // [ADM3-52] 아래 읽기도 모두 한꺼번에(실서버 자동 순환 p50 3.2초였어요).
+  const [sw, train, track, ships, syncs, shipped, urgent, notLive, keys, scores, auto, rewards] = await Promise.all([
     loopSwitches(env), loopTrain(env), readSetting(env, "play_track", {}),
     all(env, "SELECT * FROM loop_ships ORDER BY seen_at DESC LIMIT 6").catch(() => []),
     all(env, "SELECT * FROM loop_syncs ORDER BY id DESC LIMIT 8").catch(() => []),
     shippedVersion(env),
     one(env, `SELECT COUNT(*) AS n FROM inquiries i WHERE i.status = 'open' AND i.kind IN ('bug', 'problem')
       AND (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) = 'user'`).catch(() => ({ n: 0 })),
+    all(env, `SELECT id, title, route, remote, flag FROM dev_items WHERE deleted_at IS NULL AND status = 'done' AND live_at IS NULL AND route IN ('server', 'remote', 'flag') LIMIT 30`).catch(() => []),
+    all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []),
+    scoreCard(env), autonomy(env), rewardRules(env),
   ]);
-  const notLive = await all(env, `SELECT id, title, route, remote, flag FROM dev_items WHERE deleted_at IS NULL AND status = 'done' AND live_at IS NULL AND route IN ('server', 'remote', 'flag') LIMIT 30`).catch(() => []);
-  const keys = await all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []);
   return {
     now: iso(now), switches: sw, train: { ...train, next: nextTrain(train, now) }, play: { ready: Boolean(playReady(env)), ...track, at: track.at ? iso(track.at) : null },
     shipped, ships: ships.map((s) => ({ version: s.version, status: s.status, seenAt: iso(s.seen_at), until: iso(s.until), doneAt: s.done_at ? iso(s.done_at) : null, by: s.by, result: s.result })),
     syncs: syncs.map((s) => ({ at: iso(s.at), sha: s.sha, version: s.version, pr: s.pr, n: s.n, result: JSON.parse(s.result || "{}") })),
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
-    urgentWaiting: urgent?.n ?? 0, scores: await scoreCard(env), autonomy: await autonomy(env), rewards: await rewardRules(env), routes: LOOP.routes, sizes: LOOP.sizes,
+    urgentWaiting: urgent?.n ?? 0, scores, autonomy: auto, rewards, routes: LOOP.routes, sizes: LOOP.sizes,
   };
 }
 

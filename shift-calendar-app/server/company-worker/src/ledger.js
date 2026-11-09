@@ -141,9 +141,11 @@ export function overlaps(q, k, skip = null) {
 
 async function linesOf(env, keys, ats) {
   const have = new Map();
-  for (let i = 0; i < keys.length; i += 90) {
-    const part = keys.slice(i, i + 90);
-    for (const r of await all(env, `SELECT key, n, summary, summary_by, summary_at FROM ledger_lines WHERE key IN (${part.map(() => "?").join(",")})`, ...part)) have.set(r.key, r);
+  const parts = [];
+  for (let i = 0; i < keys.length; i += 90) parts.push(keys.slice(i, i + 90));
+  // 1.39 [ADM3-52] 조각마다 차례로가 아니라 한꺼번에.
+  for (const got of await Promise.all(parts.map((part) => all(env, `SELECT key, n, summary, summary_by, summary_at FROM ledger_lines WHERE key IN (${part.map(() => "?").join(",")})`, ...part)))) {
+    for (const r of got) have.set(r.key, r);
   }
   const fresh = keys.filter((k) => !have.has(k)).sort((a, b) => (ats.get(a) ?? 0) - (ats.get(b) ?? 0) || a.localeCompare(b));
   for (let i = 0; i < fresh.length; i += 50) {
@@ -163,10 +165,11 @@ const lineNo = (n) => `K-${String(n).padStart(4, "0")}`;
  */
 export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   const since = now - Math.min(LEDGER.maxDays, Math.max(1, days)) * DAY;
-  const work = await workList(env, actor, now);
   const asks = can(actor, "inquiries");
   const devs = can(actor, "dev");
-  const [qs, ds, sla, k, sorted] = await Promise.all([
+  // 1.39 [ADM3-52] 할 일함 목록(다시 열림 맞추기)과 장부 읽기를 한꺼번에(실서버 결정함·장부가 DB를 차례로 오가 3초 넘었어요).
+  // 할 일함 상태(work_states)는 둘 다 끝난 뒤에 읽어요.
+  const [work, [qs, ds, sla, k, sorted]] = await Promise.all([workList(env, actor, now), Promise.all([
     asks ? all(env, `SELECT i.id, i.kind, i.info, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
         (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -182,17 +185,18 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     asks ? slaTargets(env) : {},
     asks ? known(env) : null,
     null,
-  ]);
+  ])]);
   const shipped = k?.shipped ?? null;
   const devById = new Map(ds.map((d) => [d.id, d]));
   // 문의마다 묶인 개발사항(가장 최근 것)과 '나왔어요'를 보낸 때.
   const links = new Map();
   const qIds = qs.map((q) => q.id);
-  for (let i = 0; i < qIds.length; i += 90) {
-    const part = qIds.slice(i, i + 90);
-    for (const l of await all(env, `SELECT l.item_id, l.inquiry_id, l.told_at, l.at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
-        WHERE l.inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY l.at`, ...part)) links.set(l.inquiry_id, l);
-  }
+  // 정리함 판단은 묶음 읽기와 함께 시작해요(서로 기다리지 않아요).
+  const sortJob = asks ? sortInbox(env, k) : null;
+  const parts = [];
+  for (let i = 0; i < qIds.length; i += 90) parts.push(qIds.slice(i, i + 90));
+  for (const got of await Promise.all(parts.map((part) => all(env, `SELECT l.item_id, l.inquiry_id, l.told_at, l.at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
+        WHERE l.inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY l.at`, ...part)))) for (const l of got) links.set(l.inquiry_id, l);
   // 묶였지만 장부 범위 밖(오래된) 개발사항도 묶음 칸에는 보여요.
   const missing = [...new Set([...links.values()].map((l) => l.item_id))].filter((id) => !devById.has(id));
   for (let i = 0; i < missing.length; i += 90) {
@@ -201,7 +205,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d WHERE d.id IN (${part.map(() => "?").join(",")})`, ...part)) devById.set(d.id, { ...d, outside: true });
   }
   // 정리함 판단(일곱 묶음)은 겹침 판단으로 장부 줄에 들어가요 [DESK-03].
-  const sort = asks ? await sortInbox(env, k) : null;
+  const sort = sortJob ? await sortJob : null;
   const piles = new Map();
   if (sort) {
     for (const p of Object.keys(sort.piles)) {
@@ -273,11 +277,13 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   // 할 일함 상태(같은 표 work_states)와 줄 번호.
   const keys = rows.map((r) => r.key);
   const states = new Map();
-  for (let i = 0; i < keys.length; i += 90) {
-    const part = keys.slice(i, i + 90);
-    for (const r of await all(env, `SELECT * FROM work_states WHERE key IN (${part.map(() => "?").join(",")})`, ...part)) states.set(r.key, r);
-  }
-  const lines = await linesOf(env, keys, new Map(rows.map((r) => [r.key, r.at])));
+  const keyParts = [];
+  for (let i = 0; i < keys.length; i += 90) keyParts.push(keys.slice(i, i + 90));
+  const [stateRows, lines] = await Promise.all([
+    Promise.all(keyParts.map((part) => all(env, `SELECT * FROM work_states WHERE key IN (${part.map(() => "?").join(",")})`, ...part))),
+    linesOf(env, keys, new Map(rows.map((r) => [r.key, r.at]))),
+  ]);
+  for (const got of stateRows) for (const r of got) states.set(r.key, r);
   const kstEnd = Date.parse(`${ledgerDay(now)}T00:00:00+09:00`) + DAY;
   const out = rows.map((r) => {
     const s = states.get(r.key);
