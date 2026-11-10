@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>밤낮 · 교대 근무표·근무 알람·급여 계산 앱</title>
+<meta name="description" content="교대·일근·알바·현장·사장님까지, 근무가 있는 모든 사람의 근무 앱 밤낮. 근무표를 넣으면 한 달이 채워지고, 근무마다 다른 알람과 잘 시간, 수당까지 이번 달 월급. 로그인 없이 무료로.">
+<meta name="naver-site-verification" content="9b76a60eab24da1353f46874f6fbc86169e6bc78" />
+<link rel="canonical" href="https://bamnat.app/">
+<meta name="theme-color" content="#0d1022">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="밤낮">
+<meta property="og:title" content="밤낮 · 밤낮이 바뀌어도 내 하루는 한눈에">
+<meta property="og:description" content="근무표·근무 알람·잘 시간·수당까지 이번 달 월급. 교대 근무자부터 팀 리더, 사장님까지 로그인 없이 한 앱에서.">
+<meta property="og:url" content="https://bamnat.app/">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:image" content="https://bamnat.app/og/home.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/pretendard.css" as="style">
+<link rel="stylesheet" href="assets/fonts/pretendard.css">
+<link rel="stylesheet" href="calc/calc.css">
+<link rel="stylesheet" href="assets/home.css">
+<script src="calc/calc.js"></script>
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"MobileApplication","name":"밤낮","operatingSystem":"ANDROID","applicationCategory":"ProductivityApplication","inLanguage":"ko","url":"https://bamnat.app/","installUrl":"https://play.google.com/store/apps/details?id=com.bamnat.app","offers":{"@type":"Offer","price":"0","priceCurrency":"KRW"},"publisher":{"@type":"Organization","name":"밤낮","url":"https://bamnat.app/"}},{"@type":"FAQPage","mainEntity":<!--FAQ_LD-->}]}</script>
+</head>
+<body class="home">
+<!--HEADER-->
+<main id="main">
+
+<!-- 1. 첫 장면: 시각에 맞춘 인사, 살아 있는 근무 달력 -->
+<section class="hero" aria-labelledby="hero-title">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="horizon" aria-hidden="true"></div>
+  <div class="wrap grid">
+    <div>
+      <span class="greet"><b id="clock">--:--</b><span id="greet">근무가 있는 모든 분께</span></span>
+      <h1 id="hero-title"><span class="line"><span>밤낮이 바뀌어도</span></span><span class="line"><span class="gold">내 하루는 한눈에</span></span></h1>
+      <p class="lede">근무표를 넣으면 한 달이 채워지고, 근무마다 다른 알람과 잘 시간, 야간·휴일 수당까지 이번 달 월급이 따라와요. 교대 근무자부터 팀 리더, 사장님까지.</p>
+      <div class="acts">
+        <a class="btn shine" data-play="hero" data-medium="home" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><!--PLAY-->Google Play에서 무료로 받기</a>
+        <a class="btn ghost" href="#try" id="try-link">내 근무로 미리 보기</a>
+      </div>
+      <div class="trust">
+        <span><!--CHECK-->로그인·회원가입 없이</span>
+        <span><!--CHECK-->근무 알람·위젯 무료</span>
+        <span><!--CHECK-->Android</span>
+      </div>
+    </div>
+    <div class="stage" id="try">
+      <p class="pick-label">근무 순서를 골라 보세요</p>
+      <div class="pick" id="pats" role="group" aria-label="근무 순서"></div>
+      <div class="pick teams" id="teams" role="group" aria-label="몇 조"></div>
+      <div class="phone-wrap">
+        <div class="phone" id="phone" aria-label="밤낮 달력 미리 보기">
+          <div class="screen">
+            <div class="notch"></div>
+            <div class="sb"><span id="ptime">9:41</span><i></i></div>
+            <div class="bar"><span class="who"><b>나</b>내 달력 ▾</span><span class="share">공유</span></div>
+            <div class="month"><span id="pmonth">11월</span><small id="pyear">2026년</small></div>
+            <div class="wk"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+            <div class="days" id="pdays"></div>
+            <div class="todaycard"><span class="ic" id="tic">야</span><div><strong id="ttitle">오늘 야간 19:00–07:00</strong><span id="tsub">출근 알람 17:40</span></div></div>
+            <div class="tabs"><span class="on"><i></i>달력</span><span><i></i>가계부</span><span><i></i>메모</span><span><i></i>근무·급여</span><span><i></i>마을</span></div>
+          </div>
+        </div>
+        <div class="bubble b1"><span class="ic"><!--I_ALARM--></span><div><strong>근무마다 다른 알람</strong><small class="v" id="bAlarm">야간 날 17:40</small></div></div>
+        <div class="bubble b2"><span class="ic"><!--I_MOON--></span><div><strong class="v" id="bCount">이번 달 야간 8번</strong><small class="v" id="bOff">쉬는 날 14일</small></div></div>
+        <div class="bubble b3"><span class="ic"><!--I_CAL--></span><div><strong class="v" id="bNext">다음 쉬는 날 D-2</strong><small>몇 년치도 한 번에</small></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="ribbon" aria-hidden="true">
+  <div class="track"><!--JOBS1--></div>
+  <div class="track rev"><!--JOBS2--></div>
+</div>
+
+<!-- 2. 하루가 한 바퀴: 24시간 다이얼 -->
+<section class="sec day-sec" aria-labelledby="day-title">
+  <div class="wrap">
+    <span class="eyebrow">하루가 한 바퀴</span>
+    <h2 id="day-title">근무에 맞춰 <span class="gold">알람·잠·하루</span>가 같이 돌아요</h2>
+    <p class="sub">위쪽 반은 낮, 아래쪽 반은 밤이에요. 밤낮 로고의 다이얼 그대로, 오늘 근무에 따라 하루가 어떻게 바뀌는지 눌러 보세요.</p>
+    <div class="modes" role="group" aria-label="어떤 날">
+      <button type="button" data-mode="day" aria-pressed="false">주간 근무 날</button>
+      <button type="button" data-mode="night" aria-pressed="true">야간 근무 날</button>
+      <button type="button" data-mode="off" aria-pressed="false">쉬는 날</button>
+    </div>
+    <div class="grid">
+      <div class="dial reveal">
+        <svg id="dial" viewBox="-30 -30 460 460" role="img" aria-label="24시간 다이얼"></svg>
+        <div class="center"><div id="dialc"></div></div>
+      </div>
+      <ul class="legend-list" id="legend"></ul>
+    </div>
+  </div>
+</section>
+
+<!-- 3. 누구의 근무든 -->
+<section class="sec who-sec" aria-labelledby="who-title">
+  <div class="wrap">
+    <span class="eyebrow">누구의 근무든</span>
+    <h2 id="who-title">처음에 하는 일만 고르면<br>맞는 화면이 바로 준비돼요</h2>
+    <p class="sub">교대·일근·알바·현장·가게, 그리고 근무표를 짜는 리더와 직원을 둔 사장님까지.</p>
+    <div class="who-tabs" role="tablist" aria-label="사용자 유형" id="whoTabs"></div>
+    <div class="who-panel" role="tabpanel" id="whoPanel" aria-live="polite"></div>
+  </div>
+</section>
+
+<!-- 4. 이것까지 한 앱에 -->
+<section class="gallery" aria-labelledby="gal-title">
+  <div class="wrap head">
+    <div>
+      <span class="eyebrow">이것까지 한 앱에</span>
+      <h2 id="gal-title" style="font-size:clamp(28px,5.4vw,46px);line-height:1.2;letter-spacing:-0.04em;margin:0">근무 날의 모든 순간</h2>
+    </div>
+    <div class="nav"><button type="button" id="gPrev" aria-label="앞으로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button><button type="button" id="gNext" aria-label="다음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></div>
+  </div>
+  <div class="rail" id="rail"><!--GALLERY--></div>
+  <div class="dots" id="dots" aria-hidden="true"></div>
+</section>
+
+<!-- 5. 약속 -->
+<section class="sec promise" aria-labelledby="pr-title">
+  <div class="wrap">
+    <span class="eyebrow">밤낮의 약속</span>
+    <h2 id="pr-title">근무만으로도 피곤하니까,<br>앱은 편해야 해요</h2>
+    <div class="cards">
+      <div class="pcard reveal"><div class="ic"><!--I_KEY--></div><h3>로그인 없이 바로</h3><p>회원가입도 계정도 없이 설치하자마자 근무를 넣어요.</p></div>
+      <div class="pcard reveal"><div class="ic"><!--I_QUIET--></div><h3>광고는 고를 때만</h3><p>하루 두 편까지, 소리 없이. 달력·알람·메모·설정과 켤 때는 광고가 없어요.</p></div>
+      <div class="pcard reveal"><div class="ic"><!--I_ALARM--></div><h3>알람·위젯은 무료</h3><p>근무마다 다른 기본 알람과 오늘·이번 주·이번 달 위젯은 무료예요.</p></div>
+      <div class="pcard reveal"><div class="ic"><!--I_LOCK--></div><h3>잠 소리는 폰 안에</h3><p>원할 때만 잠을 기록하고, 소리는 휴대폰 밖으로 나가지 않아요.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. 무료 도구 -->
+<section class="sec tools" aria-labelledby="tools-title">
+  <div class="wrap">
+    <span class="eyebrow">앱 없이도</span>
+    <h2 id="tools-title">무료 계산기와 근무 달력</h2>
+    <p class="sub">입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.</p>
+    <div class="bento">
+      <a class="tile big-t reveal" href="shift/"><span class="go"><!--ARROW--></span><h3>교대 근무 달력 만들기</h3><p>4조2교대·3조2교대·주야비휴 순서와 첫날만 고르면 석 달 달력이 나와요. 공개 자료로 확인한 회사별 교대 방식도 찾아봐요.</p><div class="mini" id="miniCal"></div><span class="count"><!--FIRMS--><small>곳</small></span></a>
+      <div class="tile quick reveal">
+        <h3>주휴수당, 여기서 바로</h3>
+        <p>1주에 일하는 시간을 움직여 보세요.</p>
+        <div class="row2"><output id="qOut">0원</output><span class="per">1주 주휴수당</span></div>
+        <input type="range" id="qHours" min="5" max="52" step="1" value="20" aria-label="1주 근무 시간">
+        <div class="lbl"><span>1주 <b id="qH">20</b>시간</span><span id="qMonth">한 달 약 0원</span></div>
+        <div class="chips" id="qYears"></div>
+        <p class="foot"><a href="calc/juhyu/">자세히 계산하기 →</a></p>
+      </div>
+      <a class="tile reveal" href="calc/allowance/"><span class="go"><!--ARROW--></span><h3>야간·연장·휴일수당</h3><p>출퇴근 시각만 넣으면 밤 10시~아침 6시를 나눠요</p></a>
+      <a class="tile reveal" href="calc/alba/"><span class="go"><!--ARROW--></span><h3>알바 월급</h3><p>주휴 포함, 3.3%·4대보험 뺀 실수령</p></a>
+      <a class="tile reveal" href="calc/salary/"><span class="go"><!--ARROW--></span><h3>월급·연봉 실수령액</h3><p>4대보험과 간이세액표 소득세를 뺀 통장 금액</p></a>
+      <a class="tile reveal" href="calc/daily/"><span class="go"><!--ARROW--></span><h3>일당 계산기</h3><p>현장·건설 일용직 일당의 세금과 실수령</p></a>
+      <a class="tile reveal" href="calc/leave/"><span class="go"><!--ARROW--></span><h3>연차 계산기</h3><p>입사일로 지금 연차와 근속별 개수</p></a>
+      <a class="tile reveal" href="calc/severance/"><span class="go"><!--ARROW--></span><h3>퇴직금 계산기</h3><p>평균임금 × 30일 × 재직일수/365</p></a>
+      <a class="tile reveal" href="holiday/2027/"><span class="go"><!--ARROW--></span><h3>2027년 공휴일·연휴</h3><p>대체공휴일과 사흘 이상 연휴, 교대 근무자 쉬는 날</p></a>
+      <a class="tile reveal" href="holiday/2026/"><span class="go"><!--ARROW--></span><h3>2026년 공휴일</h3><p>남은 공휴일과 연휴 한눈에</p></a>
+      <a class="tile reveal" href="shift/print/"><span class="go"><!--ARROW--></span><h3>2027 교대 달력 인쇄</h3><p>A4 한 장에 1년 근무, 공휴일·야간 횟수까지</p></a>
+      <a class="tile reveal" href="form/"><span class="go"><!--ARROW--></span><h3>근무표 엑셀 양식</h3><p>듀티표·조별 근무표·알바 스케줄표·출역표</p></a>
+    </div>
+  </div>
+</section>
+
+<!-- 7. 묻는 것 -->
+<section class="sec faq" aria-labelledby="faq-title">
+  <div class="wrap">
+    <span class="eyebrow">자주 묻는 것</span>
+    <h2 id="faq-title">궁금한 것부터 풀어요</h2>
+    <!--FAQ-->
+  </div>
+</section>
+
+<!-- 8. 마지막 권유 -->
+<section class="sec final" aria-labelledby="final-title">
+  <div class="wrap">
+    <div class="big-dial" aria-hidden="true"><!--LOGO--></div>
+    <h2 id="final-title">오늘 근무부터,<br><span class="gold">밤낮에 맡겨요</span></h2>
+    <p class="sub">근무표 한 번 넣으면 몇 년치 달력과 알람이 저절로. 무료로 시작해요.</p>
+    <div class="acts">
+      <a class="btn shine" id="finalBtn" data-play="final" data-medium="home" href="https://play.google.com/store/apps/details?id=com.bamnat.app"><!--PLAY-->Google Play에서 무료로 받기</a>
+      <div class="qr"><div class="code"><!--QR--></div><span>휴대폰 카메라로 찍으면<br>바로 설치 화면으로 가요</span></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<!--FOOTER-->
+<div class="dock" id="dock" aria-hidden="true">
+  <!--LOGO_DOCK-->
+  <div class="t"><strong>밤낮</strong><span>교대 근무표·알람·월급 · 무료</span></div>
+  <a class="btn" data-play="dock" data-medium="home" href="https://play.google.com/store/apps/details?id=com.bamnat.app" tabindex="-1">받기</a>
+</div>
+<script src="assets/home.js" defer></script>
+</body>
+</html>
