@@ -3,6 +3,74 @@ import sys
 ROOT = sys.argv[1] if len(sys.argv) > 1 else '../-'  # YWJMoney/- 저장소를 받아 둔 곳
 SITE = 'https://bamnat.app/'
 
+
+# ---------- 공통 머리·바닥 (웹 2판, 2026-11-10) ----------
+# 첫 화면 index.html은 손으로 고치니, 머리·바닥을 바꾸면 index.html의 같은 조각도 함께 고쳐요.
+LOGO = ('<svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-linecap="round">'
+        + ''.join(f'<line x1="32" y1="{3 if i % 6 == 0 else 5}" x2="32" y2="{8 if i % 6 == 0 else 7.2}" stroke-width="{2.2 if i % 6 == 0 else 1.4}" opacity="{1 if i % 6 == 0 else .5}" transform="rotate({i * 15} 32 32)"/>' for i in range(24))
+        + '</g><circle cx="32" cy="32" r="18" fill="none" stroke="#f2ece1" stroke-width="2.2"/>'
+        '<path class="dial-day" d="M14 32a18 18 0 0 1 36 0z" fill="#f2ece1"/><circle cx="32" cy="41" r="2.4" fill="#c2a36b"/></svg>')
+PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>'
+NAV = [('calc/', '무료 계산기'), ('shift/', '교대 근무 달력'), ('holiday/2027/', '공휴일'), ('form/', '근무표 양식')]
+MENU = [('계산기', [('calc/juhyu/', '주휴수당'), ('calc/alba/', '알바 월급'), ('calc/allowance/', '야간·연장·휴일수당'), ('calc/daily/', '일당'), ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/', '계산기 모두')]),
+        ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/firms/', '회사별 교대 방식'), ('shift/print/', '2027 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/2027/', '2027 공휴일'), ('holiday/2026/', '2026 공휴일')])]
+
+def site_header(up, path=''):
+    nav = ''.join(f'<a href="{up}{u}"' + (' aria-current="page"' if path.startswith(u.split("/")[0] + '/') else '') + f'>{t}</a>' for u, t in NAV)
+    menu = ''.join(f'<li class="grp">{g}</li>' + ''.join(f'<li><a href="{up}{u}">{t}</a></li>' for u, t in items) for g, items in MENU)
+    return f'''<a class="skip" href="#main">본문으로</a>
+<header class="site-header">
+  <div class="in">
+    <a class="brand" href="{up}" aria-label="밤낮 처음으로">{LOGO}<span>밤낮</span></a>
+    <nav class="site-nav" aria-label="사이트">{nav}</nav>
+    <span class="grow"></span>
+    <a class="get" data-play="header" href="https://play.google.com/store/apps/details?id=com.bamnat.app">{PLAY_ICON}앱 받기</a>
+    <button class="menu-btn" type="button" aria-label="메뉴" aria-expanded="false"><svg class="bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="menu"><div><ul>{menu}</ul></div></div>
+</header>'''
+
+def site_footer(up):
+    col = lambda g, items: f'<div><h4>{g}</h4><ul>' + ''.join(f'<li><a href="{up}{u}">{t}</a></li>' for u, t in items) + '</ul></div>'
+    return f'''<footer class="site-footer">
+  <div class="in">
+    <div class="top">
+      <div class="about"><a class="brand" href="{up}">{LOGO}<span>밤낮</span></a><p>교대·일근·알바·현장·사장님까지, 근무가 있는 모든 사람의 근무 앱이에요.</p></div>
+      {col('계산기', MENU[0][1][:7])}
+      {col('근무 달력', MENU[1][1])}
+      {col('안내', [('privacy/', '개인정보 처리방침'), ('terms/', '이용약관'), ('community/', '광장 운영 규칙')])}
+    </div>
+    <div class="biz">
+      문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> (앱 안에서는 설정 › 도움말과 문의)<br>
+      상호 밤낮 · 대표자 양원준 · 사업자등록번호 327-25-02565 (<a href="https://www.ftc.go.kr/bizCommPop.do?wrkr_no=3272502565" target="_blank" rel="noopener">사업자 정보 확인</a>)<br>
+      통신판매업 신고번호 제2026-전남여수-0424호 · 전남광주통합특별시 여수시 안산1길 179, 2동 105호<br>
+      전화 010-6408-8825 · 전자우편 yoj0790@naver.com · 호스팅 Cloudflare, Inc., GitHub, Inc.
+      <div class="safe">계산기에 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.</div>
+    </div>
+  </div>
+</footer>'''
+
+# 앱으로 이어 가기 카드에 보일 스토어 화면 (assets/app/<이름>-360|720.webp)
+SHOTS = {'pay': '05-pay', 'field': '09-field', 'leave': '12-leave', 'holiday': '11-holiday', 'calendar': '01-calendar',
+         'roster': '02-roster', 'team': '06-team', 'boss': '07-boss'}
+def cta_shot(c):
+    if c.startswith('holiday'): return SHOTS['holiday']
+    if c in ('daily', 'form_site_days'): return SHOTS['field']
+    if c == 'leave': return SHOTS['leave']
+    if c == 'form_duty': return SHOTS['roster']
+    if c == 'form_shift_team': return SHOTS['team']
+    if c == 'form_alba_week': return SHOTS['boss']
+    if c in ('juhyu', 'allowance', 'alba', 'salary', 'severance'): return SHOTS['pay']
+    return SHOTS['calendar']
+
+def hero_tags(path):
+    t = (['석 달 달력', '공개 자료 회사 방식', '로그인 없이'] if path.startswith('shift/')
+         else ['인쇄·엑셀 무료', '로그인 없이'] if path.startswith('form/')
+         else ['대체공휴일 포함', '교대 근무자 쉬는 날'] if path.startswith('holiday/')
+         else ['무료', '로그인 없이', '입력값은 보내지 않아요'])
+    return ''.join(f'<span>{x}</span>' for x in t)
+
+
 def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, cta_text, depth):
     up = '../' * depth
     canonical = SITE + path
@@ -15,18 +83,32 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
         "@context": "https://schema.org", "@type": "FAQPage",
         "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faqs]
     }]
-    nav = (f'<a href="{up}shift/">교대 근무 달력</a>' + (f' › <a href="{up}shift/firms/">회사별</a>' if path.startswith('shift/firms/') and path != 'shift/firms/' else '')) if path.startswith('shift/') and path != 'shift/' else f'<a href="{up}calc/">근무·급여 계산기</a>'
+    if path.startswith('shift/') and path != 'shift/':
+        crumbs = [(f'{up}shift/', '교대 근무 달력')] + ([(f'{up}shift/firms/', '회사별')] if path.startswith('shift/firms/') and path != 'shift/firms/' else []) + ([(f'{up}shift/print/', '인쇄')] if path.startswith('shift/print/') and path != 'shift/print/' else [])
+    elif path.startswith('form/') and path != 'form/':
+        crumbs = [(f'{up}form/', '근무표 양식')]
+    elif path.startswith('holiday/'):
+        crumbs = [(f'{up}calc/', '무료 계산기')]
+    elif path in ('shift/', 'form/', 'calc/'):
+        crumbs = []
+    else:
+        crumbs = [(f'{up}calc/', '무료 계산기')]
     ogimg = 'shift' if path.startswith('shift') else 'holiday' if path.startswith('holiday') else 'calc'
     faq_html = '\n'.join(f'<details><summary>{html.escape(q)}</summary><p>{html.escape(a)}</p></details>' for q, a in faqs)
+    shot = cta_shot(campaign)
+    tags = hero_tags(path)
+    crumb_html = f'<a href="{up}">밤낮</a>' + ''.join(f'<span class="sep">/</span><a href="{u}">{t}</a>' for u, t in crumbs)
     return f'''<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{html.escape(title)}</title>
 <meta name="description" content="{html.escape(desc)}">
 <link rel="canonical" href="{canonical}">
+<meta name="theme-color" content="#15192b">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="밤낮">
 <meta property="og:title" content="{html.escape(title)}">
 <meta property="og:description" content="{html.escape(desc)}">
 <meta property="og:url" content="{canonical}">
@@ -35,29 +117,38 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="{up}assets/icon.svg" type="image/svg+xml">
+<link rel="preload" href="{up}assets/fonts/pretendard.css" as="style">
+<link rel="stylesheet" href="{up}assets/fonts/pretendard.css">
 <link rel="stylesheet" href="{up}calc/calc.css">
 <script src="{up}calc/calc.js"></script>
 <script type="application/ld+json">{json.dumps(ld, ensure_ascii=False)}</script>
 </head>
 <body>
-<main>
-<nav class="top"><a href="{up}">밤낮</a> › {nav}</nav>
-<h1>{h1}</h1>
-<p class="lead">{lead}</p>
+{site_header(up, path)}
+<header class="page-hero">
+  <div class="in">
+    <nav class="crumbs" aria-label="위치">{crumb_html}</nav>
+    <h1>{h1}</h1>
+    <p class="lead">{lead}</p>
+    <div class="tags">{tags}</div>
+  </div>
+</header>
+<main id="main" class="tool">
 {body}
-<div class="cta">
-  <strong>{cta_title}</strong>
-  <span class="muted">{cta_text}</span><br>
-  <a class="btn" data-play="{campaign}" href="https://play.google.com/store/apps/details?id=com.bamnat.app">밤낮 무료로 받기 (Android)</a>
+<div class="cta reveal">
+  <div class="acts">
+    <strong>{cta_title}</strong>
+    <span class="muted">{cta_text}</span><br>
+    <a class="btn" data-play="{campaign}" href="https://play.google.com/store/apps/details?id=com.bamnat.app">{PLAY_ICON}밤낮 무료로 받기</a>
+  </div>
+  <div class="shot"><img src="{up}assets/app/{shot}-360.webp" srcset="{up}assets/app/{shot}-360.webp 360w, {up}assets/app/{shot}-720.webp 720w" sizes="260px" width="360" height="640" alt="밤낮 앱 화면" loading="lazy" decoding="async"></div>
 </div>
 <h2>자주 묻는 것</h2>
 {faq_html}
 <p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
-<footer>
-  <a href="{up}calc/">다른 계산기</a> · <a href="{up}shift/">교대 근무 달력 만들기</a> · <a href="{up}privacy/">개인정보 처리방침</a><br>
-  상호 밤낮 · 문의 <a href="mailto:yoj0790@naver.com">yoj0790@naver.com</a> · 입력한 값은 이 화면에서만 계산하고 어디에도 보내지 않아요.
-</footer>
 </main>
+{site_footer(up)}
 <script>
 {script}
 </script>
