@@ -42,7 +42,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: python3 shift-calendar-app/tools/test_deploy_worker.py
   deploy:
     if: github.event_name == 'workflow_dispatch'
@@ -60,8 +60,8 @@ jobs:
       IN_OLDER: ${{ inputs.allow_older }}
     steps:
       # 배포 도구는 main의 것, 서버 코드는 고른 브랜치의 것.
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           path: target
