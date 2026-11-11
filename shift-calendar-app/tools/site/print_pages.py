@@ -158,7 +158,7 @@ PRINT_FAQ = [
 # ---------- 인쇄용 연간 교대 달력 ----------
 links = ''.join(f'<li><a href="{q["slug"]}/">{y} {html.escape(q["name"])} 달력</a> · {html.escape(q["description"])}</li>' for q in PATS for y in ['2027'])
 s = page('shift/print/', '2027 교대 근무 달력 인쇄 · 4조2교대·3조2교대 연간 근무표 PDF | 밤낮',
-    '4조2교대, 3조2교대, 4조3교대, 24시간 맞교대 순서와 첫날만 고르면 2027년 열두 달 근무 달력을 A4 한 장으로 인쇄하거나 PDF로 저장해요. 공휴일과 야간 횟수도 세어 줘요.',
+    '교대 순서와 첫날만 고르면 2027년 열두 달 근무 달력을 A4 한 장으로 인쇄·PDF 저장해요. 공휴일·야간 횟수까지.',
     '2027 교대 근무 달력 인쇄', '근무 순서와 첫날만 고르면 열두 달이 A4 한 장에 들어가요. 벽이나 사물함에 붙여 두고, 같은 조 동료에게 링크로 보내요.',
     PRINT_BODY + f'<h2>순서별 2027 달력</h2><ul class="links">{links}</ul>', print_js(), PRINT_FAQ,
     'print', '종이 말고 휴대폰에, 알람까지', '밤낮 앱에서 같은 순서를 고르면 몇 년치 근무가 채워지고 주간·야간마다 다른 근무 알람이 울려요. 대근·연차도 눌러서 바로 고쳐요.', 2)
@@ -166,7 +166,7 @@ write('shift/print/', add_css(s)); NEW.append('shift/print/')
 for q in PATS:
     others = ''.join(f'<li><a href="../{o["slug"]}/">{html.escape(o["name"])}</a></li>' for o in PATS if o is not q)
     s = page(f'shift/print/{q["slug"]}/', f'2027 {q["name"]} 달력 인쇄 ({q["description"]}) · 연간 근무표 PDF | 밤낮',
-        f'2027년 {q["name"]}({q["description"]}) 근무 달력을 열두 달 한 장으로 인쇄하거나 PDF로 저장해요. 첫날만 넣으면 우리 조 달력이 되고, 공휴일·야간 횟수도 세어 줘요.',
+        f'2027년 {q["name"]} 근무 달력을 열두 달 한 장으로 인쇄·PDF 저장해요. 첫날만 넣으면 우리 조 달력, 공휴일까지.',
         f'2027 {q["name"]} 달력 인쇄', f'{html.escape(q["description"])} 순서예요. 우리 조 첫날만 넣으면 열두 달이 A4 한 장에 들어가요.',
         PRINT_BODY + f'<p class="note no-print"><a href="../../p/{q["slug"]}/">{html.escape(q["name"])} 순서 설명</a> · <a href="../">다른 순서 달력</a></p><h2>다른 순서</h2><ul class="links">{others}</ul>',
         print_js(q['codes']), PRINT_FAQ,
@@ -318,7 +318,7 @@ for slug, fn, h1, title, lead, codes, rows, camp, kind, cta_t, cta_x in FORMS:
     write(f'form/{slug}/', add_css(s)); NEW.append(f'form/{slug}/'); form_links.append((slug, h1))
 hub_body = '<ul class="links">' + ''.join(f'<li><a href="{s}/"><strong>{html.escape(h)}</strong></a></li>' for s, h in form_links) + '<li><a href="../shift/print/"><strong>2027 교대 근무 달력 인쇄</strong></a><br><span class="muted">순서와 첫날로 열두 달 한 장</span></li></ul>'
 s = page('form/', '근무표 양식 무료 다운로드 (듀티표·교대 근무표·알바 스케줄표·출역표 엑셀) | 밤낮',
-    '간호사 듀티표, 교대 조별 근무표, 알바 주간 근무표, 현장 출역표·일당 장부 엑셀 양식을 무료로 받아요. 칸을 고르면 색이 칠해지고 개수·시간·금액을 세어 줘요.',
+    '간호사 듀티표·교대 조별 근무표·알바 스케줄표·현장 출역표 엑셀 양식을 무료로 받아요. 개수·시간·금액은 저절로.',
     '근무표 양식 모음', '엑셀로 바로 쓰는 무료 근무표 양식이에요. 근무를 고르면 색과 개수가 저절로 바뀌어요.', hub_body, '',
     [('어떤 프로그램에서 열리나요?', '엑셀, 구글 시트, 한셀, 휴대폰 엑셀 앱에서 열려요.')], 'form_hub', '양식 대신 앱으로', '밤낮 앱은 근무표 사진을 찍으면 달력이 채워지고, 근무마다 다른 알람과 예상 월급까지 보여요.', 1)
 write('form/', add_css(s)); NEW.append('form/')
