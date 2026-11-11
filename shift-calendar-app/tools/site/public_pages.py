@@ -2,6 +2,7 @@ import json, os, html
 import sys
 ROOT = sys.argv[1] if len(sys.argv) > 1 else '../-'  # YWJMoney/- 저장소를 받아 둔 곳
 SITE = 'https://bamnat.app/'
+LASTMOD = '2026-11-11'  # 사이트맵에 적는 고친 날. 쪽을 다시 만들면 그날로 바꿔요.
 
 
 # ---------- 공통 머리·바닥 (웹 2판, 2026-11-10) ----------
@@ -13,7 +14,7 @@ LOGO = ('<svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f2ece1" stroke-
 PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 .8.9 1.3 1.6.9l14.1-8.4c.7-.4.7-1.4 0-1.8L6.6 2.7C5.9 2.3 5 2.8 5 3.6z" fill="currentColor"/></svg>'
 NAV = [('calc/', '무료 계산기'), ('shift/', '교대 근무 달력'), ('holiday/2027/', '공휴일'), ('form/', '근무표 양식')]
 MENU = [('계산기', [('calc/juhyu/', '주휴수당'), ('calc/alba/', '알바 월급'), ('calc/allowance/', '야간·연장·휴일수당'), ('calc/daily/', '일당'), ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/', '계산기 모두')]),
-        ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/firms/', '회사별 교대 방식'), ('shift/print/', '2027 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/2027/', '2027 공휴일'), ('holiday/2026/', '2026 공휴일')])]
+        ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/print/', '2027 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/2027/', '2027 공휴일'), ('holiday/2026/', '2026 공휴일')])]
 
 def site_header(up, path=''):
     nav = ''.join(f'<a href="{up}{u}"' + (' aria-current="page"' if path.startswith(u.split("/")[0] + '/') else '') + f'>{t}</a>' for u, t in NAV)
@@ -64,7 +65,7 @@ def cta_shot(c):
     return SHOTS['calendar']
 
 def hero_tags(path):
-    t = (['석 달 달력', '공개 자료 회사 방식', '로그인 없이'] if path.startswith('shift/')
+    t = (['석 달 달력', '같은 조에 링크로', '로그인 없이'] if path.startswith('shift/')
          else ['인쇄·엑셀 무료', '로그인 없이'] if path.startswith('form/')
          else ['대체공휴일 포함', '교대 근무자 쉬는 날'] if path.startswith('holiday/')
          else ['무료', '로그인 없이', '입력값은 보내지 않아요'])
@@ -84,7 +85,7 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
         "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faqs]
     }]
     if path.startswith('shift/') and path != 'shift/':
-        crumbs = [(f'{up}shift/', '교대 근무 달력')] + ([(f'{up}shift/firms/', '회사별')] if path.startswith('shift/firms/') and path != 'shift/firms/' else []) + ([(f'{up}shift/print/', '인쇄')] if path.startswith('shift/print/') and path != 'shift/print/' else [])
+        crumbs = [(f'{up}shift/', '교대 근무 달력')] + ([(f'{up}shift/print/', '인쇄')] if path.startswith('shift/print/') and path != 'shift/print/' else [])
     elif path.startswith('form/') and path != 'form/':
         crumbs = [(f'{up}form/', '근무표 양식')]
     elif path.startswith('holiday/'):
@@ -93,6 +94,10 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
         crumbs = []
     else:
         crumbs = [(f'{up}calc/', '무료 계산기')]
+    # 위치 띠를 검색 결과에도 보이게 (BreadcrumbList)
+    trail = [(SITE, '밤낮')] + [(SITE + u[len(up):], t) for u, t in crumbs] + [(canonical, h1)]
+    ld.append({"@context": "https://schema.org", "@type": "BreadcrumbList",
+               "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": t, "item": u} for i, (u, t) in enumerate(trail)]})
     ogimg = 'shift' if path.startswith('shift') else 'holiday' if path.startswith('holiday') else 'calc'
     faq_html = '\n'.join(f'<details><summary>{html.escape(q)}</summary><p>{html.escape(a)}</p></details>' for q, a in faqs)
     shot = cta_shot(campaign)
@@ -106,6 +111,7 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
 <title>{html.escape(title)}</title>
 <meta name="description" content="{html.escape(desc)}">
 <link rel="canonical" href="{canonical}">
+<meta name="robots" content="max-image-preview:large">
 <meta name="theme-color" content="#15192b">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="밤낮">
@@ -116,6 +122,7 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
 <meta property="og:image" content="{SITE}og/{ogimg}.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="{html.escape(h1)} · 밤낮">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="{up}assets/icon.svg" type="image/svg+xml">
 <link rel="preload" href="{up}assets/fonts/pretendard.css" as="style">
@@ -149,6 +156,11 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
 <p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. 요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율)를 써요.</p>
 </main>
 {site_footer(up)}
+<div class="dock" id="dock" aria-hidden="true">
+  <img class="logo" src="{up}assets/icon.svg" alt="" width="34" height="34">
+  <div class="t"><strong>{cta_title}</strong><span>밤낮 앱 · 무료 · 로그인 없이</span></div>
+  <a class="btn" data-play="{campaign}_dock" href="https://play.google.com/store/apps/details?id=com.bamnat.app" tabindex="-1">받기</a>
+</div>
 <script>
 {script}
 </script>
@@ -370,8 +382,8 @@ print('pages ok')
 # ---------- 교대 근무 달력 ----------
 write('shift/', page(
     'shift/', '교대 근무 달력 만들기 · 4조2교대·3조2교대·주야비휴 근무표 | 밤낮',
-    '4조2교대, 3조2교대, 4조3교대, 주야비휴, 24시간 맞교대 순서와 첫 근무 날만 고르면 석 달 근무 달력을 바로 보여 줘요. 공개 자료로 확인한 회사별 교대 방식도 찾아봐요.',
-    '교대 근무 달력 만들기', '근무 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 우리 회사 교대 방식을 모르면 아래에서 회사 이름으로 찾아봐요.',
+    '4조2교대, 3조2교대, 4조3교대, 주야비휴, 24시간 맞교대 순서와 첫 근무 날만 고르면 석 달 근무 달력을 바로 보여 줘요. 밤낮 앱으로 옮기면 몇 년치 근무와 근무 알람까지 한 번에 맞춰요.',
+    '교대 근무 달력 만들기', '근무 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 마음에 들면 같은 순서로 앱에 옮겨 알람까지 맞춰요.',
     '''<div class="card">
   <label for="pat">근무 순서</label>
   <select id="pat"></select>
@@ -386,16 +398,24 @@ write('shift/', page(
   <button type="button" class="chip" id="share" style="margin-top:12px">같은 조 동료에게 이 달력 보내기</button>
   <span class="note" id="shared"></span>
 </div>
-<h2>회사별 교대 방식 찾기</h2>
-<p class="note">기사·채용 공고·노무 사이트처럼 공개된 자료에서 확인한 것만 모았어요. 조나 부서마다 다를 수 있으니 출처를 같이 봐요.</p>
-<input id="q" placeholder="회사 이름이나 업종 (예: 발전, 제철, 반도체)" autocomplete="off">
-<div id="firms"></div>
+<div class="card app-next">
+  <strong class="t">이 달력, 앱에서는 이렇게 이어져요</strong>
+  <ul class="ticks">
+    <li><b>몇 년치가 한 번에</b><span>같은 순서와 첫날을 고르면 앞으로의 근무가 다 채워져요. 대근·연차로 바뀐 날만 눌러 고쳐요.</span></li>
+    <li><b>근무마다 다른 알람</b><span>주간·야간 시각이 따로 울리고, 쉬는 날엔 조용해요.</span></li>
+    <li><b>우리 회사 방식은 회사 이름으로</b><span>순서를 몰라도 앱의 회사 찾기에서 고르면 근무 순서와 시간이 맞춰져요.</span></li>
+    <li><b>이번 달 예상 월급</b><span>야간·휴일 수당까지 근무를 넣는 대로 따라와요.</span></li>
+  </ul>
+  <a class="btn" data-play="shift_cal" href="https://play.google.com/store/apps/details?id=com.bamnat.app">''' + PLAY_ICON + '''이 순서로 앱에서 이어 쓰기</a>
+  <span class="note">로그인·회원가입 없이 무료예요.</span>
+</div>
+<h2 id="order-list">교대 순서별 설명</h2>
 <div class="card" style="margin-top:18px">
   <strong>간호사처럼 매달 근무표가 바뀌나요?</strong><br>
   <span class="muted">순서가 정해지지 않은 듀티표는 밤낮 앱에서 근무표 사진을 찍거나 열면 내 줄을 찾아 달력에 넣어 줘요.</span>
 </div>''',
     '''(function(){
-var B=Bamnat,$=function(i){return document.getElementById(i)},pats=[],firms=[];
+var B=Bamnat,$=function(i){return document.getElementById(i)},pats=[];
 var NAME={D:'주',E:'오',N:'야',O:'휴',X:'당',B:'비'};
 function iso(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
 function codes(){var c=$('custom').value.toUpperCase().replace(/[^DENOXB]/g,'');return c||$('pat').value;}
@@ -413,38 +433,25 @@ function draw(){
     out+='</div>';}
   $('cal').innerHTML=out;
   try{history.replaceState(null,'','?p='+c+'&s='+f);}catch(e){}
+  var a=document.querySelector('a[data-play="shift_cal"]');if(a)a.href=B.playLink('shift_cal','shift')+encodeURIComponent('&utm_content='+c.slice(0,24));
 }
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(ch){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});}
-function list(){
-  var q=$('q').value.trim();if(!q){$('firms').innerHTML='';return;}
-  var hit=firms.filter(function(x){return (x.display+' '+x.form+' '+x.industry).indexOf(q)>=0;}).slice(0,30);
-  $('firms').innerHTML=hit.length?hit.map(function(x,i){
-    return '<div class="list-item"><strong>'+esc(x.display)+'</strong><br><span class="muted">'+esc(x.form)+(x.order?' · '+esc(x.order):'')+(x.time?' · '+esc(x.time):'')+'</span><br>'+
-      (x.source&&/^https?:/.test(x.source)?'<a href="'+esc(x.source)+'" target="_blank" rel="noopener nofollow">출처</a> ':'')+
-      (x.codes?'<button type="button" class="chip" data-c="'+esc(x.codes)+'">이 순서로 달력 보기</button>':'<span class="note">순서가 공개되지 않았어요</span>')+'</div>';
-  }).join(''):'<p class="note">아직 없어요. 밤낮 앱의 회사 찾기에서 알려 주시면 공개 자료를 확인해 더해요.</p>';
-  $('firms').querySelectorAll('button[data-c]').forEach(function(b){b.onclick=function(){$('custom').value=b.dataset.c;draw();$('cal').scrollIntoView({behavior:'smooth'});};});
-}
 var qs=new URLSearchParams(location.search);
 $('first').value=qs.get('s')||iso(new Date());if(qs.get('p'))$('custom').value=qs.get('p');
-Promise.all([
-  fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch(function(){return null;}),
-  fetch(B.base+'remote/v1/cycles.json').then(function(r){return r.json();}).catch(function(){return null;})
-]).then(function(a){
-  pats=(a[0]&&a[0].data&&a[0].data.patterns)||[{name:'4조 2교대',description:'주야비휴',codes:'DNOO'},{name:'3조 2교대',description:'주주야야비휴',codes:'DDNNOO'}];
-  firms=(a[1]&&a[1].data&&a[1].data.cycles)||[];
+fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch(function(){return null;}).then(function(j){
+  pats=(j&&j.data&&j.data.patterns)||[{name:'4조 2교대',description:'주야비휴',codes:'DNOO'},{name:'3조 2교대',description:'주주야야비휴',codes:'DDNNOO'}];
   $('pat').innerHTML=pats.map(function(p){return '<option value="'+esc(p.codes)+'">'+esc(p.name)+' · '+esc(p.description)+'</option>';}).join('');
-  draw();list();
+  draw();
 });
 $('share').onclick=function(){var u=location.href,t='우리 조 근무 달력 ('+codes()+')';
   if(navigator.share){navigator.share({title:t,url:u}).catch(function(){});}
   else if(navigator.clipboard){navigator.clipboard.writeText(u).then(function(){$('shared').textContent=' 링크를 복사했어요. 카톡에 붙여 넣어 보내요.';});}};
 $('pat').addEventListener('change',function(){$('custom').value='';draw();});
-['custom','first'].forEach(function(i){$(i).addEventListener('input',draw);});$('q').addEventListener('input',list);
+['custom','first'].forEach(function(i){$(i).addEventListener('input',draw);});
 })();''',
     [('4조 2교대는 어떤 순서인가요?', '가장 흔한 것은 주간·야간·비번·휴무(주야비휴) 4일 순서예요. 회사에 따라 주주야야휴휴휴휴(8일)처럼 길게 도는 곳도 있어요. 위에서 순서를 골라 첫날만 넣으면 달력이 나와요.'),
      ('3조 2교대와 4조 3교대는 어떻게 다른가요?', '3조 2교대는 세 조가 주간·야간 두 근무를 돌아가며(예: 주주야야휴휴), 4조 3교대는 네 조가 주간·오후·야간 세 근무를 돌아가요(예: 주주오오야야휴휴).'),
-     ('우리 회사 교대 방식이 목록에 없어요.', '밤낮 앱의 회사 찾기에서 알려 주시면 기사·공고 같은 공개 자료로 확인한 뒤 더해요. 확인 전에도 순서를 직접 적어 쓸 수 있어요.'),
+     ('우리 회사 교대 순서를 잘 모르겠어요.', '밤낮 앱의 회사 찾기에서 회사 이름으로 고르면 근무 순서와 시간이 맞춰져요. 없는 회사는 앱에서 알려 주시면 확인해서 더하고, 그동안은 순서를 직접 적어 써요.'),
      ('달력을 휴대폰에 넣고 알람도 맞출 수 있나요?', '밤낮 앱에서 같은 순서를 고르면 몇 년치가 한 번에 채워지고, 주간·야간마다 다른 시각에 울리는 근무 알람도 맞춰요. 쉬는 날엔 조용해요.')],
     'shift', '이 달력을 휴대폰에, 근무 알람까지', '밤낮 앱에서 같은 순서를 고르면 몇 년치 근무가 한 번에 채워지고, 주간·야간마다 다른 근무 알람과 이번 달 예상 월급까지 봐요.', 1))
 print('shift ok')
@@ -455,7 +462,7 @@ hub_body = '''<ul class="links">
   <li><a href="alba/"><strong>알바 월급 계산기</strong></a><br><span class="muted">주휴 포함 월급, 3.3%·4대보험 뺀 실수령</span></li>
   <li><a href="allowance/"><strong>야간·연장·휴일수당 계산기</strong></a><br><span class="muted">출퇴근 시각으로 밤 10시~아침 6시, 8시간 초과 시간을 나눠 계산</span></li>
   <li><a href="daily/"><strong>일당 계산기 (일용직 세금)</strong></a><br><span class="muted">현장·인테리어·건설 일당의 세금과 실수령</span></li>
-  <li><a href="../shift/"><strong>교대 근무 달력 만들기</strong></a><br><span class="muted">4조2교대·3조2교대·주야비휴 순서로 석 달 달력, 회사별 교대 방식 찾기</span></li>
+  <li><a href="../shift/"><strong>교대 근무 달력 만들기</strong></a><br><span class="muted">4조2교대·3조2교대·주야비휴 순서로 석 달 달력, 교대 순서별 설명</span></li>
 </ul>'''
 write('calc/', page('calc/', '근무·급여 계산기 모음 (주휴수당·야간수당·알바 월급·일당) | 밤낮',
     '주휴수당, 알바 월급, 야간·연장·휴일수당, 일용직 일당 세금, 교대 근무 달력을 무료로 계산해요. 2026·2027 최저시급과 4대보험 요율 반영.',
@@ -691,7 +698,6 @@ print('holiday ok')
 
 # ---------- 근무 순서별 ----------
 pre = remote('presets')['patterns']
-cyc = remote('cycles')
 NAME = {'D': '주간', 'E': '오후', 'N': '야간', 'O': '휴무', 'X': '당번', 'B': '비번'}
 SHORT = {'D': '주', 'E': '오', 'N': '야', 'O': '휴', 'X': '당', 'B': '비'}
 def strip(codes, n):
@@ -724,7 +730,7 @@ for p in pre:
 <p><a class="btn" href="../../?p={p["codes"]}">내 첫날로 석 달 달력 보기</a></p>
 <h2>다른 교대 순서</h2>
 <ul class="links">{others}</ul>
-<p class="note">우리 회사 방식은 <a href="../../firms/">회사별 교대 방식</a>에서 찾아봐요.</p>'''
+<p class="note">우리 회사 방식을 모르면 밤낮 앱의 회사 찾기에서 회사 이름으로 골라요.</p>'''
     write(f'shift/p/{slug}/', page(
         f'shift/p/{slug}/', f'{p["name"]} 근무표 ({p["description"]}) 달력 만들기 | 밤낮',
         f'{p["name"]}({p["description"]})은 {L}일마다 도는 순서로, 한 달 평균 약 {pm:.0f}일 일해요. 첫날만 넣으면 석 달 근무 달력을 바로 보여 줘요.',
@@ -736,56 +742,10 @@ for p in pre:
     SITEMAP.append(f'shift/p/{slug}/')
     pat_links.append((slug, p))
 
-# ---------- 회사별 ----------
-firms = cyc['cycles']
-by_ind = {}
-for f in firms: by_ind.setdefault(f['industry'] or '기타', []).append(f)
-for f in firms:
-    fid = f['id']
-    same = [g for g in by_ind[f['industry'] or '기타'] if g is not f][:12]
-    rel = ''.join(f'<li><a href="../{g["id"]}/">{html.escape(g["display"])}</a></li>' for g in same)
-    srcl = f'<a href="{html.escape(f["source"])}" target="_blank" rel="noopener nofollow">{html.escape(f["trust"] or "출처")}</a>' if f['source'].startswith('http') else html.escape(f['source'] or f['trust'])
-    shifts = ', '.join(f'{s["name"]} {s["start"]}~{s["end"]}' for s in f['shifts'] if s.get('start'))
-    cal = (f'<h2>4주 미리 보기</h2>{strip(f["codes"], 28)}<p><a class="btn" href="../../?p={f["codes"]}">내 첫날로 석 달 달력 보기</a></p>'
-           if f['codes'] and set(f['codes']) <= set(NAME) else '<p class="note">이 회사는 근무 순서가 공개 자료에 정확히 나와 있지 않아요. 순서를 알면 <a href="../../">교대 근무 달력</a>에서 직접 적어 볼 수 있어요.</p>')
-    title_bits = f'{f["company"]}' + (f' {f["site"]}' if f['site'] else '')
-    body = f'''<div class="card">
-  <table class="lines info">
-    <tr><td>업종</td><td>{html.escape(f["industry"])}</td></tr>
-    {f'<tr><td>부서·현장</td><td>{html.escape(f["site"])}</td></tr>' if f['site'] else ''}
-    <tr><td>근무 형태</td><td>{html.escape(f["form"])}</td></tr>
-    {f'<tr><td>순서</td><td>{html.escape(f["order"])}</td></tr>' if f['order'] else ''}
-    {f'<tr><td>근무 시간</td><td>{html.escape(f["time"])}</td></tr>' if f['time'] else (f'<tr><td>근무 시간</td><td>{html.escape(shifts)}</td></tr>' if shifts else '')}
-    {f'<tr><td>기준 시점</td><td>{html.escape(f["asOf"])}</td></tr>' if f['asOf'] else ''}
-    <tr><td>출처</td><td>{srcl}</td></tr>
-  </table>
-  <p class="note">기사·채용 공고·노무 사이트 같은 공개 자료에서 확인한 내용이에요. 조·부서·시기에 따라 다를 수 있어요. 틀린 곳은 밤낮 앱의 문의로 알려 주세요.</p>
-</div>
-{cal}
-{f'<h2>같은 업종 ({html.escape(f["industry"])})</h2><ul class="links">{rel}</ul>' if rel else ''}
-<p class="note"><a href="../">회사별 교대 방식 모두 보기</a></p>'''
-    write(f'shift/firms/{fid}/', page(
-        f'shift/firms/{fid}/', f'{title_bits} 교대 근무 ({f["form"]}) 근무표 | 밤낮',
-        f'{title_bits}의 교대 근무 형태({f["form"]}){", 순서 " + f["order"] if f["order"] else ""}{", 근무 시간 " + f["time"] if f["time"] else ""}. 공개 자료 출처와 함께, 내 근무 달력으로 바로 만들어 봐요.',
-        f'{html.escape(title_bits)} 교대 근무', f'{html.escape(f["industry"])} · {html.escape(f["form"])}',
-        body, '',
-        [('이 정보는 어디서 왔나요?', '기사, 채용 공고, 노무 사이트, 정부 자료처럼 누구나 볼 수 있는 공개 자료에서 사실(근무 형태·순서·시간)만 옮겼고, 출처를 함께 적었어요.'),
-         ('우리 조는 순서가 달라요.', '같은 회사라도 조·부서마다 다를 수 있어요. 밤낮 앱에서 순서를 직접 적거나 근무표 사진을 찍어 넣으면 내 근무 그대로 달력이 채워져요.')],
-        'firm', '우리 회사 근무를 내 휴대폰 달력에', '밤낮 앱의 회사 찾기에서 고르거나 순서를 적으면 몇 년치 근무와 근무 알람이 한 번에 맞춰져요.', 3))
-    SITEMAP.append(f'shift/firms/{fid}/')
-
-idx = ''.join(f'<h2>{html.escape(ind)} ({len(lst)})</h2><ul class="links">' + ''.join(f'<li><a href="{g["id"]}/">{html.escape(g["display"].split(" · ")[0])}</a> <span class="muted">· {html.escape(g["form"])}</span></li>' for g in sorted(lst, key=lambda g: g['display'])) + '</ul>'
-              for ind, lst in sorted(by_ind.items(), key=lambda kv: -len(kv[1])))
-write('shift/firms/', page('shift/firms/', f'회사별 교대 근무 방식 {len(firms)}곳 (발전·제철·반도체·화학·보안) | 밤낮',
-    f'공개 자료로 확인한 회사별 교대 근무 형태와 순서, 근무 시간 {len(firms)}곳. 4조2교대·3조2교대·4조3교대 등 업종별로 모았어요.',
-    '회사별 교대 근무 방식', f'기사·채용 공고·노무 사이트 같은 공개 자료로 확인한 {len(firms)}곳이에요. 업종별로 모았어요.',
-    idx, '', [('목록에 없는 회사는요?', '밤낮 앱의 회사 찾기에서 알려 주시면 공개 자료로 확인한 뒤 더해요.')],
-    'firms', '우리 회사 근무를 내 휴대폰 달력에', '밤낮 앱에서 회사를 고르거나 순서를 적으면 몇 년치 근무와 근무 알람이 한 번에 맞춰져요.', 2))
-SITEMAP.append('shift/firms/')
 pl = ''.join(f'<li><a href="p/{s}/">{html.escape(p["name"])}</a> · {html.escape(p["description"])}</li>' for s, p in pat_links)
 open(os.path.join(ROOT, 'shift/index.html'), 'a').close()
 s = open(os.path.join(ROOT, 'shift/index.html')).read()
-s = s.replace('<h2>회사별 교대 방식 찾기</h2>', f'<h2>교대 순서별 설명</h2><ul class="links">{pl}</ul>\n<h2>회사별 교대 방식 찾기</h2><p class="note"><a href="firms/">업종별 전체 목록 ({len(firms)}곳)</a></p>', 1)
+s = s.replace('<h2 id="order-list">교대 순서별 설명</h2>', f'<h2 id="order-list">교대 순서별 설명</h2><ul class="links">{pl}</ul>', 1)
 open(os.path.join(ROOT, 'shift/index.html'), 'w').write(s)
 
 # ---------- 모음·첫 화면·사이트맵 ----------
@@ -793,8 +753,8 @@ hub = open(os.path.join(ROOT, 'calc/index.html')).read()
 hub = hub.replace('<li><a href="daily/">', '''<li><a href="salary/"><strong>월급·연봉 실수령액 계산기</strong></a><br><span class="muted">4대보험과 간이세액표 소득세를 뺀 통장 금액</span></li>
   <li><a href="leave/"><strong>연차 계산기</strong></a><br><span class="muted">입사일로 지금 연차와 근속별 개수</span></li>
   <li><a href="severance/"><strong>퇴직금 계산기</strong></a><br><span class="muted">평균임금 × 30일 × 재직일수/365</span></li>
-  <li><a href="daily/">''', 1).replace('</ul>', ''.join(f'<li><a href="../holiday/{y}/"><strong>{y}년 공휴일·연휴 달력</strong></a><br><span class="muted">교대 근무자 쉬는 공휴일 확인</span></li>' for y in (2026, 2027)) + '<li><a href="../shift/firms/"><strong>회사별 교대 근무 방식</strong></a></li>\n</ul>', 1)
+  <li><a href="daily/">''', 1).replace('교대 순서별 설명</span></li>\n</ul>', '교대 순서별 설명</span></li>\n' + ''.join(f'<li><a href="../holiday/{y}/"><strong>{y}년 공휴일·연휴 달력</strong></a><br><span class="muted">교대 근무자 쉬는 공휴일 확인</span></li>' for y in (2026, 2027)) + '\n</ul>', 1)
 open(os.path.join(ROOT, 'calc/index.html'), 'w').write(hub)
-sm = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + ''.join(f'  <url><loc>{SITE}{u}</loc><lastmod>2026-11-07</lastmod></url>\n' for u in SITEMAP + ['privacy/', 'terms/', 'community/']) + '</urlset>\n'
+sm = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + ''.join(f'  <url><loc>{SITE}{u}</loc><lastmod>{LASTMOD}</lastmod></url>\n' for u in SITEMAP + ['privacy/', 'terms/', 'community/']) + '</urlset>\n'
 open(os.path.join(ROOT, 'sitemap.xml'), 'w').write(sm)
-print('shift pages', len(pat_links), 'firms', len(firms), 'sitemap', len(SITEMAP))
+print('shift pages', len(pat_links), 'sitemap', len(SITEMAP))

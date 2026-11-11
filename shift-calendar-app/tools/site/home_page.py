@@ -34,7 +34,7 @@ GALLERY = [
 FAQ = [
     ('밤낮은 무료인가요?', '근무표, 근무마다 다른 기본 알람, 위젯은 무료로 써요. 광고는 원할 때만 하루 두 편까지 소리 없이 나와요. 프로(구독 또는 자동 갱신 없는 1년 이용권)에는 광고가 없고 명세서 대조·급여 리포트 같은 기능이 더해져요. 팀원과 직원은 무료이고, 리더·사장님 기능은 팀·직원 요금제로 써요.'),
     ('회원가입을 해야 하나요?', '아니요. 로그인이나 회원가입 없이 설치하자마자 근무를 넣어요.'),
-    ('우리 회사 교대 순서가 특이해요.', '주주야야휴휴처럼 순서를 직접 적어도 되고, 종이·엑셀·PDF 근무표를 찍거나 열면 내 줄을 찾아 달력에 넣어요. 공개 자료로 확인한 회사별 교대 방식도 목록에서 골라요.'),
+    ('우리 회사 교대 순서가 특이해요.', '주주야야휴휴처럼 순서를 직접 적어도 되고, 종이·엑셀·PDF 근무표를 찍거나 열면 내 줄을 찾아 달력에 넣어요. 회사 찾기에서 회사 이름으로 고르면 순서와 근무 시간이 맞춰져요.'),
     ('간호사처럼 근무표가 매달 바뀌어도 되나요?', '네. 근무표가 나오는 날 사진을 찍거나 파일을 열면 내 줄을 찾아 한 달을 채워요. 헷갈리는 날은 따로 보여 줘서 바로 고쳐요.'),
     ('아이폰에서도 쓸 수 있나요?', '지금 앱은 안드로이드(Google Play)에서 받을 수 있어요. 팀 리더나 사장님이 보낸 근무표·출퇴근 링크는 아이폰에서도 앱 없이 열어 볼 수 있어요.'),
     ('궁금한 게 있으면 어디로 물어요?', '앱의 설정 › 도움말과 문의에서 보내 주세요. 보내 주신 의견으로 고친 판이 나오면 앱에서 알려 드려요. 전자우편 yoj0790@naver.com으로도 받아요.'),
@@ -42,7 +42,7 @@ FAQ = [
 
 def main():
     t = open(os.path.join(HERE, 'home.html'), encoding='utf-8').read()
-    firms = len(json.load(open(os.path.join(ROOT, 'remote/v1/cycles.json'), encoding='utf-8'))['data']['cycles'])
+    pats = len([p for p in json.load(open(os.path.join(ROOT, 'remote/v1/presets.json'), encoding='utf-8'))['data']['patterns'] if p['codes'] != 'DDDDDOO'])
     gallery = ''.join(
         f'<figure><div class="img"><img src="assets/app/{k}-360.webp" srcset="assets/app/{k}-360.webp 360w, assets/app/{k}-720.webp 720w" sizes="270px" width="360" height="640" alt="{html.escape(a)}" loading="lazy" decoding="async"></div><figcaption><b>{html.escape(a)}</b>{html.escape(b)}</figcaption></figure>'
         for k, a, b in GALLERY)
@@ -54,7 +54,7 @@ def main():
         '<!--HEADER-->': site_header('', ''), '<!--FOOTER-->': site_footer(''),
         '<!--LOGO-->': LOGO, '<!--LOGO_DOCK-->': LOGO.replace('<svg ', '<svg class="logo" ', 1), '<!--PLAY-->': PLAY_ICON, '<!--QR-->': qr,
         '<!--GALLERY-->': gallery, '<!--JOBS1-->': jobs(JOBS1), '<!--JOBS2-->': jobs(JOBS2),
-        '<!--FAQ-->': faq, '<!--FAQ_LD-->': faq_ld, '<!--FIRMS-->': str(firms),
+        '<!--FAQ-->': faq, '<!--FAQ_LD-->': faq_ld, '<!--PATS-->': str(pats),
     }
     for k, v in I.items(): rep[f'<!--I_{k}-->'] = v
     rep['<!--CHECK-->'] = I['CHECK']; rep['<!--ARROW-->'] = I['ARROW']

@@ -15,7 +15,7 @@ def remote(name): return json.load(open(os.path.join(ROOT, 'remote/v1', name + '
 pre = [p for p in remote('presets')['patterns'] if p['codes'] != 'DDDDDOO']
 HOL = {h['date']: h['name'] for h in remote('holidays')['days'] if h['date'][:4] in ('2026', '2027')}
 NEW = []
-TODAY = '2026-11-08'
+TODAY = LASTMOD  # public_pages.py의 사이트맵 날짜와 같게
 
 PRINT_CSS = '''<style>
 .year { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -330,10 +330,10 @@ def patch(path, old, new, mark):
     if mark in t: return
     if old not in t: print('patch miss', path); return
     open(full, 'w', encoding='utf-8').write(t.replace(old, new, 1))
-patch('shift/index.html', '<h2>회사별 교대 방식 찾기</h2>', '<p><a href="print/">2027 연간 달력 인쇄하기 (A4 한 장)</a> · <a href="../form/">근무표 엑셀 양식</a></p>\n<h2>회사별 교대 방식 찾기</h2>', 'href="print/"')
+patch('shift/index.html', '<h2 id="order-list">', '<p><a href="print/">2027 연간 달력 인쇄하기 (A4 한 장)</a> · <a href="../form/">근무표 엑셀 양식</a></p>\n<h2 id="order-list">', 'href="print/"')
 for q in PATS:
     patch(f'shift/p/{q["slug"]}/index.html', '내 첫날로 석 달 달력 보기</a></p>', f'내 첫날로 석 달 달력 보기</a> <a class="chip" href="../../print/{q["slug"]}/">2027 달력 인쇄</a></p>', '../../print/')
-patch('calc/index.html', '<li><a href="../shift/firms/">', '<li><a href="../form/"><strong>근무표 양식 (엑셀)</strong></a><br><span class="muted">듀티표·조별 근무표·알바 스케줄표·출역표</span></li>\n<li><a href="../shift/print/"><strong>2027 교대 근무 달력 인쇄</strong></a></li>\n<li><a href="../shift/firms/">', 'href="../form/"')
+patch('calc/index.html', '쉬는 공휴일 확인</span></li>\n</ul>', '쉬는 공휴일 확인</span></li>\n<li><a href="../form/"><strong>근무표 양식 (엑셀)</strong></a><br><span class="muted">듀티표·조별 근무표·알바 스케줄표·출역표</span></li>\n<li><a href="../shift/print/"><strong>2027 교대 근무 달력 인쇄</strong></a></li>\n</ul>', '근무표 양식 (엑셀)')
 sm_path = os.path.join(ROOT, 'sitemap.xml'); sm = open(sm_path, encoding='utf-8').read()
 add = ''.join(f'  <url><loc>{SITE}{u}</loc><lastmod>{TODAY}</lastmod></url>\n' for u in NEW if f'<loc>{SITE}{u}</loc>' not in sm)
 open(sm_path, 'w', encoding='utf-8').write(sm.replace('</urlset>', add + '</urlset>'))
