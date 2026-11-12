@@ -91,7 +91,16 @@ data class SetupDraft(
      * title; the summary names it and starts with one press. Empty for any other setup.
      */
     val linkTitle: String = "",
+    /**
+     * [RVG-16] 검토 TYPE-21: a setup filled from a 근무표 link ([linkTitle]) was always 교대. Its days stay the link's painted roster
+     * (the setup's steps are 교대's), and the summary asks how the user works: 일근 or 알바 here makes the saved phone that kind of
+     * work ([savedStyle]). Null: the draft's own [style].
+     */
+    val workAs: WorkStyle? = null,
 ) {
+    /** [RVG-16] The kind of work the saved setup gives the phone. */
+    val savedStyle: WorkStyle? get() = workAs ?: style
+
     val workTypes: List<ShiftType> get() = types.filter { !it.isOff && it.hasTimes }
 
     fun type(id: Long?): ShiftType? = id?.let { i -> types.firstOrNull { it.id == i } }

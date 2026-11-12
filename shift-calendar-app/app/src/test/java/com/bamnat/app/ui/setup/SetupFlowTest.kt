@@ -521,6 +521,37 @@ class SetupFlowTest {
         assertEquals("오프", snap.resolver.resolve(today.plusDays(2)).shiftType?.name)
     }
 
+    /**
+     * [RVG-16] 검토 TYPE-21: a setup started from a 근무표 link was always 교대. The summary asks how the user works; the days stay the
+     * link's, and the phone is set up as that kind of work (an 알바 team member gets 시급, not the 교대 pay setup).
+     */
+    @Test fun aLinkStartAsksHowTheUserWorks() = runBlocking {
+        fun day(d: Int, type: Long?) = com.bamnat.app.share.SharedDay(today.plusDays(d.toLong()), type, null, null, null, emptyList(), null)
+        val schedule = com.bamnat.app.share.SharedSchedule(
+            "카페 민지",
+            listOf(com.bamnat.app.share.SharedType(1, "오픈", "오", 0xFF2196F3, "09:00-14:00", false, null)),
+            mapOf(today to day(0, 1), today.plusDays(1) to day(1, null), today.plusDays(2) to day(2, 1)),
+            emptyList(), emptySet(),
+        )
+        c.setupDrafts.save(LinkStart.draft(schedule, today)!!)
+        val vm = vm()
+        assertEquals(WorkStyle.SHIFT, draft.savedStyle)
+        vm.workAs(WorkStyle.HOURLY)
+        assertEquals(WorkStyle.HOURLY, draft.savedStyle)
+        // Nothing else of the link's setup changes: still its painted days, on the summary.
+        assertEquals(SetupStep.SUMMARY, draft.step)
+        assertEquals(2, draft.painted.count { it.value != null })
+        assertEquals(draft, com.bamnat.app.data.SetupDraftCodec.decode(com.bamnat.app.data.SetupDraftCodec.encode(draft)))
+        vm.save()
+        waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        assertEquals(WorkStyle.HOURLY, c.settingsRepository.current.workStyle)
+        assertFalse("교대's monthly roster mark stays with 교대", c.settingsRepository.current.rosterMonthly)
+        val snap = c.scheduleRepository.snapshot.first()
+        assertEquals("오픈", snap.resolver.resolve(today).shiftType?.name)
+        assertEquals("오픈", snap.resolver.resolve(today.plusDays(2)).shiftType?.name)
+        assertTrue(snap.resolver.resolve(today.plusDays(1)).shiftType?.isOff != false)
+    }
+
     @Test fun aLinkWithoutTimesAsksTheTimesOnly() {
         val schedule = com.bamnat.app.share.SharedSchedule(
             "팀", listOf(com.bamnat.app.share.SharedType(1, "주간", "주", 0xFF2196F3, null, false, null)),

@@ -170,6 +170,29 @@ private fun ringLine(t: ShiftType, minutes: Int?): String {
 
 // ---- 8. the summary ----
 
+/**
+ * [RVG-16] 검토 TYPE-21: started from a 근무표 link, the phone was always 교대 (a 알바 team member got the 교대 pay setup and tabs).
+ * One line asks how the user works; the days stay the link's.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LinkWorkAs(vm: SetupViewModel, d: SetupDraft) {
+    val shown = com.bamnat.app.ui.flags.typeChoices()
+    val now = d.savedStyle
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("어떻게 일하세요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SetupViewModel.LINK_WORK.filter { shown.shows(it) }.forEach { s ->
+                FilterChip(selected = now == s, onClick = { vm.workAs(s) }, label = { Text(LINK_WORK_WORDS.getValue(s)) })
+            }
+        }
+        Text("고른 일에 맞춰 급여 설정과 메뉴가 정해져요. 날짜는 받은 근무표 그대로예요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private val LINK_WORK_WORDS = mapOf(WorkStyle.SHIFT to "교대 근무", WorkStyle.DAY to "평일 근무", WorkStyle.HOURLY to "알바 · 시급")
+
 @Composable
 internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
@@ -178,8 +201,11 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff) {
         ScheduleSnapshot(d.typesToSave(), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
     }
-    if (d.linkTitle.isNotBlank()) StepHeader("‘${d.linkTitle}’ 근무표로 시작할까요?", "받은 근무표의 근무 이름과 시간, 근무한 날을 그대로 넣었어요. 이름이 맞으면 아래 단추 하나로 시작해요.")
-    else StepHeader("이대로 저장할까요?",
+    if (d.linkTitle.isNotBlank()) {
+        // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
+        StepHeader("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", "받은 근무표의 근무 이름과 시간, 근무한 날을 그대로 넣었어요. 이름이 맞으면 아래 단추 하나로 시작해요.")
+        LinkWorkAs(vm, d)
+    } else StepHeader("이대로 저장할까요?",
         if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
     if (preview != null) {
