@@ -187,7 +187,7 @@ class LinkOwnerTest {
         c.setupDrafts.save(LinkStart.draft(com.bamnat.app.share.SharedSchedule.parse(raw("family")), java.time.LocalDate.of(2026, 11, 12))!!)
         val vm = SetupViewModel(c)
         var said: String? = null
-        // HQ-93: what reached the screen, seen last (after the button had its turn), so a miss says whether the press came at all, where,
+        // [RVG-37] HQ-93: what reached the screen, seen last (after the button had its turn), so a miss says whether the press came at all, where,
         // and whether anything took it.
         val seen = mutableListOf<String>()
         window({
@@ -207,10 +207,11 @@ class LinkOwnerTest {
             fun where() = c.setupDrafts.draft.value.let { d -> if (d == null) "draft gone" else "draft at ${d.step}, link '${d.linkTitle}'" }
             assertEquals("before the press: ${where()}", "민지", c.setupDrafts.draft.value?.linkTitle)
             button.assertIsEnabled().performClick()
-            // HQ-93 (총괄, full runs 2 of 3): the press came back without the name and the draft untouched, also after 5 seconds. The
-            // cause was a line an earlier test left in the app's one snack queue (AppSnack, kept for the whole JVM): it showed here, just
-            // above the bottom bar, over this button, and took the press. ComposeMainReset now empties it before each test. Only a wait
-            // that runs out is let through here; anything the press threw fails the test as itself, and a miss says what was on screen.
+            // [RVG-37] HQ-93 (총괄, full runs 2 of 3): the press came back without the name and the draft untouched, also after 5 s. The
+            // cause was a line an earlier test left in the app's one snack queue (AppSnack, kept for the whole JVM): ReviewPNoticeBellTest's
+            // '알림을 모두 지웠어요' showed here, just above the bottom bar (150~222px of this 470px window), over this button (156~208px),
+            // and took the press. ComposeMainReset empties it before and after each test. Only a wait that runs out is let through here;
+            // anything the press threw fails the test as itself, and a miss says what was on screen and which presses came.
             try { compose.waitUntil(5_000) { said != null } } catch (_: androidx.compose.ui.test.ComposeTimeoutException) {}
             if (said == null) throw AssertionError("after the press: ${where()}; ${screen(button)}; events: $seen")
             assertEquals("민지", said)
@@ -218,7 +219,7 @@ class LinkOwnerTest {
         }
     }
 
-    /** HQ-93: where the button was, on what window, and what else was drawn there, for a press that did not land. */
+    /** [RVG-37] HQ-93: where the button was, on what window, and what else was drawn there, for a press that did not land. */
     private fun screen(button: androidx.compose.ui.test.SemanticsNodeInteraction): String {
         val roots = compose.onAllNodes(androidx.compose.ui.test.isRoot()).fetchSemanticsNodes(atLeastOneRootRequired = false)
         val node = runCatching { button.fetchSemanticsNode() }.getOrNull()

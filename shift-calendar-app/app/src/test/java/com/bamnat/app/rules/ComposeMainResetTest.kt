@@ -9,7 +9,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 2.0.0 HQ-93: what one test leaves on the app's screen-wide objects does not reach the next. LinkOwnerTest's press on the summary
+ * 2.0.0 [RVG-37] HQ-93: what one test leaves on the app's screen-wide objects does not reach the next. LinkOwnerTest's press on the summary
  * failed in full runs because a line queued by an earlier test showed over its button; [ComposeMainReset.now] empties the queue first.
  */
 @RunWith(AndroidJUnit4::class)

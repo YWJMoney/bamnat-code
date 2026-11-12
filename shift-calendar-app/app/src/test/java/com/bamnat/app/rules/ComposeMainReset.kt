@@ -26,11 +26,12 @@ object ComposeMainReset {
     }
 
     /**
-     * 2.0.0 HQ-93 (총괄, LinkOwnerTest in full runs 2 of 3): the app's screen-wide objects live as long as the JVM too. A line an earlier
-     * test left in [com.bamnat.app.ui.components.AppSnack]'s queue (Robolectric's clock starts again each test, so it never went
-     * stale) showed on the next test's screen over what it pressed: the summary's '가족·동료 근무표였어요' sat just above the bottom bar,
-     * under that line, and the press never reached it. Emptied here as [com.bamnat.app.screenshots.ScreenshotBase] does for shots: the
-     * snack queue, the opening windows' turns and what counts as open.
+     * 2.0.0 [RVG-37] HQ-93 (총괄, LinkOwnerTest in full runs 2 of 3): the app's screen-wide objects live as long as the JVM too. A
+     * line an earlier test left in [com.bamnat.app.ui.components.AppSnack]'s queue (ReviewPNoticeBellTest's '알림을 모두 지웠어요',
+     * never shown; Robolectric's clock starts again each test, so it never went stale) showed on the next test's screen over what it
+     * pressed: the summary's '가족·동료 근무표였어요' sat just above the bottom bar, under that line, and the press never reached it.
+     * Emptied before and after each test, as [com.bamnat.app.screenshots.ScreenshotBase] does for shots: the snack queue, the opening
+     * windows' turns and what counts as open.
      */
     fun leftovers() {
         com.bamnat.app.ui.components.AppSnack.resetForTest()
@@ -43,7 +44,9 @@ object ComposeMainReset {
         object : org.junit.runners.model.Statement() {
             override fun evaluate() {
                 now()
-                base.evaluate()
+                // [RVG-37] HQ-93: and what this test leaves goes with it, for a next test in the same JVM that does not start with [now]
+                // (ReviewPNoticeBellTest's '알림을 모두 지웠어요' with its 되돌리기 waited unseen and showed over LinkOwnerTest's button).
+                try { base.evaluate() } finally { leftovers() }
             }
         }
     }
