@@ -2419,3 +2419,15 @@ P391-01,"1.39.1 9차 PC: 장터 찾기가 지난번 구간에서 '이 구간에 
 P391-02,"1.39.1 9차 PC: 1시간 안 짧은 잠은 '깼어요' 뒤 아무 말 없이 수면 기록만 열림 → 'n분 잠은 짧아서 아침 한 장 없이 기록에만 남겨요'",1.39.1,진행 중,,NightViewModel.wokeUp
 P391-03,"1.39.1 9차 PC 리더: 신청 카드가 화면을 열 때 가져오기에 실패해도 'n시에 가져왔어요 · 열 때마다 새로' → '새 신청을 못 가져왔어요 · 다시'",1.39.1,진행 중,,"LeaderTeamScreen askPullFailed, TeamAskParts AskCard pullFailed"
 P391-04,"1.39.1 9차 PC 1-12: 로컬 --market이 장터 정리로 내린 '열자마자 오늘 정리'·'아침 오늘 요약'의 코드를 알려 줘 PC가 겹치는 알림 흐름을 봄",1.39.1,진행 중,,server/company-worker/test/local-server.mjs seedMarket
+RVD-01,"검토 2026-11-12 SRV-01·TEST-01~04: 날짜에 묶인 서버 시험(/badges 11-12, loop 11-20, payp 11-30, ledger 2월, share 2027-03)과 앱 사진 시험(AI 12-01) → 시험 시계 고정, 시험 DB의 SQL 'now'가 시험 시계를 따름",1.40,진행 중,,"test/d1.mjs clocked, admin-an·payp-139·ledger·board138·spread139 시계 고정, AIScreenshotTest·J133ScreenshotTest Today"
+RVD-02,"검토 2026-11-12 TEST-05: 날마다 main에서 서버 시험을 오늘·7·30·90·365일 뒤로 돌려 날짜 폭탄을 미리 앎",1.40,진행 중,,".github/workflows/date-watch.yml, server/company-worker/tools/fake-date.mjs"
+RVD-03,"검토 2026-11-12 ADMX-01: 문의 글에 constructor·toString 같은 낱말이 있으면 오늘·운영 장부·Claude 읽기가 500",1.40,진행 중,,"src/inbox.js grams, test/review-d.test.mjs"
+RVD-04,"검토 2026-11-12 ADMX-02: 판이 둘 이상인 회사의 관리자 앱 회사 상세가 빈 화면(V.changes 이름 겹침)",1.40,진행 중,,"admin/views/loop.js changeHandlers, admin-app.js 겹침 알림"
+RVD-05,"검토 2026-11-12 ADMX-03: '더해지는'의 '해지' 같은 평범한 문의가 결제·환불 기록(3년 보관·자동 답 멈춤)으로 잡힘",1.40,진행 중,,"src/ask-check.js isBillingRecord, inquiries.js rescanBilling"
+RVD-06,"검토 2026-11-12 ADM-01(=ADMX-04): 처음 여는 문의의 '이 휴대폰' 패널이 안 읽힘",1.40,진행 중,,"admin-app.js 사람 패널 warm, test/ui/admin-ui.test.mjs"
+RVD-07,"검토 2026-11-12 SVC-02·ADMX-06·07: 사람이 봐야 하는 문의 거르기·답 글 검사를 띄어쓰기·영어로 빠져나감, 거짓 양성, 넘길 글과 결과 붙여 넣기에 같은 검사(보내는 문 하나)",1.40,진행 중,,"src/ask-check.js, test/ask-corpus.json, inbox.js handoff·applyResult"
+RVD-08,"검토 2026-11-12 SRV-03: 배포 뒤 health가 DB를 안 건드려 고장 난 판도 통과",1.40,진행 중,,"index.js deepHealth, tools/deploy_worker.py company_ok"
+RVD-09,"검토 2026-11-12 SVC-89: 광장 글 표(posts)에 parent·answer 색인 없음",1.40,진행 중,,"index.js posts_parent·posts_answer, plaza-people.js"
+RVD-10,"검토 2026-11-12 SVC-65: 개발 결과 붙여 넣기를 두 번 하면 문의 답이 두 번 감",1.40,진행 중,,"inbox.js applyResult already_applied, inboxAnswer 같은 답"
+RVD-11,"검토 2026-11-12 SVC-01: 나간 판 저장이 중간에 끊기면 남은 출시 안내·공지가 다시 가지 않음",1.40,진행 중,,"desk.js shipNow pending·resumeShip, loop.js shipTick"
+RVD-12,"검토 2026-11-12 WEB-01~04·06: 공개 웹 계산기 숫자(연봉 칩 12배, 퇴직금 윤년·3개월 일수, 연차 달 끝 입사, 주 40시간 월급 쪽마다 다름)",1.40,진행 중,,"tools/site/public_pages.py 실수령액 칩·퇴직금 addM·연차 addM·주휴 tot, 공개 저장소 PR"

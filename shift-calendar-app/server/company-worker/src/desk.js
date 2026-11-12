@@ -163,9 +163,14 @@ async function ship(request, env, now, answer) {
   return json(await shipNow(env, v, { dry: body.dry === true, notify: body.notify === true, notice: body.notice !== false }, now, answer));
 }
 
-/** 1.39 [LOOP-02] 나간 판 저장 본체: 관리자 단추와 Play 자동 감지(loop.js)가 함께 써요. [by]는 기록에 남는 이름. */
-export async function shipNow(env, v, { dry = false, notify = false, notice: post = true, by } = {}, now, answer) {
-  const was = await shippedVersion(env);
+/**
+ * 1.39 [LOOP-02] 나간 판 저장 본체: 관리자 단추와 Play 자동 감지(loop.js)가 함께 써요. [by]는 기록에 남는 이름.
+ * 1.40 [RVD-11] 검토 SVC-01: 판을 저장한 뒤 문의 답 하나가 실패하거나 일이 중간에 끊기면 남은 안내·공지·기록이 영영 안 갔어요. 이제 판을
+ * '보내는 중'(pending)으로 먼저 적고, 답은 하나씩 따로 시도해 실패해도 다음으로 가고, 공지·기록을 남긴 뒤에야 '끝'으로 적어요. 끝나지 않은
+ * 판은 5분마다 [resume]으로 남은 문의(아직 안 알린 것)부터 이어 보내요(같은 답은 inboxAnswer가 다시 보내지 않아요).
+ */
+export async function shipNow(env, v, { dry = false, notify = false, notice: post = true, by, resume = null } = {}, now, answer) {
+  const was = resume ? (resume.was ? { v: resume.was } : null) : await shippedVersion(env);
   const [targets, fresh] = await Promise.all([shipTargets(env, v), newlyOut(env, v, was?.v)]);
   const notice = newsNotice(v, fresh, now);
   // 1.37 [ADM2-10] 판을 저장하기 전에 볼 것: 개발사항마다 미리 써 둔 출시 답·공지 한 줄이 있는지, 문의에 갈 답, 올라갈 공지.
@@ -176,16 +181,35 @@ export async function shipNow(env, v, { dry = false, notify = false, notice: pos
     return { version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20),
       replies: [...byItem.values()].slice(0, 20), fresh: items.slice(0, 40), notice: notice ? { title: notice.title, body: notice.body, days: DESK.newsDays } : null };
   }
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: now, by: by ?? env.actor?.name ?? "" }));
+  const name = resume?.by ?? by ?? env.actor?.name ?? "";
+  const mark = (extra) => run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: resume?.at ?? now, by: name, ...extra }));
+  const going = { pending: true, was: was?.v ?? null, notify, post, noticeId: resume?.noticeId ?? null, tries: (resume?.tries ?? 0) + 1 };
+  await mark(going);
   let answered = 0;
+  let failed = 0;
   if (notify) for (const t of targets) {
-    if (await answer(env, t.inquiry, t.text, now)) answered++;
-    await markTold(env, t.item, [t.inquiry], now);
+    try {
+      if (await answer(env, t.inquiry, t.text, now)) answered++;
+      await markTold(env, t.item, [t.inquiry], now);
+    } catch (e) {
+      failed++;
+      console.error(`ship ${v} ${t.inquiry}: ${e?.message ?? e}`);
+    }
   }
-  // 공지는 따로 끄지 않는 한 올려요(notice: false면 안 올림).
-  const noticeId = notice && post ? await postNotice(env, notice) : null;
-  await audit(env, now, "shipped_version", v, [by && `${by}`, answered && `문의 ${answered}건에 업데이트 안내`, noticeId && "업데이트 소식 공지"].filter(Boolean).join(" · "));
-  return { version: v, was: was?.v ?? null, answered, notice: noticeId ? { id: noticeId, title: notice.title } : null };
+  // 공지는 따로 끄지 않는 한 올려요(notice: false면 안 올림). 이어 보낼 때는 이미 올린 공지를 다시 올리지 않아요.
+  if (notice && post && !going.noticeId) going.noticeId = await postNotice(env, notice).catch(() => null);
+  const noticeId = going.noticeId;
+  await audit(env, now, "shipped_version", v, [name && `${name}`, resume && "이어 보냄", answered && `문의 ${answered}건에 업데이트 안내`, noticeId && !resume?.noticeId && "업데이트 소식 공지",
+    failed && `${failed}건 실패(5분 뒤 다시)`].filter(Boolean).join(" · "));
+  await mark(failed ? going : {});
+  return { version: v, was: was?.v ?? null, answered, failed, notice: noticeId ? { id: noticeId, title: notice?.title ?? "" } : null };
+}
+
+/** 1.40 [RVD-11] 끝나지 않은 나간 판 저장을 이어요(5분마다, 한 판에 12번까지 = 1시간쯤). 이어 보낸 게 없으면 null. */
+export async function resumeShip(env, now, answer) {
+  const s = await shippedVersion(env);
+  if (!s?.pending || (s.tries ?? 0) >= 12) return null;
+  return shipNow(env, s.v, { notify: s.notify === true, notice: s.post !== false, resume: s }, now, answer);
 }
 
 // ---- 흐름(관제)과 운영 숫자 [ADM2-01][ADM2-05] ----

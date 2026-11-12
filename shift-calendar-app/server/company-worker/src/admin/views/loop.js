@@ -379,10 +379,11 @@ export function loopViews(A) {
     if (!r) t.checked = !t.checked;
     else reload("loopState");
   };
-  const changes = {
+  // [RVD-04] Not `changes`: plaza gives a function by that name, and this object hid it (판 2개 회사 상세가 빈 화면).
+  const changeHandlers = {
     "loop-switch": (t) => saveBox(t, { [t.name]: t.checked }, t.checked),
     "loop-instant": (t) => saveBox(t, { instant: [...t.form.querySelectorAll('input[name="instant"]:checked')].map((x) => x.value) }, t.checked),
   };
 
-  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms, changes };
+  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms, changeHandlers };
 }
