@@ -65,5 +65,16 @@ class HeadQuickTest {
         assertEquals(1, HeadQuickRoom.of(1, 1200f, 1f, narrow = false).words)
         // Something else in the row (알림함) takes its width from the same sum.
         assertEquals(1, HeadQuickRoom.of(3, 707f, 1f, narrow = false, reserved = 100f).words)
+        // [RVH-52] HQ-22: a work's month twice the app's size takes its room first (one with its words, not two).
+        assertEquals(1, HeadQuickRoom.of(3, 707f, 1f, narrow = false, titleGrow = 2f).words)
+        // A folded phone: the round button stands beside a month of 34dp, but not when the work's head box (바깥 6·안 12, 36dp)
+        // leaves the month less than it needs; then it waits in 도구 and the month keeps its size.
+        assertEquals(1, HeadQuickRoom.of(1, 369f, 1f, narrow = true, titleMin = 34f).shown)
+        HeadQuickRoom.of(1, 369f, 1f, narrow = true, reserved = 36f, titleMin = 34f).let {
+            assertEquals(true, it.round)
+            assertEquals(0, it.shown)
+        }
+        // On the open screen's rail there is no 나 in the row: room for one more.
+        assertEquals(1, HeadQuickRoom.of(1, 369f, 1f, narrow = true, reserved = 36f, titleMin = 34f, me = false).shown)
     }
 }
