@@ -35,11 +35,20 @@ class CommunityCareTest {
         assertTrue(CommunityCare.holdBody(h.copy(appeal = ""), 48, seoul).contains("읽고 있어요"))
         assertTrue(CommunityCare.holdBody(h.copy(scope = "community"), 48, seoul).contains("좋아요·투표"))
         assertEquals("🌙 11월 10일까지 마을 쓰기를 쉬어 가요", CommunityCare.holdLine(h.copy(scope = "community"), seoul))
+        // 2.0.0 [RVN-18] COMP-58 조사 fitted to the reason, and 당분간 without a number of days (before: "일 동안").
+        assertTrue(body, body.contains("‘광고나 같은 글 되풀이’를 운영자가 확인해 3일 동안"))
+        val sexual = CommunityCare.holdBody(h.copy(reason = "sexual", days = null), 48, seoul)
+        assertTrue(sexual, sexual.contains("‘성적인 내용’을 운영자가 확인해 당분간 의견 쓰기를") && !sexual.contains(" 일 동안"))
+        assertTrue(CommunityCare.warningBody(CareNote("c4", "sexual")).contains("‘성적인 내용’으로 신고된"))
+        assertTrue(CommunityCare.warningBody(CareNote("c5", "false")).contains("‘사실과 다른 정보’로 신고된"))
     }
 
     @Test fun mutedNewsAndAppealWords() {
-        assertTrue(CommunityCare.mutedText(until, seoul).startsWith("11월 10일까지"))
-        assertEquals("운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요", CommunityCare.mutedText(null))
+        // 2.0.0 [RVN-18] COMP-19 one line everywhere: why, until when (when known), where to read why and explain.
+        assertEquals("운영 원칙을 지키지 않은 글이 있어 11월 10일까지 마을 글쓰기를 쉬어 가요. 마을 › 맨 위 한 줄에서 까닭을 보고 해명할 수 있어요",
+            CommunityCare.mutedText(until, seoul))
+        assertEquals("운영 원칙을 지키지 않은 글이 있어 지금은 마을 글쓰기를 쉬어 가요. 마을 › 맨 위 한 줄에서 까닭을 보고 해명할 수 있어요",
+            CommunityCare.mutedText(null))
         assertEquals(CommunityCare.newsLine("lifted"), PlazaNews.line(PlazaNewsItem("care", result = "lifted")))
         assertNull(CommunityCare.newsLine("odd"))
         assertEquals("10자 이상 적어 주세요", CommunityCare.appealProblem("짧아요"))

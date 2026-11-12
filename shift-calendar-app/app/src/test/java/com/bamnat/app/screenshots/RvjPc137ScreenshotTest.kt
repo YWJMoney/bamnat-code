@@ -222,11 +222,11 @@ class RvjPc137ScreenshotTest : ScreenshotBase() {
         repeat(20) { i -> c.drawText("기본급 2,397,500   국민연금 141,750", 20f, 60f + i * 56, p) }
     }
 
-    private fun pinned(zoomed: Boolean): Screen.() -> Unit = {
-        val bitmap = photo()
+    private fun pinned(zoomed: Boolean, photos: Int = 1): Screen.() -> Unit = {
+        val bitmaps = List(photos) { photo() }
         content {
             Column {
-                PinnedPhotos(listOf(bitmap))
+                PinnedPhotos(bitmaps)
                 Text("명세서 줄", modifier = Modifier.padding(16.dp))
             }
         }
@@ -235,11 +235,53 @@ class RvjPc137ScreenshotTest : ScreenshotBase() {
             tapText("사진 크게", exact = true)
             settle()
         }
+        buttonsOffThePhoto()
+    }
+
+    /** [RVJ-61] (HQ-102): every button of the photo sits under it (they lay on it and hid lines being read). */
+    private fun Screen.buttonsOffThePhoto() {
+        val all = nodes()
+        fun said(n: androidx.compose.ui.semantics.SemanticsNode) =
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription).orEmpty() +
+                n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().map { it.text }
+        val photo = all.first { n -> said(n).any { it.startsWith("읽은 명세서 사진") } }.boundsInWindow
+        val names = setOf("사진 작게", "사진 크게", "사진 단추 더 보기", "사진 칸 넓게", "사진 칸 좁게", "접기", "닫기", "명세서", "계산 방법")
+        val buttons = all.filter { n -> said(n).any { it in names || it.endsWith("%") } }
+        assertTrue("사진 단추가 없어요", buttons.size >= 2)
+        buttons.forEach { b -> assertTrue("'${said(b)}'가 사진 위에 떠요", b.boundsInWindow.top >= photo.bottom - 0.5f) }
     }
 
     @Test fun pinnedPhotoButtons() = shoot("rvj_160_payslip_photo_zoom_folded", FOLDED, pinned(true))
     @Test fun pinnedPhotoButtonsDarkBig() = shoot("rvj_161_payslip_photo_zoom_folded_dark_200", DARK, 2f, pinned(true))
     @Test fun pinnedPhotoButtonsWide() = shoot("rvj_162_payslip_photo_zoom_unfolded", UNFOLDED, pinned(true))
+
+    /** [RVJ-61] (HQ-102): at big letters the row has no room for 사진 칸·접기, so they go into one ⋮ (and the zoom in words is left out). */
+    @Test fun bigLettersPutTheRoomButtonsInOne() = shoot("rvj_167_payslip_photo_band_more_folded_dark_200", DARK, 2f) {
+        pinned(true).invoke(this)
+        assertFalse(shows("접기", exact = true))
+        assertFalse(shows("150%", exact = true))
+        assertTrue(enabled("사진 작게"))
+        tapText("사진 단추 더 보기", exact = true)
+        settle()
+        assertTrue(inPopup("사진 칸 넓게"))
+        assertTrue(inPopup("접기"))
+    }
+
+    /** [RVJ-61] (HQ-102): two photos (명세서·계산 방법) at big letters: which photo goes into the ⋮ too, never on the photo. */
+    @Test fun twoPhotosAtBigLetters() = shoot("rvj_168_payslip_two_photos_band_folded_dark_200", DARK, 2f) {
+        pinned(false, photos = 2).invoke(this)
+        tapText("사진 단추 더 보기", exact = true)
+        settle()
+        assertTrue(inPopup("계산 방법 사진"))
+    }
+
+    /** [RVJ-61] (HQ-102): at usual letters everything shows in the one row under the photo. */
+    @Test fun twoPhotosInOneRow() = shoot("rvj_169_payslip_two_photos_band_unfolded", UNFOLDED) {
+        pinned(true, photos = 2).invoke(this)
+        assertTrue(shows("계산 방법", exact = true))
+        assertTrue(shows("접기", exact = true))
+        assertTrue(shows("150%", exact = true))
+    }
 
     @Test fun thePhotoZoomsWithoutTwoFingers() = shoot("rvj_163_payslip_photo_zoom_said_folded", FOLDED) {
         pinned(false).invoke(this)
@@ -263,6 +305,7 @@ class RvjPc137ScreenshotTest : ScreenshotBase() {
             tapText("사진 크게", exact = true)
             settle()
         }
+        buttonsOffThePhoto()
     }
 
     @Test fun bigPhoto() = shoot("rvj_165_payslip_photo_big_folded", FOLDED, big(true))

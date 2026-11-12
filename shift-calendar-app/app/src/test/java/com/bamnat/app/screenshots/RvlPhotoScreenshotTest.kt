@@ -130,9 +130,10 @@ class RvlPhotoScreenshotTest : ScreenshotBase() {
     // ---- RVL-35: the photo made bigger to tap on ----
     private fun tapDialog(zoom: Int = 0): Screen.() -> Unit = read(pick = false) {
         tapText(TAP_PHOTO)
-        assertTrue(appears("사진 크게"))
+        assertTrue(appears("1. 날짜 줄을 눌러 주세요", exact = true))
+        // 2.0.0 [RVL-35] (검토 HQ-80) A wide roster opens as tall as the window, so a line can be tapped at once.
+        assertTrue("opens zoomed", appears("%"))
         repeat(zoom) { tapText("사진 크게") }
-        if (zoom > 0) assertTrue(appears("${(Math.pow(1.5, zoom.toDouble()) * 100).toInt()}%"))
     }
 
     @Test fun tapFoldLight() = shoot("rvl35_tap_fold_light_100", FOLDED, tapDialog())
@@ -169,11 +170,11 @@ class RvlPhotoScreenshotTest : ScreenshotBase() {
         vm.tap(1)
         repeat(14) { i -> vm.put(DutyCell.Shift(id(if (i % 4 < 2) "주간" else "야간"))) }
         settle()
-        assertTrue(appears("이미 넣어 둔 연차·바꾼 근무 2일을 근무표대로 바꿔요"))
-        assertTrue(appears("5·12일 · 달력에 테두리로 보여요"))
+        assertTrue(appears("넣어 둔 2일이 바뀌어요"))
+        assertTrue(appears("5·12일 (연차·바꾼 근무)"))
         if (keep) {
             tapText("그 날은 그대로 두기", exact = true)
-            assertTrue(appears("이미 넣어 둔 연차·바꾼 근무 2일은 그대로 둬요"))
+            assertTrue(appears("넣어 둔 2일은 그대로 둬요"))
             assertTrue(appears("11월에 12일 넣기"))
         }
     }

@@ -698,12 +698,21 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
             MarketShot(item, 64.dp, style, onClick)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                // 2.0.0 [RVM-37] 총괄 HQ-83: at large text the marks beside the name cut it ('야간 회복 …'); there the name has the line
+                // (two lines) and the marks go on the line under it.
+                val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+                val marks: @Composable () -> Unit = {
                     // [R136-17] 1.36 (리뷰 R-12): 보여주기 is the operator's word; people read 추천.
                     if (item.showcase) Badge("추천")
                     else if (item.official) Badge(if (item.publicData) "공개 자료" else "시작")
                     if (item.fx.isNotEmpty()) FxBadge(locked = fxLocked)
+                }
+                if (big) {
+                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (item.showcase || item.official || item.fx.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) { marks() }
+                } else Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    marks()
                 }
                 if (item.summary.isNotEmpty()) Text(item.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -725,18 +734,25 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
 @Composable
 private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = Modifier, small: Boolean = false, onPicture: (() -> Unit)? = null, onClick: () -> Unit) {
     val fxLocked = item.fx.isNotEmpty() && !com.bamnat.app.logic.FxAccess.pro(androidx.compose.ui.platform.LocalContext.current.appContainer)
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     Card(modifier.clickable(onClickLabel = when (item.scope) { "tab" -> "작품 보기"; "part", "logic" -> "도구 보기"; else -> "테마 보기" }, onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 // 1.39 [MKF-01] The picture opens 크게 넘겨 보기 (the name and lines under it, the work's page).
                 MarketShot(item, maxWidth, style, onPicture ?: onClick)
-                // 1.39 [MKD-01] 프로 표는 그림 위 모서리에 (이름 자리를 뺏지 않게).
-                if (item.fx.isNotEmpty()) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { FxBadge(locked = fxLocked) }
+                // 1.39 [MKD-01] 프로 표는 그림 위 모서리에 (이름 자리를 뺏지 않게). 2.0.0 [RVM-37] HQ-83: at large text 추천 joins it
+                // there, above 프로, so the name has the whole width.
+                val corner = item.fx.isNotEmpty() || (big && item.showcase)
+                if (corner) Column(Modifier.align(Alignment.TopEnd).padding(6.dp), horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (big && item.showcase) Badge("추천")
+                    if (item.fx.isNotEmpty()) FxBadge(locked = fxLocked)
+                }
             }
             // PC 확인 e50bb622: 추천 by the name, not over the picture's own title. 총괄 #462 (글자 200%에서 이름이 '야간 …'): two lines.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (item.showcase) Badge("추천")
+                if (!big && item.showcase) Badge("추천")
             }
             sectionLine(item, style, long = false)?.let {
                 Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)

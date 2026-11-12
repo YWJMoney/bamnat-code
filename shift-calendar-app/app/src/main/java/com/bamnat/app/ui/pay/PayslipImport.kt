@@ -357,7 +357,7 @@ private fun PickDialog(
                         rulesOnly -> "1. 명세서 (없으면 건너뛰어도 돼요)"
                         else -> "1. 명세서"
                     }, style = MaterialTheme.typography.titleSmall)
-                    ScanButtons(onScan = onScan, onEmpty = onEmpty)
+                    ScanButtons(onScan = onScan, onEmpty = onEmpty, keepSlips = true)
                     notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() }, onPaste = onPaste)
@@ -370,7 +370,8 @@ private fun PickDialog(
                             rulesOnly -> "2. 회사 계산 방법 (명세서가 없으면 이것만으로도 계산해요)"
                             else -> "2. 회사 계산 방법 (없으면 건너뛰어도 돼요)"
                         }, style = MaterialTheme.typography.titleSmall)
-                        ScanButtons(onScan = onScanSecond, onEmpty = onEmpty)
+                        // 2.0.0 [RVL-41] A 회사 계산 방법 PDF is no 명세서: its button and its password sheet say so.
+                        ScanButtons(onScan = onScanSecond, onEmpty = onEmpty, pdfLabel = "PDF로 받은 회사 계산 방법 고르기")
                         // [RULE-ED-01] 1.30 AW (사용자 "사진 촬영 금지 회사"): the rules as 칸, with common allowances to pick.
                         OutlinedButton(onClick = onByHand, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("사진 없이 칸으로 적기") }
                     }

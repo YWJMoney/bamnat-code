@@ -71,9 +71,13 @@ import com.bamnat.app.ui.components.ConfirmDialog
 import java.time.ZoneId
 import com.bamnat.core.time.Today
 
-/** [COMM-02] What the report screen and the privacy policy say about what goes to the company server. */
+/**
+ * [COMM-02] What the report screen and the privacy policy say about what goes to the company server. 2.0.0 [RVN-18] 검토 COMP-22-11:
+ * as the policy's 1-2항 says it, the network check the server keeps for two hours too (before, "무작위 번호뿐").
+ */
 internal const val COMPANY_SEND_NOTICE =
-    "보내면 위 내용이 회사 찾기에 올라가요. 함께 가는 건 이 휴대폰에서 만든 무작위 번호뿐이라 누가 보냈는지 알 수 없어요. " +
+    "보내면 위 내용이 회사 찾기에 올라가요. 이름·연락처 없이 이 휴대폰에서 만든 무작위 번호로 보내 누가 보냈는지 알 수 없어요. " +
+        "한 사람이 여러 번 세어지지 않게 보는 네트워크 값은 2시간 뒤 지워요. " +
         "‘내가 보낸 정보’에서 언제든 거두거나 모두 지울 수 있어요. 채택된 뒤에는 같은 회사 분들이 쓰고 있어 설정은 남고, 나와의 연결만 지워져요."
 
 /**
@@ -285,7 +289,7 @@ internal fun HowAdopted(threshold: Int, reward: String?) {
         Column(Modifier.padding(16.dp)) {
             Text("이렇게 채택돼요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 6.dp))
             HowStep(1, "회사 찾기에 ‘확인 중’으로 올라가요", "같은 회사 분들은 바로 써 볼 수 있어요")
-            HowStep(2, "같은 회사 분들이 확인해요", "같은 설정을 보내거나 ‘맞았어요’를 누를 때마다 점수가 쌓여요")
+            HowStep(2, "같은 회사 분들이 확인해요", "같은 설정을 보내거나 ‘맞아요’를 누를 때마다 점수가 쌓여요")
             HowStep(3, "${threshold}점이 되면 채택돼요", "두 사람 이상이 맞다고 해야 하고, 개발자가 한 번 더 볼 때도 있어요")
             reward?.let { RewardPill(it, Modifier.padding(top = 8.dp)) }
         }
@@ -533,6 +537,10 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
             }
         } else {
             Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
+            // 2.0.0 [RVN-18] 검토 T10a-05: 일근 is 사무직 as much as 공무원·제조, so no job is guessed for it; the likely ones come first and
+            // the line says where it goes left empty.
+            if (job.isEmpty()) Text("고르지 않으면 모든 광장에 올라가요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 com.bamnat.app.ui.company.rememberJobs().forEach { (key, name) ->
                     com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
