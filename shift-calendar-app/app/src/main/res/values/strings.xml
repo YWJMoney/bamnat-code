@@ -4,16 +4,17 @@
     <string name="app_name">밤낮</string>
     <string name="channel_alarm_name">근무 알람</string>
     <string name="channel_alarm_description">근무 시작 전에 울리는 알람</string>
-    <string name="widget_today_desc">오늘과 내일 근무, 다음 알람</string>
-    <string name="widget_week_desc">이번 주 근무 (주 시작 요일부터 7일)</string>
-    <string name="widget_month_desc">이번 달 근무표</string>
-    <string name="widget_today_name">오늘 근무</string>
-    <string name="widget_week_name">주간 근무</string>
-    <string name="widget_month_name">월간 근무표</string>
-    <string name="widget_teams_desc">조마다 오늘과 내일 근무</string>
+    <string name="widget_today_desc">오늘과 내일 근무·영업·일정, 다음 알람</string>
+    <string name="widget_week_desc">이번 주 근무·영업·일정 (주 시작 요일부터 7일)</string>
+    <string name="widget_month_desc">이번 달 달력</string>
+    <!-- 2.0.0 [RVG-13] 검토 TYPE-12: 위젯 이름이 유형을 타지 않게 -->
+    <string name="widget_today_name">오늘</string>
+    <string name="widget_week_name">이번 주</string>
+    <string name="widget_month_name">한 달 달력</string>
+    <string name="widget_teams_desc">조마다 오늘과 내일 근무 (교대 근무표에서)</string>
     <string name="widget_teams_name">오늘 모든 조</string>
-    <string name="widget_countdown_desc">다음 근무까지 남은 시간, 근무 중이면 끝나는 시각</string>
-    <string name="widget_countdown_name">다음 근무까지</string>
+    <string name="widget_countdown_desc">다음 근무·영업까지 남은 시간, 하는 중이면 끝나는 시각</string>
+    <string name="widget_countdown_name">다음 일정까지</string>
     <!-- 1.37 [LEDH-14] -->
     <string name="tile_money_add">돈 적기</string>
     <string name="widget_money_name">오늘 쓸 돈</string>

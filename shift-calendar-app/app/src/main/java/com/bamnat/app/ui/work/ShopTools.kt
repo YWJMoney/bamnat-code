@@ -236,6 +236,20 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
     val payroll = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
     var ledgerOpen by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVG-04] 검토 BOSS-61: once the 급여 대장 holds the staff (its first opening copies the 근무표 in once), the card reads the
+    // 대장 — the same people, 가산·산재·달라진 날 included — so the two screens never say two 인건비. The old 근무표 stays readable
+    // as '옮기기 전 근무표'; new staff and changes go in the 대장.
+    val phase = context.appContainer.phaseThree
+    val places by phase.workplaces.collectAsStateWithLifecycle(null)
+    val place = places?.firstOrNull()?.takeIf { payroll }
+    // [RVG-12] 검토 BOSS-69: the help search's '급여 대장' opens the 대장 here (it went to the 장부 tab).
+    com.bamnat.app.ui.guide.FocusedTool("payroll", "boss.payroll") { if (payroll) ledgerOpen = true }
+    if (place != null) {
+        LedgerCostCard(place, sales, month, hadRoster = roster.staff.isNotEmpty(), onLedger = { ledgerOpen = true }, onOld = { open = true })
+        if (open) StaffScreen(calendarId, month) { open = false }
+        if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }) { ledgerOpen = false }
+        return
+    }
     SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = {
         Row {
             if (payroll) TextButton(onClick = { ledgerOpen = true }) { Text("급여 대장") }
@@ -266,6 +280,35 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     if (open) StaffScreen(calendarId, month) { open = false }
     // 1.39 G2: a month moved to on the card opens as it is; this month opens on the one to settle, as the 관리 card does.
     if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }) { ledgerOpen = false }
+}
+
+/** [RVG-04] The 직원 인건비 card once the 급여 대장 is in use: its month, its people, its 인건비율. */
+@Composable
+private fun LedgerCostCard(place: com.bamnat.core.boss.Workplace, sales: Long, month: YearMonth, hadRoster: Boolean, onLedger: () -> Unit, onOld: () -> Unit) {
+    val store = LocalContext.current.appContainer.phaseThree
+    val inputs by remember(place, month) { store.inputs(place, month) }.collectAsStateWithLifecycle(null)
+    val ledger = inputs?.takeIf { it.month == month }?.ledger
+    SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = { TextButton(onClick = onLedger) { Text("급여 대장") } }) {
+        if (ledger == null) return@SectionCard
+        if (ledger.lines.isEmpty()) {
+            Hint("급여 대장에 직원을 더하면 한 달 인건비와 매출 대비 인건비율이 여기에 보여요.")
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile("인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${ledger.lines.size}명 · ${ledger.lines.sumOf { it.workMinutes } / 60}시간")
+                val ratio = if (sales > 0) (ledger.total * 100 / sales).toInt() else null
+                StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
+                    warning = (ratio ?: 0) >= 35)
+            }
+            Column(Modifier.padding(top = 8.dp)) {
+                ledger.lines.forEach { l -> ValueLine(l.staff.name.ifBlank { "이름 없음" }, Fmt.won(l.employerTotal)) }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                ValueLine("급여", Fmt.won(ledger.gross))
+                if (ledger.employerInsurance + ledger.accident > 0) ValueLine("4대보험·산재 (사장님 몫)", Fmt.won(ledger.employerInsurance + ledger.accident))
+            }
+            Hint("급여 대장과 같은 계산이에요(가산·산재·바꾼 날 포함). 직원을 더하거나 고치는 것도 급여 대장에서 해요.", Modifier.padding(top = 6.dp))
+        }
+        if (hadRoster) TextButton(onClick = onOld) { Text("옮기기 전 근무표 보기") }
+    }
 }
 
 private val DEFAULT_SHIFT = StaffShift(LocalTime.of(9, 0), LocalTime.of(13, 0))

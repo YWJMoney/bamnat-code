@@ -179,6 +179,11 @@ class AlarmService : Service() {
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
                     // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
+                    // 2.0.0 [RVG-05] 검토 ALM-04: the morning alarm off closes a sleep left open by 잠들었어요 at this minute, as a measured
+                    // night already did. Left open, 자는 중 kept every later memo·할 일 notice quiet and 방해 금지 on into the day. The
+                    // '몇 시간 잤어요' notice that follows has 아직 자요 to undo it in one tap.
+                    if (ring.label == null && !ring.recheck && com.bamnat.app.sleep.SleepRecordService.recording.value == null)
+                        appContainer.appScope.launch { runCatching { appContainer.sleepRepository.wokeUp() } }
                     // 1.39 [SLEEP-06] The morning alarm off: 자는 동안 소리 stops too, so the microphone does not run into the day.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepRecordService.stop(this)
                     // 1.39 [FX-21] 규칙 '근무 알람을 끄면'.
@@ -396,8 +401,12 @@ class AlarmService : Service() {
             // 1.39 [FLOW-15] A sound that grows is 2 (소리 작게) until it is full; a full sound after the watch is 3.
             _stage.value = if (settings.gradualVolume) 2 else if (_stage.value > 0) 3 else 0
         }
-        if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
+        // 2.0.0 [RVG-06] 검토 ALM-06: the phone's alarm volume at 0 with 진동 off rang as a lit screen only. Then it vibrates anyway.
+        if (settings.vibrate || sound == AppSettings.SILENT_SOUND || alarmVolumeZero()) startVibration()
     }
+
+    private fun alarmVolumeZero(): Boolean =
+        runCatching { (getSystemService(AUDIO_SERVICE) as AudioManager).getStreamVolume(AudioManager.STREAM_ALARM) == 0 }.getOrDefault(false)
 
     /**
      * [ALRM-03] For 알람 제안: which shift's alarm this was and when it was due, snoozes included (the due time comes
@@ -815,6 +824,8 @@ class AlarmService : Service() {
         fun describe(ring: RingRequest): String {
             val start = ring.shiftStart.format(timeFormat)
             val work = ring.shiftName.isNotBlank()
+            // [RVG-09] '10:00 영업 시작' on a shop's day.
+            val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName)
             return when {
                 // [SCHED-01] A memo's schedule: when it is.
                 // [PROV-07] 일어났나요? had no answer.
@@ -823,24 +834,25 @@ class AlarmService : Service() {
                 ring.label == AlarmScheduler.TEST_NAME -> if (ring.isSnooze) "시험 알람 · 다시 울림" else "소리와 화면이 잘 나오는지 보는 알람이에요"
                 ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
                 ring.label != null -> "$start 일정"
-                ring.isSnooze && work -> "$start 근무 시작 · 다시 울림"
+                ring.isSnooze && work -> "$start $noun 시작 · 다시 울림"
                 ring.isSnooze -> "다시 울림"
-                ring.custom && work -> "$start 근무 시작 · 이 날 알람"
+                ring.custom && work -> "$start $noun 시작 · 이 날 알람"
                 ring.custom -> "이 날 알람"
                 // [EASE-18] One after the start says so (다음날 낮잠).
                 // PC 267560dd: "19:00 근무 시작" read as tonight on a nap alarm the next day; it says the shift began yesterday.
                 ring.offsetMinutes < 0 -> startedLine(ring, start) + " · ${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람"
-                else -> "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
+                else -> "$start $noun 시작 · ${ring.offsetMinutes}분 전 알람"
             }
         }
 
         /** "어제 19:00에 시작한 근무" when the alarm comes on a later day than the shift began, else "19:00 근무 시작". */
         internal fun startedLine(ring: RingRequest, start: String): String {
             val ringDay = AlarmScheduler.millisToLocal(ring.triggerAtMillis).toLocalDate()
+            val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName)
             return when (java.time.temporal.ChronoUnit.DAYS.between(ring.shiftDate, ringDay)) {
-                0L -> "$start 근무 시작"
-                1L -> "어제 ${start}에 시작한 근무"
-                else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 ${start}에 시작한 근무"
+                0L -> "$start $noun 시작"
+                1L -> "어제 ${start}에 시작한 $noun"
+                else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 ${start}에 시작한 $noun"
             }
         }
 

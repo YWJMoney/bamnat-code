@@ -216,10 +216,11 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     val store = LocalContext.current.appContainer.phaseThree
     val last = now.minusMonths(1)
     val staff by store.staff(place.id).collectAsStateWithLifecycle(emptyList())
-    val work by store.work(place.id, last).collectAsStateWithLifecycle(emptyList())
+    // 2.0.0 [RVG-01·02]: the same month as the 급여 대장 shows (a closed month as it was closed, the crossing weeks whole).
+    val inputs by remember(place, last) { store.inputs(place, last) }.collectAsStateWithLifecycle(null)
     val closed by store.payrollMonth(place.id, last).collectAsStateWithLifecycle(null)
     val marks by store.lines(place.id, last).collectAsStateWithLifecycle(emptyList())
-    val ledger = remember(place, staff, work, last) { PayrollLedger.month(place, staff, last, work) }
+    val ledger = inputs?.takeIf { it.month == last }?.ledger ?: PayrollLedger.month(place, emptyList(), last, emptyList())
     val isClosed = closed?.state == "CLOSED"
     val counted = if (isClosed) marks.size else ledger.lines.size
     val g = ManageDesk.ShopGlance(place.id, place.name, staff.size, place.fivePlus != null, isClosed, counted,

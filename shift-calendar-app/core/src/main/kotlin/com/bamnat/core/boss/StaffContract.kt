@@ -88,8 +88,13 @@ object StaffContract {
             append("\n지급 방법: 근로자 명의 예금 통장에 입금")
         }
         items += Item("임금", pay)
-        items += Item("연차 유급휴가", if (place.fivePlus == false) "5명 미만 사업장이라 근로기준법 제60조가 적용되지 않아요. 따로 주기로 하면 여기에 적어요."
-            else "근로기준법 제60조에 따라 줘요(1년 미만은 한 달 개근마다 1일, 1년 80% 이상 출근하면 15일)")
+        // 2.0.0 [RVG-03] 검토 BOSS-51: 초단시간(4주 평균 한 주 15시간 미만)은 제60조도 적용되지 않아요(근로기준법 제18조 제3항), the 휴일 line above says
+        // the same for 주휴일. The 연차 line now says it too instead of promising 15일 the law does not ask for.
+        items += Item("연차 유급휴가", when {
+            weekMinutes in 1 until 15 * 60 -> "한 주 15시간 미만이라 연차 유급휴가(근로기준법 제60조)가 적용되지 않아요(제18조 제3항). 따로 주기로 하면 여기에 적어요."
+            place.fivePlus == false -> "5명 미만 사업장이라 근로기준법 제60조가 적용되지 않아요. 따로 주기로 하면 여기에 적어요."
+            else -> "근로기준법 제60조에 따라 줘요(1년 미만은 한 달 개근마다 1일, 1년 80% 이상 출근하면 15일)"
+        })
         items += Item("사회보험", "고용보험 " + (if (s.insurance.employment) "가입" else "가입 안 함") + " · 산재보험 가입 · 국민연금 " + (if (s.insurance.pension) "가입" else "가입 안 함") +
             " · 건강보험 " + (if (s.insurance.health) "가입" else "가입 안 함"))
         items += Item("계약서 주기", "사업주는 이 계약서를 만들면 근로자에게 한 부를 줘요(근로기준법 제17조). 근로자가 원하지 않아도 줘야 해요.")

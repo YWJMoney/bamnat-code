@@ -33,6 +33,7 @@ import com.bamnat.core.team.TeamShift
 import com.bamnat.core.work.StaffShift
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -148,6 +149,33 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     fun work(placeId: String, month: YearMonth): Flow<List<StaffWork>> =
         pay.observeWork(placeId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l -> l.mapNotNull { it.toModel() } }
 
+    /**
+     * 2.0.0 [RVG-02] 검토 PAYU-02: the days a month's ledger needs. The pay engine reads the whole week that holds the 1st and gives
+     * 주휴 to the week that ends in the month, so a 결근 on 9/29 belongs to October's 9/28 week; the 6 days on either side come too.
+     * Lists of the month's own days filter by date ([MonthDays] does).
+     */
+    fun workAround(placeId: String, month: YearMonth): Flow<List<StaffWork>> =
+        pay.observeWork(placeId, month.atDay(1).minusDays(EDGE_DAYS).toEpochDay(), month.atEndOfMonth().plusDays(EDGE_DAYS).toEpochDay()).map { l -> l.mapNotNull { it.toModel() } }
+
+    /** What a month's ledger is worked out from; [frozen] when it is a closed month read back as it was closed ([close]). */
+    data class MonthInputs(val place: Workplace, val staff: List<StaffMember>, val work: List<StaffWork>, val month: YearMonth, val frozen: Boolean) {
+        val ledger: com.bamnat.core.boss.Ledger by lazy { com.bamnat.core.boss.PayrollLedger.month(place, staff, month, work) }
+    }
+
+    /**
+     * 2.0.0 [RVG-01] 검토 PAYU-01: a closed month stays as it was closed. The 대장, 임금대장 CSV, 명세서 and '지난달과 비교' all read
+     * these, so raising a 시급 in November no longer moves a closed October. A month closed before 2.0.0 kept no inputs and is worked
+     * out from today's rows as before.
+     */
+    fun inputs(place: Workplace, month: YearMonth): Flow<MonthInputs> = combine(
+        staff(place.id), workAround(place.id, month), pay.observeMonth(place.id, month.toString()), pay.observeLines(place.id, month.toString()),
+    ) { staff, work, m, lines ->
+        (if (m?.state == "CLOSED") frozen(place, lines, month) else null) ?: MonthInputs(place, staff, work, month, false)
+    }
+
+    /** One go of [inputs] (신고 달력, 관리 첫 화면). */
+    suspend fun ledgerOf(place: Workplace, month: YearMonth): com.bamnat.core.boss.Ledger = inputs(place, month).first().ledger
+
     /** 1.38 [P3-X-05] Every 연차 day each staff member took, for 연차 남은 날. */
     fun leaveDays(placeId: String): Flow<Map<String, Map<LocalDate, Double>>> =
         pay.observeWork(placeId, Long.MIN_VALUE, Long.MAX_VALUE).map { l ->
@@ -203,14 +231,18 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         if (work == null) pay.deleteWork(staffId, date.toEpochDay()) else pay.upsertWork(work.toEntity())
     }
 
-    /** [BOSS-04] 대장 닫기: each line as it is now (the 임금대장 row), kept even when the rules move on. */
-    suspend fun close(placeId: String, month: YearMonth, lines: List<LedgerLine>, rateVersion: String) = pay.close(
-        PayrollMonthEntity(placeId, month.toString(), "CLOSED", rateVersion, clock()),
+    /**
+     * [BOSS-04] 대장 닫기: each line as it is now (the 임금대장 row), kept even when the rules move on.
+     * 2.0.0 [RVG-01]: each line also keeps what it was worked out from (사업장 계산 칸, the staff member, their days around the month)
+     * in `deduct`, a column no screen used, so [inputs] reads a closed month back without a new table.
+     */
+    suspend fun close(place: Workplace, month: YearMonth, lines: List<LedgerLine>, rateVersion: String, work: Collection<StaffWork> = emptyList()) = pay.close(
+        PayrollMonthEntity(place.id, month.toString(), "CLOSED", rateVersion, clock()),
         lines.map { l ->
-            PayrollLineEntity(placeId, month.toString(), l.staff.id, l.gross,
+            PayrollLineEntity(place.id, month.toString(), l.staff.id, l.gross,
                 items = JSONArray(LedgerCsv.cells(l)).toString(),
                 method = JSONArray().apply { l.lines.forEach { put(JSONObject().put("label", it.label).put("amount", it.amount).put("formula", it.formula)) } }.toString(),
-                deduct = "", net = null, paidAt = null, slipSentAt = null)
+                deduct = snapshot(place, l.staff, work.filter { it.staffId == l.staff.id }), net = null, paidAt = null, slipSentAt = null)
         },
     )
 
@@ -239,6 +271,32 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     }
 
     companion object {
+        /** [RVG-02] Days read on either side of a month: a week is 7 days, so 6 reach every week that holds the 1st or the last day. */
+        const val EDGE_DAYS = 6L
+
+        /** [RVG-01] What a closed line was worked out from, as JSON; no 출퇴근 열쇠 or 계약서 (not needed to count, and kept out of copies). */
+        fun snapshot(place: Workplace, s: StaffMember, work: List<StaffWork>): String = JSONObject().put("v", 1)
+            .put("place", PhaseThreeBackup.placeJson(place.toEntity(0)))
+            .put("staff", PhaseThreeBackup.staffJson(s.copy(clockToken = null, contract = null).toEntity(place.id, 0)))
+            .put("work", JSONArray().apply { work.sortedBy { it.date }.forEach { put(PhaseThreeBackup.workJson(it.toEntity())) } })
+            .toString()
+
+        /**
+         * [RVG-01] A closed month's inputs read back from its lines; null when any line has none (closed before 2.0.0). The 사업장's
+         * name, 대타 요청 and team stay as they are now: only the fields that count are the closed ones.
+         */
+        fun frozen(live: Workplace, lines: List<PayrollLineEntity>, month: YearMonth): MonthInputs? {
+            if (lines.isEmpty()) return null
+            val got = lines.map { l -> runCatching { JSONObject(l.deduct).takeIf { it.optInt("v") >= 1 } }.getOrNull() ?: return null }
+            val p = runCatching { PhaseThreeBackup.placeFrom(got.first().getJSONObject("place")).toModel() }.getOrNull() ?: return null
+            val place = live.copy(fivePlus = p.fivePlus, payday = p.payday, legalBreaks = p.legalBreaks, weekStart = p.weekStart, minuteUnit = p.minuteUnit, industry = p.industry)
+            val staff = got.mapNotNull { o -> runCatching { PhaseThreeBackup.staffFrom(o.getJSONObject("staff")).toModel() }.getOrNull() }
+            if (staff.size != lines.size) return null
+            val work = got.flatMap { o -> o.optJSONArray("work")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONArray(it) } }.orEmpty() }
+                .mapNotNull { runCatching { PhaseThreeBackup.workFrom(it).toModel() }.getOrNull() }
+            return MonthInputs(place, staff, work, month, true)
+        }
+
         // ---- 팀 rows ----
 
         const val VIA_LINK = "LINK"

@@ -98,6 +98,8 @@
         </provider>
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
+             2.0.0 [RVG-14] 검토 UIX-08: uiMode·fontScale too, so 어두운 모드 at dusk or a new 글자 크기 does not close an open
+             sheet (돈 적기 창 PC 9차 재현); Compose reads both from the configuration and the bars follow `dark`.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->
         <activity
             android:name=".MainActivity"
@@ -105,7 +107,7 @@
             android:launchMode="singleTop"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboardHidden">
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboardHidden|uiMode|fontScale">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

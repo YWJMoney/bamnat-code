@@ -357,7 +357,11 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         )
         // [UX-04] Said as a way there, not only as a sentence.
         NavRow("근무마다 다른 소리", "근무 종류에서 근무마다 알람음을 따로 정해요", onOpenShiftTypes)
-        SwitchRow("진동", "소리와 함께 진동해요", settings.vibrate) { v -> vm.update { it.copy(vibrate = v) } }
+        // 2.0.0 [RVG-06] 검토 ALM-06: 무음 with 진동 off read as an alarm that makes nothing; it always vibrates then, and says so.
+        SwitchRow("진동", when {
+            settings.defaultAlarmSound == AppSettings.SILENT_SOUND -> "무음 알람음이라 이 스위치와 상관없이 진동으로 울려요"
+            else -> "소리와 함께 진동해요. 휴대폰 알람 소리가 0이면 꺼 둬도 진동해요"
+        }, settings.vibrate) { v -> vm.update { it.copy(vibrate = v) } }
         SwitchRow("점점 크게", "작은 소리로 시작해 20초 동안 커져요", settings.gradualVolume) { v -> vm.update { it.copy(gradualVolume = v) } }
     }
     // [PROV-06][PROV-07] 확실하게 깨우기 (프로).

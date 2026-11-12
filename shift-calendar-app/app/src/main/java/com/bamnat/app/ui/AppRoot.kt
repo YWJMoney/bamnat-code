@@ -791,6 +791,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 SettingsLinks.consume(link)
                 // [J133-77] 근무 주기 of the calendar on screen: a shop's is its 영업일·정기휴무.
                 if (link.go == SettingsGo.PATTERN) nav.openPattern(container, companyCalendarOf(container, null))
+                // 2.0.0 [RVG-07] 근무 종류 of the calendar on screen: an investor's is 계좌 (검토 WORK-13).
+                else if (link.go == SettingsGo.SHIFT_TYPES) nav.openTypes(container, companyCalendarOf(container, null))
                 else link.go.route()?.let { r -> nav.navigate(r) { launchSingleTop = true } }
             }
         }
@@ -1511,7 +1513,7 @@ private fun AppNavHost(
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
                 // [MCAL-01] The calendar on screen is the one these edit.
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
-                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(container.calendars.active.value)) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.openTypes(container, container.calendars.active.value) },
                 onOpenStats = { nav.navigateTopLevel(TopLevel.STATS.route) },
                 onOpenMoney = { nav.navigateTopLevel(TopLevel.MONEY.route) },
                 onOpenPay = { nav.navigate(Routes.pay(container.calendars.active.value)) { launchSingleTop = true } },
@@ -1756,7 +1758,7 @@ private fun AppNavHost(
             SettingsScreen(
                 vm = vm,
                 // [CALS-02] 내 근무 and 급여 set up the calendar chosen at their top: each calendar its own.
-                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(container.calendars.active.value)) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.openTypes(container, container.calendars.active.value) },
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
                 onOpenDiagnostics = { testing -> nav.navigate(Routes.diagnostics(testing)) { launchSingleTop = true } },
                 onOpenWorkStyle = { nav.navigate(Routes.workStyle(container.calendars.active.value)) { launchSingleTop = true } },
@@ -1853,7 +1855,7 @@ private fun AppNavHost(
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
                 onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
-                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.openTypes(container, calendar) },
                 top = {
                     // [EASY-05] A pay fact still guessed, asked here where it is used: only those one tap answers.
                     if (profile != null) com.bamnat.app.ui.guide.AskArea(container, calendar,
@@ -2363,7 +2365,7 @@ private fun AppNavHost(
                 onSaved = if (setup) ({
                     nav.navigate(Routes.pay(calendar)) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
                 }) else null,
-                onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
+                onOpenShiftTypes = { nav.openTypes(container, calendar) },
                 // [SPAT-02] The company's cycle is for the main calendar, as a coworker's setup is (MCAL-06).
                 onFindCompany = if (!setup && calendar == PersonalCalendar.MAIN) ({
                     vm.draft.forget()
@@ -2424,7 +2426,16 @@ internal const val SCHOOLING_KIND = "교육"
 /** [TYPE-03] 근무 주기 of a calendar; a shop's is its 영업일·정기휴무. */
 private fun NavHostController.openPattern(c: com.bamnat.app.AppContainer, calendar: String) {
     val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    // 2.0.0 [RVG-07] 검토 WORK-13: an investor's '투자 알람' line opened the 교대 근무 주기 screen; it opens 투자 › 알람.
+    if (style == WorkStyle.INVEST) return com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(Place.STATS, "invest.alarms"))
     navigate(if (style == WorkStyle.BUSINESS) Routes.shopDays(calendar) else Routes.pattern(weekdays = style == WorkStyle.DAY, calendar = calendar)) { launchSingleTop = true }
+}
+
+/** [RVG-07] 근무 종류 of a calendar; an investor's line of that place is '계좌', which opens 투자 › 계좌별 보기. */
+private fun NavHostController.openTypes(c: com.bamnat.app.AppContainer, calendar: String) {
+    val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    if (style == WorkStyle.INVEST) return com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(Place.STATS, "invest.overview"))
+    navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true }
 }
 
 /** [GUIDE-01] Where each [com.bamnat.core.guide.Place] of the feature list is, for the calendar on screen. */
