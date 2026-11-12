@@ -127,6 +127,28 @@ test("[RVQ-24] SVC-07·I22b-03 공유 서버 KV 읽기도 하루 몫으로 봐�
   assert.deepEqual((await autoRest(env, next)).rested, []);
 });
 
+test("[RVQ-24] the PC's local share server (http on the loopback address) connects too; any other plain http address does not", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const asked = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    asked.push(String(url));
+    return Response.json({ days: [{ day: new Date(Date.now() + 9 * HOUR).toISOString().slice(0, 10), writes: 3, reads: 40 }] });
+  });
+  const token = "local-share-admin-token-0123";
+  for (const base of ["http://share.example", "http://10.0.2.2:8790", "http://127.0.0.1.example:8790"]) {
+    const { env, call } = server({ SHARE_BASE_URL: base, SHARE_ADMIN_TOKEN: token });
+    await call("GET", "/api/config");
+    await autoRest(env, NOW);
+    assert.equal((await budgetState(env, NOW)).kv.writes, undefined, base);
+  }
+  assert.equal(asked.length, 0, "the token goes to no plain http address");
+  const { env, call } = server({ SHARE_BASE_URL: "http://127.0.0.1:8790", SHARE_ADMIN_TOKEN: token });
+  await call("GET", "/api/config");
+  await autoRest(env, NOW);
+  assert.equal((await budgetState(env, NOW)).kv.reads, 40);
+  assert.ok(asked[0].startsWith("http://127.0.0.1:8790/api/admin/stats"));
+});
+
 test("[RVQ-11] SRV-13 광장 글이 갑자기 몰리면 5분 작업이 광장 글쓰기를 1시간 쉬고, 기한이 지나면 저절로 켜져요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call, env, DB } = server({ plaza: true });

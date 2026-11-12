@@ -8465,7 +8465,10 @@ export async function plazaSurge(env, now) {
 function shareAdmin(env) {
   const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
   const token = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
-  return /^https:\/\/[A-Za-z0-9.-]+$/.test(base) && token.length >= 20 ? { base, token } : null;
+  // 2.0.0 [RVQ-24] The PC's two local servers (npm run local, http://127.0.0.1:8790) too, so 서버 상태's 공유 KV line and the
+  // share switch can be checked there. Only the loopback address: a Worker cannot reach it, and the token never leaves the PC.
+  const ok = /^https:\/\/[A-Za-z0-9.-]+$/.test(base) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d{2,5})?$/.test(base);
+  return ok && token.length >= 20 ? { base, token } : null;
 }
 
 /** [SRV-08] Five seconds at most: a share server that hangs does not hold the developer app's request. */

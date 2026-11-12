@@ -20,6 +20,7 @@ const env = { DB: d1(file), RATE_SALT: "local", ADMIN_PASSWORD: process.env.ADMI
 // the server answers not_set and the app shows why it cannot post).
 if (process.env.INTEGRITY_MODE) env.INTEGRITY_MODE = process.env.INTEGRITY_MODE;
 // 1.39 PC 6차 (G7 F절): the share server's address, so 서버 상태 asks its /api/health (set SHARE_BASE_URL=http://127.0.0.1:8790).
+// 2.0.0 [RVQ-24] With the same SHARE_ADMIN_TOKEN on both (20+ letters), the share admin calls work here too: 서버 상태의 공유 KV 줄, 공유 링크 신고, 새 링크 스위치.
 if (process.env.SHARE_BASE_URL) env.SHARE_BASE_URL = process.env.SHARE_BASE_URL;
 if (process.env.SHARE_ADMIN_TOKEN) env.SHARE_ADMIN_TOKEN = process.env.SHARE_ADMIN_TOKEN; // the share server started with the same value
 // 2.0.0 [RVQ-16] the daily backup's R2: in memory, or with --backup <folder> as files there, so 관리 › 백업 and 되살리기 연습 work
