@@ -53,6 +53,7 @@ import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.TimePickerDialog
+import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
@@ -158,7 +159,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             else -> "${ym.monthValue}월에 일한 몫이에요."
         })
         SectionCard(title = place.name, trailing = { TextButton(onClick = { settings = true }) { Text("사업장 설정") } }) {
-            ledger.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (place.fivePlus == null) com.bamnat.app.ui.theme.Tone.Caution.color() /* [RVP-13] */ else MaterialTheme.colorScheme.onSurfaceVariant) }
+            // [RVJ-19] The same 주의 줄 as the others on this card (it was orange words, the only ones).
+            ledger.note?.let { if (place.fivePlus == null) ToneLine(it) else Hint(it) }
             // PC 1차 제안: not answered yet → ask right here in one tap, not behind 사업장 설정. The safe side (가산 넣기) stays until then.
             if (place.fivePlus == null) {
                 Text("사장님 빼고 일하는 사람(가족 아닌 직원·알바 모두)이 평소 몇 명인가요? 지금 대장엔 ${staff.size}명이 있어요.",
@@ -182,9 +184,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             }
             // 1.39 G2 (PC f7f61818, 상): someone the law puts in the 4대보험 with nothing ticked makes the 사장님 몫 0원.
             val unticked = ledger.lines.map { it.staff }.filter { com.bamnat.core.boss.InsuranceRules.unticked(it, place.legalBreaks) }
-            if (unticked.isNotEmpty() && !isClosed) Text("4대보험을 고르지 않았어요: " + unticked.joinToString(", ") { it.name } + " · 고르면 사장님 몫까지 맞게 나와요",
-                style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
-                modifier = Modifier.clickable(role = Role.Button) { editing = unticked.first() }.padding(vertical = 4.dp))
+            // 2.0.0 [RVJ-19] 검토 조건 6 (#444 총괄 검토·HQ-12): 고르라고 권하는 줄·미리 알리는 줄은 빨강 글이 아니라 주의 아이콘 한 줄
+            // ([ToneLine])이에요. 빨강은 법을 어긴 것(최저임금 미달, 대장의 ⚠ 표시)에만 남겨요.
+            if (unticked.isNotEmpty() && !isClosed) ToneLine("4대보험을 고르지 않았어요: " + unticked.joinToString(", ") { it.name } + " · 고르면 사장님 몫까지 맞게 나와요",
+                onClick = { editing = unticked.first() })
             // 1.39 G2 PC 5066b027 (상): 최저임금·두루누리·산재 lines stacked over ten lines above the people. They fold into one
             // '알아 둘 것 N' row that names each; what needs fixing (새 최저임금보다 적은 사람) stays in the warning colour on that row.
             val law = remember(place, staff) { com.bamnat.core.boss.LawChange.next(place, staff, Today.date()) }
@@ -199,10 +202,9 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                     Text(if (open) "접기" else "펼치기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 law?.takeIf { it.under.isNotEmpty() }?.let { n ->
-                    Text("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
+                    ToneLine("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
                         (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
-                        style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color() /* [RVP-13] */,
-                        modifier = Modifier.clickable(role = Role.Button) { editing = n.under.first().first }.padding(vertical = 4.dp))
+                        onClick = { editing = n.under.first().first })
                 }
                 if (open) {
                     // G2-M1·I3: the weeks before a new 최저임금·요율 day, what changes (core LawChange, 출처는 거기).
@@ -261,7 +263,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()),
                 weekMinutes = l.staff.weekly.values.sumOf { it.paidMinutes(place.legalBreaks) })) } }
         finding?.let { (id, d) -> BossCoverDialog(place, staff, work, id, d, onDismiss = { finding = null }) }
-        contracting?.let { id -> staff.firstOrNull { it.id == id }?.let { s -> key(id) { ContractDialog(place, s, onEditStaff = { contracting = null; editing = s }) { contracting = null } } } }
+        contracting?.let { id -> staff.firstOrNull { it.id == id }?.let { s -> key(id) { ContractSheet(place, s, onEditStaff = { contracting = null; editing = s }) { contracting = null } } } }
         // 1.38 퇴사자: 이 달에 없는 사람도 기록은 3년 남아요(근로기준법 제42조). 눌러서 보거나 다시 입사시켜요.
         val gone = staff.filter { s -> ledger.lines.none { it.staff.id == s.id } }
         if (gone.isNotEmpty()) {
@@ -363,8 +365,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             if (isClosed && !got.frozen) Hint("이 달은 예전 판에서 닫아 지금 직원 정보로 계산해요. 다시 열고 닫으면 이 계산 그대로 굳어요.")
             // 검토 PAYU-01 (4): the 지급일 has gone by and the month is still open → one line asking to close it.
             if (!isClosed && place.payDate(ym)?.isBefore(Today.date()) == true)
-                Text("지급일이 지났어요. 닫아 두면 나중에 시급을 바꿔도 ${ym.monthValue}월은 그대로예요.", style = MaterialTheme.typography.bodySmall,
-                    color = LocalCalendarColors.current.warning)
+                ToneLine("지급일이 지났어요. 닫아 두면 나중에 시급을 바꿔도 ${ym.monthValue}월은 그대로예요.")
             Hint(LedgerCsv.KEEP)
         }
     }
@@ -426,12 +427,10 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
         }
         // 1.38 PC 12차 (6): saved with no usual week and nothing written for the month, the line read '0원' with no why.
         if (l.gross == 0L && l.staff.weekly.isEmpty() && !closed)
-            Text("일하는 요일이 없어서 0원이에요 · '직원 정보'에서 평소 요일을 고르거나, 근거 보기에서 일한 날을 하루씩 넣으면 계산돼요",
-                style = MaterialTheme.typography.bodySmall, color = warn, modifier = Modifier.clickable(role = Role.Button, onClick = onEdit))
+            ToneLine("일하는 요일이 없어서 0원이에요 · '직원 정보'에서 평소 요일을 고르거나, 근거 보기에서 일한 날을 하루씩 넣으면 계산돼요", onClick = onEdit)
         // 1.38 [P3-X-06] 계약서 없음: 근로계약서는 써서 한 부 줘야 해요(근로기준법 제17조, 어기면 제114조 500만 원 이하 벌금).
         if (com.bamnat.core.boss.StaffContract.lacking(l.staff, minOf(Today.date(), month.atEndOfMonth())) && l.staff.contract?.waiting(Today.millis()) != true)
-            Text("계약서 없음 · '계약서'를 누르면 직원 정보로 채워 링크로 서명받아요", style = MaterialTheme.typography.bodySmall, color = warn,
-                modifier = Modifier.clickable(role = Role.Button, onClick = onContract))
+            ToneLine("계약서 없음 · '계약서'를 누르면 직원 정보로 채워 링크로 서명받아요", onClick = onContract)
         // 1.38 [P3-X-05] 연차 남은 날, from the hire date (제60조), less the 연차 days marked here.
         leaveLeft?.let { lf ->
             Hint("연차 남은 ${com.bamnat.core.leave.LeaveAccrual.days(lf.left)} (생긴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.made)} · 쓴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.used)})" +
@@ -533,7 +532,7 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, plac
                     if (kind == WorkKind.EARLY && ask != null) OutlinedButton(onClick = { picking = false }) { Text(Fmt.time(end)) }
                     else TextButton(onClick = { picking = false }) { Text(Fmt.time(end)) }
                 }
-                if (ask != null) Text(ask, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                if (ask != null) ToneLine(ask)
                 else Text(when (kind) {
                     WorkKind.ABSENT -> "결근한 주는 주휴수당이 빠져요."
                     WorkKind.OFF -> "가게가 쉬는 날처럼 빼요. 결근이 아니라 주휴수당은 그대로예요."
@@ -615,8 +614,8 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             }
         }
         AmountField(when (s.form) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }, amountDigits(s.base), { s = s.copy(base = it.toAmount()) })
-        if (s.form == WageForm.HOUR && s.base in 1 until minimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color() /* [RVP-13] */)
-        oddWage(s.form, s.base, minimum)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        if (s.form == WageForm.HOUR && s.base in 1 until minimum) ToneLine("최저임금 ${Fmt.won(minimum)}보다 적어요")
+        oddWage(s.form, s.base, minimum)?.let { ToneLine(it) }
         OutlinedTextField(s.job, { s = s.copy(job = it.take(20)) }, label = { Text("하는 일 (예: 홀, 주방)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("입사일", modifier = Modifier.weight(1f))
@@ -687,11 +686,11 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                         s = s.copy(dayRates = if (won <= 0 || won == s.base) s.dayRates - d else s.dayRates + (d to won))
                     })
                     if (text.isEmpty()) Hint("비워 두면 기본 시급 ${Fmt.won(s.base)}으로 계산해요")
-                    oddWage(WageForm.HOUR, text.toAmount(), minimum)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    oddWage(WageForm.HOUR, text.toAmount(), minimum)?.let { ToneLine(it) }
                 }
                 val avg = com.bamnat.core.boss.PayrollLedger.ordinaryHourly(place ?: Workplace("", ""), s)
                 Hint("가산수당·주휴수당은 한 주 평균 시급(통상시급) ${Fmt.won(avg)}으로 계산하고, 요일마다 일한 시간은 그 요일 시급으로 줘요(근로기준법 시행령 제6조).")
-                if (s.dayRates.values.any { it in 1 until minimum }) Text("최저임금 ${Fmt.won(minimum)}보다 적은 요일이 있어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                if (s.dayRates.values.any { it in 1 until minimum }) ToneLine("최저임금 ${Fmt.won(minimum)}보다 적은 요일이 있어요")
             }
         }
         // 2.0.0 [RVJ-10] 검토 PAYC-08·U04-10: 식대·교통비 같은 고정 수당, each with its 세금 없는 돈(비과세) switch (식대 starts on).
@@ -709,17 +708,15 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         // 1.39 G2 통합 6차 PC: '모두' pressed before the 생년월일 kept 국민연금 on for a 16세 with nothing said. The ledger leaves it
         // out by age ([InsuranceRules.of]); the chip says so wherever it was ticked.
         val pensionAge = s.birth?.let { java.time.Period.between(it, Today.date()).years }
-        if (insTouched && s.insurance.pension && pensionAge != null && (pensionAge < 18 || pensionAge >= 60)) Text(
-            (if (pensionAge < 18) "만 18세 미만은" else "만 60세 이상은") + " 국민연금 의무 가입 대상이 아니에요. 대장은 국민연금을 빼고 계산해요.",
-            style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        if (insTouched && s.insurance.pension && pensionAge != null && (pensionAge < 18 || pensionAge >= 60)) ToneLine(
+            (if (pensionAge < 18) "만 18세 미만은" else "만 60세 이상은") + " 국민연금 의무 가입 대상이 아니에요. 대장은 국민연금을 빼고 계산해요.")
         // 1.39 G2 통합 5차 PC: with 국민연금 left off for age the line still said '모두 골라 두었어요'. It now says what was left out and why.
         if (!insTouched && s.insurance.any) Hint(
             if (s.insurance.pension) "월급이거나 한 주 15시간 이상이라 4대보험을 모두 골라 두었어요(법으로 가입 대상). 실제로 들지 않은 보험은 풀어 주세요."
             else "월급이거나 한 주 15시간 이상이라 건강·고용보험을 골라 두었어요(법으로 가입 대상). 국민연금은 " +
                 (if (s.birth?.let { java.time.Period.between(it, Today.date()).years }?.let { it >= 60 } == true) "만 60세 이상이라" else "만 18세 미만이라") +
                 " 뺐어요(본인이 원하면 가입). 실제로 들지 않은 보험은 풀어 주세요.")
-        else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) Text("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.",
-            style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) ToneLine("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.")
         // 2.0.0 [RVJ-16] 검토 BOSS-74: 외국인 직원은 국민연금·고용보험이 나라·체류자격에 따라 달라요.
         FilterChip(selected = s.insurance.foreign, onClick = { s = s.copy(insurance = s.insurance.copy(foreign = !s.insurance.foreign)) }, label = { Text("외국인 직원") })
         if (s.insurance.foreign) Hint("건강보험·산재는 같고, 국민연금은 나라에 따라, 고용보험은 체류자격에 따라 달라요. 4대사회보험 정보연계센터에서 확인해 주세요.")
@@ -727,9 +724,8 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             com.bamnat.core.boss.StaffTax.entries.forEach { t -> FilterChip(selected = s.insurance.tax == t, onClick = { s = s.copy(insurance = s.insurance.copy(tax = t)) }, label = { Text(t.label) }) }
         }
-        if (s.insurance.tax == com.bamnat.core.boss.StaffTax.BIZ && s.weekly.isNotEmpty()) Text(
-            "정해진 요일·시간에 일하는 직원은 보통 근로자예요. 3.3%는 프리랜서(사업소득)일 때만 맞아요.",
-            style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        if (s.insurance.tax == com.bamnat.core.boss.StaffTax.BIZ && s.weekly.isNotEmpty()) ToneLine(
+            "정해진 요일·시간에 일하는 직원은 보통 근로자예요. 3.3%는 프리랜서(사업소득)일 때만 맞아요.")
         // 2.0.0 [RVJ-10] 검토 PAYU-14·T05-06: 간이세액표 가족 수, as the staff member put it on the 원천징수 신고서.
         if (s.insurance.tax == com.bamnat.core.boss.StaffTax.WAGE) {
             com.bamnat.app.ui.components.StepperRow("공제대상 가족 (본인 포함)", hint = "명세서 소득세에 들어가요") {
@@ -1070,7 +1066,7 @@ private fun ClockCard(staff: List<StaffMember>, punches: List<com.bamnat.core.bo
                     Column {
                         Text("$name · ${Fmt.monthDay(r.date)} ${r.kind.label} ${r.start?.let(Fmt::time)}~${r.end?.let(Fmt::time)}", style = MaterialTheme.typography.bodyMedium)
                         // 1.38 PC 8차: 출근·퇴근을 바로 이어 누른 날(1분 근무)은 실수일 수 있어요.
-                        com.bamnat.core.boss.StaffClock.shortNote(r.start, r.end)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning) }
+                        com.bamnat.core.boss.StaffClock.shortNote(r.start, r.end)?.let { ToneLine(it) }
                     }
                 }
             }
