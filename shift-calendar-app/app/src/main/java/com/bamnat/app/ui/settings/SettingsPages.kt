@@ -1143,7 +1143,8 @@ private fun PrivacyPage(
     val pkg = Uri.parse("package:${context.packageName}")
     var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
-        NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        // 2.0.0 [RVO-08] 처리방침 판을 페이지 머리글과 같은 값으로(LegalPagesTest).
+        NavRow("개인정보 처리방침", "${com.bamnat.core.ops.PolicyConsent.REVISION_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
         HorizontalDivider()
         // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
         var forgetting by remember { mutableStateOf(false) }
@@ -1260,7 +1261,8 @@ private fun AboutPage() {
     val context = LocalContext.current
     SectionCard(title = "앱 정보") {
         // [MON-05] What paying for 프로 agrees to.
-        NavRow("이용약관", "프로 구독·체험·해지·환불") {
+        // 2.0.0 [RVO-08] 약관 판을 페이지 머리글과 같은 값으로(LegalPagesTest).
+        NavRow("이용약관", "${com.bamnat.core.ops.PolicyConsent.TERMS_VERSION} · 프로 구독·체험·해지·환불") {
             com.bamnat.app.ui.components.PolicyPage.open(context, com.bamnat.app.ui.pro.TERMS_URL, "이용약관")
         }
         HorizontalDivider()
