@@ -45,6 +45,11 @@ class ShareSync(
         data object Gone : Result
         /** [PROV-04] Keeping this link open longer is 프로's. */
         data object Locked : Result
+        /**
+         * 2.0.0 [RVG-27] 검토 SN-13: the server turned the change down for what it carries and no part could be left out; not tried
+         * again by itself (it would be turned down again), said on the share card.
+         */
+        data object Refused : Result
     }
 
     /** Follows the data for as long as the app runs. */
@@ -216,8 +221,37 @@ class ShareSync(
             c.telemetry.event(if (ttlDays == null) "share_link_auto" else "share_link_extend")
             Result.Sent
         } catch (e: ShareLinkException) {
-            when (e.message) {
-                "not_found", "forbidden" -> { store.clear(); Result.Gone }
+            when {
+                e.message == "not_found" || e.message == "forbidden" -> { store.clear(); Result.Gone }
+                ShareLinkPayload.refused(e) -> sendWithout(store, link, from, payload, sent, ttlDays, e.message)
+                else -> { store.sendResult(null); Result.Offline }
+            }
+        } catch (e: IOException) {
+            store.sendResult(null)
+            Result.Offline
+        }
+    }
+
+    /**
+     * 2.0.0 [RVG-27] 검토 SN-13: the server turned the change down for one part (an emoji 근무 그림 on a 1.34~1.39 share server):
+     * the link goes without that part, the sender is told once above the calendar, and the fingerprint is the calendar's, so the
+     * same part is not tried again until something else changes. A part the app cannot leave out is [Result.Refused].
+     */
+    private suspend fun sendWithout(store: ShareLinkStore, link: ShareLinkState, from: java.time.YearMonth, payload: org.json.JSONObject,
+                                    sent: String, ttlDays: Int?, code: String?): Result {
+        c.telemetry.event("share_link_refused", code.orEmpty().take(24))
+        val (fixed, words) = ShareLinkPayload.withoutRefused(payload, code) ?: run { store.refusedNow(); return Result.Refused }
+        return try {
+            val updated = c.shareApi.update(link, fixed)
+            store.save(updated.copy(from = from), sent)
+            store.sendResult(clock())
+            store.setDropped(words)
+            if (ttlDays != null) store.noticedFor = null
+            Result.Sent
+        } catch (e: ShareLinkException) {
+            when {
+                e.message == "not_found" || e.message == "forbidden" -> { store.clear(); Result.Gone }
+                ShareLinkPayload.refused(e) -> { store.refusedNow(); Result.Refused }
                 else -> { store.sendResult(null); Result.Offline }
             }
         } catch (e: IOException) {
