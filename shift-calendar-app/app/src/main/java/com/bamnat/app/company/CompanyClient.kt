@@ -797,7 +797,7 @@ class CompanyClient(
     override suspend fun search(query: String): List<CompanyHit> = readCall {
         if (CompanyText.norm(query).length < 2) return@readCall emptyList()
         val o = request("GET", "/api/companies?q=" + URLEncoder.encode(query.trim().take(40), "UTF-8"))
-        o.optJSONArray("companies").objects().map(::companyHit)
+        o.optJSONArray("companies").rows(::companyHit)
     }
 
     /** [J133-88] null from a server before 1.33 (not_found) and when the record is not there now (unavailable). */
@@ -809,12 +809,12 @@ class CompanyClient(
             if (e.code == "not_found" || e.code == "http_404") return@readCall null else throw e
         }
         if (o.optBoolean("unavailable")) return@readCall null
-        com.bamnat.core.plaza.PublicFirms(o.optString("asOf"), o.optString("source"), o.optJSONArray("firms").objects().map {
+        com.bamnat.core.plaza.PublicFirms(o.optString("asOf"), o.optString("source"), o.optJSONArray("firms").rows {
             com.bamnat.core.plaza.PublicFirm(it.optString("name"), it.optString("region"), it.optString("industry"), it.optInt("members"), it.optLong("average"))
-        }, o.optInt("minMembers", 5), o.optJSONArray("rules").objects().map { r ->
+        }, o.optInt("minMembers", 5), o.optJSONArray("rules").rows { r ->
             com.bamnat.core.plaza.PublicRuleSet(r.optString("name"), r.optString("rule"), r.optString("effective"), r.optString("url"),
                 r.optInt("hours", 0).takeIf { it in 100..320 },
-                r.optJSONArray("lines").objects().map { l -> com.bamnat.core.plaza.PublicRuleLine(l.optString("item"), l.optString("calc"), l.optString("amount"), l.optString("note")) },
+                r.optJSONArray("lines").rows { l -> com.bamnat.core.plaza.PublicRuleLine(l.optString("item"), l.optString("calc"), l.optString("amount"), l.optString("note")) },
                 r.optJSONArray("takes")?.let { a -> (0 until a.length()).map(a::getString) }.orEmpty(), r.optString("setup"))
         }, o.optString("rulesSource"))
     }
@@ -822,7 +822,7 @@ class CompanyClient(
     /** [SRCH-04] 1.29 AS: the companies most phones use, with their 대표 주기; empty from a server before 1.29. */
     override suspend fun popular(): List<CompanyHit> = readCall {
         try {
-            request("GET", "/api/companies/top").optJSONArray("companies").objects().map(::companyHit)
+            request("GET", "/api/companies/top").optJSONArray("companies").rows(::companyHit)
         } catch (e: CompanyException) {
             if (e.code == "not_found" || e.code == "http_404") emptyList() else throw e
         }
@@ -1077,7 +1077,7 @@ class CompanyClient(
     }
 
     override suspend fun history(company: String, setup: String): List<RuleVersion> = serverCall {
-        request("GET", "/api/companies/$company/history?setup=$setup").optJSONArray("versions").objects().map { v ->
+        request("GET", "/api/companies/$company/history?setup=$setup").optJSONArray("versions").rows { v ->
             val ch = v.optJSONObject("changes")
             RuleVersion(v.getInt("version"), v.optString("setup"), v.optString("source"), Instant.parse(v.getString("adoptedAt")), v.optString("state"),
                 v.optInt("senders"), v.optStringOrNull("post"), ch?.optJSONArray("added").lines(), ch?.optJSONArray("removed").lines(),
@@ -1090,11 +1090,11 @@ class CompanyClient(
             .joinToString("&") { (k, v) -> "$k=" + URLEncoder.encode(v, "UTF-8") }
         val o = request("GET", "/api/rates?$q", device = device)
         RateBoard(
-            groups = o.optJSONArray("groups").objects().map { g ->
+            groups = o.optJSONArray("groups").rows { g ->
                 RateGroup(g.optString("job"), g.optString("region"), g.optString("trade"), g.optString("unit"), g.optInt("year"), g.optInt("n"),
                     g.optLong("low"), g.optLong("mid"), g.optLong("high"))
             },
-            entries = o.optJSONArray("entries").objects().map(::rate),
+            entries = o.optJSONArray("entries").rows(::rate),
         )
     }
 
@@ -1383,7 +1383,7 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
     job = o.optString("job"),
     region = o.optString("region"),
     aliases = o.optJSONArray("aliases")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
-    setups = o.optJSONArray("setups").objects().map { s ->
+    setups = o.optJSONArray("setups").rows { s ->
         SharedSetup(
             id = s.getString("id"),
             adopted = s.optString("status") == "adopted",
@@ -1431,7 +1431,7 @@ internal fun roomPage(o: JSONObject): RoomPage {
     return RoomPage(
         companyId = c.getString("id"), company = c.optString("name"),
         base = b?.let(::roomVersion), mine = b?.optBoolean("mine") == true, first = b?.optBoolean("first") == true,
-        others = o.optJSONArray("others").objects().map(::roomVersion),
+        others = o.optJSONArray("others").rows(::roomVersion),
         stable = o.optBoolean("stable"),
         stablePhones = rule?.optInt("phones", 3) ?: 3, stableDays = rule?.optInt("days", 30) ?: 30, stableUses = rule?.optInt("uses") ?: 0,
     )
@@ -1449,7 +1449,7 @@ internal fun roomVersion(v: JSONObject) = RoomVersion(
 
 /** [COMM-07] A page of 회사 규칙 광장. */
 internal fun boardOf(o: JSONObject): Board = Board(
-    items = o.optJSONArray("items").objects().map { i ->
+    items = o.optJSONArray("items").rows { i ->
         val c = i.getJSONObject("company")
         BoardItem(
             companyId = c.getString("id"), company = c.getString("name"), setup = i.getString("id"), dept = i.optString("dept"),
@@ -1481,13 +1481,13 @@ internal fun pollOf(o: JSONObject): Poll {
 }
 
 internal fun talkOf(o: JSONObject): Talk = Talk(
-    posts = o.optJSONArray("posts").objects().map { p ->
+    posts = o.optJSONArray("posts").rows { p ->
         TalkPost(
             id = p.getString("id"), who = p.optInt("who"), stance = p.optStringOrNull("stance"), verified = p.optBoolean("verified"),
             body = p.optString("body"), at = Instant.parse(p.getString("at")), mine = p.optBoolean("mine"),
             hidden = p.optJSONObject("hidden")?.optString("text"),
             nick = p.optStringOrNull("nick"), parent = p.optStringOrNull("parent"), kind = p.optString("kind", "talk"),
-            change = p.optJSONArray("change").objects().map { ChangeLine(it.optString("field"), it.optString("now"), it.optString("want"), it.optString("why")) },
+            change = p.optJSONArray("change").rows { ChangeLine(it.optString("field"), it.optString("now"), it.optString("want"), it.optString("why")) },
             agree = p.optInt("agree"), disagree = p.optInt("disagree"), trust = p.optInt("trust"),
             myVote = if (p.has("myVote") && !p.isNull("myVote")) p.getBoolean("myVote") else null,
             proposal = p.optJSONObject("proposal")?.let { r ->
@@ -1522,26 +1522,26 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
 internal fun termsOf(o: JSONObject) =
     CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75), o.optInt("firstMonths", 0))
 
-internal fun plazaJobs(o: JSONObject): List<PlazaJob> = o.optJSONArray("jobs").objects().map {
+internal fun plazaJobs(o: JSONObject): List<PlazaJob> = o.optJSONArray("jobs").rows {
     PlazaJob(it.getString("key"), it.optString("name"), it.optInt("adopted"), it.optInt("voting"), it.optInt("rates"))
 }
 
 /** [PLZ-08] 내 활동. */
 internal fun activityOf(o: JSONObject): Activity = Activity(
     nick = o.optStringOrNull("nick"),
-    reports = o.optJSONArray("reports").objects().map { r ->
+    reports = o.optJSONArray("reports").rows { r ->
         val c = r.getJSONObject("company")
         ActivityReport(r.getString("id"), c.getString("id"), c.optString("name"), r.optString("dept"), r.optString("setup"), r.optString("status"),
             if (r.has("version") && !r.isNull("version")) r.getInt("version") else null, r.optInt("persons"), r.optInt("bad"), r.optInt("uses"),
             Instant.parse(r.getString("at")))
     },
-    proposals = o.optJSONArray("proposals").objects().map { p ->
+    proposals = o.optJSONArray("proposals").rows { p ->
         val c = p.getJSONObject("company")
         ActivityProposal(p.getString("id"), c.getString("id"), c.optString("name"), p.optString("setup"), p.optString("body"), p.optInt("agree"),
             p.optInt("disagree"), p.optInt("trust"), Instant.parse(p.getString("at")))
     },
-    rates = o.optJSONArray("rates").objects().map(::rate),
-    rewards = o.optJSONArray("rewards").objects().map { w ->
+    rates = o.optJSONArray("rates").rows(::rate),
+    rewards = o.optJSONArray("rewards").rows { w ->
         ActivityReward(w.optInt("months"), w.optString("status"), w.optString("why"), Instant.parse(w.getString("at")))
     },
 )
@@ -1780,7 +1780,25 @@ internal fun JSONArray?.lines(): List<String> = if (this == null) emptyList() el
     optJSONArray(i)?.let { "${it.optString(0)}: ${it.optString(1)}" } ?: optString(i)
 }
 
-internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
+/** 2.0.0 [RVN-13] COMP-49 A row that is not an object (a newer or broken server's) is left out rather than failing the whole list. */
+internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
+
+/**
+ * 2.0.0 [RVN-13] 검토 COMP-49: a list the server sent, read row by row. One row the app cannot read (a field missing or of another
+ * kind, a time it cannot parse) is left out and the rest still shows, so one bad row no longer turns 회사 화면·규칙 광장·토론 into
+ * '서버에 문제'. A list that is not there at all still reads as empty, as before.
+ */
+internal inline fun <T> JSONArray?.rows(read: (JSONObject) -> T): List<T> = objects().mapNotNull { o ->
+    try {
+        read(o)
+    } catch (e: JSONException) {
+        null
+    } catch (e: DateTimeException) {
+        null
+    } catch (e: IllegalArgumentException) {
+        null
+    }
+}
 
 
 /** 1.39 [CARE-03] `GET /api/community/standing`: 없는 칸은 비워 둬요(옛 서버는 404라 [CompanyApi.careStanding]이 빈 것을 줘요). */
