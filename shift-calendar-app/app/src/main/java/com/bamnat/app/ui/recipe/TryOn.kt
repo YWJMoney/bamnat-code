@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -345,7 +347,10 @@ fun TryOnScreen(
                 // [BIGTXT-01] 1.39 (사용자 사진: 글자를 크게 하면 '고를 모양' 목록이 0줄이 되어 사라짐) with a big font or a short screen the
                 // example and the list scroll as one, so nothing is squeezed out; a tall screen keeps the example still above the list.
                 val conf = androidx.compose.ui.platform.LocalConfiguration.current
-                val oneScroll = conf.fontScale > 1.15f || conf.screenHeightDp < 640
+                // 2.0.0 [RVM-43] MKT-07 (검토 높음): a phone 640~850dp tall (and the fold, 905) left '고를 모양' a line or none under the
+                // still example. The example's height is measured: when the list below would get less than LIST_ROOM, the two scroll as one.
+                var compareH by remember { mutableIntStateOf(0) }
+                val density = androidx.compose.ui.platform.LocalDensity.current
                 val compare: @Composable () -> Unit = {
                     // 지금 | 반반 | 입으면, and the line to slide.
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -430,15 +435,24 @@ fun TryOnScreen(
                     }
                     extra?.invoke(this)
                                 }
-                if (oneScroll) Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    compare()
-                    HorizontalDivider(Modifier.padding(top = 6.dp))
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
-                } else {
-                    compare()
-                    HorizontalDivider(Modifier.padding(top = 6.dp))
-                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
+                // The middle takes what the header and the buttons leave, so the buttons below are always whole.
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val room = maxHeight
+                    val measured: @Composable () -> Unit = {
+                        Box(Modifier.fillMaxWidth().onSizeChanged { compareH = it.height }) { compare() }
+                    }
+                    val tall = with(density) { compareH.toDp() }
+                    val oneScroll = conf.fontScale > 1.15f || conf.screenHeightDp < 640 || (compareH > 0 && tall > room - LIST_ROOM)
+                    if (oneScroll) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        measured()
+                        HorizontalDivider(Modifier.padding(top = 6.dp))
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
+                    } else Column(Modifier.fillMaxSize()) {
+                        measured()
+                        HorizontalDivider(Modifier.padding(top = 6.dp))
+                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
+                    }
                 }
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -484,3 +498,6 @@ internal fun tryOnAfter(mine: Recipe, r: Recipe, picked: Set<String>, own: Boole
 
 /** The parts a box item ([com.bamnat.app.recipe.ThemeWardrobe.Kept]) holds, said in a line. */
 internal fun partsLine(ids: List<String>): String = ids.mapNotNull { LookParts.byId(it)?.label }.joinToString(" · ").ifEmpty { "전체" }
+
+/** [RVM-43] MKT-07 What '고를 모양' needs below a still example (its title, one tab, a row of parts); less and the two scroll as one. */
+private val LIST_ROOM = 200.dp

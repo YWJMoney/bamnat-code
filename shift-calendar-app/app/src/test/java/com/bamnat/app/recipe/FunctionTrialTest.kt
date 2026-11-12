@@ -165,4 +165,20 @@ class FunctionTrialTest {
         assertTrue(c.recipes.pieces.preview(PieceKind.LOGIC, logic, PersonalCalendar.MAIN).none { it.text.contains("하는 일이 같아") })
         assertNotNull("the page's card says it ended", LiveTryOn.ended.value)
     }
+
+    /** 2.0.0 [RVM-46] 검토 RCP-20: ending the trial takes back what the tried work wrote, not what my own buttons wrote meanwhile. */
+    @Test fun endingTheTrialLeavesWhatMyOwnButtonWrote() = runBlocking {
+        val mine = LogicButton("커피값", "☕", ButtonPlace.MONEY, LogicAct(LogicVerb.ADD_MONEY, "커피", 4500))
+        c.settingsRepository.update { it.copy(logic = Logic.encode(Logic(listOf(mine)))) }
+        assertTrue(tryIt())
+        press()
+        LogicRunner.run(c, mine.act, day, LogicRunner.facts(c).scope(day), mine.label)
+        assertEquals(2, money.book.first().entries.size)
+        LiveTryOn.finish(c, keepMine = true)
+        LiveTryOn.settle(c, snack = false)
+        val left = money.book.first().entries
+        assertEquals("내 단추가 적은 커피값은 남아요", listOf(4500L), left.map { it.amount })
+        assertTrue("써 본 단추의 야식은 빠져요", left.none { it.amount == 5000L })
+        assertEquals("내 단추도 그대로", listOf(mine.label), Logic.decode(c.settingsRepository.current.logic).buttons.map { it.label })
+    }
 }

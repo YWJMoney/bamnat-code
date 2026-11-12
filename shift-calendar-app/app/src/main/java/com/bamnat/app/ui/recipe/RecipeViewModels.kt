@@ -562,7 +562,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val left = c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }
             _state.value = _state.value.copy(appliedId = left?.id, appliedAt = left?.appliedAt, undoable = undoableNow(),
                 laidAt = laidHere().maxOfOrNull { it.at },
-                message = if (n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요")
+                message = if (rows == 0 && n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else c.recipes.undoSay(n > 0))
         }
     }
 
@@ -730,7 +730,7 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun undo(id: Long) {
-        viewModelScope.launch { _message.value = if (c.recipes.undo(id)) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요" }
+        viewModelScope.launch { _message.value = c.recipes.undoSay(c.recipes.undo(id)) }
     }
 
     /** 2.0.0 [RVS-12] HQ-57 ②: received works whose 부품 꾸미기 did not go on before (by record id), offered here until put on. */

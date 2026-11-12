@@ -86,11 +86,23 @@ class FunctionTrial(private val c: AppContainer) {
     /** At the app's start: a trial the app stopped in the middle of is put back (what the user wrote stays). */
     suspend fun recover(): Ended? = if (!busy(c.appContext)) null else finish(keepMine = true)
 
+    /** 2.0.0 [RVM-46] The names of the rules and buttons the trial added (not one of mine from before), or null for every write. */
+    private fun triedNames(j: JSONObject): ((String) -> Boolean)? {
+        val pair = j.optJSONObject("before")?.optJSONObject(PieceKind.LOGIC.key)?.optJSONObject("settings")?.optJSONArray("logic") ?: return { false }
+        val before = com.bamnat.core.formula.Logic.decode(pair.optString(0))
+        val after = com.bamnat.core.formula.Logic.decode(pair.optString(1))
+        val mine = before.buttons.map { it.label }.toSet() + before.rules.map { it.name }
+        val tried = (after.buttons.map { it.label } + after.rules.map { it.name }).toSet() - mine
+        return { it in tried }
+    }
+
     private suspend fun finishNow(keepMine: Boolean): Ended? {
         val j = read() ?: return null
         val at = j.optLong("at")
         val cal = j.optString("cal")
-        val ran = runCatching { com.bamnat.app.logic.LogicRunner.takeBackSince(c, at) }.getOrDefault(0)
+        // 2.0.0 [RVM-46] 검토 RCP-20: what the tried work's own rules and buttons wrote goes; what my own rules wrote meanwhile stays
+        // (a name I already had before the trial is mine, so its writes stay too).
+        val ran = runCatching { com.bamnat.app.logic.LogicRunner.takeBackSince(c, at, triedNames(j)) }.getOrDefault(0)
         val made = runCatching { madeBy(j) }.getOrDefault(Made(0, 0))
         if (!keepMine) runCatching {
             // Gone, not to the 휴지통: they were only ever a try.

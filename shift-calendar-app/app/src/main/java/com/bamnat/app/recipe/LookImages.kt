@@ -209,6 +209,27 @@ object LookImages {
         return server
     }
 
+    private val ID_IN = Regex("[0-9a-f]{16}")
+
+    /**
+     * 2.0.0 [RVM-49] 검토 RCP-12 (조건 10): the pictures something still keeps to put back: the look before a theme was worn (옷장), my
+     * saved themes and kept parts, 입히기 전 모습, the 7-day 되돌리기 records and the studio's drafts. A tidy took them once 8 days old, so
+     * taking a theme off (or wearing my own again) after a week left my 배경·아이콘 blank, with no way to get them back.
+     */
+    suspend fun held(context: Context): Set<String> = withContext(Dispatchers.IO) {
+        val texts = ArrayList<String>()
+        for (name in listOf("theme_wardrobe", "look_undo")) runCatching {
+            context.getSharedPreferences(name, Context.MODE_PRIVATE).all.values.forEach { v ->
+                when (v) { is String -> texts += v; is Set<*> -> v.forEach { texts += it.toString() } }
+            }
+        }
+        (context.applicationContext as? com.bamnat.app.BamnatApp)?.container?.database?.recipeDao()?.let { dao ->
+            runCatching { dao.applied().filter { it.undoneAt == null }.forEach { texts += it.before } }
+            runCatching { dao.drafts().forEach { texts += it.body } }
+        }
+        texts.flatMap { t -> ID_IN.findAll(t).map { it.value } }.toSet()
+    }
+
     /**
      * Lets go of pictures the look no longer uses ([used]) once they are 8 days old, so a recipe's 되돌리기 (7 days) still finds
      * the pictures it put back.
@@ -220,7 +241,7 @@ object LookImages {
                 PhotoLook.decode(s.photoLook).images + com.bamnat.core.recipe.ScreenLooks.decode(s.screenLooks).images +
                     com.bamnat.core.recipe.Decor.decode(s.decor).images
             }.orEmpty()
-        }.getOrDefault(emptySet())
+        }.getOrDefault(emptySet()) + held(context)
         dir(context).listFiles()?.forEach { f ->
             val id = f.name.removeSuffix(".webp").removeSuffix(".tmp")
             if (id !in inUse && now - f.lastModified() > 8L * 24 * 60 * 60 * 1000) { f.delete(); cache.remove(id) }

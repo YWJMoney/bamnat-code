@@ -757,9 +757,32 @@ class RvmScreenshotTest : ScreenshotBase() {
         }
     }
 
+    /**
+     * 2.0.0 [RVM-43] MKT-07 (검토 높음): 입어 보기 on a phone 640~850dp tall left '고를 모양' with no line and pushed the buttons under the
+     * edge. Now the example and the list scroll as one whenever the list would have less than its room, so both are always in reach.
+     */
+    private fun tryOn(title: String): Screen.() -> Unit = {
+        detail(title)()
+        tapText("예시로 보기", exact = true)
+        settle()
+        check(appears("입어 보기", exact = true)) { "입어 보기가 열리지 않았어요" }
+        check(scrolledTo("고를 모양", exact = false)) { "'고를 모양'에 닿지 못해요" }
+        check(shownTimes("고를 모양") == 1)
+        check(appears("이 테마 입기", exact = true) || appears("넣기", exact = false)) { "아래 단추가 화면 밖이에요" }
+        check(appears("닫기", exact = true)) { "닫기가 보이지 않아요" }
+    }
+    @Test fun tryOnShortPhone() = shoot("rvm_84_tryon_h700", SHORT, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnPhone() = shoot("rvm_85_tryon_phone", PHONE, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnUnfolded() = shoot("rvm_86_tryon_unfolded", UNFOLDED, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnUnfoldedDark() = shoot("rvm_87_tryon_unfolded_dark", UNFOLDED_DARK, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnFolded() = shoot("rvm_88_tryon_folded", FOLDED, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnFoldedBig() = shoot("rvm_89_tryon_folded_200", FOLDED, 2f, tryOn("야간 회복 스테이션"))
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
         const val UNFOLDED_DARK = "w707dp-h823dp-port-night-420dpi"
+        /** MKT-07 A phone 700dp tall (the 640~850 the 입어 보기 list lost). */
+        const val SHORT = "w360dp-h700dp-port-450dpi"
         /** The release build's public files (gradle.properties `bamnat.remoteBaseUrl`). */
         const val PAGES = "https://ywjmoney.github.io/-/"
     }
