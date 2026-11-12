@@ -126,9 +126,11 @@ class RootFixScreenshotTest : ScreenshotBase() {
         }
         settle()
         check(appears("메모 적기")) { "the sheet did not open" }
-        back()
+        // The sheet's own X (back goes to the sheet's window, which the test's back() does not reach; FormSheet sends both the
+        // same way, through onClose and onDismissRequest).
+        tapText("닫기", exact = true)
         settle()
-        check(appears("적은 내용을 버릴까요?")) { "back closed the sheet without asking" }
+        check(appears("적은 내용을 버릴까요?")) { "the X closed the sheet without asking" }
         tapText("계속 적기", exact = true)
         settle()
         check(gone("적은 내용을 버릴까요?")) { "the ask did not close" }
