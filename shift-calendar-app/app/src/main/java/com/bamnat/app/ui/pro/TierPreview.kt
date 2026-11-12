@@ -26,13 +26,13 @@ import com.bamnat.app.ui.components.SectionCard
  * 미리 보기는 알람 점검 깊은 곳에만 있어 PC 확인이 찾지 못했어요): 등급 미리 보기를 프로 화면 맨 위에도 둬요. 알람 점검의 것과 같은 한 부품이라
  * 둘이 늘 같아요.
  *
- * - 보이는 곳: 디버그 빌드, 또는 정식 출시 전의 승인된 관리자 휴대폰([com.bamnat.app.tier.FeatureGate]가 미리 보기를 받아 주는 곳과 같아요).
- *   출시 빌드의 보통 휴대폰에는 그리지 않아요.
+ * - 보이는 곳: 디버그 빌드에만([com.bamnat.app.tier.FeatureGate]가 미리 보기를 받아 주는 곳과 같아요). 서버 깃발·관리자 휴대폰·숨은 손짓으로
+ *   열리는 길은 없어요. 모든 길이 상수 `BuildConfig.DEBUG`로 막혀 있어 R8이 출시 빌드에서 이 카드와 예시 요금제 글귀를 지우고,
+ *   `tools/release_dex_check.py`가 출시 APK의 dex에 이 글귀가 없는지 봐요.
  * - 무료: 정식 출시 뒤 프로가 없는 사람의 모습(잠긴 기능, 7일 맛보기, 기능 작품의 '하루 써 보기', 요금제 창).
  * - 리더: 팀·직원 요금제를 모두 가진 모습.
  */
-fun tierPreviewShown(c: AppContainer, debug: Boolean = BuildConfig.DEBUG): Boolean =
-    debug || (!c.flags.on(com.bamnat.core.flags.FlagCatalog.BILLING) && c.proStore.current.passes?.admin?.approved == true)
+fun tierPreviewShown(debug: Boolean = BuildConfig.DEBUG): Boolean = BuildConfig.DEBUG && debug
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -83,6 +83,12 @@ internal val PREVIEW_PLANS = listOf(
 internal val PREVIEW_PASS = PassOffer("45,000원(예시)", 45_000_000_000, "KRW")
 
 /** [RVO-01] The plans a screen shows: Play's, or in a preview without them the example ones. */
-internal fun shownPlans(gate: Gate, plans: List<Plan>): List<Plan> = if (gate.preview && plans.isEmpty()) PREVIEW_PLANS else plans
+internal fun shownPlans(gate: Gate, plans: List<Plan>): List<Plan> = if (BuildConfig.DEBUG && gate.preview && plans.isEmpty()) PREVIEW_PLANS else plans
+
+/** [RVO-01] A buy button in a preview says so and never opens Play (debug builds only, as the preview). */
+internal fun previewNoPay(gate: Gate): Boolean = BuildConfig.DEBUG && gate.preview
+
+/** [RVO-01] The 1년 이용권 row: Play's offer, or in a preview the example one. */
+internal fun shownPass(gate: Gate, pass: PassOffer?): PassOffer? = pass ?: PREVIEW_PASS.takeIf { BuildConfig.DEBUG && gate.preview }
 
 internal const val PREVIEW_NO_PAY = "미리 보기라 결제는 되지 않아요"

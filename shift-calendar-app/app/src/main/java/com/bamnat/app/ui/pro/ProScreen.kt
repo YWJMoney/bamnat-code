@@ -224,7 +224,7 @@ fun ProScreen(onBack: () -> Unit) {
             ) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 // 2.0.0 [RVO-01] (PC-54) 개발용 빌드에서는 등급 미리 보기를 맨 위에: 프로가 아닐 때 모습을 여기서 바로 골라 봐요.
-                if (tierPreviewShown(c)) TierPreviewCard(c, gate, showNow = false)
+                if (tierPreviewShown()) TierPreviewCard(c, gate, showNow = false)
                 StatusCard(gate, pro, zone, settings.workStyle)
                 // 1.36 [PSH-01] 프로 나눔 1인, right under 지금 (PC: 맨 아래에 있어 못 찾았어요).
                 if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = say("top"))

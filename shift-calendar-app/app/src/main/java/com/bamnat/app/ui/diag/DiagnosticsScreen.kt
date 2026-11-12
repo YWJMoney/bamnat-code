@@ -4,11 +4,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.saveable.rememberSaveable
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -78,7 +74,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.Notifications
-import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.diag.DiagEvent
 import com.bamnat.core.diag.EventBook
@@ -283,14 +278,8 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** [MON-02] Testers preview the screens after the launch here; null shows the real state. */
+    /** [MON-02] The gate the debug build's tier preview card reads ([com.bamnat.app.ui.pro.TierPreviewCard]). */
     val gate = container.featureGate.state
-    val previewTier = container.settingsRepository.settings.map { it.previewTier }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.previewTier)
-    fun setPreview(t: Tier?) = container.settingsRepository.update { it.copy(previewTier = t) }
-    /** S 1.32 [SECX-01] The tester's tier preview shows only on an admin phone the developer app approved (or a debug build). */
-    val adminPhone = container.proStore.state.map { it.passes?.admin?.approved == true }.distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.proStore.current.passes?.admin?.approved == true)
 
     fun report(context: Context, events: List<DiagEvent>): DiagReport {
         val now = Today.millis()
@@ -410,7 +399,6 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     // [ALRM-01] R11: a missing notification permission goes first, in red.
     val checks = remember(refresh, upcoming) { vm.checks(context).sortedBy { if (it.title == "알림 허용" && it.ok == false) 0 else 1 } }
     val week = remember(events) { events?.let { EventBook.week(it, Today.millis()) } }
-    val adminPhone by vm.adminPhone.collectAsStateWithLifecycle()
     var rawOpen by rememberSaveable { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -517,8 +505,8 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (BuildConfig.DEBUG || (testing && adminPhone)) item {
-                // 2.0.0 [RVO-01] (PC-54) 프로 화면 맨 위와 같은 한 부품(무료·프로·팀·직원 요금제, 맛보기·하루 써 보기 처음부터).
+            if (BuildConfig.DEBUG) item {
+                // 2.0.0 [RVO-01] (PC-54) 프로 화면 맨 위와 같은 한 부품(무료·프로·팀·직원 요금제, 맛보기·하루 써 보기 처음부터). 디버그 빌드에만.
                 val gate by vm.gate.collectAsStateWithLifecycle()
                 val trialCtx = androidx.compose.ui.platform.LocalContext.current
                 com.bamnat.app.ui.pro.TierPreviewCard(trialCtx.appContainer, gate)

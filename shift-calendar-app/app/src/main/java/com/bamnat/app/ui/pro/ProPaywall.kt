@@ -150,7 +150,7 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
             val buy = {
                 val activity = context.findActivity()
                 // [RVO-01] 미리 보기는 결제하지 않아요.
-                if (gate.preview) onMessage(PREVIEW_NO_PAY)
+                if (previewNoPay(gate)) onMessage(PREVIEW_NO_PAY)
                 else if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
             }
             val words = if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독"
@@ -178,7 +178,7 @@ private fun YearPassRow(c: AppContainer, yearly: Plan?, onMessage: (String) -> U
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val subscribed = proState.sub?.play()?.entitled(Today.instant()) == true
     // [RVO-01] 미리 보기에서는 Play가 없어도 이용권 줄이 보여요(예시 가격).
-    val p = playPass ?: PREVIEW_PASS.takeIf { gate.preview }
+    val p = shownPass(gate, playPass)
     if (p != null && !subscribed) {
         val until = proState.yearPassUntil
         val canBuy = com.bamnat.core.tier.YearPass.rebuy(until, Today.instant())
@@ -192,7 +192,7 @@ private fun YearPassRow(c: AppContainer, yearly: Plan?, onMessage: (String) -> U
                 style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = {
                 val activity = context.findActivity()
-                if (gate.preview) onMessage(PREVIEW_NO_PAY)
+                if (previewNoPay(gate)) onMessage(PREVIEW_NO_PAY)
                 else if (activity == null || !c.billing.buyPass(activity)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
             }, enabled = canBuy, modifier = Modifier.fillMaxWidth()) {
                 Text(if (canBuy) "1년 이용권 사기" else "끝나기 30일 전부터 이어서 살 수 있어요")

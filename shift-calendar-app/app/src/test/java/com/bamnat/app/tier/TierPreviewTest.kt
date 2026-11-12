@@ -97,9 +97,8 @@ class TierPreviewTest {
         assertEquals("Play's own plans first, when it gave them", play, shownPlans(free, play))
     }
 
-    @Test fun thePreviewCardIsOnlyForDebugBuildsAndApprovedAdminPhonesBeforeTheLaunch() {
-        val c = context.appContainer
-        assertTrue(tierPreviewShown(c, debug = true))
-        assertFalse("a user's phone in a release build", tierPreviewShown(c, debug = false))
+    @Test fun thePreviewCardIsOnlyForDebugBuilds() {
+        assertTrue(tierPreviewShown(debug = true))
+        assertFalse("a release build, whoever's phone and whatever the server says", tierPreviewShown(debug = false))
     }
 }

@@ -268,9 +268,10 @@ class FeatureGate(
         // [FLAG-08] The `billing` row in place of the 정식 출시 switch; `free.<FEATURE>` rows open a 프로 feature, never lock a free one.
         val live = rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.on == true
         val free = Feature.entries.filter { it.minTier > Tier.FREE && rows[com.bamnat.core.flags.FlagCatalog.FREE_PREFIX + it.name]?.on == true }.toSet()
-        // [MON-02] The alarm check screen's preview counts before the launch and in debug builds only.
-        // S 1.32 [SECX-01] Before the launch only on an approved admin phone: a user's phone ignores a stored preview.
-        if (previewTier != null && (debug || (!live && s.passes?.admin?.approved == true))) {
+        // [MON-02] The preview counts in debug builds only. S 1.32 [SECX-01] a user's phone ignores a stored preview. 2.0.0 [RVO-01]
+        // (총괄 11-12: 출시 빌드에서 등급을 바꾸는 길은 서버 깃발로도 열리지 않게) no longer an approved admin phone before the launch
+        // either: BuildConfig.DEBUG is a constant, so R8 drops this whole branch from a release build.
+        if (com.bamnat.app.BuildConfig.DEBUG && debug && previewTier != null) {
             val on = previewTier >= Tier.PRO
             val all = if (previewTier == Tier.LEADER) everyBand() else emptyMap()
             // 2.0.0 [RVO-01] (PC-54) The preview is the launched app: the 프로 features the server opened to everyone stay open in it too.
