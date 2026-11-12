@@ -267,10 +267,10 @@ fun PublicCycleSection(
         }
     }
     if (uploading) {
-        UploadCycleDialog(query.trim(), onDismiss = { uploading = false }) { name, formKey ->
+        UploadCycleDialog(query.trim(), onDismiss = { uploading = false }) { name, site, formKey ->
             uploading = false
             uploaded = true
-            open = PublicCycles.provided(name, formKey)
+            open = PublicCycles.provided(name, formKey, site)
         }
     }
     open?.let { c ->
@@ -285,27 +285,66 @@ fun PublicCycleSection(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun FirstProviderCard(name: String, reward: String?, onStart: (String) -> Unit, modifier: Modifier = Modifier, plaza: Boolean = true) {
-    var form by rememberSaveable(name) { mutableStateOf<String?>(null) }
+fun FirstProviderCard(
+    name: String,
+    reward: String?,
+    onStart: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    plaza: Boolean = true,
+    /** 2.0.0 [RVN-19] 검토 COMP-20: the name (and 사업장) boxes, when the name typed can still be fixed here ([CompanyNameFields]). */
+    fields: (@Composable () -> Unit)? = null,
+) {
+    var form by rememberSaveable { mutableStateOf<String?>(null) }
+    val ready = nameReady(name)
     SoftCard(modifier, highlighted = true) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("처음으로 회사 정보를 제공해 주세요!", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             if (plaza) RewardPill(publicReward(reward))
+            // [RVN-19] With the name's box right under it, the line does not say the name again.
+            val whose = if (fields == null) "‘$name’의 " else ""
             Text(
-                if (plaza) "‘$name’의 근무주기를 넣어 주시면 같은 회사 분들이 검색해서 바로 맞춰요. 근무주기만 넣어도 올라가요."
-                else "‘$name’의 근무주기를 직접 넣어요. 근무형태를 고르면 흔한 순서부터 보여 드려요.",
+                if (plaza) "${whose}근무주기를 넣어 주시면 같은 회사 분들이 검색해서 바로 맞춰요. 근무주기만 넣어도 올라가요."
+                else "${whose}근무주기를 직접 넣어요. 근무형태를 고르면 흔한 순서부터 보여 드려요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fields?.invoke()
             Text("어떤 근무형태예요?", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 PublicCycles.PROVIDE_FORMS.forEach { key ->
                     FilterChip(selected = form == key, onClick = { form = key }, label = { Text(PublicCycles.formName(key)) })
                 }
             }
-            Button(onClick = { form?.let(onStart) }, enabled = form != null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("‘$name’ 근무주기 넣기")
+            Button(onClick = { form?.let(onStart) }, enabled = form != null && ready, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (ready) "‘${name.trim()}’ 근무주기 넣기" else "근무주기 넣기", maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             if (form == null) Text("근무형태를 먼저 골라 주세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-19] 검토 U10a-11 '회사를 못 찾았을 때: 이름 확인 칸 + 비슷한 회사 3개 먼저'. The companies [typed] may mean come first
+ * ([NameLikeList], [onLike] opens one), then the first provider's card with the name to check and the 사업장 in its own box
+ * (a 사업장 typed after the name is moved there at once). [onStart] gets the name, the 사업장 and the 근무형태.
+ */
+@Composable
+fun NewCompanyStart(
+    typed: String,
+    reward: String?,
+    plaza: Boolean,
+    onStart: (name: String, site: String, form: String) -> Unit,
+    onLike: (NameLike) -> Unit,
+    modifier: Modifier = Modifier,
+    server: Boolean = plaza,
+) {
+    val split = remember(typed) { com.bamnat.core.plaza.CompanyNames.split(typed) }
+    var name by rememberSaveable(typed) { mutableStateOf(split?.first ?: typed.trim()) }
+    var site by rememberSaveable(typed) { mutableStateOf(split?.second.orEmpty().take(SITE_MAX)) }
+    val likes = rememberNameLikes(name, server)
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        NameLikeList(likes, "이 회사 보기", onLike)
+        FirstProviderCard(name, reward, onStart = { form -> onStart(name.trim(), site.trim(), form) }, plaza = plaza, fields = {
+            CompanyNameFields(name, { name = it }, site, { site = it })
+        })
     }
 }
 
@@ -413,7 +452,8 @@ fun PublicApplySheet(
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             Button(
                 onClick = {
-                    val sent = c.leadShare.upload(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty()))
+                    val sent = c.leadShare.upload(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty(),
+                        site = if (cycle.id.isEmpty()) cycle.site else ""))
                     if (sent) onDismiss() else error = "지금은 올릴 수 없어요. 인터넷에 연결된 뒤 다시 눌러 주세요"
                 },
                 enabled = ready,
@@ -437,7 +477,8 @@ fun PublicApplySheet(
                                     // [CYC-04] 1.38 업종 기념일.
                                     com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
                                     // [PLAZA-14] 1.27 AH: once, "이 정보를 다른 사람이 사용해도 될까요?" (AH-D6).
-                                    val pickNow = com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty())
+                                    val pickNow = com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty(),
+                        site = if (cycle.id.isEmpty()) cycle.site else "")
                                     // 1.38 통합 8차: came to put it up, so asked even after a no to another share ask.
                                     if (uploadOnly) c.leadShare.upload(pickNow) else c.leadShare.offer(pickNow)
                                 }
@@ -706,10 +747,15 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: Strin
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (name: String, formKey: String) -> Unit) {
-    var name by rememberSaveable { mutableStateOf(initial) }
+internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (name: String, site: String, formKey: String) -> Unit) {
+    // 2.0.0 [RVN-19] 검토 COMP-20·T10a-10: a 사업장 typed after the name goes in its own box, and the companies the name may mean
+    // are offered under it ('이 이름으로' takes that one's name, so the table goes to it rather than to a new company).
+    val split = remember(initial) { com.bamnat.core.plaza.CompanyNames.split(initial) }
+    var name by rememberSaveable { mutableStateOf(split?.first ?: initial) }
+    var site by rememberSaveable { mutableStateOf(split?.second.orEmpty().take(SITE_MAX)) }
     var form by rememberSaveable { mutableStateOf<String?>(null) }
-    val ok = PublicCycles.norm(name).length >= 2 && form != null
+    val ok = nameReady(name) && form != null
+    val likes = rememberNameLikes(name).filter { it.why != com.bamnat.core.plaza.CompanyNames.Why.SAME }
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("우리 회사 근무표 올리기") },
@@ -718,8 +764,11 @@ internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (
                 // 2.0.0 [RVN-18] COMP-22-2 both ways on (올리기만, 내 달력에도) ask before anything goes, so it says that.
                 Text("근무 순서와 시간만 넣어요. 이름·급여는 보내지 않고, 다른 분이 써도 되는지는 보내기 전에 한 번 물어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·기관 이름") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth())
+                CompanyNameFields(name, { name = it }, site, { site = it })
+                NameLikeList(likes, "이 이름으로", onPick = { l ->
+                    name = l.name
+                    if (l.site.isNotEmpty()) site = l.site.take(SITE_MAX)
+                })
                 Text("어떤 근무형태예요?", style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     PublicCycles.PROVIDE_FORMS.forEach { key ->
@@ -728,7 +777,7 @@ internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { form?.let { onNext(name.trim(), it) } }, enabled = ok) { Text("순서 넣기") } },
+        confirmButton = { TextButton(onClick = { form?.let { onNext(name.trim(), site.trim(), it) } }, enabled = ok) { Text("순서 넣기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }

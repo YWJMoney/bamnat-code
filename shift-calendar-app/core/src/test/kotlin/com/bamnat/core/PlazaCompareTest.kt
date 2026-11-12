@@ -189,6 +189,27 @@ class PlazaCompareTest {
         assertFalse(ShareAsk.due(never = false, due = 0, now = 1, usesCompanySetup = true))
     }
 
+    @Test fun `a week becomes a two-week order for 격주 work`() {
+        // 2.0.0 [RVN-19] 검토 T10a-10: 격주 토요일 근무 had no value to pick in the proposal editor.
+        val week = SetupEdit.of(company)!!.weekly(listOf("주간", "주간", "주간", "주간", "주간", null, null))
+        val two = week.weeksAsOrder()
+        assertNull(two.weekly)
+        assertEquals(14, two.rotation!!.size)
+        assertEquals(listOf("주간", "주간", "주간", "주간", "주간", null, null), two.rotation!!.subList(7, 14))
+        // Its first day is a Monday (the file's 2026-10-01 is a Thursday).
+        assertTrue(two.text.contains("\"anchor\":\"2026-09-28\""))
+        assertEquals(2, two.orderWeeks)
+        // The file's own 6-day order from a Thursday is not one of weeks.
+        assertEquals(0, SetupEdit.of(company)!!.orderWeeks)
+        // Then the second Saturday is worked, day by day.
+        val alt = two.rotation(two.rotation!!.toMutableList().also { it[12] = "주간" })
+        assertEquals("주간", alt.rotation!![12])
+        assertNull(alt.rotation!![5])
+        // Nothing without a week.
+        val order = SetupEdit.of(company)!!.rotation(listOf("주간", "야간", null, null))
+        assertEquals(order.text, order.weeksAsOrder().text)
+    }
+
     @Test fun `every proposal field is one the server knows`() {
         // [ITEM-08] 1.30 BC: hours (통상시급 기준 시간), the server's CHANGE_FIELDS.hours.
         val known = setOf("shift", "order", "break", "overtime", "night", "holiday", "allowance", "bonus", "leave", "other", "hours")

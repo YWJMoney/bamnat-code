@@ -164,6 +164,21 @@ class CompanyFindViewModel(
 /** One choice of where today falls in a shared rotation: the next week from it. */
 data class Phase(val step: Int, val days: List<ShiftType?>)
 
+/** 2.0.0 [RVN-19] 검토 U10a-09 A day of a row as the user says it: its work's name, or 휴무 for none. */
+fun phaseKind(t: ShiftType?): String = t?.name ?: "휴무"
+
+/** 2.0.0 [RVN-19] The rows left once the user said what some days are ([said]: a day of the week grid → its [phaseKind]). */
+fun Phases.left(said: Map<Int, String>): List<Phase> =
+    options.filter { o -> said.all { (d, k) -> phaseKind(o.days.getOrNull(d)) == k } }
+
+/** 2.0.0 [RVN-19] The day to ask about next: the first not said yet on which the rows left differ; null with one row (or none) left. */
+fun Phases.nextAsk(said: Map<Int, String>): Int? {
+    val left = left(said)
+    if (left.size <= 1) return null
+    val days = left.maxOf { it.days.size }
+    return (0 until days).firstOrNull { d -> d !in said && left.map { phaseKind(it.days.getOrNull(d)) }.distinct().size > 1 }
+}
+
 /**
  * A shared rotation and today's place in it, for "오늘은 어떤 근무예요?". [current] is the row the
  * calendar already shows; [sent] the row of whoever sent the file, with their [team] when they wrote it.
@@ -1729,6 +1744,9 @@ class CompanyReportViewModel(
     val start: CompanyDraft? = scope.store.draft.value
         ?: scope.store.applied.value?.let { CompanyDraft(it.company, it.dept) }
         ?: publicUse?.let { u -> CompanyDraft(u.company, u.cycle?.site.orEmpty().take(20)) }
+
+    /** 2.0.0 [RVN-19] The company this calendar uses, whose own name is not second-guessed. */
+    val usedCompany: String? get() = scope.store.applied.value?.company
 
     /** [SPAT-05] The note a setup from a public row starts with; the user may add to it. */
     val startNote: String = publicUse?.let { PublicSetup.note(it.cycle, it.codes, it.picked) }.orEmpty()

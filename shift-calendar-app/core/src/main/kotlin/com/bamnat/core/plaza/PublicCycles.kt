@@ -319,11 +319,12 @@ object PublicCycles {
      * [SPAT-02] 처음으로 회사 정보를 제공해 주세요 (사용자 2026-10-25 14:05): a company no one has given yet, as a row of its own
      * with the usual shifts of [formKey] and no order, so the same apply sheet sets it up. Nothing here is public data.
      */
-    fun provided(company: String, formKey: String): PublicCycle {
+    fun provided(company: String, formKey: String, site: String = ""): PublicCycle {
         val three = formKey in PublicCycle.THREE_FORMS
         val codes = usualWork(formKey).toList()
+        // 2.0.0 [RVN-19] 검토 T10a-10: the 사업장 in its own box, so '현대제철 당진공장' is 현대제철's, not a company of its own.
         return PublicCycle(
-            id = "", display = company, company = company, industry = "", site = "", form = formName(formKey), formKey = formKey,
+            id = "", display = company, company = company, industry = "", site = site.trim(), form = formName(formKey), formKey = formKey,
             orderText = "", timeText = "", asOf = "", trustText = "", trust = emptySet(), linkCheck = false, partner = false, source = "",
             codes = "", orderState = OrderState.NONE, weekly = false, roster = false, shifts = codes.map { CycleShift.usual(it, three) },
         )

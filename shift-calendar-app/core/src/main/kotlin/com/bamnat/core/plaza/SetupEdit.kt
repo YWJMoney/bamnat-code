@@ -29,6 +29,12 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
 
     val rotation: List<String?>? get() = (root["rotation"] as? Map<*, *>)?.let { r -> (r["steps"] as? List<*>)?.map { it as? String } }
     val weekly: List<String?>? get() = (root["weekly"] as? List<*>)?.map { it as? String }?.takeIf { it.size == 7 }
+    /** 2.0.0 [RVN-19] The order's whole weeks from a Monday (an order made of weeks, [weeksAsOrder]); 0 when it is not one. */
+    val orderWeeks: Int get() {
+        val steps = rotation ?: return 0
+        val anchor = ((root["rotation"] as? Map<*, *>)?.get("anchor") as? String)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        return if (steps.size % 7 == 0 && anchor?.dayOfWeek == java.time.DayOfWeek.MONDAY) steps.size / 7 else 0
+    }
     val hasPay: Boolean get() = root["pay"] is Map<*, *>
     val fiveOrMore: Boolean get() = pay()?.get("fiveOrMore") == true
     fun rate(key: String): Double? = (rules()?.get(key) as? Number)?.toDouble()
@@ -212,6 +218,19 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
         r["weekly"] = days.map { s -> s?.takeIf { it in names } }
     }
 
+    /**
+     * 2.0.0 [RVN-19] 검토 T10a-10 (격주·나눠 쉬는 날은 편집 칸에 고를 값이 없어 글로만 적어요): a week's days as an order of [weeks]
+     * weeks, Monday first, so 격주 토요일 근무 or a day off every other week can be said day by day. Nothing changes without a week.
+     */
+    fun weeksAsOrder(weeks: Int = 2): SetupEdit {
+        val w = weekly ?: return this
+        // The order's first day is a Monday (the week's own day 1); which week is the first is picked when it is put in.
+        val was = ((root["rotation"] as? Map<*, *>)?.get("anchor") as? String)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        val monday = (was ?: FIRST_MONDAY).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+        return with { r -> r.remove("weekly"); r["rotation"] = mapOf("anchor" to monday.toString()) }
+            .rotation(List(weeks.coerceIn(2, 8)) { w }.flatten())
+    }
+
     fun fiveOrMore(on: Boolean): SetupEdit = withPay { it["fiveOrMore"] = on }
 
     /** A premium (ot, night, hw, ho) as a share, or null for the law's. */
@@ -311,6 +330,9 @@ class SetupEdit private constructor(private val root: Map<String, Any?>) {
         const val LAW_HOURS = 209
         private val DEFAULT_RULE = mapOf("basis" to "LEGAL", "multiplier" to 1.5, "amount" to 0, "min" to 0, "night" to true,
             "percent" to 0.1, "cover" to -1, "premiums" to false, "bonus" to 0, "unit" to "ORDINARY", "unitMin" to 480, "adds" to emptyList<Any?>())
+
+        /** 2.0.0 [RVN-19] A Monday for an order made of weeks that had no day to start from. */
+        private val FIRST_MONDAY: java.time.LocalDate = java.time.LocalDate.of(2024, 1, 1)
 
         /** Null when [text] is not a company settings file. */
         fun of(text: String): SetupEdit? {
