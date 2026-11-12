@@ -191,10 +191,32 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
             l = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
         }
         readMap(K_MINE)?.let { c.recipes.pieces.restoreLook(it) }
-        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).apply()
+        // 2.0.0 [RVS-15] 검토 SN-04 (사용자 2026-11-12 '무엇을 켰든 테마를 벗으면 모두 원래대로'): the 강조색·밝기·글자 크기… the
+        // theme's work changed come back too, each one still as the work left it (one the user changed since stays theirs).
+        feelWorn().takeIf { it.isNotEmpty() }?.let { c.recipes.pieces.putFeelBack(it) }
+        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).remove(K_FEEL).apply()
         save(l.takeOff())
         refreshWidgets()
     }
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04: the 앱 동작 settings a work worn as this theme changed ([before, after]), so 벗기 puts them back. A second
+     * work worn over it keeps the first one's [before] (what the user had), the last one's after.
+     */
+    fun feelChanged(changed: Map<String, Pair<String, String>>) {
+        if (changed.isEmpty() || _lease.value.worn == null) return
+        val o = prefs.getString(K_FEEL, null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
+        changed.forEach { (k, ba) ->
+            val first = o.optJSONArray(k)?.optString(0) ?: ba.first
+            o.put(k, org.json.JSONArray().put(first).put(ba.second))
+        }
+        prefs.edit().putString(K_FEEL, o.toString()).apply()
+    }
+
+    /** What [feelChanged] kept for the theme worn now. */
+    fun feelWorn(): Map<String, Pair<String, String>> = prefs.getString(K_FEEL, null)?.let { s ->
+        runCatching { JSONObject(s).let { o -> o.keys().asSequence().associateWith { k -> o.getJSONArray(k).let { it.getString(0) to it.getString(1) } } } }.getOrNull()
+    }.orEmpty()
 
     /** A whole ad was watched: 30 more days. */
     fun extend() = save(_lease.value.extend(Today.date().toEpochDay()))
@@ -688,6 +710,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_PLACED = "placed"
         /** [CELL-02] 1.39 [keepMyCellContentOnce] has run. */
         private const val K_CELL_CONTENT = "cell_content_139"
+        /** 2.0.0 [RVS-15] The 앱 동작 settings the worn theme's work changed, setting → [before, after]. */
+        private const val K_FEEL = "feel_worn"
         private const val TAG = "BamnatDrawer"
         private const val UNDO_ROW_MS = 4_000L
         const val FOLDER_NAME = 12

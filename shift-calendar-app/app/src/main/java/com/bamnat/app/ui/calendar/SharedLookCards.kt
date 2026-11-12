@@ -141,7 +141,13 @@ private fun KitDialog(
             val switching = theirs != null && switchStyle && picks.any { it.kind == PieceKind.COMPANY }
             if (switching) runCatching { c.settingsRepository.update { it.copy(workStyle = theirs) } }
             // [CELL-02] 1.39 Their 달력 모양, my cells' content (메모 줄·줄 순서·시간·음력·지출).
-            val id = runCatching { c.recipes.apply(kit.keepMyCellContent(), "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
+            // 2.0.0 [RVS-15] 검토 SN-04 (팀 리더가 나눠 준 모양이 팀원의 글자 크기·누르기까지 바꿔요): its 앱 동작 only as 꾸밈 (강조색·움직임);
+            // 밝기 and the receiver's own settings stay theirs.
+            val motionOff = com.bamnat.core.recipe.Motion.decode(c.settingsRepository.current.motion).off
+            val mine = kit.keepMyCellContent().let { k -> k.copy(pieces = k.pieces.mapNotNull { p ->
+                if (p.kind != PieceKind.APP_FEEL) p else com.bamnat.core.recipe.AppFeel.lookOnly(p.values, motionOff).takeIf { it.isNotEmpty() }?.let { p.copy(values = it) }
+            }) }
+            val id = runCatching { c.recipes.apply(mine, "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
             val ok = id != null
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 busy = false

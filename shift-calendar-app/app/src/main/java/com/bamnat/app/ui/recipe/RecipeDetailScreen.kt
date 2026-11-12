@@ -544,6 +544,8 @@ private fun PutDialog(
                 // [RVM-13] PC-59·60·34: four short lines first (모양·단추·알람·그 밖에), the 알람 line's switch '알람도 넣기', and the full list folded.
                 val fxOn = com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
                 PutBrief(putBrief(s, fxOn), onLetters = vm::letters) { vm.toggle(PieceKind.ALARMS, it) }
+                // 2.0.0 [RVS-15] 검토 SN-04·SI-03: the work's 앱 동작, choice by choice (꾸밈 on, 밝기·내 설정 off until turned on).
+                if (s.pieces.any { it.kind == PieceKind.APP_FEEL && it.on && it.fits }) FeelChoices(s.feels, s.feelOn, vm::feel)
                 // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
                 s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
                     com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }

@@ -251,7 +251,16 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val flagged: Boolean = false,
         /** 2.0.0 [PC-33] '칸에 근무 글자 남기기' in the 넣기 창: a 칸 디자인 that shows shifts by colour alone goes in keeping their letters. */
         val letters: Boolean = false,
-    )
+        /**
+         * 2.0.0 [RVS-15] 검토 SN-04·SI-03 (사용자 2026-11-12 'A + B 혼합'): the 앱 동작 piece's choices that would change this phone, 지금 →
+         * 넣으면, each turned on or off in the 넣기 창 ([feelOn]): its 꾸밈 on, 밝기 and the user's own settings off until turned on.
+         */
+        val feels: List<RecipePieces.Feel> = emptyList(),
+        val feelOn: Map<String, Boolean> = emptyMap(),
+    ) {
+        /** The 앱 동작 keys that go in. */
+        val feelKeys: Set<String> get() = feels.filter { feelOn[it.key] == true }.map { it.key }.toSet()
+    }
     private suspend fun undoableNow(): List<Pair<Long, String>> = (c.recipes.undoable(code).map { e ->
         e.appliedAt to ("넣음" + e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.takeIf { it.isNotEmpty() }?.joinToString("·", prefix = " · ").orEmpty())
     } + laidHere().map { o -> o.at to "테마 위에 얹음 · ‘${tabName(o.tab)}’ 탭" }).sortedBy { it.first } // PC 확인 보안 7차: in the order put on
@@ -357,6 +366,21 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     }
 
     fun toggle(kind: PieceKind, on: Boolean) = set(kind) { it.copy(on = on) }
+    /** 2.0.0 [RVS-15] One 앱 동작 choice turned on or off in the 넣기 창. */
+    fun feel(key: String, on: Boolean) {
+        val s = _state.value.copy(feelOn = _state.value.feelOn + (key to on))
+        _state.value = s.copy(pieces = s.pieces.map { if (it.kind == PieceKind.APP_FEEL) feelPiece(it, s) else it })
+    }
+
+    /** The 앱 동작 piece's 전후 and lines as turned on: what stays is said in one line ('내 설정 3개는 그대로 둬요'). */
+    private fun feelPiece(p: Piece, s: State): Piece {
+        val on = s.feels.filter { s.feelOn[it.key] == true }
+        val off = s.feels.size - on.size
+        return p.copy(sides = on.map { f -> RecipePieces.Side(f.what, f.now, f.then, f.nowColor, f.thenColor) },
+            lines = on.map { RecipePieces.Change(it.what + " · " + it.then) } +
+                listOfNotNull(RecipePieces.Change("그 밖의 ${off}개는 지금 설정 그대로 둬요", skipped = true).takeIf { off > 0 })
+                    .ifEmpty { if (on.isEmpty()) listOf(RecipePieces.Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) else emptyList() })
+    }
     /** [PC-33] Keep the shift letters in the cells (or the work's colour-only mark again). */
     fun letters(keep: Boolean) { _state.value = _state.value.copy(letters = keep) }
     fun mode(kind: PieceKind, m: RecipePieces.Mode) { set(kind) { it.copy(mode = m) }; preview() }
@@ -388,10 +412,18 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val sides = r.pieces.associate { p ->
                 p.kind to c.recipes.pieces.compare(p.kind, RecipeResolve.piece(r, p, answers), calendar, modes[p.kind] ?: RecipePieces.Mode.REPLACE)
             }
+            // 2.0.0 [RVS-15] 앱 동작, choice by choice: a choice already turned keeps it; a new one starts as whose it is says.
+            val feels = r.pieces.firstOrNull { it.kind == PieceKind.APP_FEEL }?.let { p ->
+                runCatching { c.recipes.pieces.feels(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
+            }.orEmpty()
+            val motionOff = com.bamnat.core.recipe.Motion.decode(c.settingsRepository.current.motion).off
+            val feelOn = feels.associate { f -> f.key to (_state.value.feelOn[f.key] ?: com.bamnat.core.recipe.AppFeel.onAtFirst(f.key, motionOff)) }
+            _state.value = _state.value.copy(feels = feels, feelOn = feelOn)
             _state.value = _state.value.copy(pieces = _state.value.pieces.map {
                 it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList(), sides = sides[it.kind].orEmpty(),
                     overlaps = if (it.kind == PieceKind.LOGIC) overlaps else emptyList())
             }, looks = look)
+            _state.value.let { st -> _state.value = st.copy(pieces = st.pieces.map { if (it.kind == PieceKind.APP_FEEL) feelPiece(it, st) else it }) }
         }
     }
 
@@ -431,7 +463,17 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 return@launch
             }
             // [CELL-02] 1.39 Someone else's 달력 모양 changes how my cells look, not what they show (mine as the whole read says).
+            // 2.0.0 [RVS-15] 검토 SN-04: of its 앱 동작 only the choices turned on in the 넣기 창 (its 꾸밈 unless turned off; 밝기 and my own
+            // settings only when turned on). None turned on: the piece is left out.
+            // Not worked out yet (넣기 before the preview came): its 꾸밈 only, as for a work put on without being asked.
+            val st = _state.value
+            val motionOff = com.bamnat.core.recipe.Motion.decode(c.settingsRepository.current.motion).off
+            fun feelValues(v: Map<String, Any?>) =
+                if (st.feels.isEmpty()) com.bamnat.core.recipe.AppFeel.lookOnly(v, motionOff) else com.bamnat.core.recipe.AppFeel.only(v, st.feelKeys)
             val r = (if (doc.mine) r0 else r0.keepMyCellContent()).let { if (s.letters) com.bamnat.core.recipe.CellLetters.keep(it) else it }
+                .let { w -> w.copy(pieces = w.pieces.mapNotNull { p ->
+                    if (p.kind != PieceKind.APP_FEEL) p else feelValues(p.values).takeIf { it.isNotEmpty() }?.let { p.copy(values = it) }
+                }) }
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
@@ -439,7 +481,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val lookRecipe = r.copy(pieces = r.pieces.filter { it.kind in looks })
             val tab = if (looks.isEmpty()) null else com.bamnat.core.recipe.LookParts.onlyTab(lookRecipe)
             if (looks.isNotEmpty() && tab == null) c.wardrobe.beforeWear()
-            val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
+            val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) && r.pieces.any { p -> p.kind == it.kind } }
+                .map { RecipeRepository.Pick(it.kind, it.mode) }
             // 1.39 [FX-01] 프로 문: 규칙·단추 with a 1.39 기능 장치 go in with 프로 or while this work's 하루 써 보기 runs (the 장터's
             // '하루 써 보기' starts it with FxAccess.start before this). Its looks alone (규칙·단추 꺼 둠) always go in: 모양은 무료.
             val fx = if (picks.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) com.bamnat.app.logic.FxAccess.partsOf(r) else emptySet()
@@ -450,6 +493,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 return@launch
             }
             val counted = c.recipes.countedHere(code)
+            val feelBefore = c.recipes.pieces.feelSnapshot()
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.getOrDefault(false)
             // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
@@ -460,6 +504,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val sameLook = id == null && looks.isNotEmpty() && tab == null
             if ((id != null || sameLook) && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
+                // 2.0.0 [RVS-15] (사용자 2026-11-12 '무엇을 켰든 테마를 벗으면 모두 원래대로'): what its 앱 동작 changed comes off with the theme.
+                val feelAfter = c.recipes.pieces.feelSnapshot()
+                c.wardrobe.feelChanged(feelBefore.filter { (k, v) -> feelAfter[k] != v }.mapValues { (k, v) -> v to feelAfter.getValue(k) })
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
@@ -628,7 +675,11 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
                 val results = c.recipes.changes(e, r)
                 if (results.isEmpty()) { _message.value = "새 판에서 이 휴대폰에 넣을 바뀐 점이 없어요"; return@launch }
                 // What only the new version changed is chosen; where I changed it too, mine stays unless picked.
-                val picked = results.associate { res -> res.kind to res.fields.filter { it.kind == com.bamnat.core.recipe.Merge3.Kind.THEIRS }.map { it.path }.toSet() }
+                // 2.0.0 [RVS-15] 검토 SN-04: of 앱 동작, a new 밝기 or setting of mine is offered, not ticked, unless I put that one on before.
+                val had = runCatching { com.bamnat.core.recipe.RecipeCodec.readSoft(e.body).recipe }.getOrNull()
+                    ?.pieces?.firstOrNull { it.kind == PieceKind.APP_FEEL }?.values?.keys.orEmpty()
+                val picked = results.associate { res -> res.kind to res.fields.filter { it.kind == com.bamnat.core.recipe.Merge3.Kind.THEIRS }.map { it.path }
+                    .filter { path -> res.kind != PieceKind.APP_FEEL || path.substringBefore('.').let { k -> com.bamnat.core.recipe.AppFeel.onAtFirst(k) || k in had } }.toSet() }
                 _update.value = Update(e, r, v, results, picked)
             } catch (x: Exception) { _message.value = RecipeClient.problem(x) }
         }

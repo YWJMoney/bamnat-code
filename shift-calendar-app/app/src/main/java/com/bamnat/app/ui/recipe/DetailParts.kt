@@ -279,7 +279,9 @@ internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLi
             alarms.lines.any { !it.skipped } -> out += PutLine("알람 울리는 방식이 바뀌어요", PutLine.Kind.ALARM)
         }
     }
-    val rest = on.filter { it.kind !in kinds && it.kind != com.bamnat.core.recipe.PieceKind.LOGIC && it.kind != com.bamnat.core.recipe.PieceKind.ALARMS }
+    // 2.0.0 [RVS-15] 앱 동작 has its own lines under the brief ([FeelChoices]), each with its switch.
+    val rest = on.filter { it.kind !in kinds && it.kind != com.bamnat.core.recipe.PieceKind.LOGIC && it.kind != com.bamnat.core.recipe.PieceKind.ALARMS &&
+        it.kind != com.bamnat.core.recipe.PieceKind.APP_FEEL }
         .map { it.kind.label }
     if (rest.isNotEmpty()) out += PutLine("그 밖에 " + rest.take(3).joinToString(" · ") + if (rest.size > 3) " 등" else "", PutLine.Kind.OTHER)
     return out
