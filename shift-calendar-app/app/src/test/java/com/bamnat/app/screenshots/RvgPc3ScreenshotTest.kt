@@ -127,7 +127,8 @@ class RvgPc3ScreenshotTest : ScreenshotBase() {
     private fun shopPreview(): Screen.() -> Unit = {
         val cc = receivedOn(minji = false)
         shares.links[shopId] = shopShare()
-        content { com.bamnat.app.ui.calendar.AddReceivedSheet(com.bamnat.app.ui.calendar.ReceivedViewModel(cc), shopId, Today.date(), {}, {}) }
+        val vm = com.bamnat.app.ui.calendar.ReceivedViewModel(cc)
+        content { com.bamnat.app.ui.calendar.AddReceivedSheet(vm, shopId, Today.date(), {}, {}) }
         settle()
         assertTrue(appears("민지의 영업일 받기", exact = true))
         assertTrue(appears("민지의 영업일", exact = true))
