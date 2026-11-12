@@ -43,6 +43,7 @@ import com.bamnat.app.company.TalkPost
 import com.bamnat.core.plaza.IndustryGroups
 import com.bamnat.core.plaza.PlazaTag
 import com.bamnat.core.plaza.PlazaTags
+import com.bamnat.core.work.WorkStyle
 import com.bamnat.core.plaza.StylePlaza
 import androidx.compose.ui.semantics.Role
 
@@ -425,7 +426,7 @@ internal fun PlazaFeed(
                 if (lens == Lens.ALL && tops.size < STARTER_POSTS) PlazaStarter(
                     empty = tops.isEmpty(), roomName = plan.roomTitle,
                     workingNow = talk.pulse?.working?.takeIf { mine?.now == PlazaTag.Now.NIGHT && it > 0 },
-                    onStart = { s -> vm.openStarter(s) },
+                    style = vm.style, onStart = { s -> vm.openStarter(s) },
                 )
                 if (tops.isNotEmpty() && shown.isEmpty() && lifted == null) Text(when (lens) {
                     Lens.WAITING -> "답을 기다리는 질문이 없어요"
@@ -462,10 +463,37 @@ internal fun PlazaFeed(
 internal const val STARTER_POSTS = 3
 
 /** 2.0.0 [RVN-20] U10a-02 What a plaza's first posts can be, each opening the box ready for it. */
-internal enum class Starter(val label: String) {
+internal enum class Starter(private val words: String) {
     TODAY("📅 오늘 근무 한 줄"),
     QUESTION("🙋 궁금한 것 묻기"),
     POLL("📊 투표 만들기"),
+    ;
+
+    /** 2.0.0 [RVN-20] 조건 13: a shop's day is the shop's and an investor's has no 근무 ([com.bamnat.core.work.TypeWords] forbids it). */
+    fun label(style: WorkStyle?): String = when {
+        this != TODAY -> words
+        style == WorkStyle.INVEST -> "💬 오늘 한 줄"
+        style == WorkStyle.BUSINESS -> "🏪 오늘 가게 한 줄"
+        else -> words
+    }
+
+    companion object {
+        /** The first words of 오늘 한 줄 in the box: today's shift where there is one, else the kind's own day. */
+        fun todayLine(style: WorkStyle?, now: PlazaTag.Now?): String = when {
+            style == WorkStyle.INVEST -> "오늘은 "
+            style == WorkStyle.BUSINESS -> "오늘 가게는 "
+            now == PlazaTag.Now.NIGHT -> "오늘 야간이에요. "
+            now == PlazaTag.Now.DAY -> "오늘 근무 중이에요. "
+            else -> "오늘 근무는 "
+        }
+
+        /** What the 운영팀's welcome asks for: the plaza's own talk. */
+        fun talkOf(style: WorkStyle?): String = when (style) {
+            WorkStyle.INVEST -> "투자 이야기"
+            WorkStyle.BUSINESS -> "가게 이야기"
+            else -> "근무 이야기"
+        }
+    }
 }
 
 /**
@@ -476,11 +504,11 @@ internal enum class Starter(val label: String) {
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun PlazaStarter(empty: Boolean, roomName: String, workingNow: Int?, onStart: (Starter) -> Unit) {
+internal fun PlazaStarter(empty: Boolean, roomName: String, workingNow: Int?, style: WorkStyle? = null, onStart: (Starter) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (empty) com.bamnat.app.ui.components.EmptyState(
             "아직 첫 이야기를 기다리고 있어요",
-            "밤낮 운영팀: ${roomName.ifBlank { "이 광장" }}에 오신 걸 반가워요. 근무 이야기, 궁금한 것, 해 보니 좋았던 것을 편하게 나눠 주세요",
+            "밤낮 운영팀: ${roomName.ifBlank { "이 광장" }}에 오신 걸 반가워요. ${Starter.talkOf(style)}, 궁금한 것, 해 보니 좋았던 것을 편하게 나눠 주세요",
             mood = com.bamnat.app.ui.components.KaniMood.Basic,
         )
         workingNow?.let {
@@ -490,7 +518,7 @@ internal fun PlazaStarter(empty: Boolean, roomName: String, workingNow: Int?, on
             modifier = Modifier.semantics { heading() })
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Starter.entries.forEach { st ->
-                androidx.compose.material3.AssistChip(onClick = { onStart(st) }, label = { Text(st.label) },
+                androidx.compose.material3.AssistChip(onClick = { onStart(st) }, label = { Text(st.label(style)) },
                     modifier = Modifier.heightIn(min = 48.dp))
             }
         }

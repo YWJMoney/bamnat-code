@@ -232,7 +232,8 @@ fun SharedSlipCheckCard(month: com.bamnat.core.pay.MonthPay, modifier: Modifier 
 @Composable
 private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay.MonthPay, onDismiss: () -> Unit) {
     var total by rememberSaveable { mutableStateOf<Long?>(null) }
-    val parts = remember { androidx.compose.runtime.mutableStateMapOf<com.bamnat.core.pay.SlipGlance.Part, Long>() }
+    // 2.0.0 [RVN-20] 조건 10: the lines typed or read from the photo stay when the screen is made again (before: a plain remember).
+    val parts = rememberSaveable(saver = SLIP_PARTS_SAVER) { androidx.compose.runtime.mutableStateMapOf<com.bamnat.core.pay.SlipGlance.Part, Long>() }
     var result by remember { mutableStateOf<com.bamnat.core.pay.SlipGlance.Result?>(null) }
     var fixing by rememberSaveable { mutableStateOf(false) }
     var said by remember { mutableStateOf<String?>(null) }
@@ -311,3 +312,14 @@ internal fun com.bamnat.core.pay.WageType.baseWord(): String = when (this) {
     com.bamnat.core.pay.WageType.HOURLY -> "시급"
     com.bamnat.core.pay.WageType.DAILY -> "일당"
 }
+
+/** The 명세서 lines of [SharedSlipCheckSheet] as a bundle can keep them: each part by its name. */
+private val SLIP_PARTS_SAVER = androidx.compose.runtime.saveable.Saver<
+    androidx.compose.runtime.snapshots.SnapshotStateMap<com.bamnat.core.pay.SlipGlance.Part, Long>, HashMap<String, Long>>(
+    save = { m -> HashMap(m.mapKeys { it.key.name }) },
+    restore = { saved ->
+        androidx.compose.runtime.mutableStateMapOf<com.bamnat.core.pay.SlipGlance.Part, Long>().apply {
+            saved.forEach { (k, v) -> com.bamnat.core.pay.SlipGlance.Part.entries.firstOrNull { it.name == k }?.let { put(it, v) } }
+        }
+    },
+)

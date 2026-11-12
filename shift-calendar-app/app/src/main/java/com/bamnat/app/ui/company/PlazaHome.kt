@@ -78,7 +78,8 @@ class PlazaHomeViewModel(
     private val scope = c.companyOf(calendar)
     internal val container: AppContainer get() = c
     val enabled: Boolean = c.companyApi.enabled
-    private val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /** The kind of work of the calendar this plaza is for (조건 13: the 시작 꾸러미 says it in that kind's words). */
+    internal val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     /** The company this calendar joined, as the server last said; else none. */
     private val company = scope.store.member.value?.takeIf { it.first.isNotBlank() }
         ?.let { it.first to it.second.ifBlank { scope.store.applied.value?.company ?: "우리 회사" } }
@@ -378,11 +379,7 @@ class PlazaHomeViewModel(
         talk.kind.value = kind
         talk.replyId.value = null
         when (s) {
-            Starter.TODAY -> talk.draft.value = when (_todayShift.value) {
-                com.bamnat.core.plaza.PlazaTag.Now.NIGHT -> "오늘 야간이에요. "
-                com.bamnat.core.plaza.PlazaTag.Now.DAY -> "오늘 근무 중이에요. "
-                null -> "오늘 근무는 "
-            }
+            Starter.TODAY -> talk.draft.value = Starter.todayLine(style, _todayShift.value)
             Starter.POLL -> talk.pollStart.value = true
             Starter.QUESTION -> Unit
         }
@@ -532,7 +529,7 @@ fun PlazaHomeScreen(
                         }
                     }
                     TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = { vm.openTalk() }, onPost = { vm.openTalk(it) },
-                        onStart = { vm.openStarter(it) })
+                        style = vm.style, onStart = { vm.openStarter(it) })
                 }
                 (plan.alsoRoom ?: vm.backRoom.takeIf { plan.top != StylePlaza.Top.COMPANY_ROOM })?.let {
                     OutlinedButton(onClick = vm::across, modifier = Modifier.fillMaxWidth()) {
@@ -614,7 +611,7 @@ private fun FixesCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit, on
 /** 자유 토의: the newest few posts, and the sheet to read and write them all. */
 @Composable
 private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, seen: Long = 0L, onOpen: () -> Unit, onPost: (String) -> Unit = { onOpen() },
-    onStart: (Starter) -> Unit = { onOpen() }) {
+    style: com.bamnat.core.work.WorkStyle? = null, onStart: (Starter) -> Unit = { onOpen() }) {
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(plan.roomTitle.ifEmpty { "자유 토의" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -650,7 +647,7 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
                 }
             }
             if (quiet && talk != null) PlazaStarter(empty = talk.posts.none { it.parent == null && it.hidden == null }, roomName = plan.roomTitle,
-                workingNow = null, onStart = onStart)
+                workingNow = null, style = style, onStart = onStart)
             talk?.limit?.let { l -> Text(l.line(talk.leftPosts), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("글 보기·쓰기") }
         }

@@ -8,6 +8,7 @@ import com.bamnat.core.plaza.Reaction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import com.bamnat.app.ui.company.Starter
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -80,6 +81,18 @@ class Rvn6Test : ScreenshotBase() {
         settle()
         assertNotNull(vm.talk.open.value)
         assertEquals("question", vm.talk.kind.value)
+    }
+
+    /** 조건 13: the 시작 꾸러미 in each kind's words: no 근무 for an investor, the shop's own day for a shop ([TypeWords] finds none). */
+    @Test fun theStarterSpeaksEachKindsWords() {
+        for (style in listOf(null) + com.bamnat.core.work.WorkStyle.entries) {
+            val said = Starter.entries.map { it.label(style) } + Starter.talkOf(style) +
+                listOf(null, com.bamnat.core.plaza.PlazaTag.Now.DAY, com.bamnat.core.plaza.PlazaTag.Now.NIGHT).map { Starter.todayLine(style, it) }
+            said.forEach { w -> assertEquals("$style: $w", emptyList<String>(), com.bamnat.core.work.TypeWords.leaks(style, w)) }
+        }
+        assertEquals("💬 오늘 한 줄", Starter.TODAY.label(com.bamnat.core.work.WorkStyle.INVEST))
+        assertEquals("오늘 가게는 ", Starter.todayLine(com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.plaza.PlazaTag.Now.NIGHT))
+        assertEquals("📅 오늘 근무 한 줄", Starter.TODAY.label(com.bamnat.core.work.WorkStyle.SHIFT))
     }
 
     /** U10a-03 A person on every card: the writer's first letter in a circle (mine is '나'), read out with the name, not twice. */
