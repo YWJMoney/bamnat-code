@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.pay
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
@@ -35,7 +34,6 @@ import com.bamnat.app.ui.pro.openPro
 import com.bamnat.core.pay.MonthPay
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.report.PayReport
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
@@ -60,11 +58,8 @@ internal fun PayReportCard(vm: PayViewModel, profile: PayProfile, snapshot: Sche
         busy = true
         scope.launch {
             try {
-                block()
-                vm.reportMade(what)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Toast.makeText(context, "리포트를 만들지 못했어요", Toast.LENGTH_SHORT).show()
+                // 2.0.0 [RVP-69] (검토 REST-11·U14-08) The same words and 다시 하기 as every other file, not a toast of its own.
+                if (ReportShare.orTell(block)) vm.reportMade(what)
             } finally {
                 busy = false
             }

@@ -242,8 +242,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             }
             if (s != null && s.lines.isNotEmpty()) item {
                 LinesCard(s, allLines, onAll = { allLines = true },
-                    onExport = { ui.launch { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } },
-                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } },
+                    onExport = { ui.launch { com.bamnat.app.report.ReportShare.orTell { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } } }, // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } } },
                 ) { id -> ui.launch { opened = vm.entry(id) } }
             }
             item { PayoutCard(s, profile, gate, vm, promotion, snapshot) }

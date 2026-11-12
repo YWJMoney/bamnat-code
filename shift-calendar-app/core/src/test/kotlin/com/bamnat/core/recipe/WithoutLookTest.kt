@@ -40,4 +40,17 @@ class WithoutLookTest {
         assertNull(out.todayLook)
         assertEquals("only the app's own look left is no looks", CalendarView(), CalendarView(looks = listOf(CellLook(), b)).withoutLook(1))
     }
+
+    /** 2.0.0 [RVP-68][RVP-61] (검토 U14-02·U14-03) What a pattern puts in, and which days a look serves, in words. */
+    @Test fun aPatternSaysWhatItPutIn() {
+        val weekend = CellPattern(CellPattern.WEEK, week = listOf(0, 0, 0, 0, 0, 1, 1))
+        assertEquals("모양 2개 · 요일별(토·일)", weekend.summary(2))
+        assertEquals(listOf("토", "일"), weekend.usersOf(1))
+        assertEquals(listOf("월", "화", "수", "목", "금"), weekend.usersOf(0))
+        assertEquals("모양 2개 · 2칸씩 번갈아", CellPattern(CellPattern.CYCLE, n = 2).summary(2))
+        assertEquals("모양 1개 · 모든 칸", CellPattern().summary(1))
+        val night = CellPattern(CellPattern.SHIFT, shift = mapOf("night" to 1, "off" to 2))
+        assertEquals("모양 3개 · 근무별(야간·휴무·비번)", night.summary(3))
+        assertEquals(listOf("야간"), night.usersOf(1))
+    }
 }

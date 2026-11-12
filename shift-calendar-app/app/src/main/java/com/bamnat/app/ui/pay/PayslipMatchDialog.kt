@@ -661,8 +661,9 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
     SectionCard(title = "줄마다 맞춰 보기", trailing = {
         TextButton(onClick = {
             ui.launch {
-                com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
-                    "bamnat-명세서대조-${m.month}.pdf")
+                // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
+                    "bamnat-명세서대조-${m.month}.pdf") }
             }
         }) { Text("PDF") }
     }) {

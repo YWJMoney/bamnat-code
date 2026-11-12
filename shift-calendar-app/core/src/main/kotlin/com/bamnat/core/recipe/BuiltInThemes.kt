@@ -162,7 +162,7 @@ object BuiltInThemes {
             "· 앱 전체 바탕·카드·글자·강조 색${if (f.dark) " (어두운 화면)" else ""}\n" +
             "· 달력 칸 모양 ${looksCount}가지, ${patternWords(pattern)}${f.todayLook?.let { ", 오늘 칸 따로" }.orEmpty()}\n" +
             "· 메모장 ${RecipeDescribe.FREE_NAMES["layout.${m.layout}"]}, 가계부·급여 화면 모양\n" +
-            "· 광장 ${f.emoji}, 위젯·모서리\n" +
+            "· 마을 ${f.emoji}, 위젯·모서리\n" +
             "주의할 점: 모양만 바뀌어요. 근무·메모·돈 기록과 알람은 그대로예요"
         val cover = Cover(f.accent or 0xFF000000L, f.bg or 0xFF000000L, 2, f.emoji)
         return Recipe("${f.name} ${word(s)}", "${f.mood} ${word(s)} 테마", desc, setOf(s), cover, pieces = pieces)

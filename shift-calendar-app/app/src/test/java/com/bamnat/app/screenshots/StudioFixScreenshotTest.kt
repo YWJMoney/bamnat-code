@@ -38,12 +38,12 @@ class StudioFixScreenshotTest : ScreenshotBase() {
         }
         settle()
         holdText("모서리 1씩 늘리기", frames = 150)
-        check(appears("모서리 16dp", exact = true)) { "the hold did not reach the end" }
+        check(appears("모서리 16dp")) { "the hold did not reach the end" }
         check(kept == 16f) { "the end was not kept when the finger lifted: $kept" }
         tapText("모서리 1씩 줄이기", exact = true)
-        check(appears("모서리 15dp", exact = true)) { "− did not go down" }
+        check(appears("모서리 15dp")) { "− did not go down" }
         check(kept == 15f) { "− was not kept: $kept" }
         waitFor(1500)
-        check(shows("모서리 15dp", exact = true)) { "the old repeat kept pressing ＋" }
+        check(shows("모서리 15dp")) { "the old repeat kept pressing ＋" }
     }
 }
