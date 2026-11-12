@@ -207,6 +207,12 @@
 {"track": "RVIB-09", "title": "이모지 근무 그림을 워치에서 글자로", "status": "check", "size": "fix", "route": "app", "check": "이모지 근무 그림의 근무가 워치 오늘·타일·컴플리케이션에 '🌙야'처럼 보이는지(SN-18)"}
 {"track": "RVIB-10", "title": "근무를 바꾸면 알람·잘 시간·워치가 따라왔다고 한 줄", "status": "check", "size": "polish", "route": "app", "check": "오늘·내일 근무를 바꾼 줄에 ' · 알람 17:30 · 잘 시간 08:00–15:00 · 워치에도 보냈어요'"}
 {"track": "RVIB-11", "title": "쉬는 날이 된 날의 알람 끄기 창에 원래 근무", "status": "check", "size": "fix", "route": "app", "check": "근무를 쉬는 날로 바꾸면 '11월 14일(원래 야간 19:00)은 쉬는 날이 됐어요'(PC-75)"}
+{"track": "RVIB-12", "title": "날짜 창 직접 바꾼 날 줄이 200%에서 세로로 서던 것", "status": "check", "size": "fix", "route": "app", "check": "편 폭 날짜 칸·접은 폭 글자 200%에서 '근무 주기는 … | 근무 주기대로'가 두 줄로 읽히는지"}
+{"track": "RVIB-13", "title": "수면 첫 화면: 빈 안내 먼저, 채운 단추 하나", "status": "check", "size": "polish", "route": "app", "check": "기록 없는 수면 화면에 '아직 잠 기록이 없어요'가 먼저, 소리 카드는 접힘, 채운 단추는 '잠들었어요' 하나(PC-122)"}
+{"track": "RVIB-14", "title": "몇 분 만의 깼어요는 잠으로 남기지 않음", "status": "check", "size": "fix", "route": "app", "check": "잠들었어요 뒤 2분 안에 깼어요면 '2분 만에 깨서 잠으로 남기지 않았어요' + 되돌리기, 계획 대비에 '7시간 적게' 없음(PC-124)"}
+{"track": "RVIB-15", "title": "밤 화면·알람 화면의 시스템 막대를 화면 색으로", "status": "check", "size": "fix", "route": "app", "check": "3버튼 내비게이션 밝은 모드에서 밤 화면·알람 울림 화면 맨 아래가 밝은 띠가 아닌지(PC-123)"}
+{"track": "RVIB-16", "title": "'나' 메뉴에 잠", "status": "check", "size": "polish", "route": "app", "check": "가게 유형 '나' 메뉴에 '잠', 아래 막대에 넣으면 빠짐(PC-125)"}
+{"track": "RVIB-17", "title": "달력 위 띠와 알람 시각 글이 근무가 바뀌면 다시 세기", "status": "check", "size": "fix", "route": "app", "check": "받은 근무표가 들어오거나 근무를 바꾸면 띠의 쉬는 날 수·첫 알람이 그 자리에서 바뀌고 설정 › 알람 '다음 알람'과 같은지, 밤 화면 알람 줄도(PC-129·PC-36)"}
 {"track": "RVP-01", "title": "안내·주의 카드 한 모양(안내 띠)", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR. 디자인 시험 쪽에서 안내 띠 56dp 한 줄, 아이콘 색으로만 뜻, 글자 단추 하나와 X. 글이 '…'로 잘리지 않고, 글자 130% 이상이나 좁은 폭(320dp 밑)에서는 단추가 글 아래 줄로(사진 시험 2708·2709·2710)"}
 {"track": "RVP-02", "title": "고르지 않은 탭은 회색", "status": "check", "size": "polish", "route": "app", "check": "마을·메모·급여·투자 위 탭 줄: 고른 탭만 파랑, 나머지 회색"}
 {"track": "RVP-03", "title": "인터넷 없음 한 줄과 세 문구", "status": "check", "size": "polish", "route": "app", "check": "부품만: 비행기 모드에서 화면별 문구 확인은 다음 PR"}
