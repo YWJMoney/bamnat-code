@@ -58,6 +58,32 @@ class RvjScreenshotTest : ScreenshotBase() {
         reveal("밤샘 근무는 시작한 날로 휴일 판단", exact = true)
     }
 
+    /**
+     * [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': a signed contract takes '직원에게 줬어요', shows the day, and 취소 takes a
+     * mistaken press back (the model and the PDF line had it since the first PR; nothing on the screen set it).
+     */
+    private fun contractGiven(undo: Boolean): Screen.() -> Unit = {
+        content { com.bamnat.app.ui.work.PayrollScreen(roster, YearMonth.from(Today.date())) {} }
+        settle()
+        tapText("계약서", exact = true)
+        settle()
+        tapText("종이로 받았어요", exact = true)
+        settle()
+        tapText("직원에게 줬어요", exact = true)
+        settle()
+        org.junit.Assert.assertTrue("준 날이 보여야 해요", scrolledTo("에 직원에게 한 부 줬어요"))
+        org.junit.Assert.assertTrue(gone("직원에게 줬어요", exact = true))
+        if (undo) {
+            tapText("취소", exact = true)
+            settle()
+            org.junit.Assert.assertTrue(gone("에 직원에게 한 부 줬어요"))
+            org.junit.Assert.assertTrue(scrolledTo("직원에게 줬어요", exact = true))
+        }
+    }
+    @Test fun contractGivenLight() = shoot("rvj_24_contract_given_folded", FOLDED, contractGiven(false))
+    @Test fun contractGivenDarkBig() = shoot("rvj_25_contract_given_folded_dark_200", DARK, 2f, contractGiven(false))
+    @Test fun contractGivenTakenBack() = shoot("rvj_26_contract_given_undone_folded", FOLDED, contractGiven(true))
+
     @Test fun staffLight() = shoot("rvj_01_staff_folded", FOLDED, staffDialog())
     @Test fun staffDark() = shoot("rvj_02_staff_folded_dark", DARK, staffDialog())
     @Test fun staffBig() = shoot("rvj_03_staff_folded_200", FOLDED, 2f, staffDialog())
