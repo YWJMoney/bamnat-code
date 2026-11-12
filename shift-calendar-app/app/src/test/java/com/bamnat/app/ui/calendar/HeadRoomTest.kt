@@ -81,4 +81,19 @@ class HeadRoomTest {
             assertTrue(r.shortTitle)
         }
     }
+
+    /**
+     * 2.0.0 [RVH-52] 검토 HQ-22: '야간 회복 스테이션''s head box (바깥 6·안 12, 36dp) takes its sides from the row. On the folded phone the
+     * round 바로 단추 stands where '11월' still reads at its least size (about 35dp at 14dp); with the box it waits in 도구 (the month was
+     * '1' before).
+     */
+    @Test fun aWorksPaddedHeadKeepsTheMonthBeforeItsRoundButton() {
+        val bare = HeadRoom.of(369f, 1f, 16f, quick = 1, bell = true, monthDp = 35f)
+        assertTrue(bare.quick.round)
+        assertEquals("작품 상자가 없으면 동그란 단추가 머리에: $bare", 1, bare.quick.shown)
+        val boxed = HeadRoom.of(369f, 1f, 16f, quick = 1, bell = true, reserved = 36f, monthDp = 35f)
+        assertTrue(boxed.quick.round)
+        assertEquals("상자가 자리를 먹으면 물 단추는 도구에: $boxed", 0, boxed.quick.shown)
+        assertEquals("넓은 화면은 상자가 있어도 글자 단추", 1, HeadRoom.of(707f, 1f, 16f, quick = 1, bell = true, reserved = 36f, monthDp = 35f).quick.words)
+    }
 }

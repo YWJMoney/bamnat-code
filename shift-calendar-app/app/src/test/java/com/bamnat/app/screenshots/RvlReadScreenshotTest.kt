@@ -19,6 +19,7 @@ import com.bamnat.core.schedule.ShiftBundles
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.awaitCancellation
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -147,11 +148,23 @@ class RvlReadScreenshotTest : ScreenshotBase() {
         vm.readPhoto(photo)
         waitFor("the failure") { !vm.ui.value.reading && vm.ui.value.error != null }
         assertTrue(appears(TAP_PHOTO))
+        // 총괄 #484: the card is its first sentence (two lines at 200%, the calendar keeps its weeks); how to fix it is behind ⓘ.
+        assertTrue(appears("사진에서 글자를 못 찾았어요.", exact = true))
+        assertFalse(shows("밝은 곳에서 찍힌 사진"))
+    }
+
+    /** The same, with ⓘ opened: how to fix it, whole, right under the card. */
+    private fun nothingWhy(): Screen.() -> Unit = {
+        nothing().invoke(this)
+        tapText("고칠 방법 보기", exact = true)
+        assertTrue(appears("표가 화면 가득, 밝은 곳에서 찍힌 사진을 골라 주세요."))
+        assertTrue(appears("고칠 방법 접기", exact = true))
     }
 
     @Test fun nothingFoldLight() = shoot("rvl33_nothing_fold_light_100", FOLDED, nothing())
     @Test fun nothingFoldDarkHuge() = shoot("rvl33_nothing_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, nothing())
     @Test fun nothingOpenLight() = shoot("rvl33_nothing_open_light_100", UNFOLDED, nothing())
+    @Test fun nothingWhyFoldDarkHuge() = shoot("rvl33_nothing_why_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, nothingWhy())
 
     // ---- The first setup's '근무표가 있어요', the same ways, line and failure ----
     private fun setup(then: Screen.(com.bamnat.app.ui.setup.SetupViewModel) -> Unit): Screen.() -> Unit = {
