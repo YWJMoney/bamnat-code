@@ -249,7 +249,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val usersPlus: Int = 0,
         /** PC 확인 7525ccff: reported from this page, so its menu says so (the line below goes in a few seconds). */
         val flagged: Boolean = false,
-        /** 2.0.0 [PC-33] '글자 남기기' in the 넣기 창: a 칸 디자인 that shows shifts by colour alone goes in keeping their letters. */
+        /** 2.0.0 [PC-33] '칸에 근무 글자 남기기' in the 넣기 창: a 칸 디자인 that shows shifts by colour alone goes in keeping their letters. */
         val letters: Boolean = false,
     )
     private suspend fun undoableNow(): List<Pair<Long, String>> = (c.recipes.undoable(code).map { e ->

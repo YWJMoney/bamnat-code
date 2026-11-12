@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -284,37 +285,37 @@ internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLi
     return out
 }
 
-/** [RVM-13] The brief at the top of the 넣기 창; 알람 lines carry '알람은 빼고 넣기' (and back). */
+/**
+ * [RVM-13] The brief at the top of the 넣기 창. A line with a choice (알람, 칸의 근무 글자) carries it as a switch row under its words, the
+ * whole row pressed (48dp): side-by-side 글자 단추 squeezed the words at 200% into one a line, and with '바뀌는 것 모두 보기' and the 창's
+ * own 닫기·넣기 they were more 글자 단추 than 조건 2 lets a screen have (갈래 J RVJ-17 did the same).
+ */
 @Composable
 internal fun PutBrief(lines: List<PutLine>, onLetters: (Boolean) -> Unit = {}, onAlarms: (Boolean) -> Unit) {
-    // 조건 12: with big text the line's words and its 단추 side by side squeezed the words into one a line ('알람이 더 / 울려요 · / 오후 90분'),
-    // so from 130% the 단추 goes under its line.
-    val stacked = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         lines.forEach { l ->
-            val text: @Composable (Modifier) -> Unit = { m ->
-                Text(
-                    l.text, style = MaterialTheme.typography.bodyMedium, modifier = m,
-                    color = when (l.kind) {
-                        PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
-                        PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> MaterialTheme.colorScheme.onSurface
-                    },
-                )
-            }
-            val action: (@Composable () -> Unit)? = when (l.kind) {
-                PutLine.Kind.ALARM -> { { TextButton(onClick = { onAlarms(false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람은 빼고 넣기") } } }
-                PutLine.Kind.ALARM_OFF -> { { TextButton(onClick = { onAlarms(true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람도 넣기") } } }
-                PutLine.Kind.LETTERS -> { { TextButton(onClick = { onLetters(true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("글자 남기기") } } }
-                PutLine.Kind.LETTERS_KEPT -> { { TextButton(onClick = { onLetters(false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("작품대로") } } }
+            Text(
+                l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                color = when (l.kind) {
+                    PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
+                    PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+            )
+            val choice: Triple<String, Boolean, (Boolean) -> Unit>? = when (l.kind) {
+                PutLine.Kind.ALARM, PutLine.Kind.ALARM_OFF -> Triple("알람도 넣기", l.kind == PutLine.Kind.ALARM, onAlarms)
+                PutLine.Kind.LETTERS, PutLine.Kind.LETTERS_KEPT -> Triple("칸에 근무 글자 남기기", l.kind == PutLine.Kind.LETTERS_KEPT, onLetters)
                 else -> null
             }
-            if (stacked && action != null) Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                text(Modifier.fillMaxWidth())
-                action()
-            } else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp)) {
-                text(Modifier.weight(1f))
-                action?.invoke()
+            choice?.let { (label, on, set) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .toggleable(value = on, role = Role.Switch, onValueChange = set).padding(start = 12.dp),
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
+                }
             }
         }
     }
