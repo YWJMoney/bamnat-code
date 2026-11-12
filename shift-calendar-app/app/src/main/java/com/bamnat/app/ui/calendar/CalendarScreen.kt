@@ -1434,7 +1434,7 @@ fun CalendarScreen(
             // opening window a visit; the others wait in the 알림함 as a row each, to open now with a tap (or 다시 시작 for a downloaded
             // update), else they come on a later visit.
             if (paint == null) com.bamnat.app.ui.components.AskTurn.waiting.forEach { ask ->
-                val (label, line, act) = waitingWords(ask)
+                val (label, line, act) = waitingWords(ask) ?: return@forEach
                 val go: () -> Unit = if (ask == com.bamnat.core.guide.OpenAsk.UPDATE_READY) ({ com.bamnat.app.review.InAppUpdate.restart() })
                     else ({ com.bamnat.app.ui.components.AskTurn.request(ask) })
                 add(Notice("openAsk:${ask.name}", label, line = line, action = act, onAction = go, kind = "calendar.openAsk") {
@@ -3552,7 +3552,7 @@ private val FIRST_DAY_WAITS = setOf(
 private const val START_NOTICE = "startCard"
 
 /** [RVP-43] U13b-02: how the 알림함 names an opening window that waits its turn: title, line, what a tap does. */
-private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, String, String> = when (ask) {
+private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, String, String>? = when (ask) {
     com.bamnat.core.guide.OpenAsk.NEW_CONSENT -> Triple("새 기능 동의", "새로 생긴 기능을 쓰려면 동의가 필요해요", "보기")
     com.bamnat.core.guide.OpenAsk.TRIAL_CONSENT -> Triple("체험 끝", "체험이 곧 끝나요. 계속 쓸지 골라 주세요", "고르기")
     com.bamnat.core.guide.OpenAsk.WHATS_NEW -> Triple("새로 생긴 것", "업데이트로 새로 생긴 것이 있어요", "보기")
@@ -3561,4 +3561,6 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
     com.bamnat.core.guide.OpenAsk.THEME_UPDATE -> Triple("테마 새 판", "입은 테마에 새 판이 나왔어요", "보기")
     com.bamnat.core.guide.OpenAsk.TEXT_SIZE -> Triple("글자 크기", "읽기 편한 글자 크기를 골라 보세요", "고르기")
     com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS -> Triple("고마워요", "정식 출시 전부터 함께해 주셔서 고마워요", "보기")
+    // 2.0.0 [RVH-61] The Play 별점 창 is never a row to tap (Play asks apps not to prompt for it): it just waits for a later visit.
+    com.bamnat.core.guide.OpenAsk.REVIEW -> null
 }
