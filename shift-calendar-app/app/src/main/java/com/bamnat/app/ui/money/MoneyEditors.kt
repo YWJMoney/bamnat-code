@@ -215,7 +215,8 @@ internal fun WordsWithActions(words: @Composable () -> Unit, modifier: Modifier 
         val oneLine = said.first().maxIntrinsicWidth(Constraints.Infinity) + b.width <= width
         if (oneLine) {
             val w = said.first().measure(Constraints(maxWidth = width - b.width))
-            val h = maxOf(w.height, b.height)
+            // A row asked to be at least 48dp tall (a row you press) keeps the two in its middle.
+            val h = maxOf(w.height, b.height, c.minHeight)
             layout(width, h) {
                 w.place(0, (h - w.height) / 2)
                 b.place(width - b.width, (h - b.height) / 2)
@@ -229,6 +230,15 @@ internal fun WordsWithActions(words: @Composable () -> Unit, modifier: Modifier 
         }
     }
 }
+
+/**
+ * 2.0.0 [RVK-23]·HQ-30 (총괄 #457 리뷰) A name and its amount: on one line while both fit; at large text the name keeps whole lines
+ * and the amount goes under it on the right, so a name is never cut down to its date ('10/14 신한카드 카드값' → '10/14').
+ * Every 'name … amount' row of the ledger uses it (앞으로의 돈, 구독, 예산, 카드 실적, 봉투, 기타로 남은 곳).
+ */
+@Composable
+internal fun NameAndAmount(name: @Composable () -> Unit, modifier: Modifier = Modifier, amount: @Composable RowScope.() -> Unit) =
+    WordsWithActions(name, modifier) { androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp)); amount() }
 
 /** [RVK-15] Each number of a sum in 1,000 groups as it is typed ("36,000÷3"); a plain amount as [GroupedNumber]. */
 private object GroupedSum : VisualTransformation {

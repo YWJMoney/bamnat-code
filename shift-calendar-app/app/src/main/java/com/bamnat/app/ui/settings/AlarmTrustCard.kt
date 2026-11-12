@@ -101,7 +101,7 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                 }
             }
             if (settings.alarmsEnabled && ahead.isNotEmpty()) {
-                Text("$SKIP_ONCE_ROW · 끈 알람만 한 번 쉬고 나머지는 그대로 울려요", style = MaterialTheme.typography.bodySmall,
+                Text("$SKIP_ONCE_ROW · 끈 알람만 한 번 쉬어요 · 날마다 끄려면 달력에서 그날을 눌러요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

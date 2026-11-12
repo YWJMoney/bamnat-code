@@ -199,7 +199,7 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val types by vm.types.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var asked by remember { mutableStateOf(false) }
     var changing by remember { mutableStateOf<CalendarImport.Proposal?>(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked = true; vm.refresh() }
@@ -225,7 +225,7 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         bottomBar = {
             val todo = ui.todo
             if (ui.proposals != null) Surface(tonalElevation = 3.dp) {

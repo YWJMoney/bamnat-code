@@ -67,9 +67,21 @@ class TodayWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val first = WidgetData.load(context)
-        provideContent { val data = widgetData(context, first); WidgetLookTheme { WidgetFrame { TodayContent(data) } } }
+        // 2.0.0 [RVP-74] (검토 REST-16) On a lock screen anyone can read it without unlocking: no memo lines there.
+        val locked = onLockScreen(context, id)
+        provideContent { val data = widgetData(context, first).forPlace(locked); WidgetLookTheme { WidgetFrame { TodayContent(data) } } }
     }
 }
+
+/** 2.0.0 [RVP-74] (검토 REST-16) Whether the phone placed this widget on its lock screen (a tablet, Android 16), not a home screen. */
+internal fun onLockScreen(context: Context, id: GlanceId): Boolean = runCatching {
+    val appId = androidx.glance.appwidget.GlanceAppWidgetManager(context).getAppWidgetId(id)
+    android.appwidget.AppWidgetManager.getInstance(context).getAppWidgetOptions(appId)
+        .getInt(android.appwidget.AppWidgetManager.OPTION_APPWIDGET_HOST_CATEGORY, -1) == android.appwidget.AppWidgetProviderInfo.WIDGET_CATEGORY_KEYGUARD
+}.getOrDefault(false)
+
+/** 2.0.0 [RVP-74] A lock screen keeps the shifts and times and drops each day's memo line and the days marked with one. */
+internal fun WidgetData.forPlace(lockScreen: Boolean): WidgetData = if (!lockScreen) this else copy(memos = emptyMap(), memoDays = emptySet())
 
 class WeekWidget : GlanceAppWidget() {
     // [J133-32] 순번 712: laid out for its real size, so the 4×1 it is put down at keeps its marks whole.

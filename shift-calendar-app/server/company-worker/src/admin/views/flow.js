@@ -116,7 +116,7 @@ export function flowViews(A) {
     const missing = fresh.filter((d) => d.asks && !d.shipReply).length;
     const noNews = fresh.filter((d) => !d.news).length;
     openDialog(`<form data-form="flow-ship-go" data-version="${esc(r.version)}"><h2>${esc(r.version)}을 나간 판으로 저장할까요?</h2>
-      <p>${r.was ? `지금은 ${esc(r.was)}이에요. ` : ""}${r.version} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
+      <p>${r.was ? `지금은 ${esc(r.was)}이에요. ` : ""}${esc(r.version)} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
       ${fresh.length ? `<h3>이번에 나가는 개발사항 ${fresh.length}개</h3><ul class="mini">${fresh.map((d) => `<li>${esc(d.title)} <small>${esc(d.releasedIn)} · 문의 ${d.asks}건</small>
           ${d.news ? `<small class="answer">공지: ${esc(d.news)}</small>` : ""}<span>${d.asks ? `<span class="pill ${d.shipReply ? "ok" : "warn"}">${d.shipReply ? "출시 답 준비됨" : "출시 답 없음(기본 답)"}</span>` : ""}
           <span class="pill ${d.news ? "ok" : "warn"}">${d.news ? "공지 한 줄 있음" : "공지 한 줄 없음"}</span></span></li>`).join("")}</ul>
@@ -145,7 +145,9 @@ export function flowViews(A) {
       const el = document.getElementById("key-once");
       try {
         await navigator.clipboard.writeText(el?.value ?? "");
-        toast("복사했어요. Claude 프로젝트 설정에 붙여 넣어 주세요");
+        // [RVA-08] 복사했으면 닫을 때 묻지 않아요.
+        dialog.dataset.copied = "1";
+        toast("복사했어요. 붙여 넣을 곳에 넣어 주세요");
       } catch {
         el?.select();
         toast("복사하지 못했어요. 칸을 길게 눌러 복사해요");
@@ -166,7 +168,7 @@ export function flowViews(A) {
     "key-make": async (form) => {
       const r = await act(() => api("/keys", "POST", { label: new FormData(form).get("label") }));
       if (!r) return;
-      openDialog(`<div class="key-once"><h2>열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> 지금 복사해서 Claude 프로젝트 설정 › 클라우드 환경 비밀값 BAMNAT_OPS_KEY에 넣어요.</p>
+      openDialog(`<div class="key-once" data-secret="key"><h2>열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> 지금 복사해서 Claude 프로젝트 설정 › 클라우드 환경 비밀값 BAMNAT_OPS_KEY에 넣어요.</p>
         <label for="key-once">열쇠</label><input id="key-once" readonly value="${esc(r.key)}" class="mono">
         <p class="meta">${esc(r.expiresAt.slice(0, 10))}까지 써요.</p>
         <div class="actions"><button class="btn" type="button" data-act="key-copy">복사</button><button class="btn primary" type="button" data-act="close">넣었어요</button></div></div>`);

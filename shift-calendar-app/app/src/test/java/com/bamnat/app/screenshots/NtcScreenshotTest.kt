@@ -83,8 +83,12 @@ class NtcScreenshotTest : ScreenshotBase() {
 
     private val shown get() = shadowOf(app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).activeNotifications.toList()
 
+    /**
+     * Up to ten seconds, in steps of 50ms. 2.0.0 [QA-10] (#460 CI shots-b, 79줄): three seconds ran out on a slow runner while the
+     * 내 달력 미리 보기 was still on its own thread. A wait that passes ends at once, so only a real failure takes the ten.
+     */
     private fun waitFor(ok: () -> Boolean): Boolean {
-        repeat(60) { if (ok()) return true; Thread.sleep(50); settle() }
+        repeat(200) { if (ok()) return true; Thread.sleep(50); settle() }
         return ok()
     }
 

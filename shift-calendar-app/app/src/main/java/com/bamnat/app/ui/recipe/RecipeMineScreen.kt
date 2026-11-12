@@ -63,7 +63,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val newer by vm.newer.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     // [RCX-26] Every 지우기 here asks first (한 번 지운 것은 돌아오지 않아요).
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
@@ -71,7 +71,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
     LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),

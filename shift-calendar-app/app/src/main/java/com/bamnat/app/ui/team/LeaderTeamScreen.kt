@@ -313,6 +313,16 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
+    // 2.0.0 [RVJ-27] 검토 PAYU-57 ③: the board as the last 가져오기 left it and the members it added; 되돌리기 from that board asks
+    // whether they go too (they are kept in the team's list, not in the board's steps).
+    var importMade by remember(team.id, month) { mutableStateOf<Pair<TeamBoard, List<TeamMember>>?>(null) }
+    var undoNew by remember(team.id, month) { mutableStateOf<List<TeamMember>>(emptyList()) }
+    if (undoNew.isNotEmpty()) ImportUndoAsk(undoNew, onKeep = { undoNew = emptyList() }, onRemove = {
+        val ids = undoNew.map { it.id }.toSet()
+        undoNew = emptyList()
+        // Only one still as it was added: a member who got a link since is taken out from the team's list, where the link is cut.
+        scope.launch { saved?.members.orEmpty().filter { it.id in ids && it.linkId == null }.forEach { store.removeMember(it.id) } }
+    })
     // 1.39 G2: 빈칸 자동 채우기 asked for 근무별 인원 first; on 저장 the fill goes on with the numbers just saved.
     var fillAfterNeed by remember { mutableStateOf(false) }
     suspend fun fill(t: Team) {
@@ -382,7 +392,14 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     Scaffold(topBar = {
         TopAppBar(title = { Text(team.name) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             actions = {
-                IconButton(onClick = { editor?.let { board = it.undo() } }, enabled = editor?.canUndo == true) { Icon(Icons.AutoMirrored.Filled.Undo, "되돌리기") }
+                IconButton(onClick = {
+                    editor?.let { e ->
+                        val was = board
+                        board = e.undo()
+                        // [RVJ-27] The step taken back was the 가져오기 that added members.
+                        importMade?.takeIf { it.first == was }?.let { undoNew = it.second; importMade = null }
+                    }
+                }, enabled = editor?.canUndo == true) { Icon(Icons.AutoMirrored.Filled.Undo, "되돌리기") }
                 IconButton(onClick = { editor?.let { board = it.redo() } }, enabled = editor?.canRedo == true) { Icon(Icons.AutoMirrored.Filled.Redo, "다시 하기") }
             })
     }) { padding ->
@@ -831,7 +848,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             scope.launch {
                 val rows = com.bamnat.core.team.TeamGridImport.rows(grid)
                 val cur = board ?: return@launch
-                val (made, ids) = com.bamnat.core.team.TeamGridImport.newMembers(rows, choice.memberOf, choice.skipped, team.id, cur.members)
+                val (made, ids) = com.bamnat.core.team.TeamGridImport.newMembers(rows, choice.memberOf, choice.skipped, team.id, cur.members, names = choice.names)
                 if (made.isNotEmpty()) store.saveMembers(made)
                 // 1.38 [P3-L-17] 종이 신청표: the cells go in as 신청, the board stays as it is.
                 choice.wishCodes?.let { wc ->
@@ -850,6 +867,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 checkCells = a.toCheck.sortedWith(compareBy({ order.indexOf(it.first) }, { it.second }))
                 checkCells.firstOrNull()?.let { member = it.first; cursor = it.second.dayOfMonth }
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, if (photo) "team_photo" else "team_file")
+                importMade = if (made.isEmpty()) null else a.board to made
                 dialog = importSummary(a, made.size)
             }
         }

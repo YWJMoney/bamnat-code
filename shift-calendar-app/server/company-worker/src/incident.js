@@ -73,9 +73,9 @@ export async function incidentSignals(env, now = Date.now(), vitals = null) {
   const stuck = jobs.filter((j) => (j.ok_at ? j.fail_at - j.ok_at >= (INCIDENT.jobFails - 1) * HOUR : j.fails >= INCIDENT.jobFails));
   if (stuck.length) out.push({ key: "jobs", text: `정기 작업이 계속 실패: ${stuck.map((j) => JOB_NAMES[j.step] ?? j.step).join(", ")}`, v: stuck.length, n: stuck.length, was: "" });
   // SVC-83: 5분 작업(보류 끝난 답·자동 출시 안내)이 멈추면 매시 작업이 알려요.
-  const five = await one(env, "SELECT last_at FROM job_runs WHERE step = ?", FIVE_STEP).catch(() => null);
+  const five = await one(env, `SELECT MAX(last_at) AS last_at FROM job_runs WHERE step IN (${FIVE_IN})`, ...FIVE_STEPS).catch(() => null);
   if (five?.last_at && now - five.last_at > INCIDENT.fiveStaleMs) {
-    out.push({ key: "stale", text: `5분 작업이 ${Math.round((now - five.last_at) / 60000)}분째 안 돌아요(보류 끝난 답·자동 출시 안내)`, v: now - five.last_at, n: 1, was: "" });
+    out.push({ key: "stale", text: `5분 작업이 ${Math.round((now - five.last_at) / 60000)}분째 안 돌아요(보류 끝난 답·자동 출시 안내·광장 글 급증)`, v: now - five.last_at, n: 1, was: "" });
   }
   if (vitals && !vitals.error) {
     // SVC-81: 하루 사용자가 적으면 한두 명의 비정상 종료로도 기준을 넘어요. 그때는 신호로 보지 않아요.
@@ -91,8 +91,13 @@ export async function incidentSignals(env, now = Date.now(), vitals = null) {
   return out.map((s) => ({ ...s, sure: INCIDENT_URGENT.has(s.key) }));
 }
 
-/** 2.0.0 [RVN-02] 5분 작업의 정기 작업 이름(job_runs). */
-export const FIVE_STEP = "five";
+/**
+ * 2.0.0 [RVN-02] 5분 작업의 정기 작업 이름(job_runs). [RVQ-12] 검토 SRV-14로 5분 작업도 단계마다 적어서(index.js fiveMinuteSteps)
+ * 첫 단계 held5가 대표예요. [FIVE_STEPS]는 5분 작업의 모든 이름(1차 이름 five 포함)이라 매시 작업을 셀 때 빼요.
+ */
+export const FIVE_STEP = "held5";
+export const FIVE_STEPS = ["five", "held5", "ship5", "surge"];
+const FIVE_IN = FIVE_STEPS.map(() => "?").join(", ");
 
 const openOne = (env) => one(env, "SELECT * FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1").catch(() => null);
 
@@ -171,7 +176,7 @@ export async function incidentTick(env, now = Date.now(), vitals = null) {
  * 매시 작업이 죽으면 스스로를 알릴 수 없어서 서로 지켜봐요(SVC-83, 총괄 11-12).
  */
 export async function hourlyWatch(env, now = Date.now()) {
-  const last = await one(env, "SELECT MAX(last_at) AS at FROM job_runs WHERE step <> ?", FIVE_STEP).catch(() => null);
+  const last = await one(env, `SELECT MAX(last_at) AS at FROM job_runs WHERE step NOT IN (${FIVE_IN})`, ...FIVE_STEPS).catch(() => null);
   if (!last?.at || now - last.at <= INCIDENT.hourlyStaleMs) return { stale: false };
   const told = await one(env, "SELECT value FROM settings WHERE key = 'hourly_stale_told'").catch(() => null);
   if (told?.value === String(last.at)) return { stale: true, told: false };
@@ -183,7 +188,7 @@ export async function hourlyWatch(env, now = Date.now()) {
 
 /** 2.0.0 [RVN-02] /api/admin/health?jobs=1이 내는 숫자: 마지막 매시 작업이 몇 분 전인지(운영 장부 자동 처리가 하루 두 번 봐요, I22cb-03). */
 export async function hourlyAgo(env, now = Date.now()) {
-  const last = await one(env, "SELECT MAX(last_at) AS at FROM job_runs WHERE step <> ?", FIVE_STEP).catch(() => null);
+  const last = await one(env, `SELECT MAX(last_at) AS at FROM job_runs WHERE step NOT IN (${FIVE_IN})`, ...FIVE_STEPS).catch(() => null);
   return last?.at ? Math.max(0, Math.round((now - last.at) / 60000)) : null;
 }
 

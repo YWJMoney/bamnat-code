@@ -124,9 +124,11 @@ private fun EnvelopeRow(s: EnvelopeStatus, today: LocalDate, perShift: Long?, on
     val e = s.envelope
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onEdit).padding(vertical = 6.dp)
         .semantics { contentDescription = "${e.name} 봉투, ${Fmt.won(s.saved)}" + if (e.target > 0) " / ${Fmt.won(e.target)}" else "" }) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 2.0.0 [RVK-23]·HQ-30 the envelope's name whole at large text, its amount and 넣기 under it when they do not fit beside it.
+        NameAndAmount({
             Text((e.emoji.ifBlank { if (e.kind == EnvelopeKind.TAX) "🧾" else "✉️" }) + " " + e.name, style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1)
+                fontWeight = FontWeight.Medium)
+        }) {
             Text(Fmt.won(s.saved) + if (e.target > 0) " / ${Fmt.wonShort(e.target)}" else "", style = MaterialTheme.typography.bodyMedium)
             TextButton(onClick = onPut) { Text("넣기") }
         }
