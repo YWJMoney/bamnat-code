@@ -362,7 +362,7 @@ private fun WhoCard(people: List<String>, who: String?, onPick: (String) -> Unit
         Spacer(Modifier.height(8.dp))
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             people.forEach { p ->
-                androidx.compose.material3.FilterChip(selected = p == who, onClick = { onPick(p) }, label = { Text(p, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                com.bamnat.app.ui.components.FilterChip(selected = p == who, onClick = { onPick(p) }, label = { Text(p, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     modifier = Modifier.heightIn(min = 48.dp))
             }
         }

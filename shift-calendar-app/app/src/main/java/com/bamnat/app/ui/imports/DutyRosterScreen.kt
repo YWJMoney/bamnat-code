@@ -265,7 +265,7 @@ class DutyRosterViewModel(
     private fun keepDraft(u: Ui) {
         if (!u.unsaved) drafts.clear(calendarId)
         else drafts.write(calendarId, com.bamnat.app.data.RosterDraftStore.Draft(u.month, u.rows, u.picked, u.edits, u.answers, u.cursor,
-            u.from, u.named, u.chosen, u.withOutside, java.time.Instant.now()))
+            u.from, u.named, u.chosen, u.withOutside, com.bamnat.core.time.Today.instant()))
     }
 
     /** 2.0.0 [RVL-20] 처음부터: the month brought back is thrown away. */
