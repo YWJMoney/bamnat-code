@@ -1335,7 +1335,7 @@ private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
                 message = "헬스 커넥트를 설치하거나 업데이트한 뒤 다시 켜 주세요."
                 runCatching { context.startActivity(com.bamnat.app.sleep.HealthSleep.installIntent()) }
             }
-            else -> message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요. 잠들었어요·깼어요 버튼으로 기록해 주세요."
+            else -> message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요. 잠들었어요·깼어요 단추로 기록해 주세요."
         }
     }
     message?.let { Note(it) }
@@ -1491,7 +1491,7 @@ private fun AccentRow(accent: Long, onPick: (Long) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(ACCENT_ROW, style = MaterialTheme.typography.bodyLarge)
-            Text(if (accent == 0L) "앱 기본 파란색이에요. 버튼과 고른 탭의 색을 바꿔요" else "버튼·고른 탭·선택 표시가 이 색이에요",
+            Text(if (accent == 0L) "앱 기본 파란색이에요. 단추와 고른 탭의 색을 바꿔요" else "단추·고른 탭·선택 표시가 이 색이에요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (accent != 0L) TextButton(onClick = { onPick(0L) }) { Text("처음대로") }

@@ -327,7 +327,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("삭제", color = MaterialTheme.colorScheme.error) },
+                                text = { Text("지우기", color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; confirmDelete = true },
                             )
@@ -940,7 +940,7 @@ private fun ChecklistRow(
             },
         )
         IconButton(onClick = onRemove, modifier = Modifier.widthIn(max = 40.dp)) {
-            Icon(Icons.Filled.Close, "항목 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+            Icon(Icons.Filled.Close, "항목 지우기", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
         }
     }
 }

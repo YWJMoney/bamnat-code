@@ -992,7 +992,7 @@ private fun EmptyMemos(tab: MemoTab, searching: Boolean, style: com.bamnat.core.
             when {
                 searching -> "검색어나 필터를 바꿔 보세요"
                 // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
-                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 버튼으로 오늘 메모를 남겨 보세요. " + when (style) {
+                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 단추로 오늘 메모를 남겨 보세요. " + when (style) {
                     com.bamnat.core.work.WorkStyle.INVEST -> "그날 매매 기록이 함께 보여요."
                     com.bamnat.core.work.WorkStyle.BUSINESS -> "그날 영업 여부가 함께 보여요."
                     com.bamnat.core.work.WorkStyle.FIELD -> "그날 일감이 함께 보여요."

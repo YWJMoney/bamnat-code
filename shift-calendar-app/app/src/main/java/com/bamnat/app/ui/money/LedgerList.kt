@@ -144,9 +144,9 @@ internal const val SWIPE_THRESHOLD = 0.5f
 internal fun DeleteLineDialog(e: MoneyEntry, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     val what = listOfNotNull(Fmt.shortDate(e.date), e.title.ifBlank { e.category }, signedWon(e)).joinToString(" · ")
     com.bamnat.app.ui.components.ConfirmDialog(
-        title = "삭제할까요?",
-        message = "$what\n\n삭제한 뒤에도 바로 나오는 ‘되돌리기’로 다시 살릴 수 있어요.",
-        confirmLabel = "삭제",
+        title = "지울까요?",
+        message = "$what\n\n지운 뒤에도 바로 나오는 ‘되돌리기’로 다시 살릴 수 있어요.",
+        confirmLabel = "지우기",
         destructive = true,
         onDismiss = onDismiss,
         onConfirm = onConfirm,

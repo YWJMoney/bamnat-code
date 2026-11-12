@@ -142,7 +142,7 @@ fun ShiftTypesScreen(
     val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
     LaunchedEffect(vm) {
         vm.removed.collect { removal ->
-            val r = snackbar.showSnackbar("‘${removal.name}’ 근무를 삭제했어요", actionLabel = "되돌리기",
+            val r = snackbar.showSnackbar("‘${removal.name}’ 근무를 지웠어요", actionLabel = "되돌리기",
                 duration = androidx.compose.material3.SnackbarDuration.Long)
             if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.restore(removal)
         }
@@ -415,7 +415,7 @@ private fun ShiftTypeRow(
             // [SHFT-09] 1.25 Z (U25-가): deleting was only at the bottom of the editor, where people did not find it.
             if (onDelete != null) {
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.DeleteOutline, "${type.name} 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Outlined.DeleteOutline, "${type.name} 지우기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             // [DAILY-08] Drag the handle up or down: one place for each row's height passed.
@@ -466,7 +466,7 @@ private fun DeleteShiftTypeDialog(
     val inUse = u != null && (u.days > 0 || u.inPattern)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("‘${type.name}’ 근무를 삭제할까요?") },
+        title = { Text("‘${type.name}’ 근무를 지울까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -495,11 +495,11 @@ private fun DeleteShiftTypeDialog(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text("삭제한 뒤에도 바로 되돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("지운 뒤에도 바로 되돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = {
-            TextButton(onClick = { onDelete(replaceWith) }, enabled = u != null) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = { onDelete(replaceWith) }, enabled = u != null) { Text("지우기", color = MaterialTheme.colorScheme.error) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
@@ -624,7 +624,7 @@ fun ShiftTypeEditorDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 수정") },
+                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 고치기") },
                         navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
                             TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }
@@ -934,7 +934,7 @@ fun ShiftTypeEditorDialog(
                     ) { Text("저장") }
                     if (onDelete != null) {
                         TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-                            Text("이 근무 종류 삭제", color = MaterialTheme.colorScheme.error)
+                            Text("이 근무 종류 지우기", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }

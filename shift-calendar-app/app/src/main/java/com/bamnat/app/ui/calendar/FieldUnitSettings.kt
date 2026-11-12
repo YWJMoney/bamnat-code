@@ -85,7 +85,7 @@ internal fun DayRateUnitsSetting(calendarId: String, rules: FieldRules) {
     var addingChip by rememberSaveable { mutableStateOf(false) }
     var addingRule by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("날짜를 누르면 나오는 공수 버튼", style = MaterialTheme.typography.labelLarge)
+        Text("날짜를 누르면 나오는 공수 단추", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             rules.chips.forEach { u ->
                 InputChip(selected = false, onClick = {
@@ -96,11 +96,11 @@ internal fun DayRateUnitsSetting(calendarId: String, rules: FieldRules) {
             if (rules.chips.size < FieldRules.MAX_CHIPS) AssistChip(onClick = { addingChip = true }, label = { Text("추가") },
                 leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(18.dp)) })
         }
-        Text("누르면 빠져요. 모두 빼면 처음 버튼(1공·0.5·1.5)으로 돌아가요.", style = MaterialTheme.typography.bodySmall,
+        Text("누르면 빠져요. 모두 빼면 처음 단추(1공·0.5·1.5)로 돌아가요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("끝난 시각으로 공수 정하기", style = MaterialTheme.typography.labelLarge)
         if (rules.unitRules.isEmpty()) {
-            Text("예: ${DayRate.rulesLine(DayRate.SAMPLE_RULES)}. 정해 두면 날짜의 ‘끝난 시각으로’ 버튼이 시각만 고르면 공수를 적어요.",
+            Text("예: ${DayRate.rulesLine(DayRate.SAMPLE_RULES)}. 정해 두면 날짜의 ‘끝난 시각으로’ 단추가 시각만 고르면 공수를 적어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { calendars.updateField(calendarId) { it.copy(unitRules = DayRate.SAMPLE_RULES) } }) { Text("예시대로 시작") }
         } else {
@@ -117,7 +117,7 @@ internal fun DayRateUnitsSetting(calendarId: String, rules: FieldRules) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    if (addingChip) UnitsDialog("공수 버튼 추가", 2.0, null, onDismiss = { addingChip = false }) { u, _ ->
+    if (addingChip) UnitsDialog("공수 단추 더하기", 2.0, null, onDismiss = { addingChip = false }) { u, _ ->
         addingChip = false
         calendars.updateField(calendarId) { it.copy(unitChips = DayRate.cleanChips(it.chips + u)) }
     }

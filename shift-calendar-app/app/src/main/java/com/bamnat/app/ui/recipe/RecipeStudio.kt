@@ -683,7 +683,7 @@ private fun lookLine(v: Map<String, Any?>): String = v.entries.mapNotNull { (k, 
 @Composable
 private fun MockSettings(resolved: Map<PieceKind, Map<String, Any?>>) {
     val w = resolved[PieceKind.WIDGET]
-    MockNote("설정", "아래 탭 순서, 위젯 모양, 모서리를 여기서 바꿔요")
+    MockNote("설정", "아래 메뉴 순서, 위젯 모양, 모서리를 여기서 바꿔요")
     if (w != null) {
         val alpha = ((w["alpha"] as? Number)?.toInt() ?: 100).coerceIn(30, 100)
         val dark = w["theme"] == "dark"
@@ -784,7 +784,7 @@ internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boole
 @Composable
 internal fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<String>?) -> Unit) {
     val order = TabOrder.of(saved)
-    StudioCard("아래 탭 순서", "맨 앞 탭이 앱을 열면 처음 보이는 화면이에요", onReset = saved.takeIf { it.isNotEmpty() }?.let { { onChange(null) } }) {
+    StudioCard("아래 메뉴 순서", "맨 앞 탭이 앱을 열면 처음 보이는 화면이에요", onReset = saved.takeIf { it.isNotEmpty() }?.let { { onChange(null) } }) {
         order.forEachIndexed { i, key ->
             val t = TopLevel.entries.firstOrNull { it.route == key } ?: return@forEachIndexed
             Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -801,7 +801,7 @@ internal fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CornersEditor(corners: String?, onChange: (String?) -> Unit) {
-    StudioCard("모서리", "카드와 버튼의 둥근 정도예요", onReset = corners?.let { { onChange(null) } }) {
+    StudioCard("모서리", "카드와 단추의 둥근 정도예요", onReset = corners?.let { { onChange(null) } }) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("round" to "둥글게", "soft" to "보통", "square" to "각지게").forEach { (k, label) ->
                 FilterChip(corners == k, { onChange(k) }, label = { Text(label) }, shape = shapesFor(k).small)

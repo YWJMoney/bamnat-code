@@ -338,7 +338,7 @@ internal fun ScreenPreview(r: Recipe,
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             @Suppress("UNCHECKED_CAST")
             (layout?.get("tabs") as? List<String>)?.takeIf { it.isNotEmpty() }?.let { tabs ->
-                Text("아래 탭 순서", style = MaterialTheme.typography.labelLarge)
+                Text("아래 메뉴 순서", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     com.bamnat.core.layout.TabOrder.of(tabs).forEach { key ->
                         val t = com.bamnat.app.ui.TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach

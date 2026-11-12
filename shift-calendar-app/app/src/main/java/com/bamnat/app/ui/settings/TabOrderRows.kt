@@ -350,7 +350,7 @@ private fun GroupNameDialog(start: String, onDone: (String) -> Unit, onDismiss: 
         title = { Text("묶음 이름") },
         text = {
             Column {
-                Text("아래 막대에 이 이름으로 보여요(${TabSlots.NAME_MAX}자까지).", style = MaterialTheme.typography.bodyMedium,
+                Text("아래 메뉴에 이 이름으로 보여요(${TabSlots.NAME_MAX}자까지).", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                 OutlinedTextField(
                     value = name,

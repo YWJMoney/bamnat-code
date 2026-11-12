@@ -337,7 +337,7 @@ fun PatternScreen(
                             OutlinedButton(onClick = { put(null) }) { Text("쉬는 날") }
                         }
                     }
-                    TextButton(onClick = onOpenShiftTypes) { Text("근무 종류 추가·수정") }
+                    TextButton(onClick = onOpenShiftTypes) { Text("근무 종류 더하기·고치기") }
                 }
 
                 // Right under the input so each tap shows its effect on the calendar at once.
@@ -507,10 +507,10 @@ fun PatternScreen(
                 onClick = save,
                 enabled = valid,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-            ) { Text(if (existing == null) "저장하고 달력에 적용" else "저장 (조 변경 / 수정)") }
+            ) { Text(if (existing == null) "저장하고 달력에 적용" else "저장 (조 바꾸기 / 고치기)") }
             if (existing != null) {
                 TextButton(onClick = { confirmClear = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("패턴 삭제", color = MaterialTheme.colorScheme.error)
+                    Text("패턴 지우기", color = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -561,9 +561,9 @@ fun PatternScreen(
 
     if (confirmClear) {
         ConfirmDialog(
-            title = "패턴을 삭제할까요?",
+            title = "패턴을 지울까요?",
             message = "달력의 자동 표시가 사라져요. 직접 바꾼 날짜와 메모는 그대로 남아요.",
-            confirmLabel = "삭제",
+            confirmLabel = "지우기",
             destructive = true,
             onDismiss = { confirmClear = false },
             onConfirm = {

@@ -401,7 +401,7 @@ fun EntryDialog(
                         )
                     }
                     if (onEditCategories != null) {
-                        AssistChip(onClick = onEditCategories, label = { Text("분류 편집") },
+                        AssistChip(onClick = onEditCategories, label = { Text("분류 고치기") },
                             leadingIcon = { Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp)) })
                     }
                 }

@@ -184,7 +184,7 @@ internal fun FieldModePrompt(onPick: (FieldMode) -> Unit) {
         title = { Text("일을 어떻게 세요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("고르는 대로 날짜를 눌렀을 때 나오는 버튼이 달라져요. 나중에 달력 고치기에서 바꿀 수 있어요.",
+                Text("고르는 대로 날짜를 눌렀을 때 나오는 단추가 달라져요. 나중에 달력 고치기에서 바꿀 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium)
                 FieldMode.entries.forEach { m ->
                     OutlinedButton(onClick = { onPick(m) }, modifier = Modifier.fillMaxWidth()) {
@@ -214,7 +214,7 @@ internal fun FieldModeSetting(calendar: com.bamnat.app.data.PersonalCalendar) {
             }
         }
         Text(mode.hint + when (mode) {
-            FieldMode.DAY_RATE -> ". 날짜를 누르면 1공·0.5·1.5 버튼이 나와요"
+            FieldMode.DAY_RATE -> ". 날짜를 누르면 1공·0.5·1.5 단추가 나와요"
             FieldMode.PLATFORM -> ". 날짜를 누르면 플랫폼마다 건수를 적어요"
             else -> ". 날짜를 누르면 일감 적기가 나와요"
         },

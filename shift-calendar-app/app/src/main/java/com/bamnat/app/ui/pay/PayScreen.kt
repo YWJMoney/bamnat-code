@@ -1357,7 +1357,7 @@ private fun ValueRow(
                     Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Switch(checked = ordinary, onCheckedChange = onOrdinary, enabled = enabled)
                 } else Spacer(Modifier.weight(1f))
-                if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
+                if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("지우기") }
             }
         }
         if (taxFree != null && onTaxFree != null) {
@@ -1404,7 +1404,7 @@ private fun BonusRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             Switch(checked = item.ordinary, onCheckedChange = onOrdinary, enabled = enabled)
-            TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
+            TextButton(onClick = onRemove, enabled = enabled) { Text("지우기") }
         }
     }
 }
