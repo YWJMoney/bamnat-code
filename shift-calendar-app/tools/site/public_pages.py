@@ -602,7 +602,7 @@ write('shift/', page(
     'shift/', '교대 근무 달력 만들기 · 4조2교대·3조2교대 근무표 | 밤낮',
     '4조2교대·3조2교대·4조3교대·주야비휴 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 앱에선 알람까지.',
     '교대 근무 달력 만들기', '근무 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 마음에 들면 같은 순서로 앱에 옮겨 알람까지 맞춰요.',
-    '''<div class="card">
+    '''<div class="card" id="setup">
   <label for="pat">근무 순서</label>
   <select id="pat"></select>
   <label for="custom">직접 적기<span class="hint">주=D 오후=E 야=N 휴=O 당번=X 비번=B. 예: DDNNOO</span></label>
@@ -610,10 +610,12 @@ write('shift/', page(
   <label for="first">이 순서의 첫날<span class="hint">순서 맨 앞 근무를 하는 날이에요. 예: 주주야야휴휴면 첫 주간 날.</span></label>
   <input id="first" type="date">
   <label class="check"><input type="checkbox" id="once"> 반복하지 않아요 (한 달 듀티표처럼 적은 만큼만)</label>
-  <label class="check"><input type="checkbox" id="keep" checked> 이 브라우저에 기억해요 (다음에 열면 바로 내 달력)</label>
+  <label class="check" id="keepRow"><input type="checkbox" id="keep" checked> 이 브라우저에 기억해요 (다음에 열면 바로 내 달력)</label>
 </div>
 <div class="card" id="calCard">
   <div class="today-big" id="today" aria-live="polite"></div>
+  <div class="soon" id="soon"></div>
+  <div class="mine-row" id="mineRow" hidden><span id="mineSum"></span><button type="button" class="chip" id="edit" aria-controls="setup" aria-expanded="true">바꾸기</button></div>
   <div class="calnav">
     <button type="button" class="chip" id="prev">◀ 앞 석 달</button>
     <button type="button" class="chip" id="now">오늘로</button>
@@ -623,8 +625,8 @@ write('shift/', page(
   <label for="ask">그날 나는?</label>
   <input id="ask" type="date">
   <div id="askOut" class="say" aria-live="polite"></div>
-  <div class="share"><button type="button" class="chip" id="share">같은 조 동료에게 이 달력 보내기</button></div>
-  <p class="note">휴대폰 홈 화면에 이 쪽을 더해 두면 매일 오늘 근무가 바로 보여요. (크롬 ⋮ › 홈 화면에 추가 · 사파리 공유 › 홈 화면에 추가)</p>
+  <div class="share"><button type="button" class="chip" id="share">같은 조 동료에게 이 달력 보내기</button><button type="button" class="chip" id="home">홈 화면에 더하기</button></div>
+  <p class="note" id="homeHow" aria-live="polite" hidden></p>
 </div>
 <div class="card app-next">
   <strong class="t">이 달력, 앱에서는 이렇게 이어져요</strong>
@@ -644,15 +646,22 @@ write('shift/', page(
   <span class="muted">위 '직접 적기'에 한 달 순서를 적고 '반복하지 않아요'를 켜면 그달 듀티를 달력으로 볼 수 있어요. 밤낮 앱에서는 근무표 사진을 찍으면 내 줄을 찾아 달력에 넣어 줘요.</span>
 </div>''',
     r'''(function(){
-var B=Bamnat,$=B.$,D=B.d,pats=[],off=0;
+var B=Bamnat,$=B.$,D=B.d,pats=[],off=0,WD='일월화수목금토';
 var NAME={D:'주',E:'오',N:'야',O:'휴',X:'당',B:'비'},FULL={D:'주간',E:'오후',N:'야간',O:'휴무',X:'당번',B:'비번'};
+// [I50c-02] 홈 화면에서 연 '내 근무' 앱(설치한 것)인지: 그때는 늘 기억하고, 주소보다 이 기기에 기억한 순서를 먼저 써요.
+var qs=new URLSearchParams(location.search),app=qs.get('app')==='1',ios=B.ios(navigator.userAgent,navigator.maxTouchPoints||0);
+try{app=app||matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){}
 function codes(){var c=$('custom').value.toUpperCase().replace(/[^DENOXB]/g,'');return c||$('pat').value;}
 function store(on){try{if(on)localStorage.setItem('bn_shift',JSON.stringify({p:codes(),s:$('first').value,o:$('once').checked?1:0}));else localStorage.removeItem('bn_shift');}catch(e){}}
 function at(c,start,d){var k=D.between(start,d);if($('once').checked)return k>=0&&k<c.length?c[k]:'';k%=c.length;if(k<0)k+=c.length;return c[k];}
+function chip(x,sm){return '<b class="s '+(x||'none')+(sm?' sm':'')+'">'+(FULL[x]||'근무 없음')+'</b>';}
+function label(c){for(var i=0;i<pats.length;i++)if(pats[i].codes===c)return pats[i].name.replace(/\s*\(.*\)\s*$/,'');return c.split('').map(function(x){return NAME[x];}).join('');}
 function draw(){
-  var c=codes(),start=D.parse($('first').value);if(!c||!start){$('cal').innerHTML='';$('today').textContent='';return;}
+  var c=codes(),start=D.parse($('first').value);if(!c||!start){$('cal').innerHTML='';$('today').textContent='';$('soon').textContent='';return;}
   var now=D.today(),t=at(c,start,now);
-  $('today').innerHTML='오늘 '+D.md(now)+' <b class="s '+t+'">'+(FULL[t]||'근무 없음')+'</b> <span class="muted">· 순서 '+c.length+'일</span>';
+  $('today').innerHTML='<span class="t">오늘 '+(now.getUTCMonth()+1)+'월 '+now.getUTCDate()+'일 '+WD[now.getUTCDay()]+'</span> '+chip(t);
+  $('soon').innerHTML='<span>내일 '+chip(at(c,start,D.plusDays(now,1)),1)+'</span><span>모레 '+chip(at(c,start,D.plusDays(now,2)),1)+'</span>';
+  $('mineSum').textContent=(own?'':'받은 달력 · ')+label(c)+' · '+D.md(start)+'부터'+($('once').checked?' 한 번만':'');
   var out='',base=D.plusMonths(new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)),off*3);
   for(var m=0;m<3;m++){var first=D.plusMonths(base,m),y=first.getUTCFullYear(),mo=first.getUTCMonth(),last=new Date(Date.UTC(y,mo+1,0)).getUTCDate();
     out+='<h3 class="month-title">'+y+'년 '+(mo+1)+'월</h3><div class="cal">';
@@ -663,16 +672,41 @@ function draw(){
     out+='</div>';}
   $('cal').innerHTML=out;
   try{history.replaceState(null,'','?p='+c+'&s='+$('first').value+($('once').checked?'&o=1':''));}catch(e){}
-  store($('keep').checked);ask();
+  if(own)store(app||$('keep').checked);ask();
   var a=document.querySelector('a[data-play="shift_cal"]');if(a)a.href=B.playLink('shift_cal','shift','&utm_content='+c.slice(0,24));
 }
 function ask(){var d=D.parse($('ask').value),c=codes(),s=D.parse($('first').value);if(!d||!c||!s){$('askOut').textContent='';return;}var x=at(c,s,d);
   $('askOut').textContent=D.dot(d)+' '+(FULL[x]?B.josa(FULL[x],'이에요/예요').replace(/(이에요|예요)$/,'')+(x==='O'||x==='B'?', 쉬는 날이에요.':' 근무예요.'):'근무가 없어요.');}
 function esc(s){return String(s||'').replace(/[&<>"]/g,function(ch){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});}
-var qs=new URLSearchParams(location.search),saved=null;
+var saved=null;
 try{saved=JSON.parse(localStorage.getItem('bn_shift')||'null');}catch(e){}
-if(!qs.get('p')&&saved&&saved.p){$('custom').value=saved.p;$('first').value=saved.s;$('once').checked=!!saved.o;}
+var useSaved=!!(saved&&saved.p&&(app||!qs.get('p')));
+// 동료가 보낸 다른 달력 링크를 열어도 이 기기에 기억한 내 달력은 그대로예요(고치거나 홈 화면에 더할 때만 이것을 기억해요).
+var own=!(qs.get('p')&&!app&&saved&&saved.p&&(saved.p!==qs.get('p').toUpperCase()||saved.s!==qs.get('s')||!!saved.o!==(qs.get('o')==='1')));
+if(useSaved){$('custom').value=saved.p;$('first').value=saved.s;$('once').checked=!!saved.o;}
 else{$('first').value=qs.get('s')||D.iso(D.today());if(qs.get('p'))$('custom').value=qs.get('p');$('once').checked=qs.get('o')==='1';}
+// [I50c-02] 내 달력이 있으면(기억했거나 받은 링크) 오늘·내일 근무가 맨 위에 오고, 순서 고르기는 '바꾸기'로 접혀요.
+function fold(open){$('setup').hidden=!open;$('edit').setAttribute('aria-expanded',open?'true':'false');$('edit').textContent=open?'다 됐어요':'바꾸기';}
+if(useSaved||qs.get('p')){document.body.classList.add('mine');$('mineRow').hidden=false;fold(false);}
+$('edit').onclick=function(){var open=$('setup').hidden;fold(open);
+  if(open){var still=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;$('setup').scrollIntoView({block:'start',behavior:still?'auto':'smooth'});$('pat').focus({preventScroll:true});}
+  else $('today').scrollIntoView({block:'center'});};
+if(app){$('keep').checked=true;$('keepRow').hidden=true;$('home').hidden=true;var dk=document.getElementById('dock');if(dk)dk.hidden=true;}
+// 홈 화면에 더하기: Android는 설치 창(되면)이나 메뉴 안내, 아이폰은 공유 › 홈 화면에 추가(주소에 내 순서가 담겨요).
+// 아이폰 사파리는 설치 정보(manifest)의 시작 주소로 열어 내 순서를 잃을 수 있어 아이폰에는 주지 않아요.
+var asked=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();asked=e;});
+if(!ios){var mf=document.createElement('link');mf.rel='manifest';mf.href='manifest.webmanifest';document.head.appendChild(mf);}
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
+$('home').onclick=function(){
+  own=true;$('keep').checked=true;store(true);
+  var how=$('homeHow'),ua=navigator.userAgent;how.hidden=false;
+  if(asked){asked.prompt();asked.userChoice.then(function(r){how.textContent=r.outcome==='accepted'?'홈 화면에 더했어요. 아이콘을 누르면 오늘 근무가 맨 위에 보여요.':'언제든 다시 눌러 더할 수 있어요.';});asked=null;return;}
+  how.textContent=/KAKAOTALK/i.test(ua)?'카카오톡 안에서는 더할 수 없어요. 오른쪽 아래 ⋮ › 다른 브라우저로 열기 뒤에 다시 눌러 주세요.'
+    :/NAVER\(inapp|Instagram|FBAN|FBAV|Line\//.test(ua)?'이 앱 안에서는 더할 수 없어요. 메뉴의 다른 브라우저로 열기 뒤에 다시 눌러 주세요.'
+    :ios?'공유 단추(네모에 위 화살표) › 홈 화면에 추가를 눌러요. 내 순서가 주소에 담겨 있어요.'
+    :/SamsungBrowser/.test(ua)?'아래 메뉴(≡) › 현재 페이지 추가 › 홈 화면을 눌러요.':'오른쪽 위 ⋮ › 홈 화면에 추가를 눌러요.';
+};
 fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch(function(){return null;}).then(function(j){
   pats=(j&&j.data&&j.data.patterns)||%FALLBACK%;
   $('pat').innerHTML=pats.filter(function(p){return p.codes!=='DDDDDOO';}).map(function(p){return '<option value="'+esc(p.codes)+'">'+esc(p.name)+' · '+esc(p.description)+'</option>';}).join('');
@@ -680,9 +714,9 @@ fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch
   draw();
 });
 B.shareButton($('share'),'우리 조 근무 달력');
-$('pat').addEventListener('change',function(){$('custom').value='';draw();});
-['custom','first','once'].forEach(function(i){$(i).addEventListener('input',draw);$(i).addEventListener('change',draw);});
-$('keep').addEventListener('change',function(){store($('keep').checked);});
+$('pat').addEventListener('change',function(){own=true;$('custom').value='';draw();});
+['custom','first','once'].forEach(function(i){var mine=function(){own=true;draw();};$(i).addEventListener('input',mine);$(i).addEventListener('change',mine);});
+$('keep').addEventListener('change',function(){own=true;store($('keep').checked);});
 $('ask').addEventListener('input',ask);
 $('prev').onclick=function(){off--;draw();};$('next').onclick=function(){off++;draw();};$('now').onclick=function(){off=0;draw();};
 })();'''.replace('%FALLBACK%', json.dumps(FALLBACK_PATS, ensure_ascii=False)),
@@ -690,8 +724,10 @@ $('prev').onclick=function(){off--;draw();};$('next').onclick=function(){off++;d
      ('3조 2교대와 4조 3교대는 어떻게 다른가요?', '3조 2교대는 세 조가 주간·야간 두 근무를 돌아가며(예: 주주야야휴휴), 4조 3교대는 네 조가 주간·오후·야간 세 근무를 돌아가요(예: 주주오오야야휴휴).'),
      ('우리 회사 교대 순서를 잘 모르겠어요.', '밤낮 앱의 회사 찾기에서 회사 이름으로 고르면 근무 순서와 시간이 맞춰져요. 없는 회사는 앱에서 알려 주시면 확인해서 더하고, 그동안은 순서를 직접 적어 써요.'),
      ('고른 순서는 어디에 남나요?', "'이 브라우저에 기억해요'를 켜 두면 이 기기 브라우저에만 남아 다음에 열 때 바로 내 달력이 보여요. 서버로는 보내지 않고, 끄면 바로 지워요."),
+     ('아이폰에서도 매일 볼 수 있나요?', "네. '홈 화면에 더하기'를 누르고 안내대로 홈 화면에 더하면 아이콘이 생겨요. 누를 때마다 오늘·내일 근무가 맨 위에 크게 보이고, 인터넷이 잠깐 끊겨도 지난번에 연 달력이 열려요. 앱을 깔 수 없는 가족·동료에게 링크를 보내 같은 달력을 쓰게 해도 돼요."),
      ('달력을 휴대폰에 넣고 알람도 맞출 수 있나요?', '밤낮 앱에서 같은 순서를 고르면 몇 년치가 한 번에 채워지고, 주간·야간마다 다른 시각에 울리는 근무 알람도 맞춰요. 쉬는 날엔 조용해요.')],
-    'shift', '이 달력을 휴대폰에, 근무 알람까지', '밤낮 앱에서 같은 순서를 고르면 몇 년치 근무가 한 번에 채워지고, 주간·야간마다 다른 근무 알람과 이번 달 예상 월급까지 봐요.', 1))
+    'shift', '이 달력을 휴대폰에, 근무 알람까지', '밤낮 앱에서 같은 순서를 고르면 몇 년치 근무가 한 번에 채워지고, 주간·야간마다 다른 근무 알람과 이번 달 예상 월급까지 봐요.', 1,
+    head='\n<link rel="apple-touch-icon" href="../assets/icon-180.png">\n<meta name="apple-mobile-web-app-title" content="내 근무">'))
 print('shift ok')
 
 # ---------- 공휴일 ----------

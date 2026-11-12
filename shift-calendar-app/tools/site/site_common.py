@@ -159,7 +159,7 @@ def og_image(path):
     return {'print': 'shift', 'shift': 'shift', 'form': 'form', 'calc': 'calc'}[k]
 
 
-def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, cta_text, depth, crumbs=None):
+def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, cta_text, depth, crumbs=None, head=''):
     up = '../' * depth
     canonical = SITE + path
     assert len(desc) <= 80, ('설명은 80자 안으로(네이버 사이트 진단)', path, len(desc), desc)
@@ -215,7 +215,7 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="{html.escape(h1)} · 밤낮">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="{up}assets/icon.svg" type="image/svg+xml">
+<link rel="icon" href="{up}assets/icon.svg" type="image/svg+xml">{head}
 <link rel="preload" href="{up}assets/fonts/pretendard.css" as="style">
 <link rel="stylesheet" href="{up}assets/fonts/pretendard.css">
 <link rel="stylesheet" href="{up}calc/calc.css">

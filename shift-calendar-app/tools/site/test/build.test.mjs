@@ -24,6 +24,17 @@ test('목록 밖 파일·내부 주소·지난해 숫자가 섞이면 실패해�
     const js = fs.readFileSync(path.join(root, 'calc/calc.js'), 'utf8');
     assert.doesNotMatch(js, /\[(?:WEB|U50|T50|I50a|SPREAD)-\d+\]/);
     assert.match(js, /\/\*@rates\*\/\{"rates":/, '자료를 못 받을 때 값은 rates.json에서 채워요');
+    // [I50c-02] 내 근무 달력: 홈 화면 설치 정보의 아이콘이 모두 있고, 시작 주소는 앱 표시(?app=1), 서비스 워커는 이 사이트 GET만.
+    const mf = JSON.parse(fs.readFileSync(path.join(root, 'shift/manifest.webmanifest'), 'utf8'));
+    assert.equal(mf.start_url, './?app=1');
+    assert.equal(mf.scope, './');
+    for (const i of mf.icons) assert.ok(fs.statSync(path.join(root, 'shift', i.src)).size > 1000, i.src);
+    assert.ok(mf.icons.some((i) => i.purpose === 'maskable' && i.sizes === '512x512'));
+    const sw = fs.readFileSync(path.join(root, 'shift/sw.js'), 'utf8');
+    assert.match(sw, /r\.method !== 'GET' \|\| u\.origin !== location\.origin/);
+    const shift = fs.readFileSync(path.join(root, 'shift/index.html'), 'utf8');
+    assert.match(shift, /<link rel="apple-touch-icon" href="\.\.\/assets\/icon-180\.png">/);
+    assert.ok(fs.statSync(path.join(root, 'assets/icon-180.png')).size > 1000);
 
     const bad = (file, text, expect) => {
       const f = path.join(root, file);

@@ -34,8 +34,8 @@ ALLOWED_TOP = {'.git', '.nojekyll', 'README.md', 'index.html', 'sitemap.xml', 'r
                'assets', 'calc', 'shift', 'holiday', 'form', 'r', 'og', 'css', 'privacy', 'terms', 'community', 'remote'}
 INDEXNOW_KEY = re.compile(r'^[0-9a-f]{32}\.txt$')
 # 이 도구가 만드는 곳(아래 글자 검사를 받는 곳)
-GENERATED = ('index.html', 'sitemap.xml', 'robots.txt', 'calc/', 'shift/', 'holiday/', 'form/', 'r/', 'assets/home.', 'og/')
-TEXT_EXT = ('.html', '.js', '.css', '.txt', '.xml', '.json', '.svg')
+GENERATED = ('index.html', 'sitemap.xml', 'robots.txt', 'calc/', 'shift/', 'holiday/', 'form/', 'r/', 'assets/home.', 'assets/icon-', 'og/')
+TEXT_EXT = ('.html', '.js', '.css', '.txt', '.xml', '.json', '.svg', '.webmanifest')
 # 공개 파일에 있으면 안 되는 글자: 내부 주소, 비밀 이름, 개발 저장소·도구 경로, 내부 문서 이름
 FORBIDDEN = ['10.0.2.2', 'localhost', '127.0.0.1', '/api/admin', 'ADMIN_PASSWORD', 'RATE_SALT', 'MAIL_API_KEY', 'PLAY_SERVICE_ACCOUNT',
              'BAMNAT_OPS_KEY', 'keystore', 'shift-calendar-app', 'bamnat-code', 'tools/site', 'core/src', 'docs/plans', 'tracker.csv',
@@ -68,6 +68,9 @@ def copy_static(root):
         rel = os.path.relpath(src, os.path.join(HERE, 'static'))
         dst = os.path.join(root, rel)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if rel.endswith('.png'):  # [I50c-02] 홈 화면 아이콘(app_icons.js가 만든 것)은 그대로
+            shutil.copyfile(src, dst)
+            continue
         t = open(src, encoding='utf-8').read()
         if rel == os.path.join('calc', 'calc.js'):
             assert '/*@rates*/null/*@*/' in t

@@ -28,8 +28,9 @@ node tools/site/check_pages.js ../- <사진 폴더>   # 모든 쪽을 폭 380·8
 | `print_pages.py` | 인쇄 달력 `shift/print/`(우리 조 열두 달, 조 나란히 팀 근무표, 범례 시각, 종이에 한 해 요약), 양식 `form/`·`form/files/*.xlsx`(9mm 칸 빈 양식 인쇄) |
 | `r_page.py` | 레시피 링크 받는 쪽 `r/`(noindex, Play 출처 `bamnat_share`) |
 | `home_page.py` + `home.html` | 첫 화면 `index.html` |
-| `static/` | 손으로 쓰는 정적 파일: `calc/calc.js`(공식·칸·링크), `calc/calc.css`(디자인 체계), `assets/home.js`·`home.css`, `robots.txt` |
+| `static/` | 손으로 쓰는 정적 파일: `calc/calc.js`(공식·칸·링크), `calc/calc.css`(디자인 체계), `assets/home.js`·`home.css`, `robots.txt`, `shift/manifest.webmanifest`·`shift/sw.js`(내 근무 달력을 홈 화면에, 인터넷 없이도) |
 | `og_images.js` | 미리보기 그림 `og/calc·shift·form·recipe·holiday-<해>.png` |
+| `app_icons.js` | 홈 화면 아이콘 `static/assets/icon-180·192·512·maskable-512.png`(공개 저장소의 `assets/icon.svg`에서, 바꿀 때만 `node app_icons.js <공개 폴더>`) |
 | `calc-cases.json` + `test/` | 웹 계산기와 앱 core가 같은 답을 내는지(`WebCalcParityTest`가 같은 파일을 봐요), 공개 파일 검사 시험 |
 | `check_pages.js` | 넘침·콘솔 오류·바깥 요청·숫자 가운데 줄바꿈·접힌 메뉴 초점 점검과 사진 |
 | `indexnow.py` | 공개 저장소에 합쳐 나간 뒤 바뀐 쪽을 네이버·빙에 알리기 |
