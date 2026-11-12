@@ -313,6 +313,9 @@ private fun Cell(
                 .then(if (doubt) Modifier.background(warn.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
                 .then(when {
                     pointed -> Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall)
+                    // [RVL-36] On the card's own tint the caution wash alone read grey-green: its edge in the caution colour, as
+                    // the calendar's cells below draw the same days.
+                    doubt -> Modifier.border(1.5.dp, warn, MaterialTheme.shapes.extraSmall)
                     tappable -> Modifier.border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.extraSmall)
                     else -> Modifier
                 })
