@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { Window } from "happy-dom";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
+import { SERVER_VERSION } from "../../src/version.js";
 import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
 
 const APP_JS = await adminFile("/admin/app.js").text();
@@ -501,7 +502,7 @@ test("[ADM3-43] 서버 상태: company counts and versions, an old share server 
   const u = await asOwner(env, t);
   await u.go("#/server");
   await u.settle(30);
-  assert.match(u.text("#main"), /회사 1 · 쓰는 규칙 \d+ · 서버 1\.39\.0 · 관리자 앱 빌드/);
+  assert.match(u.text("#main"), new RegExp(`회사 1 · 쓰는 규칙 \\d+ · 서버 ${SERVER_VERSION.replaceAll(".", "\\.")} · 관리자 앱 빌드`));
   const share = [...u.$$("#main .tile")].find((x) => /공유 서버/.test(x.textContent));
   assert.match(share.textContent, /살아 있음 · 판 다름/);
   assert.ok(!share.classList.contains("hot"));
