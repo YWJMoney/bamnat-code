@@ -803,6 +803,13 @@ abstract class ScreenshotBase {
             (0..40).map { x to from + dp * d * it / 40 } + listOf(x to from + dp * d)
         }
 
+        /** 2.0.0 [RVK-44] Pushes the content up by [dp] with a finger (slowly), as a person reads on down a page. */
+        fun readOn(dp: Int, across: Float = 0.5f) = gesture { w, h, d ->
+            val x = w * across
+            val from = h * 0.7f
+            (0..40).map { x to from - dp * d * it / 40 } + listOf(x to from - dp * d)
+        }
+
         /** [CAL-51] Every node in the topmost window, for checks of what shows where (묶음 R's layout checks). */
         /**
          * 2.0.0 [RVI-75] The lowest node that says exactly [text]: a memo's offer is a one-line nudge under the words now, its

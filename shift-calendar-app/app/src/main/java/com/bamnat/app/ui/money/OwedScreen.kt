@@ -94,6 +94,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -300,6 +301,10 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     val doneShown = remember(done, query) { done.filter { query.isBlank() || "${it.who} ${it.name} ${it.note}".contains(query.trim(), ignoreCase = true) } }
     val listState = rememberLazyListState()
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the rows fill the width and the button covered the ends of amounts: it steps aside
+    // while the list scrolls down and comes back on the way up (or at the top).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val bigLetters = com.bamnat.app.ui.components.bigLetters()
 
     val actions = RowActions(
         open = { o -> when (o) { is Owed.Written -> openId = o.r.id; is Owed.FromJob -> openJobId = o.job.id } },
@@ -309,6 +314,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     val pickFilter = { f: OwedFilter -> show = Show.OWED; filter = if (filter == f) OwedFilter.ALL else f }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
                 title = { Text("받을 돈") },
@@ -336,7 +342,10 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             // [RVP-06] The shared rule (icon alone with big letters too).
-            com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
+            AnimatedVisibility(!bigLetters || fab.open || atTop, enter = fadeIn() + androidx.compose.animation.scaleIn(),
+                exit = fadeOut() + androidx.compose.animation.scaleOut()) {
+                com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
+            }
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {
