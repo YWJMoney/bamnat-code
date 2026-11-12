@@ -581,6 +581,12 @@ object RuleText {
         Regex("""(?<![\d.,])(\d{1,3}(?:,\d{3})+)(?![\d,]|\s*(?:%|배|시간|분|명|년|개월))""").find(clause)
             ?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()?.takeIf { it >= 1_000 }
 
+    /**
+     * 2.0.0 [RVL-17] The pay's name at the start and its amount next, with only words that say how it is counted between ("기본급은 월
+     * 2,500,000원", "시급: 10,320원", "시급은 최저임금 10,320원", "일당(1일) 150,000원").
+     */
+    private fun payHead(names: String) = Regex("""^(?:$names)(?:[은는이가:=()\[\]\-]|월|매월|1개월|시간당|1시간|1일|하루|최저임금|금액|으로|로|약|₩)*(?=\d)""")
+
     private fun readClause(line: String, clause: String, c: String, shiftTypes: List<ShiftType>): List<RuleFinding> {
         val amount = RuleImport.parseAmount(clause) ?: bareAmount(clause)
         val pct = percentRe.find(clause)?.groupValues?.get(1)?.toDouble()
@@ -589,9 +595,11 @@ object RuleText {
 
         // The pay itself.
         if ("연봉" in c && amount != null) return one(RuleChange.Annual(amount), 0.85)
-        if (Regex("^(기본급|기본월급|월급|기본임금)").containsMatchIn(c) && amount != null && pct == null) return one(RuleChange.Base(WageType.MONTHLY, amount), 0.9)
-        if (Regex("^(시급|기본시급)").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.HOURLY, amount), 0.9)
-        if (Regex("^(일당|일급)").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.DAILY, amount), 0.85)
+        // 2.0.0 [RVL-17] (검토 SCAN-30·T07b-09) Only with its amount right after its name: "기본급에는 고정연장수당 300,000원이 포함된다",
+        // "기본급 외에 식대 200,000원", "시급제 직원은 …", "일당직은 식대 5,000원" are about something else, and were read as the pay itself.
+        if (payHead("기본급|기본월급|월급|기본임금").containsMatchIn(c) && amount != null && pct == null) return one(RuleChange.Base(WageType.MONTHLY, amount), 0.9)
+        if (payHead("시급|기본시급").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.HOURLY, amount), 0.9)
+        if (payHead("일당|일급").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.DAILY, amount), 0.85)
         if (("인상" in c || "상승" in c) && pct != null) {
             val month = monthListRe.find(c)?.groupValues?.get(1)?.toInt()?.takeIf { it in 1..12 } ?: 1
             return one(RuleChange.Raise(month, pct), 0.8)

@@ -167,7 +167,9 @@ class DutyRosterTextTest {
     /** 상-3: every leave word was a whole day of 연차. */
     @Test fun f3_leaveKinds() {
         val row = one("1 2 3 4 5 6 7 8 9\n김민지 반 반차 오전반 반반차 생휴 병가 공가 경조 연차")
-        assertEquals(DutyCell.Leave(quarters = 2), row.cells[1])
+        // 2.0.0 [RVL-21] (검토 SCAN-06) '반' alone is asked once (반차 offered first), not put in as 반차 without a word.
+        assertEquals(DutyCell.Unknown("반"), row.cells[1])
+        assertEquals("반차", DutyCodes.guessOf("반")?.first)
         assertEquals(DutyCell.Leave(quarters = 2), row.cells[2])
         assertEquals(DutyCell.Leave(quarters = 2, fromStart = true), row.cells[3])
         assertEquals(DutyCell.Leave(quarters = 1), row.cells[4])
