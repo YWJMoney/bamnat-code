@@ -273,7 +273,7 @@ export function todayViews(A) {
           <form data-form="quick-reply" data-id="${esc(x.id)}" data-others="${esc(also.map((o) => o.id).join(","))}"><label class="sr" for="qr-${esc(x.id)}">답</label>
             <textarea id="qr-${esc(x.id)}" name="text" maxlength="4000" required placeholder="보낸 분 앱에 보일 답을 적어요"></textarea>
             ${also.length ? `<label class="switch"><input type="checkbox" name="all"><span class="track" aria-hidden="true"></span><span>비슷한 문의 ${also.length}건에도 같은 답 보내기</span></label>` : ""}
-            <div class="actions"><button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">보내기</button></div></form></details>` : "";
+            <div class="actions"><button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn" type="submit">보내기</button></div></form></details>` : "";
         return `<li><div class="row">
         <span class="row-main"><b><span class="kind">${esc(INBOX_NAMES[x.type] ?? x.type)}${more.length ? ` ${more.length + 1}건` : ""}</span> <a href="${inboxLink(x)}">${esc(x.title)}</a></b>
           <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>

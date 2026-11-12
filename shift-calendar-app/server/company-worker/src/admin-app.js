@@ -6785,6 +6785,11 @@ function adminApp(L, BUILD, M) {
       S.inquirySort = t.value;
       refilter("inquiries");
     },
+    // 2.0.0 [RVA-62] PC-158: 좁은 폭의 회사 정렬 고르기(표 머리의 정렬 단추와 같은 값).
+    "company-sort": (t) => {
+      S.companySort = t.value === "new" ? "" : t.value;
+      refilter("list");
+    },
     // 2.0.0 [RVD-16] 드릴 보상 종류(목록 머리의 고르기 칸).
     "reward-kind": (t) => {
       S.rewardKind = t.value;

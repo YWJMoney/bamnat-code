@@ -3577,3 +3577,41 @@ test("[RVA-59] 자동 순환의 '다가오는 날짜': 남은 날 순서, 2주 �
   assert.equal(card.querySelectorAll(":scope > .note.warn").length, d.gaps.length);
   assert.deepEqual(u.errors, []);
 });
+
+// 2.0.0 [RVA-62] PC-157(조건 2): 줄·카드 안 단추는 테두리. 운영 장부·검토·오늘에서 채운 단추는 화면에 '지금 할 일' 하나만.
+test("[RVA-62] PC-157 줄 안에는 채운 단추가 없어요(운영 장부 끝내기·검토 채택·오늘 바로 답하기 보내기)", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const inRows = () => u.$$("#main .rows li .btn.primary, #main .lg-line .btn.primary, #main table .btn.primary").length;
+  await u.go("#/desk");
+  await u.settle(30);
+  assert.ok(u.$$("#main .lg-line").length > 0, "장부에 줄이 있어요");
+  assert.equal(inRows(), 0, "운영 장부 줄의 끝내기는 테두리");
+  await u.go("#/review");
+  await u.settle(30);
+  assert.equal(inRows(), 0, "검토 줄의 채택은 테두리");
+  await u.go("#/home");
+  await u.settle(30);
+  assert.ok(u.$$("#main .btn.primary").length <= 1, "오늘은 '차례로 답하기' 하나까지");
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭의 회사 목록은 표 머리 대신 찾기 옆 정렬 고르기 하나.
+test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 그 순서로", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/companies");
+  await u.settle(30);
+  const pick = u.$('#main .company-top select.sort-pick[data-change="company-sort"]');
+  assert.ok(pick, "정렬 고르기");
+  assert.equal(pick.value, "new");
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /@media \(max-width:599\.98px\)\{\.company-top \.sort-pick\{display:block[^}]*\}(?:[^{}@]+\{[^}]*\})*table\.list\.companies thead\{display:none\}\}/);
+  pick.value = "members";
+  pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  await u.settle(30);
+  assert.match(u.$('#main th[aria-sort="descending"]').textContent, /참여/);
+  assert.deepEqual(u.errors, []);
+});

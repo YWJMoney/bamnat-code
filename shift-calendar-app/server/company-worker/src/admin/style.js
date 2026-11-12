@@ -1657,6 +1657,9 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 .company-top input[type=search]{flex:1 1 8rem;min-width:0}
 .btn.icon-only{width:2.75rem;padding:0;flex:none}
 @media (max-width:599.98px){.company-top .btn.primary{width:2.75rem;padding:0;flex:none}.company-top .btn.primary .lbl{display:none}}
+/* 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭은 표 머리 대신 찾기 옆 정렬 고르기 하나(첫 회사 줄이 화면 위 25% 안에서). */
+.company-top .sort-pick{display:none}
+@media (max-width:599.98px){.company-top .sort-pick{display:block;flex:0 0 auto;width:6.5rem;padding-inline:.6rem 1.5rem;min-height:min(2.75rem,48px)}.company-top input[type=search]{min-width:6.5rem}table.list.companies thead{display:none}}
 @media (max-width:599.98px){.timebar .meta{display:none}}
 .decide-rows .draft-line{padding:0 1rem .75rem;display:grid;gap:.35rem}
 .decide-rows .draft-line .answer{margin:0;padding:.5rem .7rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -1664,6 +1667,9 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 .toolbar.list-top{flex-wrap:nowrap}.toolbar.list-top .grow{flex:1 1 auto;min-width:0}
 .day-head.bad{color:var(--bad)}
 .list-head + h2.section,.list-head + h2.day-head,.list-head + .note + h2.day-head{margin-top:.25rem}
+/* 2.0.0 [RVA-62] PC-158(조건 1): 380×800 기능 관리의 첫 줄이 25.4%. 목록 머리 바로 밑 묶음 제목의 위아래 틈을 줄여요(모든 목록 같은 값). */
+.list-head{margin-bottom:.35rem}
+.list-head + h2.day-head{margin-top:.1rem;margin-bottom:.3rem}
 /* 보기가 많은 화면: 구간 줄은 옆으로 밀리고(줄 바꿈 없음) 남은 폭을 다 써요. 끝 흐림은 허브 탭 줄과 같아요. */
 .list-head.seg-scroll>.segmented{flex:1 1 12rem;min-width:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
 .list-head.seg-scroll>.segmented .seg{flex:0 0 auto}

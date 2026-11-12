@@ -6466,6 +6466,9 @@ function auditDetail(r) {
   if (r.action === "reject" || r.action === "reject_undo") return REASONS[r.detail] ?? (r.detail ? r.detail : "");
   if (r.action === "adopt" || r.action === "post_autohide") return /^[A-Za-z0-9/_-]{12,}$/.test(r.detail ?? "") ? "" : r.detail;
   if (r.action === "invite" || r.action === "admin_update") return permWords(r.detail);
+  // [RVA-62] PC-159: 보낸 분 휴대폰 앞자리 대신 아무것도(코드가 label), 거절 까닭은 말로.
+  if (r.action === "invite_credit" || r.action === "invite_capped") return "";
+  if (r.action === "invite_refused") return { phone: "이미 초대받은 휴대폰", self: "자기 코드" }[r.detail] ?? r.detail;
   if (r.action !== "company_update") return r.detail;
   try {
     const b = JSON.parse(r.detail);
@@ -6488,6 +6491,9 @@ const AUDIT_SELECT = `SELECT a.id, a.at, a.action, a.target, a.detail, a.actor, 
     (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = CASE WHEN a.action IN ('dev_link', 'dev_unlink') THEN a.detail
       WHEN substr(a.action, 1, 8) = 'inquiry_' THEN a.target END ORDER BY m.id LIMIT 1) AS inquiry_first,
     (SELECT 1 FROM dev_items d WHERE d.id = a.detail) AS dev_kept,
+    -- 2.0.0 [RVA-62] PC-159: a friend-invite entry by the code people know (a batch id names the reward; refused/burst name the code).
+    CASE WHEN a.action IN ('invite_credit', 'invite_capped') THEN (SELECT u.code FROM invite_uses u WHERE u.batch = a.target LIMIT 1)
+      WHEN a.action IN ('invite_refused', 'invite_burst') THEN a.target END AS invite_code,
     -- AX 1.30 [ADMX-01] a reward's company (reward_auto and the others name the reward's id)
     (SELECT c.name FROM rewards w JOIN reports p ON p.id = w.report_id JOIN companies c ON c.id = p.company_id
       WHERE substr(a.action, 1, 7) = 'reward_' AND w.id = a.target) AS reward_company
@@ -6500,6 +6506,11 @@ function auditAbout(r) {
     return r.inquiry_first !== null ? { label: `문의 "${words(r.inquiry_first)}"`, link: `#/inquiries/${r.target}` } : { label: "지워진 문의", link: null };
   }
   if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
+  // 2.0.0 [RVA-62] PC-159: 친구 초대 줄은 안쪽 번호(보상 묶음 id·휴대폰 앞자리) 대신 사람이 아는 초대 코드로.
+  if (r.action.startsWith("invite_") && r.action !== "invite_settings") {
+    const code = String(r.invite_code ?? "");
+    return { label: code ? `코드 ${code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code}` : "친구 초대", link: "#/rewards" };
+  }
   // AX 1.30 [ADMX-01] A reward by the company it was for; its id (a hash) is never the words.
   if (r.action.startsWith("reward_")) return { label: r.reward_company ? `${r.reward_company} 보상` : "보상", link: "#/rewards" };
   if (r.company_name !== null && r.company_name !== undefined) {
