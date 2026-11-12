@@ -460,6 +460,9 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         }
     }
     SectionCard(title = "근무시간 경고") {
+        // 2.0.0 [RVJ-23] 검토 U04-07: the law's limit and the user's own warning are two things, said apart.
+        Text("건강을 위해 내가 정하는 경고예요. 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 근무·급여 화면에 따로 보여요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 빨갛게 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }
