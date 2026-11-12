@@ -13,7 +13,7 @@ object ScanCache {
     const val KEEP_MS = 30 * 60 * 1000L
 
     /** How many were deleted. */
-    fun sweep(context: Context, now: Long = System.currentTimeMillis()): Int {
+    fun sweep(context: Context, now: Long = System.currentTimeMillis()): Int { // real clock: held against the file system's own times
         val cache = context.cacheDir ?: return 0
         val scans = File(cache, "scan").listFiles().orEmpty().asSequence()
         // AnyFile.pages' copies of a PDF (File.createTempFile("roster", ".pdf")).
