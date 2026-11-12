@@ -188,7 +188,9 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
                 val name = ReceiptFiles.import(context, uri)
                 val file = name?.let { ReceiptFiles.file(context, it) }
                 if (name == null || file == null) { onMessage("사진을 읽지 못했어요"); return@launch }
+                // 2.0.0 [RVL-31] (검토 SCAN-03) Leaving the screen stops the reading; that is not a reading that failed.
                 val result = runCatching { com.bamnat.app.pay.PayslipScanner.read(context, Uri.fromFile(file)) }
+                (result.exceptionOrNull() as? kotlinx.coroutines.CancellationException)?.let { throw it }
                 val text = result.getOrNull().orEmpty()
                 val notReady = result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady
                 val draft = com.bamnat.core.money.ReceiptReader.read(text, Today.date())

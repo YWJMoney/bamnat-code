@@ -106,7 +106,8 @@ object LogicRunner {
         }
         // 1.39 [FX-15] 기다렸다 하기: kept and done at its time, the app open or not.
         act.after?.let { m ->
-            later(c, act, date, who)
+            // 2.0.0 [RVM-23] STU-12: the chain it is part of goes with it, so a wait does not start the count again.
+            later(c, act, date, who, depth = depth)
             done?.set(0, true)
             store.log(who, "${LogicAct.afterWords(m)} 뒤에 ‘${act.now().say()}’를 해요")
             if (!quiet || onScreen) _message.value = "${LogicAct.afterWords(m)} 뒤에 ${act.now().say()}를 해요"
@@ -121,13 +122,21 @@ object LogicRunner {
                 // words there (one notice, not two); its 알림 단추 keep their own notice.
                 val rest = if (fold && act.then.isEmpty())
                     com.bamnat.core.formula.NoticeOverlap.tidy(FormulaText.render(com.bamnat.core.formula.NoticeOverlap.withoutShift(act.arg), scope)) else null
+                // 2.0.0 [RVM-24] STU-13: a received rule's words that join the app's own notices (오늘 근무, 몇 시간 잤어요) say which work
+                // they come from, and have no address or phone, so they never read as the app's own.
+                val from = workOf(c, who)
                 val said = com.bamnat.core.formula.NoticeOverlap.tidy(words).ifBlank { who }
-                if (rest != null && com.bamnat.app.alarm.TodayShiftNotice.fold(ctx, who, rest)) store.log(who, "잠금 화면 ‘오늘 근무’ 알림에 합쳐 보였어요")
+                    .let { if (from != null) com.bamnat.core.recipe.RecipeText.masked(it) else it }
+                val restShown = rest?.let { r -> if (from == null || r.isBlank()) r else foldedLine(from, com.bamnat.core.recipe.RecipeText.masked(r)) }
+                if (restShown != null && com.bamnat.app.alarm.TodayShiftNotice.fold(ctx, who, restShown)) store.log(who, "잠금 화면 ‘오늘 근무’ 알림에 합쳐 보였어요")
                 // [RVM-03] PC-37: a rule saying how long I slept, when the app's own '몇 시간 잤어요' is up (알람 끄면), is one notice.
-                else if (act.then.isEmpty() && com.bamnat.core.formula.NoticeOverlap.saysSlept(act.arg) && foldIntoSlept(ctx, said, workOf(c, who)))
+                else if (act.then.isEmpty() && com.bamnat.core.formula.NoticeOverlap.saysSlept(act.arg) && foldIntoSlept(ctx, said, from))
                     store.log(who, "앱의 ‘몇 시간 잤어요’ 알림에 합쳐 보였어요")
+                // 2.0.0 [RVM-23] STU-12: at most [HOUR_NOTICES] notices an hour from one rule running by itself (a 단추 pressed by hand
+                // is not held back); the rest are left in '왜 안 됐지'.
+                else if (logic(c, all = true).rules.any { it.name == who } && !store.notice(who)) store.log(who, "한 시간에 알림이 ${HOUR_NOTICES}번을 넘어 이번 알림은 띄우지 않았어요")
                 else notify(ctx, who, said, buttons = act.then.mapNotNull { id -> logic(c).button(id) },
-                    date = date, again = act.then.filter { it in LogicAct.AGAIN }, from = workOf(c, who))
+                    date = date, again = act.then.filter { it in LogicAct.AGAIN }, from = from)
             }
             // 1.39 [FX-03][FX-13] 값 칸: the number (and words) before are kept for 되돌리기; then 값이 바뀌면 rules ([valueChanged]).
             LogicVerb.VAL_ADD, LogicVerb.VAL_SET, LogicVerb.VAL_STAMP, LogicVerb.VAL_TEXT -> {
@@ -254,7 +263,10 @@ object LogicRunner {
      * 1.39 [FX-11] 동작 줄: [acts] one after another (a later one reads what an earlier one counted), a screen or a 메모 틀 opened once.
      */
     suspend fun runSteps(c: AppContainer, acts: List<LogicAct>, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0,
-                         fold: Boolean = false) {
+                         fold: Boolean = false, /** 2.0.0 [RVM-23] STU-12 False for a 단추 pressed by hand (the person's own, never held back). */ capped: Boolean = true) {
+        // 2.0.0 [RVM-23] STU-12 ('값이 바뀌면' + '기다렸다 하기'로 끝없이 도는 고리, 배터리): a rule runs at most [DAY_MAX] times a day; past
+        // that it rests till tomorrow and says why in '왜 안 됐지'.
+        if (capped && LogicStore(c.appContext).tooOften(who)) { LogicStore(c.appContext).log(who, TOO_OFTEN); return }
         var opened = false
         // [RVM-01] PC-41: '지난 7일 N번' counts presses and runs, not steps (a two-step 커피 단추 once pressed read 2번).
         val done = BooleanArray(1)
@@ -307,7 +319,7 @@ object LogicRunner {
             if (!quiet || onScreen) _message.value = "‘${b.label}’${com.bamnat.core.text.Josa.eunneun(b.label)} 지금 조건에 맞지 않아요"
             return
         }
-        runSteps(c, steps, date, scope, b.label, quiet)
+        runSteps(c, steps, date, scope, b.label, quiet, capped = false)
     }
 
     /**
@@ -341,10 +353,11 @@ object LogicRunner {
     // ---- 1.39 [FX-15] 기다렸다 하기 ----
 
     /** Keeps [act] to be done [LogicAct.after] minutes from now (at most [LATER_MAX] waiting), and registers the alarm. */
-    internal fun later(c: AppContainer, act: LogicAct, date: LocalDate, who: String, again: Boolean = false) {
+    internal fun later(c: AppContainer, act: LogicAct, date: LocalDate, who: String, again: Boolean = false, depth: Int = 0) {
         val m = act.after ?: return
         val at = Today.millis() + m * 60_000L
         val o = JSONObject().put("at", at).put("who", who).put("date", date.toString()).put("act", JSONObject(act.toMap())).put("again", again)
+            .put("depth", depth)
         LogicStore(c.appContext).addLater(o, LATER_MAX)
         schedule(c)
     }
@@ -362,6 +375,11 @@ object LogicRunner {
 
     private const val CHAIN_MAX = 3
     private const val LATER_MAX = 20
+    /** 2.0.0 [RVM-23] STU-12 Runs of one rule a day (몇 분마다 30분은 하루 48번이라 그만큼). */
+    const val DAY_MAX = 48
+    /** 2.0.0 [RVM-23] STU-12 Notices from one rule or 단추 an hour. */
+    const val HOUR_NOTICES = 6
+    const val TOO_OFTEN = "오늘 ${DAY_MAX}번 넘게 돌아 내일까지 쉬어요"
 
     /**
      * Takes back the last thing a button or rule wrote; false when there is nothing to take back. [RVM-01] PC-41 (커피 단추: 되돌리기가
@@ -528,6 +546,12 @@ object LogicRunner {
         }
         return true
     }
+
+    /**
+     * 2.0.0 [RVM-23] STU-18 ('꾸밈 단추'가 가리키는 단추가 없거나 쉬면 그 자리의 날짜 누르기가 먹통): a decoration's button presses only
+     * when it is there and on; false otherwise, and the date's own tap goes on (a resting button over a date says nothing each time).
+     */
+    fun pressDecor(c: AppContainer, id: String, date: LocalDate): Boolean = logic(c).button(id) != null && press(c, id, date)
 
     /**
      * [RVM-11] PC-34 (프로가 아닐 때 달력 머리 '물 +1잔'을 눌러도 화면이 그대로): a button that rests without 프로 says so where it was
@@ -726,8 +750,11 @@ object LogicRunner {
                 // The gate looks at the act as the rule or button holds it (with its wait); a '다시 알림' was let through when it was asked.
                 val trusted = o.optBoolean("again")
                 if (!trusted && !FxAccess.on(c) && !runsNow(c, act)) { store.log(who, PRO_REST); continue }
-                // [RVM-01] A waited step is part of the press or run that kept it, already counted.
-                runCatching { run(c, act.now(), day, scopeNow(f, day), who, quiet = true, trusted = true, done = BooleanArray(1)) }.onFailure { store.log(who, "하다가 멈췄어요") }
+                // 2.0.0 [RVM-23] STU-12: a rule that ran too often today rests till tomorrow, its waited steps too.
+                if (store.tooOften(who)) { store.log(who, TOO_OFTEN); continue }
+                // [RVM-01] A waited step is part of the press or run that kept it, already counted. STU-12: in the chain it was kept from.
+                runCatching { run(c, act.now(), day, scopeNow(f, day), who, quiet = true, trusted = true, done = BooleanArray(1), depth = o.optInt("depth")) }
+                    .onFailure { store.log(who, "하다가 멈췄어요") }
             }
         }
         val runs = logic(c).rules.associateBy { it.key }
@@ -823,7 +850,7 @@ object LogicRunner {
         return runCatching {
             val b = android.app.Notification.Builder.recoverBuilder(ctx, n.notification)
             if (text.isNotBlank()) b.setContentText(text).setStyle(android.app.Notification.BigTextStyle().bigText(text))
-            from?.let { b.setSubText(it) }
+            from?.let { b.setSubText(sourceLine(it)) }
             nm.notify(n.tag, n.id, b.build())
             true
         }.getOrDefault(false)
@@ -836,18 +863,23 @@ object LogicRunner {
     private fun notify(ctx: Context, title: String, text: String, quietly: Boolean = false,
         buttons: List<com.bamnat.core.formula.LogicButton> = emptyList(), date: LocalDate = Today.date(), again: List<String> = emptyList(),
         /** [RVM-03] PC-37: the work it came with ([workOf]), shown small above the title. */ from: String? = null) {
+        // 2.0.0 [RVM-24] STU-13 (받은 규칙의 알림이 작품이 정한 이름·글 그대로 '밤낮' 알림으로 떠요): a rule that came with a work says
+        // so in its title and which work above it, has no address or phone in its words, and comes on its own channel (끄기 한 번).
+        val channel = if (from != null) Notifications.RECEIVED_RULES_CHANNEL_ID else Notifications.RULES_CHANNEL_ID
+        val shownTitle = if (from != null) receivedTitle(title) else title
+        val shownText = if (from != null) com.bamnat.core.recipe.RecipeText.masked(text) else text
         // 1.36 [SEC-12] 보안 점검 M5: on the lock screen only "규칙 알림" (the words may hold the 가계부's numbers).
-        val public = NotificationCompat.Builder(ctx, Notifications.RULES_CHANNEL_ID)
+        val public = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("밤낮 규칙 알림")
+            .setContentTitle(if (from != null) "받은 규칙 알림" else "밤낮 규칙 알림")
             .setContentText("휴대폰을 열면 보여요")
             .build()
-        val n = NotificationCompat.Builder(ctx, Notifications.RULES_CHANNEL_ID)
+        val n = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(text)
-            .apply { from?.let { setSubText(it) } }
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentTitle(shownTitle)
+            .setContentText(shownText)
+            .apply { from?.let { setSubText(sourceLine(it)) } }
+            .setStyle(NotificationCompat.BigTextStyle().bigText(shownText))
             .setContentIntent(Notifications.open(ctx, NoticeLinks.Target.TODAY, REQ + 1))
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(public)
@@ -860,6 +892,15 @@ object LogicRunner {
             .build()
         Notifications.post(ctx, NOTICE_ID, n, tag = title)
     }
+
+    /** 2.0.0 [RVM-24] STU-13 The small line over a rule's notice that came with work [title]. */
+    internal fun sourceLine(title: String): String = "작품 ‘${title.take(24)}’의 규칙"
+
+    /** 2.0.0 [RVM-24] STU-13 A received rule's words on the app's own 오늘 근무 notice: "작품 ‘야간 회복’ · 이달 쓴 돈 …". */
+    internal fun foldedLine(work: String, words: String): String = "작품 ‘${work.take(16)}’ · $words"
+
+    /** 2.0.0 [RVM-24] STU-13 The title of a notice from a received rule [name]: never one that reads as the app's own. */
+    internal fun receivedTitle(name: String): String = "받은 규칙 · ‘${name.take(30)}’"
 
     /** 1.36 [SEC-12] "규칙 ‘월급날 저축’: 가계부에 ‘저축 100,000원’ 넣기를 했어요" without a sound, with where to take it back. */
     private fun wroteQuietly(ctx: Context, who: String, act: LogicAct) =
@@ -936,6 +977,22 @@ class LogicStore(context: Context) {
     }
 
     private fun times(who: String): List<Long> = p.getString("runs.$who", "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }
+
+    /** 2.0.0 [RVM-23] STU-12 [who] ran [LogicRunner.DAY_MAX] times or more today. */
+    fun tooOften(who: String): Boolean {
+        val start = Today.date().atStartOfDay(Today.zone()).toInstant().toEpochMilli()
+        val now = Today.millis()
+        return times(who).count { it in start..now } >= LogicRunner.DAY_MAX
+    }
+
+    /** 2.0.0 [RVM-23] STU-12 A notice from [who] may go out (fewer than [LogicRunner.HOUR_NOTICES] in the last hour), and it is counted. */
+    fun notice(who: String): Boolean {
+        val now = Today.millis()
+        val recent = p.getString("notes.$who", "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }.filter { it in (now - 3_600_000L)..now }
+        if (recent.size >= LogicRunner.HOUR_NOTICES) return false
+        p.edit().putString("notes.$who", (recent + now).joinToString(",")).apply()
+        return true
+    }
 
     /** "11/13 18:00 · 했어요": the last time [key] came and what happened (규칙 줄에 보여요). */
     fun result(key: String, at: LocalDateTime, what: String) =

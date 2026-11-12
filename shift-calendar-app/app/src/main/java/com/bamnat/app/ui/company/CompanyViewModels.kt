@@ -267,6 +267,51 @@ class CompanyDetailViewModel(
     private val _stale = MutableStateFlow(false)
     val stale: StateFlow<Boolean> = _stale.asStateFlow()
 
+    /** 2.0.0 [RVN-17] 검토 COMP-12 This calendar is held by another company: said before an order is picked, with '잘못 골랐어요'. */
+    private val _wait = MutableStateFlow<MemberWait?>(null)
+    val wait: StateFlow<MemberWait?> = _wait.asStateFlow()
+    private val _freeing = MutableStateFlow(false)
+    val freeing: StateFlow<Boolean> = _freeing.asStateFlow()
+
+    fun closeWait() { _wait.value = null }
+
+    /**
+     * 2.0.0 [RVN-17] 검토 COMP-12 (보고서 11장 결정 10 '고르기 전에 알리고'): before an order is picked, a calendar held by another
+     * company asks the server whether it could take [page] (nothing joined). [held] gets the wait (the screen asks: 근무주기만 넣기 or
+     * '잘못 골랐어요'); [go] runs when it could, or when the look itself failed (offline: the end of the way still says it, as before).
+     */
+    fun beforeUse(page: CompanyPage, go: () -> Unit, held: (MemberWait) -> Unit) {
+        val heldBy = scope.store.member.value?.first
+        if (page.member || heldBy == null || heldBy == page.id) return go()
+        viewModelScope.launch {
+            val m = runCatching { c.companyApi.joinCheck(scope.store.device, page.id, scope.serverCal) }.getOrNull()
+            val w = m?.let(MemberWait::of)
+            if (w != null) held(w) else go()
+        }
+    }
+
+    /** 2.0.0 [RVN-17] COMP-12 The wait asked about before an order (HeldDialog), kept on the card while it is being freed. */
+    fun freeHeld(w: MemberWait) { _wait.value = w }
+
+    /** 2.0.0 [RVN-17] COMP-12 '잘못 골랐어요': frees this calendar once a year, then [then] goes on; the card says why it could not. */
+    fun undoJoin(then: () -> Unit) {
+        if (_freeing.value) return
+        _freeing.value = true
+        viewModelScope.launch {
+            try {
+                c.companyApi.undoJoin(scope.store.device, scope.serverCal)
+                scope.store.setMember(null)
+                c.telemetry.event("company_undo", "detail")
+                _wait.value = null
+                then()
+            } catch (e: com.bamnat.app.company.CompanyException) {
+                _wait.value = _wait.value?.failed(e)
+            } finally {
+                _freeing.value = false
+            }
+        }
+    }
+
     init {
         load()
     }
@@ -403,17 +448,26 @@ class CompanyDetailViewModel(
                         else (_state.value as? State.Loaded)?.page
                     now?.setups?.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
                 }
+                // 2.0.0 [RVN-17] 검토 I10ab-02 '근무주기만 넣기는 참여 없이': a calendar held by another company (or a phone at its
+                // two companies) still takes the order alone, as anyone sees it; the company, its plaza and the pay stay as they are.
+                var heldBy: String? = null
                 if (setup.payHidden || !page.member) {
                     val m = c.companyApi.join(store.device, page.id, scope.serverCal)
-                    if (!m.joined) {
+                    val alone = !withPay && (m.error == "member_wait" || m.error == "member_limit")
+                    if (!m.joined && !alone) {
+                        // 2.0.0 [RVN-17] COMP-12 A wait is said as a wait (which company, until when, '잘못 골랐어요'), not as a red failure.
+                        MemberWait.of(m)?.let { _wait.value = it }
                         failed(companyProblem(m.error ?: "member"))
                         return@launch
                     }
-                    store.setMember(page.id, page.name)
-                    // [SPD-16] 1.30 AP1: the member's page came with the join (SP1); a server before 1.30 is asked as before.
-                    val again = (m.page ?: c.companyApi.company(page.id)).also(c.companySearch::keepPage)
-                    _state.value = State.Loaded(again)
-                    again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
+                    if (alone) heldBy = m.held ?: store.member.value?.second?.takeIf { it.isNotBlank() } ?: ""
+                    else {
+                        store.setMember(page.id, page.name)
+                        // [SPD-16] 1.30 AP1: the member's page came with the join (SP1); a server before 1.30 is asked as before.
+                        val again = (m.page ?: c.companyApi.company(page.id)).also(c.companySearch::keepPage)
+                        _state.value = State.Loaded(again)
+                        again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
+                    }
                 }
                 // 1.39 [PAYP-03] A server that shows no pay way: the pay part is taken now, for the pay alone (never shown).
                 if (withPay && (setup.payPrivate || page.setups.any { it.id == setup.id && it.payPrivate })) {
@@ -447,7 +501,7 @@ class CompanyDetailViewModel(
                         }
                         scope.autoShare.rebase()
                         // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
-                        com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(page.id, setup.id, false, scope.serverCal))
+                        if (heldBy == null) com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(page.id, setup.id, false, scope.serverCal))
                         if (usedBefore != null && usedBefore.setup != setup.id) {
                             com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(usedBefore.companyId, usedBefore.setup, true, scope.serverCal))
                         }
@@ -458,6 +512,19 @@ class CompanyDetailViewModel(
                 if (!payWaits && withPay && result.pendingPay) {
                     // The amounts screen does not ask "쓸까요?" again; the way is kept when its amounts are saved.
                     scope.payWays.decided = true
+                }
+                if (heldBy != null) {
+                    // 2.0.0 [RVN-17] I10ab-02 The order alone, not joined: no 쓰는 사람 here (that is a member's), and the calendar no longer
+                    // uses the set before; the company, its plaza and the pay way stay as they were.
+                    store.applied.value?.let { b ->
+                        launch { com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(b.companyId, b.setup, false, scope.serverCal)) }
+                    }
+                    store.setApplied(null)
+                    scope.autoShare.rebase()
+                    c.telemetry.event("company_apply", "alone")
+                    _wait.value = null
+                    done(result.copy(heldBy = heldBy))
+                    return@launch
                 }
                 // [PLZ-08] 쓰는 사람: this calendar now uses this rule set, and no longer the one before (by the company's id; 1.29 sent its name).
                 val before = store.applied.value
@@ -752,6 +819,9 @@ class TalkHolder(
         com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PAY, fixFocus(fields).key))
     }
 
+    /** 2.0.0 [RVN-17] COMP-14 Whether [o]'s posts may hold an amount: a room, with the server's 방 글에 금액 받기 on. */
+    fun roomMoney(o: Open? = _open.value): Boolean = o?.room == true && c.termsNow()?.roomMoney == true
+
     fun voteLine(): String {
         val t = c.termsNow()
         return "글마다 맞아요·달라요로 알려 주세요. ‘고치자는 제안’은 맞아요가 ${t?.agree ?: 75}% 이상이고 ${t?.threshold ?: 3}점이 모이면 " +
@@ -833,8 +903,11 @@ class TalkHolder(
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
-        poll.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
-        CompanyText.personal(text)?.let { return done(talkProblem(it)) }
+        // 2.0.0 [RVN-17] 검토 COMP-14: a room's post (and its poll) may say an amount once the server's 방 글에 금액 받기 is on; a rule's talk
+        // keeps the amounts out, as the server does.
+        val money = roomMoney(o)
+        poll.firstNotNullOfOrNull { CompanyText.post(it, o.room, money) }?.let { return done(talkProblem(it)) }
+        CompanyText.post(text, o.room, money)?.let { return done(talkProblem(it)) }
         change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
         val talkKey = "${o.company}/${o.setup}"
