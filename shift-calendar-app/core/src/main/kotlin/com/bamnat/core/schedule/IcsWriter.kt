@@ -34,28 +34,28 @@ object IcsWriter {
         for (day in days) {
             val type = day.shiftType?.takeIf { day.isWorkDay }
             if (type != null) {
-                lines += "BEGIN:VEVENT"
-                // Stable per date, so importing again updates events instead of doubling them.
-                lines += "UID:${day.date.format(dateOnly)}@bamnat.app"
-                lines += "DTSTAMP:${nowUtc.format(stamp)}Z"
-                val start = day.start
-                val end = day.end
-                if (start != null && end != null) {
-                    val startAt = day.date.atTime(start)
-                    // End at or before start means the shift runs into the next day.
-                    val endAt = if (end.isAfter(start)) day.date.atTime(end) else day.date.plusDays(1).atTime(end)
-                    lines += "DTSTART;TZID=${zone.id}:${startAt.format(stamp)}"
-                    lines += "DTEND;TZID=${zone.id}:${endAt.format(stamp)}"
-                } else {
-                    lines += "DTSTART;VALUE=DATE:${day.date.format(dateOnly)}"
-                    lines += "DTEND;VALUE=DATE:${day.date.plusDays(1).format(dateOnly)}"
+                // [RVH-44] 설계 4-5절: a day of two parts is two events of the same name; the second's UID ends "-p2".
+                val parts: List<ClosedRange<LocalDateTime>?> = day.segments.ifEmpty { listOf(null) }
+                parts.forEachIndexed { i, part ->
+                    lines += "BEGIN:VEVENT"
+                    // Stable per date, so importing again updates events instead of doubling them.
+                    lines += "UID:${day.date.format(dateOnly)}${if (i == 0) "" else "-p${i + 1}"}@bamnat.app"
+                    lines += "DTSTAMP:${nowUtc.format(stamp)}Z"
+                    if (part != null) {
+                        // The parts are on the clock already: an end at or before the start is on the next day.
+                        lines += "DTSTART;TZID=${zone.id}:${part.start.format(stamp)}"
+                        lines += "DTEND;TZID=${zone.id}:${part.endInclusive.format(stamp)}"
+                    } else {
+                        lines += "DTSTART;VALUE=DATE:${day.date.format(dateOnly)}"
+                        lines += "DTEND;VALUE=DATE:${day.date.plusDays(1).format(dateOnly)}"
+                    }
+                    lines += "SUMMARY:${escape(type.name)}"
+                    // Extra work without clock times has no event of its own, so it is noted here.
+                    val notes = day.extras.filter { it.from == null }.map { "${it.kind.name} ${hours(it.minutes)}" }
+                    if (notes.isNotEmpty() && i == 0) lines += "DESCRIPTION:${escape(notes.joinToString(", "))}"
+                    lines += "TRANSP:OPAQUE"
+                    lines += "END:VEVENT"
                 }
-                lines += "SUMMARY:${escape(type.name)}"
-                // Extra work without clock times has no event of its own, so it is noted here.
-                val notes = day.extras.filter { it.from == null }.map { "${it.kind.name} ${hours(it.minutes)}" }
-                if (notes.isNotEmpty()) lines += "DESCRIPTION:${escape(notes.joinToString(", "))}"
-                lines += "TRANSP:OPAQUE"
-                lines += "END:VEVENT"
             }
             // [EXTRA-01] Each piece of extra work with clock times is an event, on days off too.
             day.extras.forEachIndexed { i, e ->
