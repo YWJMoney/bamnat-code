@@ -84,6 +84,25 @@ import { SERVER_VERSION } from "./version.js";
 // 2.0.0 [RVD-28] SD-08: 근무 종류 한 규칙표, written by core ShiftRulesExportTest (the company server reads the same file).
 import { SHIFT_RULES } from "./shift-rules.js";
 
+/**
+ * 2.0.0 [RVQ-19][RVQ-21] 처리방침 3.14 스위치(총괄 11-12): 공유 서버가 새로 남기는 정보 둘은 3.14가 시행되는 날부터만 남겨요.
+ * ① 확인했어요를 누른 시각(`ok:<링크>`), ② 피곤해요 날짜별 '다른 휴대폰 수'를 세는 그날의 표시(네트워크·앱 정보의 소금 해시).
+ * 3.14 시행일이 정해지면 이 한 줄에 날짜("2026-12-14" 꼴)를 적어 배포해요. 그날 0시(한국 시간)부터 켜지고, 비어 있으면 꺼져 있어요.
+ * 같은 이름의 Worker 변수(POLICY_314_FROM)가 있으면 그 값을 써요(시험이 켠 상태를 볼 때. keep_vars라 대시보드 값도 남아요).
+ * 꺼져 있으면: 근무표 페이지에 확인 칸이 없고, 누르기(/s/:id/ok·/api/share/:id/ok)는 저장하지 않으며, GET은 watch·okAt을 내보내지
+ * 않아요(앱은 옛 '열어 본 사람' 줄만). 피곤해요는 지금 실서버처럼 누른 수로 세고 새 표시를 남기지 않아요('누르지 않은 링크 2개
+ * 미만이면 숨김'처럼 새 정보를 남기지 않는 보호는 그대로예요).
+ */
+export const POLICY_314_FROM = "";
+
+/** Whether 처리방침 3.14 is in force (see [POLICY_314_FROM]). */
+export function policy314(env, now = Date.now()) {
+  const from = String(typeof env?.POLICY_314_FROM === "string" ? env.POLICY_314_FROM : POLICY_314_FROM).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return false;
+  const at = Date.parse(`${from}T00:00:00+09:00`);
+  return Number.isFinite(at) && now >= at;
+}
+
 export const LIMITS = {
   // 1.37 [SHR-31][SHR-32] Room for a 테마 (32 KB) and 근무 설정 (24 KB) next to a company setup (24 KB) and the days.
   bodyBytes: 128 * 1024,
@@ -546,8 +565,8 @@ async function view(request, env, id) {
   const url = new URL(request.url);
   // 1.39 [IOS-04] A leader's 피곤해요 합계 is on for this link: the page offers the press too (once a day, like the app).
   const tired = record.tired ? await tiredState(env, id, record) : null;
-  // 2.0.0 [RVQ-19] A link the leader watches asks the member to press 확인했어요 once per change.
-  const ok = record.watch ? { at: await okAt(env, id, record), said: url.searchParams.get("k") } : null;
+  // 2.0.0 [RVQ-19] A link the leader watches asks the member to press 확인했어요 once per change (from 처리방침 3.14, [policy314]).
+  const ok = record.watch && policy314(env) ? { at: await okAt(env, id, record), said: url.searchParams.get("k") } : null;
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   return html(renderSchedule(record.schedule, record.expiresAt, phone === "android" ? id : null, id,
     { phone, feed: `${url.host}/s/${id}.ics`, scheme: url.protocol.replace(":", ""), tired, said: url.searchParams.get("t"), ok }));
@@ -604,7 +623,9 @@ async function read(request, env, id) {
   if (record?.removed) return json({ error: "removed", ...(record.reason ? { reason: record.reason } : {}), at: record.at ?? null }, 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
   // [SHR-12] Receivers ask often and download only when the schedule or its end date changed.
-  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}${record.tired ? "|t" : ""}${record.watch ? "|w" : ""}`)).slice(0, 20)}"`;
+  // 2.0.0 [RVQ-19] watch goes out only from 처리방침 3.14 ([policy314]); the day it turns on, the tag changes so the app reads it.
+  const watch = Boolean(record.watch) && policy314(env);
+  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}${record.tired ? "|t" : ""}${watch ? "|w" : ""}`)).slice(0, 20)}"`;
   // 1.39 G2: the member's app checking in the background (받은 근무표 따라가기, 하루 한 번 소식) is not the member looking.
   // 2.0.0 [RVQ-19] Before the 304: when the background check already brought the new version, the member opening it later is
   // answered 304 and used never to count as 열어 봄.
@@ -615,7 +636,7 @@ async function read(request, env, id) {
   }
   // 2.0.0 [RVQ-19] watch: the leader asks for 확인했어요 on this link (the app may offer the press, POST /api/share/:id/ok).
   const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null, ...(record.tired ? { tired: true } : {}),
-    ...(record.watch ? { watch: true } : {}) });
+    ...(watch ? { watch: true } : {}) });
   res.headers.set("etag", tag);
   return res;
 }
@@ -1536,7 +1557,8 @@ async function seenRead(request, env, id) {
   if (!record.watch) await put(env, id, { ...record, watch: true });
   const seen = await env.SHARES.get(seenKey(id), "json");
   const at = seen && Date.parse(seen.at) >= Date.parse(record.updatedAt ?? 0) ? seen.at : null;
-  return json({ seenAt: at, okAt: await okAt(env, id, record), updatedAt: record.updatedAt ?? null });
+  // 2.0.0 [RVQ-19] okAt only from 처리방침 3.14: before, the leader's app keeps the 열어 본 사람 line alone (it reads okAt's absence).
+  return json({ seenAt: at, ...(policy314(env) ? { okAt: await okAt(env, id, record) } : {}), updatedAt: record.updatedAt ?? null });
 }
 
 // ---- 2.0.0 [RVQ-19] 확인했어요 (검토 U22-01·I22b-01) ----
@@ -1559,7 +1581,8 @@ async function okPress(request, env, id, app = false) {
   const record = await env.SHARES.get(id, "json");
   const back = (k) => app ? (k === "1" ? new Response(null, { status: 204 }) : json({ error: k === "wait" ? "rate_limited" : "not_found" }, k === "wait" ? 429 : 404))
     : new Response(null, { status: 303, headers: { location: `/s/${id}?k=${k}`, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
-  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.watch) return back("off");
+  // 2.0.0 [RVQ-19] Before 처리방침 3.14 nothing is kept: the page says off, the app hears not_found and stops offering it.
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.watch || !policy314(env)) return back("off");
   if (!(await allow(env, request, "ko", LIMITS.createsPerHour))) return back("wait");
   if (!(await okAt(env, id, record))) {
     const at = new Date().toISOString();
@@ -1686,6 +1709,13 @@ async function tiredAdd(request, env, id) {
   days[day] = (days[day] ?? 0) + 1;
   // 2.0.0 [RVQ-21] SVC-14: how many different phones pressed today. The marks are a salted hash of the network and the browser or app
   // line, kept for today only (the next press of another day drops them); only their number stays for the day.
+  // From 처리방침 3.14 only ([policy314]); before, the box counts presses as the live server does and keeps no mark.
+  if (!policy314(env)) {
+    const { marks: _m, people: _p, ...rest } = box;
+    await put(env, tiredKey(record.tired), { ...rest, days });
+    count(env, "tired");
+    return "ok";
+  }
   const mark = (await sha256(`${env.RATE_SALT || "bamnat"}:tp:${day}:${netOf(request.headers.get("cf-connecting-ip"))}:${request.headers.get("user-agent") || ""}`)).slice(0, 10);
   const marks = box.marks?.day === day ? new Set(box.marks.list) : new Set();
   marks.add(mark);
