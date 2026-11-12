@@ -11,7 +11,7 @@ import kotlin.math.roundToLong
  * pass left out or cut short. All on the phone; nothing here sends anything.
  */
 object LedgerChecks {
-    private fun won(v: Long) = "%,d원".format(v)
+    private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 
     // ---- [LEDX-13] 경로: the pay app a payment went through ----
 
@@ -38,10 +38,10 @@ object LedgerChecks {
     data class BillCheck(val card: MoneyAccount, val payMonth: YearMonth, val expected: Long, val actual: Long) {
         val diff: Long get() = actual - expected
         /** "예상 412,300원 · 실제 415,800원 (3,500원 더)" */
-        val words: String get() = "예상 ${"%,d".format(expected)}원 · 실제 ${"%,d".format(actual)}원" + when {
+        val words: String get() = "예상 ${"%,d".format(java.util.Locale.ROOT, expected)}원 · 실제 ${"%,d".format(java.util.Locale.ROOT, actual)}원" + when {
             abs(diff) < 10 -> " (맞아요)"
-            diff > 0 -> " (${"%,d".format(diff)}원 더)"
-            else -> " (${"%,d".format(-diff)}원 덜)"
+            diff > 0 -> " (${"%,d".format(java.util.Locale.ROOT, diff)}원 더)"
+            else -> " (${"%,d".format(java.util.Locale.ROOT, -diff)}원 덜)"
         }
     }
 

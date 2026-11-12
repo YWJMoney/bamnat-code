@@ -2,13 +2,19 @@
 # PR: 개발 상태 파일 검사. main에 합쳐지면: 합친 커밋의 판(versionName)과 함께 서버 /api/admin/dev/sync로 보내요.
 # 보내는 열쇠는 '개발 동기화 열쇠'(POST /dev/sync만 되는 좁은 열쇠)예요. 사용자가 관리자 앱 › 운영 장부 › 열쇠에서 만들어
 # 저장소 Settings › Secrets › Actions에 BAMNAT_SYNC_KEY로, 서버 주소는 Variables에 BAMNAT_API로 넣어요. 없으면 보내지 않고 넘어가요.
+#
+# 2.0.0 [HQ-77] (사용자 2026-11-13 "개발 사항들이 서버랑 연동이 안되는거 같은데?", 카드 '지금 채우고 자동으로'):
+# - 판을 통합 브랜치에 모으는 동안에는 main에 합쳐지는 일이 없어 서버 개발사항이 멈춰 있었어요(2.0.0: 574줄 가운데 536줄이 서버에 없었음).
+#   지금 판의 통합 브랜치에 올릴 때도 보내요. **통합 브랜치 이름이 바뀌면 아래 branches 줄도 같이 고쳐요**(맨 위 CLAUDE.md 1-000항).
+# - 통합 브랜치에서는 판 번호 없이 보내요. 서버가 '고친 판'을 적지 않고, 기다리는 문의에 '곧 나와요' 답도 보내지 않아요. 그것은 main에 합쳐질 때예요.
+# - 서버는 한 번에 200줄까지만 받아요. 50줄씩 나눠 보내고, 한 덩어리라도 실패하거나 줄 오류가 있으면 이 일을 실패로 남겨요.
 name: dev-status
 
 on:
   pull_request:
     paths: ["shift-calendar-app/ops/**", "shift-calendar-app/tools/dev_status.py", "shift-calendar-app/server/company-worker/src/dev-built.js", ".github/workflows/dev-status.yml"]
   push:
-    branches: [main]
+    branches: [main, "claude/project-thread-f33c16"]
     paths: ["shift-calendar-app/ops/**", "shift-calendar-app/gradle.properties", "shift-calendar-app/server/company-worker/src/dev-built.js", ".github/workflows/dev-status.yml"]
 
 permissions:
@@ -48,20 +54,39 @@ jobs:
             echo "BAMNAT_API 또는 BAMNAT_SYNC_KEY가 없어 보내지 않아요(사용자 할 일: 1.39 사용자가-해야-할-일.md)." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          version=$(sed -n 's/^bamnat.versionName=//p' gradle.properties | tr -d '[:space:]')
-          python3 tools/dev_status.py payload --version "$version" --sha "$GITHUB_SHA" > "$RUNNER_TEMP/body.json"
-          code=$(curl -sS -o "$RUNNER_TEMP/out.json" -w '%{http_code}' -X POST "${BAMNAT_API%/}/api/admin/dev/sync" \
-            -H "authorization: Bearer $BAMNAT_SYNC_KEY" -H "x-admin: 1" -H "content-type: application/json" \
-            --data-binary @"$RUNNER_TEMP/body.json")
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            version=$(sed -n 's/^bamnat.versionName=//p' gradle.properties | tr -d '[:space:]')
+          else
+            version=""
+          fi
+          python3 tools/dev_status.py payload --version "$version" --sha "$GITHUB_SHA" --out "$RUNNER_TEMP/sync" > /dev/null
+          : > "$RUNNER_TEMP/codes.txt"
+          for body in "$RUNNER_TEMP"/sync/body-*.json; do
+            out="${body%.json}.out"
+            code=$(curl -sS -m 120 -o "$out" -w '%{http_code}' -X POST "${BAMNAT_API%/}/api/admin/dev/sync" \
+              -H "authorization: Bearer $BAMNAT_SYNC_KEY" -H "x-admin: 1" -H "content-type: application/json" \
+              --data-binary @"$body" || true)
+            echo "$code $out" >> "$RUNNER_TEMP/codes.txt"
+          done
           # 결과에는 개수와 개발사항 번호만 있어요(문의 내용 없음).
-          python3 - "$RUNNER_TEMP/out.json" "$code" "$version" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          python3 - "$RUNNER_TEMP/codes.txt" "${version:-판 번호 없이(통합 브랜치)}" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json, sys
-          out, code, ver = sys.argv[1], sys.argv[2], sys.argv[3]
-          try:
-              r = json.load(open(out, encoding="utf-8"))
-          except Exception:
-              r = {}
-          print(f"### 개발 상태 동기화 {ver} (HTTP {code})")
-          print(f"새로 만듦 {r.get('made', '-')} · 바뀜 {r.get('changed', '-')} · 바로 답 {r.get('told', '-')} · 오류 {r.get('errors', r.get('error', '-'))}")
+          codes, ver = sys.argv[1], sys.argv[2]
+          total = {"made": 0, "changed": 0, "told": 0, "errors": 0}
+          bad = []
+          parts = [l.split(" ", 1) for l in open(codes, encoding="utf-8").read().splitlines() if l.strip()]
+          for code, out in parts:
+              try:
+                  r = json.load(open(out, encoding="utf-8"))
+              except Exception:
+                  r = {}
+              if code != "200":
+                  bad.append(f"HTTP {code} {r.get('error', '')}".strip())
+                  continue
+              for k in total:
+                  total[k] += int(r.get(k) or 0)
+          print(f"### 개발 상태 동기화 {ver} ({len(parts)}덩어리)")
+          print(f"새로 만듦 {total['made']} · 바뀜 {total['changed']} · 바로 답 {total['told']} · 줄 오류 {total['errors']}"
+                + (f" · 실패한 덩어리 {len(bad)}: {', '.join(bad[:5])}" if bad else ""))
+          sys.exit(1 if bad or total["errors"] or not parts else 0)
           PY
-          [ "$code" = "200" ]
