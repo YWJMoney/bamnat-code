@@ -3,6 +3,7 @@ package com.bamnat.app.screenshots
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.pay.PayPeriod
+import androidx.compose.foundation.verticalScroll
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -36,6 +37,34 @@ class RvjFrozenScreenshotTest : ScreenshotBase() {
         settle()
         reveal("이 달 마감하기")
     }
+
+    /** 2.0.0 [RVJ-20] 검토 BOSS-62: 가게 › 직원 근무표, three staff (the week grid was 456dp wide) and the 요율 line. */
+    private fun staffWeek(bottom: Boolean): Screen.() -> Unit = {
+        val roster = com.bamnat.core.work.StaffRoster(listOf(
+            com.bamnat.core.work.Staff("a", "김민지", 10_320, shifts = java.time.DayOfWeek.entries.take(5).associateWith {
+                com.bamnat.core.work.StaffShift(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(13, 0)) }),
+            com.bamnat.core.work.Staff("b", "이준호", 10_320, insured = true, shifts = java.time.DayOfWeek.entries.drop(2).associateWith {
+                com.bamnat.core.work.StaffShift(java.time.LocalTime.of(13, 0), java.time.LocalTime.of(21, 30)) }),
+            com.bamnat.core.work.Staff("c", "박서연", 10_320, shifts = listOf(java.time.DayOfWeek.SATURDAY, java.time.DayOfWeek.SUNDAY).associateWith {
+                com.bamnat.core.work.StaffShift(java.time.LocalTime.of(10, 0), java.time.LocalTime.of(18, 0)) }),
+        ))
+        com.bamnat.app.data.WorkToolsStore.get(app).update(com.bamnat.app.data.PersonalCalendar.MAIN) { it.copy(roster = roster) }
+        settle()
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                com.bamnat.app.ui.work.ShopToolCards(com.bamnat.app.data.PersonalCalendar.MAIN, com.bamnat.core.money.MoneyBook(), java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
+            }
+        }
+        settle()
+        tapText("근무표", exact = true, scrolls = 0)
+        settle()
+        if (bottom) reveal("4대보험 사장님 몫은")
+    }
+
+    @Test fun weekLight() = shoot("rvj_19_staff_week_folded", FOLDED, staffWeek(false))
+    @Test fun weekDarkBig() = shoot("rvj_20_staff_week_folded_dark_200", DARK, 2f, staffWeek(false))
+    @Test fun weekWide() = shoot("rvj_21_staff_week_unfolded", UNFOLDED, staffWeek(false))
+    @Test fun weekRates() = shoot("rvj_22_staff_rates_folded", FOLDED, staffWeek(true))
 
     @Test fun askLight() = shoot("rvj_12_close_ask_folded", FOLDED, ask())
     @Test fun askDarkBig() = shoot("rvj_13_close_ask_folded_dark_200", DARK, 2f, ask())
