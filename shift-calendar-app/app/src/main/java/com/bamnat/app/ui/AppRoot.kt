@@ -2823,9 +2823,9 @@ private fun LookUndoBand() {
     }
 }
 
-/** The words' colour that reads on [ground]: near-black on a light colour, white on a dark one. */
+/** The words' colour that reads on [ground]; 2.0.0 [RVP-12] (검토 UIX-12) the app's one contrast rule, not a fixed near-black. */
 private fun inkOn(ground: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
-    if (ground.luminance() > 0.45f) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.White
+    com.bamnat.app.ui.components.contentColorOn(ground)
 
 /** [READ-31] 1.39: where a shared roster may go besides 내 달력: the leader's teams, the 사장님's staff list (each behind its flag). */
 private suspend fun sharedPlaces(c: AppContainer): List<com.bamnat.app.imports.SharedToManage.Place> {

@@ -23,6 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import com.bamnat.app.ui.theme.color
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -431,7 +433,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                             Text(m.name + if (m.skill == Skill.CHARGE) "★" else "", maxLines = 1, style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (m.id == current?.id) FontWeight.Bold else null, modifier = Modifier.weight(1f))
                             // 1.38 병동 신청표의 왼쪽 칸: last month's last days ("NN"), so the first days are painted knowing them.
-                            if (!small && prevBoard != null) Text(TeamCheck.tail(team, prevBoard, m.id, 3).trimStart('·'), fontSize = 8.sp, maxLines = 1,
+                            if (!small && prevBoard != null) Text(TeamCheck.tail(team, prevBoard, m.id, 3).trimStart('·'), fontSize = 10.sp /* [RVP-11] */, maxLines = 1,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -444,13 +446,14 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                             // 1.38 PC 1차 (날짜 머리가 모두 빨간색): the weekday's own color; a day short of people gets an amber mark under it,
                             // 책임자 없음 only a small dot, so the header says the danger and not every note.
                             val lack = short.any { it.kind == TeamCheck.Kind.SHORT }
+                            // 2.0.0 [RVP-12] (검토 UIX-12·T13-05) The calendar's own weekend colours, not a blue of its own.
                             val dayColor = when (d.dayOfWeek) {
-                                java.time.DayOfWeek.SUNDAY -> MaterialTheme.colorScheme.error
-                                java.time.DayOfWeek.SATURDAY -> Color(0xFF3D6FD6)
+                                java.time.DayOfWeek.SUNDAY -> com.bamnat.app.ui.theme.LocalCalendarColors.current.sunday
+                                java.time.DayOfWeek.SATURDAY -> com.bamnat.app.ui.theme.LocalCalendarColors.current.saturday
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             }
                             Text(if (small) "${d.dayOfMonth}" else "${d.dayOfMonth}\n${Fmt.dayOfWeekShort(d.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
-                                color = dayColor, fontSize = if (small) 8.sp else androidx.compose.ui.unit.TextUnit.Unspecified, maxLines = if (small) 1 else 2,
+                                color = dayColor, fontSize = if (small) 10.sp /* [RVP-11] */ else androidx.compose.ui.unit.TextUnit.Unspecified, maxLines = if (small) 1 else 2,
                                 modifier = Modifier.width(cellDp.dp)
                                     .background(if (lack) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning.copy(alpha = 0.22f) else Color.Transparent, RoundedCornerShape(4.dp))
                                     .clickable(role = Role.Button, enabled = short.isNotEmpty()) { dialog = short.joinToString("\n") { "${Fmt.monthDay(d)} ${it.text}" } })
@@ -461,8 +464,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                             if (round != null && !small) {
                                 val asked = TeamAsk.taken(wishes, d)
                                 val cap = TeamAsk.cap(round.rules, d)
-                                Text(if (asked == 0) "" else if (cap > 0) "$asked/$cap" else "$asked", style = MaterialTheme.typography.labelSmall, fontSize = 9.sp,
-                                    color = if (cap in 1 until asked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                                Text(if (asked == 0) "" else if (cap > 0) "$asked/$cap" else "$asked", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp /* [RVP-11] */,
+                                    // 2.0.0 [RVP-13] (검토 UIX-15) More asks than places is a 주의, not a danger.
+                                    color = if (cap in 1 until asked) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.width(cellDp.dp).height(12.dp))
                             }
                             active.forEach { m ->
@@ -730,8 +734,12 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 LaunchedEffect(team.id, monthText, state.version, linkKey, busy == null) { if (busy == null) seen = readSeen() }
                 seen?.let { got ->
                     val line = com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, got)
-                    Text(line.text, style = MaterialTheme.typography.bodyMedium,
-                        color = if (line.gone.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    // 2.0.0 [RVP-13] (검토 UIX-15 '위험이 아닌 아직 안 연 사람이 빨강') Not yet opened is grey words with a 주의 mark.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (line.gone.isNotEmpty()) Icon(Icons.Outlined.WarningAmber, null, tint = com.bamnat.app.ui.theme.Tone.Caution.color(),
+                            modifier = Modifier.padding(end = 6.dp).size(18.dp))
+                        Text(line.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (line.gone.isNotEmpty()) Button(enabled = busy == null, onClick = {
                             scope.launch {
@@ -854,7 +862,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 // 1.38 PC 2차: what the need asks of each person, said before any 안, so a short 안 is not a surprise.
                 val asks = remember(team, b) { b?.let { TeamAuto.weekHoursNeeded(team, it) } ?: 0.0 }
                 if (asks > TeamCheck.WEEK_LIMIT_MINUTES / 60.0) Text("이 인원으로 근무별 인원을 다 채우면 한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 주 52시간을 지킬 수 없어요. 사람을 더하거나 근무별 인원을 줄여 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color()) // [RVP-13] 주의
                 else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
                 list.forEachIndexed { i, p ->
@@ -889,7 +897,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 if (fresh.isNotEmpty()) {
                     Text(fresh.joinToString(", ") { it.first.name } + "님 링크가 서버에 없어서 새로 만들었어요. 예전 링크는 열리지 않으니 새 링크를 꼭 보내 주세요. " +
                         "밤낮 앱에 예전 링크를 넣어 둔 팀원은 새 링크를 한 번 열어 다시 넣어야 해요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color()) // [RVP-13] 주의
                     if (fresh.size < list.size) Button(onClick = { send(context, "${team.name} ${Fmt.month(month)} 근무표 새 링크예요(예전 링크는 열리지 않아요).\n" +
                         fresh.joinToString("\n") { (m, u) -> "${m.name}: $u" }, "새 링크 보내기") }) { Text("새 링크 ${fresh.size}개만 보내기") }
                 }

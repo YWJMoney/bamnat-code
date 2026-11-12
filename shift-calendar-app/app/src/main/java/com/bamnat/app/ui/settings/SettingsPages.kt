@@ -782,6 +782,13 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
         SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
             settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
+        // 2.0.0 [RVP-08] (검토 I13c-04) The explanations learned once are a line or ⓘ; this says them in full again.
+        val explainContext = androidx.compose.ui.platform.LocalContext.current
+        var explainedAgain by remember { mutableStateOf(false) }
+        NavRow("설명 처음처럼 보기", if (explainedAgain) "모든 설명을 다시 처음처럼 다 보여 줘요"
+            else "한 번 읽은 설명은 다음부터 한 줄이나 ⓘ로 줄어들어요. 누르면 모두 다시 다 보여 줘요") {
+            com.bamnat.app.ui.components.ExplainSeen.reset(explainContext); explainedAgain = true
+        }
         // 1.38 [FLOW-08] 내 하루 이야기 줄.
         SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요. 달력 아래 카드로도 둘 수 있어요(날짜 화면의 ‘달력 아래에도 두기’ 또는 카드 배치 › ＋ 카드 넣기)",
             settings.dayStory) { on -> vm.update { it.copy(dayStory = on) } }

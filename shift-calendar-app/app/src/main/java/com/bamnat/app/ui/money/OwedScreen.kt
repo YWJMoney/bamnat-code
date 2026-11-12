@@ -63,7 +63,6 @@ import com.bamnat.app.ui.components.DatePickerDialog
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -344,9 +343,8 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { adding = startKinds(style).first() }, expanded = atTop || wide,
-                icon = { Icon(Icons.Filled.Add, null) }, text = { Text("받을 돈 적기") },
-                modifier = Modifier.semantics { contentDescription = "받을 돈 적기" })
+            // [RVP-06] The shared rule (icon alone with big letters too).
+            com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {

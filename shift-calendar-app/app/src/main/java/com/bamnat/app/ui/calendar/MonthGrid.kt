@@ -1503,7 +1503,7 @@ internal fun cellFillGround(look: com.bamnat.core.recipe.CellLook?): Color? = lo
 
 /** [FREE-01] A cell's corners by its look, else 달력 모양's. */
 internal fun cellShape(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): androidx.compose.ui.graphics.Shape =
-    look?.corner?.let { RoundedCornerShape(it.dp) } ?: if (view.grid == "line") RoundedCornerShape(3.dp) else RoundedCornerShape(10.dp)
+    look?.corner?.let { RoundedCornerShape(it.dp) } ?: if (view.grid == "line") RoundedCornerShape(3.dp) else RoundedCornerShape(8.dp)
 
 /** [CVW-01] 1.35 달력 모양 for every calendar grid; MainActivity provides the user's. */
 val LocalCalendarView = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.CalendarView() }

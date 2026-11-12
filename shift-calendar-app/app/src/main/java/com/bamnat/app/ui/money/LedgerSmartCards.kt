@@ -126,7 +126,7 @@ internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedA
             Text("석 달 넘게 매달 나가는 구독 ${f.staleSubs.size}개 · 아직 쓰나요? 1년이면 ${Fmt.won(f.staleYearly)}", style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 8.dp))
             f.staleSubs.take(4).forEach { s ->
-                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(s.place) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(s.place) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
                 }

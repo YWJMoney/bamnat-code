@@ -2,6 +2,7 @@ package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -120,7 +121,7 @@ internal fun EnvelopesCard(
 @Composable
 private fun EnvelopeRow(s: EnvelopeStatus, today: LocalDate, perShift: Long?, onPut: () -> Unit, onEdit: () -> Unit) {
     val e = s.envelope
-    Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onEdit).padding(vertical = 6.dp)
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onEdit).padding(vertical = 6.dp)
         .semantics { contentDescription = "${e.name} 봉투, ${Fmt.won(s.saved)}" + if (e.target > 0) " / ${Fmt.won(e.target)}" else "" }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text((e.emoji.ifBlank { if (e.kind == EnvelopeKind.TAX) "🧾" else "✉️" }) + " " + e.name, style = MaterialTheme.typography.bodyLarge,

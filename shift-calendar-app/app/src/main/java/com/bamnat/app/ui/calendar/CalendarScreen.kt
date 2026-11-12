@@ -72,7 +72,6 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -1856,21 +1855,15 @@ fun CalendarScreen(
         else if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
-            // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
-            ExtendedFloatingActionButton(
-                onClick = { quickMoney = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = label) },
-                text = { Text(label) },
-                expanded = fabExpanded,
-                modifier = place,
-            )
+            // 2.0.0 [RVP-06] The shared floating-button rule: TalkBack reads the words, big letters keep it to the icon.
+            com.bamnat.app.ui.components.AddFab(label, onClick = { quickMoney = true }, open = fabExpanded, modifier = place)
         } else if (!fabGone && paint == null) {
-            ExtendedFloatingActionButton(
+            com.bamnat.app.ui.components.AddFab(
+                "빠른 입력",
                 // [CAL-01] Nothing is chosen yet, so the first tap cannot paint a day by surprise.
                 onClick = { vm.setPaint(PaintTool.Pick) },
-                icon = { Icon(Icons.Filled.EditCalendar, contentDescription = "빠른 입력") },
-                text = { Text("빠른 입력") },
-                expanded = fabExpanded,
+                open = fabExpanded,
+                icon = Icons.Filled.EditCalendar,
                 modifier = place,
             )
         }

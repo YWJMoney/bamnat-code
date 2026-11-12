@@ -868,15 +868,15 @@ private fun ReceivedDayCell(
                 day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
                     Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
-                    ) { Text(e.name.take(1), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
+                    ) { Text(e.name.take(1), fontSize = 10.sp /* [RVP-11] T13-07 */, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
                 }
             }
             if (inRange) DayBadge(schedule, day, size = 22.dp, shifts = shifts)
             // [CAL-12] Without a memo, a job's start time says when the day begins.
             Text(
                 day?.memo ?: day?.extras?.firstOrNull { it.time != null }?.time?.substringBefore("-").orEmpty(),
-                fontSize = 9.sp,
-                lineHeight = 10.sp,
+                fontSize = 10.sp, // 2.0.0 [RVP-11] (검토 UIX-11) 10sp at least
+                lineHeight = 11.sp,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,

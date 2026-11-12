@@ -2,6 +2,7 @@ package com.bamnat.app.ui.invest
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -165,7 +166,7 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
     val unit = if (h.market == Market.CRYPTO) "개" else "주"
     val fx = state.settings.usdKrw
     SectionCard(title = null) {
-        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(h.title, style = MaterialTheme.typography.titleSmall)
                 Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.price(h.averagePrice, h.market)} · 비중 ${"%.0f".format(weight * 100)}%",
@@ -298,7 +299,7 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     alarms.forEach { a ->
         SectionCard(title = null) {
-            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.AlarmEdit(editing = a)) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open(InvestSheet.AlarmEdit(editing = a)) }, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(a.title, style = MaterialTheme.typography.titleSmall)
                     Text(InvestAlarms.describe(a) + (if (a.ring) " · 소리" else "") +

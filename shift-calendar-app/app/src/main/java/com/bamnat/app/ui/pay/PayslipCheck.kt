@@ -154,7 +154,8 @@ internal fun SlipCheck(
         val doubt = i in unsure
         Column(
             Modifier.fillMaxWidth()
-                .then(if (doubt) Modifier.background(WARN.copy(alpha = 0.3f), MaterialTheme.shapes.extraSmall) else Modifier)
+                // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour.
+                .then(if (doubt) Modifier.background(com.bamnat.app.ui.theme.LocalCalendarColors.current.warning.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
                 .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraSmall) else Modifier)
                 // [PHOTO-31] 1.30 AW: any line opens on a tap, not only after '다른 곳이 있어요'.
                 .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { preset = null; editing = if (editing == i) null else i }
@@ -399,4 +400,3 @@ internal fun SlipLineEditor(
     }
 }
 
-private val WARN = Color(0xFFFFC107)
