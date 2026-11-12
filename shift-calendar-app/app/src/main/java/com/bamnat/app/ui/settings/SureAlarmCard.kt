@@ -48,15 +48,21 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
     }
     SectionCard(title = "확실하게 깨우기", trailing = { com.bamnat.app.ui.components.ProBadge(locked = !open) }) { // [TIER-06]
         val chosen = if (open) AlarmMission.of(settings.alarmMission) else AlarmMission.NONE
-        ChoiceRow(
-            MISSION_ROW,
-            "알람을 끄려면 풀어야 해요. ${chosen.hint}. ${Missions.GIVE_UP_AFTER.toMinutes()}분이 지나면 미션 없이도 끌 수 있어요",
-            missions.map { it to it.label }, chosen,
-        ) { m -> if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) openPro(com.bamnat.app.tier.Feature.SURE_ALARM) else pick(m) { vm.update { s -> s.copy(alarmMission = m.key) } } }
+        val photoChosen = settings.alarmMission == AlarmMission.PHOTO.key || settings.shiftMissions.values.any { it == AlarmMission.PHOTO.key }
+        // 2.0.0 [RVO-10] (검토 SET-03: 설정 찾기·기능 찾기로 '증명 사진 기준'에 오면 줄이 없었어요): asked for, its rows show to take the
+        // first photo there; where 알람 미션 is not open, the mission row is what it lands on.
+        val photoAsked = LocalSettingsFocus.current?.row == PHOTO_ROW
+        val photoRows = open && (photoWanted || photoChosen || references.isNotEmpty() || photoAsked)
+        Column(if (photoRows) Modifier else Modifier.focusMark(PHOTO_ROW)) {
+            ChoiceRow(
+                MISSION_ROW,
+                "알람을 끄려면 풀어야 해요. ${chosen.hint}. ${Missions.GIVE_UP_AFTER.toMinutes()}분이 지나면 미션 없이도 끌 수 있어요",
+                missions.map { it to it.label }, chosen,
+            ) { m -> if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) openPro(com.bamnat.app.tier.Feature.SURE_ALARM) else pick(m) { vm.update { s -> s.copy(alarmMission = m.key) } } }
+        }
         // 1.36 PC Y14: how and until when 알람 미션 is open stays here, not only in a toast that goes.
         com.bamnat.app.ui.pro.TrialNote(com.bamnat.app.tier.Feature.SURE_ALARM, gate)
-        val photoChosen = settings.alarmMission == AlarmMission.PHOTO.key || settings.shiftMissions.values.any { it == AlarmMission.PHOTO.key }
-        if (open && (photoWanted || photoChosen || references.isNotEmpty())) {
+        if (photoRows) {
             PhotoMissionRows(references, photoWanted, photoChosen,
                 onTaken = { hash, place, replace ->
                     photos.add(hash, place, replace = replace)

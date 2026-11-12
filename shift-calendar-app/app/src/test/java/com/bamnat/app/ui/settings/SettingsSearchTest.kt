@@ -251,4 +251,53 @@ class SettingsSearchTest {
         org.junit.Assert.assertTrue(invest.any { it.title == "모든 투자 알람 한 번에 옮기기" && "잠금 화면 오늘 근무" !in it.keywords })
         org.junit.Assert.assertTrue(invest.any { it.title == "잠금 화면 오늘 일정" && "잠금 화면 오늘 근무" in it.keywords })
     }
+
+    /**
+     * 2.0.0 [RVO-10] 검토 U11a-04·T11a-01~03 (설정 찾기가 유형의 말을 모르고, 그 유형 쪽에 없는 줄을 찾아 줘요): each kind finds a row by the
+     * words its page says it in, the old word still finds it, and a row its page does not draw is not found.
+     */
+    @Test fun eachKindFindsItsRowsInItsWords() {
+        fun of(style: com.bamnat.core.work.WorkStyle) =
+            SettingsIndex.entries(board = false, company = style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.DAY, style = style)
+        fun firstFor(style: com.bamnat.core.work.WorkStyle, q: String) = SettingsIndex.search(q, of(style)).firstOrNull()?.title
+        val field = com.bamnat.core.work.WorkStyle.FIELD
+        val shop = com.bamnat.core.work.WorkStyle.BUSINESS
+        val invest = com.bamnat.core.work.WorkStyle.INVEST
+        // U11a-04: the page's words are the index's.
+        val sleepAfter = of(field).first { it.title == "일 끝난 뒤 잠들기까지" }
+        assertTrue("퇴근 후 잠들기까지" in sleepAfter.keywords)
+        assertEquals("일 끝난 뒤 잠들기까지", firstFor(field, "일 끝난 뒤 잠들기"))
+        assertEquals("마감 후 잠들기까지", firstFor(shop, "퇴근 후 잠들기까지"))
+        assertEquals("일 끝난 뒤 가계부 정리 알림", firstFor(field, "가계부 정리 알림"))
+        // T11a-01 가게: 영업시간·정기휴무 by its words, no 연차.
+        assertEquals("영업시간", firstFor(shop, "영업시간"))
+        assertEquals("영업일·정기휴무", firstFor(shop, "정기휴무"))
+        assertTrue(SettingsIndex.search("연차", of(shop)).none { "연차" in it.title || (it.place as? SettingPlace.Screen)?.go == SettingsGo.LEAVE })
+        assertTrue(SettingsIndex.search("연차", of(com.bamnat.core.work.WorkStyle.DAY)).any { (it.place as? SettingPlace.Screen)?.go == SettingsGo.LEAVE })
+        // T11a-02 투자: 계좌, and nothing of hours worked or the day's dial.
+        assertEquals("계좌", firstFor(invest, "계좌"))
+        val investTitles = of(invest).map { it.title }
+        listOf("큰 지출을", "하루 다이얼", "잠들기까지", "가계부 정리 알림").forEach { w -> assertTrue(w, investTitles.none { w in it }) }
+        // T11a-03 현장: 일정 종류, and no 하루 브리핑·근무 전 한 줄 예고 (only work with a 근무표 has them).
+        assertEquals("일정 종류", firstFor(field, "일정 종류"))
+        listOf(field, shop, invest).forEach { st ->
+            val t = of(st).map { it.title }
+            listOf("하루 브리핑", "잘 준비", "한 줄 예고", "퇴근길 안전", "돌아가는 길", "광장 시세와 내 단가 견주기", "견줄 내 지역").forEach { w -> assertTrue("$st $w", t.none { w in it }) }
+        }
+        // 퇴근길 안전 is 교대's (the end of a night); 퇴근 시각 알림 일근's.
+        assertTrue("퇴근길 안전" in of(com.bamnat.core.work.WorkStyle.SHIFT).map { it.title })
+        assertFalse("퇴근길 안전" in of(com.bamnat.core.work.WorkStyle.HOURLY).map { it.title })
+        assertTrue(LEAVE_TIME_ROW in of(com.bamnat.core.work.WorkStyle.DAY).map { it.title })
+        assertFalse(LEAVE_TIME_ROW in of(com.bamnat.core.work.WorkStyle.SHIFT).map { it.title })
+        // 날짜 칸 줄마다: 일감 only where there are 일감; the old name finds it.
+        assertEquals(CELL_LIST_ROW, firstFor(field, "여러 줄"))
+        assertEquals("날짜 칸에 메모를 줄마다", firstFor(com.bamnat.core.work.WorkStyle.SHIFT, "날짜 칸에 일감·메모 여러 줄"))
+    }
+
+    /** 2.0.0 [RVO-11] 검토 PC-77: 움직임 끄기 is found on 화면과 글자, by what people say when the screen moves too much. */
+    @Test fun motionOffIsOnTheScreenPage() {
+        listOf("멀미", "움직임 끄기", "애니메이션 끄기").forEach { q -> assertEquals(q, MOTION_OFF_ROW, first(q)) }
+        val e = SettingsIndex.entries().first { it.title == MOTION_OFF_ROW }
+        assertEquals(SettingPlace.Row(SettingsPage.CALENDAR, MOTION_OFF_ROW), e.place)
+    }
 }

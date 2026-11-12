@@ -718,6 +718,8 @@ fun SettingsScreen(
     }
 
     if (wide) {
+        // 2.0.0 [RVO-10] (검토 U11a-17: 폴드를 편 폭에서는 검색어를 넣은 채 뒤로 가면 설정을 나갔어요): back clears a search first, as on a phone.
+        BackHandler(enabled = query.isNotEmpty()) { query = "" }
         val shown = page ?: SettingsPage.WORK
         BoxWithConstraints(Modifier.fillMaxSize()) {
         // The list takes two fifths: its lines are short, the group's explanations are long. 2.0.0 [RVO-02] (HQ-01) With big letters it
@@ -837,16 +839,8 @@ private fun SettingsHub(
         SettingsSearchField(query, onQuery, searchFocus)
         Spacer(Modifier.size(4.dp))
         if (query.isNotBlank()) {
-            // [J133-71] 1.33: what the calendar's kind of work has, so 알바 finds no 회사 찾기.
-            val companyWork = context.appContainer.companyFits(com.bamnat.app.ui.company.companyCalendarOf(context.appContainer, null))
-            val style = work.workStyle
             val searchCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
-            val flowAdded = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", style,
-                com.bamnat.app.ui.guide.rememberFitAdded(searchCalendar))
-            val entries = remember(onOpenBoard != null, companyWork, style, flowAdded) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
-                flowAdded = flowAdded,
-                sleepAuto = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false),
-                sleepSound = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)) }
+            val entries = rememberSettingsEntries(board = onOpenBoard != null, share = vm.shareOn, style = work.workStyle, calendar = searchCalendar)
             SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick)
             return@Column
         }
@@ -972,6 +966,24 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusR
 internal fun whereFor(where: String, style: com.bamnat.core.work.WorkStyle?): String {
     val page = SettingsPage.entries.firstOrNull { where == it.title || where.startsWith(it.title + " ›") } ?: return where
     return page.titleFor(style) + where.removePrefix(page.title)
+}
+
+/**
+ * 2.0.0 [RVO-10] (검토 T11a-06: 도움말 › 설정에서 찾기가 유형을 전혀 거르지 않았어요): what settings can find for the calendar on screen,
+ * the same for 설정 찾기 and 도움말. [J133-71] 회사 things only where the work has a company; the kind of work's rows and words; 오늘의
+ * 흐름 only when it is on that calendar; the sleep switches only when their flags are open.
+ */
+@Composable
+internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.bamnat.core.work.WorkStyle?, calendar: String): List<SettingEntry> {
+    val c = LocalContext.current.appContainer
+    val company = c.companyFits(com.bamnat.app.ui.company.companyCalendarOf(c, calendar))
+    val flowAdded = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", style,
+        com.bamnat.app.ui.guide.rememberFitAdded(calendar))
+    val sleepAuto = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false)
+    val sleepSound = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)
+    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound) {
+        SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto, sleepSound = sleepSound)
+    }
 }
 
 @Composable

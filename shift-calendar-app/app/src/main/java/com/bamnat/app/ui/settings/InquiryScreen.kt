@@ -1342,16 +1342,18 @@ private fun HelpHome(
             (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
         } else {
             val found = remember(query, topics) { HelpFaq.search(query, topics) }
-            val settings = remember(query) {
-                SettingsIndex.search(query, SettingsIndex.entries(board = false, share = vm.shareOn), limit = 3)
+            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
+            val guideContainer = LocalContext.current.appContainer
+            // 2.0.0 [RVO-10] (검토 T11a-06): the settings of the calendar on screen's kind of work, as 설정 찾기 finds them.
+            val (helpCalendar, helpStyle) = remember(query) { guideContainer.guideCalendar() }
+            val index = rememberSettingsEntries(board = false, share = vm.shareOn, style = helpStyle, calendar = helpCalendar)
+            val settings = remember(query, index) {
+                SettingsIndex.search(query, index, limit = 3)
                     .filter { (it.place as? SettingPlace.Screen)?.go != SettingsGo.INQUIRY }
             }
             val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
-            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
-            val guideContainer = LocalContext.current.appContainer
-            val features = remember(query, hiddenKinds) {
-                val (_, style) = guideContainer.guideCalendar()
-                com.bamnat.app.ui.guide.FeatureSearch.search(query, style, hidden = hiddenKinds)
+            val features = remember(query, hiddenKinds, helpStyle) {
+                com.bamnat.app.ui.guide.FeatureSearch.search(query, helpStyle, hidden = hiddenKinds)
             }
             val total = found.size + settings.size + posts.size + features.size
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
@@ -1365,7 +1367,7 @@ private fun HelpHome(
             found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
             if (settings.isNotEmpty()) {
                 SectionLabel("설정에서 찾기")
-                settings.forEach { e -> HelpSettingRow(e) }
+                settings.forEach { e -> HelpSettingRow(e, helpStyle) }
             }
             if (posts.isNotEmpty()) {
                 SectionLabel("모두의 문의에서")
@@ -1431,7 +1433,7 @@ private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, o
 
 /** [UX-05] A setting the help search found, with where it lives; it opens there. */
 @Composable
-private fun HelpSettingRow(e: SettingEntry) {
+private fun HelpSettingRow(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
             .clickable(role = Role.Button) {
@@ -1445,7 +1447,8 @@ private fun HelpSettingRow(e: SettingEntry) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge)
-            Text(settingsPath(e.where), style = MaterialTheme.typography.bodySmall,
+            // [RVO-10] The page in the kind of work's words, as 설정 찾기 says it (가게 '매출과 경비', not '급여와 연차').
+            Text(settingsPath(whereFor(e.where, style)), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)

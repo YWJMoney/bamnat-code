@@ -815,6 +815,18 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         SwitchRow("오전/오후로 보기", // [R136-17] 1.36 (리뷰 R-46: 꺼진 스위치 밑 '24시간으로 보여요'가 이름과 반대로 읽혔어요).
             if (settings.clock12) "시각을 '오후 3:05'처럼 보여요" else "켜면 '오후 3:05'처럼 보여요. 지금은 '15:05'",
             settings.clock12) { on -> vm.update { it.copy(clock12 = on) } }
+        HorizontalDivider()
+        // 2.0.0 [RVO-11] (검토 PC-77: 움직임 끄기가 스튜디오 › 앱 전체 › 움직임에만 있어 설정 찾기에 '움직'을 쳐야 나왔어요): the same value
+        // here, where people look for what makes the screen easier. The phone's 애니메이션 삭제 keeps it on.
+        val motionContext = LocalContext.current
+        val systemStill = remember { com.bamnat.app.ui.theme.systemAnimationsOff(motionContext) }
+        val motion = com.bamnat.core.recipe.Motion.decode(settings.motion)
+        SwitchRow(MOTION_OFF_ROW,
+            if (systemStill) "휴대폰 설정의 ‘애니메이션 삭제’가 켜져 있어 앱도 움직이지 않아요"
+            else "달 넘김·오늘 칸·테마 입히기가 움직이지 않고 바로 바뀌어요. 하나씩 고르려면 스튜디오 › 앱 전체 › 움직임",
+            motion.off || systemStill, enabled = !systemStill) { on ->
+            vm.update { it.copy(motion = com.bamnat.core.recipe.Motion.decode(it.motion).copy(off = on).encode()) }
+        }
     }
     SectionCard(title = "모양") {
         // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
@@ -908,6 +920,14 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             MemoView.CELLS -> "날짜 밑에 그날 메모 첫 글자가 보이고, 이번 달 메모도 달력 아래에 모여요"
         }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
             vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
+        }
+        // 2.0.0 [RVO-10] (검토 SET-03: 설정 찾기가 '날짜 칸에 일감·메모 여러 줄'을 찾아 여기로 왔는데 줄이 없었어요; 1.39 [CELL-01]의 선택은
+        // 달력 › 카드 배치에만 있었어요): the same choice here, under 메모 보기. 일감 is a 현장 word, so the others read 메모 only.
+        val jobs = com.bamnat.core.work.CalendarFocus.of(settings.workStyle) == com.bamnat.core.work.CalendarFocus.JOBS
+        Column(Modifier.focusMark(CELL_LIST_ROW)) {
+            ChoiceRow(if (jobs) CELL_LIST_ROW else "날짜 칸에 메모를 줄마다",
+                if (jobs) "알아서: 일감과 메모를 칸 안에 한 줄씩 보여요" else "알아서: 메모가 있는 날은 칸 안에 한 줄씩 보여요",
+                listOf("auto" to "알아서", "on" to "늘", "off" to "한 줄만"), settings.cellList) { v -> vm.update { it.copy(cellList = v) } }
         }
         // 1.38 [EASE-29] The widgets with my own days, above the rows that change them.
         WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
@@ -1507,6 +1527,10 @@ internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
 internal const val WORK_TIME_ROW = "큰 지출을 근무 시간으로"
+/** 2.0.0 [RVO-11] 설정 › 화면과 글자's 움직임 끄기, the studio's [com.bamnat.core.recipe.Motion.off]. */
+internal const val MOTION_OFF_ROW = "움직임 끄기"
+/** 2.0.0 [RVO-10] 1.39 [CELL-01]'s choice on 설정 › 화면과 글자 (also in 달력 › 카드 배치), for 설정 찾기. */
+internal const val CELL_LIST_ROW = "날짜 칸에 일감·메모를 줄마다"
 /** 1.39 [SPREAD-05] 설정 › 데이터, also found by search. */
 internal const val EXPORT_MARK_ROW = "보내는 사진에 밤낮 표시"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"

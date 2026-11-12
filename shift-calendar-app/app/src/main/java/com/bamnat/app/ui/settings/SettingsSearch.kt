@@ -156,8 +156,20 @@ internal object SettingsIndex {
                 flowAdded: Boolean = false): List<SettingEntry> =
         all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
 
+    /**
+     * 2.0.0 [RVO-10] (검토 U11a-04·SET-03: 설정 찾기가 유형의 말을 몰라요): an entry reads as its row does on that kind of work's page.
+     * The pages say each row in the kind's words ([com.bamnat.core.work.TypeWords.say], 갈래 H RVH-41), so the index says the same and
+     * a 현장 finds '일 끝난 뒤 잠들기까지' by its own words; the shared name stays a keyword, so the old word still finds it.
+     */
+    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry {
+        val named = named(e, style)
+        if (style == null) return named
+        val said = com.bamnat.core.work.TypeWords.say(style, named.title)
+        return if (said == named.title) named else named.copy(title = said, keywords = named.keywords + named.title)
+    }
+
     /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
-    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry = when {
+    private fun named(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry = when {
         // 2.0.0 [RVG-12] 검토 BOSS-69: '근무 주기'·'근무 종류와 시간' read as the row does on that kind of work's page (가게 '영업일·정기휴무'·
         // '영업시간', 투자 '투자 알람'·'계좌', 알바 '출근 요일'…); the old name still finds it.
         style != null && (e.place as? SettingPlace.Screen)?.go == SettingsGo.PATTERN && e.title == "근무 주기" ->
@@ -172,12 +184,18 @@ internal object SettingsIndex {
             val word = if (e.title == MOVE_ALL_ALARMS_ROW) com.bamnat.app.ui.shifts.alarmNoun(style) else com.bamnat.app.ui.shifts.lockNoun(style)
             if (word == "근무") e else e.copy(title = e.title.replace("근무", word), keywords = e.keywords + e.title)
         }
+        // 2.0.0 [RVO-10] 일감 is a 현장 word: the others' page says 메모 only.
+        e.title == CELL_LIST_ROW && com.bamnat.core.work.CalendarFocus.of(style) != com.bamnat.core.work.CalendarFocus.JOBS ->
+            e.copy(title = "날짜 칸에 메모를 줄마다", keywords = e.keywords + e.title)
         else -> e
     }
 
-    /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
+    /**
+     * [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have.
+     * 2.0.0 [RVO-10] (검토 T11a-01: 가게가 '연차'를 찾으면 연차 원장이 나왔어요) and 연차, which only an employee has.
+     */
     private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,
-        SettingsGo.COMMUTE, SettingsGo.PAY, SettingsGo.PAY_BASE, SettingsGo.PAY_ITEMS, SettingsGo.PAY_PERIOD, SettingsGo.PAY_HOURS)
+        SettingsGo.COMMUTE, SettingsGo.PAY, SettingsGo.PAY_BASE, SettingsGo.PAY_ITEMS, SettingsGo.PAY_PERIOD, SettingsGo.PAY_HOURS, SettingsGo.LEAVE)
     /** [J133-77] Rows about shifts, wages and 연차. */
     private val WAGE_ROWS = setOf("휴식 점검", "근무표 점검 기준", "한 주 근무 경고", "최근 3개월 한 주 평균 경고", "퇴근 시각 알림", "연속 근무 경고",
         "급여 입금 비교", com.bamnat.app.ui.pay.AUTO_CLOSE_TITLE, "연차 사용 촉진 알림", "근무마다 다른 소리", "알람 뒤 오늘 카드")
@@ -190,6 +208,7 @@ internal object SettingsIndex {
      * work has. No kind chosen keeps everything.
      */
     internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?, flowAdded: Boolean = false): Boolean {
+        if (style != null && !rowFits(e.title, style)) return false
         // 1.39 [PAYX-62] 주 15시간 경계 알림은 알바에만 있어요.
         if (style != null && style != com.bamnat.core.work.WorkStyle.HOURLY && e.title == com.bamnat.core.pay.WeekHoursNudge.ROW) return false
         // 2.0.0 [RVH-41] 검토 T30-80·82: 알바 has no 근무시간 경고 card (주 52시간·3개월 평균·연속 근무).
@@ -200,6 +219,25 @@ internal object SettingsIndex {
         // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
         // 1.39 G6: unless the user put it on the calendar themselves.
         return e.title !in WAGE_ROWS && (flowAdded || e.title != "오늘의 흐름 보기")
+    }
+
+    /**
+     * 2.0.0 [RVO-10] (검토 SET-03·T11a-03: 현장이 '하루 브리핑'·'근무 전 한 줄 예고'를 찾지만 쪽에는 없어요): the rows a page draws only for
+     * some kinds of work, as the page's own `if` says (SettingsPages NoticesPage·RestPage·PayPage·CalendarPage). A row already turned on
+     * still shows on its page so it can be turned off; search finds what the kind of work has. `SettingsFoundRowsScreenTest` opens every
+     * found row's page for each kind, so a page that hides a row this does not know fails there.
+     */
+    private fun rowFits(title: String, style: com.bamnat.core.work.WorkStyle): Boolean = when (title) {
+        // 야간이 끝날 때: 교대만.
+        "퇴근길 안전" -> style == com.bamnat.core.work.WorkStyle.SHIFT
+        // [WTYP-16] 사무직의 '지금 퇴근'.
+        LEAVE_TIME_ROW -> style == com.bamnat.core.work.WorkStyle.DAY
+        // What follows a 근무표 (교대·일근·알바).
+        "하루 브리핑", "잘 준비", "하루 다이얼", "광장 시세와 내 단가 견주기", "견줄 내 지역", SHIFT_PREVIEW_ROW -> style.usesPayEngine
+        DAY_CLOSE_ROW -> style != com.bamnat.core.work.WorkStyle.BUSINESS && style != com.bamnat.core.work.WorkStyle.INVEST
+        // An investor has no end of work and no hourly pay.
+        "퇴근 후 잠들기까지", WORK_TIME_ROW -> style != com.bamnat.core.work.WorkStyle.INVEST
+        else -> true
     }
 
     private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
@@ -301,7 +339,8 @@ internal object SettingsIndex {
         row(C, "휴대폰 배경색에 맞추기", "색", "배경화면", "앱 색"),
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),
         row(C, "날짜 칸 아래", "음력", "근무시간 표시", "날짜 밑"),
-        row(C, "날짜 칸에 일감·메모 여러 줄", "칸에 일정", "일정 여러 줄", "메모 잘림", "일감 이름 잘림", "줄마다", "테마 입으면 메모 안 보임"),
+        // 2.0.0 [RVO-10] The row is on 화면과 글자 now (before, only in 달력 › 카드 배치, and this found a row the page did not have).
+        row(C, CELL_LIST_ROW, "날짜 칸에 일감·메모 여러 줄", "여러 줄", "칸에 일정", "일정 여러 줄", "메모 잘림", "일감 이름 잘림", "줄마다", "테마 입으면 메모 안 보임"),
         row(C, "우리 업종 기념일", "기념일", "소방의 날", "경찰의 날", "업종의 날"), // [EASE-04] 1.38
         row(C, CAL_THEME_ROW, "달력 테마", "토요일 색", "일요일 색", "공휴일 색", "오늘 색", "칸 색칠", "근무 날 칸", "꾸미기"), // [RCP-09] 1.34
         row(A, com.bamnat.app.logic.LOGIC_ROW, "규칙", "수식", "조건", "만약", "자동", "단추", "버튼", "이럴 때", "인수인계", "체크 초기화", "메모 틀", "자동 기록"), // [RUL-06] 1.36
@@ -324,6 +363,8 @@ internal object SettingsIndex {
         screen("스튜디오 › 앱 전체 › 부품", "부품 움직임", SettingsGo.STUDIO_PARTS, "움직임", "효과", "부품 효과", "애니메이션", "흔들림", "깜빡임", "부품", "animation"),
         row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
         row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
+        // 2.0.0 [RVO-11] (검토 PC-77) 움직임 끄기 on 화면과 글자 too.
+        row(C, MOTION_OFF_ROW, "움직임", "움직임 줄이기", "애니메이션", "애니메이션 끄기", "효과 끄기", "멀미", "어지러워요", "달 넘김 효과", "배터리"),
         row(C, "밤 색", "밤 모드", "야간 모드", "어두운 색", "붉은 색", "눈부심", "잘 시간", "새벽", "밤에 어둡게", "다크 모드", "수면 화면만"), // 1.39 [FLOW-14][DSG-07]
         row(C, "칸이 보이기", "칸이", "캐릭터", "마스코트", "그림 친구", "캐릭터 끄기"), // 1.38 [FLOW-26]
         row(C, "설명 처음처럼 보기", "설명", "안내 다시", "도움말 다시", "설명 펼치기", "ⓘ"), // 2.0.0 [RVP-08]
