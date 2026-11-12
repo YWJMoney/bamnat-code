@@ -46,9 +46,10 @@ on:
 permissions:
   contents: read
 # 배포는 한 번에 하나씩, 도중에 끊지 않아요.
+# PR 시험(test 일)은 묶음을 따로 써요: 같은 묶음이면 PR에 push할 때마다 러너를 기다리던 배포 run이 밀려 취소돼요(2026-11-12, 갈래 D run 123).
 concurrency:
-  group: deploy-server
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('deploy-server-test-{0}', github.ref) || 'deploy-server' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     if: github.event_name == 'pull_request'

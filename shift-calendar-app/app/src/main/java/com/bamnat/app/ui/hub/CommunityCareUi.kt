@@ -170,14 +170,18 @@ fun AppealDialog(c: AppContainer, target: String, answerHours: Int = CommunityCa
     )
 }
 
-/** 1.39 조사 ⑦ 쓰기 전 한마디(다정하게, 막지 않아요). */
+/**
+ * 1.39 조사 ⑦ 쓰기 전 한마디(다정하게, 막지 않아요). 2.0.0 [RVN-13] U10b-07: it says the word it saw in [text], and 그대로 보내기 comes
+ * first (the word may be an everyday one the check still takes), 고치기 beside it.
+ */
 @Composable
-fun NudgeDialog(onEdit: () -> Unit, onSend: () -> Unit) {
+fun NudgeDialog(text: String, onEdit: () -> Unit, onSend: () -> Unit) {
+    val word = androidx.compose.runtime.remember(text) { com.bamnat.core.plaza.PostNudge.found(text) }
     AlertDialog(
         onDismissRequest = onEdit,
         title = { Text(com.bamnat.core.plaza.PostNudge.TITLE) },
-        text = { Text(com.bamnat.core.plaza.PostNudge.TEXT) },
-        confirmButton = { TextButton(onClick = onEdit) { Text(com.bamnat.core.plaza.PostNudge.EDIT) } },
-        dismissButton = { TextButton(onClick = onSend) { Text(com.bamnat.core.plaza.PostNudge.SEND) } },
+        text = { Text(com.bamnat.core.plaza.PostNudge.text(word)) },
+        confirmButton = { TextButton(onClick = onSend) { Text(com.bamnat.core.plaza.PostNudge.SEND) } },
+        dismissButton = { TextButton(onClick = onEdit) { Text(com.bamnat.core.plaza.PostNudge.EDIT) } },
     )
 }
