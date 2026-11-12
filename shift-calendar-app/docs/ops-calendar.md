@@ -12,15 +12,17 @@
 | 3월 | `tax-table` | 근로소득 간이세액표가 바뀌었으면 `remote/v1/taxtable.json` 고치기(판 올리고 서명) | 소득세법 시행령 별표 2(2026년 개정은 3월 1일 이후 원천징수분부터) |
 | 3월 | `privacy-review` | 처리방침·데이터 보안 답안을 지금 서버와 대조 | 개인정보 보호법 제30조, [server-data.md](server-data.md) |
 | 3월 | `incident-drill` | 유출 대응 절차서를 한 번 따라 해 보기(연락 순서·공지 문구) | 개인정보 보호법 제34조, [incident-response.md](incident-response.md) |
+| 3월 | `secret-review` | 서버 비밀값을 바꿀지 보기(관리 › 보안 한 장의 바꾼 날). RATE_SALT·SEAL_KEY를 바꾸면 옛 값을 SEAL_KEY_OLD에 두고 다음 백업·되살리기 연습이 맞은 뒤 지우기 | 개인정보 보호법 제29조(안전조치의무), [incident-response.md](incident-response.md) |
 | 4월 | `android-preview` | 새 Android 미리보기에서 알람·알림 점검 | Google Play 대상 API 수준 요건(해마다 8월 31일) |
 | 5월 | `store-listing` | 스토어 등록정보·화면 사진이 지금 앱과 맞는지 확인 | Google Play 메타데이터 정책 |
 | 6월 | `pension-prepare` | 7월부터 쓰는 국민연금 기준소득월액 상하한 준비 | 국민연금법 시행령 제5조 |
 | 6월 | `labor-law-amendment` | 2027-06-10 시행 근로기준법 개정(조문 번호 이동, 시간 단위 연차)에 맞춰 앱의 법 조문 글귀와 연차 계산을 확인 | 근로기준법 개정(2027-06-10 시행), `docs/tracker.csv` LEAVE-12 |
+| 6월 | `backup-restore` | 하루 백업 한 날을 내려받아 로컬 서버에 실제로 되살려 보기(`server/company-worker/tools/backup-open.mjs`, 매주 자동 되살리기 연습과 따로 손으로 한 번) | 개인정보 보호법 제29조(안전조치의무), [server-data.md](server-data.md) 하루 백업 |
 | 7월 | `pension-apply` | 국민연금 기준소득월액 상하한을 `remote/v1/rates.json`에 넣어 7월 급여부터 맞추기(판 올리고 서명) | 국민연금법 시행령 제5조 제3항(3월 31일까지 고시)·제4항(7월부터 적용) |
 | 8월 | `minwage-next` | 다음 해 최저임금 결정(8월 5일까지)을 앱에 넣을 준비 | 최저임금법 제8조 제1항 |
 | 8월 | `target-api` | 대상 API 수준 마감(8월 31일) 전에 업데이트 출시 | Google Play 대상 API 수준 요건(2026-08-31부터 API 36) |
 | 9월 | `wages-sep` | 9월 공표 시중노임단가를 `remote/v1/wages.json`에 넣기(판 올리고 서명) | 대한건설협회 시중노임단가(1월·9월 공표) |
-| 9월 | `holidays-next` | 다음 해 공휴일·대체공휴일·선거일 확인 | 관공서의 공휴일에 관한 규정 |
+| 9월 | `holidays-next` | 다음 해 공휴일·대체공휴일·선거일 확인(2.0.0 RVR-15: 9월부터 core 시험이 경고, 12-15부터 표가 없으면 실패) | 관공서의 공휴일에 관한 규정 |
 | 10월 | `health-next` | 다음 해 건강보험료율이 결정되면 `remote/v1/rates.json`에 넣기(결정 시기는 해마다 확인) | 국민건강보험법 시행령 제44조 |
 | 11월 | `ltc-next` | 다음 해 장기요양보험료율이 결정되면 `remote/v1/rates.json`에 넣기(2027년 요율은 결정되는 대로) | 노인장기요양보험법 시행령 제4조 |
 | 12월 | `release-new-year` | 새해 요율·최저임금·공휴일을 넣은 업데이트를 1월 1일 전에 출시 | 위 항목들 |

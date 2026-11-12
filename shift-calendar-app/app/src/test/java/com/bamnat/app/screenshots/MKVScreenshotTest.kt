@@ -266,10 +266,14 @@ class MKVScreenshotTest : ScreenshotBase() {
         val code = m.code(i)
         // 30시간 전에 시작해 그동안 값을 한 번 더했고, 지금은 끝났어요.
         val now = com.bamnat.core.time.Today.zoned()
-        com.bamnat.core.time.Today.fix(now.minusHours(30))
-        assertTrue(com.bamnat.app.logic.FxAccess.start(c, code))
-        com.bamnat.app.logic.FxAccess.note(c, com.bamnat.core.formula.LogicVerb.VAL_ADD)
-        com.bamnat.core.time.Today.fix(now)
+        // 2.0.0 [RVR-19] (검토 TEST-20 ①) Put back even when this fails, so the class's other shots keep their day.
+        try {
+            com.bamnat.core.time.Today.fix(now.minusHours(30))
+            assertTrue(com.bamnat.app.logic.FxAccess.start(c, code))
+            com.bamnat.app.logic.FxAccess.note(c, com.bamnat.core.formula.LogicVerb.VAL_ADD)
+        } finally {
+            com.bamnat.core.time.Today.fix(now)
+        }
         assertTrue(com.bamnat.app.logic.FxAccess.status(c, code) is com.bamnat.core.formula.FxTaste.Status.Used)
         val vm = com.bamnat.app.ui.recipe.RecipeDetailViewModel(c, code, com.bamnat.app.data.PersonalCalendar.MAIN)
         content { com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = {}, onRemake = {}, onMaker = {}) }
