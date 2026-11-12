@@ -103,13 +103,21 @@ private fun LayerHeading(title: String, count: Int?, open: Boolean, onToggle: ((
 
 /**
  * 1.37 [LEDH-32] 복귀 반김: back after a week or more without a line, no blame and no catch-up list — the days away, what came in by
- * itself meanwhile, and that writing only the big ones is fine. Gone once a line is written, or for now with 넘기기.
+ * itself meanwhile, and that writing only the big ones is fine. Gone once a line is written, or with 넘기기 for that gap.
+ * 2.0.0 [RVK-42] (검토 MONEY-26·U06a-26) 넘기기 is kept on the phone with the day the gap began, per calendar: the card does not come
+ * back each time the app opens (it was kept only while the screen lived), and asks again only after another gap.
  */
 @Composable
-internal fun WelcomeBackCard(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate, onAdd: () -> Unit) {
-    var skipped by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+internal fun WelcomeBackCard(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate, onAdd: () -> Unit, calendarId: String = "") {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = androidx.compose.runtime.remember { context.getSharedPreferences(WELCOME_PREFS, android.content.Context.MODE_PRIVATE) }
+    var skippedFrom by androidx.compose.runtime.remember(calendarId) {
+        androidx.compose.runtime.mutableStateOf(prefs.getString(welcomeKey(calendarId), "").orEmpty())
+    }
     val away = androidx.compose.runtime.remember(book, today) { com.bamnat.core.money.LedgerSmarts.away(book.entries, today) } ?: return
-    if (skipped) return
+    // The gap began on the last line by hand: today less the days away.
+    val gap = today.minusDays(away.days.toLong()).toString()
+    if (skippedFrom == gap) return
     com.bamnat.app.ui.components.SectionCard(title = "${away.days}일 만이에요") {
         Text(
             (if (away.auto > 0) "그동안 결제 알림·반복 지출로 ${away.auto}건이 저절로 적혔어요. " else "") +
@@ -118,10 +126,17 @@ internal fun WelcomeBackCard(book: com.bamnat.core.money.MoneyBook, today: java.
         )
         Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             androidx.compose.material3.TextButton(onClick = onAdd) { Text("돈 적기") }
-            androidx.compose.material3.TextButton(onClick = { skipped = true }) { Text("넘기기") }
+            androidx.compose.material3.TextButton(onClick = {
+                skippedFrom = gap
+                prefs.edit().putString(welcomeKey(calendarId), gap).apply()
+            }) { Text("넘기기") }
         }
     }
 }
+
+private const val WELCOME_PREFS = "welcome_back"
+
+private fun welcomeKey(calendarId: String) = "skipped_from:$calendarId"
 
 /** 1.37 [LEDH-33] 가계부에 묻기: a chip per question, the answer worked out on the phone from the book. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

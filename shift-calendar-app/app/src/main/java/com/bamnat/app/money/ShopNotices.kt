@@ -51,11 +51,15 @@ object ShopNotices {
         val date = arrived.toLocalDate()
         val key = "$id|$postedAt|${text.hashCode()}"
         ShopCapture.read(text, pkg, app)?.let { sale ->
+            // 2.0.0 [RVK-40] (검토 MONEY-52·T06b-03) 접수·수락·완료 of one order, each with the amount, is one sale.
+            if (ShopCapture.isRepeat(text, sale, postedAt, countedList(c))) return MoneyRepository.Outcome.DUPLICATE
             // [DAILY-13] 결정 D7-3: with 확인하고 적기 on, the sale waits for the user like a payment line does.
             if (c.autoRecordPrefs.current.confirmFirst) return once(c, key) {
                 ShopPendingStore.get(c.appContext).add(id, ShopCapture.Pending(key, date, sale))
+                count(c, ShopCapture.counted(text, sale, postedAt))
             }
             return once(c, key) {
+                count(c, ShopCapture.counted(text, sale, postedAt))
                 val day = money.book.first().sales.firstOrNull { it.date == date }
                 val next = ShopCapture.add(day, date, sale)
                 money.save(next)
@@ -135,6 +139,22 @@ object ShopNotices {
     }
 
     private fun file(c: AppContainer) = java.io.File(c.appContext.noBackupFilesDir, "shop_notices_seen.txt")
+
+    /** 2.0.0 [RVK-40] The delivery orders counted lately, kept in a file so a 배달 완료 after a restart still finds its 접수. */
+    private var counted: List<ShopCapture.Counted>? = null
+
+    private fun countedFile(c: AppContainer) = java.io.File(c.appContext.noBackupFilesDir, "shop_orders_counted.txt")
+
+    @Synchronized
+    private fun countedList(c: AppContainer): List<ShopCapture.Counted> =
+        counted ?: runCatching { countedFile(c).readLines() }.getOrDefault(emptyList()).mapNotNull(ShopCapture.Counted::decode).also { counted = it }
+
+    @Synchronized
+    private fun count(c: AppContainer, one: ShopCapture.Counted) {
+        val next = ShopCapture.remember(countedList(c), one)
+        counted = next
+        runCatching { countedFile(c).writeText(next.joinToString("\n") { it.encode() }) }
+    }
 
     @Synchronized
     private fun seenList(c: AppContainer): ArrayDeque<String> =

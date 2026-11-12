@@ -558,6 +558,9 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                     (start?.let { s -> val d = now.net - s.net; " · ${s.date.monthValue}월 말보다 " + (if (d >= 0) "+" else "−") + Fmt.won(kotlin.math.abs(d)) } ?: ""),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 2.0.0 [RVK-37] (검토 MONEY-46) Bills gone past their day with no 카드값 written: counted as paid on the day, said in one line.
+            if (now.unrecorded > 0) Text("카드값을 적지 않은 청구 ${now.unrecorded}번은 결제일에 나간 것으로 셌어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (known.size >= 3) {
                 val line = MaterialTheme.colorScheme.primary
                 val values = known.map { it.net }
@@ -716,7 +719,7 @@ fun AccountEditor(
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
     // 1.38 [LEDH-25] 대출: 남은 원금은 양수로 받아 음수 잔액으로 둬요. [LEDH-27] 카드 실적 구간·뺄 분류.
     var owedText by rememberSaveable { mutableStateOf(amountDigits(if (initial?.isLoan == true) -initial.opening else 0)) }
-    var rateText by rememberSaveable { mutableStateOf(initial?.rate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()) }
+    var rateText by rememberSaveable { mutableStateOf(initial?.rate?.takeIf { it > 0 }?.let { com.bamnat.core.text.Numbers.plain(it, 2) }.orEmpty()) }
     var monthlyText by rememberSaveable { mutableStateOf(amountDigits(initial?.monthlyPay ?: 0)) }
     var tiersText by rememberSaveable { mutableStateOf(initial?.perfTiers.orEmpty().joinToString(", ") { if (it % 10_000 == 0L) "${it / 10_000}만" else "$it" }) }
     var skipText by rememberSaveable { mutableStateOf(initial?.perfSkip.orEmpty().joinToString(",")) }
@@ -756,7 +759,7 @@ fun AccountEditor(
                 if (loan) {
                     // 1.38 PC 1차: 자판 '다음'으로 원금 → 이자율 → 매달 갚는 돈, 고른 칸은 자판 위로 올라와요.
                     AmountField(if (initial == null) "남은 원금" else "남은 원금 (적기 시작할 때)", owedText, { owedText = it }, Modifier.aboveKeyboard())
-                    OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) }, singleLine = true,
+                    OutlinedTextField(value = rateText, onValueChange = { v -> rateText = com.bamnat.core.text.Numbers.cleanRate(v) }, singleLine = true,
                         label = { Text("연 이자율 % (모르면 비워 둬요)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth().aboveKeyboard())
                     AmountField("매달 갚는 돈", monthlyText, { monthlyText = it }, Modifier.aboveKeyboard(), imeAction = ImeAction.Done)
@@ -883,6 +886,9 @@ private fun DayStepper(label: String, day: Int, onChange: (Int) -> Unit) {
 
 private fun dayOfMonth(day: Int): String = if (day >= 31) "말일" else "${day}일"
 
+/** 2.0.0 [RVK-42] (검토 MONEY-15) What the editor saves for one kind: its rows in order and the names changed (from → to). */
+data class CategoryChange(val kind: MoneyKind, val edits: List<CategoryEdit>, val renames: List<Pair<String, String>>)
+
 /** One category in the editor: its name now, the name it had, and whether it is hidden. */
 private data class EditRow(val name: String, val was: String?, val hidden: Boolean) {
     companion object {
@@ -903,30 +909,42 @@ private data class EditRow(val name: String, val was: String?, val hidden: Boole
 @Composable
 fun CategoryEditor(
     book: MoneyBook,
-    onSave: (MoneyKind, List<CategoryEdit>, List<Pair<String, String>>) -> Unit,
+    onSave: (List<CategoryChange>) -> Unit,
     onDismiss: () -> Unit,
     startKind: MoneyKind = MoneyKind.EXPENSE,
 ) {
     var kind by rememberSaveable { mutableStateOf(startKind) }
     // 1.37 PC 4차: 예산 창과 같은 구조라 같이, 뒤로 가기 전에 바꾼 것을 버릴지 물어요.
-    val start = remember(kind) {
-        val mine = book.categories.filter { it.kind == kind }.sortedBy { it.position }
-        val shown = book.categoriesOf(kind).filter { it != MoneyCategories.OTHER }
+    fun startOf(k: MoneyKind): List<EditRow> {
+        val mine = book.categories.filter { it.kind == k }.sortedBy { it.position }
+        val shown = book.categoriesOf(k).filter { it != MoneyCategories.OTHER }
         val hidden = mine.filter { it.hidden }.map { it.name }
-        shown.map { EditRow(it, it, false) } + hidden.map { EditRow(it, it, true) }
+        return shown.map { EditRow(it, it, false) } + hidden.map { EditRow(it, it, true) }
     }
+    // 2.0.0 [RVK-42] (검토 MONEY-15·U06a-15) Each kind keeps its own changes: 지출 이름 셋을 고치고 수입 탭을 봐도 지출 쪽 고침이 남고, 저장은
+    // 바뀐 종류 모두예요 (before, a tab change made the rows again and the save kept only the kind on show).
+    val starts = MoneyKind.entries.associateWith { k -> remember(k) { startOf(k) } }
     // 2.0.0 [RVK-03] (MONEY-01): the names, order and hiding being changed come back after a rebuilt screen.
-    val rows = rememberSaveable(kind, saver = EditRow.Rows) { mutableStateListOf<EditRow>().apply { addAll(start) } }
+    val rowsBy = MoneyKind.entries.associateWith { k ->
+        rememberSaveable(k, saver = EditRow.Rows) { mutableStateListOf<EditRow>().apply { addAll(starts.getValue(k)) } }
+    }
+    val start = starts.getValue(kind)
+    val rows = rowsBy.getValue(kind)
+    val changed = MoneyKind.entries.filter { k -> rowsBy.getValue(k).toList() != starts.getValue(k) }
     var renaming by rememberSaveable { mutableStateOf<Int?>(null) }
     var adding by rememberSaveable { mutableStateOf("") }
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
-    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = rows.toList() != start || adding.isNotBlank(), closeButton = false) {
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = changed.isNotEmpty() || adding.isNotBlank(), closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("분류 고치기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                com.bamnat.app.ui.components.ChoiceRow(MoneyKind.entries.map { it.label }, selected = kind.ordinal, onSelect = { kind = MoneyKind.entries[it] },
-                    modifier = Modifier.padding(bottom = 8.dp))
+                // A kind with changes not saved yet says so on its tab: a dot ('지출 •') that stays on one line in a third of a folded
+                // phone, read out in words.
+                val waiting = { k: MoneyKind -> k in changed && k != kind }
+                com.bamnat.app.ui.components.ChoiceRow(MoneyKind.entries.map { k -> k.label + if (waiting(k)) " •" else "" },
+                    selected = kind.ordinal, onSelect = { kind = MoneyKind.entries[it] }, modifier = Modifier.padding(bottom = 8.dp),
+                    descriptions = MoneyKind.entries.map { k -> if (waiting(k)) "${k.label}, 저장 안 한 고침이 있어요" else k.label })
                 rows.forEachIndexed { i, r ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics(mergeDescendants = true) {
@@ -971,12 +989,15 @@ fun CategoryEditor(
             HorizontalDivider()
             Button(
                 onClick = {
-                    val edits = rows.mapIndexed { i, r -> CategoryEdit(kind, r.name, i, r.hidden) }
-                    val renames = rows.mapNotNull { r -> r.was?.takeIf { it != r.name }?.let { it to r.name } }
-                    onSave(kind, edits, renames)
+                    // Every kind changed; with none, the kind on show as before.
+                    onSave(changed.ifEmpty { listOf(kind) }.map { k ->
+                        val list = rowsBy.getValue(k)
+                        CategoryChange(k, list.mapIndexed { i, r -> CategoryEdit(k, r.name, i, r.hidden) },
+                            list.mapNotNull { r -> r.was?.takeIf { it != r.name }?.let { it to r.name } })
+                    })
                 },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
-            ) { Text("${kind.label} 분류 저장") }
+            ) { Text(changed.ifEmpty { listOf(kind) }.joinToString("·") { it.label } + " 분류 저장") }
         }
     }
     renaming?.let { i ->

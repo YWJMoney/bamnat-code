@@ -118,6 +118,13 @@ fun NewRecordsCard(
     onPick: (MoneyEntry, String) -> Unit = { _, _ -> },
     /** 2.0.0 [RVK-13] The calendar whose '자동으로 정리한 것' shows under the new lines. */
     calendarId: String? = null,
+    /**
+     * 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 to someone the app could not tell ([com.bamnat.core.money.LedgerSmarts.spentOrMoved]):
+     * '쓴 돈 / 내 계좌로 옮김' under it, once for each receiver.
+     */
+    spentOrMoved: (MoneyEntry) -> Boolean = { false },
+    onSpent: (MoneyEntry) -> Unit = {},
+    onMoved: (MoneyEntry) -> Unit = {},
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
     var clearing by remember { mutableStateOf(false) }
@@ -135,6 +142,7 @@ fun NewRecordsCard(
             unseen.take(10).forEach { e ->
                 androidx.compose.runtime.key(e.id) {
                     PendingRow(e, onOpen = { onOpen(e) }, onConfirm = { onConfirm(listOf(e)) }, onDelete = { onDelete(listOf(e)) })
+                    if (spentOrMoved(e)) SpentOrMovedRow(onSpent = { onSpent(e) }, onMoved = { onMoved(e) })
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -160,6 +168,7 @@ fun NewRecordsCard(
         }
         if (!waiting) unseen.take(10).forEach { e ->
             EntryRow(e, showDate = true) { onOpen(e) }
+            if (spentOrMoved(e)) SpentOrMovedRow(onSpent = { onSpent(e) }, onMoved = { onMoved(e) })
             // E 1.32 [LEDX-05] Not sure where it goes: the two likeliest, one tap each.
             if (e.category == "기타") {
                 val g = remember(e) { guesses(e) }
@@ -191,6 +200,22 @@ fun NewRecordsCard(
         }
         // 2.0.0 [RVK-13] 뿌리 7: what was taken for a copy or joined, a tap away from what was written.
         AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_MONEY, calendarId)
+    }
+}
+
+/**
+ * 2.0.0 [RVK-39] (검토 MONEY-42) Under a bank 출금 to someone else: was it spending (월세·송금·계좌 결제) or the user's own money moving?
+ * The same quiet chips as '혹시' (no filled button, 조건 2), wrapping at 200% (조건 12).
+ */
+@Composable
+private fun SpentOrMovedRow(onSpent: () -> Unit, onMoved: () -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
+    ) {
+        Text("이 돈은", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.AssistChip(onClick = onSpent, label = { Text("쓴 돈") })
+        androidx.compose.material3.AssistChip(onClick = onMoved, label = { Text("내 계좌로 옮김") })
     }
 }
 
@@ -485,7 +510,8 @@ fun PasteDialog(
     /** 1.38 [LEDH-29] 첫날 채우기: the steps for copying many texts at once from the messages app. */
     firstFill: Boolean = false,
 ) {
-    var text by rememberSaveable { mutableStateOf(initialText) }
+    var text by rememberSaveable { mutableStateOf(initialText.take(PASTE_MAX)) }
+    var cut by rememberSaveable { mutableStateOf(initialText.length > PASTE_MAX) }
     val rows = remember(text, existing, rules) {
         // Rows earlier in the same paste count too: the card text and the pay push for one payment.
         val seen = existing.toMutableList()
@@ -522,12 +548,14 @@ fun PasteDialog(
                     style = MaterialTheme.typography.bodyMedium)
                 Text("카드·은행 문자를 길게 눌러 복사한 뒤 붙여 넣어요. 여러 건도 한 번에 돼요. 문자 원문은 저장하지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = text, onValueChange = { text = it.take(20_000) }, label = { Text("문자 내용") },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), maxLines = 8)
+                // 2.0.0 [RVK-42] (검토 U06a-18) More than fits is said, not cut without a word: '앞 20,000자만 읽었어요'.
+                OutlinedTextField(value = text, onValueChange = { cut = it.length > PASTE_MAX; text = it.take(PASTE_MAX) }, label = { Text("문자 내용") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), maxLines = 8,
+                    supportingText = if (cut) { { Text("앞 ${com.bamnat.core.text.Numbers.grouped(PASTE_MAX.toLong())}자만 읽었어요. 나머지는 한 번 더 붙여 넣어 주세요.") } } else null)
                 // [INPUT-04] A payment message just copied: one tap, read only when tapped (계획/1.24-Q-개발계획.md Q-D1).
                 if (text.isBlank()) com.bamnat.app.ui.components.ClipboardHint("결제 문자",
                     fits = { t -> PaymentParser.splitMessages(t).any { PaymentParser.parse(it, Today.dateTime(), rules) is PaymentParser.Result.Ok } },
-                    onPaste = { text = it.take(20_000) })
+                    onPaste = { cut = it.length > PASTE_MAX; text = it.take(PASTE_MAX) })
                 rows.forEachIndexed { i, r ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = r.entry != null && i !in skipped, enabled = r.entry != null,
@@ -840,3 +868,6 @@ fun PlacesSection(places: List<MoneyStats.Place>, selected: String?, onSelect: (
         }
     }
 }
+
+/** 2.0.0 [RVK-42] (검토 U06a-18) How much pasted text is read at once (a month of a card's texts fits many times). */
+private const val PASTE_MAX = 20_000

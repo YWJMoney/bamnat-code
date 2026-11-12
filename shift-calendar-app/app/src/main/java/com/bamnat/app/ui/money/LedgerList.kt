@@ -265,8 +265,10 @@ fun LedgerListPane(
                 if (shown.isEmpty()) {
                     item(key = "empty") {
                         when {
+                            // 2.0.0 [RVK-35] (PC-126) One '돈 적기': the floating one, always there (this one stood beside it). Named as it
+                            // shows: with big letters it is only its +.
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd,
+                                (if (com.bamnat.app.ui.components.bigLetters()) "아래 + 단추" else "아래 ‘돈 적기’") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
                                 kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })
@@ -405,9 +407,11 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
     }
 }
 
+// 2.0.0 [RVK-35] (PC-126) On the folded phone '전체' was cut at the right edge of a row that slid: the five wrap now, all seen.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PeriodChips(view: LedgerView, month: YearMonth, onView: (LedgerView) -> Unit, cycle: com.bamnat.core.money.PayCycle.Range? = null) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LedgerPeriod.entries.forEach { p ->
             val label = when (p) {
                 LedgerPeriod.MONTH -> cycle?.label ?: Fmt.monthShort(month)
@@ -674,10 +678,18 @@ private fun LedgerRow(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    // 2.0.0 [RVK-42] Big letters: a long name ('라마바전자 무선청소기') takes two lines before it is cut.
+                    Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = if (com.bamnat.app.ui.components.bigLetters()) 2 else 1,
+                        overflow = TextOverflow.Ellipsis)
                     if (caption.isNotEmpty()) {
                         Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay. 2.0.0 [RVK-42] (조건 12) Its own line under the
+                    // name: beside the amount it squeezed the name to '라마바전…' and the card to '신한 De…' on a folded phone.
+                    if (e.installments > 1) {
+                        Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date(), book.accounts) ?: "${e.installments}개월 할부",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                     }
                     if (e.tags.isNotEmpty() || e.memo.isNotBlank()) {
                         Text((e.tags.map { "#$it" } + listOfNotNull(e.memo.takeIf { it.isNotBlank() })).joinToString(" "),
@@ -694,9 +706,7 @@ private fun LedgerRow(
                         fontWeight = amountPart.weight?.let { FontWeight(it) } ?: FontWeight.Bold,
                         color = amountPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: amountColor(e), maxLines = 1)
                     when {
-                        // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay.
-                        e.installments > 1 -> Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) ?: "${e.installments}개월 할부",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        e.installments > 1 -> Unit
                         e.kind == MoneyKind.TRANSFER -> Text("이체", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.amount < 0 -> Text("취소", style = MaterialTheme.typography.labelSmall, color = cal.income)
                         // 1.37 [LEDH-07] 근무 시간 환산, for spending of 5만 원 and more.

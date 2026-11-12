@@ -182,7 +182,7 @@ internal fun CaptureTuneDialog(onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val prefs by c.autoRecordPrefs.state.collectAsStateWithLifecycle()
     var names by rememberSaveable { mutableStateOf(prefs.myNames.joinToString(", ")) }
-    var fee by rememberSaveable { mutableStateOf("%.2f".format(prefs.abroadFee * 100).trimEnd('0').trimEnd('.')) }
+    var fee by rememberSaveable { mutableStateOf(com.bamnat.core.text.Numbers.plain(prefs.abroadFee * 100, 2)) }
     var cur by rememberSaveable { mutableStateOf("") }
     var rate by rememberSaveable { mutableStateOf("") }
     AlertDialog(
@@ -195,21 +195,21 @@ internal fun CaptureTuneDialog(onDismiss: () -> Unit) {
                 Muted("이 이름으로 들어온 돈은 수입이 아니라 내 계좌끼리 옮긴 돈으로 적어요. 홍*동처럼 가려 와도 알아봐요. 휴대폰에만 있어요")
                 HorizontalDivider()
                 Text("해외 결제", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(fee, { fee = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, label = { Text("해외 이용 수수료 (%)") }, singleLine = true,
+                OutlinedTextField(fee, { fee = com.bamnat.core.text.Numbers.cleanRate(it) }, label = { Text("해외 이용 수수료 (%)") }, singleLine = true,
                     visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 Muted("카드사 안내문의 ‘해외 이용 수수료’예요. 보통 브랜드 1% + 해외 서비스 0.18~0.25%예요")
                 if (prefs.rates.isNotEmpty()) {
                     Text("내 환율", style = MaterialTheme.typography.labelLarge)
                     prefs.rates.entries.sortedBy { it.key }.forEach { (k, v) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("$k 1 = ${"%,.2f".format(v)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text("$k 1 = ${"%,.2f".format(java.util.Locale.ROOT, v)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             IconButton(onClick = { c.autoRecordPrefs.setRate(k, null) }) { Icon(Icons.Filled.Close, "$k 환율 지우기") }
                         }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(cur, { cur = it.filter { ch -> ch.isLetter() }.uppercase().take(3) }, label = { Text("통화") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(rate, { rate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(9) }, label = { Text("1단위 원") }, singleLine = true,
+                    OutlinedTextField(rate, { rate = com.bamnat.app.ui.invest.cleanDecimal(it).take(9) }, label = { Text("1단위 원") }, singleLine = true,
                         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1.4f))
                     TextButton(enabled = cur.length == 3 && (rate.toDoubleOrNull() ?: 0.0) > 0, onClick = {
                         c.autoRecordPrefs.setRate(cur, rate.toDoubleOrNull()); cur = ""; rate = ""

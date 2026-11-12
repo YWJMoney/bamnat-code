@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.invest
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -19,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
@@ -83,10 +85,13 @@ import com.bamnat.app.ui.theme.bamnat
 /** [INV-01] Which of the investor's sheets is open. */
 sealed interface InvestSheet {
     data class TradeEdit(val draft: TradeDraft? = null, val editing: Trade? = null) : InvestSheet
-    data class CashEdit(val kind: CashKind = CashKind.DEPOSIT, val date: LocalDate? = null, val editing: CashFlow? = null) : InvestSheet
+    /** 2.0.0 [RVK-34] (검토 U06b-03) [symbol]·[accountId]: a 종목 card's '배당' opens with that 종목 and its account. */
+    data class CashEdit(val kind: CashKind = CashKind.DEPOSIT, val date: LocalDate? = null, val editing: CashFlow? = null, val symbol: String = "",
+                        val accountId: Long? = null) : InvestSheet
     data class AccountEdit(val editing: InvestAccount? = null) : InvestSheet
     data object Quotes : InvestSheet
-    data class AlarmEdit(val kind: AlarmKind = AlarmKind.PLAN, val editing: InvestAlarm? = null) : InvestSheet
+    /** [RVK-34] (U06b-03) [holding]: a 종목 card's '목표가 알람' opens with that 종목 and market. */
+    data class AlarmEdit(val kind: AlarmKind = AlarmKind.PLAN, val editing: InvestAlarm? = null, val holding: TradeDraft? = null) : InvestSheet
     data class EventEdit(val date: LocalDate? = null, val editing: InvestEvent? = null) : InvestSheet
     data object Goal : InvestSheet
     data object Principles : InvestSheet
@@ -111,10 +116,10 @@ fun InvestSheetHost(vm: InvestViewModel, sheet: InvestSheet, onSheet: (InvestShe
             onQuantity = { d -> onSheet(InvestSheet.QuantityEdit(d)) })
         is InvestSheet.QuantityEdit -> QuantityChangeSheet(vm, state, sheet.draft, sheet.editing, onDismiss = close)
         is InvestSheet.Story -> HoldingStorySheet(state, sheet.key, sheet.accountId, onDismiss = close, open = onSheet)
-        is InvestSheet.CashEdit -> CashSheet(vm, state, sheet.kind, sheet.date, sheet.editing, onDismiss = close)
+        is InvestSheet.CashEdit -> CashSheet(vm, state, sheet.kind, sheet.date, sheet.editing, onDismiss = close, symbol0 = sheet.symbol, account0 = sheet.accountId)
         is InvestSheet.AccountEdit -> AccountSheet(vm, sheet.editing, onDismiss = close)
         InvestSheet.Quotes -> QuoteSheet(vm, state, onDismiss = close, open = onSheet)
-        is InvestSheet.AlarmEdit -> AlarmSheet(vm, state, sheet.kind, sheet.editing, onDismiss = close)
+        is InvestSheet.AlarmEdit -> AlarmSheet(vm, state, sheet.kind, sheet.editing, onDismiss = close, from = sheet.holding)
         is InvestSheet.EventEdit -> EventSheet(vm, sheet.date ?: state.today, sheet.editing, onDismiss = close)
         InvestSheet.Goal -> GoalSheet(vm, state, onDismiss = close)
         InvestSheet.Principles -> PrinciplesSheet(vm, state, onDismiss = close)
@@ -266,6 +271,12 @@ internal fun TradeSheet(
     var deleting by remember { mutableStateOf(false) }
     // 2.0.0 [RVK-31] (검토 MONEY-66) A 국내 ETF's kind, picked here once and kept for that holding.
     var etfPicked by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    // 2.0.0 [RVK-34] (검토 U06b-05) 이유·마음·원칙·메모 open for someone who writes them (this trade has some, or any trade
+    // before), one line for everyone else.
+    var notesOpen by rememberSaveable {
+        mutableStateOf(tags.isNotEmpty() || emotions.isNotEmpty() || rules != null || memo.isNotBlank() ||
+            book.trades.any { it.tags.isNotEmpty() || it.emotions.isNotEmpty() || it.followedRules != null || it.memo.isNotBlank() })
+    }
 
     val q = qty.toDecimal() ?: 0.0
     val p = price.toDecimal() ?: 0.0
@@ -354,7 +365,7 @@ internal fun TradeSheet(
             ChoiceChips(listOf(false, true), { it == etfTaxed }, { if (it) "해외지수·채권·원자재 등" else "국내주식형" }, { etfPicked = it })
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            DecimalField("수량", qty, { qty = it }, Modifier.weight(1f), suffix = if (market == Market.CRYPTO) "개" else "주")
+            DecimalField("수량", qty, { qty = it }, Modifier.weight(1f), suffix = market.unit)
             DecimalField(if (market.foreign) "단가 (달러)" else "단가", price, { price = it }, Modifier.weight(1.3f), suffix = if (market.foreign) "$" else "원")
         }
         if (side == Side.SELL && held > EPS) {
@@ -364,7 +375,7 @@ internal fun TradeSheet(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("이 계좌에 ${InvestFmt.quantity(held)}${if (market == Market.CRYPTO) "개" else "주"} 있어요", style = MaterialTheme.typography.bodySmall,
+                Text("이 계좌에 ${InvestFmt.quantity(held)}${market.unit} 있어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 TextButton(onClick = { qty = InvestFmt.input(held) }) { Text("전부") }
                 TextButton(onClick = { qty = InvestFmt.input(if (market.fractional) held / 2 else kotlin.math.floor(held / 2)) }) { Text("절반") }
@@ -433,21 +444,30 @@ internal fun TradeSheet(
         }
         DateRow(runCatching { LocalDate.parse(date) }.getOrDefault(state.today), minute, { date = it.toString() }, { minute = it })
         HorizontalDivider()
-        FieldLabel("이유")
-        ChoiceChips(REASON_TAGS, { it in tags }, { it }, { t -> if (t in tags) tags.remove(t) else tags.add(t) })
-        FieldLabel("그때 마음")
-        ChoiceChips(Emotion.entries, { it in emotions }, { it.label }, { e -> if (e in emotions) emotions.remove(e) else emotions.add(e) })
-        FieldLabel("내 원칙")
-        ChoiceChips(listOf(true, false), { rules == it }, { if (it) "지켰어요" else "어겼어요" }, { v -> rules = if (rules == v) null else v })
-        LongTextField(memo, { memo = it.take(500) }, label = { Text("메모") }, placeholder = { Text("왜 샀는지, 언제 팔지") },
-            modifier = Modifier.fillMaxWidth(), minLines = 2)
+        if (notesOpen) {
+            FieldLabel("이유")
+            ChoiceChips(REASON_TAGS, { it in tags }, { it }, { t -> if (t in tags) tags.remove(t) else tags.add(t) })
+            FieldLabel("그때 마음")
+            ChoiceChips(Emotion.entries, { it in emotions }, { it.label }, { e -> if (e in emotions) emotions.remove(e) else emotions.add(e) })
+            FieldLabel("내 원칙")
+            ChoiceChips(listOf(true, false), { rules == it }, { if (it) "지켰어요" else "어겼어요" }, { v -> rules = if (rules == v) null else v })
+            LongTextField(memo, { memo = it.take(500) }, label = { Text("메모") }, placeholder = { Text("왜 샀는지, 언제 팔지") },
+                modifier = Modifier.fillMaxWidth(), minLines = 2)
+        } else Row(
+            // 2.0.0 [RVK-34] (검토 U06b-05) One line until wanted: 수량·단가·요약 come first and the sheet ends at 저장.
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Button) { notesOpen = true },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("이유·마음·메모 적기", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
     }
     if (editingFees) FeeRatesDialog(book.settings, onDismiss = { editingFees = false }) { buy, sell ->
         vm.saveSettings { it.copy(buyFeeRate = buy, sellFeeRate = sell) }
         editingFees = false
     }
     if (deleting && start != null) ConfirmDialog(
-        title = "이 매매를 지울까요?", message = "${start.title} ${start.side.label} ${InvestFmt.quantity(start.quantity)}주 기록이 없어지고 손익도 다시 계산돼요. 바로 되돌릴 수 있어요.",
+        title = "이 매매를 지울까요?", message = "${start.title} ${start.side.label} ${InvestFmt.quantity(start.quantity)}${start.market.unit} 기록이 없어지고 손익도 다시 계산돼요. 바로 되돌릴 수 있어요.",
         confirmLabel = "지우기", destructive = true, onDismiss = { deleting = false },
         onConfirm = { deleting = false; vm.deleteTrade(start); onDismiss() },
     )
@@ -458,17 +478,19 @@ internal fun TradeSheet(
  * sheet shows what it does to 원금, 수익률, cash and the goal, before it is saved.
  */
 @Composable
-internal fun CashSheet(vm: InvestViewModel, state: InvestState, kind0: CashKind, date0: LocalDate?, editing: CashFlow?, onDismiss: () -> Unit) {
+internal fun CashSheet(vm: InvestViewModel, state: InvestState, kind0: CashKind, date0: LocalDate?, editing: CashFlow?, onDismiss: () -> Unit,
+                       symbol0: String = "", account0: Long? = null) {
     val book = state.full
     val accounts = book.activeAccounts
     var kind by rememberSaveable { mutableStateOf(editing?.kind ?: kind0) }
     var accountId by rememberSaveable {
-        mutableStateOf(editing?.accountId ?: (state.account ?: book.settings.lastAccountId)?.takeIf { id -> accounts.any { it.id == id } } ?: accounts.firstOrNull()?.id ?: 0L)
+        mutableStateOf(editing?.accountId ?: (account0 ?: state.account ?: book.settings.lastAccountId)?.takeIf { id -> accounts.any { it.id == id } }
+            ?: accounts.firstOrNull()?.id ?: 0L)
     }
     var amount by rememberSaveable { mutableStateOf(amountDigits(editing?.amount ?: 0)) }
     var taxText by rememberSaveable { mutableStateOf(amountDigits(editing?.tax ?: 0)) }
     var taxTyped by rememberSaveable { mutableStateOf(editing != null) }
-    var symbol by rememberSaveable { mutableStateOf(editing?.symbol ?: "") }
+    var symbol by rememberSaveable { mutableStateOf(editing?.symbol ?: symbol0) }
     var memo by rememberSaveable { mutableStateOf(editing?.memo ?: "") }
     var date by rememberSaveable { mutableStateOf((editing?.date ?: date0 ?: state.today).toString()) }
     var deleting by remember { mutableStateOf(false) }
@@ -548,7 +570,7 @@ private fun CashPreview(state: InvestState, cashDelta: Long, principalDelta: Lon
         if (principalDelta != 0L) add("원금 ${InvestFmt.short(s.principal, hide)} → ${InvestFmt.short(newPrincipal, hide)}")
         add("수익률 ${InvestFmt.percent(s.simpleReturn)} → ${InvestFmt.percent(newRate)}")
         add("현금 ${InvestFmt.short(s.cash, hide)} → ${InvestFmt.short(s.cash + (newAssets - s.totalAssets), hide)}")
-        state.settings.goalAmount?.let { g -> add("목표 ${InvestFmt.short(g, hide)}까지 ${"%.0f".format(newAssets * 100.0 / g)}%") }
+        state.settings.goalAmount?.let { g -> add("목표 ${InvestFmt.short(g, hide)}까지 ${"%.0f".format(java.util.Locale.ROOT, newAssets * 100.0 / g)}%") }
     }
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {

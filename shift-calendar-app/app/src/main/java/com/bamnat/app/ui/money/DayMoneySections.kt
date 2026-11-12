@@ -184,8 +184,10 @@ fun DayLedgerSection(
     val memoAmounts = remember(memoText, entries) { MemoAmounts.pending(memoText, entries) }
     var addingJob by rememberSaveable { mutableStateOf(false) }
     var editing by rememberOpenLine<MoneyEntry>({ it.id }) { id -> entries.firstOrNull { it.id == id } }
+    // 2.0.0 [RVK-41] (검토 MONEY-11·48) From the calendar the actions carry no book: the calendar's own, as the line sheet reads it.
+    val ledger = rememberLedger(actions.ledger)
     SectionCard(title = "가계부") {
-        entries.forEach { e -> EntryRow(e) { editing = e } }
+        entries.forEach { e -> EntryRow(e, accounts = ledger.accounts) { editing = e } }
         // [WORK-05] "+50,000" or "수입 5만원" in the day's memo is offered as a line; nothing is added until saved.
         memoAmounts.forEach { f ->
             SuggestionChip(
@@ -247,7 +249,12 @@ fun DayLedgerSection(
  * [LEDG-11] A split line, installments, tags and a memo show in the second line.
  */
 @Composable
-fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
+fun EntryRow(
+    e: MoneyEntry, showDate: Boolean = false,
+    /** 2.0.0 [RVK-37] (검토 MONEY-48) The book's accounts, so a 할부's 회차 counts from its card's first bill. */
+    accounts: List<com.bamnat.core.money.MoneyAccount> = emptyList(),
+    onClick: () -> Unit,
+) {
     // 2.0.0 [RVK-21]·HQ-23 (총괄 #457 리뷰): at large text a long shop name and its date line were cut to '…' beside the amount.
     // There they wrap to two lines and, like every 'name … amount' row (NameAndAmount), the amount goes under them when both do
     // not fit on one line, so the name has the row's whole width; at 100% the row is as before.
@@ -268,7 +275,7 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
                     if (showDate) Fmt.shortDate(e.date) else null, e.time?.let(Fmt::time),
                     if (e.isSplit) "${e.shares().size}개 분류" else e.category,
                     if (e.kind == MoneyKind.TRANSFER) "이체" else null,
-                    if (e.installments > 1) com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) else null, source,
+                    if (e.installments > 1) com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date(), accounts) else null, source,
                     e.note.takeIf { it.isNotBlank() && e.merchant.isNotBlank() },
                     e.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
                 ).joinToString(" · "),

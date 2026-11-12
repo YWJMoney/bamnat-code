@@ -3074,9 +3074,13 @@ private fun PaintBar(
  */
 @Composable
 internal fun MonthJumpTitle(month: YearMonth, onPick: (YearMonth) -> Unit, modifier: Modifier = Modifier,
-                            style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium, suffix: String = "") {
+                            style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleMedium, suffix: String = "",
+                            // 2.0.0 [RVK-35] (PC-126, 가계부·통계 머리) Large letters on a folded phone: '10월' ('25년 10월' another year), as the
+                            // calendar's head does, so ‹ ›, 찾기, ⋮ and 나 keep their places (나 was pushed past the edge at 200%).
+                            short: Boolean = LocalDensity.current.fontScale >= 1.3f && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400) {
     var open by remember { mutableStateOf(false) }
-    Text(Fmt.month(month) + suffix, style = style, maxLines = 1, softWrap = false,
+    val title = if (!short) Fmt.month(month) else if (month.year == Today.date().year) Fmt.monthShort(month) else "${month.year % 100}년 ${month.monthValue}월"
+    Text(title + suffix, style = style, maxLines = 1, softWrap = false,
         modifier = modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "연·월 고르기", role = Role.Button) { open = true }
             .padding(horizontal = 4.dp, vertical = 6.dp))
     if (open) MonthPickerDialog(month, onDismiss = { open = false }, onPick = { open = false; onPick(it) })

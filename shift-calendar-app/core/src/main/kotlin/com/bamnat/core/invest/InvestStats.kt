@@ -174,7 +174,7 @@ object InvestMonthSummary {
             }
         }
 
-        private fun won(v: Long) = "%,d원".format(v)
+        private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
     }
 
     /** The trades dated in [month] and the realised result of its sells, in won. */

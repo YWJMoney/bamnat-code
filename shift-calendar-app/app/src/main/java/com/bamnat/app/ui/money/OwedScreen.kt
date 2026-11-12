@@ -15,7 +15,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -74,10 +73,8 @@ import androidx.compose.material3.MaterialTheme
 import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -214,8 +211,9 @@ class OwedViewModel(
 
     fun deletePayment(p: ReceivablePayment) {
         container.appScope.launch {
-            money.delete(p)
-            _messages.emit(UndoMessage("받은 기록을 지웠어요"))
+            // 2.0.0 [RVK-42] (검토 MONEY-10·U06a-19) Like every other step here, with 되돌리기: the payment and its income line come back.
+            val back = money.takeBack(p)
+            _messages.emit(UndoMessage("받은 기록을 지웠어요" + if (p.entryId != null) " (수입에서도 뺌)" else "") { back() })
         }
     }
 
@@ -292,12 +290,9 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     androidx.activity.compose.BackHandler(enabled = searching) { searching = false; query = "" }
     var person by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
-    LaunchedEffect(vm) {
-        vm.messages.collect { m ->
-            val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) vm.runUndo(m)
-        }
-    }
+    // 2.0.0 [RVK-42] (검토 MONEY-14·U06a-19) A 되돌리기 shows at once and for 8 s (it was 4 s, behind the line before: 밀어서 '다 받음'을
+    // 잘못했을 때 되돌리기가 이미 지나갔어요).
+    LaunchedEffect(vm) { vm.messages.collect { m -> com.bamnat.app.ui.components.AppSnack.post(m, vm::runUndo) } }
     val owed = remember(book, today) { book.owed(today) }
     val summary = remember(book, today) { Receivables.summary(book.receivables, book.jobs, today) }
     val counts = remember(owed, today) { Receivables.counts(owed, today) }
@@ -560,7 +555,7 @@ private fun MeterRow(label: String, value: String, fraction: Float, color: Color
 }
 
 /** Tabs, chips, the search field and a person picked from the breakdown, over the list. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun Controls(
     show: Show, onShow: (Show) -> Unit, owedCount: Int, doneCount: Int,
@@ -580,7 +575,8 @@ private fun Controls(
             )
         }
         if (show == Show.OWED && owedCount > 0) {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 2.0.0 [RVK-35] (PC-126과 같은 구조) The filters wrap instead of sliding off the folded phone's edge.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // A chip with nothing behind it is left out, unless it is the one picked.
                 OwedFilter.entries.filter { it == OwedFilter.ALL || it == filter || (counts[it] ?: 0) > 0 }.forEach { f ->
                     FilterChip(selected = filter == f, onClick = { onFilter(f) },

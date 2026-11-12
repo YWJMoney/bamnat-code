@@ -88,7 +88,15 @@ fun LedgerReportsPane(
     /** 1.39 [FLOW-18] The shown month's category budgets, for the 잘 쓴 곳·많이 쓴 곳 chips. */
     budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
 ) {
-    if (analysis == null) return
+    if (analysis == null) {
+        // 2.0.0 [RVK-42] (검토 MONEY-20·U06a-16) The first count of a long book takes a moment: grey rows the shape of the cards and one
+        // line saying so, not an empty page under the header ('통계가 안 나와요'). Opened again, the last count shows at once (rememberLast).
+        Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("세는 중이에요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.bamnat.app.ui.components.SkeletonRows(count = 4, dot = false)
+        }
+        return
+    }
     val places = remember(book, month) { MoneyStats.places(book.entries, month) }
     val r = analysis.report
     val m = analysis.month
