@@ -24,6 +24,12 @@ class RvkScreenshotTest : ScreenshotBase() {
     private fun entryPlain(): Screen.() -> Unit = {
         content { com.bamnat.app.ui.money.EntryDialog(today, null, onSave = {}, onDismiss = {}) }
         settle()
+        // 총괄 #457: the icon says what it does and is a 48dp place to press (조건 9·14). // K-NEW
+        val icon = nodes().single { it.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { emptyList() }.contains("계산하기") } // K-NEW
+        val dp = app.resources.displayMetrics.density // K-NEW
+        // Drawn 40dp like every icon button; the place a finger lands is the 48dp around it. // K-NEW
+        val touch = icon.touchBoundsInRoot // K-NEW
+        org.junit.Assert.assertTrue("계산기 아이콘 누르는 곳 $touch", touch.width >= 48 * dp - 1 && touch.height >= 48 * dp - 1) // K-NEW
     }
 
     /** [RVK-15] 돈 적기 with "36000÷3" in the amount: + − × ÷ = under it and "= 12,000원". */

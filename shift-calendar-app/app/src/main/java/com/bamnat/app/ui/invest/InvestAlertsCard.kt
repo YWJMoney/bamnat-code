@@ -153,7 +153,7 @@ private fun AccountChip(into: com.bamnat.core.invest.InvestAccount, accounts: Li
             trailingIcon = if (many) { { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.ArrowDropDown, null) } } else null,
             modifier = Modifier.semantics { contentDescription = "${into.name} 계좌로 적어요" + if (many) ", 눌러서 바꾸기" else "" },
         )
-        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        com.bamnat.app.ui.components.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             accounts.forEach { a ->
                 androidx.compose.material3.DropdownMenuItem(
                     text = { Text(a.name + (a.broker.takeIf { it.isNotBlank() && it != a.name }?.let { " · $it" } ?: "")) },
