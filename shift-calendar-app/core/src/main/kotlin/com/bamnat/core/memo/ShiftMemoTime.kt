@@ -97,6 +97,12 @@ object ShiftMemoTime {
         return { d -> byDate[d.date.minusDays(1)] }
     }
 
+    /** 2.0.0 [RVIB-04] (검토 I07ac-01) The next time [anchor] is told after [now] over [days] (the work days among them), or null. */
+    fun workNext(days: List<Day>, anchor: WorkAnchor, now: LocalDateTime): LocalDateTime? = days.asSequence()
+        .filter { it.work && it.start != null && it.end != null }
+        .mapNotNull { anchor.on(it.date, it.start!! to it.end!!) }
+        .filter { it.isAfter(now) }.minOrNull()
+
     /** For the dialog: the next of each kind of shift ahead, and the next day off, soonest first, at most [max]. */
     fun suggestions(days: List<Day>, now: LocalDateTime, max: Int = 4): List<Suggestion> {
         val seen = HashSet<String>()

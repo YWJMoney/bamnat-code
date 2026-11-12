@@ -2,7 +2,17 @@ package com.bamnat.core.memo
 
 import java.time.LocalDate
 
-data class ChecklistItem(val text: String, val checked: Boolean = false)
+/**
+ * One line of a checklist. 2.0.0 [RVIB-02] (검토 I07ab-03) 하위 할 일과 우선순위: a line can be [starred] (it goes to the top of the
+ * open lines and stays there), carry a [time] of its own (shown by the line; it does not ring) and a short [note] under it.
+ */
+data class ChecklistItem(
+    val text: String,
+    val checked: Boolean = false,
+    val starred: Boolean = false,
+    val time: java.time.LocalTime? = null,
+    val note: String = "",
+)
 
 /**
  * A note. It can belong to a calendar date or stand alone, and can be plain text or a checklist.
@@ -216,19 +226,33 @@ object MemoCalendars {
 }
 
 /**
- * Stores a checklist in one text column. One item per line: the first character is
- * '1' (checked) or '0', and backslash, newline and carriage return are escaped,
- * so any text round-trips exactly.
+ * Stores a checklist in one text column. One item per line: the first character is a digit, 1 for checked plus 2 for
+ * starred ('0'~'3'; lists written before 2.0.0 have only '0' and '1'), and backslash, newline, carriage return and the unit
+ * separator are escaped, so any text round-trips exactly. 2.0.0 [RVIB-02] A line with a time or a note ends with
+ * US time US note (the time as HH:MM, or nothing).
  */
 object ChecklistCodec {
-    fun encode(items: List<ChecklistItem>): String =
-        items.joinToString("\n") { (if (it.checked) "1" else "0") + escape(it.text) }
+    private const val SEP = '\u001F'
+
+    fun encode(items: List<ChecklistItem>): String = items.joinToString("\n") {
+        val flag = (if (it.checked) 1 else 0) + (if (it.starred) 2 else 0)
+        val extra = if (it.time == null && it.note.isEmpty()) "" else "$SEP${it.time?.toString().orEmpty()}$SEP${escape(it.note)}"
+        flag.toString() + escape(it.text) + extra
+    }
 
     fun decode(raw: String?): List<ChecklistItem> {
         if (raw.isNullOrEmpty()) return emptyList()
         return raw.split('\n').mapNotNull { line ->
             if (line.isEmpty()) return@mapNotNull null
-            ChecklistItem(text = unescape(line.substring(1)), checked = line[0] == '1')
+            val flag = line[0].digitToIntOrNull() ?: 0
+            val parts = line.substring(1).split(SEP)
+            ChecklistItem(
+                text = unescape(parts[0]),
+                checked = flag and 1 != 0,
+                starred = flag and 2 != 0,
+                time = parts.getOrNull(1)?.takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() },
+                note = parts.getOrNull(2)?.let(::unescape).orEmpty(),
+            )
         }
     }
 
@@ -237,6 +261,7 @@ object ChecklistCodec {
             '\\' -> append("\\\\")
             '\n' -> append("\\n")
             '\r' -> append("\\r")
+            SEP -> append("\\u")
             else -> append(c)
         }
     }
@@ -249,6 +274,7 @@ object ChecklistCodec {
                 when (s[i + 1]) {
                     'n' -> append('\n')
                     'r' -> append('\r')
+                    'u' -> append(SEP)
                     else -> append(s[i + 1])
                 }
                 i += 2

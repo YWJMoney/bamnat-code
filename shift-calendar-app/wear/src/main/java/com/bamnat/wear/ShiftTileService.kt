@@ -67,7 +67,7 @@ class ShiftTileService : TileService() {
             col.addContent(text(if (p == null) WatchText.NO_DATA else WatchText.notSent(p), 15f, WHITE, lines = 3))
         } else {
             col.addContent(space(4f))
-            col.addContent(text(d.name, 24f, readable(d.colorArgb), bold = true))
+            col.addContent(text(d.shown, 24f, readable(d.colorArgb), bold = true)) // 2.0.0 [RVIB-09] (SN-18)
             if (d.times.isNotEmpty()) col.addContent(text(d.times, 16f, WHITE))
             WatchDays.on(p.days, today.plusDays(1))?.let { t ->
                 col.addContent(space(6f))

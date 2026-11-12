@@ -2694,3 +2694,39 @@ RVJ-19,"검토 품질 조건 6(PR #444 총괄 검토): 사장님 급여 직원 �
 QA-10,"2.0.0 통합: 화면 사진 시험이 누르는 때에 따라 흔들림(NtcScreenshotTest.replaceTurnsTheOldOneOffAndUndoBringsItBack 161줄, #444·#446 CI와 로컬 재현). 작품 상세 '규칙 1개 넣기'는 글이 먼저 보이고 '내 달력 미리 보기'가 끝나야 켜지는데, 시험이 꺼진 단추를 눌러 넣기 창이 안 열림 → tapText가 꺼진 단추는 켜질 때까지(5초까지) 기다렸다 눌러요(건너뛰기 없음)",2.0.0,진행 중,,"ScreenshotBase.tapText, NtcScreenshotTest 7개(고친 뒤 로컬에서 4번 이어 돌려 모두 통과, 2026-11-12)"
 PC-32,"2.0.0 통합 1차 PC 확인: 회사 서버에는 도는 판을 알려 주는 주소가 없었어요(/api/health 없음, /api/admin/health에 판 없음) → /api/admin/health가 version을 주고 배포 도구가 그 값으로 지금 판·새 판을 봐요(갈래 D, RVD-19와 함께)",2.0.0,진행 중,,"server/company-worker test_company_health_says_its_version, tools/deploy_worker.py company_ok (#442 99bcb42b)"
 QA-11,"2.0.0 통합: 화면 사진 시험이 느린 실행기에서 흔들림(BBScreenshotTest.usingASetupInTheSecondCalendarKeepsTheMainOne 120줄, #446 CI shots-b). 회사 설정 적용은 저장을 뒤쪽 스레드에서 한 뒤 끝났다고 알리는데, 시험은 화면 스레드의 시계만 300ms 돌리고 바로 확인했어요 → 끝날 때까지(5초까지) 기다리는 waitUntil을 두고 같은 모양 네 곳을 바꿔요(건너뛰기 없음)",2.0.0,진행 중,,"ScreenshotBase.waitUntil, APScreenshotTest 2곳·BAScreenshotTest 1곳·BBScreenshotTest 1곳"
+RVI-73,검토 U07a-07·I07aa-05·T07a-09·T07a-10: 반복을 고르는 곳이 편집기 칩과 일정 창에 따로·여러 요일·격주·둘째 수요일·N일마다·끝나는 날 없음 → 반복 창 하나(다음 날짜 미리 보기),2.0.0,진행 중,,ui/memo/MemoRepeatSheet.kt; core memo/MemoRepeat.kt
+RVI-74,"검토 U07a-01·I07aa-01: 카드에서 끝내려면 열어야 함 → 카드 왼쪽 동그라미 한 번으로 끝냄(할 일인 것만), 체크리스트 줄도 카드에서, 최근 수정순 자리 그대로",2.0.0,진행 중,,ui/memo/MemoViews.kt; core memo/TaskList.finishable
+RVI-75,검토 U07a-06(디자인 품질 3): '일정으로 넣을까요?'가 큰 카드·채운 단추 → 공통 한 줄 안내(NudgeCard) '10월 15일 (목) 오후 3:00 · 알림 넣기',2.0.0,진행 중,,ui/memo/MemoScheduleParts.kt ScheduleOffer
+RVI-76,검토 U07a-11: 한 줄 창에서 '다음 야간 때'를 못 읽음 → 내 달력의 다가오는 근무로 읽음,2.0.0,진행 중,,memo/QuickTaskActivity.kt
+RVI-77,"검토 U07a-02·03·I07ab-01(대기열 TASK-01·03·40): 메모 탭 첫 메모가 330dp 아래 → 맨 위 '오늘' 묶음(늦음·오늘·고정, 할 일 위젯과 같은 목록)과 한 줄로 적기",2.0.0,진행 중,,ui/memo/MemoTodayBlock.kt
+RVI-78,검토 T07a-04: 근무마다 메모가 화면의 달력을 따라감 → 알림이 따르는 달력 하나로,2.0.0,진행 중,,ui/memo/MemoViewModels.kt shiftCal
+RVI-79,검토 U07a-10·T07a-05: 일정 창이 근무 중·야간 뒤 잘 시간으로 시작 → 퇴근 뒤·깬 뒤 첫 30분 단위,2.0.0,진행 중,,core memo/ShiftClash.firstFree
+RVI-80,"검토 U07a-09(대기열 TASK-34·KEEP-12): 일주일 넘은 할 일이 말없이 사라짐 → '오래된 할 일 N개' 한 줄, 모두 끝내기·모두 오늘로·모두 휴지통으로(되돌리기)",2.0.0,진행 중,,core memo/TaskList.old; ui/memo/MemoTodayBlock.kt
+RVI-81,검토 U03-06(대기열 TASK-41): 위젯의 날짜를 누르면 앱 첫 화면 → 그날 창,2.0.0,진행 중,,widget/Widgets.kt
+RVI-83,검토 U03-08·T03-03: 위젯 목록에 아홉 개가 유형과 상관없이 → 달력 유형에 맞는 위젯만(홈 화면에 있는 것은 그대로),2.0.0,진행 중,,widget/WidgetOffer.kt
+RVI-84,검토 U03-12: 자정을 넘겨 열어 둔 주 위젯 창이 어제 주 그대로 → 분 시계로 오늘,2.0.0,진행 중,,widget
+RVI-85,검토 T07a-11·I07ac-03: 지난 같은 근무에서 안 끝낸 줄을 이어 받기 → 한 번 눌러 이번 메모로,2.0.0,진행 중,,core memo/TaskList.carried; ui/memo/MemoEditorScreen.kt
+RVI-86,검토 I03a-06: 알람이 제때 울렸는지 알 길 없음 → 알람 점검에 이번 주 알람마다 제때·N분 늦게·기록 없음(빨강은 한 단어),2.0.0,진행 중,,ui/diag/DiagnosticsScreen.kt; core alarm EventBook.weekRows
+RVI-88,검토 I03b-03: 자기 전 다음 알람 확인에 앱을 열어야 함 → 오늘 위젯 ⏰가 작은 창(이번만 끄기·다시 켜기),2.0.0,진행 중,,alarm/AlarmPeekActivity.kt
+RVI-89,검토 I03b-02: 소리 재기를 켜는 걸 잊음 → 잘 시간 무렵 충전하면 '오늘 밤 소리 잴까요?' 한 번(끌 수 있음),2.0.0,진행 중,,sleep/SleepRecordOffer.kt
+RVI-90,검토 I03b-01: 휴대폰 알람이 안 오면 워치도 조용 → 워치 예비 알람(휴대폰 알람이 오지 않았어요),2.0.0,진행 중,,wear BackupRing; core work/WatchDays
+RVI-91,"검토 I03c-02: 알람 안 울림을 놓친 뒤에야 앎 → 하루 한 번 낮에 소리 없는 예행 연습, 늦게 오는 폰이면 밤 전에 알림",2.0.0,진행 중,,alarm/AlarmRehearsal.kt
+RVI-92,검토 I03b-04(대기열 발굴 3-3): 1분 뒤 시험 알람 결과가 남지 않음 → 알람 점검에 마지막 시험 결과,2.0.0,진행 중,,ui/diag/DiagnosticsScreen.kt
+RVI-93,"검토 I03b-04(대기열 G5-M2): 야간 휴게에 쪽잠 타이머 없음 → 오늘의 흐름 '쪽잠 20분'(진동만, 워치 진동, 근무 알람과 따로)",2.0.0,진행 중,,alarm/ShiftNap.kt; core sleep/TodayFlow SHIFT_NAP
+RVI-94,대기열 G5-M3: 손목에서 잠 기록 → 워치 잠 타일(잠들었어요·깼어요),2.0.0,진행 중,,wear MoreTiles.kt
+RVI-95,"대기열 TASK-35: 워치에 오늘 할 일 → 할 일 타일(할 일 위젯과 같은 목록, 눌러 끝냄)",2.0.0,진행 중,,wear MoreTiles.kt; watch/WatchSync.kt
+RVI-96,"검토 I03c-01: 누르지 않으면 잠 기록이 안 남음 → 잘 시간 무렵 충전한 밤은 아침에 '이 잠 맞나요?' 한 번(권한 없이, 폰 안에서만)",2.0.0,진행 중,,sleep/SleepNoTap.kt
+RVI-97,검토 I03c-03: 근무 중 진행이 안 보임 → 안드로이드 16 잠금 화면 알림에 진행 막대·남은 시간 칩,2.0.0,진행 중,,alarm/TodayShiftNotice.kt; core schedule/ShiftProgress.kt
+RVI-98,검토 I03b-01: 워치 연결 여부를 몰라 예비 알람·워치 줄을 늘 보임 → 연결된 워치가 있을 때만,2.0.0,진행 중,,watch/WatchSync.kt paired
+RVI-99,검토 I07aa-02: 폰이 꺼진 동안 지난 일정이 하나씩 → 둘 넘으면 '놓친 일정 N개' 한 장(모두 끝내기·쉬는 날로),2.0.0,진행 중,,memo/MemoMissed.kt
+RVIB-01,검토 I07ab-02(대기열 TASK-03): 할 일을 말로 적기 → 할 일 적기 창의 마이크(음성 인식이 있는 폰만),2.0.0,진행 중,,memo/QuickTaskActivity.kt
+RVIB-02,"검토 I07ab-03: 체크리스트 줄의 중요 표시·시각·메모 없음 → 별표(열린 줄 맨 위로)·줄 시각·줄 메모, 글로 바꿔도 남음",2.0.0,진행 중,,core memo/ChecklistEdit.kt·Memo.kt ChecklistCodec; ui/memo/MemoEditorScreen.kt
+RVIB-03,"총괄 전달(갈래 M RVM-06, Glance 자식 10개 제한): 오늘 위젯(일근 금요일·현장 조용한 주)과 조 위젯(7~8조)에서 마지막 줄이 사라짐 → 묶어서 8개 이하",2.0.0,진행 중,,widget/Widgets.kt·DailyWidgets.kt; WidgetChildLimitTest
+RVIB-04,"검토 I07ac-01: '출근 1시간 전마다'·'퇴근 30분 뒤'·'야간 끝나고 일어나면' 알림을 근무에 붙일 수 없음 → 그날 근무에서 읽는 알림(근무가 바뀌어도 그대로), DB 35판 memos.remindWork",2.0.0,진행 중,,core memo/MemoSchedule.kt WorkAnchor; ui/memo/MemoScheduleParts.kt WorkRow
+RVIB-05,"검토 I07ac-02(대기열 TASK-22): 근무 중 메모 알림이 하나씩·밀린 할 일이 쌓임 → 울리지 않는 알림은 퇴근 때 한 장, 지난 할 일은 다음 쉬는 날 아침 한 장(모두 끝내기·오늘로·지우기), 설정 두 줄",2.0.0,진행 중,,core memo/MemoBacklog.kt; memo/MemoMissed.kt·MemoRestCard.kt
+RVIB-06,"PC-83(통합 2차, 조건 8): 알람 더하기 '시작 기준' 칩이 줄 글·바퀴를 '시작 10분 전'에 둠 → 칩이 바퀴·줄 글·저장 값을 함께",2.0.0,진행 중,,ui/components/AlarmOffsetDialog.kt; AlarmOffsetChipTest
+RVIB-07,"PC-89(통합 2차, 조건 1·4): 수면 기록이 길어 '날마다 잠'까지 여러 번 밀어야 함 → '날마다 잠'(이번 주 띠)을 맨 위, 나머지는 '더 보기'로 접음",2.0.0,진행 중,,ui/sleep/SleepScreen.kt
+RVIB-08,검토 I07ac-04: '매달 25일 월세 50만 원'을 메모와 가계부에 따로 → 한 줄 제안 '넣기'로 반복 메모 + 고정 지출(↶로 둘 다 되돌림),2.0.0,진행 중,,core memo/MoneyRepeatLine.kt; ui/memo/MemoViewModels.kt acceptMoney
+RVIB-09,총괄 SN-18(통합 30065c07): 이모지 근무 그림이 워치에서 안 보임 → 워치 문자열 칸에 글자로(짧은 칸은 앞에 붙여 '🌙야'),2.0.0,진행 중,,core work/WatchDays.kt WatchDay.shown; wear ComplicationDays·MainActivity·ShiftTileService
+RVIB-10,"검토 I03c-04: 근무를 바꾼 뒤 알람·잠 계획·워치가 따라왔는지 따로 확인 → 바꾼 줄에 한 줄 ' · 알람 17:30 · 잘 시간 08:00–15:00 · 워치에도 보냈어요'(오늘·내일 근무만, 워치는 연결됐을 때만)",2.0.0,진행 중,,"core sleep/ShiftFollow.kt, ui/calendar/CalendarViewModel.kt followLine"
+RVIB-11,"PC-75(통합 PC, ★ 출근 알람): 쉬는 날이 된 날의 '알람을 끌까요?' 창에서 그날이 원래 근무가 있던 날인지 안 보임 → '11월 14일(원래 야간 19:00)은 쉬는 날이 됐어요', 여러 날이면 '원래 11월 14일 야간 19:00 · …' 한 줄",2.0.0,진행 중,,"ui/calendar/CalendarViewModel.kt RestAlarmAsk.was, CalendarScreen.kt RestAlarmDialog"

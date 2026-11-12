@@ -3130,6 +3130,10 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
 private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turnOff: Boolean) -> Unit, onDismiss: () -> Unit) {
     val one = ask.days.singleOrNull()
     val times = ask.days.flatMap { d -> d.was.map { Fmt.time(it.triggerAt.toLocalTime()) } }.distinct().take(3).joinToString(", ")
+    // 2.0.0 [RVIB-11] (PC-75, ★ 출근 알람) Whether the day had work before it became a day off, at a glance: 끄기 on a day that
+    // was a 야간 is not the same answer as on a day that was already free.
+    fun was(date: LocalDate) = ask.was[date]?.let { w -> w.name + (w.start?.let { " ${Fmt.time(it)}" } ?: "") }
+    val worked = ask.days.mapNotNull { d -> was(d.date)?.let { "${Fmt.monthDay(d.date)} $it" } }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.AlarmOff, null) },
@@ -3137,9 +3141,13 @@ private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turn
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (one != null) "${Fmt.monthDay(one.date)}은 쉬는 날이 됐어요. 이날 $times 알람을 어떻게 할까요?"
+                    if (one != null) "${Fmt.monthDay(one.date)}${was(one.date)?.let { "(원래 $it)" } ?: ""}은 쉬는 날이 됐어요. 이날 $times 알람을 어떻게 할까요?"
                     else "쉬는 날이 된 ${ask.days.size}일에 알람($times)이 있었어요. 어떻게 할까요?",
                     style = MaterialTheme.typography.bodyLarge,
+                )
+                if (one == null && worked.isNotEmpty()) Text(
+                    "원래 " + worked.take(3).joinToString(" · ") + if (worked.size > 3) " 외 ${worked.size - 3}일" else "",
+                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Text("끄면 그 날 알람이 울리지 않아요. 어느 쪽이든 바로 되돌릴 수 있고, 날짜를 눌러 알람에서 다시 바꿀 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

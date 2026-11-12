@@ -550,9 +550,16 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
         }
         val summary: @Composable ColumnScope.() -> Unit = { today(); pattern() }
         val history: @Composable ColumnScope.() -> Unit = {
-            Bars(s.log, s.today, target)
+            // 2.0.0 [RVIB-07] (PC-89, 통합 2차) '날마다 잠' took several swipes to reach: 이번 주 띠 (주 넘기기) and the day's records come
+            // first, the 2주 막대 under them, and the rest (잠 자동으로 잡기, 밤 색, 2주 수면 일지) folded under '더 보기'.
             // 1.39 [FLOW-11] 주 띠로 날 고르기, the day's 잠 이야기 줄, then that day's records.
             SleepDays(s, settings, target) { e -> if (!e.imported) editing = e }
+            Bars(s.log, s.today, target)
+            val (more, setMore) = com.bamnat.app.ui.components.rememberFold("sleep.history.more")
+            com.bamnat.app.ui.components.FoldButton(if (more) "접기 ▴" else "더 보기 ▾", if (more) "잠 기록 설정 접기" else "잠 자동으로 잡기·밤 색·2주 수면 일지 펼치기") {
+                setMore(!more)
+            }
+            if (more) {
             morning?.takeIf { it.autoShown }?.let { m -> SectionCard(title = null) { SleepAutoSwitch(m.autoOn, vm::setAuto) } }
             // 1.39 [FLOW-14] 밤 색, the same four choices as 설정 › 화면과 글자.
             SectionCard(title = null) { com.bamnat.app.ui.settings.NightLookRow(settings.nightLook, vm::setNightLook) }
@@ -565,6 +572,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 OutlinedButton(onClick = { vm.diary(ctx) { ok -> diaryNote = if (ok) null else "PDF를 만들지 못했어요. 다시 눌러 주세요." } },
                     modifier = Modifier.padding(top = 8.dp)) { Text("PDF 만들기") }
                 diaryNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
             }
             healthNote(health)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

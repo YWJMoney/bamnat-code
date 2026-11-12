@@ -68,6 +68,9 @@ fun AlarmOffsetDialog(
         ringMin = r.hour * 60 + r.minute
         day = AlarmOffsets.dayOf(start, v)
     }
+    // 2.0.0 [RVIB-06] (PC-83, 통합 2차) The '시작 기준' wheels read the minutes as they are when they turn, not as the frame that drew
+    // them saw them: a shortcut's jump turned the wheels, and a wheel still holding the frame before wrote '시작 10분 전' back over it.
+    fun current(): Int = AlarmOffsets.offsetFor(start, LocalTime.of(ringMin / 60, ringMin % 60), day) ?: 0
     val taken = picked != null && picked in existing
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -136,9 +139,9 @@ fun AlarmOffsetDialog(
                         androidx.compose.runtime.key("before", sign) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 WheelHalf(count = 24, value = gap / 60, jump = jump, label = "시간", cyclic = false,
-                                    onValue = { h -> setMinutes(sign * (h * 60 + kotlin.math.abs(minutes) % 60).coerceAtMost(AlarmOffsets.MAX_MINUTES)) })
+                                    onValue = { h -> if (h != kotlin.math.abs(current()) / 60) setMinutes(sign * (h * 60 + kotlin.math.abs(current()) % 60).coerceAtMost(AlarmOffsets.MAX_MINUTES)) })
                                 WheelHalf(count = 60, value = gap % 60, jump = jump, label = "분",
-                                    onValue = { m -> setMinutes(sign * (kotlin.math.abs(minutes) / 60 * 60 + m).coerceAtMost(AlarmOffsets.MAX_MINUTES)) })
+                                    onValue = { m -> if (m != kotlin.math.abs(current()) % 60) setMinutes(sign * (kotlin.math.abs(current()) / 60 * 60 + m).coerceAtMost(AlarmOffsets.MAX_MINUTES)) })
                             }
                         }
                     }

@@ -211,13 +211,13 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             val d = m.date!!
             if (m.repeat.isEmpty() || !d.isBefore(today)) return d
             return nextDays.getOrPut(m.id) {
-                val shifts = if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat)) null
+                val shifts = if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m)) null
                     else snapshots[com.bamnat.app.data.MemoRepository.calendarOf(m, active)]?.resolver?.let { com.bamnat.core.memo.ShiftMemoTime.shiftOf(it) }
                 generateSequence(today) { it.plusDays(1) }.take(NEXT_LOOK_DAYS).firstOrNull { com.bamnat.core.memo.MemoRepeat.occursOn(m, it, shifts) } ?: d
             }
         }
         val repeatShifts = { m: Memo ->
-            if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat)) null
+            if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m)) null
             else snapshots[com.bamnat.app.data.MemoRepository.calendarOf(m, active)]?.resolver
                 ?.let { r -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(r) }
         }
@@ -447,19 +447,9 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
      * dropped), or into the trash. Saved without touching '고친 시각'; [before] for 되돌리기 is what they were.
      */
     fun settleOld(memos: List<Memo>, how: OldWay) {
-        val now = Today.dateTime()
         viewModelScope.launch {
-            for (m in memos) {
-                val stored = repo.get(m.id) ?: continue
-                when (how) {
-                    OldWay.DONE -> repo.save(stored.withDone(true, stored.date, Today.millis()), touch = false)
-                    OldWay.TODAY -> repo.save(stored.copy(
-                        date = if (stored.date != null) now.toLocalDate() else null,
-                        reminder = stored.reminder?.let { r -> now.toLocalDate().atTime(r.at.toLocalTime()).takeIf { it.isAfter(now) }?.let { r.copy(at = it) } },
-                    ), touch = false)
-                    OldWay.TRASH -> repo.delete(stored)
-                }
-            }
+            // 2.0.0 [RVIB-05] The same as the 지난 할 일 card's buttons.
+            com.bamnat.app.memo.settleLeft(repo, memos.map { it.id }, how)
             runCatching { com.bamnat.app.widget.TaskWidget.redraw(container.appContext) }
         }
     }
@@ -628,12 +618,20 @@ class MemoEditorViewModel(
     fun undo() {
         val previous = undoStack.removeLastOrNull() ?: return
         redoStack.addLast(_memo.value)
+        // 2.0.0 [RVIB-08] The step that made a 고정 지출 takes it back too.
+        costStep?.takeIf { previous === it.before }?.let { s ->
+            s.saved?.let { c -> container.appScope.launch { container.calendars.money(s.calendar).delete(c) } }
+            s.saved = null
+        }
         applyChange(record = false) { cur -> previous.keepIdentityOf(cur) }
     }
 
     fun redo() {
         val next = redoStack.removeLastOrNull() ?: return
         undoStack.addLast(_memo.value)
+        costStep?.takeIf { next === it.after && it.saved == null }?.let { s ->
+            container.appScope.launch { s.saved = container.calendars.money(s.calendar).save(s.cost.copy(id = 0)) }
+        }
         applyChange(record = false) { cur -> next.keepIdentityOf(cur) }
     }
 
@@ -841,7 +839,7 @@ class MemoEditorViewModel(
      * when the memo is one already, as its new time. Null when there is nothing to ask.
      */
     /** [MEMO-05] 1.27 AK: the calendar whose shifts this memo goes by (its own, else the one on screen). */
-    private val shiftCal = combine(_memo.map { Triple(it.calendars, it.onEveryCalendar, com.bamnat.core.memo.MemoRepeat.followsSchedule(it.repeat)) }.distinctUntilChanged(), container.calendars.active) { (_, _, bySchedule), active ->
+    private val shiftCal = combine(_memo.map { Triple(it.calendars, it.onEveryCalendar, com.bamnat.core.memo.MemoRepeat.followsSchedule(it)) }.distinctUntilChanged(), container.calendars.active) { (_, _, bySchedule), active ->
         // 2.0.0 [RVI-78] (검토 T07a-04) A 근무마다 memo by the one calendar its notices go by, not the one on screen.
         (if (bySchedule) com.bamnat.app.data.MemoRepository.scheduleCalendarOf(_memo.value) else shiftCalendar(listOf(_memo.value), active) ?: active)
             .takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN
@@ -864,6 +862,11 @@ class MemoEditorViewModel(
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val shiftSnap: StateFlow<ScheduleSnapshot?> = shiftCal.flatMapLatest { cal -> container.calendars.repository(cal).live }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** 2.0.0 [RVIB-04] '야간 끝나고 일어나면' is the night's end and this much sleep (잠 목표). */
+    val sleepTarget: Int get() = container.settingsRepository.current.sleepTargetMinutes
+    /** 2.0.0 [RVIB-05] 근무 중 메모 알림 모으기 ([com.bamnat.app.memo.MemoMissed.hold]). */
+    val holdAtWork: Boolean get() = container.settingsRepository.current.memoHoldAtWork
 
     /** [EASE-22] The kinds of day offered as '야간마다', in the calendar's order; 1.36 kinds put away are left out. */
     val shiftTypes: StateFlow<List<com.bamnat.core.model.ShiftType>> = shiftSnap.map { s -> s?.shiftTypes.orEmpty().sortedBy { it.sortOrder } }
@@ -909,11 +912,55 @@ class MemoEditorViewModel(
 
     /** [SCHED-01] Makes the memo a schedule (or a plain memo again with null); [answered] is the time this answers. */
     fun setReminder(reminder: MemoReminder?, answered: MemoTime.Found? = null) = update {
-        it.copy(reminder = reminder, reminderAsked = answered?.key ?: it.reminderAsked)
+        it.copy(reminder = reminder, reminderAsked = answered?.let { a -> com.bamnat.core.memo.MemoAsked.with(it.reminderAsked, a.key) } ?: it.reminderAsked)
     }
 
     /** [SCHED-01] "메모로 둘게요": the same time is not offered again. */
-    fun keepAsMemo(found: MemoTime.Found) = update { it.copy(reminderAsked = found.key) }
+    fun keepAsMemo(found: MemoTime.Found) = update { it.copy(reminderAsked = com.bamnat.core.memo.MemoAsked.with(it.reminderAsked, found.key)) }
+
+    /**
+     * 2.0.0 [RVIB-08] (검토 I07ac-04) "매달 25일 월세 50만 원": offered once, under a time's offer when there is one, as a memo that comes
+     * back on that day and a 고정 지출 (or 수입) of that amount in the 가계부. Asked by its words, like a time.
+     */
+    val moneyOffer: StateFlow<com.bamnat.core.memo.MoneyRepeatLine.Found?> = _memo.distinctUntilChanged { a, b ->
+        a.title == b.title && a.body == b.body && a.checklist == b.checklist && a.reminderAsked == b.reminderAsked
+    }.conflate().map { m ->
+        com.bamnat.core.memo.MoneyRepeatLine.find((sequenceOf(m.title, m.text) + m.checklist.asSequence().map { it.text }).joinToString("\n"))
+            ?.takeIf { !com.bamnat.core.memo.MemoAsked.has(m.reminderAsked, it.key) }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 2.0.0 [RVIB-08] The 고정 지출 [acceptMoney] made, so ↶ takes it back with the repeat (and ↷ puts it back). */
+    private class CostStep(val before: Memo, val after: Memo, val cost: com.bamnat.core.money.FixedCost, val calendar: String) {
+        @Volatile var saved: com.bamnat.core.money.FixedCost? = null
+    }
+    private var costStep: CostStep? = null
+
+    /**
+     * 2.0.0 [RVIB-08] '넣기': the memo comes back on that day (its date the first one from today) and the 가계부 gets the 고정 지출, in
+     * one step that ↶ takes back whole. One already there by the same name, amount and day is not made twice. Returns what to say.
+     */
+    fun acceptMoney(found: com.bamnat.core.memo.MoneyRepeatLine.Found): String {
+        val first = found.firstFrom(Today.date())
+        val before = _memo.value
+        lastHistoryAt = 0L
+        update { it.copy(date = first, repeat = found.memoRepeat(first), reminderAsked = com.bamnat.core.memo.MemoAsked.with(it.reminderAsked, found.key)) }
+        val after = _memo.value
+        val calendar = container.calendars.active.value
+        val cost = found.cost()
+        val step = CostStep(before, after, cost, calendar).also { costStep = it }
+        container.appScope.launch {
+            val money = container.calendars.money(calendar)
+            val there = money.book.first().fixed.any { it.name == cost.name && it.amount == cost.amount && it.day == cost.day && it.repeat == cost.repeat }
+            // The 가계부's notices re-plan from the book (AppContainer), so its 알림 comes with it.
+            if (!there) step.saved = money.save(cost)
+        }
+        val what = if (found.kind == com.bamnat.core.money.MoneyKind.INCOME) "고정 수입" else "고정 지출"
+        return "${found.said}에 메모가 돌아오고, 가계부 $what${com.bamnat.app.ui.Fmt.ro(what)} 넣었어요 · 위 ↶로 되돌려요"
+    }
+
+    /** 2.0.0 [RVIB-08] '메모로 둘게요': the same words are not offered again. */
+    fun keepMoneyAsMemo(found: com.bamnat.core.memo.MoneyRepeatLine.Found) =
+        update { it.copy(reminderAsked = com.bamnat.core.memo.MemoAsked.with(it.reminderAsked, found.key)) }
 
     /** Saves a copy of this memo and returns nothing; the copy shows up in the list. */
     fun duplicate() {
@@ -981,6 +1028,25 @@ class MemoEditorViewModel(
 
     /** 2.0.0 [RVI-35] A line moved by its handle or the 위로·아래로 action. */
     fun moveItem(from: Int, to: Int) = update { m -> m.copy(checklist = com.bamnat.core.memo.ChecklistEdit.move(m.checklist, from, to)) }
+
+    /** 2.0.0 [RVIB-02] (검토 I07ab-03) 별표: starred, the line goes up to the top of the open lines; unstarred, it stays. */
+    fun starItem(index: Int, on: Boolean): Int? {
+        var at: Int? = null
+        update { m ->
+            val list = com.bamnat.core.memo.ChecklistEdit.star(m.checklist, index, on)
+            val moved = m.checklist.getOrNull(index)
+            // Where the line went, so the cursor goes with it (the copy is the only line that is not one of the old ones).
+            at = list.indexOfFirst { item -> m.checklist.none { it === item } }.takeIf { it >= 0 && moved != null }
+            m.copy(checklist = list)
+        }
+        return at
+    }
+
+    /** 2.0.0 [RVIB-02] A line's own time (shown by it, not rung), or none. */
+    fun setItemTime(index: Int, time: java.time.LocalTime?) = update { m -> m.copy(checklist = com.bamnat.core.memo.ChecklistEdit.time(m.checklist, index, time)) }
+
+    /** 2.0.0 [RVIB-02] A line's note under it. */
+    fun setItemNote(index: Int, note: String) = update { m -> m.copy(checklist = com.bamnat.core.memo.ChecklistEdit.note(m.checklist, index, note)) }
 
     /** Inserts an empty item after [index] and returns its position. */
     fun insertItemAfter(index: Int, text: String = ""): Int {

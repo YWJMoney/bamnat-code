@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 2.0.0 [RVI-97] 근무 중 잠금 화면 진행 막대를 상태 표시줄 칩으로(안드로이드 16, '오늘 근무' 알림을 켠 사람만). -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- [MKT-09] Only for read-only schedule links the user makes; nothing else goes online. -->
     <!-- Android 12: exact alarms. Android 13+: USE_EXACT_ALARM, allowed for calendar/alarm apps. -->
     <uses-permission
@@ -47,6 +49,10 @@
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <!-- 2.0.0 [RVIB-01] 말로 적기: whether the phone has speech recognition to hand a line to. -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <application
@@ -232,6 +238,14 @@
         <receiver
             android:name=".memo.MemoDoneReceiver"
             android:exported="false" />
+        <!-- 2.0.0 [RVI-99] 놓친 일정 한 장의 모두 끝내기·쉬는 날로. -->
+        <receiver
+            android:name=".memo.MemoMissedReceiver"
+            android:exported="false" />
+        <!-- 2.0.0 [RVIB-05] 지난 할 일 한 장: the day off's morning and its three answers. -->
+        <receiver
+            android:name=".memo.MemoRestCardReceiver"
+            android:exported="false" />
         <!-- 2.0.0 [RVI-26] The memo notice swiped away: what it showed does not come back. -->
         <receiver
             android:name=".memo.MemoNoticeClearedReceiver"
@@ -365,6 +379,10 @@
             android:process=":fontprobe" />
 
         <!-- 2.0.0 [RVI-88] The today widget's alarm: a small window with 이번만 끄기 · 다시 켜기. Only the widget opens it. -->
+        <!-- 2.0.0 [RVI-97] 잠금 화면 '오늘 근무' 다시 그리기 (근무 중 진행 막대). -->
+        <receiver
+            android:name=".alarm.TodayShiftTickReceiver"
+            android:exported="false" />
         <activity
             android:name=".alarm.AlarmPeekActivity"
             android:exported="false"

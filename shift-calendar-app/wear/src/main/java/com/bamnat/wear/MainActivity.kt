@@ -177,7 +177,8 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
         item {
             if (d == null) Text(WatchText.notSent(p), fontSize = 16.sp)
             else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(d.name, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // 2.0.0 [RVIB-09] (SN-18) "🌙 야간" with an emoji 근무 그림.
+                Text(d.shown, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (d.times.isNotEmpty()) Text(d.times, fontSize = 16.sp)
             }
         }

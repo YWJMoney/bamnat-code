@@ -110,6 +110,18 @@ object WatchSync {
         }
     }
 
+    /** 2.0.0 [RVI-98] A watch is connected now (asked for a moment at most, kept 10 minutes); false without Play services. */
+    suspend fun paired(context: Context): Boolean {
+        val now = Today.millis()
+        pairedAt?.takeIf { now - it.first < 10 * 60_000L }?.let { return it.second }
+        val on = kotlinx.coroutines.withTimeoutOrNull(800L) {
+            runCatching { await(Wearable.getNodeClient(context).connectedNodes) }.getOrNull().orEmpty().isNotEmpty()
+        } ?: false
+        pairedAt = now to on
+        return on
+    }
+    @Volatile private var pairedAt: Pair<Long, Boolean>? = null
+
     /** A Play services task's result, or null when it failed (no Play services, no Wear OS app). */
     private suspend fun <T> await(task: Task<T>): T? = suspendCancellableCoroutine { cont ->
         task.addOnSuccessListener { cont.resume(it) }.addOnFailureListener { cont.resume(null) }

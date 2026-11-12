@@ -634,6 +634,17 @@ private fun NoticesPage(
             set(on) { it.copy(afterAlarmCard = on) }
         }
     }
+    // 2.0.0 [RVIB-05] (검토 I07ac-02) 메모·할 일: 근무 중 알림 모으기 for work with hours, 지난 할 일 for a calendar with days off (not 투자).
+    if (planned || settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST) SectionCard(title = "메모·할 일") {
+        if (planned || !settings.memoHoldAtWork) SwitchRow(MEMO_HOLD_ROW, "울리지 않는 메모 알림은 근무가 끝날 때 한 장으로 모아 와요 · 울리는 알람은 제때 울려요",
+            settings.memoHoldAtWork, warning = warning(settings.memoHoldAtWork, Notifications.MEMO_CHANNEL_ID), onFix = fix(Notifications.MEMO_CHANNEL_ID)) { on ->
+            set(on) { it.copy(memoHoldAtWork = on) }
+        }
+        SwitchRow(MEMO_REST_ROW, "못 끝낸 할 일을 다음 쉬는 날 아침에 소리 없이 한 장으로 보여 줘요",
+            settings.memoRestCard, warning = warning(settings.memoRestCard, Notifications.MEMO_CHANNEL_ID), onFix = fix(Notifications.MEMO_CHANNEL_ID)) { on ->
+            set(on) { it.copy(memoRestCard = on) }
+        }
+    }
     // [J133-77] 연차 for work with a company; 급여 입금 for work paid wages.
     val leave = settings.workStyle?.usesCompany != false
     SectionCard(title = if (leave) "돈과 휴가" else "돈") {
@@ -1466,6 +1477,9 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
+internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
+internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"
 internal const val DAY_CLOSE_ROW = "퇴근 뒤 가계부 정리 알림"
 internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 

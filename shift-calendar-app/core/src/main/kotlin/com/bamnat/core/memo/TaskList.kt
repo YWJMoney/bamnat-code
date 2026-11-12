@@ -38,7 +38,9 @@ object TaskList {
         }.sortedWith(compareBy<Memo> { dueDay(it) }.thenBy { it.reminder?.at })
             .map { Row(it, Kind.LATE, dueDay(it), false, it.reminder?.at?.toLocalTime()) }
         val todays = live.filter { m -> if (m.repeat.isNotEmpty()) MemoRepeat.occursOn(m, today, shifts(m)) else dueDay(m) == today }.map { m ->
-            val time = m.reminder?.at?.takeIf { it.toLocalDate() == today || m.repeat.isNotEmpty() }?.toLocalTime()
+            // 2.0.0 [RVIB-04] Told by the work: today's work says the time (none read: no time rather than another day's).
+            val time = m.reminder?.work?.let { a -> shifts(m)?.let { a.on(today, it.hours(today))?.toLocalTime() } }
+                ?: m.reminder?.takeIf { it.work == null }?.at?.takeIf { it.toLocalDate() == today || m.repeat.isNotEmpty() }?.toLocalTime()
             Row(m, Kind.TODAY, if (m.repeat.isNotEmpty()) today else dueDay(m), m.isDoneOn(if (m.repeat.isNotEmpty()) today else m.date), time)
         }.sortedWith(compareBy<Row> { it.time == null }.thenBy { it.time }.thenByDescending { it.memo.pinned }.thenBy { it.memo.createdAtMillis })
         val shown = (late.map { it.memo.id } + todays.map { it.memo.id }).toSet()
@@ -57,8 +59,8 @@ object TaskList {
      */
     fun looks(memos: List<Memo>, today: LocalDate): List<Any?> =
         of(memos, today).map { listOf(it.memo.id, it.kind, it.day, it.done, it.time, it.text, it.count) } +
-            memos.filter { MemoRepeat.followsSchedule(it.repeat) && !it.inTrash }
-                .map { listOf(it.id, it.title.ifBlank { it.preview.take(TEXT_CHARS) }, it.repeat, it.skips, it.doneDays, it.reminder?.at) }
+            memos.filter { MemoRepeat.followsSchedule(it) && !it.inTrash }
+                .map { listOf(it.id, it.title.ifBlank { it.preview.take(TEXT_CHARS) }, it.repeat, it.skips, it.doneDays, it.reminder?.at, it.reminder?.work) }
 
     /**
      * 2.0.0 [RVI-80] (검토 U07a-09, 대기열 TASK-34·KEEP-12) To-dos from before the [LATE_DAYS] the list shows (8일째부터), up to [OLD_DAYS]

@@ -21,9 +21,18 @@ data class WatchDay(
     /** [WEAR-03] The shift's icon key ([com.bamnat.core.model.ShiftIcon]), for the watch face's small image. */
     val icon: String? = null,
 ) {
-    /** "주간 09:00–18:00", "휴무", "연차". */
+    /**
+     * 2.0.0 [RVIB-09] (총괄 SN-18) An emoji 근무 그림 ("e:🌙", 1.34, 장터 작품 100개가 써요): the watch knows only the drawn icons, so it
+     * is drawn as a letter in front of the name instead; null for a drawn icon or none.
+     */
+    val emoji: String? get() = com.bamnat.core.model.ShiftIcon.emoji(icon)
+
+    /** "🌙 야간", or the name alone. */
+    val shown: String get() = emoji?.let { "$it $name" } ?: name
+
+    /** "주간 09:00–18:00", "휴무", "연차" (2.0.0 [RVIB-09] "🌙 야간 22:00–07:00" with an emoji 근무 그림). */
     val line: String
-        get() = if (start != null && end != null && !off) "$name ${hm(start)}–${hm(end)}" else name
+        get() = if (start != null && end != null && !off) "$shown ${hm(start)}–${hm(end)}" else shown
 
     /** "09:00–18:00", or empty on a day off. */
     val times: String get() = if (start != null && end != null && !off) "${hm(start)}–${hm(end)}" else ""

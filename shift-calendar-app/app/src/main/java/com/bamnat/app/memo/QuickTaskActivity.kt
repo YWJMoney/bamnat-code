@@ -119,6 +119,18 @@ internal suspend fun shiftDaysAhead(c: com.bamnat.app.AppContainer, calendar: St
     return (-1L..60L).mapNotNull { i -> com.bamnat.core.memo.ShiftMemoTime.of(snap.resolver.resolve(from.plusDays(i))) }
 }
 
+/** 2.0.0 [RVIB-01] The phone has speech recognition to hand the line to. */
+internal fun speechAvailable(context: Context): Boolean = runCatching {
+    context.packageManager.queryIntentActivities(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0).isNotEmpty()
+}.getOrDefault(false)
+
+/** 2.0.0 [RVIB-01] One line in Korean, free words ("내일 저녁 6시 치과"). */
+internal fun speechIntent(): Intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "ko-KR")
+    .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "할 일을 말해 주세요")
+    .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+
 /** Which day the line goes on: what was read, today, tomorrow, or none (a note pinned for later). */
 internal enum class QuickDay { READ, TODAY, TOMORROW, NONE }
 
@@ -229,6 +241,15 @@ internal fun QuickTask(
     val line = remember(text, half, shifts) { quickLine(text, now, half, shifts) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // 2.0.0 [RVIB-01] (검토 I07ab-02, TASK-03) 말로 적기: the phone's own speech recognition (gloves on a site, at the wheel). What it
+    // heard goes into the line to read and change before 적기; no sound is kept by the app, and no microphone permission is asked.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val canListen = remember { speechAvailable(context) }
+    val listen = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { heard ->
+            text = (if (text.isBlank()) heard else "${text.trimEnd()} $heard").take(QuickTaskActivity.MAX_CHARS)
+        }
+    }
     val dayFmt = remember { DateTimeFormatter.ofPattern("M/d (E)", Locale.KOREAN) }
     // The dim around the card closes it, as a sheet does. 2.0.0 [RVI-43] (검토 MEMO-22) Not while something is written: a brush past
     // the card lost the line; 닫기 is right there.
@@ -255,6 +276,12 @@ internal fun QuickTask(
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                     placeholder = { Text("예: 내일 저녁 6시 치과") },
                     maxLines = 4,
+                    trailingIcon = if (!canListen) null else ({
+                        androidx.compose.material3.IconButton(onClick = { runCatching { listen.launch(speechIntent()) } },
+                            modifier = Modifier.semantics { contentDescription = "말로 적기" }) {
+                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Mic, null)
+                        }
+                    }),
                 )
                 // 2.0.0 [RVI-43] What was cut is said, not dropped silently.
                 if (cut || text.length >= QuickTaskActivity.MAX_CHARS) {

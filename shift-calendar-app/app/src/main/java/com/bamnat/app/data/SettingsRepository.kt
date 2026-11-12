@@ -195,6 +195,10 @@ data class AppSettings(
     val recordOffer: Boolean = true,
     /** 2.0.0 [RVI-96] 충전하면 잠 잡기 ([com.bamnat.app.sleep.SleepNoTap]). */
     val sleepNoTap: Boolean = true,
+    /** 2.0.0 [RVIB-05] (검토 I07ac-02) 근무 중에 온 메모 알림(울리지 않는 것)을 모아 퇴근 때 한 장으로 ([com.bamnat.app.memo.MemoMissed]). */
+    val memoHoldAtWork: Boolean = true,
+    /** 2.0.0 [RVIB-05] 지난 할 일을 다음 쉬는 날 아침에 한 장으로 ([com.bamnat.app.memo.MemoRestCard]). */
+    val memoRestCard: Boolean = true,
     /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
@@ -531,6 +535,8 @@ class SettingsRepository(context: Context) {
             sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
             recordOffer = prefs.getBoolean(K_RECORD_OFFER, d.recordOffer),
             sleepNoTap = prefs.getBoolean(K_SLEEP_NO_TAP, d.sleepNoTap),
+            memoHoldAtWork = prefs.getBoolean(K_MEMO_HOLD_AT_WORK, d.memoHoldAtWork),
+            memoRestCard = prefs.getBoolean(K_MEMO_REST_CARD, d.memoRestCard),
             noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
             noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
             nightLook = prefs.getString(K_NIGHT_LOOK, null)
@@ -677,6 +683,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
             .putBoolean(K_RECORD_OFFER, s.recordOffer)
             .putBoolean(K_SLEEP_NO_TAP, s.sleepNoTap)
+            .putBoolean(K_MEMO_HOLD_AT_WORK, s.memoHoldAtWork)
+            .putBoolean(K_MEMO_REST_CARD, s.memoRestCard)
             .putString(K_NOISE_MIX, s.noiseMix)
             .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
             .putString(K_NIGHT_LOOK, s.nightLook)
@@ -890,6 +898,8 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_AUTO = "sleep_auto"
         const val K_RECORD_OFFER = "record_offer"
         const val K_SLEEP_NO_TAP = "sleep_no_tap"
+        const val K_MEMO_HOLD_AT_WORK = "memo_hold_at_work"
+        const val K_MEMO_REST_CARD = "memo_rest_card"
         const val K_NOISE_MIX = "noise_mix"
         const val K_NOISE_TIMER = "noise_timer"
         /** 1.38 밤에는 어두운 색 (sleep screen only), read once into [K_NIGHT_LOOK]. */

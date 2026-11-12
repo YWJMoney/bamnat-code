@@ -92,12 +92,12 @@ class MemoRepository(
      * Any other memo gets null. No such memo: no schedule is read at all.
      */
     fun shiftLookup(list: List<Memo>, calendar: String): Flow<(Memo) -> MemoRepeat.ShiftOf?> {
-        val cals = list.filter { MemoRepeat.followsSchedule(it.repeat) }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
+        val cals = list.filter { MemoRepeat.followsSchedule(it) }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
         if (cals.isEmpty()) return flowOf { _: Memo -> null }
         return combine(cals.map { c -> shiftsOf(c).map { c to it } }) { pairs ->
             val byCal = pairs.toMap()
             val lookup: (Memo) -> MemoRepeat.ShiftOf? = { m ->
-                if (MemoRepeat.followsSchedule(m.repeat)) byCal[calendarOf(m, calendar)] else null
+                if (MemoRepeat.followsSchedule(m)) byCal[calendarOf(m, calendar)] else null
             }
             lookup
         }
@@ -247,7 +247,7 @@ class MemoRepository(
          */
         fun calendarOf(memo: Memo, viewing: String): String = when {
             // 2.0.0 [RVI-78] (검토 T07a-04) One that comes back by the 근무표 keeps to its own calendar whichever is on screen.
-            MemoRepeat.followsSchedule(memo.repeat) -> scheduleCalendarOf(memo)
+            MemoRepeat.followsSchedule(memo) -> scheduleCalendarOf(memo)
             memo.onEveryCalendar || viewing in memo.owners -> viewing
             else -> memo.owners.singleOrNull() ?: viewing
         }

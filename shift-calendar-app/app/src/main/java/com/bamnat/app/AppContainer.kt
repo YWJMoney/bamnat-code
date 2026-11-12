@@ -1127,6 +1127,13 @@ class AppContainer(context: Context) {
                         com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, list, shiftsOf = shifts)
                     }
             }
+            // 2.0.0 [RVIB-05] (검토 I07ac-02) The 지난 할 일 card's morning follows the calendar on screen (a day off moved) and its switch.
+            keep("memorestcard") {
+                combine(calendars.active.flatMapLatest { calendars.repository(it).live.map { s -> s.resolver } },
+                    settingsRepository.settings.map { it.memoRestCard }.distinctUntilChanged()) { r, on -> r to on }
+                    .debounce(1_000)
+                    .collect { runCatching { com.bamnat.app.memo.MemoRestCard.plan(appContext) } }
+            }
             // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
             keep("taskwidget") {
                 // 2.0.0 [RVI-53] (검토 MEMO-19) Only when what it shows changes, not at each save of a memo's words.

@@ -55,6 +55,9 @@ object MemoRepeat {
     /** 1.39 [TASK-44] A repeat read from the calendar's schedule (근무마다, 쉬는 날마다): without it, its own date only. */
     fun followsSchedule(repeat: String): Boolean = kindOf(repeat).let { it == Kind.SHIFT || it == Kind.REST }
 
+    /** 2.0.0 [RVIB-04] (검토 I07ac-01) [followsSchedule], or a memo told by the work (출근 1시간 전마다), which reads it too. */
+    fun followsSchedule(memo: Memo): Boolean = followsSchedule(memo.repeat) || memo.reminder?.work != null
+
     /** The kind of [repeat], or [Kind.NONE] for empty or text this app does not know. [RVI-73] Its end ("~20261231") aside. */
     fun kindOf(repeat: String): Kind = kindOfBody(bodyOf(repeat))
 
@@ -248,6 +251,8 @@ object MemoRepeat {
         untilOf(memo.repeat)?.let { end -> if (date.isAfter(end) && date != start) return false }
         val body = bodyOf(memo.repeat)
         val n = body.drop(1)
+        // 2.0.0 [RVIB-04] (검토 I07ac-01) Repeating and told by the work: only on days with work (a 야간's on nights), its own date too.
+        memo.reminder?.work?.let { a -> if (shifts != null && kindOf(memo.repeat) != Kind.NONE && !a.fits(shifts.hours(date))) return false }
         // [EASE-22] A 근무마다 memo is where its kind of day is, its own date too: a day changed to another shift lets it go.
         if (kindOf(memo.repeat) == Kind.SHIFT && shifts != null) return !date.isBefore(start) && shifts.on(date) == n.toLongOrNull()
         // 1.39 [TASK-44] 쉬는 날마다 likewise: on each day off from its date on, its own date too only when that is one.
@@ -291,7 +296,7 @@ object MemoRepeat {
     fun datesIn(memo: Memo, from: LocalDate, to: LocalDate, shifts: ShiftOf? = null): List<LocalDate> {
         val start = memo.date ?: return emptyList()
         val kind = kindOf(memo.repeat)
-        if (kind == Kind.NONE || followsSchedule(memo.repeat) && shifts == null) {
+        if (kind == Kind.NONE || followsSchedule(memo) && shifts == null) {
             return if (start in from..to && (kind == Kind.NONE || start !in memo.skips)) listOf(start) else emptyList()
         }
         return generateSequence(maxOf(from, start)) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }
@@ -308,7 +313,7 @@ object MemoRepeat {
         val kind = kindOf(m.repeat)
         when {
             m.date == null || kind == Kind.NONE -> listOf(m)
-            followsSchedule(m.repeat) -> {
+            followsSchedule(m) -> {
                 val shifts = shiftsOf(m)
                 if (shifts == null) listOf(m) else datesIn(m, from, to, shifts).map { m.copy(date = it) }
             }

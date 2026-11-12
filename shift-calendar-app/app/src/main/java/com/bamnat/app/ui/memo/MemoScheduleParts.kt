@@ -76,10 +76,23 @@ internal fun scheduleText(at: LocalDateTime): String {
  * 11/13" (it said the first day, 11/1, as if it were past). [next]: its next time, where it can be worked out.
  */
 internal fun scheduleLine(memo: com.bamnat.core.memo.Memo, r: MemoReminder, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null }): String {
+    // 2.0.0 [RVIB-04] Told by the work: "출근 1시간 전마다", "야간마다 출근 1시간 전", once "출근 1시간 전 · 11/13".
+    r.work?.let { a -> return workLine(memo, a, next, shiftName) }
     val again = com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName).takeIf { memo.date != null && it.isNotEmpty() }
         ?: return scheduleText(r.at)
     val time = scheduleText(r.at).substringAfter(") ")
     return "$again $time" + (next?.let { " · 다음 ${it.monthValue}/${it.dayOfMonth}" } ?: "")
+}
+
+/** 2.0.0 [RVIB-04] (검토 I07ac-01) A schedule told by the work, as its chip and card say it. */
+internal fun workLine(memo: com.bamnat.core.memo.Memo, a: com.bamnat.core.memo.WorkAnchor, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null }): String {
+    val kind = com.bamnat.core.memo.MemoRepeat.kindOf(memo.repeat)
+    val head = when {
+        memo.date == null || kind == com.bamnat.core.memo.MemoRepeat.Kind.NONE -> a.label
+        kind == com.bamnat.core.memo.MemoRepeat.Kind.DAY -> a.label + "마다"
+        else -> com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName) + " " + a.label
+    }
+    return head + (next?.let { " · 다음 ${it.monthValue}/${it.dayOfMonth} ${Fmt.time(it.toLocalTime())}" } ?: "")
 }
 
 /** [SCHED-01] How a schedule is brought up, in a few words: "알람·알림", "알람", "알림". */
@@ -133,6 +146,24 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
 }
 
 /**
+ * 2.0.0 [RVIB-08] (검토 I07ac-04) Under the memo when one line says a repeat and an amount ("매달 25일 월세 50만 원"): the same one
+ * line as a time's offer — "매달 25일 월세 500,000원 · 반복 메모와 가계부 고정 지출로" · 넣기, X to keep it a memo.
+ */
+@Composable
+internal fun MoneyOffer(found: com.bamnat.core.memo.MoneyRepeatLine.Found, onAccept: () -> Unit, onDecline: () -> Unit) {
+    val what = if (found.kind == com.bamnat.core.money.MoneyKind.INCOME) "고정 수입" else "고정 지출"
+    com.bamnat.app.ui.components.NudgeCard(
+        text = "${found.said} ${found.name} ${com.bamnat.app.ui.Fmt.won(found.amount)} · 반복 메모와 가계부 $what${com.bamnat.app.ui.Fmt.ro(what)}",
+        icon = Icons.Filled.Repeat,
+        action = "넣기",
+        onAction = onAccept,
+        onClose = onDecline,
+        closeLabel = "메모로 둘게요",
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+/**
  * [SCHED-01] When, and how to be told: 울리는 알람 (rings like the shift alarm, over the lock screen)
  * and/or 알림 메시지 (a message in the notification shade). Says what is turned off on the phone that
  * the chosen way needs, with the button to turn it on.
@@ -150,7 +181,9 @@ internal fun ScheduleDialog(
     /** [MEMO-05] 1.27 AK: '근무에 맞춰' — the next of each shift ahead (출근 1시간 전) and the next day off. */
     shiftTimes: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion> = emptyList(),
     /** 1.39 [CAL2-20] What a time runs into on the calendar (근무, 야간 뒤 잘 시간), read again as the time changes. */
-    clashOf: (LocalDateTime) -> String? = { null },
+    clashOf: (LocalDateTime) -> com.bamnat.core.memo.ShiftClash.Clash? = { null },
+    /** 2.0.0 [RVIB-05] 근무 중 메모 알림 모으기 is on: a notice at work says it comes when the work ends. */
+    heldAtWork: Boolean = false,
     /**
      * 1.39 [TASK-44] PC 6차 (매일 반복을 고르는 곳을 못 찾음): the memo's repeat ([com.bamnat.core.memo.Memo.repeat]) as '반복: 안 함·매일·평일·
      * 쉬는 날' here, called with the kind picked before [onSave] when it changed; null leaves the row out. [restRepeat]: the calendar
@@ -162,6 +195,10 @@ internal fun ScheduleDialog(
     restRepeat: Boolean = false,
     /** 2.0.0 [RVI-73] The calendar's kinds of shift, for 근무마다 in the repeat window. */
     shiftTypes: List<com.bamnat.core.model.ShiftType> = emptyList(),
+    /** 2.0.0 [RVIB-04] (검토 I07ac-01) When each 근무 기준 choice is next told, read from the calendar's work; null leaves the row out. */
+    workNext: ((com.bamnat.core.memo.WorkAnchor) -> LocalDateTime?)? = null,
+    /** 2.0.0 [RVIB-04] '야간 끝나고 일어나면': how long the sleep after a night is (잠 목표). */
+    wakeAfterMinutes: Int = 7 * 60,
 ) {
     val context = LocalContext.current
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }
@@ -179,8 +216,12 @@ internal fun ScheduleDialog(
     var again by rememberSaveable { mutableStateOf(repeat) }
     var repeating by remember { mutableStateOf(false) }
     val at = date.atTime(time)
+    // 2.0.0 [RVIB-04] Told by the work instead of a clock time: its next time is read from the calendar.
+    var work by rememberSaveable { mutableStateOf(current?.work?.code) }
+    val anchor = com.bamnat.core.memo.WorkAnchor.parse(work)
+    val anchorAt = anchor?.let { workNext?.invoke(it) }
     // A repeating schedule whose time today is gone rings on its next day, so it can be kept.
-    val ahead = at.isAfter(now()) || again.isNotEmpty()
+    val ahead = if (anchor != null) anchorAt != null else at.isAfter(now()) || again.isNotEmpty()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -191,17 +232,24 @@ internal fun ScheduleDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // 2.0.0 [RVI-31] (디자인 품질 12) At 200% on a folded phone the time stood in three lines beside the date: each keeps
                 // one line, and the time goes under the date when they do not fit side by side.
-                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (anchor == null) androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date), maxLines = 1, softWrap = false) }
                     OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") "), maxLines = 1, softWrap = false) }
                 }
+                if (workNext != null) WorkRow(anchor, wakeAfterMinutes, anchorAt, workNext) { a ->
+                    work = a?.code
+                    // "출근 1시간 전마다": picked on a memo that does not repeat, it comes back on each day with work.
+                    if (a != null && again.isEmpty() && onRepeat != null) again = com.bamnat.core.memo.MemoRepeat.code(com.bamnat.core.memo.MemoRepeat.Kind.DAY, date)
+                }
                 // 2.0.0 [RVI-73] (검토 U07a-07) One line that opens the one repeat window (the editor's chip opens the same).
-                if (onRepeat != null) RepeatLine(again, shiftTypes) { repeating = true }
-                if (shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }
-                if (ahead) clashOf(at)?.let { ClashLine(it) }
+                if (onRepeat != null) RepeatLine(again, shiftTypes, worked = anchor != null) { repeating = true }
+                if (anchor == null && shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }
+                if (ahead && anchor == null) clashOf(at)?.let { c ->
+                    ClashLine(if (heldAtWork && notify && !ring && !c.sleep) "${c.text} · 알림은 근무가 끝날 때 모아 와요" else c.text)
+                }
                 if (!ahead) {
-                    Text("지난 시각이에요. 날짜나 시각을 바꿔 주세요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error)
+                    Text(if (anchor != null) "다가오는 근무가 없어요. 근무표를 채우거나 시각으로 골라 주세요." else "지난 시각이에요. 날짜나 시각을 바꿔 주세요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
                 Text("어떻게 알려 드릴까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
                 WayRow(
@@ -237,7 +285,7 @@ internal fun ScheduleDialog(
                 // and turn on first; the schedule is kept either way and rings once they are allowed.
                 if ((notify || ring) && !notificationsOk) askNotifications()
                 if (onRepeat != null && again != repeat) onRepeat(again)
-                onSave(MemoReminder(at, ring, notify))
+                onSave(MemoReminder(anchorAt ?: at, ring, notify, work = anchor))
             }, enabled = ahead && (ring || notify)) { Text(if ((notify || ring) && !notificationsOk) "알림 켜고 저장" else "저장") }
         },
         dismissButton = {
@@ -324,15 +372,44 @@ internal fun scheduleStart(
  * ([RepeatSheet]): the chips here (안 함·매일·평일·쉬는 날) were another list than the editor's.
  */
 @Composable
-private fun RepeatLine(repeat: String, shiftTypes: List<com.bamnat.core.model.ShiftType>, onOpen: () -> Unit) {
+private fun RepeatLine(repeat: String, shiftTypes: List<com.bamnat.core.model.ShiftType>, worked: Boolean = false, onOpen: () -> Unit) {
     val names = remember(shiftTypes) { shiftTypes.associate { it.id to it.name } }
+    // 2.0.0 [RVIB-04] Told by the work, 매일 is each day with work.
+    val daily = worked && com.bamnat.core.memo.MemoRepeat.kindOf(repeat) == com.bamnat.core.memo.MemoRepeat.Kind.DAY
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
         Text("반복", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 8.dp))
         androidx.compose.material3.AssistChip(
             onClick = onOpen,
-            label = { Text(com.bamnat.core.memo.MemoRepeat.label(repeat) { names[it] }.ifEmpty { "안 함" }, maxLines = 1) },
+            label = { Text(if (daily) "근무하는 날마다" else com.bamnat.core.memo.MemoRepeat.label(repeat) { names[it] }.ifEmpty { "안 함" }, maxLines = 1) },
             leadingIcon = { Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)) },
         )
+    }
+}
+
+/**
+ * 2.0.0 [RVIB-04] (검토 I07ac-01) 근무에 붙여 매번: 출근 1시간·30분 전, 퇴근할 때, 퇴근 30분 뒤, 야간 끝나고 일어나면, each offered only when
+ * the calendar has work for it ahead (가게·투자처럼 근무 시각이 없으면 줄이 없어요). [picked] first if it is another one saved before.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun WorkRow(
+    picked: com.bamnat.core.memo.WorkAnchor?, wakeAfter: Int, next: LocalDateTime?,
+    nextOf: (com.bamnat.core.memo.WorkAnchor) -> LocalDateTime?, onPick: (com.bamnat.core.memo.WorkAnchor?) -> Unit,
+) {
+    val S = com.bamnat.core.memo.WorkAnchor.From.START
+    val E = com.bamnat.core.memo.WorkAnchor.From.END
+    val all = listOf(com.bamnat.core.memo.WorkAnchor(S, -60), com.bamnat.core.memo.WorkAnchor(S, -30), com.bamnat.core.memo.WorkAnchor(E, 0),
+        com.bamnat.core.memo.WorkAnchor(E, 30), com.bamnat.core.memo.WorkAnchor(com.bamnat.core.memo.WorkAnchor.From.WAKE, wakeAfter))
+    val offered = (listOfNotNull(picked?.takeIf { it !in all }) + all).filter { it == picked || nextOf(it) != null }
+    if (offered.isEmpty()) return
+    Text("근무에 붙여 매번", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FilterChip(selected = picked == null, onClick = { onPick(null) }, label = { Text("시각으로") })
+        for (a in offered) com.bamnat.app.ui.components.FilterChip(selected = picked == a, onClick = { onPick(a) }, label = { Text(a.label) })
+    }
+    if (picked != null && next != null) {
+        Text("다음 ${scheduleText(next)} · 근무가 바뀌면 저절로 맞춰요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
