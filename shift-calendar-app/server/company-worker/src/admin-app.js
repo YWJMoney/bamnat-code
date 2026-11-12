@@ -2509,9 +2509,13 @@ function adminApp(L, BUILD, M) {
     // 2.0.0 [RVD-16] 조건 1(총괄 11-12 2차): 목록 첫 줄이 화면 위 25% 안. 고르기 막대는 목록 뒤(아래에 붙음), 한 줄 설명과 Claude 줄은 목록 아래.
     const body = !ready ? skeleton() : !r.rewards.length ? empty(owedTab ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map(row).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}${bar}`;
+    // 2.0.0 [RVD-21] 접힌 한 줄도 1년 12개월이 언제부터인지 따라요(처리방침 3.13 게시 + 30일). 첫 쪽의 친구 초대 규칙, 없으면 설정, 없으면 줄의 값.
+    const capRule = r?.invites?.rules ?? S.data.inviteSettings;
+    const year = capRule ? { cap: capRule.yearCap, from: capRule.yearCapFrom } : r?.rewards?.find((w) => w.year)?.year;
+    const yearOn = !year || year.cap != null;
     const foot = `<div class="list-foot">${ready && owedTab && edit ? L.draftEmpty(r.rewards) : ""}
-      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · 한 분에 1년 12개월까지</summary>
-        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. 상한을 넘는 만큼은 지급하지 않아요.</p></details></div>`;
+      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · ${yearOn ? "한 분에 1년 12개월까지" : `1년 12개월 상한은 ${L.capFromWords(year.from)}`}</summary>
+        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. ${yearOn ? "상한을 넘는 만큼은 지급하지 않아요." : `모든 보상 합쳐 한 분에 1년 12개월까지는 ${L.capFromWords(year.from)} 세요. 그 전에는 친구 초대 설정의 상한만 봐요.`}</p></details></div>`;
     // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
     // 2.0.0 [RVD-16] 조건 1·4(총괄 11-12): 친구 초대 숫자도 목록 아래 그 카드로 옮겨요. 규칙 문장은 한 곳에만.
     const rules = inviteCard(can("rewards") ? r?.invites : null, can("settings"), can("settings", "edit"));
