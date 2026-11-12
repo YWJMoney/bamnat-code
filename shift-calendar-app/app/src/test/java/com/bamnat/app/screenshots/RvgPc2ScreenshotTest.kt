@@ -261,6 +261,36 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun putInCardFoldDarkHuge() = shoot("rvg33_put_in_card_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, putInCard())
     @Test fun putInCardOpenLight() = shoot("rvg33_put_in_card_open_light_100", UNFOLDED, putInCard(wide = true))
 
+    /**
+     * PC-132 ([RVG-34]): a member who started from the 팀 리더's link sees, at the calendar's head, a face that says 팀 근무표; with
+     * large text on the folded screen there is no room for the words, so the face alone, read out as the link's full name.
+     */
+    private val teamId = "Tm3dEfGh5JkLmNoPqRsTuv"
+    private fun memberHead(words: Boolean): Screen.() -> Unit = {
+        c.shareApi = shares
+        val body = JSONObject(minjiShare().schedule.toString()).apply { put("title", "3병동 김간호"); put("team", true) }
+        val share = ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
+        shares.links[teamId] = share
+        LinkStart.keepMine(c.received, teamId, share)
+        settle()
+        assertTrue(appears("3병동 김간호의 근무표 보기", exact = true))
+        assertEquals("팀", c.received.get(teamId)!!.initial)
+        if (words) assertTrue(appears("팀 근무표", exact = true)) else assertTrue(gone("팀 근무표", exact = true))
+    }
+    @Test fun memberHeadFoldLight() = shoot("rvg34_member_head_fold_light_100", FOLDED, memberHead(words = true))
+    @Test fun memberHeadFoldBig() = shoot("rvg34_member_head_fold_light_130", FOLDED, fontScale = 1.3f, memberHead(words = true))
+    @Test fun memberHeadFoldDarkHuge() = shoot("rvg34_member_head_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, memberHead(words = false))
+    // The open screen puts the bar beside the month (42% of the width): at 200% the face stands alone there too.
+    @Test fun memberHeadOpenDarkHuge() = shoot("rvg34_member_head_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, memberHead(words = false))
+    @Test fun memberHeadOpenLight() = shoot("rvg34_member_head_open_light_100", UNFOLDED, memberHead(words = true))
+    /** The list the calendar's name ▾ opens says it is the 팀 근무표. */
+    @Test fun memberSwitcherFoldDarkHuge() = shoot("rvg34_member_switcher_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {
+        memberHead(words = false).invoke(this)
+        tapText("달력 바꾸기, 지금 내 달력", exact = true)
+        assertTrue(appears("어느 달력을 볼까요?", exact = true))
+        assertTrue(appears("팀 근무표 · ", exact = false))
+    }
+
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"
