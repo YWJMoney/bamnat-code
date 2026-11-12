@@ -410,7 +410,17 @@ abstract class ScreenshotBase {
             reach(text, exact, prefix, scrolls, across)
             // Where it is once a scroll or late data has stopped moving things.
             settle()
-            touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
+            var node = reach(text, exact, prefix, 0, across)
+            // 2.0.0 [QA-10] A button can show its words before it can be pressed: 작품 상세의 '규칙 1개 넣기' reads its count from the
+            // work but is enabled only once '내 달력 미리 보기' (off the main thread) has landed. A tap in that gap did nothing, no
+            // window opened, and the next step failed (NtcScreenshotTest 161, #444·#446 CI). A person waits for the button to
+            // light up, so the tap does too; one that stays off is still tapped, as before.
+            val end = System.nanoTime() + REACH_WAIT_NANOS
+            while (node.config.contains(SemanticsProperties.Disabled) && System.nanoTime() < end) {
+                settle()
+                node = find(text, exact, prefix) ?: node
+            }
+            touch(node.boundsInWindow.center)
         }
 
         /** 1.39 [MKD-42] Whether [text] is reached by scrolling down to it (no tap), as a long page puts it below the first screen. */
