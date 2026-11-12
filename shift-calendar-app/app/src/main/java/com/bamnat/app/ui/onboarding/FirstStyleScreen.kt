@@ -149,7 +149,7 @@ private fun LinkCard(title: String, line: String?, more: String, mood: com.bamna
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (com.bamnat.app.ui.components.LocalShowKani.current) {
                     com.bamnat.app.ui.components.Kani(mood, night = com.bamnat.app.ui.components.isDarkSurface(), size = 40.dp,
-                        modifier = Modifier.padding(end = 10.dp))
+                        modifier = Modifier.padding(end = 12.dp))
                 }
                 Text(title, style = MaterialTheme.typography.titleSmall, color = on, modifier = Modifier.weight(1f).padding(vertical = 8.dp)
                     .semantics { heading() }.then(if (line == null) liveIf else Modifier))
