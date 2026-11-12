@@ -31,6 +31,12 @@ data class RestRules(
      * 11 hours are between one working day and the next. Not saved; [forStyle] sets it.
      */
     val sameDayRest: Boolean = true,
+    /**
+     * 2.0.0 [RVJ-31] (검토 T05-01) 주 52시간 (근로기준법 제50조·제53조) is told and kept by the team board's checks and auto-fill. false
+     * for a 상시 5인 미만 사업장, which those two articles do not bind (제11조 제2항, 시행령 제7조 별표 1; the 급여 대장's [BOSS-10] note
+     * leaves it out the same way). 휴게(제54조)·주휴일(제55조 제1항) do bind it, so the other checks stay. Not saved; the board sets it.
+     */
+    val weekLimit: Boolean = true,
 ) {
     /** These rules for a calendar of [style]: only 교대·주기 근무 is told about the order of its shifts. */
     fun forStyle(style: com.bamnat.core.work.WorkStyle?): RestRules =

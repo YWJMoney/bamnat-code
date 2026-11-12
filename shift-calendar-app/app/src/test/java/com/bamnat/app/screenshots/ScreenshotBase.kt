@@ -464,6 +464,10 @@ abstract class ScreenshotBase {
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
+        /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
+        fun enabled(text: String): Boolean =
+            find(text, exact = true, prefix = false)?.let { !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) } == true
+
         /**
          * [J133-45] Whether [text] comes on screen, waiting while it has not yet: a sheet, a saved row or
          * data from a fake server can land a few frames after the tap on a busy test machine. Returns as
