@@ -521,7 +521,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             val homeRoute = container.settingsRepository.current.let {
                 com.bamnat.core.layout.TabSlots.home(com.bamnat.core.layout.TabSlots.resolve(it.tabSlots, it.tabOrder, TabPicks.known))
             }
-            if (NoticeLinks.target.value == null && current != null && current != homeRoute && TopLevel.entries.any { it.route == current }) {
+            if (NoticeLinks.target.value == null && current != homeRoute && current != null && TopLevel.entries.any { it.route == current }) {
                 TabHistory.clear()
                 nav.navigate(homeRoute) {
                     popUpTo(nav.graph.findStartDestination().id) { saveState = true }

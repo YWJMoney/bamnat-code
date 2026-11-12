@@ -150,14 +150,14 @@ object DraftStore {
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun read(context: Context, key: String, now: Long = System.currentTimeMillis()): String {
+    fun read(context: Context, key: String, now: Long = com.bamnat.core.time.Today.millis()): String {
         val raw = prefs(context).getString(key, null) ?: return ""
         val at = raw.substringBefore('|').toLongOrNull() ?: 0L
         if (now - at > KEEP_DAYS * 86_400_000L) { clear(context, key); return "" }
         return raw.substringAfter('|')
     }
 
-    fun write(context: Context, key: String, text: String, now: Long = System.currentTimeMillis()) {
+    fun write(context: Context, key: String, text: String, now: Long = com.bamnat.core.time.Today.millis()) {
         if (text.isBlank()) clear(context, key) else prefs(context).edit().putString(key, "$now|$text").apply()
     }
 
