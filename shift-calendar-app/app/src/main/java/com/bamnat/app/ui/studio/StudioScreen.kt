@@ -606,14 +606,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val feelLine = vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
                     vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }
                 // 2.0.0 [RVS-16] (총괄 #495 사진, 조건 12: 글자 200%에서 제목 ‘지금 …’의 아래가 잘렸어요) The bar is as tall as its lines at this
-                // text size (스튜디오 · the start's name · 지금: …), never under the app bar's own height.
-                val typo = MaterialTheme.typography
-                val barHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
-                    fun lh(t: androidx.compose.ui.text.TextStyle) = (if (t.lineHeight.isSpecified) t.lineHeight else t.fontSize * 1.4f).toDp()
-                    lh(typo.labelMedium) + lh(typo.titleMedium) + (if (feelLine != null) lh(typo.labelSmall) else 0.dp) + 16.dp
-                }.coerceAtLeast(androidx.compose.material3.TopAppBarDefaults.TopAppBarExpandedHeight)
+                // text size (스튜디오 · the start's name · 지금: …): the app's one top bar grows to its title ([RVP-85] HQ-53).
                 TopAppBar(
-                    expandedHeight = barHeight,
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }

@@ -455,7 +455,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                             HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                             Modifier.weight(1f),
                             caption = if (employee) "기준 ${settings.averageLimitHours}시간" else "참고용",
-                            tone = if (three.overLimit) Tone.Danger else Tone.Plain,
+                            warning = three.overLimit, // 법 기준 넘김: 위험
                         )
                         StatTile(
                             "월 평균",

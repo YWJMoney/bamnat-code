@@ -116,8 +116,9 @@ internal fun NoticeStack(
     val urgent = waiting.filter { it.urgent && it.key !in state.snoozed }
     val band: Notice? = when {
         open <= 0 -> null
-        // PC-81: Once settled, a closed place stays closed: what comes later is in the bell.
-        state.settled && !state.slotOpen -> null
+        // PC-81: Once settled, a closed place stays closed: what comes later is in the bell. PC-139 (높음): except what keeps an alarm
+        // from working (알림을 다시 끔, 알림에서 오늘 알람 끔 while the calendar stayed open behind): that one line is worth the move.
+        state.settled && !state.slotOpen -> urgent.firstOrNull { it.keep && it.key !in state.snoozed }
         // 갈래 P 3/3 (L의 '앱 잠금 쉼'은 화면이 앞에 온 뒤에야 말해서 알람 줄에 띠를 내줬어요): until it settles the first in the order
         // has it; then the band up keeps its place, so what is under the finger does not change.
         !state.settled -> urgent.firstOrNull()
@@ -132,7 +133,7 @@ internal fun NoticeStack(
         // that copy says nothing too.
         if (state.answered.isNotEmpty()) state.answered.filter { (state.heights[it] ?: 0) == 0 }.takeIf { it.isNotEmpty() }?.let { state.answered = state.answered - it.toSet() }
         state.bandKey = band?.key
-        if (!state.settled || band == null) state.slotOpen = band != null
+        if (!state.settled || band == null || band.keep) state.slotOpen = band != null
         // The bell's number is what its sheet holds (the band's notice too), so '3' on the bell is '알림 3' when it opens.
         state.inBell = rows.size + postedRows.size
         state.present = present.map { it.key }

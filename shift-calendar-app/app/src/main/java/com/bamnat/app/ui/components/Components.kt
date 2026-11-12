@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
@@ -277,10 +278,10 @@ fun StatTile(
     // the same shape as [warning]; [warning] stays for danger.
     caution: Boolean = false,
 ) {
-    val cal = LocalCalendarColors.current
-    val careInk = MaterialTheme.bamnat.caution
-    val ink = when { warning -> cal.warning; caution -> careInk; else -> null }
-    val bg = when { warning -> cal.warningContainer; caution -> careInk.copy(alpha = 0.12f); else -> MaterialTheme.colorScheme.surfaceContainerLowest }
+    // 2.0.0 [RVP-13] (HQ-54, 조건 6) 위험 is the app's danger colour, not the calendar's Sunday red under another name.
+    val careInk = Tone.Caution.color()
+    val ink = when { warning -> Tone.Danger.color(); caution -> careInk; else -> null }
+    val bg = when { warning -> Tone.Danger.container(); caution -> careInk.copy(alpha = 0.12f); else -> MaterialTheme.colorScheme.surfaceContainerLowest }
     Surface(
         modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
