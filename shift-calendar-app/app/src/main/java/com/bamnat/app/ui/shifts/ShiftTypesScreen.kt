@@ -658,7 +658,7 @@ fun ShiftTypeEditorDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ShiftBadge(draft.copy(label = draft.label.ifBlank { draft.name.take(1).ifBlank { "?" } }), size = 44.dp,
+                        ShiftBadge(draft.copy(label = draft.label.ifBlank { com.bamnat.core.model.ShiftRules.cut(draft.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS).ifBlank { "?" } }), size = 44.dp,
                             outlined = draft.isOff)
                         Spacer(Modifier.width(12.dp))
                         OutlinedTextField(
@@ -671,7 +671,9 @@ fun ShiftTypeEditorDialog(
                         Spacer(Modifier.width(8.dp))
                         OutlinedTextField(
                             value = draft.label,
-                            onValueChange = { v -> draft = draft.copy(label = v.take(2)) },
+                            // 2.0.0 [RVM-29] SN-16: two letters as a person counts them (👩‍⚕️ is one), never half an emoji (ShiftRules).
+                            onValueChange = { v -> draft = draft.copy(label = com.bamnat.core.model.ShiftRules.cut(v,
+                                com.bamnat.core.model.ShiftRules.LABEL_LETTERS, com.bamnat.core.model.ShiftRules.LABEL_UNITS)) },
                             label = { Text("표시") },
                             singleLine = true,
                             modifier = Modifier.width(76.dp),
@@ -897,7 +899,7 @@ fun ShiftTypeEditorDialog(
                                 Text("지금 모양 그대로 써도 돼요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            ShiftBadge(draft.copy(label = draft.label.ifBlank { draft.name.take(1).ifBlank { "?" } }), size = 32.dp,
+                            ShiftBadge(draft.copy(label = draft.label.ifBlank { com.bamnat.core.model.ShiftRules.cut(draft.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS).ifBlank { "?" } }), size = 32.dp,
                                 outlined = draft.isOff)
                             Spacer(Modifier.width(8.dp))
                             Icon(if (styling) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)

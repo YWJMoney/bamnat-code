@@ -593,7 +593,8 @@ private fun InquiryForm(
         val body = bodyOf(text)
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+    val inviteTerms = rememberInviteTerms()
+    val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
         var notIt by remember { mutableStateOf(emptySet<String>()) }
         var helped by remember { mutableStateOf<String?>(null) }
         val tips = remember(body, kind) {
@@ -1296,7 +1297,8 @@ private fun HelpHome(
 ) {
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+    val inviteTerms = rememberInviteTerms()
+    val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }

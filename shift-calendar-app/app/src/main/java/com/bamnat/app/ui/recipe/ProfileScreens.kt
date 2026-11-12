@@ -723,14 +723,22 @@ internal fun compact(n: Int): String = when {
     else -> n.toString()
 }
 
-/** Works in a 2-column grid: the theme drawn large, 📌 on 대표 작품. */
+/**
+ * Works in a grid: the theme drawn large, 📌 on 대표 작품. 2.0.0 [RVM-32] 총괄 HQ-43: as many to a row as 장터 takes at this width (two on a
+ * folded phone, four unfolded), not always two.
+ */
 @Composable
 private fun Grid(items: List<RecipeItem>, pins: List<String>, empty: String, onOpen: (String) -> Unit) {
     if (items.isEmpty()) { Text(empty, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); return }
-    items.chunked(2).forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            row.forEach { r -> WorkTile(r, r.code in pins, Modifier.weight(1f)) { onOpen(r.code) } }
-            if (row.size == 1) Spacer(Modifier.weight(1f))
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cols = marketCols(maxWidth.value.toInt(), small = false)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items.chunked(cols).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(MARKET_GAP.dp)) {
+                    row.forEach { r -> WorkTile(r, r.code in pins, Modifier.weight(1f)) { onOpen(r.code) } }
+                    repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
     }
 }

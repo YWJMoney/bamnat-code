@@ -33,11 +33,13 @@ class TodayComplicationService : SuspendingTimelineComplicationDataSourceService
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationDataTimeline? {
-        val days = WatchStore.load(this)?.days
+        val p = WatchStore.load(this)
+        val days = p?.days
+        val noun = p?.noun ?: "근무"
         val zone = Today.zone()
         val today = Today.date(zone)
-        val now = data(request.complicationType, ComplicationDays.today(days, today, zone)) ?: return null
-        val ahead = days?.let { ComplicationDays.ahead(it, today, zone) }.orEmpty().mapNotNull { d ->
+        val now = data(request.complicationType, ComplicationDays.today(days, today, zone, noun)) ?: return null
+        val ahead = days?.let { ComplicationDays.ahead(it, today, zone, noun) }.orEmpty().mapNotNull { d ->
             data(request.complicationType, d)?.let { TimelineEntry(TimeInterval(d.start, d.end), it) }
         }
         return ComplicationDataTimeline(now, ahead)

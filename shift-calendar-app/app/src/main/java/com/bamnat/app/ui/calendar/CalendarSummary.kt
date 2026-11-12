@@ -275,9 +275,11 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
             autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 17.sp, stepSize = 0.5.sp),
         )
         // [CAL-52] Each note on its own line, shrinking a little before it would be cut.
+        // 갈래 P 3/3 (R 점검 편 폭: 한 줄에 다 들지 않는 '10/14 전은 근무표'가 '10/14 전은'에서 잘림, 조건 12): at the smallest size it
+        // takes a second line instead of losing its end.
         f.notes.forEach {
             BasicText(it, style = MaterialTheme.typography.labelSmall.merge(TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)),
-                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
+                maxLines = 2, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
         }
     }
 }
@@ -637,25 +639,6 @@ internal fun TodaySalesCard(today: LocalDate, sales: List<DailySales>, onWrite: 
                 compare?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             if (now == null) Button(onClick = onWrite) { Text("매출 적기") } else OutlinedButton(onClick = onWrite) { Text("고치기") }
-        }
-    }
-}
-
-/** [CAL-13] The added calendar on screen does not ring; one line says so and turns it back on. */
-@Composable
-internal fun CalendarAlarmsOffLine(name: String, onTurnOn: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onTurnOn,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
-    ) {
-        Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.AlarmOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Text("‘$name’ 달력은 알람이 꺼져 있어요", style = MaterialTheme.typography.bodyMedium, maxLines = 3,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("켜기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
         }
     }
 }

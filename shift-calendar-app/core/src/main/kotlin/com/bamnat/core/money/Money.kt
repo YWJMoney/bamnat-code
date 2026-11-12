@@ -459,6 +459,8 @@ data class MoneyBook(
     val styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     /** [COMN-04] Lines from payment notifications waiting in 확인 대기함, kept out of every total until confirmed. */
     val pending: List<MoneyEntry> = emptyList(),
+    /** 2.0.0 [RVK-40] (검토 MONEY-50) The shops' 일반·간이과세 behind this book, for the 부가세 deadlines. */
+    val vat: Set<TaxDeadlines.Vat> = emptySet(),
 ) {
     /** [SHOP-04] Every kind of work behind this book, for the tax deadlines that go with them. */
     val allStyles: Set<com.bamnat.core.work.WorkStyle> get() = styles + setOfNotNull(style)
@@ -506,6 +508,7 @@ data class MoneyBook(
                 moved.flatMap { it.entries }, moved.flatMap { it.jobs }, moved.flatMap { it.sales }, moved.flatMap { it.fixed },
                 moved.flatMap { it.receivables }, moved.flatMap { it.accounts },
                 styles = books.flatMap { it.allStyles }.toSet(), pending = moved.flatMap { it.pending },
+                vat = books.flatMap { it.vat }.toSet(),
             )
         }
 

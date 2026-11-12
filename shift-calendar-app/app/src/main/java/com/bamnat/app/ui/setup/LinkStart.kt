@@ -72,7 +72,8 @@ object LinkStart {
      * 2.0.0 [RVG-32] 검토 PC-93 (조건 4·16): a link's 근무표 in a sentence: ‘민지’ 근무표, or 받은 근무표 for one sent without a name
      * (before, ‘받은’ 근무표 and 이름 없음님).
      */
-    fun roster(title: String?): String = title?.trim()?.takeIf { it.isNotEmpty() && it != NO_NAME }?.let { "‘$it’ 근무표" } ?: "받은 근무표"
+    // 2.0.0 [RVG-35] 검토 HQ-64: in the link's own word ([com.bamnat.core.work.linkWord]): ‘민지’ 영업일, 받은 일정.
+    fun roster(title: String?, word: String = "근무표"): String = title?.trim()?.takeIf { it.isNotEmpty() && it != NO_NAME }?.let { "‘$it’ $word" } ?: "받은 $word"
 
     fun draft(schedule: SharedSchedule, from: LocalDate): SetupDraft? {
         val types = schedule.types.map { it.asShiftType() }.distinctBy { it.id }

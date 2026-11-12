@@ -132,6 +132,24 @@ class InviteAppTest {
         self.sync()
         assertEquals("self", self.report(code, "typed").reason)
         assertEquals(2, inviter.refresh()!!.friends)
+
+        // 2.0.0 [RVO-13] 통합 2차 PC-114: the year's 12 months spoken for while most still wait for the 운영팀. The owner makes one friend
+        // worth 11 months; with the one month paid above, the cap is reached, but 11 of it has not come in: the card says so, not '모두 받았어요'.
+        setRules(url, """{"friends":1,"days":7,"months":11}""")
+        val third = phone(url, "f", "test-device-friend-00004", "android-f") { referrer }
+        third.sync()
+        assertEquals("waiting", third.report(third.offer()!!, "referrer").status)
+        moveServerClock(url, days = 7)
+        Today.use(Clock.offset(Clock.systemUTC(), Duration.ofDays(14))) // real clock: the local server's test clock runs on from the real one, so the phone moves with it
+        third.sync()
+        assertEquals("credited", third.store.current.answer?.status)
+        counts = inviter.refresh()!!
+        assertEquals(Triple(1, 11, true), Triple(counts.given, counts.pending, counts.capReached))
+        val capped = InviteRules.capped(counts.terms.capMonths, counts.pending)
+        assertEquals("프로 11개월은 운영팀이 확인한 뒤 들어와요. 확인이 끝나면 올해 받을 수 있는 12개월이 모두 차요. 친구는 계속 셀게요.", capped)
+        assertEquals("받은 프로 1개월 · 확인 기다리는 11개월", InviteRules.status(counts.given, counts.pending, counts.waiting))
+        passes = TierClient(url).passes("test-device-inviter-0001")
+        assertEquals(listOf(11 to "invite"), passes.pending.map { it.months to it.why })
     }
 
     /** Signs in to the developer app on the local server, as its 설정 screen does, and saves the invite rules. */

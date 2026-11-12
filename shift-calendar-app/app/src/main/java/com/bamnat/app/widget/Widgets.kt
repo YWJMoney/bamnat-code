@@ -193,12 +193,14 @@ internal fun TodayContent(data: WidgetData) {
             Spacer(GlanceModifier.height(4.dp))
             HourlyClockButton(out, yesterday = out && clockOutDay(todayDay, data.today, now) { data.day(data.today.minusDays(1)) }?.date != data.today)
         }
-        val line = data.flow?.line
+        val line = data.flow?.line ?: data.restLine?.text
         if (line != null) {
             Spacer(GlanceModifier.height(4.dp))
-            val warn = data.flow.state == TodayFlow.State.ALARM_OFF || data.flow.state == TodayFlow.State.FORGOT_WAKE
+            val warn = data.flow?.state == TodayFlow.State.ALARM_OFF || data.flow?.state == TodayFlow.State.FORGOT_WAKE
+            // 2.0.0 [RVI-18] (검토 T03-08) 가게·현장·투자: the sleep line by the next alarm, where 오늘의 흐름 has none.
+            val mark = data.flow?.let(::flowMark) ?: if (data.restLine?.sleeping == true) "🌙" else "🛏"
             Text(
-                "${flowMark(data.flow)} $line",
+                "$mark $line",
                 style = TextStyle(color = if (warn) GlanceTheme.colors.error else GlanceTheme.colors.primary, fontSize = wsp(13), fontWeight = FontWeight.Medium),
                 maxLines = 1,
             )
@@ -380,6 +382,15 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
                 val leave = day.leave?.takeIf { !it.isFullDay }
                 if (day.isWorkDay && start != null && end != null) {
                     Text(Fmt.timeRangeShort(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                } else {
+                    // 2.0.0 [RVI-66] (PC 통합 1차 N8) '주간 대근' on a day off had no hours under it, as a shift has.
+                    day.extras.firstOrNull { it.covered != null }?.let { e ->
+                        val from = e.from
+                        val to = e.to
+                        if (from != null && to != null) {
+                            Text(Fmt.timeRangeShort(from.toLocalTime(), to.toLocalTime()), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                        }
+                    }
                 }
             }
         }

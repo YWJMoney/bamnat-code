@@ -1,6 +1,7 @@
 package com.bamnat.app.data
 
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.toEntity
@@ -70,12 +71,21 @@ class MemoRepository(
 
     /** [NOTE-01][MEMO-01] Dates with a memo that shows on calendar [calendar]; [NOTE-05] each day a repeating one comes back on. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = memosFor(calendar).flatMapLatest { list ->
-        shiftLookup(list, calendar).map { shifts ->
-            val (from, to) = repeatWindow()
-            MemoRepeat.expand(list, from, to, shifts).mapNotNullTo(HashSet()) { it.date }
-        }
-    }.flowOn(kotlinx.coroutines.Dispatchers.Default) // [SPD-25] 1.31 I4: four years of repeats, never on the main thread
+    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = datesWithMemos(calendar, kotlinx.coroutines.flow.flowOf(repeatWindow()))
+
+    /**
+     * 2.0.0 [RVI-53] (검토 MEMO-19) The same, between the days [window] gives (the calendar: around the month on screen), and worked
+     * out again only when a memo's day, repeat or skips change: a save of its words (every 400ms as one types) leaves the dots alone.
+     */
+    fun datesWithMemos(calendar: String, window: Flow<Pair<LocalDate, LocalDate>>): Flow<Set<LocalDate>> =
+        memosFor(calendar).distinctUntilChanged { a, b -> a.map(::dotKey) == b.map(::dotKey) }.flatMapLatest { list ->
+            combine(shiftLookup(list, calendar), window.distinctUntilChanged()) { shifts, (from, to) ->
+                MemoRepeat.expand(list, from, to, shifts).mapNotNullTo(HashSet()) { it.date }
+            }
+        }.flowOn(kotlinx.coroutines.Dispatchers.Default) // [SPD-25] 1.31 I4: repeats laid out never on the main thread
+
+    /** What puts a memo's dots on the calendar. */
+    private fun dotKey(m: Memo) = listOf(m.id, m.date, m.repeat, m.skips, m.reminder?.at, m.deletedAtMillis)
 
     /**
      * [EASE-22] For the 근무마다 memos among [list] seen on calendar [calendar]: the schedule of the calendar each goes by
@@ -119,14 +129,21 @@ class MemoRepository(
 
     suspend fun get(id: Long): Memo? = dao.get(id)?.toModel()
 
-    /** Inserts or updates; returns the memo as stored (with id and timestamps). */
-    suspend fun save(memo: Memo): Memo {
+    /** 2.0.0 [RVI-53] (검토 MEMO-19) Memo [id] as it changes, read alone; null once it is gone. */
+    fun observe(id: Long): Flow<Memo?> = dao.observe(id).map { it?.toModel() }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
+    /**
+     * Inserts or updates; returns the memo as stored (with id and timestamps). 2.0.0 [RVI-56] (검토 U07a-14) [touch] false keeps the
+     * memo's 고친 시각: a 미루기 or 끝내기 from its notice is not an edit, so '최근 수정순' does not move it to the top.
+     */
+    suspend fun save(memo: Memo, touch: Boolean = true): Memo {
         val now = clock()
         return if (memo.id == 0L) {
             val toInsert = memo.copy(createdAtMillis = now, updatedAtMillis = now)
             toInsert.copy(id = dao.insert(toInsert.toEntity()))
         } else {
-            val toUpdate = memo.copy(updatedAtMillis = now, createdAtMillis = memo.createdAtMillis.takeIf { it > 0 } ?: now)
+            val toUpdate = memo.copy(updatedAtMillis = if (touch || memo.updatedAtMillis <= 0) now else memo.updatedAtMillis,
+                createdAtMillis = memo.createdAtMillis.takeIf { it > 0 } ?: now)
             dao.update(toUpdate.toEntity())
             toUpdate
         }
@@ -143,9 +160,14 @@ class MemoRepository(
      * 2.0.0 [RVL-19] (검토 SCAN-12) [addQuick] unless [date] already has a memo with the same line: the same roster put in again
      * does not leave a second '듀티표 표시' memo.
      */
-    suspend fun addQuickOnce(date: LocalDate, text: String, calendars: Set<String> = emptySet()): Memo? {
+    suspend fun addQuickOnce(
+        date: LocalDate, text: String, calendars: Set<String> = emptySet(),
+        /** 2.0.0 [RVL-34] The same memo as an older version worded it, so a renamed label is not put in twice. */
+        alsoAs: Collection<String> = emptyList(),
+    ): Memo? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || memosOn(date).first().any { it.body.trim() == trimmed }) return null
+        val same = alsoAs.mapTo(hashSetOf(trimmed)) { it.trim() }
+        if (trimmed.isEmpty() || memosOn(date).first().any { it.body.trim() in same }) return null
         return addQuick(date, trimmed, calendars)
     }
 

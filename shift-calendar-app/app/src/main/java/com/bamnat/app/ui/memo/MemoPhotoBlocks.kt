@@ -350,7 +350,7 @@ internal fun MemoPhotoViewer(name: String, onClose: () -> Unit) {
  * [MPH-01] 사진 넣기: 사진 고르기 (the system photo picker, several at once, no permission) or 사진 찍기 (the camera app). Each photo goes
  * in through [onPhoto] as it is copied in; [menu] opens the choice.
  */
-class MemoPhotoPicker internal constructor(val open: () -> Unit, val pick: () -> Unit)
+class MemoPhotoPicker internal constructor(val open: () -> Unit, val pick: () -> Unit, val busy: () -> Boolean = { false })
 
 @Composable
 internal fun rememberMemoPhotoPicker(
@@ -386,13 +386,16 @@ internal fun rememberMemoPhotoPicker(
         }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { take(it) }
-    var shot by remember { mutableStateOf<Uri?>(null) }
+    // 2.0.0 [RVI-45] (검토 MEMO-25) Kept across the screen being made again while the camera is up (a phone short of memory),
+    // so the photo taken still comes in.
+    var shot by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val uri = shot
         if (ok && uri != null) take(listOf(uri))
     }
     val picker = remember {
-        MemoPhotoPicker(open = { onOpen(); menu = true }, pick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
+        MemoPhotoPicker(open = { onOpen(); menu = true }, pick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            busy = { busy })
     }
     val ui: @Composable () -> Unit = {
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -420,7 +423,7 @@ internal fun rememberMemoPhotoPicker(
                 onClick = { menu = false; onBoard() },
             )
         }
-        if (busy) Text("  사진 넣는 중…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVI-45] '사진 넣는 중…' is the chip's own word now (it sat over the chip).
     }
     return picker to ui
 }
@@ -431,7 +434,7 @@ internal fun MemoPhotoChip(count: Int, picker: MemoPhotoPicker, menu: @Composabl
     Box {
         AssistChip(
             onClick = picker.open,
-            label = { Text(if (count > 0) "사진 ${count}장 · 넣기" else "사진 넣기") },
+            label = { Text(if (picker.busy()) "사진 넣는 중…" else if (count > 0) "사진 ${count}장 · 넣기" else "사진 넣기") },
             leadingIcon = { Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(18.dp)) },
         )
         menu()

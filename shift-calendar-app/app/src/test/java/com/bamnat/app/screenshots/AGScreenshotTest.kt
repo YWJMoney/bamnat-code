@@ -43,6 +43,8 @@ class AGScreenshotTest : ScreenshotBase() {
     private companion object {
         const val PHONE_393 = "w393dp-h873dp-port-440dpi"
         const val REFERRER = "utm_source=bamnat_invite&utm_content=FRND2345"
+        /** The 친구 초대 권유's row in the 알림함. */
+        const val NUDGE = "친구를 초대하면 무료로 써요"
     }
 
     private lateinit var api: FakeInviteApi
@@ -120,6 +122,8 @@ class AGScreenshotTest : ScreenshotBase() {
         assertEquals(listOf("FRND2345" to "referrer"), api.uses)
         assertEquals("FRND2345", c.invites.store.current.reportedCode)
         // [INVITE-13] On the calendar, no question to find: what was said, and the friend's own chance to invite.
+        // 2.0.0 [RVP-43] HQ-49: in the 알림함, whose row says it was told (not the question again).
+        openNotice("친구 초대")
         reveal("초대한 분께 알렸어요")
         assertTrue(gone("친구 초대로 오셨나요?"))
         assertTrue(appears("당신도 친구 5명이 각자 7일 이상 쓰면"))
@@ -144,7 +148,10 @@ class AGScreenshotTest : ScreenshotBase() {
         c.referrerSource = ReferrerSource { REFERRER }
         runBlocking { c.invites.sync() }
         settle()
-        // First among the notices: seen without opening "알림 n개 더 보기".
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함's 안내 now (only what has to be seen stands over the month); the bell's number
+        // says it is there, and its row opens the question in place.
+        assertTrue(appears("알림 ", exact = false))
+        openNotice("친구 초대")
         reveal("친구 초대로 오셨나요?")
         assertTrue(appears("알리기", exact = true))
         // A code from the link is kept: none can be typed over it.
@@ -159,19 +166,30 @@ class AGScreenshotTest : ScreenshotBase() {
         // The calendar reads the install day again as it opens.
         tab(1, wide = false); tab(0, wide = false)
         settle()
-        if (!shows("친구에게 밤낮 알려 주기")) tapText("알림 ", prefix = true, scrolls = 0)
-        reveal("친구에게 밤낮 알려 주기")
-        assertTrue(appears("다음 프로까지 2명"))
-        assertEquals(Today.date(), c.grow.current.inviteShownOn)
-        tapText("그만 보기", exact = true)
-        assertTrue(gone("친구에게 밤낮 알려 주기"))
+        // 2.0.0 [RVP-43] HQ-48·HQ-49·HQ-50: a 권유 row of the 알림함 (not a card over the month); a tap goes to 프로's 친구 초대.
+        tapText("알림 ", prefix = true, scrolls = 0)
+        assertTrue(appears(NUDGE, exact = true))
+        // 기능 켜고 끄기 still turns it off, and on again the same day it is back.
         val f = FeatureRegistry.get("invite.nudge")!!
-        assertTrue("off in 기능 켜고 끄기", com.bamnat.app.data.GuideStore.get(app).current.isOff(f, GuideState.ALL))
-        // On again in 기능 켜고 끄기: the same day it shows again, and the picture is of the card.
-        com.bamnat.app.data.GuideStore.get(app).setOn(f, GuideState.ALL, true)
+        val guide = com.bamnat.app.data.GuideStore.get(app)
+        guide.setOn(f, GuideState.ALL, false)
+        assertTrue("off in 기능 켜고 끄기", gone(NUDGE, exact = true))
+        guide.setOn(f, GuideState.ALL, true)
+        assertTrue(appears(NUDGE, exact = true))
+        assertNull("only a tap on it counts as seen", c.grow.current.inviteShownOn)
+    })
+
+    /** Its X rests it [com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS] days, as the card's 닫기 did (not back tomorrow). */
+    @Test fun theInviteRowRestsWhenClosed() = shoot("1084b_ag_invite_rests", FOLDED, style(WorkStyle.SHIFT) {
+        c.invites.installedAt = { Today.instant().minus(Duration.ofDays(4)) }
+        api.viewAnswer = view(progress = 3, waiting = 1, friends = 3)
+        runBlocking { c.invites.makeLink() }
+        tab(1, wide = false); tab(0, wide = false)
         settle()
-        if (!shows("친구에게 밤낮 알려 주기")) tapText("알림 ", prefix = true, scrolls = 0)
-        reveal("친구에게 밤낮 알려 주기")
+        tapText("알림 ", prefix = true, scrolls = 0)
+        tapText("닫기: $NUDGE", exact = true, scrolls = 0)
+        assertTrue(gone(NUDGE, exact = true))
+        assertEquals(Today.date(), c.grow.current.inviteClosedOn)
     })
 
     @Test fun settingsStartsWithGrowingTogether() = shoot("1085_ag_settings_top", FOLDED, style(WorkStyle.SHIFT) {
@@ -182,7 +200,7 @@ class AGScreenshotTest : ScreenshotBase() {
         assertTrue(appears("개발자가 직접 읽고 답을 드리고"))
         // [J133-77] 1.33: while this card says 친구 초대, the 더 보기 row does not say it again.
         reveal("더 보기", exact = true)
-        assertTrue(gone("초대 코드 넣기"))
+        assertTrue(gone("받은 코드 넣기"))
         scrollDown(2000)
         reveal("함께 만들어요", exact = true)
         noCuts("settings_top")
@@ -229,8 +247,9 @@ class AGScreenshotTest : ScreenshotBase() {
         reveal("‘명세서 대조’ · 프로 기능이에요")
         assertTrue(appears("광고 보고 급여 7일 열기", exact = true))
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
-        reveal("친구 초대로 프로 이용권 받기", exact = true)
-        assertTrue(appears("친구 5명이 각자 7일 이상 쓰면"))
+        // 2.0.0 [RVO-13] (HQ-48) the same name and one-line promise as on 프로.
+        reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
+        assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월"))
         assertTrue(app.container.featureGate.state.value.preview)
         noCuts("sheet")
     }
@@ -264,8 +283,8 @@ class AGScreenshotTest : ScreenshotBase() {
             com.bamnat.app.ui.pro.ProOfferHost(app.container)
         }
         settle()
-        reveal("친구 초대로 프로 이용권 받기", exact = true)
-        tapText("친구 초대로 프로 이용권 받기", exact = true)
+        reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
+        tapText(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
         reveal("‘근무·급여 비교’ · 프로 기능이에요")
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
     }
@@ -275,7 +294,8 @@ class AGScreenshotTest : ScreenshotBase() {
         com.bamnat.app.diag.CrashLog.write(app, "main", IllegalStateException(), Today.millis() - 60_000)
         // The calendar reads the note again as it opens.
         tab(1, wide = false); tab(0, wide = false)
-        if (!shows("앱이 갑자기 닫혔어요")) tapText("알림 ", prefix = true, scrolls = 0)
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함, opened in place there.
+        openNotice("불편한 점 알려 주기")
         reveal("앱이 갑자기 닫혔어요")
         tapText("멈춤 기록과 함께 알려 주기")
         assertTrue(c.grow.current.crashSeenAt > 0)
@@ -309,7 +329,7 @@ class AGScreenshotTest : ScreenshotBase() {
         lockedPay().invoke(this)
         openPayGuides()
         tapText("금액 비교하기", scrolls = 30)
-        reveal("친구 초대로 프로 이용권 받기", exact = true)
+        reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
         noCuts("sheet_200")
     }
 

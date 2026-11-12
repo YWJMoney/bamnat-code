@@ -251,7 +251,7 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
     fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
     when (style) {
         null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
-            NavRow("한 달 근무 넣기", "달력 위 키패드로 바로 넣거나, 듀티표 사진·엑셀·PDF를 읽어 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            NavRow("한 달 근무 넣기", "달력 위 키패드로 바로 넣거나, 근무표 사진·엑셀·PDF를 읽어 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
             HorizontalDivider()
             NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
         }

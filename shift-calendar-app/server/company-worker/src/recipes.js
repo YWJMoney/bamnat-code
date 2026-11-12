@@ -17,7 +17,7 @@ import { careGate, careRepeat } from "./community-care.js";
 import { makerMarks, markFields } from "./maker-mark.js";
 import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys, fxReadsLink } from "./formula.js";
-import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
+import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap, decorTapProblem } from "./decor.js";
 import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 import { waitingPhotos } from "./photo-guard.js";
 import { PARTS_SINCE } from "./parts-since.js";
@@ -754,6 +754,11 @@ export function cleanRecipeObject(raw) {
     if (seen.has(kind)) fail("pieces", `pieces.${i}`);
     seen.add(kind);
     pieces.push({ kind, ...fields(RECIPE_PIECES[kind].fields, p, `pieces.${i}`, ctx) });
+    // 2.0.0 [RVM-23] RCP-17·STU-19: a 꾸밈 단추 one cannot see, covering a part or bigger than a button is refused (decor.js).
+    if (kind === "decor") {
+      const bad = decorTapProblem(pieces[pieces.length - 1].items ?? []);
+      if (bad >= 0) fail("decor_tap", `pieces.${i}.items.${bad}.tap`);
+    }
   });
   if (!pieces.length) fail("pieces", "pieces");
   const fits = new Set(pieces.flatMap((p) => RECIPE_PIECES[p.kind].styles));

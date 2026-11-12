@@ -165,4 +165,9 @@ data class MemoEntity(
     @ColumnInfo(defaultValue = "NULL") val doneAt: Long? = null,
     /** Version 33 (1.39 [TASK-02]): the days a repeating memo was finished on, as [com.bamnat.core.memo.MemoRepeat.encodeSkips]. */
     @ColumnInfo(defaultValue = "''") val doneDays: String = "",
+    /**
+     * Version 35 (2.0.0 [RVIB-04] 검토 I07ac-01): a schedule told by the work ('출근 1시간 전'), as
+     * [com.bamnat.core.memo.WorkAnchor.code]; null for one told by the clock ([remindAt]) as before.
+     */
+    @ColumnInfo(defaultValue = "NULL") val remindWork: String? = null,
 )

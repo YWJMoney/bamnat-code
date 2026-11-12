@@ -87,7 +87,8 @@ class PayFacts(private val pay: PaySource, private val snap: ScheduleSnapshot) {
     fun payDays(today: LocalDate, months: Int = 4): List<com.bamnat.core.money.PayDay> =
         (-1..months).map { YearMonth.from(today).plusMonths(it.toLong()) }.mapNotNull { m ->
             val gross = month(m)?.total?.takeIf { it > 0 } ?: return@mapNotNull null
-            val date = pay.profile.period.payDate(m)
+            // 2.0.0 [RVK-38] (검토 MONEY-79) The widget's 미래 잔액 too: the day it really comes off a weekend or 공휴일.
+            val date = pay.profile.period.payDateWorkday(m)
             com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), com.bamnat.core.pay.PayIncome.net(pay.profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
         }
 

@@ -21,7 +21,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -82,11 +81,12 @@ internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
     val date = memo.date ?: Today.date()
     val label = prop?.label ?: "금액"
     val title = memo.title.ifBlank { prop?.label ?: memo.preview }.ifBlank { "메모" }.take(40)
-    val income = INCOME_WORDS.any { label.contains(it) }
+    // 2.0.0 [RVI-34] (검토 T07a-08) '카드'·'현금' is a shop's 매출 (카드 매출); for anyone else it is how the money was spent.
+    val shop = container.settingsRepository.current.workStyle == com.bamnat.core.work.WorkStyle.BUSINESS
+    val income = incomeLabel(label, shop)
     var kind by remember { mutableStateOf(if (income) MoneyKind.INCOME else MoneyKind.EXPENSE) }
     var category by remember { mutableStateOf(if (income) (if (label.contains("매출")) "매출" else "부수입") else "기타") }
     var typed by remember { mutableStateOf(amount?.toString().orEmpty()) }
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -111,9 +111,15 @@ internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
         confirmButton = {
             val n = typed.toLongOrNull() ?: 0
             TextButton(enabled = n > 0 && category.isNotBlank(), onClick = {
-                scope.launch {
-                    money.save(MoneyEntry(date = date, kind = kind, amount = n, category = category.trim(), merchant = title, source = MoneySource.MEMO, memo = "메모에서"))
-                    android.widget.Toast.makeText(context, "가계부에 ${Fmt.won(n)} 넣었어요", android.widget.Toast.LENGTH_SHORT).show()
+                // 2.0.0 [RVI-33] (검토 MEMO-18) The save runs in the app's scope: closing the dialog no longer cancels it.
+                val app = context.applicationContext
+                val entry = MoneyEntry(date = date, kind = kind, amount = n, category = category.trim(), merchant = title, source = MoneySource.MEMO, memo = "메모에서")
+                container.appScope.launch {
+                    val saved = runCatching { money.save(entry) }.isSuccess
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(app, if (saved) "가계부에 ${Fmt.won(n)} 넣었어요" else "가계부에 넣지 못했어요 · 다시 눌러 주세요",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
                 onDismiss()
             }) { Text("넣기") }
@@ -122,7 +128,13 @@ internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
     )
 }
 
-private val INCOME_WORDS = listOf("매출", "수입", "급여", "팁", "받은", "입금", "현금", "카드")
+private val INCOME_WORDS = listOf("매출", "수입", "급여", "팁", "받은", "입금")
+/** Words a shop's 매출 일지 uses for money in ('카드: 12000' 카드 매출); for anyone else they say how money was spent. */
+private val SHOP_INCOME_WORDS = listOf("현금", "카드")
+
+/** 2.0.0 [RVI-34] Whether a 금액 칸 named [label] is money in: '매출'·'입금'…, and '현금'·'카드' only in a [shop]. */
+internal fun incomeLabel(label: String, shop: Boolean): Boolean =
+    INCOME_WORDS.any { label.contains(it) } || (shop && SHOP_INCOME_WORDS.any { label.contains(it) })
 
 /** PC 확인 5c21f3bb: the first amount written as '4500원', '4,500 원' or '3만원'·'1.5만 원' in [text], or null. */
 internal fun wonInText(text: String): Long? {

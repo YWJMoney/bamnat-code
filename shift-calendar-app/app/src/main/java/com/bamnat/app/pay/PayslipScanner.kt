@@ -17,6 +17,8 @@ import com.bamnat.core.pay.SlipReading
 import com.bamnat.core.pay.SlipVote
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -98,54 +100,68 @@ object PayslipScanner {
         var photo = ImagePrep.load(context, uri)
         if (turn != 0) photo = ImagePrep.turned(photo, turn.toFloat()).also { if (it !== photo) photo.recycle() }
         progress(1, 0)
-        var first = OcrModel.read(context, photo, preparing)
-        var firstLines = lines(first)
-        var kept = turn
-        // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads
-        // like a payslip ([PhotoTurn]); the way that read well last time on this phone is tried first, and a good one stops.
-        if (turn == 0 && PhotoTurn.worthTurning(firstLines)) {
-            val memory = TurnMemory(context)
-            val tried = mutableMapOf<Int, Pair<Text, List<OcrLine>>>()
-            for (deg in PhotoTurn.candidates(firstLines, memory.last)) {
-                val turned = runCatching { ImagePrep.turned(photo, deg.toFloat()) }.getOrNull() ?: continue
-                val t = runCatching { OcrModel.read(context, turned) }.getOrNull()
-                turned.recycle()
-                if (t == null) continue
-                tried[deg] = t to lines(t)
-                if (PhotoTurn.pick(firstLines, mapOf(deg to tried.getValue(deg).second)) == deg && !PhotoTurn.worthTurning(tried.getValue(deg).second)) break
+        // 2.0.0 [RVL-31] (검토 SCAN-03·SCAN-24) One recognizer for all the ways, and a cancelled reading stops at the next one.
+        OcrModel.reading(context, preparing) { reader ->
+            var first = reader.read(photo)
+            var firstLines = lines(first)
+            var kept = turn
+            // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads
+            // like a payslip ([PhotoTurn]); the way that read well last time on this phone is tried first, and a good one stops.
+            if (turn == 0 && PhotoTurn.worthTurning(firstLines)) {
+                val memory = TurnMemory(context)
+                val tried = mutableMapOf<Int, Pair<Text, List<OcrLine>>>()
+                for (deg in PhotoTurn.candidates(firstLines, memory.last)) {
+                    currentCoroutineContext().ensureActive()
+                    val turned = runCatching { ImagePrep.turned(photo, deg.toFloat()) }.getOrNull() ?: continue
+                    val t = attempt { reader.read(turned) }
+                    turned.recycle()
+                    if (t == null) continue
+                    tried[deg] = t to lines(t)
+                    if (PhotoTurn.pick(firstLines, mapOf(deg to tried.getValue(deg).second)) == deg && !PhotoTurn.worthTurning(tried.getValue(deg).second)) break
+                }
+                val best = PhotoTurn.pick(firstLines, tried.mapValues { it.value.second })
+                if (best != 0) {
+                    val turned = ImagePrep.turned(photo, best.toFloat())
+                    if (photo !== turned) photo.recycle()
+                    photo = turned
+                    first = tried.getValue(best).first; firstLines = tried.getValue(best).second
+                    kept = best
+                }
+                memory.last = best.takeIf { it != 0 } ?: memory.last
             }
-            val best = PhotoTurn.pick(firstLines, tried.mapValues { it.value.second })
-            if (best != 0) {
-                val turned = ImagePrep.turned(photo, best.toFloat())
-                if (photo !== turned) photo.recycle()
-                photo = turned
-                first = tried.getValue(best).first; firstLines = tried.getValue(best).second
-                kept = best
+            val texts = mutableListOf(join(first, firstLines))
+            // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
+            val boxes = mutableListOf(words(first))
+            val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
+            val plan = ImagePrep.plan(photo, letter)
+            val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
+                firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
+            // C 1.32 [STAB-05] A phone short of memory makes at most two other readings, and none once memory runs low.
+            val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }.let { if (ImagePrep.tight(context)) it.take(2) else it }
+            for ((i, kind) in more.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                progress(i + 2, more.size + 1)
+                if (ImagePrep.low(context)) continue
+                val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: continue
+                val t = attempt { reader.read(v.bitmap) }
+                if (v.bitmap !== photo) v.bitmap.recycle()
+                // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
+                if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }
             }
-            memory.last = best.takeIf { it != 0 } ?: memory.last
+            val (tilt, keystone) = OcrRows.lean(firstLines)
+            val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
+            if (com.bamnat.app.BuildConfig.DEBUG) dump(boxes)
+            put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
         }
-        val texts = mutableListOf(join(first, firstLines))
-        // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
-        val boxes = mutableListOf(words(first))
-        val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
-        val plan = ImagePrep.plan(photo, letter)
-        val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
-            firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
-        // C 1.32 [STAB-05] A phone short of memory makes at most two other readings, and none once memory runs low.
-        val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }.let { if (ImagePrep.tight(context)) it.take(2) else it }
-        more.forEachIndexed { i, kind ->
-            progress(i + 2, more.size + 1)
-            if (ImagePrep.low(context)) return@forEachIndexed
-            val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: return@forEachIndexed
-            val t = runCatching { OcrModel.read(context, v.bitmap) }.getOrNull()
-            if (v.bitmap !== photo) v.bitmap.recycle()
-            // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
-            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }
-        }
-        val (tilt, keystone) = OcrRows.lean(firstLines)
-        val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
-        if (com.bamnat.app.BuildConfig.DEBUG) dump(boxes)
-        put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
+    }
+
+    /** 2.0.0 [RVL-31] (검토 SCAN-03) One more way whose failure only leaves it out; a cancelled reading is not a failed one. */
+    private suspend fun <T> attempt(block: suspend () -> T): T? = try {
+        block()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /**

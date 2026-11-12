@@ -23,7 +23,7 @@ object InvestCsv {
         line(sb, TRADES_HEADER)
         for (t in book.trades.filter { inRange(it.date, from, to) }.sortedWith(Portfolio.ORDER)) {
             line(sb, listOf(
-                t.date.toString(), t.minute?.let { "%02d:%02d".format(it / 60, it % 60) }.orEmpty(), text(book.account(t.accountId)?.name.orEmpty()),
+                t.date.toString(), t.minute?.let { "%02d:%02d".format(java.util.Locale.ROOT, it / 60, it % 60) }.orEmpty(), text(book.account(t.accountId)?.name.orEmpty()),
                 t.side.label, text(t.symbol), text(t.name), t.market.label, Portfolio.quantityText(t.quantity), number(t.price), t.currency,
                 if (t.currency == "KRW") "" else number(t.fxRate), t.grossWon.roundToLong().toString(), number(t.fee), number(t.tax),
                 pnl[t.id]?.roundToLong()?.toString().orEmpty(), text(t.reason), t.emotions.joinToString(" ") { it.label },

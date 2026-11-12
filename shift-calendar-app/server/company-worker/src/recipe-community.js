@@ -5,7 +5,7 @@
 // it, never the hash. 구독 is kept on the phone only: it asks for the newest version of the codes it took (no device sent), so
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
 import { autoCheck, autoCheckOn, firstState, flagImage, passedPhotos, PHOTO_GUARD, PHOTO_WHY } from "./photo-guard.js";
-import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
+import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, RETIRED, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
 import { careGate } from "./community-care.js";
 import { addStrike, confirmStrike, limitJson, operatorStrike, strikeTakenBack, writeAllowance, writeLimitHit } from "./write-limits.js";
@@ -662,6 +662,7 @@ async function rcInbox(d, env, request, url) {
     .map(([kind, n]) => ({ code: r.code, title: r.title, kind, n: reached(n) })));
   const sums = { recipes: own.length, likes: own.reduce((s, r) => s + r.likes, 0), users: own.reduce((s, r) => s + r.applied, 0) };
   const named = fresh.filter((r) => rcNamed(r) && !blocked.has(r.maker));
+  const reactions = await rcReactions(d, env, dev, since, kept);
   // 2.0.0 [RVQ-27] 검토 U22b-09: the operator let my 소개 show again (after reports or a fix it looked at).
   const bioBack = await d.one(env, `SELECT at FROM recipe_actions WHERE target = 'maker' AND code = ? AND action = 'bio-show' AND at > ?
     ORDER BY id DESC LIMIT 1`, me.maker, since);
@@ -675,7 +676,51 @@ async function rcInbox(d, env, request, url) {
     milestones,
     ...(bioBack ? { bioBack: new Date(bioBack.at).toISOString() } : {}),
     badges: await rcBadgesOf(d, env, dev, me, sums),
+    ...reactions,
   });
+}
+
+/**
+ * 2.0.0 [HQ-52] What people did with this phone's works since [since], for the app's 알림함 (사용자 11-12 20:40 KST '사용자들과 상호작용하는
+ * 모든 알림은 알림함으로'). Every line has the 알림함's common fields {kind, target, title, count, at} (갈래 N's /api/digest reactions too),
+ * newest first. Read only from what the server already keeps for these works: the phone sends its device and since as before, and what
+ * it has seen stays on the phone, so nothing new is collected (처리방침 범위 그대로).
+ * - likes: one line a work, how many 좋아요 since and when the last came. A 안좋아요 is never told one by one (조건 16).
+ * - talk: each 후기·의견·아이디어('이렇게 고쳐 주세요'도 아이디어 글)·질문 someone else wrote under a work, with its post id so the line opens it.
+ * - uses: works put on since the day of [since] (counted by the day), with the whole number so the phone can say only the new ones.
+ * - decided: what the operator or reports decided: 공개됨, 돌려받음(그 까닭), 가려짐(신고·운영), 다시 보임. A report itself is never told.
+ */
+async function rcReactions(d, env, dev, since, kept) {
+  const iso = (ms) => new Date(ms).toISOString();
+  const likes = await d.all(env, `SELECT v.code, r.title, COUNT(*) AS n, MAX(v.at) AS at FROM recipe_votes v JOIN recipes r ON r.code = v.code
+    WHERE r.owner = ? AND r.state = 'visible' AND v.value > 0 AND v.held = 0 AND v.device != ? AND v.at > ?
+    GROUP BY v.code ORDER BY at DESC LIMIT 20`, dev, dev, since);
+  const talk = await kept(await d.all(env, `SELECT q.id, q.grp AS code, q.kind, q.body, q.created_at, q.device, NULL AS maker, r.title FROM posts q
+    JOIN recipes r ON r.code = q.grp
+    WHERE q.company_id = 'recipe' AND q.kind IN ('review', 'opinion', 'idea', 'question') AND q.parent IS NULL AND q.status = 'shown'
+      AND r.owner = ? AND q.device != ? AND q.created_at > ? ORDER BY q.created_at DESC, q.rowid DESC LIMIT 30`, dev, dev, since), (x) => x.device);
+  const kst = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
+  const uses = await d.all(env, `SELECT c.code, r.title, r.applied AS total, SUM(c.applied) AS n, MAX(c.day) AS day FROM recipe_counts c
+    JOIN recipes r ON r.code = c.code
+    WHERE r.owner = ? AND r.state = 'visible' AND c.day >= ? AND c.applied > 0 GROUP BY c.code ORDER BY day DESC, n DESC LIMIT 20`, dev, kst(since));
+  const judged = await d.all(env, `SELECT code, title, state, note, hidden_reason AS why,
+      CASE WHEN state = 'hidden' THEN hidden_at ELSE decided_at END AS at FROM recipes
+    WHERE owner = ? AND ((state IN ('visible', 'returned') AND decided_at > ?) OR (state = 'hidden' AND COALESCE(hidden_reason, '') != ? AND hidden_at > ?))
+    ORDER BY at DESC LIMIT 20`, dev, since, RETIRED, since);
+  // Shown again after a hide (the operator's 다시 보이기 sets no decided_at; its record is in recipe_actions).
+  const shown = await d.all(env, `SELECT a.code, r.title, MAX(a.at) AS at FROM recipe_actions a JOIN recipes r ON r.code = a.code
+    WHERE r.owner = ? AND r.state = 'visible' AND a.action = 'show' AND a.at > ? GROUP BY a.code`, dev, since);
+  const decided = [...judged.map((x) => ({ kind: "decided", target: x.code, title: x.title, count: 1, at: iso(x.at), state: x.state,
+      ...(x.state === "hidden" ? { why: x.why === "flags" ? "flags" : "admin" } : {}), ...(x.note ? { note: x.note } : {}) })),
+    ...shown.map((x) => ({ kind: "decided", target: x.code, title: x.title, count: 1, at: iso(x.at), state: "visible", again: true }))]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .filter((x, i, all) => all.findIndex((y) => y.target === x.target) === i); // the newest decision of a work only
+  return {
+    likes: likes.map((x) => ({ kind: "like", target: x.code, title: x.title, count: x.n, at: iso(x.at) })),
+    talk: talk.map((x) => ({ kind: x.kind, target: x.code, post: x.id, title: x.title, body: x.body.slice(0, 80), count: 1, at: iso(x.created_at) })),
+    uses: uses.map((x) => ({ kind: "use", target: x.code, title: x.title, count: x.n, total: x.total, at: iso(Date.parse(`${x.day}T00:00:00+09:00`)) })),
+    decided,
+  };
 }
 
 /** GET /api/recipes/news?since= — for this phone's 소식: new recipes of the makers it follows and the makers' answers to its questions. */
