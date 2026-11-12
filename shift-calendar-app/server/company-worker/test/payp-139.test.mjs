@@ -8,6 +8,7 @@ import { sharedPayOut } from "../src/recipes.js";
 import { server, report, setup, device, from, signIn } from "./helpers.mjs";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
+const DAY_MS = 86400e3;
 const app = (n) => ({ ...from(n), "x-device": device(n), "x-pay-private": "1" });
 
 /** 처리방침 3.12 in the owner's calendar, in force: plaza.fix_request turns on by itself. */
@@ -16,7 +17,10 @@ async function policy312(DB, effective = "2026-11-01") {
     .bind(JSON.stringify({ "3.12": { posted: "2026-10-01", effective, heldUntil: null, unfavourable: false } })).run();
 }
 
-test("[PAYP-01][PAYP-03] a 1.39 app reads no pay, members too, and takes a version's pay only after joining, a few times a day", async () => {
+test("[PAYP-01][PAYP-03] a 1.39 app reads no pay, members too, and takes a version's pay only after joining, a few times a day", async (t) => {
+  // [RVD-01] Its own day, not the real one: the takes are counted in memory per phone and UTC day, so on the real
+  // 2026-11-30 this test's 12 takes for phone 9 used up the day the tests below (clock AFTER) take on.
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER - 3 * DAY_MS });
   const { call } = server();
   const a = await call("POST", "/api/reports", report(1, { company: "가림정밀" }), from(1));
   const c = a.data.company.id;
