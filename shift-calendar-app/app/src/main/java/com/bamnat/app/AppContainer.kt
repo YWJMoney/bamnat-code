@@ -142,6 +142,8 @@ class AppContainer(context: Context) {
                 val p = com.bamnat.core.invest.TradeAlerts.decode(org.json.JSONObject(item.payload).optString("fill")).firstOrNull()
                 p != null && invest(item.calendarId).addAlertAnyway(p)
             }
+            // 2.0.0 [RVM-26] RCP-08 입었던 테마의 한도가 뺀 테마.
+            t.register(com.bamnat.app.recipe.ThemeWardrobe.KIND_PUSHED) { wardrobe.putBack(it.payload) }
         }
     }
     /** 2.0.0 [RVK-14] Messages read already and which app's text each line came from (hashes only). */

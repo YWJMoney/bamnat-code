@@ -89,4 +89,22 @@ class ThemeLeaseTest {
         // An old line (six fields) still reads.
         assertEquals("", ThemeLease.decode("H\t오션\tbuiltin:오션\t{}\t1\t2\t0\n").history.first().shared)
     }
+
+    /** 2.0.0 [RVM-26] RCP-08: 입었던 테마's 30 count others only; mine and the one worn are never pushed out, and what is let go is said. */
+    @Test fun theLimitNeverPushesOutMine() {
+        val mine = (1..3).map { theme.copy(title = "내 테마 $it", code = "", own = true) }
+        var l = ThemeLease(history = mine)
+        (1..ThemeLease.HISTORY).forEach { n -> l = l.wear(theme.copy(title = "남의 $n", code = "C$n"), day + n, free = false) }
+        assertEquals(ThemeLease.HISTORY + 3, l.history.size)
+        val before = l
+        l = l.wear(theme.copy(title = "새 테마", code = "NEW"), day + 99, free = false)
+        assertTrue("내 테마는 모두 남아요", mine.all { m -> l.history.any { it.key == m.key } })
+        assertEquals(ThemeLease.HISTORY, l.history.count { !it.own })
+        assertEquals("가장 오래 전에 입은 남의 테마 하나만", listOf("C1"), before.pushedOut(l).map { it.code })
+        // Worn again: not pushed out, only moved first.
+        assertTrue(l.pushedOut(l.wear(theme.copy(title = "남의 5", code = "C5"), day + 100, free = false)).isEmpty())
+        val (kept, out) = ThemeLease.capped(l.history + theme.copy(title = "끝", code = "END"), keep = "END")
+        assertTrue("입는 것은 남아요", kept.any { it.code == "END" })
+        assertEquals(1, out.size)
+    }
 }

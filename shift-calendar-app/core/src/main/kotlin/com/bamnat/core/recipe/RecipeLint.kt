@@ -68,6 +68,15 @@ object RecipeLint {
         out += if (NameSkeleton.reserved(r.title)) Line("reserved", Level.ERROR, RecipeText.problemText("name_taken"), 3)
             else Line("reserved", Level.OK, "이름이 괜찮아요", 3)
         similar(r, others)?.let { (title, why) -> out += Line("similar", Level.WARN, "‘$title’${com.bamnat.core.text.Josa.fit(title, "와")} $why. 그 작품을 고쳐 만들어도 돼요", 1) }
+        // 2.0.0 [RVM-23] RCP-17·STU-19 (보이지 않는 꾸밈 단추, 칸 전체를 덮는 꾸밈 단추가 날짜 누르기를 가로챔): such a 꾸밈 단추 presses nothing
+        // on any phone, and the server refuses it; 고치기 leaves it a picture.
+        r.pieces.firstOrNull { it.kind == PieceKind.DECOR }?.let { p ->
+            DecorTapRule.problem(Decor.of(p.values).items)?.let { (n, why) ->
+                out += Line("decor_tap", Level.ERROR, "누르는 꾸밈 ${n}개가 눌리지 않아요: $why", 1, fix = { rr ->
+                    rr.copy(pieces = rr.pieces.map { if (it.kind == PieceKind.DECOR) it.copy(values = DecorTapRule.cleanValues(it.values)) else it })
+                })
+            }
+        }
         return out
     }
 

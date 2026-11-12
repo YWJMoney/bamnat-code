@@ -158,6 +158,8 @@ fun ThemeDrawer(
         Text("찾는 것이 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         TextButton(onClick = { query = ""; kind = null; folder = null }) { Text("모두 보기") }
     } else Grid(shown, byKey) { open = it.key }
+    // 2.0.0 [RVM-26] RCP-08: themes 입었던 테마's limit let go, to see why and put back (나머지는 아무것도 보이지 않아요).
+    com.bamnat.app.ui.money.AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_RECIPE, null)
 
     // 내 테마로 저장: the look on the phone now kept as one of mine (free one, 프로 ten).
     val mineCount = c.wardrobe.ownCount(lease)

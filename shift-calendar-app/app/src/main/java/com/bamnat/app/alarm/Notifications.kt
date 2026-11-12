@@ -53,6 +53,8 @@ object Notifications {
     const val TODAY_CHANNEL_ID = "today_shift_v1"
     /** [RUL-04] 1.36 수식·규칙: what a rule says (내일 야간 준비 등). */
     const val RULES_CHANNEL_ID = "rules_v1"
+    /** 2.0.0 [RVM-24] STU-13 What a rule that came with someone's work says, apart from mine (turned off at once in the system settings). */
+    const val RECEIVED_RULES_CHANNEL_ID = "received_rules_v1"
     /** [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 확인 and date notices. */
     const val INVEST_CHANNEL_ID = "invest_alarm_v1"
     /** [MON-06] The one notice before a free trial turns paid. */
@@ -242,6 +244,11 @@ object Notifications {
             // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
+        val received = NotificationChannel(RECEIVED_RULES_CHANNEL_ID, "받은 작품의 규칙 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "장터에서 받은 작품의 규칙이 띄우는 알림이에요. 알림 위에 어느 작품의 규칙인지 적혀 있고, 여기서 한 번에 끌 수 있어요"
+            group = GROUP_DAY
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
         val nightQuiet = NotificationChannel(NIGHT_QUIET_CHANNEL_ID, "자는 동안 온 알림", NotificationManager.IMPORTANCE_LOW).apply {
             description = "자는 중일 때 온 근무표 바뀜·문의 답 같은 알림. 소리 없이 알림창 아래쪽에 모여 있어요"
             group = GROUP_DAY
@@ -250,7 +257,7 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock, roster))
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, received, inquiry, clock, roster))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }

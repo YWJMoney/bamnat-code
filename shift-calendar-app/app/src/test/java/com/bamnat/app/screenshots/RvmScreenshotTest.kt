@@ -3,7 +3,11 @@ package com.bamnat.app.screenshots
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.glance.appwidget.compose
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -86,7 +90,7 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun style(s: WorkStyle) = c.settingsRepository.update { it.copy(workStyle = s) }
 
     /** 작품 상세 of [title] as it opens (PC-66: the 넣기 step on the bottom edge; PC-53 '넣어 본 분'; PC-59 the ✦ line in the user's words). */
-    private fun detail(title: String, put: Boolean = false): Screen.() -> Unit = {
+    private fun detail(title: String, put: Boolean = false, sees: String? = null): Screen.() -> Unit = {
         val market = Market().also { c.recipeApi = it }
         style(WorkStyle.SHIFT)
         val vm = RecipeDetailViewModel(c, market.code(title), PersonalCalendar.MAIN)
@@ -98,6 +102,7 @@ class RvmScreenshotTest : ScreenshotBase() {
             tapText("이 테마 입기", exact = true)
             settle()
             appears("이렇게 바뀌어요", exact = true)
+            sees?.let { check(appears(it)) { "넣기 창에 '$it'이 없어요" } }
         }
     }
 
@@ -150,6 +155,50 @@ class RvmScreenshotTest : ScreenshotBase() {
         shoot("rvm_30_market_unfolded", UNFOLDED, market())
         shoot("rvm_31_market_folded_dark", DARK, market())
     }
+    // 2.0.0 [RVM-22] RCP-05: 큰 시계 기상 (울림 5분) on a phone that rings 10분: the 넣기 창 names what would make the alarm weaker and
+    // leaves it out unless '약하게 하는 설정도 넣기' is on.
+    private val weakAlarm = detail("큰 시계 기상", put = true, sees = "알람을 약하게 하는 설정은 빼고 넣어요")
+    @Test fun putWeakAlarm() = shoot("rvm_40_put_weak_alarm_folded", FOLDED, weakAlarm)
+    @Test fun putWeakAlarmDarkBig() = shoot("rvm_41_put_weak_alarm_folded_dark_200", DARK, 2f, weakAlarm)
+    @Test fun putWeakAlarmWide() = shoot("rvm_42_put_weak_alarm_unfolded", UNFOLDED, weakAlarm)
+    @Test fun putWeakAlarmBig() = shoot("rvm_43_put_weak_alarm_folded_200", FOLDED, 2f, weakAlarm)
+
+    /**
+     * 2.0.0 [RVM-26] RCP-08: 내 서랍 with a theme the 입었던 테마 limit let go — the line '자동으로 정리한 것 1건 보기' under the drawer and,
+     * [open], its sheet in the drawer's words (not the 가계부's) with 되살리기.
+     */
+    private fun drawerTidy(open: Boolean): Screen.() -> Unit = {
+        val today = com.bamnat.core.time.Today.date().toEpochDay()
+        fun wear(title: String, code: String) = com.bamnat.core.recipe.ThemeLease.Wear(title, code, RecipeCodec.write(work(title)), today - 3, today + 27)
+        val lease = com.bamnat.core.recipe.ThemeLease(history = listOf(wear("야간 회복 스테이션", "MKT10001"), wear("딥워크 데스크", "MKT10002")))
+        app.getSharedPreferences("theme_wardrobe", 0).edit().putString("lease", com.bamnat.core.recipe.ThemeLease.encode(lease)).commit()
+        c.wardrobe.reload()
+        val gone = com.bamnat.core.recipe.ThemeLease(history = listOf(wear("큰 시계 기상", "MKT10003")))
+        runBlocking {
+            c.autoTidy.add(com.bamnat.app.data.AutoTidy.AREA_RECIPE, PersonalCalendar.MAIN, "큰 시계 기상",
+                "입었던 테마가 30개를 넘어 가장 오래 전에 입은 것을 서랍에서 뺐어요", com.bamnat.app.recipe.ThemeWardrobe.KIND_PUSHED,
+                com.bamnat.core.recipe.ThemeLease.encode(gone))
+        }
+        content {
+            Surface {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    com.bamnat.app.ui.recipe.ThemeDrawer(WorkStyle.SHIFT, onFind = {}, onFix = {}, onStudio = {}, onRecipe = {}, onUpload = {})
+                }
+            }
+        }
+        settle()
+        check(appears("자동으로 정리한 것 1건 보기", exact = true)) { "서랍 아래 정리 줄이 없어요" }
+        if (open) {
+            tapText("자동으로 정리한 것 1건 보기", exact = true)
+            settle()
+            check(appears("입었던 테마가 30개를 넘어 서랍에서 뺀 것이에요")) { "정리함 글이 테마의 말이 아니에요" }
+        }
+    }
+    @Test fun drawerTidyLine() = shoot("rvm_44_drawer_tidy_folded", FOLDED, drawerTidy(open = false))
+    @Test fun drawerTidySheet() = shoot("rvm_45_drawer_tidy_sheet_folded", FOLDED, drawerTidy(open = true))
+    @Test fun drawerTidySheetDarkBig() = shoot("rvm_46_drawer_tidy_sheet_folded_dark_200", DARK, 2f, drawerTidy(open = true))
+    @Test fun drawerTidySheetWide() = shoot("rvm_47_drawer_tidy_sheet_unfolded", UNFOLDED, drawerTidy(open = true))
+
     @Test fun nightDark() = shoot("rvm_15_night_recovery_folded_dark", DARK, wear("야간 회복 스테이션"))
     @Test fun nightBig() = shoot("rvm_16_night_recovery_folded_200", FOLDED, 2f, wear("야간 회복 스테이션"))
     @Test fun nightWide() = shoot("rvm_17_night_recovery_unfolded", UNFOLDED, wear("야간 회복 스테이션"))
