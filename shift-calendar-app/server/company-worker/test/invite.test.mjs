@@ -68,8 +68,9 @@ test("a code is eight plain letters, typed any way, and its link goes to Play wi
 
 test("one code per install: asked again, the same code and link; the rules need no install", async () => {
   const { call } = server();
-  // [INVITE-08] Until the developer changes them: 5 friends who use it 7 days give 1 month; 2.0.0 [RVD-15] 1년 12달 for all rewards.
-  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 12 });
+  // [INVITE-08] Until the developer changes them: 5 friends who use it 7 days give 1 month. 2.0.0 [RVD-21] No cap (0) until 처리방침
+  // 3.13's 30-day date: the 1년 12달 for all rewards (RVD-15) is in test/review-d-reward.test.mjs with 3.13 in the calendar.
+  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 0 });
   assert.equal((await call("POST", "/api/invites/code", {}, phone(1))).data.error, "phone");
   assert.equal((await call("POST", "/api/invites/code", { phone: mark(1) })).data.error, "device");
   const c = await code(call);
@@ -78,7 +79,7 @@ test("one code per install: asked again, the same code and link; the rules need 
   assert.equal(again.status, 200);
   assert.equal(again.data.code, c);
   assert.equal(again.data.link, `${ORIGIN}/i/${c}`);
-  assert.deepEqual(await view(call), { code: c, link: `${ORIGIN}/i/${c}`, need: 5, days: 7, months: 1, capMonths: 12,
+  assert.deepEqual(await view(call), { code: c, link: `${ORIGIN}/i/${c}`, need: 5, days: 7, months: 1, capMonths: 0,
     progress: 0, waiting: 0, friends: 0, given: 0, pending: 0, capReached: false, used: null });
   // A phone without a code sees none, and the rules.
   const none = await view(call, 9);
@@ -151,7 +152,9 @@ test("the developer app sets the rules, within limits; a lowered number pays at 
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
-  assert.deepEqual((await call("GET", "/api/admin/settings/invite", undefined, owner)).data, { friends: 5, days: 7, months: 1, capMonths: 0 });
+  // 2.0.0 [RVD-21] with whether the 1년 12달 counts yet: not without 처리방침 3.13 in the calendar.
+  const none = { yearCap: null, yearCapFrom: null };
+  assert.deepEqual((await call("GET", "/api/admin/settings/invite", undefined, owner)).data, { friends: 5, days: 7, months: 1, capMonths: 0, ...none });
   for (const [body, key] of [[{ friends: 0 }, "friends"], [{ days: 61 }, "days"], [{ months: 0 }, "months"], [{ capMonths: -1 }, "capMonths"], [{ friends: "3" }, "friends"]]) {
     const r = await call("POST", "/api/admin/settings/invite", body, owner);
     assert.deepEqual([r.status, r.data.error], [400, key]);
@@ -165,9 +168,9 @@ test("the developer app sets the rules, within limits; a lowered number pays at 
   for (let n = 10; n < 13; n++) await seen(call, n);
   assert.deepEqual([(await view(call)).progress, got(await view(call))], [3, 0]);
   // Three friends are enough now: the three already counted give their month when it is saved.
-  assert.deepEqual(await rules(call, { friends: 3, months: 2 }), { friends: 3, days: 7, months: 2, capMonths: 0 });
+  assert.deepEqual(await rules(call, { friends: 3, months: 2 }), { friends: 3, days: 7, months: 2, capMonths: 0, ...none });
   assert.deepEqual([(await view(call)).progress, got(await view(call))], [0, 2]);
-  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 3, days: 7, months: 2, capMonths: 12 });
+  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 3, days: 7, months: 2, capMonths: 0 });
 
   // A cap of 3 months in a year (the owed months count too): the next group of three is counted without months.
   await rules(call, { capMonths: 3, days: 1 });
@@ -298,7 +301,7 @@ test("the developer app's 보상 screen names invite rewards and sums up invites
   assert.equal(r.invites.codes, 1);
   assert.equal(r.invites.credited, 1);
   assert.equal(r.invites.waiting, 1);
-  assert.deepEqual(r.invites.rules, { friends: 1, days: 1, months: 1, capMonths: 0 });
+  assert.deepEqual(r.invites.rules, { friends: 1, days: 1, months: 1, capMonths: 0, yearCap: null, yearCapFrom: null });
   assert.deepEqual(r.invites.refused, { self: 1 });
   assert.deepEqual(r.invites.top, [{ code: c, friends: 2, counted: 1, waiting: 1 }]);
   // A raw request without a device is refused, as for passes.

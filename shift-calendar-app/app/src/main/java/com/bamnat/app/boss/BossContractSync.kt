@@ -57,14 +57,18 @@ object BossContractSync {
         c.phaseThree.updateContract(s.id) { cur -> if (cur == null || cur.signed) cur else cur.past.lastOrNull()?.copy(past = cur.past.dropLast(1)) }
     }
 
-    /** 종이 계약서로 받았어요: the items as they are now, marked signed on paper. */
-    suspend fun paper(c: AppContainer, place: Workplace, s: StaffMember): StaffContract.Sent? {
+    /**
+     * 종이 계약서로 받았어요: the items as they are now, marked signed on paper. 2.0.0 [RVJ-24] 검토 BOSS-53: [on] is the day the
+     * paper came back (asked before it is marked; it was always today).
+     */
+    suspend fun paper(c: AppContainer, place: Workplace, s: StaffMember, on: java.time.LocalDate = Today.date()): StaffContract.Sent? {
         s.contract?.takeIf { !it.signed && it.linkId != null && it.token != null }?.let { old -> runCatching { c.shareApi.signDelete(old.linkId!!, old.token!!) } }
-        val contract = StaffContract.of(place, s)
-        val at = Today.millis()
-        val sent = StaffContract.Sent(StaffContract.title(contract), contract.items, at, signedAt = at, paper = true)
+        val sent = StaffContract.onPaper(StaffContract.of(place, s), Today.millis(), on, Today.zone())
         return c.phaseThree.updateContract(s.id) { cur -> cur?.replacedBy(sent) ?: sent }
     }
+
+    /** 2.0.0 [RVJ-24] 검토 BOSS-53: '종이 표시 취소', a mistaken press taken back ([StaffContract.withoutPaper]). */
+    suspend fun unpaper(c: AppContainer, s: StaffMember): StaffContract.Sent? = c.phaseThree.updateContract(s.id) { cur -> StaffContract.withoutPaper(cur) }
 
     /**
      * 2.0.0 [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': the day the signed contract was handed over (근로기준법 제17조 제2항),

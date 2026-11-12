@@ -116,16 +116,27 @@ class BackupManager(
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
         val types = JSONArray()
         source.shiftTypeDao().getAll().forEach { t ->
+            // 2.0.0 [RVH-44] 하루 두 구간 (설계 4-4절): an app before 2.0.0 reads "break"·"breakStart" only, so they hold the break and the gap
+            // together from the gap's start (one stretch, the same minutes worked); "rest"·"restStart"·"gapStart"·"gap" hold them apart.
+            val gap = t.gapMinutes.takeIf { it > 0 && t.gapStartMinute != null }
             types.put(
                 JSONObject()
                     .put("id", t.id).put("name", t.name).put("label", t.label).put("color", t.colorArgb)
                     .putOpt("start", t.startMinute).putOpt("end", t.endMinute)
-                    .put("break", t.breakMinutes).put("off", t.isOff)
+                    .put("break", t.breakMinutes + (gap ?: 0)).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
-                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
+                    .putOpt("breakStart", if (gap != null) t.gapStartMinute else t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
                     // [PAYX-32] Version 20; only when set.
-                    .putOpt("breakPaid", t.breakPaid),
+                    .putOpt("breakPaid", t.breakPaid)
+                    // 2.0.0 [RVH-33] 검토 WORK-19 Version 34: the times before a change '오늘부터만'; only when there are some.
+                    .putOpt("timeHistory", t.timeHistory.takeIf { it.isNotEmpty() })
+                    .apply {
+                        if (gap != null) {
+                            put("rest", t.breakMinutes).putOpt("restStart", t.breakStartMinute).put("gapStart", t.gapStartMinute).put("gap", gap)
+                            if (t.gapAlarm) put("gapAlarm", true)
+                        }
+                    },
             )
         }
         into.put("shiftTypes", types)
@@ -146,7 +157,11 @@ class BackupManager(
                     .putOpt("break", d.customBreakMinutes).put("skip", d.alarmSkipped)
                     .putOpt("alarms", d.customAlarms).put("leave", d.leave)
                     // [HRLY-01][SHFT-03] Version 17; older apps ignore them.
-                    .putOpt("attendance", d.attendance.takeIf { it != 0 }).putOpt("swap", d.swapWith.ifEmpty { null }),
+                    .putOpt("attendance", d.attendance.takeIf { it != 0 }).putOpt("swap", d.swapWith.ifEmpty { null })
+                    // 2.0.0 [RVH-44][RVH-45] Version 34: the day's own gap, and an hour's leave beside the "leave" code (which keeps the
+                    // nearest quarter of a day, so an older app reads part of a day, never a whole one). Only when set.
+                    .putOpt("gapStart", d.customGapStartMinute).putOpt("gap", d.customGapMinutes)
+                    .putOpt("leaveMinutes", d.leaveMinutes).putOpt("leaveAt", d.leaveAt),
             )
         }
         into.put("days", days)
@@ -646,6 +661,8 @@ class BackupManager(
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("payAutoClose", s.payAutoClose).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
+                // 2.0.0 [RVK-19] 요약의 큰 숫자를 바꿔 둔 것.
+                .put("moneyHero", s.moneyHero)
                 // 1.38 [LEDH-24]
                 .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour).put("moneyChallenge", s.moneyChallenge)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("manageLayout", s.manageLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
@@ -778,7 +795,17 @@ class BackupManager(
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
                 breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
                 breakPaid = if (o.has("breakPaid") && !o.isNull("breakPaid")) o.optBoolean("breakPaid") else null,
-            )
+                // 검토 WORK-19 A backup from before 2.0.0 has none: every day takes the times above, as it did.
+                timeHistory = o.optString("timeHistory", ""),
+            ).let { e ->
+                // 2.0.0 [RVH-44] With "gap", the break and the gap apart; without it (a backup from before 2.0.0, or a day of one part) the
+                // "break" is the break, never guessed to be a gap.
+                val gap = o.optIntOrNull("gap")?.takeIf { it in 1 until 24 * 60 }
+                val gapStart = o.optIntOrNull("gapStart")?.takeIf { it in 0 until 24 * 60 }
+                if (gap == null || gapStart == null) e
+                else e.copy(breakMinutes = o.optInt("rest").coerceIn(0, 24 * 60), breakStartMinute = o.optIntOrNull("restStart"),
+                    gapStartMinute = gapStart, gapMinutes = gap, gapAlarm = o.optBoolean("gapAlarm"))
+            }
         }
         val types = read.ifEmpty { if (orDefaults) DefaultShiftTypes.all().map { it.toEntity() } else emptyList() }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
@@ -804,6 +831,10 @@ class BackupManager(
                 customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
                 secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
                 attendance = o.optInt("attendance"), swapWith = o.optString("swap"),
+                customGapStartMinute = o.optIntOrNull("gapStart")?.takeIf { it in 0 until 24 * 60 },
+                customGapMinutes = o.optIntOrNull("gap")?.takeIf { it in 0 until 24 * 60 },
+                leaveMinutes = o.optIntOrNull("leaveMinutes")?.takeIf { it in 1 until 24 * 60 },
+                leaveAt = o.optIntOrNull("leaveAt")?.takeIf { it in 0 until 24 * 60 },
             )
         }
         val extras = from.optJSONArray("extras")?.objects()?.map { o ->
@@ -1268,6 +1299,7 @@ class BackupManager(
                     viewAsked = true, // 1.39 [CALX-07] a restored backup brings its own view: not asked again
                     statsPeriod = StatsPeriod.read(o.optString("statsPeriod").ifEmpty { null }, o.optBoolean("statsPayPeriod", false)),
                     moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
+                    moneyHero = o.optString("moneyHero", s.moneyHero),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
                     shiftPreviewNotice = o.optBoolean("shiftPreview", s.shiftPreviewNotice),

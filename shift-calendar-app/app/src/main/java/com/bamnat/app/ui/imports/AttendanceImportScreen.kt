@@ -56,6 +56,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.imports.AttendanceField
 import com.bamnat.core.imports.AttendanceImport
@@ -228,7 +229,7 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
 @Composable
 fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var choosing by remember { mutableStateOf<AttendanceField?>(null) }
     var choosingHeader by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::open) }
@@ -245,7 +246,7 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         bottomBar = {
             if (ui.rows.isNotEmpty()) Surface(tonalElevation = 3.dp) {
                 val n = ui.todo.size
@@ -361,7 +362,7 @@ private fun WhoCard(people: List<String>, who: String?, onPick: (String) -> Unit
         Spacer(Modifier.height(8.dp))
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             people.forEach { p ->
-                androidx.compose.material3.FilterChip(selected = p == who, onClick = { onPick(p) }, label = { Text(p, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                com.bamnat.app.ui.components.FilterChip(selected = p == who, onClick = { onPick(p) }, label = { Text(p, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     modifier = Modifier.heightIn(min = 48.dp))
             }
         }
@@ -380,8 +381,9 @@ private fun CompareCard(vm: AttendanceImportViewModel, days: List<AttendanceRow>
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var all by remember { mutableStateOf(false) }
     SectionCard(title = "내 기록과 비교") {
+        // 2.0.0 [RVL-26] 사진 검토: fewer hours on the company's record is to be checked, not a danger (조건 6): 주의, not the red of Sundays.
         Text(result.summary, style = MaterialTheme.typography.titleSmall,
-            color = if (result.shortMinutes > 0) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else MaterialTheme.colorScheme.primary)
+            color = if (result.shortMinutes > 0) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.primary)
         if (result.leftEarlierDays > 0) Text("회사 퇴근이 내 기록보다 이른 날 ${result.leftEarlierDays}일: 조퇴로 처리되지 않았는지 확인해 보세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val shown = if (all) result.diffs else result.diffs.take(10)

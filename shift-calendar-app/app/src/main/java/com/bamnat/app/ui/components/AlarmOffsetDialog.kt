@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,12 +73,9 @@ fun AlarmOffsetDialog(
         text = {
           ScrollMoreColumn {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SegmentedButton(selected = byClock == 1, onClick = { byClock = 1; jump++ },
-                        shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("울릴 시각") }
-                    SegmentedButton(selected = byClock == 0, onClick = { byClock = 0; jump++ },
-                        shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("시작 기준") }
-                }
+                // [RVH-46] Words on two lines or stacked at a large font, never cut.
+                ChoiceRow(listOf("울릴 시각", "시작 기준"), selected = if (byClock == 1) 0 else 1,
+                    onSelect = { byClock = if (it == 0) 1 else 0; jump++ })
                 Text(
                     when {
                         picked == null -> "근무 시작과 하루 넘게 떨어진 때는 맞출 수 없어요"
@@ -99,20 +94,13 @@ fun AlarmOffsetDialog(
                 )
                 if (byClock == 1) {
                     // [EASE-18] Which day it rings: 전날 for an early start, 다음날 for a nap after a 야간.
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        for ((i, d) in listOf(-1, 0, 1).withIndex()) {
-                            SegmentedButton(selected = day == d, onClick = { day = d },
-                                shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(AlarmOffsets.dayWord(d)) }
-                        }
-                    }
+                    ChoiceRow(listOf(-1, 0, 1).map(AlarmOffsets::dayWord), selected = day + 1, onSelect = { day = it - 1 })
                 } else {
                     // [ALRM-28] 1.38: hours after the start too (a nap after a 야간), not only from '울릴 시각'.
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        SegmentedButton(selected = minutes >= 0, onClick = { if (minutes < 0) { setMinutes(-minutes); jump++ } },
-                            shape = SegmentedButtonDefaults.itemShape(0, 2)) { Text("시작 전") }
-                        SegmentedButton(selected = minutes < 0, onClick = { if (minutes >= 0) { setMinutes(-(minutes.coerceAtLeast(60))); jump++ } },
-                            shape = SegmentedButtonDefaults.itemShape(1, 2)) { Text("시작 뒤") }
-                    }
+                    ChoiceRow(listOf("시작 전", "시작 뒤"), selected = if (minutes >= 0) 0 else 1, onSelect = {
+                        if (it == 0 && minutes < 0) { setMinutes(-minutes); jump++ }
+                        if (it == 1 && minutes >= 0) { setMinutes(-(minutes.coerceAtLeast(60))); jump++ }
+                    })
                 }
                 Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * 5), contentAlignment = Alignment.Center) {
                     Box(

@@ -43,14 +43,19 @@ class LeaveRepository(
 
     /** The ledger on today, following the calendar, the pay setup and the stored rows. */
     val summary: Flow<LeaveSummary> = combine(entries, schedule.snapshot, pay.profile, LeaveHire.all) { stored, snap, profile, hires ->
-        LeaveSources.summary(today(), LeaveSources.withHire(profile, hires[calendarId]), snap.entries, snap.resolver::resolve, stored)
+        build(snap, LeaveSources.withHire(profile, hires[calendarId]), stored)
     }.onStart { moveOldSettings() }.flowOn(Dispatchers.Default)
 
     /** [summary] read once, e.g. by a notice. */
     suspend fun now(): LeaveSummary = withContext(Dispatchers.Default) {
         moveOldSettings()
-        val snap = schedule.snapshot.first()
-        LeaveSources.summary(today(), LeaveSources.withHire(pay.profile.value, LeaveHire.of(calendarId)), snap.entries, snap.resolver::resolve, all())
+        build(schedule.snapshot.first(), LeaveSources.withHire(pay.profile.value, LeaveHire.of(calendarId)), all())
+    }
+
+    /** [RVH-38] 검토 WORK-02 An hourly job under 15 hours a week (the last four weeks) makes no 연차 by itself. */
+    private fun build(snap: com.bamnat.app.data.ScheduleSnapshot, profile: com.bamnat.core.pay.PayProfile?, stored: List<LedgerEntry>): LeaveSummary {
+        val weekly = LeaveSources.partTimeHours(profile, today(), snap.copy(legalBreaks = profile?.legalBreaks == true).resolver::resolve)
+        return LeaveSources.summary(today(), profile, snap.entries, snap.resolver::resolve, stored, weeklyHours = weekly)
     }
 
     suspend fun all(): List<LedgerEntry> = dao.all().mapNotNull { it.toModel() }

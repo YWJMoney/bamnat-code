@@ -160,7 +160,8 @@ test("v2 keeps only the parts the sharer ticked", () => {
   assert.equal(all.types[1].icon, null);
   assert.equal(all.days[2].rest, true);
   assert.equal(all.days[1].rest, undefined);
-  assert.equal(validate({ ...full, types: [{ ...full.types[0], icon: "<svg>" }] }).error, "type_icon");
+  // 2.0.0 [RVD-28] SD-08: an icon the rule does not know is dropped, and the link made (it was type_icon).
+  assert.equal(validate({ ...full, types: [{ ...full.types[0], icon: "<svg>" }, ...full.types.slice(1)] }).schedule.types[0].icon, null);
   assert.deepEqual(all.shows, ["leaveKinds", "extras", "memos", "pay"]);
   assert.equal(all.payKind, "pay");
   assert.deepEqual(all.days[0].extras, [{ name: "잔업", time: "19:00-21:00", minutes: 120 }]);

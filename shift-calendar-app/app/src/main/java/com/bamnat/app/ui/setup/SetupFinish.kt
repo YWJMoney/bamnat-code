@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.ExpandMore
-import com.bamnat.app.data.ScheduleSnapshot
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -201,27 +204,25 @@ private fun LinkWorkAs(vm: SetupViewModel, d: SetupDraft) {
 private val LINK_WORK_WORDS = mapOf(WorkStyle.SHIFT to "교대 근무", WorkStyle.DAY to "평일 근무", WorkStyle.HOURLY to "알바 · 시급")
 
 @Composable
-internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
+internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft, onNotMine: (() -> Unit)? = null) {
     // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
     // 1.39 [FLOW-04] The check is the calendar itself: this month as it will be saved, a day tapped goes back to where it is set, and
     // the answers in words fold into one line under it (opened, each has its '고치기').
-    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff) {
-        ScheduleSnapshot(d.typesToSave(), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
+    // [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has keep their colors and alarms, so the month shows them.
+    val kept by vm.kept.collectAsStateWithLifecycle()
+    // 2.0.0 [RVH-43] 검토 PC-31: filled as saving fills it (a first setup from the 1st and before, not from today only).
+    val periods by vm.periods.collectAsStateWithLifecycle()
+    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff, kept, periods) {
+        vm.previewSnapshot(d, periods)
     }
-    if (d.linkTitle.isNotBlank()) {
-        // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
-        // 디자인 품질 조건 1·4: one line under the title, so the month starts within the screen's top quarter.
-        StepHeader("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", "근무 이름과 시간, 날짜를 그대로 넣었어요.")
-    } else StepHeader("이대로 저장할까요?",
-        if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
-    if (preview != null) {
-        val thisMonth = remember(vm.today) { java.time.YearMonth.from(vm.today) }
-        // [RVG-18] 검토 PC-22 (도약 14): a link's roster of next month opens on that month, not on an empty this month.
-        var month by androidx.compose.runtime.saveable.rememberSaveable {
-            mutableStateOf((if (d.linkTitle.isNotBlank()) d.openingMonth(vm.today).coerceAtMost(thisMonth.plusMonths(2)) else thisMonth).toString())
-        }
-        SetupMonth(
+    val thisMonth = remember(vm.today) { java.time.YearMonth.from(vm.today) }
+    // [RVG-18] 검토 PC-22 (도약 14): a link's roster of next month opens on that month, not on an empty this month.
+    var month by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf((if (d.linkTitle.isNotBlank()) d.openingMonth(vm.today).coerceAtMost(thisMonth.plusMonths(2)) else thisMonth).toString())
+    }
+    val monthPart: @Composable () -> Unit = {
+        if (preview != null) SetupMonth(
             month = java.time.YearMonth.parse(month),
             snapshot = preview,
             weekStart = vm.weekStart,
@@ -234,10 +235,49 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             onDayClick = { vm.fix(if (d.usesRotation && SetupStep.TODAY in d.steps) SetupStep.TODAY else SetupStep.ORDER) },
         )
     }
+    if (d.linkTitle.isNotBlank() && onNotMine != null) {
+        // [RVG-19] 검토 HQ-09 (조건 10): '내 근무표예요' pressed by mistake had no way back (← only went to earlier questions). The other
+        // answer sits right under the question it answers, one press. It takes the place of the line saying the names, times and days
+        // were filled in (the month and '근무 이름' under it show them), and the month comes 4dp under it (the button's own room is
+        // round its words), so the month still starts in the screen's top quarter on a folded phone (조건 1).
+        Column(Modifier.fillMaxWidth()) {
+            Text("${LinkStart.roster(d.linkTitle)}를 내 근무로 시작할까요?", style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.semantics { heading() })
+            // Its words line up with the title's (a text button's own side room is 12dp).
+            TextButton(onClick = onNotMine, modifier = Modifier.offset(x = (-12).dp)) { Text("가족·동료 근무표였어요") }
+            if (preview != null) {
+                Spacer(Modifier.height(4.dp))
+                monthPart()
+            }
+        }
+    } else {
+        if (d.linkTitle.isNotBlank()) {
+            // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
+            // 디자인 품질 조건 1·4: one line under the title, so the month starts within the screen's top quarter.
+            StepHeader("${LinkStart.roster(d.linkTitle)}를 내 근무로 시작할까요?", "근무 이름과 시간, 날짜를 그대로 넣었어요.")
+        } else StepHeader("이대로 저장할까요?",
+            if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
+        monthPart()
+    }
     // [RVG-16] Under the month (디자인 품질 조건 1: the month first): how the user works, the days staying the link's.
     if (d.linkTitle.isNotBlank()) LinkWorkAs(vm, d)
-    if (d.linkTitle.isNotBlank()) SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
-        onFix = { vm.fix(SetupStep.TIMES) })
+    if (d.linkTitle.isNotBlank()) {
+        // 2.0.0 [RVG-28] 검토 PC-94: a link from before 2.0.0 carries no breaks; said here, under the month, while none is set.
+        val restUnknown = remember(d.types) { vm.linkRestUnknown(d) }
+        SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
+            onFix = { vm.fix(SetupStep.TIMES) }, extra = if (!restUnknown) null else { {
+                Text("받은 근무표에 쉬는 시간이 없어요. ‘고치기’에서 넣어 주세요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, end = 12.dp))
+            } })
+    }
+    // 검토 WORK-04 Before 2.0.0 a time the calendar had was changed with no word: what changes is said before saving, never folded.
+    val changes = remember(d.types, kept) { d.timeChanges(kept) }
+    if (changes.isNotEmpty()) SummaryCard(
+        "바뀌는 시간",
+        changes.joinToString("\n") { (before, after) -> "${after.name} ${changeHours(before)} → ${changeHours(after)}" } +
+            "\n오늘부터 이 시간이에요. 지난 날은 그대로예요",
+        onFix = { vm.fix(SetupStep.TIMES) },
+    )
     var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(preview == null) }
     if (!open) {
         SummaryFold(foldLine(d, preview != null)) { open = true }
@@ -279,7 +319,10 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     // of 주휴수당 is said plainly when the week's hours make or miss it, and when the break alone decides it. 1.39: never folded away.
     weeklyHolidayNote(d)?.let { SummaryCard("주휴수당", it, onFix = { vm.fix(SetupStep.TIMES) }) }
     // [EASE-07] 1.38: the alarm is chosen here (already 출근 1시간 전), not on a screen of its own.
-    val first = remember(d) { vm.firstAlarm(d) }
+    val first = remember(d, kept) { vm.firstAlarm(d) }
+    // 검토 WORK-04 The shifts the calendar has keep the alarms set for them; the choice here is for the new ones.
+    val keptWork = remember(d.types, kept) { d.keptWork(kept) }
+    val allKept = keptWork.isNotEmpty() && keptWork.size == d.workTypes.size
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -287,13 +330,16 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("근무 알람 · 출근 몇 분 전에 깨울까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            AlarmPart(vm, d, compact = true)
+            Text(if (allKept) "근무 알람" else "근무 알람 · 출근 몇 분 전에 깨울까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!allKept) AlarmPart(vm, d, compact = true)
+            if (keptWork.isNotEmpty()) Text(keptAlarmLine(keptWork, kept, allKept), style = MaterialTheme.typography.bodyMedium)
             Text(
                 buildString {
-                    append(alarmLine(d))
+                    if (!allKept) append(alarmLine(d))
+                    else if (first == null) append("울릴 알람이 없어요")
                     first?.let { a ->
-                        append(" · 첫 알람 ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
+                        if (isNotEmpty()) append(" · ")
+                        append("첫 알람 ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
                         if (a.shiftName.isNotEmpty()) append(" ${a.shiftName}")
                     }
                 },
@@ -328,16 +374,21 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
 /** 1.39 [FLOW-04] The answers in words, folded to one line under the month: "교대 근무 · 4조 2교대 · 주간 07:00~19:00 외 1 ▾". */
 @Composable
 private fun SummaryFold(text: String, onOpen: () -> Unit) {
-    Row(
+    // 2.0.0 [RVG-26] 디자인 품질 조건 12 (PC-94 사진, 접은 폭·글자 200%): beside '고른 답 보기' the line had a few letters a row and was cut
+    // ('교대 근무 · 야간 19:0…'); where they do not fit side by side, '고른 답 보기' goes under it and the line has the whole width.
+    com.bamnat.app.ui.components.SideOrBelow(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(onClickLabel = "고른 답 모두 보기", onClick = onOpen)
             .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Text("고른 답 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
-        Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
-    }
+        minStart = 200.dp,
+        start = {
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        },
+        end = {
+            Text("고른 답 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+        },
+    )
 }
 
 /** 1.39 [FLOW-04] The folded line: the kind of work, where the order came from and the first shift's hours. */
@@ -418,6 +469,23 @@ private fun weekLine(d: SetupDraft): String {
     val one = days.map { it.second.id }.distinct().size == 1
     return if (one) days.joinToString("·") { Fmt.dayOfWeekShort(it.first) } + " " + days.first().second.name
     else days.joinToString(" · ") { "${Fmt.dayOfWeekShort(it.first)} ${it.second.name}" }
+}
+
+/** 검토 WORK-04 "07:00~16:00", "07:00~16:00 · 쉬는 시간 1시간", "쉬는 날": a shift's times as the summary compares them. */
+private fun changeHours(t: ShiftType): String =
+    hoursOf(t) + if (t.hasTimes && t.breakMinutes > 0) " · 쉬는 시간 ${HoursFormat.korean(t.breakMinutes)}" else ""
+
+/**
+ * 검토 WORK-04 The alarms the shifts the calendar has keep: "알람·색은 지금 쓰는 그대로예요: 주간 1시간 전·30분 전 · 야간 안 씀" when every
+ * shift is one of them, "주간·야간은 지금 쓰는 알람·색 그대로예요" when the choice above is for new ones.
+ */
+private fun keptAlarmLine(work: List<ShiftType>, kept: List<ShiftType>, all: Boolean): String {
+    if (!all) return work.joinToString("·") { it.name } + Fmt.eun(work.last().name) + " 지금 쓰는 알람·색 그대로예요"
+    val byName = kept.associateBy { it.name.trim() }
+    return "알람·색은 지금 쓰는 그대로예요: " + work.joinToString(" · ") { t ->
+        val alarms = byName[t.name.trim()]?.copy(start = t.start, end = t.end)?.activeAlarms.orEmpty()
+        "${t.name} " + if (alarms.isEmpty()) "안 씀" else alarms.joinToString("·") { Fmt.offset(it.offsetMinutes) }
+    }
 }
 
 private fun alarmLine(d: SetupDraft): String {

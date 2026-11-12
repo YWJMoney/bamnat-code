@@ -17,6 +17,8 @@ import com.bamnat.core.imports.DeviceEvent
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -102,6 +104,11 @@ class RvlScanScreenshotTest : ScreenshotBase() {
         vm.pick(vm.ui.value.rows!!.indexOfFirst { it.label == "김민지" })
         settle()
         reveal("인가요, 근무인가요?")
+        // 'V' asked as 연차 first: one 연차 chip, not that and the plain 연차 after the kinds of work as well.
+        val chips = nodes().count { n ->
+            n.config.getOrNull(SemanticsProperties.Text)?.lastOrNull()?.text == "연차"
+        }
+        assertEquals(1, chips)
     }
 
     @Test fun guessedFoldLight() = shoot("rvl21_guessed_fold_light_100", FOLDED, guessed())
@@ -197,8 +204,14 @@ class RvlScanScreenshotTest : ScreenshotBase() {
     @Test fun leaveFoldLight() = shoot("rvl30_leave_fold_light_100", FOLDED, leave())
     @Test fun leaveFoldDarkHuge() = shoot("rvl30_leave_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, leave())
     @Test fun leaveOpenLight() = shoot("rvl30_leave_open_light_100", UNFOLDED, leave())
-    @Test fun failedFoldLight() = shoot("rvl30_failed_fold_light_100", FOLDED, calendar(null) { reveal("캘린더를 읽지 못했어요") })
-    @Test fun failedFoldDarkHuge() = shoot("rvl30_failed_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, calendar(null) { reveal("캘린더를 읽지 못했어요") })
+    /** Reading failed: said as that, with no greyed "가져올 새 일정이 없어요" under it saying otherwise. */
+    private fun failed(): Screen.() -> Unit = calendar(null) {
+        reveal("캘린더를 읽지 못했어요")
+        assertTrue(gone("가져올 새 일정이 없어요"))
+    }
+
+    @Test fun failedFoldLight() = shoot("rvl30_failed_fold_light_100", FOLDED, failed())
+    @Test fun failedFoldDarkHuge() = shoot("rvl30_failed_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, failed())
 
     // ---- RVL-17: a pay read that would turn a 월급 into a 시급, said against today's and left off ----
     private fun payCaution(): Screen.() -> Unit = {

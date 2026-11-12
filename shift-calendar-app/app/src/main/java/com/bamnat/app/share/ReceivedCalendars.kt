@@ -14,13 +14,32 @@ import java.time.YearMonth
 import com.bamnat.core.time.Today
 
 /** [SHR-02] A shift as someone else's link describes it. */
-data class SharedType(val id: Long, val name: String, val short: String, val color: Long, val time: String?, val off: Boolean, val icon: String?) {
-    /** The same shift as this app draws it, for the calendar's own badges. */
+data class SharedType(
+    val id: Long, val name: String, val short: String, val color: Long, val time: String?, val off: Boolean, val icon: String?,
+    /**
+     * 2.0.0 [RVG-28] 검토 PC-94: the sender's break in minutes (0 = none); null for a link from an app or a share server before 2.0.0,
+     * which sent the times only (the setup then says the break is not in it).
+     */
+    val rest: Int? = null,
+    /** [RVG-28] When the break starts, when the sender set it. */
+    val restStart: String? = null,
+    /** [RVG-28] 2.0.0 하루 두 구간 ([RVH-44]): the time between the two parts, "13:00-17:00"; null for a day in one part. */
+    val gap: String? = null,
+) {
+    /** The same shift as this app draws it, for the calendar's own badges; [RVG-28] with the sender's break, so the hours match. */
     fun asShiftType(): ShiftType {
         val parts = time?.split("-")
         fun at(s: String?) = s?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
-        return ShiftType(-id - 1, name, short, color, at(parts?.getOrNull(0)), at(parts?.getOrNull(1)), isOff = off, icon = icon)
+        val between = gap?.split("-")?.mapNotNull { at(it) }?.takeIf { it.size == 2 && !off }
+        return ShiftType(-id - 1, name, short, color, at(parts?.getOrNull(0)), at(parts?.getOrNull(1)), isOff = off, icon = icon,
+            breakMinutes = rest?.takeIf { !off } ?: 0, breakStart = at(restStart)?.takeIf { (rest ?: 0) > 0 && !off },
+            gapStart = between?.get(0), gapMinutes = between?.let { com.bamnat.core.model.WorkTime.spanMinutes(it[0], it[1]) } ?: 0)
+            // A gap that does not fit the day (an odd link) is no gap: the day stays in one part.
+            .let { if (it.gapStart != null && !it.hasGap) it.copy(gapStart = null, gapMinutes = 0) else it }
     }
+
+    /** [RVG-28] A timed 근무 whose break the link did not say (an older sender). */
+    val restUnknown: Boolean get() = !off && time != null && rest == null
 }
 
 data class SharedExtra(val name: String, val time: String?, val minutes: Int?)
@@ -90,7 +109,8 @@ data class SharedSchedule(
                 val id = t.optLong("id", Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE } ?: return@mapNotNull null
                 val color = t.optString("color").removePrefix("#").toLongOrNull(16)?.let { 0xFF000000 or it } ?: 0xFF9E9E9E
                 SharedType(id, t.optString("name"), t.optString("short").ifEmpty { t.optString("name").take(1) }, color,
-                    t.str("time"), t.optBoolean("off"), t.str("icon"))
+                    t.str("time"), t.optBoolean("off"), t.str("icon"),
+                    rest = t.optInt("rest", -1).takeIf { t.has("rest") && it in 0..720 }, restStart = t.str("restStart"), gap = t.str("gap"))
             }
             val days = o.optJSONArray("days").objects().mapNotNull { d ->
                 val date = runCatching { LocalDate.parse(d.optString("date")) }.getOrNull() ?: return@mapNotNull null
@@ -164,10 +184,21 @@ data class ReceivedCalendar(
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
-    /** Like an account name: what the sharer typed, e.g. 민지. */
-    val name: String get() = title.trim().ifEmpty { "이름 없음" }
+    /**
+     * [RVG-21] 검토 HQ-19 (조건 13): a 리더's team link (`team`: one member's days, made for them). Any other link is the sender's own,
+     * so what its cards say names 보낸 분, never 리더. When the link is gone, the copy the user's days were matched to says it.
+     */
+    val fromLeader: Boolean get() = (raw ?: basis)?.optBoolean("team") == true
+    /**
+     * Like an account name: what the sharer typed, e.g. 민지. 2.0.0 [RVG-32] 검토 PC-93: a link sent without a name is '받은 표' on a
+     * chip ('이름 없음' was cut to '이름 없'); in a sentence it is [roster] or [fullName].
+     */
+    val name: String get() = title.trim().ifEmpty { "받은 표" }
+
+    /** [RVG-32] This calendar's 근무표 in a sentence: ‘민지’ 근무표, or 받은 근무표 (not ‘받은 표’ 근무표 or 이름 없음님). */
+    val roster: String get() = com.bamnat.app.ui.setup.LinkStart.roster(title)
     /** 민지의 근무표, as the shared page says. [RVH-20] 검토 TYPE-16: a shop's link is 민지의 영업일, a field worker's 민지의 일정. */
-    val fullName: String get() = title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "이름 없는 $word"
+    val fullName: String get() = title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "받은 $word" // [RVG-32] was 이름 없는 근무표
 
     /** [RVH-20] What the link holds, as far as it says: 매출 sent → 영업일, 일감 → 일정, else 근무표. */
     val word: String get() = schedule?.let { s ->
@@ -179,7 +210,8 @@ data class ReceivedCalendar(
     } ?: "근무표"
     /** The letter in its avatar. */
     // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
-    val initial: String get() = title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?"
+    /** [RVG-32] 검토 PC-93: a link without a name shows 받 (as in 받은 표), not a question mark. */
+    val initial: String get() = title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받"
 
     companion object {
         /** Avatar colours, one per calendar in the order they were added. */
@@ -228,7 +260,9 @@ data class FollowNote(
  * month comes. [short] is the settings list's summary; otherwise the 내 근무 row's line.
  */
 fun ReceivedCalendar.mineLine(short: Boolean = false): String {
-    if (gone) return if (short) "받은 근무표 · 링크가 끊겼어요" else "${name} 링크가 끊겼어요 · 새 링크를 받으면 이어서 와요"
+    // [RVG-32] 검토 PC-93: a link without a name is 받은 근무표 in these lines, not '받은 표에서 받아요'.
+    val who = title.trim().ifEmpty { null }
+    if (gone) return if (short) "받은 근무표 · 링크가 끊겼어요" else "${who ?: "받은 근무표"} 링크가 끊겼어요 · 새 링크를 받으면 이어서 와요"
     // 1.38 PC 12.5 빈틈 3: a roster is a month's; '12월 2일까지' (the last day painted) read as if the rest of 12월 were missing.
     val first = schedule?.first?.let(java.time.YearMonth::from)
     val last = schedule?.last?.let(java.time.YearMonth::from)
@@ -238,8 +272,8 @@ fun ReceivedCalendar.mineLine(short: Boolean = false): String {
         first == last -> m(last)
         else -> "${m(first)}~${m(last)}"
     }
-    return if (short) listOfNotNull("받은 근무표", name, months?.let { "$it 근무표" }).joinToString(" · ")
-    else listOfNotNull("${name}에서 받아요", months?.let { "$it 근무표를 받았어요" }, "다음 달 근무표는 확정되면 알림으로 와요").joinToString(" · ")
+    return if (short) listOfNotNull("받은 근무표", who, months?.let { "$it 근무표" }).joinToString(" · ")
+    else listOfNotNull(who?.let { "${it}에서 받아요" } ?: "받은 근무표 링크에서 받아요", months?.let { "$it 근무표를 받았어요" }, "다음 달 근무표는 확정되면 알림으로 와요").joinToString(" · ")
 }
 
 /**
@@ -324,6 +358,21 @@ class ReceivedCalendarStore(
     fun markAdopted(id: String) {
         // The days just put in are this copy's, so it is what a later change is compared with.
         write(_calendars.value.map { if (it.id == id) it.copy(adopted = true, basis = it.raw ?: it.basis) else it })
+    }
+
+    /**
+     * [RVG-19][RVG-20] 검토 HQ-09: '내 근무표예요' was picked for someone else's link. It stays beside as theirs, only seen: not the
+     * user's work any more, never put in again by itself (follow back to its default, [RosterFollower.Mode.OFF]), no line left over.
+     */
+    fun notMine(id: String) {
+        write(_calendars.value.map { if (it.id == id) it.copy(mine = false, adopted = false, follow = null, note = null) else it })
+    }
+
+    /** [RVG-20] 되돌리기 of [notMine]: the link's own answers as they were in [before]; its copy stays the newest. */
+    fun putBack(before: ReceivedCalendar) {
+        write(_calendars.value.map {
+            if (it.id == before.id) it.copy(mine = before.mine, adopted = before.adopted, follow = before.follow, note = before.note, basis = before.basis) else it
+        })
     }
 
     /** 1.39 [TEAM-22] My days now match [schedule] of this link. */

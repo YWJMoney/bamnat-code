@@ -12,7 +12,7 @@ object RecipeWords {
     "byRole" to "근무마다 알람", "before" to "시작 몇 분 전", "snooze" to "다시 울림(분)", "ring" to "울리는 시간(분)", "gradual" to "점점 크게",
     "vibrate" to "진동", "mission" to "끄기 미션", "title" to "제목", "check" to "체크 목록", "body" to "내용", "repeat" to "반복",
     "five" to "5인 이상 사업장", "weeklyPay" to "주휴수당", "weekStart" to "주 시작 요일", "breakPay" to "휴게시간", "legalBreaks" to "법정 휴게 자동 빼기",
-    "night" to "야간 가산(%)", "partTime" to "단시간 가산", "rounding" to "시간 반올림", "tax" to "세금", "mode" to "받는 방식",
+    "night" to "야간 가산(%)", "partTime" to "단시간 가산", "rounding" to "시간 반올림", "tax" to "세금", "mode" to "세는 방식", // 2.0.0 [RVP-65] (검토 REST-20) one name with the calendar's own line
     "chips" to "공수 칩", "ends" to "끝난 시각 규칙", "end" to "끝난 시각", "units" to "공수", "kinds" to "작업 분류", "costs" to "경비 분류",
     "open" to "영업일", "opens" to "여는 시각", "closes" to "닫는 시각", "holidaysClosed" to "공휴일 쉬기", "cardFee" to "카드 수수료(%)",
     "settleDays" to "카드 정산(일 뒤)", "simpleTax" to "간이과세", "valueAdded" to "부가가치율(%)", "closing" to "마감 체크", "rules" to "투자 원칙",
@@ -52,7 +52,9 @@ object RecipeWords {
     "own" to "메모마다 색", "one" to "한 가지 색", "thin" to "가늘게", "s" to "작게", "m" to "보통", "l" to "크게",
     "sans" to "기본", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨 느낌", "roomy" to "넉넉히", "emoji" to "이모지", "band" to "색 띠",
     "MONDAY" to "월", "TUESDAY" to "화", "WEDNESDAY" to "수", "THURSDAY" to "목", "FRIDAY" to "금", "SATURDAY" to "토", "SUNDAY" to "일",
-) + ShiftRole.entries.associate { it.key to it.label }
+)
+    // 2.0.0 [RVP-65] (검토 REST-20) The kinds of day first, a choice's own word over them: 테마 'night' read as 야간, not 야간 근무 때 어둡게.
+    .let { own -> ShiftRole.entries.associate { it.key to it.label } + own }
 }
 
 

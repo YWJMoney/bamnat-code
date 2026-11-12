@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.LinkOff
@@ -338,7 +339,7 @@ internal fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Bo
             }
         }
     }
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val who = sender.trim().ifEmpty { "동료" }
             Text("$who 님이 ${company.ifEmpty { "회사" }} 근무표와 급여 계산 방식을 보냈어요.", style = MaterialTheme.typography.titleSmall)
@@ -412,10 +413,10 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?", color, size = 44.dp)
+                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받", color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "이름 없는 근무표", style = MaterialTheme.typography.titleMedium)
+                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "받은 근무표", style = MaterialTheme.typography.titleMedium)
                     if (s.first != null && s.last != null) {
                         Text("${Fmt.monthDay(s.first)} ~ ${Fmt.monthDay(s.last)}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -519,6 +520,11 @@ private fun ResolvedDay.isRestForMe(): Boolean = (isOff || leave?.isFullDay == t
  * [SHR-02][SHR-04] Someone's shared calendar in place of the user's own: read only, with the days
  * both are off marked, the day picked compared with the user's own, and what else they sent.
  */
+/** [RVG-22] What the received month's head needs besides the month and '오늘': ‹ and › (48dp each), the month's 6dp sides, the text
+ * button's own 12dp sides and the row's 4dp ends. */
+private val HEAD_BUTTONS = 48.dp * 2 + 12.dp + 24.dp + 8.dp
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReceivedCalendarView(
     vm: ReceivedViewModel,
@@ -532,6 +538,8 @@ fun ReceivedCalendarView(
     modifier: Modifier = Modifier,
     /** [NURS-06] The user's own 근무표 점검 기준, to read their roster with. */
     rules: com.bamnat.core.schedule.RestRules = com.bamnat.core.schedule.RestRules(),
+    /** [RVG-20] Says what was done on this calendar, with 되돌리기 (the calendar screen's line at the bottom). */
+    onSay: ((com.bamnat.app.ui.UndoMessage) -> Unit)? = null,
 ) {
     val refresh by vm.refresh.collectAsState()
     // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
@@ -579,14 +587,32 @@ fun ReceivedCalendarView(
 
     val calendarPart: @Composable () -> Unit = {
         identityBar()
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-            Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 6.dp))
-            IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘") }
+        // [RVG-22] 검토 HQ-20 (조건 12): on a narrow column at large text (편 폭 200%) the month took the room and '오늘' stood one letter
+        // a line. Where the month and '오늘' do not both fit, '오늘' is the calendar's 오늘 icon (read out as 오늘) and the month drops
+        // this year's number, as the month view's header does; the month itself shrinks last and never wraps.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val monthStyle = MaterialTheme.typography.titleMedium
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val todayStyle = MaterialTheme.typography.labelLarge
+            val roomy = with(androidx.compose.ui.platform.LocalDensity.current) {
+                (measurer.measure(Fmt.month(month), monthStyle).size.width + measurer.measure("오늘", todayStyle).size.width).toDp()
+            } + HEAD_BUTTONS <= maxWidth
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    com.bamnat.app.ui.FitText(
+                        if (roomy) androidx.compose.ui.text.AnnotatedString(Fmt.month(month)) else monthTitle(month, short = true),
+                        monthStyle, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp),
+                    )
+                    IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+                }
+                if (roomy) TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘", maxLines = 1, softWrap = false) }
+                else IconButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Icon(Icons.Filled.Today, "오늘") }
+            }
         }
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        // [RVG-22] 검토 HQ-20: at large text on a narrow column the chip took the row and '방금 받음 ↻' was cut to '방금'; now when both
+        // do not fit, the freshness goes whole to the line under the chip (the chip is never squeezed either).
+        FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             // [CAL-12] Only for a month the link covers: outside it there is nothing to compare.
             if (canCompare && schedule.covers(month)) {
                 FilterChip(
@@ -598,7 +624,7 @@ fun ReceivedCalendarView(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Freshness(cal, loading, offline, onRefresh = { vm.refresh(cal.id) })
+            Row(verticalAlignment = Alignment.CenterVertically) { Freshness(cal, loading, offline, onRefresh = { vm.refresh(cal.id) }) }
         }
         WeekdayHeader(weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
@@ -639,7 +665,7 @@ fun ReceivedCalendarView(
             // 1.38 [P3-X-03]: the link's month as the user's own days, with what their pay setup makes of it.
             if (canCompare && schedule.covers(month) && schedule.usesShifts()) AdoptRosterCard(cal.id, schedule, month, mine)
             // 1.39 [TEAM-22] What happens when this link changes, for the link the user's days come from or were put in from.
-            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal)
+            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal, onSay)
             val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
             if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
@@ -855,6 +881,7 @@ private fun ReceivedDayCell(
             val dateSp = with(density) { minOf(13.sp.toDp(), 14.dp).toSp() }
             // 2.0.0 [RVP-11][RVH-11] 10sp at least (검토 UIX-11), and capped so that at 200% it stays inside the cell (CAL-16).
             val memoSp = with(density) { minOf(10.sp.toDp(), 11.dp).toSp() }
+            val markSp = with(density) { minOf(10.sp.toDp(), 10.dp).toSp() }
             Box(Modifier.fillMaxWidth().height(20.dp)) {
                 Box(
                     Modifier.align(Alignment.Center).size(20.dp).clip(CircleShape).background(if (isToday) scheme.primary else Color.Transparent),
@@ -866,6 +893,9 @@ private fun ReceivedDayCell(
                         fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
                         color = if (isToday) scheme.onPrimary else numberColor,
                         fontSize = dateSp,
+                        // [RVG-22] 검토 HQ-20: the style's own line (20sp, 40 at 200%) in a 20dp circle cut the number in half; the line
+                        // is the number's size, as the month view's cells have it.
+                        lineHeight = dateSp,
                         maxLines = 1,
                     )
                 }
@@ -875,7 +905,12 @@ private fun ReceivedDayCell(
                 day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
                     Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
-                    ) { Text(e.name.take(1), fontSize = 10.sp /* [RVP-11] T13-07 */, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
+                    ) {
+                        // [RVG-22] 검토 HQ-20: at 200% its letter grew over today's date (the '14' under a green box); capped as the
+                        // month view's cell marks are (WorkCells), so the date stays seen.
+                        Text(e.name.take(1), fontSize = markSp /* [RVP-11] T13-07 */, lineHeight = markSp, fontWeight = FontWeight.Bold,
+                            color = scheme.onSecondaryContainer)
+                    }
                 }
             }
             if (inRange) DayBadge(schedule, day, size = 22.dp, shifts = shifts)
@@ -1049,7 +1084,8 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("${cal.name}님 근무표 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
+            // [RVG-32] 검토 PC-93: no '이름 없음님' for a link sent without a name.
+            Text((if (cal.title.isBlank()) "받은 근무표" else "${cal.name}님 근무표") + " 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
             // [REST-02] The same sign over the month is one line: the first in full, then the other days.
             val groups = warnings.groupBy { it.kind to it.pattern }.values.toList()
             groups.take(5).forEach { same ->

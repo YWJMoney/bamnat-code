@@ -82,7 +82,7 @@ class FeatureWayScreenTest : ScreenshotBase() {
         /** Places opened as a tab of the bottom bar. */
         val TAB_PLACES = setOf(Place.CALENDAR, Place.TODAY, Place.MONEY, Place.MEMOS, Place.STATS, Place.PLAZA, Place.SHARE, Place.RECEIVE)
 
-        /** 문의하기 opens its sheet over whatever is on screen: not a place of its own. */
-        val SKIP = setOf(Place.INQUIRY)
+        /** 문의하기 opens its sheet over whatever is on screen: not a place of its own. 2.0.0 [RVP-75] The ringing alarm's 모두 끄기 has none. */
+        val SKIP = setOf(Place.INQUIRY, Place.NOWHERE)
     }
 }

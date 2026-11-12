@@ -26,12 +26,13 @@ export async function fcmRoute(request, env, path) {
   if (!id) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(id);
   const now = Date.now();
+  // 2.0.0 [RVQ-10] 검토 SRV-12 (라): 지우기도 같은 한도(설치마다 시간에 20번).
+  const hit = await overLimit(env, now, [["device", `pushtok|${dev}`, FCM_LIMITS.perHour, HOUR]]);
+  if (hit) return hit;
   if (request.method === "DELETE") {
     await run(env, "DELETE FROM push_phones WHERE device = ?", dev);
     return json({ ok: true });
   }
-  const hit = await overLimit(env, now, [["device", `pushtok|${dev}`, FCM_LIMITS.perHour, HOUR]]);
-  if (hit) return hit;
   if (typeof body.token !== "string" || !FCM_TOKEN.test(body.token)) return json({ error: "token", field: "token" }, 400);
   await run(env, `INSERT INTO push_phones (device, token, at) VALUES (?, ?, ?)
     ON CONFLICT (device) DO UPDATE SET token = excluded.token, at = excluded.at`, dev, body.token, now);
@@ -88,8 +89,11 @@ export async function fcmTell(env, inquiryIds, now = Date.now()) {
   }
 }
 
-/** One wordless data message to each of [phones] ({device, token}); a token Google says is gone is forgotten. */
-async function fcmSend(env, phones, data, now) {
+/**
+ * One wordless data message to each of [phones] ({device, token}); a token Google says is gone is forgotten. 2.0.0 [RVN-04][SVC-91] [ok], when
+ * given, collects the devices Google took a message for, so a caller marks only those as told.
+ */
+async function fcmSend(env, phones, data, now, ok = null) {
   if (!phones.length) return 0;
   const { token, project } = await fcmAccess(env, now);
   let sent = 0;
@@ -99,8 +103,10 @@ async function fcmSend(env, phones, data, now) {
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ message: { token: p.token, data, android: { priority: "high", ttl: "86400s" } } }),
     });
-    if (res.ok) sent++;
-    else if (res.status === 404 || res.status === 400) await run(env, "DELETE FROM push_phones WHERE device = ? AND token = ?", p.device, p.token);
+    if (res.ok) {
+      sent++;
+      ok?.add(p.device);
+    } else if (res.status === 404 || res.status === 400) await run(env, "DELETE FROM push_phones WHERE device = ? AND token = ?", p.device, p.token);
   }
   return sent;
 }
@@ -109,7 +115,7 @@ async function fcmSend(env, phones, data, now) {
  * 1.39 [PLZC-41] The phones of [devices] (install hashes) hear "something new in 광장" ({kind}). Never throws; nothing without the
  * secret or a token.
  */
-export async function fcmTellDevices(env, devices, kind, now = Date.now()) {
+export async function fcmTellDevices(env, devices, kind, now = Date.now(), ok = null) {
   const list = [...new Set((devices ?? []).filter(Boolean))].slice(0, 200);
   if (!env.FCM_SERVICE_ACCOUNT || !list.length) return 0;
   try {
@@ -118,7 +124,7 @@ export async function fcmTellDevices(env, devices, kind, now = Date.now()) {
       const part = list.slice(i, i + 90);
       phones.push(...(await all(env, `SELECT device, token FROM push_phones WHERE device IN (${part.map(() => "?").join(",")})`, ...part)));
     }
-    return await fcmSend(env, phones, { kind }, now);
+    return await fcmSend(env, phones, { kind }, now, ok);
   } catch (e) {
     console.error("fcm", e && e.stack ? e.stack : String(e));
     return 0;

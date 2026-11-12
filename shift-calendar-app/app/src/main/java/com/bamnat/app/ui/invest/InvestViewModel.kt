@@ -211,15 +211,37 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     }
 
     // [INV-32] A found trade: written as it came, opened to fix first, or let go (with 되돌리기).
-    fun confirmAlert(p: com.bamnat.core.invest.TradeAlerts.Pending) = viewModelScope.launch {
-        val t = repo.confirmAlert(p)
+    fun confirmAlert(p: com.bamnat.core.invest.TradeAlerts.Pending, into: Long? = null) = viewModelScope.launch {
+        val t = repo.confirmAlert(p, into)
         changed()
         say("${t.title} ${t.side.label} 적었어요") { repo.deleteTrade(t.id); repo.addAlert(p) }
+    }
+
+    /**
+     * 2.0.0 [RVK-17] (검토 U06b-02): '확실한 N건 모두 적기' — every waiting fill whose price is known and agrees, each into its
+     * account ([into] holds the ones picked on the line), with one 되돌리기 for all.
+     */
+    fun confirmSure(list: List<com.bamnat.core.invest.TradeAlerts.Pending>, into: Map<Long, Long>) = viewModelScope.launch {
+        val sure = list.filter { com.bamnat.core.invest.TradeAlerts.sure(it) }
+        if (sure.isEmpty()) return@launch
+        val done = sure.map { p -> p to repo.confirmAlert(p, into[p.at]) }
+        changed()
+        say("${done.size}건을 적었어요", long = true) {
+            done.forEach { (p, t) -> repo.deleteTrade(t.id); repo.addAlert(p) }
+        }
     }
 
     fun dropAlert(p: com.bamnat.core.invest.TradeAlerts.Pending) = viewModelScope.launch {
         repo.dropAlert(p.at)
         say("${p.title} ${p.side.label} 알림을 넘겼어요") { repo.addAlert(p) }
+    }
+
+    /**
+     * 2.0.0 [RVK-24] (총괄 #472 리뷰, 조건 9·14) 넘기기 from the sheet a found line opens: letting one go no longer takes the swipe
+     * to the left, which a finger that cannot slide or TalkBack's plain tap could not do.
+     */
+    fun dropAlertAt(at: Long) = viewModelScope.launch {
+        repo.alertsNow().firstOrNull { it.at == at }?.let { dropAlert(it) }
     }
 
     // ---- 1.27 AK 순번 450 (INV-42~45): 캡처로 채우기 — 같으면 건너뛰고, 다르면 묻고, 새 것만 확인, 믿으면 묻지 않기 ----

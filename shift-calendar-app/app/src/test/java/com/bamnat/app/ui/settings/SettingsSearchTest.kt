@@ -110,7 +110,7 @@ class SettingsSearchTest {
     @Test fun eachKindOfWorkFindsItsOwn() {
         val shop = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.BUSINESS).map { it.title }
         assertFalse("급여 계산" in shop)
-        assertFalse("연장 휴무일 근무 지정" in shop)
+        assertFalse("연장·휴무일 근무 지정" in shop)
         assertFalse("연차 사용 촉진 알림" in shop)
         assertFalse("근태 엑셀 가져오기" in shop)
         assertTrue("백업 저장" in shop)

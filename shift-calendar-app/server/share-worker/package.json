@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/worker.test.mjs test/security136.test.mjs test/clock138.test.mjs test/ask138.test.mjs test/call138.test.mjs test/swap138.test.mjs test/sign138.test.mjs test/board138.test.mjs test/tired138.test.mjs test/seen139.test.mjs test/spread139.test.mjs test/care139.test.mjs test/ios139.test.mjs test/health139.test.mjs test/bundle139.test.mjs",
+    "test": "node --test test/worker.test.mjs test/security136.test.mjs test/clock138.test.mjs test/ask138.test.mjs test/call138.test.mjs test/swap138.test.mjs test/sign138.test.mjs test/board138.test.mjs test/tired138.test.mjs test/seen139.test.mjs test/spread139.test.mjs test/care139.test.mjs test/ios139.test.mjs test/health139.test.mjs test/bundle139.test.mjs test/hq13-two-parts.test.mjs test/pc92-emoji-icon.test.mjs test/pc94-rest.test.mjs test/rvd26-short.test.mjs",
     "deploy": "wrangler deploy",
     "local": "node --disable-warning=ExperimentalWarning test/local-server.mjs",
     "bundle": "node tools/bundle.mjs"

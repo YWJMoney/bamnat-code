@@ -23,7 +23,6 @@ import com.bamnat.app.ui.components.KaniMood
 import com.bamnat.app.ui.components.StoryEvent
 import com.bamnat.app.ui.components.StoryLine
 import com.bamnat.app.ui.components.WeekStrip
-import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.core.design.StoryKind
 import org.junit.Test
@@ -43,7 +42,7 @@ import java.time.LocalDateTime
 @Config(sdk = [35])
 class DesignScreenshotTest : ScreenshotBase() {
     @Composable private fun Page(dark: Boolean = false, body: @Composable () -> Unit) {
-        BamnatTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
+        ShotTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) { body() }
         }
@@ -157,6 +156,9 @@ class DesignScreenshotTest : ScreenshotBase() {
         com.bamnat.app.ui.components.NudgeCard("이번 달 근무표가 아직 비어 있어요", detail = "근무표 사진을 찍으면 한 번에 채워요",
             action = "사진으로 채우기", onClose = {})
         com.bamnat.app.ui.components.NudgeCard("백업했어요", tone = Tone.Good, onClose = {})
+        // 갈래 J가 찾음: 단추가 없는 카드도 큰 글자에서 둘째 줄을 자르지 않아요.
+        com.bamnat.app.ui.components.NudgeCard("급여 설정 파일을 읽지 못했어요", detail = "지난번에 저장한 값으로 계산했어요. 설정을 한 번 열어 저장하면 다시 맞춰져요",
+            tone = Tone.Caution, onClose = {})
     }
 
     @Test fun nudgeCardsBigTextFolded() = shoot("2708_design_nudge_200", FOLDED, 2f) {
@@ -184,7 +186,7 @@ class DesignScreenshotTest : ScreenshotBase() {
 
     @Test fun kaniSizesNight() = shoot("2707_design_kani_sizes_night", FOLDED) {
         content {
-            com.bamnat.app.ui.theme.BamnatTheme(themeMode = ThemeMode.DARK, night = true) {
+            ShotTheme(themeMode = ThemeMode.DARK, night = true) {
                 Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) { Sizes(true) }
             }

@@ -31,6 +31,9 @@ jobs:
           echo "16 KB aligned"
           # apksigner travels with the files so the APK can be signed where the key is, without an Android SDK.
           cp "$(dirname "$za")/lib/apksigner.jar" app/build/outputs/apk/release/
+      # 2.0.0 [RVO-01] The debug build's tier preview and example prices must be gone from the release dex (R8 drops them).
+      - name: No debug-only words
+        run: python3 tools/release_dex_check.py app/build/outputs/apk/release/app-release-unsigned.apk
       # [PERF-04] Sizes and their largest parts in the job summary; a file over its budget fails the build.
       - name: Size
         run: |

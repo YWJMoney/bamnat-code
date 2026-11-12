@@ -1,5 +1,5 @@
 import { SWITCH_FLAGS, flagDef, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
-import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, stmt, versions } from "./index.js";
+import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, sharedCount, stmt, versions } from "./index.js";
 import { SLA_SQL, plainText, readSla } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
 import { WORK_PRODUCTS, phase3Metrics } from "./phase3-metrics.js";
@@ -97,8 +97,15 @@ export async function opsState(env) {
   return { notices, off: forced.filter((r) => SWITCH_FLAGS[r.key] && !(r.until && r.until <= now)).map((r) => SWITCH_FLAGS[r.key]) };
 }
 
-/** [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. */
-export const paused = (env, name) => switchOff(env, name);
+/**
+ * [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. 2.0.0 [RVQ-11] 검토 SRV-13: 광장
+ * 글쓰기 시도는 사본들이 함께 세어(10번에 한 번 D1) 5분 작업이 급증을 봐요(index.js plazaSurge). 세기가 실패해도 쓰기는 그대로.
+ */
+export const paused = async (env, name) => {
+  const off = await switchOff(env, name);
+  if (!off && name === "PLAZA_WRITE") await sharedCount(env, "plazaw", HOUR, Date.now(), 10).catch(() => 0);
+  return off;
+};
 
 export const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
   minApp: n.minApp ?? null, maxApp: n.maxApp ?? null, audience: n.audience ?? null, action: n.action ?? null });
@@ -364,12 +371,15 @@ export async function usage(request, env) {
     for (const e of counts.keys()) lately.add(e);
     for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
   }
+  // 2.0.0 [RVQ-13] 검토 SRV-21: 깃발 저장소(4문장 묶음)는 이 요청에서 한 번만, 필요할 때 읽어요(전에는 조건마다 따로 최대 4번).
+  let storeRead = null;
+  const store = () => (storeRead ??= flagStore(env));
   // 1.39 [STAT2-02] 처리방침 3.12 시행일(깃발 stats.life) 전에 온 life_*는 버려요.
-  if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await flagStore(env), "stats.life", now).on) {
+  if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await store(), "stats.life", now).on) {
     for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("life_")) rows.splice(i, 1);
   }
   // 1.40 [DISC-06] 처리방침 3.13 시행일(깃발 stats.disc) 전에 온 disc_*는 버려요.
-  if (rows.some((r) => r[1].startsWith("disc_")) && !serverEval(await flagStore(env), "stats.disc", now).on) {
+  if (rows.some((r) => r[1].startsWith("disc_")) && !serverEval(await store(), "stats.disc", now).on) {
     for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("disc_")) rows.splice(i, 1);
   }
   const app = body.app;
@@ -377,7 +387,7 @@ export async function usage(request, env) {
   // 1.39 [OBS2-08] 유형별 흐름(stats.kind)과 기능과 머묾(stats.keep): 처리방침 3.12 시행일 전에 온 것은 버려요.
   const style = kindOf(body.style);
   const keep = keepRows(body.keep, now);
-  const obsStore = style || keep.length ? await flagStore(env) : null;
+  const obsStore = style || keep.length ? await store() : null;
   const kindRowsIn = style && serverEval(obsStore, "stats.kind", now).on
     ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_"))).map((r) => [r[0], style, r[1]]) : [];
   const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
@@ -399,10 +409,10 @@ export async function usage(request, env) {
   const startupDay = [...days].sort().at(-1);
   // 1.31 [STAT-08] Lookup times only once 처리방침 3.5 is in force (stats.lookup's date); before it they are left out.
   const lookups = lookupRows(body.lookups);
-  const lookupOn = lookups.length > 0 && serverEval(await flagStore(env), "stats.lookup", now).on;
+  const lookupOn = lookups.length > 0 && serverEval(await store(), "stats.lookup", now).on;
   // 1.39 [SETUP-20] 첫 설정 누른 횟수 only once 처리방침 3.12 is in force (stats.setup's date); before it it is left out.
   const setup = setupRows(body.setup);
-  const setupOn = setup.length > 0 && serverEval(await flagStore(env), "stats.setup", now).on;
+  const setupOn = setup.length > 0 && serverEval(await store(), "stats.setup", now).on;
   for (const [kind, step, bucket] of [...startupRows(body.startup), ...(lookupOn ? lookups : []), ...(setupOn ? setup : [])]) {
     stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
       ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));

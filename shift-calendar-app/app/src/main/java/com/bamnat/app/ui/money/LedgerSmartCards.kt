@@ -71,8 +71,8 @@ internal fun SubscriptionsCard(entries: List<MoneyEntry>, today: LocalDate, look
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         subs.take(8).forEach { s ->
             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // 2.0.0 [RVK-23]·HQ-30
+                NameAndAmount({ Text(s.place, style = MaterialTheme.typography.bodyMedium) }) {
                     Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
                 }
                 // 1.37 PC 7차: '써요'를 누른 구독은 단추가 사라지고 줄만 남아 헷갈렸어요. 쓰기로 한 것을 말해요.
@@ -126,8 +126,9 @@ internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedA
             Text("석 달 넘게 매달 나가는 구독 ${f.staleSubs.size}개 · 아직 쓰나요? 1년이면 ${Fmt.won(f.staleYearly)}", style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 8.dp))
             f.staleSubs.take(4).forEach { s ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(s.place) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // 2.0.0 [RVK-23]·HQ-30
+                NameAndAmount({ Text(s.place, style = MaterialTheme.typography.bodyMedium) },
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(s.place) }.padding(vertical = 4.dp)) {
                     Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
                 }
             }

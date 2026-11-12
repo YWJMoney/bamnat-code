@@ -197,6 +197,7 @@ fun CalendarIdentityBar(
     // [J133-22] 1.33 (실사용 테스트 "작은 폰에서 지금 보는 달력 칩·공유가 0x0으로 사라짐"): a small phone keeps the name and 공유
     // (as an icon) and leaves the other calendars to the list (+n).
     val small = maxWidth < 340.dp
+    val barWidth = maxWidth
     val room = when {
         small -> 0
         LocalDensity.current.fontScale > 1.3f -> 1
@@ -272,15 +273,22 @@ fun CalendarIdentityBar(
                 else ShareAction(it, Modifier.padding(start = 4.dp), shareName)
             }
         } else {
-            Surface(onClick = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) },
-                shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+            val goHome = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) }
+            val homeWords = if (home.isMain) "내 달력으로" else "${home.name}${Fmt.ro(home.name)}"
+            // [RVG-22] 검토 HQ-20 (조건 12): at large text the words were cut to '내 달력…'. They show whole while they take at most
+            // 40% of the bar (the name beside keeps the rest); past that the chip is its face only, read out in the same words.
+            val labelStyle = MaterialTheme.typography.labelLarge
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val wordsFit = with(LocalDensity.current) { measurer.measure(homeWords, labelStyle).size.width.toDp() } <= barWidth * 0.4f
+            if (wordsFit) Surface(onClick = goHome, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     home.Avatar(size = 26.dp)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (home.isMain) "내 달력으로" else "${home.name}${Fmt.ro(home.name)}", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 120.dp))
+                    Text(homeWords, style = labelStyle, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                 }
+            } else Surface(onClick = goHome, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(48.dp).semantics { contentDescription = homeWords }) {
+                Box(Modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) { home.Avatar(size = 30.dp) }
             }
         }
     }

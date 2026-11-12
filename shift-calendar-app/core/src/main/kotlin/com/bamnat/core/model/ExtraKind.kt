@@ -146,7 +146,7 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
 
     /**
      * 1.39 PC eae4e024 (일반 직장인 칸 창에 '일근 대근 09–18'이 먼저): a first setup of 일근 keeps 대근 folded, as 잔업·특근 are
-     * what office work adds; 설정 › 연장 휴무일 근무 지정 shows it again. Only the kinds as they come: ones the user or a company file
+     * what office work adds; 설정 › 연장·휴무일 근무 지정 shows it again. Only the kinds as they come: ones the user or a company file
      * changed stay as they are.
      */
     fun forDayWork(): ExtraKinds =
