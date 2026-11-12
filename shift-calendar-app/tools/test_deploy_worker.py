@@ -86,6 +86,26 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertIsNone(d.version_gate("share", "2.0.0", None, False))
         self.assertEqual(d.message_version({"metadata": {"message": "1.39.1 49c7ddb8 x"}}), "1.39.1")
 
+    def test_company_health_says_its_version(self):
+        # 2.0.0 [PC-32] 회사 /api/admin/health가 판 이름을 알려 주면 지금 판은 그 값, 새 판 health는 그 값이 올린 판과 같아야 해요.
+        good = {"database": True, "password": True, "salt": True, "schema": True, "config": True}
+        self.assertTrue(d.company_ok(200, {**good, "version": "2.0.0"}, True, "2.0.0"))
+        self.assertFalse(d.company_ok(200, {**good, "version": "1.39.0"}, True, "2.0.0"))
+        self.assertTrue(d.company_ok(200, good, False, "2.0.0"))  # 판 이름이 없는 옛 판(되돌린 판)은 건너뛰어요
+        seen = []
+        real = d.get
+        try:
+            d.get = lambda url: (seen.append(url), (200, '{"database":true,"version":"2.0.0"}'))[1]
+            view = {"annotations": {"workers/message": "1.39.0 0b62510b x"}}
+            self.assertEqual(d.live_version("company", "https://api.example", view), "2.0.0")
+            self.assertEqual(seen, ["https://api.example/api/admin/health"])
+            d.get = lambda url: (200, '{"database":true}')  # 2.0.0 앞 판: health에 판이 없으면 메시지로
+            self.assertEqual(d.live_version("company", "https://api.example", view), "1.39.0")
+            d.get = lambda url: (200, '{"version":"x"}')
+            self.assertIsNone(d.live_version("company", "https://api.example", {"annotations": {}}))
+        finally:
+            d.get = real
+
     def test_upload_version_id(self):
         nd = '{"type":"wrangler-session"}\n{"type":"version-upload","version_id":"0f0f0f0f-1111-2222-3333-444444444444"}\n'
         self.assertEqual(d.upload_version_id(nd, ""), "0f0f0f0f-1111-2222-3333-444444444444")

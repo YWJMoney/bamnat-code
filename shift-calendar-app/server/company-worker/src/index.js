@@ -4927,7 +4927,8 @@ const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly;
  */
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
-  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
+  // 2.0.0 [PC-32] 도는 코드의 판 이름(공유 서버 /api/health처럼). 배포 도구가 지금 판·새 판을 이 값으로 봐요. 판 이름 말고는 더 내보내지 않아요.
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why, version: SERVER_VERSION };
 }
 
 /**
