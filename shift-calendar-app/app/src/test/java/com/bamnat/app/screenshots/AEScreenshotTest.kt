@@ -147,7 +147,7 @@ class AEScreenshotTest : ScreenshotBase() {
         assertFalse(appears("0/1명", ms = 0))
         assertFalse(appears("프로 0개월", ms = 0))
         fun top(t: String) = nodes(merged = false).first { n ->
-            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString("") { it.text } == t
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString("") { it.text } == t
         }.boundsInRoot.top
         assertTrue("the month being looked at is said first", top(InviteRules.pending(1)) < top("친구 5명이 더 7일 쓰면 프로 1개월"))
     }

@@ -237,7 +237,8 @@ internal object SettingsIndex {
         DAY_CLOSE_ROW -> style != com.bamnat.core.work.WorkStyle.BUSINESS && style != com.bamnat.core.work.WorkStyle.INVEST
         // An investor has no end of work and no hourly pay.
         "퇴근 후 잠들기까지", WORK_TIME_ROW -> style != com.bamnat.core.work.WorkStyle.INVEST
-        else -> true
+        // 2.0.0 [RVO-22] Any other notice on the 알림 한눈에 board is found where the board draws it (메모·할 일 [RVIB-05] and the next ones).
+        else -> NoticeBoard.OWN.firstOrNull { it.label(style) == title || it.label(null) == title }?.let { it.shows(style) } ?: true
     }
 
     private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
