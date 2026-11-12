@@ -2,7 +2,8 @@
 // (recipes.js, a 회사 근무 주기 작품) checks it with the very function the company server does. Moved from index.js as it was; index.js
 // imports it back and still exports what it exported.
 import { readItemShare } from "./plaza-items.js";
-import { graphemes } from "./letters.js";
+import { graphemes, cutLetters } from "./letters.js";
+import { SHIFT_RULES } from "./shift-rules.js";
 
 /** The newest company settings file this server reads (CompanyShare.VERSION in the app). */
 // [PAYS-03] 3 carries 감시·단속 승인, 5인 미만 공휴일, 유급 휴게 and allowances paid instead of a premium.
@@ -60,8 +61,9 @@ function date(v, field) {
 
 /** 2.0.0 [RVD-20] HQ-08 하루 두 구간 (결정 19번, 설계 4-4절, 갈래 H #451): the keys a shift type carries the gap and the break apart in. */
 const TWO_PART_KEYS = ["gapStart", "gap", "rest", "restStart"];
-/** [RVD-20] HQ-08 As the app's WorkTime: each part at least 30 minutes, the gap at least 30. */
-const MIN_PART = 30;
+/** [RVD-20] HQ-08 As the app's WorkTime: each part at least 30 minutes, the gap at least 30 ([RVD-28] SD-08 from core ShiftRules). */
+const MIN_PART = SHIFT_RULES.gap.part;
+const MIN_GAP = SHIFT_RULES.gap.min;
 const minutesOf = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
 const clock = (m) => `${String(Math.floor((m % (24 * 60)) / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const DAY_MIN = 24 * 60;
@@ -74,8 +76,8 @@ const DAY_MIN = 24 * 60;
  */
 function twoParts(t, type) {
   const gapStart = time(t.gapStart, "shiftTypes");
-  const gap = int(t.gap, MIN_PART, DAY_MIN - 2 * MIN_PART, "shiftTypes");
-  const rest = int(t.rest ?? 0, 0, 720, "shiftTypes");
+  const gap = int(t.gap, MIN_GAP, DAY_MIN - 2 * MIN_PART, "shiftTypes");
+  const rest = int(t.rest ?? 0, 0, SHIFT_RULES.rest.max, "shiftTypes");
   const restStart = given(t.restStart) ? time(t.restStart, "shiftTypes") : null;
   if (type.off || type.start === null || type.end === null) refuse("setup", "shiftTypes");
   // Minutes from the first start, a shift past midnight read as the app reads it (WorkTime.offset·spanMinutes).
@@ -89,11 +91,33 @@ function twoParts(t, type) {
 /**
  * 2.0.0 [RVD-26] SN-16 근무 글자: two letters as a person counts them (an emoji made of several, 👩‍⚕️, is one; letters.js), up to 16 code
  * units, as the app and a 작품 keep it. What 8 code units took before still goes, so no file the server took before is refused now.
+ * [RVD-28] SD-08 (core ShiftRules, 근무 종류 한 규칙표): longer is cut to its first letters that fit, never refused (총괄 11-12 '버리기, 거절
+ * 아님'; nothing points at a 근무 글자).
  */
 function shiftLabel(v) {
-  const s = str(v ?? "", 16, "shiftTypes");
-  return s.length <= 8 || graphemes(s) <= 2 ? s : refuse("setup", "shiftTypes");
+  const { letters, units, before } = SHIFT_RULES.label;
+  const s = str(v ?? "", Infinity, "shiftTypes");
+  return s.length <= before.company ? s : cutLetters(s, letters, units);
 }
+
+/**
+ * [RVD-28] SD-08 A kind of day's name (core ShiftRules): what 40 code units took before, or 20 letters up to 80 code units (a 작품's 근무
+ * 꾸미기 counts letters). More is refused, not cut: the 근무 주기 and 대근 point at a kind of day by its name.
+ */
+function shiftName(v) {
+  const { letters, units, before } = SHIFT_RULES.name;
+  const s = str(v, Math.max(units, before.company), "shiftTypes", { empty: false });
+  return s.length <= before.company || graphemes(s) <= letters ? s : refuse("setup", "shiftTypes");
+}
+
+const ICON_KEY = new RegExp(SHIFT_RULES.icon.key);
+const EMOJI_ICON = new RegExp(SHIFT_RULES.icon.emoji, "u");
+/**
+ * [RVD-28] SD-08 A 근무 그림 as core ShiftRules says (2.0.0 [RVD-22] PC-92): a drawn icon's key, or "e:" and one emoji of up to 12 code points.
+ * The share server checks it with the same rule. One that does not fit is dropped (the kind of day shows its 글자), never the file.
+ */
+export const iconOk = (icon) => typeof icon === "string" &&
+  (ICON_KEY.test(icon) || ([...icon].length - SHIFT_RULES.icon.prefix.length <= SHIFT_RULES.icon.emojiCodePoints && EMOJI_ICON.test(icon)));
 
 /**
  * [COMM-02] A company settings file (CompanyShare in the app) cut down to the fields the app reads,
@@ -109,20 +133,21 @@ export function cleanSetup(raw, texts = []) {
   object(raw, "setup");
   if (raw.format !== "bamnat-company") refuse("setup", "format");
   if (int(raw.v, 1, 99, "v") > SETUP_VERSION) refuse("setup_version", "v");
-  const shiftTypes = list(raw.shiftTypes, 24, "shiftTypes").map((t) => {
+  const shiftTypes = list(raw.shiftTypes, SHIFT_RULES.types, "shiftTypes").map((t) => {
     object(t, "shiftTypes");
     const two = TWO_PART_KEYS.some((k) => given(t[k]));
     const type = {
-      name: say("shiftTypes", str(t.name, 40, "shiftTypes", { empty: false })),
+      name: say("shiftTypes", shiftName(t.name)),
       label: say("shiftTypes", shiftLabel(t.label)),
-      color: int(t.color ?? 4284246976, 0, 4294967295, "shiftTypes"),
+      color: int(t.color ?? SHIFT_RULES.color.default, 0, SHIFT_RULES.color.max, "shiftTypes"),
       start: given(t.start) ? time(t.start, "shiftTypes") : null,
       end: given(t.end) ? time(t.end, "shiftTypes") : null,
       // 2.0.0 [RVD-20] HQ-08 With a gap, "break" is the break and the gap together (what an app before 2.0.0 reads), so it may pass 12 hours.
-      break: int(t.break ?? 0, 0, two ? 720 + 24 * 60 : 720, "shiftTypes"),
+      break: int(t.break ?? 0, 0, two ? SHIFT_RULES.rest.max + DAY_MIN : SHIFT_RULES.rest.max, "shiftTypes"),
       breakStart: given(t.breakStart) ? time(t.breakStart, "shiftTypes") : null,
       off: bool(t.off ?? false, "shiftTypes"),
-      icon: given(t.icon) ? str(t.icon, 32, "shiftTypes") : null,
+      // [RVD-28] SD-08 One the rule does not know is dropped, not refused (it was any text of up to 32).
+      icon: given(t.icon) && iconOk(t.icon) ? t.icon : null,
     };
     return two ? { ...type, ...twoParts(t, type) } : type;
   });
@@ -371,4 +396,4 @@ export function item(raw, names, say) {
 }
 
 // index.js uses these too.
-export { shiftLabel, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, object, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, usesNewer, period, kindRef, rules, extraRule, tiers, premium };
+export { shiftLabel, shiftName, MIN_GAP, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, object, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, usesNewer, period, kindRef, rules, extraRule, tiers, premium };

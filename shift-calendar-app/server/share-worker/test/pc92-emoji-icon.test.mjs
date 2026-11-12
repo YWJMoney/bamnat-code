@@ -39,8 +39,13 @@ test("[RVD-22] PC-92 the picker's longest forms pass: skin tones, ZWJ, flags, ke
   }
 });
 
-test("[RVD-22] PC-92 anything that is not one emoji is still refused (type_icon)", () => {
+test("[RVD-22] PC-92 anything that is not one emoji is not kept: [RVD-28] SD-08 it is dropped and the link is made (총괄 '버리기, 거절 아님')", () => {
   const bad = ["e:", "e:a", "e:<b>", "e:🌙<script>", "e:🌙\"", "e:🌙'", "e:🌙 ", "e: 🌙", "e:🌙\n", "e:\u0000", "e:12", "e:#", "e:🇰",
     "e:🌙🌙", "e:🌙\u200D", "e:\u200D🌙", "e:&lt;", "x:🌙", "E:🌙", "Moon", "<svg>", "e:" + "🌙\u200D".repeat(6) + "🌙", 7];
-  for (const icon of bad) assert.equal(validate(link([icon])).error, "type_icon", JSON.stringify(icon));
+  for (const icon of bad) {
+    assert.equal(iconOk(icon), false, JSON.stringify(icon));
+    const v = validate(link([icon]));
+    assert.equal(v.error, undefined, JSON.stringify(icon));
+    assert.equal(v.schedule.types[0].icon, null, JSON.stringify(icon));
+  }
 });
