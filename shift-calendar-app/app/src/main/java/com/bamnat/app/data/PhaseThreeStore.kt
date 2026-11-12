@@ -449,12 +449,12 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
             weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly), leaves = decodeLeaves(weekly),
-            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract),
+            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract), overtimeInPay = decodeOvertimeInPay(weekly),
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
-            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves), memberId, sort, clockId, clockToken,
+            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves, overtimeInPay), memberId, sort, clockId, clockToken,
             encodeContract(contract),
         )
 
@@ -504,7 +504,12 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         /** The week as "1".."7" → [start, end] minutes, and 1.38 요일별 시급 as "r1".."r7" → won beside it (no DB change). */
         /** 1.38: the 요일별 시급 ("r1".."r7") and 휴직 기간 ("leaves": [[start, end|null]] epoch days) ride in the same column, so no new table. */
-        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList()) = JSONObject().apply {
+        // [RVJ-42] The 월급's answer for the hours past 40 rides in the same column (no new DB 판; backups carry the column as it is).
+        fun decodeOvertimeInPay(t: String): Boolean? = runCatching { JSONObject(t).let { o -> if (o.has("otIn")) o.getBoolean("otIn") else null } }.getOrNull()
+
+        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList(),
+                         overtimeInPay: Boolean? = null) = JSONObject().apply {
+            overtimeInPay?.let { put("otIn", it) }
             m.forEach { (d, s) -> put(d.value.toString(), JSONArray().put(s.start.hour * 60 + s.start.minute).put(s.end.hour * 60 + s.end.minute)) }
             rates.forEach { (d, r) -> put("r${d.value}", r) }
             if (leaves.isNotEmpty()) put("leaves", JSONArray().apply { leaves.forEach { put(JSONArray().put(it.start.toEpochDay()).put(it.end?.toEpochDay() ?: JSONObject.NULL)) } })
