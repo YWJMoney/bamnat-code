@@ -273,7 +273,8 @@ class FeatureGate(
         if (previewTier != null && (debug || (!live && s.passes?.admin?.approved == true))) {
             val on = previewTier >= Tier.PRO
             val all = if (previewTier == Tier.LEADER) everyBand() else emptyMap()
-            return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), preview = true, holds = all, plans = config.workPlans)
+            // 2.0.0 [RVO-01] (PC-54) The preview is the launched app: the 프로 features the server opened to everyone stay open in it too.
+            return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), free = free, preview = true, holds = all, plans = config.workPlans)
         }
         val now = clock()
         val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live, now), now, zone())

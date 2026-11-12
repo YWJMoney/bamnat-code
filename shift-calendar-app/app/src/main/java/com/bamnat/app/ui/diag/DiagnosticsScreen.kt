@@ -51,7 +51,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.Box
@@ -519,30 +518,17 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                 }
             }
             if (BuildConfig.DEBUG || (testing && adminPhone)) item {
-                val preview by vm.previewTier.collectAsStateWithLifecycle()
+                // 2.0.0 [RVO-01] (PC-54) 프로 화면 맨 위와 같은 한 부품(무료·프로·팀·직원 요금제, 맛보기·하루 써 보기 처음부터).
                 val gate by vm.gate.collectAsStateWithLifecycle()
-                SectionCard(title = "출시 뒤 화면 미리 보기") {
-                    // [MON-02] After the 정식 출시 switch only debug builds can preview; a release build shows the real state.
-                    Text(if (gate.live && !gate.preview) "정식 출시를 해서 실제 등급으로 보여요. 미리 보기는 개발용 빌드에서만 돼요."
-                        else "정식 출시 뒤 무료와 프로 화면이 어떻게 보이는지 미리 볼 수 있어요. 결제는 되지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("지금: ${gate.access.reason.words}", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = preview == null, onClick = { vm.setPreview(null) }, label = { Text("실제") })
-                        listOf(Tier.FREE, Tier.PRO).forEach { t ->
-                            FilterChip(selected = preview == t, onClick = { vm.setPreview(t) }, label = { Text(t.label) })
-                        }
-                    }
-                    val trialCtx = androidx.compose.ui.platform.LocalContext.current
-                    // [MON-13] 1.36: 금액 비교하기·세후 예상 일주일 무료, tried again from the start.
-                    if (BuildConfig.DEBUG) androidx.compose.material3.TextButton(onClick = { trialCtx.appContainer.featureGate.resetTrials() }) { Text("일주일 무료 맛보기 처음부터") }
-                    // PC 17차 사용성 제안: 안전 모드 tried without stopping the app three times (a debug build only).
-                    if (BuildConfig.DEBUG) {
-                        var armed by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
-                        androidx.compose.material3.TextButton(onClick = { com.bamnat.app.diag.StartGuard.armNext(trialCtx); armed = true }) {
-                            Text(if (armed) "다음 실행은 안전 모드예요 · 앱을 완전히 닫고 다시 열어요" else "다음 실행을 안전 모드로")
-                        }
-                    }
+                val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                com.bamnat.app.ui.pro.TierPreviewCard(trialCtx.appContainer, gate)
+            }
+            // PC 17차 사용성 제안: 안전 모드 tried without stopping the app three times (a debug build only).
+            if (BuildConfig.DEBUG) item {
+                val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                var armed by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+                androidx.compose.material3.TextButton(onClick = { com.bamnat.app.diag.StartGuard.armNext(trialCtx); armed = true }) {
+                    Text(if (armed) "다음 실행은 안전 모드예요 · 앱을 완전히 닫고 다시 열어요" else "다음 실행을 안전 모드로")
                 }
             }
             // S 1.32 [SECX-01] 기능 상태 and its 관리자 미리 보기 switches are gone from the phone (the developer app sets previews).

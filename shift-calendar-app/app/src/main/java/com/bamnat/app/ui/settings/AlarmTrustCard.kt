@@ -72,11 +72,14 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(nextLine(settings.alarmsEnabled, upcoming, today), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             // [ALRM-26] 1.38: the next few, each with its own 이번만 끄기 / 다시 켜기 (not only the very next one).
+            // 2.0.0 [RVO-02] (HQ-01과 같은 구조: 편 폭·글자 200%에서 '내일 06:30 · 주간 근무 알람'이 한 글자씩 세로로 섰어요) 글과 단추는
+            // SideOrBelow로, 좁으면 단추가 아래로(조건 12). 채운 단추는 가장 먼저 울릴 알람 하나에만, 나머지는 글자 단추(조건 2).
+            val first = ahead.firstOrNull { it.triggerAtMillis !in skips }?.triggerAtMillis
             if (settings.alarmsEnabled) for (r in ahead) {
                 val off = r.triggerAtMillis in skips
                 val at = AlarmScheduler.millisToLocal(r.triggerAtMillis)
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
+                com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().heightIn(min = 48.dp), minStart = 120.dp, start = {
+                    Column {
                         Text("${whenText(at.toLocalDate(), today)} ${Fmt.time(at.toLocalTime())}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (off) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
@@ -84,10 +87,15 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                         Text(if (off) "이번만 꺼 뒀어요" else r.title, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (off) OutlinedButton(onClick = { AlarmSoon.unskip(context, r.triggerAtMillis); refresh++ }) { Text("다시 켜기") }
-                    else FilledTonalButton(onClick = { AlarmSoon.skip(context, r.triggerAtMillis); refresh++ },
-                        enabled = skips.size < AlarmSoon.MAX_SKIPS) { Text(SKIP_ONCE_ROW) }
-                }
+                }, end = {
+                    val skip: () -> Unit = { AlarmSoon.skip(context, r.triggerAtMillis); refresh++ }
+                    val can = skips.size < AlarmSoon.MAX_SKIPS
+                    when {
+                        off -> OutlinedButton(onClick = { AlarmSoon.unskip(context, r.triggerAtMillis); refresh++ }) { Text("다시 켜기") }
+                        r.triggerAtMillis == first -> FilledTonalButton(onClick = skip, enabled = can) { Text(SKIP_ONCE_ROW) }
+                        else -> TextButton(onClick = skip, enabled = can) { Text(SKIP_ONCE_ROW) }
+                    }
+                })
             }
             if (settings.alarmsEnabled && ahead.isNotEmpty()) {
                 Text("끈 알람만 쉬고 나머지는 그대로 울려요. 날마다 끄려면 달력에서 그 날을 눌러요", style = MaterialTheme.typography.bodySmall,

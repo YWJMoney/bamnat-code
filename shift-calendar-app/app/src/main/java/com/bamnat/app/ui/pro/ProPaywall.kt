@@ -68,7 +68,9 @@ fun ProPaywallHost(c: AppContainer) {
 @Composable
 internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
-    val plans by c.billing.plans.collectAsStateWithLifecycle()
+    val playPlans by c.billing.plans.collectAsStateWithLifecycle()
+    // 2.0.0 [RVO-01] (PC-54) 미리 보기에서는 Play가 없어도 요금제 쪽이 보여요(예시 가격, 결제하지 않음).
+    val plans = shownPlans(gate, playPlans)
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val yearly = plans.firstOrNull { it.yearly }
     val ledger = ledgerOf(c, gate, yearly?.priceMicros)
@@ -127,8 +129,9 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
     val context = LocalContext.current
     val passOffer by c.billing.pass.collectAsStateWithLifecycle()
     val proState by c.proStore.state.collectAsStateWithLifecycle()
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val monthly = plans.firstOrNull { !it.yearly }
-    plans.sortedByDescending { it.yearly }.forEach { plan ->
+    plans.sortedByDescending { it.yearly }.forEachIndexed { i, plan ->
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(plan.priceWords + (if (plan.yearly) " (1년마다)" else " (매달)") + if (plan.yearly) " · 추천" else "",
                 style = MaterialTheme.typography.titleSmall)
@@ -144,12 +147,16 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
             // 1.39 [FLOW-25] the free month said as money and a date, before the one big button.
             if (trial) Text(trialHead(Today.date(), plan.priceWords), style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
-            Button(onClick = {
+            val buy = {
                 val activity = context.findActivity()
-                if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
-            }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독")
+                // [RVO-01] 미리 보기는 결제하지 않아요.
+                if (gate.preview) onMessage(PREVIEW_NO_PAY)
+                else if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
             }
+            val words = if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독"
+            // 2.0.0 [RVO-01] (PC-54 미리 보기로 처음 본 요금제 창: 채운 단추가 둘) 채운 단추는 맨 위 추천 하나, 나머지는 테두리 단추(조건 2).
+            if (i == 0) Button(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
+            else OutlinedButton(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
         }
         // 1.38 [GROW-04] A안: the 1년 이용권 right beside the yearly plan, "한 번 결제 · 자동 결제 없음" first (no 평생권, 1.36 결정).
         if (plan.yearly) YearPassRow(c, plan, onMessage)
@@ -166,10 +173,12 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
 @Composable
 private fun YearPassRow(c: AppContainer, yearly: Plan?, onMessage: (String) -> Unit) {
     val context = LocalContext.current
-    val passOffer by c.billing.pass.collectAsStateWithLifecycle()
+    val playPass by c.billing.pass.collectAsStateWithLifecycle()
     val proState by c.proStore.state.collectAsStateWithLifecycle()
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val subscribed = proState.sub?.play()?.entitled(Today.instant()) == true
-    val p = passOffer
+    // [RVO-01] 미리 보기에서는 Play가 없어도 이용권 줄이 보여요(예시 가격).
+    val p = playPass ?: PREVIEW_PASS.takeIf { gate.preview }
     if (p != null && !subscribed) {
         val until = proState.yearPassUntil
         val canBuy = com.bamnat.core.tier.YearPass.rebuy(until, Today.instant())
@@ -183,7 +192,8 @@ private fun YearPassRow(c: AppContainer, yearly: Plan?, onMessage: (String) -> U
                 style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = {
                 val activity = context.findActivity()
-                if (activity == null || !c.billing.buyPass(activity)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
+                if (gate.preview) onMessage(PREVIEW_NO_PAY)
+                else if (activity == null || !c.billing.buyPass(activity)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
             }, enabled = canBuy, modifier = Modifier.fillMaxWidth()) {
                 Text(if (canBuy) "1년 이용권 사기" else "끝나기 30일 전부터 이어서 살 수 있어요")
             }
