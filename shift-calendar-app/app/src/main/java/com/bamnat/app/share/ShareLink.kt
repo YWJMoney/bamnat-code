@@ -378,6 +378,11 @@ object ShareLinkPayload {
         sleepPlan: List<SleepPlanWindow> = emptyList(),
         /** 2.0.0 [RVH-45] The 1일 기준 (LeavePolicy.dayMinutes) an hour's leave is told against for a receiver before 2.0.0. */
         leaveDayMinutes: Int = Leave.DAY_MINUTES,
+        /**
+         * 2.0.0 [RVG-38] What the sender's app calls the link ([com.bamnat.core.work.scheduleWord]); null sends none. Given only from
+         * 처리방침 3.14 (`share.word`, [ShareContent.Gates.word]), and only one of [com.bamnat.core.work.LINK_WORDS] goes.
+         */
+        word: String? = null,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -493,6 +498,8 @@ object ShareLinkPayload {
             if (options.sleepPlan && sleepPlan.isNotEmpty()) put("sleepPlan", JSONArray().apply {
                 sleepPlan.take(com.bamnat.core.sleep.SleepPlanShare.MAX).forEach { w -> put(JSONObject().put("from", w.from).put("to", w.to)) }
             })
+            // 2.0.0 [RVG-38] A share server from before 2.0.0, or one before 3.14, drops it (D RVD-32).
+            word?.takeIf { it in com.bamnat.core.work.LINK_WORDS }?.let { put("word", it) }
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->

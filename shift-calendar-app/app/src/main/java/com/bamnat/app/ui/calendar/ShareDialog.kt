@@ -163,6 +163,8 @@ fun ShareDialog(
     // [SHR-20][J133-71] 1.33: the 동료 way's words and setup only for work with a company; the setup in the link from 3.7's date.
     val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
+    // 2.0.0 [RVG-38] Whether links say the calendar's own word now (처리방침 3.14, `share.word`).
+    val wordOpen = remember { ShareContent.wordInLink(container) }
     // 1.37 [SHR-31][SHR-32] 내 테마·근무 설정 in the link from 처리방침 3.11's date; before, the rows say the date once it is set.
     val lookOpen = remember { ShareContent.lookInLink(container) }
     // 1.38 [SLEEP-11] 지금 자는 중, for the main calendar's link while `sleep.share` is on.
@@ -240,7 +242,9 @@ fun ShareDialog(
                     // [RVG-35] 검토 HQ-64: in the word the receiving app and the web page will use, from what the button below
                     // sends ([quickSends], [com.bamnat.core.work.linkWord]: 일감 → 일정; no money goes this way, so a shop's link is
                     // its 근무표 as the receiver sees it); 로/으로 by the word (일정으로).
-                    supportingText = { Text(com.bamnat.core.work.linkWord(quickSends.shows, kind).let { w ->
+                    // [RVG-38] From 처리방침 3.14 the link also says the calendar's own word (가게 영업일, 투자 달력), which names it then.
+                    supportingText = { Text(com.bamnat.core.work.linkWord(quickSends.shows, kind,
+                        com.bamnat.core.work.scheduleWord(style).takeIf { wordOpen }).let { w ->
                         val said = title.trim().let { n -> if (n.isEmpty()) "받은 $w" else "${n}의 $w" }
                         (if (title.isBlank()) "적지 않으면 " else "") + "받는 분 화면에 ‘$said’${com.bamnat.app.ui.Fmt.ro(w)} 보여요"
                     }) },

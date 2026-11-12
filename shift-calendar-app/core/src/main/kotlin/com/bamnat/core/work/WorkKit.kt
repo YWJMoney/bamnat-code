@@ -320,15 +320,25 @@ fun scheduleWord(style: WorkStyle?): String = when (style) {
 }
 
 /**
- * 2.0.0 [RVG-35] 검토 HQ-64 (조건 13): what a 근무표 link is called, from what it already carries (no new field goes to the server):
- * 매출 → 영업일, 일감(목록이나 금액) → 일정, else 근무표. The sender's hint, the receiving app's cards and list, and the web page
- * (share-worker) use this one rule, so the same link has one name everywhere. [shows] is the link's `shows`, [payKind] its `payKind`.
+ * 2.0.0 [RVG-35] 검토 HQ-64 (조건 13): what a 근무표 link is called, from what it already carries:
+ * 매출 → 영업일, 일감(목록이나 금액) → 일정, else the word the sender's app said ([RVG-38]), else 근무표. The sender's hint, the receiving app's cards and list, and the web page
+ * (share-worker) use this one rule, so the same link has one name everywhere. [shows] is the link's `shows`, [payKind] its `payKind`,
+ * [said] its `word` (2.0.0 [RVG-38], sent only from 처리방침 3.14).
  */
-fun linkWord(shows: Collection<String>, payKind: MoneyShare?): String = when {
+fun linkWord(shows: Collection<String>, payKind: MoneyShare?, said: String? = null): String = when {
     "pay" in shows && payKind == MoneyShare.SALES -> "영업일"
     "jobs" in shows || "pay" in shows && payKind == MoneyShare.JOBS -> "일정"
+    // 2.0.0 [RVG-38] HQ-64 B안 (D RVD-32 #514): what the sender's app said the link is ([said], its [scheduleWord]), when it is one of
+    // [LINK_WORDS]. A link without it (before 2.0.0, before 처리방침 3.14, or an old server) or with any other value is as above.
+    said != null && said in LINK_WORDS -> said
     else -> "근무표"
 }
+
+/**
+ * 2.0.0 [RVG-38] The words a sender's app may name its link with ([scheduleWord]: 교대·일근·알바 근무표, 가게 영업일, 현장 일정, 투자 달력).
+ * The share server keeps the same list (share-worker `SCHEDULE_WORDS`) and drops any other value.
+ */
+val LINK_WORDS: List<String> = listOf("근무표", "영업일", "일정", "달력")
 
 /** [J133-79] [scheduleWord] with 로/으로 ("근무표로", "일정으로"). */
 fun scheduleWordRo(style: WorkStyle?): String = scheduleWord(style) + if (style == WorkStyle.FIELD) "으로" else "로"
@@ -338,6 +348,17 @@ fun daysWord(style: WorkStyle?): String = when (style) {
     WorkStyle.FIELD -> "일정과 쉬는 날"
     WorkStyle.BUSINESS -> "영업일과 쉬는 날"
     WorkStyle.INVEST -> "달력"
+    else -> "근무와 휴가"
+}
+
+/**
+ * 2.0.0 [RVG-38] (조건 13) [daysWord] for a received link, by its name ([linkWord]): what a link with nothing ticked beside its days
+ * holds, so an investor's 달력 is not '근무와 휴가' (받은 링크 카드 '…만 받았어요').
+ */
+fun linkDaysWord(word: String): String = when (word) {
+    "영업일" -> "영업일과 쉬는 날"
+    "일정" -> "일정과 쉬는 날"
+    "달력" -> "달력"
     else -> "근무와 휴가"
 }
 
