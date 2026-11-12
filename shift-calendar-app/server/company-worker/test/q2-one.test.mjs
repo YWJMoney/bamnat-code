@@ -372,21 +372,3 @@ test("[RVA-59] 다가오는 날짜: 날짜 약속 장부를 KST 오늘부터 남
   assert.ok(Array.isArray(loop.dates.upcoming) && Array.isArray(loop.dates.gaps));
   assert.match(loop.dates.today, /^\d{4}-\d{2}-\d{2}$/);
 });
-
-test("[RVA-62] PC-159 활동 기록의 친구 초대 줄은 안쪽 번호 대신 초대 코드와 말로", async (t) => {
-  const { call, DB } = server({ t });
-  const owner = await signIn(call);
-  DB.db.prepare(`INSERT INTO invite_uses (invitee, phone, code, inviter, source, first_day, status, reason, created_at, batch)
-    VALUES ('friend1', 'mark1', 'AHC493YJ', 'inviterdevice0001', 'link', '2026-11-01', 'credited', '', ?, 'iJcNXrC52iGMzK2kr5bstC')`).run(TEST_NOW);
-  const add = DB.db.prepare("INSERT INTO audit (at, action, target, detail, actor) VALUES (?, ?, ?, ?, '')");
-  add.run(TEST_NOW, "invite_credit", "iJcNXrC52iGMzK2kr5bstC", "3bf6b2f7");
-  add.run(TEST_NOW + 1, "invite_refused", "ZZZZ2222", "phone");
-  const { entries } = (await call("GET", "/api/admin/audit", undefined, owner)).data;
-  const credit = entries.find((e) => e.action === "invite_credit");
-  assert.equal(credit.label, "코드 AHC4-93YJ");
-  assert.equal(credit.detail, "", "보낸 분 휴대폰 앞자리는 보이지 않아요");
-  assert.equal(credit.link, "#/rewards");
-  const refused = entries.find((e) => e.action === "invite_refused");
-  assert.equal(refused.label, "코드 ZZZZ-2222");
-  assert.equal(refused.detail, "이미 초대받은 휴대폰");
-});

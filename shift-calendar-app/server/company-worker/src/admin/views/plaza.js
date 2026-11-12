@@ -230,12 +230,12 @@ export function plazaViews(A) {
   const COMPANY_COLS = [["name", "회사"], ["rules", "규칙"], ["pending", "대기"], ["reports", "제보"], ["members", "참여"], ["uses", "30일 적용"], ["bad", "달라요"]];
 
   /**
-   * 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭(600 아래)에서는 표 머리(정렬 단추 줄)를 숨기고 찾기 옆 고르기 칸 하나로 정렬해요.
+   * 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭(600 아래)에서는 표 머리(정렬 단추 줄)를 숨기고 찾기 옆 고르기 칸 하나로 정렬해요. 글자 200%에서도 잘리지 않게 이름은 짧게(최신순·참여순).
    * 회사 줄이 카드 모양이라 머리 줄이 한 줄을 더 먹어 첫 회사가 30.9%에서 시작했어요.
    */
   function sortPick() {
     const sort = S.companySort || "new";
-    const opts = [["new", "새로 온 순"], ...COMPANY_COLS.map(([k, l]) => [k, k === "name" ? "이름순" : `${l} 많은 순`])];
+    const opts = [["new", "최신순"], ...COMPANY_COLS.map(([k, l]) => [k, `${k === "name" ? "이름" : k === "uses" ? "적용" : l}순`])];
     return `<label class="sr" for="co-sort">정렬</label><select id="co-sort" class="sort-pick" data-change="company-sort">${opts.map(([k, l]) =>
       `<option value="${k}"${sort === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
   }
@@ -243,8 +243,8 @@ export function plazaViews(A) {
   function companiesView() {
     const edit = can("companies", "edit");
     // 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 찾기·고르기·회사 만들기 한 줄(좁은 폭은 아이콘), '같은 회사일까요?'는 목록 아래.
-    return `<div class="toolbar list-top company-top"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
-        enterkeyhint="search" aria-label="회사 찾기">${sortPick()}${edit ? `${S.companyPick ? '<button class="btn" data-act="company-pick-mode" aria-pressed="true">선택 마침</button>'
+    return `<div class="toolbar list-top company-top"><input id="search" type="search" placeholder="회사 찾기" aria-label="회사 이름이나 다른 이름으로 찾기" value="${esc(S.query)}" autocomplete="off"
+        enterkeyhint="search">${sortPick()}${edit ? `${S.companyPick ? '<button class="btn" data-act="company-pick-mode" aria-pressed="true">선택 마침</button>'
           : `<button class="btn icon-only" data-act="company-pick-mode" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.picks)}</button>`}
         <button class="btn primary" data-act="new-company" aria-label="회사 만들기">${icon(P.plus)}<span class="lbl">회사 만들기</span></button>` : ""}</div>
       <div id="company-list">${companyRows()}</div>${edit && !S.query ? similarCard() : ""}`;

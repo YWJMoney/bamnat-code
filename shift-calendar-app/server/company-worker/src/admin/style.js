@@ -1657,9 +1657,9 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 .company-top input[type=search]{flex:1 1 8rem;min-width:0}
 .btn.icon-only{width:2.75rem;padding:0;flex:none}
 @media (max-width:599.98px){.company-top .btn.primary{width:2.75rem;padding:0;flex:none}.company-top .btn.primary .lbl{display:none}}
-/* 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭은 표 머리 대신 찾기 옆 정렬 고르기 하나(첫 회사 줄이 화면 위 25% 안에서). */
+/* 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭은 표 머리 대신 찾기 옆 정렬 고르기 하나(첫 회사 줄이 화면 위 25% 안에서). 큰 글자에서는 다음 줄로 내려가요(조건 12). */
 .company-top .sort-pick{display:none}
-@media (max-width:599.98px){.company-top .sort-pick{display:block;flex:0 0 auto;width:6.5rem;padding-inline:.6rem 1.5rem;min-height:min(2.75rem,48px)}.company-top input[type=search]{min-width:6.5rem}table.list.companies thead{display:none}}
+@media (max-width:599.98px){.company-top .sort-pick{display:block;flex:0 0 auto;width:auto;max-width:100%;padding-inline:.5rem 1.4rem;min-height:min(2.75rem,48px)}.company-top input[type=search]{flex-basis:min(6.5rem,40vw);min-width:min(6.5rem,40vw)}.toolbar.list-top.company-top{flex-wrap:wrap}table.list.companies thead{display:none}}
 @media (max-width:599.98px){.timebar .meta{display:none}}
 .decide-rows .draft-line{padding:0 1rem .75rem;display:grid;gap:.35rem}
 .decide-rows .draft-line .answer{margin:0;padding:.5rem .7rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
