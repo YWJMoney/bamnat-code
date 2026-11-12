@@ -426,6 +426,8 @@ dialog h2{font-size:1.15rem;margin-bottom:.35rem}
 dialog p{margin:0 0 .75rem;color:var(--muted);font-size:.88rem}
 dialog .actions:last-child{position:sticky;bottom:0;margin:1rem -1.25rem -1.1rem;padding:.75rem 1.25rem calc(.9rem + env(safe-area-inset-bottom));
 background:var(--raised);border-top:1px solid var(--line)}
+/* 2.0.0 [RVQ-29] 아래에 붙은 단추 줄이 창 맨 아래를 덮어요: 틀린 칸으로 굴릴 때(초점·이유) 그 칸과 이유가 단추 줄 위에 오게. */
+dialog{scroll-padding-bottom:calc(5.5rem + env(safe-area-inset-bottom))}
 @media (max-width:599.98px){dialog{margin:auto 0 0;width:100vw;max-width:100vw;border-radius:var(--r-lg) var(--r-lg) 0 0;padding-bottom:env(safe-area-inset-bottom)}
 @keyframes pop{from{transform:translateY(100%)}to{transform:none}}
 /* AT 1.29: a wide box (복사, 개발사항에 추가) is a whole-width sheet on a phone too; dialog.wide's 94vw left a gap at the side. */
