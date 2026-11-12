@@ -93,6 +93,7 @@ export const OPS_ALERT_SQL = (now) => ({
   // 2.0.0 [RVQ-12] 검토 SVC-07: 오늘 D1 쓰기(UTC 날, D1의 하루)와 정기 작업 한 호출의 질의 수.
   ops_meter: ["SELECT count FROM counters WHERE key = ?", `meter|${new Date(now).toISOString().slice(0, 10)}`],
   ops_jobq: ["SELECT value FROM settings WHERE key = 'job_queries'"],
+  ops_sharekv: ["SELECT value FROM settings WHERE key = 'share_kv'"],
 });
 
 /**
@@ -150,6 +151,22 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
     out.push({ key: `budget:d1:${new Date(now).toISOString().slice(0, 10)}`, kind: "spike", tone: "warn",
       title: `오늘 D1 쓰기가 하루 몫의 ${Math.floor((used / plan.d1WritesDay) * 100)}%예요`,
       meta: `${plan.name} 하루 몫 ${plan.d1WritesDay.toLocaleString("ko-KR")}번. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요`, to: "#/server" });
+  }
+  // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 공유 서버 KV 오늘 쓰기·읽기가 하루 몫의 80%를 넘으면(정기 작업이 잰 것).
+  let skv = null;
+  try {
+    skv = JSON.parse(got.ops_sharekv?.[0]?.value ?? "null");
+  } catch {
+    skv = null;
+  }
+  if (skv && skv.day === new Date(now + 9 * 3600000).toISOString().slice(0, 10)) {
+    const w = plan.kvWritesDay ? skv.writes / plan.kvWritesDay : 0;
+    const r = plan.kvReadsDay ? skv.reads / plan.kvReadsDay : 0;
+    if (Math.max(w, r) >= BUDGET_WARN) {
+      out.push({ key: `budget:kv:${skv.day}`, kind: "spike", tone: "warn",
+        title: `공유 서버 KV ${w >= r ? "쓰기" : "읽기"}가 하루 몫의 ${Math.floor(Math.max(w, r) * 100)}%예요`,
+        meta: `${plan.name} 하루 몫 쓰기 ${plan.kvWritesDay.toLocaleString("ko-KR")}·읽기 ${plan.kvReadsDay.toLocaleString("ko-KR")}번. 90%면 새 링크부터 내일까지 쉬어요`, to: "#/server" });
+    }
   }
   let jobq = {};
   try {

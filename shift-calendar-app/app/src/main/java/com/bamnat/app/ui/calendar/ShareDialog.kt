@@ -229,15 +229,21 @@ fun ShareDialog(
             // 1.36 PC C19 (가족에게 이번 달만 보내고 싶은데 이미지·PDF·링크·받는 사람·보여 줄 것·이름·기간… 끝까지 내려야 '링크 만들어
             // 보내기'): with no link yet, the two things most people open this for, big, and the rest behind '자세히 정하기'.
             var detailed by androidx.compose.runtime.saveable.rememberSaveable(slot) { mutableStateOf(detailedFirst || link != null || preview != null || slot > 1) }
+            // [RVG-35] What '링크로 보내기' here sends: the 가족 way without memos or money (its hint names the link by it).
+            val quickSends = ShareOptions.forAudience(com.bamnat.app.share.ShareAudience.FAMILY, employee, field).copy(memos = false, pay = false)
             if (!detailed) {
                 // PC 확인 20ab0254 (링크를 만들 때 이름을 안 물어 '이름 없는 근무표'가 돼요): the name goes with the quick link too.
                 val quickKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
                 OutlinedTextField(value = title, onValueChange = ::typed, singleLine = true,
                     label = { Text("내 이름 (선택)") }, placeholder = { Text("예: 민지") },
                     // 2.0.0 [RVG-33] 검토 HQ-55: left empty, the link shows as '받은 근무표' ([RVG-32]), not as the example name's.
-                    // The receiving app calls a nameless link '받은 근무표' whatever the sender's 유형 ([LinkStart.roster]); 로/으로 by the word (일정으로).
-                    supportingText = { Text(title.trim().let { n -> if (n.isEmpty()) "적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요"
-                        else "받는 분 화면에 ‘${n}의 ${com.bamnat.core.work.scheduleWord(style).let { it + "’" + com.bamnat.app.ui.Fmt.ro(it) }} 보여요" }) },
+                    // [RVG-35] 검토 HQ-64: in the word the receiving app and the web page will use, from what the button below
+                    // sends ([quickSends], [com.bamnat.core.work.linkWord]: 일감 → 일정; no money goes this way, so a shop's link is
+                    // its 근무표 as the receiver sees it); 로/으로 by the word (일정으로).
+                    supportingText = { Text(com.bamnat.core.work.linkWord(quickSends.shows, kind).let { w ->
+                        val said = title.trim().let { n -> if (n.isEmpty()) "받은 $w" else "${n}의 $w" }
+                        (if (title.isBlank()) "적지 않으면 " else "") + "받는 분 화면에 ‘$said’${com.bamnat.app.ui.Fmt.ro(w)} 보여요"
+                    }) },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { quickKeyboard?.hide() }))
@@ -248,7 +254,7 @@ fun ShareDialog(
                 }
                 val quickPaused = container.flags.paused(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE)
                 OutlinedButton(enabled = !busy && !quickPaused, onClick = {
-                    options = ShareOptions.forAudience(com.bamnat.app.share.ShareAudience.FAMILY, employee, field).copy(memos = false, pay = false)
+                    options = quickSends
                     run {
                         val sent = payload()
                         val (made, left) = client.createLeaving(sent, store)

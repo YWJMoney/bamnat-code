@@ -3601,6 +3601,9 @@ function adminApp(L, BUILD, M) {
         ${stepper("rewardCapMonths", "한 사람 상한", s.rewardCapMonths ?? 3, "개월", edit)}
         ${stepper("rewardCapDays", "상한을 세는 기간", s.rewardCapDays ?? 90, "일", edit)}
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
+        <h3>광장 방 글</h3>
+        <label class="switch"><input type="checkbox" data-change="room-money"${s.roomMoney ? " checked" : ""}${edit ? "" : " disabled"}><span class="track" aria-hidden="true"></span><span>방 글에 금액 받기</span></label>
+        <p class="hint">켜면 회사 방·유형별 방의 글에 금액을 적을 수 있어요(연락처는 그대로 막아요). 운영 규칙 4항을 고쳐 게시한 날 켜요.</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>`;
   }
@@ -3681,9 +3684,17 @@ function adminApp(L, BUILD, M) {
     const rows = [
       [tone(b.d1.share), mark(b.d1.share), `오늘 D1 쓰기 ${num(b.d1.used)}번, 하루 몫 ${num(b.d1.day)}번의 ${pct(b.d1.share)}`],
       [tone(b.queries.share), mark(b.queries.share), `정기 작업 한 번에 D1 질의 가장 많이 ${num(b.queries.top)}번(상한 ${num(b.queries.limit)}번)`],
+      // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 공유 서버 KV(링크 페이지·팀 신청이 쓰는 곳)의 오늘 쓰기·읽기, 정기 작업이 잰 것.
+      // 몫을 더 많이 쓴 쪽을 앞에, 한 줄로 읽히게(디자인 품질 4).
+      ...(b.kv?.writes != null ? [(() => {
+        const parts = [["쓰기", b.kv.writes, b.kv.day ? b.kv.writes / b.kv.day : 0], ["읽기", b.kv.reads, b.kv.readsDay ? b.kv.reads / b.kv.readsDay : 0]]
+          .sort((x, y) => y[2] - x[2]);
+        const [[a, an, as], [c, cn, cs]] = parts;
+        return [tone(b.kv.share), mark(b.kv.share), `공유 서버 KV ${a} 하루 몫의 ${pct(as)}(${num(an)}번), ${c} ${pct(cs)}(${num(cn)}번)${b.kv.at ? ` · ${ago(b.kv.at)} 기준` : ""}`];
+      })()] : []),
     ];
-    const note = b.overage ? "유료 요금제는 몫을 넘어도 멈추지 않고 요금이 더 나가요. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요"
-      : "무료 요금제는 몫을 넘으면 그날 쓰기가 멈춰요. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요";
+    const note = b.overage ? "유료 요금제는 몫을 넘어도 멈추지 않고 요금이 더 나가요. 90%면 사용 통계·문의 사진부터, 공유 KV는 새 링크부터 내일까지 쉬어요"
+      : "무료 요금제는 몫을 넘으면 그날 쓰기가 멈춰요. 90%면 사용 통계·문의 사진부터, 공유 KV는 새 링크부터 내일까지 쉬어요";
     return `<h3 class="sub" data-budget>요금제 · ${esc(b.plan)}</h3>
         <ul class="checks">${rows.map(([t, m, line]) => `<li class="${t}"><span aria-hidden="true">${m}</span>${esc(line)}</li>`).join("")}</ul>
         <p class="hint">${esc(note)}</p>`;
@@ -6761,6 +6772,11 @@ function adminApp(L, BUILD, M) {
     },
     "auto-reward": (t) => {
       S.draft = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? {}), autoReward: t.checked ? 1 : 0 };
+      render({ keepScroll: true });
+    },
+    // 2.0.0 [RVN-17] 검토 COMP-14: 광장 방 글의 금액 한 값.
+    "room-money": (t) => {
+      S.draft = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? {}), roomMoney: t.checked ? 1 : 0 };
       render({ keepScroll: true });
     },
     "pref-theme": (t) => {

@@ -140,12 +140,25 @@ object Budgets {
      * [LEDG-06] The budgets a new line pushes over: categories (and the whole month) that were
      * within their budget before [entry] and are over it with it, so the app can say so once.
      */
-    fun crossedBy(entry: MoneyEntry, budgets: List<MoneyBudget>, entries: List<MoneyEntry>, today: LocalDate): List<BudgetLine> {
+    fun crossedBy(
+        entry: MoneyEntry, budgets: List<MoneyBudget>, entries: List<MoneyEntry>, today: LocalDate,
+        /** 2.0.0 [RVK-41] (검토 MONEY-53) The 급여일 주기 holding the line's day when the budget is seen by pay cycle. */
+        cycle: PayCycle.Range? = null,
+        /** The categories that carry the last stretch's leftover ([carry]), as the budget screen counts them. */
+        rolling: Set<String> = emptySet(),
+    ): List<BudgetLine> {
         if (entry.kind != MoneyKind.EXPENSE || entry.amount <= 0) return emptyList()
         val month = YearMonth.from(entry.date)
+        // 2.0.0 [RVK-41] (검토 MONEY-53) Over the same days and with the same 넘김 as the budget screen, so '예산을 넘었어요' comes when
+        // the screen says over, not by 1일~말일 and without the carry.
+        val range = cycle?.takeIf { it.contains(entry.date) }
+        val from = range?.from ?: month.atDay(1)
+        val to = range?.to ?: month.atEndOfMonth()
+        val carry = if (rolling.isEmpty()) emptyMap() else carry(budgets, entries, from, to, rolling)
+        fun at(list: List<MoneyEntry>) = if (range != null) statusIn(budgets, list, from, to, today, carry = carry) else status(budgets, list, month, today, carry = carry)
         // An edited line replaces the one it was; a new one is added.
-        val before = status(budgets, entries, month, today)
-        val after = status(budgets, entries.filter { entry.id == 0L || it.id != entry.id } + entry, month, today)
+        val before = at(entries)
+        val after = at(entries.filter { entry.id == 0L || it.id != entry.id } + entry)
         val was = (listOfNotNull(before.total) + before.categories).associateBy { it.category }
         return (listOfNotNull(after.total) + after.categories).filter { it.level == BudgetLevel.OVER && was[it.category]?.level != BudgetLevel.OVER }
     }

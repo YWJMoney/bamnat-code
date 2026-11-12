@@ -69,7 +69,7 @@ object WakeCheck {
         clear(context)
         Notifications.cancel(context, Notifications.WAKE_CHECK_ID)
         context.appContainer.telemetry.event("wake_check", "rang")
-        AlarmService.start(context, ring.copy(recheck = true, isSnooze = false, triggerAtMillis = Today.millis()))
+        AlarmService.startOrFallback(context, ring.copy(recheck = true, isSnooze = false, triggerAtMillis = Today.millis()))
     }
 
     /** 일어났어요, or a new alarm in the meantime: nothing more for this one. */

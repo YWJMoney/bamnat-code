@@ -29,6 +29,9 @@ import kotlin.math.abs
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class RvnScreenshotTest : ScreenshotBase() {
+    /** The terms a shot set (3차 roomMoneyOn) go with it. */
+    @org.junit.After fun clearTerms() = rvnTerms(null)
+
     /** 임금표 with a 일당 of 150,000원: '내 급여에 넣기' on 형틀목수 (가운데 250,000원). Before: it changed the pay at once. */
     private fun rateApply(): Screen.() -> Unit = {
         val c = companyOn()
@@ -161,6 +164,47 @@ class RvnScreenshotTest : ScreenshotBase() {
         }
     }
 
+    /**
+     * 2.0.0 3차 COMP-12: 이 설정 쓰기 on a calendar held by ‘가나상사’ (12월 10일까지). Now asked before an order is picked; before, the
+     * same taps went on to 이 순서로 쓸게요 and ended in a red band.
+     */
+    private fun held(fails: String? = null): Screen.() -> Unit = {
+        val c = companyOn()
+        val until = LocalDate.of(2026, 12, 10).atTime(12, 0).atZone(com.bamnat.core.time.Today.zone()).toInstant()
+        company.held = com.bamnat.app.company.Membership(false, "c1", "member_wait", until = until, undo = true, held = "가나상사")
+        company.undoFails = fails
+        c.companyStore.setMember("c9", "가나상사")
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(c, "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true, openPhasesFor = "s1") }
+        settle()
+        check(appears("정해져 있어요")) { "잡힌 달력을 묻는 창이 뜨지 않았어요" }
+        if (fails != null) {
+            // '잘못 골랐어요' › 풀고 이어서 넣기, refused (once a year used): the card keeps the reason and offers 문의하기.
+            tapText("잘못 골랐어요", exact = true)
+            settle()
+            tapText("풀고 이어서 넣기", exact = true)
+            settle()
+            check(appears("문의하기", exact = true)) { "기다림 카드가 뜨지 않았어요" }
+        }
+    }
+
+    /** 2.0.0 3차 COMP-14: a 광장 방 with 방 글에 금액 받기 on: the line on writing keeps only 이름·연락처. */
+    private fun roomMoneyOn(): Screen.() -> Unit = {
+        company.roomMoney = true
+        rvnTerms(com.bamnat.app.company.CompanyTerms(3, 3, roomMoney = true))
+        roomTalk()()
+    }
+
+    @Test fun heldLight() = shoot("rvn_33_held_folded", FOLDED, held())
+    @Test fun heldDarkBig() = shoot("rvn_34_held_folded_dark_200", DARK, 2f, held())
+    @Test fun heldWide() = shoot("rvn_35_held_unfolded", UNFOLDED, held())
+    @Test fun heldUsedLight() = shoot("rvn_36_held_used_folded", FOLDED, held("undo_used"))
+    @Test fun heldUsedDarkBig() = shoot("rvn_37_held_used_folded_dark_200", DARK, 2f, held("undo_used"))
+    @Test fun heldUsedWide() = shoot("rvn_38_held_used_unfolded_dark", DARK_WIDE, held("undo_used"))
+    @Test fun roomMoneyLight() = shoot("rvn_39_room_money_folded", FOLDED, roomMoneyOn())
+    @Test fun roomMoneyDarkBig() = shoot("rvn_40_room_money_folded_dark_200", DARK, 2f, roomMoneyOn())
+    @Test fun roomMoneyWide() = shoot("rvn_41_room_money_unfolded", UNFOLDED, roomMoneyOn())
+
     @Test fun rateApplyLight() = shoot("rvn_01_rate_apply_folded", FOLDED, rateApply())
     @Test fun rateApplyDarkBig() = shoot("rvn_02_rate_apply_folded_dark_200", DARK, 2f, rateApply())
     @Test fun rateApplyWide() = shoot("rvn_03_rate_apply_unfolded", UNFOLDED, rateApply())
@@ -213,4 +257,10 @@ internal fun rvnPopupNode(text: String): SemanticsNode {
         rootOf(v)?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = true)
             ?.firstOrNull { n -> n.rvnSaid().any { it == text } && n.config.contains(SemanticsActions.OnClick) }
     } ?: error("팝업에서 ‘$text’를 찾지 못했어요")
+}
+
+/** 2.0.0 3차: the terms a run read (the app keeps them once a run), set for a shot and taken back by the next read. */
+internal fun rvnTerms(t: com.bamnat.app.company.CompanyTerms?) {
+    val k = Class.forName("com.bamnat.app.ui.company.TermsCache")
+    k.getDeclaredField("value").apply { isAccessible = true }.set(null, t)
 }

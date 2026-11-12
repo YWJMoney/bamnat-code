@@ -101,7 +101,7 @@ object DayRate {
 
     /** G 1.32 [WTYP-27] "17:00까지 1공 · 19:00까지 1.5공". */
     fun rulesLine(rules: List<EndRule>): String =
-        rules.sortedBy { it.until }.joinToString(" · ") { "%02d:%02d까지 %s".format(it.until.hour, it.until.minute, label(it.units)) }
+        rules.sortedBy { it.until }.joinToString(" · ") { "%02d:%02d까지 %s".format(java.util.Locale.ROOT, it.until.hour, it.until.minute, label(it.units)) }
 
     /** G 1.32 [WTYP-27] Own chips, kept to [FieldRules.MAX_CHIPS] distinct values in 0..5. */
     fun cleanChips(list: List<Double>): List<Double> = list.filter { it > 0 && it <= 5 }.distinct().take(FieldRules.MAX_CHIPS)
@@ -113,7 +113,7 @@ object DayRate {
     fun cell(units: Double): String = if (units == 1.0) "1공" else trim(units)
 
     // G 1.32 [WTYP-04] 공수 to the third decimal (0.125공), as 건설 현장 쓰는 대로.
-    fun trim(units: Double): String = if (units == units.toLong().toDouble()) units.toLong().toString() else "%.3f".format(units).trimEnd('0').trimEnd('.')
+    fun trim(units: Double): String = if (units == units.toLong().toDouble()) units.toLong().toString() else "%.3f".format(java.util.Locale.ROOT, units).trimEnd('0').trimEnd('.')
 
     /** G 1.32 [WTYP-04] A typed 공수 ("0.125", "1,5"), to three decimals; null when not a number in 0..5. */
     fun parse(text: String): Double? = text.trim().replace(',', '.').toDoubleOrNull()

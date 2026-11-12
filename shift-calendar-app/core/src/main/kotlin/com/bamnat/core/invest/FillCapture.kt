@@ -142,7 +142,7 @@ object FillSheetReader {
         // [INVA-03] 오전 9:12 · 오후 2:03 are 09:12 · 14:03.
         t = Regex("(오전|오후)\\s*(\\d{1,2}):(\\d{2})").replace(t) { m ->
             val h = m.groupValues[2].toInt() % 12 + if (m.groupValues[1] == "오후") 12 else 0
-            "%02d:%s".format(h, m.groupValues[3])
+            "%02d:%s".format(java.util.Locale.ROOT, h, m.groupValues[3])
         }
         // On a line in 원 (no $, no coin), "185.750" is 185,750: a Korean share's price and amount have no decimals.
         // A wrong guess here still has to agree with 수량 × 단가 = 금액, or the fill is asked about.

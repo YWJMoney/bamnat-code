@@ -226,7 +226,9 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             // PC 확인 8773e3ae (받기 창 제목에 가족·동료가 섞여요): '링크로 보내기' sends the same link to anyone, so the sheet names the
             // sender, not who it was meant for. [J133-79] Before a link is read, no one is called 동료.
             val sender = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.title?.trim().orEmpty()
-            Text(if (sender.isNotEmpty()) "${sender}의 근무표 받기" else "근무표 받기", style = MaterialTheme.typography.titleLarge)
+            // 2.0.0 [RVG-35] 검토 HQ-64: once read, in the link's word (민지의 영업일 받기), as its card under it says.
+            val word = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.let { com.bamnat.core.work.linkWord(it.shows, it.payKind) } ?: "근무표"
+            Text(if (sender.isNotEmpty()) "${sender}의 $word 받기" else "$word 받기", style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (startId == null) {
@@ -284,7 +286,9 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                         }
                         // [SHR-20] 1.33 (계획 693): a friend's link leads on to the receiver's own calendar; nothing of the friend's setup goes.
                         if (p.schedule.audience == com.bamnat.app.share.ShareAudience.FRIEND) FriendStart()
-                        Text("읽기 전용이에요. 보낸 분이 근무표를 고치면 열 때마다 새로 받아요.",
+                        // [RVG-35] 검토 HQ-64: the link's own word (보낸 분이 영업일을 고치면).
+                        val word = com.bamnat.core.work.linkWord(p.schedule.shows, p.schedule.payKind)
+                        Text("읽기 전용이에요. 보낸 분이 $word${com.bamnat.app.ui.Fmt.obj(word)} 고치면 열 때마다 새로 받아요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -416,20 +420,29 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
                 CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받", color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "받은 근무표", style = MaterialTheme.typography.titleMedium)
+                    // [RVG-35] 검토 HQ-64: in the link's word, as the list and the web page say it.
+                    val word = com.bamnat.core.work.linkWord(s.shows, s.payKind)
+                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "받은 $word", style = MaterialTheme.typography.titleMedium)
                     if (s.first != null && s.last != null) {
-                        Text("${Fmt.monthDay(s.first)} ~ ${Fmt.monthDay(s.last)}", style = MaterialTheme.typography.bodySmall,
+                        // [RVG-35] 조건 12: each date stays whole at 200% (was '12월' / '31일' on two lines).
+                        Text("${Fmt.monthDay(s.first).replace(' ', '\u00A0')} ~ ${Fmt.monthDay(s.last).replace(' ', '\u00A0')}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
             // The next week at a glance, from today or from where the schedule starts.
             val from = s.first?.let { if (today.isBefore(it)) it else today } ?: today
+            // [RVG-35] 조건 12: at large text a seventh of the card has no room for '오늘' (it stood as 오/늘); today keeps its weekday
+            // there, in bold and the primary colour, and is read out as 오늘 (조건 14: not by colour alone).
+            val roomy = androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.3f
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                 (0 until 7).forEach { i ->
                     val d = from.plusDays(i.toLong())
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(if (d == today) "오늘" else Fmt.dayOfWeekShort(d.dayOfWeek), style = MaterialTheme.typography.labelSmall,
+                        Text(if (d == today && roomy) "오늘" else Fmt.dayOfWeekShort(d.dayOfWeek), style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, softWrap = false,
+                            fontWeight = if (d == today) androidx.compose.ui.text.font.FontWeight.Bold else null,
+                            modifier = if (d == today && !roomy) Modifier.semantics { contentDescription = "오늘" } else Modifier,
                             color = if (d == today) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
                         DayBadge(s, s.days[d], size = 22.dp, inRange = s.covers(d))
@@ -684,7 +697,7 @@ fun ReceivedCalendarView(
                     }
                 }
             }
-            ReportLink(vm, cal.id)
+            ReportLink(vm, cal.id, cal.word)
         }
     }
     if (wide) {
@@ -703,17 +716,18 @@ fun ReceivedCalendarView(
 
 /** [SRV-05] A received link that breaks the rules can be reported; the share server never learns by whom. */
 @Composable
-private fun ReportLink(vm: ReceivedViewModel, id: String) {
+private fun ReportLink(vm: ReceivedViewModel, id: String, word: String = "근무표") {
     var open by remember { mutableStateOf(false) }
     var said by remember(id) { mutableStateOf<String?>(null) }
     said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 4.dp)) }
-    TextButton(onClick = { open = true }) { Text("이 근무표 신고하기") }
+    // 2.0.0 [RVG-35] 검토 HQ-64: in the link's word (이 영업일 신고하기).
+    TextButton(onClick = { open = true }) { Text("이 $word 신고하기") }
     if (!open) return
     // 2.0.0 [RVN-13] HQ-39 (같은 신고 창): nothing picked first, so 신고하기 never goes with a reason the user did not read.
     var reason by remember { mutableStateOf<com.bamnat.app.share.ShareReport?>(null) }
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { open = false },
-        title = { Text("이 근무표를 신고할까요?") },
+        title = { Text("이 $word${Fmt.obj(word)} 신고할까요?") },
         text = {
             Column {
                 com.bamnat.app.share.ShareReport.entries.forEach { r ->

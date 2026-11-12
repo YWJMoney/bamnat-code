@@ -229,7 +229,11 @@ class CalendarBook(
     /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
-        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = m.currentStyle())
+        val style = m.currentStyle()
+        // 2.0.0 [RVK-40] (검토 MONEY-50) A shop's 간이과세 picks its 부가세 deadlines.
+        val vat = if (style != com.bamnat.core.work.WorkStyle.BUSINESS) emptySet()
+            else setOf(if (cal.shopMoney?.simpleTax == true) com.bamnat.core.money.TaxDeadlines.Vat.SIMPLE else com.bamnat.core.money.TaxDeadlines.Vat.GENERAL)
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = style, vat = vat)
             .holdUnconfirmed(m.holdFrom())
     })
 
