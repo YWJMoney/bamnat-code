@@ -1300,10 +1300,20 @@ export async function metered(env, name, fn) {
 /** 2.0.0 [RVQ-12] 관리 › 서버 상태의 요금제 줄: 요금제, 오늘 D1 쓰기와 하루 몫, 정기 작업 호출의 질의 수와 상한. */
 export async function budgetState(env, now) {
   const plan = cfPlan(env);
-  const [meter, jobs] = await Promise.all([
+  const [meter, jobs, shareKv] = await Promise.all([
     one(env, "SELECT count FROM counters WHERE key = ?", `meter|${meterDay(now)}`).catch(() => null),
     one(env, "SELECT value FROM settings WHERE key = 'job_queries'").catch(() => null),
+    one(env, "SELECT value FROM settings WHERE key = 'share_kv'").catch(() => null),
   ]);
+  // 2.0.0 [RVQ-24] 공유 서버 KV 오늘(정기 작업이 남긴 것, 오늘 것만). 공유 서버를 묶지 않았으면 없음.
+  let kvDay = null;
+  try {
+    const k = JSON.parse(shareKv?.value ?? "null");
+    // 공유 서버의 날은 한국 날짜예요.
+    if (k && k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10)) kvDay = k;
+  } catch {
+    kvDay = null;
+  }
   let queries = {};
   try {
     queries = JSON.parse(jobs?.value ?? "{}");
@@ -1318,7 +1328,8 @@ export async function budgetState(env, now) {
     d1: { used: d1Used, day: plan.d1WritesDay, share: plan.d1WritesDay ? d1Used / plan.d1WritesDay : 0 },
     queries: { top, limit: plan.queriesPerCall, share: top / plan.queriesPerCall,
       jobs: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { n: q.n, top: q.top ?? q.n, at: iso(q.at) }])) },
-    kv: { day: plan.kvWritesDay },
+    kv: { day: plan.kvWritesDay, readsDay: plan.kvReadsDay, ...(kvDay ? { writes: kvDay.writes, reads: kvDay.reads, at: iso(kvDay.at),
+      share: Math.max(plan.kvWritesDay ? kvDay.writes / plan.kvWritesDay : 0, plan.kvReadsDay ? kvDay.reads / plan.kvReadsDay : 0) } : {}) },
   };
 }
 
@@ -8426,10 +8437,14 @@ export async function autoRest(env, now) {
   const d1Budget = plan.d1WritesDay;
   const kvBudget = plan.kvWritesDay;
   let kv = 0;
+  let kvReads = 0;
   if (shareAdmin(env)) {
     try {
       const st = await shareCall(env, "GET", "/api/admin/stats?days=1");
       kv = Number(st?.days?.[0]?.writes ?? 0) || 0;
+      kvReads = Number(st?.days?.[0]?.reads ?? 0) || 0;
+      // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 공유 서버의 오늘 KV 쓰기·읽기를 남겨 서버 상태·오늘 화면이 매번 묻지 않고 보여요.
+      await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_kv', ?)", JSON.stringify({ day: st?.days?.[0]?.day ?? day, writes: kv, reads: kvReads, at: now }));
     } catch {
       kv = 0;
     }
@@ -8449,7 +8464,7 @@ export async function autoRest(env, now) {
   const back = [];
   // A new day below the line: what the job rested goes back on.
   for (const r of mine.filter((r) => r.day !== day)) {
-    if ((r.key === AUTO_REST.kv ? kv < kvBudget * AUTO_REST.share : used < d1Budget * AUTO_REST.share)) back.push(r);
+    if ((r.key === AUTO_REST.kv ? kv < kvBudget * AUTO_REST.share && kvReads < plan.kvReadsDay * AUTO_REST.share : used < d1Budget * AUTO_REST.share)) back.push(r);
   }
   if (back.length) {
     off = off.filter((k) => !back.some((r) => r.key === k));
@@ -8468,8 +8483,10 @@ export async function autoRest(env, now) {
       changed = true;
     }
   }
-  if (kv >= kvBudget * AUTO_REST.share && !off.includes(AUTO_REST.kv)) {
-    await turnOff(AUTO_REST.kv, `KV ${kv}/${kvBudget}`);
+  // 2.0.0 [RVQ-24] I22b-03: 읽기도 봐요(새 링크를 쉬면 그 링크를 여는 읽기도 줄어요).
+  const kvRead = plan.kvReadsDay ? kvReads / plan.kvReadsDay : 0;
+  if ((kv >= kvBudget * AUTO_REST.share || kvRead >= AUTO_REST.share) && !off.includes(AUTO_REST.kv)) {
+    await turnOff(AUTO_REST.kv, kv >= kvBudget * AUTO_REST.share ? `KV ${kv}/${kvBudget}` : `KV 읽기 ${kvReads}/${plan.kvReadsDay}`);
     changed = true;
   }
   if (!changed) return { used, kv, rested: mine.map((r) => r.key) };
@@ -8545,7 +8562,10 @@ export async function plazaSurge(env, now) {
 function shareAdmin(env) {
   const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
   const token = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
-  return /^https:\/\/[A-Za-z0-9.-]+$/.test(base) && token.length >= 20 ? { base, token } : null;
+  // 2.0.0 [RVQ-24] The PC's two local servers (npm run local, http://127.0.0.1:8790) too, so 서버 상태's 공유 KV line and the
+  // share switch can be checked there. Only the loopback address: a Worker cannot reach it, and the token never leaves the PC.
+  const ok = /^https:\/\/[A-Za-z0-9.-]+$/.test(base) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d{2,5})?$/.test(base);
+  return ok && token.length >= 20 ? { base, token } : null;
 }
 
 /** [SRV-08] Five seconds at most: a share server that hangs does not hold the developer app's request. */
