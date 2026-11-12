@@ -2039,8 +2039,8 @@ export function validate(body) {
     if (t.gap != null && !(t.time != null && t.off !== true && isTimeRange(t.gap) && gapFits(t.time, t.gap))) return { error: "type_gap" };
     // 2.0.0 [RVD-23] PC-94: the shift's 휴게 (ShiftType.breakMinutes, minutes) and, when known, when it starts, so the receiver does not count it
     // as work. 0 is '휴게 없음' and differs from no field (an app before 2.0.0, not known). Older receivers ignore both.
+    // 총괄 11-12 (PC-92의 교훈): a rest that is not the app's is dropped, never the link; the receiver then asks for the 휴게 itself.
     const rest = restOf(t);
-    if (rest === false) return { error: "type_rest" };
     types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: t.icon ?? null, ...(t.gap != null ? { gap: t.gap } : {}),
       ...rest });
   }
@@ -2258,18 +2258,19 @@ function gapFits(time, gap) {
 }
 /**
  * 2.0.0 [RVD-23] PC-94 (갈래 G와 맞춤, 11-12): `rest` whole minutes 0~720, shorter than the shift (with its gap, if any); `restStart` 'HH:MM' when the
- * app knows it, starting inside the shift with the whole rest inside it. Kept only on a shift with times that is not a day off (dropped
- * elsewhere, so a stray field never breaks a link); restStart is dropped with a rest of 0. {} when there is none, false when it is not the app's.
+ * app knows it, starting inside the shift with the whole rest inside it. Kept only on a shift with times that is not a day off. What does not fit
+ * is dropped, not refused (총괄 11-12): a phone with a 휴게 longer than the shift still makes its link, and the receiver, seeing no rest, asks for
+ * it. A wrong restStart drops only itself; restStart is dropped with a rest of 0. Returns the fields to keep ({} for none).
  */
 function restOf(t) {
   if (t.rest == null || t.time == null || t.off === true) return {};
-  if (!Number.isInteger(t.rest) || t.rest < 0 || t.rest > 720) return false;
+  if (!Number.isInteger(t.rest) || t.rest < 0 || t.rest > 720) return {};
   const shift = rangeMinutes(t.time);
-  if (t.rest + (t.gap != null ? rangeMinutes(t.gap).length : 0) >= shift.length) return false;
+  if (t.rest + (t.gap != null ? rangeMinutes(t.gap).length : 0) >= shift.length) return {};
   if (t.restStart == null || t.rest === 0) return { rest: t.rest };
-  if (typeof t.restStart !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(t.restStart)) return false;
+  if (typeof t.restStart !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(t.restStart)) return { rest: t.rest };
   const from = (minuteOf(t.restStart) - shift.from + DAY_MINUTES) % DAY_MINUTES;
-  return from + t.rest <= shift.length ? { rest: t.rest, restStart: t.restStart } : false;
+  return from + t.rest <= shift.length ? { rest: t.rest, restStart: t.restStart } : { rest: t.rest };
 }
 /** 2.0.0 [RVD-20] HQ-13 A shift's times as the page and a calendar app show them: two parts when it stops between them. */
 function parts(t) {

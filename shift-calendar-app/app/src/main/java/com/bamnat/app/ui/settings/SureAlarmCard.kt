@@ -70,7 +70,13 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
         }
         if (ringing.isNotEmpty()) {
             HorizontalDivider()
-            SwitchRow("근무마다 다르게", "예: 야간 뒤 아침 근무만 계산 문제", perShift || mine.isNotEmpty()) { on ->
+            // 2.0.0 [RVH-41] 검토 T30-85: the example in the kind's own days.
+            SwitchRow("근무마다 다르게", when (settings.workStyle) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "예: 이른 오픈 날만 계산 문제"
+                com.bamnat.core.work.WorkStyle.FIELD -> "예: 새벽 일정만 계산 문제"
+                com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "예: 이른 출근 날만 계산 문제"
+                else -> "예: 야간 뒤 아침 근무만 계산 문제"
+            }, perShift || mine.isNotEmpty()) { on ->
                 if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) { openPro(com.bamnat.app.tier.Feature.SURE_ALARM); return@SwitchRow }
                 perShift = on
                 if (!on) vm.update { it.copy(shiftMissions = com.bamnat.core.model.ShiftRef.without(it.shiftMissions, cal)) }

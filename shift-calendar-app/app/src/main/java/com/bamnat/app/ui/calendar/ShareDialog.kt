@@ -252,9 +252,17 @@ fun ShareDialog(
                         Text("링크로 보내기")
                     }
                 }
-                Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·${shareLeftOut(style)} 빼고). " +
-                    (if (keeps) "프로를 쓰는 동안 열려 있어요." else "${ShareLinkPayload.ttlLabel(ttl)} 열려요.") + "\n" + shareServerNotice(style),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVH-37] #446 품질 표 조건 4 (공유 시트 안내가 100%에서 4줄, 200%에서 8줄): one line with ⓘ for the rest. The line keeps
+                // what a person must know before a link is made (anyone with the address sees it, first, so a line cut at 200% keeps it;
+                // then the months and how long), so it never goes down to ⓘ alone (처리방침 1.6 1·5항 안내는 ⓘ 안에 그대로).
+                val word = com.bamnat.core.work.scheduleWord(style)
+                val open = if (keeps) "프로를 쓰는 동안 열려요" else "${ShareLinkPayload.ttlLabel(ttl)} 열려요"
+                com.bamnat.app.ui.components.Explain(
+                    key = "share.link.note",
+                    text = "링크는 ${linkMonth.monthValue}월부터 3개월 ${word}만 담아요(메모·${shareLeftOut(style)} 빼고). $open." + "\n" + shareServerNotice(style),
+                    summary = "받은 누구나 봐요 · 3개월 $word · $open",
+                    iconOnly = false,
+                )
                 if (quickPaused) Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 TextButton(onClick = { detailed = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

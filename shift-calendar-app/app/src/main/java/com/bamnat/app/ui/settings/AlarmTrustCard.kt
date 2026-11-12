@@ -70,7 +70,7 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
     val today = Today.date()
     SectionCard(title = "다음 알람", modifier = Modifier.focusMark(SKIP_ONCE_ROW)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(nextLine(settings.alarmsEnabled, upcoming, today), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(nextLine(settings.alarmsEnabled, upcoming, today, settings.workStyle), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             // [ALRM-26] 1.38: the next few, each with its own 이번만 끄기 / 다시 켜기 (not only the very next one).
             // 2.0.0 [RVO-02] (HQ-01과 같은 구조: 편 폭·글자 200%에서 '내일 06:30 · 주간 근무 알람'이 한 글자씩 세로로 섰어요) 글과 단추는
             // SideOrBelow로, 좁으면 단추가 아래로(조건 12). 채운 단추는 가장 먼저 울릴 알람 하나에만, 나머지는 글자 단추(조건 2).
@@ -84,7 +84,7 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (off) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
                             textDecoration = if (off) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
-                        Text(if (off) "이번만 꺼 뒀어요" else r.title, style = MaterialTheme.typography.bodySmall,
+                        Text(if (off) "이번만 꺼 뒀어요" else r.title(settings.workStyle), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }, end = {
@@ -149,12 +149,12 @@ private const val MAX_SHOWN = 3
 internal const val CALL_LINE = "통화 중에 울릴 때는 소리를 멈췄다가 통화가 끝나면 다시 울려요. 메신저 통화는 3분, 전화는 30분이 넘으면 그대로 울려요"
 
 /** "내일 (11월 6일 목) 05:30 · 주간 근무 알람", or why there is none. */
-internal fun nextLine(enabled: Boolean, next: UpcomingAlarm?, today: LocalDate): String = when {
+internal fun nextLine(enabled: Boolean, next: UpcomingAlarm?, today: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): String = when {
     !enabled -> "알람이 모두 꺼져 있어요"
     next == null -> "120일 안에 울릴 알람이 없어요"
     else -> {
         val at = next.plan.triggerAt
-        val what = if (next.plan.shiftName.isBlank()) "이 날 알람" else com.bamnat.core.alarm.AlarmWords.alarm(next.plan.shiftName) // 1.39 [SHOP-13]
+        val what = if (next.plan.shiftName.isBlank()) "이 날 알람" else com.bamnat.core.alarm.AlarmWords.alarm(next.plan.shiftName, style) // 1.39 [SHOP-13]
         "${whenText(at.toLocalDate(), today)} ${Fmt.time(at.toLocalTime())} · $what"
     }
 }
