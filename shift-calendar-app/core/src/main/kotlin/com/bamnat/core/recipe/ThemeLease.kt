@@ -75,9 +75,12 @@ data class ThemeLease(
     /** [w] is worn from [today] for [DAYS]; it goes first in the history. [free] counts one of the first free ones. */
     fun wear(w: Wear, today: Long, free: Boolean): ThemeLease {
         val now = w.copy(from = today, until = today + DAYS)
-        return copy(worn = now, history = (listOf(now) + history.filter { it.key != now.key }).take(HISTORY), askedDay = null,
+        return copy(worn = now, history = capped(listOf(now) + history.filter { it.key != now.key }, now.key).first, askedDay = null,
             freeUsed = freeUsed + if (free) 1 else 0)
     }
+
+    /** 2.0.0 [RVM-26] RCP-08 What [next] (made from this) let go of from 입었던 테마 for the [HISTORY] limit, not for being worn again. */
+    fun pushedOut(next: ThemeLease): List<Wear> = history.filter { h -> next.history.none { it.key == h.key } && next.worn?.key != h.key }
 
     /** A whole ad watched: 30 more days from [today] (or from the end, if it is not over yet). */
     fun extend(today: Long): ThemeLease = worn?.let { w ->
@@ -130,6 +133,19 @@ data class ThemeLease(
     }
 
     companion object {
+        /**
+         * 2.0.0 [RVM-26] RCP-08 (서랍 30개 한도가 '내 테마로 저장'한 것까지 말없이 밀어냄): [list] (newest first) kept to [HISTORY] themes
+         * of others; mine ([Wear.own]) are never pushed out by it (내 테마 has its own count, 무료 1벌·프로 10벌, and "내가 고친 …" kept on 벗기) and neither is [keep] (the
+         * one worn). The first is what stays, the second what the limit let go (the app keeps those in 자동으로 정리한 것 to put back).
+         */
+        fun capped(list: List<Wear>, keep: String? = null): Pair<List<Wear>, List<Wear>> {
+            // The worn one takes one of the places wherever it stands; the rest go by how lately they were worn.
+            val room = HISTORY - if (list.any { !it.own && it.key == keep }) 1 else 0
+            var others = 0
+            val (kept, out) = list.partition { w -> w.own || w.key == keep || ++others <= room }
+            return kept to out
+        }
+
         const val DAYS = 30L
         const val NO_AD_DAYS = 7L
         const val HEADS_UP = 3L
@@ -166,7 +182,8 @@ data class ThemeLease(
                     "L" -> if (p.size == 3) p[2].toIntOrNull()?.let { log[p[1]] = it }
                 }
             }
-            return ThemeLease(worn, history.take(HISTORY), free, log, asked)
+            // [RVM-26] Read back with the same limit as written: mine and the one worn stay, others past [HISTORY] go.
+            return ThemeLease(worn, capped(history, worn?.key).first, free, log, asked)
         }
 
         /** The written theme on one line: backslash, tab and line breaks as \\, \t and \n. */

@@ -116,7 +116,8 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     // 1.38 통합 12차: in the month-first line (no order of the user's own, [CALENDAR_FIRST]) it is over the month as one line until
     // opened, so the five weeks stay in view on any phone.
     val monthFirst = remember(settings.calendarLayout) { com.bamnat.core.layout.PageLayout.decode(settings.calendarLayout).order.isEmpty() }
-    val folded = chosen ?: (short || monthFirst)
+    val openNow by vm.flowOpenNow.collectAsStateWithLifecycle()
+    val folded = !openNow && (chosen ?: (short || monthFirst))
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
     // 1.39 [FLOW-28] 하루 다이얼: the same day as a 24-hour ring (work, planned and real sleep, alarms, now), off in 설정 › 화면과 글자.
@@ -162,6 +163,7 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         modifier = modifier,
         folded = folded,
         onFold = vm::setFlowFolded,
+        openNow = openNow,
         // 1.38 사용자 2026-11-06: 밤샘·첫 야간 rules only where there are nights to work.
         nights = nightWork(settings.workStyle, snapshot),
         // 1.39 사용자 2026-11-08 (수면 기록이 찾기 어려워요): the card that says when to sleep opens the sleep log too, as the
@@ -217,6 +219,8 @@ internal fun TodayFlowCard(
     dial: Pair<com.bamnat.core.design.DayDialArcs.Dial, String>? = null,
     /** 1.39 The way to 수면 기록 (근무별 평균, 아침 한 장, 기록 고치기) from the opened card; null shows no link. */
     onSleepLog: (() -> Unit)? = null,
+    /** 2.0.0 [RVI-68] Opened by a today link: a day off's one line opens too. */
+    openNow: Boolean = false,
 ) {
     var info by remember { mutableStateOf(false) }
     var askWake by remember { mutableStateOf(false) }
@@ -246,7 +250,7 @@ internal fun TodayFlowCard(
         // screen; folding and unfolding afterwards still move smoothly.
         modifier = modifier.fillMaxWidth().then(if (FirstMonth.settled.value) Modifier.animateContentSize() else Modifier),
     ) {
-        if (folded || card.compact && !opened) {
+        if (folded || card.compact && !opened && !openNow) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 52.dp)
                     .clickable(onClickLabel = "오늘의 흐름 펼치기") { if (folded) onFold(false); opened = true }

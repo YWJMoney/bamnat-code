@@ -46,7 +46,7 @@ fun TierPreviewCard(c: AppContainer, gate: Gate, showNow: Boolean = true) {
             style = MaterialTheme.typography.bodyMedium,
         )
         // On the 프로 screen its own 지금 card is right under this one.
-        if (showNow) Text("지금: ${gate.access.reason.words}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (showNow) Text("지금: ${gate.access.say(com.bamnat.core.time.Today.zone())}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             com.bamnat.app.ui.components.FilterChip(selected = preview == null, onClick = { setPreview(c, null) }, label = { Text("실제") })
             listOf(Tier.FREE to "무료", Tier.PRO to "프로", Tier.LEADER to "팀·직원 요금제").forEach { (t, words) ->

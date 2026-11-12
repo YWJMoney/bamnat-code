@@ -13,6 +13,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.heightIn
@@ -108,16 +110,23 @@ fun rememberScanner(onImage: (Uri) -> Unit, onError: (String) -> Unit): () -> Un
     }
 }
 
-/** [READ-15] The scanner's button: the straightened page to [onImage], or why it could not run to [onError]. */
+/**
+ * [READ-15] The scanner's button: the straightened page to [onImage], or why it could not run to [onError].
+ * 2.0.0 [RVL-34] (검토 SCAN-20·U07b-14) Not there on a phone that cannot run the scanner (a button that only said it could not was
+ * one tap for nothing), and called '스캐너로 찍기' as everywhere else.
+ */
 @Composable
 fun ScannerButton(onImage: (Uri) -> Unit, onError: (String) -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier) {
-    val scan = rememberScanner(onImage, onError)
+    val context = LocalContext.current
+    var ready by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(DocScanner.available(context)) }
+    val scan = rememberScanner(onImage) { onError(it); ready = false }
+    if (!ready) return
     TextButton(
         onClick = scan,
         enabled = enabled,
         modifier = modifier.heightIn(min = 48.dp),
     ) {
         Icon(Icons.Filled.DocumentScanner, null, Modifier.size(18.dp))
-        Text(" 스캐너로 반듯하게 찍기", maxLines = 1)
+        Text(" 스캐너로 찍기", maxLines = 1)
     }
 }
