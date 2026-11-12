@@ -136,7 +136,7 @@ class XScreenshotTest : ScreenshotBase() {
         val vm = CompanyDetailViewModel(c, "c1")
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
-        assertTrue(appears("대표 판 v2", exact = true))
+        assertTrue(appears("대표 판 · 2판", exact = true))
         // [PLZD-06] 1.30 BD: the department's other versions fold under the 대표 until asked for.
         tapText("같은 부서 다른 판 2개 보기", exact = true)
         tapText("대표 판과 비교", exact = true)
@@ -154,7 +154,7 @@ class XScreenshotTest : ScreenshotBase() {
         // The line starts with the day it came in.
         reveal("같은 부서의 다른 판을 더 많은 분이 써서 대표 판이 됐어요", exact = false)
         tapText("지금 판과 비교 · 되돌리기", exact = true)
-        assertTrue(appears("v1과 지금 비교", exact = true))
+        assertTrue(appears("1판과 지금 비교", exact = true))
         tapText("이 판으로 되돌리기", exact = true)
         // [PAYF-03] 1.29: a setup with a pay way asks first whether the pay goes in too.
         if (shows("근무주기만 넣을게요", exact = true)) tapText("근무주기만 넣을게요", exact = true)
@@ -311,7 +311,8 @@ class XScreenshotTest : ScreenshotBase() {
         }.invoke(this)
         settle()
         reveal(ShareAsk.Moment.PAY.title, exact = true)
-        tapText("다음에", exact = true)
+        // 2.0.0 [RVJ-34] 검토 PC-85: under the values it is the one 안내 카드 shape, closed with its X ('다음에 볼게요').
+        tapText("다음에 볼게요", exact = true)
         assertTrue(gone(ShareAsk.Moment.PAY.title, exact = true))
     }
 }

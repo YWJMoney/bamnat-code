@@ -1,5 +1,7 @@
 package com.bamnat.app.memo
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -54,11 +56,12 @@ class MemoLaterActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val id = intent.getLongExtra(EXTRA_MEMO, -1L)
         val rest = MemoSnoozeReceiver.restAt(intent)
+        val day = MemoSnoozeReceiver.dayOf(intent)
         setContent {
             BamnatTheme {
                 MemoLater(rest, onClose = { finish() }, onPick = { way ->
                     lifecycleScope.launch {
-                        val at = runCatching { MemoSnoozeReceiver.put(applicationContext, id, way, rest) }.getOrNull()
+                        val at = runCatching { MemoSnoozeReceiver.put(applicationContext, id, way, rest, day) }.getOrNull()
                         Toast.makeText(applicationContext, at?.let { "${laterSaid(it, Today.dateTime())}에 다시 알려요" } ?: "메모를 찾지 못했어요",
                             Toast.LENGTH_SHORT).show()
                         finish()
@@ -72,11 +75,11 @@ class MemoLaterActivity : ComponentActivity() {
         private const val EXTRA_MEMO = "memo"
         private const val REQUEST_BASE = 0x4C000
 
-        fun intent(context: Context, memo: Long, rest: LocalDateTime?): PendingIntent = PendingIntent.getActivity(
+        fun intent(context: Context, memo: Long, rest: LocalDateTime?, day: java.time.LocalDate? = null): PendingIntent = PendingIntent.getActivity(
             context, REQUEST_BASE + (memo.toInt() and 0x3ff),
-            Intent(context, MemoLaterActivity::class.java)
+            Intent(context, MemoLaterActivity::class.java).setData(memoButtonData("later", memo)) // 2.0.0 [RVI-27]
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                .putExtra(EXTRA_MEMO, memo).let { MemoSnoozeReceiver.putRest(it, rest) },
+                .putExtra(EXTRA_MEMO, memo).let { MemoSnoozeReceiver.putRest(it, rest) }.let { MemoSnoozeReceiver.putDay(it, day) },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
@@ -103,7 +106,7 @@ internal fun MemoLater(rest: LocalDateTime?, onClose: () -> Unit, onPick: (MemoS
         Surface(
             Modifier.widthIn(max = 560.dp).fillMaxWidth().navigationBarsPadding()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
             tonalElevation = 3.dp,
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

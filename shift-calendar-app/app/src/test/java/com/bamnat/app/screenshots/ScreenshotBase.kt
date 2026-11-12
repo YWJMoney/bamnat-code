@@ -111,6 +111,14 @@ abstract class ScreenshotBase {
         // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
         // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
         com.bamnat.app.ui.calendar.SetupFill.close()
+        // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
+        com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
+        // [RVL-18] Nor a month put in by an earlier shot (an urgent band now).
+        com.bamnat.app.ui.RecentFill.reset()
+        // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.
+        com.bamnat.app.ui.components.AppSnack.resetForTest()
+        com.bamnat.app.ui.components.AskTurn.resetForTest()
+        com.bamnat.app.ui.components.Busy.resetForTest()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -123,8 +131,9 @@ abstract class ScreenshotBase {
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
         com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
         // [GUIDE-02][GUIDE-03] A settled user: the first-days card and the tips are put away, so the shots show the screens.
+        // [DISC-01] So is the occasional '이런 기능도 있어요' card (its own shots are DiscScreenshotTest's).
         com.bamnat.app.data.GuideStore.get(app).let { g ->
-            listOf("guide.checklist", "guide.tips").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
+            listOf("guide.checklist", "guide.tips", "guide.discover").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
         }
         // [EASY-05] Today's questions already asked, so the shots show the screens; 묶음 N's shots clear it.
         c.asks.set(com.bamnat.app.data.PersonalCalendar.MAIN, com.bamnat.core.profile.AskState(day = today, shownToday = com.bamnat.core.profile.AskScheduler.PER_DAY))
@@ -234,6 +243,14 @@ abstract class ScreenshotBase {
                     dv.draw(canvas)
                     canvas.restore()
                 }
+                // 2.0.0 [RVI-61] A menu (DropdownMenu) is a popup window of its own: drawn last, where it was put.
+                for (popup in shownPopups(activity)) {
+                    val lp = popup.layoutParams as android.view.WindowManager.LayoutParams
+                    canvas.save()
+                    canvas.translate(lp.x.toFloat(), lp.y.toFloat())
+                    popup.draw(canvas)
+                    canvas.restore()
+                }
             }
             val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
             out.outputStream().use { s -> bmp.compress(Bitmap.CompressFormat.PNG, 100, s) }
@@ -242,6 +259,25 @@ abstract class ScreenshotBase {
 
     /** Dialogs still open, oldest first: a time picker over a sheet is two. */
     internal fun shownDialogs() = ShadowDialog.getShownDialogs().filter { it.isShowing }.distinct()
+
+    /**
+     * 2.0.0 [RVI-61] Popup windows open over [activity] (Compose's DropdownMenu): neither the activity's window nor a dialog, so
+     * [shoot] did not draw them and [Screen.inPopup] reads them.
+     */
+    internal fun shownPopups(activity: android.app.Activity): List<View> {
+        val global = Class.forName("android.view.WindowManagerGlobal")
+        val instance = global.getMethod("getInstance").invoke(null)
+        @Suppress("UNCHECKED_CAST")
+        val views = (global.getDeclaredField("mViews").apply { isAccessible = true }.get(instance) as List<View>).toList()
+        fun android.content.Context.of(a: android.app.Activity) =
+            generateSequence(this) { (it as? android.content.ContextWrapper)?.baseContext }.any { it === a }
+        return views.filter { v ->
+            v.isAttachedToWindow && v.width > 0 && v.context.of(activity) &&
+                // A panel over the activity's window (Compose's Popup is a sub panel, 1002).
+                (v.layoutParams as? android.view.WindowManager.LayoutParams)?.type in
+                    android.view.WindowManager.LayoutParams.FIRST_SUB_WINDOW..android.view.WindowManager.LayoutParams.LAST_SUB_WINDOW
+        }
+    }
 
     /**
      * Lets Room deliver on its background threads and the UI draw, then finishes animations. State
@@ -355,6 +391,13 @@ abstract class ScreenshotBase {
 
         private fun lookInTabsAndFolds(text: String, exact: Boolean, prefix: Boolean, scrolls: Int, across: Float): SemanticsNode? {
             val tabs = listOf("결과", "내 급여 값", "회사 규칙", "도구")
+            // 2.0.0 [RVJ-18] The tabs are the top of the pay page, and the 결과 tab is longer now (the 마감 question, the 날짜별 합 line):
+            // from far down it, [reach]'s way back up stopped short of them and no tab was tried (phonePublicGradeHugeText at 150%).
+            // On the pay screen, go on up to the tabs as a person would.
+            if (find("급여 계산", exact = true, prefix = false) != null) {
+                var back = 0
+                while (find(tabs[3], exact = true, prefix = false) == null && back++ < scrolls * 3) scrollDown(350, across)
+            }
             if (find(tabs[1], exact = true, prefix = false) != null && find(tabs[3], exact = true, prefix = false) != null) {
                 for (tab in tabs) {
                     val at = find(tab, exact = true, prefix = false) ?: continue
@@ -378,7 +421,7 @@ abstract class ScreenshotBase {
         }
 
         /** Every word on screen, for a failure message that says what was there instead. */
-        private fun shownWords(): List<String> {
+        fun shownWords(): List<String> {
             val words = mutableListOf<String>()
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity
@@ -409,7 +452,19 @@ abstract class ScreenshotBase {
             reach(text, exact, prefix, scrolls, across)
             // Where it is once a scroll or late data has stopped moving things.
             settle()
-            touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
+            var node = reach(text, exact, prefix, 0, across)
+            // 2.0.0 [QA-10] A button can show its words before it can be pressed: 작품 상세의 '규칙 1개 넣기' reads its count from the
+            // work but is enabled only once '내 달력 미리 보기' (off the main thread) has landed. A tap in that gap did nothing, no
+            // window opened, and the next step failed (NtcScreenshotTest 161, #444·#446 CI). A person waits for the button to
+            // light up, so the tap does too; one that stays off is still tapped, as before.
+            // 2.0.0 [RVP-75] The whole suite on two forks still saw 161 fail once with 5 s (the preview waits behind the other fork's
+            // shots); a button that lights up late gets [ENABLE_WAIT_NANOS], and only a disabled one waits at all.
+            val end = System.nanoTime() + ENABLE_WAIT_NANOS
+            while (node.config.contains(SemanticsProperties.Disabled) && System.nanoTime() < end) {
+                settle()
+                node = find(text, exact, prefix) ?: node
+            }
+            touch(node.boundsInWindow.center)
         }
 
         /** 1.39 [MKD-42] Whether [text] is reached by scrolling down to it (no tap), as a long page puts it below the first screen. */
@@ -432,8 +487,58 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /**
+         * 2.0.0 [RVO-09] (PC-82) The keyboard up, [heightDp] tall over the foot of the screen, as the phone tells an app drawn edge to edge
+         * (it does not shrink the window): the window insets say so, and what is drawn under them is out of reach. 0 puts it away.
+         * Returns the keyboard's top in window pixels.
+         */
+        fun keyboard(heightDp: Int): Float {
+            var top = 0f
+            scenario.onActivity { activity ->
+                val decor = activity.window.decorView
+                val h = (heightDp * activity.resources.displayMetrics.density).toInt()
+                val ime = androidx.core.view.WindowInsetsCompat.Type.ime()
+                val insets = androidx.core.view.WindowInsetsCompat.Builder()
+                    .setInsets(ime, androidx.core.graphics.Insets.of(0, 0, 0, h))
+                    .setVisible(ime, h > 0)
+                    .build().toWindowInsets()
+                if (insets != null) decor.dispatchApplyWindowInsets(insets)
+                top = (decor.height - h).toFloat()
+            }
+            settle()
+            return top
+        }
+
+        /** 2.0.0 [RVO-13] PC-112: how many places on screen now say [text] (a line said twice is a fault). */
+        fun shownTimes(text: String): Int {
+            var n = 0
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                n = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).count { node ->
+                    val b = node.boundsInWindow
+                    b.width > 1f && b.height > 1f && node.words().any { w -> text in w }
+                }
+            }
+            return n
+        }
+
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
+
+        /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
+        fun enabled(text: String): Boolean =
+            find(text, exact = true, prefix = false)?.let { !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) } == true
+
+        /** 2.0.0 [RVI-61] Whether an open menu (a popup window, see [shownPopups]) says [text], waiting as [appears] does. */
+        fun inPopup(text: String, ms: Long = SOON_MS): Boolean = until(ms) {
+            var hit = false
+            scenario.onActivity { activity ->
+                hit = shownPopups(activity).any { p ->
+                    rootOf(p)?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = true)?.any { n -> text in n.words() } == true
+                }
+            }
+            hit
+        }
 
         /**
          * [J133-45] Whether [text] comes on screen, waiting while it has not yet: a sheet, a saved row or
@@ -466,6 +571,40 @@ abstract class ScreenshotBase {
             touch(at ?: error("화면에서 ‘$label’ 동작을 찾지 못했어요"))
         }
 
+        /**
+         * 2.0.0 [RVP-43] 검토 HQ-49: Opens the calendar's notice whose row says [label] whole, the way a person does now that only what
+         * has to be seen stands over the month: the bell beside 공유 ("알림 N개"), then the notice's row in the 알림함, which opens it
+         * in place. One already open (its band was tapped, which opens the sheet on it) stays open.
+         */
+        fun openNotice(label: String) {
+            // The sheet's own 전체 지움 says it is open already.
+            if (!shows("전체 지움", exact = true)) tapText("알림 ", prefix = true, scrolls = 0)
+            val row = reach(label, exact = true, prefix = false, scrolls = 6, across = 0.5f)
+            val folded = row.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.endsWith("눌러서 펼치기") }
+            if (folded) touch(row.boundsInWindow.center)
+        }
+
+        /**
+         * 2.0.0 [RVP-45] 검토 U13-01: 이전 달·다음 달 (or 주) by its arrow where the one-row head has room for it, else the way TalkBack
+         * offers it on the month once the arrows have folded away (a person swipes the month there).
+         */
+        fun stepMonth(label: String) {
+            if (shows(label, exact = true)) {
+                tapText(label, exact = true, scrolls = 0)
+                return
+            }
+            var done = false
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val act = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).firstNotNullOfOrNull { n ->
+                    n.config.getOrNull(SemanticsActions.CustomActions)?.firstOrNull { it.label == label }
+                }
+                done = act?.action?.invoke() == true
+            }
+            check(done) { "‘$label’ 동작이 없어요" }
+            settle()
+        }
+
         /** Scrolls until [text] shows near the top of the screen, without tapping it. */
         /** 1.36 PC C6: the pay result's guide cards (빠진 값, 회사 급여 방식, 명세서와 맞춰 보기) are folded under '더 정확하게 하기'. */
         fun openPayGuides() {
@@ -489,6 +628,18 @@ abstract class ScreenshotBase {
         }
 
         /** Types [text] into the field labelled [label], as the keyboard would. */
+        /** 2.0.0 [RVIB-20] HQ-86 The memo tab's search box: opened from the 🔍 on the head's row, then typed into. */
+        fun memoSearch(text: String) {
+            if (!shows(MEMO_SEARCH_HINT, exact = true)) tapText("메모 검색", prefix = true, scrolls = 0)
+            typeInto(MEMO_SEARCH_HINT, text)
+        }
+
+        /** [RVIB-20] The memo tab's filter chips, behind the search box's filter icon. */
+        fun memoFilters() {
+            if (!shows("필터 펼치기", exact = true)) tapText("메모 검색", prefix = true, scrolls = 0)
+            tapText("필터 펼치기", exact = true, scrolls = 0)
+        }
+
         fun typeInto(label: String, text: String) {
             reach(label, exact = true, prefix = false, scrolls = 4, across = 0.5f)
             scenario.onActivity { activity ->
@@ -500,6 +651,9 @@ abstract class ScreenshotBase {
             }
             settle()
         }
+
+        /** 2.0.0 [RVP-62] Holds a finger on what shows [text] for [frames] frames of 16ms (a held −/＋), then lifts it. */
+        fun holdText(text: String, frames: Int, exact: Boolean = true) = touch(reach(text, exact, false, 0, 0.5f).boundsInWindow.center, hold = frames)
 
         /** Holds a finger on what shows [text], for its quick menu. */
         fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
@@ -628,12 +782,18 @@ abstract class ScreenshotBase {
         fun settingsPage(title: String, wide: Boolean = false) {
             tab(SETTINGS_TAB, wide)
             // Wide, the list is the left part of the screen: it scrolls there.
+            // 2.0.0 [RVI-38] Brought up first: with the alarm card's problem lines above it, the row could sit under the bottom bar,
+            // where a tap goes to the bar (Robolectric's alarm volume is 0, one of 설정 › 알람's checks).
+            reveal(title, exact = true, across = if (wide) 0.2f else 0.5f)
             tapText(title, exact = true, across = if (wide) 0.2f else 0.5f)
         }
 
-        /** Replaces the activity's content, for screens that are slow to reach by touch. */
+        /**
+         * Replaces the activity's content, for screens that are slow to reach by touch. [QA-12] On the theme's background with
+         * onBackground for words, as the app's Scaffold gives them ([ShotGround]); a test that sets its own theme uses [ShotTheme].
+         */
         fun content(body: @androidx.compose.runtime.Composable () -> Unit) {
-            scenario.onActivity { activity -> activity.setContent { BamnatTheme { body() } } }
+            scenario.onActivity { activity -> activity.setContent { BamnatTheme { ShotGround(body) } } }
         }
 
         /** Taps a point given in dp from the top-left, or from the right edge when [fromRight]. */
@@ -655,7 +815,29 @@ abstract class ScreenshotBase {
             (0..40).map { x to from + dp * d * it / 40 } + listOf(x to from + dp * d)
         }
 
+        /** 2.0.0 [RVK-44] Pushes the content up by [dp] with a finger (slowly), as a person reads on down a page. */
+        fun readOn(dp: Int, across: Float = 0.5f) = gesture { w, h, d ->
+            val x = w * across
+            val from = h * 0.7f
+            (0..40).map { x to from - dp * d * it / 40 } + listOf(x to from - dp * d)
+        }
+
         /** [CAL-51] Every node in the topmost window, for checks of what shows where (묶음 R's layout checks). */
+        /**
+         * 2.0.0 [RVI-75] The lowest node that says exactly [text]: a memo's offer is a one-line nudge under the words now, its
+         * '알림 넣기' like the editor's chip above it.
+         */
+        /**
+         * Taps the lowest on screen of what shows exactly [text]: a button under a card that shows the same words, or (with
+         * [merged] false) a memo's own title under the search box that holds the same word, at the title, not the card's middle.
+         */
+        fun tapLowest(text: String, merged: Boolean = true) {
+            val node = nodes(merged).filter { n -> n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == text } }
+                .maxByOrNull { it.boundsInWindow.top } ?: error("no '$text' on screen")
+            touch(node.boundsInWindow.center)
+            settle()
+        }
+
         fun nodes(merged: Boolean = true): List<SemanticsNode> {
             var all: List<SemanticsNode> = emptyList()
             scenario.onActivity { activity ->
@@ -1008,6 +1190,8 @@ abstract class ScreenshotBase {
     }
 
     internal companion object {
+        /** The memo tab's search box hint ([RVIB-20] behind the 🔍 until opened). */
+        const val MEMO_SEARCH_HINT = "제목, 내용, #태그 검색"
         const val RULES_PERIOD_SCROLL = 420
 
         /** [SETUP-15] The first card on "무슨 일 하세요?". */
@@ -1020,6 +1204,8 @@ abstract class ScreenshotBase {
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L
+        /** How long [Screen.tapText] waits for a disabled button to light up before it taps it anyway. */
+        const val ENABLE_WAIT_NANOS = 15_000_000_000L
         /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
         const val TAB_TRIES = 3
         /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5); [NAV2-01] 1.39 five places, 설정 by the 나 button. */
@@ -1500,7 +1686,7 @@ abstract class ScreenshotBase {
     // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
     internal fun recommended(
         items: Set<ConsentItem> = ConsentItem.entries.toSet(),
-        /** [SETUP-15] The card tapped on "무슨 일 하세요?" first; null taps "백업이나 회사 파일로 시작할게요". */
+        /** [SETUP-15] The card tapped on "무슨 일 하세요?" first; null taps "파일로 시작" (RVG-15: the one file start). */
         firstStyle: String? = SHIFT_CARD,
         then: Screen.() -> Unit = {},
     ): Screen.() -> Unit {
@@ -1508,7 +1694,7 @@ abstract class ScreenshotBase {
         c.consentStore.forget()
         c.consentStore.availableForTest = items
         return fresh(null) {
-            tapText(firstStyle ?: "백업이나 회사 파일로 시작할게요", exact = true)
+            tapText(firstStyle ?: "파일로 시작", exact = true)
             then()
         }
     }
@@ -1650,7 +1836,23 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         ))
     }
 
-    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
+    /** 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기 as the server says it. */
+    var roomMoney = false
+    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3, roomMoney = roomMoney)
+
+    /** 2.0.0 [RVN-17] COMP-12 This calendar held by another company: the look before choosing and the join say so. */
+    var held: com.bamnat.app.company.Membership? = null
+    /** 2.0.0 [RVN-17] COMP-12 Why '잘못 골랐어요' fails (null: it frees the calendar). */
+    var undoFails: String? = null
+    override suspend fun joinCheck(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(false, company)
+    override suspend fun join(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(true, company)
+    override suspend fun undoJoin(device: String, cal: String): Boolean {
+        undoFails?.let { throw com.bamnat.app.company.CompanyException(it) }
+        held = null
+        return true
+    }
 
     /** [SPAT-05] What was sent: the note and the setup file, to check that no amount went. */
     val reports = mutableListOf<Pair<String, org.json.JSONObject>>()
@@ -1663,6 +1865,10 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override suspend fun forgetMine(device: String) = mine.size
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
+    /** 2.0.0 [RVN-18] COMP-22-1 What a second tap on ✓ 맞아요 took back. */
+    val unvoted = mutableListOf<String>()
+    override suspend fun unvote(device: String, company: String, setup: String) =
+        com.bamnat.app.company.VoteResult(3, 2, 1, 3, true).also { unvoted += setup }
 
     // [COMM-06][COMM-07] 회사 규칙 광장 and the talk on a rule set.
     private fun item(id: String, company: String, dept: String, adopted: Boolean, points: Int, persons: Int, bad: Int, trust: Int, agree: Int,

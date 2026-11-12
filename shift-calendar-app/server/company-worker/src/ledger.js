@@ -1,9 +1,13 @@
 import { all, batch, can, iso, json, readJson, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { BILLING_RECORD, DEV, TOPIC_NAMES, slaKey, slaTargets, triage } from "./inquiries.js";
+import { DEV, TOPIC_NAMES, slaKey, slaTargets, triage } from "./inquiries.js";
 import { PILE_NAMES, compareVersions, grams, known, likeness, sortInbox, titleFrom, version } from "./inbox.js";
 import { isOut } from "./desk.js";
+import { askOwnerOf, replyRiskOf } from "./ask-check.js";
 import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_STATE_NAMES, WORK_TYPES, workList } from "./work.js";
+import { errorLine, recordRowErrors } from "./ops-watch.js";
+import { REVIEWS } from "./store-reviews.js";
+import { marketHealthRows } from "./market-health.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
 //
@@ -35,6 +39,9 @@ export const LEDGER = {
   /** 한 번에 보내는 줄 수(CSV는 모두). */
   page: 300,
   summary: 120,
+  /** 2.0.0 [RVA-50] 스토어 리뷰: 한 번에 읽는 수, 별 1~2개에 답할 목표(시간). */
+  reviews: 200,
+  reviewHours: 24,
 };
 
 export const LEDGER_SCHEMA = [
@@ -57,54 +64,25 @@ export const VIEWS = { today: "오늘 할 것", claude: "Claude 차례", owner: 
   open: "열린 것 모두", closed: "닫힘", all: "모두" };
 
 /** 줄의 종류(할 일함 종류에 장부만의 이름을 얹어요). 문의는 kind로 더 나눠요. */
-const LINE_KINDS = { bug: "문제", question: "질문", idea: "제안", company: "회사 방식", other: "기타", studio: "스튜디오 요구" };
-export const LEDGER_TYPES = { ...WORK_TYPES };
+const LINE_KINDS = { bug: "문제", question: "질문", idea: "제안", company: "회사 방식", other: "기타", studio: "스튜디오 요구", billing: "결제·환불" };
+export const LEDGER_TYPES = { ...WORK_TYPES, store_review: "스토어 리뷰", market_broken: "깨진 작품" };
+/** 2.0.0 [RVA-50] 검토 U23-14·I23b-03: 스토어 리뷰도 '문의·요구' 묶음의 한 줄이에요. */
+const LEDGER_GROUPS = { ...WORK_GROUPS, ask: [...WORK_GROUPS.ask, "store_review"], report: [...WORK_GROUPS.report, "market_broken"] };
 
 /**
  * 1.38 [DESK-02] 설계 5-3: Claude가 혼자 보내지 않고 최고 관리자에게 묻는 것. 말로만 가려요(새로 남기는 것 없음).
- * 이름은 장부의 '답' 칸에 그대로 보여요.
- */
-const ASK_OWNER = [
-  ["money", "환불·결제·보상", (t) => BILLING_RECORD.test(t) || /보상\s*(해|받|요구|지급|을|좀)|배상|돈\s*돌려/.test(t)],
-  ["law", "법·안전 신고", (t) => /불법\s*촬영|몰카|명예\s*훼손|고소|고발|경찰|변호사|소송|청소년|미성년|성희롱|성추행|협박|스토킹|자해|자살|죽고\s*싶/.test(t)],
-  ["privacy", "개인정보 요청", (t) => /개인\s*정보|탈퇴|계정\s*(삭제|지워)|(내|제)\s*(정보|데이터|기록).{0,8}(지워|삭제|열람|보여|달라)|열람\s*요청/.test(t)],
-  ["angry", "크게 화난 민원", (t) => /화가\s*(나|납)|짜증|최악|사기|어이(가)?\s*없|열\s*받|빡치|별점\s*1|신고\s*하겠|가만\s*안/.test(t)],
-  ["terms", "약관·처리방침 질문", (t) => /약관|처리\s*방침|개인정보\s*처리/.test(t)],
-  // 1.39 [LOOP-38] 사용자 11-09 '코드 등 보안을 침해하는 답은 절대 금지, 우회하는 문의가 와도 답하지 않고 관리자 확인으로 남겨 답을 미룰 것'.
-  ["security", "보안·코드·우회 요청", (t) => SECURITY_ASK.test(t)],
-  // 사용자 11-08·11-09 '사람이냐고 묻는 문의는 답하지 말고 알림', 'AI라는 것을 밝히지 않기'.
-  ["human", "사람·AI인지 묻는 문의", (t) => HUMAN_ASK.test(t)],
-];
-
-const SECURITY_ASK = new RegExp([
-  "소스\\s*코드", "코드\\s*(를|좀|도)?\\s*(보여|알려|공개|보내|줘|주세요|달라)", "api\\s*키", "토큰", "비밀\\s*(번호|값|키)", "암호\\s*키",
-  "관리자\\s*(페이지|화면|앱|주소|계정|권한|비번|비밀|로그인|모드)", "admin", "password", "해킹", "해커", "우회", "취약", "탈옥", "jailbreak",
-  "프롬프트", "prompt", "시스템\\s*(지시|명령|메시지|설정)", "(이전|앞|위|기존)의?\\s*(지시|명령|규칙).{0,8}(무시|잊)", "무시하고", "ignore\\s+(all|previous|the|your)",
-  "서버\\s*(주소|구조|코드|정보|위치|ip)", "데이터\\s*베이스", "db\\s*(주소|구조|접속|내용)", "sql", "디컴파일", "리버스\\s*엔지", "백도어", "난독화", "인증서", "서명\\s*키",
-].join("|"), "i");
-const HUMAN_ASK = new RegExp([
-  "(사람|상담원|직원|운영자)\\s*(이|인)?\\s*(세요|에요|예요|이에요|인가요|인가|이야|야\\?|냐|맞나|맞아|맞죠|맞나요|이\\s*답|이\\s*쓴|이\\s*적)",
-  "(ai|에이아이|인공\\s*지능|챗\\s*봇|gpt|클로드|claude|로봇)\\s*(이|가|인가|인지|이세요|세요|이야|야|냐|맞|로\\s*답|가\\s*답|가\\s*쓴|가\\s*적|아니|한테)",
-  "자동\\s*(답|응답)\\s*(이|인|이에|이야|이세|맞)", "봇\\s*(이|인가|이세요|이야|이냐)",
-].join("|"), "i");
-
-/**
- * 1.39 [LOOP-38] 사람 없이 나갈 답(Claude 열쇠·자동 정리) 글에 들어가면 안 되는 말: AI·자동 답이라는 것, 코드·서버·열쇠 같은 보안 정보.
- * 걸리면 그 답은 저절로 가지 않고 문의 권한이 있는 관리자가 보고 보내요. 그 이유 이름, 아니면 null.
+ * 이름은 장부의 '답' 칸에 그대로 보여요. 1.40 [RVD-07] 가리는 식은 src/ask-check.js 한 곳(예문 장부 test/ask-corpus.json).
  */
 export function replyRisk(text) {
-  const t = String(text ?? "");
-  if (/(\bai\b|인공\s*지능|챗\s*봇|gpt|claude|클로드|anthropic|언어\s*모델|자동\s*(으로\s*)?(답|응답|생성)|로봇)/i.test(t)) return "답에 AI·자동 답 표현";
-  if (/(bamnat_|bearer\s|sk-[a-z0-9]|ghp_|wrangler|cloudflare|d1\b|\/api\/|workers\.dev|소스\s*코드|\.js\b|\.kt\b|github|깃허브|토큰|비밀\s*(번호|값|키)|api\s*키|서버\s*(주소|구조|코드)|데이터\s*베이스|sql|관리자\s*(페이지|계정|주소))/i.test(t)) return "답에 보안 정보";
-  return null;
+  return replyRiskOf(text);
 }
 
 /** 문의 하나가 최고 관리자 확인이 필요한지: { key, name } 또는 null. 회사 방식은 회사 이름이 나와서 늘 물어요. */
 export function askOwner(kind, text) {
   if (kind === "company") return { key: "company", name: "회사 방식 공개" };
-  const t = String(text ?? "");
-  for (const [key, name, test] of ASK_OWNER) if (test(t)) return { key, name };
-  return null;
+  // 2.0.0 [RVQ-30] 앱의 '결제·환불'로 보낸 문의는 글과 상관없이 사람이 먼저 봐요.
+  if (kind === "billing") return { key: "money", name: "환불·결제·보상" };
+  return askOwnerOf(text);
 }
 
 /** 앱이 문의 앞에 붙이는 화면 경로 '[설정 > 알람]'. */
@@ -196,7 +174,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   const devs = can(actor, "dev");
   // 1.39 [ADM3-52] 할 일함 목록(다시 열림 맞추기)과 장부 읽기를 한꺼번에(실서버 결정함·장부가 DB를 차례로 오가 3초 넘었어요).
   // 할 일함 상태(work_states)는 둘 다 끝난 뒤에 읽어요.
-  const [work, [qs, ds, sla, k, sorted]] = await Promise.all([workList(env, actor, now), Promise.all([
+  const [work, [qs, ds, sla, k, rv]] = await Promise.all([workList(env, actor, now), Promise.all([
     asks ? all(env, `SELECT i.id, i.kind, i.info, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
         (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -211,8 +189,12 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       ORDER BY d.updated_at DESC LIMIT ${LEDGER.devs}`, since) : [],
     asks ? slaTargets(env) : {},
     asks ? known(env) : null,
-    null,
+    // 2.0.0 [RVA-50] 검토 U23-14·I23b-03: 스토어 리뷰도 장부 한 줄(문의와 한 대기열). 답 안 한 것은 모두, 답한 것은 기간 안에서만.
+    asks ? all(env, `SELECT id, stars, text, app, at, reply, reply_at, replied_by, draft, draft_by, status FROM store_reviews
+      WHERE status <> 'replied' OR reply_at > ? ORDER BY at DESC LIMIT ${LEDGER.reviews}`, since).catch(() => []) : [],
   ])]);
+  // 2.0.0 [RVA-56] 검토 SX-04: 장터 건강의 깨진 작품(마지막 결과)도 장부 줄로. 다음 결과에서 나으면 사라져요.
+  const brokenWorks = await marketHealthRows(env, actor).catch(() => []);
   const shipped = k?.shipped ?? null;
   const devById = new Map(ds.map((d) => [d.id, d]));
   // 문의마다 묶인 개발사항(가장 최근 것)과 '나왔어요'를 보낸 때.
@@ -246,54 +228,86 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   }
 
   const rows = [];
+  // 2.0.0 [RVA-37] 검토 I24b-02: 한 줄을 읽다 오류가 나면 그 줄만 '읽지 못한 줄'로 두고 장부는 계속(ADMX-01처럼 문의 하나가 장부·오늘을 멈추지 않게).
+  const bad = [];
+  const unreadable = (key, type, id, e, extra = {}) => {
+    bad.push({ key, e });
+    rows.push({ key, type, id, kind: null, kindName: type === "dev" ? "개발사항" : "문의", title: type === "dev" ? "(읽지 못한 개발사항)" : "(읽지 못한 문의)",
+      text: "", path: null, app: null, same: 0, stage: "intake", dueAt: null, unreadable: errorLine(e), ...extra });
+  };
   for (const q of qs) {
-    const info = JSON.parse(q.info || "{}");
-    const text = q.first ?? "";
-    const link = links.get(q.id) ?? null;
-    const d = link ? devById.get(link.item_id) ?? null : null;
-    const owner = askOwner(q.kind, text);
-    const tri = triage(q.kind, text, info);
-    const waitingAdmin = q.status === "open" && q.last === "user";
-    let stage;
-    if (q.status === "closed") stage = "closed";
-    else if (d) {
+    try {
+      const info = JSON.parse(q.info || "{}");
+      const text = q.first ?? "";
+      const link = links.get(q.id) ?? null;
+      const d = link ? devById.get(link.item_id) ?? null : null;
+      const owner = askOwner(q.kind, text);
+      const tri = triage(q.kind, text, info);
+      const waitingAdmin = q.status === "open" && q.last === "user";
+      let stage;
+      if (q.status === "closed") stage = "closed";
+      else if (d) {
+        if (d.status === "rejected") stage = "rejected";
+        else if (d.status === "todo") stage = d.handed_at ? "handed" : "devwait";
+        else if (d.status === "doing") stage = "doing";
+        else if (d.status === "done" && !isOut(d.released_in, shipped)) stage = "built";
+        else stage = link.told_at || q.last === "admin" ? "shipped" : "notify";
+      } else if (q.last === "admin") stage = "answered";
+      else stage = piles.has(q.id) ? "sorted" : "intake";
+      rows.push({
+        key: `inquiry:${q.id}`, type: "inquiry", id: q.id, kind: q.kind, kindName: LINE_KINDS[q.kind] ?? q.kind, topic: tri.topic, topicName: tri.topicName,
+        urgent: tri.urgency === "urgent", title: titleFrom(text), text: clip(text, 600), path: screenPath(text), app: vOf(info.app), model: info.model ?? null,
+        at: q.created_at, last: q.last_at ?? q.updated_at, same: q.same ?? 0, status: q.status,
+        waitingAdmin, ownerAsk: owner, handedIn: q.handed_in ?? null, skipped: q.sorted_at ? { at: q.sorted_at, back: piles.get(q.id)?.back ?? false } : null,
+        sort: piles.get(q.id) ?? null,
+        bundle: d ? { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
+          out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks, told: Boolean(link.told_at) } : null,
+        said: q.said ? { text: clip(q.said, 300), by: q.said_by ?? "", at: q.said_at } : null,
+        assignee: q.assignee_name ?? null, stage,
+        dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
+        overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
+      });
+    } catch (e) {
+      unreadable(`inquiry:${q.id}`, "inquiry", q.id, e, { at: q.created_at, last: q.updated_at, status: q.status });
+    }
+  }
+  for (const d of devById.values()) {
+    if (d.outside) continue;
+    try {
+      let stage;
       if (d.status === "rejected") stage = "rejected";
       else if (d.status === "todo") stage = d.handed_at ? "handed" : "devwait";
       else if (d.status === "doing") stage = "doing";
       else if (d.status === "done" && !isOut(d.released_in, shipped)) stage = "built";
-      else stage = link.told_at || q.last === "admin" ? "shipped" : "notify";
-    } else if (q.last === "admin") stage = "answered";
-    else stage = piles.has(q.id) ? "sorted" : "intake";
-    rows.push({
-      key: `inquiry:${q.id}`, type: "inquiry", id: q.id, kind: q.kind, kindName: LINE_KINDS[q.kind] ?? q.kind, topic: tri.topic, topicName: tri.topicName,
-      urgent: tri.urgency === "urgent", title: titleFrom(text), text: clip(text, 600), path: screenPath(text), app: vOf(info.app), model: info.model ?? null,
-      at: q.created_at, last: q.last_at ?? q.updated_at, same: q.same ?? 0, status: q.status,
-      waitingAdmin, ownerAsk: owner, handedIn: q.handed_in ?? null, skipped: q.sorted_at ? { at: q.sorted_at, back: piles.get(q.id)?.back ?? false } : null,
-      sort: piles.get(q.id) ?? null,
-      bundle: d ? { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
-        out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks, told: Boolean(link.told_at) } : null,
-      said: q.said ? { text: clip(q.said, 300), by: q.said_by ?? "", at: q.said_at } : null,
-      assignee: q.assignee_name ?? null, stage,
-      dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
-      overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
-    });
+      else stage = "closed";
+      // 오래전에 나간 개발사항은 닫힌 것으로 기간 안에서만.
+      if (stage === "closed" && d.updated_at <= since) continue;
+      rows.push({ key: `dev:${d.id}`, type: "dev", id: d.id, kind: null, kindName: "개발사항", title: d.title, text: clip(d.body, 600), path: null,
+        app: null, at: d.created_at, last: d.updated_at, same: 0, status: d.status, releasedIn: d.released_in ?? null, out: d.status === "done" && isOut(d.released_in, shipped),
+        bundle: { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
+          out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks },
+        handed: Boolean(d.handed_at), reason: d.reason || "", assignee: d.assignee_name ?? null, createdBy: d.created_by_name, stage, dueAt: null });
+    } catch (e) {
+      unreadable(`dev:${d.id}`, "dev", d.id, e, { at: d.created_at, last: d.updated_at, status: d.status });
+    }
   }
-  for (const d of devById.values()) {
-    if (d.outside) continue;
-    let stage;
-    if (d.status === "rejected") stage = "rejected";
-    else if (d.status === "todo") stage = d.handed_at ? "handed" : "devwait";
-    else if (d.status === "doing") stage = "doing";
-    else if (d.status === "done" && !isOut(d.released_in, shipped)) stage = "built";
-    else stage = "closed";
-    // 오래전에 나간 개발사항은 닫힌 것으로 기간 안에서만.
-    if (stage === "closed" && d.updated_at <= since) continue;
-    rows.push({ key: `dev:${d.id}`, type: "dev", id: d.id, kind: null, kindName: "개발사항", title: d.title, text: clip(d.body, 600), path: null,
-      app: null, at: d.created_at, last: d.updated_at, same: 0, status: d.status, releasedIn: d.released_in ?? null, out: d.status === "done" && isOut(d.released_in, shipped),
-      bundle: { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
-        out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks },
-      handed: Boolean(d.handed_at), reason: d.reason || "", assignee: d.assignee_name ?? null, createdBy: d.created_by_name, stage, dueAt: null });
+  for (const v of rv) {
+    try {
+      const replied = v.status === "replied";
+      const low = v.stars <= REVIEWS.urgentStars;
+      rows.push({ key: `store_review:${v.id}`, type: "store_review", id: v.id, kind: null, kindName: "스토어 리뷰", stars: v.stars,
+        title: `별 ${v.stars}개 · ${v.text ? titleFrom(v.text) : "(글 없이 별점만)"}`, text: clip(v.text, 600), path: null, app: v.app || null,
+        at: v.at, last: v.reply_at ?? v.at, same: 0, status: v.status, link: "#/reviews",
+        review: { draft: clip(v.draft, REVIEWS.replyMax), draftBy: v.draft_by || "" },
+        said: replied && v.reply_at ? { text: clip(v.reply, 300), by: v.replied_by || "", at: v.reply_at } : null,
+        // 답 초안이 있으면 Play로 보내기(최고 관리자)만 남아요.
+        stage: replied ? "answered" : v.draft || v.status === "seen" ? "sorted" : "intake",
+        dueAt: !replied && low ? v.at + LEDGER.reviewHours * HOUR : null });
+    } catch (e) {
+      unreadable(`store_review:${v.id}`, "store_review", v.id, e, { at: v.at, last: v.at, status: v.status, kindName: "스토어 리뷰", title: "(읽지 못한 리뷰)" });
+    }
   }
+  rows.push(...brokenWorks);
   for (const x of work) {
     if (x.type === "inquiry" || x.type === "dev") continue;
     rows.push({ key: x.key, type: x.type, id: x.id, kind: null, kindName: x.typeName, title: x.title, text: "", path: null, app: null,
@@ -313,6 +327,23 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   for (const got of stateRows) for (const r of got) states.set(r.key, r);
   const kstEnd = Date.parse(`${ledgerDay(now)}T00:00:00+09:00`) + DAY;
   const out = rows.map((r) => {
+    try {
+      return lineOut(r);
+    } catch (e) {
+      bad.push({ key: r.key, e });
+      return { key: r.key, id: r.id, no: lines.get(r.key) ? lineNo(lines.get(r.key).n) : null, n: lines.get(r.key)?.n ?? 0, type: r.type,
+        typeName: Object.hasOwn(LEDGER_TYPES, r.type) ? LEDGER_TYPES[r.type] : "줄", kind: null, kindName: "", group: "ops", title: "(읽지 못한 줄)", summary: "",
+        summaryBy: "", text: "", path: null, app: null, model: null, topic: null, topicName: null, urgent: false, same: 0, n2: 0, meta: null, link: null,
+        at: iso(Number(r.at) || now), last: iso(Number(r.last) || Number(r.at) || now), age: 0, overlap: [], sort: null, skipped: null, handedIn: null, handed: false,
+        bundle: null, releasedIn: null, reason: "", stage: "intake", stageName: STAGES.intake, answer: null, ownerAsk: null, turn: "owner", turnName: TURNS.owner,
+        holder: null, due: null, late: false, dueToday: false, state: "new", stateName: WORK_STATE_NAMES.new, stateReason: "", stateReasonName: "", note: "",
+        reopened: 0, closed: false, lastMove: null, unreadable: errorLine(e) };
+    }
+  });
+  if (bad.length) await recordRowErrors(env, "ledger", bad, now);
+  return { rows: out, shipped, auto: sort?.auto ?? null, unreadable: bad.length };
+
+  function lineOut(r) {
     const s = states.get(r.key);
     const state = s?.state ?? "new";
     const line = lines.get(r.key);
@@ -322,7 +353,8 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     else if (r.type !== "inquiry" && r.type !== "dev") stage = state === "waiting" ? "waiting" : state === "seeing" ? "sorted" : stage;
     else if (stage === "intake" && state === "seeing") stage = "sorted";
     // 문의는 답을 보내 '답함'이 된 것, 묶인 개발사항이 반려됐거나 나가서 안내까지 간 것이 닫힘이에요. 개발이 남은 문의는 답을 받았어도 열려 있어요.
-    const closed = stage === "closed" || (r.type === "inquiry" ? r.status !== "open" && ["answered", "rejected", "shipped"].includes(stage) : stage === "rejected");
+    const closed = stage === "closed" || (r.type === "inquiry" ? r.status !== "open" && ["answered", "rejected", "shipped"].includes(stage)
+      : r.type === "store_review" ? r.status === "replied" : stage === "rejected");
     // 다음에 움직일 쪽.
     let turn = null;
     if (!closed && state !== "done") {
@@ -333,8 +365,14 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         else if (stage === "notify") turn = "claude";
       } else if (r.type === "dev") turn = stage === "built" ? "ship" : ["devwait", "handed", "doing"].includes(stage) ? "claude" : null;
       else if (r.type === "studio_need") turn = "claude";
+      // [RVA-50] 리뷰: 초안은 Claude(열쇠로 POST /reviews/<id>/draft), Play로 보내기는 최고 관리자.
+      else if (r.type === "store_review") turn = r.review?.draft ? "owner" : "claude";
+      // [RVA-56] 깨진 작품은 개발(스튜디오·장터 갈래)이 고쳐요.
+      else if (r.type === "market_broken") turn = "claude";
       else turn = "admin";
       if (state === "waiting") turn = s.reason === "user" ? "asker" : s.reason === "dev" ? "claude" : turn;
+      // 2.0.0 [RVA-37] 읽지 못한 줄은 사람이 봐요(Claude·자동 답이 손대지 않게, 오늘 보기에 올라와요).
+      if (r.unreadable) turn = "owner";
     }
     // 담당: 누가 잡고 있으면 그 사람, 아니면 차례.
     const holder = s && state !== "new" && state !== "done" && s.by_name ? s.by_name : r.assignee && whoKind(r.assignee) === "person" ? r.assignee : null;
@@ -345,13 +383,17 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       line?.summary_at ? { at: line.summary_at, by: line.summary_by, what: "요약" } : null,
       r.type === "dev" ? { at: r.last, by: r.assignee || r.createdBy || "", what: DEV.statuses[r.status] ?? r.status } : null,
     ].filter(Boolean).sort((a, b) => b.at - a.at)[0] ?? null;
-    const answer = r.type !== "inquiry" ? null
+    const answer = r.type === "store_review"
+      ? r.said ? { key: "sent", name: "보냄", text: r.said.text, by: r.said.by, byKind: whoKind(r.said.by), at: iso(r.said.at) }
+        : r.review?.draft ? { key: "draft", name: "초안 있음", text: r.review.draft, by: r.review.draftBy, byKind: whoKind(r.review.draftBy) }
+        : { key: "none", name: "안 함" }
+      : r.type !== "inquiry" ? null
       : r.said && (!r.waitingAdmin) ? { key: "sent", name: "보냄", text: r.said.text, by: r.said.by, byKind: whoKind(r.said.by), at: iso(r.said.at) }
       : r.ownerAsk && r.waitingAdmin ? { key: "owner", name: "최고 관리자 확인", why: r.ownerAsk.name, ...(r.said ? { before: r.said.text } : {}) }
       : { key: "none", name: r.said ? "새 말에 아직" : "안 함", ...(r.said ? { before: r.said.text, by: r.said.by } : {}) };
     return {
       key: r.key, id: r.id, no: line ? lineNo(line.n) : null, n: line?.n ?? 0, type: r.type, typeName: LEDGER_TYPES[r.type] ?? r.type, kind: r.kind, kindName: r.kindName,
-      group: Object.keys(WORK_GROUPS).find((g) => WORK_GROUPS[g].includes(r.type)) ?? "ops",
+      group: Object.keys(LEDGER_GROUPS).find((g) => LEDGER_GROUPS[g].includes(r.type)) ?? "ops", ...(r.stars ? { stars: r.stars } : {}),
       title: r.title, summary: line?.summary || "", summaryBy: line?.summary_by || "", text: r.text, path: r.path, app: r.app, model: r.model ?? null,
       topic: r.topic ?? null, topicName: r.topicName ?? null, urgent: Boolean(r.urgent), same: r.same, n2: r.n ?? 0, meta: r.meta ?? null, link: r.link ?? null,
       at: iso(r.at), last: iso(Math.max(r.last ?? r.at, lastMove?.at ?? 0)), age: Math.max(0, Math.floor((now - r.at) / HOUR)),
@@ -365,9 +407,9 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       stateReasonName: state === "waiting" ? WAIT_REASONS[s?.reason] ?? "" : state === "done" ? DONE_REASONS[s?.reason] ?? "" : "",
       note: s?.note ?? "", reopened: s?.reopened ?? 0, closed: closed || state === "done",
       lastMove: lastMove ? { at: iso(lastMove.at), by: lastMove.by, byKind: whoKind(lastMove.by), what: lastMove.what } : null,
+      ...(r.unreadable ? { unreadable: r.unreadable } : {}),
     };
-  });
-  return { rows: out, shipped, auto: sort?.auto ?? null };
+  }
 }
 
 /** 오래된 것이 위로: 기한 넘김 → 다시 열림 → 최고 관리자 확인 → 기한 가까운 순 → 오래된 순. 닫힌 것은 최근 것이 위로. */
@@ -408,7 +450,7 @@ function matches(r, q) {
 export async function ledgerQuery(env, actor, now, params) {
   const view = VIEWS[params.get("view")] ? params.get("view") : "today";
   const type = LEDGER_TYPES[params.get("type")] ? params.get("type") : null;
-  const group = WORK_GROUPS[params.get("group")] ? params.get("group") : null;
+  const group = LEDGER_GROUPS[params.get("group")] ? params.get("group") : null;
   const v = /^\d{1,2}(\.\d{1,2}){0,2}$/.test(params.get("v") ?? "") ? params.get("v") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 60);
   const days = Number(params.get("days")) || LEDGER.days;
@@ -416,7 +458,7 @@ export async function ledgerQuery(env, actor, now, params) {
   const open = rows.filter((r) => !r.closed);
   const counts = Object.fromEntries(Object.keys(VIEWS).map((k) => [k, rows.filter((r) => inView(r, k, now)).length]));
   const items = rows.filter((r) => inView(r, view, now) && (!type || r.type === type) && (!group || r.group === group) && inVersion(r, v) && matches(r, q)).sort(ledgerOrder);
-  const groups = Object.fromEntries(Object.keys(WORK_GROUPS).map((g) => [g, rows.filter((r) => inView(r, view, now) && r.group === g).length]));
+  const groups = Object.fromEntries(Object.keys(LEDGER_GROUPS).map((g) => [g, rows.filter((r) => inView(r, view, now) && r.group === g).length]));
   const versions = [...new Set(rows.flatMap((r) => [r.app, r.releasedIn]).filter(Boolean))]
     .sort((a, b) => compareVersions(version(b), version(a))).slice(0, 12);
   const start = Date.parse(`${ledgerDay(now)}T00:00:00+09:00`);
@@ -502,7 +544,8 @@ async function visible(env, actor, now, keys) {
   return keys.filter((k) => mine.has(k));
 }
 
-const KEY_RE = /^[a-z_]{2,20}:[A-Za-z0-9._-]{1,60}$/;
+// [RVA-50] Play 리뷰 번호는 'gp:…'처럼 콜론이 있고 길어요.
+const KEY_RE = /^[a-z_]{2,20}:[A-Za-z0-9._:-]{1,120}$/;
 
 async function setStates(env, actor, now, keys, state, reason, note, action = state, before = null) {
   const known_ = await all(env, `SELECT key, state, reason FROM work_states WHERE key IN (${keys.map(() => "?").join(",")})`, ...keys);
@@ -525,7 +568,11 @@ export async function ledgerRoute(request, env, url, path, now) {
   if (path === "/ledger" && method === "GET") {
     const d = await ledgerQuery(env, actor, now, url.searchParams);
     const page = Math.max(0, Number(url.searchParams.get("page")) || 0);
-    return json({ ...d, items: d.items.slice(page * LEDGER.page, (page + 1) * LEDGER.page), more: d.items.length > (page + 1) * LEDGER.page });
+    // 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 관리자 앱은 limit=50으로 50줄씩 이어 받아요(1.79MB를 한 번에 받던 것). 열쇠·CSV는 그대로 300줄·모두.
+    const size = Math.min(LEDGER.page, Math.max(10, Number(url.searchParams.get("limit")) || LEDGER.page));
+    const more = d.items.length > (page + 1) * size;
+    return json({ ...d, items: d.items.slice(page * size, (page + 1) * size), more, next: more ? page + 1 : null, page, size,
+      lateTotal: d.items.filter((r) => r.late).length });
   }
   if (path === "/ledger.csv" && method === "GET") {
     const d = await ledgerQuery(env, actor, now, url.searchParams);

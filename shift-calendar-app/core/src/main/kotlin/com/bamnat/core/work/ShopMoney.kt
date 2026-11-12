@@ -104,6 +104,25 @@ object CardSettlement {
         return open.groupBy { it.payDate }.entries.sortedWith(compareBy { kotlin.math.abs(it.key.toEpochDay() - date.toEpochDay()) })
             .firstOrNull { (_, list) -> list.size > 1 && close(amount, list.sumOf { it.amount }) }?.value.orEmpty()
     }
+
+    /** [R200-04] A card company's deposit waiting for its other parts: [id] its ledger line, on [date]. */
+    data class Part(val id: Long, val date: LocalDate, val amount: Long)
+
+    /**
+     * [R200-04] (검토 MONEY-41 넘긴 일) Each card company pays its own part of a day's card sales (삼성 81,300원, 신한 115,700원 …),
+     * so no single deposit fits. A deposit of [amount] on [date] that [match]es nothing is added to the [waiting] parts: first
+     * the ones that came the same day, then all from the five days before, and when their sum fits ([match]) those days are
+     * settled. Returns the days and the parts used (without the new one), or null when even together they fit nothing.
+     */
+    fun matchParts(amount: Long, date: LocalDate, waiting: List<Part>, expected: List<Expected>): Pair<List<Expected>, List<Part>>? {
+        val near = waiting.filter { !it.date.isAfter(date) && !it.date.isBefore(date.minusDays(5)) }
+        for (set in listOf(near.filter { it.date == date }, near).distinct()) {
+            if (set.isEmpty()) continue
+            val days = match(amount + set.sumOf { it.amount }, date, expected)
+            if (days.isNotEmpty()) return days to set
+        }
+        return null
+    }
 }
 
 /** [SHOP-03] 시재: the cash that should be in the till at closing, against what was counted. */

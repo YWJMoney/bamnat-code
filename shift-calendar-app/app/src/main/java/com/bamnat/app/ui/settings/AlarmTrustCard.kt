@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,11 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +43,7 @@ import com.bamnat.app.ui.diag.applyAlarmFix
 import com.bamnat.core.time.Today
 import java.time.LocalDate
 import kotlinx.coroutines.launch
+import com.bamnat.app.ui.theme.color
 
 /** [EASE-17] The row title settings search points at. */
 const val SKIP_ONCE_ROW = "이번만 끄기"
@@ -70,27 +71,38 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
     val today = Today.date()
     SectionCard(title = "다음 알람", modifier = Modifier.focusMark(SKIP_ONCE_ROW)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(nextLine(settings.alarmsEnabled, upcoming, today), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(nextLine(settings.alarmsEnabled, upcoming, today, settings.workStyle), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             // [ALRM-26] 1.38: the next few, each with its own 이번만 끄기 / 다시 켜기 (not only the very next one).
+            // 2.0.0 [RVI-65] (디자인 품질 2·12) Three filled '이번만 끄기' stood in a column, and at 200% they left the time a word
+            // per line ('내일 / 06:30 / 주간 / 근무'): each alarm is a row with a switch, as an alarm list is, the whole row a target.
             if (settings.alarmsEnabled) for (r in ahead) {
                 val off = r.triggerAtMillis in skips
                 val at = AlarmScheduler.millisToLocal(r.triggerAtMillis)
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                        value = !off,
+                        enabled = off || skips.size < AlarmSoon.MAX_SKIPS,
+                        role = androidx.compose.ui.semantics.Role.Switch,
+                        onValueChange = { on ->
+                            if (on) AlarmSoon.unskip(context, r.triggerAtMillis) else AlarmSoon.skip(context, r.triggerAtMillis)
+                            refresh++
+                        },
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
                         Text("${whenText(at.toLocalDate(), today)} ${Fmt.time(at.toLocalTime())}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (off) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
                             textDecoration = if (off) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
-                        Text(if (off) "이번만 꺼 뒀어요" else r.title, style = MaterialTheme.typography.bodySmall,
+                        Text(if (off) "이번만 꺼 뒀어요" else r.title(settings.workStyle), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (off) OutlinedButton(onClick = { AlarmSoon.unskip(context, r.triggerAtMillis); refresh++ }) { Text("다시 켜기") }
-                    else FilledTonalButton(onClick = { AlarmSoon.skip(context, r.triggerAtMillis); refresh++ },
-                        enabled = skips.size < AlarmSoon.MAX_SKIPS) { Text(SKIP_ONCE_ROW) }
+                    Switch(checked = !off, onCheckedChange = null, enabled = off || skips.size < AlarmSoon.MAX_SKIPS)
                 }
             }
             if (settings.alarmsEnabled && ahead.isNotEmpty()) {
-                Text("끈 알람만 쉬고 나머지는 그대로 울려요. 날마다 끄려면 달력에서 그 날을 눌러요", style = MaterialTheme.typography.bodySmall,
+                Text("$SKIP_ONCE_ROW · 끈 알람만 한 번 쉬어요 · 날마다 끄려면 달력에서 그날을 눌러요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -106,7 +118,20 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                     color = if (bad.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
                 )
             }
-            for (check in bad.take(MAX_SHOWN)) {
+            // 2.0.0 [RVI-91] (검토 I03c-02) How the week went, and the silent daytime rehearsals: trust shown, not only promised.
+            val trust by androidx.compose.runtime.produceState<String?>(null, refresh) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { com.bamnat.core.diag.EventBook.trustLine(c.telemetry.log.read(), Today.millis()) }.getOrNull()
+                }
+            }
+            trust?.let { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 28.dp),
+                    color = if ("늦게" in line || "기록 없음" in line || "오지 않았어요" in line) com.bamnat.app.ui.theme.Tone.Caution.color()
+                        else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // 2.0.0 [RVI-65] (디자인 품질 2·4, the settings top card [RVI-38] alike) The most serious one with its button; the rest are
+            // counted and wait in 알람 점검 below, which lists each with its own fix. Three paragraphs and three buttons read as a page.
+            bad.firstOrNull()?.let { check ->
                 Column(Modifier.padding(start = 28.dp)) {
                     Text(check.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     Text(check.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -114,15 +139,16 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) { Text(check.fixLabel) }
                 }
             }
-            if (bad.size > MAX_SHOWN) {
-                Text("그 밖에 ${bad.size - MAX_SHOWN}가지는 알람 점검에서 볼 수 있어요", style = MaterialTheme.typography.bodySmall,
+            if (bad.size > 1) {
+                Text("고칠 것이 ${bad.size - 1}가지 더 있어요 · 아래 알람 점검에서 모두 고칠 수 있어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
             }
             Text(CALL_LINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 28.dp))
         }
         // [ALRM-27] 알람 지킴이: the same checks a few hours before each alarm, said while there is time to fix them.
-        SwitchRow(GUARD_ROW, "알람 ${com.bamnat.app.alarm.AlarmGuard.LEAD_MILLIS / 3_600_000}시간 전에 소리 0·알림 꺼짐·방해 금지처럼 알람을 막는 것이 있으면 미리 알려요. 휴가 뒤 첫 알람은 전날 저녁에 알려요",
+        // 2.0.0 [RVI-65] (디자인 품질 4) One line; what it looks at is in 알람 점검 below.
+        SwitchRow(GUARD_ROW, "알람을 막는 것이 있으면 ${com.bamnat.app.alarm.AlarmGuard.LEAD_MILLIS / 3_600_000}시간 전에 미리 알려요 · 휴가 뒤 첫 알람은 전날 저녁에",
             settings.alarmGuard) { on ->
             c.settingsRepository.update { it.copy(alarmGuard = on) }
             c.appScope.launch { runCatching { c.rescheduleAlarms() } }
@@ -135,18 +161,18 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
     }
 }
 
-private const val MAX_SHOWN = 3
 
 /** [EASE-21] How the alarm meets a call ([com.bamnat.app.alarm.AlarmService.holdsForCall]). */
-internal const val CALL_LINE = "통화 중에 울릴 때는 소리를 멈췄다가 통화가 끝나면 다시 울려요. 메신저 통화는 3분, 전화는 30분이 넘으면 그대로 울려요"
+// 2.0.0 [RVI-65] (디자인 품질 4) One line, as the call wait now is ([RVI-36]: 끝나면 바로, 메신저 3분·전화 30분 한도).
+internal const val CALL_LINE = "통화 중이면 끝나는 대로 울려요 · 메신저 3분, 전화 30분이 넘으면 그대로"
 
 /** "내일 (11월 6일 목) 05:30 · 주간 근무 알람", or why there is none. */
-internal fun nextLine(enabled: Boolean, next: UpcomingAlarm?, today: LocalDate): String = when {
+internal fun nextLine(enabled: Boolean, next: UpcomingAlarm?, today: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): String = when {
     !enabled -> "알람이 모두 꺼져 있어요"
     next == null -> "120일 안에 울릴 알람이 없어요"
     else -> {
         val at = next.plan.triggerAt
-        val what = if (next.plan.shiftName.isBlank()) "이 날 알람" else com.bamnat.core.alarm.AlarmWords.alarm(next.plan.shiftName) // 1.39 [SHOP-13]
+        val what = if (next.plan.shiftName.isBlank()) "이 날 알람" else com.bamnat.core.alarm.AlarmWords.alarm(next.plan.shiftName, style) // 1.39 [SHOP-13]
         "${whenText(at.toLocalDate(), today)} ${Fmt.time(at.toLocalTime())} · $what"
     }
 }

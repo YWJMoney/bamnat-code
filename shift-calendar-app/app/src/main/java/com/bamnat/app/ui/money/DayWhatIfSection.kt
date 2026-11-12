@@ -66,7 +66,8 @@ fun DayWhatIfSection(date: LocalDate, snapshot: ScheduleSnapshot, profile: PayPr
     }.collectAsState(null)
     com.bamnat.app.ui.guide.FeatureCard("money.whatIf", calendarId) {
         Column(Modifier.padding(top = 8.dp)) {
-            Text("이날 일하면?", style = MaterialTheme.typography.titleSmall)
+            // 2.0.0 [RVK-43] (검토 T06a-09) On a working day the chips are 연차·쉬는 날, so the question is '이날 쉬면?'.
+            Text(DayWhatIf.question(changes), style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 changes.forEachIndexed { i, c -> FilterChip(selected = i == picked, onClick = { picked = i }, label = { Text(c.label) }) }
             }

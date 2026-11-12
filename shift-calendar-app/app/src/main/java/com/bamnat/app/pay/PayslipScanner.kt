@@ -17,6 +17,8 @@ import com.bamnat.core.pay.SlipReading
 import com.bamnat.core.pay.SlipVote
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -98,54 +100,68 @@ object PayslipScanner {
         var photo = ImagePrep.load(context, uri)
         if (turn != 0) photo = ImagePrep.turned(photo, turn.toFloat()).also { if (it !== photo) photo.recycle() }
         progress(1, 0)
-        var first = OcrModel.read(context, photo, preparing)
-        var firstLines = lines(first)
-        var kept = turn
-        // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads
-        // like a payslip ([PhotoTurn]); the way that read well last time on this phone is tried first, and a good one stops.
-        if (turn == 0 && PhotoTurn.worthTurning(firstLines)) {
-            val memory = TurnMemory(context)
-            val tried = mutableMapOf<Int, Pair<Text, List<OcrLine>>>()
-            for (deg in PhotoTurn.candidates(firstLines, memory.last)) {
-                val turned = runCatching { ImagePrep.turned(photo, deg.toFloat()) }.getOrNull() ?: continue
-                val t = runCatching { OcrModel.read(context, turned) }.getOrNull()
-                turned.recycle()
-                if (t == null) continue
-                tried[deg] = t to lines(t)
-                if (PhotoTurn.pick(firstLines, mapOf(deg to tried.getValue(deg).second)) == deg && !PhotoTurn.worthTurning(tried.getValue(deg).second)) break
+        // 2.0.0 [RVL-31] (검토 SCAN-03·SCAN-24) One recognizer for all the ways, and a cancelled reading stops at the next one.
+        OcrModel.reading(context, preparing) { reader ->
+            var first = reader.read(photo)
+            var firstLines = lines(first)
+            var kept = turn
+            // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads
+            // like a payslip ([PhotoTurn]); the way that read well last time on this phone is tried first, and a good one stops.
+            if (turn == 0 && PhotoTurn.worthTurning(firstLines)) {
+                val memory = TurnMemory(context)
+                val tried = mutableMapOf<Int, Pair<Text, List<OcrLine>>>()
+                for (deg in PhotoTurn.candidates(firstLines, memory.last)) {
+                    currentCoroutineContext().ensureActive()
+                    val turned = runCatching { ImagePrep.turned(photo, deg.toFloat()) }.getOrNull() ?: continue
+                    val t = attempt { reader.read(turned) }
+                    turned.recycle()
+                    if (t == null) continue
+                    tried[deg] = t to lines(t)
+                    if (PhotoTurn.pick(firstLines, mapOf(deg to tried.getValue(deg).second)) == deg && !PhotoTurn.worthTurning(tried.getValue(deg).second)) break
+                }
+                val best = PhotoTurn.pick(firstLines, tried.mapValues { it.value.second })
+                if (best != 0) {
+                    val turned = ImagePrep.turned(photo, best.toFloat())
+                    if (photo !== turned) photo.recycle()
+                    photo = turned
+                    first = tried.getValue(best).first; firstLines = tried.getValue(best).second
+                    kept = best
+                }
+                memory.last = best.takeIf { it != 0 } ?: memory.last
             }
-            val best = PhotoTurn.pick(firstLines, tried.mapValues { it.value.second })
-            if (best != 0) {
-                val turned = ImagePrep.turned(photo, best.toFloat())
-                if (photo !== turned) photo.recycle()
-                photo = turned
-                first = tried.getValue(best).first; firstLines = tried.getValue(best).second
-                kept = best
+            val texts = mutableListOf(join(first, firstLines))
+            // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
+            val boxes = mutableListOf(words(first))
+            val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
+            val plan = ImagePrep.plan(photo, letter)
+            val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
+                firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
+            // C 1.32 [STAB-05] A phone short of memory makes at most two other readings, and none once memory runs low.
+            val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }.let { if (ImagePrep.tight(context)) it.take(2) else it }
+            for ((i, kind) in more.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                progress(i + 2, more.size + 1)
+                if (ImagePrep.low(context)) continue
+                val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: continue
+                val t = attempt { reader.read(v.bitmap) }
+                if (v.bitmap !== photo) v.bitmap.recycle()
+                // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
+                if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }
             }
-            memory.last = best.takeIf { it != 0 } ?: memory.last
+            val (tilt, keystone) = OcrRows.lean(firstLines)
+            val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
+            if (com.bamnat.app.BuildConfig.DEBUG) dump(boxes)
+            put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
         }
-        val texts = mutableListOf(join(first, firstLines))
-        // [PHOTO-01] 1.29: each reading's words with their boxes, for reading the payslip as the table it is (SlipReading).
-        val boxes = mutableListOf(words(first))
-        val letter = PhotoVariants.median(firstLines.map { (it.bottom - it.top).coerceAtLeast(1) })
-        val plan = ImagePrep.plan(photo, letter)
-        val box = if (firstLines.isEmpty()) null else android.graphics.Rect(firstLines.minOf { it.left }, firstLines.minOf { it.top },
-            firstLines.maxOf { it.right }, firstLines.maxOf { it.bottom })
-        // C 1.32 [STAB-05] A phone short of memory makes at most two other readings, and none once memory runs low.
-        val more = plan.kinds.filter { it != PhotoVariants.Kind.ORIG }.let { if (ImagePrep.tight(context)) it.take(2) else it }
-        more.forEachIndexed { i, kind ->
-            progress(i + 2, more.size + 1)
-            if (ImagePrep.low(context)) return@forEachIndexed
-            val v = ImagePrep.variant(photo, kind, box, letter, plan.moire) ?: return@forEachIndexed
-            val t = runCatching { OcrModel.read(context, v.bitmap) }.getOrNull()
-            if (v.bitmap !== photo) v.bitmap.recycle()
-            // Each reading's words go back on the photo's own pixels, so a doubled crop's letters measure as the photo's.
-            if (t != null) join(t, lines(t)).takeIf { it.isNotBlank() }?.let { texts += it; boxes += onPhoto(words(t), v) }
-        }
-        val (tilt, keystone) = OcrRows.lean(firstLines)
-        val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
-        if (com.bamnat.app.BuildConfig.DEBUG) dump(boxes)
-        put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
+    }
+
+    /** 2.0.0 [RVL-31] (검토 SCAN-03) One more way whose failure only leaves it out; a cancelled reading is not a failed one. */
+    private suspend fun <T> attempt(block: suspend () -> T): T? = try {
+        block()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /**
@@ -164,41 +180,115 @@ object PayslipScanner {
     }
 
     /**
+     * 2.0.0 [RVL-41][RVL-44] What a payslip PDF gave: its payslips ([Slips], one, or one a month or a person), or that it is
+     * locked and asks for its password ([Locked]).
+     */
+    sealed interface PdfRead {
+        /**
+         * [scans]: each payslip read (the screen's picture of a PDF with its text is drawn when that one is picked, [shown]);
+         * [cut]: "PDF가 9쪽이라 앞 6쪽만 읽었어요" when it had more pages than are read.
+         */
+        class Slips internal constructor(val scans: List<Scan>, val cut: String?, internal val pdf: com.bamnat.app.imports.AnyFile.Pdf?, internal val firstPages: List<Int>) : PdfRead
+        data class Locked(val lock: com.bamnat.app.imports.PdfLock) : PdfRead
+    }
+
+    /**
      * [READ-34] 1.38 (사용자 2026-11-06 "기술적인 부분은 만들어서 넣을 수 있는 거 아니야?"): a payslip PDF from the company's ERP, a
      * 급여 프로그램 or a 노무 site. With its letters in it, those are read as they are ([PdfText]): no OCR, so nothing to misread
-     * (정답 묶음 83/83). A scanned PDF's pages are read as photos. Each page is a page of one payslip ([combine]). All on the phone;
-     * the copies a scan needs are in the app's cache and deleted at once.
+     * (정답 묶음 83/83). A scanned PDF's pages are read as photos. All on the phone; the copies a scan needs are in the app's cache
+     * and deleted at once.
+     * 2.0.0 [RVL-41] (검토 U07b-10·I07bb-01) A locked one opens with the [password] typed (for this reading only).
+     * [RVL-42] (검토 SCAN-15) Letters that hold no payslip, rules or 체결 are read again from the drawn pages.
+     * [RVL-43] (검토 SCAN-18) A scan is drawn a page at a time, and the picture shown is drawn once, for the payslip picked.
+     * [RVL-44] (검토 SCAN-28·I07bb-04) Several payslips (months, people) in one file are kept apart ([SlipReading.slips]); 1.39 put
+     * every page into one payslip.
      */
-    suspend fun scanPdf(context: Context, uri: Uri, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+    suspend fun scanPdf(
+        context: Context, uri: Uri, password: CharArray? = null, progress: (Int, Int) -> Unit = { _, _ -> },
+    ): PdfRead = withContext(Dispatchers.Default) {
         val bytes = com.bamnat.app.imports.AnyFile.bytes(context, uri, com.bamnat.app.imports.AnyFile.MAX_PDF)
-        val shown = runCatching { com.bamnat.app.imports.AnyFile.render(context, bytes).let { pages ->
-            pages.drop(1).forEach { it.recycle() }
-            pages.firstOrNull()?.let { ImagePrep.forScreen(it).first }
-        } }.getOrNull()
-        val text = com.bamnat.core.imports.PdfText.pages(bytes)?.map { page -> page.map { OcrLine(it.text, it.left, it.top, it.right, it.bottom) } }
-            ?.filter { it.isNotEmpty() }
-        if (!text.isNullOrEmpty()) {
-            val templates = runCatching { com.bamnat.app.data.ReadFixBook.get(context).templates() }.getOrDefault(emptyList())
-            return@withContext text.map { words -> put(listOf(OcrRows.join(words)), null, null, listOf(words), templates) }
-                .reduce(::combine).let { s -> Scan(s.text, s.texts, s.slip, s.fills, shown, null, s.boxes, s.pages) }
+        val pdf = com.bamnat.app.imports.AnyFile.Pdf(bytes, password)
+        val opened = com.bamnat.core.imports.PdfText.open(bytes, password)
+        if (opened is com.bamnat.core.imports.PdfText.Opened.Locked) {
+            return@withContext PdfRead.Locked(if (opened.wrong) com.bamnat.app.imports.PdfLock.WRONG else com.bamnat.app.imports.PdfLock.ASK)
         }
-        // A scan: its pages as photos (at most AnyFile.MAX_PAGES), read the way a photo is.
-        val pages = com.bamnat.app.imports.AnyFile.render(context, bytes)
+        val templates = runCatching { com.bamnat.app.data.ReadFixBook.get(context).templates() }.getOrDefault(emptyList())
+        var fromText: PdfRead.Slips? = null
+        if (opened is com.bamnat.core.imports.PdfText.Opened.Words) {
+            val each = opened.pages.map { page ->
+                val words = page.map { OcrLine(it.text, it.left, it.top, it.right, it.bottom) }
+                put(listOf(OcrRows.join(words)), null, null, listOf(words), templates)
+            }
+            val groups = apart(each)
+            val scans = groups.map { g -> g.map { each[it] }.reduce(::combine) }
+            fromText = PdfRead.Slips(scans, com.bamnat.app.imports.AnyFile.cutLine(opened.total, opened.pages.size), pdf, groups.map { it.first() })
+            if (scans.any(::found)) return@withContext single(context, fromText)
+        }
+        // A scan, or letters that held nothing: its pages as photos (at most AnyFile.MAX_PAGES), drawn and read one at a time.
+        val drawn = try {
+            pictures(context, pdf, progress)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The letters are still there to show when the pictures could not be read.
+            fromText ?: throw e
+            null
+        }
+        if (drawn != null && (fromText == null || drawn.scans.any(::found))) drawn else single(context, fromText!!)
+    }
+
+    /**
+     * [RVL-44] The pages of each payslip in the file ([SlipReading.slips]). A 체결 내역 PDF is one record however many pages it
+     * has: its pages stay together.
+     */
+    private fun apart(each: List<Scan>): List<List<Int>> =
+        if (each.isEmpty() || each.any { it.fills.isNotEmpty() }) listOf(each.indices.toList()).filter { it.isNotEmpty() }
+        else SlipReading.slips(each.map { it.slip })
+
+    /** One payslip goes on at once, with its picture. */
+    private suspend fun single(context: Context, r: PdfRead.Slips): PdfRead.Slips =
+        if (r.scans.size == 1) PdfRead.Slips(listOf(shown(context, r, 0)), r.cut, r.pdf, r.firstPages) else r
+
+    /** A reading that found something to use: payslip lines, 체결, or rules. */
+    private fun found(s: Scan): Boolean = s.slip.read.lines.isNotEmpty() || s.fills.isNotEmpty() || RuleText.read(s.text).isNotEmpty()
+
+    private suspend fun pictures(context: Context, pdf: com.bamnat.app.imports.AnyFile.Pdf, progress: (Int, Int) -> Unit): PdfRead.Slips {
         val dir = File(context.cacheDir, "scan").apply { mkdirs() }
-        try {
-            pages.mapIndexed { i, bmp ->
+        return com.bamnat.app.imports.AnyFile.pages(context, pdf).use { src ->
+            val each = (0 until src.count).map { i ->
+                currentCoroutineContext().ensureActive()
+                val bmp = src.page(i)
                 val f = File(dir, "payslip-pdf-$i.jpg")
                 try {
                     f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
                     bmp.recycle()
-                    scan(context, Uri.fromFile(f), scanned = true) { n, m -> progress(i * 10 + n, pages.size * 10) }
+                    // [RVL-43] Each page's picture is let go once read (20 held at once was the 1.39 out-of-memory); the
+                    // payslip picked is drawn again to be shown ([shown]).
+                    val s = scan(context, Uri.fromFile(f), scanned = true) { n, m -> progress(i * 10 + n, src.count * 10) }
+                    Scan(s.text, s.texts, s.slip, s.fills, null, s.quality, s.boxes, s.pages).also { it.turn = s.turn }
                 } finally {
+                    if (!bmp.isRecycled) bmp.recycle()
                     f.delete()
                 }
-            }.reduce(::combine)
-        } finally {
-            pages.forEach { if (!it.isRecycled) it.recycle() }
+            }
+            val groups = apart(each)
+            PdfRead.Slips(groups.map { g -> g.map { each[it] }.reduce(::combine) }, com.bamnat.app.imports.AnyFile.cutLine(src.total, src.count), pdf, groups.map { it.first() })
         }
+    }
+
+    /**
+     * 2.0.0 [RVL-43][RVL-44] Payslip [i] of [read], with the picture of its first page for "사진과 같은가요?" (a PDF with its text has
+     * none until picked: one page drawn, at screen size).
+     */
+    suspend fun shown(context: Context, read: PdfRead.Slips, i: Int): Scan = withContext(Dispatchers.IO) {
+        val s = read.scans[i]
+        val pdf = read.pdf
+        if (s.image != null || pdf == null) return@withContext s
+        val page = com.bamnat.app.imports.AnyFile.page(context, pdf, read.firstPages.getOrElse(i) { 0 })
+        // A scanned page read turned is shown as it was read.
+        val turned = page?.let { p -> if (s.turn != 0) ImagePrep.turned(p, s.turn.toFloat()).also { if (it !== p) p.recycle() } else p }
+        val image = turned?.let { p -> ImagePrep.forScreen(p).first.also { if (it !== p) p.recycle() } }
+        Scan(s.text, s.texts, s.slip, s.fills, image, s.quality, s.boxes, s.pages).also { it.turn = s.turn }
     }
 
     /** A 1.32 [FIX132-01] The last turn that made a photo read well on this phone (a phone that always saves them one way). */

@@ -83,7 +83,8 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
     var open by rememberSaveable(e.id) { mutableStateOf(false) }
     val dot = when (e.kind) {
         StoryKind.Shift -> shiftColor
-        StoryKind.Sleep, StoryKind.SleepPlan -> Color(0xFF6F7BD8)
+        // 2.0.0 [RVP-12] (검토 UIX-12) The calendar's sleep colour.
+        StoryKind.Sleep, StoryKind.SleepPlan -> com.bamnat.app.ui.theme.LocalCalendarColors.current.sleep
         else -> storyTone(e.tone).takeIf { it != Tone.Plain }?.color() ?: MaterialTheme.colorScheme.outline
     }
     // The thing's own times, with the day said when it is not this one: "어제 19:00–07:00", "19:00–내일 07:00".
@@ -156,4 +157,5 @@ private fun goingLabel(kind: StoryKind) = when (kind) {
     else -> "지금"
 }
 
-private fun hm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)
+// 2.0.0 [RVP-27] (검토 UIX-50) In the clock the settings chose.
+private fun hm(t: LocalDateTime) = com.bamnat.app.ui.Fmt.time(t.toLocalTime())

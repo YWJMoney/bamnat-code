@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.core.recipe.PieceKind
+import androidx.compose.ui.semantics.Role
 
 /**
  * [RCP-38] 설정 › 나눔 판: turn it off (every way in goes, with where to turn it back on), the recipes put on this phone with
@@ -59,10 +60,12 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val mine by vm.mine.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.shownAgain() }
+    val missedParts by vm.missedParts.collectAsStateWithLifecycle()
+    LaunchedEffect(applied.size) { vm.loadMissedParts() }
     val newer by vm.newer.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     // [RCX-26] Every 지우기 here asks first (한 번 지운 것은 돌아오지 않아요).
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
@@ -70,8 +73,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
     LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
+        topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 작품", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
@@ -80,24 +83,24 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     Column(Modifier.weight(1f)) {
                         Text("장터 쓰기", style = MaterialTheme.typography.bodyLarge)
                         Text(if (on) "마을에 장터 칸과 설정 화면의 ‘이 설정 나누기’가 보여요"
-                            else "꺼져 있어요. 다시 켜려면 여기(마을 › 공방 › 내 것)로 오세요. 넣어 둔 레시피는 그대로예요",
+                            else "꺼져 있어요. 다시 켜려면 여기(마을 › 공방 › 내 것)로 오세요. 넣어 둔 작품은 그대로예요",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(on, vm::setOn)
                 }
                 if (on) NewsSwitches()
                 if (on) Row {
-                    TextButton(onClick = onList) { Text("레시피 보러 가기") }
+                    TextButton(onClick = onList) { Text("작품 보러 가기") }
                     me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 프로필") } }
                 }
 
-                Header("받은 레시피")
+                Header("받은 작품")
                 // 1.37 PC 3차 (받은 꾸밈이 서랍과 공방에 나뉘어 있어요): where all of it is together.
                 Muted("입은 테마·얹은 탭·담아 둔 조각까지 한곳에서 보려면 마을 › 테마(내 서랍)로 가요. 여기서는 새 판 반영과 알림을 정해요")
-                if (applied.none { !com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }) Muted("아직 넣은 레시피가 없어요")
+                if (applied.none { !com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }) Muted("아직 넣은 작품이 없어요")
                 // 1.37 PC d12d4cf1: a look mixed and put on in the studio (‘조합 · …’) is mine, in 내 서랍, not a recipe received.
                 applied.filterNot { com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }.take(30).forEach { e ->
-                    Card(Modifier.fillMaxWidth().clickable(enabled = e.code.isNotEmpty()) { onOpen(e.code) }) {
+                    Card(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = e.code.isNotEmpty()) { onOpen(e.code) }) {
                         Column(Modifier.padding(12.dp)) {
                             Text(e.title, style = MaterialTheme.typography.titleSmall)
                             Text(e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.joinToString(" · ") + " · " +
@@ -114,10 +117,15 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     Switch(sub, { sub = it; vm.subscribe(e.code, it) })
                                 }
                             }
+                            // 2.0.0 [RVS-12] HQ-57 ②: its 부품 꾸미기 did not go on before (1.36~1.39); put on only when asked, so nothing changes by itself.
+                            if (e.id in missedParts) {
+                                Muted("이 작품의 부품 꾸미기는 아직 안 들어갔어요 · 넣어도 7일 안에 되돌릴 수 있어요")
+                                TextButton(onClick = { vm.putMissedParts(e) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("부품 꾸미기 넣기") }
+                            }
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")
                                 e.replacedAt == com.bamnat.app.data.RecipeBackup.RESTORED -> Muted("백업에서 돌아왔어요 · 되돌리기는 넣은 휴대폰에서만 돼요")
-                                e.replacedAt != null -> Muted("다른 레시피가 그 자리에 들어갔어요")
+                                e.replacedAt != null -> Muted("다른 작품이 그 자리에 들어갔어요")
                                 vm.canUndo(e) -> TextButton(onClick = { undoing = e.title to { vm.undo(e.id) } }) { Text("되돌리기 (넣은 지 7일 안)") }
                                 else -> Muted("7일이 지나 그대로 쓰고 있어요")
                             }
@@ -125,15 +133,15 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     }
                 }
 
-                Header("내가 올린 레시피")
+                Header("내가 올린 작품")
                 val m = mine
                 if (m == null) Muted("불러오는 중이거나 인터넷이 없어요")
                 else {
                     val review = if (m.reviewLeft > 0) " · 앞으로 ${m.reviewLeft}개는 운영자가 보고 올려요" else ""
                     Muted("하루에 ${if (m.trust >= 1) 4 else 2}개까지 올릴 수 있어요$review")
-                    if (m.items.isEmpty()) Muted("아직 올린 레시피가 없어요")
+                    if (m.items.isEmpty()) Muted("아직 올린 작품이 없어요")
                     m.items.forEach { (item, st) ->
-                        Card(Modifier.fillMaxWidth().clickable { onOpen(item.code) }) {
+                        Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(item.code) }) {
                             Column(Modifier.padding(12.dp)) {
                                 Text(item.title, style = MaterialTheme.typography.titleSmall)
                                 Text(stateLabel(st.first, st.second), style = MaterialTheme.typography.bodySmall)
@@ -142,8 +150,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     "pending" -> com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
                                 }
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
-                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users} · 코드 ${item.code}",
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // [RVM-34] HQ-72: within two lines at 200% ('♥ 12 · 34명' there), read aloud in words.
+                                MarketNumbersText(item, long = true, tail = "코드 ${item.code}", keepTail = true)
                                 RemixCount(item.code)
                                 Row {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
@@ -156,16 +164,16 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     }
                 }
 
-                Header("만들던 레시피")
-                if (drafts.isEmpty()) Muted("만들던 레시피가 없어요")
+                Header("만들던 작품")
+                if (drafts.isEmpty()) Muted("만들던 작품이 없어요")
                 drafts.forEach { d ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f).clickable { onDraft(d.id) }.padding(vertical = 8.dp)) {
-                            Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 레시피",
+                        Column(Modifier.weight(1f).clickable(role = Role.Button) { onDraft(d.id) }.padding(vertical = 8.dp)) {
+                            Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 작품",
                                 style = MaterialTheme.typography.bodyLarge)
                             Muted(if (d.step <= 1) "만들던 중 · 이어서 하면 멈춘 곳부터" else "올리기 ${d.step - 1}/4단계에서 멈춤")
                         }
-                        TextButton(onClick = { asking = "만들던 레시피를 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
+                        TextButton(onClick = { asking = "만들던 작품을 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -259,11 +267,11 @@ private fun NewsSwitches() {
             }
             Switch(value, set)
         }
-    line("새 판 알림", "넣은 레시피에 새 판이 나오면 밤낮 소식으로 알려요. 레시피마다 끄려면 아래 받은 레시피에서", newer) {
+    line("새 판 알림", "넣은 작품에 새 판이 나오면 밤낮 소식으로 알려요. 작품마다 끄려면 아래 받은 작품에서", newer) {
         c.recipes.setNewVersionNews(it); newer = it
     }
-    line("팔로우·답 알림", "팔로우한 분의 새 레시피와, 내 질문에 만든 분이 단 답을 알려요", follow) { c.recipes.setFollowNews(it); follow = it }
-    line("요청 판 보이기", "마을 › 공방의 ‘이런 거 있었으면’ 칸에 ‘이런 레시피 있었으면’이 보여요", requests, c.recipes::setRequestsOn)
+    line("팔로우·답 알림", "팔로우한 분의 새 작품과, 내 질문에 만든 분이 단 답을 알려요", follow) { c.recipes.setFollowNews(it); follow = it }
+    line("요청 판 보이기", "마을 › 공방의 ‘이런 거 있었으면’ 칸에 ‘이런 작품 있었으면’이 보여요", requests, c.recipes::setRequestsOn)
 }
 
 /**

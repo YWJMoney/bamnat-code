@@ -13,7 +13,11 @@ import java.time.LocalDate
  */
 object StaffContract {
     data class Item(val title: String, val body: String)
-    data class Contract(val items: List<Item>, val missing: List<String>, val shortTime: Boolean)
+    /**
+     * [warn]: 2.0.0 [RVJ-17] 검토 BOSS-54 what the contract's own hours break for an 18세 미만 (제69·70조), said before it is sent like
+     * [missing], but not blocking (the boss may have the 인가).
+     */
+    data class Contract(val items: List<Item>, val missing: List<String>, val shortTime: Boolean, val warn: List<String> = emptyList())
 
     /**
      * The contract as it went to the staff member (kept as sent, so the signed PDF says what they read even after the row changes),
@@ -31,6 +35,8 @@ object StaffContract {
         val signedName: String? = null,
         val signedAt: Long? = null,
         val paper: Boolean = false,
+        /** 2.0.0 [RVJ-17] 검토 BOSS-55: when the boss marked the signed copy as given to the staff member (제17조 교부); null = not yet. */
+        val givenAt: Long? = null,
         /** Signed contracts this one replaced (시급·시간이 바뀌어 새로 쓴 것), oldest first; kept so each PDF can be made again. */
         val past: List<Sent> = emptyList(),
     ) {
@@ -42,6 +48,25 @@ object StaffContract {
         fun waiting(now: Long): Boolean = !signed && linkId != null && (expiresAt == null || now < expiresAt)
     }
 
+    /**
+     * 2.0.0 [RVJ-24] 검토 BOSS-53 '종이로 받았어요': the contract as it reads now, marked signed on paper on [on] (the day the boss
+     * says the paper came back; it was always today, so last week's paper contract carried the wrong day). [now] is when it was
+     * marked. Today's keeps the time of the press, another day is that day's noon in [zone].
+     */
+    fun onPaper(c: Contract, now: Long, on: LocalDate, zone: java.time.ZoneId): Sent {
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val signed = if (!on.isBefore(today)) now else on.atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+        return Sent(title(c), c.items, now, signedAt = signed, paper = true)
+    }
+
+    /**
+     * 2.0.0 [RVJ-24] 검토 BOSS-53 '되돌릴 수 없어요': the paper mark taken back. The signed contract it replaced (if any) is the
+     * contract again and the rest of the 지난 계약서 stay; a contract signed on the link is the staff member's own word and is never
+     * taken back here.
+     */
+    fun withoutPaper(cur: Sent?): Sent? =
+        if (cur == null || !cur.signed || !cur.paper) cur else cur.past.lastOrNull()?.copy(past = cur.past.dropLast(1))
+
     /** 계약서 없음 on the ledger: a staff member still working with no signed contract. */
     fun lacking(s: StaffMember, on: LocalDate): Boolean = s.contract?.signed != true && s.employedOn(on)
 
@@ -50,8 +75,16 @@ object StaffContract {
     private fun date(d: LocalDate) = "${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일"
     private fun won(v: Long) = "%,d원".format(v)
 
+    /** [RVJ-17] 검토 BOSS-54: under 18 on [on] (근로기준법 제66~70조). */
+    fun young(s: StaffMember, on: LocalDate?): Boolean = s.birth != null && on != null && on.isBefore(s.birth.plusYears(18))
+
+    /** [RVJ-17] The line an 18세 미만's contract carries (제66조 서류, 제67조 대리 금지, 제69·70조 시간). */
+    const val YOUNG = "친권자(후견인) 동의서와 가족관계증명서를 사업장에 둬요(근로기준법 제66조). 계약은 본인과 맺고 친권자가 대신 맺을 수 없어요(제67조). " +
+        "하루 7시간·한 주 35시간까지예요(합의하면 하루 1시간·한 주 5시간 더, 제69조). 밤 10시~아침 6시와 휴일 근무는 본인 동의와 고용노동부 인가가 있어야 해요(제70조)."
+
     fun of(place: Workplace, s: StaffMember, start: LocalDate? = s.hiredOn): Contract {
         val missing = ArrayList<String>()
+        val warn = ArrayList<String>()
         if (s.name.isBlank()) missing += "이름"
         if (start == null) missing += "입사일(근로 시작일)"
         if (s.job.isBlank()) missing += "하는 일(업무)"
@@ -60,6 +93,12 @@ object StaffContract {
         val week = DayOfWeek.entries.filter { it in s.weekly }
         val weekMinutes = week.sumOf { s.weekly.getValue(it).paidMinutes(place.legalBreaks) }
         val shortTime = s.weekly.isNotEmpty() && weekMinutes < 40 * 60
+        // 2.0.0 [RVJ-42] 검토 PC-104: the 소정 is each day up to 8시간 and the week up to 40시간 (근로기준법 제50조); the rest of the usual
+        // week is 연장 (제53조 합의, 1주 12시간까지). A place of 4 or fewer has neither (시행령 [별표 1]), the line says so.
+        val usual = PayrollLedger.weeklyMinutes(place, s)
+        val over = (weekMinutes - usual).coerceAtLeast(0)
+        val five = place.fivePlus != false
+        fun hm(m: Int) = "${m / 60}시간" + if (m % 60 != 0) " ${m % 60}분" else ""
         val items = ArrayList<Item>()
         items += Item("근로 시작일", (start?.let(::date) ?: "____년 __월 __일") + "부터" + (s.leftOn?.let { " ${date(it)}까지" } ?: " (기간을 정하지 않음)"))
         items += Item("근무 장소", place.name)
@@ -68,33 +107,75 @@ object StaffContract {
             val sh = s.weekly.getValue(d)
             val brk = if (place.legalBreaks) LegalBreak.minutesFor(sh.spanMinutes) else 0
             "${day(d)}요일 ${sh.start}~${sh.end}" + (if (brk > 0) " (휴게 ${brk}분, 근로시간 중에)" else "")
-        } + "\n한 주 소정근로시간 ${weekMinutes / 60}시간" + (if (weekMinutes % 60 != 0) " ${weekMinutes % 60}분" else ""))
+        } + if (over > 0) "\n한 주 소정근로시간 ${hm(usual)}, 그 밖의 평소 근무 한 주 ${hm(over)}은 연장근로" +
+            (if (five) "(근로자와 합의, 근로기준법 제53조: 한 주 12시간까지)" else "(5명 미만 사업장이라 주 40시간 제한·가산은 없어요)")
+        else "\n한 주 소정근로시간 ${hm(weekMinutes)}")
         // 주휴일: a day not in the week, 일요일 first.
         val rest = listOf(DayOfWeek.SUNDAY, DayOfWeek.SATURDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
             .firstOrNull { it !in s.weekly }
-        items += Item("휴일", if (weekMinutes >= 15 * 60 && s.weeklyHolidayPay) "매주 ${rest?.let(::day) ?: "_"}요일 (유급 주휴일)" else "매주 ${rest?.let(::day) ?: "_"}요일" +
-            if (weekMinutes in 1 until 15 * 60) " (한 주 15시간 미만이라 주휴일은 유급이 아니에요, 제18조 제3항)" else "")
+        // 2.0.0 [RVJ-17] 검토 BOSS-52: a seven-day week leaves no 주휴일 to write (제55조 제1항: 1주에 평균 1회 이상); it is asked first.
+        if (rest == null && s.weekly.isNotEmpty()) missing += "주휴일(한 주에 쉬는 날, 평소 근무에서 하루를 빼 주세요)"
+        // [RVJ-17] 제17조 제1항 제3호 '제55조에 따른 휴일': 5인 이상은 관공서 공휴일·대체공휴일도 유급휴일(제55조 제2항), 노동절(5월 1일)은
+        // 모든 사업장의 유급휴일(근로자의 날 제정에 관한 법률, 2026년부터 '노동절').
+        val paidDays = if (place.fivePlus != false) "\n관공서 공휴일·대체공휴일과 노동절(5월 1일)은 유급휴일이에요(근로기준법 제55조 제2항)."
+            else "\n노동절(5월 1일)은 유급휴일이에요. 5명 미만 사업장이라 다른 공휴일은 쉬기로 한 날만 쉬어요."
+        items += Item("휴일", (if (weekMinutes >= 15 * 60 && s.weeklyHolidayPay) "매주 ${rest?.let(::day) ?: "_"}요일 (유급 주휴일)" else "매주 ${rest?.let(::day) ?: "_"}요일" +
+            if (weekMinutes in 1 until 15 * 60) " (한 주 15시간 미만이라 주휴일은 유급이 아니에요, 제18조 제3항)" else "") + paidDays)
         val pay = buildString {
+            val split = MonthlyOvertime.of(place, s)
             append(when (s.form) {
                 WageForm.HOUR -> "시급 ${won(s.base)}"
                 WageForm.DAY -> "일급 ${won(s.base)}"
-                WageForm.MONTH -> "월급 ${won(s.base)}"
+                // [RVJ-42] The 월급 and the usual hours past 40, as the 대장 pays them.
+                WageForm.MONTH -> "월급 ${won(s.base)}" + when {
+                    split == null -> ""
+                    s.overtimeInPay == true -> " (기본급 ${won(split.base)} + ${PayrollLedger.FIXED_OT} ${won(split.fixed)})\n${PayrollLedger.FIXED_OT}: 40시간을 넘는 평소 근무" +
+                        "(한 주 ${split.overHours}시간, 한 달 약 ${split.monthOverHours}시간)를 " + (if (five) "통상시급의 150%로" else "통상시급으로") +
+                        " 미리 줘요. 실제 연장근로가 더 많은 달은 차액을 더 줘요"
+                    else -> " (한 주 40시간 몫, 월 ${split.hours}시간)\n40시간을 넘는 근로(평소 한 주 ${split.overHours}시간)는 " +
+                        (if (five) "통상시급의 150%를" else "통상시급만큼") + " 더 줘요 · 평소 한 달 약 ${won(split.onTop)}"
+                }
             })
             if (s.dayRates.isNotEmpty()) append("\n요일별 시급: " + DayOfWeek.entries.filter { it in s.dayRates }.joinToString(", ") { "${day(it)} ${won(s.dayRates.getValue(it))}" })
-            if (s.allowances.isNotEmpty()) append("\n수당: " + s.allowances.joinToString(", ") { "${it.name} ${won(it.amount)}" + if (it.perDay) "(일한 날마다)" else "(매월)" })
+            if (s.allowances.isNotEmpty()) append("\n수당: " + s.allowances.joinToString(", ") {
+                "${it.name} ${won(it.amount)}" + (if (it.perDay) "(일한 날마다" else "(매월") + (if (it.taxFree) ", 비과세)" else ")")
+            })
             if (s.form == WageForm.HOUR && s.weeklyHolidayPay && weekMinutes >= 15 * 60) append("\n주휴수당: 한 주 소정근로일을 다 나오면 유급 주휴일 1일분")
             if (place.fivePlus != false) append("\n연장·야간·휴일 근로: 통상임금의 50%를 더해 줘요(근로기준법 제56조)")
-            append("\n지급일: " + (place.payday?.let { "매월 ${it}일 (그달 것을 다음 달에)" } ?: "매월 __일"))
+            // 2.0.0 [RVJ-09] 검토 BOSS-56: 그달에 주는 가게는 '그달 것을 그달에'.
+            // 2.0.0 [RVJ-41] 검토 PC-103: 31 is the picker's '말일' (a short month pays on its last day), so the contract says 말일 too.
+            append("\n지급일: " + (place.payday?.let { "매월 ${if (it >= 31) "말일" else "${it}일"} (" + (if (place.payNextMonth) "그달 것을 다음 달에" else "그달 것을 그달에") + ", 쉬는 날이면 그 전날)" } ?: "매월 __일"))
             append("\n지급 방법: 근로자 명의 예금 통장에 입금")
         }
         items += Item("임금", pay)
-        items += Item("연차 유급휴가", if (place.fivePlus == false) "5명 미만 사업장이라 근로기준법 제60조가 적용되지 않아요. 따로 주기로 하면 여기에 적어요."
-            else "근로기준법 제60조에 따라 줘요(1년 미만은 한 달 개근마다 1일, 1년 80% 이상 출근하면 15일)")
-        items += Item("사회보험", "고용보험 " + (if (s.insurance.employment) "가입" else "가입 안 함") + " · 산재보험 가입 · 국민연금 " + (if (s.insurance.pension) "가입" else "가입 안 함") +
-            " · 건강보험 " + (if (s.insurance.health) "가입" else "가입 안 함"))
+        // 2.0.0 [RVG-03] 검토 BOSS-51: 초단시간(4주 평균 한 주 15시간 미만)은 제60조도 적용되지 않아요(근로기준법 제18조 제3항), the 휴일 line above says
+        // the same for 주휴일. The 연차 line now says it too instead of promising 15일 the law does not ask for.
+        items += Item("연차 유급휴가", when {
+            weekMinutes in 1 until 15 * 60 -> "한 주 15시간 미만이라 연차 유급휴가(근로기준법 제60조)가 적용되지 않아요(제18조 제3항). 따로 주기로 하면 여기에 적어요."
+            place.fivePlus == false -> "5명 미만 사업장이라 근로기준법 제60조가 적용되지 않아요. 따로 주기로 하면 여기에 적어요."
+            else -> "근로기준법 제60조에 따라 줘요(1년 미만은 한 달 개근마다 1일, 1년 80% 이상 출근하면 15일)"
+        })
+        // 2.0.0 [RVJ-16] 검토 BOSS-74: what the law puts them in (the same [InsuranceRules] the ledger uses), not only the boxes ticked.
+        val ins = InsuranceRules.of(place, s, java.time.YearMonth.from(start ?: com.bamnat.core.time.Today.date())).effective
+        items += Item("사회보험", if (s.insurance.tax == StaffTax.BIZ) "사업소득(3.3%)으로 받는 계약이라 4대보험이 없어요" else
+            "고용보험 " + (if (ins.employment) "가입" else "가입 안 함") + " · 산재보험 가입 · 국민연금 " + (if (ins.pension) "가입" else "가입 안 함") +
+                " · 건강보험 " + (if (ins.health) "가입" else "가입 안 함"))
+        // [RVJ-17] 검토 BOSS-54: 18세 미만.
+        if (young(s, start ?: com.bamnat.core.time.Today.date())) {
+            items += Item("18세 미만 근로자", YOUNG)
+            val longDay = s.weekly.values.any { it.paidMinutes(place.legalBreaks) > 7 * 60 }
+            if (longDay || weekMinutes > 35 * 60) warn += "18세 미만은 하루 7시간·한 주 35시간까지예요. 평소 근무가 넘어요(합의하면 하루 1시간·한 주 5시간 더, 제69조)"
+            val late = java.time.LocalTime.of(22, 0)
+            val early = java.time.LocalTime.of(6, 0)
+            if (s.weekly.values.any { it.end.isAfter(late) || it.start.isBefore(early) || !it.end.isAfter(it.start) })
+                warn += "18세 미만의 밤 10시~아침 6시 근무는 본인 동의와 고용노동부 인가가 있어야 해요(제70조)"
+        }
         items += Item("계약서 주기", "사업주는 이 계약서를 만들면 근로자에게 한 부를 줘요(근로기준법 제17조). 근로자가 원하지 않아도 줘야 해요.")
         items += Item("그 밖의 것", "이 계약에 적지 않은 것은 근로기준법과 그 시행령을 따라요." + if (shortTime) " 단시간 근로자라 근로일과 근로일별 근로시간을 위에 적었어요(시행령 제9조)." else "")
-        return Contract(items, missing, shortTime)
+        // [RVJ-42] Asked once in the 직원 정보; the contract says 'paid on top' until then, and says that it does.
+        if (MonthlyOvertime.unasked(place, s)) warn += "40시간을 넘는 시간을 월급에 넣었는지 아직 안 골랐어요. 지금은 '더 줘요'로 적었어요 · 직원 정보에서 골라요"
+        if (five && over > 12 * 60) warn += "평소 연장근로가 한 주 ${hm(over)}이에요. 근로자와 합의해도 한 주 12시간까지예요(제53조)"
+        return Contract(items, missing, shortTime, warn)
     }
 
     fun title(c: Contract) = if (c.shortTime) "단시간 근로자 근로계약서" else "근로계약서"
@@ -110,18 +191,26 @@ object StaffContract {
             sent.paper -> "근로자 ${s.name} — 종이 계약서에 서명함 (${date(at.toLocalDate())} 받음)"
             else -> "근로자 ${sent.signedName ?: s.name} — 링크에서 읽고 이름을 써서 동의함 (${date(at.toLocalDate())} %02d:%02d)".format(at.hour, at.minute)
         }
-        return doc(place, s, sent.title, sent.items, line)
+        // [RVJ-17] 검토 BOSS-55: a contract the boss sent from the app carries the 사업주 side too (작성해 보낸 날).
+        val sentOn = java.time.Instant.ofEpochMilli(sent.sentAt).atZone(zone).toLocalDate()
+        val boss = if (sent.paper) null else "사업주 ${place.name}" + place.owner.takeIf { it.isNotBlank() }?.let { " (대표 $it)" }.orEmpty() +
+            " — 앱에서 작성해 보냄 (${date(sentOn)})"
+        val given = sent.givenAt?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate() }?.let { "\n근로자에게 한 부 줌 (${date(it)})" }.orEmpty()
+        return doc(place, s, sent.title, sent.items, line + given, boss)
     }
 
-    private fun doc(place: Workplace, s: StaffMember, title: String, items: List<Item>, signLine: String): ReportDoc = ReportDoc(
+    private fun doc(place: Workplace, s: StaffMember, title: String, items: List<Item>, signLine: String, bossLine: String? = null): ReportDoc = ReportDoc(
         title = title,
         blocks = buildList {
-            add(ReportDoc.Facts(listOfNotNull("사업주" to place.name, "근로자" to s.name.ifBlank { "________" },
+            // 2.0.0 [RVJ-17] 검토 BOSS-55: 대표자·주소 when the place has them, so who signed with whom is clear.
+            add(ReportDoc.Facts(listOfNotNull("사업주" to (place.name + place.owner.takeIf { it.isNotBlank() }?.let { " (대표 $it)" }.orEmpty()),
+                place.address.takeIf { it.isNotBlank() }?.let { "사업장 주소" to it },
+                "근로자" to s.name.ifBlank { "________" },
                 s.birth?.let { "생년월일" to "${it.year}.${it.monthValue}.${it.dayOfMonth}" })))
             items.forEachIndexed { i, it -> add(ReportDoc.Heading("${i + 1}. ${it.title}")); add(ReportDoc.Paragraph(it.body)) }
             add(ReportDoc.Heading("서명"))
             add(ReportDoc.Paragraph(signLine))
-            add(ReportDoc.Paragraph("사업주 ${place.name} ________ (서명)"))
+            add(ReportDoc.Paragraph(bossLine ?: "사업주 ${place.name} ________ (서명)"))
             add(ReportDoc.Paragraph("밤낮 앱이 직원 정보로 채운 계약서예요. 보내기 전에 사장님이 내용을 확인해요.", small = true))
         },
     )

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.getValue
 import com.bamnat.app.ui.theme.AppFonts
 import com.bamnat.app.ui.theme.OpenFonts
 import com.bamnat.core.recipe.FontCatalog
@@ -21,9 +22,15 @@ import java.util.concurrent.ConcurrentHashMap
  * work names, whole (주아 2 MB, 고운바탕 8 MB, 본명조 14 MB, and the bold too), while the card itself was drawn in the closest phone font
  * anyway; a page of 테마 pulled megabytes before its pictures were done, and the fonts named by 부품 never showed on a card at all.
  *
- * Now a card gets each font as only the letters an example phone shows ([CHARS], Google Fonts' `text=`: about 0.2~0.3 MB for a Korean font, 20 KB for a Latin one), kept in the
+ * Now a card gets each font as only the letters an example phone shows ([CHARS]: about 0.1~0.2 MB for a Korean font, 20 KB for a Latin one), kept in the
  * 장터 cache folder and shared by every card that names that font. A letter outside [CHARS] (a name only that work uses) is drawn in
  * the phone's font, as Android does for any letter a font lacks. The whole font still comes down where the user picks or wears it.
+ *
+ * 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 카드 '우리 쪽에서 글꼴 내주기': 장터 모습은 그대로, Google 요청은 글꼴을 고를 때만): these small
+ * fonts no longer come from Google Fonts. They are made once from the same open fonts (tools/card_fonts.py: renamed 'BN Card NN' as the
+ * SIL OFL asks of a changed copy, their licenses beside them) and put on our public files (GitHub Pages, `bamnat.remoteBaseUrl`
+ * `remote/card-fonts/<version>/`); a file is used only when its bytes are the ones this app was built with ([CardFontPins]). A build
+ * without public files (the PC's debug build) or a font not there draws in the phone's closest font, as offline.
  */
 internal object MarketFonts {
     private const val ASCII = "!\"#\$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
@@ -63,6 +70,56 @@ internal object MarketFonts {
     private val gate = Semaphore(2)
     private const val RETRY_MS = 5 * 60_000L
 
+    /** 2.0.0 [RVM-21] MKT-32 Our public files ([com.bamnat.app.BuildConfig.REMOTE_BASE_URL]); blank: no card fonts at all. */
+    @androidx.annotation.VisibleForTesting internal var base: String = com.bamnat.app.BuildConfig.REMOTE_BASE_URL
+    /** The bytes at an address (a plain GET, at most [MAX_BYTES]), or null. Swapped in tests to count where the 장터 asks. */
+    @androidx.annotation.VisibleForTesting internal var get: (String) -> ByteArray? = ::download
+    /**
+     * 2.0.0 [RVM-21] Whether the phone may ask our public files now: [com.bamnat.core.flags.FlagCatalog.CARD_FONTS], on from 처리방침
+     * 3.13's 7-day line (PolicyConsent.REVISION_EFFECTIVE) ([com.bamnat.app.AppContainer] sets it). Off, nothing is asked and the cards draw in the phone's fonts.
+     */
+    @Volatile internal var allowed: () -> Boolean = { false }
+    /** The sha256 of every card font this app takes, by "<id>-r"·"<id>-b". */
+    @androidx.annotation.VisibleForTesting internal var pins: Map<String, String> = CardFontPins.SHA
+    private const val MAX_BYTES = 1_000_000
+
+    /** Where card font [id] ([bold] or not) is on our public files, or null when this build has none or the letters are not the ones made. */
+    internal fun address(id: String, bold: Boolean): String? =
+        base.takeIf { it.isNotBlank() && version == CardFontPins.VERSION }?.let { it.trimEnd('/') + "/remote/card-fonts/$version/$id-${if (bold) "b" else "r"}.ttf" }
+
+    /** Card font [id] from our public files when it is the one made for this app ([pins]), else null. */
+    private fun fetch(id: String, bold: Boolean): ByteArray? {
+        if (!allowed()) return null
+        val sha = pins["$id-${if (bold) "b" else "r"}"] ?: return null
+        val url = address(id, bold) ?: return null
+        val bytes = get(url) ?: return null
+        val got = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        return bytes.takeIf { got == sha && com.bamnat.app.ui.theme.UserFonts.looksLikeFont(it) }
+    }
+
+    private fun download(url: String): ByteArray? = runCatching {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 15_000
+        conn.instanceFollowRedirects = false
+        try {
+            if (conn.responseCode != 200 || conn.contentLengthLong > MAX_BYTES) return@runCatching null
+            conn.inputStream.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(16 * 1024)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (out.size() > MAX_BYTES) return@runCatching null
+                }
+                out.toByteArray()
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }.getOrNull()
+
     private fun dir(c: Context) = File(c.cacheDir, "market/font")
     private fun file(c: Context, id: String, bold: Boolean) = File(dir(c), "$id-$version-${if (bold) "b" else "r"}.ttf")
 
@@ -88,10 +145,14 @@ internal object MarketFonts {
         failed[id]?.let { at -> if (System.nanoTime() / 1_000_000 - at < RETRY_MS) return null }
         val got = withContext(Dispatchers.IO) {
             val regular = file(c, id, false)
+            // 2.0.0 [RVM-21] MKT-32 With Android's 데이터 절약 on a metered network, the cards keep to the phone's fonts (a page of 테마
+            // names about 20 fonts, 3~4 MB); they come on Wi-Fi.
+            if (!regular.isFile && saving(c)) return@withContext null
             if (!regular.isFile) gate.withPermit {
-                val bytes = listOf(400, 500, 300).firstNotNullOfOrNull { OpenFonts.subset(id, it, letters) } ?: return@withContext null
+                // 2.0.0 [RVM-21] MKT-32 From our public files, never Google Fonts (the regular weight was made from 400, else 500 or 300).
+                val bytes = fetch(id, bold = false) ?: return@withContext null
                 keep(regular, bytes)
-                OpenFonts.subset(id, 700, letters)?.let { keep(file(c, id, true), it) }
+                fetch(id, bold = true)?.let { keep(file(c, id, true), it) }
             }
             runCatching {
                 val bold = file(c, id, true).takeIf { it.isFile }
@@ -103,6 +164,12 @@ internal object MarketFonts {
         AppFonts.cards[AppFonts.CARD + id] = got
         got
     }
+
+    /** Android's 데이터 절약 is on for this app and the network is metered. */
+    private fun saving(c: Context): Boolean = runCatching {
+        val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
+        cm.isActiveNetworkMetered && cm.restrictBackgroundStatus == android.net.ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
+    }.getOrDefault(false)
 
     private fun keep(f: File, bytes: ByteArray) {
         f.parentFile?.mkdirs()
@@ -118,3 +185,23 @@ internal object MarketFonts {
     /** For tests: the fonts this run made. */
     internal fun forget() { families.clear(); failed.clear(); AppFonts.cards.clear() }
 }
+
+/**
+ * 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 '장터 모습은 그대로, Google 요청은 글꼴을 고를 때만'): inside the 장터 (목록·작품 상세·
+ * 입어 보기·테마 창·만든 분 쪽) and while a theme is tried on the real app, every open font is drawn as a card font from our public files
+ * or the phone's closest one; the whole font (from Google Fonts) comes only when the user picks a font or wears or puts in the work.
+ * [ids] (the fonts of the work shown) are brought as card fonts and drawn in once they are here; a card inside keeps its own.
+ */
+@androidx.compose.runtime.Composable
+internal fun MarketFontsOf(ids: Set<String>, content: @androidx.compose.runtime.Composable () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val fonts by androidx.compose.runtime.produceState(emptyMap<String, FontFamily>(), ids) { value = MarketFonts.ready(ctx.applicationContext, ids) }
+    val outer = com.bamnat.app.ui.theme.LocalCardFonts.current
+    val both = androidx.compose.runtime.remember(outer, fonts) { outer.orEmpty() + fonts }
+    androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalCardFonts provides both) { content() }
+}
+
+/** [MarketFontsOf] for [r] (null: no work of its own, only no whole fonts). */
+@androidx.compose.runtime.Composable
+internal fun MarketFontsOf(r: com.bamnat.core.recipe.Recipe?, content: @androidx.compose.runtime.Composable () -> Unit) =
+    MarketFontsOf(androidx.compose.runtime.remember(r) { r?.let { MarketFonts.ids(com.bamnat.core.recipe.RecipeCodec.write(it)) }.orEmpty() }, content)

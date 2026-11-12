@@ -2,6 +2,7 @@ package com.bamnat.app
 
 import android.app.Application
 import android.content.Context
+import kotlinx.coroutines.launch
 import com.bamnat.app.alarm.BootAlarms
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.diag.CrashLog
@@ -48,8 +49,12 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
     override fun onCreate() {
         StartupTrace.begin()
         super.onCreate()
+        // 2.0.0 [RVP-28] (검토 UIX-51) Numbers are written as Korean writes them whatever the phone's language: "%02d" on a phone in
+        // Nepali or Arabic gave its own digits, and "%.1f억" on a German phone "1,5억". Every String.format reads this category.
+        keepKoreanNumbers()
         // 1.36 [SEC-10] The font look's isolated process starts nothing of the app's (it may not read the app's files).
         if (com.bamnat.app.recipe.FontProbe.inProbe()) return
+        lastNight = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
         CrashLog.install(this)
         // 1.32.1 [STAB-10] 멈춤 관찰 기록: the screen, the memory and how the app ended last time.
         com.bamnat.app.diag.Trail.install(this)
@@ -57,7 +62,7 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         com.bamnat.app.diag.TestLab.attach(this)
         // [LAY-04][RUL-03] 1.36 꾸밈 층의 누르기는 규칙·단추의 단추를 눌러요 (갈래 C와 D를 잇는 곳).
         com.bamnat.app.ui.decor.DecorTap.buttons = { s -> com.bamnat.core.formula.Logic.decode(s.logic).buttons.map { it.id to "${it.emoji} ${it.label}" } }
-        com.bamnat.app.ui.decor.DecorTap.press = { c, id, date -> com.bamnat.app.logic.LogicRunner.press(c, id, date) }
+        com.bamnat.app.ui.decor.DecorTap.press = { c, id, date -> com.bamnat.app.logic.LogicRunner.pressDecor(c, id, date) }
         // 1.39 [FX-03] 값 칸 numbers for 값() formulas, read from the container once it is there (nothing is read here).
         com.bamnat.app.logic.FxValues.attach { readyContainer() }
         // 1.36 [SEC-11] Play Integrity: nothing is asked here; the engine runs only when the server wants a verdict.
@@ -70,8 +75,27 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         // makes the window; the first use on the main thread waits for it (lazy is synchronized).
         // C 1.32 [STAB-04] Counted before anything that could stop it; a phone still locked is not counted.
         if (!BootAlarms.isLocked(this)) com.bamnat.app.diag.StartGuard.begin(this)
-        if (!BootAlarms.isLocked(this)) building = Thread({ container }, "bamnat-container").apply { start() }
+        // 2.0.0 [RVL-45] (검토 SCAN-23) Pictures for reading left behind by an app closed meanwhile go, off the main thread.
+        if (!BootAlarms.isLocked(this)) building = Thread({ container; runCatching { com.bamnat.app.imports.ScanCache.sweep(this) } }, "bamnat-container").apply { start() }
         StartupTrace.mark(StartupTrace.Step.APP)
+    }
+
+    /**
+     * 2.0.0 [RVI-06] (검토 ALM-13) The phone turned light or dark: the widgets are drawn again, so their 꾸밈 그림 and the parts'
+     * dark lines (drawn for one look) follow at once instead of at the next shift change, midnight or six hours on.
+     */
+    private var lastNight: Int? = null
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // [RVP-28] A language change sets every locale category again.
+        keepKoreanNumbers()
+        val night = newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val before = lastNight
+        lastNight = night
+        if (before == null || before == night) return
+        val c = readyContainer() ?: return
+        c.appScope.launch { runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(this@BamnatApp) } }
     }
 
     /** 1.36 [SEC-11] A Play Integrity token for [nonce], on the caller's (network) thread; null when Play cannot give one. */
@@ -127,6 +151,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
 
     private fun containerStarted() = (this::class.java.getDeclaredField("container\$delegate")
         .apply { isAccessible = true }.get(this) as Lazy<*>).isInitialized()
+
+    private fun keepKoreanNumbers() = java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.KOREA)
 }
 
 private const val APP_STATE = "app_state"

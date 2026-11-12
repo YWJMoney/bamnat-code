@@ -10,6 +10,7 @@ import com.bamnat.app.ui.calendar.newCalendarBadge
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.setup.SetupStep
+import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -44,9 +45,9 @@ class PersonalCalendarsTest {
     private val today = now.toLocalDate()
 
     private fun waitFor(what: String, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 60_000
+        val end = System.currentTimeMillis() + 60_000  // real clock: a timeout
         while (!done()) {
-            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }
+            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }  // real clock: a timeout
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
         }
@@ -132,12 +133,104 @@ class PersonalCalendarsTest {
         assertTrue(vm.done.value)
         assertNull(c.calendars.get(id))
         assertNull(c.calendarSetupDrafts.draft.value)
+        // 2.0.0 [RVH-43] Nothing still running opens its database again after it went (#451 CI: the summary's month had a read of it
+        // in flight, and the file came back now and then). The background work is given time to show itself before looking.
+        repeat(10) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(30) }
         assertFalse(app.getDatabasePath(CalendarStorage.fileName(id)).exists())
 
         // Without an answer kept, one left over is cleared on the next start.
         val left = c.calendars.begin("남은 것")
         c.calendars.dropUnfinished()
         assertNull(c.calendars.get(left))
+    }
+
+    /**
+     * 2.0.0 [RVH-54] A read that still holds [db] after its calendar went, done the way Room does it outside its coroutines
+     * (`RoomDatabase.query`, `runInTransaction`: straight to the open helper, with no check that the database was closed), off the
+     * main thread as Room wants: how many rows of [from] it finds, or null when it failed.
+     */
+    private fun lateCount(db: androidx.room.RoomDatabase, from: String): Int? {
+        var n: Int? = null
+        kotlin.concurrent.thread {
+            n = runCatching { db.query(androidx.sqlite.db.SimpleSQLiteQuery("SELECT COUNT(*) FROM $from")).use { it.moveToFirst(); it.getInt(0) } }.getOrNull()
+        }.join()
+        return n
+    }
+
+    private fun lateWrite(db: androidx.room.RoomDatabase, sql: String) {
+        kotlin.concurrent.thread { runCatching { db.runInTransaction { db.openHelper.writableDatabase.execSQL(sql) } } }.join()
+    }
+
+    /**
+     * 2.0.0 [RVH-54] (#451 CI) The read the summary's month had of a calendar being added, still holding its database after
+     * 그만두기 deleted the file, made the file again. Done here on purpose rather than left to timing, both ways a late read goes:
+     * the repository's own read (Room's coroutines, which refuse a closed database) and Room's read outside them (straight to the
+     * file). Before, the second made the file again; now it gets an empty database in memory and the file stays gone.
+     */
+    @Test fun aReadStillHoldingACalendarLeftInItsSetupDoesNotMakeTheFileAgain() = runBlocking {
+        val id = c.calendars.begin("가족")
+        val file = app.getDatabasePath(CalendarStorage.fileName(id))
+        // What the summary's month read before #451: this calendar's order periods, through its repository.
+        val held = c.calendars.repository(id)
+        val db = c.calendars.database(id)
+        assertTrue(held.patterns.first().isEmpty())
+        assertTrue(file.exists())
+
+        val vm = SetupViewModel(c, now = { now }, calendarId = id)
+        vm.pickStyle(WorkStyle.SHIFT)
+        vm.cancelCalendar()
+        assertNull(c.calendars.get(id))
+        assertFalse(file.exists())
+
+        runCatching { held.patterns.first() }
+        assertFalse("the repository's read after 그만두기 made the file again", file.exists())
+        assertEquals(0, lateCount(db, "pattern"))
+        assertFalse("a read straight to the file after 그만두기 made it again", file.exists())
+        assertFalse(File(file.path + "-wal").exists())
+    }
+
+    /**
+     * 2.0.0 [RVH-54] The same for a calendar that was used and finished: what still holds it after it is removed (a screen, a
+     * notice's worker) reads nothing, writes nowhere and never brings its file back. A calendar a restore brings back with the
+     * same id opens a database of its own, and the old one held from before never reaches its file.
+     */
+    @Test fun aCalendarRemovedAfterUseStaysGoneForWhatStillHoldsIt() = runBlocking {
+        val id = listedCalendar("알바")
+        val file = app.getDatabasePath(CalendarStorage.fileName(id))
+        val held = c.calendars.repository(id)
+        held.ensureDefaults()
+        val monday = today.with(java.time.DayOfWeek.MONDAY).plusWeeks(1)
+        held.setOverride(monday, ShiftOverride.Off)
+        assertTrue(file.exists())
+        val db = c.calendars.database(id)
+        // Its own day, as a late read would look for it.
+        val itsMonday = "day_entries WHERE epochDay = ${monday.toEpochDay()}"
+        assertEquals(1, lateCount(db, itsMonday))
+
+        c.calendars.delete(id)
+        assertFalse(file.exists())
+
+        runCatching { held.snapshot.first() }
+        // A late write lands in the empty database in memory, never in a file.
+        runCatching { held.setOverride(monday.plusDays(1), ShiftOverride.Off) }
+        assertFalse("a late write made the file again", file.exists())
+        assertEquals("a late read still saw the removed calendar's day", 0, lateCount(db, itsMonday))
+        lateWrite(db, "DELETE FROM shift_types")
+        assertFalse("a late read or write made the file again", file.exists())
+        // Asked for again by its id, a calendar that went gives the main one and opens nothing.
+        assertSame(c.scheduleRepository, c.calendars.repository(id))
+        assertFalse(file.exists())
+
+        // The same id brought back (a restore) opens a database of its own again.
+        c.calendars.restoreEntry(PersonalCalendar(id = id, name = "알바", color = PersonalCalendar.COLORS[0], style = WorkStyle.HOURLY), null)
+        val back = c.calendars.repository(id)
+        assertNotSame(held, back)
+        back.setOverride(monday, ShiftOverride.Off)
+        assertEquals(listOf(monday), back.snapshot.first().entries.map { it.date })
+        assertTrue(file.exists())
+        // The old database held from before stays off the new file.
+        assertEquals("the old hold reached the calendar brought back", 0, lateCount(db, itsMonday))
+        assertEquals(1, lateCount(c.calendars.database(id), itsMonday))
     }
 
     @Test fun theListKeepsTheUsersOrderWithReceivedCalendarsInIt() {
@@ -177,14 +270,14 @@ class PersonalCalendarsTest {
 
     @Test fun anAddedCalendarRingsUnderItsNameUntilItsAlarmsAreOff() = runBlocking {
         val id = listedCalendar("알바")
-        assertEquals(listOf(null, "알바"), c.calendars.ringing.first().map { it.first })
+        assertEquals(listOf(null, "알바"), c.calendars.ringing.first().map { it.name })
         c.calendars.setAlarms(id, false)
-        assertEquals(listOf<String?>(null), c.calendars.ringing.first().map { it.first })
+        assertEquals(listOf<String?>(null), c.calendars.ringing.first().map { it.name })
     }
 
     @Test fun eachCalendarKeepsItsOwnLink() {
         val id = listedCalendar("알바")
-        val link = ShareLinkState("abc", "https://example.test/s/abc", "token", Instant.now().plusSeconds(86_400), "민지")
+        val link = ShareLinkState("abc", "https://example.test/s/abc", "token", Today.instant().plusSeconds(86_400), "민지")
         ShareLinkStore(app, id).save(link)
         assertEquals("abc", ShareLinkStore(app, id).load()?.id)
         assertNull(ShareLinkStore(app).load())

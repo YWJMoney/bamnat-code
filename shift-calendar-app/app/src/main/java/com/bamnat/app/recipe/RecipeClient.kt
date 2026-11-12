@@ -126,11 +126,17 @@ data class RecipeDoc(
     /** 신고 2번으로 다른 분께 잠시 가려진 사진 수. */
     val photosHeld: Int = 0,
 ) {
-    /** The recipe itself, checked again on this phone: the written form hashes to what the server named it (S10). */
-    fun recipe(): Recipe {
-        val r = RecipeCodec.read(body)
-        if (RecipeCodec.hash(r) != hash) throw com.bamnat.core.recipe.RecipeException("hash")
-        return r
+    /** The recipe itself, checked again on this phone (S10), as far as this app knows it ([read]). */
+    fun recipe(): Recipe = read().recipe
+
+    /**
+     * 2.0.0 [RVS-05] (검토 RCP-07·SD-03): the text that came is the text the server named ([hash] is the SHA-256 of [body] as served),
+     * then read as far as this app knows it ([RecipeCodec.readSoft]). Before, the work was read first and its rewritten form hashed, so
+     * a field only a newer app knew was dropped on reading and the work failed as '오는 길에 바뀌었어요' though nothing had changed.
+     */
+    fun read(): RecipeCodec.Soft {
+        if (RecipeCodec.sha256(body) != hash) throw com.bamnat.core.recipe.RecipeException("hash")
+        return RecipeCodec.readSoft(body)
     }
 }
 
@@ -264,10 +270,30 @@ data class ProfileInbox(
     val followersLatest: String? = null,
     /** The server's time of this answer, kept as the next since (the phone's clock may be off). */
     val at: Instant? = null,
+    /**
+     * 2.0.0 [RVM-36] 검토 HQ-52: what people did with my works since (server rcReactions), for the 알림함: 좋아요 by work, each 글
+     * (후기·의견·이렇게 바꿔 봐요·질문), 넣어 본 분 by work with the whole number, and what the review decided. 안좋아요 and reports are
+     * never in it.
+     */
+    val likes: List<Reaction> = emptyList(),
+    val talk: List<Reaction> = emptyList(),
+    val uses: List<Reaction> = emptyList(),
+    val decided: List<Reaction> = emptyList(),
 ) {
     data class Milestone(val code: String, val title: String, val kind: String, val n: Int) {
         val key: String get() = "$code|$kind|$n"
     }
+
+    /**
+     * [RVM-36] One line of [likes], [talk], [uses] or [decided]: [kind] is "like", "use", "decided" or the 글's kind; [post] and [body]
+     * for a 글, [total] for 넣어 본 분, [state] ("visible", "returned", "hidden"), [why] ("flags", "admin"), [note] and [again] (shown
+     * again after a hide) for a decision.
+     */
+    data class Reaction(
+        val kind: String, val code: String, val title: String, val count: Int = 1, val at: Instant? = null,
+        val post: String? = null, val body: String? = null, val total: Int? = null,
+        val state: String? = null, val why: String? = null, val note: String? = null, val again: Boolean = false,
+    )
 }
 
 /** [PRF-07] 모음: 2~6 of a maker's own recipes (테마 하나 + 기능별 탭들) put on together. */
@@ -418,7 +444,11 @@ class RecipeClient(
     }
 
     override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc = readCall {
-        val o = call("GET", "/api/recipes/$code" + (version?.let { "?v=$it" } ?: ""), device = device)
+        // 2.0.0 [PC-28] This app's versionCode, as the list sends it: the server serves a work's 스르륵·책장·움직이지 않기 달 넘김 as 밀기 to
+        // the apps before 2.0.0 (and to one that says none), and as made to this one. Without it the card (list, app=) and the work read
+        // whole would differ and 넣기 would say a new 판 came in between.
+        val o = call("GET", "/api/recipes/$code" + listOfNotNull(version?.let { "v=$it" }, "app=${com.bamnat.app.BuildConfig.VERSION_CODE}")
+            .joinToString("&", prefix = "?"), device = device)
         RecipeDoc(
             item(o), o.getString("hash"), o.getString("body"), o.optString("scope", "public"), o.optBoolean("mine"),
             o.optInt("myVote").takeIf { o.has("myVote") }, o.optStringOrNull("state"), o.optStringOrNull("note"),
@@ -599,7 +629,20 @@ class RecipeClient(
             o.optJSONArray("remixes").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("parentTitle")) },
             o.optJSONArray("milestones").objects().map { ProfileInbox.Milestone(it.optString("code"), it.optString("title"), it.optString("kind"), it.optInt("n")) },
             o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") },
-            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() })
+            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            likes = reactions(o, "likes"), talk = reactions(o, "talk"), uses = reactions(o, "uses"), decided = reactions(o, "decided"))
+    }
+
+    /** [RVM-36] HQ-52 One list of the inbox's reactions; a line without a work is left out. */
+    private fun reactions(o: JSONObject, name: String): List<ProfileInbox.Reaction> = o.optJSONArray(name).objects().mapNotNull { x ->
+        val code = x.optString("target").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        ProfileInbox.Reaction(
+            kind = x.optString("kind"), code = code, title = x.optString("title"), count = x.optInt("count", 1).coerceAtLeast(1),
+            at = x.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            post = x.opt("post")?.takeIf { it != JSONObject.NULL }?.toString(), body = x.optStringOrNull("body"),
+            total = if (x.has("total") && !x.isNull("total")) x.optInt("total") else null,
+            state = x.optStringOrNull("state"), why = x.optStringOrNull("why"), note = x.optStringOrNull("note"), again = x.optBoolean("again"),
+        )
     }
 
     override suspend fun block(device: String, id: String, on: Boolean) = serverCall {
@@ -844,7 +887,7 @@ class RecipeClient(
                 "sold" -> "이 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. OFL 같은 공개 글꼴만 함께 보낼 수 있어요"
                 "not_yet" -> "정식 출시일부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
-                "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
+                "name_like" -> "다른 분 작품과 이름이 거의 같아요. 이름을 바꾸거나 그 작품을 고쳐 만들어 주세요"
                 // 1.39 [FX-17] 서버도 같은 줄: 기능 작품을 남이 보게 올리는 사람은 프로.
                 "fx_pro" -> "프로 기능 장치(✦)가 든 작품은 프로에서 장터에 올려요. 나만 보기로는 지금 올릴 수 있어요"
                 "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as CompanyException).retryAfter ?: 86_400).let { w ->
@@ -852,12 +895,12 @@ class RecipeClient(
                 }
                 "reason" -> "안좋아요 이유를 골라 주세요"
                 "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
-                "own" -> "내 레시피에는 누를 수 없어요"
+                "own" -> "내 작품에는 누를 수 없어요"
                 // PC 확인 보안 6차: not always 신고, nor 30 days (운영자 가림, 30·90일 단계); the same words as 광장's.
                 "muted" -> (e as? CompanyException)?.untilMillis?.let { com.bamnat.core.plaza.CommunityCare.mutedText(it) }
                     ?: "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
                 "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
-                "not_found" -> "지워졌거나 가려진 레시피예요"
+                "not_found" -> "지워졌거나 가려진 작품이에요"
                 "too_long" -> "40자까지 쓸 수 있어요"
                 "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 탭별 작품으로 골라 주세요"
                 "codes" -> "작품을 2~6개 골라 주세요"
@@ -871,7 +914,7 @@ class RecipeClient(
                 // 1.36 [SEC-11] Play Integrity: the app from Play on a real phone is needed to write where others see.
                 "integrity" -> "Play 스토어에서 받은 밤낮으로만 올리거나 신고할 수 있어요. Play 스토어 앱을 업데이트한 뒤 다시 해 주세요"
                 "image_size" -> "사진이 너무 커요. 다른 사진을 골라 주세요"
-                "too_big", "too_large" -> "레시피가 너무 커요. 조각을 줄여 주세요"
+                "too_big", "too_large" -> "작품이 너무 커요. 조각을 줄여 주세요"
                 else -> com.bamnat.core.recipe.RecipeText.problemText(c)
             }
         }

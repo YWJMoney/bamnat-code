@@ -59,6 +59,24 @@ class ShareLinkTest {
         File("build/share-payload.json").writeText(p.toString())
     }
 
+    /**
+     * 2.0.0 [RVM-29] SN-16: a 근무 글자 of joined emoji goes whole (take(4) sent half of 👩‍⚕️), a longer one is cut at a letter as
+     * core ShiftRules says, and an empty one falls back to the name's first letter, a flag whole.
+     */
+    @Test fun shiftLettersAreCutAtALetter() {
+        val nurse = ShiftType(1, "간호 👩‍⚕️ 근무", "👩‍⚕️", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0))
+        val long = ShiftType(2, "DAY1", "DAY1", 0xFF5E35B1, LocalTime.of(19, 0), LocalTime.of(7, 0))
+        val flag = ShiftType(3, "🇰🇷 휴무", "", 0xFF9E9E9E, null, null, isOff = true)
+        val p = ShareLinkPayload.build(ScheduleSnapshot(listOf(nurse, long, flag), WorkPattern.Rotation(start, listOf(1L, 2L, 3L)), emptyList()), start, "", 30)
+        val types = p.getJSONArray("types").let { a -> (0 until a.length()).associate { a.getJSONObject(it).getInt("id") to a.getJSONObject(it) } }
+        assertEquals("👩‍⚕️", types.getValue(1).getString("short"))
+        assertEquals("간호 👩‍⚕️ 근무", types.getValue(1).getString("name"))
+        assertEquals("DA", types.getValue(2).getString("short"))
+        assertEquals("🇰🇷", types.getValue(3).getString("short"))
+        // Every 근무 글자 sent is one the 2.0.0 share server takes whole (no half surrogate left).
+        types.values.forEach { assertTrue(com.bamnat.core.model.ShiftRules.labelFits(it.getString("short"))) }
+    }
+
     /** [SHR-04] Days with no work at all say so, for the receiver's 같이 쉬는 날; the day off with a 대근 does not. */
     /** 1.37 [SHR-31][SHR-32] 묶음 E: the 테마 and 근무 설정 go only when ticked, come back as recipes, and a pay part never does. */
     @Test fun lookAndKit() {
@@ -164,6 +182,49 @@ class ShareLinkTest {
             leaves.map { ShareLinkPayload.leaveLabel(it, kinds = true) })
         // Every label fits whole in what the server takes.
         assertTrue(LeaveKind.entries.flatMap { k -> (1..4).map { q -> Leave(k, q).label } }.all { it.length <= ShareLinkPayload.LEAVE_CHARS })
+    }
+
+    /**
+     * 2.0.0 [RVH-44][RVH-45] 결정 19번 (설계 4-4절, 총괄 1-2): an hour's leave tells a receiver before 2.0.0 '반차' with its hours from half
+     * a day up and nothing below (that app reads a leave without '반' as a whole day off), its minutes apart; a kind of two parts keeps
+     * "time" as the first start to the last end and says its gap apart.
+     */
+    @Test fun anHoursLeaveAndTwoPartsReadRightOnAnOldReceiver() {
+        val shop = ShiftType(4, "영업", "영", 0xFF43A047, LocalTime.of(11, 0), LocalTime.of(22, 0),
+            gapStart = LocalTime.of(15, 0), gapMinutes = 120)
+        val snap = ScheduleSnapshot(
+            listOf(shop, off),
+            WorkPattern.Rotation(start, listOf(4L, 4L, 4L, 3L)),
+            listOf(
+                DayEntry(start, leave = Leave.hours(LeaveKind.ANNUAL, 120, fromStart = true)),
+                DayEntry(start.plusDays(1), leave = Leave.hours(LeaveKind.UNPAID, 300, at = LocalTime.of(13, 0))),
+                DayEntry(start.plusDays(2), leave = Leave(LeaveKind.ANNUAL, 2)),
+            ),
+        )
+        val p = ShareLinkPayload.build(snap, start, "민지", 30, ShareOptions(leaveKinds = true))
+        val days = p.getJSONArray("days")
+        val two = days.getJSONObject(0)
+        assertFalse("2시간: 옛 앱이 하루 연차로 읽지 않게 비워요", two.has("leave"))
+        assertEquals(120, two.getInt("leaveMinutes"))
+        assertTrue(two.getBoolean("leaveStart"))
+        val five = days.getJSONObject(1)
+        assertEquals("무급 반차 5시간", five.getString("leave"))
+        assertEquals(780, five.getInt("leaveAt"))
+        assertEquals("반차", days.getJSONObject(2).getString("leave"))
+        assertFalse(days.getJSONObject(2).has("leaveMinutes"))
+        // Without 휴가 종류 the kind stays on the phone.
+        val plain = ShareLinkPayload.build(snap, start, "민지", 30).getJSONArray("days").getJSONObject(1)
+        assertEquals("반차 5시간", plain.getString("leave"))
+        val types = p.getJSONArray("types")
+        val t = (0 until types.length()).map { types.getJSONObject(it) }.first { it.getString("name") == "영업" }
+        assertEquals("11:00-22:00", t.getString("time"))
+        assertEquals("15:00-17:00", t.getString("gap"))
+        assertFalse((0 until types.length()).map { types.getJSONObject(it) }.first { it.getString("name") == "휴무" }.has("gap"))
+        // What an app before 2.0.0 does with "leave" (ReceivedDay.fullLeave): never a whole day for an hour's leave.
+        for (i in 0..1) {
+            val text = days.getJSONObject(i).optString("leave").ifEmpty { null }
+            assertFalse("$i: $text", text != null && !text.contains("반") && !text.startsWith("0.75"))
+        }
     }
 
     /** [SHR-01] What the sharer ticks goes along; what they leave unticked stays on the phone. */
@@ -327,7 +388,7 @@ class ShareLinkTest {
     /** Runs against `npx wrangler dev` or server/share-worker/test/local-server.mjs when SHARE_TEST_URL points at it; skipped otherwise. */
     @Test fun roundTripAgainstTestServer() = runBlocking {
         val base = System.getenv("SHARE_TEST_URL").orEmpty()
-        assumeTrue(base.isNotBlank())
+        assumeTrue("SHARE_TEST_URL에 공유 서버 주소를 줄 때만 돌아요", base.isNotBlank())
         val client = ShareLinkClient(base)
         val made = client.create(ShareLinkPayload.build(snapshot, start, "민지", 7))
         assertTrue(made.url.startsWith(base.trimEnd('/') + "/s/"))
@@ -351,6 +412,12 @@ class ShareLinkTest {
         assertEquals(90, longer.ttlDays)
         assertTrue(longer.expiresAt.isAfter(v2.expiresAt))
         assertTrue("a longer link is downloaded again for its new end date", client.readIfChanged(made.id, tagged.etag) != null)
+        // 2.0.0 [RVM-29] SN-16: a 근무 글자 of joined emoji goes up whole and comes back whole (take(4) sent half of it).
+        val nurse = ShiftType(1, "간호 👩‍⚕️", "👩‍⚕️", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0))
+        val em = client.create(ShareLinkPayload.build(ScheduleSnapshot(listOf(nurse, off), WorkPattern.Rotation(start, listOf(1L, 3L)), emptyList()), start, "", 7))
+        val sent = client.read(em.id).schedule.getJSONArray("types").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.first { it.getInt("id") == 1 }
+        assertEquals(listOf("👩‍⚕️", "간호 👩‍⚕️"), listOf(sent.getString("short"), sent.getString("name")))
+        client.delete(em)
         client.delete(updated)
         client.delete(updated) // already gone: still fine
         assertEquals("not_found", runCatching { client.read(made.id) }.exceptionOrNull()?.message)

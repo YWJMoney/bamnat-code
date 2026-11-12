@@ -20,7 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -61,7 +61,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     // [TOWN-02] 1.37: answers that came since this phone last looked, marked on each of my posts until I leave this screen.
     var fresh by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var problem by remember { mutableStateOf<String?>(null) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val scope = rememberCoroutineScope()
     // PC 확인: 글 보기 opens the post itself in its plaza's talk.
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
@@ -93,7 +93,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
         }
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text("간직한 글 · 내 글") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -109,7 +109,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                 when (tab) {
                     0 -> {
                         if (keptList.isEmpty()) item {
-                            Empty("아직 간직한 글이 없어요. 광장 글의 ⋯ › ‘간직하기’로 좋은 팁을 모아 두면 여기서 다시 봐요", "광장 가기", onPlaza)
+                            Empty("아직 간직한 글이 없어요. 광장 글의 ⋮ › ‘간직하기’로 좋은 팁을 모아 두면 여기서 다시 봐요", "광장 가기", onPlaza)
                         }
                         items(keptList, key = { it.id }) { s ->
                             PostCard(s.roomName, label(s.kind), s.body, ago(s.at), extra = null) {

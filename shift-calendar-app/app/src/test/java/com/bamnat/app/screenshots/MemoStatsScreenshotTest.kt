@@ -123,7 +123,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun phoneStatsHugeText() = shoot("167_phone_stats_huge_text", PHONE, fontScale = 2f) { tab(3, wide = false) }
     @Test fun phoneMemosHugeText() = shoot("171_phone_memos_huge_text", PHONE, fontScale = 2f) { tab(2, wide = false) }
     @Test fun foldedStatsSameMonth() = shoot("147_folded_stats_same_month", FOLDED) {
-        tapText("이전 달", exact = true, scrolls = 0)
+        stepMonth("이전 달")
         tab(3, wide = false)
     }
     // ---- [SCHED-01] A memo that names a time ----
@@ -131,7 +131,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
         tab(2, wide = false); tapText("건강검진 오전 9시")
     }
     @Test fun foldedMemoScheduleDialog() = shoot("189_folded_memo_schedule_dialog", FOLDED) {
-        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("일정으로 넣기", exact = true)
+        tab(2, wide = false); tapText("건강검진 오전 9시"); tapLowest("알림 넣기") // 2.0.0 [RVI-75] the offer's button
     }
 
     @Test fun smallPhoneStats() = shoot("364_small_phone_stats", SMALL_PHONE) { tab(3, wide = false) }
@@ -146,7 +146,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     }
     @Test fun phoneStatsYear() = shoot("388_phone_stats_year", PHONE) {
         runBlocking { app.container.payStore.save(PayViewModel(app.container).sampleProfile().copy(rules = companyRules), keepUndo = false) }
-        tab(3, wide = false); reveal("${java.time.Year.now().value}년 근무·급여", exact = true)
+        tab(3, wide = false); reveal("${Today.date().year}년 근무·급여", exact = true) // 2.0.0 [RVR-15] (TEST-07) the fixed clock's year, not the machine's
     }
 
     @Test fun storeTabletYear() {
@@ -170,7 +170,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun e485UnfoldedMemos() = shoot("485_unfolded_memos_one_button", UNFOLDED) { tab(2, wide = true) }
     @Test fun e486FoldedMemosFilters() = shoot("486_folded_memos_filters_open", FOLDED) {
         tab(2, wide = false)
-        tapText("필터 펼치기", exact = true, scrolls = 0)
+        memoFilters()
     }
     @Test fun e488PhoneMemosHugeText() = shoot("488_phone_memos_huge_text", PHONE, 1.5f) { tab(2, wide = false) }
 

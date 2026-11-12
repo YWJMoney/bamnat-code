@@ -64,7 +64,7 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
     // PC 3차: 되돌리기 put the days back but left 일하는 방식 on the sender's; the line then offers the old one back too.
     var switchedFrom by remember(linkId) { mutableStateOf<com.bamnat.core.work.WorkStyle?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 when {
@@ -83,7 +83,7 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
             }
             done?.let { (id, n) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (undone) "넣은 것을 되돌렸어요" else "고른 ${n}가지를 넣었어요. 7일 안에는 여기나 마을 › 장터 › 내 레시피에서 되돌려요",
+                    Text(if (undone) "넣은 것을 되돌렸어요" else "고른 ${n}가지를 넣었어요. 7일 안에는 여기나 마을 › 장터 › 내 작품에서 되돌려요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                     if (!undone) TextButton(onClick = {
                         scope.launch { if (c.recipes.undo(id)) undone = true }
@@ -127,8 +127,9 @@ private fun KitDialog(
     var switchStyle by remember(theirs) { mutableStateOf(theirs != null) }
     val lines by produceState<Map<PieceKind, String>>(emptyMap(), kit) {
         value = kit.pieces.associate { p ->
+            // 2.0.0 [RVM-22] RCP-05: what would make my alarm weaker is said and stays out (설정 › 알람에서 바꿔요).
             p.kind to (runCatching { c.recipes.pieces.preview(p.kind, p.values, PersonalCalendar.MAIN) }.getOrNull()
-                ?.joinToString(" · ") { it.text }?.takeIf { it.isNotBlank() } ?: RecipeDescribe.line(p, amounts = false))
+                ?.joinToString(" · ") { it.text + if (it.weak) "(넣지 않아요)" else "" }?.takeIf { it.isNotBlank() } ?: RecipeDescribe.line(p, amounts = false))
         }
     }
     fun put() {
@@ -141,7 +142,9 @@ private fun KitDialog(
             val switching = theirs != null && switchStyle && picks.any { it.kind == PieceKind.COMPANY }
             if (switching) runCatching { c.settingsRepository.update { it.copy(workStyle = theirs) } }
             // [CELL-02] 1.39 Their 달력 모양, my cells' content (메모 줄·줄 순서·시간·음력·지출).
-            val id = runCatching { c.recipes.apply(kit.keepMyCellContent(), "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
+            // 2.0.0 [RVM-22] RCP-05 Their 알람 묶음 never makes my alarm weaker (진동 끔·짧게 울림·작게 시작 stay mine).
+            val strong = com.bamnat.core.recipe.AlarmStrength.keepStrong(kit.keepMyCellContent(), c.recipes.pieces.alarmNow())
+            val id = runCatching { c.recipes.apply(strong, "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
             val ok = id != null
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 busy = false

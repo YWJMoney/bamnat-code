@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.money.BudgetStatus
@@ -25,6 +26,7 @@ import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.UpcomingPayments
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /**
  * E 1.32 [LEDX-07] 587: where the month ends at this pace (fixed costs still to leave included) and, with a budget, what
@@ -43,13 +45,14 @@ internal fun PaceCard(
         Text("오늘까지 ${Fmt.won(pace.spent)} · 이대로면 월말 ${Fmt.won(pace.projected)}", style = MaterialTheme.typography.titleSmall)
         pace.budget?.let { b ->
             val over = pace.projected - b
-            Text(if (over > 0) "예산보다 ${Fmt.won(over)} 넘을 것 같아요" else "예산 안에서 끝날 것 같아요 (${Fmt.won(-over)} 남음)",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (over > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Heading over the budget is 주의, the same line and colour as the summary card's.
+            com.bamnat.app.ui.components.ToneLine(
+                if (over > 0) "예산보다 ${Fmt.won(over)} 넘을 것 같아요" else "예산 안에서 끝날 것 같아요 (${Fmt.won(-over)} 남음)",
+                tone = if (over > 0) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Good)
         }
         if (sayToday) pace.todayLeft?.let { Text("오늘 쓸 수 있는 돈 ${Fmt.won(it)} (남은 ${pace.daysLeft}일)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
             ?: Text("예산을 정하면 오늘 쓸 수 있는 돈을 알려 드려요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val inst = remember(book, today) { LedgerSmarts.installmentsLeft(book.entries, today) }
+        val inst = remember(book, today) { LedgerSmarts.installmentsLeft(book.entries, today, book.accounts) }
         onGraph?.let { go -> androidx.compose.material3.TextButton(onClick = go, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("지난달과 그래프로 보기 › 통계") } }
         if (sayInstallments && inst > 0) Text("할부로 남은 돈 ${Fmt.won(inst)} (이번 달 회차 포함)", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -70,14 +73,15 @@ internal fun SubscriptionsCard(entries: List<MoneyEntry>, today: LocalDate, look
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         subs.take(8).forEach { s ->
             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // 2.0.0 [RVK-23]·HQ-30
+                NameAndAmount({ Text(s.place, style = MaterialTheme.typography.bodyMedium) }) {
                     Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
                 }
                 // 1.37 PC 7차: '써요'를 누른 구독은 단추가 사라지고 줄만 남아 헷갈렸어요. 쓰기로 한 것을 말해요.
                 val notes = listOfNotNull("${s.months}달째", s.raised?.let { "${Fmt.won(it)} 올랐어요" }, "계속 써요".takeIf { !s.stale && s.months >= 3 })
                 Text(notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
-                    color = if (s.raised != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVK-43] (검토 MONEY-24, 조건 6) A price that went up is worth a look, not a danger: the caution ink.
+                    color = if (s.raised != null) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
                 if (s.stale) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("아직 쓰나요?", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                     TextButton(onClick = { onStillUsing(s.place) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("써요") }
@@ -101,8 +105,8 @@ internal fun CardGaugeCard(book: MoneyBook, today: LocalDate, yearGross: Long?) 
         Text("신용카드 ${Fmt.won(gauge.credit)} · 체크카드·현금·페이 ${Fmt.won(gauge.debitAndCash)}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(Fmt.hide(gauge.tip), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-        Text("통장·카드에 카드 종류를 넣으면 더 정확해요. 전통시장·대중교통·문화비는 공제율이 더 높아요(40~80%).",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVK-29] (검토 HQ-44 같은 모양) Said in full once, then one line with ⓘ ([Explain]).
+        com.bamnat.app.ui.components.Explain("money.cardGauge", "통장·카드에 카드 종류를 넣으면 더 정확해요. 전통시장·대중교통·문화비는 공제율이 더 높아요(40~80%).")
     }
 }
 
@@ -125,8 +129,9 @@ internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedA
             Text("석 달 넘게 매달 나가는 구독 ${f.staleSubs.size}개 · 아직 쓰나요? 1년이면 ${Fmt.won(f.staleYearly)}", style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 8.dp))
             f.staleSubs.take(4).forEach { s ->
-                Row(Modifier.fillMaxWidth().clickable { onOpen(s.place) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                // 2.0.0 [RVK-23]·HQ-30
+                NameAndAmount({ Text(s.place, style = MaterialTheme.typography.bodyMedium) },
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(s.place) }.padding(vertical = 4.dp)) {
                     Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
                 }
             }

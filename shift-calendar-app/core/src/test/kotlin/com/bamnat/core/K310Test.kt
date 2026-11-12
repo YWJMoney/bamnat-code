@@ -88,9 +88,15 @@ class K310Test {
         assertNull(KoreanHolidays.nameOf(LocalDate.of(2027, 3, 2)))
         val y27 = KoreanHolidays.builtInDays.filterKeys { it.year == 2027 }.entries
             .joinToString(",") { """{"date":"${it.key}","name":"${it.value}"}""" }
-        KoreanHolidays.use(file("holidays", """{"version":"2027.01a","fromYear":2027,"toYear":2028,"days":[$y27,
-            {"date":"2027-03-02","name":"임시공휴일"},{"date":"2028-01-01","name":"신정"},{"date":"2028-12-25","name":"성탄절"}]}"""))
+        val before = KoreanHolidays.revision
+        val announced = file("holidays", """{"version":"2027.01a","fromYear":2027,"toYear":2028,"days":[$y27,
+            {"date":"2027-03-02","name":"임시공휴일"},{"date":"2028-01-01","name":"신정"},{"date":"2028-12-25","name":"성탄절"}]}""")
+        KoreanHolidays.use(announced)
         assertEquals("임시공휴일", KoreanHolidays.nameOf(LocalDate.of(2027, 3, 2)))
+        // 2.0.0 [RVH-14] 검토 CAL-19: a file that changes the days moves the revision the calendar and the alarms follow; the same again does not.
+        assertEquals(before + 1, KoreanHolidays.revision)
+        KoreanHolidays.use(announced)
+        assertEquals(before + 1, KoreanHolidays.revision)
         assertEquals("2027.01a", KoreanHolidays.version)
         assertEquals(2025..2028, KoreanHolidays.years)
         // 2028 is the file's: only what it lists (the rules would have found 설날).
@@ -98,6 +104,7 @@ class K310Test {
         // 2026 still the built-in table.
         assertEquals("추석", KoreanHolidays.nameOf(LocalDate.of(2026, 9, 25)))
         KoreanHolidays.use(null)
+        assertEquals(before + 2, KoreanHolidays.revision)
         assertEquals(KoreanHolidays.VERSION, KoreanHolidays.version)
         assertNull(KoreanHolidays.nameOf(LocalDate.of(2027, 3, 2)))
         refused { KoreanHolidays.read(file("holidays", """{"version":"x","fromYear":2027,"toYear":2027,"days":[{"date":"2027-01-01","name":"신정"}]}""")) }

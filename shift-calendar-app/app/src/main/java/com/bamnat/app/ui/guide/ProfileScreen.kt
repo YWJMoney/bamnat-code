@@ -367,7 +367,7 @@ fun FactEditSheet(c: AppContainer, calendar: String, fact: Fact<*>, hasPay: Bool
                             if (c.answers.answer(calendar, fact.key, value)) { onSaved(); onDismiss() } else failed = true
                         }
                     },
-                    onOpen = { feature -> onDismiss(); FeatureRegistry.get(feature)?.let(FeatureLinks::open) },
+                    onOpen = { feature -> onDismiss(); FeatureLinks.openAnswer(feature) },
                     current = FactText.answerOf(fact),
                 )
                 if (failed) Text("저장하지 못했어요. 그 기능 화면에서 고쳐 주세요.", style = MaterialTheme.typography.bodySmall,

@@ -1,17 +1,24 @@
 package com.bamnat.app.ui.imports
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -19,21 +26,31 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.Dialog
@@ -96,14 +113,14 @@ internal fun PhotoTapDialog(scan: RosterScanner.Scan, onDismiss: () -> Unit, onD
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (askDays) "1. 날짜 줄(1 2 3 …)을 눌러 주세요" else "2. 내 줄(이름이나 근무 글자)을 눌러 주세요",
-                    style = MaterialTheme.typography.titleMedium)
-                Text(if (askDays) "날짜가 적힌 줄 아무 곳이나 한 번 누르면 돼요." else "내 이름이나 내 근무가 적힌 줄 아무 곳이나 눌러 주세요.",
+                // 2.0.0 [RVL-35] (검토 HQ-80) The title in one short line at 200% too; the example under it.
+                Text(if (askDays) "1. 날짜 줄을 눌러 주세요" else "2. 내 줄을 눌러 주세요", style = MaterialTheme.typography.titleMedium)
+                // 2.0.0 [RVL-35] (검토 SCAN-19·U07b-03) A table of 20 people is tapped zoomed in, as the payslip photo is looked at.
+                Text((if (askDays) "1 2 3 …처럼 날짜가 적힌 줄 아무 곳이나 한 번 누르면 돼요." else "내 이름이나 내 근무가 적힌 줄 아무 곳이나 눌러 주세요.") +
+                    " 옆으로 밀면 다른 날도 보여요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    RosterPhoto(scan, marks = listOfNotNull(dayRow), lines = emptyList()) { x, y ->
-                        if (askDays) { dayRow = x to y; askDays = false } else onDone(RosterHint(dayRow, x to y))
-                    }
+                RosterPhoto(scan, marks = listOfNotNull(dayRow), lines = emptyList(), modifier = Modifier.weight(1f).fillMaxWidth(), fillHeight = true) { x, y ->
+                    if (askDays) { dayRow = x to y; askDays = false } else onDone(RosterHint(dayRow, x to y))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     if (askDays) TextButton(onClick = { askDays = false }) { Text("날짜 줄이 없어요") }
@@ -126,11 +143,12 @@ internal fun ReadDiagnosisDialog(scan: RosterScanner.Scan, rows: List<RosterRow>
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("무엇을 읽었는지", style = MaterialTheme.typography.titleMedium)
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(summary(read, rows), style = MaterialTheme.typography.bodyMedium)
-                    Text("파란 틀은 날짜 줄, 초록은 근무 줄, 회색은 그 밖의 글이에요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (scan.image != null) RosterPhoto(scan, marks = emptyList(), lines = read.lines, onTap = null)
+                Text(summary(read, rows), style = MaterialTheme.typography.bodyMedium)
+                Text("파란 틀은 날짜 줄, 초록은 근무 줄, 회색은 그 밖의 글이에요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // The same zoomed photo as 사진에서 내 줄 알려 주기: a frame on a dense table is seen up close; the lines in words scroll under it.
+                if (scan.image != null) RosterPhoto(scan, marks = emptyList(), lines = read.lines, modifier = Modifier.weight(0.6f).fillMaxWidth(), onTap = null)
+                Column(Modifier.weight(0.4f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     read.lines.forEach { l ->
                         Text("${kindName(l.kind)} · ${l.text}", style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
@@ -155,36 +173,141 @@ private fun kindName(k: RosterPhotoRead.Kind) = when (k) {
     RosterPhotoRead.Kind.OTHER -> "그 밖"
 }
 
-/** The photo as wide as the screen, [lines] framed on it, [marks] dotted, and a tap given back in the words' pixels. */
+/**
+ * The photo as wide as [modifier]'s box, [lines] framed on it, [marks] dotted, and a tap given back in the words' pixels.
+ * 2.0.0 [RVL-35] (검토 SCAN-19·U07b-03) Zoomed like the payslip photo ([com.bamnat.app.ui.pay.ZoomablePhoto]): two fingers zoom (to 6×),
+ * one finger moves it, a double tap zooms in there or back out, and ⊕ ⊖ in the corner do the same without two fingers. A tap is read
+ * through the zoom, so a line is picked as easily in a table of twenty as in one of five. A photo taller than the box moves up and
+ * down with one finger (it was a scrolled page before).
+ */
 @Composable
-private fun RosterPhoto(scan: RosterScanner.Scan, marks: List<Pair<Int, Int>>, lines: List<RosterPhotoRead.Line>, onTap: ((Int, Int) -> Unit)?) {
+private fun RosterPhoto(
+    scan: RosterScanner.Scan, marks: List<Pair<Int, Int>>, lines: List<RosterPhotoRead.Line>, modifier: Modifier = Modifier,
+    /**
+     * 2.0.0 [RVL-35] (검토 HQ-80) A wide roster (thirty days across) at the box's width is a thin strip in the middle whose lines are a few dp tall: it
+     * opens as tall as the box (to 6×), from its left top, so a line can be tapped at once; the edges say there is more to the side.
+     */
+    fillHeight: Boolean = false,
+    onTap: ((Int, Int) -> Unit)?,
+) {
     val image = scan.image ?: return
     val bitmap = remember(image) { image.asImageBitmap() }
     val days = MaterialTheme.colorScheme.primary
     val duties = Color(0xFF2E7D32)
     val other = Color(0xFF9E9E9E)
     val mark = MaterialTheme.colorScheme.error
-    Canvas(
-        Modifier.fillMaxWidth().aspectRatio(image.width.toFloat() / image.height.coerceAtLeast(1))
-            .semantics { contentDescription = "근무표 사진" }
-            .then(if (onTap != null) Modifier.pointerInput(scan) {
-                detectTapGestures { p ->
-                    // Screen → the screen copy → the pixels the words were read in.
-                    val k = image.width / size.width.toFloat() * scan.scale
-                    onTap((p.x * k).roundToInt(), (p.y * k).roundToInt())
-                }
-            } else Modifier),
-    ) {
-        drawImage(bitmap, dstOffset = IntOffset.Zero, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()))
-        val k = size.width / (image.width * scan.scale)
-        lines.forEach { l ->
-            val color = when (l.kind) {
-                RosterPhotoRead.Kind.DAYS, RosterPhotoRead.Kind.WEEKDAYS -> days
-                RosterPhotoRead.Kind.DUTIES -> duties
-                RosterPhotoRead.Kind.OTHER -> other
-            }
-            drawRect(color, Offset(l.left * k, l.top * k), Size((l.right - l.left) * k, (l.bottom - l.top) * k), style = Stroke(2.dp.toPx()))
-        }
-        marks.forEach { (x, y) -> drawCircle(mark, 8.dp.toPx(), Offset(x * k, y * k)) }
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    var zoom by remember(scan) { mutableFloatStateOf(1f) }
+    var offset by remember(scan) { mutableStateOf(Offset.Zero) }
+    fun place(o: Offset, z: Float) = photoPlace(o, z, box, image.width, image.height)
+    fun zoomBy(f: Float, at: Offset = Offset(box.width / 2f, box.height / 2f)) {
+        val next = (zoom * f).coerceIn(1f, MAX_ZOOM)
+        val from = place(offset, zoom)
+        offset = place(at - (at - from) * (next / zoom), next)
+        zoom = next
     }
+    fun move(dx: Float, dy: Float): Boolean { offset = place(place(offset, zoom) + Offset(dx, dy), zoom); return true }
+    var filled by remember(scan) { mutableStateOf(false) }
+    LaunchedEffect(box, fillHeight) {
+        if (!fillHeight || filled || box.width == 0 || box.height == 0) return@LaunchedEffect
+        filled = true
+        val fit = startZoom(box, image.width, image.height)
+        if (fit > 1f) { zoom = fit; offset = place(Offset.Zero, fit) }
+    }
+    Box(
+        modifier.clipToBounds().onSizeChanged { box = it }
+            .semantics {
+                contentDescription = if (onTap != null) "근무표 사진, 줄을 눌러 골라요" else "근무표 사진"
+                customActions = listOf(
+                    CustomAccessibilityAction("크게") { zoomBy(STEP); true },
+                    CustomAccessibilityAction("작게") { zoomBy(1 / STEP); true },
+                    CustomAccessibilityAction("사진을 왼쪽으로") { move(box.width / 4f, 0f) },
+                    CustomAccessibilityAction("사진을 오른쪽으로") { move(-box.width / 4f, 0f) },
+                    CustomAccessibilityAction("사진을 위로") { move(0f, box.height / 4f) },
+                    CustomAccessibilityAction("사진을 아래로") { move(0f, -box.height / 4f) },
+                )
+            }
+            .pointerInput(scan) {
+                detectTransformGestures { centroid, pan, z, _ ->
+                    val next = (zoom * z).coerceIn(1f, MAX_ZOOM)
+                    val from = place(offset, zoom)
+                    offset = place(centroid - (centroid - from) * (next / zoom) + pan, next)
+                    zoom = next
+                }
+            }
+            .pointerInput(scan, onTap != null) {
+                detectTapGestures(
+                    onTap = { p -> onTap?.let { tap -> photoTap(p, place(offset, zoom), zoom, box.width.toFloat() / image.width, scan.scale).let { (x, y) -> tap(x, y) } } },
+                    onDoubleTap = { p -> if (zoom > 1.01f) { zoom = 1f; offset = place(Offset.Zero, 1f) } else zoomBy(DOUBLE_TAP, p) },
+                )
+            },
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            if (size.width <= 0f) return@Canvas
+            val fit = size.width / image.width
+            val at = place(offset, zoom)
+            val s = zoom * fit
+            withTransform({ translate(at.x, at.y); scale(s, s, pivot = Offset.Zero) }) {
+                drawImage(bitmap, dstSize = IntSize(image.width, image.height), filterQuality = FilterQuality.Medium)
+                // The words' pixels → the photo's.
+                val k = 1f / scan.scale
+                lines.forEach { l ->
+                    val color = when (l.kind) {
+                        RosterPhotoRead.Kind.DAYS, RosterPhotoRead.Kind.WEEKDAYS -> days
+                        RosterPhotoRead.Kind.DUTIES -> duties
+                        RosterPhotoRead.Kind.OTHER -> other
+                    }
+                    drawRect(color, Offset(l.left * k, l.top * k), Size((l.right - l.left) * k, (l.bottom - l.top) * k), style = Stroke(2.dp.toPx() / s))
+                }
+                marks.forEach { (x, y) -> drawCircle(mark, 8.dp.toPx() / s, Offset(x * k, y * k)) }
+            }
+        }
+        // 2.0.0 [RVL-35] (검토 HQ-80) More to the side: the edge it goes on past fades.
+        val at = place(offset, zoom)
+        val shade = MaterialTheme.colorScheme.surface
+        if (at.x < -1f) Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(24.dp)
+            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(shade.copy(alpha = 0.85f), Color.Transparent))))
+        if (at.x + box.width * zoom > box.width + 1f) Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(24.dp)
+            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, shade.copy(alpha = 0.85f)))))
+        // ⊕ ⊖ for one hand, TalkBack and Switch Access; the zoom in words while zoomed.
+        Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (zoom > 1.01f) Text("${(zoom * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
+                modifier = Modifier.padding(end = 4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.7f), MaterialTheme.shapes.small)
+                    .padding(horizontal = 8.dp, vertical = 4.dp))
+            FilledTonalIconButton(onClick = { zoomBy(1 / STEP) }, enabled = zoom > 1.01f) { Icon(Icons.Filled.ZoomOut, contentDescription = "사진 작게") }
+            FilledTonalIconButton(onClick = { zoomBy(STEP) }, enabled = zoom < MAX_ZOOM - 0.01f) { Icon(Icons.Filled.ZoomIn, contentDescription = "사진 크게") }
+        }
+    }
+}
+
+private const val MAX_ZOOM = 6f
+private const val STEP = 1.5f
+private const val DOUBLE_TAP = 2.5f
+
+/**
+ * Where the photo sits in a [box] at [zoom]: as wide as the box at 1×, in the middle when shorter than it, and never moved past its
+ * own edges (so the empty box never shows where the photo could be).
+ */
+internal fun photoPlace(o: Offset, zoom: Float, box: IntSize, width: Int, height: Int): Offset {
+    if (box.width == 0 || width <= 0) return o
+    val w = box.width * zoom
+    val h = box.width.toFloat() * height / width * zoom
+    val x = o.x.coerceIn(minOf(0f, box.width - w), 0f)
+    val y = if (h <= box.height) (box.height - h) / 2f else o.y.coerceIn(box.height - h, 0f)
+    return Offset(x, y)
+}
+
+/** 2.0.0 [RVL-35] (검토 HQ-80) The zoom a photo opens at to tap a line on: as tall as the [box] when it is much wider than tall, to 6×; else 1×. */
+internal fun startZoom(box: IntSize, width: Int, height: Int): Float {
+    if (box.width == 0 || box.height == 0 || width <= 0 || height <= 0) return 1f
+    val tall = box.width.toFloat() * height / width
+    val fit = (box.height / tall).coerceIn(1f, MAX_ZOOM)
+    return if (fit > 1.05f) fit else 1f
+}
+
+/** A tap at [p] on the photo placed at [at] and [zoom] ([fit] screen pixels a photo pixel at 1×), in the pixels the words were read in. */
+internal fun photoTap(p: Offset, at: Offset, zoom: Float, fit: Float, wordsScale: Float): Pair<Int, Int> {
+    val k = wordsScale / (zoom * fit)
+    return ((p.x - at.x) * k).roundToInt() to ((p.y - at.y) * k).roundToInt()
 }

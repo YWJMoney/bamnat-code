@@ -60,7 +60,8 @@ class SScreenshotTest : ScreenshotBase() {
     })
     @Test fun firstStyleSmallPhone() = shoot("781_s_first_style_small", SMALL_PHONE, firstScreen())
     @Test fun firstStyleHugeText() = shoot("782_s_first_style_huge_text", PHONE, fontScale = 2f, firstScreen {
-        reveal("백업이나 회사 파일로 시작할게요", exact = true)
+        // [RVG-15] The file start is at the top now (one text button less); the bottom of the list is its last card.
+        reveal("자영업", exact = true)
     })
     @Test fun firstStyleLandscape() = shoot("783_s_first_style_landscape", PHONE_LANDSCAPE, firstScreen())
 

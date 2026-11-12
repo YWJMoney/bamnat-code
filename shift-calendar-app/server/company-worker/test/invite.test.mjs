@@ -32,6 +32,20 @@ async function rules(call, body) {
   return r.data;
 }
 
+/**
+ * 2.0.0 [RVD-14] The months a group of friends gives wait in 드릴 보상 for an admin (사용자 결정 2026-11-12 '확인 뒤 지급'):
+ * the months counted toward the inviter, given or still to be looked at.
+ */
+const got = (v) => v.given + v.pending;
+/** An admin pays every owed reward, as the 보상 screen's 지급하기. */
+async function payAll(call) {
+  const owner = await signIn(call);
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed", undefined, owner)).data.rewards) {
+    const r = await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, owner);
+    assert.equal(r.status, 200, r.text);
+  }
+}
+
 /** One friend, one day: most tests are about something else. */
 const oneByOne = (call) => rules(call, { friends: 1, days: 1 });
 
@@ -54,7 +68,8 @@ test("a code is eight plain letters, typed any way, and its link goes to Play wi
 
 test("one code per install: asked again, the same code and link; the rules need no install", async () => {
   const { call } = server();
-  // [INVITE-08] Until the developer changes them: 5 friends who use it 7 days give 1 month, with no cap.
+  // [INVITE-08] Until the developer changes them: 5 friends who use it 7 days give 1 month. 2.0.0 [RVD-21] No cap (0) until 처리방침
+  // 3.13's 30-day date: the 1년 12달 for all rewards (RVD-15) is in test/review-d-reward.test.mjs with 3.13 in the calendar.
   assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 0 });
   assert.equal((await call("POST", "/api/invites/code", {}, phone(1))).data.error, "phone");
   assert.equal((await call("POST", "/api/invites/code", { phone: mark(1) })).data.error, "device");
@@ -65,7 +80,7 @@ test("one code per install: asked again, the same code and link; the rules need 
   assert.equal(again.data.code, c);
   assert.equal(again.data.link, `${ORIGIN}/i/${c}`);
   assert.deepEqual(await view(call), { code: c, link: `${ORIGIN}/i/${c}`, need: 5, days: 7, months: 1, capMonths: 0,
-    progress: 0, waiting: 0, friends: 0, given: 0, capReached: false, used: null });
+    progress: 0, waiting: 0, friends: 0, given: 0, pending: 0, capReached: false, used: null });
   // A phone without a code sees none, and the rules.
   const none = await view(call, 9);
   assert.deepEqual([none.code, none.need], [null, 5]);
@@ -92,15 +107,18 @@ test("five friends who each use the app seven days give the inviter a month, wai
   for (const n of [5, 6]) await use(call, n, c);
   // "3/5명 · 2명은 사용 기간 채우는 중".
   let v = await view(call);
-  assert.deepEqual([v.progress, v.need, v.waiting, v.friends, v.given], [3, 5, 2, 3, 0]);
+  assert.deepEqual([v.progress, v.need, v.waiting, v.friends, got(v)], [3, 5, 2, 3, 0]);
 
   t.mock.timers.tick(7 * DAY);
   assert.equal((await seen(call, 5)).data.status, "qualified");
   assert.equal((await seen(call, 6)).data.status, "credited");
   assert.equal((await seen(call, 2)).data.status, "credited");
   v = await view(call);
-  assert.deepEqual([v.progress, v.waiting, v.friends, v.given], [0, 0, 5, 1]);
+  assert.deepEqual([v.progress, v.waiting, v.friends, got(v)], [0, 0, 5, 1]);
 
+  // 2.0.0 [RVD-14] The phone says it is being looked at until an admin pays it.
+  assert.deepEqual((await call("GET", "/api/passes", undefined, phone(1))).data.pending, [{ months: 1, why: "invite" }]);
+  await payAll(call);
   // Before the launch the month waits, as other reward passes do, and shows as an invite.
   const passes = (await call("GET", "/api/passes", undefined, phone(1))).data;
   assert.equal(passes.until, null);
@@ -117,7 +135,7 @@ test("five friends who each use the app seven days give the inviter a month, wai
   assert.equal(live.waitingMonths, 0);
 });
 
-test("with no cap, every five more friends give another month", async (t) => {
+test("with no invite cap of its own, every five more friends give another month (to the 1년 12달 of all rewards)", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call } = server();
   const c = await code(call);
@@ -125,7 +143,8 @@ test("with no cap, every five more friends give another month", async (t) => {
   t.mock.timers.tick(7 * DAY);
   for (let n = 10; n < 22; n++) await seen(call, n);
   const v = await view(call);
-  assert.deepEqual([v.friends, v.given, v.progress, v.capReached], [12, 2, 2, false]);
+  assert.deepEqual([v.friends, got(v), v.progress, v.capReached], [12, 2, 2, false]);
+  await payAll(call);
   assert.equal((await call("GET", "/api/passes", undefined, phone(1))).data.waitingMonths, 2);
 });
 
@@ -133,7 +152,9 @@ test("the developer app sets the rules, within limits; a lowered number pays at 
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-25T03:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
-  assert.deepEqual((await call("GET", "/api/admin/settings/invite", undefined, owner)).data, { friends: 5, days: 7, months: 1, capMonths: 0 });
+  // 2.0.0 [RVD-21] with whether the 1년 12달 counts yet: not without 처리방침 3.13 in the calendar.
+  const none = { yearCap: null, yearCapFrom: null };
+  assert.deepEqual((await call("GET", "/api/admin/settings/invite", undefined, owner)).data, { friends: 5, days: 7, months: 1, capMonths: 0, ...none });
   for (const [body, key] of [[{ friends: 0 }, "friends"], [{ days: 61 }, "days"], [{ months: 0 }, "months"], [{ capMonths: -1 }, "capMonths"], [{ friends: "3" }, "friends"]]) {
     const r = await call("POST", "/api/admin/settings/invite", body, owner);
     assert.deepEqual([r.status, r.data.error], [400, key]);
@@ -145,21 +166,21 @@ test("the developer app sets the rules, within limits; a lowered number pays at 
   for (let n = 10; n < 13; n++) await use(call, n, c);
   t.mock.timers.tick(7 * DAY);
   for (let n = 10; n < 13; n++) await seen(call, n);
-  assert.deepEqual([(await view(call)).progress, (await view(call)).given], [3, 0]);
+  assert.deepEqual([(await view(call)).progress, got(await view(call))], [3, 0]);
   // Three friends are enough now: the three already counted give their month when it is saved.
-  assert.deepEqual(await rules(call, { friends: 3, months: 2 }), { friends: 3, days: 7, months: 2, capMonths: 0 });
-  assert.deepEqual([(await view(call)).progress, (await view(call)).given], [0, 2]);
+  assert.deepEqual(await rules(call, { friends: 3, months: 2 }), { friends: 3, days: 7, months: 2, capMonths: 0, ...none });
+  assert.deepEqual([(await view(call)).progress, got(await view(call))], [0, 2]);
   assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 3, days: 7, months: 2, capMonths: 0 });
 
-  // A cap of 3 months in a year: the next group of three is counted without months.
+  // A cap of 3 months in a year (the owed months count too): the next group of three is counted without months.
   await rules(call, { capMonths: 3, days: 1 });
   for (let n = 20; n < 23; n++) await use(call, n, c);
   t.mock.timers.tick(DAY);
-  const got = [];
-  for (let n = 20; n < 23; n++) got.push((await seen(call, n)).data.status);
-  assert.deepEqual(got, ["qualified", "qualified", "capped"]);
+  const said = [];
+  for (let n = 20; n < 23; n++) said.push((await seen(call, n)).data.status);
+  assert.deepEqual(said, ["qualified", "qualified", "capped"]);
   const v = await view(call);
-  assert.deepEqual([v.friends, v.given, v.capReached, v.capMonths], [6, 2, true, 3]);
+  assert.deepEqual([v.friends, got(v), v.capReached, v.capMonths], [6, 2, true, 3]);
 });
 
 test("a friend who does not come back within the period and 30 days is let go", async (t) => {
@@ -172,7 +193,7 @@ test("a friend who does not come back within the period and 30 days is let go", 
   t.mock.timers.tick(2 * DAY);
   assert.equal((await view(call)).waiting, 0);
   assert.equal((await seen(call, 2)).data.status, "expired");
-  assert.equal((await view(call)).given, 0);
+  assert.equal(got(await view(call)), 0);
   // The hourly clean-up forgets it after that.
   await prune(env, Date.now());
   assert.equal((await seen(call, 2)).status, 404);
@@ -244,7 +265,7 @@ test("a recovery code moves the invite code too; 모두 지우기 keeps only a c
   const rc = (await call("POST", "/api/passes/code", {}, phone(1))).data.code;
   await call("POST", "/api/passes/claim", { code: rc }, phone(8));
   const moved = await view(call, 8);
-  assert.deepEqual([moved.code, moved.friends, moved.given], [c, 1, 1]);
+  assert.deepEqual([moved.code, moved.friends, got(moved)], [c, 1, 1]);
 
   // The friend wipes what it sent: its install is cut loose, the phone mark stays for the year.
   assert.equal((await call("DELETE", "/api/mine", undefined, phone(2))).status, 200);
@@ -271,13 +292,16 @@ test("the developer app's 보상 screen names invite rewards and sums up invites
   t.mock.timers.tick(DAY);
   await seen(call, 2);
   const owner = await signIn(call);
+  // 2.0.0 [RVD-14] It waits in 드릴 보상, then is paid there.
+  assert.equal((await call("GET", "/api/admin/rewards?status=owed", undefined, owner)).data.rewards.length, 1);
+  await payAll(call);
   const r = (await call("GET", "/api/admin/rewards?status=paid", undefined, owner)).data;
   assert.equal(r.rewards.length, 1);
   assert.deepEqual([r.rewards[0].company.name, r.rewards[0].invite, r.rewards[0].months, r.rewards[0].memo], ["친구 초대", true, 1, "친구 초대 1명"]);
   assert.equal(r.invites.codes, 1);
   assert.equal(r.invites.credited, 1);
   assert.equal(r.invites.waiting, 1);
-  assert.deepEqual(r.invites.rules, { friends: 1, days: 1, months: 1, capMonths: 0 });
+  assert.deepEqual(r.invites.rules, { friends: 1, days: 1, months: 1, capMonths: 0, yearCap: null, yearCapFrom: null });
   assert.deepEqual(r.invites.refused, { self: 1 });
   assert.deepEqual(r.invites.top, [{ code: c, friends: 2, counted: 1, waiting: 1 }]);
   // A raw request without a device is refused, as for passes.
@@ -298,31 +322,32 @@ test("each five different friends who each used seven days give one month: 5 →
     await seen(call, 10);
   }
   let v = await view(call);
-  assert.deepEqual([v.progress, v.friends, v.given], [1, 1, 0]);
+  assert.deepEqual([v.progress, v.friends, got(v)], [1, 1, 0]);
   // Four more: five friends, one month.
   for (let n = 11; n < 15; n++) await use(call, n, c);
   t.mock.timers.tick(7 * DAY);
   for (let n = 11; n < 15; n++) await seen(call, n);
   v = await view(call);
-  assert.deepEqual([v.progress, v.friends, v.given], [0, 5, 1]);
+  assert.deepEqual([v.progress, v.friends, got(v)], [0, 5, 1]);
   // Nine: still one month, four toward the next.
   for (let n = 15; n < 19; n++) await use(call, n, c);
   t.mock.timers.tick(7 * DAY);
   for (let n = 15; n < 19; n++) await seen(call, n);
   v = await view(call);
-  assert.deepEqual([v.progress, v.friends, v.given], [4, 9, 1]);
+  assert.deepEqual([v.progress, v.friends, got(v)], [4, 9, 1]);
   // The same friends opening again, and reporting again, change nothing.
   for (let n = 10; n < 19; n++) {
     await seen(call, n);
     await use(call, n, c);
   }
-  assert.deepEqual([(await view(call)).progress, (await view(call)).given], [4, 1]);
+  assert.deepEqual([(await view(call)).progress, got(await view(call))], [4, 1]);
   // The tenth: another month.
   await use(call, 19, c);
   t.mock.timers.tick(7 * DAY);
   assert.equal((await seen(call, 19)).data.status, "credited");
   v = await view(call);
-  assert.deepEqual([v.progress, v.friends, v.given], [0, 10, 2]);
+  assert.deepEqual([v.progress, v.friends, got(v)], [0, 10, 2]);
+  await payAll(call);
   assert.equal((await call("GET", "/api/passes", undefined, phone(1))).data.waitingMonths, 2);
 });
 

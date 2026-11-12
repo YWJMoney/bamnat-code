@@ -321,11 +321,11 @@ test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작
   assert.equal(stats.items[0].days.length, 28);
   assert.equal(stats.week, stats.items[0].days.slice(-7).reduce((x, y) => x + y, 0));
   assert.equal(stats.week > 0, true);
-  const month = (await call("GET", "/api/recipes/makers/month?style=SHIFT")).data;
-  assert.deepEqual(month.items.map((x) => [x.maker, x.bio]), [[m1, "교대 꾸미기"]]);
-  // The operator's pick comes first.
-  await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m2] }, admin);
-  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked]), [[m2, true], [m1, false]]);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: 이달의 제작자 are the operator's picks; the most put-on makers are candidates in the admin app only.
+  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items, []);
+  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT.map((x) => [x.maker, x.users]), [[m1, 3]]);
+  await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m1, m2] }, admin);
+  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked, x.bio ?? null]), [[m1, true, "교대 꾸미기"], [m2, true, null]]);
 });
 
 test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작품, 앱으로 열기; 숨긴 프로필은 없어요; 글은 그대로 찍지 않아요", async (t) => {
@@ -603,6 +603,9 @@ test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공
   // 1.36 [GRW-09] 고르면 주인 기기의 프로 내역에 만든 작품 보상이 생기고, 다시 저장해도 두 번 가지 않아요.
   assert.equal(picked.data.rewarded, 1);
   assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [mine] }, admin)).data.rewarded, 0);
+  // 2.0.0 [RVD-13] 확인 뒤 지급: the phone says it waits, then has it once an admin pays.
+  assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.pending.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed&kind=maker", undefined, admin)).data.rewards) await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, admin);
   assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.items.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
   t.mock.timers.setTime(AFTER + 3 * 86_400_000); // December (KST): November's picks show
   const next = (await see(3)).data;

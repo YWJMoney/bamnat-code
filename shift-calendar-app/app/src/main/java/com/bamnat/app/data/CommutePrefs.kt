@@ -37,6 +37,12 @@ class CommutePrefs private constructor(context: Context) {
         val undo: Commute.Undo? = null,
         /** [DAYW-07] The workplace circle last handed to Play services ("lat,lng,radius"), or null. */
         val fence: String? = null,
+        /** [RVH-34] 검토 WORK-15 Minutes after the end that are still leaving, not 잔업 (10·20·30). */
+        val overtimeSlack: Int = Commute.SLACK_MINUTES,
+        /** 검토 WORK-15 잔업 seen on leaving: asked once (also with [auto]), written, or never written. */
+        val overtime: Commute.OvertimeWay = Commute.OvertimeWay.ASK,
+        /** [RVH-35] 검토 WORK-16·U02-09 Not at work when turning it on: the place is taken a while after the next shift starts. */
+        val placeNext: Boolean = false,
     ) {
         val hasPlace: Boolean get() = lat != null && lng != null
         /** Today's arrival, when there is one. */
@@ -51,12 +57,15 @@ class CommutePrefs private constructor(context: Context) {
     fun setEnabled(on: Boolean) = edit {
         putBoolean(K_ON, on)
         // Turned off, the workplace point goes too.
-        if (!on) { remove(K_LAT); remove(K_LNG); remove(K_ARRIVED); remove(K_LEFT); remove(K_PENDING); remove(K_UNDO); remove(K_FENCE) }
+        if (!on) { remove(K_LAT); remove(K_LNG); remove(K_PLACE_NEXT); remove(K_ARRIVED); remove(K_LEFT); remove(K_PENDING); remove(K_UNDO); remove(K_FENCE) }
     }
 
-    fun setPlace(lat: Double, lng: Double) = edit { putString(K_LAT, lat.toString()); putString(K_LNG, lng.toString()) }
+    fun setPlace(lat: Double, lng: Double) = edit { putString(K_LAT, lat.toString()); putString(K_LNG, lng.toString()); remove(K_PLACE_NEXT) }
     fun setRadius(m: Int) = edit { putInt(K_RADIUS, m.coerceIn(MIN_RADIUS, MAX_RADIUS)) }
     fun setAuto(auto: Boolean) = edit { putBoolean(K_AUTO, auto) }
+    fun setOvertimeSlack(minutes: Int) = edit { putInt(K_SLACK, minutes.coerceIn(Commute.SLACK_MINUTES, 60)) }
+    fun setOvertime(way: Commute.OvertimeWay) = edit { putString(K_OVERTIME, way.key) }
+    fun setPlaceNext(on: Boolean) = edit { putBoolean(K_PLACE_NEXT, on) }
     fun setCalendar(id: String) = edit { putString(K_CALENDAR, id) }
     fun arrived(at: LocalDateTime) = edit { putString(K_ARRIVED, at.toString()); remove(K_PENDING); remove(K_UNDO) }
     /** [DAYW-07] What a written leave changed on [date], to put back if the phone comes back that day. */
@@ -118,6 +127,9 @@ class CommutePrefs private constructor(context: Context) {
             undoDate = undo?.first,
             undo = undo?.second,
             fence = prefs.getString(K_FENCE, null),
+            overtimeSlack = prefs.getInt(K_SLACK, Commute.SLACK_MINUTES),
+            overtime = Commute.OvertimeWay.of(prefs.getString(K_OVERTIME, null)),
+            placeNext = prefs.getBoolean(K_PLACE_NEXT, false),
         )
     }
 
@@ -136,6 +148,9 @@ class CommutePrefs private constructor(context: Context) {
         private const val K_PENDING = "pending_leave"
         private const val K_UNDO = "leave_undo"
         private const val K_FENCE = "fence"
+        private const val K_SLACK = "overtime_slack"
+        private const val K_OVERTIME = "overtime"
+        private const val K_PLACE_NEXT = "place_next"
 
         @Volatile private var instance: CommutePrefs? = null
 

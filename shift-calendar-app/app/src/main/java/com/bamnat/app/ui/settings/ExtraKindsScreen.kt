@@ -45,8 +45,8 @@ import androidx.compose.material.icons.outlined.Email
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +73,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +86,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.appContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
@@ -434,7 +436,7 @@ private fun templates(kinds: ExtraKinds, types: List<ShiftType>): List<KindTempl
 }
 
 /**
- * [EXTRA-04, EXTRA-07] 연장 휴무일 근무 지정: 잔업·특근·대근 as this person's company has them, on one screen: each kind's name, mark,
+ * [EXTRA-04, EXTRA-07] 연장·휴무일 근무 지정: 잔업·특근·대근 as this person's company has them, on one screen: each kind's name, mark,
  * hours (근무 뒤 2시간, 야간 대근 19~07시 …), what a day off makes of it, and how it is paid, with
  * what one of them comes to on a real coming day.
  */
@@ -454,9 +456,11 @@ fun ExtraKindsScreen(
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
     val edit by vm.editing.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-    val kinds = settings.extraKinds
+    // [RVH-50] HQ-18: the kinds as the calendar names them (an 알바's 추가 근무 · 쉬는 날 출근 · 대타); a kind edited here keeps that name.
+    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val kinds = settings.extraKinds.forStyle(calendars.styleOf(vm.calendarId, settings.workStyle))
     var adding by rememberSaveable { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var started by rememberSaveable { mutableStateOf(start == null) }
     var focusPay by remember { mutableStateOf(false) }
     val startSnap = snapshot
@@ -466,7 +470,7 @@ fun ExtraKindsScreen(
         val norm = start!!.replace(" ", "")
         val have = kinds.kinds.firstOrNull { it.name.replace(" ", "") == norm }
         if (have != null) vm.open(have)
-        else templates(kinds, startSnap.shiftTypes).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
+        else templates(kinds, if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) startSnap.shiftTypes else emptyList()).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
         focusPay = true
     }
 
@@ -477,17 +481,20 @@ fun ExtraKindsScreen(
         }
     }
 
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
-                title = { Text("연장 휴무일 근무 지정") },
+                title = { Text("연장·휴무일 근무 지정") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
-            // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
-            ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, "종류 추가") }, text = { Text("종류 추가") })
+            // [RVP-06] One rule for floating buttons; the words stay with TalkBack even when it is the icon alone.
+            com.bamnat.app.ui.components.AddFab("종류 추가", onClick = { adding = true }, open = fab.open)
         },
     ) { padding ->
         val snap = snapshot
@@ -532,7 +539,7 @@ fun ExtraKindsScreen(
         }
         if (adding) {
             TemplateDialog(
-                templates = remember(kinds, snap.shiftTypes) { templates(kinds, snap.shiftTypes) },
+                templates = remember(kinds, snap.shiftTypes) { templates(kinds, if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) snap.shiftTypes else emptyList()) },
                 onPick = { t -> adding = false; vm.openNew(t) },
                 onDismiss = { adding = false },
             )
@@ -598,7 +605,7 @@ private fun TemplateDialog(templates: List<KindTemplate>, onPick: (KindTemplate)
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
                 for (t in templates) {
                     Row(
-                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { onPick(t) }.padding(vertical = 10.dp, horizontal = 4.dp),
+                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(role = Role.Button) { onPick(t) }.padding(vertical = 10.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (t.kind.name.isBlank()) {
@@ -714,11 +721,12 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "색") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+                        FlowRow {
                             for (c in ExtraPalette) {
                                 val selected = c == kind.colorArgb
                                 Box(
-                                    Modifier.size(36.dp).clip(CircleShape).background(c.asColor())
+                                    Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(c.asColor())
                                         .selectable(selected = selected, role = Role.RadioButton) { setKind(kind.copy(colorArgb = c)) },
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -729,7 +737,7 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "시간") {
-                        TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it })
+                        TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it }, ownShifts = vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN)
                     }
 
                     SectionCard(title = "급여와 가산", modifier = Modifier.bringIntoViewRequester(payView)) {
@@ -878,7 +886,11 @@ private fun KindEditor(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: ScheduleSnapshot, onTiming: (ExtraTiming) -> Unit, onPick: (String) -> Unit) {
+private fun TimingContent(
+    kind: ExtraKind, timed: List<ShiftType>, snapshot: ScheduleSnapshot, onTiming: (ExtraTiming) -> Unit, onPick: (String) -> Unit,
+    /** [R200-01] False in an added calendar: the kinds are the app's and a chosen shift would name the main calendar's. */
+    ownShifts: Boolean = true,
+) {
     val t = kind.timing
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = t is ExtraTiming.Band, onClick = {
@@ -945,6 +957,8 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
         is ExtraTiming.AsShift -> {
             if (timed.isEmpty()) {
                 Hint("시간이 있는 근무 종류가 없어요. 근무 종류를 만들면 그 시간이 그대로 들어가요. 지금은 09:00–18:00으로 넣어요.")
+            } else if (!ownShifts) {
+                Hint("이 달력에서는 그날 대신한 근무를 달력에서 골라 넣어요. 어느 근무만 대신하는지는 내 달력에서 정해요.")
             } else {
                 // [EXTRA-07] Several shifts at once: one 대근 for 모닝 and 나이트 alike. A shift deleted since is left out.
                 val picked = t.shiftTypeIds.filter { id -> timed.any { it.id == id } }.toSet()

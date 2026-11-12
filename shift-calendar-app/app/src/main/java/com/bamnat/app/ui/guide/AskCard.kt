@@ -115,7 +115,7 @@ fun AskArea(
             question = question,
             onOpen = {
                 val a = question.answer
-                if (a is Answer.Open) FeatureRegistry.get(a.feature)?.let(FeatureLinks::open) else opened = true
+                if (a is Answer.Open) FeatureLinks.openAnswer(a.feature) else opened = true
             },
             onLater = { c.asks.set(calendar, AskScheduler.later(c.asks.of(calendar), current.missing.key, today)) },
             modifier = modifier,
@@ -126,7 +126,7 @@ fun AskArea(
         question = question,
         reward = current.reward,
         onAnswer = { value -> scope.launch { if (c.answers.answer(calendar, current.missing.key, value)) answered++ } },
-        onOpen = { feature -> FeatureRegistry.get(feature)?.let(FeatureLinks::open) },
+        onOpen = { feature -> FeatureLinks.openAnswer(feature) },
         onLater = { c.asks.set(calendar, AskScheduler.later(c.asks.of(calendar), current.missing.key, today)) },
         modifier = modifier,
         // [EASY-09] A value 모두 처음부터 asks again starts from what it is.

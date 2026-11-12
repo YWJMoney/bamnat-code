@@ -85,6 +85,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.settings.ColorPick
 import com.bamnat.core.recipe.Decor
 import com.bamnat.core.recipe.DecorGlyphs
@@ -373,7 +374,7 @@ private fun Stage(items: List<DecorItem>, place: String, picked: Set<Int>, advan
         val k = with(density) { minOf(maxWidth.toPx() / part.width, maxH.toPx() / part.height) }
         val w = with(density) { (part.width * k).toDp() }
         val h = with(density) { (part.height * k).toDp() }
-        Canvas(Modifier.size(w, h).clip(RoundedCornerShape(8.dp)).background(ground).border(1.dp, line, RoundedCornerShape(8.dp))
+        Canvas(Modifier.size(w, h).clip(MaterialTheme.shapes.small).background(ground).border(1.dp, line, MaterialTheme.shapes.small)
             .semantics {
                 contentDescription = "꾸미기 판: ${Decor.anchorLabel(place)}. 꾸밈 ${items.count { it.at == place && !it.hide }}개"
                 stateDescription = if (picked.isEmpty()) "고른 꾸밈 없음" else "고른 꾸밈 ${picked.size}개"
@@ -584,7 +585,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
         val accent = MaterialTheme.colorScheme.primary
         when (kind) {
             DecorKind.SHAPE -> GlyphGrid(DecorGlyphs.search(DecorGlyphs.SHAPE_LIST, q)) { g ->
-                Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.SHAPE, g.id) }
+                Box(Modifier.size(52.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.SHAPE, g.id) }
                     .semantics { contentDescription = g.label }, contentAlignment = Alignment.Center) {
                     Canvas(Modifier.size(30.dp)) {
                         val p = DecorShapes.path(g.id, size.width, size.height)
@@ -598,7 +599,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                     Text("선 아이콘 (색을 골라 써요)", style = MaterialTheme.typography.titleSmall) }
                 OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("선 아이콘 찾기 (예: 별, 하트, 달)") })
                 GlyphGrid(DecorGlyphs.search(DecorGlyphs.ICON_LIST, q)) { g ->
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
+                    Box(Modifier.size(52.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
                         contentAlignment = Alignment.Center) {
                         DecorIcons.of(g.id)?.let { Icon(it, g.label.substringBefore(' '), tint = ink, modifier = Modifier.size(28.dp)) }
                     }
@@ -609,7 +610,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                 if (list.isEmpty()) Text("찾는 이모지가 없어요", style = MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     list.forEach { e ->
-                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "$e 넣기") { onAdd(DecorKind.EMOJI, e) },
+                        Box(Modifier.size(44.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "$e 넣기") { onAdd(DecorKind.EMOJI, e) },
                             contentAlignment = Alignment.Center) { Text(e, fontSize = 24.sp) }
                     }
                 }
@@ -778,6 +779,11 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
             FilterChip(selected = first.tap == null, onClick = { all(null) { it.copy(tap = null) } }, label = { Text("그림만") })
             buttons.forEach { (id, words) -> FilterChip(selected = first.tap == id, onClick = { all(null) { it.copy(tap = id) } }, label = { Text(words) }) }
         }
+        // 2.0.0 [RVM-23] RCP-17·STU-19: one that cannot take a tap (보이지 않음·너무 큼·화면 가득) says so here, where the button is picked,
+        // not only at 올리기 점검; it stays a picture until it can.
+        com.bamnat.core.recipe.DecorTapRule.why(first)?.let { why ->
+            Text("이대로는 눌리지 않고 그림으로만 보여요. $why", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.bamnat.caution)
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             AssistChip(onClick = { all(null) { it.copy(flip = !first.flip) } }, label = { Text("좌우 뒤집기") })
             AssistChip(onClick = { onOrder(true) }, label = { Text("앞으로") })
@@ -892,7 +898,7 @@ private fun Layers(items: List<DecorItem>, places: List<String>, picked: Set<Int
 private fun LayerRow(item: DecorItem, picked: Boolean, onPick: (Boolean) -> Unit, set: ((DecorItem) -> DecorItem) -> Unit,
                      canUp: Boolean, canDown: Boolean, onMove: (Boolean) -> Unit, onEdit: () -> Unit = {}) {
     // PC 확인 1.36 (레이어 줄 글자가 좁아 숨기기 단추가 눌려요): 숨기기·잠그기 on the row; 앞으로·뒤로·고치기 under the picked one.
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
         .background(if (picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)) {
     Row(Modifier.fillMaxWidth()
         .clickable(onClickLabel = "고르기") { onPick(false) }.padding(start = 16.dp),
@@ -924,11 +930,8 @@ internal fun Color.argbLong(): Long = toArgb().toLong() and 0xFFFFFFFFL
 
 @Suppress("unused") private val keepSpacer: @Composable () -> Unit = { Spacer(Modifier.height(0.dp)) }
 
-/** 을 or 를 after [w], by its last syllable's 받침. */
-internal fun eul(w: String): String {
-    val c = w.lastOrNull { it in '가'..'힣' } ?: return "을(를)"
-    return if ((c - '가') % 28 != 0) "을" else "를"
-}
+/** 을 or 를 after [w], by its last sound's 받침 (2.0.0 [RVJ-33] PC-84: a name with no Hangul read as Korean says it, not '을(를)'). */
+internal fun eul(w: String): String = com.bamnat.app.ui.Fmt.obj(w)
 
 /** An item's name in a sentence: a text box's own words already stand in quotes. */
 private fun quoted(i: DecorItem): String = if (i.kind == DecorKind.TEXT) i.label else "‘${i.label}’"

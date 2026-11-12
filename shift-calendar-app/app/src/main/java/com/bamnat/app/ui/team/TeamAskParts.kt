@@ -142,6 +142,7 @@ private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit, zero: St
 @Composable
 internal fun AskCard(
     round: AskRound, members: List<TeamMember>, wishes: List<TeamWish>, shifts: List<TeamShift>, busy: Boolean, misses: Map<String, Int>,
+    pullFailed: Boolean = false,
     onPull: () -> Unit, onSend: () -> Unit, onClose: (Boolean) -> Unit, onEnd: () -> Unit,
 ) {
     val names = members.associate { it.id to it.name }
@@ -186,7 +187,13 @@ internal fun AskCard(
             // 1.39 G2 통합 7차 PC: '22:22에 가져왔어요' on a phone at 13:22 (GMT). When it was fetched is the phone's own time, like its
             // clock; the 마감 above stays in 한국 시각, as the 신청 page shows it.
             val t = java.time.Instant.ofEpochMilli(it).atZone(com.bamnat.core.time.Today.zone())
-            Text("${t.monthValue}/${t.dayOfMonth} ${"%02d:%02d".format(t.hour, t.minute)}에 가져왔어요. 화면을 열 때마다 새로 가져와요.",
+            val at = "${t.monthValue}/${t.dayOfMonth} ${"%02d:%02d".format(t.hour, t.minute)}"
+            // 1.39.1 9차 PC 리더: when the fetch on opening failed, say so with a way to try again instead of the old time alone.
+            if (pullFailed) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("새 신청을 못 가져왔어요($at 것을 보여 줘요)", style = MaterialTheme.typography.labelSmall,
+                    color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning, modifier = Modifier.weight(1f))
+                TextButton(onClick = onPull, enabled = !busy && round.token != null) { Text("다시") }
+            } else Text("${at}에 가져왔어요. 화면을 열 때마다 새로 가져와요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -58,7 +59,15 @@ import com.bamnat.core.time.Today
  * opened over the tab, a row that opens a tool, number and date fields, and a label–value line.
  */
 
-/** A full-screen page with a back arrow and an optional action, scrolling its content above the keyboard. */
+/**
+ * A full-screen page with a back arrow and an optional action, scrolling its content above the keyboard.
+ *
+ * 2.0.0 [RVP-07] (검토 UIX-04·T13-03·UIX-22, 더할 것 I13a-05) It looked like a page but was a 창: the status bar and the bottom line
+ * were dimmed grey over a light page, it filled a 펼친 폴드 edge to edge and it came in without the side slide every other page has.
+ * Now it is drawn edge to edge under the bars with their icons in the page's colours and no dimming, its body keeps to
+ * [PageWidth.Body] in the middle of a wide screen, and it slides in from the side like a page (still when 움직임 끄기). The eight
+ * 사장님·알바·현장 tools (급여 대장, 견적서, 매출…) change together.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ToolScreen(
@@ -71,22 +80,29 @@ internal fun ToolScreen(
     bodyModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text(title) },
-                        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
-                        actions = { if (action != null) TextButton(onClick = onAction, enabled = actionEnabled) { Text(action) } },
-                    )
-                },
-            ) { padding ->
-                Column(
-                    Modifier.fillMaxSize().padding(padding).imePadding().then(bodyModifier).verticalScroll(rememberScrollState()).padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = content,
-                )
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        com.bamnat.app.ui.components.PageWindow()
+        com.bamnat.app.ui.components.SlideInPage {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(title) },
+                            navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
+                            actions = { if (action != null) TextButton(onClick = onAction, enabled = actionEnabled) { Text(action) } },
+                        )
+                    },
+                ) { padding ->
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding).imePadding(),
+                        contentAlignment = Alignment.TopCenter) {
+                        Column(
+                            Modifier.widthIn(max = com.bamnat.app.ui.components.PageWidth.Body).fillMaxSize().then(bodyModifier)
+                                .verticalScroll(rememberScrollState()).padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            content = content,
+                        )
+                    }
+                }
             }
         }
     }

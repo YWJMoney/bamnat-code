@@ -28,7 +28,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -133,12 +136,13 @@ fun Modifier.partBox(s: PartStyle, shape: Shape = RoundedCornerShape(0.dp), inne
         m = m.shadow(e.dp, sh, clip = false, ambientColor = c, spotColor = c)
     }
     s.alpha?.let { m = m.alpha(it / 100f) }
-    // [MAT-01] 1.36 채우기 (그라데이션·무늬·질감·유리·셰이더) wins over the plain fill colour.
-    if (s.paint != null) m = m.clip(sh).fillWith(s.paint, sh, alpha = (s.fillA ?: 100) / 100f)
-    else s.fillColor?.let { m = m.clip(sh).background(it, sh) }
+    // [MAT-01] 1.36 채우기 (그라데이션·무늬·질감·유리·셰이더) wins over the plain fill colour. 2.0.0 [RVS-02] cut to the part's shape
+    // as it is drawn only: a layer's clip also cut where a finger lands (a round 칸's corners on the open fold opened nothing).
+    if (s.paint != null) m = m.drawClip(sh).fillWith(s.paint, sh, alpha = (s.fillA ?: 100) / 100f)
+    else s.fillColor?.let { m = m.drawClip(sh).background(it, sh) }
     m = m.partLine(s, sh)
     // [MAT-07] 부품 움직임.
-    m = m.partMotion(s.motion, s.lineColor ?: s.fillColor ?: Color.White)
+    m = m.partMotion(s.motion, s.lineColor ?: s.fillColor ?: Color.Unspecified)
     if (inner) m = m.partPadding(s)
     return m
 }
@@ -155,11 +159,12 @@ private fun Modifier.paintedLine(fill: com.bamnat.core.recipe.Fill, w: androidx.
 
 /**
  * [MAT-07] A part's movement (숨쉬기·은은한 빛·도는 테·통통·반짝 지나가기) in [tint]. The app's 움직임 끄기 and the phone's 애니메이션 삭제
- * keep it still.
+ * keep it still. 2.0.0 [RVS-03] (스튜디오 조사 SN-01) A line with no colour of its own glows in the app's own colour: it was white, which
+ * does not show on a light cell.
  */
 fun Modifier.partMotion(kind: String?, tint: Color): Modifier = if (kind == null || kind == "none") this else composed {
     if (com.bamnat.app.ui.theme.LocalMotionOff.current) return@composed Modifier
-    if (kind != "shimmer") return@composed Modifier.todayMotion(kind, tint)
+    if (kind != "shimmer") return@composed Modifier.todayMotion(kind, tint.takeOrElse { androidx.compose.material3.MaterialTheme.colorScheme.primary })
     val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer")
     val v by t.animateFloat(-1f, 2f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1800)), label = "v")
     Modifier.drawWithContent {
@@ -185,19 +190,21 @@ fun Modifier.partLine(s: PartStyle, shape: Shape): Modifier {
     if (kind == "solid") return border(w, color, shape)
     val corners = s.corners.map { (it ?: 0).toFloat() }
     return drawWithContent {
-        drawContent()
         val px = w.toPx()
         val r = CornerRadius(corners.maxOrNull()?.dp?.toPx() ?: 0f)
+        // 2.0.0 [PC-33] 야간 회복 스테이션의 공휴일 칸 (두 줄 테두리의 안쪽 줄이 날짜·'11h'·'대체공휴일' 글자를 가로질러요): the inner line of
+        // 두 줄 lies inside the part, so it is drawn under what is in it; the outer one stays on top at the edge.
+        if (kind == "double") {
+            val gap = px * 3
+            drawRoundRect(color, Offset(gap, gap), Size(size.width - gap * 2, size.height - gap * 2), r, style = Stroke(px))
+        }
+        drawContent()
         val effect = when (kind) {
             "dash" -> PathEffect.dashPathEffect(floatArrayOf(px * 4, px * 3))
             "dot" -> PathEffect.dashPathEffect(floatArrayOf(px, px * 2))
             else -> null
         }
         drawRoundRect(color, Offset(px / 2, px / 2), Size(size.width - px, size.height - px), r, style = Stroke(px, pathEffect = effect))
-        if (kind == "double") {
-            val gap = px * 3
-            drawRoundRect(color, Offset(gap, gap), Size(size.width - gap * 2, size.height - gap * 2), r, style = Stroke(px))
-        }
     }
 }
 
@@ -308,15 +315,34 @@ fun PartStyle.fillColorOr(default: Color): Color = fillColor ?: default
 object PartTheme {
     private fun on(c: Color): Color = if (c.luminance() > 0.45f) Color.Black else Color.White
 
+    private fun Color.argb(): Long = toArgb().toLong() and 0xFFFFFFFFL
+
+    /**
+     * 2.0.0 [RVS-06] SN-05: a look's 앱 바탕 brings every colour a screen draws on it (보조 글자, 테두리, 입력 칸, 카드 층), made from that
+     * ground and its letters ([com.bamnat.core.recipe.PartFloor.roles]), each kept readable; before, only the ground and its letters
+     * changed and the app's light-grey lines and helper text stayed, unread on a dark ground. A 단추's letters read on its fill.
+     */
     fun colors(c: androidx.compose.material3.ColorScheme, bp: Blueprint): androidx.compose.material3.ColorScheme {
         if (bp.isEmpty) return c
         val app = bp.own("app")
         val button = bp.own("app.button")
         val card = bp.own("app.card")
         var s = c
-        app.fillColor?.let { s = s.copy(background = it, surface = it, onBackground = on(it), onSurface = on(it)) }
-        app.ink?.partColor()?.let { s = s.copy(onBackground = it, onSurface = it) }
-        button.fillColor?.let { s = s.copy(primary = it, onPrimary = button.ink?.partColor() ?: on(it)) }
+        val ground = app.fillColor?.compositeOver(c.background)
+        if (ground != null || app.ink != null) {
+            val r = com.bamnat.core.recipe.PartFloor.roles((ground ?: c.background).argb(), app.ink)
+            s = s.copy(onBackground = Color(r.on), onSurface = Color(r.on), onSurfaceVariant = Color(r.onVariant))
+            if (ground != null) s = s.copy(
+                background = ground, surface = ground, surfaceContainerLowest = ground, surfaceBright = ground, surfaceDim = ground,
+                surfaceContainerLow = Color(r.sunk), surfaceContainer = Color(r.raised), surfaceContainerHigh = Color(r.raised),
+                surfaceContainerHighest = Color(r.field), surfaceVariant = Color(r.field),
+                outline = Color(r.outline), outlineVariant = Color(r.outlineVariant),
+            )
+        }
+        button.fillColor?.let { f ->
+            val fill = f.compositeOver(s.background)
+            s = s.copy(primary = fill, onPrimary = Color(com.bamnat.core.recipe.PartFloor.readable((button.ink?.partColor() ?: on(fill)).argb(), fill.argb(), com.bamnat.core.recipe.PartFloor.BODY)))
+        }
         card.fillColor?.let { s = s.copy(surfaceContainerLow = it, surfaceContainer = it, surfaceContainerHigh = it) }
         return s
     }

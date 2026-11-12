@@ -144,7 +144,7 @@ internal fun ExtrasContent(
                 if (day.isRestDay) "쉬는 날 일했다면 여기서 넣어 주세요. 근무표는 그대로 두고 일한 시간만 더해져서 급여가 맞게 계산돼요."
                 else if (snapshot.kinds.visible().none { it.timing is com.bamnat.core.model.ExtraTiming.AsShift })
                     "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 특근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요."
-                else "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 같은 날 대근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.",
+                else "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 같은 날 ${ExtraText.coverWord(extraStyle)}${Fmt.obj(ExtraText.coverWord(extraStyle))} 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.", // [RVH-07]
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -152,7 +152,7 @@ internal fun ExtrasContent(
         TextButton(onClick = onOpenExtraKinds, modifier = Modifier.padding(start = 0.dp)) {
             Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("연장 휴무일 근무 지정")
+            Text("연장·휴무일 근무 지정")
         }
     }
 }

@@ -4,6 +4,9 @@ import com.bamnat.app.ui.parts.partSpot
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
+import com.bamnat.app.ui.parts.cellPartInside
+import com.bamnat.app.ui.parts.cellPartOutside
+import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.parts.partStyle
 import com.bamnat.app.ui.parts.partLine
 import com.bamnat.app.ui.parts.shape
@@ -110,6 +113,7 @@ import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.HourlyWork
 import com.bamnat.core.work.DayWork
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Work
 import java.time.DayOfWeek
@@ -280,6 +284,8 @@ fun MonthGrid(
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
     /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
     marked: Set<LocalDate> = emptySet(),
+    /** 2.0.0 [RVL-38] (검토 U07b-06) Days something is about to be written over (한 달 근무 넣기: leave already there), outlined in the caution orange (조건 6). */
+    outlined: Set<LocalDate> = emptySet(),
     /** 1.32 [CALX-06] The first day of each 급여 기간 on the grid: a line at its left edge (마감 다음 날). */
     cutDays: Set<LocalDate> = emptySet(),
     /** 1.32 [WTYP-11] 희망 오프 days: a small ♡ at the top right. */
@@ -428,6 +434,8 @@ fun MonthGrid(
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight().then(
                             if (date in marked) Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.small) else Modifier,
+                        ).then(
+                            if (date in outlined) Modifier.border(2.dp, MaterialTheme.bamnat.caution, MaterialTheme.shapes.small) else Modifier,
                         ).then(
                             if (fill == null) Modifier
                             else fillShare(date, today, firstCell.plusDays(GRID_ROWS * 7L - 1)).let { share ->
@@ -663,7 +671,9 @@ private fun DayCell(
         // [CAL-05] A field or shop day without work is not a day off: it says what the day has, or that it is empty.
         val shiftWords = when {
             day.isWorkDay -> (type?.name ?: "근무") + " " + HoursFormat.korean(day.scheduledMinutes)
-            type != null && (focus == CalendarFocus.SHIFTS || !type.isOff || jobs == 0 && sales == null) -> type.name
+            // 2.0.0 [RVR-40] (누르는 시험이 찾음): a shop day the owner turned to 휴무 says so even with an 일감 or 외상 on it, so
+            // '직접 바꿈' is not read without what it was changed to.
+            type != null && (focus == CalendarFocus.SHIFTS || !type.isOff || jobs == 0 && sales == null || day.source == DaySource.OVERRIDE) -> type.name
             focus == CalendarFocus.SHIFTS -> "쉬는 날"
             jobs > 0 || sales != null -> null
             else -> focus.emptyDay(day.isWorkDay)
@@ -708,16 +718,17 @@ private fun DayCell(
 
     Box(
         modifier
-            .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, paint = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
+            // 2.0.0 [RVS-03] 칸 부품의 바깥(바깥 간격·그림자)·안(채우기·선·투명도·움직임)은 스튜디오 예시 칸과 같은 함수로
+            // (스튜디오 조사 SN-01: 움직임이 바깥 간격·그림자가 있을 때만 그려져 장터 394개 작품의 '오늘 칸 빛'이 안 보였어요).
+            .cellPartOutside(cellPart, partShape)
             .cellEdge(view, cellLook, partShape, scheme.outlineVariant)
-            .clip(partShape)
+            // 2.0.0 [RVS-02] cut as drawn only, so a round cell's corners still open its day (스튜디오 조사 SN-02).
+            .drawClip(partShape)
             // [MAT-01] 1.36 칸 채우기 under the day's wash; a shader moves only in today's cell (a month of moving cells is too much).
             .fillWith(cellLook?.fill, alpha = cellFillAlpha(cellLook), animate = isToday)
             .background(tint ?: Color.Transparent)
-            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour.
-            .then(run { cellPart.paint?.let { Modifier.fillWith(it, alpha = (cellPart.fillA ?: 100) / 100f, animate = isToday) } ?: cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
-            .then(run { Modifier.partLine(cellPart, partShape) })
-            .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
+            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour, its line, 투명도 and 2.0.0 [RVS-03] 움직임.
+            .cellPartInside(cellPart, partShape, isToday, isSelected)
             .decor(com.bamnat.core.recipe.Decor.CELL, decorDay, date = day.date)
             .then(
                 when {
@@ -874,7 +885,7 @@ private fun DayCell(
                 Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         // At least 20dp round, wider with a big font so today's "14" stays inside its circle.
-                        Modifier.defaultMinSize(20.dp, 20.dp).clip(RoundedCornerShape(10.dp)).background(if (isToday) look.today ?: scheme.primary else Color.Transparent)
+                        Modifier.defaultMinSize(20.dp, 20.dp).clip(MaterialTheme.shapes.small).background(if (isToday) look.today ?: scheme.primary else Color.Transparent)
                             .padding(horizontal = 2.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1043,9 +1054,15 @@ private fun DayCell(
             // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not offered here either, but the day's own.
             val folded = com.bamnat.app.ui.shifts.foldedHere()
             // [DAILY-10] The types changed to most in the last 60 days come first.
-            val ordered = remember(snapshot, folded, type?.id) {
+            // 2.0.0 [RVG-10] 검토 CAL-08 (PC 9차 가게에서 재현: 잔업·대근·특근·연차·반차·반반차, 칠하기 키가 주간·오후·야간): the
+            // long-press menu takes the day sheet's rules — a shop offers its own 영업 kinds ([dayTypes]), and an owner (가게·투자)
+            // has no 추가 근무 or 연차 of their own; one already on the day still shows so it can be taken off.
+            val owner = extraStyle == com.bamnat.core.work.WorkStyle.BUSINESS || extraStyle == com.bamnat.core.work.WorkStyle.INVEST
+            val ordered = remember(snapshot, folded, type?.id, extraStyle) {
                 val today = Today.date()
-                com.bamnat.core.schedule.QuickOrder.byUse(snapshot.shiftTypes.filter { it.id !in folded || it.id == type?.id }, { it.id },
+                val offered = if (extraStyle == com.bamnat.core.work.WorkStyle.BUSINESS) dayTypes(snapshot, extraStyle, type?.id, folded)
+                    else snapshot.shiftTypes.filter { it.id !in folded || it.id == type?.id }
+                com.bamnat.core.schedule.QuickOrder.byUse(offered, { it.id },
                     (0 until com.bamnat.core.schedule.QuickOrder.DAYS).mapNotNull { back ->
                         snapshot.resolver.resolve(today.minusDays(back.toLong())).takeIf { it.source == DaySource.OVERRIDE }?.shiftType?.id
                     })
@@ -1073,8 +1090,9 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
             }
-            val choices = remember(snapshot, day, usesShifts, folded) {
-                if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day) else emptyList()
+            val choices = remember(snapshot, day, usesShifts, folded, owner) {
+                if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day)
+                    .filter { !owner || ExtraText.indexOf(day, it) >= 0 } else emptyList()
             }
             if (choices.isNotEmpty()) HorizontalDivider()
             for (c in choices) {
@@ -1086,11 +1104,12 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Extra(c)) },
                 )
             }
-            val shift = type?.takeIf { it.hasTimes }
+            val shift = type?.takeIf { it.hasTimes && !owner }
             if (shift != null || day.leave != null) {
                 HorizontalDivider()
                 for (q in listOf(4, 2, 1)) {
                     val l = Leave(LeaveKind.ANNUAL, q)
+                    if (owner && day.leave != l) continue
                     DropdownMenuItem(
                         text = { Text(if (day.leave == l) "${l.label} 해제" else l.label) },
                         leadingIcon = { LeaveMark(l, size = 20.dp) },
@@ -1158,7 +1177,7 @@ internal fun JobBadge(count: Int, owed: Boolean) {
     val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
     Box(
         // [CAL-52] At least 22dp, taller with large text: a fixed 22dp cut the "일" in half at 200%.
-        Modifier.heightIn(min = 22.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 5.dp),
+        Modifier.heightIn(min = 22.dp).clip(MaterialTheme.shapes.extraSmall).background(bg).padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold,
@@ -1335,6 +1354,10 @@ internal fun CustomCellBody(
                     fontWeight = dp.weight?.let { FontWeight(it) } ?: if (isToday) FontWeight.ExtraBold else if (l?.dateBold == false) FontWeight.Normal else if (l?.dateBold == true) FontWeight.Bold else FontWeight.SemiBold,
                     fontSize = size, lineHeight = size, maxLines = 1,
                     color = when {
+                        // 2.0.0 [PC-62] 야간 회복 스테이션 (오늘 숫자가 분홍색으로 하늘색 동그라미 위에): a date colour of the blueprint (요일·조건부)
+                        // that does not read on the date's own round (오늘) gives way to the letters that do (3:1 at least).
+                        dp.ink != null && chip.alpha >= 0.5f && com.bamnat.core.layout.Contrast.ratio(dp.ink!!, chip.copy(alpha = 1f).toArgb().toLong() and 0xFFFFFFFFL) < 3.0 ->
+                            com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
                         dp.ink != null -> Color(dp.ink!!.toInt())
                         // [BLU-05] A fill the blueprint gives the date brings letters that read on it (PC 1차: 노랑 위 흰 글자).
                         dp.fillColor != null && chip.alpha >= 0.5f -> com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
@@ -1491,11 +1514,13 @@ internal fun cellFillAlpha(look: com.bamnat.core.recipe.CellLook?): Float = if (
 
 /** [MAT-01] What a cell's fill reads as (for the date's ink), when it is strong enough to matter. */
 internal fun cellFillGround(look: com.bamnat.core.recipe.CellLook?): Color? = look?.fill?.average?.let { Color(it.toInt()) }
-    ?.copy(alpha = cellFillAlpha(look))?.takeIf { it.alpha >= 0.5f }
+    // 2.0.0 [PC-33] 야간 회복 스테이션 (야간 칸의 '11h'가 어두워 안 읽혀요): a fill of see-through colours (10~40 of 255) is that see-through
+    // on the cell too, so its own alpha counts; it used to be taken as solid and the lines read in black on what is a dark cell.
+    ?.let { it.copy(alpha = it.alpha * cellFillAlpha(look)) }?.takeIf { it.alpha >= 0.5f }
 
 /** [FREE-01] A cell's corners by its look, else 달력 모양's. */
 internal fun cellShape(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): androidx.compose.ui.graphics.Shape =
-    look?.corner?.let { RoundedCornerShape(it.dp) } ?: if (view.grid == "line") RoundedCornerShape(3.dp) else RoundedCornerShape(10.dp)
+    look?.corner?.let { RoundedCornerShape(it.dp) } ?: if (view.grid == "line") RoundedCornerShape(3.dp) else RoundedCornerShape(8.dp)
 
 /** [CVW-01] 1.35 달력 모양 for every calendar grid; MainActivity provides the user's. */
 val LocalCalendarView = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.CalendarView() }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>밤낮 · 교대 근무표·근무 알람·급여 계산 앱</title>
-<meta name="description" content="교대 근무표·근무마다 다른 알람·야간 수당까지 이번 달 월급을 한 앱에서. 교대·알바·현장·사장님까지 로그인 없이 무료.">
+<meta name="description" content="교대 근무표·근무마다 다른 알람·야간 수당까지 이번 달 월급을 한 앱에서. 교대·알바·현장·가게·사장님까지 로그인 없이 무료.">
 <meta name="naver-site-verification" content="9b76a60eab24da1353f46874f6fbc86169e6bc78" />
 <link rel="canonical" href="https://bamnat.app/">
 <meta name="robots" content="max-image-preview:large">
@@ -60,7 +60,7 @@
             <div class="notch"></div>
             <div class="sb"><span id="ptime">9:41</span><i></i></div>
             <div class="bar"><span class="who"><b>나</b>내 달력 ▾</span><span class="share">공유</span></div>
-            <div class="month"><span id="pmonth">11월</span><small id="pyear">2026년</small></div>
+            <div class="month"><span id="pmonth">11월</span><small id="pyear"><!--THIS_YEAR--></small></div>
             <div class="wk"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
             <div class="days" id="pdays"></div>
             <div class="todaycard"><span class="ic" id="tic">야</span><div><strong id="ttitle">오늘 야간 19:00–07:00</strong><span id="tsub">출근 알람 17:40</span></div></div>
@@ -106,7 +106,7 @@
   <div class="wrap">
     <span class="eyebrow">누구의 근무든</span>
     <h2 id="who-title">처음에 하는 일만 고르면<br>맞는 화면이 바로 준비돼요</h2>
-    <p class="sub">교대·일근·알바·현장·가게, 그리고 근무표를 짜는 리더와 직원을 둔 사장님까지.</p>
+    <p class="sub">교대·일근·알바·현장·가게·투자, 그리고 근무표를 짜는 리더와 직원을 둔 사장님까지.</p>
     <div class="who-tabs" role="tablist" aria-label="사용자 유형" id="whoTabs"></div>
     <div class="who-panel" role="tabpanel" id="whoPanel" aria-live="polite"></div>
   </div>
@@ -119,7 +119,7 @@
       <span class="eyebrow">이것까지 한 앱에</span>
       <h2 id="gal-title" style="font-size:clamp(28px,5.4vw,46px);line-height:1.2;letter-spacing:-0.04em;margin:0">근무 날의 모든 순간</h2>
     </div>
-    <div class="nav"><button type="button" id="gPrev" aria-label="앞으로"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button><button type="button" id="gNext" aria-label="다음"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></div>
+    <div class="nav"><button type="button" id="gPrev" aria-label="앞 화면 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button><button type="button" id="gNext" aria-label="다음 화면 보기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button></div>
   </div>
   <div class="rail" id="rail"><!--GALLERY--></div>
   <div class="dots" id="dots" aria-hidden="true"></div>
@@ -153,18 +153,20 @@
         <div class="row2"><output id="qOut">0원</output><span class="per">1주 주휴수당</span></div>
         <input type="range" id="qHours" min="5" max="52" step="1" value="20" aria-label="1주 근무 시간">
         <div class="lbl"><span>1주 <b id="qH">20</b>시간</span><span id="qMonth">한 달 약 0원</span></div>
-        <div class="chips" id="qYears"></div>
+        <div class="chips" id="qYears" role="group" aria-label="최저시급 연도"></div>
         <p class="foot"><a href="calc/juhyu/">자세히 계산하기 →</a></p>
       </div>
       <a class="tile reveal" href="calc/allowance/"><span class="go"><!--ARROW--></span><h3>야간·연장·휴일수당</h3><p>출퇴근 시각만 넣으면 밤 10시~아침 6시를 나눠요</p></a>
+      <a class="tile reveal" href="calc/week/"><span class="go"><!--ARROW--></span><h3>한 주 연장·52시간</h3><p>요일마다 출퇴근을 넣으면 주 40시간 넘은 연장까지</p></a>
       <a class="tile reveal" href="calc/alba/"><span class="go"><!--ARROW--></span><h3>알바 월급</h3><p>주휴 포함, 3.3%·4대보험 뺀 실수령</p></a>
       <a class="tile reveal" href="calc/salary/"><span class="go"><!--ARROW--></span><h3>월급·연봉 실수령액</h3><p>4대보험과 간이세액표 소득세를 뺀 통장 금액</p></a>
       <a class="tile reveal" href="calc/daily/"><span class="go"><!--ARROW--></span><h3>일당 계산기</h3><p>현장·건설 일용직 일당의 세금과 실수령</p></a>
       <a class="tile reveal" href="calc/leave/"><span class="go"><!--ARROW--></span><h3>연차 계산기</h3><p>입사일로 지금 연차와 근속별 개수</p></a>
       <a class="tile reveal" href="calc/severance/"><span class="go"><!--ARROW--></span><h3>퇴직금 계산기</h3><p>평균임금 × 30일 × 재직일수/365</p></a>
-      <a class="tile reveal" href="holiday/2027/"><span class="go"><!--ARROW--></span><h3>2027년 공휴일·연휴</h3><p>대체공휴일과 사흘 이상 연휴, 교대 근무자 쉬는 날</p></a>
-      <a class="tile reveal" href="holiday/2026/"><span class="go"><!--ARROW--></span><h3>2026년 공휴일</h3><p>남은 공휴일과 연휴 한눈에</p></a>
-      <a class="tile reveal" href="shift/print/"><span class="go"><!--ARROW--></span><h3>2027 교대 달력 인쇄</h3><p>A4 한 장에 1년 근무, 공휴일·야간 횟수까지</p></a>
+      <a class="tile reveal" href="calc/boss/"><span class="go"><!--ARROW--></span><h3>사장님 인건비</h3><p>주휴수당과 사업주 4대보험까지 직원 한 달 인건비</p></a>
+      <a class="tile reveal" href="calc/shop/"><span class="go"><!--ARROW--></span><h3>가게 하루 매출 목표</h3><p>쉬는 요일로 이번 달 문 여는 날과 하루 목표, 세금 날까지</p></a>
+      <!--HOL_TILES-->
+      <a class="tile reveal" href="shift/print/"><span class="go"><!--ARROW--></span><h3><!--PRINT_YEAR--> 교대 달력 인쇄</h3><p>A4 한 장에 1년 근무, 공휴일·야간 횟수까지. 조 여러 개를 나란히도</p></a>
       <a class="tile reveal" href="form/"><span class="go"><!--ARROW--></span><h3>근무표 엑셀 양식</h3><p>듀티표·조별 근무표·알바 스케줄표·출역표</p></a>
     </div>
   </div>

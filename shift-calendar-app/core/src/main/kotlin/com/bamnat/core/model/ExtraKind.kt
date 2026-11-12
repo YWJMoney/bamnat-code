@@ -122,6 +122,14 @@ data class ExtraEntry(
 data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
     fun byId(id: Long): ExtraKind? = kinds.firstOrNull { it.id == id }
 
+    /**
+     * [R200-01] The kinds as an added calendar uses them. The kinds are the app's, but a 대근 for chosen shifts names the
+     * main calendar's shift ids, which in another calendar's own database are other kinds of day: there it covers any shift.
+     */
+    fun forAddedCalendar(): ExtraKinds =
+        if (kinds.none { (it.timing as? ExtraTiming.AsShift)?.shiftTypeIds?.isNotEmpty() == true }) this
+        else copy(kinds = kinds.map { k -> if (k.timing is ExtraTiming.AsShift && k.timing.shiftTypeIds.isNotEmpty()) k.copy(timing = ExtraTiming.AsShift()) else k })
+
     /** The kind for [id]; a kind deleted since still shows, as 추가 근무. */
     fun of(id: Long): ExtraKind = byId(id) ?: DEFAULTS.firstOrNull { it.id == id }
         ?: ExtraKind(id, "추가 근무", "추", 0xFF78909C, ExtraTiming.AfterShift(DEFAULT_AFTER_MINUTES))
@@ -130,15 +138,22 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
 
     /**
      * [J133B-01] 1.33 빌드 9 확인 ("알바 대타 메뉴와 기록이 '오전 알바 대근'"): an 알바 calendar calls the 대근 a 대타, as its day sheet
-     * does; a name the user gave it stays.
+     * does; a name the user gave it stays. 2.0.0 [RVH-50] HQ-18 (총괄 사진 검토, 알바 설정에 '잔업 · 특근'): 잔업 is 추가 근무 and 특근
+     * 쉬는 날 출근 too, each with its own mark (추·출, not 연 or 휴, which are 연차's and a day off's). A mark the user changed stays.
      */
     fun forHourly(): ExtraKinds =
-        if (kinds.none { it.id == ExtraKind.COVER_ID && it.name == "대근" }) this
-        else ExtraKinds(kinds.map { if (it.id == ExtraKind.COVER_ID && it.name == "대근") it.copy(name = "대타") else it })
+        if (kinds.none { k -> HOURLY_WORDS[k.id]?.first == k.name }) this
+        else ExtraKinds(kinds.map { k ->
+            val (was, now) = HOURLY_WORDS[k.id]?.takeIf { it.first == k.name } ?: return@map k
+            k.copy(name = now.first, short = if (k.short.trim() == was.take(1)) now.second else k.short)
+        })
+
+    /** 2.0.0 [RVH-50] The kinds as a calendar of [style] names them: an 알바's own words ([forHourly]), the same for every other kind. */
+    fun forStyle(style: com.bamnat.core.work.WorkStyle?): ExtraKinds = if (style == com.bamnat.core.work.WorkStyle.HOURLY) forHourly() else this
 
     /**
      * 1.39 PC eae4e024 (일반 직장인 칸 창에 '일근 대근 09–18'이 먼저): a first setup of 일근 keeps 대근 folded, as 잔업·특근 are
-     * what office work adds; 설정 › 연장 휴무일 근무 지정 shows it again. Only the kinds as they come: ones the user or a company file
+     * what office work adds; 설정 › 연장·휴무일 근무 지정 shows it again. Only the kinds as they come: ones the user or a company file
      * changed stay as they are.
      */
     fun forDayWork(): ExtraKinds =
@@ -166,6 +181,13 @@ data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
     companion object {
         private const val V2 = "v2"
         const val DEFAULT_AFTER_MINUTES = 2 * 60
+
+        /** [RVH-50] An 알바's word and mark for each built-in kind still under its first name. */
+        private val HOURLY_WORDS: Map<Long, Pair<String, Pair<String, String>>> = mapOf(
+            ExtraKind.OVERTIME_ID to ("잔업" to ("추가 근무" to "추")),
+            ExtraKind.SPECIAL_ID to ("특근" to ("쉬는 날 출근" to "출")),
+            ExtraKind.COVER_ID to ("대근" to ("대타" to "대")),
+        )
 
         val DEFAULTS: List<ExtraKind> = listOf(
             ExtraKind(ExtraKind.OVERTIME_ID, "잔업", "잔", 0xFFE8900C, ExtraTiming.AfterShift(DEFAULT_AFTER_MINUTES)),

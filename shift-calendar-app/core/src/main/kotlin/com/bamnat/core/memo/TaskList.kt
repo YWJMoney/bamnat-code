@@ -38,7 +38,9 @@ object TaskList {
         }.sortedWith(compareBy<Memo> { dueDay(it) }.thenBy { it.reminder?.at })
             .map { Row(it, Kind.LATE, dueDay(it), false, it.reminder?.at?.toLocalTime()) }
         val todays = live.filter { m -> if (m.repeat.isNotEmpty()) MemoRepeat.occursOn(m, today, shifts(m)) else dueDay(m) == today }.map { m ->
-            val time = m.reminder?.at?.takeIf { it.toLocalDate() == today || m.repeat.isNotEmpty() }?.toLocalTime()
+            // 2.0.0 [RVIB-04] Told by the work: today's work says the time (none read: no time rather than another day's).
+            val time = m.reminder?.work?.let { a -> shifts(m)?.let { a.on(today, it.hours(today))?.toLocalTime() } }
+                ?: m.reminder?.takeIf { it.work == null }?.at?.takeIf { it.toLocalDate() == today || m.repeat.isNotEmpty() }?.toLocalTime()
             Row(m, Kind.TODAY, if (m.repeat.isNotEmpty()) today else dueDay(m), m.isDoneOn(if (m.repeat.isNotEmpty()) today else m.date), time)
         }.sortedWith(compareBy<Row> { it.time == null }.thenBy { it.time }.thenByDescending { it.memo.pinned }.thenBy { it.memo.createdAtMillis })
         val shown = (late.map { it.memo.id } + todays.map { it.memo.id }).toSet()
@@ -49,6 +51,45 @@ object TaskList {
         val (done, open) = todays.partition { it.done }
         return late + open + pinned + done
     }
+
+    /**
+     * 2.0.0 [RVI-53] (검토 MEMO-19) What the 할 일 위젯 shows of [memos] on [today], and what the memos that follow the 근무표 hold
+     * (read with the schedule only when drawn): the same value means the widget looks the same, so a save of a memo's words
+     * does not draw it again.
+     */
+    fun looks(memos: List<Memo>, today: LocalDate): List<Any?> =
+        of(memos, today).map { listOf(it.memo.id, it.kind, it.day, it.done, it.time, it.text, it.count) } +
+            memos.filter { MemoRepeat.followsSchedule(it) && !it.inTrash }
+                .map { listOf(it.id, it.title.ifBlank { it.preview.take(TEXT_CHARS) }, it.repeat, it.skips, it.doneDays, it.reminder?.at, it.reminder?.work) }
+
+    /**
+     * 2.0.0 [RVI-80] (검토 U07a-09, 대기열 TASK-34·KEEP-12) To-dos from before the [LATE_DAYS] the list shows (8일째부터), up to [OLD_DAYS]
+     * back, not finished, oldest first. They dropped off the list without a word; the widget and the memo tab now count them in one
+     * line ('오래된 할 일 3개') that finishes them, moves them to today or puts them away at once.
+     */
+    fun old(memos: List<Memo>, today: LocalDate): List<Memo> = memos.filter { m ->
+        val d = dueDay(m) ?: return@filter false
+        !m.inTrash && !m.isBlank && m.repeat.isEmpty() && !m.isDone && meant(m) &&
+            d.isBefore(today.minusDays(LATE_DAYS)) && !d.isBefore(today.minusDays(OLD_DAYS))
+    }.sortedWith(compareBy<Memo> { dueDay(it) }.thenBy { it.reminder?.at })
+
+    /** How far back [old] looks: a to-do left two months is let go of quietly. */
+    const val OLD_DAYS = 60L
+
+    /** 2.0.0 [RVI-80] "오래된 할 일 3개 · 11/2부터" for [old]'s list, or null when there are none. */
+    fun oldLine(old: List<Memo>): String? = old.firstOrNull()?.let { first ->
+        val from = dueDay(first)
+        "오래된 할 일 ${old.size}개" + (from?.let { " · ${it.monthValue}/${it.dayOfMonth}부터" } ?: "")
+    }
+
+    /**
+     * 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) A memo the card offers to finish with one tap (its left circle): one the 할 일 위젯 can
+     * list on some day — dated, set to ring or notify, repeating, with lines to tick, or a pinned one without a date — or one already
+     * finished. A plain note with no date ('지난달 회식 장소') is not a to-do and gets no circle.
+     */
+    fun finishable(m: Memo): Boolean =
+        m.date != null || m.reminder != null || m.repeat.isNotEmpty() || m.pinned || boxes(m).second > 0 ||
+            m.doneAtMillis != null || m.doneDays.isNotEmpty()
 
     /** The day a memo that does not repeat is due: its 일정's day when it has one, else its date. */
     private fun dueDay(m: Memo): LocalDate? = m.reminder?.at?.toLocalDate() ?: m.date
@@ -66,6 +107,26 @@ object TaskList {
             when { OPEN_BOX.containsMatchIn(l) -> false; TICKED_BOX.containsMatchIn(l) -> true; else -> null }
         }.toList().let { marks -> marks.count { it } to marks.size }
 
+    /**
+     * 2.0.0 [RVI-85] (검토 T07a-11·I07ac-03, 대기열 TASK-26) 인수인계: the lines left unticked in [last] (the memos of the last day
+     * with the same shift), as their words, without those [now] already has. The editor brings them into this shift's memo at once.
+     */
+    fun carried(last: List<Memo>, now: Memo): List<String> {
+        val have = (now.checklist.map { it.text } + now.text.lineSequence().map { it.replace(BOX_MARK, "") }).map { it.trim() }.toSet()
+        return last.flatMap { m ->
+            if (m.isChecklist) m.checklist.filter { !it.checked && it.text.isNotBlank() }.map { it.text.trim() }
+            else m.text.lineSequence().filter { OPEN_BOX.containsMatchIn(it) }.map { it.replace(BOX_MARK, "").trim() }.toList()
+        }.distinct().filter { it !in have }
+    }
+
+    /** [RVI-85] [now] with [lines] added as lines to tick: items of a checklist, ☐ lines of a note. */
+    fun withCarried(now: Memo, lines: List<String>): Memo = when {
+        lines.isEmpty() -> now
+        now.isChecklist -> now.copy(checklist = now.checklist + lines.map { ChecklistItem(it) })
+        else -> now.copy(body = listOf(now.body.trimEnd(), lines.joinToString("\n") { "☐ $it" }).filter { it.isNotEmpty() }.joinToString("\n"))
+    }
+
+    private val BOX_MARK = Regex("^\\s*(☐ |☑ |- \\[[ xX]] )")
     private val OPEN_BOX = Regex("^\\s*(☐ |- \\[ ] )\\S")
     private val TICKED_BOX = Regex("^\\s*(☑ |- \\[[xX]] )\\S")
 

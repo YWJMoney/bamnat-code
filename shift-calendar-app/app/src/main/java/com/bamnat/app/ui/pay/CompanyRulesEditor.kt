@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.pay.BreakPay
@@ -97,7 +98,7 @@ fun CompanyRulesEditor(
     month: YearMonth,
     onClose: () -> Unit,
     onOpenKinds: () -> Unit,
-    /** [PAYX-51] 연장 휴무일 근무 지정 opened at '교육', its 시수 in view. */
+    /** [PAYX-51] 연장·휴무일 근무 지정 opened at '교육', its 시수 in view. */
     onOpenSchooling: () -> Unit = onOpenKinds,
     /** Opened for one value (설정 찾기 '월급날', the 근무시간 chip): scrolled to it and lit for a moment. */
     focus: PayFocus? = null,
@@ -152,9 +153,12 @@ fun CompanyRulesEditor(
     fun PayProfile.settled(vararg keys: String) = copy(estimatedFields = estimatedFields - keys.toSet() -
         // [PAYS-17] 시수 said here too.
         (if (com.bamnat.core.pay.Unknowns.MONTHLY_HOURS in keys) setOf(com.bamnat.core.pay.RuleOnlyNeeds.HOURS_UNSET) else emptySet()))
+    // 2.0.0 [RVJ-32] 검토 PC-80: a closed month stays as closed, so the band works out and names the first open month after it.
+    val closedMonths by vm.closed.collectAsStateWithLifecycle()
+    val lands = landsIn(month, closedMonths.keys)
     // Worked out off the main thread, so a toggle never waits for the month [PAYS-01].
-    val before by produceState<Long?>(null, saved, snapshot, month) { value = vm.calculateOff(saved, snapshot, month).total }
-    val after by produceState<MonthPay?>(null, draft, snapshot, month) { value = vm.calculateOff(draft, snapshot, month) }
+    val before by produceState<Long?>(null, saved, snapshot, lands) { value = vm.calculateOff(saved, snapshot, lands).total }
+    val after by produceState<MonthPay?>(null, draft, snapshot, lands) { value = vm.calculateOff(draft, snapshot, lands) }
     // [PAYS-03] The newer choices show where setup would ask them, or once they are set.
     val asked = remember(draft.items, draft.occupation, draft.fiveOrMoreEmployees, snapshot) {
         PaySetupQuestions.applicable(draft, snapshot.shiftTypes, PatternTimeline.current(snapshot.patterns, Today.date()))
@@ -335,25 +339,42 @@ fun CompanyRulesEditor(
                 Hint("${month.monthValue}월 급여는 ${period.label(month)} 근무로 계산해요.")
                 Label(say("월급날"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = period.payDay == null, onClick = { draft = draft.copy(period = period.copy(payDay = null)) },
+                    FilterChip(selected = period.payDay == null, onClick = { draft = draft.copy(period = period.withPayDay(null)) },
                         label = { Text("안 정함") })
                     listOf(10, 25).forEach { d ->
-                        FilterChip(selected = period.payDay == d, onClick = { draft = draft.copy(period = period.copy(payDay = d)) },
+                        FilterChip(selected = period.payDay == d, onClick = { draft = draft.copy(period = period.withPayDay(d)) },
                             label = { Text("${d}일") })
                     }
                     // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
                         Text(period.payDay?.let { "${it}일" } ?: "없음", style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
                     }
                 }
                 if (period.payDay != null) {
                     Toggle("마감한 다음 달에 지급", "예: 말일 마감, 다음 달 10일 지급", period.payNextMonth) {
                         draft = draft.copy(period = period.copy(payNextMonth = it))
                     }
-                    period.payDate(month)?.let { Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요.") }
+                    // 2.0.0 [RVK-38] (검토 MONEY-79) A pay day on a weekend or 공휴일: when it comes, for 미래 잔액 and the money cards.
+                    Label("쉬는 날이면")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.pay.PayDayOff.entries.forEach { h ->
+                            FilterChip(selected = period.payDayOff == h, onClick = { draft = draft.copy(period = period.copy(payDayOff = h)) },
+                                label = { Text(h.label) })
+                        }
+                    }
+                    // One sentence (J 5차와 맞춤, 조건 4): the day it comes, and why when a 쉬는 날 moved it. [RVJ-52] 검토 PC-120: a day
+                    // inside the period itself is said as such (당월 지급), judged on the day before any move (a 31일 moved to a Friday the 29th
+                    // is not paid early on purpose).
+                    period.payDate(month)?.let { d ->
+                        val w = period.payDateWorkday(month) ?: d
+                        val early = d.isBefore(period.end(month))
+                        Hint("${month.monthValue}월 급여는 ${w.monthValue}월 ${w.dayOfMonth}일에 들어와요" +
+                            (if (w != d) "(${d.dayOfMonth}일이 쉬는 날이라 ${if (w.isBefore(d)) "앞당겨요" else "미뤄요"})." else ".") +
+                            if (early) " 일이 끝나기 전에 미리 받는 날이에요." else "")
+                    }
                 }
                 // 1.32 [CALX-06] 주급: the weekday it arrives; the week runs from the 주휴 week's first day.
                 Label("주급이면 받는 요일")
@@ -466,6 +487,10 @@ fun CompanyRulesEditor(
                     Toggle("밤샘 근무는 시작한 날로 휴일 판단", say("끄면 공휴일 0시~24시에 일한 시간만 휴일근로예요. 회사가 근무 시작일로 정하면 켜 주세요"), rules.holidayByShiftStart) {
                         setRules(rules.copy(holidayByShiftStart = it))
                     }
+                    // 2.0.0 [RVJ-01] 검토 U04-11: 휴일에 일한 시간도 주 40시간에 넣어요(법 기준, 제2조 제1항 제7호). 끄는 회사만 켜요.
+                    Toggle("휴일 근무는 주 40시간에 안 넣음", say("법은 휴일에 일한 시간도 한 주 40시간에 넣어요. 그래서 그 주의 다른 날이 40시간을 넘으면 연장이에요. 회사가 휴일 근무를 빼고 세면 켜 주세요"), rules.holidayOutsideWeek) {
+                        setRules(rules.copy(holidayOutsideWeek = it))
+                    }
                     Toggle("공휴일 연차는 연차 일수에서 안 빠짐", say("공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요"), rules.holidayLeaveFree) {
                         setRules(rules.copy(holidayLeaveFree = it))
                     }
@@ -483,7 +508,7 @@ fun CompanyRulesEditor(
             }
 
             // [EXTRA-04] How each kind is paid lives with its times on one screen; here is what it says.
-            FoldSection(title = "연장 휴무일 근무 지정") {
+            FoldSection(title = "연장·휴무일 근무 지정") {
                 kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                         ExtraKindMark(k, size = 22.dp, asIs = true)
@@ -512,14 +537,14 @@ fun CompanyRulesEditor(
                 Hint("수당·더 받는 근무·빠지는 돈을 칸으로 하나씩 더해요. 사진이 없어도 돼요. 위에 있는 가산율이나 대근 방식도 칸으로 담으면 알아서 맞춰 넣어요.")
                 val shiftNames = remember(snapshot.shiftTypes) { snapshot.shiftTypes.associate { it.id to it.name } }
                 val own = remember(draft.items, draft.customRules, shiftNames) { com.bamnat.core.pay.RuleSheet.of(draft, shiftNames) }
-                val host = remember(draft, snapshot, month) {
-                    com.bamnat.app.ui.pay.rulesheet.RuleSheetHost(draft, snapshot, month, { change ->
+                val host = remember(draft, snapshot, month, lands) {
+                    com.bamnat.app.ui.pay.rulesheet.RuleSheetHost(draft, snapshot, month, landsIn = lands, effect = { change ->
                         val made = when (change) {
                             is com.bamnat.core.pay.RuleChange.Item -> MadeItem.Item(change.item)
                             is com.bamnat.core.pay.RuleChange.Custom -> MadeItem.Rule(change.rule)
                             else -> null
                         }
-                        made?.let { vm.effectOf(draft, snapshot, month, it) }?.let { com.bamnat.app.ui.pay.rulesheet.CellEffect(it.amount, it.times) }
+                        made?.let { vm.effectOf(draft, snapshot, lands, it) }?.let { com.bamnat.app.ui.pay.rulesheet.CellEffect(it.amount, it.times) }
                     })
                 }
                 com.bamnat.app.ui.pay.rulesheet.RuleCellList(
@@ -534,7 +559,8 @@ fun CompanyRulesEditor(
                     },
                     empty = "아직 칸이 없어요. 아래 ‘칸 더하기’에서 자주 쓰는 수당을 고르면 금액만 넣으면 돼요.",
                 )
-                RuleSentenceBox(kinds.kinds, snapshot.shiftTypes, draft.fiveOrMoreEmployees) { changes ->
+                RuleSentenceBox(kinds.kinds, snapshot.shiftTypes, draft.fiveOrMoreEmployees,
+                    current = com.bamnat.core.pay.RuleSheet.payNow(draft, com.bamnat.core.time.Today.date())) { changes ->
                     draft = com.bamnat.core.pay.RuleText.apply(draft, changes, month)
                 }
             }
@@ -700,13 +726,16 @@ fun CompanyRulesEditor(
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                 val was = before
                 val now = after
+                // [RVJ-32] PC-80: "10월은 마감돼 그대로예요" first when the month on screen is closed.
+                if (lands != month) Text("${month.monthValue}월은 마감돼 그대로예요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (was == null || now == null) {
-                    Text("${month.monthValue}월 합계를 계산하고 있어요", style = MaterialTheme.typography.titleSmall,
+                    Text("${lands.monthValue}월 합계를 계산하고 있어요", style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     val delta = now.total - was
                     Text(
-                        "${month.monthValue}월 합계 ${won(was)}" + if (delta != 0L) " → ${won(now.total)} (${if (delta > 0) "+" else "−"}${won(kotlin.math.abs(delta))})" else "",
+                        "${lands.monthValue}월 합계 ${won(was)}" + if (delta != 0L) " → ${won(now.total)} (${if (delta > 0) "+" else "−"}${won(kotlin.math.abs(delta))})" else "",
                         style = MaterialTheme.typography.titleSmall,
                         color = if (delta == 0L) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
                     )

@@ -156,13 +156,32 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         if (phone != null) {
             phone.setAutoShare(on)
             if (on != true) autoDirty = false
+            // 2.0.0 [RVN-13] COMP-47 나누지 않기 also drops a 나눌게요 still waiting for a connection.
+            if (on == false) autoOnce = false
             return
         }
         _autoShare.value = on
+        if (on != true) _autoPay.value = false
         prefs.edit().apply {
             if (on == null) remove("auto_share") else putBoolean("auto_share", on)
-            if (on != true) putBoolean("auto_dirty", false)
+            if (on != true) putBoolean("auto_dirty", false).remove("auto_pay")
+            if (on == false) putBoolean("auto_once", false)
         }.apply()
+    }
+
+    /**
+     * 2.0.0 [RVN-11] COMP-44 Whether 저절로 나누기 takes the pay way (계산 방식) too: only after a yes that named it (the ask's
+     * '다음부터 묻지 않고 저절로 나누기', 설정's switch). A 근무주기 yes ([LeadShare]: "근무 이름·시간·순서만 나눠요") is for the cycle; a
+     * change of the pay way is then asked as without 저절로 나누기. The phone's one choice, as [autoShare]; a phone that said yes before
+     * 2.0.0 is taken at the narrower word (the cycle) until it says yes to the pay way.
+     */
+    private val _autoPay = MutableStateFlow(phone == null && prefs.getBoolean("auto_pay", false))
+    val autoPay: StateFlow<Boolean> = phone?.autoPay ?: _autoPay.asStateFlow()
+
+    fun setAutoPay(on: Boolean) {
+        if (phone != null) return phone.setAutoPay(on)
+        _autoPay.value = on
+        prefs.edit().putBoolean("auto_pay", on).apply()
     }
 
     /**
@@ -177,9 +196,42 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
     var autoDirty: Boolean
         get() = prefs.getBoolean("auto_dirty", false)
         set(v) = prefs.edit().putBoolean("auto_dirty", v).apply()
+    /** 2.0.0 [RVN-13] COMP-47 A 나눌게요 given without a connection: it goes once online ([AutoShare.flush]), then this is off. */
+    var autoOnce: Boolean
+        get() = prefs.getBoolean("auto_once", false)
+        set(v) = prefs.edit().putBoolean("auto_once", v).apply()
     var autoSentAt: Long
         get() = prefs.getLong("auto_sent_at", 0)
         set(v) = prefs.edit().putLong("auto_sent_at", v).apply()
+
+    /**
+     * 2.0.0 [RVN-10] COMP-46 Reports a 되돌리기 could not take back for want of a connection: taken back once online
+     * ([AutoShare.takeBackWaiting], [OutboxJob]), so the 광장 does not keep what the user took back.
+     */
+    val takeBackLater: Set<String>
+        get() = prefs.getString("take_back_later", null)?.split(',')?.filter { it.isNotBlank() }?.toSet().orEmpty()
+
+    fun takeBackLater(id: String, waiting: Boolean) {
+        val now = if (waiting) takeBackLater + id else takeBackLater - id
+        prefs.edit().apply { if (now.isEmpty()) remove("take_back_later") else putString("take_back_later", now.joinToString(",")) }.apply()
+    }
+
+    /** 2.0.0 [RVN-13] COMP-48 쓰고 있어요·맞아요·회사 빼기 that could not reach the server, oldest first ([SmallSends], [OutboxJob]). */
+    internal val keptCalls: List<SmallSends.Call>
+        get() = SmallSends.read(prefs.getString("kept_calls", null))
+
+    /** The newest word for a thing takes the older's place (and goes to the end, so the order sent is the order said). */
+    @Synchronized
+    internal fun keepCall(call: SmallSends.Call) = writeCalls(keptCalls.filter { it.key != call.key } + call)
+
+    @Synchronized
+    internal fun dropCall(key: String) {
+        val now = keptCalls
+        if (now.any { it.key == key }) writeCalls(now.filter { it.key != key })
+    }
+
+    private fun writeCalls(calls: List<SmallSends.Call>) =
+        prefs.edit().apply { if (calls.isEmpty()) remove("kept_calls") else putString("kept_calls", SmallSends.write(calls)) }.apply()
 
     private val _member = MutableStateFlow(readMember())
     /** [PLAZA-07] The company this calendar joined, as the server last said: (id, name). [CALI-02] Each calendar its own. */
@@ -217,6 +269,13 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         setMember(null)
         // [PLAZA-34] And what it had of this phone: the next save is the first again.
         autoBase = null
+        // 2.0.0 [RVN-10] COMP-43 모두 지우기 means nothing goes up by itself afterwards: 저절로 나누기 is back to 묻기 (the phone's one
+        // choice, [setAutoShare] null), and a change waiting for its day or a take-back waiting for a connection has nothing left to do.
+        if (autoShare.value == true) setAutoShare(null)
+        autoDirty = false
+        autoOnce = false
+        // COMP-48 What waited to go is about what the server no longer has.
+        prefs.edit().remove("take_back_later").remove("kept_calls").apply()
     }
 
     fun setApplied(a: AppliedSetup?) {
@@ -232,7 +291,7 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         }).apply()
     }
 
-    fun voted(ok: Boolean) {
+    fun voted(ok: Boolean?) {
         _applied.value?.let { setApplied(it.copy(vote = ok)) }
     }
 

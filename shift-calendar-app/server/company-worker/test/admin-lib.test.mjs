@@ -2,7 +2,7 @@
 // server error in plain words, no inline style (the CSP forbids it), colour pairs readable. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { adminLib } from "../src/admin-lib.js";
 import { adminFile } from "../src/admin-app.js";
 
@@ -25,6 +25,12 @@ test("[ADMIN-18] every error code the server can send has words in the app", () 
   const missing = [...codes].filter((c) => !Object.hasOwn(L.ERRORS, c));
   assert.deepEqual(missing, [], "src/admin-lib.js ERRORS needs words for these");
   assert.equal(L.errorText("nope"), "처리하지 못했어요. 잠시 뒤 다시 해 주세요");
+  // 2.0.0 [RVN-15] 검토 SVC-101: 같은 코드가 두 번 적히면 뒤의 말이 앞의 말을 가려요(마을 돌봄의 'off'가 그랬어요).
+  const lib = read("../src/admin-lib.js");
+  const block = lib.slice(lib.indexOf("const ERRORS = {"), lib.indexOf("\n  };", lib.indexOf("const ERRORS = {")));
+  const keys = [...block.matchAll(/^\s+"?([A-Za-z0-9_]+)"?:/gm)].map((m) => m[1]);
+  assert.deepEqual(keys.filter((k, i) => keys.indexOf(k) !== i), [], "ERRORS has a code twice");
+  assert.ok(keys.length > 80);
   for (const [code, text] of Object.entries(L.ERRORS)) assert.ok(!/[A-Za-z]{4,}/.test(text.replace(/[A-Z_]{3,}|versionCode|Cloudflare|Play|Excel|MONEY_STATS|SHARE_\w+|PLAY_\w+|ADMIN_\w+|Ctrl/g, "")), `${code} reads as Korean`);
 });
 
@@ -73,7 +79,8 @@ test("[ADMUX-30][ADM3] five hubs: every pre-1.28 screen has a place, and an admi
   assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "desk", "decide", "flow", "loop", "cockpit", "incident"],
     ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"],
     ["launch", "flags", "materials", "types", "notices", "chores", "gates"], ["glance", "metrics", "health", "money", "errors", "effects", "tiers"],
-    ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"]]);
+    // 2.0.0 [RVQ-18] 검토 I21b-01: 보안 한 장은 서버 상태 옆.
+    ["server", "security", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"]]);
   const tabs = L.HUBS.flatMap((h) => h.tabs);
   assert.equal(new Set(tabs).size, tabs.length, "each tab once");
   for (const t of tabs) assert.ok(L.TABS[t]?.label, `${t} has a name`);
@@ -167,7 +174,7 @@ test("[ADMUX-07] chart axes use round steps", () => {
   assert.ok(L.ticks(100).every((t, i, a) => i === 0 || t - a[i - 1] === a[1]));
   assert.ok(L.ticks(1234).at(-1) >= 1234);
   const svg = L.barChart([0, 5, 10], { labels: ["1일", "2일", "3일"], name: "새 문의" });
-  assert.match(svg, /<table class="sr">/);
+  assert.match(svg, /<div class="sr"><table>/, "2.0.0 [RVA-21] the read-out table sits in a 1px box (no sideways scroll at 380 · 200%)");
   assert.equal((svg.match(/<rect class="bar"/g) ?? []).length, 3);
 });
 
@@ -226,7 +233,7 @@ test("[ADMUX-01] a slow answer for a screen the admin left is not drawn", () => 
 test("[ADMUX-06] answer targets as words", () => {
   assert.deepEqual(L.slaText(30), { text: "30분 남음", tone: "warn" });
   assert.deepEqual(L.slaText(300), { text: "5시간 남음", tone: "" });
-  assert.deepEqual(L.slaText(-90), { text: "목표 1시간 넘김", tone: "bad" });
+  assert.deepEqual(L.slaText(-90), { text: "목표 1시간 넘김", tone: "late" }); // [RVA-46] HQ-69: 굵은 보통 글자
   assert.equal(L.slaText(null), null);
   assert.deepEqual(L.appVersion("1.22.0 (33)"), [33, "1.22.0"]);
 });
@@ -346,14 +353,16 @@ test("[ADMCP-01][ADMCP-02] c copies and Space picks, and the ? list says so", ()
 // ---- AX 1.30 ----
 
 test("[ADMX-01] every activity code the server writes has words, and an unknown one never shows as a code", () => {
-  const src = ["../src/index.js", "../src/admin-insight.js", "../src/push.js"].map(read).join("\n");
+  // 2.0.0 [RVN-15] 검토 SVC-100: 세 파일만 읽어 다른 파일의 새 일 40여 가지가 영어 코드로 보였어요. 이제 src의 모든 파일.
+  const files = readdirSync(new URL("../src/", import.meta.url)).filter((f) => f.endsWith(".js") && f !== "dev-built.js");
+  const src = files.map((f) => read(`../src/${f}`)).join("\n");
   const codes = new Set([
     ...[...src.matchAll(/audit\(env, [^,]+, "([a-z_]+)"/g)].map((m) => m[1]),
     ...[...src.matchAll(/audit\(env, [^,]+, [^,]*\? "([a-z]+_[a-z_]+)" : "([a-z]+_[a-z_]+)"/g)].flatMap((m) => [m[1], m[2]]),
     // Codes made from a status: rate_${status}, reward_${status}, ${what}_bulk; and flag_migrate written in SQL.
     "rate_adopted", "rate_hidden", "rate_pending", "reward_paid", "reward_void", "reward_owed", "post_bulk", "rate_bulk", "flag_migrate",
   ]);
-  assert.ok(codes.size > 40, "the codes were found");
+  assert.ok(codes.size > 100, "the codes were found");
   assert.deepEqual([...codes].filter((c) => !Object.hasOwn(L.ACTION_NAMES, c)), []);
   assert.equal(L.actionName("reward_auto"), "보상 저절로 지급");
   assert.equal(L.actionName("invite_something_new"), "친구 초대 처리");
@@ -394,9 +403,16 @@ test("[ADMX-05] n goes to the next waiting question", () => {
 test("[ADMX-01][ADMX-12] the stylesheet no longer hides the numbers on a phone, and the screens come from src/admin/views", async () => {
   const css = await adminFile("/admin/app.css").text();
   assert.ok(!css.includes("@media (max-width:599.98px){.tiles{display:none}}"));
-  assert.match(css, /\.tiles\.core\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.tiles\.core\{--cols:2;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(9rem,/, "휴대폰은 숫자 두 칸, 글자가 커지면 한 칸으로");
+  // 2.0.0 [RVA-57] 화면 묶음은 각자 파일(v/<묶음>.<해시>.js)이고, 첫 묶음에는 이름표만 있어요.
+  const { adminPrebuilt } = await import("../src/admin-app.js");
+  const files = adminPrebuilt().files;
+  for (const [g, f] of [["today", "todayViews"], ["plaza", "plazaViews"], ["insight", "insightViews"], ["market", "marketViews"], ["flags", "flagsViews"]]) {
+    const path = Object.keys(files).find((p) => p.startsWith(`/admin/v/${g}.`));
+    assert.ok(path && files[path].body.includes(`function ${f}(A)`), f);
+  }
   const app = await adminFile("/admin/app.js").text();
-  for (const f of ["todayViews", "plazaViews", "insightViews"]) assert.ok(app.includes(`function ${f}(A)`), f);
+  assert.ok(!app.includes("function todayViews(A)"), "the first bundle has only the names");
 });
 
 test("[CYC-03] a 제보 with an order becomes one line of the public cycle table", () => {
@@ -409,4 +425,19 @@ test("[CYC-03] a 제보 with an order becomes one line of the public cycle table
   assert.match(L.cycleCsvRow(six), /^"다, 주식회사 \[현장\] · \(업종\)","다, 주식회사",.*,4조3교대,순서:DDEENNOO,주 06:00-14:00 \/ 오후 14:00-22:00 \/ 야 22:00-06:00,/);
   // No order (a monthly roster or weekdays only): nothing to copy.
   assert.equal(L.cycleCsvRow({ company: { name: "나" }, lines: [["근무", "주간 06:00~14:00"]] }), null);
+});
+
+test("[RVA-60] PC-147: 받침 없는 말 뒤는 '예요', 값을 끼운 문장은 L.eyo로 이어요", () => {
+  assert.equal(L.eyo("처리방침 3.13 시행일부터"), "처리방침 3.13 시행일부터예요");
+  assert.equal(L.eyo("12월 12일부터"), "12월 12일부터예요");
+  assert.equal(L.eyo("이분의 1년 보상 3/12개월"), "이분의 1년 보상 3/12개월이에요");
+  assert.equal(L.eyo(54), "54예요");
+  assert.equal(L.eyo(53), "53이에요");
+  assert.equal(L.eyo(50), "50이에요");
+  assert.equal(L.eyo("2.0.0"), "2.0.0이에요");
+  assert.equal(L.eyo("2.0.0(번호 54)"), "2.0.0(번호 54)예요");
+  assert.equal(L.eyo("1.39.2"), "1.39.2예요");
+  // 끼운 값 바로 뒤에 '이에요'·'예요'를 붙이면 값에 따라 틀려요(PC-147 '시행일부터이에요').
+  const files = ["../src/admin-app.js", "../src/admin-lib.js", ...readdirSync(new URL("../src/admin/views/", import.meta.url)).map((f) => `../src/admin/views/${f}`)];
+  for (const f of files) assert.doesNotMatch(read(f), /\}(이에요|예요)|부터이에요/, f);
 });

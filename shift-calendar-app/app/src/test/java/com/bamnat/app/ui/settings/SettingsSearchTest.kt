@@ -110,7 +110,7 @@ class SettingsSearchTest {
     @Test fun eachKindOfWorkFindsItsOwn() {
         val shop = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.BUSINESS).map { it.title }
         assertFalse("급여 계산" in shop)
-        assertFalse("연장 휴무일 근무 지정" in shop)
+        assertFalse("연장·휴무일 근무 지정" in shop)
         assertFalse("연차 사용 촉진 알림" in shop)
         assertFalse("근태 엑셀 가져오기" in shop)
         assertTrue("백업 저장" in shop)
@@ -150,9 +150,20 @@ class SettingsSearchTest {
         assertFalse("우리 회사 급여 방식 찾기" in titles)
         assertFalse("회사 규칙 광장" in titles)
         assertTrue("광장" in titles)
-        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title.startsWith("회사") })
+        // 2.0.0 [RVH-53]: with '처음 설정 다시 받기' no longer found by '회사 찾기' here, the closest may be 회사 규모 (the pay rule an
+        // 알바 has too); what must not come is a company's search, setup or board.
+        val companyThings = setOf("회사 찾기", "회사 이름으로 근무주기 찾기", "회사 대표 주기", "회사 설정 보내기", "회사 설정 불러오기", "회사 규칙 광장")
+        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title in companyThings })
         assertEquals("광장", SettingsIndex.search("알바 광장", entries).first().title)
         assertTrue("회사 찾기" in SettingsIndex.entries().map { it.title })
+        // 2.0.0 [RVH-53] HQ-27: '처음 설정 다시 받기' is not found by '회사 찾기' where the work has no company, and its answer asks none.
+        assertFalse("회사 찾기" in entries.first { it.title == SETUP_AGAIN_ROW }.keywords)
+        assertTrue("회사 찾기" in SettingsIndex.entries().first { it.title == SETUP_AGAIN_ROW }.keywords)
+        val again = { s: com.bamnat.core.work.WorkStyle -> HelpFaq.topics().forStyle(s).first { it.id == "setupAgain" } }
+        assertTrue("회사 찾기부터" in again(com.bamnat.core.work.WorkStyle.SHIFT).answer)
+        assertTrue("근무 시간과 요일, 알람, 급여까지" in again(com.bamnat.core.work.WorkStyle.HOURLY).answer)
+        assertTrue("일하는 방식부터" in again(com.bamnat.core.work.WorkStyle.FIELD).answer)
+        assertFalse("회사 찾기" in again(com.bamnat.core.work.WorkStyle.HOURLY).keywords)
     }
 
     @Test fun everyShortcutIsInTheIndex() {
@@ -200,6 +211,20 @@ class SettingsSearchTest {
             assertTrue(t.id, t.question.isNotBlank() && t.tag.isNotBlank())
         }
         assertEquals(HelpFaq.topics().size, HelpFaq.topics().map { it.id }.toSet().size)
+    }
+
+    /** 2.0.0 [RVO-13] 통합 2차 PC-116: the invite answer says the server's numbers, as the card does; none before they were read. */
+    @Test fun theInviteAnswerSaysTheServersRules() {
+        fun answer(t: com.bamnat.core.tier.InviteTerms?) = HelpFaq.topics(invite = t).single { it.id == "invite" }.answer
+        val test = answer(com.bamnat.core.tier.InviteTerms(need = 1, days = 1, months = 1, capMonths = 0))
+        assertTrue(test, test.contains("친구 1명이 각자 1일 이상 쓸 때마다 프로 1개월"))
+        assertFalse("상한은 서버가 셀 때만", test.contains("12개월까지"))
+        val capped = answer(com.bamnat.core.tier.InviteTerms(need = 5, days = 7, months = 1, capMonths = 12))
+        assertTrue(capped, capped.contains("친구 5명이 각자 7일 이상") && capped.contains("1년에 모두 합쳐 12개월까지"))
+        val unknown = answer(null)
+        assertFalse(unknown, Regex("""친구 \d+명""").containsMatchIn(unknown))
+        assertTrue(unknown, unknown.contains("지금 규칙 그대로"))
+        listOf(test, capped, unknown, answer(com.bamnat.core.tier.InviteTerms(50, 60, 12, 120))).forEach { assertTrue(it, it.length <= 220) }
     }
 
     @Test fun boardMatchesFindOthersQuestions() {

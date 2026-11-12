@@ -362,7 +362,7 @@ private fun DayGroups(
                         val changed = day.source == DaySource.OVERRIDE || day.hasCustomTimes || day.entry?.customBreakMinutes != null
                         DayGroup(
                             // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
-                            title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
+                            title = G.workTitle(style), icon = Icons.Outlined.Work,
                             summary = workSummary(day, snapshot, linkName),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
@@ -579,6 +579,7 @@ private fun DayGroups(
             moneyFirst = moneyFirst,
             onChange = vm::setDayGroupOrder,
             onDismiss = { ordering = false },
+            style = style,
         )
     }
 
@@ -662,7 +663,8 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot, link: Stri
         day.source == DaySource.OVERRIDE && link != null -> "$name$time · ${link}대로"
         day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
-            "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
+            // 2.0.0 [RVH-05] 검토 CAL-13: one word for the cycle (근무 주기, or 평소 for a weekday calendar), never 패턴.
+            "$name$time · 직접 바꿈 (${snapshot.cycleWord}${Fmt.eun(snapshot.cycleWord)} ${pattern?.name ?: "쉬는 날"})"
         }
         day.hasCustomTimes -> "$name$time · 이 날만 시간 바꿈"
         day.source == DaySource.OVERRIDE -> "$name$time"
@@ -735,19 +737,24 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
     day.coveredShift?.let { DayNoteField(day.date, "${it.name} ${if (style == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"}", vm) }
     if (day.source == DaySource.OVERRIDE) {
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 2.0.0 [RVIB-12] (디자인 품질 12, 갈래 I 2묶음 사진) With the line squeezed by weight beside the button, '근무 주기는 주간 ·
+        // 지금은 휴무' stood one letter a line in the unfolded day pane at 200%: the button goes under it when it has no room.
+        com.bamnat.app.ui.components.SideOrBelow(start = {
             Text(
-                if (snapshot.hasPattern) "직접 바꾼 날이에요 · 패턴: ${patternType?.name ?: "쉬는 날"}" else "직접 정한 날이에요",
+                // [RVH-05] 검토 CAL-13·사용성 U01-05: "근무 주기는 주간 · 지금은 야간 · 되돌리기" in one line.
+                if (snapshot.hasPattern) "${snapshot.cycleWord}${Fmt.eun(snapshot.cycleWord)} ${patternType?.name ?: "쉬는 날"} · 지금은 ${day.shiftType?.name ?: "쉬는 날"}"
+                else "직접 정한 날이에요",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.weight(1f),
+                // 2.0.0 [RVP-13] (검토 UIX-15·U13-06) A neutral explanation is grey; orange stays for 주의.
+                color = com.bamnat.app.ui.components.QuietInk,
             )
+        }, end = {
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(snapshot.backWord)
             }
-        }
+        })
     }
     if (day.isWorkDay) WorkTimeContent(day, snapshot, vm)
     // [SHFT-03] On a shift calendar, who the shift was swapped with.
@@ -773,7 +780,7 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
         Text(
             "연차로 줄어든 근무 ${Fmt.timeRange(start, end)} · ${HoursFormat.korean(day.scheduledMinutes)}",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = com.bamnat.app.ui.components.QuietInk, // [RVP-13] neutral, not 주의
         )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -983,7 +990,8 @@ private fun AlarmContent(
         DayAlarmEditorDialog(
             date = day.date,
             // [DAYW-09] The evening before's alarms come along as 전날 ones, so saving keeps them (I 리뷰 P13).
-            initial = custom ?: planned.map { DayAlarm(it.triggerAt.toLocalTime(), dayBefore = it.triggerAt.toLocalDate().isBefore(day.date)) },
+            // 2.0.0 [RVI-17] (검토 ALM-08) And the day after's as 다음날 ones: a night's 다음날 14:00 became 14:00 of the day.
+            initial = custom ?: planned.mapNotNull { DayAlarm.ringingAt(day.date, it.triggerAt) },
             suggested = start?.minusHours(1) ?: LocalTime.of(8, 0),
             onDismiss = { editing = false },
             onSave = { list ->
@@ -1026,7 +1034,7 @@ private fun DayAlarmEditorDialog(
                 alarms.forEachIndexed { i, alarm ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            (if (alarm.dayBefore) "전날 " else "") + Fmt.time(alarm.time),
+                            alarm.dayWord + Fmt.time(alarm.time),
                             style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                             color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
                             modifier = Modifier
@@ -1036,8 +1044,8 @@ private fun DayAlarmEditorDialog(
                                 .padding(vertical = 6.dp),
                         )
                         Switch(checked = alarm.enabled, onCheckedChange = { on -> alarms[i] = alarm.copy(enabled = on) },
-                            modifier = Modifier.semantics { contentDescription = "${Fmt.time(alarm.time)} 알람" })
-                        IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "${Fmt.time(alarm.time)} 알람 지우기") }
+                            modifier = Modifier.semantics { contentDescription = "${alarm.dayWord}${Fmt.time(alarm.time)} 알람" })
+                        IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "${alarm.dayWord}${Fmt.time(alarm.time)} 알람 지우기") }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1063,16 +1071,17 @@ private fun DayAlarmEditorDialog(
     )
     picking?.let { index ->
         val before = if (index >= 0) alarms[index].dayBefore else newDayBefore
+        val after = index >= 0 && alarms[index].dayAfter // 2.0.0 [RVI-17] a 다음날 alarm stays 다음날 when its time changes
         val initialTime = when {
             index >= 0 -> alarms[index].time
             before -> LocalTime.of(22, 0)
-            else -> alarms.filter { !it.dayBefore }.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
+            else -> alarms.filter { !it.dayBefore && !it.dayAfter }.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
         }
         TimePickerDialog(
             when { index >= 0 -> "알람 시각 바꾸기"; before -> "전날 알람 추가"; else -> "알람 추가" },
             initialTime, onDismiss = { picking = null },
         ) { t ->
-            if (alarms.none { it.time == t && it.dayBefore == before }) {
+            if (alarms.none { it.time == t && it.dayBefore == before && it.dayAfter == after }) {
                 if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t, dayBefore = before))
                 alarms.sortBy { it.at(date) }
             }
@@ -1136,15 +1145,18 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     // [CAL-43] I 리뷰 N2: a line like "내일 야간 대근 7시" is offered as a change to the calendar, asked first.
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val today = rememberToday()
-    val proposal = remember(text, snapshot, date, today) {
-        snapshot?.let { s -> com.bamnat.core.schedule.QuickText.parse(text, today, date, s.shiftTypes, s.kinds) }
+    // 2.0.0 [RVH-41] 검토 TYPE-14: an investor's days are not stamped, and a field worker's or a shop's 휴가 is a day off, not 연차.
+    val workStyle = vm.settings.collectAsStateWithLifecycle().value.workStyle
+    val proposal = remember(text, snapshot, date, today, workStyle) {
+        if (workStyle == com.bamnat.core.work.WorkStyle.INVEST) null
+        else snapshot?.let { s -> com.bamnat.core.schedule.QuickText.parse(text, today, date, s.shiftTypes, s.kinds, leave = workStyle?.usesPayEngine != false) }
     }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().focusRequester(focus),
         // [J133-77] 1.33 (유형별 점검: 가게 날짜 화면에 '인수인계, 내일 야간 대근'): an example of the calendar's own work.
-        placeholder = { Text(quickMemoExample(vm.settings.collectAsStateWithLifecycle().value.workStyle)) },
+        placeholder = { Text(quickMemoExample(workStyle)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { submit() }),

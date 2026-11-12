@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pro
 
+import com.bamnat.app.tier.launchAt
+import com.bamnat.app.tier.thanks
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -33,10 +35,14 @@ fun trialConsentText(end: java.time.LocalDate, price: String): String =
     "1개월 무료 체험이 ${end.monthValue}월 ${end.dayOfMonth}일에 끝나고, 그날부터 ${price}씩 자동으로 결제돼요. 계속 쓸까요?\n\n" +
         "해지하려면 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 ${end.monthValue}월 ${end.dayOfMonth}일까지는 프로를 써요."
 
-/** The price of the trial's plan as Play shows it, or plain words when Play has not said yet. */
-fun trialPrice(sub: SubRecord, plans: List<Plan>): String =
-    (plans.firstOrNull { it.basePlan == sub.basePlan } ?: plans.firstOrNull { !it.yearly })?.priceWords
-        ?: if (sub.basePlan == ProductIds.YEARLY) "연 요금" else "월 요금"
+/**
+ * The price of the trial's plan as Play shows it; null until Play has said, and the question waits for it.
+ * 1.39.1 [R391-12] (검토 PRO-03) A trial bought before the app learned its plan (the app closed during the purchase, a new phone)
+ * has no [SubRecord.basePlan]: it was asked with the 월 요금, while the trial is the 연 요금제's only (Billing). The answer is kept as
+ * the consent with these words (전자상거래법 제13조 6항), so it is asked with the 연 요금 then, and never without an amount.
+ */
+fun trialPrice(sub: SubRecord, plans: List<Plan>): String? =
+    (plans.firstOrNull { it.basePlan == sub.basePlan } ?: plans.firstOrNull { it.yearly })?.priceWords
 
 /**
  * [MON-06] 전자상거래법 제13조 6항: from 7 days before a trial turns paid, the app asks on its own,
@@ -59,12 +65,14 @@ fun TrialConsentPrompt(c: AppContainer) {
     val day = end.atZone(zone).toLocalDate()
     val work by c.billing.work.collectAsStateWithLifecycle()
     val kind = com.bamnat.core.tier.WorkPlanKind.ofProduct(sub.product)
-    val price = if (kind == null) trialPrice(sub, plans) else {
+    val price = (if (kind == null) trialPrice(sub, plans) else {
         val cap = c.remoteConfig.current.workPlans.capOf(kind, sub.basePlan)
         work.firstOrNull { it.kind == kind && it.cap == cap && it.way == com.bamnat.app.billing.WorkOffer.Way.YEARLY }?.let { "연 ${it.price}" }
-            ?: c.remoteConfig.current.workPlans.bands(kind).firstOrNull { it.cap == cap }?.let { "연 %,d원".format(it.yearly) } ?: "연 요금"
-    }
+            ?: c.remoteConfig.current.workPlans.bands(kind).firstOrNull { it.cap == cap }?.let { "연 %,d원".format(it.yearly) }
+    }) ?: return
     val text = trialConsentText(day, price)
+    // 2.0.0 [RVP-22] One opening window at a time, the law first (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.TRIAL_CONSENT)) return
     val answer: (String) -> Unit = { a ->
         val now = Today.instant()
         // [SRV-07] Queued first, then sent: without a connection it goes at the next sync instead of being lost.
@@ -109,8 +117,11 @@ fun LaunchThanks(c: AppContainer) {
     val rows by c.flags.byKey.collectAsStateWithLifecycle()
     if (rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.on != true || pro.thanksSeen) return
     val zone = Today.zone()
-    val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchedAt, config.thanksMonths, zone) ?: return
+    // 2.0.0 [RVO-12] A release build knows the 출시 moment and months before the server answers.
+    val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchAt(), config.thanks(), zone) ?: return
     if (!Today.instant().isBefore(until)) return
+    // 2.0.0 [RVP-22] Last of the opening windows (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS)) return
     AlertDialog(
         onDismissRequest = { c.proStore.thanksSeen() },
         title = { Text("고마워요") },

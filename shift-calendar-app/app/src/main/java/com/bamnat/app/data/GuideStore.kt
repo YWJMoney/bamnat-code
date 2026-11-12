@@ -71,12 +71,42 @@ class GuideStore private constructor(context: Context) {
         prefs.edit().putStringSet(K_SWITCHED, prefs.getStringSet(K_SWITCHED, emptySet()).orEmpty() + keys).apply()
     }
 
+    /**
+     * 2.0.0 [RVP-22] (검토 UIX-47) A phone in its first setup has had everything so far, however long ago it was installed: Play may
+     * have updated it before it was first opened (weekly releases), and '새로 생긴 것' then came over its first calendar.
+     */
+    fun firstSetup(currentCode: Int, on: (String) -> Boolean) {
+        whatsNew(currentCode, freshInstall = true)
+        switchedNew(on, freshInstall = true)
+    }
+
     fun whatsNewSeen(currentCode: Int) {
         prefs.edit().putInt(K_SEEN_VERSION, currentCode).apply()
     }
 
     /** [GUIDE-03] "다시 보지 않기". */
+    /**
+     * 2.0.0 [RVH-51] PC-72 '이 날 맞아요?': [TURN_SLIP_ASK] not answered yet, [TURN_SLIP_FOLDED] its card closed with X (업데이트 소식 줄에만
+     * 남아요), [TURN_SLIP_DONE] answered, never asked again.
+     */
+    val turnSlip: Int get() = prefs.getInt(K_TURN_SLIP, TURN_SLIP_ASK)
+
+    fun setTurnSlip(state: Int) = prefs.edit().putInt(K_TURN_SLIP, state).apply()
+
+    /**
+     * [RVH-51] PC-72 When the changes it asks about end: the update to 2.0.0 ([updatedAt], the phone's lastUpdateTime) the first time it
+     * is read, then that same moment, so a later update does not widen it.
+     */
+    fun turnSlipUntil(updatedAt: Long): Long = prefs.getLong(K_TURN_SLIP_UNTIL, 0L).takeIf { it > 0L }
+        ?: updatedAt.also { prefs.edit().putLong(K_TURN_SLIP_UNTIL, it).apply() }
+
     fun never(id: String) = edit { putStringSet(K_NEVER, current.never + id) }
+
+    /** 1.40 [DISC-01] 되돌리기 on the '안 써 본 기능' card: its '이미 써요' or '안 볼래요' taken back. */
+    fun unmark(id: String, used: Boolean, never: Boolean) = edit {
+        if (used) putStringSet(K_USED, current.used - id)
+        if (never) putStringSet(K_NEVER, current.never - id)
+    }
 
     /** [GUIDE-03] Today's tip, recorded once it shows, so no other comes today. */
     fun tipShown(day: LocalDate, id: String) = edit {
@@ -187,6 +217,11 @@ class GuideStore private constructor(context: Context) {
         private const val K_TIP_ID = "tip_id"
         private const val K_TIP_CLOSED = "tip_closed"
         private const val K_LIST = "list_"
+        private const val K_TURN_SLIP = "turn_slip"
+        private const val K_TURN_SLIP_UNTIL = "turn_slip_until"
+        const val TURN_SLIP_ASK = 0
+        const val TURN_SLIP_FOLDED = 1
+        const val TURN_SLIP_DONE = 2
         private const val LIST_ID = "guide.checklist"
 
         @Volatile private var instance: GuideStore? = null

@@ -2,6 +2,7 @@ package com.bamnat.app
 
 import kotlinx.coroutines.sync.withLock
 import android.content.Context
+import com.bamnat.app.invest.invest
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.company.warmCompaniesNow
 import com.bamnat.app.data.BackupManager
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -61,13 +63,14 @@ class AppContainer(context: Context) {
 
     val database: AppDatabase = AppDatabase.create(context)
     val settingsRepository = SettingsRepository(context)
-    val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds },
-        extraName = { settingsRepository.current.extraKinds.name(it) }, shareScope = appScope)
+    // [RVH-50] The main calendar's kinds in its own words (an 알바's 추가 근무·쉬는 날 출근·대타), in the day's record and its log too.
+    val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds.forStyle(it.workStyle) },
+        extraName = { settingsRepository.current.let { s -> s.extraKinds.forStyle(s.workStyle).name(it) } }, shareScope = appScope)
     /** [MCAL-01] The user's calendars; the main one is [scheduleRepository]. */
     val calendars: com.bamnat.app.data.CalendarBook = com.bamnat.app.data.CalendarBook(
         java.io.File(appContext.filesDir, "calendars.json"), scheduleRepository, com.bamnat.app.data.CalendarStorage.Files(appContext),
         repositoryOf = { db ->
-            ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds }, extraName = { settingsRepository.current.extraKinds.name(it) },
+            ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds.forAddedCalendar() }, extraName = { settingsRepository.current.extraKinds.name(it) },
                 shareScope = appScope)
         },
         mainMoney = { moneyRepository },
@@ -79,11 +82,22 @@ class AppContainer(context: Context) {
                 list.firstOrNull { it.id == id }?.takeIf { !it.isMain }?.style ?: s.workStyle
             }, confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
                 marks = com.bamnat.app.data.RecurringMarks(java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "recurring_marks.json")),
-                tune = ::captureTune, dayLabel = { dayLabels(calendars.repository(id)) })
+                tune = ::captureTune, dayLabel = { dayLabels(calendars.repository(id)) },
+                calendarId = id, tidy = { autoTidy }, seen = { captureSeen })
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
-        onDelete = { id, kept -> if (!kept) companyGone(id) },
+        onDelete = { id, kept ->
+            if (!kept) {
+                companyGone(id)
+                // [R200-01] Its own 끄기 미션 and 근무 그림 go with it (a new calendar never gets its id again).
+                settingsRepository.update { s ->
+                    val look = com.bamnat.core.recipe.PhotoLook.decode(s.photoLook)
+                    s.copy(shiftMissions = com.bamnat.core.model.ShiftRef.without(s.shiftMissions, id),
+                        photoLook = look.copy(icons = com.bamnat.core.model.ShiftRef.without(look.icons, id)).encode())
+                }
+            }
+        },
     )
     /** [MCAL-06] Calendar [id]'s days, money and pay as a screen sees them. */
     fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
@@ -103,6 +117,10 @@ class AppContainer(context: Context) {
         calendars.repository(id).live.map { s -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(s.resolver) }
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** 1.39.1 [R391-04] Removes a 소리 클립 by its file name. */
+    val sleepClipDeleter: (String) -> Unit = { name ->
+        java.io.File(java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR), name).delete()
+    }
     /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
     val phaseThree = com.bamnat.app.data.PhaseThreeStore(database).also { it.prefsOf = { appContext.getSharedPreferences("work_plans", android.content.Context.MODE_PRIVATE) } }
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
@@ -114,10 +132,32 @@ class AppContainer(context: Context) {
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats the user turned down. */
     val autoRecordPrefs by lazy { com.bamnat.app.data.AutoRecordPrefs(appContext) }
     private val captureStore by lazy { com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")) }
+    /**
+     * 2.0.0 [RVK-13] 뿌리 7: what the app left out or joined on its own (a payment taken for a copy, two lines made one move, a fill
+     * told twice), kept 30 days on this phone to put back. Each area registers its way back here.
+     */
+    val autoTidy by lazy {
+        com.bamnat.app.data.AutoTidy(java.io.File(appContext.noBackupFilesDir, "auto_tidy.json")).also { t ->
+            t.register(MoneyRepository.KIND_LEFT_OUT) { calendars.money(it.calendarId).putBackLeftOut(it.payload) }
+            t.register(MoneyRepository.KIND_JOINED) { calendars.money(it.calendarId).putBackJoined(it.payload) }
+            // 2.0.0 [RVH-57] A received link's day kept as I had changed it by hand.
+            t.register(com.bamnat.app.share.RosterFollower.KIND_KEPT) { com.bamnat.app.share.RosterFollower.putBackKept(this, it.payload) }
+            t.register(com.bamnat.app.invest.TradeCapture.KIND_FILL) { item ->
+                val p = com.bamnat.core.invest.TradeAlerts.decode(org.json.JSONObject(item.payload).optString("fill")).firstOrNull()
+                p != null && invest(item.calendarId).addAlertAnyway(p)
+            }
+            // 2.0.0 [RVM-26] RCP-08 입었던 테마의 한도가 뺀 테마.
+            t.register(com.bamnat.app.recipe.ThemeWardrobe.KIND_PUSHED) { wardrobe.putBack(it.payload) }
+        }
+    }
+    /** 2.0.0 [RVK-14] Messages read already and which app's text each line came from (hashes only). */
+    val captureSeen by lazy { com.bamnat.app.data.CaptureSeen(java.io.File(appContext.noBackupFilesDir, "capture_seen.json")) }
+    /** 2.0.0 [RVK-16] (검토 MONEY-13·U06a-17): when 결제 알림 읽기 last read and how many lines it wrote this month. */
+    val captureHealth by lazy { com.bamnat.app.data.CaptureHealth(appContext) }
     val moneyRepository = MoneyRepository(database, captureStore, style = settingsRepository.settings.map { it.workStyle },
         confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
         marks = com.bamnat.app.data.RecurringMarks(java.io.File(appContext.filesDir, "recurring_marks.json")),
-        tune = ::captureTune, dayLabel = { dayLabels(scheduleRepository) })
+        tune = ::captureTune, dayLabel = { dayLabels(scheduleRepository) }, tidy = { autoTidy }, seen = { captureSeen })
 
     /** 1.32 [LEDX-15][LEDX-18] 결제 알림 › 더 정확하게 적기, as the capture reads it. */
     private fun captureTune(): com.bamnat.app.data.CaptureTune = autoRecordPrefs.current.let { com.bamnat.app.data.CaptureTune(it.myNames, it.abroadFee, it.rates) }
@@ -144,10 +184,15 @@ class AppContainer(context: Context) {
      * and checked against every calendar's lines, so one payment is written once. If picking the
      * calendar fails, it goes to the main one rather than being lost.
      */
-    suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
-        captureInto(text, pkg, app, postedAt, fromMessenger).also {
+    suspend fun capture(
+        text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean,
+        /** 2.0.0 [RVK-14] What tells this message from another of the same app: the same [origin] and text again is a repost. */
+        origin: String = "$pkg|$postedAt",
+    ): MoneyRepository.Outcome =
+        captureInto(text, pkg, app, postedAt, fromMessenger, origin).also {
             // [OBS-01] 기록 지점 9: how many, never what or how much.
             if (it == MoneyRepository.Outcome.SAVED) {
+                captureHealth.wrote()
                 journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
                 // [TAX-01] A pay deposit just written becomes 월급 관측 (and 급여, so it is not added on top of the estimate).
                 runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt), notify = true) }
@@ -155,8 +200,10 @@ class AppContainer(context: Context) {
             }
         }
 
-    private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
+    private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean, origin: String): MoneyRepository.Outcome =
         captureLock.withLock {
+            // 2.0.0 [RVK-14]: the very same message again (a chat stack posts its earlier messages with each new one) is read once.
+            if (!captureSeen.firstTime(origin, text)) return@withLock MoneyRepository.Outcome.DUPLICATE
             // [INV-30] A broker's 체결 notification goes to the investor calendar, not the ledger.
             runCatching { com.bamnat.app.invest.TradeCapture.take(this, text, pkg, app, postedAt, fromMessenger) }
                 .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
@@ -222,6 +269,9 @@ class AppContainer(context: Context) {
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext), com.bamnat.app.ui.memo.MemoPhotoFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
         staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles },
+        // 2.0.0 [RVL-04][RVL-02] The night sounds' clips, and where the data as it was waits while a restore writes.
+        sleepClips = java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR),
+        guard = java.io.File(appContext.noBackupFilesDir, "restore_guard"),
         settingsFiles = {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
                 com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
@@ -243,6 +293,23 @@ class AppContainer(context: Context) {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
             filesOf = { id -> com.bamnat.app.data.CalendarStorage.filesOf(appContext, id) }, workTools = com.bamnat.app.data.WorkToolsStore.get(appContext),
             autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
+    }
+    /** 2.0.0 [RVL-02] True after this start put back a restore the app was closed in the middle of (said once above the calendar). */
+    val restoreStopped = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /**
+     * 2.0.0 [RVL-05][RVL-06][RVL-07] (검토 DATA-02·DATA-10·U12-03) What Android's own backup leaves out of the preference files, kept where it
+     * takes it (the keys only sealed), and the card that says what came on a phone the data came to.
+     */
+    val phoneMove by lazy {
+        com.bamnat.app.data.PhoneMove(
+            carry = java.io.File(appContext.filesDir, com.bamnat.app.data.PhoneMove.CARRY),
+            keys = java.io.File(appContext.dataDir, com.bamnat.app.data.PhoneMove.KEYS),
+            here = java.io.File(appContext.noBackupFilesDir, "phone_here"),
+            state = java.io.File(appContext.noBackupFilesDir, "phone_moved.json"),
+            out = backupManager::carryOut, outKeys = backupManager::carryKeys, received = { received.links() },
+            take = backupManager::carryIn,
+            sealedKeys = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P,
+        )
     }
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
@@ -278,6 +345,8 @@ class AppContainer(context: Context) {
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [PLAZA-32] 1.27 AI: the one line the company's 정보 광장 shows first after 이 설정 쓰기 (in memory, once). */
     var pendingPlazaNote: String? = null
+    /** 2.0.0 [RVN-18] 검토 U10a-16: 내 활동 › 보낸 규칙 opened a company page at one rule set (company id, setup id; in memory, once). */
+    var pendingCompanySetup: Pair<String, String>? = null
     /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
     var pendingMatch: Boolean = false
     /** 1.36 PC 급여 검토 W3: the 길잡이 invitation after a first pay setup, shown once the result was seen (or on the next visit). */
@@ -366,13 +435,14 @@ class AppContainer(context: Context) {
         com.bamnat.app.company.OutboxJob.cancelShare(appContext, id)
         if ((used == null && joined == null) || !companyApi.enabled) return
         appScope.launch {
-            val device = companyStore.device
             val others = companyScopes().filter { it.calendarId != id }
+            // 2.0.0 [RVN-13] COMP-48 The calendar's own files are gone: what could not go waits with the phone's (the main calendar's).
+            val keep = companyStore
             used?.takeIf { u -> others.none { it.store.applied.value?.setup == u.setup } }?.let { u ->
-                runCatching { companyApi.use(device, u.companyId, u.setup, false, files.serverCal(id)) }
+                com.bamnat.app.company.SmallSends.send(this@AppContainer, keep, com.bamnat.app.company.SmallSends.use(u.companyId, u.setup, false, files.serverCal(id)))
             }
             joined?.takeIf { j -> others.none { it.store.member.value?.first == j.first || it.store.applied.value?.companyId == j.first } }?.let { j ->
-                runCatching { companyApi.leave(device, j.first) }
+                com.bamnat.app.company.SmallSends.send(this@AppContainer, keep, com.bamnat.app.company.SmallSends.leave(j.first))
             }
         }
     }
@@ -415,8 +485,10 @@ class AppContainer(context: Context) {
     fun companySetupUsed(scope: com.bamnat.app.company.CompanyScope, a: com.bamnat.app.company.AppliedSetup) {
         if (!companyApi.enabled) return
         appScope.launch {
-            runCatching { companyApi.use(scope.store.device, a.companyId, a.setup, true, scope.serverCal) }
-                .onSuccess { if (scope.store.member.value == null) scope.store.setMember(a.companyId, a.company) }
+            // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+            if (com.bamnat.app.company.SmallSends.send(this@AppContainer, scope.store, com.bamnat.app.company.SmallSends.use(a.companyId, a.setup, true, scope.serverCal))) {
+                if (scope.store.member.value == null) scope.store.setMember(a.companyId, a.company)
+            }
         }
     }
 
@@ -483,9 +555,20 @@ class AppContainer(context: Context) {
         val calendar = remoteConfig.current.calendar
         val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
         val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
-        // 1.37: 3.11 (테마·근무 설정 in a link) too; one yes to it counts for 3.9 and 3.1.
-        return listOf(com.bamnat.core.ops.PolicyConsent.ASK_VERSION, com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
+        // 1.37: 3.11 too; 1.39.1 [POLC-01]: 3.12 too. One yes to the newest counts for every older one.
+        return com.bamnat.core.ops.PolicyConsent.ASKED_VERSIONS
             .any { calendar.holds(it, installed, remoteConfig.agreed.value, today) == true }
+    }
+    /** [POLC-01] Whether [version] still waits on this phone (the card says so for 3.11 under the 3.12 lines). */
+    fun policyWaits(version: String): Boolean {
+        val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
+        val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
+        return remoteConfig.current.calendar.holds(version, installed, remoteConfig.agreed.value, today) == true
+    }
+    /** [POLC-01] The day this phone's features start without a yes (the latest held-until among the versions still waiting). */
+    fun policyHeldUntil(): java.time.LocalDate? {
+        val calendar = remoteConfig.current.calendar
+        return com.bamnat.core.ops.PolicyConsent.ASKED_VERSIONS.filter { policyWaits(it) }.mapNotNull { calendar.of(it)?.holdEnds }.maxOrNull()
     }
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the
@@ -535,6 +618,10 @@ class AppContainer(context: Context) {
         // 1.39 [OBS2-08]: 유형별 흐름·기능과 머묾 from 처리방침 3.12's date on (사용자 2026-11-08 '유형별·기능 둘만').
         com.bamnat.app.diag.UsageStats.kindAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KIND) }
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
+        // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
+        com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
+        // 2.0.0 [RVM-21] 장터 카드 글꼴은 처리방침 3.13의 7일 줄(PolicyConsent.REVISION_EFFECTIVE, 서버 시각)부터 공개 자료에서(그 전에는 휴대폰 글꼴).
+        com.bamnat.app.ui.recipe.MarketFonts.allowed = { flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
@@ -571,6 +658,9 @@ class AppContainer(context: Context) {
             owner = admin?.owner == true,
             // S 1.32 [SECX-01] Only what the developer app set for this approved phone (nothing is switched on the phone).
             previews = admin?.previews?.toSet().orEmpty(),
+            // 2.0.0 [RVO-12] (HQ-46) A release build knows the 정식 출시 happened (debug builds and tests: every feature open).
+            knownDay = com.bamnat.core.flags.Released.DAY.takeIf { com.bamnat.app.tier.ReleaseBuild.on },
+            knownChecks = if (com.bamnat.app.tier.ReleaseBuild.on) com.bamnat.core.flags.Released.CHECKS else emptyMap(),
         )
     }
     private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }
@@ -621,6 +711,15 @@ class AppContainer(context: Context) {
         val every = if (!opened) com.bamnat.app.tier.RemoteConfigStore.EVERY
             else if (BuildConfig.DEBUG) java.time.Duration.ZERO else com.bamnat.app.tier.RemoteConfigStore.ON_OPEN
         runCatching { remoteConfig.refresh(tierApi, force = force, every = every) }
+        // 1.39.1 [R391-11] (검토 PRO-08) Play's purchases first, right after the switch: read last, the few seconds after a renewal
+        // showed the app as free (locks flashing, 휴대폰 캘린더's shifts taken off and written again).
+        // Play is asked only once paying is possible, or for a subscription this phone already knew.
+        if (flags.on(com.bamnat.core.flags.FlagCatalog.BILLING) || proStore.current.sub != null) {
+            runCatching { billing.refresh() }
+            featureGate.refresh()
+        }
+        // [R200-03] And once a day near a subscription's end even when the app is not opened.
+        runCatching { com.bamnat.app.tier.ProRecheckJob.schedule(appContext, this@AppContainer) }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
@@ -631,8 +730,6 @@ class AppContainer(context: Context) {
         runCatching { sendConsent() }
         // [INVITE-03] A friend's next day and the inviter's counts; not before the calendar has drawn (afterFirstFrame).
         runCatching { if (laterStarted.get()) invites.sync(force) }
-        // Play is asked only once paying is possible, or for a subscription this phone already knew.
-        if (flags.on(com.bamnat.core.flags.FlagCatalog.BILLING) || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
         // [STAT-04] A day with a paid subscription counts toward the G2 gate (구독 사용자 비율).
         if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
@@ -689,7 +786,10 @@ class AppContainer(context: Context) {
             }
         }
         val made = appContext.getSharedPreferences(MAKER_PREFS, Context.MODE_PRIVATE).getBoolean("made", false)
-        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made
+        // 2.0.0 [RVO-13] PC-113: a phone that made an invite link has a reason too. Before, an inviter with nothing else sent never asked,
+        // so the month an admin paid for its friends showed on the invite card but never in 보상 이용권 (nor in its 프로).
+        val invited = inviteApi.enabled && invites.store.current.view?.code != null
+        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made || invited
         val last = proStore.current.passes?.checkedAt
         if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))
@@ -699,8 +799,10 @@ class AppContainer(context: Context) {
         com.bamnat.app.imports.CalendarImporter(appContext, com.bamnat.app.imports.DeviceCalendars(appContext), scheduleRepository,
             memoRepository, database.importedEventDao())
     }
-    /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. */
-    val shownMonth = com.bamnat.app.ui.ShownMonth()
+    /** 2.0.0 [RVH-15] 검토 CAL-20: the day and month left on the calendar, for opening there again after the phone closed 밤낮. */
+    val calendarPlace by lazy { com.bamnat.app.data.CalendarPlaceStore(appContext) }
+    /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. [RVH-15] Where it was left, within 6 hours. */
+    val shownMonth = com.bamnat.app.ui.ShownMonth(runCatching { calendarPlace.month() }.getOrNull() ?: com.bamnat.core.time.Today.month())
     /** [NOTE-02] The memo tab's notebook, kept while the app runs so coming back finds the same list. */
     val memoNotebook = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.memo.MemoNotebook.CALENDAR)
 
@@ -797,16 +899,35 @@ class AppContainer(context: Context) {
             }
             var first = true
             settingsRepository.settings.map { it.logic }.distinctUntilChanged().collect {
+                val opening = first
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
                 // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
                 com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
-                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
+                // [RVM-19] PC-48: only the app's start is an opening; a work put in does not run its 앱을 열면 rule there and then.
+                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer, opened = opening)
             }
         }
         keep("schedule") {
             scheduleRepository.ensureDefaults()
+            // 2.0.0 [RVL-02] (검토 DATA-08) A restore the app was closed in the middle of: the data as it was goes back whole, first.
+            runCatching {
+                if (backupManager.finishInterrupted()) {
+                    restoreStopped.value = true
+                    journal.note(com.bamnat.core.journal.JournalKind.RESTORE_BACK)
+                }
+            }
+            // 2.0.0 [RVL-05][RVL-06] (검토 DATA-02·U12-03) A phone the data came to by Android's own backup (구글 계정, 휴대폰 옮기기) takes the
+            // settings kept apart in, once, and plans its alarms (Android plans none until the app opens); then the carry is kept fresh.
+            // On every other start this is one look at a file; writing the carry waits off the way to the first month.
+            runCatching {
+                phoneMove.arrive()?.let {
+                    journal.note(com.bamnat.core.journal.JournalKind.PHONE_MOVED)
+                    rescheduleAlarms()
+                }
+            }
+            launch { runCatching { phoneMove.keep() } }
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
             // 1.38 사용자 2026-11-06: a calendar of work without 교대 (일근·알바·현장·자영업·투자) keeps 주간·오후·야간 put away until the user brings one back
@@ -842,12 +963,30 @@ class AppContainer(context: Context) {
                             .onFailure { android.util.Log.w("AppContainer", "quiet kinds of $id", it) }
                     }
             }
-            memoRepository.purgeOldTrash()
-            // [MPH-03] 1.38 메모 사진 no memo (nor the trash) points at any more go, a day after they were put in.
-            runCatching { com.bamnat.app.ui.memo.MemoPhotoFiles.sweep(appContext, memoRepository.photoNames()) }
-            // [UNDO-01] What was cleared or removed more than 7 days ago goes for good.
-            runCatching { recordsTrash.purge() }
-            moneyRepository.purgeCaptures()
+            // 2.0.0 [RVI-37] (검토 ALM-02·PC-07, 도약 7) The clean-ups run beside the alarm and widget job below, not before it:
+            // a shift changed in the first seconds after the app opened waited for them to reach the home screen.
+            launch {
+                memoRepository.purgeOldTrash()
+                // [MPH-03] 1.38 메모 사진 no memo (nor the trash) points at any more go, a day after they were put in.
+                runCatching { com.bamnat.app.ui.memo.MemoPhotoFiles.sweep(appContext, memoRepository.photoNames()) }
+                // [UNDO-01] What was cleared or removed more than 7 days ago goes for good.
+                runCatching { recordsTrash.purge() }
+                runCatching { autoTidy.purge() }
+                // 2.0.0 [RVK-11] (MONEY-05): receipt photos no line names any more, nor a line kept in 최근 지운 기록, go two days after.
+                // Only when every calendar's lines could be read, so a photo is never taken from a line that was not looked at.
+                runCatching {
+                    val added = calendars.calendars.value.filter { !it.isMain }
+                    if (added.all { it.ready }) {
+                        val used = buildSet {
+                            addAll(com.bamnat.app.ui.money.ReceiptFiles.usedBy(database.openHelper.readableDatabase))
+                            added.forEach { addAll(com.bamnat.app.ui.money.ReceiptFiles.usedBy(calendars.database(it.id).openHelper.readableDatabase)) }
+                            addAll(recordsTrash.keptReceipts())
+                        }
+                        com.bamnat.app.ui.money.ReceiptFiles.sweep(appContext, used)
+                    }
+                }
+                moneyRepository.purgeCaptures()
+            }
             // [MCAL-02] A calendar whose setup was left before saving is not kept.
             if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)
             // [EASY-01] An example the app no longer shows (a restored list without its database) goes, with its memos.
@@ -863,10 +1002,12 @@ class AppContainer(context: Context) {
                     // PC 확인 f6b585f8: the switch as the alarms see it, so a turn from anywhere (a backup, a recipe) is in 알람 점검.
                     if (lastOn != null && lastOn != on) telemetry.event("alarms_switch", if (on) "on seen" else "off seen")
                     lastOn = on
+                    // 2.0.0 [RVI-37] (도약 7: 근무 바뀜이 위젯에 5초 안) The widgets first: they read the days and the next alarm
+                    // themselves, so they need not wait for every alarm to be planned.
+                    WidgetRefresher.refresh(appContext, "days")
                     alarmScheduler.reschedule(ringing, on)
                     // [OBS-01] 기록 지점 1: a line only when the next alarm moved.
                     alarmScheduler.upcoming.value?.let { journal.noteIfChanged(com.bamnat.core.journal.JournalKind.ALARMS_PLANNED, it.plan.triggerAt.format(JOURNAL_ALARM)) }
-                    WidgetRefresher.refresh(appContext)
                 }
         }
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
@@ -894,6 +1035,7 @@ class AppContainer(context: Context) {
         // What waited while the user slept is planned again from the log.
         keep("sleeping") {
             var openId: Long? = null
+            var anyOpen: Boolean? = null
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
             // 1.39 [SLEEP-06] While 자는 동안 소리 measures, its notice is the 자는 중 notice (깼어요 and 측정만 끝 side by side
             // on one card), so the shade does not stack two of them (PC 1.38 최종 사용성 6).
@@ -921,6 +1063,13 @@ class AppContainer(context: Context) {
                         !show -> SleepingNotice.cancel(appContext)
                     }
                     openId = open?.id
+                    // 2.0.0 [RVI-17] (검토 ALM-08) A 낮잠 ended early, by 깼어요 from anywhere: its wake goes from the day's alarms.
+                    // Followed here, with the sleep log this job already reads, so the start keeps its budget of jobs.
+                    val stillOpen = log.any { it.end == null }
+                    if (stillOpen != anyOpen) {
+                        anyOpen = stillOpen
+                        if (!stillOpen) runCatching { com.bamnat.app.sleep.NapWake.afterWake(this@AppContainer) }
+                    }
                     // 1.38 [SLEEP-12] 자는 동안 방해 금지 follows the open sleep (off by default).
                     com.bamnat.app.sleep.SleepDnd.follow(appContext, open != null, settingsRepository.current.sleepDnd)
                     QuietHold.release(appContext)
@@ -991,6 +1140,12 @@ class AppContainer(context: Context) {
         }
         // Widgets lay out weeks from the user's first day of the week.
         keep("widgetweek") {
+            // 2.0.0 [RVI-83] (검토 U03-08·T03-03) The same job keeps the phone's widget list to the calendars' kinds of work.
+            launch {
+                combine(calendars.calendars, settingsRepository.settings.map { it.workStyle }.distinctUntilChanged()) { list, main ->
+                    (list.mapNotNull { calendars.styleOf(it.id, main) } + listOfNotNull(main)).toSet()
+                }.distinctUntilChanged().collect { styles -> runCatching { com.bamnat.app.widget.WidgetChoices.sync(appContext, styles) } }
+            }
             settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
@@ -1028,6 +1183,13 @@ class AppContainer(context: Context) {
             delay(LATER_SECOND_MILLIS)
             // F 1.32 [TAXP-03] 연말정산 매주 다시 계산 (프로 구독, 10월~1월, its switch on the card).
             launch { runCatching { com.bamnat.app.tax.YearEndWeekly.check(this@AppContainer) } }
+            // 1.39.1 [R391-04] 검토 ALM-03: 소리 클립 7일, also for a phone that stopped measuring (not a named job: one pass).
+            launch {
+                runCatching {
+                    sleepRepository.sweepClips(java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR),
+                        com.bamnat.app.sleep.SleepRecordService.KEEP_DAYS)
+                }
+            }
             // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
             // [SLP-15] So does the 나갈 돈·받을 돈 switch.
             keep("money") {
@@ -1045,23 +1207,44 @@ class AppContainer(context: Context) {
             }
             // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
             keep("memoschedule") {
+                // 2.0.0 [RVIB-05] (검토 I07ac-02) The 지난 할 일 card's morning follows the calendar on screen (a day off moved) and its
+                // switch. In this job, not one of its own: the start keeps its budget of jobs (StartupBudgetTest).
+                launch {
+                    combine(calendars.active.flatMapLatest { calendars.repository(it).live.map { s -> s.resolver } },
+                        settingsRepository.settings.map { it.memoRestCard }.distinctUntilChanged()) { r, on -> r to on }
+                        .debounce(1_000)
+                        .collect { runCatching { com.bamnat.app.memo.MemoRestCard.plan(appContext) } }
+                }
                 // 1.39 [TASK-44] A repeat changed or a day finished moves the next ring too.
-                memoRepository.memos.map { list -> list.filter { it.reminder != null } }
+                // 1.39.1 [R391-06] So does a one-off memo marked 끝냄.
+                // 2.0.0 [RVI-28] (검토 MEMO-05) And so does a change to the schedule a 근무마다·쉬는 날마다 memo goes by, or to the calendar
+                // on screen (a shared memo goes by it): '쉬는 날마다 10:00' rings on a day just changed to 휴무.
+                val withSchedules = memoRepository.memos.map { list -> list.filter { it.reminder != null } }
                     .distinctUntilChanged { a, b ->
-                        a.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.skips, it.inTrash) } ==
-                            b.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.skips, it.inTrash) }
+                        a.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.doneAtMillis, it.skips, it.inTrash, it.calendars) } ==
+                            b.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.doneAtMillis, it.skips, it.inTrash, it.calendars) }
                     }
+                combine(withSchedules, calendars.active) { list, cal -> list to cal }
+                    .flatMapLatest { (list, cal) -> memoRepository.shiftLookup(list, cal).map { list to it } }
                     .debounce(300)
-                    .collect { list ->
-                        val shifts = com.bamnat.app.memo.MemoScheduleAlarm.shiftsFor(appContext, list)
+                    .collect { (list, shifts) ->
+                        // 2.0.0 [RVI-19] (검토 MEMO-04) Finished anywhere: its notice and 미루기 go, as with the notice's own 끝내기.
+                        runCatching { com.bamnat.app.memo.MemoScheduleAlarm.settle(appContext, list) }
                         com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, list, shiftsOf = shifts)
                     }
             }
             // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
             keep("taskwidget") {
-                combine(memoRepository.memos, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
+                // 2.0.0 [RVI-53] (검토 MEMO-19) Only when what it shows changes, not at each save of a memo's words.
+                val looks = memoRepository.memos.map { com.bamnat.core.memo.TaskList.looks(it, Today.date()) }.distinctUntilChanged()
+                    .flowOn(Dispatchers.Default)
+                combine(looks, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
                     .drop(1).debounce(800)
-                    .collect { com.bamnat.app.widget.TaskWidget.redraw(appContext) }
+                    .collect {
+                        com.bamnat.app.widget.TaskWidget.redraw(appContext)
+                        // 2.0.0 [RVI-95] (TASK-35) The watch's 오늘 할 일 tile follows the same list.
+                        runCatching { com.bamnat.app.watch.WatchSync.push(appContext) }
+                    }
             }
             // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
             keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }

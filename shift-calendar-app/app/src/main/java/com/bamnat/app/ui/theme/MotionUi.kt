@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.bamnat.core.recipe.Motion
@@ -74,34 +76,55 @@ fun WearTransition(key: Any, ground: Color, motion: Motion, content: @Composable
 /**
  * [MAT-07] 1.36 달 넘김: how a month page at [offset] (0 shown, ±1 a page away) is drawn — 밀기 (the pager's own), 스르륵, 책장 넘기기,
  * 다가오기, 겹쳐 오기, 움직이지 않기.
+ *
+ * 2.0.0 [PC-28] Only the drawing moves, and a month not seen is not moved at all. The months either side are kept made ([PERF-11])
+ * and 스르륵·책장·움직이지 않기 used to bring them back over the month on screen with the layer's own translation, unseen (alpha 0). A
+ * layer's translation also moves where a finger lands, and the later month is on top: 11월 12일 tapped opened 12월 10일, a long press
+ * saved the shift there, and with 움직임 끄기 or the phone's 'remove animations' (every turn is then 움직이지 않기) it happened with no theme
+ * worn at all. The slide back is now done while drawing ([monthTurnShift]), so a month answers a finger only where the pager has
+ * it — at rest, the month on screen. 책장's turned page is left flat once it is out of sight (from halfway): a page turned 75° in
+ * perspective, though off to the side, still answered fingers on the month shown.
  */
 fun Modifier.monthTurn(turn: String?, offset: () -> Float): Modifier = when (turn) {
     null, "slide" -> this
-    else -> graphicsLayer {
+    else -> drawWithContent {
+        val shift = monthTurnShift(turn, offset().coerceIn(-1f, 1f)) * size.width
+        if (shift == 0f) drawContent() else translate(left = shift) { this@drawWithContent.drawContent() }
+    }.graphicsLayer {
         val o = offset().coerceIn(-1f, 1f)
+        val near = abs(o) < 0.5f
         when (turn) {
-            "fade" -> { translationX = o * size.width; alpha = 1f - abs(o) }
-            "flip" -> {
-                cameraDistance = 12f * density
-                rotationY = o * -75f
-                alpha = if (abs(o) < 0.5f) 1f else 0f
-                translationX = o * size.width
-            }
+            "fade" -> alpha = 1f - abs(o)
+            "flip" -> if (near) { cameraDistance = 12f * density; rotationY = o * -75f } else alpha = 0f
             "zoom" -> { val s = 1f - 0.18f * abs(o); scaleX = s; scaleY = s; alpha = 1f - abs(o) * 0.8f }
-            "stack" -> if (o < 0) { translationX = o * size.width * -1f; val s = 1f - 0.1f * abs(o); scaleX = s; scaleY = s; alpha = 1f - abs(o) * 0.5f }
-            "none" -> { translationX = o * size.width; alpha = if (abs(o) < 0.5f) 1f else 0f }
+            "stack" -> if (o < 0) { val s = 1f - 0.1f * abs(o); scaleX = s; scaleY = s; alpha = 1f - abs(o) * 0.5f }
+            "none" -> if (!near) alpha = 0f
         }
     }
 }
 
-/** [MAT-07] 1.36 오늘 강조: today's date moving as [Motion.today] says (숨쉬기, 은은한 빛, 도는 테, 통통), in [tint]. */
+/**
+ * 2.0.0 [PC-28] How far, in widths of the page, a month [o] pages away is drawn from where the pager has it: 스르륵·책장·움직이지 않기
+ * stay in the middle (the pager's slide undone), 겹쳐 오기 comes in from twice as far, the others ride the pager.
+ */
+internal fun monthTurnShift(turn: String?, o: Float): Float = when (turn) {
+    "fade", "flip", "none" -> o
+    "stack" -> if (o < 0) -o else 0f
+    else -> 0f
+}
+
+/**
+ * [MAT-07] 1.36 오늘 강조: today's date moving as [Motion.today] says (숨쉬기, 은은한 빛, 도는 테, 통통), in [tint]. 2.0.0 [RVS-02]
+ * (스튜디오 조사 SN-02, PC-28과 같은 뿌리): 숨쉬기 and 통통 move only how it is drawn. As a layer's scale and shift they moved where a
+ * finger lands too, so the edge of the day before a breathing 오늘 opened 오늘 and the bottom of a bouncing 오늘 opened nothing.
+ */
 fun Modifier.todayMotion(kind: String?, tint: Color): Modifier = if (kind == null || kind == "none") this else composed {
     val t = rememberInfiniteTransition(label = "today")
     val v by t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (kind == "ring") 2400 else 1100, easing = FastOutSlowInEasing),
         if (kind == "ring") RepeatMode.Restart else RepeatMode.Reverse), label = "v")
     when (kind) {
-        "pulse" -> graphicsLayer { val s = 1f + 0.12f * v; scaleX = s; scaleY = s }
-        "bounce" -> graphicsLayer { translationY = -3.dp.toPx() * v }
+        "pulse" -> drawWithContent { val s = 1f + 0.12f * v; scale(s, s) { this@drawWithContent.drawContent() } }
+        "bounce" -> drawWithContent { translate(top = -3.dp.toPx() * v) { this@drawWithContent.drawContent() } }
         "glow" -> drawBehind { drawCircle(tint.copy(alpha = 0.18f + 0.22f * v), radius = size.minDimension * (0.62f + 0.12f * v)) }
         "ring" -> drawBehind {
             val w = 1.6.dp.toPx()

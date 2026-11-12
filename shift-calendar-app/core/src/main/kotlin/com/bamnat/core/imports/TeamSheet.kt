@@ -1,5 +1,6 @@
 package com.bamnat.core.imports
 
+import com.bamnat.core.boss.StaffTax
 import com.bamnat.core.boss.WageForm
 import com.bamnat.core.time.Today
 import java.time.DayOfWeek
@@ -89,9 +90,15 @@ object TeamSheet {
         if (grids.size == 1) return grids[0]
         val rows = LinkedHashMap<String, GridRow>()
         for (g in grids) for (r in g.rows) {
-            val key = DutyCodes.norm(r.name)
+            var key = DutyCodes.norm(r.name)
+            // 2.0.0 [RVL-22] (검토 SCAN-07) Another member of the same name (their days meet): a line of their own, "김민지 (2)".
+            var n = 1
+            while (rows[key]?.let { had -> had.cells.keys.count(r.cells::containsKey) > 1 } == true) {
+                n++
+                key = DutyCodes.norm(DutyRoster.twin(r.name, n))
+            }
             val had = rows[key]
-            rows[key] = if (had == null) r else had.copy(role = had.role ?: r.role, cells = had.cells + r.cells.filterKeys { it !in had.cells }, doubtful = had.doubtful + r.doubtful)
+            rows[key] = if (had == null) (if (n == 1) r else r.copy(name = DutyRoster.twin(r.name, n))) else had.copy(role = had.role ?: r.role, cells = had.cells + r.cells.filterKeys { it !in had.cells }, doubtful = had.doubtful + r.doubtful)
         }
         val all = rows.values.toList()
         val days = all.flatMap { it.cells.keys }.distinct().sorted()
@@ -111,9 +118,16 @@ data class StaffRow(
     val job: String? = null,
     val hiredOn: LocalDate? = null,
     val doubtful: Set<String> = emptySet(),
+    /** 2.0.0 [RVJ-40] 검토 PC-102: 소득세 칸 (3.3%·일용·근로), null when the list has none or it was not read. */
+    val tax: StaffTax? = null,
+    /** [RVJ-40] 외국인·국적 칸, null when the list has none. */
+    val foreign: Boolean? = null,
+    /** [RVJ-40] Cells that held something the reader could not read, as "일급 칸 ‘15만원?’", said as they are. */
+    val unreadCells: List<String> = emptyList(),
 )
 
-data class StaffSheet(val rows: List<StaffRow>) {
+/** [rows], and [unread]: the list's own column names that are not read (빈 칸 이름 빼고, 연락처·주민번호처럼 일부러 안 읽는 칸 빼고). */
+data class StaffSheet(val rows: List<StaffRow>, val unread: List<String> = emptyList()) {
     companion object {
         fun read(rows: List<List<String>>, near: LocalDate = Today.date()): StaffSheet? = StaffSheets.read(rows, near)
         @JvmName("readBook")
@@ -128,12 +142,19 @@ data class StaffSheet(val rows: List<StaffRow>) {
 object StaffSheets {
     private val NAME = listOf("이름", "성명", "직원", "직원명", "사원명", "NAME")
     private val FORM = listOf("급여형태", "임금형태", "형태", "급여구분", "구분")
-    private val BASE = listOf("시급", "월급", "일급", "급여", "임금", "기본급", "시급월급", "시급/월급", "금액", "통상임금")
+    // 2.0.0 [RVJ-40] 검토 PC-102: '이름,시급,일급,월급,…' lists keep each person's pay in the column of its kind. Only the first of
+    // them was read, so 일급·월급 people came in as 시급 at the 최저시급. Each kind has its own column now; [BASE] is a column of any kind.
+    private val HOURLY = listOf("시급", "시간급", "시간당", "시간당급여")
+    private val DAILY = listOf("일급", "일당", "하루급여")
+    private val MONTHLY = listOf("월급", "월급여", "월급액", "월기본급", "월임금")
+    private val BASE = listOf("급여", "임금", "기본급", "시급월급", "시급/월급", "금액", "통상임금", "급여액")
+    private val TAX = listOf("소득세", "세금", "원천징수", "원천세", "소득구분", "세금구분", "신고구분", "소득종류", "세금처리", "과세구분")
+    private val FOREIGN = listOf("외국인", "국적", "내외국인", "외국인여부", "내국인외국인")
     private val DAYS = listOf("근무요일", "요일", "근무일")
     private val START = listOf("출근", "시작", "출근시간", "근무시작", "시작시간")
     private val END = listOf("퇴근", "끝", "종료", "퇴근시간", "근무종료", "종료시간")
     private val HOURS = listOf("근무시간", "시간")
-    private val JOB = listOf("담당", "업무", "직무", "파트", "포지션", "담당업무")
+    private val JOB = listOf("담당", "업무", "직무", "파트", "포지션", "담당업무", "하는일", "직책", "역할")
     private val HIRED = listOf("입사일", "입사", "근로시작일", "계약시작")
     /** Never read (최소 수집). */
     private val PRIVATE = listOf("연락처", "전화", "휴대폰", "핸드폰", "주민", "주민번호", "주민등록번호", "계좌", "은행", "주소", "이메일")
@@ -145,26 +166,43 @@ object StaffSheets {
         sheets.mapNotNull { read(it.rows, near) }.maxByOrNull { it.rows.size }
 
     fun read(rows: List<List<String>>, near: LocalDate = Today.date()): StaffSheet? {
-        val headAt = rows.take(10).indexOfFirst { r -> r.any { norm(it) in NAME } && r.count { c -> (BASE + FORM + DAYS + START + JOB + HOURS).any { norm(c) == norm(it) } } >= 1 }
+        val known = BASE + HOURLY + DAILY + MONTHLY + FORM + DAYS + START + JOB + HOURS + TAX
+        val headAt = rows.take(10).indexOfFirst { r -> r.any { norm(it) in NAME } && r.count { c -> known.any { norm(c) == norm(it) } } >= 1 }
         if (headAt < 0) return null
         val head = rows[headAt].map(::norm)
         fun col(names: List<String>, not: Set<Int> = emptySet()) = head.withIndex().firstOrNull { (i, h) -> i !in not && names.any { norm(it) == h } }?.index ?: -1
         val nameCol = col(NAME)
         val privateCols = head.withIndex().filter { (_, h) -> PRIVATE.any { h.contains(norm(it)) } }.map { it.index }.toSet()
-        val formCol = col(FORM, privateCols); val baseCol = col(BASE, privateCols + formCol); val daysCol = col(DAYS, privateCols)
+        val formCol = col(FORM, privateCols)
+        val hourlyCol = col(HOURLY, privateCols + formCol); val dailyCol = col(DAILY, privateCols + formCol); val monthlyCol = col(MONTHLY, privateCols + formCol)
+        val baseCol = col(BASE, privateCols + formCol + hourlyCol + dailyCol + monthlyCol); val daysCol = col(DAYS, privateCols)
         val startCol = col(START, privateCols); val endCol = col(END, privateCols); val hoursCol = col(HOURS, privateCols + startCol + endCol)
         val jobCol = col(JOB, privateCols); val hiredCol = col(HIRED, privateCols)
+        val taxCol = col(TAX, privateCols); val foreignCol = col(FOREIGN, privateCols)
+        val used = setOf(nameCol, formCol, hourlyCol, dailyCol, monthlyCol, baseCol, daysCol, startCol, endCol, hoursCol, jobCol, hiredCol, taxCol, foreignCol)
+        // [RVJ-40] Said as it is: the list's columns that are not read (a 비고, a 휴게) are named in the preview.
+        val unread = rows[headAt].withIndex().filter { (i, h) -> i !in used && i !in privateCols && h.isNotBlank() }.map { it.value.trim() }
+        val typedCols = listOf(Triple(hourlyCol, WageForm.HOUR, "시급"), Triple(dailyCol, WageForm.DAY, "일급"), Triple(monthlyCol, WageForm.MONTH, "월급"))
+            .filter { it.first >= 0 }
         val out = rows.drop(headAt + 1).mapNotNull { r ->
             fun at(c: Int) = if (c < 0 || c in privateCols) "" else r.getOrNull(c)?.trim().orEmpty()
             val name = RosterSheet.nameAndRole(at(nameCol), DutyCodes(emptyList())).first
             if (name.isEmpty() || name.any(Char::isDigit) || norm(name) in listOf("합계", "계", "소계", "TOTAL")) return@mapNotNull null
             val doubt = mutableSetOf<String>()
+            val unreadCells = mutableListOf<String>()
+            // [RVJ-40] The 시급·일급·월급 columns first: the one that holds a sum is the person's form and pay.
+            val typed = typedCols.mapNotNull { (c, f, label) -> at(c).takeUnless(::blankish)?.let { t -> Triple(f, moneyOf(t), label to t) } }
+            typed.filter { it.second == null }.forEach { (_, _, lt) -> unreadCells += "${lt.first} 칸 ‘${lt.second}’"; doubt += "base" }
+            val readTyped = typed.filter { it.second != null }
+            val saidForm = formOf(at(formCol))
+            val pick = readTyped.firstOrNull { it.first == saidForm } ?: readTyped.firstOrNull()
+            if (readTyped.size > 1 && saidForm == null) doubt += "form"
             val formText = at(formCol) + " " + head.getOrNull(baseCol).orEmpty()
-            val money = at(baseCol).replace(Regex("""[,\s원₩]"""), "").let { t ->
-                Regex("""^(\d+(?:\.\d+)?)(만)?$""").matchEntire(t)?.let { m -> (m.groupValues[1].toDouble() * if (m.groupValues[2].isNotEmpty()) 10_000 else 1).toLong() }
-            }
-            if (at(baseCol).isNotEmpty() && money == null) doubt += "base"
-            val form = when {
+            val generic = at(baseCol).takeUnless(::blankish).orEmpty()
+            val money = pick?.second ?: moneyOf(generic)
+            if (pick == null && generic.isNotEmpty() && money == null) { doubt += "base"; unreadCells += "${rows[headAt].getOrNull(baseCol)?.trim().orEmpty().ifBlank { "금액" }} 칸 ‘$generic’" }
+            // The read column's kind; else the one typed column that held something (an 일급 칸 not read is still an 일급); else the 형태 칸.
+            val form = pick?.first ?: typed.singleOrNull()?.first ?: saidForm ?: when {
                 formText.contains("시급") && !formText.contains("월급") || at(formCol).contains("시급") -> WageForm.HOUR
                 at(formCol).contains("월급") || at(formCol).contains("월") && !at(formCol).contains("일") -> WageForm.MONTH
                 at(formCol).contains("일급") || at(formCol).contains("일당") -> WageForm.DAY
@@ -173,6 +211,13 @@ object StaffSheets {
                 money != null -> WageForm.HOUR.also { if (at(formCol).isEmpty()) doubt += "form" }
                 else -> null
             }
+            // [RVJ-40] 소득세 (3.3%·일용·근로) and 외국인 칸.
+            val taxText = at(taxCol)
+            val tax = taxOf(taxText) ?: if (at(formCol).contains("일용")) StaffTax.DAILY else null
+            if (taxText.isNotBlank() && taxOf(taxText) == null) { doubt += "tax"; unreadCells += "${rows[headAt].getOrNull(taxCol)?.trim()} 칸 ‘$taxText’" }
+            val foreignText = at(foreignCol)
+            val foreign = foreignOf(foreignText, byCountry = foreignCol >= 0 && norm(rows[headAt][foreignCol]) == "국적")
+            if (foreignText.isNotBlank() && foreign == null) { doubt += "foreign"; unreadCells += "${rows[headAt].getOrNull(foreignCol)?.trim()} 칸 ‘$foreignText’" }
             val times = hoursOf(at(startCol), at(endCol), at(hoursCol))
             if ((at(startCol) + at(endCol) + at(hoursCol)).isNotBlank() && times == null) doubt += "weekly"
             val days = daysOf(at(daysCol))
@@ -180,10 +225,65 @@ object StaffSheets {
             StaffRow(
                 name, form, money,
                 if (times != null) (days.ifEmpty { emptySet() }).associateWith { times } else emptyMap(),
-                at(jobCol).ifBlank { null }, AttendanceImport.parseDate(at(hiredCol), near.year, near), doubt,
+                at(jobCol).ifBlank { null }, AttendanceImport.parseDate(at(hiredCol), near.year, near), doubt, tax, foreign, unreadCells,
             )
         }
-        return out.takeIf { it.isNotEmpty() }?.let(::StaffSheet)
+        return out.takeIf { it.isNotEmpty() }?.let { StaffSheet(it, unread) }
+    }
+
+    /**
+     * [RVJ-40] 검토 PC-102: the column names read, said in one line before the file is picked ([READS]), and a file that has them all
+     * ([EXAMPLE_CSV], 예시 파일). The example is read back by a test, so the two do not drift apart.
+     */
+    const val READS = "이름·시급·일급·월급·근무 요일·출근·퇴근·입사일·하는 일·소득세·외국인"
+    val EXAMPLE_CSV = """
+        이름,급여형태,시급,일급,월급,근무요일,출근,퇴근,입사일,하는일,소득세,외국인
+        김알바,시급,10320,,,월~금,09:00,15:00,2026-03-02,홀,근로소득,
+        이일용,일급,,150000,,토일,10:00,19:00,2026-10-01,주방,일용,
+        박매니저,월급,,,2500000,월~금,09:00,18:00,2025-01-06,매니저,근로소득,
+        최디자인,시급,12000,,,수,13:00,18:00,2026-09-01,디자인,3.3%,
+        응우옌,시급,10320,,,월수금,10:00,16:00,2026-05-04,주방,근로소득,예
+    """.trimIndent() + "\n"
+
+    /** "10,320", "10320원", "250만", "2,500,000" as a sum; null for anything else. */
+    internal fun moneyOf(text: String): Long? = text.replace(Regex("""[,\s원₩]"""), "").let { t ->
+        Regex("""^(\d+(?:\.\d+)?)(만)?$""").matchEntire(t)?.let { m -> (m.groupValues[1].toDouble() * if (m.groupValues[2].isNotEmpty()) 10_000 else 1).toLong() }
+    }
+
+    /** A cell that says nothing: empty, a dash, 0 or 없음 (the other kinds' columns of a person paid by one kind). */
+    private fun blankish(t: String): Boolean = t.isBlank() || t.trim() in setOf("-", "–", "—", "0", "없음", "x", "X", "/", "해당없음")
+
+    /** The 급여 형태 column said in words. */
+    private fun formOf(t: String): WageForm? = when {
+        t.contains("시급") -> WageForm.HOUR
+        t.contains("일급") || t.contains("일당") || t.contains("일용") -> WageForm.DAY
+        t.contains("월급") || t.contains("연봉") -> WageForm.MONTH
+        else -> null
+    }
+
+    /** [RVJ-40] 소득세 칸: '3.3%'·'사업소득' → 3.3%, '일용' → 일용, '근로'·'간이'·'4대보험' → 근로소득, '없음'·'안 뗌' → 떼지 않음. */
+    internal fun taxOf(t: String): StaffTax? {
+        val s = t.replace(" ", "")
+        return when {
+            s.isEmpty() -> null
+            s.contains("3.3") || s.contains("사업") || s.contains("프리") -> StaffTax.BIZ
+            s.contains("일용") -> StaffTax.DAILY
+            s.contains("근로") || s.contains("간이") || s.contains("4대") || s.contains("갑근") -> StaffTax.WAGE
+            s.contains("없") || s.contains("안뗌") || s.contains("미공제") || s.contains("비과세") -> StaffTax.NONE
+            else -> null
+        }
+    }
+
+    /** [RVJ-40] 외국인 칸: 예·O·✓·외국인 → yes, 아니오·X·내국인 → no. A 국적 칸 says yes for any country but 한국. */
+    internal fun foreignOf(t: String, byCountry: Boolean): Boolean? {
+        val s = t.replace(" ", "").uppercase()
+        if (s.isEmpty()) return null
+        if (byCountry) return s !in setOf("한국", "대한민국", "내국인", "KOREA", "KR", "KOR", "한국인")
+        return when (s) {
+            "Y", "YES", "예", "네", "O", "○", "●", "✓", "✔", "V", "1", "TRUE", "외국인", "해당" -> true
+            "N", "NO", "아니오", "아니요", "X", "×", "0", "FALSE", "내국인", "-", "해당없음" -> false
+            else -> null
+        }
     }
 
     /** "월화수", "월~금", "월,수,금", "주5일(월-금)", "평일", "주말" as days. */

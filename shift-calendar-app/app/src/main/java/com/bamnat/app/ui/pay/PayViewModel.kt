@@ -82,6 +82,10 @@ class PayViewModel(
     private val payStore = scope.pay
     val profile: StateFlow<PayProfile?> = payStore.profile
     val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
+    /** 2.0.0 [RVJ-25] 검토 PAYU-11·PAYC-21: the setup's file could not be read (and what came back), or the last save did not go through. */
+    val trouble: StateFlow<com.bamnat.app.pay.PayStore.Trouble> = payStore.trouble
+    fun troubleSeen() = payStore.troubleSeen()
+    fun retrySave() = viewModelScope.launch { payStore.retrySave() }
     val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.live.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
@@ -116,10 +120,14 @@ class PayViewModel(
 
     val closed: StateFlow<Map<YearMonth, CalcSnapshot>> = payStore.closed
 
-    /** Keeps this month's result as it is now, whatever changes later [PAYX-03]. */
+    /**
+     * Keeps this month's result as it is now, whatever changes later [PAYX-03]. 2.0.0 [RVJ-18] 굳은 달: its days and the 세후 of that
+     * day are kept too, so 날짜별 내역·세후·통계·리포트 show the same month.
+     */
     fun closeMonth(result: MonthPay) = viewModelScope.launch {
         val existing = closed.value[result.month]
-        val snap = existing?.recalculated(result, Today.millis()) ?: CalcSnapshot.close(result, Today.millis())
+        val home = takeHomeAt(result)
+        val snap = existing?.recalculated(result, Today.millis(), home) ?: CalcSnapshot.close(result, Today.millis(), home)
         payStore.saveClosed(snap, result.month)
         container.telemetry.event("pay_month_close", if (existing == null) "close" else "recalc")
         // [DAILY-17] A month closed is the second moment Play's review may be asked at, back on 내 달력.
@@ -127,6 +135,48 @@ class PayViewModel(
     }
 
     fun reopenMonth(month: YearMonth) = viewModelScope.launch { payStore.saveClosed(null, month) }
+
+    /** 2.0.0 [RVJ-18] 검토 I05a-02: 저절로 마감 on or off (도구 › ○월 마감, 설정 › 알림 › 돈, the ask card's '앞으로 저절로'). */
+    fun setAutoClose(on: Boolean) {
+        container.settingsRepository.update { it.copy(payAutoClose = on) }
+    }
+
+    /** [RVJ-18] The 세후 of [result] as the screen would say it today, kept with the closed month; null when it is not shown. */
+    private suspend fun takeHomeAt(result: MonthPay): CalcSnapshot.TakeHomeAt? = runCatching {
+        val profile = payStore.profile.value ?: return null
+        if (result.total <= 0 || !container.featureGate.state.value.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)) return null
+        val records = container.tax(calendarId).allObservations()
+        val f = withContext(Dispatchers.Default) { com.bamnat.app.tax.TakeHomeLine.of(profile, records, result.total, result.month) }
+        if (f.basis == com.bamnat.core.tax.TaxLearner.Basis.NONE) null else CalcSnapshot.TakeHomeAt(f.net, f.tableNet, f.basis.name)
+    }.getOrNull()
+
+    /** [RVJ-18] A month as every screen shows it: the closed one when closed. */
+    fun shown(result: MonthPay): MonthPay = closed.value[result.month]?.frozen(result) ?: result
+
+    /** [RVJ-18] 검토 U05-01: '나중에' kept, so the card does not come back for that month. */
+    val closeAsked: StateFlow<Set<YearMonth>> = payStore.closeAsked
+    fun closeAskLater(month: YearMonth) = viewModelScope.launch { payStore.closeAskLater(month) }
+
+    /**
+     * [RVJ-18] 검토 U05-01·I05a-02: the latest month whose 급여일 has passed (up to 14 days ago) and is not closed or put off, to ask
+     * "이대로 마감할까요?"; null when none.
+     */
+    fun closeDue(profile: PayProfile, records: List<com.bamnat.core.tax.PayObservation> = emptyList(), today: java.time.LocalDate = Today.date()): YearMonth? {
+        val now = YearMonth.from(today)
+        return (0L..2L).map { now.minusMonths(it) }.firstOrNull { m ->
+            m !in closeAsked.value && com.bamnat.core.pay.CloseAsk.due(m, profile.period.payDate(m), today, m in closed.value, paidOn(records, m))
+        }
+    }
+
+    /** [RVJ-18] I05c-01: the day [month]'s 월급 was seen arriving (입금 알림 or a typed 실수령); null when not yet. */
+    fun paidOn(records: List<com.bamnat.core.tax.PayObservation>, month: YearMonth): java.time.LocalDate? =
+        records.filter { it.payMonth == month }.minOfOrNull { it.date }
+
+    /** [RVJ-18] Closes [month] from the card: worked out now, then kept. */
+    fun closeMonthOf(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth) = viewModelScope.launch {
+        val result = withContext(Dispatchers.Default) { calculate(profile, snapshot, month) }
+        closeMonth(result).join()
+    }
 
     /** What a month comes to: its closed result when closed, else a fresh calculation. */
     fun totalFor(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
@@ -191,9 +241,11 @@ class PayViewModel(
         payStore.leaveShared()
         company.payWays.use(null)
         if (w != null && container.companyApi.enabled) {
-            val device = company.store.device
             val cal = company.serverCal
-            container.appScope.launch { runCatching { container.companyApi.use(device, w.companyId, w.setup, false, cal) } }
+            // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+            container.appScope.launch {
+                com.bamnat.app.company.SmallSends.send(container, company.store, com.bamnat.app.company.SmallSends.use(w.companyId, w.setup, false, cal))
+            }
         }
         container.telemetry.event("pay_way", "leave_shared")
     }
@@ -276,8 +328,13 @@ class PayViewModel(
 
     // ---- [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a change did, the 7 days of changes, starting over ----
 
-    /** [PAYIN-05] One change just saved: what it was, the month on screen before and after, and the change to put back. */
-    data class ChangeNote(val what: String, val month: YearMonth, val before: Long?, val after: Long?, val change: com.bamnat.app.pay.PayStore.Change?)
+    /**
+     * [PAYIN-05] One change just saved: what it was, the month on screen before and after, and the change to put back. 2.0.0 [RVJ-32]
+     * (PC-80): [shut] is the closed month on screen, which stays as closed; [month] is then the first open month after it, where the
+     * change lands.
+     */
+    data class ChangeNote(val what: String, val month: YearMonth, val before: Long?, val after: Long?, val change: com.bamnat.app.pay.PayStore.Change?,
+        val shut: YearMonth? = null)
 
     private val _note = MutableStateFlow<ChangeNote?>(null)
     /**
@@ -290,10 +347,12 @@ class PayViewModel(
         val after = payStore.profile.value
         val change = payStore.history.value.firstOrNull()?.takeIf { it.why == what }
         val snap = snapshot.value ?: scope.schedule.lastSnapshot
-        val m = month.value
+        val shown = month.value
+        // 2.0.0 [RVJ-32] PC-80: a closed month keeps its closed result, so the change is said where it lands.
+        val m = landsIn(shown, closed.value.keys)
         val total = { p: PayProfile? -> p?.let { q -> snap?.let { runCatching { calculator.calculate(q.named(settings.value.extraKinds).hourlyWeek(settings.value), m, it.resolver::resolve, checks = false).total }.getOrNull() } } }
         val (b, a) = withContext(Dispatchers.Default) { total(before) to total(after) }
-        _note.value = ChangeNote(what, m, b, a, change)
+        _note.value = ChangeNote(what, m, b, a, change, shut = shown.takeIf { it != m })
     }
 
     fun noteShown() { _note.value = null }
@@ -382,11 +441,18 @@ class PayViewModel(
         )
     }
 
-    /** What the change does to the next months, before it is applied [PAYX-03]. */
+    /**
+     * What the change does to the next months, before it is applied [PAYX-03]. 2.0.0 [RVJ-08] 검토 PAYU-07: also the months
+     * before [from] that hold the value (up to 12), so the screen can say "지난 n개월도 바뀌어요".
+     */
     fun planEdit(p: PayProfile, snapshot: ScheduleSnapshot, target: ValueTarget, value: Long, scope: EditScope, from: YearMonth): EditPlan =
         BulkEditPlanner.plan(
             timelineOf(p, target), value, scope,
-            preview = (0L until 12L).map { from.plusMonths(it) },
+            preview = run {
+                val first = timelineOf(p, target).entries.minOfOrNull { it.from }?.let { YearMonth.from(it) } ?: from
+                val back = maxOf(first, from.minusMonths(12))
+                generateSequence(back) { it.plusMonths(1) }.takeWhile { it < from }.toList() + (0L until 12L).map { from.plusMonths(it) }
+            },
             totalFor = { t, m -> calculate(p.withTimeline(target, t), snapshot, m).total },
             isLocked = { it in closed.value },
         )
@@ -535,8 +601,7 @@ class PayViewModel(
     }
 
     /** [PROV-01] A month as the report shows it: the closed result when the month is closed [PAYX-03]. */
-    private fun asShown(pay: MonthPay): MonthPay =
-        closed.value[pay.month]?.let { pay.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: pay
+    private fun asShown(pay: MonthPay): MonthPay = shown(pay)
 
     /** [PROV-01] The months of [year], each as the pay screen shows it, for the year's report. */
     suspend fun yearPays(profile: PayProfile, snapshot: ScheduleSnapshot, year: Int): List<MonthPay> = withContext(Dispatchers.Default) {

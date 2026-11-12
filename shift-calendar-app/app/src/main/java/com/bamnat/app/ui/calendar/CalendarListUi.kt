@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapVert
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -196,6 +197,7 @@ fun CalendarIdentityBar(
     // [J133-22] 1.33 (실사용 테스트 "작은 폰에서 지금 보는 달력 칩·공유가 0x0으로 사라짐"): a small phone keeps the name and 공유
     // (as an icon) and leaves the other calendars to the list (+n).
     val small = maxWidth < 340.dp
+    val barWidth = maxWidth
     val room = when {
         small -> 0
         LocalDensity.current.fontScale > 1.3f -> 1
@@ -234,19 +236,19 @@ fun CalendarIdentityBar(
             // [J133-79] 빌드 5 (달력이 4개면 다시 한 글자 동그라미): two named faces at most, the rest behind +N.
             val named = shown >= 2
             val count = if (named) 2 else shown
-            faces.take(count).forEach { row ->
+            val teamMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
+            if (named) CalendarFaces(faces, count, onPick)
+            else faces.take(count).forEach { row ->
                 val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
-                if (named) Surface(
-                    onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "$name 보기" },
-                ) {
-                    Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        row.Avatar(size = 24.dp)
-                        Spacer(Modifier.width(4.dp))
-                        Text(row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
-                    }
-                } else Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) }
+                // 2.0.0 [RVG-34] 검토 PC-132: a member's link from the 팀 리더 is where they go most, and its face alone ('3') did not
+                // say what it is. It says 팀 근무표; with large text too while the words take at most 30% of the bar (as [RVG-22]'s
+                // '내 달력으로'), past that the face alone, read out in full.
+                val team = (row as? CalendarRow.Got)?.cal?.fromLeader == true
+                val labelFits = team && with(LocalDensity.current) {
+                    teamMeasurer.measure(TEAM_FACE_WORDS, MaterialTheme.typography.labelMedium).size.width.toDp() } + 42.dp <= barWidth * 0.3f
+                if (labelFits) CalendarFace(row, onPick)
+                else Box(
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) } /* [RVP-10] 48dp */
                         .semantics { contentDescription = "$name 보기" },
                     contentAlignment = Alignment.Center,
                 ) { row.Avatar(size = 30.dp) }
@@ -254,37 +256,151 @@ fun CalendarIdentityBar(
             if (faces.size > count) {
                 TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - count}", maxLines = 1, softWrap = false) }
             }
-            if (faces.isEmpty() && onTogether != null && !small) {
-                Surface(
-                    onClick = onTogether, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = when { togetherShop -> "영업일 같이 보기"; togetherField -> "일정 같이 보기"; else -> "가족·연인과 근무 같이 보기" } },
-                ) {
-                    Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(if (room >= 2) "같이 보기" else "같이", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                    }
-                }
-            }
+            if (faces.isEmpty() && onTogether != null && !small) TogetherChip(onTogether, togetherShop, togetherField, words = room >= 2)
             onShare?.let {
                 if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }
                 else ShareAction(it, Modifier.padding(start = 4.dp), shareName)
             }
         } else {
-            Surface(onClick = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) },
-                shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+            val goHome = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) }
+            val homeWords = if (home.isMain) "내 달력으로" else "${home.name}${Fmt.ro(home.name)}"
+            // [RVG-22] 검토 HQ-20 (조건 12): at large text the words were cut to '내 달력…'. They show whole while they take at most
+            // 40% of the bar (the name beside keeps the rest); past that the chip is its face only, read out in the same words.
+            val labelStyle = MaterialTheme.typography.labelLarge
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val wordsFit = with(LocalDensity.current) { measurer.measure(homeWords, labelStyle).size.width.toDp() } <= barWidth * 0.4f
+            if (wordsFit) Surface(onClick = goHome, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     home.Avatar(size = 26.dp)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (home.isMain) "내 달력으로" else "${home.name}${Fmt.ro(home.name)}", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 120.dp))
+                    Text(homeWords, style = labelStyle, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                 }
+            } else Surface(onClick = goHome, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(48.dp).semantics { contentDescription = homeWords }) {
+                Box(Modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) { home.Avatar(size = 30.dp) }
             }
         }
     }
     }
 }
+
+/**
+ * 2.0.0 [RVP-45] 검토 U13-01·HQ-29: what the calendar head's row needs to say whose calendar is on screen, now that the calendar chip
+ * stands at the row's start instead of on a line of its own.
+ */
+internal data class HeadChip(
+    val rows: List<CalendarRow>,
+    val current: CalendarRow,
+    val onOpenSwitcher: () -> Unit,
+    val onPick: (CalendarRow) -> Unit,
+    /** Shares the calendar on screen; null for someone else's. */
+    val onShare: (() -> Unit)? = null,
+    val shareName: String = "근무표 공유",
+    /** 1.38 [EASE-30] 같이 보기, while no other calendar sits beside this one. */
+    val onTogether: (() -> Unit)? = null,
+    val togetherShop: Boolean = false,
+    val togetherField: Boolean = false,
+)
+
+/**
+ * 2.0.0 [RVP-45] 검토 HQ-29 (작품을 입은 접은 폭·글자 200%에서 '내 달력' 칩이 '내 달…'): the calendar chip says the calendar's name only
+ * where the whole name fits ([name], from [HeadRoom]); else it is the calendar's face and ▾, read by name. Never cut.
+ */
+@Composable
+internal fun CalendarChip(current: CalendarRow, name: Boolean, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val currentName = (current as? CalendarRow.Got)?.cal?.fullName ?: current.title
+    Surface(
+        onClick = onOpen,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.semantics { contentDescription = "달력 바꾸기, 지금 $currentName" },
+    ) {
+        Row(Modifier.heightIn(min = 40.dp).padding(start = 4.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            current.Avatar(size = 28.dp)
+            if (name) {
+                Spacer(Modifier.width(6.dp))
+                Text(current.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false,
+                    modifier = Modifier.clearAndSetSemantics { })
+            }
+            Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
+        }
+    }
+}
+
+/** [J133-66][J133-79] Other calendars to switch to with one tap: by name beside their faces while [count] is 2 or less. */
+@Composable
+internal fun CalendarFaces(faces: List<CalendarRow>, count: Int, onPick: (CalendarRow) -> Unit) {
+    faces.take(count).forEach { row -> CalendarFace(row, onPick) }
+}
+
+/** Another calendar by its face alone (48dp), read by its name. */
+@Composable
+internal fun CalendarFaceOnly(row: CalendarRow, onPick: (CalendarRow) -> Unit) {
+    val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
+    Box(
+        Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) } /* [RVP-10] 48dp */
+            .semantics { contentDescription = "$name 보기" },
+        contentAlignment = Alignment.Center,
+    ) { row.Avatar(size = 30.dp) }
+}
+
+/** What a 팀 리더's link says beside its face (2.0.0 [RVG-34] 검토 PC-132). */
+internal const val TEAM_FACE_WORDS = "팀 근무표"
+
+/**
+ * 2.0.0 [RVG-34] 검토 PC-132 with 갈래 P 3/3 (총괄 HQ-49 '달력 위는 꼭 봐야 하는 것만'): on a phone the head has no face for the 팀 리더's
+ * link (it is the first line of the list the calendar chip's ▾ opens), so a member who does not know to look there is told once, in
+ * the 알림함, not over the month. Once on this phone: cleared, or turned off with '다시 보지 않기', it does not come back. A tap opens
+ * that list ([com.bamnat.app.NoticeLinks.Target.CALENDARS]).
+ */
+internal object TeamLinkNote {
+    const val KIND = "team.leaderRoster"
+    const val LINE = "맨 위 왼쪽 달력 ▾에서 리더가 보낸 근무표를 봐요"
+
+    fun once(context: android.content.Context, id: String) {
+        val hints = HintStore(context)
+        if (hints.done(HintStore.TEAM_LINK_INBOX)) return
+        com.bamnat.app.inbox.Inbox.post(context, com.bamnat.app.inbox.InboxRow(key = "leaderRoster:$id", kind = KIND,
+            section = com.bamnat.app.inbox.InboxSection.NOTICE, title = TEAM_FACE_WORDS, line = LINE,
+            target = com.bamnat.app.NoticeLinks.Target.CALENDARS))
+        hints.markDone(HintStore.TEAM_LINK_INBOX)
+    }
+}
+
+/** One other calendar by its face and its name's first letters, or 팀 근무표 for a 팀 리더's link ([RVG-34]). */
+@Composable
+internal fun CalendarFace(row: CalendarRow, onPick: (CalendarRow) -> Unit) {
+    val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
+    val team = (row as? CalendarRow.Got)?.cal?.fromLeader == true
+    Surface(
+        onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "$name 보기" },
+    ) {
+        Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            row.Avatar(size = 24.dp)
+            Spacer(Modifier.width(4.dp))
+            Text(if (team) TEAM_FACE_WORDS else row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+/** 1.38 [EASE-30] 같이 보기 (가족·연인과 근무 같이 보기), in words or one word. */
+@Composable
+internal fun TogetherChip(onTogether: () -> Unit, shop: Boolean, field: Boolean, words: Boolean) {
+    Surface(
+        onClick = onTogether, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = togetherSaid(shop, field) },
+    ) {
+        Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(if (words) "같이 보기" else "같이", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+/** 1.38 [EASE-30] What 같이 보기 is, in the calendar's words (근무, 영업일, 일정). */
+internal fun togetherSaid(shop: Boolean, field: Boolean): String = when { shop -> "영업일 같이 보기"; field -> "일정 같이 보기"; else -> "가족·연인과 근무 같이 보기" }
 
 /** [UX-03] 공유 in words and an icon, so it reads as what it does on every screen; TalkBack hears what is shared. */
 @Composable
@@ -319,6 +435,13 @@ fun CalendarSwitcherSheet(
     onShare: ((PersonalCalendar) -> Unit)? = null,
     /** [COMN-01] 모든 달력 합쳐 보기, offered once the user has two calendars or more. */
     onCombined: (() -> Unit)? = null,
+    /**
+     * 2.0.0 [RVP-45] 검토 U13-01: 같이 보기 (1.38 EASE-30), which stood beside the calendar's name on a line of its own; on a phone's
+     * one-row head it is here, first of the ways to add a calendar. Null hides it.
+     */
+    onTogether: (() -> Unit)? = null,
+    togetherShop: Boolean = false,
+    togetherField: Boolean = false,
 ) {
     var removing by remember { mutableStateOf<ReceivedCalendar?>(null) }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -354,7 +477,8 @@ fun CalendarSwitcherSheet(
                     is CalendarRow.Got -> SwitchRow(
                         avatar = { row.cal.Avatar(size = 40.dp) },
                         title = row.cal.fullName,
-                        subtitle = row.cal.summary(),
+                        // [RVG-34] 검토 PC-132: the member's 팀 리더 link says so in the list the calendar's name ▾ opens.
+                        subtitle = listOfNotNull("팀 근무표".takeIf { row.cal.fromLeader }, row.cal.summary()).joinToString(" · "),
                         detail = row.cal.schedule?.showsText()?.let { "함께 받은 것: $it" },
                         selected = currentKey == row.key,
                         dim = row.cal.gone,
@@ -365,12 +489,22 @@ fun CalendarSwitcherSheet(
                     )
                 }
             }
+            onTogether?.let {
+                AddRow(togetherSaid(togetherShop, togetherField), it, CircleShape,
+                    detail = "링크를 보내고 받아 서로의 ${if (togetherShop) "영업일을" else if (togetherField) "일정을" else "근무를"} 나란히 봐요. 계정은 필요 없어요")
+            }
             if (onCombined != null && rows.count { it is CalendarRow.Mine } >= 2) {
                 AddRow("모든 달력 합쳐 보기", onCombined, MineShape, detail = "달력마다 색 막대로 한 달력에 보고, 겹치는 시간을 알려 줘요")
             }
-            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(), detail = "알바·부업 근무를 따로 적고 따로 공유해요")
+            // 2.0.0 [RVH-20] 검토 T01-11: a shop, a field worker or an investor has no 동료 근무표; said in their words.
+            val employee = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle?.usesPayEngine != false
+            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(),
+                detail = if (employee) "알바·부업 근무를 따로 적고 따로 공유해요" else "다른 일·부업·가족 일정을 따로 적고 따로 공유해요")
             // [UX-03] Said the way people think of it: a coworker's schedule, and what it is for.
-            onAddReceived?.let { AddRow("동료 근무표 받기", it, CircleShape, detail = "받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요") }
+            onAddReceived?.let {
+                AddRow(if (employee) "동료 근무표 받기" else "다른 사람 달력 받기", it, CircleShape,
+                    detail = "받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요")
+            }
             Text(
                 "새 달력은 근무와 순서를 따로 갖고, 링크도 따로 공유해요. " +
                     (if (onAddReceived != null) "받은 달력은 읽기 전용이고 보낸 분이 링크를 끊으면 여기서도 지워져요." else ""),
@@ -469,11 +603,12 @@ internal fun proNote(live: Boolean): String =
 @Composable
 internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
     val names = androidx.compose.runtime.remember { com.bamnat.app.ui.settings.colorNames(PersonalCalendar.COLORS) }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+    FlowRow {
         PersonalCalendar.COLORS.forEachIndexed { i, c ->
             val on = c == selected
             Box(
-                Modifier.size(40.dp).clip(MineShape).background(c.asColor())
+                Modifier.minimumInteractiveComponentSize().size(40.dp).clip(MineShape).background(c.asColor())
                     .clickable(role = Role.RadioButton) { onPick(c) }
                     .semantics { this.selected = on; contentDescription = names[i] },
                 contentAlignment = Alignment.Center,
@@ -683,7 +818,7 @@ private fun OrderedRow(row: CalendarRow, index: Int, count: Int, onUp: () -> Uni
     val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
     val subtitle = when (row) {
         is CalendarRow.Mine -> row.subtitle() + if (!row.cal.isMain && !row.cal.alarms) " · 알람 끔" else ""
-        is CalendarRow.Got -> "받은 달력 · ${row.cal.summary()}"
+        is CalendarRow.Got -> "${if (row.cal.fromLeader) "팀 근무표" else "받은 달력"} · ${row.cal.summary()}" // [RVG-34]
     }
     Row(
         Modifier
@@ -737,8 +872,9 @@ private fun CalendarEditDialog(
                 if (!cal.isMain) {
                     ColorRow(cal.color, onColor)
                     ListItem(
-                        headlineContent = { Text("근무 알람 울리기") },
-                        supportingContent = { Text("이 달력 근무의 알람도 내 달력 알람처럼 울려요") },
+                        // [RVH-20] In the calendar's words: 영업·일정·투자 알람.
+                        headlineContent = { Text("${com.bamnat.app.ui.shifts.alarmNoun(cal.style)} 알람 울리기") },
+                        supportingContent = { Text("이 달력 ${com.bamnat.app.ui.shifts.alarmNoun(cal.style)}의 알람도 내 달력 알람처럼 울려요") },
                         trailingContent = { Switch(checked = cal.alarms, onCheckedChange = onAlarms) },
                         modifier = Modifier.clickable(role = Role.Switch) { onAlarms(!cal.alarms) },
                     )
@@ -758,7 +894,8 @@ private fun CalendarEditDialog(
                 OutlinedButton(onClick = { save(); onShare() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (open != null) "링크 고치기·다시 보내기" else "이 달력 근무표 공유")
+                    Text(if (open != null) "링크 고치기·다시 보내기"
+                        else if (cal.style == com.bamnat.core.work.WorkStyle.INVEST) "이 달력 공유" else "이 달력 ${com.bamnat.core.work.scheduleWord(cal.style)} 공유")
                 }
             }
         },

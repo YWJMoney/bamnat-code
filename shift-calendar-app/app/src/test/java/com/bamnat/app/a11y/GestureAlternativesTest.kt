@@ -24,7 +24,7 @@ class GestureAlternativesTest {
         "MonthSwipe.kt" to "근무·급여·가계부·투자·메모 달력 등 옆으로 밀어 달 넘기기(1.39 CALX-08) → 머리의 이전 달·다음 달 버튼(‹ ›)과 달 고르기",
         "MonthGrid.kt" to "끌어서 여러 날 칠하기(달력·한 달 근무 넣기) → 날짜 칸을 하나씩 눌러 칠하기(칸마다 OnClick), 한 달 근무 넣기는 아래 키패드로 한 칸씩",
         // [READ-04] 1.25 U.
-        "RosterPhotoViews.kt" to "사진 위에서 날짜 줄·내 줄 누르기 → ‘어느 줄(조)이 내 것인가요?’ 버튼 목록, ‘날짜 줄이 없어요’, 한 달 근무 넣기 키패드",
+        "RosterPhotoViews.kt" to "사진 위에서 날짜 줄·내 줄 누르기 → ‘어느 줄(조)이 내 것인가요?’ 버튼 목록, ‘날짜 줄이 없어요’, 한 달 근무 넣기 키패드; 두 손가락 확대·두 번 누르기·끌어 옮기기 → ⊕·⊖ 단추와 읽어 주기 동작(크게·작게·사진을 왼쪽·오른쪽·위·아래로)",
         // [NAV-06] 1.26 AD.
         // [J133-46] 1.33 모든 조 보기.
         "MemoBoard.kt" to "자유 판 조각 끌기·두 손가락 키우기·돌리기 → 고른 조각 도구 줄의 ‘← 왼쪽·오른쪽 →·↑ 올리기·↓ 내리기·크게·작게·↻ 돌리기’",
@@ -61,9 +61,24 @@ class GestureAlternativesTest {
         // [MKC-02][MKC-03] 1.39 도구 전후 해 보기: 그림·단추 화면을 누르고 있으면 넣기 전.
         "ToolTryout.kt" to "누르고 있으면 넣기 전 모습 → 위의 ‘지금·반반·넣으면’ 칩(부품), ‘지금·넣으면’ 칩(단추), 비교 선은 TryOn의 접근성 동작",
         "PartSpot.kt" to "미리 보기 위 부품 누르기 → 부품 도구의 부품 칩(묶음 제목 아래 모든 부품)과 상태 칩, 고정 줄의 상태 고르기",
+        // [RVP-59] 2.0.0 말랑 칸이: 누르면 말랑하게 눌렸다 돌아와요. 하는 일이 없는 꾸밈이라 대안이 따로 필요 없어요.
+        // 2.0.0 [RVI-61] (검토 U07a-04) 새 메모: 한 번 누르면 글 메모, 길게 누르면 메모·체크리스트 고르기.
+        "MemoListScreen.kt" to "'새 메모' 단추 길게 누르기 → 그 단추의 접근성 동작 '체크리스트로 새로 만들기'(onLongClick), 편집기 안의 '체크리스트로 바꾸기'",
+        // 2.0.0 [RVI-35] (검토 MEMO-24) 체크리스트 줄 손잡이 끌어 순서 바꾸기.
+        "MemoEditorScreen.kt" to "체크리스트 줄 손잡이 끌기 → 그 줄의 접근성 동작 '위로 옮기기·아래로 옮기기'",
+        "Kani.kt" to "칸이 누르기(말랑하게 눌리는 움직임뿐, 하는 일 없음) → 할 일은 옆의 단추, 칸이는 '칸이, 기분'으로 읽어 줘요",
+        // [RVM-18] 2.0.0 PC-46: 작품 미리 그림의 달력 머리는 넣은 뒤와 같은 머리를 그리지만, 누르기는 막아요(하는 일 없음).
+        "RecipeStudio.kt" to "미리 그림의 달력 머리 누르기를 받아 버림(하는 일 없음) → 머리는 '○월 달력 머리 미리 그림' 한 줄로 읽어 줘요",
+        // 2.0.0 [RVK-24] (총괄 #472 리뷰) Rows that slide (SwipeToDismissBox) are gestures too.
+        "LedgerList.kt" to "내역 줄을 밀어 오늘로 복사·지우기 → 줄을 눌러 여는 돈 적기 창의 '오늘 날짜로 복사'·'지우기', 접근성 동작 '오늘로 복사·지우기'",
+        "PendingRecords.kt" to "확인 대기 줄을 밀어 확인·지우기 → 줄 오른쪽 ✓ '확인'(48dp), 줄을 눌러 여는 돈 적기 창의 저장·'지우기'",
+        "OwedScreen.kt" to "받을 돈 줄을 밀어 다 받음·알림 문자 → 줄을 눌러 여는 창의 '알림 문자'·받은 돈 적기, 접근성 동작 '다 받음·알림 문자 보내기'",
+        // 2.0.0 [RVK-34] (검토 U06b-06) 총자산 흐름을 누르면 그날 값.
+        "InvestScreen.kt" to "총자산 흐름 그래프 누르기 → 그래프 설명(contentDescription)이 처음·끝 날과 가장 높았던 날의 총자산을 읽어 줘요",
+        "InvestAlertsCard.kt" to "찾은 거래 줄을 밀어 적기·넘기기 → 줄 오른쪽 ✓ '적기'(48dp), 줄을 눌러 여는 매매 창의 저장·'넘기기', 접근성 동작 '적기·넘기기'",
     )
 
-    private val gesture = Regex("""\.pointerInput\(|detect(Tap|Drag|HorizontalDrag|VerticalDrag|Transform)Gestures""")
+    private val gesture = Regex("""\.pointerInput\(|detect(Tap|Drag|HorizontalDrag|VerticalDrag|Transform)Gestures|SwipeToDismissBox\(""")
 
     @Test fun everyGestureHasAWayTalkBackCanUse() {
         val found = ui.walkTopDown().filter { it.isFile && it.extension == "kt" && gesture.containsMatchIn(it.readText()) }

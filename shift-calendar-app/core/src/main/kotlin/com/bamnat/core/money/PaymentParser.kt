@@ -39,12 +39,19 @@ object PaymentParser {
         val cardKind: AccountType? = null,
         /** 1.32 [LEDX-20] Money put on a pay balance (페이 머니 충전, 포인트 전환, 교통카드 충전): a move, not spending. */
         val charge: Boolean = false,
+        /**
+         * 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 that went to someone else for something: 월세·관리비·통신비·보험료 자동이체, a 계좌 결제
+         * (the receiver's name is a kind of spending the app knows, or the user once said which spending that receiver is). Spending,
+         * not a move between the user's own accounts.
+         */
+        val spentTo: Boolean = false,
     ) {
         val isCard: Boolean get() = type == Type.APPROVAL || type == Type.CANCEL
         val needsWon: Boolean get() = amount == null && foreign != null
         val kind: MoneyKind get() = when {
             charge && type != Type.CANCEL -> MoneyKind.TRANSFER
             type == Type.DEPOSIT -> MoneyKind.INCOME
+            type == Type.WITHDRAW && spentTo -> MoneyKind.EXPENSE
             type == Type.WITHDRAW -> MoneyKind.TRANSFER
             else -> MoneyKind.EXPENSE
         }
@@ -66,18 +73,82 @@ object PaymentParser {
         "페이코" to "페이코", "우체국" to "우체국", "새마을" to "새마을금고", "수협" to "수협", "SC제일" to "SC제일",
         "iM" to "iM뱅크", "대구" to "iM뱅크", "부산" to "부산", "경남" to "경남", "광주" to "광주", "전북" to "전북",
     )
-    private val ISSUER_RE = Regex("(${ISSUERS.joinToString("|") { it.first }})(카드|은행|뱅크|체크카드|체크)?")
+    /**
+     * 2.0.0 [RVK-43] (검토 MONEY-54) A Latin name counts only when no Latin letter touches it: "ABC마트" is not BC카드, "Prime"
+     * is not iM뱅크.
+     */
+    private val ISSUER_RE = Regex("(${ISSUERS.joinToString("|") { (word, _) ->
+        (if (word.first().isLatin()) "(?<![A-Za-z])" else "") + Regex.escape(word).let { if (word.last().isLatin()) "$it(?![A-Za-z])" else it }
+    }})(카드|은행|뱅크|체크카드|체크)?")
 
-    /** Plain words that are also bank names: "GS25 우리동네점" is not 우리카드. */
-    private val PLAIN_WORDS = setOf("우리", "하나", "기업", "현대", "대구", "부산", "경남", "광주", "전북", "국민", "삼성", "롯데", "토스", "새마을", "농협", "신한", "수협", "iM")
+    private fun Char.isLatin() = this in 'A'..'Z' || this in 'a'..'z'
+
+    /**
+     * Plain words that are also bank names: "GS25 우리동네점" is not 우리카드. 2.0.0 [RVK-43] (검토 MONEY-54) 씨티·우체국·비씨 too
+     * ("씨티 헬스", "우체국 택배").
+     */
+    private val PLAIN_WORDS = setOf("우리", "하나", "기업", "현대", "대구", "부산", "경남", "광주", "전북", "국민", "삼성", "롯데", "토스", "새마을", "농협", "신한", "수협", "iM",
+        "씨티", "우체국", "비씨", "BC")
+
+    // 2.0.0 [RVK-43] (검토 MONEY-61) Every pattern is made once: a list row's title and a text's reading made twenty and more each time.
+    private val AFTER_ISSUER_NUMBER = Regex("^\\s*\\(?\\s*[*xX]?\\d{4}")
+    private val ONLY_TAGS = Regex("^\\s*(\\[[^]]*]\\s*)*$")
+    private val AD = Regex("\\[\\s*광고\\s*]|\\(\\s*광고\\s*\\)|수신\\s*거부|무료\\s*거부|(?<!\\d)080-?\\d{3,4}-?\\d{4}(?!\\d)")
+    private val BILL_NOTICE = Regex("결제\\s*예정|청구\\s*(금액|예정|서)|이용\\s*대금\\s*명세|명세서|납부\\s*예정|출금\\s*예정|미납|연체")
+    private val WENT_THROUGH = Regex("승인|결제\\s*완료|사용")
+    private val INFO_NOTICE = Regex("한도\\s*(상향|변경|안내|조정)|포인트\\s*(소멸|안내)|소멸\\s*예정|이벤트|당첨|쿠폰")
+    private val ANY_AMOUNT = Regex("[\\d,]+\\s*원|(출금|입금)\\s*:?\\s*[\\d,]{3,}|(USD|US\\$|EUR|JPY|\\$)\\s*[\\d,.]+")
+    private val PAY_WORD = Regex("승인|결제|취소|출금|입금|이체|사용")
+    private val NEWLINES = Regex("\r\n?")
+    private val MESSAGE_START = Regex("(?=\\[(?:Web발신|국외발신|국제발신)])|\\n\\s*\\n")
+    private val WON = Regex("[\\d,]+\\s*원")
+    private val LINE_PAY_WORD = Regex("(승인|취소|결제|출금|입금|사용)")
+    private val WON_AMOUNT = Regex("(\\d{1,3}(?:,\\d{3})+|\\d+)\\s*원")
+    private val NOT_SPENT_BEFORE = Regex("(누적|잔액|한도|잔여|포인트|적립|가능)\\s*:?\\s*$")
+    private val BANK_AMOUNT = Regex("(출금|입금|이체)\\s*:?\\s*(\\d{1,3}(?:,\\d{3})+|\\d{3,})")
+    private val FX_CODE_FIRST = Regex("(USD|US\\$|EUR|JPY|CNY|GBP|HKD|SGD|AUD|CAD|VND|THB)\\s*([\\d,]+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE)
+    private val FX_WORD_AFTER = Regex("([\\d,]+(?:\\.\\d+)?)\\s*(USD|달러|EUR|유로|JPY|엔|위안|파운드)")
+    private val DOLLAR = Regex("\\$\\s*([\\d,]+(?:\\.\\d+)?)")
+    private val DECLINED = Regex("승인\\s*거절|거절")
+    private val OUT_WORD = Regex("출금|이체")
+    private val TIME = Regex("(?<!\\d)([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)")
+    private val MONTHS = Regex("(\\d{1,2})\\s*개월")
+    private val INSTALLMENT = Regex("할부\\s*\\(?\\s*(\\d{1,2})")
+    private val CUMULATIVE = Regex("누적\\s*:?\\s*([\\d,]+)")
+    private val BALANCE = Regex("잔액\\s*:?\\s*([\\d,]+)")
+    private val TAG = Regex("\\[[^]]*]")
+    private val NOT_SPENT_AMOUNT = Regex("(누적|잔액|한도|잔여)\\s*:?\\s*[\\d,]+\\s*원?")
+    private val CARD_NUMBER = Regex("\\(?\\s*[*xX]?\\d{4}\\s*\\)?")
+    private val PLAN_WORD = Regex("\\d{1,2}\\s*개월|일시불|할부")
+    private val CORP_MARK = Regex("\\(주\\)|㈜")
+    private val LOOSE_NUMBER = Regex("(?<![A-Za-z가-힣\\d])\\d[\\d,.\\-]*")
+    private val PIECE_BREAK = Regex("[|\\n]")
+    private val WIDE_GAP = Regex("\\s{2,}")
+    private val PIECE_EDGES = Regex("^[\\s:()·,.\\-]+|[\\s:()·,.\\-]+$")
+    private val ONLY_PAY_WORDS = Regex("^(승인|취소|결제|출금|입금)+$")
+    private val SPACES = Regex("\\s+")
+    private val CHECK = Regex("체크")
+    private val CREDIT = Regex("신용")
+
+    /**
+     * 2.0.0 [RVK-43] (검토 MONEY-54) Four digits that are not a card's end: an amount ("체크 5000원", "카드 1,200") follows with 원 or
+     * a comma, or more digits.
+     */
+    private const val NOT_AMOUNT = "(?![\\d,]|\\s*원)"
+    private val CARD_END_WORD = Regex("(?:카드|체크)\\s*\\(?\\s*[*xX]?(\\d{4})$NOT_AMOUNT\\s*\\)?")
+    private val CARD_END_PAREN = Regex("\\(\\s*[*xX]?(\\d{4})\\s*\\)")
+    private val CARD_END_STAR = Regex("[*xX](\\d{4})(?!\\d)$NOT_AMOUNT")
+    private val CARD_END_AFTER_ISSUER = Regex("^\\s*\\(?\\s*(\\d{4})(?!\\d)$NOT_AMOUNT")
+    /** 2.0.0 [RVK-43] (검토 MONEY-54) "1.5%", "3.5만", "2.5배" are not dates. */
+    private val DATE = Regex("(?<![\\d,.])(\\d{1,2})\\s*[/.\\-월]\\s*(\\d{1,2})\\s*일?(?![\\d,.%])(?!\\s*(?:%|만|배|천|억))")
 
     /** A bare bank word counts only with 카드/은행 after it, a card number after it, or at the start of the text. */
     private fun isIssuer(m: MatchResult, src: String): Boolean {
         if (m.groupValues[2].isNotEmpty() || m.groupValues[1] !in PLAIN_WORDS) return true
         val after = m.range.last + 1
-        if (Regex("^\\s*\\(?\\s*[*xX]?\\d{4}").containsMatchIn(src.substring(after))) return true
+        if (AFTER_ISSUER_NUMBER.containsMatchIn(src.substring(after))) return true
         val before = src.substring(0, m.range.first)
-        return Regex("^\\s*(\\[[^]]*]\\s*)*$").matches(before) || before.endsWith("\n")
+        return ONLY_TAGS.matches(before) || before.endsWith("\n")
     }
 
     private val STOPWORDS = setOf(
@@ -128,7 +199,7 @@ object PaymentParser {
      */
     fun placeKey(merchant: String): String {
         val s = merchant.trim().replace(PAY_GATE, "").replace(CORP, " ").trim()
-        val words = s.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = s.split(SPACES).filter { it.isNotEmpty() }
         val kept = if (words.size >= 2 && BRANCH.containsMatchIn(words.last())) words.dropLast(1) else words
         return kept.joinToString("").lowercase()
     }
@@ -149,7 +220,7 @@ object PaymentParser {
     fun isContainsRule(key: String): Boolean = key.startsWith(CONTAINS)
 
     /** [LEDG-21] The word of a "이 말이 들어가면" rule as it is compared: no spaces, lower case. */
-    private fun containsWord(key: String): String = key.removePrefix(CONTAINS).replace(Regex("\\s+"), "").lowercase()
+    private fun containsWord(key: String): String = key.removePrefix(CONTAINS).replace(SPACES, "").lowercase()
 
     /**
      * [LEDG-17] The user's rule for [merchant]: the same name first, else the rule whose place is the
@@ -160,11 +231,28 @@ object PaymentParser {
         if (merchant.isBlank() || rules.isEmpty()) return null
         rules[merchant]?.let { return it }
         val key = placeKey(merchant)
-        val flat = merchant.replace(Regex("\\s+"), "").lowercase()
+        val flat = merchant.replace(SPACES, "").lowercase()
         return rules.entries.mapNotNull { (m, c) ->
             if (isContainsRule(m)) containsWord(m).takeIf { it.isNotEmpty() && flat.contains(it) }?.let { it to c }
             else placeKey(m).takeIf { it.length >= 2 && key.length >= 2 && key.startsWith(it) }?.let { it to c }
         }.maxByOrNull { it.first.length }?.second
+    }
+
+    /** 2.0.0 [RVK-39] The note on a line written from a bank 출금 that is spending ([Parsed.spentTo]). */
+    const val WITHDRAW_NOTE = "계좌 출금"
+
+    /**
+     * 2.0.0 [RVK-39] (검토 MONEY-42) The spending a bank 출금 to [receiver] is, or null when it may be the user's own money moving:
+     * the user's rule for that receiver when it names a spending category (a transfer one such as 저축·내 계좌 keeps it a move), else
+     * the built-in words (통신·보험·관리비·월세 …).
+     */
+    fun withdrawSpending(receiver: String, rules: Map<String, String> = emptyMap(), spending: Map<String, String> = emptyMap()): String? {
+        if (receiver.isBlank()) return null
+        // A rule's 기타 was learned from a spending line (지출 기타); the moves the user tells are 내 계좌·저축 and the like.
+        ruleFor(receiver, rules)?.let { c -> return if (c in MoneyCategories.transfer && c != MoneyCategories.OTHER) null else c }
+        // The user's own 반복 지출 by the receiver's name (관리비 to the 관리사무소, 보험료 to the insurer).
+        ruleFor(receiver, spending)?.let { return it }
+        return CATEGORY_HINTS.firstOrNull { (re, _) -> re.containsMatchIn(receiver) }?.second
     }
 
     fun guessCategory(merchant: String, rules: Map<String, String> = emptyMap()): String {
@@ -182,11 +270,11 @@ object PaymentParser {
      * Null for anything else; the reason otherwise, and the notification listener drops these.
      */
     fun notice(text: String): String? = when {
-        Regex("\\[\\s*광고\\s*]|\\(\\s*광고\\s*\\)|수신\\s*거부|무료\\s*거부|(?<!\\d)080-?\\d{3,4}-?\\d{4}(?!\\d)").containsMatchIn(text) -> "광고 문자예요"
-        Regex("결제\\s*예정|청구\\s*(금액|예정|서)|이용\\s*대금\\s*명세|명세서|납부\\s*예정|출금\\s*예정|미납|연체").containsMatchIn(text) -> "카드값·청구 안내예요"
+        AD.containsMatchIn(text) -> "광고 문자예요"
+        BILL_NOTICE.containsMatchIn(text) -> "카드값·청구 안내예요"
         // A pay-app receipt may mention a coupon it used; only texts that do not say a payment went through.
-        !Regex("승인|결제\\s*완료|사용").containsMatchIn(text) &&
-            Regex("한도\\s*(상향|변경|안내|조정)|포인트\\s*(소멸|안내)|소멸\\s*예정|이벤트|당첨|쿠폰").containsMatchIn(text) -> "안내 문자예요"
+        !WENT_THROUGH.containsMatchIn(text) &&
+            INFO_NOTICE.containsMatchIn(text) -> "안내 문자예요"
         else -> null
     }
 
@@ -206,18 +294,18 @@ object PaymentParser {
 
     /** Quick filter for the notification listener: a won/foreign amount next to a payment word. */
     fun looksFinancial(text: String): Boolean =
-        Regex("[\\d,]+\\s*원|(출금|입금)\\s*:?\\s*[\\d,]{3,}|(USD|US\\$|EUR|JPY|\\$)\\s*[\\d,.]+").containsMatchIn(text) &&
-            Regex("승인|결제|취소|출금|입금|이체|사용").containsMatchIn(text)
+        ANY_AMOUNT.containsMatchIn(text) &&
+            PAY_WORD.containsMatchIn(text)
 
     /** Several messages pasted at once, split one per message [LEDG-03]. */
     fun splitMessages(text: String): List<String> {
-        val norm = text.replace(Regex("\r\n?"), "\n").trim()
+        val norm = text.replace(NEWLINES, "\n").trim()
         if (norm.isEmpty()) return emptyList()
-        val chunks = norm.split(Regex("(?=\\[(?:Web발신|국외발신|국제발신)])|\\n\\s*\\n")).map { it.trim() }.filter { it.isNotEmpty() }
+        val chunks = norm.split(MESSAGE_START).map { it.trim() }.filter { it.isNotEmpty() }
         val out = ArrayList<String>()
         for (c in chunks) {
             val lines = c.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-            val each = lines.size > 1 && lines.all { Regex("[\\d,]+\\s*원").containsMatchIn(it) && Regex("(승인|취소|결제|출금|입금|사용)").containsMatchIn(it) }
+            val each = lines.size > 1 && lines.all { WON.containsMatchIn(it) && LINE_PAY_WORD.containsMatchIn(it) }
             if (each) out += lines else out += c
         }
         return out
@@ -227,43 +315,55 @@ object PaymentParser {
 
     private fun findAmount(text: String): Found? {
         // '누적', '잔액', '한도' 바로 뒤 금액은 쓴 돈이 아니다.
-        for (m in Regex("(\\d{1,3}(?:,\\d{3})+|\\d+)\\s*원").findAll(text)) {
+        for (m in WON_AMOUNT.findAll(text)) {
             val before = text.substring(maxOf(0, m.range.first - 6), m.range.first)
-            if (Regex("(누적|잔액|한도|잔여|포인트|적립|가능)\\s*:?\\s*$").containsMatchIn(before)) continue
+            if (NOT_SPENT_BEFORE.containsMatchIn(before)) continue
             return Found(num(m.groupValues[1]) ?: continue, m.value)
         }
         // 은행 문자는 '출금 50,000'처럼 '원'이 없는 때가 많다.
-        val bank = Regex("(출금|입금|이체)\\s*:?\\s*(\\d{1,3}(?:,\\d{3})+|\\d{3,})").find(text) ?: return null
+        val bank = BANK_AMOUNT.find(text) ?: return null
         return Found(num(bank.groupValues[2]) ?: return null, bank.groupValues[2])
     }
 
     private fun findForeign(text: String): Pair<Foreign, String>? {
-        Regex("(USD|US\\$|EUR|JPY|CNY|GBP|HKD|SGD|AUD|CAD|VND|THB)\\s*([\\d,]+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)?.let {
+        FX_CODE_FIRST.find(text)?.let {
             return Foreign(it.groupValues[1].uppercase().replace("US$", "USD"), dec(it.groupValues[2])) to it.value
         }
-        Regex("([\\d,]+(?:\\.\\d+)?)\\s*(USD|달러|EUR|유로|JPY|엔|위안|파운드)").find(text)?.let {
+        FX_WORD_AFTER.find(text)?.let {
             val map = mapOf("달러" to "USD", "유로" to "EUR", "엔" to "JPY", "위안" to "CNY", "파운드" to "GBP")
             return Foreign(map[it.groupValues[2]] ?: it.groupValues[2].uppercase(), dec(it.groupValues[1])) to it.value
         }
-        Regex("\\$\\s*([\\d,]+(?:\\.\\d+)?)").find(text)?.let { return Foreign("USD", dec(it.groupValues[1])) to it.value }
+        DOLLAR.find(text)?.let { return Foreign("USD", dec(it.groupValues[1])) to it.value }
         return null
     }
 
-    /** A December text read in January belongs to last year. */
-    private fun inferYear(month: Int, now: LocalDateTime): Int = if (month > now.monthValue + 1) now.year - 1 else now.year
+    /**
+     * A December text read in January belongs to last year. 2.0.0 [RVK-43] (검토 MONEY-54) So does any day more than two days after
+     * today: a payment text never tells of one to come, and a line dated next week fell out of this month's sums as if it were gone.
+     * (Was: only a month two or more ahead.) Two days leave room for a card company's late night and a phone's clock.
+     */
+    private fun inferDate(month: Int, day: Int, now: LocalDateTime): LocalDate? {
+        val thisYear = runCatching { LocalDate.of(now.year, month, day) }.getOrNull()
+        if (thisYear != null && !thisYear.isAfter(now.toLocalDate().plusDays(2))) return thisYear
+        return runCatching { LocalDate.of(now.year - 1, month, day) }.getOrNull()
+    }
 
-    fun parse(text: String, now: LocalDateTime = Today.dateTime(), rules: Map<String, String> = emptyMap()): Result {
+    fun parse(
+        text: String, now: LocalDateTime = Today.dateTime(), rules: Map<String, String> = emptyMap(),
+        /** 2.0.0 [RVK-39] (검토 MONEY-42) The user's 반복 지출 names and their categories, for a bank 출금 to one of them. */
+        spending: Map<String, String> = emptyMap(),
+    ): Result {
         val src = text.trim()
         if (src.isEmpty()) return Result.Fail("빈 글")
         val fx = findForeign(src)
         val amt = findAmount(src)
         if (amt == null && fx == null) return Result.Fail("금액을 찾지 못했어요")
-        if (Regex("승인\\s*거절|거절").containsMatchIn(src)) return Result.Fail("승인 거절 문자예요")
+        if (DECLINED.containsMatchIn(src)) return Result.Fail("승인 거절 문자예요")
         notice(src)?.let { return Result.Fail(it) }
         val type = when {
             src.contains("취소") -> Type.CANCEL
             src.contains("입금") -> Type.DEPOSIT
-            Regex("출금|이체").containsMatchIn(src) -> Type.WITHDRAW
+            OUT_WORD.containsMatchIn(src) -> Type.WITHDRAW
             else -> Type.APPROVAL
         }
 
@@ -271,51 +371,51 @@ object PaymentParser {
         val issuer = iss?.let { m -> ISSUERS.first { it.first == m.groupValues[1] }.second }
 
         // 카드 끝 4자리: 신한카드(1234), KB국민카드1234승인, *1234
-        val l4 = Regex("(?:카드|체크)\\s*\\(?\\s*[*xX]?(\\d{4})\\s*\\)?").find(src)
-            ?: Regex("\\(\\s*[*xX]?(\\d{4})\\s*\\)").find(src)
-            ?: Regex("[*xX](\\d{4})(?!\\d)").find(src)
-            ?: iss?.let { Regex("^\\s*\\(?\\s*(\\d{4})(?!\\d)").find(src.substring(it.range.last + 1)) }
+        val l4 = CARD_END_WORD.find(src)
+            ?: CARD_END_PAREN.find(src)
+            ?: CARD_END_STAR.find(src)
+            ?: iss?.let { CARD_END_AFTER_ISSUER.find(src.substring(it.range.last + 1)) }
         val last4 = l4?.groupValues?.get(1)
 
         var date: LocalDate? = null
         var dateRaw: String? = null
         // A foreign amount such as "USD 12.30" is not the 30th of December.
         val dateSrc = fx?.second?.let { src.replace(it, " ") } ?: src
-        for (m in Regex("(?<![\\d,.])(\\d{1,2})\\s*[/.\\-월]\\s*(\\d{1,2})\\s*일?(?![\\d,.])").findAll(dateSrc)) {
+        for (m in DATE.findAll(dateSrc)) {
             val mo = m.groupValues[1].toInt()
             val da = m.groupValues[2].toInt()
             if (mo in 1..12 && da in 1..31) {
-                date = runCatching { LocalDate.of(inferYear(mo, now), mo, da) }.getOrNull() ?: continue
+                date = inferDate(mo, da, now) ?: continue
                 dateRaw = m.value
                 break
             }
         }
-        val tm = Regex("(?<!\\d)([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)").find(src)
+        val tm = TIME.find(src)
         val time = tm?.let { LocalTime.of(it.groupValues[1].toInt(), it.groupValues[2].toInt()) }
 
-        val inst = Regex("(\\d{1,2})\\s*개월").find(src) ?: Regex("할부\\s*\\(?\\s*(\\d{1,2})").find(src)
+        val inst = MONTHS.find(src) ?: INSTALLMENT.find(src)
         val installments = inst?.groupValues?.get(1)?.toInt()?.takeIf { it > 1 } ?: 1
 
-        val cum = Regex("누적\\s*:?\\s*([\\d,]+)").find(src)?.let { num(it.groupValues[1]) }
-        val bal = Regex("잔액\\s*:?\\s*([\\d,]+)").find(src)?.let { num(it.groupValues[1]) }
+        val cum = CUMULATIVE.find(src)?.let { num(it.groupValues[1]) }
+        val bal = BALANCE.find(src)?.let { num(it.groupValues[1]) }
 
         // 가맹점: 알려진 조각을 지우고 남은 조각 가운데 마지막 것.
-        var rest = src.replace(Regex("\\[[^]]*]"), "|")
+        var rest = src.replace(TAG, "|")
         fun cut(s: String?) { if (!s.isNullOrEmpty()) rest = rest.split(s).joinToString("|") }
         cut(iss?.value); cut(amt?.raw); cut(fx?.second); cut(dateRaw); cut(tm?.value)
         rest = rest
-            .replace(Regex("(누적|잔액|한도|잔여)\\s*:?\\s*[\\d,]+\\s*원?"), "|")
-            .replace(Regex("\\(?\\s*[*xX]?\\d{4}\\s*\\)?"), "|")
-            .replace(Regex("\\d{1,2}\\s*개월|일시불|할부"), "|")
-            .replace(Regex("\\(주\\)|㈜"), "")
-            .replace(Regex("(?<![A-Za-z가-힣\\d])\\d[\\d,.\\-]*"), "|")
-        val pieces = rest.split(Regex("[|\\n]"))
-            .flatMap { it.split(Regex("\\s{2,}")) }
-            .map { it.replace(Regex("^[\\s:()·,.\\-]+|[\\s:()·,.\\-]+$"), "").trim() }
+            .replace(NOT_SPENT_AMOUNT, "|")
+            .replace(CARD_NUMBER, "|")
+            .replace(PLAN_WORD, "|")
+            .replace(CORP_MARK, "")
+            .replace(LOOSE_NUMBER, "|")
+        val pieces = rest.split(PIECE_BREAK)
+            .flatMap { it.split(WIDE_GAP) }
+            .map { it.replace(PIECE_EDGES, "").trim() }
             // 1.32 [LEDX-12] A foreign card's "AMAZON.COM*AB12" is a shop, not a masked number.
             .map { p -> MerchantNames.foreignStar(p) ?: p }
-            .filter { p -> p.isNotEmpty() && !p.contains('*') && !p.endsWith("님") && p !in STOPWORDS && !Regex("^(승인|취소|결제|출금|입금)+$").matches(p) }
-        val cleaned = pieces.map { p -> p.split(Regex("\\s+")).filter { w -> w !in STOPWORDS && !w.endsWith("님") }.joinToString(" ") }
+            .filter { p -> p.isNotEmpty() && !p.contains('*') && !p.endsWith("님") && p !in STOPWORDS && !ONLY_PAY_WORDS.matches(p) }
+        val cleaned = pieces.map { p -> p.split(SPACES).filter { w -> w !in STOPWORDS && !w.endsWith("님") }.joinToString(" ") }
             .filter { it.isNotEmpty() }
         // 1.32 [LEDX-12][LEDX-13] No code tails or 온라인·결제 words, and "네이버페이 - 가게" kept as the shop with its 경로.
         val (routed, shop) = MerchantNames.route(MerchantNames.clean(cleaned.lastOrNull().orEmpty()))
@@ -325,8 +425,8 @@ object PaymentParser {
         val via = if (charge) null else routed ?: issuer?.takeIf { i -> MerchantNames.ROUTES.any { it.equals(i, ignoreCase = true) } || i == "토스" }
             ?.takeIf { merchant.isNotEmpty() }
         val cardKind = when {
-            Regex("체크").containsMatchIn(src) -> AccountType.CHECK
-            Regex("신용").containsMatchIn(src) -> AccountType.CREDIT
+            CHECK.containsMatchIn(src) -> AccountType.CHECK
+            CREDIT.containsMatchIn(src) -> AccountType.CREDIT
             else -> null
         }
 
@@ -336,15 +436,19 @@ object PaymentParser {
         if (merchant.isNotEmpty()) confidence += 0.15
         if (issuer != null) confidence += 0.1
 
+        // 2.0.0 [RVK-39] (검토 MONEY-42) A 출금 to a receiver whose name is a kind of spending (통신·보험·관리비·월세 …), or one the user
+        // once filed as spending (가맹점 규칙), is that spending; any other 출금 stays a move, for the user to tell.
+        val spentAs = if (type == Type.WITHDRAW && !charge && !CARD_BILL.containsMatchIn(src)) withdrawSpending(merchant, rules, spending) else null
         val category = when {
             charge && type != Type.CANCEL -> CHARGE_CATEGORY
             type == Type.DEPOSIT -> if (src.contains("급여")) MoneyCategories.SALARY else "부수입"
+            spentAs != null -> spentAs
             type == Type.WITHDRAW -> if (CARD_BILL.containsMatchIn(src)) "카드값" else "내 계좌"
             else -> guessCategory(merchant, rules)
         }
         return Result.Ok(
             Parsed(type, amt?.value, fx?.first, issuer, last4, date, time, installments, cum, bal, merchant, category,
-                minOf(1.0, Math.round(confidence * 100) / 100.0), via = via, cardKind = cardKind, charge = charge),
+                minOf(1.0, Math.round(confidence * 100) / 100.0), via = via, cardKind = cardKind, charge = charge, spentTo = spentAs != null),
         )
     }
 
@@ -380,6 +484,8 @@ object PaymentParser {
         val amount = signedAmount(p) ?: return null
         val notes = buildList {
             if (p.type == Type.CANCEL) add("결제 취소")
+            // 2.0.0 [RVK-39] (검토 MONEY-42) A 출금 read as spending says so, and a 체크카드 approval of the same payment finds it.
+            if (p.spentTo) add(WITHDRAW_NOTE)
             if (p.installments > 1) add("${p.installments}개월 할부")
             // 1.32 [LEDX-13] The pay app the money went through, when it is not the one that sent the text.
             p.via?.takeIf { it != p.issuer }?.let { add("$it 결제") }

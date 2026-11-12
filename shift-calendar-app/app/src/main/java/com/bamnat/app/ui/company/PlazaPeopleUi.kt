@@ -2,8 +2,8 @@ package com.bamnat.app.ui.company
 
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +43,7 @@ import com.bamnat.core.plaza.IndustryGroups
 import com.bamnat.core.plaza.PlazaTag
 import com.bamnat.core.plaza.PlazaTags
 import com.bamnat.core.plaza.StylePlaza
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.39 [PLZC] 광장을 사람 먼저로 (사용자 2026-11-07 "광장은 급여를 나누는 것 말고는 하는 것이 전혀 없어", 설계 `계획/1.39-광장-커뮤니티-설계.md`):
@@ -85,10 +86,35 @@ internal fun MeToo(count: Int, mine: Boolean?, onVote: (Boolean?) -> Unit) {
     val picked = mine == true
     TextButton(onClick = { onVote(if (picked) null else true) }, modifier = Modifier.heightIn(min = 48.dp)
         .semantics { contentDescription = if (picked) "나도요 $count, 눌렀어요" else "나도요 $count" }) {
-        Text("🙋 나도요 $count", style = MaterialTheme.typography.labelMedium, fontWeight = if (picked) FontWeight.Bold else FontWeight.Normal,
+        Text(meTooWord(count), style = MaterialTheme.typography.labelMedium, fontWeight = if (picked) FontWeight.Bold else FontWeight.Normal,
             color = if (picked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/**
+ * A post's head: the writer's name (a tap to the 프로필) and when. 2.0.0 [RVN-13] HQ-40 ④ At 글자 크기 150% and more the name has the
+ * whole line and the time goes under it: side by side, a name such as '새벽세시까지…' was cut while the time kept its room.
+ */
+@Composable
+internal fun NameAndTime(p: TalkPost, name: String, modifier: Modifier = Modifier) {
+    val shown = if (p.mine) "나 ($name)" else name
+    val onProfile = p.maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } }
+    val time = MaterialTheme.typography.labelSmall
+    if (com.bamnat.app.ui.components.bigLetters()) Column(modifier) {
+        com.bamnat.app.ui.village.MakerName(shown, p.mark, onProfile = onProfile, maxLines = 2)
+        Text(ago(p.at), style = time, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    } else Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.village.MakerName(shown, p.mark, onProfile = onProfile, modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+        Text(" · " + ago(p.at), style = time, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+/** 2.0.0 [RVN-13] HQ-40 ③ "🙋 나도요 2", and with none yet just "🙋 나도요" (a 0 reads as nobody cares rather than a button). */
+internal fun meTooWord(count: Int): String = if (count > 0) "🙋 나도요 $count" else "🙋 나도요"
+
+/** 2.0.0 [RVN-13] HQ-40 ③ "공감 2 · 비공감 1" with the 0s left out; null when there is none of either. */
+internal fun reactionWords(agree: Int, disagree: Int): String? =
+    listOfNotNull("공감 $agree".takeIf { agree > 0 }, "비공감 $disagree".takeIf { disagree > 0 }).joinToString(" · ").ifEmpty { null }
 
 /** [PLZC-10] 3-3 공개 범위: what my posts show, kept on this phone. */
 @Composable
@@ -130,7 +156,8 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                         }
                         TextButton(onClick = { industryOpen = !industryOpen }) { Text(if (industryOpen) "접기" else "고르기") }
                     }
-                    if (industryOpen) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 2.0.0 [RVN-18] 검토 U10a-04: chip rows fold to one line with 펼치기 (사용자 11-04 규칙).
+                    if (industryOpen) com.bamnat.app.ui.components.FoldRow("plaza.industry", what = "업종") {
                         com.bamnat.app.ui.components.FilterChip(selected = s.industry == null, onClick = { s = s.copy(industry = null) }, label = { Text("보이지 않음") })
                         PlazaTags.industries().forEach { g ->
                             com.bamnat.app.ui.components.FilterChip(selected = s.industry == g.key, onClick = { s = s.copy(industry = g.key) }, label = { Text(g.name) })
@@ -148,7 +175,8 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(if (c.settingsRepository.current.plazaNews) "밤낮 소식 알림 하나로 와요. 자는 시간·근무 중에는 모아 두었다 알려요."
-                    else "설정 › 알림 › 밤낮 소식이 꺼져 있어 지금은 오지 않아요.",
+                    // 2.0.0 [RVN-21] the page's own name (it said 알림, the page is 알림과 잠).
+                    else "${settingsWay("plaza.news", c.settingsRepository.current.workStyle)}이 꺼져 있어 지금은 오지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
@@ -192,6 +220,9 @@ internal object Lens {
 /** [PLZC-32] How far back 야간 라운지 looks. */
 private const val LOUNGE_HOURS = 12L
 
+/** 2.0.0 [RVN-13] COMP-17 How many night posts the lounge needs before a night shift opens on it, and below which 전체 follows it. */
+internal const val LOUNGE_OPENS = 3
+
 /** Whether [p] (a top post) answers to [lens], with my tag for 나와 같은 근무 and 같은 업종, and the answers under it. */
 internal fun inLens(p: TalkPost, lens: String, mine: PlazaTag?, answers: List<TalkPost>): Boolean = when (lens) {
     Lens.SAME -> mine?.form != null && p.tag?.form == mine.form
@@ -203,6 +234,25 @@ internal fun inLens(p: TalkPost, lens: String, mine: PlazaTag?, answers: List<Ta
     Lens.QUESTION, Lens.TIP, Lens.SHOW -> p.kind == lens
     else -> true
 }
+
+/**
+ * 2.0.0 [RVN-18] COMP-18 The question lifted on top of 전체 ([PLZC-05] 하루 넘게 답을 기다리는 질문): someone else's, still without an
+ * answer, asked 1 to [LIFT_DAYS] days ago, and not lifted on this phone before ([seen]: so the next open brings another one). One
+ * the user can answer comes first (the same 근무형태 or 업종 as [mine]), then the one waiting longest. Before, it was always the
+ * oldest unanswered question read, weeks old after 지난 글 더 보기, and the same one every time until someone answered.
+ */
+internal fun liftedQuestion(tops: List<TalkPost>, answersOf: Map<String?, List<TalkPost>>, mine: PlazaTag?, seen: Set<String>,
+    now: java.time.Instant): TalkPost? {
+    val dayAgo = now.minusSeconds(24 * 3600)
+    val oldest = now.minusSeconds(LIFT_DAYS * 24 * 3600)
+    fun canAnswer(q: TalkPost) = (mine?.form != null && q.tag?.form == mine.form) || (mine?.industry != null && q.tag?.industry == mine.industry)
+    return tops.filter { q ->
+        !q.mine && q.id !in seen && !q.id.startsWith("local-") && q.at.isBefore(dayAgo) && !q.at.isBefore(oldest) &&
+            inLens(q, Lens.WAITING, mine, answersOf[q.id].orEmpty())
+    }.sortedWith(compareByDescending<TalkPost> { canAnswer(it) }.thenBy { it.at }).firstOrNull()
+}
+
+internal const val LIFT_DAYS = 7L
 
 /** [PLZC-20] 근무 카드 under a post: a small box with this month's numbers from the writer's calendar. */
 @Composable
@@ -286,6 +336,7 @@ internal fun PlazaFeed(
     older: List<TalkPost>,
     olderMore: Boolean,
     loadingOlder: Boolean,
+    olderFailed: String? = null,
 ) {
     val styleRoom = plan.room?.startsWith("style-") == true
     var lens by rememberSaveable(plan.room) { mutableStateOf(Lens.ALL) }
@@ -293,15 +344,39 @@ internal fun PlazaFeed(
     // My tag (and so the lenses that need one), and the 시간 맞춤 line, worked out from my calendar.
     // 1.39 [PLZC-60] (사용자 2026-11-08 "위에 공간을 불필요하게 차지"): the 시간 맞춤 줄·이번 주 주제·글 쓰기 are one 글 쓰기 box; 오늘 글 n is
     // on the head line ([PlazaHead]), 답 기다리는·근무 중 counts are on their own lens chips; 내 태그 is in the head's menu and the sheet.
+    // 2.0.0 [RVN-06] COMP-01[U10a-01] 신고·안 보기·지우기 right on a card, 지난 글 too (before, only in the sheet, which never had them).
+    var flagging by remember { mutableStateOf<TalkPost?>(null) }
+    var hiding by remember { mutableStateOf<TalkPost?>(null) }
+    var deleting by remember { mutableStateOf<TalkPost?>(null) }
+    FlagPostDialog(flagging, invest = plan.room == StylePlaza.INVEST, onDismiss = { flagging = null }) { p, reason ->
+        vm.talk.flag(p.id, reason) { e -> com.bamnat.app.ui.PutOnNotice.say(e ?: FLAGGED) }
+    }
+    HideWriterDialog(hiding, onDismiss = { hiding = null }) { p ->
+        vm.talk.hide(p, quiet = true)
+        vm.load()
+        // 2.0.0 [RVN-16] 검토 U10a-07: 되돌리기 right away (before, only 마을 › 팔로잉 › 차단 brought the writer back).
+        com.bamnat.app.ui.PutOnNotice.say(hiddenLine(p)) { p.author?.let { vm.talk.unhide(it) }; vm.load(); true }
+    }
+    deleting?.let { p ->
+        com.bamnat.app.ui.components.ConfirmDialog(title = "이 글을 지울까요?", message = "지운 글은 되돌릴 수 없어요.", confirmLabel = "지우기",
+            onDismiss = { deleting = null }, onConfirm = { deleting = null; vm.talk.delete(p.id) { vm.load() } }, destructive = true)
+    }
+    val menu = FeedMenu(onFlag = { flagging = it }, onHide = { hiding = it }, onDelete = { deleting = it }, room = plan.room, roomName = plan.roomTitle)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         talk?.pulse?.checkin?.let { CheckinRow(plan.room, it, vm.todayShift.collectAsStateWithLifecycle().value, vm::checkin) }
         PlazaComposer(vm.timeLine.collectAsStateWithLifecycle().value?.first ?: plan.hint.ifBlank { "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" },
             topic = talk?.topic, onWrite = { vm.openTalk() })
         // [PLZC-32] On a night shift the plaza opens as 야간 라운지 once (a tap on 전체 stays).
+        // 2.0.0 [RVN-13] COMP-17·T10a-07 …only when the lounge has something to read (LOUNGE_OPENS posts): a quiet night opened on an
+        // empty room every time. With fewer it opens on 전체, the 🌙 chip first in the row.
         val night = styleRoom && mine?.now == PlazaTag.Now.NIGHT
         var loungeOpened by rememberSaveable(plan.room) { mutableStateOf(false) }
-        androidx.compose.runtime.LaunchedEffect(night) {
-            if (night && !loungeOpened) { loungeOpened = true; if (lens == Lens.ALL) lens = Lens.LOUNGE }
+        val loungePosts = talk?.let { t -> (t.posts + older).count { it.parent == null && inLens(it, Lens.LOUNGE, mine, emptyList()) } }
+        androidx.compose.runtime.LaunchedEffect(night, loungePosts) {
+            if (night && !loungeOpened && loungePosts != null) {
+                loungeOpened = true
+                if (lens == Lens.ALL && loungePosts >= LOUNGE_OPENS) lens = Lens.LOUNGE
+            }
             if (!night && lens == Lens.LOUNGE) lens = Lens.ALL
         }
         val lenses = buildList {
@@ -315,7 +390,8 @@ internal fun PlazaFeed(
             add(Lens.WAITING to "답 기다리는 질문" + (pulse?.waiting?.takeIf { it > 0 }?.let { " $it" } ?: ""))
             add(Lens.QUESTION to "질문"); add(Lens.TIP to "팁"); add(Lens.SHOW to "자랑")
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 2.0.0 [RVN-18] 검토 U10a-04: the lenses on one line, all of them with 펼치기.
+        com.bamnat.app.ui.components.FoldRow("plaza.lens", what = "보기 칩") {
             lenses.forEach { (k, label) -> com.bamnat.app.ui.components.FilterChip(selected = lens == k, onClick = { lens = k }, label = { Text(label) }) }
         }
         when {
@@ -326,15 +402,17 @@ internal fun PlazaFeed(
                 val tops = all.filter { it.parent == null }.sortedByDescending { it.at }
                 val answersOf = all.filter { it.parent != null }.groupBy { it.parent }
                 // [PLZC-05] A question without an answer for a day comes up once more, on top of 전체.
-                val dayAgo = com.bamnat.core.time.Today.instant().minusSeconds(24 * 3600)
-                val lifted = if (lens != Lens.ALL) null else tops.lastOrNull { q ->
-                    !q.mine && q.at.isBefore(dayAgo) && inLens(q, Lens.WAITING, mine, answersOf[q.id].orEmpty())
+                // 2.0.0 [RVN-18] COMP-18 …1 to 7 days old, one not lifted on this phone before, one I can answer first.
+                val seenLifted = vm.liftSeen.collectAsStateWithLifecycle().value
+                val lifted = if (lens != Lens.ALL) null else remember(tops, answersOf, mine, seenLifted) {
+                    liftedQuestion(tops, answersOf, mine, seenLifted, com.bamnat.core.time.Today.instant())
                 }
+                androidx.compose.runtime.LaunchedEffect(lifted?.id) { lifted?.let { vm.markLifted(it.id) } }
                 val shown = tops.filter { it.id != lifted?.id && inLens(it, lens, mine, answersOf[it.id].orEmpty()) }
                 lifted?.let { q ->
                     Text("🙋 하루 넘게 답을 기다리는 질문이에요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     androidx.compose.runtime.key("lifted-" + q.id) {
-                        FeedCard(q, answersOf[q.id].orEmpty(), inSheet = talk.posts.any { it.id == q.id },
+                        FeedCard(q, answersOf[q.id].orEmpty(), menu,
                             onOpen = { vm.openTalk(q.id) }, onVote = { ok -> vm.vote(q.id, ok) }, onReply = { vm.openTalk(q.id, reply = true) })
                     }
                 }
@@ -347,49 +425,97 @@ internal fun PlazaFeed(
                 },
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
                 shown.forEach { p -> androidx.compose.runtime.key(p.id) {
-                    FeedCard(p, answersOf[p.id].orEmpty(), inSheet = talk.posts.any { it.id == p.id },
+                    FeedCard(p, answersOf[p.id].orEmpty(), menu,
                         onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) }, onReply = { vm.openTalk(p.id, reply = true) })
                 } }
-                if (talk.more && (older.isEmpty() || olderMore)) OutlinedButton(onClick = vm::more, enabled = !loadingOlder,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loadingOlder) "불러오는 중…" else "지난 글 더 보기") }
+                // 2.0.0 [RVN-13] COMP-17 A quiet lounge goes on with the rest of the plaza under it, so a night is never an empty page.
+                val rest = if (lens == Lens.LOUNGE && shown.size < LOUNGE_OPENS) tops.filter { t -> shown.none { it.id == t.id } && t.id != lifted?.id } else emptyList()
+                if (rest.isNotEmpty()) {
+                    Text("광장의 다른 글", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+                    rest.forEach { p -> androidx.compose.runtime.key("rest-" + p.id) {
+                        FeedCard(p, answersOf[p.id].orEmpty(), menu,
+                            onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) }, onReply = { vm.openTalk(p.id, reply = true) })
+                    } }
+                }
+                // 2.0.0 [RVN-18] COMP-16 디자인 품질 7: a page that did not come says why with 다시 시도, as the rule plaza's end does.
+                if (talk.more && (older.isEmpty() || olderMore)) {
+                    if (olderFailed != null && !loadingOlder) com.bamnat.app.ui.components.OfflineLine(text = olderFailed, onRetry = vm::more)
+                    else OutlinedButton(onClick = vm::more, enabled = !loadingOlder,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loadingOlder) "불러오는 중…" else "지난 글 더 보기") }
+                }
             }
         }
     }
 }
 
-/** One post on the plaza's page. An older post (not in the sheet) opens its answers here. */
+/** 2.0.0 [RVN-06] What a card's ⋮ does; [room]/[roomName] keep a post (간직하기) as the sheet does. */
+internal class FeedMenu(val onFlag: (TalkPost) -> Unit, val onHide: (TalkPost) -> Unit, val onDelete: (TalkPost) -> Unit,
+    val room: String?, val roomName: String)
+
+/**
+ * One post on the plaza's page. 2.0.0 [RVN-06]: every card opens the sheet on its own post (a 지난 글 too: the sheet reads its thread,
+ * COMP-01); ⋮ has 신고·안 보기·간직·지우기 right here; the head is the name and time with ⋮ always at the end, the marks on a line of
+ * their own (COMP-08: a long name and chips pushed ⋮ out); a post with a 개인 정보 신고 is folded until tapped and my post hidden from
+ * others says so with 이의 제기 (COMP-02).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onOpen: () -> Unit, onVote: (Boolean?) -> Unit,
+internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOpen: () -> Unit, onVote: (Boolean?) -> Unit,
     /** PC 4차 c0ca3d9f: '답 남기기'·'환영 답 남기기' open the sheet with the answer box on this post. */
     onReply: () -> Unit = onOpen) {
-    var open by rememberSaveable(p.id) { mutableStateOf(false) }
+    var reveal by rememberSaveable(p.id) { mutableStateOf(false) }
+    val folded = p.review && p.hidden == null && !p.mine && !reveal
+    val name = p.nick ?: if (p.who > 0) "참여자 ${p.who}" else "참여자"
     SoftCard {
-        Column(Modifier.fillMaxWidth().clickable(onClickLabel = "이 글 보기") { if (inSheet) onOpen() else open = !open }.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val name = p.nick ?: if (p.who > 0) "참여자 ${p.who}" else "참여자"
-                val maker = p.maker
+        Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "신고된 글 펼쳐 보기" else "이 글 보기") { if (folded) reveal = true else onOpen() }
+            .padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every card.
                 // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
-                com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
-                    onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } })
-                WriterMarks(p)
-                when (p.kind) {
-                    "question" -> { Spacer(Modifier.width(4.dp)); StatusChip(if (p.poll != null) "투표" else "질문", Tone.QUIET) }
-                    "tip" -> { Spacer(Modifier.width(4.dp)); StatusChip("팁", Tone.GOOD) }
-                    "show" -> { Spacer(Modifier.width(4.dp)); StatusChip("자랑", Tone.WAIT) }
-                }
-                Spacer(Modifier.weight(1f))
-                Text(ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                NameAndTime(p, name, Modifier.weight(1f))
+                FeedMenuButton(p, menu)
             }
-            p.tag?.let { PlazaTagLine(it) }
-            Text(p.body, style = MaterialTheme.typography.bodyMedium, maxLines = if (open) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis)
-            p.card?.let { WorkCardLine(it) }
-            p.attach?.let { (_, title) -> Text("🎨 $title", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!p.mine) MeToo(p.agree, p.myVote, onVote)
-                else Text("🙋 나도요 ${p.agree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp))
-                Spacer(Modifier.weight(1f))
+            val kindChip = when (p.kind) {
+                "question" -> (if (p.poll != null) "투표" else "질문") to Tone.QUIET
+                "tip" -> "팁" to Tone.GOOD
+                "show" -> "자랑" to Tone.WAIT
+                else -> null
+            }
+            if (p.first || p.helped > 0 || kindChip != null) androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                kindChip?.let { (t, tone) -> StatusChip(t, tone) }
+                if (p.first) StatusChip("🌱 첫 글", Tone.GOOD)
+                if (p.helped > 0) Text("도움 ${p.helped}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.align(Alignment.CenterVertically).semantics { contentDescription = "답이 도움 된 횟수 ${p.helped}" })
+            }
+            Column(Modifier.padding(end = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                p.tag?.let { PlazaTagLine(it) }
+                if (folded) {
+                    // COMP-02 Until an operator looks, the words stay folded on 광장's first page as in the sheet.
+                    Text("개인 정보가 있다는 신고로 운영자가 보고 있어요 · 눌러서 보기", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text(p.body, style = MaterialTheme.typography.bodyMedium, maxLines = 6, overflow = TextOverflow.Ellipsis,
+                        color = if (p.hidden != null || p.review) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                    p.card?.let { WorkCardLine(it) }
+                    p.attach?.let { (_, title) -> Text("🎨 $title", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+                }
+                p.hidden?.let { why ->
+                    // COMP-02 My post others no longer see: said on the card too, with 이의 제기.
+                    // 2.0.0 [RVN-13] HQ-40 ① a caution (it can be looked at again), in the app's one line shape, not red.
+                    com.bamnat.app.ui.components.ToneLine("다른 분께는 가려졌어요 · $why")
+                    if (p.mine) TextButton(onClick = { com.bamnat.app.ui.settings.InquiryLinks.ask(appealStart(p.id)) },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("이의 제기") }
+                }
+            }
+            // 2.0.0 [RVN-06] 디자인 품질 12: at 200% '아직 답이 없어요 · 답 남기기' stood beside 나도요 a word a line; it now goes under it.
+            if (p.hidden == null) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(end = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                if (!p.mine) Box(Modifier.align(Alignment.CenterVertically)) { MeToo(p.agree, p.myVote, onVote) }
+                // HQ-40 ③ My own post with no 나도요 yet says nothing rather than "나도요 0".
+                else if (p.agree > 0) Text(meTooWord(p.agree), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterVertically).padding(horizontal = 8.dp))
                 val helped = p.answer != null
                 Text(when {
                     answers.isEmpty() && p.first && !p.mine -> "첫 글이에요 · 환영 답 남기기"
@@ -398,15 +524,38 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onO
                     helped -> "답 ${answers.size} · 도움 된 답 있음"
                     else -> "답 ${answers.size}"
                 }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { if (answers.isEmpty()) onReply() else onOpen() }.padding(vertical = 12.dp, horizontal = 4.dp))
+                    modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button) { if (answers.isEmpty()) onReply() else onOpen() }
+                        .padding(vertical = 12.dp, horizontal = 8.dp))
             }
-            if (open && !inSheet) answers.forEach { r ->
-                Column(Modifier.padding(start = 16.dp, top = 4.dp)) {
-                    Text((r.nick ?: "참여자") + if (r.id == p.answer) " · 도움 됐어요 ✓" else "", style = MaterialTheme.typography.labelMedium)
-                    r.tag?.let { PlazaTagLine(it) }
-                    Text(r.body, style = MaterialTheme.typography.bodyMedium)
-                }
+        }
+    }
+}
+
+/** [RVN-06] The card's ⋮: 간직하기, 신고하기 or 지우기 (mine), 이 사람 글 안 보기, 닫기 — as in the sheet. */
+@Composable
+private fun FeedMenuButton(p: TalkPost, menu: FeedMenu) {
+    var open by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val saved = remember(menu.room) { menu.room?.let { com.bamnat.app.company.SavedPosts.of(context) } }
+    val keptList by (saved?.items ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList())).collectAsStateWithLifecycle()
+    if (p.id.startsWith("local-")) return
+    androidx.compose.foundation.layout.Box {
+        androidx.compose.material3.IconButton(onClick = { open = true }) {
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, "${if (p.mine) "내 글" else "이 글"} 더 보기: 신고·안 보기·간직")
+        }
+        com.bamnat.app.ui.components.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (saved != null && menu.room != null && p.hidden == null) {
+                val kept = keptList.any { it.id == p.id }
+                androidx.compose.material3.DropdownMenuItem(text = { Text(if (kept) "간직 빼기" else "간직하기") }, onClick = {
+                    open = false
+                    if (kept) saved.remove(p.id) else saved.save(p, menu.room, menu.roomName)
+                    com.bamnat.app.ui.PutOnNotice.say(if (kept) "간직한 글에서 뺐어요" else "간직했어요 · 마을 › 공방 › 간직한 글 · 내 글에서 다시 봐요")
+                })
             }
+            if (p.mine) androidx.compose.material3.DropdownMenuItem(text = { Text("지우기") }, onClick = { open = false; menu.onDelete(p) })
+            else androidx.compose.material3.DropdownMenuItem(text = { Text("신고하기") }, onClick = { open = false; menu.onFlag(p) })
+            if (!p.mine && p.author != null) androidx.compose.material3.DropdownMenuItem(text = { Text("이 사람 글 안 보기") }, onClick = { open = false; menu.onHide(p) })
+            androidx.compose.material3.DropdownMenuItem(text = { Text("닫기", color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = { open = false })
         }
     }
 }
@@ -493,7 +642,7 @@ internal fun plazaMenu(plan: StylePlaza.Plan, picks: Int, onPicks: () -> Unit, o
  */
 @Composable
 internal fun PlazaComposer(prompt: String, topic: String?, onWrite: () -> Unit) {
-    androidx.compose.material3.Surface(onClick = onWrite, shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+    androidx.compose.material3.Surface(onClick = onWrite, shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) {
             contentDescription = "글 쓰기. $prompt" + (topic?.let { ". 이번 주 주제 $it" } ?: "")
@@ -506,7 +655,7 @@ internal fun PlazaComposer(prompt: String, topic: String?, onWrite: () -> Unit) 
                     maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
             Spacer(Modifier.width(8.dp))
-            androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.primary, shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)) {
+            androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.large) {
                 Text("글 쓰기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }

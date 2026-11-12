@@ -76,6 +76,24 @@ object MoneyAccounts {
         return (same.firstOrNull { it.isCard } ?: same.firstOrNull())?.id
     }
 
+    /**
+     * 2.0.0 [RVK-18] (검토 U06a-09): '지금 잔액으로 맞추기' — the one line that brings [account]'s counted balance [counted] to the
+     * [actual] amount in it, as a transfer (so no month's 수입·지출 changes): money that left without a line goes out of it, money
+     * that came without a line comes into it. Null when they already agree or the account does not hold money.
+     */
+    fun adjustment(account: MoneyAccount, counted: Long, actual: Long, on: LocalDate): MoneyEntry? {
+        if (!account.keepsBalance || account.isLoan || actual == counted) return null
+        val diff = actual - counted
+        return MoneyEntry(
+            date = on, kind = MoneyKind.TRANSFER, amount = kotlin.math.abs(diff), category = LedgerSmarts.TRANSFER_CATEGORY,
+            merchant = ADJUST_NAME, note = "실제 잔액에 맞춤", source = MoneySource.MANUAL, reviewed = true,
+            accountId = account.id.takeIf { diff < 0 }, toAccountId = account.id.takeIf { diff > 0 },
+        )
+    }
+
+    /** 2.0.0 [RVK-18] What a balance line is called in the list. */
+    const val ADJUST_NAME = "잔액 맞춤"
+
     /** The account a payment text belongs to when it is saved, or null when no card matches. */
     fun match(cardLast4: String, accounts: List<MoneyAccount>): Long? =
         of(MoneyEntry(date = LocalDate.MIN, kind = MoneyKind.EXPENSE, amount = 0, category = "", cardLast4 = cardLast4), accounts)
@@ -185,37 +203,56 @@ object CardCycle {
 
     /**
      * fc374a23 PC 확인 (카드값을 갚은 뒤에도 '다음 카드값'이 그대로): what is still owed on each bill of [months] after what was paid
-     * to the card (a transfer to it, or its 카드값 line) up to [today]. Each payment goes to the oldest bill not yet paid off whose
-     * days have begun, the rest to the next one, so paying early or in parts counts too.
+     * to the card (a transfer to it, or its 카드값 line) up to [today].
+     *
+     * 2.0.0 [RVK-37] (검토 MONEY-45) A payment within [LedgerChecks.BILL_DAYS] of a bill's day is that bill, the card company's own
+     * figure: it closes the bill when it is at least half of it (more or less than the app's sum, from a 연회비 or a line not written),
+     * and nothing of it carries to the next one. Any other payment is an early or part payment: it goes to the oldest bill not yet paid
+     * off whose days have begun, the rest to the next one, but never to a bill whose day is more than two weeks gone, which the card
+     * company took on its day even when that was not written down.
      */
     fun left(card: MoneyAccount, months: List<YearMonth>, entries: List<MoneyEntry>, accounts: List<MoneyAccount>, today: LocalDate): Map<YearMonth, Long> {
-        val sorted = months.sorted()
+        val sorted = months.distinct().sorted()
         val owed = sorted.associateWith { bill(card, it, entries, accounts).amount }.toMutableMap()
-        val pays = entries.filter { e ->
-            e.kind == MoneyKind.TRANSFER && !e.date.isAfter(today) && e.amount > 0 && (e.toAccountId == card.id || (e.source == MoneySource.FIXED && e.merchant == card.name))
-        }.sortedBy { it.date }
-        for (p in pays) {
+        for (p in paymentsTo(card, entries, today)) {
+            val due = sorted.firstOrNull { m -> kotlin.math.abs(ChronoUnit.DAYS.between(payDate(card, m), p.date)) <= LedgerChecks.BILL_DAYS }
+            if (due != null) {
+                val was = owed.getValue(due)
+                owed[due] = if (p.amount * 2 >= was) 0 else was - p.amount
+                continue
+            }
             var money = p.amount
             for (m in sorted) {
                 if (money <= 0) break
                 if (period(card, m).first.isAfter(p.date)) break
-                val due = owed.getValue(m)
-                if (due <= 0) continue
-                val take = minOf(due, money)
-                owed[m] = due - take
+                if (payDate(card, m).plusDays(PAID_WINDOW_DAYS).isBefore(p.date)) continue
+                val left = owed.getValue(m)
+                if (left <= 0) continue
+                val take = minOf(left, money)
+                owed[m] = left - take
                 money -= take
             }
         }
         return owed
     }
 
-    /** Whether the bill of [payMonth] was paid: a transfer to the card, or its 카드값 line, within two weeks of the day. */
-    fun paid(card: MoneyAccount, payMonth: YearMonth, entries: List<MoneyEntry>): Boolean {
+    /** What went to [card] up to [until]: a transfer to it, or its 카드값 repeating line, oldest first. */
+    fun paymentsTo(card: MoneyAccount, entries: List<MoneyEntry>, until: LocalDate): List<MoneyEntry> = entries.filter { e ->
+        e.kind == MoneyKind.TRANSFER && !e.date.isAfter(until) && e.amount > 0 && (e.toAccountId == card.id || (e.source == MoneySource.FIXED && e.merchant == card.name))
+    }.sortedBy { it.date }
+
+    /**
+     * Whether the bill of [payMonth] is paid. 2.0.0 [RVK-37] (검토 MONEY-44) By the money, not by one transfer of any amount near the
+     * day: what went to the card up to two weeks after the day covers it ([left], the three bills before first). A bill with nothing
+     * written on it counts as paid once anything went to the card within two weeks of the day, as before.
+     */
+    fun paid(card: MoneyAccount, payMonth: YearMonth, entries: List<MoneyEntry>, accounts: List<MoneyAccount>): Boolean {
         val day = payDate(card, payMonth)
-        return entries.any { e ->
-            e.kind == MoneyKind.TRANSFER && kotlin.math.abs(ChronoUnit.DAYS.between(day, e.date)) <= PAID_WINDOW_DAYS &&
-                (e.toAccountId == card.id || (e.source == MoneySource.FIXED && e.merchant == card.name))
+        if (bill(card, payMonth, entries, accounts).amount <= 0) {
+            return paymentsTo(card, entries, day.plusDays(PAID_WINDOW_DAYS)).any { kotlin.math.abs(ChronoUnit.DAYS.between(day, it.date)) <= PAID_WINDOW_DAYS }
         }
+        val months = (3L downTo 0L).map { payMonth.minusMonths(it) }
+        return left(card, months, entries, accounts, day.plusDays(PAID_WINDOW_DAYS)).getValue(payMonth) <= 0
     }
 
     private const val PAID_WINDOW_DAYS = 14L
@@ -226,28 +263,83 @@ object CardCycle {
  * yet paid to it), on any day; and the last twelve month-ends, for one line over the year.
  */
 object NetWorth {
-    data class Point(val date: LocalDate, val have: Long, val owe: Long) {
+    /**
+     * [unrecorded] 2.0.0 [RVK-37] (검토 MONEY-46): the cards' bills gone past their day that no payment to the card was written for,
+     * counted as paid on their day (from the account the card pays from, when the book keeps it).
+     */
+    data class Point(val date: LocalDate, val have: Long, val owe: Long, val unrecorded: Int = 0) {
         val net: Long get() = have - owe
     }
 
     fun on(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, date: LocalDate): Point {
         val until = entries.filter { !it.date.isAfter(date) }
-        val balances = MoneyAccounts.balances(accounts, until)
+        val balances = MoneyAccounts.balances(accounts, until).toMutableMap()
         // 1.38 [LEDH-25] A loan is owed, not had.
         val loans = accounts.filter { it.isLoan }.map { it.id }.toSet()
-        val have = balances.filterKeys { it !in loans }.values.sum()
-        val loanOwed = balances.filterKeys { it in loans }.values.sumOf { (-it).coerceAtLeast(0) }
-        val credit = accounts.filter { it.isCredit }.map { it.id }.toSet()
         var owe = 0L
-        for (e in until) {
-            val on = MoneyAccounts.of(e, accounts)
-            when {
-                e.kind == MoneyKind.EXPENSE && on in credit -> owe += e.amount
-                e.kind == MoneyKind.INCOME && on in credit -> owe -= e.amount
-                e.kind == MoneyKind.TRANSFER && e.toAccountId in credit -> owe -= e.amount
+        var unrecorded = 0
+        for (card in accounts.filter { it.isCredit }) {
+            val on = until.filter { MoneyAccounts.of(it, accounts) == card.id }
+            if (!card.hasBill) {
+                // Without a 결제일 the app cannot tell which bill is gone: what was spent on the card less what was paid to it.
+                owe += (on.sumOf { if (it.kind == MoneyKind.EXPENSE) it.amount else if (it.kind == MoneyKind.INCOME) -it.amount else 0L } -
+                    until.filter { it.kind == MoneyKind.TRANSFER && it.toAccountId == card.id }.sumOf { it.amount }).coerceAtLeast(0)
+                continue
+            }
+            val c = cardOwed(card, on, until, accounts, date)
+            owe += c.owe
+            unrecorded += c.months.size
+            // The bill left the account the card pays from on its day; after the last 잔액 맞춤 there, which already counted it before.
+            val from = card.payFromId?.takeIf { id -> accounts.any { it.id == id && it.keepsBalance } }
+            if (from != null) {
+                val fixed = until.filter { MoneyAccounts.of(it, accounts) == from && it.merchant == MoneyAccounts.ADJUST_NAME }.maxOfOrNull { it.date }
+                val gone = c.months.filter { (day, _) -> fixed == null || day.isAfter(fixed) }.sumOf { it.second }
+                balances.merge(from, -gone, Long::plus)
             }
         }
-        return Point(date, have, owe.coerceAtLeast(0) + loanOwed)
+        val have = balances.filterKeys { it !in loans }.values.sum()
+        val loanOwed = balances.filterKeys { it in loans }.values.sumOf { (-it).coerceAtLeast(0) }
+        return Point(date, have, owe + loanOwed, unrecorded)
+    }
+
+    /** What a card still owes on [date], and each bill gone past its day with no payment written for it (its day and what was not). */
+    private data class CardOwed(val owe: Long, val months: List<Pair<LocalDate, Long>>)
+
+    /**
+     * 2.0.0 [RVK-37] (검토 MONEY-46) A card with a 결제일 owes only the bills whose day has not come (this period's spending and the
+     * 할부 회차 still ahead, 유이자 수수료 too): a bill whose day is gone was taken by the card company on its day, written down or not.
+     * So the 갚을 돈 no longer grows month after month for someone who never writes the 카드값. Payments go to the oldest bills first.
+     */
+    private fun cardOwed(card: MoneyAccount, on: List<MoneyEntry>, until: List<MoneyEntry>, accounts: List<MoneyAccount>, date: LocalDate): CardOwed {
+        val byMonth = sortedMapOf<YearMonth, Long>()
+        var credited = 0L
+        for (e in on) {
+            when (e.kind) {
+                MoneyKind.EXPENSE -> {
+                    val first = CardCycle.billMonth(card, e.date)
+                    for (k in 0 until e.installments.coerceIn(1, 60)) {
+                        val m = first.plusMonths(k.toLong())
+                        val part = CardCycle.portion(e, first, m) +
+                            (if (e.installmentRate > 0) LedgerChecks.installmentRow(e, first, m)?.fee ?: 0L else 0L)
+                        if (part != 0L) byMonth.merge(m, part, Long::plus)
+                    }
+                }
+                MoneyKind.INCOME -> credited += e.amount
+                else -> {}
+            }
+        }
+        var paid = CardCycle.paymentsTo(card, until, date).sumOf { it.amount } + credited
+        val missed = mutableListOf<Pair<LocalDate, Long>>()
+        var ahead = 0L
+        for ((m, amount) in byMonth) {
+            val day = CardCycle.payDate(card, m)
+            if (day.isBefore(date)) {
+                val covered = minOf(amount.coerceAtLeast(0), paid.coerceAtLeast(0))
+                paid -= covered
+                if (amount - covered > 0) missed += day to (amount - covered)
+            } else ahead += amount
+        }
+        return CardOwed((ahead - paid.coerceAtLeast(0)).coerceAtLeast(0), missed)
     }
 
     /** Today and the last [months] month-ends before it, oldest first; empty with no account that holds money. */

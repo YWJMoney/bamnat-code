@@ -27,4 +27,11 @@ class JobHoursTest {
         )
         assertEquals(8 * 60 + 3 * 3 * 60, JobHours.weeks(jobs, YearMonth.of(2026, 11), DayOfWeek.MONDAY).sumOf { it.minutes })
     }
+
+    /** 2.0.0 [RVK-43] (검토 T06b-06) The same start and end (a time picked twice) is no length, not a 24-hour day. */
+    @Test fun sameStartAndEndIsNoLength() {
+        assertEquals(0, JobHours.minutes(job("2026-11-05", "09:00", "09:00")))
+        assertEquals(0, JobHours.weeks(listOf(job("2026-11-05", "09:00", "09:00")), YearMonth.of(2026, 11), DayOfWeek.MONDAY).sumOf { it.minutes })
+        assertEquals(8 * 60, JobHours.minutes(job("2026-11-05", "22:00", "06:00")))
+    }
 }

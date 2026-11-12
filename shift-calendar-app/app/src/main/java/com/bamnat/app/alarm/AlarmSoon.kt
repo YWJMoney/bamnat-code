@@ -27,6 +27,8 @@ object AlarmSoon {
     private const val K_SKIPS = "skips"
     /** [ALRM-26] How many alarms ahead can be put aside at once. */
     const val MAX_SKIPS = 8
+    /** 2.0.0 [RVI-51] (검토 ALM-26) The time zone the skips were put aside in. */
+    private const val K_ZONE = "zone"
     const val ACTION_SOON = "com.bamnat.app.alarm.SOON"
     const val ACTION_SKIP = "com.bamnat.app.alarm.SOON_SKIP"
     const val ACTION_KEEP = "com.bamnat.app.alarm.SOON_KEEP"
@@ -49,9 +51,20 @@ object AlarmSoon {
     fun skippedAll(context: Context, now: Long = Today.millis()): List<Long> {
         val p = prefs(context)
         val old = p.getLong(K_SKIP, 0L).takeIf { it > 0 }
-        return (p.getStringSet(K_SKIPS, emptySet()).orEmpty().mapNotNull { it.toLongOrNull() } + listOfNotNull(old))
-            .filter { it > now - 60_000 }.distinct().sorted()
+        val stored = p.getStringSet(K_SKIPS, emptySet()).orEmpty().mapNotNull { it.toLongOrNull() } + listOfNotNull(old)
+        // 2.0.0 [RVI-51] (검토 ALM-26) Moved to another time zone: each stays on the same clock time there, as the alarms are
+        // planned again in the new zone (the 06:00 put aside is the new zone's 06:00, not whatever the old instant is now).
+        val zone = Today.zone()
+        val was = p.getString(K_ZONE, null)?.let { runCatching { java.time.ZoneId.of(it) }.getOrNull() }
+        val list = if (was == null || was == zone || stored.isEmpty()) stored else stored.map { at ->
+            java.time.Instant.ofEpochMilli(at).atZone(was).toLocalDateTime().atZone(zone).toInstant().toEpochMilli()
+        }.also { moved -> save(context, moved.sorted()) }
+        return list.filter { it > now - 60_000 }.distinct().sorted()
     }
+
+    /** 2.0.0 [RVI-51] The skips as one zone sees them, for the time-zone test. */
+    internal fun movedTo(skips: List<Long>, from: java.time.ZoneId, to: java.time.ZoneId): List<Long> =
+        skips.map { java.time.Instant.ofEpochMilli(it).atZone(from).toLocalDateTime().atZone(to).toInstant().toEpochMilli() }
 
     /** The earliest alarm turned off ahead, else null. */
     fun skipped(context: Context, now: Long = Today.millis()): Long? = skippedAll(context, now).firstOrNull()
@@ -59,12 +72,15 @@ object AlarmSoon {
     fun isSkipped(context: Context, at: Long): Boolean = at in skippedAll(context, at - 1)
 
     private fun save(context: Context, list: List<Long>) {
-        prefs(context).edit().remove(K_SKIP).putStringSet(K_SKIPS, list.takeLast(MAX_SKIPS).map { it.toString() }.toSet()).commit()
+        // 2.0.0 [RVI-51] (검토 ALM-26) Past [MAX_SKIPS], the soonest are kept: the 9th used to push out the very next alarm put aside,
+        // which then rang.
+        prefs(context).edit().remove(K_SKIP).putStringSet(K_SKIPS, list.distinct().sorted().take(MAX_SKIPS).map { it.toString() }.toSet())
+            .putString(K_ZONE, Today.zone().id).commit()
     }
 
     /** [ring] was turned off ahead of time; it stays quiet even if it was registered before. */
     fun silences(context: Context, ring: RingRequest): Boolean =
-        !ring.isSnooze && !ring.recheck && ring.label != AlarmScheduler.TEST_NAME && isSkipped(context, ring.triggerAtMillis)
+        !ring.isSnooze && !ring.recheck && ring.label != AlarmScheduler.TEST_NAME && !ShiftNap.isNap(ring) && isSkipped(context, ring.triggerAtMillis)
 
     private fun fireIntent(context: Context, at: Long, text: String?): PendingIntent = PendingIntent.getBroadcast(
         context, REQ_FIRE,

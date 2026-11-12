@@ -21,61 +21,97 @@ import java.time.YearMonth
  */
 object ManageImport {
     sealed interface Got<out T> {
-        data class Read<T>(val value: T, val fromPhoto: Boolean) : Got<T>
-        data class Failed(val why: String) : Got<Nothing>
+        /** 2.0.0 [RVL-43] [note]: "PDF가 9쪽이라 앞 6쪽만 읽었어요" when a file had more pages than are read. */
+        data class Read<T>(val value: T, val fromPhoto: Boolean, val note: String? = null) : Got<T>
+        /** 2.0.0 [RVL-41] (검토 U07b-10) A locked PDF: its password is asked where it was picked, then read again with it. */
+        data class Locked(val lock: PdfLock) : Got<Nothing>
+        /** 2.0.0 [RVL-33] (검토 T07b-07) With the one fix its cause asks for, when a photo's reading failed ([com.bamnat.app.pay.OcrModel.fix]). */
+        data class Failed(val why: String, val fix: com.bamnat.app.pay.OcrModel.Fix? = null) : Got<Nothing>
     }
 
     private const val FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·사진 파일을 골라 주세요."
 
     private fun codes(shifts: List<TeamShift>) = DutyCodes(shifts.map { DutyType(it.id, it.name, it.label, it.isOff, it.start) })
 
-    private suspend fun <T> open(context: Context, uri: Uri, then: suspend (AnyFile.Opened) -> Got<T>): Got<T> {
-        val opened = runCatching { AnyFile.open(context, uri) }
+    private suspend fun <T> open(context: Context, uri: Uri, password: CharArray?, then: suspend (AnyFile.Opened) -> Got<T>): Got<T> {
+        val opened = runCatching { AnyFile.open(context, uri, password) }
         opened.exceptionOrNull()?.let { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
             return Got.Failed((e as? Sheets.SheetException)?.message ?: FAILED)
         }
-        return runCatching { then(opened.getOrThrow()) }.getOrElse { e ->
+        val o = opened.getOrThrow()
+        if (o is AnyFile.Opened.Locked) return Got.Locked(o.lock)
+        return runCatching {
+            val got = then(o)
+            // 2.0.0 [RVL-43] A file of more pages than were read says so with what was read.
+            val cut = when (o) { is AnyFile.Opened.Table -> o.cut; is AnyFile.Opened.Pages -> o.cut; else -> null }
+            if (got is Got.Read && cut != null) got.copy(note = cut) else got
+        }.getOrElse { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Got.Failed((e as? com.bamnat.app.pay.OcrModel.NotReady)?.message ?: FAILED)
+            // 2.0.0 [RVL-32] A photo that could not be read says why (준비물·Play 서비스·사진), as 한 달 근무 넣기 does.
+            val photo = e is com.bamnat.app.pay.OcrModel.NotReady || com.bamnat.app.pay.OcrModel.why(e) != com.bamnat.app.pay.OcrModel.Why.OTHER
+            Got.Failed(if (photo) com.bamnat.app.pay.OcrModel.said(context, e) else FAILED, com.bamnat.app.pay.OcrModel.fix(e))
         }
     }
 
-    /** Pictures read one by one (a scanned PDF's pages are recycled after). */
-    private suspend fun scans(context: Context, o: AnyFile.Opened, codes: DutyCodes): List<RosterScanner.Scan> = when (o) {
-        is AnyFile.Opened.Picture -> listOf(RosterScanner.scan(context, o.uri, codes))
-        is AnyFile.Opened.Pages -> try { o.pages.map { RosterScanner.scanPicture(context, it, codes) } } finally { o.pages.forEach { if (!it.isRecycled) it.recycle() } }
-        is AnyFile.Opened.Table -> emptyList()
+    /**
+     * Pictures read one by one. 2.0.0 [RVL-43] (검토 SCAN-18) A scanned PDF's pages are drawn one at a time and let go after; a PDF
+     * whose text held nothing to read is read so too ([RVL-42], 검토 SCAN-15).
+     */
+    private suspend fun scans(context: Context, o: AnyFile.Opened, codes: DutyCodes, preparing: (Int?) -> Unit = {}): List<RosterScanner.Scan> = when (o) {
+        is AnyFile.Opened.Picture -> listOf(RosterScanner.scan(context, o.uri, codes, preparing))
+        is AnyFile.Opened.Pages -> drawn(context, o.pdf, codes, preparing)
+        is AnyFile.Opened.Table -> o.pdf?.let { drawn(context, it, codes, preparing) }.orEmpty()
+        is AnyFile.Opened.Locked -> emptyList()
     }
+
+    private suspend fun drawn(context: Context, pdf: AnyFile.Pdf, codes: DutyCodes, preparing: (Int?) -> Unit): List<RosterScanner.Scan> =
+        AnyFile.pages(context, pdf).use { s ->
+            (0 until s.count).map { i ->
+                val page = s.page(i)
+                try { RosterScanner.scanPicture(context, page, codes, preparing) } finally { page.recycle() }
+            }
+        }
 
     /**
      * The whole team's roster. [month] is the board's: a photo that names no month is read for it; a table finds its own.
      * [shifts] are the team's kinds of day, so a photo cell read as one of them comes back under the team's own label.
      */
-    suspend fun roster(context: Context, uri: Uri, month: YearMonth, shifts: List<TeamShift>, near: LocalDate): Got<RosterGrid> = open(context, uri) { o ->
+    suspend fun roster(
+        context: Context, uri: Uri, month: YearMonth, shifts: List<TeamShift>, near: LocalDate,
+        /** 2.0.0 [RVL-41] The password typed for a locked PDF, for this reading only. */
+        password: CharArray? = null,
+        /** 2.0.0 [RVL-32] The reading model coming down before a photo is read (percent, null while unknown). */
+        preparing: (Int?) -> Unit = {},
+    ): Got<RosterGrid> = open(context, uri, password) { o ->
+        val c = codes(shifts)
+        val labels = shifts.associate { it.id to it.label }
+        suspend fun pictures(): Got<RosterGrid>? {
+            val grids = scans(context, o, c, preparing).mapNotNull { s ->
+                val text = s.words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }
+                TeamSheet.roster(s.read, DutyRoster.monthIn(text, near) ?: month, labels)
+            }
+            return TeamSheet.pages(grids)?.let { Got.Read(it, true) }
+        }
         when (o) {
             is AnyFile.Opened.Table -> TeamSheet.roster(o.sheets, null, near)?.takeIf { it.rows.isNotEmpty() }?.let { Got.Read(it, false) }
+                // 2.0.0 [RVL-42] (검토 SCAN-15) A PDF whose text held no roster is drawn and read as pictures first.
+                ?: o.pdf?.let { pictures() }
                 ?: Got.Failed(if (o.fromPdf) "PDF에서 날짜와 근무를 찾지 못했어요. 표가 든 쪽인지 봐 주세요."
                     else "날짜와 근무를 찾지 못했어요. 첫 줄에 1 2 3 … 날짜가 있고 한 줄에 한 사람인 표면 돼요.")
-            else -> {
-                val c = codes(shifts)
-                val labels = shifts.associate { it.id to it.label }
-                val grids = scans(context, o, c).mapNotNull { s ->
-                    val text = s.words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }
-                    TeamSheet.roster(s.read, DutyRoster.monthIn(text, near) ?: month, labels)
-                }
-                TeamSheet.pages(grids)?.let { Got.Read(it, true) }
-                    ?: Got.Failed("사진에서 근무표를 찾지 못했어요. 표 전체가 반듯하게, 밝은 곳에서 나온 사진을 골라 주세요.")
-            }
+            else -> pictures() ?: Got.Failed("사진에서 근무표를 찾지 못했어요. 표 전체가 반듯하게, 밝은 곳에서 나온 사진을 골라 주세요.")
         }
     }
 
     /** A staff list (이름·시급·근무 요일·시간 …). 연락처·주민번호·계좌 columns are never read ([com.bamnat.core.imports.StaffSheets]). */
-    suspend fun staff(context: Context, uri: Uri, near: LocalDate): Got<StaffSheet> = open(context, uri) { o ->
+    suspend fun staff(context: Context, uri: Uri, near: LocalDate, password: CharArray? = null): Got<StaffSheet> = open(context, uri, password) { o ->
+        // 2.0.0 [RVJ-40] 검토 PC-102: a photo goes the same way as a file (the same columns read, the same unread ones said).
+        suspend fun pictures() = scans(context, o, DutyCodes(emptyList())).mapNotNull { StaffSheet.read(WordTable.rows(it.words), near) }
+            .takeIf { it.isNotEmpty() }?.let { l -> Got.Read(StaffSheet(l.flatMap { it.rows }, l.flatMap { it.unread }.distinct()), true) }
         when (o) {
-            is AnyFile.Opened.Table -> StaffSheet.read(o.sheets, near)?.let { Got.Read(it, false) }
-            else -> scans(context, o, DutyCodes(emptyList())).mapNotNull { StaffSheet.read(WordTable.rows(it.words), near) }
-                .flatMap { it.rows }.takeIf { it.isNotEmpty() }?.let { Got.Read(StaffSheet(it), true) }
+            // 2.0.0 [RVL-42] A PDF whose text held no list is drawn and read as pictures first.
+            is AnyFile.Opened.Table -> StaffSheet.read(o.sheets, near)?.let { Got.Read(it, false) } ?: o.pdf?.let { pictures() }
+            else -> pictures()
         } ?: Got.Failed("직원 이름 줄을 찾지 못했어요. 첫 줄에 '이름'과 '시급'(또는 근무 요일·시간) 같은 칸 이름이 있는 명단이면 돼요.")
     }
 }

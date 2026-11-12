@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Search
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,6 +60,7 @@ import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.recipe.ThemeLease
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 /** What one [DrawerItem] stands for, so its sheet knows what it can do. */
 private sealed interface Held {
@@ -125,10 +124,8 @@ fun ThemeDrawer(
             modifier = Modifier.heightIn(min = 48.dp)) { Text("↕ ${sort.label}") }
     }
     if (items.isNotEmpty()) {
-        OutlinedTextField(query, { query = it.take(30) }, Modifier.fillMaxWidth(), singleLine = true,
-            placeholder = { Text("서랍에서 찾기") },
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
-            trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, "찾기 지우기") } }) else null)
+        // 2.0.0 [RVM-31] the same 48dp 찾기 칸 as 장터 (조건 5, 같은 구조는 함께).
+        SearchBox(query, { query = it.take(30) }, "서랍에서 찾기", Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // PC 08a6f771: the numbers follow what 찾기 and the 묶음 leave.
             Drawer.counts(Drawer.shown(items, null, folder, query, sort)).forEach { (k, n) ->
@@ -157,6 +154,8 @@ fun ThemeDrawer(
         Text("찾는 것이 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         TextButton(onClick = { query = ""; kind = null; folder = null }) { Text("모두 보기") }
     } else Grid(shown, byKey) { open = it.key }
+    // 2.0.0 [RVM-26] RCP-08: themes 입었던 테마's limit let go, to see why and put back (나머지는 아무것도 보이지 않아요).
+    com.bamnat.app.ui.money.AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_RECIPE, null)
 
     // 내 테마로 저장: the look on the phone now kept as one of mine (free one, 프로 ten).
     val mineCount = c.wardrobe.ownCount(lease)
@@ -281,7 +280,7 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
 
 /** The kinds of piece a draft holds (null when it holds none), read as loosely as 만들기 reads its drafts. */
 private fun draftKinds(body: String): List<PieceKind>? {
-    val kinds = runCatching { RecipeCodec.read(body).pieces.map { it.kind } }.getOrNull()
+    val kinds = runCatching { RecipeCodec.readDraft(body).pieces.map { it.kind } }.getOrNull()
         ?: runCatching {
             val a = org.json.JSONObject(body).optJSONArray("pieces") ?: org.json.JSONArray()
             (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.optString("kind")?.let(PieceKind::of) }
@@ -308,7 +307,7 @@ private fun Grid(items: List<DrawerItem>, byKey: Map<String, Held>, onOpen: (Dra
 
 @Composable
 private fun Cell(i: DrawerItem, h: Held?, width: androidx.compose.ui.unit.Dp, onOpen: (DrawerItem) -> Unit) {
-    Column(Modifier.width(width).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "할 일 보기") { onOpen(i) },
+    Column(Modifier.width(width).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "할 일 보기") { onOpen(i) },
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Thumb(h, width)
         Text((if (i.kind == DrawerKind.MINE && h is Held.Theme) "🎨 " else "") + i.title, style = MaterialTheme.typography.labelLarge, maxLines = 2,
@@ -329,7 +328,7 @@ private fun Thumb(h: Held?, width: androidx.compose.ui.unit.Dp) {
         is Held.Got -> h.e.pieces.split(',').firstNotNullOfOrNull { PieceKind.of(it) }?.let(::emojiOf) ?: "📦"
         else -> "🧩"
     }
-    Box(Modifier.width(width).aspectRatio(1.8f).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+    Box(Modifier.width(width).aspectRatio(1.8f).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center) { Text(emoji, style = MaterialTheme.typography.headlineMedium) }
 }
 
@@ -509,7 +508,7 @@ private fun FolderPick(i: DrawerItem, onDone: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 names.forEach { n ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { c.wardrobe.setFolder(i.key, n); onDone() },
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { c.wardrobe.setFolder(i.key, n); onDone() },
                         verticalAlignment = Alignment.CenterVertically) {
                         Text((if (i.folder == n) "✓ " else "") + "📁 $n", style = MaterialTheme.typography.bodyLarge)
                     }

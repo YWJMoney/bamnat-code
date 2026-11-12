@@ -76,6 +76,16 @@ data class ResolvedDay(
     val plannedStart: LocalTime? = start,
     val plannedEnd: LocalTime? = end,
     val plannedBreakMinutes: Int = breakMinutes,
+    /**
+     * 2.0.0 [RVH-44] 검토 TYPE-24·I30b-03 하루 두 구간: where the day stops between its two parts (가게·알바 '브레이크 타임', 일근·교대
+     * '비는 시간'), on the clock, after leave took its part; null for a day of one part. Never work, never a break: [scheduledMinutes]
+     * and [breakMinutes] leave it out (설계 docs/plans/2.0.0/두-구간-근무-시간-연차-설계.md 2-3절).
+     */
+    val gapFrom: LocalDateTime? = null,
+    val gapTo: LocalDateTime? = null,
+    /** [RVH-45] An hour's leave in the middle of the day (외출), on the clock: the day is two parts around it (설계 3-3절). */
+    val leaveFrom: LocalDateTime? = null,
+    val leaveTo: LocalDateTime? = null,
 ) {
     /** [DAYW-08] True when partial leave moved the clock times, so the day has a planned and a worked span. */
     val leaveShrunk: Boolean get() = leave != null && !leave.isFullDay && (plannedStart != start || plannedEnd != end)
@@ -102,6 +112,45 @@ data class ResolvedDay(
     /** The shift on the clock, if it has times. */
     val shiftFrom: LocalDateTime? get() = if (start != null && end != null) date.atTime(start) else null
     val shiftTo: LocalDateTime? get() = shiftFrom?.let { endAfter(it, end!!) }
+
+    /** [RVH-44] Minutes the day stops between its two parts; 0 for a day of one part. */
+    val gapMinutes: Int get() = if (gapFrom != null && gapTo != null) Duration.between(gapFrom, gapTo).toMinutes().toInt() else 0
+
+    /**
+     * [RVH-44][RVH-45] The parts of the day on the clock, earliest first: one ([shiftFrom]~[shiftTo]) for a day of one part, two around
+     * the gap or an hour's leave in the middle, none without times. [start]·[end] stay the first start and the last end, so what reads
+     * only them is right; what asks when the work is (근무 중, 야간 분, 알람) reads these.
+     */
+    val segments: List<ClosedRange<LocalDateTime>>
+        get() {
+            val from = shiftFrom ?: return emptyList()
+            val to = shiftTo ?: return emptyList()
+            val holes = listOfNotNull(
+                gapFrom?.let { f -> gapTo?.let { f..it } },
+                leaveFrom?.let { f -> leaveTo?.let { f..it } },
+            ).filter { it.start.isAfter(from) && it.endInclusive.isBefore(to) }.sortedBy { it.start }
+            if (holes.isEmpty()) return listOf(from..to)
+            val parts = mutableListOf<ClosedRange<LocalDateTime>>()
+            var at = from
+            for (h in holes) {
+                if (h.start.isAfter(at)) parts += at..h.start
+                if (h.endInclusive.isAfter(at)) at = h.endInclusive
+            }
+            if (to.isAfter(at)) parts += at..to
+            return parts
+        }
+
+    /** [RVH-44] Two parts with a stop between them (a gap or an hour's leave in the middle). */
+    val split: Boolean get() = segments.size > 1
+
+    /**
+     * [RVH-44] Whether the day's shift is being worked at [t]: inside a part, not in the gap between them (설계 2-3절, 갈래 I 4-2절 6번:
+     * 오늘의 흐름·잠금 화면·위젯·워치·알림 미루기 all ask this one question). The start counts, the end does not.
+     */
+    fun workingAt(t: LocalDateTime): Boolean = segments.any { !t.isBefore(it.start) && t.isBefore(it.endInclusive) }
+
+    /** [RVH-44] Minutes of the parts (the shift on the clock less the gap and an hour's leave in the middle), the break still in. */
+    val segmentMinutes: Int get() = segments.sumOf { Duration.between(it.start, it.endInclusive).toMinutes().toInt() }
 
     companion object {
         /** [end] on the day of [from], or the next day when that is not after it (overnight; equal is 24 hours). */
@@ -161,11 +210,12 @@ class ScheduleResolver(
         val (type, source) = when (val o = entry?.override ?: ShiftOverride.None) {
             ShiftOverride.Off -> null to DaySource.OVERRIDE
             // An override pointing at a deleted type falls back to "nothing scheduled".
-            is ShiftOverride.Shift -> typesById[o.shiftTypeId] to DaySource.OVERRIDE
+            // [RVH-33] 검토 WORK-19 A kind of day whose times changed '오늘부터만' keeps the old ones on the days before.
+            is ShiftOverride.Shift -> typesById[o.shiftTypeId]?.on(date) to DaySource.OVERRIDE
             ShiftOverride.None -> {
                 val pattern = patternOn(date)
                 val id = pattern?.shiftTypeIdOn(date)
-                val t = id?.let { typesById[it] }
+                val t = id?.let { typesById[it]?.on(date) }
                 t to if (pattern != null) DaySource.PATTERN else DaySource.NONE
             }
         }
@@ -193,32 +243,40 @@ class ScheduleResolver(
             breakMinutes = 0
         }
 
-        val fullScheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes) else 0
+        // [RVH-44] The day's gap between two parts: its own (그날만, 0 is '오늘은 이어서 일해요'), else the kind of day's. One that no longer
+        // fits the day's times (a day's own times moved it out, or left a part under 30 minutes) is dropped: one part (설계 2-6절).
+        val gapAt: LocalTime?
+        val gapLength: Int
+        run {
+            val own = entry?.customGapMinutes
+            val s = if (own != null) entry.customGapStart else type?.gapStart
+            val m = own ?: (type?.gapMinutes ?: 0)
+            val fits = start != null && end != null && WorkTime.gapFits(start, end, s, m)
+            gapAt = s.takeIf { fits }
+            gapLength = if (fits) m else 0
+        }
+        val fullScheduled = if (start != null && end != null) WorkTime.workMinutes(start, end, breakMinutes + gapLength) else 0
         // Leave only counts on a day with work to take off. Partial leave comes off the end of
         // the shift and the break shrinks in proportion, so 반차 of 09~18 (1h break) is 09~13:30.
         // 오전 반차 comes off the start instead (13:30~18), unless that would start after midnight:
         // the day's work stays on its own date, so such a shift keeps its leave at the end.
+        // [RVH-44] On a day of two parts the leave is cut along the parts, the gap never counted (설계 2-7절): 뒤쪽 반차 of 11~15·17~21
+        // leaves 11~15. [RVH-45] An hour's leave takes its own minutes, off the start, the end or the middle (외출), and a break it
+        // passes over on the clock comes out with it, never shrunk in proportion (설계 3-3절).
         val leave = entry?.leave?.takeIf { fullScheduled > 0 }
-        val leaveMinutes = leave?.let { Math.round(fullScheduled * it.quarters / 4.0).toInt() } ?: 0
-        var workStart = start
-        var workEnd = end
-        var workBreak = breakMinutes
-        if (leave != null && start != null) {
-            if (leave.isFullDay) {
-                workStart = null
-                workEnd = null
-                workBreak = 0
-            } else {
-                workBreak = Math.round(breakMinutes * (4 - leave.quarters) / 4.0).toInt()
-                val off = leaveMinutes + breakMinutes - workBreak
-                val later = date.atTime(start).plusMinutes(off.toLong())
-                if (leave.offStart && later.toLocalDate() == date) workStart = later.toLocalTime()
-                else workEnd = start.plusMinutes((fullScheduled - leaveMinutes + workBreak).toLong())
-            }
-        }
+        val cut = if (leave != null && start != null && end != null) {
+            DayCut.of(date, start, end, breakMinutes, type?.breakStart, gapAt, gapLength, leave, fullScheduled)
+        } else null
+        val leaveMinutes = cut?.leaveMinutes ?: 0
+        val workStart = if (cut != null) cut.start else start
+        val workEnd = if (cut != null) cut.end else end
+        val workBreak = cut?.breakMinutes ?: breakMinutes
         val scheduled = fullScheduled - leaveMinutes
         val shiftFrom = if (workStart != null && workEnd != null) date.atTime(workStart) else null
         val shiftTo = shiftFrom?.let { ResolvedDay.endAfter(it, workEnd!!) }
+        val base = start?.let { date.atTime(it) }
+        val gapOffset = if (cut != null) cut.gapOffset else gapAt?.let { WorkTime.offset(start!!, it) }
+        val gapFrom = if (base != null && gapOffset != null && gapLength > 0) base.plusMinutes(gapOffset.toLong()) else null
 
         return ResolvedDay(
             date = date,
@@ -239,6 +297,10 @@ class ScheduleResolver(
             plannedStart = start,
             plannedEnd = end,
             plannedBreakMinutes = breakMinutes,
+            gapFrom = gapFrom,
+            gapTo = gapFrom?.plusMinutes(gapLength.toLong()),
+            leaveFrom = cut?.holeFrom?.let { base!!.plusMinutes(it.toLong()) },
+            leaveTo = cut?.holeTo?.let { base!!.plusMinutes(it.toLong()) },
         )
     }
 
@@ -253,7 +315,7 @@ class ScheduleResolver(
         var before = shiftFrom
         return list.map { e ->
             val kind = kinds.of(e.kindId)
-            val covered = e.coveredShiftId?.let { typesById[it] }
+            val covered = e.coveredShiftId?.let { typesById[it]?.on(date) }
             val asCovered = covered?.takeIf { !e.hasTimes && it.hasTimes }
             if (e.hasTimes || asCovered != null) {
                 val from = date.atTime(e.start ?: asCovered!!.start!!)

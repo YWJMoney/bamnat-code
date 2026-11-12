@@ -2,7 +2,12 @@ package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import kotlin.math.ceil
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextAlign
@@ -47,6 +52,7 @@ data class Baseline(val value: Double, val label: String, val dashed: Boolean = 
  * meaning colour ([ChartBar.tone]), one dashed [baseline], and a tap shows one bubble that moves to the next bar tapped.
  * The number on top (DSG-01 [HeroNumber]) is the screen's own, above this.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun BarChart(
     bars: List<ChartBar>,
@@ -112,14 +118,50 @@ fun BarChart(
             }
         }
         if (labels && bars.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(if (bars.size > 10) 4.dp else 8.dp)) {
-                bars.forEach { b ->
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(b.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center, maxLines = 2)
-                        if (values) Text(b.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center, maxLines = 2, color = if (b.tone != Tone.Plain) b.tone.color() else Color.Unspecified)
+            val spacing = if (bars.size > 10) 4.dp else 8.dp
+            val labelStyle = MaterialTheme.typography.labelSmall
+            val measurer = rememberTextMeasurer()
+            BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                // 2.0.0 [RVK-34] Twelve months on the folded phone: '10월' had 22dp under its bar and stood on two lines. When the
+                // widest label does not fit its bar on one line, it is said under every 2nd (3rd …) bar, on one line, centred on that
+                // bar; the bubble still says every bar. A few bars keep their two-line labels.
+                val gap = with(LocalDensity.current) { spacing.toPx() }
+                val cell = (constraints.maxWidth - gap * (bars.size - 1)) / bars.size
+                val widest = bars.maxOf { measurer.measure(it.label, labelStyle, maxLines = 1).size.width }
+                val step = if (bars.size <= 7 || widest <= cell) 1 else ceil((widest + gap) / (cell + gap)).toInt().coerceAtLeast(1)
+                // 2.0.0 [RVK-36] (총괄 HQ-63 ①) A value with a word wider than its bar ('+18.3만' at 200%) broke in the middle of the
+                // number: then the values go under the chart instead, '5월 +18.3만' each whole, as many to a line as fit. '7시간 30분' still
+                // takes two lines under its bar, broken at the space.
+                val valueStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
+                val valuesUnder = values && bars.any { b -> b.text.split(' ').any { w -> measurer.measure(w, valueStyle, maxLines = 1).size.width > cell } }
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    bars.forEachIndexed { i, b ->
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            if (step == 1) {
+                                Text(b.label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center, maxLines = 2)
+                                if (values && !valuesUnder) Text(b.text, style = valueStyle, textAlign = TextAlign.Center, maxLines = 2,
+                                    color = if (b.tone != Tone.Plain) b.tone.color() else Color.Unspecified)
+                            } else if (i % step == 0) {
+                                Text(b.label, style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                    softWrap = false, modifier = Modifier.wrapContentWidth(unbounded = true))
+                                if (values && !valuesUnder) Text(b.text, style = valueStyle, maxLines = 1,
+                                    softWrap = false, modifier = Modifier.wrapContentWidth(unbounded = true),
+                                    color = if (b.tone != Tone.Plain) b.tone.color() else Color.Unspecified)
+                            }
+                        }
                     }
+                }
+                if (valuesUnder) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    bars.forEach { b ->
+                        Row {
+                            Text("${b.label} ", style = labelStyle, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+                            Text(b.text, style = valueStyle, maxLines = 1, softWrap = false,
+                                color = if (b.tone != Tone.Plain) b.tone.color() else Color.Unspecified)
+                        }
+                    }
+                }
                 }
             }
             baseline?.let {

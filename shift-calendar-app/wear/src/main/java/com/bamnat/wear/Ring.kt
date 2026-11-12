@@ -7,6 +7,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -55,7 +58,16 @@ object Ring {
     /** What rings now ("근무 알람 · 주간"), or null once it stopped. The open [RingActivity] closes on null. */
     val ringing = MutableStateFlow<String?>(null)
 
-    fun start(context: Context, what: String) {
+    /** 2.0.0 [RVI-90] What a ring the watch started by itself ([BackupRing]) says first. */
+    const val BACKUP_PREFIX = "휴대폰 알람이 오지 않았어요 · "
+
+    /** 2.0.0 [RVI-90] The ring on now was started by the watch ([BackupRing]), not by the phone. */
+    @Volatile private var backup = false
+
+    fun start(context: Context, what: String, backup: Boolean = false) {
+        this.backup = backup
+        // 2.0.0 [RVI-90] The phone's ring came: the watch's own alarm for it stays quiet.
+        if (!backup) BackupRing.phoneRang(context)
         ringing.value = what.ifBlank { "근무 알람" }
         // The vibration is the alarm on the wrist, with or without the screen: it goes until 끄기, the phone's stop, or [LONGEST_MS].
         vibrate(context, true)
@@ -95,6 +107,8 @@ object Ring {
 
     /** 끄기 or 다시 울림: quiet at once, then the button goes to the phone (outliving the screen, which closes now). */
     fun answer(context: Context, path: String) {
+        // 2.0.0 [RVI-90] The phone may be gone: the watch's own ring comes again by itself.
+        if (backup && path == WatchDays.RING_SNOOZE_PATH) BackupRing.snooze(context)
         stop(context)
         scope.launch { WatchStore.send(context.applicationContext, path, "") }
     }
@@ -111,7 +125,11 @@ object Ring {
     private fun vibrate(context: Context, on: Boolean) {
         val v = (if (Build.VERSION.SDK_INT >= 31) context.getSystemService(VibratorManager::class.java)?.defaultVibrator
             else @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)) ?: return
-        if (on) v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 1)) else v.cancel()
+        // 2.0.0 [RVI-12] (검토 ALM-22) Marked as an alarm, so the watch's 취침·방해 금지 and the app in the back do not drop it.
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 1)
+        if (!on) v.cancel()
+        else if (Build.VERSION.SDK_INT >= 33) v.vibrate(effect, android.os.VibrationAttributes.createForUsage(android.os.VibrationAttributes.USAGE_ALARM))
+        else @Suppress("DEPRECATION") v.vibrate(effect, android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ALARM).build())
     }
 }
 
@@ -154,12 +172,18 @@ class RingActivity : ComponentActivity() {
 
 }
 
+/**
+ * 2.0.0 [RVI-11] (검토 ALM-10·U03-11) 다시 울림 big and first; 끄기 smaller and only by holding it, so a half-asleep tap on the
+ * wrist snoozes rather than turns the phone's alarm off. A plain tap on 끄기 says to hold it.
+ */
 @Composable
 private fun RingScreen(what: String, onOff: () -> Unit, onSnooze: () -> Unit) {
+    var hint by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(what, fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2)
-        Button(onClick = onOff, modifier = Modifier.fillMaxWidth(), label = { Text("끄기") })
-        Button(onClick = onSnooze, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.filledTonalButtonColors(), label = { Text("다시 울림") })
+        Button(onClick = onSnooze, modifier = Modifier.fillMaxWidth().height(64.dp), label = { Text("다시 울림", fontSize = 18.sp) })
+        Button(onClick = { hint = true }, onLongClick = onOff, onLongClickLabel = "끄기", modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.filledTonalButtonColors(), label = { Text(if (hint) "길게 눌러 끄기" else "끄기 (길게)", fontSize = 13.sp) })
     }
 }

@@ -17,13 +17,25 @@ import java.time.temporal.TemporalAdjusters
  */
 object WorkProof {
     data class Day(val date: LocalDate, val shift: String, val start: LocalTime?, val end: LocalTime?, val breakMinutes: Int,
-                   val minutes: Int, val extraMinutes: Int, val recorded: Boolean)
+                   val minutes: Int, val extraMinutes: Int, val recorded: Boolean,
+                   /** 2.0.0 [RVJ-07] Some extra work that day has hours but no clock times (an old record). */
+                   val extraUntimed: Boolean = false)
 
+    /**
+     * 2.0.0 [RVJ-07] 검토 PAYC-06: 더 일함 is what the pay counts ([ResolvedExtra.minutes]: the span less its break, and none of
+     * the hours inside the day's own shift, e.g. 교육 09~13 on an 09~18 일근), and a piece with hours but no times still counts.
+     */
     fun days(from: LocalDate, to: LocalDate, resolve: (LocalDate) -> ResolvedDay): List<Day> =
         generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map { d ->
             val r = resolve(d)
-            val extra = r.extras.sumOf { e -> if (e.from != null && e.to != null) java.time.Duration.between(e.from, e.to).toMinutes().toInt() else 0 }
-            Day(d, r.shiftType?.name ?: "", r.start, r.end, r.breakMinutes, r.scheduledMinutes, extra, r.hasCustomTimes)
+            val extra = r.extras.sumOf { e -> e.minutes.coerceAtLeast(0) }
+            // 2.0.0 [RVJ-47] 검토 PC-111: a day off worked (휴무일 특근) has no shift times; its row shows the work's own start, end and
+            // break as they were put in (it read '-' · '-' · 0분).
+            val timed = r.extras.filter { it.from != null && it.to != null && it.minutes > 0 }
+            val own = r.start == null && r.end == null && r.scheduledMinutes == 0 && timed.isNotEmpty()
+            Day(d, r.shiftType?.name ?: "", if (own) timed.minOf { it.from!! }.toLocalTime() else r.start,
+                if (own) timed.maxOf { it.to!! }.toLocalTime() else r.end, if (own) timed.sumOf { it.breakMinutes } else r.breakMinutes,
+                r.scheduledMinutes, extra, r.hasCustomTimes, extraUntimed = r.extras.any { it.entry.start == null && it.minutes > 0 })
         }.filter { it.minutes > 0 || it.extraMinutes > 0 }.toList()
 
     data class Week(val monday: LocalDate, val minutes: Int) {
@@ -42,11 +54,15 @@ object WorkProof {
         val total = days.sumOf { it.minutes + it.extraMinutes }
         val blocks = mutableListOf<ReportDoc.Block>()
         blocks += ReportDoc.Facts(listOf("기간" to "$from ~ $to", "근무한 날" to "${days.size}일", "일한 시간" to hm(total),
-            "52시간 넘은 주" to "${weeks.count { it.over52 }}주") + listOfNotNull(who.takeIf { it.isNotBlank() }?.let { "이름" to it }))
+            "52시간 넘은 주" to "${weeks.count { it.over52 }}주") +
+            // 2.0.0 [RVJ-47] 검토 PC-111: [who] is the 직업 the pay setup holds ('제조·생산 교대'), not a name. The name is left to be
+            // written by hand on the paper (the app keeps no name), the same label the pay report uses for the 직업.
+            listOfNotNull(who.takeIf { it.isNotBlank() }?.let { "직업" to it }, "이름" to ""))
         blocks += ReportDoc.Heading("날짜별 기록")
         blocks += ReportDoc.Table(listOf("날짜", "근무", "시작", "끝", "휴게", "일한 시간", "더 일함", "기록"),
             days.map { listOf(d(it.date), it.shift, t(it.start), t(it.end), "${it.breakMinutes}분", hm(it.minutes),
-                if (it.extraMinutes > 0) hm(it.extraMinutes) else "", if (it.recorded) "실제 기록" else "근무표") },
+                if (it.extraMinutes > 0) hm(it.extraMinutes) + (if (it.extraUntimed) " (시각 안 적음)" else "") else "",
+                if (it.recorded) "실제 기록" else "근무표") },
             listOf(1.4f, 1.2f, 1f, 1f, 0.8f, 1.3f, 1.2f, 1f), right = setOf(5, 6),
             total = listOf("합계", "", "", "", "", hm(days.sumOf { it.minutes }), hm(days.sumOf { it.extraMinutes }), ""))
         blocks += ReportDoc.Heading("주별 합계")
@@ -83,7 +99,8 @@ object StaffReport {
                 "주휴수당" to if (s.holidayPay) "줌" else "안 줌")),
             ReportDoc.Table(listOf("날짜", "시간", "인정 시간"), rows, listOf(1.4f, 2f, 1f), right = setOf(2)),
             ReportDoc.Facts(listOf("급여" to won(line.base), "주휴수당" to won(line.holidayPay), "합계" to won(line.pay)) +
-                listOfNotNull(if (line.insurance > 0) "4대보험 (사장님 몫)" to won(line.insurance) else null)),
+                // [RVJ-54] Under 15 hours a week the share is 고용보험 alone ([LaborCost.shortWeek]).
+                listOfNotNull(if (line.insurance > 0) (if (LaborCost.shortWeek(s, roster.legalBreaks)) "고용보험 (사장님 몫)" else "4대보험 (사장님 몫)") to won(line.insurance) else null)),
             ReportDoc.Paragraph("근무표대로 셌어요. 야간·휴일 가산과 근로자 몫 4대보험·세금은 빠져 있어요. 참고용 · 만든 날 $made · 밤낮", small = true),
         )
         return ReportDoc("${shop.ifBlank { "가게" }} · ${s.name.ifBlank { "직원" }} ${month.year}년 ${month.monthValue}월 근무·급여", blocks, footer = "밤낮 · 직원 근무")

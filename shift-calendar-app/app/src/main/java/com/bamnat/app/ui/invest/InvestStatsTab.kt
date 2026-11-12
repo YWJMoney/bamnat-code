@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,8 @@ internal fun InvestStatsTab(
     state: InvestState, wide: Boolean, calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
     /** 1.39 [CALX-08] Kept by the screen, which also turns it on a sideways swipe. */
     shownMonth: String, onMonth: (String) -> Unit, yearly: Boolean, onYearly: (Boolean) -> Unit,
+    /** 2.0.0 [RVK-31] A 국내 ETF's kind told from the 세금 미리 보기. */
+    onEtfKind: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val ym = YearMonth.parse(shownMonth)
     val hide = state.hide
@@ -73,7 +76,7 @@ internal fun InvestStatsTab(
         Text(if (yearly) "${ym.year}년에 적은 매매가 없어요" else "${ym.monthValue}월에 적은 매매가 없어요", style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
-        Figures(stats, hide, if (wide) 4 else 3)
+        Figures(stats, hide)
     }
     MonthlyBars(state, ym.year)
     if (!stats.isEmpty) {
@@ -82,7 +85,7 @@ internal fun InvestStatsTab(
         com.bamnat.app.ui.guide.FeatureCard("invest.mind", calendarId) { Behaviour(stats, hide) }
         com.bamnat.app.ui.guide.FeatureCard("invest.weekdays", calendarId) { Weekdays(stats, hide) }
     }
-    com.bamnat.app.ui.guide.FeatureCard("invest.tax", calendarId) { TaxCard(state, ym.year) }
+    com.bamnat.app.ui.guide.FeatureCard("invest.tax", calendarId) { TaxCard(state, ym.year, onEtfKind) }
     // 1.32 [WTYP-29] 연말 손실 정리 미리 보기 and the coins' 12월 31일 notice, this year only.
     if (ym.year == state.today.year) com.bamnat.app.ui.guide.FeatureCard(com.bamnat.app.calendar.DateNoticeAlarm.YEAR_END, calendarId) { HarvestCard(state) }
 }
@@ -111,27 +114,41 @@ private fun HarvestCard(state: InvestState) {
     }
 }
 
+/**
+ * 2.0.0 [RVK-34] (검토 U06b-07) The four that answer 'how did it go' first (손익·승률·매매·실현손익), the other eight under
+ * '8개 더 보기'; two to a row below 420dp or with letters over 150% (twelve in three rows of a folded phone were cramped), four
+ * otherwise.
+ */
 @Composable
-private fun Figures(s: PeriodStats, hide: Boolean, columns: Int) {
+private fun Figures(s: PeriodStats, hide: Boolean) {
+    var more by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val tiles = listOf(
         Triple("손익", InvestFmt.signedShort(s.pnl, hide), "실현 + 배당·이자"),
-        Triple("승률", s.winRate?.let { "${"%.0f".format(it * 100)}%" } ?: "–", "매도 ${s.sells}번 중 ${s.wins}번 이익"),
+        Triple("승률", s.winRate?.let { "${"%.0f".format(java.util.Locale.ROOT, it * 100)}%" } ?: "–", "매도 ${s.sells}번 중 ${s.wins}번 이익"),
         Triple("매매", "${s.trades}건", "산 돈 ${InvestFmt.short(s.bought, hide)}"),
         Triple("실현손익", InvestFmt.signedShort(s.realized, hide), "판 돈 ${InvestFmt.short(s.sold, hide)}"),
         Triple("배당·이자", InvestFmt.short(s.income, hide), "세후"),
         Triple("수수료·세금", InvestFmt.short(s.fees + s.taxes, hide), "세금 ${InvestFmt.short(s.taxes, hide)}"),
-        Triple("손익비", s.payoff?.let { "%.2f".format(it) } ?: "–", "평균 이익 ÷ 평균 손실"),
-        Triple("수익 팩터", s.profitFactor?.let { "%.2f".format(it) } ?: "–", "총이익 ÷ 총손실"),
-        Triple("평균 보유", s.averageHoldingDays?.let { "%.0f일".format(it) } ?: "–", "판 종목 기준"),
+        Triple("손익비", s.payoff?.let { "%.2f".format(java.util.Locale.ROOT, it) } ?: "–", "평균 이익 ÷ 평균 손실"),
+        Triple("수익 팩터", s.profitFactor?.let { "%.2f".format(java.util.Locale.ROOT, it) } ?: "–", "총이익 ÷ 총손실"),
+        Triple("평균 보유", s.averageHoldingDays?.let { "%.0f일".format(java.util.Locale.ROOT, it) } ?: "–", "판 종목 기준"),
         Triple("연속 수익일", "${s.longestWinStreak}일", "연속 손실 ${s.longestLossStreak}일"),
         Triple("입금·출금", InvestFmt.short(s.deposits - s.withdrawals, hide), "입금 ${InvestFmt.short(s.deposits, hide)}"),
         Triple("일지 쓴 날", "${s.journalDays}일", "수익 ${s.winDays}일 · 손실 ${s.lossDays}일"),
     )
-    tiles.chunked(columns).forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { (l, v, c) -> StatTile(l, v, Modifier.weight(1f), caption = c) }
-            repeat(columns - row.size) { androidx.compose.foundation.layout.Spacer(Modifier.weight(1f)) }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth < 420.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.5f) 2 else 4
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            (if (more) tiles else tiles.take(CORE_FIGURES)).chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (l, v, c) -> StatTile(l, v, Modifier.weight(1f), caption = c) }
+                    repeat(columns - row.size) { androidx.compose.foundation.layout.Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
+    }
+    androidx.compose.material3.TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text(if (more) "접기" else "${tiles.size - CORE_FIGURES}개 더 보기")
     }
     s.best?.let { b ->
         Text("가장 잘한 매도 · ${b.name} ${InvestFmt.signed(b.pnlWon.roundToLong(), hide)} (${Fmt.shortDate(b.date)})",
@@ -201,7 +218,7 @@ private fun Behaviour(s: PeriodStats, hide: Boolean) {
 private fun TagRow(t: TagPnl, hide: Boolean) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(t.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(96.dp))
-        Text("${t.sells}번 · 승률 ${t.winRate?.let { "%.0f%%".format(it * 100) } ?: "–"}", style = MaterialTheme.typography.bodySmall,
+        Text("${t.sells}번 · 승률 ${t.winRate?.let { "%.0f%%".format(java.util.Locale.ROOT, it * 100) } ?: "–"}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         Text(InvestFmt.signed(t.pnl, hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = pnlColor(t.pnl))
     }
@@ -212,13 +229,30 @@ private fun TagRow(t: TagPnl, hide: Boolean) {
 private fun Weekdays(s: PeriodStats, hide: Boolean) {
     val days = DayOfWeek.entries.filter { it.value <= 5 || (s.byWeekday[it] ?: 0L) != 0L }
     if (days.all { (s.byWeekday[it] ?: 0L) == 0L }) return
+    val valueStyle = MaterialTheme.typography.bodySmall.merge(NumberStyle)
+    val texts = days.map { d -> (s.byWeekday[d] ?: 0L).let { v -> v to (if (v == 0L) "–" else InvestFmt.signedShort(v, hide)) } }
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     SectionCard(title = "요일별 손익") {
-        Row(Modifier.fillMaxWidth()) {
-            days.forEach { d ->
-                val v = s.byWeekday[d] ?: 0L
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (v == 0L) "–" else InvestFmt.signedShort(v, hide), style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = pnlColor(v))
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // 2.0.0 [RVK-34] '+18.3만' stood on two lines in a fifth of the folded phone at 글자 200%: when the widest amount does not fit
+            // its column on one line, the days go one under another, the day on the left and its amount on the right.
+            val widest = texts.maxOf { measurer.measure(it.second, valueStyle, maxLines = 1).size.width }
+            if (widest <= constraints.maxWidth / days.size) {
+                Row(Modifier.fillMaxWidth()) {
+                    days.zip(texts).forEach { (d, t) ->
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(t.second, style = valueStyle, color = pnlColor(t.first), maxLines = 1)
+                        }
+                    }
+                }
+            } else Column(Modifier.fillMaxWidth()) {
+                days.zip(texts).forEach { (d, t) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f))
+                        Text(t.second, style = valueStyle, color = pnlColor(t.first))
+                    }
                 }
             }
         }
@@ -230,27 +264,41 @@ private fun Weekdays(s: PeriodStats, hide: Boolean) {
  * 코인 from 2027, 배당·이자 15.4% and 금융소득종합과세 at 2,000만, ISA's 비과세 한도, 연금 계좌 deferred.
  */
 @Composable
-private fun TaxCard(state: InvestState, year: Int) {
+private fun TaxCard(state: InvestState, year: Int, onEtfKind: (String, Boolean) -> Unit) {
     val t = remember(state, year) { InvestTaxes.estimate(state.full, state.fullResult, year) }
     val hide = state.hide
     val lines = buildList {
-        if (t.domesticGain != 0L || t.tradeTax > 0) add("국내 주식 손익 ${InvestFmt.signed(t.domesticGain, hide)} · 거래세 ${InvestFmt.won(t.tradeTax, hide)} (대주주가 아니면 양도세 없음)")
+        // [RVK-31] 국내주식형 ETF (and ETFs not told yet) are counted with 국내 주식: no tax on the gain.
+        if (t.domesticGain != 0L || t.tradeTax > 0) add("국내 주식·주식형 ETF 손익 ${InvestFmt.signed(t.domesticGain, hide)} · 거래세 ${InvestFmt.won(t.tradeTax, hide)} (대주주가 아니면 양도세 없음)")
+        if (t.otherEtfGain > 0) add("해외지수·채권 등 ETF 이익 ${InvestFmt.won(t.otherEtfGain, hide)} → 증권사가 떼는 세금 어림 ${InvestFmt.won(t.otherEtfTax, hide)} (15.4%, 금융소득에 더함)")
+        if (t.otherMarketGain != 0L) add("기타 손익 ${InvestFmt.signed(t.otherMarketGain, hide)} (세금은 상품마다 달라 셈하지 않아요)")
         if (t.foreignGain != 0L) add("해외 주식 손익 ${InvestFmt.signed(t.foreignGain, hide)} → 예상 양도세 ${InvestFmt.won(t.foreignTax, hide)}" +
             if (t.foreignDeductionLeft > 0) " (250만 원 공제 ${InvestFmt.short(t.foreignDeductionLeft, hide)} 남음)" else "")
         if (t.cryptoGain != 0L) add("코인 손익 ${InvestFmt.signed(t.cryptoGain, hide)} · " +
             if (t.cryptoTaxed) "예상 세금 ${InvestFmt.won(t.cryptoTax, hide)}" else "${InvestTaxes.CRYPTO_FROM_YEAR}년부터 과세 (그 기준이면 ${InvestFmt.won(t.cryptoTax, hide)})")
-        if (t.financialIncome > 0) add("배당·이자 ${InvestFmt.won(t.financialIncome, hide)} · 떼인 세금 ${InvestFmt.won(t.dividendTax, hide)}")
+        if (t.dividendsGross + t.interestGross > 0) add("배당·이자 ${InvestFmt.won(t.dividendsGross + t.interestGross, hide)} · 떼인 세금 ${InvestFmt.won(t.dividendTax, hide)}")
         if (t.hasIsa) add("ISA 순이익 ${InvestFmt.signed(t.isaGain, hide)} / 비과세 ${InvestFmt.short(t.isaLimit, hide)}" +
             if (t.isaTaxOver > 0) " · 넘는 만큼 9.9% ${InvestFmt.won(t.isaTaxOver, hide)}" else "")
         if (t.deferredGain != 0L) add("연금저축·IRP 손익 ${InvestFmt.signed(t.deferredGain, hide)} · 연금으로 받을 때 과세")
     }
-    if (lines.isEmpty()) return
+    if (lines.isEmpty() && t.nextYearSales == 0) return
     SectionCard(title = "${year}년 세금 미리 보기") {
         lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }
-        if (t.financialOver) Text("금융소득이 2,000만 원을 넘었어요. 다른 소득과 합쳐 종합과세될 수 있어요.", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning)
-        else if (t.financialNear) Text("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning)
+        // 2.0.0 [RVK-31] (검토 MONEY-66) 국내 ETFs sold this year whose kind was not told: asked right here, a line and two chips each;
+        // picking moves its gain to the right line above at once. Three at most, the rest wait for the next visit.
+        t.untoldEtfs.take(3).forEach { r ->
+            Text("${r.name.ifBlank { r.key }}, 어떤 ETF예요?", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            ChoiceChips(listOf(false, true), { false }, { if (it) "해외지수·채권·원자재 등" else "국내주식형" },
+                { onEtfKind(r.key, it) })
+        }
+        // [RVK-30] 주의 is said the one way the app says it: the mark and the words, not words in an orange of their own.
+        if (t.financialOver) com.bamnat.app.ui.components.ToneLine("금융소득이 2,000만 원을 넘었어요. 다른 소득과 합쳐 종합과세될 수 있어요.",
+            Modifier.padding(top = 4.dp))
+        else if (t.financialNear) com.bamnat.app.ui.components.ToneLine("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.",
+            Modifier.padding(top = 4.dp))
+        // 2.0.0 [RVK-32] (검토 MONEY-68) A 해외 주식 sale on the year's last trading day is next year's: said, so the sum is not a puzzle.
+        if (t.nextYearSales > 0) Text(InvestTaxes.nextYearNote(t.nextYearSales, year), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         // [INV-35] Why this gain and the 보유 tab's can differ.
         if (t.foreignGain != 0L) Text(InvestTaxes.AVERAGE_VS_FIFO, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -258,3 +306,6 @@ private fun TaxCard(state: InvestState, year: Int) {
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/** [RVK-34] How many figures show before '더 보기'. */
+private const val CORE_FIGURES = 4

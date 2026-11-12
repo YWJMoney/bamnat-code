@@ -19,6 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -68,7 +69,9 @@ class QuickTaskTest {
         assertEquals(8, morning.reminder?.at?.hour)
         val evening = quickMemo("평일마다 8시 출근 도장", QuickDay.READ, ring = true, at1310, com.bamnat.core.memo.MemoTime.Half.PM)!!
         assertEquals(20, evening.reminder?.at?.hour)
-        assertEquals(at1310.toLocalDate(), evening.date)
+        // 2.0.0 [RVI-21] (검토 MEMO-15) 11/7 is a Saturday: a 평일 repeat starts on Monday, not on the weekend it was typed on.
+        assertEquals(java.time.LocalDate.of(2026, 11, 9), evening.date)
+        assertEquals(java.time.LocalDate.of(2026, 11, 9), morning.date)
     }
 
     /** PC c0ca3d9f: '오늘' was picked but the line still said 11/9 21:00, and a time gone today was dropped without a word. */
@@ -123,7 +126,7 @@ class QuickWindowsTest {
     @Test fun oneMoreKeepsTheWindowOpen() {
         val saved = mutableListOf<Pair<String, Boolean>>()
         var closed = false
-        window({ QuickTask("우유 사기", onClose = { closed = true }, onSave = { m, more -> saved += m.title to more }) }) {
+        window({ QuickTask("우유 사기", onClose = { closed = true }, onSave = { m, more, done -> saved += m.title to more; done(true) }) }) {
         compose.onNodeWithText("적고 하나 더").performClick()
         assertEquals(listOf("우유 사기" to true), saved)
         compose.onNodeWithText("적었어요: 우유 사기").assertExists()
@@ -145,7 +148,10 @@ class QuickWindowsTest {
         }
     }
 
-    /** 1.39 [TASK-44] PC 6차: the 일정 창 offers '반복: 안 함·매일·평일·쉬는 날', and the one picked comes back before the save. */
+    /**
+     * 1.39 [TASK-44] PC 6차: the 일정 창 offers a repeat, and the one picked comes back before the save. 2.0.0 [RVI-73] (검토 U07a-07)
+     * It opens the one repeat window, the editor's too: 매일·평일·쉬는 날 and 요일마다·격주·며칠마다 in one list.
+     */
     @Test fun theScheduleWindowOffersARepeat() {
         val picked = mutableListOf<Any>()
         window({
@@ -156,13 +162,19 @@ class QuickWindowsTest {
             )
         }) {
             compose.onNodeWithText("반복").assertExists()
-            compose.onNodeWithText("평일").assertExists()
-            compose.onNodeWithText("쉬는 날").assertExists()
             // 9:24 today is gone: a schedule that does not repeat cannot be saved, a daily one can (it rings tomorrow).
             compose.onNodeWithText("저장", substring = true).assertIsNotEnabled()
+            compose.onNodeWithText("안 함").performClick()
+            compose.onNodeWithText("평일").assertExists()
+            compose.onNodeWithText("쉬는 날").assertExists()
+            compose.onNodeWithText("격주").assertExists()
+            compose.onNodeWithText("며칠마다").assertExists()
             compose.onNodeWithText("매일").performClick()
+            compose.onNodeWithText("다음:", substring = true).assertExists()
+            compose.onNodeWithText("정하기").performClick()
+            compose.onNodeWithText("매일", substring = true).assertExists()
             compose.onNodeWithText("저장", substring = true).performClick()
-            assertEquals(com.bamnat.core.memo.MemoRepeat.Kind.DAY, picked.first())
+            assertEquals(com.bamnat.core.memo.MemoRepeat.code(com.bamnat.core.memo.MemoRepeat.Kind.DAY, java.time.LocalDate.of(2026, 11, 9)), picked.first())
             assertEquals(LocalDateTime.of(2026, 11, 9, 9, 24), (picked[1] as com.bamnat.core.memo.MemoReminder).at)
         }
     }
@@ -170,7 +182,7 @@ class QuickWindowsTest {
     /** PC 7차 c92cec3e: a bare '8시' shows 오전·오후 chips; 오후 picked is what 적기 saves. */
     @Test fun theWindowLetsTheHalfBePicked() {
         val saved = mutableListOf<com.bamnat.core.memo.Memo>()
-        window({ QuickTask("평일마다 8시 출근 도장", onClose = {}, onSave = { m, _ -> saved += m }) }) {
+        window({ QuickTask("평일마다 8시 출근 도장", onClose = {}, onSave = { m, _, done -> saved += m; done(true) }) }) {
             compose.onNodeWithText("오전").assertExists()
             compose.onNodeWithText("오후").performClick()
             compose.onNodeWithText("적기").performClick()
@@ -184,5 +196,26 @@ class QuickWindowsTest {
         window({ MemoLater(java.time.LocalDateTime.of(2026, 11, 12, 14, 0), onClose = {}, onPick = {}) }) {
             compose.onNodeWithText("쉬는 날(11/12) 오후").assertExists()
         }
+    }
+
+    /** 2.0.0 [RVI-43] (검토 MEMO-22) A failed save is not said as 적었어요, the line comes back, and a brush outside keeps it. */
+    @Test fun aFailedSaveKeepsTheLine() {
+        var closed = false
+        window({ QuickTask("우유 사기", onClose = { closed = true }, onSave = { _, _, done -> done(false) }) }) {
+        compose.onNodeWithText("적고 하나 더").performClick()
+        compose.onNodeWithText("적었어요: 우유 사기").assertDoesNotExist()
+        compose.onNodeWithText("우유 사기").assertExists()
+        compose.onNodeWithContentDescription("닫기").performClick()
+        assertFalse(closed)
+        }
+    }
+
+    /** 2.0.0 [RVI-43] A long shared line: its first words the title, the rest the body. */
+    @Test fun aLongLineIsCutIntoTitleAndBody() {
+        val long = "회의에서 정한 것 정리합니다 각자 맡은 부분 초안을 올려 주세요 늦지 않게 부탁드려요 감사합니다"
+        val memo = quickMemo(long, QuickDay.NONE, ring = false, now = java.time.LocalDateTime.of(2026, 11, 12, 9, 0))!!
+        assertTrue(memo.title.length <= QUICK_TITLE)
+        assertTrue(memo.body.isNotBlank())
+        assertEquals(long, memo.title + " " + memo.body)
     }
 }

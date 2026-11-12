@@ -1,6 +1,7 @@
 package com.bamnat.app.screenshots
 
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.test.core.app.ActivityScenario
@@ -134,7 +135,7 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun memoSearchClearsBeforeLeavingTheTab() = open(FOLDED) {
         tab(2, wide = false)
-        typeInto("제목, 내용, #태그 검색", "회식")
+        memoSearch("회식")
         assertTrue(appears("검색어 지우기", exact = true))
         back()
         assertEquals("메모", tabNow())
@@ -261,17 +262,59 @@ class ZScreenshotTest : ScreenshotBase() {
         assertTrue("90분 전 is on 주간: ${day.alarms}", day.alarms.any { it.offsetMinutes == 90 })
     }
 
+    /** Runs TalkBack's one-step action [label] on the wheel that has it, as a finger turning it one row. */
+    private fun Screen.wheelStep(label: String) {
+        val node = nodes(merged = false).firstOrNull { n ->
+            n.config.getOrNull(SemanticsActions.CustomActions).orEmpty().any { it.label == label }
+        } ?: error("‘$label’ 바퀴가 없어요")
+        node.config[SemanticsActions.CustomActions].first { it.label == label }.action()
+        settle()
+    }
+
+    // 1.39.1 [R391-01] 검토 UIX-49: on '시작 기준', the minute wheel kept the minutes of its first frame, so turning the hour
+    // wheel and then the minute wheel saved what the minute wheel alone said (10분 전 → 1시간 10분 → 1시간 9분 saved as 9분).
+    @Test fun bothBeforeWheelsTurnedSaveWhatTheWheelsShow() = shoot("916b_z_alarm_two_wheels", FOLDED) {
+        dayShiftAlarm()
+        tapText("시작 기준", exact = true)
+        assertTrue(appears(Fmt.startOffset(10)))
+        wheelStep("1시간 늘리기")
+        assertTrue(appears(Fmt.startOffset(70)))
+        wheelStep("1분 줄이기")
+        assertTrue(appears(Fmt.startOffset(69)))
+        tapText("추가", exact = true)
+        tapText("저장", exact = true)
+        val day = runBlocking { c.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
+        assertTrue("1시간 9분 전 is on 주간: ${day.alarms}", day.alarms.any { it.offsetMinutes == 69 })
+    }
+
+    // 1.39.1 [R391-10] 검토 UIX-41: 앱 잠금's cover was drawn in the activity, under a 창 left open, which stayed readable on top.
+    @Test fun theLockCoverIsOverAWindowLeftOpen() = shoot("916c_z_lock_over_window", FOLDED) {
+        dayShiftAlarm()
+        assertTrue(appears("시작 기준", exact = true))
+        try {
+            com.bamnat.app.AppLock.lockNow()
+            settle()
+            assertTrue("the cover is the top window", appears("밤낮이 잠겨 있어요"))
+            assertFalse("the alarm window is under it", nodes().any { n ->
+                n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == "시작 기준" }
+            })
+        } finally {
+            com.bamnat.app.AppLock.onConfirmed(true)
+            settle()
+        }
+    }
+
     // ---- 401 [SHFT-09] 근무 종류 삭제 ----
 
     private fun Screen.deleteNight() {
         settingsPage("내 근무")
         tapText("근무 종류와 시간", exact = true)
-        tapText("야간 삭제", exact = true)
+        tapText("야간 지우기", exact = true)
     }
 
     @Test fun deleteAsksWhereTheShiftIsUsed() = shoot("917_z_delete_ask", FOLDED) {
         deleteNight()
-        assertTrue(appears("‘야간’ 근무를 삭제할까요?"))
+        assertTrue(appears("‘야간’ 근무를 지울까요?"))
         assertTrue(appears("근무 주기에 들어 있어요"))
     }
 
@@ -280,7 +323,7 @@ class ZScreenshotTest : ScreenshotBase() {
         val night = before.shiftTypes.first { it.name == "야간" }.id
         deleteNight()
         tapText("주간으로 바꾸기", exact = true)
-        tapText("삭제", exact = true)
+        tapText("지우기", exact = true)
         val gone = runBlocking { c.scheduleRepository.snapshot.first() }
         assertTrue(gone.shiftTypes.none { it.id == night })
         assertTrue("the work order has 주간 where 야간 was", gone.resolver.resolve(today).shiftType != null)
@@ -387,7 +430,7 @@ class ZScreenshotTest : ScreenshotBase() {
             assertFalse("one back on the very first screen does not close the app", scenario.finishing())
             assertTrue(appears("어떤 일을 하고 계신가요?"))
             // [SETUP-17] 1.37: straight to the file chooser (no features pages); closed without a file, the first question stays.
-            tapText("백업이나 회사 파일로 시작할게요", exact = true)
+            tapText("파일로 시작", exact = true)
             assertTrue(appears("어떻게 일하세요?"))
             back()
             assertFalse("one back on the first question does not close the app", scenario.finishing())

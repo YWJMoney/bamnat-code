@@ -111,7 +111,24 @@ class PlazaHomeViewModel(
     private val _seen = MutableStateFlow(0L)
     val seen: StateFlow<Long> = _seen.asStateFlow()
     private fun seenKey() = "seen_${_plan.value.room}"
-    private fun readSeen() { _seen.value = runCatching { ui.getLong(seenKey(), 0L) }.getOrDefault(0L) }
+    private fun readSeen() {
+        _seen.value = runCatching { ui.getLong(seenKey(), 0L) }.getOrDefault(0L)
+        _liftSeen.value = runCatching { ui.getString(liftKey(), null) }.getOrNull()?.split('|')?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+    }
+
+    /**
+     * 2.0.0 [RVN-18] COMP-18 The questions lifted on top here before ([liftedQuestion] leaves them out), as read when the plaza
+     * opened: one lifted now stays for this visit and the next visit brings another. The last [LIFT_KEEP] are kept (device-only).
+     */
+    private val _liftSeen = MutableStateFlow<Set<String>>(emptySet())
+    val liftSeen: StateFlow<Set<String>> = _liftSeen.asStateFlow()
+    private fun liftKey() = "lifted_${_plan.value.room}"
+
+    fun markLifted(id: String) {
+        val key = liftKey()
+        val kept = runCatching { ui.getString(key, null) }.getOrNull()?.split('|')?.filter { it.isNotEmpty() && it != id }.orEmpty()
+        runCatching { ui.edit().putString(key, (kept + id).takeLast(LIFT_KEEP).joinToString("|")).apply() }
+    }
 
     // 1.39 [PLZC-10][PLZC-13][PLZC-03] my tag, the 시간 맞춤 line and older pages (declared before init, which reads them).
     private val _mine = MutableStateFlow<com.bamnat.core.plaza.PlazaTag?>(null)
@@ -124,6 +141,9 @@ class PlazaHomeViewModel(
     val olderMore: StateFlow<Boolean> = _olderMore.asStateFlow()
     private val _loadingOlder = MutableStateFlow(false)
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+    /** 2.0.0 [RVN-18] COMP-16 Why the last 지난 글 더 보기 did not come (said at the list's end with 다시 시도), null when it did. */
+    private val _olderFailed = MutableStateFlow<String?>(null)
+    val olderFailed: StateFlow<String?> = _olderFailed.asStateFlow()
     // [PLZC-22] 선배 답 모음 of this kind of work's plaza.
     private val _picks = MutableStateFlow<List<com.bamnat.app.company.PlazaPick>>(emptyList())
     val picks: StateFlow<List<com.bamnat.app.company.PlazaPick>> = _picks.asStateFlow()
@@ -144,7 +164,7 @@ class PlazaHomeViewModel(
         val p = _plan.value
         _plan.value = if (p.top == StylePlaza.Top.COMPANY_ROOM) StylePlaza.own(style) else StylePlaza.plan(style, company)
         _state.value = State()
-        _older.value = emptyList(); _olderMore.value = true
+        _older.value = emptyList(); _olderMore.value = true; _olderFailed.value = null
         readSeen()
         load()
         refreshMine()
@@ -210,7 +230,10 @@ class PlazaHomeViewModel(
             val next = if (talk.first == null && _state.value.talk != null) _state.value.copy(refreshing = false, stale = true)
                 else stateOf(talk.first, talk.second, r)
             if (!atOnce && talk.first != null) com.bamnat.app.company.NetTimings.end(com.bamnat.app.company.NetTimings.Wait.PLAZA, started)
-            if (_plan.value == p) _state.value = next
+            if (_plan.value == p) {
+                talk.first?.let { fresh -> _older.value = keepBetween(_state.value.talk?.posts.orEmpty(), fresh.posts, _older.value) }
+                _state.value = next
+            }
         }
     }
 
@@ -244,6 +267,7 @@ class PlazaHomeViewModel(
         val oldest = (_state.value.talk?.posts.orEmpty() + _older.value).filter { it.parent == null && !it.id.startsWith("local-") }
             .minOfOrNull { it.at } ?: return
         _loadingOlder.value = true
+        _olderFailed.value = null
         viewModelScope.launch {
             try {
                 val page = c.companyApi.talkBefore(c.companyStore.device, room, oldest)
@@ -251,22 +275,44 @@ class PlazaHomeViewModel(
                     _older.value = (_older.value + page.posts).distinctBy { it.id }
                     _olderMore.value = page.more
                 }
-            } catch (_: CompanyException) {
+            } catch (e: CompanyException) {
+                // 2.0.0 [RVN-18] COMP-16 Before, a failed page said nothing and the button looked as if it did nothing.
+                if (_plan.value.room == room) _olderFailed.value = companyProblem(e)
             } finally {
                 _loadingOlder.value = false
             }
         }
     }
 
-    private companion object {
+    internal companion object {
+        /**
+         * 2.0.0 [RVN-12] COMP-03 After 지난 글 더 보기, a new first page that moved on (new posts on top) no longer holds the old
+         * first page's oldest posts, and [older] starts below them: they went from the screen. Those posts (older than the new
+         * page's oldest, with their answers) go down into [older]; one gone from the server for another reason (newer than that) is
+         * not kept. Nothing changes until older pages were read.
+         */
+        fun keepBetween(before: List<com.bamnat.app.company.TalkPost>, fresh: List<com.bamnat.app.company.TalkPost>,
+            older: List<com.bamnat.app.company.TalkPost>): List<com.bamnat.app.company.TalkPost> {
+            if (older.isEmpty()) return older
+            val ids = fresh.mapTo(HashSet()) { it.id }
+            val newOldest = fresh.filter { it.parent == null && !it.id.startsWith("local-") }.minOfOrNull { it.at } ?: return older
+            val tops = before.filter { it.parent == null && it.id !in ids && !it.id.startsWith("local-") && it.at.isBefore(newOldest) }
+            if (tops.isEmpty()) return older
+            val topIds = tops.mapTo(HashSet()) { it.id }
+            val answers = before.filter { it.parent in topIds && it.id !in ids }
+            return (tops + answers + older).distinctBy { it.id }
+        }
+
         const val STALE_MS = 15_000L
+        const val LIFT_KEEP = 50
     }
 
     /** [PLZC-21] 오늘 출근 [kind] (null takes it back); the room's head line takes the counts that come back. */
     fun checkin(kind: String?) {
         val room = _plan.value.room ?: return
         viewModelScope.launch {
-            val got = try { c.companyApi.plazaCheckin(c.companyStore.device, room, kind) } catch (_: CompanyException) { return@launch }
+            // 2.0.0 [RVN-18] COMP-16 A 오늘 출근 that did not go says why (before, the chip stayed as it was and said nothing).
+            val got = try { c.companyApi.plazaCheckin(c.companyStore.device, room, kind) } catch (e: CompanyException) { return@launch failed(e) }
             val t = _state.value.talk ?: return@launch
             if (_plan.value.room != room) return@launch
             _state.value = _state.value.copy(talk = t.copy(pulse = t.pulse?.copy(checkin = got)))
@@ -276,13 +322,18 @@ class PlazaHomeViewModel(
     /** [PLZC-04] 나도요 (true) on a post on the page, or taken back (null); the count comes back from the server. */
     fun vote(id: String, ok: Boolean?) {
         viewModelScope.launch {
-            val v = try { c.companyApi.postVote(c.companyStore.device, id, ok) } catch (_: CompanyException) { return@launch }
+            val v = try { c.companyApi.postVote(c.companyStore.device, id, ok) } catch (e: CompanyException) { return@launch failed(e) }
             fun List<com.bamnat.app.company.TalkPost>.with() = map {
                 if (it.id == id) it.copy(agree = v.agree, disagree = v.disagree, trust = v.trust, myVote = v.myVote) else it
             }
             _state.value.talk?.let { t -> _state.value = _state.value.copy(talk = t.copy(posts = t.posts.with())) }
             _older.value = _older.value.with()
         }
+    }
+
+    /** 2.0.0 [RVN-18] COMP-16 What a tap that did not go says, on the app's one line at the bottom. */
+    private fun failed(e: CompanyException) {
+        com.bamnat.app.ui.components.AppSnack.show(companyProblem(e), kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
     }
 
     /** The plaza's state from a talk and a company's room: 고친 점 cards and the 근무·급여 정보 lines, worked out off the screen's thread. */
@@ -437,7 +488,8 @@ fun PlazaHomeScreen(
                     PlazaFeed(vm.container, vm, plan, state.talk, state.error,
                         older = vm.older.collectAsStateWithLifecycle().value,
                         olderMore = vm.olderMore.collectAsStateWithLifecycle().value,
-                        loadingOlder = vm.loadingOlder.collectAsStateWithLifecycle().value)
+                        loadingOlder = vm.loadingOlder.collectAsStateWithLifecycle().value,
+                        olderFailed = vm.olderFailed.collectAsStateWithLifecycle().value)
                 } else {
                     if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
                         InfoCard(state, onCompany = { plan.room?.let(onCompany) })
@@ -511,7 +563,7 @@ private fun InfoCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit) {
                 }
             }
             r?.base?.let { b ->
-                Text((if (b.adopted) "채택된 설정" else "확인 중인 설정") + " · 쓰는 분 ${b.uses}명" + (b.version?.let { " · v$it" } ?: ""),
+                Text((if (b.adopted) "채택된 설정" else "확인 중인 설정") + " · 쓰는 분 ${b.uses}명" + (b.version?.let { " · ${it}판" } ?: ""),
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             TextButton(onClick = onCompany) { Text("회사 화면에서 자세히") }

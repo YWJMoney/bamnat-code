@@ -21,8 +21,44 @@ data class PlaySub(
     enum class State { ACTIVE, GRACE, CANCELED, ON_HOLD, PAUSED, EXPIRED, PENDING }
 
     fun entitled(now: Instant): Boolean = when (state) {
-        State.ACTIVE, State.GRACE, State.CANCELED -> expiry == null || now < expiry
+        // 1.39.1 [R391-11] (검토 PRO-08) A subscription set to renew is renewed by Play at [expiry], but the phone learns the new
+        // end only when the app reads its purchases again: a 5시 alarm waking the app the night after a renewal found 프로 gone
+        // and rang without its 끄기 미션. Until [RENEW_LEEWAY] past it, it still counts; one that will not renew ends on time.
+        State.ACTIVE -> expiry == null || now < (if (autoRenew) expiry.plus(RENEW_LEEWAY) else expiry)
+        State.GRACE, State.CANCELED -> expiry == null || now < expiry
         else -> false
+    }
+
+    /** [R200-03] When it stops counting ([entitled] turns false by itself), or null when it does not end by the clock. */
+    fun endsAt(): Instant? = when (state) {
+        State.ACTIVE -> expiry?.let { if (autoRenew) it.plus(RENEW_LEEWAY) else it }
+        State.GRACE, State.CANCELED -> expiry
+        else -> null
+    }
+
+    /**
+     * [R200-03] (검토 PRO-08 넘긴 일) Play's purchases read again in the background, once a day, from [RECHECK_BEFORE] before
+     * [expiry] until [RECHECK_AFTER] past it: a renewal (or a fixed payment) is then known before an alarm asks for 프로,
+     * even when the app is not opened. [checkedAt] is when the phone last read them.
+     */
+    fun recheckDue(now: Instant, checkedAt: Instant): Boolean {
+        if (state !in RECHECKED) return false
+        val end = expiry ?: return false
+        val from = end.minus(RECHECK_BEFORE)
+        if (now.isBefore(from) || now.isAfter(end.plus(RECHECK_AFTER))) return false
+        return checkedAt.isBefore(from) || !now.isBefore(checkedAt.plus(Duration.ofDays(1)))
+    }
+
+    /** [R200-03] Whether the daily look is still wanted at all (it stops itself after [RECHECK_AFTER]). */
+    fun recheckWanted(now: Instant): Boolean = state in RECHECKED && expiry?.plus(RECHECK_AFTER)?.isAfter(now) == true
+
+    companion object {
+        /** 1.39.1 [R391-11] As long as Play's own grace period for a failed renewal (3일). */
+        val RENEW_LEEWAY: Duration = Duration.ofDays(3)
+        val RECHECK_BEFORE: Duration = Duration.ofHours(6)
+        /** Past the leeway and Play's account hold notice, so a late renewal still comes back by itself. */
+        val RECHECK_AFTER: Duration = Duration.ofDays(7)
+        private val RECHECKED = setOf(State.ACTIVE, State.GRACE, State.CANCELED, State.ON_HOLD)
     }
 }
 
@@ -31,7 +67,16 @@ data class AdminLink(val approved: Boolean, val checkedAt: Instant)
 
 /** Why this phone has 프로 now. */
 enum class ProReason(val words: String) {
-    NOT_LAUNCHED("정식 출시 전이라 모든 기능이 무료예요"),
+    /**
+     * 결제가 열리지 않은 휴대폰: 개발용 빌드·로컬 시험 서버(모든 기능을 연 채로 시험, 사용자 2026-11-12 20:32 KST), 관리자가 결제를 잠시 끈 때.
+     * 2.0.0 [RVO-12] (HQ-46) 정식 출시(11-12) 뒤라 '정식 출시 전'이라고 하지 않아요.
+     */
+    ALL_OPEN("지금은 모든 기능이 무료로 열려 있어요"),
+    /**
+     * 2.0.0 [RVO-12] (HQ-46) 처리방침 3.1 보류(9항): 10-27 전에 깔고 3.1에 동의하지 않은 휴대폰은 보류가 끝나는 날까지 모두 무료예요.
+     * 날짜는 [Access.until](보류가 끝나는 날 0시)로 [say]가 붙여요.
+     */
+    HELD("처리방침 3.1 동의 전이라 모든 기능이 무료예요"),
     TRIAL("1개월 무료 체험 중이에요"),
     SUBSCRIPTION("프로를 구독 중이에요"),
     GRACE("결제가 안 됐어요. Play에서 결제 수단을 확인해 주세요"),
@@ -47,7 +92,8 @@ enum class ProReason(val words: String) {
     SHARED("프로를 산 분이 나눠 준 프로예요. 그분이 프로를 쓰는 동안 이어져요"),
     NONE("무료로 쓰고 있어요"),
     /** A tester's preview from the alarm check screen; [ProAccess.resolve] never answers it. */
-    PREVIEW("알람 점검 화면에서 고른 등급으로 미리 보고 있어요"),
+    // 2.0.0 [RVO-01] 미리 보기는 프로 화면 맨 위에도 있어요(알람 점검과 같은 카드).
+    PREVIEW("개발용 미리 보기에서 고른 등급으로 보고 있어요"),
 }
 
 /** Everything that can give this phone 프로, as last known on the phone. */
@@ -70,9 +116,21 @@ data class ProSources(
     val yearPassUntil: Instant? = null,
     /** 1.38 Phase 3 요금: the end of a live 팀·직원 요금제 (subscription or 1년 이용권), which includes 프로. */
     val workUntil: Instant? = null,
+    /** 2.0.0 [RVO-12] (HQ-46) 결제 is off here only because 처리방침 3.1's hold keeps this phone back, until the start of this day. */
+    val heldUntil: Instant? = null,
 )
 
-data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null)
+data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null) {
+    /**
+     * 2.0.0 [RVO-12] The sentence a screen shows for this access: [ProReason.words], and for [ProReason.HELD] the last free day
+     * ('처리방침 3.1 동의 전이라 11월 23일까지 모든 기능이 무료예요').
+     */
+    fun say(zone: ZoneId): String {
+        if (reason != ProReason.HELD || until == null) return reason.words
+        val last = until.atZone(zone).toLocalDate().minusDays(1)
+        return "처리방침 3.1 동의 전이라 ${last.monthValue}월 ${last.dayOfMonth}일까지 모든 기능이 무료예요"
+    }
+}
 
 /**
  * [MON-02] The one answer to "does this phone have 프로": a Play subscription (trial and grace
@@ -84,7 +142,7 @@ object ProAccess {
     val ADMIN_CHECK: Duration = Duration.ofDays(7)
 
     fun resolve(s: ProSources, now: Instant, zone: ZoneId): Access {
-        if (!s.billingLive) return Access(true, ProReason.NOT_LAUNCHED)
+        if (!s.billingLive) return if (s.heldUntil != null) Access(true, ProReason.HELD, s.heldUntil) else Access(true, ProReason.ALL_OPEN)
         s.subscription?.takeIf { it.entitled(now) }?.let { sub ->
             val reason = when {
                 sub.state == PlaySub.State.GRACE -> ProReason.GRACE

@@ -41,7 +41,7 @@ object RecipeLint {
         read.exceptionOrNull()?.let { e ->
             val code = (e as? RecipeException)?.code ?: "format"
             val path = (e as? RecipeException)?.path ?: ""
-            out += Line("read", Level.ERROR, readProblem(code, path), stepOf(path))
+            out += Line("read", Level.ERROR, readProblem(code, path, r), stepOf(path))
         }
         // [STU-25] 1.36 빌드 7: the studio's starting words and an empty 틀 채우기 are not the maker's own words yet.
         out += if (r.summary.isBlank()) Line("summary", Level.WARN, "한 줄 설명을 적으면 목록에서 더 잘 보여요", 4)
@@ -67,7 +67,16 @@ object RecipeLint {
         if (NameSkeleton.mixedScript(r.title + " " + r.summary)) out += Line("script", Level.WARN, "이름에 다른 나라 글자가 섞여 있어요", 3)
         out += if (NameSkeleton.reserved(r.title)) Line("reserved", Level.ERROR, RecipeText.problemText("name_taken"), 3)
             else Line("reserved", Level.OK, "이름이 괜찮아요", 3)
-        similar(r, others)?.let { (title, why) -> out += Line("similar", Level.WARN, "‘$title’와 $why. 그 레시피를 고쳐 만들어도 돼요", 1) }
+        similar(r, others)?.let { (title, why) -> out += Line("similar", Level.WARN, "‘$title’${com.bamnat.core.text.Josa.fit(title, "와")} $why. 그 작품을 고쳐 만들어도 돼요", 1) }
+        // 2.0.0 [RVM-23] RCP-17·STU-19 (보이지 않는 꾸밈 단추, 칸 전체를 덮는 꾸밈 단추가 날짜 누르기를 가로챔): such a 꾸밈 단추 presses nothing
+        // on any phone, and the server refuses it; 고치기 leaves it a picture.
+        r.pieces.firstOrNull { it.kind == PieceKind.DECOR }?.let { p ->
+            DecorTapRule.problem(Decor.of(p.values).items)?.let { (n, why) ->
+                out += Line("decor_tap", Level.ERROR, "누르는 꾸밈 ${n}개가 눌리지 않아요: $why", 1, fix = { rr ->
+                    rr.copy(pieces = rr.pieces.map { if (it.kind == PieceKind.DECOR) it.copy(values = DecorTapRule.cleanValues(it.values)) else it })
+                })
+            }
+        }
         return out
     }
 
@@ -80,7 +89,7 @@ object RecipeLint {
         else -> 4
     }
 
-    private fun readProblem(code: String, path: String): String {
+    private fun readProblem(code: String, path: String, r: Recipe): String {
         val where = when {
             path.startsWith("title") -> "이름"
             path.startsWith("summary") -> "한 줄 설명"
@@ -88,13 +97,18 @@ object RecipeLint {
             path.startsWith("inputs") -> "받는 사람이 정할 칸"
             path.startsWith("tokens") -> "테마 색"
             path.startsWith("pieces") -> "조각"
-            else -> "레시피"
+            else -> "작품"
         }
         return when (code) {
             "text" -> "$where 글자 수를 맞춰 주세요"
-            "too_big" -> "레시피가 너무 커요. 조각을 줄여 주세요"
+            // 2.0.0 [RVS-07] SD-04 ③: by case (용량·조각 수·없음), with how far over, not one line for all.
+            "too_big" -> WorkSize.of(r).overLine ?: "작품이 너무 커요. 조각을 줄여 주세요"
             "range" -> "$where 값이 범위를 넘었어요"
-            "pieces" -> "조각을 하나 이상 골라 주세요"
+            "pieces" -> when {
+                r.pieces.isEmpty() -> "조각을 하나 이상 골라 주세요"
+                r.pieces.size > RecipeCodec.MAX_PIECES -> WorkSize.of(r).overLine!!
+                else -> "같은 조각이 두 번 들어 있어요. 하나만 남겨 주세요"
+            }
             "styles" -> "맞는 일 유형을 골라 주세요"
             "emoji" -> "$where 이모지를 다시 골라 주세요"
             else -> "$where: " + RecipeText.problemText(code)

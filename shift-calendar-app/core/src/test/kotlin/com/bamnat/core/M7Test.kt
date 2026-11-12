@@ -63,8 +63,10 @@ class M7Test {
     fun theOrdinaryPartOfASplitNightIsRegularThenOvertimePastEightHours() {
         val m = PayCalculator().calculate(profile, oct, only(night, hangul)::resolve).minutes.single { it.date == hangul }
         assertEquals(5 * 60, m.holidayWithin8h)
-        assertEquals(7 * 60, m.regular)
-        assertEquals(0, m.overtime)
+        // 2.0.0 [RVJ-02] 검토 PAYC-02: the 5 holiday hours fill the day's 8 hours first, so 3 ordinary hours are regular
+        // and the last 4 are 연장 (the same 12 hours on a weekday are regular 8h + 연장 4h).
+        assertEquals(3 * 60, m.regular)
+        assertEquals(4 * 60, m.overtime)
         assertTrue(m.night > 0)
     }
 

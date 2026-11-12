@@ -1,5 +1,5 @@
 import { SWITCH_FLAGS, flagDef, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
-import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, stmt, versions } from "./index.js";
+import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, sharedCount, stmt, versions } from "./index.js";
 import { SLA_SQL, plainText, readSla } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
 import { WORK_PRODUCTS, phase3Metrics } from "./phase3-metrics.js";
@@ -97,8 +97,15 @@ export async function opsState(env) {
   return { notices, off: forced.filter((r) => SWITCH_FLAGS[r.key] && !(r.until && r.until <= now)).map((r) => SWITCH_FLAGS[r.key]) };
 }
 
-/** [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. */
-export const paused = (env, name) => switchOff(env, name);
+/**
+ * [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. 2.0.0 [RVQ-11] 검토 SRV-13: 광장
+ * 글쓰기 시도는 사본들이 함께 세어(10번에 한 번 D1) 5분 작업이 급증을 봐요(index.js plazaSurge). 세기가 실패해도 쓰기는 그대로.
+ */
+export const paused = async (env, name) => {
+  const off = await switchOff(env, name);
+  if (!off && name === "PLAZA_WRITE") await sharedCount(env, "plazaw", HOUR, Date.now(), 10).catch(() => 0);
+  return off;
+};
 
 export const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
   minApp: n.minApp ?? null, maxApp: n.maxApp ?? null, audience: n.audience ?? null, action: n.action ?? null });
@@ -205,10 +212,13 @@ export const OPS_CALENDAR = [
   [3, "tax-table", "근로소득 간이세액표가 바뀌었으면 remote/v1/taxtable.json 고치기(판 올리고 서명)", "소득세법 시행령 별표 2(2026년 개정은 3월 1일 이후 원천징수분부터)"],
   [3, "privacy-review", "처리방침·데이터 보안 답안을 지금 서버와 대조", "개인정보 보호법 제30조, docs/server-data.md"],
   [3, "incident-drill", "유출 대응 절차서를 한 번 따라 해 보기(연락 순서·공지 문구)", "개인정보 보호법 제34조, docs/incident-response.md"],
+  // 2.0.0 [RVQ-18] 검토 I21b-01·SRV-15: 비밀값 바꾸기 점검과 백업을 손으로 한 번 되살려 보기(매주 자동 연습과 따로).
+  [3, "secret-review", "서버 비밀값을 바꿀지 보기(관리 › 보안 한 장의 바꾼 날). RATE_SALT·SEAL_KEY를 바꾸면 옛 값을 SEAL_KEY_OLD에 두고 다음 백업·되살리기 연습이 맞은 뒤 지우기", "개인정보 보호법 제29조(안전조치의무), docs/incident-response.md"],
   [4, "android-preview", "새 Android 미리보기에서 알람·알림 점검", "Play 대상 API 수준 요건(매년 8월 31일)"],
   [5, "store-listing", "스토어 등록정보·화면 사진이 지금 앱과 맞는지 확인", "Google Play 메타데이터 정책"],
   [6, "pension-prepare", "7월부터 쓰는 국민연금 기준소득월액 상하한 준비", "국민연금법 시행령 제5조"],
   [6, "labor-law-amendment", "2027-06-10 시행 근로기준법 개정(조문 번호 이동, 시간 단위 연차)에 맞춰 앱의 법 조문 글귀와 연차 계산을 확인", "근로기준법 개정(2027-06-10 시행), docs/tracker.csv LEAVE-12"],
+  [6, "backup-restore", "하루 백업 한 날을 내려받아 로컬 서버에 실제로 되살려 보기(tools/backup-open.mjs)", "개인정보 보호법 제29조(안전조치의무), docs/server-data.md 하루 백업"],
   [7, "pension-apply", "국민연금 기준소득월액 상하한을 remote/v1/rates.json에 넣어 7월 급여부터 맞추기(판 올리고 서명)", "국민연금법 시행령 제5조"],
   [8, "minwage-next", "다음 해 최저임금 결정(8월 5일까지)을 앱에 넣을 준비", "최저임금법 제8조 제1항"],
   [8, "target-api", "대상 API 수준 마감(8월 31일) 전에 업데이트 출시", "Google Play 대상 API 수준 요건"],
@@ -312,6 +322,11 @@ export const EVENTS = {
   life_d30: "깐 지 30일째 다시 염",
   life_back7: "7일 넘게 쉬다 다시 염",
   life_back30: "30일 넘게 쉬다 다시 염",
+  // 1.40 [DISC-06] 안 써 본 기능 카드 합계(깃발 stats.disc, 처리방침 3.13 전에는 받지 않아요). 어떤 기능인지는 오지 않아요.
+  disc_shown: "안 써 본 기능 카드 보임",
+  disc_try: "안 써 본 기능 카드 열어 봄",
+  disc_later: "안 써 본 기능 카드 나중에",
+  disc_off: "안 써 본 기능 카드 그만 보기",
 };
 
 export async function usage(request, env) {
@@ -359,16 +374,23 @@ export async function usage(request, env) {
     for (const e of counts.keys()) lately.add(e);
     for (const e of lately) rows.push([d.day, e, counts.has(e) ? 1 : 0, counts.get(e) ?? 0, 1]);
   }
+  // 2.0.0 [RVQ-13] 검토 SRV-21: 깃발 저장소(4문장 묶음)는 이 요청에서 한 번만, 필요할 때 읽어요(전에는 조건마다 따로 최대 4번).
+  let storeRead = null;
+  const store = () => (storeRead ??= flagStore(env));
   // 1.39 [STAT2-02] 처리방침 3.12 시행일(깃발 stats.life) 전에 온 life_*는 버려요.
-  if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await flagStore(env), "stats.life", now).on) {
+  if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await store(), "stats.life", now).on) {
     for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("life_")) rows.splice(i, 1);
+  }
+  // 1.40 [DISC-06] 처리방침 3.13 시행일(깃발 stats.disc) 전에 온 disc_*는 버려요.
+  if (rows.some((r) => r[1].startsWith("disc_")) && !serverEval(await store(), "stats.disc", now).on) {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("disc_")) rows.splice(i, 1);
   }
   const app = body.app;
   if (days.size === 0) return json({ ok: true, skipped });
   // 1.39 [OBS2-08] 유형별 흐름(stats.kind)과 기능과 머묾(stats.keep): 처리방침 3.12 시행일 전에 온 것은 버려요.
   const style = kindOf(body.style);
   const keep = keepRows(body.keep, now);
-  const obsStore = style || keep.length ? await flagStore(env) : null;
+  const obsStore = style || keep.length ? await store() : null;
   const kindRowsIn = style && serverEval(obsStore, "stats.kind", now).on
     ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_"))).map((r) => [r[0], style, r[1]]) : [];
   const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
@@ -390,10 +412,10 @@ export async function usage(request, env) {
   const startupDay = [...days].sort().at(-1);
   // 1.31 [STAT-08] Lookup times only once 처리방침 3.5 is in force (stats.lookup's date); before it they are left out.
   const lookups = lookupRows(body.lookups);
-  const lookupOn = lookups.length > 0 && serverEval(await flagStore(env), "stats.lookup", now).on;
+  const lookupOn = lookups.length > 0 && serverEval(await store(), "stats.lookup", now).on;
   // 1.39 [SETUP-20] 첫 설정 누른 횟수 only once 처리방침 3.12 is in force (stats.setup's date); before it it is left out.
   const setup = setupRows(body.setup);
-  const setupOn = setup.length > 0 && serverEval(await flagStore(env), "stats.setup", now).on;
+  const setupOn = setup.length > 0 && serverEval(await store(), "stats.setup", now).on;
   for (const [kind, step, bucket] of [...startupRows(body.startup), ...(lookupOn ? lookups : []), ...(setupOn ? setup : [])]) {
     stmts.push(stmt(env, `INSERT INTO usage_startup (day, app, kind, step, bucket, phones) VALUES (?, ?, ?, ?, ?, 1)
       ON CONFLICT (day, app, kind, step, bucket) DO UPDATE SET phones = phones + 1`, startupDay, app, kind, step, bucket));

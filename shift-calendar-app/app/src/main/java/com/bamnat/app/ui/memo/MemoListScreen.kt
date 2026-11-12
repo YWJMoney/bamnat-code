@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -41,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.bamnat.app.appContainer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -56,8 +59,9 @@ import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.AddToPhotos
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -71,7 +75,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,7 +82,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,6 +91,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -100,6 +104,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,6 +124,8 @@ import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.color
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,6 +137,7 @@ fun MemoListScreen(
     style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val shiftDays by vm.shiftDays.collectAsStateWithLifecycle()
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
@@ -148,9 +161,18 @@ fun MemoListScreen(
     var arranging by rememberSaveable { mutableStateOf(false) }
     // [DAILY-05] Filter chips fold into the search box's icon unless a filter is on or the user keeps them open.
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
-    val filterOn = state.tag != null ||
+    // 2.0.0 [RVI-77] A '야간 날' chip counts too: the filter icon shows it and the chips stay open while it is on.
+    val filterOn = state.tag != null || state.shift != null ||
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
+    // 2.0.0 [RVIB-20] HQ-86 (조건 1·4·12): the search box waits behind the 🔍 on the head's row; it opens with the keyboard on it and
+    // stays while there are words in it. At 200% on a folded phone the box was a row of its own over the 오늘 묶음 and the tabs, and the
+    // memos began at the bottom of the screen.
+    val searchPart = parts.any { it.part == MemoPart.SEARCH && it.shown }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    val searchShown = searchOpen || query.isNotEmpty()
+    // Back clears the words and folds the box in one go (Z 1.25 U4: back clears a search before leaving the tab).
+    BackHandler(enabled = !state.selecting && (searchOpen || query.isNotEmpty())) { vm.setQuery(""); searchOpen = false; filtersOpen = false }
     val today = Today.date()
     var undo by remember { mutableStateOf<UndoBar?>(null) }
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
@@ -166,10 +188,34 @@ fun MemoListScreen(
             vm.setDone(memo, day, done)
             undo = UndoBar(if (done) "끝냈어요" else "끝냄을 풀었어요", { vm.setDone(memo, day, !done) }, "바꾸기 전으로 돌아왔어요")
         },
+        // 2.0.0 [RVI-74] (검토 U07a-01) A checklist line ticked on the card, with 되돌리기 as 끝냄 has.
+        onCheckItem = { memo, index, checked ->
+            vm.setItemChecked(memo, index, checked)
+            undo = UndoBar(if (checked) "체크했어요" else "체크를 풀었어요", { vm.setItemChecked(memo, index, !checked) }, "바꾸기 전으로 돌아왔어요")
+        },
     )
     androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
+    // 2.0.0 [RVI-80] (검토 U07a-09) '오래된 할 일', from the '오늘' 묶음 or the 할 일 위젯's line.
+    val askOld by MemoLinks.old.collectAsStateWithLifecycle()
+    if (askOld && state.loaded) {
+        val old = state.oldTasks
+        if (old.isEmpty()) androidx.compose.runtime.LaunchedEffect(Unit) { MemoLinks.old.value = false }
+        else OldTasksSheet(
+            old = old,
+            onOpen = { m -> MemoLinks.old.value = false; open(m) },
+            onDone = { m -> actions.onDone?.invoke(m, m.date, true) },
+            onAll = { how ->
+                MemoLinks.old.value = false
+                vm.settleOld(old, how)
+                undo = UndoBar("${old.size}개를 ${how.said}", { vm.restoreOld(old) }, "바꾸기 전으로 돌아왔어요")
+            },
+            onClose = { MemoLinks.old.value = false },
+        )
+    }
 
-    Box(Modifier.fillMaxSize()) {
+    // 2.0.0 [RVP-06] The new-memo button shrinks to its icon while the list scrolls down.
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    Box(Modifier.fillMaxSize().nestedScroll(fab.connection)) {
         Column(Modifier.fillMaxSize()) {
             if (state.selecting) {
                 SelectionBar(
@@ -183,32 +229,56 @@ fun MemoListScreen(
                     onShare = if (state.manyCalendars) ({ sharing = true }) else null,
                 )
             } else {
-                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MEMO) })
+                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MEMO) },
+                    onSearch = if (searchPart && !searchShown) ({ searchOpen = true }) else null, filterOn = filterOn)
             }
             for (p in parts) {
                 if (!p.shown) continue
                 when (p.part) {
-                    MemoPart.NOTEBOOKS -> NotebookBar(state, vm::setNotebook)
-                    MemoPart.SEARCH -> OutlinedTextField(
-                        value = query,
-                        onValueChange = vm::setQuery,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                        placeholder = { Text("제목, 내용, #태그 검색") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
-                        trailingIcon = {
-                            Row {
-                                if (state.query.isNotEmpty()) {
-                                    IconButton(onClick = { vm.setQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") }
-                                }
-                                if (fold) IconButton(onClick = { filtersOpen = !filtersOpen }) {
-                                    Icon(Icons.Filled.FilterList, if (filtersOpen) "필터 접기" else "필터 펼치기",
-                                        tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
-                                }
+                    // 2.0.0 [RVI-77] Not while searching, filtering or picking memos: then the list is what is looked for.
+                    MemoPart.TODAY -> if (state.loaded && !state.selecting && query.isEmpty() && !filterOn) MemoTodayBlock(
+                        rows = state.todayTasks,
+                        onOpen = open,
+                        onDone = { memo, day, done -> actions.onDone?.invoke(memo, day, done) },
+                        onWrite = { text, written ->
+                            vm.addQuick(text) { m ->
+                                written(m != null)
+                                undo = if (m != null) UndoBar(quickWritten(m), { vm.unwrite(m) }, "적은 것을 지웠어요")
+                                    else UndoBar("적지 못했어요. 다시 적어 주세요", null)
                             }
                         },
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.extraLarge,
+                        shifts = shiftDays,
+                        old = state.oldTasks,
+                        onOld = { MemoLinks.old.value = true },
                     )
+                    MemoPart.NOTEBOOKS -> NotebookBar(state, vm::setNotebook)
+                    MemoPart.SEARCH -> if (searchShown) {
+                        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                        // Opened from the 🔍: the keyboard comes up on it, so searching is still one tap and the words.
+                        androidx.compose.runtime.LaunchedEffect(Unit) { if (query.isEmpty()) runCatching { focus.requestFocus() } }
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = vm::setQuery,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).focusRequester(focus),
+                            // 2.0.0 [RVI-64] (디자인 품질 1·12) In the list pane at 200% the hint stood in four lines and pushed the
+                            // memos to the bottom half: it keeps one line (TalkBack still reads all of it).
+                            placeholder = { Text("제목, 내용, #태그 검색", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
+                            trailingIcon = {
+                                Row {
+                                    if (state.query.isNotEmpty()) {
+                                        IconButton(onClick = { vm.setQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") }
+                                    } else IconButton(onClick = { searchOpen = false; filtersOpen = false }) { Icon(Icons.Filled.Close, "검색 닫기") }
+                                    if (fold) IconButton(onClick = { filtersOpen = !filtersOpen }) {
+                                        Icon(Icons.Filled.FilterList, if (filtersOpen) "필터 접기" else "필터 펼치기",
+                                            tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.extraLarge,
+                        )
+                    }
                     MemoPart.FOLD, MemoPart.WEEK -> Unit
                 }
             }
@@ -223,7 +293,7 @@ fun MemoListScreen(
                 }
             }
             // With the search box hidden there is no icon to unfold them, so they stay open.
-            if (!fold || filtersOpen || filterOn || parts.none { it.part == MemoPart.SEARCH && it.shown }) FilterRow(state, vm)
+            if (!fold || filtersOpen || filterOn || !searchPart) FilterRow(state, vm)
             // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
             val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
             val memoView = tabViews.memo
@@ -298,7 +368,7 @@ fun MemoListScreen(
         // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
         undo?.let { (said, back, backSaid) ->
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.inverseSurface,
                 shadowElevation = 4.dp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp).fillMaxWidth()
@@ -322,13 +392,36 @@ fun MemoListScreen(
                 // On the calendar tab a new memo starts on today so it lands in that list.
                 val date = if (state.tab == MemoTab.CALENDAR) today else null
                 // [DAILY-05] One button, then 메모 or 체크리스트 [UX-06]: said in words, a pencil alone was read as "edit".
+                // 2.0.0 [RVI-61] (검토 U07a-04) A tap writes a memo at once (it took a second tap on 메모); a long press offers 체크리스트,
+                // as the editor's ⋮ › 체크리스트로 바꾸기 does.
                 var choosing by remember { mutableStateOf(false) }
                 Box {
-                    ExtendedFloatingActionButton(
-                        onClick = { choosing = true },
-                        icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                        text = { Text("새 메모") },
-                        modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트" },
+                    // 2.0.0 [RVP-06] The shared floating-button rule: words at rest, the icon alone while the list goes down.
+                    // [RVI-61] (검토 U07a-04) One tap starts a memo; held, it asks memo or checklist (it asked on every tap).
+                    com.bamnat.app.ui.components.AddFab(
+                        "새 메모",
+                        onClick = { onNew(false, date) },
+                        open = fab.open,
+                        icon = Icons.Outlined.Edit,
+                        description = if (date != null) "오늘 날짜로 새 메모" else "새 메모",
+                        modifier = Modifier
+                            .pointerInput(Unit) {
+                                // Seen before the button's own tap: held long enough, the menu opens and the tap does not happen.
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                        waitForUpOrCancellation(pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    }
+                                    if (up == null) {
+                                        choosing = true
+                                        do {
+                                            val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                            e.changes.forEach { it.consume() }
+                                        } while (e.changes.any { it.pressed })
+                                    }
+                                }
+                            }
+                            .semantics { onLongClick(label = "체크리스트로 새로 만들기") { choosing = true; true } },
                     )
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         DropdownMenuItem(text = { Text("메모") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
@@ -348,6 +441,8 @@ fun MemoListScreen(
  * on, the filter chips fold into the search box's icon ([DAILY-05], on unless turned off).
  */
 internal enum class MemoPart(val id: String, val label: String, val what: String, val movable: Boolean = true) {
+    /** 2.0.0 [RVI-77] (검토 U07a-02·I07ab-01) 늦음·오늘·고정 and the line to write the next one, first on the tab. */
+    TODAY("today", "오늘 할 일", "늦은 것·오늘·고정을 맨 위에, 동그라미로 끝내고 한 줄로 적기"),
     NOTEBOOKS("notebooks", "공책", "공책을 나눠 쓸 때 위에 고르는 줄"),
     SEARCH("search", "검색 칸", "제목·내용·#태그 찾기"),
     FOLD("fold", "필터는 검색 칸 아이콘으로 접기", "끄면 필터·태그 칩이 늘 펼쳐져 있어요", movable = false),
@@ -399,10 +494,15 @@ internal class CardActions(
     val onChange: (before: Memo, after: Memo, said: String) -> Unit = { _, _, _ -> },
     /** 1.39 [TASK-02] 끝냄 표시 / 풀기 on [day] (a repeating memo's day; the memo's own for one that does not repeat). */
     val onDone: ((memo: Memo, day: java.time.LocalDate?, done: Boolean) -> Unit)? = null,
+    /** 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) Line [index] of a checklist ticked on the card itself; null: the lines are only shown. */
+    val onCheckItem: ((memo: Memo, index: Int, checked: Boolean) -> Unit)? = null,
 )
 
 @Composable
-private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {}) {
+private fun Header(
+    state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {},
+    onSearch: (() -> Unit)? = null, filterOn: Boolean = false,
+) {
     var sortMenu by remember { mutableStateOf(false) }
     // [BLU-05] 1.36 부품 '메모장 머리'(memo.head).
     val head = com.bamnat.app.ui.parts.partStyle("memo.head")
@@ -430,6 +530,11 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
                     }
                 }
             }
+        }
+        // 2.0.0 [RVIB-20] HQ-86 The search box, folded here; a filter on shows on the 🔍 too.
+        if (onSearch != null) IconButton(onClick = onSearch) {
+            Icon(Icons.Filled.Search, contentDescription = if (filterOn) "메모 검색 · 필터 켜짐" else "메모 검색",
+                tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
         }
         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
         IconButton(onClick = onArrange) { Icon(Icons.Outlined.Dashboard, contentDescription = "카드 배치") }
@@ -468,12 +573,12 @@ private fun SelectionBar(
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (i in MemoPaletteLight.indices) {
                             Box(
-                                Modifier
+                                Modifier.minimumInteractiveComponentSize()
                                     .size(30.dp)
                                     .clip(CircleShape)
                                     .background(memoBackground(i))
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                    .clickable {
+                                    .clickable(role = Role.Button) {
                                         palette = false
                                         onColor(i)
                                     },
@@ -491,13 +596,38 @@ private fun SelectionBar(
 /** 1.39 [FLOW-19] 주 띠 (DSG-06): ‹ week › with a dot under each day that has memos; the picked day's line under it with 모두 보기. */
 @Composable
 private fun MemoWeekStrip(state: MemoListState, today: LocalDate, vm: MemoListViewModel) = Column(Modifier.padding(horizontal = 4.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.moveWeek(-1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") }
+    val back = @Composable { IconButton(onClick = { vm.moveWeek(-1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") } }
+    val next = @Composable { IconButton(onClick = { vm.moveWeek(1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") } }
+    val strip = @Composable { m: Modifier ->
         com.bamnat.app.ui.components.WeekStrip(
             days = state.week, selected = state.day ?: LocalDate.MIN, today = today,
-            onPick = vm::pickDay, modifier = Modifier.weight(1f), counts = state.weekCounts, countWord = "메모",
+            onPick = vm::pickDay, modifier = m, counts = state.weekCounts, countWord = "메모",
         )
-        IconButton(onClick = { vm.moveWeek(1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
+    }
+    // 2.0.0 [RVI-64] (디자인 품질 4·12) In the 40% list pane of an unfolded phone at 200% letters seven days and two arrows left a
+    // day about 20dp: the arrows go over the strip with the week's dates between them, and the days get the whole width.
+    val numberStyle = MaterialTheme.typography.titleSmall
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val need = remember(numberStyle, density) { with(density) { measurer.measure("30", numberStyle, maxLines = 1).size.width.toDp() } + 10.dp }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if ((maxWidth - 96.dp) / 7 >= need) {
+            Row(verticalAlignment = Alignment.CenterVertically) { back(); strip(Modifier.weight(1f)); next() }
+        } else Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                back()
+                val first = state.week.firstOrNull()
+                val last = state.week.lastOrNull()
+                Text(when {
+                    first == null || last == null -> ""
+                    first.month == last.month -> "${first.monthValue}/${first.dayOfMonth}~${last.dayOfMonth}"
+                    else -> "${first.monthValue}/${first.dayOfMonth}~${last.monthValue}/${last.dayOfMonth}"
+                }, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                next()
+            }
+            strip(Modifier.fillMaxWidth())
+        }
     }
     state.day?.let { d ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -599,8 +729,10 @@ private fun CalendarMemoList(state: MemoListState, today: LocalDate, actions: Ca
 private fun GeneralMemoGrid(state: MemoListState, actions: CardActions) {
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     LazyVerticalStaggeredGrid(
-        // [FREE-04] The app's own: as many 160dp columns as fit; else the look's.
-        columns = if (look.layout == null) StaggeredGridCells.Adaptive(minSize = 160.dp) else StaggeredGridCells.Fixed(look.columns),
+        // [FREE-04] The app's own: as many 160dp columns as fit; else the look's. 2.0.0 [RVI-48] (디자인 품질 12) 160dp grows with the
+        // text size: at 200% on a folded phone two columns left five letters a line, so it is one column there, two unfolded.
+        columns = if (look.layout == null) StaggeredGridCells.Adaptive(minSize = 160.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 2f))
+            else StaggeredGridCells.Fixed(look.columns),
         modifier = Modifier.fillMaxSize().memoPaper(look),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -640,8 +772,11 @@ private fun DateHeader(date: LocalDate, day: ResolvedDay?, today: LocalDate) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(Fmt.dayTitle(date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        // 2.0.0 [RVI-64] (디자인 품질 12) In the narrow list pane at 200% 'D-5' was cut to 'D-' beside the date: it is its own
+        // piece of its own small row, so it goes under the date when they do not fit side by side.
+        androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(Fmt.dayTitle(date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.CenterVertically).padding(end = 6.dp))
             val days = ChronoUnit.DAYS.between(today, date)
             val badge = when {
                 days == 0L -> "오늘"
@@ -649,11 +784,9 @@ private fun DateHeader(date: LocalDate, day: ResolvedDay?, today: LocalDate) {
                 days in 2..99 -> "D-$days"
                 else -> null
             }
-            if (badge != null) {
-                Spacer(Modifier.width(6.dp))
+            if (badge != null) Box(Modifier.align(Alignment.CenterVertically)) {
                 Pill(badge, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
             }
-            Spacer(Modifier.width(8.dp))
         }
         ShiftLabel(day, Modifier.align(Alignment.CenterVertically))
     }
@@ -749,7 +882,10 @@ internal fun MemoCard(
                 .combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),
         ) {
           androidx.compose.runtime.CompositionLocalProvider(LocalMemoCardLook provides look) {
-            Column(Modifier.padding(start = 14.dp, top = if (look.layout == "compact") 6.dp else 10.dp, bottom = if (look.layout == "compact") 6.dp else 12.dp, end = 4.dp)) {
+            // 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) 끝내기 was ⋮ › 끝냄 표시 (2번): a to-do's card has a circle on its left that
+            // finishes it in one tap, with 되돌리기 (48dp to the finger, its mark where the card's words began).
+            val circle = actions.onDone?.takeIf { !selecting && com.bamnat.core.memo.TaskList.finishable(memo) }
+            Column(Modifier.padding(start = if (circle != null) 2.dp else 14.dp, top = if (look.layout == "compact") 6.dp else 10.dp, bottom = if (look.layout == "compact") 6.dp else 12.dp, end = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (selecting) {
                         Icon(
@@ -759,6 +895,18 @@ internal fun MemoCard(
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(Modifier.width(6.dp))
+                    }
+                    if (circle != null) {
+                        IconButton(
+                            onClick = { circle(memo, doneDay, !done) },
+                            modifier = Modifier.semantics { stateDescription = if (done) "끝냄" else "안 끝냄" },
+                        ) {
+                            Icon(
+                                if (done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                                contentDescription = if (done) "끝냄 풀기" else "끝냄 표시",
+                                tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            )
+                        }
                     }
                     Text(
                         highlighted(memo.title.ifBlank { memo.preview.take(com.bamnat.core.memo.MemoSearch.CARD_CHARS) }, query),
@@ -774,22 +922,24 @@ internal fun MemoCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.title")),
                     )
-                    if (done) {
+                    if (done && circle == null) {
                         Icon(Icons.Filled.CheckCircle, "끝냄", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     if (memo.pinned) {
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     if (!selecting) {
-                        IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.MoreVert, "메모 메뉴", Modifier.size(18.dp))
+                        // 2.0.0 [RVI-48] (검토 MEMO-29) The card's ⋮ is 48dp to the finger (it was 32dp).
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Filled.MoreVert, "메모 메뉴", Modifier.size(20.dp))
                         }
                     } else {
                         Spacer(Modifier.width(10.dp))
                     }
                 }
-                Column(Modifier.padding(end = 10.dp)) {
-                    if (look.layout != "compact") MemoContent(memo, query)
+                // The lines under the title stay where they were (14dp in), so a checklist's boxes line up under the circle.
+                Column(Modifier.padding(start = if (circle != null) 12.dp else 0.dp, end = 10.dp)) {
+                    if (look.layout != "compact") MemoContent(memo, query, actions.onCheckItem?.takeIf { !selecting })
                     // [TAB-01] 1.36 메모 속성: the memo's "칸: 값" lines as pills.
                     if (look.layout != "compact") PropPills(memo, modifier = Modifier.padding(top = 6.dp))
                     Footer(memo, showDate && look.date != false)
@@ -810,9 +960,10 @@ internal fun MemoCard(
                 leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
                 onClick = { menu = false; actions.onTogglePin(memo) },
             )
+            // 2.0.0 [RVI-52] (검토 MEMO-28) The same words as the editor's menu.
             DropdownMenuItem(
-                text = { Text("복제") },
-                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                text = { Text("하나 더 만들기") },
+                leadingIcon = { Icon(Icons.Outlined.AddToPhotos, null) },
                 onClick = { menu = false; actions.onDuplicate(memo) },
             )
             // [TAB-03] PC 확인 bad7d860: '가계부에 넣기' from a card's menu too.
@@ -839,7 +990,7 @@ internal fun MemoCard(
 private val LocalMemoCardLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.MemoLook() }
 
 @Composable
-private fun MemoContent(memo: Memo, query: String) {
+private fun MemoContent(memo: Memo, query: String, onCheck: ((memo: Memo, index: Int, checked: Boolean) -> Unit)? = null) {
     // [MPH-04] 1.38 A memo's photos as small pictures on its card.
     val photos = remember(memo.body) { memo.photos }
     if (photos.isNotEmpty()) MemoPhotoStrip(photos)
@@ -848,16 +999,22 @@ private fun MemoContent(memo: Memo, query: String) {
         // [J135-07] A template's answers kept above the list.
         if (memo.text.isNotBlank()) Text(highlighted(memo.text, query), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-        val items = memo.checklist.filter { it.text.isNotBlank() }
+        // 2.0.0 [RVI-74] (검토 U07a-01) By their place in the whole list, so a tick on the card lands on the right line.
+        val items = memo.checklist.withIndex().filter { it.value.text.isNotBlank() }
         val cardLook = LocalMemoCardLook.current
         val shown = cardLook.lines ?: 6
-        for (item in items.take(shown)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        for ((index, item) in items.take(shown)) {
+            // 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) The card's lines tick without opening the memo: the whole line is the box,
+            // 44dp tall (디자인 품질 9: lines stacked in a card, the width is the whole card).
+            val tick = onCheck?.let { check ->
+                Modifier.heightIn(min = 44.dp).toggleable(value = item.checked, role = androidx.compose.ui.semantics.Role.Checkbox) { check(memo, index, it) }
+            } ?: Modifier.padding(top = 4.dp)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().then(tick)) {
                 Icon(
                     if (item.checked) Icons.Filled.CheckBox else Icons.Filled.CheckBoxOutlineBlank,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(if (onCheck != null) 20.dp else 16.dp),
+                    tint = if (onCheck != null && !item.checked) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -907,6 +1064,9 @@ private fun Footer(memo: Memo, showDate: Boolean) {
     val progress = memo.isChecklist && memo.itemCount > 0
     val reminder = memo.reminder
     if (date == null && tags.isEmpty() && !progress && reminder == null) return
+    // 2.0.0 [RVIB-04] (디자인 품질 13) A schedule told by the work in the kind's words (가게 '영업 시작 1시간 전마다').
+    val container = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val style = remember(reminder?.work) { if (reminder?.work != null) container.settingsRepository.current.workStyle else null }
     Row(
         Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
@@ -929,13 +1089,20 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         }
         // [SCHED-01] A memo that is a schedule says when it rings or notifies.
         if (reminder != null) {
+            // 2.0.0 [RVI-63] (검토 U07a-08) Late, as the 할 일 위젯 counts it (gone past its time and not finished): the card says '늦음' in
+            // the caution colour, not only the widget.
+            val late = remember(memo, Today.date(), Today.dateTime().hour) {
+                com.bamnat.core.memo.TaskList.of(listOf(memo), Today.date()).firstOrNull()?.let { com.bamnat.core.memo.TaskList.overdue(it, Today.dateTime()) } == true
+            }
+            val tone = if (late) com.bamnat.app.ui.theme.Tone.Caution.color() else androidx.compose.material3.LocalContentColor.current
             Row(
                 Modifier.clip(MaterialTheme.shapes.small).background(pillColor).padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp))
+                Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp), tint = tone)
                 Spacer(Modifier.width(3.dp))
-                Text(scheduleText(reminder.at), style = MaterialTheme.typography.labelSmall)
+                // 2.0.0 [RVI-49] (검토 MEMO-11) "매일 오전 9:00", not the first day as if it were past.
+                Text((if (late) "늦음 · " else "") + scheduleLine(memo, reminder, style = style), style = MaterialTheme.typography.labelSmall, color = tone)
             }
         }
         for (tag in tags.take(3)) {
@@ -964,42 +1131,38 @@ private fun Pill(text: String, background: Color, content: Color) {
 
 @Composable
 private fun EmptyMemos(tab: MemoTab, searching: Boolean, style: com.bamnat.core.work.WorkStyle? = null) {
-    Column(
-        Modifier.fillMaxWidth().padding(top = 56.dp, start = 32.dp, end = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            if (tab == MemoTab.CALENDAR) Icons.Filled.Event else Icons.AutoMirrored.Outlined.StickyNote2,
-            contentDescription = null,
-            modifier = Modifier.size(56.dp),
-            tint = MaterialTheme.colorScheme.outline,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            when {
-                searching -> "찾는 메모가 없어요"
-                tab == MemoTab.CALENDAR -> "아직 달력 메모가 없어요"
-                else -> "아직 일반 메모가 없어요"
-            },
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            when {
-                searching -> "검색어나 필터를 바꿔 보세요"
-                // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
-                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 버튼으로 오늘 메모를 남겨 보세요. " + when (style) {
-                    com.bamnat.core.work.WorkStyle.INVEST -> "그날 매매 기록이 함께 보여요."
-                    com.bamnat.core.work.WorkStyle.BUSINESS -> "그날 영업 여부가 함께 보여요."
-                    com.bamnat.core.work.WorkStyle.FIELD -> "그날 일감이 함께 보여요."
-                    else -> "그날 근무가 함께 보여요."
-                }
-                else -> "인수인계, 준비물, 교대 약속처럼 날짜와 상관없는 메모를 적어 두세요. #태그로 묶을 수 있어요."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
+    // 2.0.0 [RVI-70] (PC 통합 1차 PC-65, 디자인 품질 7·16) The empty memo tab was an icon over two paragraphs: it is the shared empty
+    // screen (칸이, one line, the 새 메모 button below starts one). (검토 T07a-07, 디자인 품질 13) The general tab's example was
+    // '인수인계, 준비물, 교대 약속' for every kind of work: each says its own.
+    com.bamnat.app.ui.components.EmptyState(
+        title = when {
+            searching -> "찾는 메모가 없어요"
+            tab == MemoTab.CALENDAR -> "아직 달력 메모가 없어요"
+            else -> "아직 일반 메모가 없어요"
+        },
+        detail = when {
+            searching -> "검색어나 필터를 바꿔 보세요"
+            // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
+            tab == MemoTab.CALENDAR -> "날짜에 남긴 메모는 그날 " + when (style) {
+                com.bamnat.core.work.WorkStyle.INVEST -> "매매 기록과"
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업 여부와"
+                com.bamnat.core.work.WorkStyle.FIELD -> "일감과"
+                else -> "근무와"
+            } + " 함께 보여요"
+            else -> generalExample(style) + "처럼 날짜와 상관없는 메모를 적어 두세요"
+        },
+        modifier = Modifier.padding(top = 32.dp),
+    )
+}
+
+/** 2.0.0 [RVI-70] (검토 T07a-07) What a general memo is for, in each kind of work's own words. */
+internal fun generalExample(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.DAY -> "회의 준비, 할 일, 준비물"
+    com.bamnat.core.work.WorkStyle.HOURLY -> "근무 바꾸기 약속, 준비물, 매장 안내"
+    com.bamnat.core.work.WorkStyle.FIELD -> "자재 목록, 거래처 연락처, 견적 메모"
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "재료 주문, 단골 메모, 가게 할 일"
+    com.bamnat.core.work.WorkStyle.INVEST -> "매매 원칙, 관심 종목, 공부 메모"
+    else -> "인수인계, 준비물, 교대 약속"
 }
 
 /** Highlights every case-insensitive match of each word in [query]. */

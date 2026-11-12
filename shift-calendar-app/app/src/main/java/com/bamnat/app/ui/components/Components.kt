@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.components
 
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.core.model.ShiftIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,9 +63,12 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 fun Long.asColor(): Color = Color(this.toInt())
 
@@ -165,7 +169,7 @@ fun ShiftBadge(
             val density = androidx.compose.ui.platform.LocalDensity.current
             // [RCX-30] 1.35 그림 꾸미기: the kind of day's own picture goes first.
             val pictured = showIcon && (text == null || text == type?.label) &&
-                type?.id?.let { com.bamnat.app.ui.theme.LocalPhotoLook.current.icons[it] } != null
+                type?.id?.let { com.bamnat.app.ui.theme.LocalShiftIcons.current[it] } != null
             if (pictured && com.bamnat.app.ui.theme.ShiftPicture(type?.id, size * 0.62f)) {
                 Spacer(Modifier.width(2.dp))
             } else if (icon != null) {
@@ -268,29 +272,37 @@ fun StatTile(
     caption: String? = null,
     warning: Boolean = false,
     onClick: (() -> Unit)? = null,
+    // 2.0.0 [RVK-25] (검토 MONEY-69, 조건 6) A caption that asks for care ('9일 전 가격') is written in the caution colour while
+    // the tile and its number keep their own colours: [warning] is red, kept for danger.
+    captionTone: Tone = Tone.Plain,
+    // 2.0.0 [RVK-45] (조건 6) A tile that asks for care (약속일 지남, 아직 받을 돈, 남은 돈이 모자람, 현금 부족) in the caution colour,
+    // the same shape as [warning]; [warning] stays for danger.
+    caution: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
-    val bg = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLowest
+    val careInk = MaterialTheme.bamnat.caution
+    val ink = when { warning -> cal.warning; caution -> careInk; else -> null }
+    val bg = when { warning -> cal.warningContainer; caution -> careInk.copy(alpha = 0.12f); else -> MaterialTheme.colorScheme.surfaceContainerLowest }
     Surface(
-        modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick) else Modifier),
+        modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
         color = bg,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (warning) cal.warning.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            ink?.copy(alpha = 0.5f) ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         ),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (warning) {
-                    Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(14.dp))
+                if (ink != null) {
+                    Icon(Icons.Filled.WarningAmber, null, tint = ink, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                 }
                 // Three tiles share the narrow folded screen, so text shrinks instead of being cut off.
                 BasicText(
                     label,
                     style = MaterialTheme.typography.labelMedium.copy(
-                        color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ink ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                     maxLines = 2,
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
@@ -302,7 +314,7 @@ fun StatTile(
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
-                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                    color = ink ?: MaterialTheme.colorScheme.onSurface,
                 ),
                 maxLines = if (big) 2 else 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),
@@ -310,10 +322,14 @@ fun StatTile(
             if (caption != null) {
                 BasicText(
                     caption,
-                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (captionTone == Tone.Plain) MaterialTheme.colorScheme.onSurfaceVariant else captionTone.color(),
+                    ),
                     // [VIS-05] Three lines at a big font: a half-width tile on a 320dp phone cut a caption's last line.
-                    maxLines = if (big) 3 else 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 9.sp, maxFontSize = 11.sp),
+                    // 2.0.0 [RVP-11] (조건 4·12) The caption no longer shrinks to 9sp to stay on one line ('22~06시에 걸침 · 대근 2번
+                    // 포함' on a 393dp phone): from 10sp down it takes a second line.
+                    maxLines = if (big) 3 else 2,
+                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 10.sp, maxFontSize = 11.sp),
                 )
             }
         }

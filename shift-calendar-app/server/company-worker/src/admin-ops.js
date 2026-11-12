@@ -1,9 +1,12 @@
-import { LIMITS, audit, batch, can, json, one, readJson, stmt } from "./index.js";
-import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
+import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, stmt } from "./index.js";
+import { DEV, actorName, devEvent } from "./inquiries.js";
+import { signalsOfDev } from "./observe.js";
+import { ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
 import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
 import { KEEP_SCHEMA, backupTick, keepRoute, requestTick } from "./keep.js";
+import { securityView } from "./security-board.js";
 import { REVIEW_SCHEMA, reviewCounts, reviewRoute, reviewTick } from "./store-reviews.js";
 import { INCIDENT_SCHEMA, incidentBadge, incidentRoute, incidentTick } from "./incident.js";
 import { DAY, HOUR } from "./units.js";
@@ -18,6 +21,7 @@ import { draftStats } from "./claude-drafts.js";
 //   /release(/<v>)                        출시 날 점검표 [ADM3-14]                  운영(ops) 권한
 //   /health/versions, /changes            판 건강·바뀐 일 [ADM3-15·33]              지표 권한
 //   /data-requests, /backup               데이터 요청·백업 [ADM3-16]               최고 관리자
+//   /security                             보안 한 장 [RVQ-18]                       최고 관리자
 //   /reviews                              스토어 리뷰 [ADM3-18]                     문의 권한(Play로 보내기는 주인)
 //   /incident                             사고 모드 [ADM3-32]                       최고 관리자
 //   /cockpit                              Claude 조종석 [ADM3-31]                   문의 권한
@@ -30,8 +34,10 @@ export function opsArea(path) {
   // 1.39 [ADM3-52] 응답 속도는 숫자를 보는 사람·Claude 열쇠도 읽어요(주소·건수·걸린 시간뿐, 개인 정보 없음). 로딩 개선을 숫자로 재려고.
   if (path === "/watch/speed") return "metrics";
   if (path.startsWith("/watch/") || path === "/money" || path.startsWith("/money/") || path === "/data-requests" || path.startsWith("/data-requests/")
-    || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/")) return "owner";
+    || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/") || path === "/security") return "owner";
   if (path === "/person") return "inquiries";
+  // 2.0.0 [RVA-52] 관리자 앱 화면 오류 알리기: 로그인한 누구나(화면 이름·빌드·오류 첫 줄뿐).
+  if (path === "/screen-error") return null;
   if (path === "/release" || path.startsWith("/release/")) return "ops";
   if (path === "/health/versions" || path === "/changes") return "metrics";
   if (path === "/reviews" || path.startsWith("/reviews/")) return "inquiries";
@@ -49,13 +55,15 @@ export const opsSteps = (env, vitals) => [
 ];
 
 /**
- * 배지에 더하는 숫자: index.js BADGE_SQL에 들어가 메뉴 숫자와 같은 한 번의 batch로 읽어요([area, sql], 볼 수 있는 사람에게만).
+ * 배지에 더하는 숫자: index.js BADGE_SQL에 들어가 메뉴 숫자와 같은 한 번의 batch로 읽어요([area, sql, ...묶을 값], 볼 수 있는 사람에게만;
+ * 묶을 값이 함수면 지금 시각 now로 불러요).
  * 사고는 열린 수(맨 위 띠), 데이터 요청은 기한이 이틀 안이거나 넘은 수도 따로.
  */
 export const OPS_BADGE_SQL = {
   errorsNew: ["owner", "SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again')"],
   requestsOpen: ["owner", "SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open'"],
-  requestsLate: ["owner", "SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < (CAST(strftime('%s', 'now') AS INTEGER) + 2 * 86400) * 1000"],
+  // 2.0.0 [RVR-13] (검토 TEST-06) 시각은 SQLite 'now'가 아니라 서버의 Date.now()로 묶어요: 시험 시계(--test-clock)와 같은 시계.
+  requestsLate: ["owner", "SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", (now) => now + 2 * DAY],
   incidentOpen: ["owner", "SELECT COUNT(*) AS n FROM incidents WHERE closed_at IS NULL"],
   reviewsWaiting: ["inquiries", "SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied'"],
   releaseOpen: ["ops", "SELECT COUNT(*) AS n FROM release_runs WHERE done_at IS NULL"],
@@ -67,7 +75,8 @@ export const OPS_BADGE_SQL = {
  */
 export const OPS_ALERT_SQL = (now) => ({
   ops_jobs: ["SELECT step, ok_at, fail_at, error FROM job_runs"],
-  ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ?", now - DAY],
+  // 2.0.0 [RVA-37] 읽지 못한 줄(row/…)은 오늘 맨 위 '읽지 못한 N줄' 카드가 따로 보여요(같은 일을 두 번 세지 않게).
+  ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ? AND route NOT LIKE 'row/%'", now - DAY],
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
   ops_incident: ["SELECT id, signals FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"],
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
@@ -79,6 +88,12 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_owed: ["SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed' AND created_at < ?", now - REWARD_DAYS * DAY],
   ops_idle_admins: ["SELECT COUNT(*) AS n FROM admins WHERE status = 'active' AND COALESCE(last_login, approved_at, created_at) < ?", now - IDLE_ADMIN_DAYS * DAY],
   ops_passkey: ["SELECT COUNT(*) AS n FROM admin_passkeys WHERE admin = 'owner'"],
+  // 2.0.0 [RVQ-05] 검토 SRV-08·U21-05: 최고 관리자의 두 번째 확인(켬)이 있는지.
+  ops_second: ["SELECT COUNT(*) AS n FROM admin_totp WHERE admin = 'owner' AND on_at IS NOT NULL"],
+  // 2.0.0 [RVQ-12] 검토 SVC-07: 오늘 D1 쓰기(UTC 날, D1의 하루)와 정기 작업 한 호출의 질의 수.
+  ops_meter: ["SELECT count FROM counters WHERE key = ?", `meter|${new Date(now).toISOString().slice(0, 10)}`],
+  ops_jobq: ["SELECT value FROM settings WHERE key = 'job_queries'"],
+  ops_sharekv: ["SELECT value FROM settings WHERE key = 'share_kv'"],
 });
 
 /**
@@ -104,7 +119,7 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
     out.push({ key: `incident:${inc.id}`, kind: "incident", tone: "bad", title: "사고가 열려 있어요", meta: first, to: "#/incident" });
   }
   if (got.ops_requests?.[0]?.n) out.push({ key: `requests:${got.ops_requests[0].n}`, kind: "incident", tone: "bad", title: `데이터 요청 ${got.ops_requests[0].n}건 기한 임박·넘김`, meta: "개인정보·환불·법 신고", to: "#/requests" });
-  if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: setup.missing.join(" · "), to: "#/server" });
+  if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: `${setup.names.join(" · ")} · 넣는 곳은 관리 › 서버 상태`, to: "#/server" });
   const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now, env)).filter((j) => j.state === "fail" || j.state === "stale");
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
@@ -119,8 +134,57 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
     meta: owed.since ? `가장 오래된 것 ${Math.floor((now - owed.since) / DAY)}일째` : "", to: "#/rewards" });
   if (got.ops_idle_admins?.[0]?.n) out.push({ key: `idle-admins:${got.ops_idle_admins[0].n}`, kind: "nudge", tone: "warn",
     title: `${IDLE_ADMIN_DAYS}일 넘게 안 쓴 관리자 ${got.ops_idle_admins[0].n}명`, meta: "안 쓰는 계정은 멈춰 두면 안전해요(관리 › 관리자)", to: "#/admins" });
-  if (got.ops_passkey && !got.ops_passkey[0]?.n) out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
-    meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
+  // 2.0.0 [RVQ-05] 검토 SRV-08·U21-05: 최고 관리자는 두 번째 확인이나 패스키 중 하나는 꼭. 둘 다 없으면 비밀번호 하나에 기대니 붉게(맨 위 쪽).
+  const second = Boolean(got.ops_second?.[0]?.n);
+  const passkey = Boolean(got.ops_passkey?.[0]?.n);
+  if (got.ops_second && !second && got.ops_passkey && !passkey) {
+    out.unshift({ key: "owner:single", kind: "incident", tone: "bad", title: "최고 관리자가 비밀번호 하나로만 들어와요",
+      meta: "두 번째 확인이나 패스키 중 하나를 켜요(내 계정). 비밀번호가 새면 바로 들어올 수 있어요", to: "#/account" });
+  } else if (got.ops_passkey && !passkey) {
+    out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
+      meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
+  }
+  // 2.0.0 [RVQ-12] 검토 SVC-07: 요금제의 하루 몫·호출당 질의 상한의 80%를 넘으면(90%에서 덜 중요한 것부터 쉬어요).
+  const plan = cfPlan(env);
+  const used = Number(got.ops_meter?.[0]?.count ?? 0);
+  if (got.ops_meter && used >= plan.d1WritesDay * BUDGET_WARN) {
+    out.push({ key: `budget:d1:${new Date(now).toISOString().slice(0, 10)}`, kind: "spike", tone: "warn",
+      title: `오늘 D1 쓰기가 하루 몫의 ${Math.floor((used / plan.d1WritesDay) * 100)}%예요`,
+      meta: `${plan.name} 하루 몫 ${plan.d1WritesDay.toLocaleString("ko-KR")}번. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요`, to: "#/server" });
+  }
+  // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 공유 서버 KV 오늘 쓰기·읽기가 하루 몫의 80%를 넘으면(정기 작업이 잰 것).
+  let skv = null;
+  try {
+    skv = JSON.parse(got.ops_sharekv?.[0]?.value ?? "null");
+  } catch {
+    skv = null;
+  }
+  if (skv && skv.day === new Date(now + 9 * 3600000).toISOString().slice(0, 10)) {
+    const w = plan.kvWritesDay ? skv.writes / plan.kvWritesDay : 0;
+    const r = plan.kvReadsDay ? skv.reads / plan.kvReadsDay : 0;
+    if (Math.max(w, r) >= BUDGET_WARN) {
+      out.push({ key: `budget:kv:${skv.day}`, kind: "spike", tone: "warn",
+        title: `공유 서버 KV ${w >= r ? "쓰기" : "읽기"}가 하루 몫의 ${Math.floor(Math.max(w, r) * 100)}%예요`,
+        meta: `${plan.name} 하루 몫 쓰기 ${plan.kvWritesDay.toLocaleString("ko-KR")}·읽기 ${plan.kvReadsDay.toLocaleString("ko-KR")}번. 90%면 새 링크부터 내일까지 쉬어요`, to: "#/server" });
+    }
+  }
+  let jobq = {};
+  try {
+    jobq = JSON.parse(got.ops_jobq?.[0]?.value ?? "{}");
+  } catch {
+    jobq = {};
+  }
+  const today = new Date(now).toISOString().slice(0, 10);
+  const heavy = Object.entries(jobq).filter(([, q]) => q?.day === today && Number(q.top ?? q.n) >= plan.queriesPerCall * BUDGET_WARN);
+  if (heavy.length) {
+    out.push({ key: `budget:queries:${heavy.map(([k]) => k).join(",")}`, kind: "incident", tone: "bad",
+      title: `정기 작업 한 번이 D1 질의 ${Math.max(...heavy.map(([, q]) => Number(q.top ?? q.n)))}번을 썼어요`,
+      meta: `상한 ${plan.queriesPerCall}번을 넘으면 그 뒤 단계가 실패해요. 단계를 47분 쪽으로 옮기거나 묶어 읽게 고쳐요`, to: "#/server" });
+  }
+  if (second && env?.ADMIN_2FA_RESET === "1") {
+    out.unshift({ key: "owner:2fa-reset", kind: "incident", tone: "bad", title: "최고 관리자 두 번째 확인이 꺼진 채예요",
+      meta: "Cloudflare의 ADMIN_2FA_RESET이 1이에요. 휴대폰을 찾았으면 지워요", to: "#/account" });
+  }
   return out;
 }
 
@@ -183,6 +247,12 @@ export async function story(env, id) {
     ev.push({ at: h.at, kind: h.action, text: `${what} · ${h.actor}` });
   }
   if (ship) ev.push({ at: ship.at, kind: "ship", text: `${ship.target} 판이 나감` });
+  // 2.0.0 [RVA-54] 검토 I23c-03: 이 개발사항을 만든 개선 신호의 걸음(뜬 날·숫자가 돌아온 날·그대로라 다시 대기열에 온 날)도 한 줄에.
+  for (const s of await signalsOfDev(env, id).catch(() => [])) {
+    if (s.first) ev.push({ at: s.first, kind: "signal", text: `개선 신호가 뜸 · ${String(s.title).slice(0, 60)}` });
+    if (s.cleared) ev.push({ at: s.cleared, kind: "back", text: `숫자가 돌아옴 · ${s.value ?? "—"}${s.unit ?? ""} → ${s.after ?? "—"}${s.unit ?? ""}` });
+    if (s.stuck && s.prevDev === id) ev.push({ at: s.stuck, kind: "stuck", text: "닿고 2주가 지나도 숫자가 그대로라 신호가 다시 대기열에" });
+  }
   ev.sort((a, b) => a.at - b.at);
   return { id: item.id, title: item.title, status: item.status, releasedIn: item.released_in, events: ev,
     days: ev.length ? Math.round(((ev.at(-1).at - ev[0].at) / DAY) * 10) / 10 : 0 };
@@ -212,6 +282,16 @@ export async function morningExtra(env, now = Date.now()) {
 export async function opsRoute(request, env, url, path, method, now, vitals) {
   const actor = env.actor;
   if (path === "/watch/health" && method === "GET") return json(await healthBoard(env, now));
+  // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱이 화면 오류·빈 화면을 알려요. 한 관리자가 한 시간에 30번까지(그 뒤는 조용히 버려요).
+  if (path === "/screen-error" && method === "POST") {
+    const body = await readJson(request, 2048);
+    const hour = Math.floor(now / HOUR);
+    const n = await one(env, `INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2) ON CONFLICT (key) DO UPDATE SET count = count + 1 RETURNING count`,
+      `screenerr|${actor?.id ?? "?"}|${hour}`, (hour + 2) * HOUR).catch(() => null);
+    if ((n?.count ?? 1) > SCREEN_ERROR.perHour) return json({ ok: false, limited: true }, 202);
+    await recordScreenError(env, { screen: body?.screen, where: body?.where, kind: body?.kind, message: body?.message }, now, body?.build);
+    return json({ ok: true }, 202);
+  }
   if (path === "/watch/speed" && method === "GET") return json(await speedState(env, now, Math.min(168, Number(url.searchParams.get("hours")) || 24)));
   if (path === "/watch/errors" && method === "GET") return json(await errorState(env, now, { status: url.searchParams.get("status") ?? "open" }));
   let m = path.match(/^\/watch\/errors\/([a-z0-9]{1,13})$/);
@@ -220,6 +300,31 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     if (!(await setErrorState(env, m[1], body?.status, body?.note, now))) return json({ error: "not_found" }, 404);
     await audit(env, now, "error_state", m[1], `${body?.status ?? ""} ${String(body?.note ?? "").slice(0, 80)}`);
     return json({ ok: true });
+  }
+  // 2.0.0 [RVA-37] 검토 I24c-01: 오늘의 '읽지 못한 줄' 카드에서 [개발사항으로] 한 번에. 묶음은 '보는 중'이 되고 메모에 개발사항 번호가 남아요.
+  m = path.match(/^\/watch\/errors\/([a-z0-9]{1,13})\/dev$/);
+  if (m && method === "POST") {
+    const g = await one(env, "SELECT * FROM error_groups WHERE sig = ?", m[1]);
+    if (!g) return json({ error: "not_found" }, 404);
+    const done = /^개발사항 (d[A-Za-z0-9]{15})/.exec(g.note ?? "");
+    if (done) return json({ error: "already", dev: done[1] }, 409);
+    const [, where = "", key = ""] = String(g.route).startsWith("row/") ? String(g.route).split("/") : [];
+    const place = where ? `읽지 못한 줄(${ROW_WHERE[where] ?? where})` : `서버 오류 ${g.route}`;
+    const title = `${place}: ${g.message}`.slice(0, DEV.title);
+    const text = [`오류 묶음 ${g.sig} · ${g.total}번 · 처음 ${new Date(g.first_at).toISOString().slice(0, 16)}Z`, key ? `원인 줄 ${key}` : "", g.message, g.sample ?? ""]
+      .filter(Boolean).join("\n").slice(0, DEV.body);
+    const id = `d${randomId(15)}`;
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, actor.id, actorName(env), now, now),
+      devEvent(env, id, now, "create", { title, from: "오류 묶음" }),
+      // 같은 줄을 다른 곳(장부·정리함)에서 읽다 난 묶음도 같은 개발사항으로.
+      key ? stmt(env, "UPDATE error_groups SET status = 'seen', note = ?, seen_at = ? WHERE sig = ? OR (route LIKE 'row/%' AND route LIKE ?)",
+        `개발사항 ${id}`, now, g.sig, `%/${key}`)
+        : stmt(env, "UPDATE error_groups SET status = 'seen', note = ?, seen_at = ? WHERE sig = ?", `개발사항 ${id}`, now, g.sig),
+    ]);
+    await audit(env, now, "error_dev", title.slice(0, 80), id);
+    return json({ ok: true, dev: id }, 201);
   }
   if (path === "/money" && method === "GET") return json(await moneyBoard(env, now, url.searchParams.get("days")));
   if (path === "/money/prices" && method === "POST") return savePriceTable(request, env, now);
@@ -244,6 +349,8 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     const r = await keepRoute(request, env, url, path, method, now);
     if (r) return r;
   }
+  // 2.0.0 [RVQ-18] 검토 I21b-01: 보안 한 장.
+  if (path === "/security" && method === "GET") return json(await securityView(env, now));
   if (path === "/reviews" || path.startsWith("/reviews/")) {
     const r = await reviewRoute(request, env, url, path, method, now);
     if (r) return r;

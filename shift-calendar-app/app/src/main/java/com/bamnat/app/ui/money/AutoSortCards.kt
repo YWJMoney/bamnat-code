@@ -47,6 +47,7 @@ import com.bamnat.core.money.CaptureFilter
 import com.bamnat.core.money.OtherPlaces
 import com.bamnat.core.money.PaymentParser
 import com.bamnat.core.money.RepeatFinder
+import androidx.compose.ui.semantics.Role
 
 /**
  * [LEDG-21] The rules 자동 기록 sorts by: those learned when the user moved a place, and those
@@ -78,7 +79,7 @@ fun CategoryRulesDialog(
                     Text("아직 규칙이 없어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 8.dp))
                 }
                 rules.entries.sortedBy { it.key.removePrefix(PaymentParser.CONTAINS) }.forEach { (m, c) ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { editing = m to c }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { editing = m to c }, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(ruleLabel(m), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("→ $c", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -129,7 +130,7 @@ private fun RuleEditor(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedTextField(value = word, onValueChange = { word = it.replace("*", "") }, singleLine = true,
                     label = { Text(if (contains) "이 말이 들어가면" else "가게 이름") }, modifier = Modifier.fillMaxWidth())
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { contains = !contains }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { contains = !contains }, verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = contains, onCheckedChange = { contains = it })
                     Text("이름 어디에든 이 말이 있으면", style = MaterialTheme.typography.bodyMedium)
                 }
@@ -141,13 +142,13 @@ private fun RuleEditor(
                 val key = if (contains) PaymentParser.CONTAINS + clean else clean
                 val changes = remember(key, category, entries) { com.bamnat.core.money.LedgerSmarts.ruleWouldChange(entries, key, category) }
                 if (changes.isNotEmpty()) {
-                    Text("지난 거래 ${changes.size}건이 ‘$category’(으)로 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    Text("지난 거래 ${changes.size}건이 ‘$category’${com.bamnat.app.ui.Fmt.ro(category)} 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     changes.take(5).forEach { e ->
                         Text("${e.date.monthValue}/${e.date.dayOfMonth} ${e.title} · ${com.bamnat.app.ui.Fmt.won(e.amount)} · ${e.category} → $category",
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (changes.size > 5) Text("외 ${changes.size - 5}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { past = !past }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { past = !past }, verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = past, onCheckedChange = { past = it })
                         Text("지난 거래도 같이 바꾸기", style = MaterialTheme.typography.bodyMedium)
                     }
@@ -238,12 +239,12 @@ fun OtherPlacesCard(groups: List<OtherPlaces.Group>, categories: List<String>, o
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val choices = categories.filter { it != com.bamnat.core.money.MoneyCategories.OTHER }
     SectionCard(title = "기타로 남은 곳 ${groups.size}곳") {
-        Text("가게를 눌러 분류를 고르면 그곳 기록이 모두 옮겨지고 다음부터 그 분류로 적어요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVK-29] (검토 HQ-44 같은 모양) Said in full once, then one line with ⓘ ([Explain]).
+        com.bamnat.app.ui.components.Explain("money.otherPlaces", "가게를 눌러 분류를 고르면 그곳 기록이 모두 옮겨지고 다음부터 그 분류로 적어요.")
         groups.take(5).forEach { g ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { open = if (open == g.place) null else g.place },
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(g.place, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 2.0.0 [RVK-23]·HQ-30 name and amount, the name never cut at large text.
+            NameAndAmount({ Text(g.place, style = MaterialTheme.typography.bodyMedium) },
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open = if (open == g.place) null else g.place }) {
                 Text("${g.entries.size}건 · ${Fmt.won(g.total)}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -265,8 +266,8 @@ fun OtherPlacesCard(groups: List<OtherPlaces.Group>, categories: List<String>, o
 fun RepeatSuggestCard(suggestions: List<RepeatFinder.Suggestion>, onAdd: (RepeatFinder.Suggestion) -> Unit, onNo: (RepeatFinder.Suggestion) -> Unit) {
     if (suggestions.isEmpty()) return
     SectionCard(title = "매달 나가는 돈 같아요") {
-        Text("반복으로 등록하면 나가기 사흘 전과 당일에 알려 주고, 곧 나갈 돈에 들어가요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [RVK-29] As above.
+        com.bamnat.app.ui.components.Explain("money.repeatSuggest", "반복으로 등록하면 나가기 사흘 전과 당일에 알려 주고, 곧 나갈 돈에 들어가요.")
         suggestions.forEach { s ->
             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

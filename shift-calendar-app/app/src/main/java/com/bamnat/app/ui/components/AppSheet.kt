@@ -61,6 +61,8 @@ fun AppSheet(
         kotlinx.coroutines.delay(800)
         if (!sheetState.isVisible && sheetState.targetValue == androidx.compose.material3.SheetValue.Hidden) runCatching { sheetState.show() }
     }
+    // 1.39.1 [R391-10] Opened while 앱 잠금 holds, the cover comes back over it.
+    StaysUnderTheLock()
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         // [J133-49] 1.33 (중간 빌드 확인: 끝까지 펼친 시트의 X가 상태줄 밑에 그려져 눌리지 않았어요): a sheet stops under the status
@@ -109,13 +111,9 @@ fun GuardedSheet(
 ) {
     var asking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val keep by androidx.compose.runtime.rememberUpdatedState(unsaved)
-    if (asking) AlertDialog(
-        onDismissRequest = { asking = false },
-        title = { androidx.compose.material3.Text("적은 내용을 버릴까요?") },
-        text = { androidx.compose.material3.Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = { asking = false; onDismissRequest() }) { androidx.compose.material3.Text("버리기") } },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { androidx.compose.material3.Text("계속 적기") } },
-    )
+    // 2.0.0 [RVP-24] 뿌리 고침 3: the app's one ask before typed words go (DiscardAsk); typed and unsaved counts as writing (Busy).
+    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismissRequest() })
+    Busy.Writing(unsaved)
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
     })

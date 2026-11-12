@@ -35,7 +35,10 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
     val open = gate.allows(Feature.SURE_ALARM)
     val shake = remember { hasMotionSensor(context) }
     val missions = AlarmMission.entries.filter { it != AlarmMission.SHAKE || shake }
-    var perShift by rememberSaveable { mutableStateOf(settings.shiftMissions.isNotEmpty()) }
+    // [R200-01] Each calendar's kinds of day have their own missions; the shown calendar's are listed here.
+    val cal by vm.activeCalendar.collectAsStateWithLifecycle()
+    val mine = remember(settings.shiftMissions, cal) { com.bamnat.core.model.ShiftRef.of(settings.shiftMissions, cal) }
+    var perShift by rememberSaveable(cal) { mutableStateOf(mine.isNotEmpty()) }
     // [ALRM-04] 증명 사진 needs a reference photo first; picking it without one asks for the photo.
     val photos = remember { context.appContainer.photoReferences }
     val references by photos.all.collectAsStateWithLifecycle()
@@ -67,17 +70,24 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
         }
         if (ringing.isNotEmpty()) {
             HorizontalDivider()
-            SwitchRow("근무마다 다르게", "예: 야간 뒤 아침 근무만 계산 문제", perShift || settings.shiftMissions.isNotEmpty()) { on ->
+            // 2.0.0 [RVH-41] 검토 T30-85: the example in the kind's own days.
+            SwitchRow("근무마다 다르게", when (settings.workStyle) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "예: 이른 오픈 날만 계산 문제"
+                com.bamnat.core.work.WorkStyle.FIELD -> "예: 새벽 일정만 계산 문제"
+                com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "예: 이른 출근 날만 계산 문제"
+                else -> "예: 야간 뒤 아침 근무만 계산 문제"
+            }, perShift || mine.isNotEmpty()) { on ->
                 if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) { openPro(com.bamnat.app.tier.Feature.SURE_ALARM); return@SwitchRow }
                 perShift = on
-                if (!on) vm.update { it.copy(shiftMissions = emptyMap()) }
+                if (!on) vm.update { it.copy(shiftMissions = com.bamnat.core.model.ShiftRef.without(it.shiftMissions, cal)) }
             }
-            if (open && (perShift || settings.shiftMissions.isNotEmpty())) {
+            if (open && (perShift || mine.isNotEmpty())) {
                 for (t in ringing) {
-                    val own = settings.shiftMissions[t.id]?.let(AlarmMission::of)
+                    val own = mine[t.id]?.let(AlarmMission::of)
                     ChoiceRow<AlarmMission?>(t.name, null,
                         listOf<Pair<AlarmMission?, String>>(null to "위와 같게") + missions.map { it to it.label }, own) { m ->
-                        pick(m) { vm.update { s -> s.copy(shiftMissions = if (m == null) s.shiftMissions - t.id else s.shiftMissions + (t.id to m.key)) } }
+                        val key = com.bamnat.core.model.ShiftRef.key(cal, t.id)
+                        pick(m) { vm.update { s -> s.copy(shiftMissions = if (m == null) s.shiftMissions - key else s.shiftMissions + (key to m.key)) } }
                     }
                 }
             }

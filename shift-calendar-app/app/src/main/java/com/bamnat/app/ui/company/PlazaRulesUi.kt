@@ -153,7 +153,7 @@ fun RulesLink(modifier: Modifier = Modifier) {
         modifier = modifier.heightIn(min = 48.dp)) { Text("운영 규칙 보기") }
 }
 
-/** [COMM-09] Asks before hiding a writer; the list can be undone in 내 활동 > 가린 사람. */
+/** [COMM-09] Asks before hiding a writer; the list can be undone in 내 활동 › 안 보는 사람 (마을 › 팔로잉 › 차단). */
 @Composable
 fun HideWriterDialog(post: TalkPost?, onDismiss: () -> Unit, onHide: (TalkPost) -> Unit) {
     val p = post ?: return
@@ -168,6 +168,48 @@ fun HideWriterDialog(post: TalkPost?, onDismiss: () -> Unit, onHide: (TalkPost) 
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
+
+/** 2.0.0 [RVN-06][U10a-06] What one 신고 says on the app's line: it went, and where its outcome comes. */
+const val FLAGGED = "신고했어요 · 결과는 밤낮 소식으로 알려 드려요"
+
+/**
+ * [COMM-06] 신고 with a reason, the same in the talk sheet and on 광장's own cards (2.0.0 [RVN-06] COMP-01, 지난 글 too). 2.0.0 COMP-10
+ * 성적인 내용·불법은 their own reasons, as 마을 돌봄 handles them first (CARE_SEVERE); [invest] adds 종목 추천·리딩.
+ */
+@Composable
+fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFlag: (TalkPost, String) -> Unit) {
+    val p = post ?: return
+    // 2.0.0 [RVN-13] HQ-39 Nothing picked first: each reason is handled its own way (개인 정보 is hidden at once), so 신고하기 waits
+    // until one is chosen rather than sending the first one unread.
+    var reason by remember(p.id) { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("이 글을 신고할까요?") },
+        text = {
+            // At 200% text the reasons scroll inside the dialog rather than push its buttons away.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                FLAG_REASONS.filter { (key, _) -> key != "advice" || invest }.forEach { (key, label) ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = reason == key, role = Role.RadioButton) { reason = key },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(selected = reason == key, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Text("서로 다른 세 분이 신고하면 운영자가 확인할 때까지 가려져요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { reason?.let { onDismiss(); onFlag(p, it) } }, enabled = reason != null) { Text("신고하기") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/** The reasons a post can be reported for, as the server keeps them (FLAGS). */
+internal val FLAG_REASONS = listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "sexual" to "성적인 내용", "illegal" to "불법·위험한 내용",
+    "spam" to "광고·도배", "false" to "일부러 틀린 정보", "advice" to "종목 추천·리딩")
 
 /**
  * [VIL-02] 1.36 마을 V2 차단 하나로: opens 마을 › 팔로잉 › 차단, where 광장에서 가린 분 and 장터·프로필에서 차단한 분 are one list.
@@ -216,12 +258,12 @@ fun PlazaPhoneSettings() {
                 modifier = Modifier.heightIn(min = 48.dp)) { Text("휴대폰 알림 설정에서 ‘밤낮 소식’ 보기") }
         }
         val openBlocked = LocalOpenBlocked.current
-        Text("가린 사람 ${hidden.writers.size}", style = MaterialTheme.typography.titleSmall)
-        Text(if (hidden.writers.isEmpty()) "토론 글의 ⋮ > 이 사람 글 안 보기로 가린 분은 장터·프로필에서 차단한 분과 한 목록에 모여요. 가린 분은 이 휴대폰에만 남아요."
+        Text("${com.bamnat.core.plaza.PlazaWords.HIDDEN} ${hidden.writers.size}", style = MaterialTheme.typography.titleSmall)
+        Text(if (hidden.writers.isEmpty()) "글의 ⋮ › 이 사람 글 안 보기로 고른 분은 장터·프로필에서 차단한 분과 한 목록(마을 › 팔로잉 › 차단)에 모여요. 이 휴대폰에만 남아요."
             else hidden.writers.take(3).joinToString(" · ") { it.label } + if (hidden.writers.size > 3) " 외 ${hidden.writers.size - 3}명" else "",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (openBlocked != null) {
-            OutlinedButton(onClick = openBlocked, modifier = Modifier.heightIn(min = 48.dp)) { Text("가린 분·차단한 분 보기") }
+            OutlinedButton(onClick = openBlocked, modifier = Modifier.heightIn(min = 48.dp)) { Text("안 보는 사람·차단한 분 보기") }
         } else hidden.writers.forEach { w ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(w.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))

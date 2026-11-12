@@ -75,6 +75,25 @@ object NightPalette {
         surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF17100D),
         outline = androidx.compose.ui.graphics.Color(0xFF8F7A70),
         outlineVariant = androidx.compose.ui.graphics.Color(0xFF4A3B34),
+        // 2.0.0 [RVP-14] (검토 UIX-05) Every role the screens use, warm too: left out, Material's own lavender and pink came through
+        // on cards (secondaryContainer), chips (tertiary), errors and the cards' own ground (surfaceContainerLowest).
+        secondaryContainer = androidx.compose.ui.graphics.Color(0xFF3A2A22),
+        onSecondaryContainer = androidx.compose.ui.graphics.Color(0xFFF2D5C6),
+        tertiary = androidx.compose.ui.graphics.Color(0xFFE8C08A),
+        onTertiary = androidx.compose.ui.graphics.Color(0xFF3A2600),
+        tertiaryContainer = androidx.compose.ui.graphics.Color(0xFF4A3618),
+        onTertiaryContainer = androidx.compose.ui.graphics.Color(0xFFFFDDB0),
+        error = androidx.compose.ui.graphics.Color(0xFFFF9A8A),
+        onError = androidx.compose.ui.graphics.Color(0xFF4A0E06),
+        errorContainer = androidx.compose.ui.graphics.Color(0xFF5A1E16),
+        onErrorContainer = androidx.compose.ui.graphics.Color(0xFFFFDAD3),
+        surfaceContainerLowest = androidx.compose.ui.graphics.Color(0xFF0D0807),
+        surfaceBright = androidx.compose.ui.graphics.Color(0xFF3A2E29),
+        surfaceDim = androidx.compose.ui.graphics.Color(0xFF120C0A),
+        surfaceTint = androidx.compose.ui.graphics.Color(0xFFFFB38A),
+        inverseSurface = androidx.compose.ui.graphics.Color(0xFFEAD9D0),
+        inverseOnSurface = androidx.compose.ui.graphics.Color(0xFF2E221D),
+        inversePrimary = androidx.compose.ui.graphics.Color(0xFF8A4A26),
     )
 
     /** Whether [now] is in the night hours the sleep screen goes dark for (1.39: [com.bamnat.core.design.NightRule.screen]). */
@@ -140,8 +159,15 @@ fun rememberAppNight(settings: com.bamnat.app.data.AppSettings, container: AppCo
 fun NightSurface(night: Boolean, content: @Composable () -> Unit) {
     NightBars(night, androidx.compose.material3.MaterialTheme.colorScheme.background.luminance() > 0.5f)
     if (!night) return content()
-    androidx.compose.material3.MaterialTheme(colorScheme = NightPalette.scheme, typography = androidx.compose.material3.MaterialTheme.typography,
-        shapes = androidx.compose.material3.MaterialTheme.shapes, content = content)
+    // 2.0.0 [RVP-14] (검토 UIX-05) The calendar's and the meaning colours go dark with it: a light phone's warning and income inks
+    // sat on the near-black ground at about 3.5:1.
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalCalendarColors provides DarkCalendarColors,
+        LocalBamnatColors provides BamnatColors.Dark,
+    ) {
+        androidx.compose.material3.MaterialTheme(colorScheme = NightPalette.scheme, typography = androidx.compose.material3.MaterialTheme.typography,
+            shapes = androidx.compose.material3.MaterialTheme.shapes, content = content)
+    }
 }
 
 /**

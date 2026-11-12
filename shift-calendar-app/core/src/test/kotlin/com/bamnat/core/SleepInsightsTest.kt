@@ -141,4 +141,15 @@ class SleepInsightsTest {
         val left = com.bamnat.core.sleep.SleepUnlocks.of(full, answeredMornings = 5, style = null).map { it.key }
         assertTrue("groups" !in left && "causes" !in left)
     }
+
+    /** 2.0.0 [RVI-71] (검토 U03-05) '깼어요' after a short sleep says why there is no 아침 한 장; never '0시간 잤어요'. */
+    @Test fun aShortSleepSaysWhy() {
+        // 2.0.0 [RVIB-14] (PC-124) Within minutes it is not kept at all.
+        assertEquals("1분 만에 깨서 잠으로 남기지 않았어요", SleepInsights.wokeLine(0))
+        assertEquals("19분 만에 깨서 잠으로 남기지 않았어요", SleepInsights.wokeLine(19))
+        assertEquals("20분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요", SleepInsights.wokeLine(20))
+        assertEquals("40분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요", SleepInsights.wokeLine(40))
+        assertEquals("7시간 30분 잤어요", SleepInsights.wokeLine(450))
+        assertTrue(SleepInsights.wokeLine(17 * 60).startsWith("16시간이 넘게"))
+    }
 }

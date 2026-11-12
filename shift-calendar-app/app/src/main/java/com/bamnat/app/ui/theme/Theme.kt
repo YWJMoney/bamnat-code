@@ -17,6 +17,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -211,6 +212,9 @@ val LocalCalendarLook = staticCompositionLocalOf { CalendarLook() }
 /** [RCX-30] 1.35 그림 꾸미기, as the settings keep it (pictures by id, drawn from files/looks/). */
 val LocalPhotoLook = staticCompositionLocalOf { com.bamnat.core.recipe.PhotoLook() }
 
+/** [R200-01] The pictures of the shown calendar's kinds of day, by shift id ([com.bamnat.core.recipe.PhotoLook.icons] is by calendar). */
+val LocalShiftIcons = staticCompositionLocalOf { emptyMap<Long, String>() }
+
 /**
  * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
  * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions
@@ -305,12 +309,24 @@ fun BamnatTheme(
     // worn 테마's own font was drawn as the closest phone font until it was picked in an editor), and the parts are read again once they are.
     val partFonts = androidx.compose.runtime.remember(raw) { raw.lines.mapNotNull { it["font"] as? String }.filter { AppFonts.downloads(it) }.distinct() }
     val fontsCame = partFonts.count { AppFonts.loads[it] == AppFonts.Load.READY }
-    if (partFonts.isNotEmpty()) {
+    // 2.0.0 [RVM-21] MKT-32 While a theme is tried on the real app (LiveTryOn): its fonts are card fonts from our public files, the whole
+    // font (Google Fonts) comes only with 입기.
+    val cardFonts = LocalCardFonts.current
+    if (partFonts.isNotEmpty() && cardFonts == null) {
         val ctx = LocalContext.current
         androidx.compose.runtime.LaunchedEffect(partFonts) { partFonts.forEach { AppFonts.start(ctx, it) } }
     }
-    val parts = androidx.compose.runtime.remember(raw, dark, fontsCame) { raw.forDark(dark).let { if (fontsCame > 0) com.bamnat.core.recipe.Blueprint(it.lines) else it } }
-    CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
+    val parts = androidx.compose.runtime.remember(raw, dark, fontsCame, cardFonts) {
+        raw.forDark(dark).let {
+            when {
+                !cardFonts.isNullOrEmpty() -> com.bamnat.core.recipe.Blueprint(com.bamnat.app.ui.recipe.MarketFonts.lines(it.lines, cardFonts))
+                fontsCame > 0 -> com.bamnat.core.recipe.Blueprint(it.lines)
+                else -> it
+            }
+        }
+    }
+    // 2.0.0 [RVP-14] (검토 UIX-05) 밤 색 over the whole app takes the dark calendar colours too, whatever the phone's own theme.
+    CompositionLocalProvider(LocalCalendarColors provides if (dark || night) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
         val base = androidx.compose.ui.platform.LocalDensity.current
@@ -331,7 +347,11 @@ fun BamnatTheme(
                 typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
                 shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
             ) {
-                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts,
+                // 2.0.0 [RVS-06] 그릴 때 지키는 바닥선: every part as this screen draws it (letters that read, a tab bar that is seen), the
+                // look's own values kept as set ([com.bamnat.core.recipe.PartFloor]).
+                val screenArgb = MaterialTheme.colorScheme.background.toArgb().toLong() and 0xFFFFFFFFL
+                val shown = androidx.compose.runtime.remember(parts, screenArgb) { parts.floored(screenArgb) }
+                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides shown,
                     com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, content = content)
             }
         }

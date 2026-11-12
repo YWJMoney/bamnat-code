@@ -37,6 +37,11 @@ object NoticeLinks {
         SHARE,
         /** [UX-03] The calendar with the sheet that takes a received link open. */
         RECEIVE,
+        /**
+         * 2.0.0 [RVG-34] 내 달력 with the calendar chip's list (달력 이름 ▾) open, from the 알림함's '팀 근무표' line: on a phone the 팀 리더's
+         * link waits there, not beside the chip.
+         */
+        CALENDARS,
         /** [SHFT-06] 듀티표 사진으로 넣기, for the calendar on screen. */
         DUTY_ROSTER,
         /** [SHFT-07] 연간 건강 지표. */
@@ -65,6 +70,11 @@ object NoticeLinks {
         VILLAGE_POSTS,
         /** [TOWN-01] 1.37 마을 › 장터, from a 소식 that says only what came new in 장터. */
         MARKET,
+        /**
+         * 2.0.0 [RVP-43] One work of 장터 by its code in [payload], from the 알림함 ('부탁하신 꾸미기가 풀렸어요', U13b-10; a reaction to
+         * one's own work, HQ-52).
+         */
+        RECIPE,
         /** [GUIDE-20] 1.31: 회사 찾기, from the first week's 시작 단계 card. */
         COMPANY_FIND,
         /** [INQ-05] 문의하기 on 내 문의, from 밤낮 소식's answer line. */
@@ -126,9 +136,31 @@ object NoticeLinks {
     /** [INV-08] What [target] opens on, when a notice says: an investor alarm's id for [Target.INVEST_TRADE]. */
     val payload: StateFlow<String?> = _payload.asStateFlow()
 
+    private const val KEY_EXTRA = "com.bamnat.app.extra.KEY"
+
+    /**
+     * 2.0.0 [RVL-08] (검토 DATA-03) A value only this app knows (made once on this phone, kept in no-backup storage): each notice, widget
+     * and tile carries it, and [read] follows only an intent that does. [MainActivity] is the launcher, so any app on the phone can
+     * start it with extras of its own; without this one, another app could open the pay or money screen, or start 밤 소리 측정 (the
+     * microphone) through the bedtime notice's 측정 시작, with nobody pressing anything.
+     */
+    @Volatile private var key: String? = null
+
+    internal fun key(context: Context): String = key ?: synchronized(this) {
+        key ?: run {
+            val f = java.io.File(context.applicationContext.noBackupFilesDir, "notice_key")
+            val kept = runCatching { f.readText().trim() }.getOrNull()?.takeIf { it.matches(KEY_FORM) }
+            kept ?: java.security.SecureRandom().let { r -> ByteArray(16).also(r::nextBytes) }.joinToString("") { "%02x".format(it) }
+                .also { made -> runCatching { f.parentFile?.mkdirs(); f.writeText(made) } }
+        }.also { key = it }
+    }
+
+    private val KEY_FORM = Regex("[0-9a-f]{32}")
+
     /** Opens the app on [target], or brings it forward there; the screen underneath is not stacked again. */
     fun intent(context: Context, target: Target, calendar: String? = null, payload: String? = null): Intent = Intent(context, MainActivity::class.java)
         .putExtra(EXTRA, target.name)
+        .putExtra(KEY_EXTRA, key(context))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         .apply {
             if (payload != null) {
@@ -143,9 +175,18 @@ object NoticeLinks {
         }
 
     /** Reads a target off an intent; true when there was one. */
-    fun read(intent: Intent?): Boolean {
+    fun read(context: Context, intent: Intent?): Boolean {
         // Reopened from Recents, Android hands back the intent the app was first opened with: it was followed then.
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return false
+        // 2.0.0 [RVL-08] An intent that does not carry this app's own value was not made by it: the app opens as from its icon.
+        val own = runCatching { intent.getStringExtra(KEY_EXTRA) }.getOrNull()
+        intent.removeExtra(KEY_EXTRA)
+        if (!follows(own, key(context))) {
+            intent.removeExtra(EXTRA)
+            intent.removeExtra(CALENDAR_EXTRA)
+            intent.removeExtra(PAYLOAD_EXTRA)
+            return false
+        }
         val target = intent.getStringExtra(EXTRA)?.let { n -> Target.entries.firstOrNull { it.name == n } } ?: return false
         intent.removeExtra(EXTRA)
         _calendar.value = intent.getStringExtra(CALENDAR_EXTRA)
@@ -169,7 +210,33 @@ object NoticeLinks {
     /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
     const val ON_SCREEN = "on_screen"
 
+    /**
+     * 2.0.0 [RVIB-19] (PC-150) A [payload] for TODAY from an alarm ('끄고 오늘 보기', the card after an alarm): where 오늘의 흐름 is not on the
+     * page (달력만 크게 보기), today's own day opens. Other ways to today (도움말 '달력 열기', 받은 근무표 알림) keep the calendar as it is.
+     */
+    const val TODAY_DAY = "today_day"
+
+    /** 2.0.0 [RVL-08] An intent's value against this phone's, compared in constant time. */
+    internal fun follows(carried: String?, own: String): Boolean =
+        carried != null && java.security.MessageDigest.isEqual(carried.toByteArray(), own.toByteArray())
+
+    /**
+     * Done with [target]. 2.0.0 [RVP-26] (검토 UIX-48) Its [payload] and [calendar] go with it: they stayed, and the next screen to read
+     * them (같이 보는 근무 opened from the 나 메뉴) started on a widget's old date. Read them before this, or [hand] them to the screen.
+     */
     fun consume(target: Target) {
-        _target.compareAndSet(target, null)
+        if (_target.compareAndSet(target, null)) {
+            _payload.value = null
+            _calendar.value = null
+        }
     }
+
+    private val handed = java.util.concurrent.ConcurrentHashMap<Target, String>()
+
+    /** 2.0.0 [RVP-26] A value for the screen [target] opens, taken once by that screen ([takeHanded]) however it is drawn. */
+    fun hand(target: Target, value: String?) {
+        if (value == null) handed.remove(target) else handed[target] = value
+    }
+
+    fun takeHanded(target: Target): String? = handed.remove(target)
 }

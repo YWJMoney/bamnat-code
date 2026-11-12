@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,6 +59,7 @@ import com.bamnat.core.plaza.FactGroup
 import com.bamnat.core.plaza.SetupCompare
 import com.bamnat.core.plaza.SetupEdit
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 /*
  * [PLAZA-02] 1.25 묶음 X (계획/1.25-X-개발계획.md 386, U2): a company's rule set compared item by item, and
@@ -79,7 +81,7 @@ fun CompareRows(rows: List<CompareRow>, beforeName: String, afterName: String) {
         }
         if (kept.isNotEmpty()) {
             Row(
-                Modifier.fillMaxWidth().clickable { same = !same }.padding(vertical = 6.dp),
+                Modifier.fillMaxWidth().clickable(role = Role.Button) { same = !same }.padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(if (same) "같은 곳 접기" else "같은 곳 ${kept.size}가지 보기", style = MaterialTheme.typography.labelLarge,
@@ -230,14 +232,14 @@ fun DiffEditorSheet(
                     label = { Text("왜 다른지 (선택)") }, placeholder = { Text("예: 10월부터 주간이 한 시간 줄었어요") },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("보내면 토론에 ‘고치자는 제안’으로 올라가요. 같은 부서 분들이 맞아요를 누르면 이 설정이 다음 버전이 돼요.",
+                Text("보내면 토론에 ‘고치자는 제안’으로 올라가요. 같은 부서 분들이 맞아요를 누르면 이 설정이 다음 판이 돼요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp)) }
             // [PROP-03] 1.30 BC: the user's own pay follows what they said, sent or not (a refused post never blocks the pay).
             if (alsoMine && changed.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Checkbox) { takeMine = !takeMine }.padding(top = 4.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) { takeMine = !takeMine }.padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.Checkbox(checked = takeMine, onCheckedChange = { takeMine = it })
@@ -248,7 +250,8 @@ fun DiffEditorSheet(
                 onClick = {
                     if (alsoMine && takeMine) {
                         val text = e.text
-                        scope.launch {
+                        // 2.0.0 [RVN-18] COMP-22-7 saved on the app's own scope: closing the sheet does not cut it.
+                        c.appScope.launch {
                             val n = runCatching { mineScope.share.takeEdited(base, text) }.getOrDefault(0)
                             c.telemetry.event("plaza_diff", if (n > 0) "mine_taken" else "mine_same")
                         }
@@ -503,8 +506,11 @@ private fun AllowanceEditor(e: SetupEdit, a: SetupEdit.Allowance, amounts: Boole
     }
 }
 
-/** [ITEM-10] The usual allowance names, a tap each; anything else is typed. */
-private val USUAL_ITEMS = listOf("식대", "교통비", "근속수당", "자격수당", "직책수당", "위험수당", "교대수당", "기본급2", "위험예지")
+/**
+ * [ITEM-10] The usual allowance names, a tap each; anything else is typed. 2.0.0 [RVN-18] 검토 COMP-22-8: names any workplace has
+ * (before, "기본급2" and "위험예지" were one company's own).
+ */
+private val USUAL_ITEMS = listOf("식대", "교통비", "근속수당", "자격수당", "직책수당", "위험수당", "교대수당", "가족수당", "야간근무수당")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

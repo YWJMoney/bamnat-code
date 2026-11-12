@@ -64,6 +64,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** [COMN-01] A month of every calendar's work: each day's pieces of work and the days where two calendars clash. */
 private class CombinedMonth(val spans: Map<LocalDate, List<WorkSpan>>, val clashes: List<Pair<WorkSpan, WorkSpan>>) {
@@ -163,7 +164,8 @@ private fun Grid(month: YearMonth, weekStart: DayOfWeek, m: CombinedMonth, calen
     val lead = (month.atDay(1).dayOfWeek.value - weekStart.value + 7) % 7
     val cells = lead + month.lengthOfMonth()
     val rows = (cells + 6) / 7
-    val today = Today.date()
+    // 2.0.0 [RVH-19] 검토 CAL-24: today moves on at midnight, as the calendar's does.
+    val today = rememberToday()
     Row(Modifier.fillMaxWidth()) {
         (0 until 7).forEach { i ->
             val dow = weekStart.plus(i.toLong())
@@ -190,13 +192,14 @@ private fun Grid(month: YearMonth, weekStart: DayOfWeek, m: CombinedMonth, calen
                     if (clash) append(", 시간이 겹쳐요")
                 }
                 Column(
-                    Modifier.weight(1f).heightIn(min = 64.dp).clip(RoundedCornerShape(8.dp))
+                    Modifier.weight(1f).heightIn(min = 64.dp).clip(MaterialTheme.shapes.small)
                         .background(if (date == today) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable { onPick(date) }.semantics { contentDescription = said }.padding(3.dp),
+                        .clickable(role = Role.Button) { onPick(date) }.semantics { contentDescription = said }.padding(3.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("$n", style = MaterialTheme.typography.labelMedium.merge(NumberStyle))
+                        // [RVH-19] Sundays and 공휴일 in red, Saturdays in blue, as on the calendar.
+                        Text("$n", style = MaterialTheme.typography.labelMedium.merge(NumberStyle), color = dayNumberColor(date))
                         if (clash) Box(Modifier.padding(start = 2.dp).size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
                     }
                     Spacer(Modifier.height(4.dp))
@@ -218,7 +221,7 @@ private fun DaySheet(day: LocalDate, m: CombinedMonth, calendars: List<PersonalC
         Text(Fmt.dayTitle(day), style = MaterialTheme.typography.titleLarge)
         if (clashes.isNotEmpty()) {
             val names = { s: WorkSpan -> calendars.firstOrNull { it.id == s.calendar }?.name.orEmpty() }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp)) {
+            Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp)) {
                 Text("시간이 겹쳐요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                 clashes.forEach { (a, b) ->
                     Text("${names(a)} ${a.label} ${timeOf(a)} · ${names(b)} ${b.label} ${timeOf(b)}",

@@ -67,10 +67,19 @@ object ReceiptFiles {
             val bmp = context.contentResolver.openInputStream(uri)?.use {
                 BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
             } ?: return@runCatching null
+            // 2.0.0 [RVK-43] (검토 MONEY-06) A photo the camera kept lying down with an EXIF turn is saved upright, as 메모 사진
+            // and 근무표 사진 are (the JPEG written here has no EXIF left to say so).
+            val orientation = runCatching {
+                context.contentResolver.openInputStream(uri)?.use {
+                    android.media.ExifInterface(it).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+                }
+            }.getOrNull() ?: android.media.ExifInterface.ORIENTATION_NORMAL
+            val upright = com.bamnat.app.imports.ImagePrep.upright(orientation)
+                ?.let { m -> Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true).also { if (it !== bmp) bmp.recycle() } } ?: bmp
             val name = UUID.randomUUID().toString() + ".jpg"
             val out = File(dir(context).apply { mkdirs() }, name)
-            out.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-            bmp.recycle()
+            out.outputStream().use { upright.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            upright.recycle()
             name
         }.getOrNull()
     }
@@ -78,6 +87,30 @@ object ReceiptFiles {
     fun delete(context: Context, name: String) {
         file(context, name)?.delete()
     }
+
+    /** 2.0.0 [RVK-11] A photo picked but not saved, changed or taken off stays this long, for 되돌리기 and a sheet still open. */
+    private const val SWEEP_AFTER_MILLIS = 2 * 24 * 60 * 60 * 1000L
+
+    /**
+     * 2.0.0 [RVK-11] (검토 MONEY-05·I06aa-08) Deletes the receipt photos that none of [used] names — every calendar's lines and
+     * the lines kept in 최근 지운 기록 — once they are two days old, so a receipt the user took off or deleted (카드 번호 일부·가게·
+     * 시간) does not stay on the phone and in its backups. How many went.
+     */
+    fun sweep(context: Context, used: Set<String>, now: Long = com.bamnat.core.time.Today.millis()): Int = sweep(dir(context), used, now)
+
+    internal fun sweep(dir: File, used: Set<String>, now: Long): Int {
+        var n = 0
+        for (f in dir.listFiles().orEmpty()) {
+            if (!f.isFile || f.name in used) continue
+            if (now - f.lastModified() < SWEEP_AFTER_MILLIS) continue
+            if (f.delete()) n++
+        }
+        return n
+    }
+
+    /** [RVK-11] The receipt names the lines of one database hold. */
+    fun usedBy(db: androidx.sqlite.db.SupportSQLiteDatabase): Set<String> =
+        db.query("SELECT receipt FROM money_entries WHERE receipt != ''").use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
 
     /** A small picture of the receipt for the editor. */
     suspend fun thumbnail(context: Context, name: String, side: Int = 240): ImageBitmap? = withContext(Dispatchers.IO) {
@@ -155,7 +188,9 @@ fun ReceiptScanChip(onRead: (com.bamnat.core.money.ReceiptReader.Draft, String) 
                 val name = ReceiptFiles.import(context, uri)
                 val file = name?.let { ReceiptFiles.file(context, it) }
                 if (name == null || file == null) { onMessage("사진을 읽지 못했어요"); return@launch }
+                // 2.0.0 [RVL-31] (검토 SCAN-03) Leaving the screen stops the reading; that is not a reading that failed.
                 val result = runCatching { com.bamnat.app.pay.PayslipScanner.read(context, Uri.fromFile(file)) }
+                (result.exceptionOrNull() as? kotlinx.coroutines.CancellationException)?.let { throw it }
                 val text = result.getOrNull().orEmpty()
                 val notReady = result.exceptionOrNull() as? com.bamnat.app.pay.OcrModel.NotReady
                 val draft = com.bamnat.core.money.ReceiptReader.read(text, Today.date())

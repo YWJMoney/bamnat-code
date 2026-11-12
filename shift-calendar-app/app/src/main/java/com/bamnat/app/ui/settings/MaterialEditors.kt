@@ -95,7 +95,7 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
     val accent = scheme.primary.toArgb().toLong() and 0xFFFFFFFFL
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(56.dp, 40.dp).clip(RoundedCornerShape(8.dp)).border(1.dp, scheme.outlineVariant, RoundedCornerShape(8.dp))
+            Box(Modifier.size(56.dp, 40.dp).clip(MaterialTheme.shapes.small).border(1.dp, scheme.outlineVariant, MaterialTheme.shapes.small)
                 .fillWith(value).semantics { contentDescription = "$label 미리 보기: ${fillSummary(value)}" })
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -109,8 +109,8 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
             Fill.PRESETS.forEach { (name, f) ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "$name 채우기") { onChange(f) }
                     .semantics { selected = value == f }) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp))
-                        .border(if (value == f) 3.dp else 1.dp, if (value == f) scheme.primary else scheme.outlineVariant, RoundedCornerShape(10.dp)).fillWith(f))
+                    Box(Modifier.size(44.dp).clip(MaterialTheme.shapes.small)
+                        .border(if (value == f) 3.dp else 1.dp, if (value == f) scheme.primary else scheme.outlineVariant, MaterialTheme.shapes.small).fillWith(f))
                     Text(name, fontSize = 11.sp)
                 }
             }
@@ -134,8 +134,8 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
                         val f = value.copy(kind = k)
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "무늬 ${Fill.PATTERN_NAMES[k]}") { onChange(f) }
                             .semantics { selected = k == value.kind }) {
-                            Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
-                                .border(if (k == value.kind) 3.dp else 1.dp, if (k == value.kind) scheme.primary else scheme.outlineVariant, RoundedCornerShape(8.dp)).fillWith(f))
+                            Box(Modifier.size(38.dp).clip(MaterialTheme.shapes.small)
+                                .border(if (k == value.kind) 3.dp else 1.dp, if (k == value.kind) scheme.primary else scheme.outlineVariant, MaterialTheme.shapes.small).fillWith(f))
                             Text(Fill.PATTERN_NAMES[k] ?: k, fontSize = 10.sp)
                         }
                     }
@@ -153,8 +153,8 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
                         val f = value.copy(kind = k)
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "질감 ${Fill.TEXTURE_NAMES[k]}") { onChange(f) }
                             .semantics { selected = k == value.kind }) {
-                            Box(Modifier.size(38.dp).clip(RoundedCornerShape(8.dp))
-                                .border(if (k == value.kind) 3.dp else 1.dp, if (k == value.kind) scheme.primary else scheme.outlineVariant, RoundedCornerShape(8.dp)).fillWith(f))
+                            Box(Modifier.size(38.dp).clip(MaterialTheme.shapes.small)
+                                .border(if (k == value.kind) 3.dp else 1.dp, if (k == value.kind) scheme.primary else scheme.outlineVariant, MaterialTheme.shapes.small).fillWith(f))
                             Text(Fill.TEXTURE_NAMES[k] ?: k, fontSize = 10.sp)
                         }
                     }
@@ -175,8 +175,8 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
                         val f = value.copy(kind = k)
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "${Fill.SHADER_NAMES[k]}") { onChange(f) }
                             .semantics { selected = k == value.kind }) {
-                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(8.dp))
-                                .border(if (k == value.kind) 3.dp else 1.dp, if (k == value.kind) scheme.primary else scheme.outlineVariant, RoundedCornerShape(8.dp)).fillWith(f))
+                            Box(Modifier.size(44.dp).clip(MaterialTheme.shapes.small)
+                                .border(if (k == value.kind) 3.dp else 1.dp, if (k == value.kind) scheme.primary else scheme.outlineVariant, MaterialTheme.shapes.small).fillWith(f))
                             Text(Fill.SHADER_NAMES[k] ?: k, fontSize = 10.sp)
                         }
                     }
@@ -403,12 +403,21 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, focusNo
         }
     }
     val flashColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f * flash.value)
-    Row(Modifier.fillMaxWidth().onSizeChanged { rowSize = it }.bringIntoViewRequester(bring).background(flashColor, MaterialTheme.shapes.small)
-        .clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    // 2.0.0 [RVS-16] (총괄 #495, 조건 12) The same name line as 색 고르기: with big text on a narrow phone the name and sample have their own line.
+    com.bamnat.app.ui.components.NameLine(
+        modifier = Modifier.fillMaxWidth().onSizeChanged { rowSize = it }.bringIntoViewRequester(bring).background(flashColor, MaterialTheme.shapes.small)
+            .clickable(onClickLabel = "$label 고르기") { open = true },
+        name = {
+            Column {
+                Text(label, style = MaterialTheme.typography.bodyMedium)
+                Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+        widest = {
+            Text(name, style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = {}) { Text("처음대로") }
+        },
+    ) {
         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }
@@ -507,7 +516,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
         when (val r = UserFonts.add(ctx, uri, name)) {
             is UserFonts.Result.Added -> {
                 mine = UserFonts.list(ctx); stamp++
-                problem = if (r.font.sold) "‘${r.font.name}’ 글꼴은 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(레시피와 함께 나눌 수 없어요)" else null
+                problem = if (r.font.sold) "‘${r.font.name}’ 글꼴은 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(작품과 함께 나눌 수 없어요)" else null
                 note = if (!r.font.hangul) (FontCatalog.byId(r.font.fallback)?.name ?: "기본 글꼴").let { like ->
                     "‘${r.font.name}’ 글꼴에는 한글이 없어요. 숫자·영문만 이 글꼴로, 한글은 $like${com.bamnat.app.ui.Fmt.ro(like)} 보여요" } else null
             }
@@ -549,7 +558,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                                     Text("+ 내 글꼴 넣기")
                                 }
                             }
-                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 레시피와 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요",
+                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 작품과 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요. 구글 자동 백업에는 들어가지 않아요(폰 옮기기에는 들어가요)", // 2.0.0 [RVP-73] REST-15
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         items(mine.filter { hit(it.name) }, key = { it.id + stamp }) { f ->
@@ -558,7 +567,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (f.received) {
                                     // [MAT-06] A font that came with a recipe: its sender said it is open; 신고 if it is not.
-                                    Text("레시피와 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    Text("작품과 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     TextButton(onClick = { reportOf = f }) { Text("신고") }
                                 } else if (f.sold) {
                                     // PC 확인 6차: told when it goes in, not only after 올리기.
@@ -627,7 +636,7 @@ private fun FontLine(id: String, name: String, note: String, on: Boolean, onPick
     // [MAT-05] PC 확인 1차: until an open font has come down, its line shows the sample drawn in it ahead of time.
     val picture = remember(id) { AppFonts.sampleImage(ctx, id) }.takeIf { it != 0 && AppFonts.loads[id] != AppFonts.Load.READY }
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "$name 쓰기") { onPick(id) }
-        .border(if (on) 2.dp else 0.dp, if (on) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+        .border(if (on) 2.dp else 0.dp, if (on) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.shapes.small)
         .padding(8.dp).semantics { selected = on }) {
         if (picture != null) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(picture), contentDescription = "$name 견본: $sample",
             modifier = Modifier.heightIn(min = 26.dp, max = 26.dp), contentScale = androidx.compose.ui.layout.ContentScale.FillHeight, alignment = Alignment.CenterStart,

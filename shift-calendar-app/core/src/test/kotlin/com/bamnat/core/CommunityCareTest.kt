@@ -35,11 +35,20 @@ class CommunityCareTest {
         assertTrue(CommunityCare.holdBody(h.copy(appeal = ""), 48, seoul).contains("읽고 있어요"))
         assertTrue(CommunityCare.holdBody(h.copy(scope = "community"), 48, seoul).contains("좋아요·투표"))
         assertEquals("🌙 11월 10일까지 마을 쓰기를 쉬어 가요", CommunityCare.holdLine(h.copy(scope = "community"), seoul))
+        // 2.0.0 [RVN-18] COMP-58 조사 fitted to the reason, and 당분간 without a number of days (before: "일 동안").
+        assertTrue(body, body.contains("‘광고나 같은 글 되풀이’를 운영자가 확인해 3일 동안"))
+        val sexual = CommunityCare.holdBody(h.copy(reason = "sexual", days = null), 48, seoul)
+        assertTrue(sexual, sexual.contains("‘성적인 내용’을 운영자가 확인해 당분간 의견 쓰기를") && !sexual.contains(" 일 동안"))
+        assertTrue(CommunityCare.warningBody(CareNote("c4", "sexual")).contains("‘성적인 내용’으로 신고된"))
+        assertTrue(CommunityCare.warningBody(CareNote("c5", "false")).contains("‘사실과 다른 정보’로 신고된"))
     }
 
     @Test fun mutedNewsAndAppealWords() {
-        assertTrue(CommunityCare.mutedText(until, seoul).startsWith("11월 10일까지"))
-        assertEquals("운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요", CommunityCare.mutedText(null))
+        // 2.0.0 [RVN-18] COMP-19 one line everywhere: why, until when (when known), where to read why and explain.
+        assertEquals("운영 원칙을 지키지 않은 글이 있어 11월 10일까지 마을 글쓰기를 쉬어 가요. 마을 › 맨 위 한 줄에서 까닭을 보고 해명할 수 있어요",
+            CommunityCare.mutedText(until, seoul))
+        assertEquals("운영 원칙을 지키지 않은 글이 있어 지금은 마을 글쓰기를 쉬어 가요. 마을 › 맨 위 한 줄에서 까닭을 보고 해명할 수 있어요",
+            CommunityCare.mutedText(null))
         assertEquals(CommunityCare.newsLine("lifted"), PlazaNews.line(PlazaNewsItem("care", result = "lifted")))
         assertNull(CommunityCare.newsLine("odd"))
         assertEquals("10자 이상 적어 주세요", CommunityCare.appealProblem("짧아요"))
@@ -54,6 +63,25 @@ class CommunityCareTest {
         assertFalse(PostNudge.needed("야간 끝나고 바로 자는 게 좋아요"))
         assertFalse(PostNudge.needed("시발점에서 다시 생각해 봐요"))
         assertFalse(PostNudge.needed("불이 꺼져 있었어요"))
+    }
+
+    /** 2.0.0 [RVN-13] COMP-50 everyday words that asked before; U10b-07 the window says the word it saw. */
+    @Test fun theNudgeLeavesEverydayWordsAndSaysWhichWordAsked() {
+        assertFalse(PostNudge.needed("근무 시 발생한 일은 바로 적어 주세요"))
+        assertFalse(PostNudge.needed("언니 미안 오늘 대타 못 가"))
+        assertFalse(PostNudge.needed("개새벽 출근이라 일찍 자요"))
+        assertFalse(PostNudge.needed("등신대 세워 둔 매장이에요"))
+        assertFalse(PostNudge.needed("어머니 미역국 끓였어요"))
+        // Still asked: inside a word, spread over words from start to end, with marks between.
+        assertEquals("병신", PostNudge.found("이 병신 같은 회사"))
+        assertEquals("씨발", PostNudge.found("씨 발 진짜"))
+        assertEquals("개새끼", PostNudge.found("저 개 새끼가"))
+        assertEquals("씨발", PostNudge.found("씨 발놈"))
+        assertEquals("씨발", PostNudge.found("씨.발"))
+        assertEquals("ㅅㅂ", PostNudge.found("ㅅㅂ 야간 또"))
+        assertNull(PostNudge.found("야간 끝나고 바로 자는 게 좋아요"))
+        assertTrue(PostNudge.text("병신").startsWith("‘병신’ 같은 말은"))
+        assertEquals(PostNudge.TEXT, PostNudge.text(null))
     }
 
     @Test fun teamLinksSayWhyAContactWasRefused() {

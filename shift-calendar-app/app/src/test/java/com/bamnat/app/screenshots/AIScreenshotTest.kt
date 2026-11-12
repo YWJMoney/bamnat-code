@@ -19,6 +19,8 @@ import com.bamnat.app.company.RoomPage
 import com.bamnat.app.company.RoomVersion
 import com.bamnat.app.company.Talk
 import com.bamnat.app.company.TalkPost
+import com.bamnat.app.needs
+import com.bamnat.app.nodeWorks
 import com.bamnat.app.ui.company.AutoShareHost
 import com.bamnat.app.ui.company.CompanyBoardScreen
 import com.bamnat.app.ui.company.CompanyBoardViewModel
@@ -46,7 +48,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -158,7 +159,8 @@ class AIScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
         runBlocking { com.bamnat.app.company.PublicCycleFiles.apply(c, gsCaltex, "DDOONNOO", 0) }
         settle()
-        if (!shows("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)) tapText("근무주기 다음 단계")
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함, opened in place there.
+        if (!shows("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)) openNotice("근무주기 다음 단계")
         reveal("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)
         // One ask: the card's own, and no second one from 저절로 나누기 on top.
         assertNull(c.autoShare.ask.value)
@@ -373,6 +375,8 @@ class AIScreenshotTest : ScreenshotBase() {
         ownPay()
         member()
         c.companyStore.setAutoShare(true)
+        // 2.0.0 [RVN-11] COMP-44: a yes that named the pay way (the ask's '다음부터 저절로', 설정's switch); only the 야간 % changes here.
+        c.companyStore.setAutoPay(true)
         c.companyStore.autoBase = mine()
         c.companyStore.autoSentAt = Today.millis()
         runBlocking { c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false) }
@@ -391,6 +395,27 @@ class AIScreenshotTest : ScreenshotBase() {
         settle()
         assertFalse(c.autoShare.waiting)
     }
+    /**
+     * 2.0.0 [RVN-11] COMP-44: 저절로 나누기 from a 근무주기 yes alone (or a phone that said yes before 2.0.0) is for the cycle; a change of the
+     * pay way only is asked as without it, with '다음부터 저절로' to take the pay way too.
+     */
+    @Test fun aCycleYesAsksBeforeThePayWayGoes() = shoot("1137b_ai_pay_asks", PHONE) {
+        rooms()
+        ownPay()
+        member()
+        c.companyStore.setAutoShare(true)
+        c.companyStore.autoBase = mine()
+        c.companyStore.autoSentAt = Today.millis()
+        runBlocking { c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false) }
+        content {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { AutoShareHost(c, onOpen = {}, snackbar = null) }
+        }
+        runBlocking { c.autoShare.check() }
+        settle()
+        assertFalse(c.autoShare.waiting)
+        assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
+        assertTrue(appears("• 야간 50% → 60%", exact = true))
+    }
     @Test fun theSettingAsksOrSharesOrNot() = shoot("1138_ai_setting", SMALL_PHONE) {
         companyOn()
         member()
@@ -407,8 +432,8 @@ class AIScreenshotTest : ScreenshotBase() {
     /** The company server on Node (server/company-worker), as PlazaAIAppTest runs it. */
     private fun server(block: (String) -> Unit) {
         val dir = File("../server/company-worker")
-        assumeTrue(dir.resolve("test/local-server.mjs").exists())
-        assumeTrue(runCatching { ProcessBuilder("node", "--version").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false))
+        needs("server/company-worker/test/local-server.mjs", dir.resolve("test/local-server.mjs").exists())
+        needs("node", nodeWorks())
         val port = ServerSocket(0).use { it.localPort }
         val node = ProcessBuilder("node", "test/local-server.mjs", port.toString()).directory(dir).redirectErrorStream(true).start()
         try {

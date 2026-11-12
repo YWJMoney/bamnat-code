@@ -1,12 +1,17 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.layout.Column
+import com.bamnat.app.ui.theme.bamnat
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
@@ -22,6 +27,7 @@ import com.bamnat.core.money.JobStatus
 import com.bamnat.core.money.ReceivableKind
 import com.bamnat.core.work.CardSettlement
 import com.bamnat.core.work.ShopMoney
+import kotlinx.coroutines.launch
 
 /**
  * [SHOP-01][SHOP-02][SHOP-06] Under a shop day's sales: how they were paid, when the card money
@@ -45,17 +51,30 @@ fun SalesDayExtras(sales: DailySales) {
                 style = MaterialTheme.typography.bodySmall, color = muted,
             )
         }
-        if (sales.card > 0) {
+        if (sales.card > 0 && sales.cardSettled) {
+            // 2.0.0 [RVK-42] (검토 MONEY-16·U06a-21) A deposit confirmed by mistake is let go here (it could only be undone by changing
+            // the day's card amount in 하루 마감).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("카드 매출 입금 확인했어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.income,
+                    modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    val money = c.calendars.money(calendar.id)
+                    c.appScope.launch {
+                        money.save(sales.copy(cardSettled = false))
+                        com.bamnat.app.ui.components.AppSnack.show("${Fmt.shortDate(sales.date)} 카드 입금 확인을 풀었어요", undo = { money.save(sales) })
+                    }
+                }, modifier = Modifier.heightIn(min = 48.dp)) { Text("확인 풀기") }
+            }
+        } else if (sales.card > 0) {
             val pay = remember(sales, rules) { CardSettlement.payDate(sales.date, rules.settleDays, KoreanHolidays::isHoliday) }
             Text(
-                if (sales.cardSettled) "카드 매출 입금 확인했어요"
-                else "카드 입금 예정 ${Fmt.shortDate(pay)} · ${Fmt.won(CardSettlement.afterFee(sales.card, rules.cardFeeBp))} (수수료 ${rules.feeLabel})",
-                style = MaterialTheme.typography.bodySmall, color = if (sales.cardSettled) LocalCalendarColors.current.income else muted,
+                "카드 입금 예정 ${Fmt.shortDate(pay)} · ${Fmt.won(CardSettlement.afterFee(sales.card, rules.cardFeeBp))} (수수료 ${rules.feeLabel})",
+                style = MaterialTheme.typography.bodySmall, color = muted,
             )
         }
         credits.forEach { r ->
             Text("외상 ${r.who.ifBlank { "이름 없음" }} ${Fmt.won(r.amount)}" + if (r.left == 0L) " · 받음" else "",
-                style = MaterialTheme.typography.bodySmall, color = if (r.left > 0) LocalCalendarColors.current.warning else muted)
+                style = MaterialTheme.typography.bodySmall, color = if (r.left > 0) MaterialTheme.bamnat.caution else muted)
         }
     }
 }

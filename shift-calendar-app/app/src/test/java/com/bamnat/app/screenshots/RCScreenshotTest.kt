@@ -105,7 +105,10 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("보관함", prefix = true)
         tapText("장터 ‘탭별 작품 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
-        assertTrue(appears("탭 하나를 위해", exact = true))
+        // 2.0.0 [RVM-31] HQ-42: the 구간 are chips now; 탭별 작품 is the one picked.
+        assertTrue(appears("🗂 탭별 작품", exact = true))
+        assertTrue("탭별 작품이 골라져 있어요", nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "🗂 탭별 작품" } &&
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Selected) == true })
         back()
         assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
     } }
@@ -125,7 +128,8 @@ class RCScreenshotTest : ScreenshotBase() {
         model.query("없는이름가나"); model.load()
         settle()
         assertTrue(appears("‘없는이름가나’에 맞는 작품이", exact = false))
-        assertTrue(appears("탭별 작품에서 찾기", exact = true))
+        // 1.39.1 [P391-01]: the search already looked in all three 구간 (none had it), so the empty screen offers to make one.
+        assertTrue(appears("다른 낱말로 찾거나, 없으면 직접 만들어 볼 수 있어요", exact = true))
     }
 
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {
@@ -134,7 +138,8 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeListViewModel(c)
         content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
-        assertTrue(appears("요즘 뜨는", exact = true))
+        // 2.0.0 [RVM-31]: the order the list is in is the 정렬 chip in the one row of chips (slid in, or under ▾ on a 360dp phone).
+        assertTrue(nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "요즘 뜨는" } })
         assertTrue(appears("야간 파랑", exact = true))
         // A 알바 recipe is not in the 교대 list.
         assertTrue(gone("주휴", exact = false))
@@ -284,10 +289,13 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("넣기", exact = true)
         settle()
         assertTrue(appears("넣었어요", exact = false))
-        // 1.39 [MKD-43] The page's own 되돌리기 (사다리 넣기 칸 옆) may show too: the line's is the one at the bottom of the screen.
+        // 1.39 [MKD-43] The page's own 되돌리기 may show too (2.0.0 [RVM-08]: in the 넣기 bar on the bottom edge, which asks first):
+        // the line's is the one beside its words.
+        val line = compose.onAllNodesWithText("7일 안에 되돌릴 수 있어요", substring = true).fetchSemanticsNodes().maxBy { it.boundsInWindow.top }
         val undos = compose.onAllNodesWithText("되돌리기", substring = false)
-        val lowest = undos.fetchSemanticsNodes().withIndex().maxBy { it.value.boundsInWindow.top }.index
-        undos[lowest].performClick()
+        val beside = undos.fetchSemanticsNodes().withIndex()
+            .minBy { kotlin.math.abs(it.value.boundsInWindow.center.y - line.boundsInWindow.center.y) }.index
+        undos[beside].performClick()
         settle()
         settle()
         assertTrue("되돌린 뒤: ${vm.state.value.appliedAt} ${vm.state.value.message}", vm.state.value.appliedAt == null)
@@ -319,7 +327,7 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
         // PC 확인 7525ccff: the question lists what goes back.
-        assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
+        assertTrue(appears("이 작품을 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
         assertTrue(appears("근무 꾸미기", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
@@ -359,7 +367,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(scrolledTo("✓ 넣었어요 · 다시 넣기", exact = true))
         tapText("되돌리기", exact = true)
         settle()
-        assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
+        assertTrue(appears("이 작품을 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
         assertTrue(appears("테마 위에 얹음 · ‘달력’ 탭", exact = false))
         assertTrue(appears("넣음 · 근무 꾸미기", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
@@ -441,6 +449,10 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("이 테마 입기", exact = true)  // 1.38 PC 스튜디오: all ticked says it in one word
         settle()
         assertTrue(appears("이렇게 바뀌어요", exact = true))
+        // [RVM-13] PC-59: a short line first, the whole list folded under '바뀌는 것 모두 보기'.
+        assertTrue(appears("모양이 바뀌어요 · ", exact = false))
+        tapText("바뀌는 것 모두 보기", exact = true, scrolls = 0)
+        settle()
         assertTrue("단추와 같은 수", appears("모양 ${parts.size}개", exact = true))
         assertTrue(appears("• 달력: 칸 디자인, ", exact = false))
         parts.forEach { p -> assertTrue(p.label, appears(p.label, exact = false)) }
@@ -467,7 +479,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeMakeViewModel(c)
         content { RecipeMakeScreen(model, onBack = {}, onOpen = {}) }
         settle()
-        assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
+        assertTrue(appears("작품 만들기 1/5 · 꾸미기", exact = true))
     }
 
     /** PC 확인 d263030e: a draft opened at 마치기 goes back to 이름·표지 by its chip; a step ahead waits for the name, as 다음 does. */
@@ -482,7 +494,7 @@ class RCScreenshotTest : ScreenshotBase() {
         model.go(5)
         settle()
         assertTrue(model.state.value.recipe.pieces.isNotEmpty())
-        assertTrue(appears("레시피 만들기 5/5 · 마치기", exact = true))
+        assertTrue(appears("작품 만들기 5/5 · 마치기", exact = true))
         tapText("이름·표지", exact = true)
         settle()
         assertEquals(3, model.state.value.step)
@@ -503,7 +515,7 @@ class RCScreenshotTest : ScreenshotBase() {
         content { RecipeMineScreen(model, onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
         settle()
         assertTrue(appears("장터 쓰기", exact = true))
-        assertTrue(appears("받은 레시피", exact = true))
+        assertTrue(appears("받은 작품", exact = true))
         assertTrue(appears("앞으로 3개는 운영자가 보고 올려요", exact = false))
     }
 
@@ -586,7 +598,7 @@ class RCScreenshotTest : ScreenshotBase() {
         content { RequestsScreen(model, onBack = {}, onOpen = {}, onMake = {}) }
         settle()
         assertTrue(appears("간호사 3교대 근무별 알람 세트", exact = false))
-        assertTrue(appears("완성된 레시피 보기", exact = true))
+        assertTrue(appears("완성된 작품 보기", exact = true))
     }
     // ---- 1.35 꾸미기 자유도 [CVW-01]..[CVW-10] [STU-01]..[STU-06] [LIN-01]..[LIN-05] ----
 
@@ -628,7 +640,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val vm = RecipeMakeViewModel(c)
         content { RecipeMakeScreen(vm, onBack = {}, onOpen = {}) }
         settle()
-        assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
+        assertTrue(appears("작품 만들기 1/5 · 꾸미기", exact = true))
         assertTrue(appears("어디서 시작할까요?", exact = true))
         tapText(api.item(0).title, exact = true)
         settle()

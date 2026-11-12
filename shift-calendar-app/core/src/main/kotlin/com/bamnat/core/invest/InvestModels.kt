@@ -83,7 +83,27 @@ enum class Market(val label: String, val currency: String, val defaultFeeRate: D
     val unit: String get() = if (this == CRYPTO) "개" else "주"
 }
 
-enum class Side(val label: String) { BUY("매수"), SELL("매도") }
+enum class Side(val label: String) {
+    BUY("매수"),
+    SELL("매도"),
+    /**
+     * 2.0.0 [RVK-27] (검토 MONEY-64) 분할·병합: [Trade.quantity] is the new shares for one old (5 for 1주 → 5주, 0.1 for 10주 → 1주);
+     * what was paid stays, no money moves.
+     */
+    SPLIT("분할·병합"),
+    /** [RVK-27] Shares in without a buy (무상증자, 다른 증권사에서 옮겨 옴, 에어드랍), at [Trade.price] each (0 when free). */
+    IN("입고"),
+    /** [RVK-27] Shares out without a sale (다른 증권사로 옮김): they leave at what they cost, nothing made or lost. */
+    OUT("출고");
+
+    /** A buy or a sale, with money; the others only change what is held ([RVK-27] 수량 바뀜). */
+    val trade: Boolean get() = this == BUY || this == SELL
+
+    companion object {
+        /** The two a trade sheet, an alarm or a notification offers. */
+        val TRADES = listOf(BUY, SELL)
+    }
+}
 
 /** [INV-03][INV-13] How the user felt when trading (Edgewonk-style emotion tags). */
 enum class Emotion(val label: String) {
@@ -137,8 +157,12 @@ data class Trade(
     val gross: Double get() = quantity * price
     val grossWon: Double get() = gross * fxRate
     val costsWon: Double get() = (fee + tax) * fxRate
-    /** Won that left (a buy) or came in (a sell) after fees and tax. */
-    val cashWon: Double get() = if (side == Side.BUY) -(grossWon + costsWon) else grossWon - costsWon
+    /** Won that left (a buy) or came in (a sell) after fees and tax; for [RVK-27] 수량 바뀜 only a fee paid, if any. */
+    val cashWon: Double get() = when (side) {
+        Side.BUY -> -(grossWon + costsWon)
+        Side.SELL -> grossWon - costsWon
+        Side.SPLIT, Side.IN, Side.OUT -> -costsWon
+    }
 }
 
 fun holdingKey(symbol: String, name: String): String = symbol.trim().ifEmpty { name.trim() }.uppercase()
@@ -312,6 +336,12 @@ data class InvestSettings(
      */
     val buyFeeRate: Double = DEFAULT_FEE_RATE,
     val sellFeeRate: Double = DEFAULT_FEE_RATE,
+    /**
+     * 2.0.0 [RVK-31] (검토 MONEY-66) Each 국내 ETF's kind by its holding key, asked once in the trade sheet: true for one whose gain
+     * is taxed as 배당소득 (해외지수·채권·원자재·레버리지 등, 15.4% at the broker, counted in 금융소득), false for 국내주식형 (no tax on
+     * the gain). Absent while not told.
+     */
+    val etfTaxed: Map<String, Boolean> = emptyMap(),
 ) {
     /** [INV-38] The calendar's 기본 수수료 for [side]. */
     fun feeRate(side: Side): Double = if (side == Side.BUY) buyFeeRate else sellFeeRate

@@ -25,9 +25,16 @@ data class MemoTemplate(
         // [CVW-10] A list keeps only its own items (자유도 점검 F-56: answers ticked in 완료 read as done tasks). Its answers are kept
         // whole as a note above the list, not in the title, which a long answer cut and then lost ([J135-07] F-63·F-65).
         val title = listOfNotNull(emoji, title).joinToString(" ")
-        val day = when {
-            repeat.startsWith("W") -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
-            repeat.startsWith("M") -> nextDayOfMonth(date ?: today, repeat.drop(1).toInt())
+        // 2.0.0 [RVI-39] (검토 MEMO-24) A repeat is read only when it is one ("W9", "Wx" from an old or shared 틀 crashed the start);
+        // anything else starts with no repeat.
+        val kind = MemoRepeat.kindOf(repeat)
+        val repeat = if (kind == MemoRepeat.Kind.NONE) "" else repeat
+        val day = when (kind) {
+            // 2.0.0 [RVI-73] The repeat's body: one that ends ("W3~20261231") reads its weekday before the end.
+            MemoRepeat.Kind.WEEK -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(MemoRepeat.bodyOf(repeat).drop(1).toInt())))
+            MemoRepeat.Kind.MONTH -> nextDayOfMonth(date ?: today, MemoRepeat.bodyOf(repeat).drop(1).toInt())
+            // [RVI-73] 요일 골라·격주·몇째 요일: their first day from the date picked (or today).
+            MemoRepeat.Kind.DAYS_OF_WEEK, MemoRepeat.Kind.EVERY_WEEKS, MemoRepeat.Kind.NTH_WEEKDAY -> MemoRepeat.firstFrom(repeat, date ?: today)
             else -> picked(answers, today) ?: date
         }
         return base.copy(

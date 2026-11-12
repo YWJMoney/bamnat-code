@@ -57,7 +57,9 @@ import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.asksHolidaysOff
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -204,7 +206,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }.getOrNull())
     val flowFolded: StateFlow<Boolean?> = _flowFolded.asStateFlow()
 
+    /**
+     * 2.0.0 [RVI-68] (PC 통합 1차 N18·PC-49) '끄고 오늘 보기' and the other today links opened the calendar with 오늘의 흐름 still folded
+     * to its one line: they open it for this visit, and the fold kept on this phone stays as it was for the next.
+     */
+    private val _flowOpenNow = MutableStateFlow(false)
+    val flowOpenNow: StateFlow<Boolean> = _flowOpenNow.asStateFlow()
+
+    fun openFlowNow() {
+        _flowOpenNow.value = true
+    }
+
     fun setFlowFolded(folded: Boolean) {
+        _flowOpenNow.value = false
         _flowFolded.value = folded
         viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
     }
@@ -279,7 +293,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [J133-03] 1.33 앞으로도 늘 쉬어요: the weekly pattern itself keeps public holidays off, so the card is not asked again
      * next month. Said back with undo.
      */
-    fun restHolidaysAlways() {
+    fun restHolidaysAlways() = gate(WriteKind.PATTERN) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule
             val before = schedule.patterns.first()
@@ -290,8 +304,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [CAL-07] The holidays become days off in one write, said back with undo. */
-    fun restHolidays(dates: List<LocalDate>) {
-        if (dates.isEmpty()) return
+    fun restHolidays(dates: List<LocalDate>) = gate(WriteKind.DAYS) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
+        if (dates.isEmpty()) return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDays(dates.distinct()) { e ->
@@ -318,7 +332,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     val memoDates: StateFlow<Set<LocalDate>> =
         // [NOTE-01] Only the memos that show on the calendar on screen.
-        container.calendars.active.flatMapLatest { memoRepo.datesWithMemos(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        // 2.0.0 [RVI-53] (검토 MEMO-19) Around the month on screen, not four years, and not again at each save of a memo's words.
+        container.calendars.active.flatMapLatest { cal ->
+            memoRepo.datesWithMemos(cal, container.shownMonth.month.map { com.bamnat.app.data.MemoRepository.shownWindow(it) })
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
 
     /** [SETUP-01] A first setup left for later, to go on from the calendar. */
@@ -394,12 +411,30 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The law's defaults with no money, to sort minutes before the pay setup is done. */
     private fun lawOnly(s: AppSettings) = PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(), weekStart = s.weekStart)
 
-    private val _selected = MutableStateFlow(Today.date())
+    // 2.0.0 [RVH-15] 검토 CAL-20: the day left picked, when 밤낮 was closed by the phone less than 6 hours ago in the month it shows.
+    private val _selected = MutableStateFlow(
+        runCatching { container.calendarPlace.day() }.getOrNull()?.takeIf { YearMonth.from(it) == container.shownMonth.month.value } ?: Today.date(),
+    )
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
 
     /** [NAV-01] The month on screen, shared with 돈 and 근무·급여. */
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
+
+    /** [RVH-15] The day and month kept for opening there again; also when 밤낮 goes behind another app. */
+    fun keepPlace() {
+        runCatching { container.calendarPlace.keep(shownMonth.value, _selected.value) }
+    }
+
+    init {
+        viewModelScope.launch {
+            // collectLatest: a swipe through months writes once, when it stops.
+            combine(container.shownMonth.month, _selected) { m, d -> m to d }.drop(1).collectLatest {
+                kotlinx.coroutines.delay(PLACE_DEBOUNCE_MILLIS)
+                keepPlace()
+            }
+        }
+    }
 
     private val _paint = MutableStateFlow<PaintTool?>(null)
     val paint: StateFlow<PaintTool?> = _paint.asStateFlow()
@@ -473,7 +508,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [SLP-14] 오늘의 흐름 at [now]. */
-    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
+    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime, shiftNapUntil: Long? = null): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
             settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
@@ -481,7 +516,27 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()),
             since = container.recordsTrash.styleChangedOn(activeCalendar.value.id),
             // 1.39 G6 발굴 [FLOW-32]: 가게 '영업 중·마감까지', 현장 '일하는 중' (the card shows for them once added to the calendar).
-            talk = TodayFlow.WorkTalk.of(settings.workStyle))
+            talk = TodayFlow.WorkTalk.of(settings.workStyle),
+            // 2.0.0 [RVI-93] 쪽잠 20분 on: when it vibrates.
+            shiftNapUntil = shiftNapUntil?.let(com.bamnat.app.alarm.AlarmScheduler::millisToLocal))
+
+    /**
+     * 2.0.0 [RVI-93] (검토 I03b-04, G5-M2) 쪽잠 20분: a wake that only vibrates, said back with a way to take it back. Not written in
+     * the sleep log: a 휴게's few minutes are no night's sleep, and the averages stay the user's own sleeps.
+     */
+    fun shiftNap() {
+        val ctx = container.appContext
+        val at = com.bamnat.app.alarm.ShiftNap.start(ctx)
+        _messages.tryEmit(UndoMessage("쪽잠 ${TodayFlow.SHIFT_NAP_MINUTES}분 · ${Fmt.time(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(at).toLocalTime())}에 진동으로 깨워요") {
+            com.bamnat.app.alarm.ShiftNap.cancel(ctx)
+        })
+    }
+
+    /** 2.0.0 [RVI-93] 일어났어요 before the 쪽잠's vibration. */
+    fun endShiftNap() {
+        com.bamnat.app.alarm.ShiftNap.cancel(container.appContext)
+        _messages.tryEmit(UndoMessage("쪽잠을 끝냈어요"))
+    }
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {
@@ -511,19 +566,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun napNow(until: java.time.LocalDateTime) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val schedule = this@CalendarViewModel.schedule
+            val calendar = container.calendars.active.value
             val asleep = container.sleepRepository.fellAsleep()
             val date = until.toLocalDate()
             val ringing = container.settingsRepository.current.alarmsEnabled
-            val merged = if (!ringing) null else com.bamnat.core.sleep.NapAlarm.merge(date,
-                com.bamnat.core.alarm.AlarmPlanner.alarmsOn(schedule.snapshot.first().resolver, date).map { it.triggerAt }, until)
+            val resolver = schedule.snapshot.first().resolver
+            val dayAlarms = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(resolver, date).map { it.triggerAt }
+            val merged = if (!ringing) null else com.bamnat.core.sleep.NapAlarm.merge(date, dayAlarms, until)
             val before = merged?.let { schedule.setDayAlarms(date, it) }
+            // 2.0.0 [RVI-17] (검토 ALM-08) Kept so it rings as 낮잠 알람 and an early 깼어요 takes it back out.
+            if (merged != null) com.bamnat.app.sleep.NapWake.save(container.appContext, date,
+                until.atZone(Today.zone()).toInstant().toEpochMilli(), hadOwn = resolver.resolve(date).entry?.customAlarms != null, calendar, merged)
             val at = Fmt.time(until.toLocalTime())
+            // 2.0.0 [RVI-40] (검토 ALM-25) An alarm already near the wake is the one that wakes: said so, not "○시에 깨워요".
+            val near = if (ringing && merged == null) com.bamnat.core.sleep.NapAlarm.near(dayAlarms, until) else null
             _messages.emit(UndoMessage(
-                if (!ringing) "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
-                else "낮잠 자는 중이에요 · ${at}에 깨워요",
+                when {
+                    !ringing -> "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
+                    near != null -> "낮잠 자는 중이에요 · ${Fmt.time(near.toLocalTime())}쯤 울리는 알람이 있어 그걸로 깨워요"
+                    else -> "낮잠 자는 중이에요 · ${at}에 깨워요"
+                },
             ) {
+                if (merged != null) com.bamnat.app.sleep.NapWake.clear(container.appContext) // first, so the undo puts the day back itself
                 if (asleep.started) container.sleepRepository.delete(asleep.entry.id)
-                before?.let { schedule.restoreDay(date, it) }
+                // 2.0.0 [RVI-17] A day with nothing saved before (null) is put back too: the wake stayed after 되돌리기.
+                if (merged != null) schedule.restoreDay(date, before)
             })
         }
     }
@@ -544,14 +611,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun wokeUp(at: LocalDateTime? = null) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
-            val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
-            val minutes = sleep.minutes ?: 0
-            val text = if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
-            else "${HoursFormat.korean(minutes.toInt())} 잤어요"
-            _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
+            // 2.0.0 [RVIB-14] (PC-124) Within minutes (a 낮잠 stopped at once too) it is not kept; 되돌리기 opens it again.
+            val woke = container.sleepRepository.wokeUpByHand(millis) ?: return@launch
+            // 2.0.0 [RVI-71] One wording with the sleep page and the night screen; a short sleep says why it has no 아침 한 장.
+            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((woke.sleep.minutes ?: 0).toLong())
+            _messages.emit(UndoMessage(text) { container.sleepRepository.undoWoke(woke) })
         }
     }
-    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }
+    // 1.39.1 [R391-04] The night's sounds and clips go with it.
+    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.deleteWithSounds(id, container.sleepClipDeleter) } }
 
     /** Rest-gap signs that fall on [date]. */
     fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): List<RestCheck.Issue> {
@@ -736,6 +804,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [CAL-19] The answer: [asCover] keeps the days off and adds a 대근 of the shift's hours; else the days become working days. */
     fun answerCover(ask: CoverAsk, asCover: Boolean, keep: Boolean) {
         _coverAsk.value = null
+        // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does.
+        gate(WriteKind.SHIFT) { coverWrite(ask, asCover, keep) }
+    }
+
+    private fun coverWrite(ask: CoverAsk, asCover: Boolean, keep: Boolean) {
         if (keep) coverAnswer = asCover
         val snap = snapshot.value ?: return
         if (!asCover) {
@@ -767,8 +840,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun dismissCover() { _coverAsk.value = null }
 
-    /** [ALRM-20] Days just made a day off or leave whose alarms set by hand would still ring. */
-    data class RestAlarmAsk(val days: List<com.bamnat.core.alarm.AlarmPlanner.RestDay>, val schedule: com.bamnat.app.data.ScheduleRepository)
+    /**
+     * [ALRM-20] Days just made a day off or leave whose alarms set by hand would still ring. 2.0.0 [RVIB-11] (PC-75) [was]: what
+     * each of them was before, for the ones that were work ('11월 14일(원래 야간 19:00)').
+     */
+    data class RestAlarmAsk(
+        val days: List<com.bamnat.core.alarm.AlarmPlanner.RestDay>,
+        val schedule: com.bamnat.app.data.ScheduleRepository,
+        val was: Map<LocalDate, com.bamnat.core.memo.ShiftMemoTime.Day> = emptyMap(),
+    )
 
     private val _restAlarms = MutableStateFlow<RestAlarmAsk?>(null)
     val restAlarms: StateFlow<RestAlarmAsk?> = _restAlarms.asStateFlow()
@@ -781,6 +861,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private suspend fun restDayAlarms(dates: Collection<LocalDate>, before: ScheduleSnapshot): String {
         if (!settings.value.alarmsEnabled || !calendarAlarmsOn.value || dates.isEmpty()) return ""
         val was = dates.associateWith { before.resolver.entryOn(it) }
+        // 2.0.0 [RVH-08] 검토 CAL-12: the same shift painted again changes nothing; the bar comes at once instead of after 3 s.
+        fun DayEntry?.plain() = this?.takeUnless { it.isEmpty }
+        if (dates.all { schedule.entryNow(it).plain() == was[it].plain() }) return ""
         val after = kotlinx.coroutines.withTimeoutOrNull(3_000) {
             container.calendars.activeSnapshot.first { s -> dates.any { s.resolver.entryOn(it) != was[it] } }
         } ?: return ""
@@ -796,7 +879,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         // 1.35 [J135-10] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
         // nobody misses a wake-up they still wanted. Closing the ask changes nothing more.
         // [J135-13] The change's message says nothing of alarms while the ask is open: the answer says it.
-        if (days.isNotEmpty()) _restAlarms.value = RestAlarmAsk(days, schedule)
+        if (days.isNotEmpty()) _restAlarms.value = RestAlarmAsk(days, schedule, days.mapNotNull { d ->
+            com.bamnat.core.memo.ShiftMemoTime.of(before.resolver.resolve(d.date))?.takeIf { it.work }?.let { d.date to it }
+        }.toMap())
         // [ALRM-29] The other way: a day that became a working day or got a 대근 rings its shift's alarms; one turned off
         // while it was a day off is turned on again, and the message says what will ring (or that it moved).
         return workDayAlarms(dates.mapNotNull { com.bamnat.core.alarm.AlarmPlanner.workDay(before.resolver, after.resolver, it) })
@@ -813,7 +898,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [J135-10] The alarms a day had that stopped with its shift (not the ones set by hand), as that day's own alarms. */
     private fun stoppedAlarms(ask: RestAlarmAsk): Map<LocalDate, List<DayAlarm>> = ask.days.associate { d ->
         d.date to d.was.filter { w -> d.left.none { it.triggerAt == w.triggerAt } }
-            .map { a -> DayAlarm(a.triggerAt.toLocalTime(), dayBefore = a.triggerAt.toLocalDate() < d.date) }.distinct()
+            .mapNotNull { a -> DayAlarm.ringingAt(d.date, a.triggerAt) }.distinct() // 2.0.0 [RVI-17] 다음날 ones stay 다음날
     }.filterValues { it.isNotEmpty() }
 
     /** [J135-10] The ask closed without an answer: nothing more changes (the shift's own alarms stay off, alarms set by hand on). */
@@ -918,7 +1003,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val alarms = restDayAlarms(before.keys, snap) // [ALRM-20]
             val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "을" else "${before.size}일을"
             _lastPaint.value = PaintUndo(
-                (if (name == null) "$what 근무 주기대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요") + alarms,
+                (if (name == null) "$what ${snap.backDone}" else "$what $name${Fmt.ro(name)} 칠했어요") + alarms,
                 // Only the shift goes back: a memo or alarm changed on those days since stays.
                 undo = {
                     schedule.updateDays(before.keys.toList()) { now ->
@@ -1011,8 +1096,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * and sets the days in [clear] back to the pattern. Said back with one undo for both.
      */
     /** G 1.32 [WTYP-07] 명절 휴무: the order stops for [days] days from [date] and goes on after, with one undo. */
-    fun pausePattern(date: LocalDate, days: Int) {
-        val snap = snapshot.value ?: return
+    fun pausePattern(date: LocalDate, days: Int) = gate(WriteKind.PATTERN) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
+        val snap = snapshot.value ?: return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule
             val before = snap.patterns
@@ -1023,9 +1108,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) {
-        val snap = snapshot.value ?: return
-        val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return
+    fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) = gate(WriteKind.PATTERN) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
+        val snap = snapshot.value ?: return@gate
+        val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val beforePatterns = snap.patterns
@@ -1066,8 +1151,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             if (!announce) return@launch
             val name = (override as? ShiftOverride.Shift)?.let { snapshot.value?.typesById?.get(it.shiftTypeId)?.name }
                 ?: if (override == ShiftOverride.Off) "쉬는 날" else null
+            val follow = followLine(date, alarmSaid = alarms.isNotEmpty()) // 2.0.0 [RVIB-10]
             _messages.emit(
-                UndoMessage((if (name == null) "${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") + alarms) {
+                UndoMessage((if (name == null) "${Fmt.monthDay(date)}을 ${snap.backDone}" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") + alarms + follow) {
                     schedule.restoreDay(date, before)
                 },
             )
@@ -1085,9 +1171,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = changeShift(date) { override }
             val alarms = restDayAlarms(listOf(date), snapshot) // [ALRM-20]
-            val name = type?.name ?: if (override == ShiftOverride.None) "패턴" else "쉬는 날"
+            val name = type?.name ?: if (override == ShiftOverride.None) snapshot.backWord else "쉬는 날" // [RVH-05] 검토 CAL-13
             val restore: suspend () -> Unit = { schedule.restoreDay(date, before) }
             val cover = type?.takeIf { isRosterRestDay(day, it) }?.let { coverKind(snapshot, it) }
+            // 2.0.0 [RVIB-10] (검토 I03c-04) What followed the change, in its own line (not on the 대근 question, which is long already).
+            val follow = if (cover != null) "" else followLine(date, alarmSaid = alarms.isNotEmpty())
             _messages.emit(
                 when {
                     // [EASE-11] 1.38: the day changed at once (no window); the bar asks whether it was a 대근, and the day's own
@@ -1099,15 +1187,32 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                         schedule.restoreDay(date, before)
                         schedule.addExtra(date, ExtraText.cover(cover, type))
                     }
-                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요$alarms", undo = restore)
-                    else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요$alarms", undo = restore)
+                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 ${snapshot.backDone}$alarms$follow", undo = restore)
+                    else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요$alarms$follow", undo = restore)
                 },
             )
         }
     }
 
+    /**
+     * 2.0.0 [RVIB-10] (검토 I03c-04) After today's or tomorrow's work changed: " · 알람 17:30 · 잘 시간 08:00–15:00 · 워치에도 보냈어요",
+     * read from the calendar once it holds the change ([com.bamnat.core.sleep.ShiftFollow]).
+     */
+    private suspend fun followLine(date: LocalDate, alarmSaid: Boolean): String = runCatching {
+        val now = Today.dateTime()
+        if (date.isBefore(now.toLocalDate()) || date.isAfter(now.toLocalDate().plusDays(1))) return@runCatching ""
+        val want = schedule.entryNow(date)
+        val snap = kotlinx.coroutines.withTimeoutOrNull(3_000) { container.calendars.activeSnapshot.first { it.resolver.entryOn(date) == want } }
+            ?: return@runCatching ""
+        val s = settings.value
+        val onWatch = activeCalendar.value.id == (s.watchCalendar.takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+        com.bamnat.core.sleep.ShiftFollow.line(date, now, snap.resolver, s.alarmsEnabled && calendarAlarmsOn.value, alarmSaid,
+            watch = onWatch && com.bamnat.app.watch.WatchSync.paired(container.appContext), sleep = s.sleepTips,
+            targetMinutes = s.sleepTargetMinutes, commuteMinutes = s.commuteMinutes)
+    }.getOrDefault("")
+
     /** [EASE-11] What a shift on a day off is called here: 대타 on an 알바 calendar, else 대근 ([J133B-01]). */
-    internal fun coverWord(): String = if (container.settingsRepository.current.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"
+    internal fun coverWord(): String = ExtraText.coverWord(container.settingsRepository.current.workStyle)
 
     /** [EXTRA-01] True when [type] would turn a day the roster gives off into a working day: likely a 대근. */
     fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
@@ -1115,6 +1220,49 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** The kind for a 대근 of [type] [EXTRA-07]. */
     fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
+
+    /**
+     * 1.40 [SPREAD-37] 연말 근무 결산 for [year] on the calendar [snapshot]: from the day this calendar started ([startDay], or the
+     * first day written by hand before it), in the kind of work's own figures. The money is the pay engine's 세전 예상 month by
+     * month for shifts, done 일감 for field work, 순수익 for a shop; it stays hidden until the user shows it. Off the main thread.
+     */
+    suspend fun yearRecap(
+        year: Int, today: LocalDate, startDay: LocalDate?, snapshot: ScheduleSnapshot, focus: com.bamnat.core.work.CalendarFocus,
+        style: com.bamnat.core.work.WorkStyle?, profile: PayProfile?, book: com.bamnat.core.money.MoneyBook,
+    ): com.bamnat.core.work.YearRecap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val firstWritten = snapshot.entries.filter { it.date.year == year && !it.isEmpty }.minOfOrNull { it.date }
+        // Field and shop records are the user's own whatever the start; shifts before the calendar started are only the pattern.
+        val (from, to) = com.bamnat.core.work.YearRecap.range(year, today,
+            startDay.takeIf { focus == com.bamnat.core.work.CalendarFocus.SHIFTS }, firstWritten)
+        val days = snapshot.resolver.resolveRange(from, to)
+        val sleep = runCatching { kotlinx.coroutines.withTimeoutOrNull(3_000) { container.sleepRepository.recent(days = 400).first() } }.getOrNull().orEmpty()
+        fun inRange(d: LocalDate) = !d.isBefore(from) && !d.isAfter(to)
+        val money: Long? = when (focus) {
+            com.bamnat.core.work.CalendarFocus.SHIFTS -> if (profile == null || style?.usesPayEngine == false) null else
+                generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }
+                    .mapNotNull { m -> monthEstimate(profile, snapshot, m) }.toList().takeIf { it.isNotEmpty() }?.sum()
+            com.bamnat.core.work.CalendarFocus.JOBS -> book.jobs.filter { !it.cancelled && inRange(it.date) && it.isDone(today) }.sumOf { it.payable }
+            com.bamnat.core.work.CalendarFocus.SALES -> book.sales.filter { inRange(it.date) }.sumOf { it.sales - it.costs }
+            com.bamnat.core.work.CalendarFocus.INVEST -> null
+        }
+        com.bamnat.core.work.YearRecap.of(
+            year, from, to, focus, days,
+            restCounts = snapshot.hasPattern,
+            jobs = book.jobs, sales = book.sales, sleep = sleep,
+            money = money,
+            moneyLabel = when (focus) {
+                com.bamnat.core.work.CalendarFocus.SHIFTS -> if (style == com.bamnat.core.work.WorkStyle.HOURLY) "알바비 (세전 예상)" else "급여 (세전 예상)"
+                else -> style?.incomeLabel ?: if (focus == com.bamnat.core.work.CalendarFocus.JOBS) "일감 수입" else "가게 순수익"
+            },
+            today = today,
+        )
+    }
+
+    /** 1.40 [SPREAD-37] The 연말 결산 card is closed for this part of the window (12월, then once more in 1월). */
+    fun closeYearRecap(today: LocalDate) {
+        val key = com.bamnat.core.work.YearRecap.key(today)
+        container.settingsRepository.update { s -> if (s.yearRecapSeen >= key) s else s.copy(yearRecapSeen = key) }
+    }
 
     /** [CAL-46] The month's "내 기록" card is not shown again. */
     fun closeMonthRecap(month: java.time.YearMonth) {
@@ -1196,7 +1344,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * undo for all of them. A 대근 copies the covered shift's hours; extra work with a start and a length is
      * that span; otherwise the kind's usual piece.
      */
-    fun applyQuickText(p: com.bamnat.core.schedule.QuickText.Proposal, snapshot: ScheduleSnapshot) {
+    fun applyQuickText(p: com.bamnat.core.schedule.QuickText.Proposal, snapshot: ScheduleSnapshot) = gate(WriteKind.DAYS) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = p.dates.associateWith { snapshot.resolver.entryOn(it) }
@@ -1291,7 +1439,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [DAYW-11] Start, end and break of one day from the one time window. [DAYW-08] Always the planned shift,
      * before leave took its part: the resolver takes the leave off again from what is saved here.
      */
-    fun setDayTimes(date: LocalDate, start: LocalTime, end: LocalTime, breakMinutes: Int, type: ShiftType?) {
+    fun setDayTimes(date: LocalDate, start: LocalTime, end: LocalTime, breakMinutes: Int, type: ShiftType?) = gate(WriteKind.DAY_TIME) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             // The shift's own times are not "this day only": the day keeps following the shift type.
@@ -1467,7 +1615,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.resetDay(date)
             if (before != null && !before.isEmpty) {
-                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요") {
+                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 ${currentSnapshot().backDone}") {
                     schedule.restoreDay(date, before)
                 })
             }
@@ -1534,6 +1682,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.skipDay(it, day) } }
     }
 
+    /** 2.0.0 [RVI-41] "오늘 오후 3:00", "11월 14일 오전 9:00": when a quick memo's notice comes. */
+    private fun quickWhen(at: java.time.LocalDateTime): String {
+        val today = Today.date()
+        val day = when (at.toLocalDate()) {
+            today -> "오늘"
+            today.plusDays(1) -> "내일"
+            else -> com.bamnat.app.ui.Fmt.dayTitle(at.toLocalDate())
+        }
+        return "$day ${com.bamnat.app.ui.Fmt.time(at.toLocalTime())}"
+    }
+
     private val _openMemo = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     /** [SCHED-01] A memo to open in the editor, from the snackbar's 일정으로 넣기. */
     val openMemo: SharedFlow<Long> = _openMemo.asSharedFlow()
@@ -1541,11 +1700,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun addQuickMemo(date: LocalDate, text: String) = gate(WriteKind.MEMO) {
         viewModelScope.launch {
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
-            val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
-            // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
-            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime()) ?: return@launch
-            _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
-                _openMemo.tryEmit(memo.id)
+            val active = container.calendars.active.value
+            // 2.0.0 [RVI-76] (검토 U07a-03·11) Read as the 할 일 위젯's window and the memo tab's line read it (quickMemo): the day and
+            // time leave the title ("오후 3시 치과" → '치과' at 15:00), "매일"·"평일마다" repeat, "다음 야간 때" goes by the 근무표; a line
+            // that names no day stays on the day it was written on. It was the whole line as the memo's words.
+            val shifts = runCatching { com.bamnat.app.memo.shiftDaysAhead(container, active) }.getOrDefault(emptyList())
+            val read = com.bamnat.app.memo.quickMemo(text.trim(), com.bamnat.app.memo.QuickDay.READ, ring = true, Today.dateTime(), base = date, shifts = shifts)
+                ?: return@launch
+            val memo = memoRepo.save(read.copy(calendars = setOf(active), pinned = false))
+            // [SCHED-01] A quick line that names a time gets its notice. 2.0.0 [RVI-41] (검토 PC-10: the day's story showed 15:00 but
+            // nothing told the user; the offer took two more taps through the editor) It is put at once, a notice only (no ring),
+            // with 되돌리기.
+            val at = memo.reminder?.at ?: return@launch
+            _messages.tryEmit(UndoMessage("${quickWhen(at)}에 알려 드릴게요", actionLabel = "되돌리기") {
+                viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.save(it.copy(reminder = null)) } }
             })
         }
     }
@@ -1569,9 +1737,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             // [LEDG-18] When the category changed, offer the other lines from this place instead.
             val same = before?.let { money.samePlace(saved, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
-                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’(으)로 바꿀까요?", actionLabel = "바꾸기") {
+                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’${com.bamnat.app.ui.Fmt.ro(saved.category)} 바꿀까요?", actionLabel = "바꾸기") {
                     same.forEach { money.save(com.bamnat.core.money.Ledger.recategorize(it, saved.category)) }
-                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’(으)로 옮겼어요") { money.saveAll(same) })
+                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’${com.bamnat.app.ui.Fmt.ro(saved.category)} 옮겼어요") { money.saveAll(same) })
                 })
                 return@launch
             }
@@ -1591,8 +1759,16 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     override fun deleteEntry(entry: MoneyEntry) {
         val money = money
         container.appScope.launch {
+            // 2.0.0 [RVK-10] (MONEY-04): kept 30 days in 최근 지운 기록, as from 가계부.
+            val calendarId = container.calendars.active.value
+            val kept = runCatching {
+                container.recordsTrash.keepLines(calendarId, listOf(entry.id), "${entry.title} · ${com.bamnat.app.ui.Fmt.won(kotlin.math.abs(entry.amount))}")
+            }.getOrNull()
             money.delete(entry)
-            _messages.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") { money.save(entry) })
+            _messages.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") {
+                money.save(entry)
+                kept?.let { container.recordsTrash.forget(listOf(it.id)) }
+            })
         }
     }
 
@@ -1640,6 +1816,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
+    /** [RVG-20] A line said for something done elsewhere on this screen (a received calendar's '내 근무표가 아니에요'). */
+    fun say(message: UndoMessage) {
+        _messages.tryEmit(message)
+    }
+
     fun runUndo(message: UndoMessage) {
         val undo = message.undo ?: return
         container.appScope.launch { undo() }
@@ -1650,6 +1831,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         const val K_LIST = "list"
         const val K_FLOW_FOLDED = "flow_folded"
         const val K_HOLIDAYS = "holidays_kept"
+        const val PLACE_DEBOUNCE_MILLIS = 500L
         val FULL_LEAVE = Leave(LeaveKind.ANNUAL, 4)
     }
 }

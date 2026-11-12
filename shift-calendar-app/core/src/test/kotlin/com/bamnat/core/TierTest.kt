@@ -29,7 +29,27 @@ class TierTest {
     @Test fun beforeLaunchEverythingIsOpen() {
         val a = ProAccess.resolve(ProSources(billingLive = false), now, zone)
         assertTrue(a.pro)
-        assertEquals(ProReason.NOT_LAUNCHED, a.reason)
+        assertEquals(ProReason.ALL_OPEN, a.reason)
+    }
+
+    /** 2.0.0 [RVO-12] 검토 HQ-46: 처리방침 3.1's hold says its last free day, never '정식 출시 전'. */
+    @Test fun theHoldSaysItsLastFreeDay() {
+        val ends = java.time.LocalDate.of(2026, 11, 24).atStartOfDay(zone).toInstant()
+        val a = ProAccess.resolve(ProSources(billingLive = false, heldUntil = ends), now, zone)
+        assertTrue(a.pro)
+        assertEquals(ProReason.HELD, a.reason)
+        assertEquals("처리방침 3.1 동의 전이라 11월 23일까지 모든 기능이 무료예요", a.say(zone))
+        assertEquals("지금은 모든 기능이 무료로 열려 있어요", ProAccess.resolve(ProSources(billingLive = false), now, zone).say(zone))
+        assertTrue(ProReason.entries.none { it.words.contains("정식 출시 전") })
+        // Billing on: the hold is over whatever the sources say.
+        assertEquals(ProReason.NONE, ProAccess.resolve(ProSources(billingLive = true, heldUntil = ends), now, zone).reason)
+    }
+
+    /** 2.0.0 [RVO-12] A phone from before the 출시 has its 감사 month from the moment a release build knows. */
+    @Test fun thanksFromTheLaunchARelaseBuildKnows() {
+        val until = ProAccess.thanksUntil(at("2026-10-20T00:00:00Z"), com.bamnat.core.flags.Released.AT, com.bamnat.core.flags.Released.THANKS_MONTHS, zone)
+        assertEquals(java.time.LocalDate.of(2026, 12, 12), until!!.atZone(zone).toLocalDate())
+        assertNull(ProAccess.thanksUntil(at("2026-11-13T00:00:00Z"), com.bamnat.core.flags.Released.AT, 1, zone))
     }
 
     @Test fun afterLaunchNothingMeansFree() {
@@ -47,10 +67,21 @@ class TierTest {
         for (s in listOf(PlaySub.State.ON_HOLD, PlaySub.State.PAUSED, PlaySub.State.EXPIRED, PlaySub.State.PENDING)) {
             assertFalse(s.name, ProAccess.resolve(live { copy(subscription = sub(s)) }, now, zone).pro)
         }
-        // Paid up to a moment that has passed.
-        assertFalse(ProAccess.resolve(live { copy(subscription = sub(expiry = now)) }, now, zone).pro)
+        // Paid up to a moment that has passed, and not renewing.
+        assertFalse(ProAccess.resolve(live { copy(subscription = sub(expiry = now, autoRenew = false)) }, now, zone).pro)
         // The phone's Play said so without an expiry (no server check): 프로 while Play lists it.
         assertTrue(ProAccess.resolve(live { copy(subscription = sub(expiry = null)) }, now, zone).pro)
+    }
+
+    /** 1.39.1 [R391-11] 검토 PRO-08: renewed by Play at night, the app not opened since, the 5시 alarm still has 프로. */
+    @Test fun aRenewingSubscriptionKeepsProUntilThePhoneReadsTheRenewal() {
+        val end = now.minus(Duration.ofMinutes(1))
+        assertTrue(ProAccess.resolve(live { copy(subscription = sub(expiry = end)) }, now, zone).pro)
+        assertTrue(ProAccess.resolve(live { copy(subscription = sub(expiry = end, trial = true)) }, now, zone).pro)
+        assertFalse("past 3일 the phone has not seen it renew", ProAccess.resolve(live { copy(subscription = sub(expiry = now.minus(PlaySub.RENEW_LEEWAY))) }, now, zone).pro)
+        // Turned off in Play: it ends on time.
+        assertFalse(ProAccess.resolve(live { copy(subscription = sub(expiry = end, autoRenew = false)) }, now, zone).pro)
+        assertFalse(ProAccess.resolve(live { copy(subscription = sub(PlaySub.State.CANCELED, expiry = end, autoRenew = false)) }, now, zone).pro)
     }
 
     /** [MON-09] An approved admin phone is 프로 while it reached the server within 7 days. */
@@ -139,5 +170,24 @@ class TierTest {
         assertEquals(ProReason.SHARED, ProAccess.resolve(live { copy(sharedUntil = until) }, now, zone).reason)
         assertEquals(ProReason.NONE, ProAccess.resolve(live { copy(sharedUntil = now.minusSeconds(1)) }, now, zone).reason)
         assertEquals(ProReason.SUBSCRIPTION, ProAccess.resolve(live { copy(sharedUntil = until, subscription = sub()) }, now, zone).reason)
+    }
+
+    /** [R200-03] (검토 PRO-08 넘긴 일) Read again once a day from 6시간 before the end, until 7일 past it. */
+    @Test fun aSubscriptionNearItsEndIsReadAgainOnceADay() {
+        val end = at("2027-01-01T00:00:00Z")
+        val s = sub(expiry = end)
+        val long = at("2026-12-01T00:00:00Z")
+        assertFalse("a week before, nothing", s.recheckDue(end.minus(Duration.ofDays(7)), long))
+        assertTrue("6시간 before", s.recheckDue(end.minus(Duration.ofHours(6)), long))
+        val read = end.minus(Duration.ofHours(5))
+        assertFalse("read an hour ago", s.recheckDue(end.minus(Duration.ofHours(4)), read))
+        assertTrue("a day after the last read", s.recheckDue(read.plus(Duration.ofDays(1)), read))
+        assertFalse("7일 past it, no more", s.recheckDue(end.plus(Duration.ofDays(8)), read))
+        assertFalse(s.recheckWanted(end.plus(Duration.ofDays(8))))
+        assertTrue(s.recheckWanted(end.minus(Duration.ofDays(30))))
+        assertFalse("nothing to watch once expired", sub(state = PlaySub.State.EXPIRED, expiry = end).recheckWanted(end))
+        assertEquals(end.plus(PlaySub.RENEW_LEEWAY), s.endsAt())
+        assertEquals(end, sub(expiry = end, autoRenew = false).endsAt())
+        assertNull(sub(state = PlaySub.State.EXPIRED).endsAt())
     }
 }

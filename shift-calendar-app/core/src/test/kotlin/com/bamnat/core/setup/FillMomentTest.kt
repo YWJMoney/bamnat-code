@@ -49,6 +49,18 @@ class FillMomentTest {
         assertEquals("다음 달까지 일하는 날 17일", FillMoment.of(r, today)!!.head)
     }
 
+    /** 2.0.0 [RVI-67] (PC 통합 1차 N5) The first alarm said is the one the phone has set, not the setup's guess, and goes once past. */
+    @Test fun theFirstAlarmIsTheOneSet() {
+        val today = LocalDate.of(2026, 11, 2)
+        val r = days(WorkPattern.Weekly.fromSteps(today, listOf(day.id, day.id, day.id, day.id, day.id, null, null), holidaysOff = false), listOf(day), today)
+        val line = FillMoment.of(r, today, today.atTime(8, 0))!!
+        val now = today.atTime(6, 0)
+        assertEquals("쉬는 날 8일 · 첫 알람 오늘 07:40", line.restWith(today.atTime(7, 40), now))
+        assertEquals("쉬는 날 8일 · 첫 알람 모레 05:30", line.restWith(today.plusDays(2).atTime(5, 30), now))
+        assertEquals("no alarm set, none said", "쉬는 날 8일", line.restWith(null, now))
+        assertEquals("쉬는 날 8일", line.restWith(today.atTime(5, 0), now))
+    }
+
     @Test fun nothingWhenNoDayWorks() {
         val today = LocalDate.of(2026, 11, 7)
         assertNull(FillMoment.of(days(WorkPattern.Rotation(today, listOf(off.id)), listOf(off), today), today))

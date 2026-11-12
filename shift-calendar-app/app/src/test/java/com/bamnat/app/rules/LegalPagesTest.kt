@@ -1,5 +1,6 @@
 package com.bamnat.app.rules
 
+import com.bamnat.app.needs
 import com.bamnat.app.ui.pro.PRIVACY_URL
 import com.bamnat.app.ui.pro.TERMS_URL
 import com.bamnat.core.tier.AdRules
@@ -7,7 +8,6 @@ import com.bamnat.core.tier.TrialConsent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 
@@ -20,11 +20,12 @@ class LegalPagesTest {
     private val site = File("../..")
 
     /** 1.39 [STAT2-02] The events the page in force names: 3.12's life_* come in when 3.12 is published (then count them all). */
-    private val policyEvents = com.bamnat.core.stats.UsageEvent.entries.size - com.bamnat.core.stats.UsageEvent.POLICY_312.size
+    private val policyEvents = com.bamnat.core.stats.UsageEvent.entries.size - com.bamnat.core.stats.UsageEvent.POLICY_312.size -
+        com.bamnat.core.stats.UsageEvent.POLICY_313.size // 1.40 [DISC-06] 3.13's disc_* likewise
 
     @Test fun thePrivacyPolicyCoversProAndAds() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("2.5에서 바뀐 점: 앱 1.19.0부터"))
         listOf("1-5. 정식 출시 확인", "1-6. 프로 구독과 무료 체험 동의", "1-7. 보상 이용권, 복구 코드, 관리자 휴대폰 연결", "1-8. 광고").forEach {
@@ -42,7 +43,7 @@ class LegalPagesTest {
     /** [FEAT-07][FEAT-15][PROV-03][PROV-04] 2.6 for 1.20.0: the phone calendar, the feed address, more links and the daily backup, in the app's numbers. */
     @Test fun thePrivacyPolicyCoversThePhoneCalendarAndTheFeed() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("2.6에서 바뀐 점: 앱 1.20.0부터"))
         assertTrue(text.contains("2-7. 휴대폰 캘린더에 근무 쓰기"))
@@ -72,7 +73,7 @@ class LegalPagesTest {
     /** [PLZ-01][PLZ-08][PLZ-14][INV-30] 2.7 for 1.21.0: the plaza's votes, names and 임금표, and trades read from 체결 알림. */
     @Test fun thePrivacyPolicyCoversThePlazaAndTradeAlerts() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("처리방침 2.7 · 앱 버전 1.21.0"))
         assertTrue("광장 이름 2~12자", text.contains("광장 이름(선택, 2~12자)"))
@@ -90,7 +91,7 @@ class LegalPagesTest {
      */
     @Test fun thePrivacyPolicyCoversUsageStatsPhotosAndThePlazaRules() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("처리방침 2.8 · 앱 버전 1.22.0"))
         assertTrue(text.contains("2.8에서 바뀐 점: 앱 1.22.0부터"))
@@ -137,7 +138,7 @@ class LegalPagesTest {
      */
     @Test fun thePrivacyPolicyCoversGroupsTakedownReasonsAndBamnatNews() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("처리방침 2.9 · 앱 버전 1.23.0 기준 · 게시일 2026년 10월 24일 · 시행일 2026년 11월 21일"))
         assertTrue(text.contains("2.9에서 바뀐 점: 앱 1.23.0부터"))
@@ -176,7 +177,7 @@ class LegalPagesTest {
      */
     @Test fun thePrivacyPolicyCoversInvites() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("처리방침 3.0 · 앱 버전 1.26.0 기준 · 게시일 2026년 10월 25일 · 시행일 2026년 11월 24일"))
         assertTrue("30 days' notice", java.time.LocalDate.of(2026, 10, 25).plusDays(30) == java.time.LocalDate.of(2026, 11, 24))
@@ -190,7 +191,9 @@ class LegalPagesTest {
         val d = com.bamnat.core.tier.InviteTerms.DEFAULT
         assertTrue(server.contains("  friends: ${d.need},\n  days: ${d.days},\n  months: ${d.months},\n  capMonths: ${d.capMonths},"))
         assertTrue(server.contains("days: [1, 60]") && server.contains("graceDays: 30,") && server.contains("keepCounted: 365 * DAY"))
-        assertTrue(text.contains("친구 ${d.need}명마다 프로 ${d.months}개월, 사용 기간 ${d.days}일, 상한 없음") && text.contains("사용 기간은 60일까지"))
+        // 2.0.0 [RVO-08] 3.13 ①: 초대만의 상한은 없고, 모든 보상을 합쳐 1년 12개월(30일 줄).
+        assertTrue(text.contains("친구 ${d.need}명마다 프로 ${d.months}개월, 사용 기간 ${d.days}일</b>이며") && text.contains("사용 기간은 60일까지"))
+        assertTrue(text.contains("이유를 모두 합쳐 한 사람이 1년(365일)에 12개월까지 받습니다"))
         assertTrue(text.contains("영문·숫자 8자") && com.bamnat.core.tier.InviteRules.code("abcd-2345") == "ABCD2345")
         assertTrue(text.contains("알린 날부터 (사용 기간+30)일 뒤 삭제(지금 ${d.days + 30}일)") && text.contains("사용 기간을 채운 기록은 1년 뒤 삭제"))
         // The phone mark: hashed on the phone, never the id or the advertising ID.
@@ -209,7 +212,7 @@ class LegalPagesTest {
 
     @Test fun theTermsCoverSubscriptionTrialAndRefunds() {
         val terms = File(site, "terms/index.html")
-        assumeTrue(File(site, "privacy/index.html").exists())
+        needs("privacy/index.html", File(site, "privacy/index.html").exists())
         assertTrue("이용약관 페이지가 있어요", terms.exists())
         val text = terms.readText()
         assertTrue(text.contains("이용약관 1.0 · 앱 버전 1.19.0"))
@@ -225,7 +228,7 @@ class LegalPagesTest {
     /** [PRIV-03] 3.1 for 1.27.0 (결정 D84): the dates the app holds the launch by are the dates the pages say. */
     @Test fun policy31AndTerms11MoveTheDateWithTheTestersYes() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val c = com.bamnat.core.ops.PolicyConsent
         // 1.38: the app opens on its own day (11-12 by default, 관리자 앱 일정), never before the day the page says (11-10).
@@ -246,7 +249,7 @@ class LegalPagesTest {
      */
     @Test fun policy32NamesTheExtraUsageItemsAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 28) && v.effective == java.time.LocalDate.of(2026, 11, 27) && v.heldUntil == null)
@@ -271,7 +274,7 @@ class LegalPagesTest {
      */
     @Test fun policy33NamesPhotoWrongCountsAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.3")!!
         val v32 = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
@@ -292,7 +295,7 @@ class LegalPagesTest {
      */
     @Test fun policy34NamesCompanyFixedAmountsAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.4")!!
         val v32 = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.2")!!
@@ -312,7 +315,7 @@ class LegalPagesTest {
      */
     @Test fun policy35NamesLookupTimesAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.5")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 29) && v.effective == java.time.LocalDate.of(2026, 11, 28) && v.heldUntil == null)
@@ -336,7 +339,7 @@ class LegalPagesTest {
      */
     @Test fun policy36NamesTheStopTrailAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.6")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29) && v.heldUntil == null)
@@ -358,7 +361,7 @@ class LegalPagesTest {
      */
     @Test fun policy37NamesTheCoworkerSetupAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.7")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29) && v.heldUntil == null)
@@ -381,7 +384,7 @@ class LegalPagesTest {
      */
     @Test fun policy38NamesTheRecipeBoardAndItsDates() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.8")!!
         assertTrue(v.posted == java.time.LocalDate.of(2026, 10, 30) && v.effective == java.time.LocalDate.of(2026, 11, 29))
@@ -406,7 +409,7 @@ class LegalPagesTest {
     /** 1.36 [PUSH-01][GRW-10] 사용자 2026-11-01 승인 (YWJMoney/-#7): 알림 토큰과 Firebase 위탁, '없다고 알리기'. */
     @Test fun policy39TellsTheAnswerSignalAndTheMissWords() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("문의 답 바로 알림 (앱 1.36.0부터)") && text.contains("알림 토큰"))
         assertTrue("Google LLC Firebase 위탁", text.contains("Firebase 클라우드 메시징"))
@@ -417,7 +420,7 @@ class LegalPagesTest {
 
     @Test fun policy39BringsThePreLaunchItemsToLaunchDay() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
         assertTrue(v.effective >= java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
@@ -448,7 +451,7 @@ class LegalPagesTest {
      */
     @Test fun policy311NamesTheThemeAndSettingsInALink() {
         val policy = File(site, "privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.11")!!
         // 1.38 (사용자 2026-11-07 "처리방침은 오늘 기준으로"): 3.11 is posted and takes effect on 11-07; a phone installed before
@@ -464,16 +467,94 @@ class LegalPagesTest {
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.11" })
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Policy && it.version == "3.11" })
         assertFalse(flag.default)
-        assertEquals("3.11", com.bamnat.core.ops.PolicyConsent.ASK_VERSION)
+        assertEquals("3.12", com.bamnat.core.ops.PolicyConsent.ASK_VERSION)
         assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.11"), "3.9"))
         assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.11"), "3.1"))
+    }
+
+    /**
+     * 2.0.0 [RVO-08] 처리방침 3.13·이용약관 1.4 (사용자 2026-11-12 "게시해"): one 게시일 ([PolicyConsent.REVISION_POSTED]) gives the 7-day
+     * and the 30-day 시행일 on both pages (9항, 약관 제3조), every date is a `<time data-legal>` that `tools/legal_dates.py` rewrites,
+     * the app's 설정 rows say the same versions, 3.13 is not asked on the calendar card and `stats.disc` waits for 3.13's 시행일.
+     */
+    @Test fun policy313AndTerms14FollowOnePostedDay() {
+        val policy = File(site, "privacy/index.html")
+        val termsFile = File(site, "terms/index.html")
+        needs("privacy·terms index.html", policy.exists() && termsFile.exists())
+        val text = policy.readText()
+        val terms = termsFile.readText()
+        val c = com.bamnat.core.ops.PolicyConsent
+        assertEquals(c.REVISION_POSTED.plusDays(7), c.REVISION_EFFECTIVE)
+        assertEquals(c.REVISION_POSTED.plusDays(30), c.REVISION_EFFECTIVE_30)
+        fun tag(kind: String, d: java.time.LocalDate) = "<time data-legal=\"$kind\" datetime=\"$d\">${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일</time>"
+        val posted = tag("posted", c.REVISION_POSTED)
+        val p7 = tag("p7", c.REVISION_EFFECTIVE)
+        val p30 = tag("p30", c.REVISION_EFFECTIVE_30)
+        // Every date tag on the pages is one of the three, so moving the 게시일 moves them all.
+        val tags = Regex("<time data-legal=\"[a-z0-9]+\" datetime=\"[0-9-]+\">[^<]*</time>")
+        val allowed = setOf(posted, p7, p30)
+        (tags.findAll(text) + tags.findAll(terms)).forEach { assertTrue("날짜 표시 ${it.value}", it.value in allowed) }
+        assertTrue(text.contains("처리방침 ${c.REVISION_VERSION} · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7(3.12를 대신함."))
+        assertTrue(text.contains("1-12항 친구 초대의 바뀐 곳은 ${p30}부터)"))
+        assertTrue("3.13 is the newest version line", text.indexOf("처리방침 3.13 ·") < text.indexOf("(이전) 처리방침 3.12 ·"))
+        assertTrue(text.contains("${posted}에 앱 공지와 이 페이지로 먼저 알린 뒤 7일 뒤인 ${p7}에 시행합니다"))
+        assertTrue(text.contains("30일 뒤인 ${p30}에 시행합니다"))
+        assertTrue(terms.contains("이용약관 ${c.TERMS_VERSION} · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p30(1.3을 대신함"))
+        assertTrue(terms.indexOf("이용약관 1.4 ·") < terms.indexOf("(이전) 이용약관 1.3 ·"))
+        assertTrue(terms.contains("1.4에서 바뀐 곳(제4조 2항, 제10조, 제14조)은 ${p30}부터 시행합니다"))
+        // ④ the four 'disc_' totals: 46 names in all, the flag reads 3.13 and 3.13 needs no yes on the calendar card.
+        assertTrue(text.contains("더해 ${com.bamnat.core.stats.UsageEvent.entries.size}가지. 어떤 기능을 알렸는지는 보내지 않음"))
+        assertEquals(4, com.bamnat.core.stats.UsageEvent.POLICY_313.size)
+        val disc = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.STATS_DISC)!!
+        assertTrue(disc.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == c.REVISION_VERSION })
+        assertTrue(disc.conditions.any { it is com.bamnat.core.flags.Condition.Policy && it.version == c.REVISION_VERSION })
+        assertFalse(disc.default)
+        assertFalse("3.13 has no calendar card", c.REVISION_VERSION in c.ASKED_VERSIONS)
+        assertTrue(com.bamnat.app.ui.onboarding.STATS_WHAT.contains("처리방침 3.13 시행일부터: ‘안 써 본 기능 알려 주기’"))
+        // ③ ⑤ ⑥ ⑦ ⑧: the code box, the trial's 3-day notice (the app's own number), biometrics, the backup as it is, the fonts.
+        assertTrue(text.contains("설정 › 프로 맨 아래 ‘코드를 받으셨나요?’에 코드를 넣음(앱 2.0.0부터. 그 전 판은 ‘관리자 연결’)"))
+        assertTrue(text.contains("답이 없으면 끝나기 3일 전에 ‘구독 관리·해지’로 가는 알림을 한 번 더 보냅니다"))
+        assertTrue(text.contains("<td>생체 인증 (앱 잠금을 켠 경우만)</td>"))
+        assertTrue(text.contains("Cloudflare D1의 시점 복구 기능(늘 켜져 있음)으로 최근 30일 안의 어느 때로든"))
+        assertFalse("옛 R2 매일 백업 글이 남지 않아요", text.contains("매일 같은 Cloudflare의 저장소(R2)에"))
+        assertTrue(text.replace("<wbr>", "").contains("<code>ywjmoney.github.io/-/remote/card-fonts/</code>"))
+        assertTrue(text.contains("장터에서 작품을 보거나 입어 볼 때는 생기지 않습니다"))
+        // ⑨ ⑩ ⑪ in the terms.
+        assertTrue(terms.contains("이용자가 만든 작품이 모두의 도구·기본 도구가 되거나 이달의 주제에 뽑히면, 운영자가 확인한 뒤"))
+        assertTrue(terms.contains("한 이용자가 받는 보상 이용권은 이유를 모두 합쳐 1년(365일)에 12개월까지입니다"))
+        assertTrue(terms.contains("수면 도구(수면 기록·아침 기분·계획 대비)는 생활 습관을 돌아보는 도구이며 의료 기기나 진단이 아닙니다"))
+        assertTrue(terms.contains("할 일·값 칸·단추 위젯 추가(두 번째부터)"))
+        // The app's 설정 rows name the same versions.
+        val pages = File("src/main/java/com/bamnat/app/ui/settings/SettingsPages.kt").readText()
+        assertTrue(pages.contains("\"\${com.bamnat.core.ops.PolicyConsent.REVISION_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지\""))
+        assertTrue(pages.contains("\"\${com.bamnat.core.ops.PolicyConsent.TERMS_VERSION} · 프로 구독·체험·해지·환불\""))
+    }
+
+    /**
+     * 2.0.0 [RVO-08] (총괄 2026-11-12 "공개 PR과 글이 같은지 시험으로 묶어 주세요"): the pages here are the ones on the public site.
+     * `tools/legal_dates.py --site <공개 저장소>` copies them there and writes their sha256 to docs/legal-published.txt; a page changed here
+     * without that (and a PR to YWJMoney/-) fails this.
+     */
+    @Test fun theRepoPagesAreTheOnesPublished() {
+        val record = File("../docs/legal-published.txt")
+        needs("docs/legal-published.txt", record.exists())
+        val want = record.readLines().filter { it.isNotBlank() && !it.startsWith("#") }.associate { line ->
+            val (sum, path) = line.trim().split(Regex("\\s+"), limit = 2)
+            path to sum
+        }
+        assertEquals(setOf("privacy/index.html", "terms/index.html"), want.keys)
+        for ((path, sum) in want) {
+            val bytes = File(site, path).readBytes()
+            val got = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            assertEquals("${path}이 공개 저장소에 올린 것과 달라요. tools/legal_dates.py --site로 공개 PR을 만들고 기록을 고쳐요", sum, got)
+        }
     }
 
     /** 1.36 842 (수익 2판·3판): no banner, the four bundles' 7 days, the 1년 이용권 and the trial on the yearly plan only, in both pages. */
     @Test fun the136MoneyWaysAreInThePolicyAndTerms() {
         val policy = File(site, "privacy/index.html")
         val termsFile = File(site, "terms/index.html")
-        assumeTrue(policy.exists() && termsFile.exists())
+        needs("privacy/index.html and terms/index.html", policy.exists() && termsFile.exists())
         val text = policy.readText()
         val terms = termsFile.readText()
         assertTrue(text.contains("앱 1.36.0부터 띠 광고는 없고"))

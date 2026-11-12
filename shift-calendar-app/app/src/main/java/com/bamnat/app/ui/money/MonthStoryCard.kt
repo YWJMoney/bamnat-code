@@ -36,12 +36,19 @@ import java.time.YearMonth
  * for the month, and turned off in 카드 배치.
  */
 @Composable
-internal fun MonthStoryCard(book: MoneyBook, moves: List<EnvelopeMove>, work: MonthWork?, today: LocalDate, gate: Gate) {
+internal fun MonthStoryCard(book: MoneyBook, moves: List<EnvelopeMove>, work: MonthWork?, today: LocalDate, gate: Gate, calendarId: String = "") {
     if (!MonthStory.due(today)) return
     val month = YearMonth.from(today).minusMonths(1)
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { context.getSharedPreferences("month_story", android.content.Context.MODE_PRIVATE) }
-    var closedFor by remember { mutableStateOf(prefs.getString("closed_for", "").orEmpty()) }
+    // 2.0.0 [RVK-42] (검토 MONEY-26·T06a-12) 이번 달 닫기 is per calendar: closed on 본업, 부업·가게's story still comes. The one kept before
+    // for every calendar stays with the main one.
+    val key = "closed_for:$calendarId"
+    var closedFor by remember(calendarId) {
+        mutableStateOf(prefs.getString(key, null) ?: prefs.getString("closed_for", "").orEmpty().takeIf {
+            calendarId == com.bamnat.app.data.PersonalCalendar.MAIN || calendarId.isEmpty()
+        }.orEmpty())
+    }
     if (closedFor == month.toString()) return
     val story = remember(book, moves, work, month) {
         MonthStory.of(month, book.month(month), book.month(month.minusMonths(1)), moves,
@@ -50,7 +57,7 @@ internal fun MonthStoryCard(book: MoneyBook, moves: List<EnvelopeMove>, work: Mo
     if (story.earned == 0L && story.spent == 0L) return
     val cards = remember(story) { story.cards() }
     var open by remember { mutableStateOf(false) }
-    SectionCard(title = "${month.monthValue}월 돈 이야기", trailing = { TextButton(onClick = { closedFor = month.toString(); prefs.edit().putString("closed_for", closedFor).apply() }) { Text("이번 달 닫기") } }) {
+    SectionCard(title = "${month.monthValue}월 돈 이야기", trailing = { TextButton(onClick = { closedFor = month.toString(); prefs.edit().putString(key, closedFor).apply() }) { Text("이번 달 닫기") } }) {
         StoryPage(cards.first())
         TextButton(onClick = { open = true }) { Text("이야기 ${cards.size}장 넘겨 보기") }
     }

@@ -15,6 +15,11 @@ import com.bamnat.core.imports.RosterPhotoRead
 import com.bamnat.core.imports.RosterWord
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
@@ -43,6 +48,13 @@ object RosterScanner {
     @VisibleForTesting
     var fake: (suspend (Uri) -> List<RosterWord>)? = null
 
+    /** 1.39.1 [R391-13] For tests: what a picture in memory (a scanned PDF's page) reads as, or the failure it throws. */
+    var fakePicture: (suspend (Bitmap) -> List<RosterWord>)? = null
+
+    /** 2.0.0 [RVL-32] For tests: what a reading says while under way (the model's percent, a step) before [fake] reads. */
+    @VisibleForTesting
+    var fakeUnderWay: (suspend (preparing: (Int?) -> Unit, progress: (Int, Int) -> Unit) -> Unit)? = null
+
     /**
      * [READ-13] Several readings of one photo the tests give (as the made-over pictures would read), put together as the
      * phone does. Wins over [fake].
@@ -60,7 +72,12 @@ object RosterScanner {
      * light) and read again, and the readings put together cell by cell ([RosterVote]): a cell lost once comes back, a
      * cell read two ways is yellow. [progress] hears (reading n, of m) for "n/m번째로 읽는 중".
      */
-    suspend fun scan(context: Context, uri: Uri, codes: DutyCodes, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+    suspend fun scan(
+        context: Context, uri: Uri, codes: DutyCodes,
+        /** 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down before the first reading (percent, null while unknown). */
+        preparing: (Int?) -> Unit = {},
+        progress: (Int, Int) -> Unit = { _, _ -> },
+    ): Scan = withContext(Dispatchers.Default) {
         fakeReads?.let { f ->
             val reads = f(uri)
             val analysed = reads.map { DutyRoster.analyse(it, codes) }
@@ -68,20 +85,34 @@ object RosterScanner {
             return@withContext Scan(words, RosterVote.merge(analysed), fakeImage?.invoke(), 1f, ways = reads.size)
         }
         fake?.let { f ->
+            fakeUnderWay?.invoke(preparing, progress)
             val words = f(uri)
             return@withContext Scan(words, DutyRoster.analyse(words, codes), fakeImage?.invoke(), 1f)
         }
-        scanPicture(context, ImagePrep.load(context, uri), codes, progress)
+        scanPicture(context, ImagePrep.load(context, uri), codes, preparing, progress)
     }
 
-    /** [READ-32] 1.38: a picture already in memory (a scanned PDF's page, [AnyFile.render]) read as a photo is. */
-    suspend fun scanPicture(context: Context, photo: Bitmap, codes: DutyCodes, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
+    /**
+     * [READ-32] 1.38: a picture already in memory (a scanned PDF's page, [AnyFile.render]) read as a photo is.
+     * 2.0.0 [RVL-31] (검토 SCAN-03·SCAN-24) All its readings go through one recognizer ([OcrModel.reading]), and a cancelled reading
+     * (멈추기, the screen left, the setup's time limit) stops at the next step instead of running its other ways to the end.
+     */
+    suspend fun scanPicture(
+        context: Context, photo: Bitmap, codes: DutyCodes,
+        preparing: (Int?) -> Unit = {},
+        progress: (Int, Int) -> Unit = { _, _ -> },
+    ): Scan = withContext(Dispatchers.Default) {
         progress(1, 0)
+        fakePicture?.let { f -> val words = f(photo); return@withContext Scan(words, DutyRoster.analyse(words, codes), null, 1f) }
+        OcrModel.reading(context, preparing) { reader -> scanWith(reader, context, photo, codes, progress) }
+    }
+
+    private suspend fun scanWith(reader: OcrModel.Reader, context: Context, photo: Bitmap, codes: DutyCodes, progress: (Int, Int) -> Unit): Scan {
         // 1.38 PC 11차 (흐린 근무표: 혼자 37초, 다른 폰과 함께 47초 → 45초 제한에 걸려 아무것도 못 보여 줌): the extra ways stop once
         // [READ_BUDGET_NS] is spent and the cells read so far are shown, so a slow phone gets fewer ways instead of nothing.
         val deadline = System.nanoTime() + READ_BUDGET_NS
         val spent = { System.nanoTime() > deadline }
-        val first = words(OcrModel.read(context, photo))
+        val first = words(reader.read(photo))
         val firstRead = DutyRoster.analyse(first, codes)
         var base = photo
         var leveled = false
@@ -89,7 +120,7 @@ object RosterScanner {
         val reads = mutableListOf(firstRead)
         if (firstRead.problem != null || abs(firstRead.tilt) >= SECOND_LOOK_TILT) {
             val level = ImagePrep.leveled(photo, firstRead.tilt)
-            val again = runCatching { words(OcrModel.read(context, level.bitmap)) }.getOrNull()
+            val again = attempt { words(reader.read(level.bitmap)) }
             if (again != null) {
                 val againRead = DutyRoster.analyse(again, codes)
                 // The level picture's words sit elsewhere than the photo's: one of the two is read on, not both.
@@ -105,13 +136,14 @@ object RosterScanner {
         val box = if (lead.isEmpty()) null else android.graphics.Rect(lead.minOf { it.left }, lead.minOf { it.top }, lead.maxOf { it.right }, lead.maxOf { it.bottom })
         // The level picture is already grey with its contrast stretched.
         val more = kinds.filter { it != PhotoVariants.Kind.ORIG && !(leveled && it == PhotoVariants.Kind.CONTRAST) }
-        more.forEachIndexed { i, kind ->
-            if (spent()) return@forEachIndexed
+        for ((i, kind) in more.withIndex()) {
+            currentCoroutineContext().ensureActive()
+            if (spent()) break
             progress(i + 2, more.size + 1)
-            val v = ImagePrep.variant(base, kind, box) ?: return@forEachIndexed
-            val got = runCatching { words(OcrModel.read(context, v.bitmap)) }.getOrNull()
+            val v = ImagePrep.variant(base, kind, box) ?: continue
+            val got = attempt { words(reader.read(v.bitmap)) }
             if (v.bitmap !== base) v.bitmap.recycle()
-            if (got.isNullOrEmpty()) return@forEachIndexed
+            if (got.isNullOrEmpty()) continue
             val back = got.map { w -> w.copy(left = v.x(w.left), top = v.y(w.top), right = v.x(w.right), bottom = v.y(w.bottom)) }
             words += back
             reads += DutyRoster.analyse(back, codes)
@@ -123,14 +155,26 @@ object RosterScanner {
             // Twice: bands 5 letters high at 2.5×, then 4 high at 3.5× (photo bench +48 and +8 cells, silent 0 both).
             for ((zoom, high) in STRIP_PASSES) {
                 if (ImagePrep.low(context) || spent()) break
-                strips(context, base, box, letter ?: 0, zoom, high, spent)?.let { band -> words += band; reads += DutyRoster.analyse(band, codes) }
+                strips(reader, context, base, box, letter ?: 0, zoom, high, spent)?.let { band -> words += band; reads += DutyRoster.analyse(band, codes) }
             }
         }
         val anchor = RosterVote.anchor(reads)
         if (BuildConfig.DEBUG) dump(words, anchor)
         val quality = PhotoQuality.of(stats, letter, first.size, firstRead.tilt)
         val (screen, scale) = ImagePrep.forScreen(base)
-        Scan(words[anchor], RosterVote.merge(reads), screen, scale, quality, reads.size)
+        return Scan(words[anchor], RosterVote.merge(reads), screen, scale, quality, reads.size)
+    }
+
+    /**
+     * 2.0.0 [RVL-31] (검토 SCAN-03) One of the other ways, whose failure only leaves it out: `runCatching` took a cancelled reading
+     * for a failed one and went on to the next way, so 멈추기 and the time limit stopped nothing.
+     */
+    private suspend fun <T> attempt(block: suspend () -> T): T? = try {
+        block()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /**
@@ -138,7 +182,7 @@ object RosterScanner {
      * high that overlap by half, each made [zoomWanted]× bigger and read; a word is kept from the band whose middle half it
      * sits in. Mirror of tools/photo_bench.py `strips`. Null when it could not run (memory, no table found).
      */
-    private suspend fun strips(context: Context, base: Bitmap, box: android.graphics.Rect?, letter: Int, zoomWanted: Float, high: Int, spent: () -> Boolean = { false }): List<RosterWord>? {
+    private suspend fun strips(reader: OcrModel.Reader, context: Context, base: Bitmap, box: android.graphics.Rect?, letter: Int, zoomWanted: Float, high: Int, spent: () -> Boolean = { false }): List<RosterWord>? {
         if (box == null || letter <= 0) return null
         val v = ImagePrep.variant(base, PhotoVariants.Kind.FLAT, box) ?: return null
         try {
@@ -146,30 +190,42 @@ object RosterScanner {
             val h = flat.height
             val band = maxOf((letter / v.toBase * high).toInt(), 24).coerceAtMost(h)
             val step = band / 2
+            val zoom = minOf(zoomWanted, ImagePrep.BIG_SIDE.toFloat() / flat.width).coerceAtLeast(1f)
+            // Each band's top, the last one reaching the bottom.
+            val tops = generateSequence(0) { y -> if (y + band >= h) null else y + step }.toList()
             val out = mutableListOf<RosterWord>()
-            var y = 0
-            while (true) {
-                val hh = minOf(band, h - y)
-                val crop = Bitmap.createBitmap(flat, 0, y, flat.width, hh)
-                val zoom = minOf(zoomWanted, ImagePrep.BIG_SIDE.toFloat() / flat.width).coerceAtLeast(1f)
-                val up = Bitmap.createScaledBitmap(crop, (crop.width * zoom).toInt().coerceAtLeast(1), (crop.height * zoom).toInt().coerceAtLeast(1), true)
-                if (crop !== flat && crop !== up) crop.recycle()
-                val got = runCatching { words(OcrModel.read(context, up)) }.getOrNull().orEmpty()
-                up.recycle()
-                val lo = y + if (y == 0) 0 else band / 4
-                val hi = y + if (y + band >= h) band else band - band / 4
-                for (w in got) {
-                    val t = w.top / zoom + y
-                    val b = w.bottom / zoom + y
-                    if ((t + b) / 2 < lo || (t + b) / 2 >= hi) continue
-                    out += w.copy(left = v.x((w.left / zoom).toInt()), right = v.x((w.right / zoom).toInt()), top = v.y(t.toInt()), bottom = v.y(b.toInt()))
+            // 2.0.0 [RVL-31] (검토 SCAN-24) Two bands at a time on a phone with memory to spare: one is cut out and made bigger while
+            // the other is read.
+            for (some in tops.chunked(if (ImagePrep.tight(context)) 1 else BANDS_AT_ONCE)) {
+                currentCoroutineContext().ensureActive()
+                if (ImagePrep.low(context) || spent()) break
+                val read = coroutineScope { some.map { y -> async { y to band(reader, flat, y, minOf(band, h - y), zoom) } }.awaitAll() }
+                for ((y, got) in read) {
+                    val lo = y + if (y == 0) 0 else band / 4
+                    val hi = y + if (y + band >= h) band else band - band / 4
+                    for (w in got) {
+                        val t = w.top / zoom + y
+                        val b = w.bottom / zoom + y
+                        if ((t + b) / 2 < lo || (t + b) / 2 >= hi) continue
+                        out += w.copy(left = v.x((w.left / zoom).toInt()), right = v.x((w.right / zoom).toInt()), top = v.y(t.toInt()), bottom = v.y(b.toInt()))
+                    }
                 }
-                if (y + band >= h || ImagePrep.low(context) || spent()) break
-                y += step
             }
             return out.takeIf { it.isNotEmpty() }
         } finally {
             if (v.bitmap !== base) v.bitmap.recycle()
+        }
+    }
+
+    /** [READ-35] One band of [flat] from [y], [hh] high, made [zoom]× bigger and read: its words on the bigger band. */
+    private suspend fun band(reader: OcrModel.Reader, flat: Bitmap, y: Int, hh: Int, zoom: Float): List<RosterWord> {
+        val crop = Bitmap.createBitmap(flat, 0, y, flat.width, hh)
+        val up = Bitmap.createScaledBitmap(crop, (crop.width * zoom).toInt().coerceAtLeast(1), (crop.height * zoom).toInt().coerceAtLeast(1), true)
+        if (crop !== flat && crop !== up) crop.recycle()
+        try {
+            return attempt { words(reader.read(up)) }.orEmpty()
+        } finally {
+            up.recycle()
         }
     }
 
@@ -212,4 +268,6 @@ object RosterScanner {
     private const val SECOND_LOOK_TILT = 1.5
     /** [READ-35] How much bigger each band is read, and how many letters high it is. */
     private val STRIP_PASSES = listOf(2.5f to 5, 3.5f to 4)
+    /** 2.0.0 [RVL-31] Bands read together. */
+    private const val BANDS_AT_ONCE = 2
 }

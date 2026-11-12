@@ -102,7 +102,7 @@ fun InvestDayMark(cells: InvestCells, date: LocalDate, modifier: Modifier = Modi
     val n = cells.trades(date)
     val scheme = MaterialTheme.colorScheme
     Box(
-        modifier.height(22.dp).clip(RoundedCornerShape(6.dp)).background(if (n > 0) scheme.secondaryContainer else Color.Transparent)
+        modifier.height(22.dp).clip(MaterialTheme.shapes.extraSmall).background(if (n > 0) scheme.secondaryContainer else Color.Transparent)
             .padding(horizontal = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -137,7 +137,7 @@ fun TodayInvestCard(vm: InvestViewModel, today: LocalDate, onTrade: () -> Unit, 
     val next = state.full.alarms.mapNotNull { a -> InvestAlarms.next(a, now)?.takeIf { it.toLocalDate() == today }?.let { a to it } }.minByOrNull { it.second }
     val events = state.full.events.filter { it.date == today }
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.clickable(onClick = onOpen).padding(16.dp)) {
+        Column(Modifier.clickable(role = Role.Button, onClick = onOpen).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("오늘 투자", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -175,7 +175,7 @@ fun InvestMonthBar(vm: InvestViewModel, month: YearMonth, onOpen: () -> Unit, mo
     val s = state.result.summary
     val figures = listOf(
         Triple("${month.monthValue}월 손익", InvestFmt.signedShort(stats.pnl, hide), pnlColor(stats.pnl)),
-        Triple("승률", stats.winRate?.let { "${"%.0f".format(it * 100)}%" } ?: "–", MaterialTheme.colorScheme.onSurface),
+        Triple("승률", stats.winRate?.let { "${"%.0f".format(java.util.Locale.ROOT, it * 100)}%" } ?: "–", MaterialTheme.colorScheme.onSurface),
         Triple("총 수익률", InvestFmt.percent(s.simpleReturn), rateColor(s.simpleReturn)),
     )
     val notes = listOf("매매 ${stats.trades}건", "매도 ${stats.sells}번", "원금 ${InvestFmt.short(s.principal, hide)}")
@@ -225,12 +225,12 @@ fun InvestDayContent(vm: InvestViewModel, date: LocalDate, onSheet: (InvestSheet
         state.cashOn(date).forEach { c -> CashLine(c, state) { onSheet(InvestSheet.CashEdit(editing = c)) } }
         state.full.events.filter { it.date == date }.forEach { e ->
             Text("${e.kind.label} · ${e.label}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.fillMaxWidth().clickable { onSheet(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 6.dp))
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { onSheet(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 6.dp))
         }
         state.full.journalOn(date)?.takeIf { !it.isEmpty }?.let { j ->
             Text("일지 · " + listOfNotNull(j.grade?.label, j.review.ifBlank { j.market }.take(60).ifBlank { null }).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().clickable { onSheet(InvestSheet.Journal(date)) }.padding(vertical = 6.dp))
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { onSheet(InvestSheet.Journal(date)) }.padding(vertical = 6.dp))
         }
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             AssistChip(onClick = { onSheet(InvestSheet.TradeEdit(vm.draftFor(null, date).copy(side = Side.BUY))) }, label = { Text("매수") })

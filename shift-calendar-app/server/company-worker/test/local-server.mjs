@@ -1,12 +1,13 @@
 // [COMM-04][ADMIN-01] The worker on a plain Node server with SQLite, for the app's round-trip test and
 // to try the developer app at http://localhost:8788/admin/ before deploying:
-//   ADMIN_PASSWORD=<10+ letters> [SHARE_BASE_URL=http://127.0.0.1:8790] npm run local -- 8788 [--seed] [--market] [--db local.sqlite]
+//   ADMIN_PASSWORD=<10+ letters> [SHARE_BASE_URL=http://127.0.0.1:8790] npm run local -- 8788 [--seed] [--market] [--db local.sqlite] [--backup local-backup]
 // --seed fills it with made-up coworkers' reports, so every screen has something on it.
 // --market (1.39) puts the real 장터's works in too (seedMarket, below).
 import http from "node:http";
 import worker from "../src/index.js";
 import { d1 } from "./d1.mjs";
 import { report, setup } from "./helpers.mjs";
+import { localR2 } from "./local-r2.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,8 +20,12 @@ const env = { DB: d1(file), RATE_SALT: "local", ADMIN_PASSWORD: process.env.ADMI
 // the server answers not_set and the app shows why it cannot post).
 if (process.env.INTEGRITY_MODE) env.INTEGRITY_MODE = process.env.INTEGRITY_MODE;
 // 1.39 PC 6차 (G7 F절): the share server's address, so 서버 상태 asks its /api/health (set SHARE_BASE_URL=http://127.0.0.1:8790).
+// 2.0.0 [RVQ-24] With the same SHARE_ADMIN_TOKEN on both (20+ letters), the share admin calls work here too: 서버 상태의 공유 KV 줄, 공유 링크 신고, 새 링크 스위치.
 if (process.env.SHARE_BASE_URL) env.SHARE_BASE_URL = process.env.SHARE_BASE_URL;
 if (process.env.SHARE_ADMIN_TOKEN) env.SHARE_ADMIN_TOKEN = process.env.SHARE_ADMIN_TOKEN; // the share server started with the same value
+// 2.0.0 [RVQ-16] the daily backup's R2: in memory, or with --backup <folder> as files there, so 관리 › 백업 and 되살리기 연습 work
+// on the PC and `node tools/backup-open.mjs <folder>/d1/<day>` (BAMNAT_BACKUP_SECRET=local) turns a day back into SQL.
+env.BACKUP = localR2(args.includes("--backup") ? args[args.indexOf("--backup") + 1] : null);
 if (!env.ADMIN_PASSWORD) console.log("ADMIN_PASSWORD is not set: the developer app shows what is missing.");
 
 const send = (path, body, ip, method = "POST") => worker.fetch(new Request(`http://localhost:${port}${path}`, {
@@ -332,6 +337,12 @@ async function seedMarket() {
   }
   const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
   console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);
+  // 1.39.1 [P391-04] 9차 PC 1-12: '열자마자 오늘 정리'(겹치는 알림 확인용)는 1.39 장터 정리로 내려가 장터에서 찾을 수 없어요. 내린 작품도 코드로는
+  // 열리니, PC 확인이 장터 찾기 칸에 넣을 코드를 알려 줘요.
+  for (const title of ["열자마자 오늘 정리", "아침 오늘 요약"]) {
+    const row = await env.DB.prepare("SELECT code FROM recipes WHERE title = ? ORDER BY created_at LIMIT 1").bind(title).first().catch(() => null);
+    if (row?.code) console.log(`--market: PC 확인용 '${title}' 코드 ${row.code} (장터 찾기 칸에 넣으면 열려요)`);
+  }
   await seedMaterials(here, admin);
 }
 
@@ -367,6 +378,35 @@ async function seedMaterials(here, admin) {
 }
 if (args.includes("--market")) await seedMarket();
 
+/**
+ * 2.0.0 [HQ-47] The real server recorded the 정식 출시 at 2026-11-12 00:17 KST and 무료·프로 have been apart since. This local one stays
+ * as before 출시, every feature open (사용자 2026-11-12 20:32 KST: 시험은 모든 기능을 기반으로 동작해야 하므로 유지, 실 배포 버전만 정상적으로).
+ * --launched is only for looking at what the released app shows a phone without 프로: the same 출시 moment and both Play checks
+ * confirmed as the developer does in 기능 관리, so a phone installed after it has no 프로 and one installed before has its 감사 1개월.
+ * Needs ADMIN_PASSWORD. Not for the everyday PC 확인, and the app's round-trip tests start the server without it.
+ */
+const REAL_LAUNCH = Date.parse("2026-11-11T15:17:42.082Z");
+async function launch() {
+  const login = await worker.fetch(new Request(`http://localhost:${port}/api/admin/login`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.31" },
+    body: JSON.stringify({ password: env.ADMIN_PASSWORD }),
+  }), env);
+  if (!login.ok) return console.log("--launched: ADMIN_PASSWORD가 있어야 출시 상태로 맞춰요.");
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  // Before the checks: the first moment billing is on is written down once (recordLaunch), and the real one is the one to keep.
+  await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('launched_at', ?)").bind(String(REAL_LAUNCH)).run();
+  for (const name of ["play.production", "play.subscription"]) {
+    const r = await worker.fetch(new Request(`http://localhost:${port}/api/admin/checks/${name}`, {
+      method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie },
+      body: JSON.stringify({ done: true, note: "로컬 시험 서버: 실서버와 같게" }),
+    }), env);
+    if (!r.ok) return console.log(`--launched: ${name} 확인이 안 됐어요(${r.status}).`);
+  }
+  const config = await worker.fetch(new Request(`http://localhost:${port}/api/config`), env).then((r) => r.json());
+  console.log(`--launched: 결제 ${config.billingLive ? "켜짐(무료·프로가 나뉘어요)" : "아직 꺼짐(기능 관리 › 결제의 조건을 봐 주세요)"}, 정식 출시 ${config.launchedAt ?? "기록 없음"}`);
+}
+if (args.includes("--launched")) await launch();
+
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.
 const testClock = args.includes("--test-clock");
@@ -387,8 +427,10 @@ http.createServer(async (req, res) => {
   // 1.36 [GRW-02][GRW-03][GRW-05] POST /__test/tick: the hourly work now (스튜디오 요구 묶음 → 장터, 승격 사다리), so a phone test needn't wait.
   if (testClock && req.method === "POST" && req.url.startsWith("/__test/tick")) {
     const waits = [];
-    // 1.38 [ADM3-05] ?cron=5 runs the five-minute work instead (보류가 끝난 Claude 답 보내기).
-    const cron = new URL(req.url, "http://x").searchParams.get("cron") === "5" ? "*/5 * * * *" : "17 * * * *";
+    // 1.38 [ADM3-05] ?cron=5 runs the five-minute work instead (보류가 끝난 Claude 답 보내기). 2.0.0 [RVQ-12] 매시 작업은 17분·47분으로
+    // 나뉘었어요: ?cron=17·?cron=47은 그 몫만, 없으면 예전처럼 모두(모르는 cron은 모두 돌아요).
+    const want = new URL(req.url, "http://x").searchParams.get("cron");
+    const cron = { 5: "*/5 * * * *", 17: "17 * * * *", 47: "47 * * * *" }[want] ?? "manual";
     await worker.scheduled({ cron, scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
     await Promise.all(waits);
     res.writeHead(204);

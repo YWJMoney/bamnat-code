@@ -24,6 +24,12 @@ import com.bamnat.core.time.Today
 data class UpcomingAlarm(val plan: PlannedAlarm, val triggerAtMillis: Long, val exact: Boolean)
 
 /**
+ * [MCAL-01] A calendar whose alarms ring: the name its alarms are told by (null for the main calendar) and, [R200-01],
+ * its id so a ringing alarm finds that calendar's own settings (null or [com.bamnat.core.model.ShiftRef.MAIN] for the main one).
+ */
+data class RingingCalendar(val name: String?, val snapshot: ScheduleSnapshot, val id: String? = null)
+
+/**
  * Keeps exactly one shift alarm registered with the system: the next one.
  * Called whenever the schedule changes, after an alarm rings, after reboot and on time changes.
  */
@@ -62,18 +68,18 @@ class AlarmScheduler(
      * just rang guarantees the same alarm is never registered twice.
      */
     fun reschedule(snapshot: ScheduleSnapshot, enabled: Boolean, after: LocalDateTime = Today.dateTime()) =
-        reschedule(listOf(null to snapshot), enabled, after)
+        reschedule(listOf(RingingCalendar(null, snapshot)), enabled, after)
 
     /**
      * [MCAL-01] The same over several calendars: the earliest alarm of any of them rings, and one from
      * an added calendar carries that calendar's name ("알바 주간 근무 알람"), the main calendar's none.
      */
     @Synchronized
-    fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = Today.dateTime()) {
+    fun reschedule(calendars: List<RingingCalendar>, enabled: Boolean, after: LocalDateTime = Today.dateTime()) {
         try { plan(calendars, enabled, after) } finally { plannings++ }
     }
 
-    private fun plan(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime) {
+    private fun plan(calendars: List<RingingCalendar>, enabled: Boolean, after: LocalDateTime) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
         // [ALRM-09] 오늘 남은 알람 모두 끄기: the next alarm is the first one after it.
@@ -92,6 +98,9 @@ class AlarmScheduler(
             AlarmSoon.schedule(context, null, null, 0)
             AlarmGuard.schedule(context, null)
             AlarmGuard.scheduleBack(context, null, null)
+            AlarmRehearsal.schedule(context, false, null) // 2.0.0 [RVI-91]
+            com.bamnat.app.sleep.SleepRecordOffer.plan(context, null) // 2.0.0 [RVI-89]
+            com.bamnat.app.sleep.SleepNoTap.plan(context, null) // 2.0.0 [RVI-96]
             prefs.edit().remove(K_PENDING).apply()
             alarmManager.cancel(operation)
             if (_upcoming.value != null) telemetry.event(DiagEvents.ALARM_CLEARED, if (enabled) "none_ahead" else "switched_off")
@@ -102,9 +111,14 @@ class AlarmScheduler(
         val exact = setAlarm(triggerAt, operation)
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
         // 1.38 [SLEEP-08] 깨우는 구간: a separate listening alarm before this one (off by default); the alarm above stays.
-        com.bamnat.app.sleep.SmartWake.arm(context, RingRequest.from(plan, triggerAt))
+        com.bamnat.app.sleep.SmartWake.arm(context, ringOf(plan, triggerAt))
         AlarmSoon.schedule(context, triggerAt, soonText(plan), soonMinutes())
         AlarmGuard.schedule(context, if (guard()) triggerAt else null)
+        // 2.0.0 [RVI-91] (검토 I03c-02) The silent daytime rehearsal, under the same 알람 지킴이.
+        AlarmRehearsal.schedule(context, guard(), triggerAt)
+        // 2.0.0 [RVI-89] (검토 I03b-02) 충전하면 소리 재기 묻기, around the time to sleep for this alarm.
+        runCatching { com.bamnat.app.sleep.SleepRecordOffer.plan(context, plan.triggerAt) }
+        runCatching { com.bamnat.app.sleep.SleepNoTap.plan(context, plan.triggerAt) }
         // [ALRM-29] The first alarm after a break (no alarm in any calendar for two days) is said the evening before.
         val back = guard() && calendars.all { (_, s) -> com.bamnat.core.alarm.AlarmPlanner.afterBreak(s.resolver, plan.triggerAt) }
         AlarmGuard.scheduleBack(context, if (back) triggerAt else null, backText(plan))
@@ -129,7 +143,7 @@ class AlarmScheduler(
      * Returns true when something had to be put right.
      */
     @Synchronized
-    fun verify(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, now: LocalDateTime = Today.dateTime()): Boolean {
+    fun verify(calendars: List<RingingCalendar>, enabled: Boolean, now: LocalDateTime = Today.dateTime()): Boolean {
         // An alarm that just rang is being planned past; until that is done nothing is missing.
         if (Today.millis() - firedAtMillis < SETTLE_MILLIS) return false
         val expected = if (enabled) nextKept(calendars, AlarmsOff.planFrom(context, planFrom(now)), AlarmSoon.skippedAll(context).toSet()) else null
@@ -215,7 +229,7 @@ class AlarmScheduler(
 
     /** The next [BootAlarms.AHEAD] alarms, so a locked phone can ring several in a row. */
     /** [ALRM-26] The first alarm after [from] that was not turned off ahead ([skips], epoch ms). */
-    private fun nextKept(calendars: List<Pair<String?, ScheduleSnapshot>>, from: LocalDateTime, skips: Set<Long>): PlannedAlarm? {
+    private fun nextKept(calendars: List<RingingCalendar>, from: LocalDateTime, skips: Set<Long>): PlannedAlarm? {
         var at = from
         repeat(skips.size + 1) {
             val p = nextOf(calendars, at) ?: return null
@@ -225,22 +239,24 @@ class AlarmScheduler(
         return nextOf(calendars, at)
     }
 
-    private fun planAhead(calendars: List<Pair<String?, ScheduleSnapshot>>, after: LocalDateTime, count: Int = BootAlarms.AHEAD): List<RingRequest> {
+    private fun planAhead(calendars: List<RingingCalendar>, after: LocalDateTime, count: Int = BootAlarms.AHEAD): List<RingRequest> {
         val out = ArrayList<RingRequest>()
         var from = after
         while (out.size < maxOf(count, BootAlarms.AHEAD)) {
             val p = nextOf(calendars, from) ?: break
-            out += RingRequest.from(p, p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
+            out += ringOf(p, p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
             from = p.triggerAt
         }
         return out
     }
 
     /** [MCAL-01] The first alarm after [from] across [calendars]; at the same minute the earlier calendar's. */
-    private fun nextOf(calendars: List<Pair<String?, ScheduleSnapshot>>, from: LocalDateTime): PlannedAlarm? =
-        calendars.mapNotNull { (name, snapshot) ->
+    private fun nextOf(calendars: List<RingingCalendar>, from: LocalDateTime): PlannedAlarm? =
+        calendars.mapNotNull { (name, snapshot, id) ->
             AlarmPlanner.nextAlarm(snapshot.resolver, from)?.let { p ->
-                if (name == null || p.shiftName.isBlank()) p else p.copy(shiftName = "$name ${p.shiftName}")
+                // [R200-01] Which calendar it is from, for that calendar's own 끄기 미션.
+                val own = p.copy(calendarId = id?.takeIf { it != com.bamnat.core.model.ShiftRef.MAIN })
+                if (name == null || own.shiftName.isBlank()) own else own.copy(shiftName = "$name ${own.shiftName}")
             }
         }.minByOrNull { it.triggerAt }
 
@@ -299,8 +315,12 @@ class AlarmScheduler(
     private fun setAlarm(triggerAt: Long, operation: PendingIntent): Boolean = setAlarm(context, alarmManager, triggerAt, operation)
 
     private fun shiftAlarmIntent(plan: PlannedAlarm?): PendingIntent = shiftAlarmIntent(
-        context, plan?.let { RingRequest.from(it, it.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()) },
+        context, plan?.let { ringOf(it, it.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()) },
     )
+
+    /** 2.0.0 [RVI-17] (검토 ALM-08 PC 재확인) A 낮잠's wake rings as 낮잠 알람, not as the night's shift alarm. */
+    private fun ringOf(plan: PlannedAlarm, triggerAt: Long): RingRequest =
+        RingRequest.from(plan, triggerAt, nap = com.bamnat.app.sleep.NapWake.isNap(context, plan.shiftDate, triggerAt, plan.custom))
 
     private fun snoozeIntent(ring: RingRequest?): PendingIntent = snoozeIntent(context, ring)
 

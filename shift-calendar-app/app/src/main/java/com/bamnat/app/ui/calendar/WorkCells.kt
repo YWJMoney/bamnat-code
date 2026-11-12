@@ -148,6 +148,9 @@ internal fun rememberCardDue(money: MoneyBook): Set<LocalDate> {
 /** [SHOP-02] The small 입금 mark on a day a card deposit is expected; [EASE-04] '급여' on a 월급날. */
 @Composable
 internal fun CardDueMark(modifier: Modifier = Modifier, text: String = "입금") {
-    Text(text, fontSize = 8.sp, lineHeight = 9.sp, maxLines = 1, fontWeight = FontWeight.Bold,
+    // 2.0.0 [RVP-11][RVH-11] 10sp at least, like every word in a cell (검토 UIX-11), and capped like the month cells' own
+    // text so that at 200% it does not cover the date (검토 CAL-16).
+    val size = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(10.sp.toDp(), 10.dp).toSp() }
+    Text(text, fontSize = size, lineHeight = size * 1.12f, maxLines = 1, fontWeight = FontWeight.Bold,
         color = com.bamnat.app.ui.theme.LocalCalendarColors.current.income, modifier = modifier)
 }

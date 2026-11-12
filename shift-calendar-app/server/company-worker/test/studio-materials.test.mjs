@@ -56,6 +56,14 @@ test("[STM-02] the operator puts materials in waiting, opens them with the app v
   // 다시 넣어도 공개 상태는 그대로예요.
   await call("POST", "/api/admin/recipes/materials", { items: [items[1]] }, admin);
   assert.deepEqual((await call("GET", "/api/recipes/materials?app=52")).data.items.map((x) => x.id), [bg]);
+  // 2.0.0 [RVN-15] 검토 SVC-99: '모두'는 출시 대기 → 공개만이라 숨긴 묶음이 되살아나지 않고, 모두 숨기기는 없어요.
+  await call("POST", "/api/admin/recipes/materials/state", { state: "ok", all: true }, admin);
+  assert.deepEqual((await call("GET", "/api/recipes/materials?app=52")).data.items.map((x) => x.id), [bg]);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/state", { state: "hidden", all: true }, admin)).status, 400);
+  // 올리기·공개·숨기기가 활동 기록에 남아요.
+  const log = (await call("GET", "/api/admin/audit", undefined, admin)).data;
+  const acts = log.entries.map((e) => e.action);
+  for (const a of ["material_add", "material_state"]) assert.ok(acts.includes(a), `${a} in ${acts.join(" ")}`);
 });
 
 test("[STM-10] 무료·광고 나누기: 묶음마다 모두 무료·모두 광고·앞쪽 3분의 1만 무료", async () => {
@@ -83,7 +91,8 @@ test("[E11] 실서버용 재료 파일: 25개씩 나뉘고, 관리자 앱이 알
   assert.deepEqual(out.map((f) => [f.kind, f.part, f.of, f.items.length]), [[FILE_KIND, 1, 3, 25], [FILE_KIND, 2, 3, 25], [FILE_KIND, 3, 3, 10]]);
   assert.deepEqual(out.flatMap((f) => f.items).map((x) => x.name), items.map((x) => x.name));
   // The admin app's upload form reads exactly this marker, and sends 25 at a time (the server's batch).
-  const app = readFileSync(new URL("../src/admin-app.js", import.meta.url), "utf8");
+  // 2.0.0 [RVA-57] 재료 올리기 양식은 장터 묶음(src/admin/views/market.js)에, 보내기는 앱에 있어요.
+  const app = readFileSync(new URL("../src/admin-app.js", import.meta.url), "utf8") + readFileSync(new URL("../src/admin/views/market.js", import.meta.url), "utf8");
   assert.ok(app.includes(`doc?.kind !== "${FILE_KIND}"`) && app.includes('data-form="material-upload"'));
   const { MATERIAL_LIMITS } = await import("../src/studio-materials.js");
   assert.ok(app.includes(`i += ${MATERIAL_LIMITS.batch}`));
