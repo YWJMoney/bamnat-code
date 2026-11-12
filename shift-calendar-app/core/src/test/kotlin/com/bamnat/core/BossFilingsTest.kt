@@ -78,6 +78,6 @@ class BossFilingsTest {
         assertTrue(pay.detail, pay.detail.startsWith("1명 · 세전"))
         // [RVJ-38] Said right by the amount, with what it comes to with 민수 in.
         val line = pay.missing!!.line(pay.amount)
-        assertTrue(line, line.startsWith("입사일 없는 민수님 빼고예요 · 그 달에 일했으면 입사일을 넣어요(넣으면 "))
+        assertTrue(line, line.startsWith("입사일 없는 민수님 빼고예요 · 그 달에 일했으면 입사일을 넣어요(넣으면 약 "))
     }
 }

@@ -149,28 +149,40 @@ fun PayslipFillDialog(
     plaza: com.bamnat.app.ui.company.CompanyWayText? = null,
     /** [RULE-ED-01] Opens on the 칸 with no photo (촬영이 안 되는 회사). */
     startByHand: Boolean = false,
+    /**
+     * 2.0.0 [RVJ-62] 검토 PAYU-42·50·U05-03: names the place that opens it, so what was read and fixed stays for the app's life when
+     * the window goes without the user throwing it away ('직접 문의하기', the screen made again when the phone turns dark): opened
+     * again from the same place, it goes on where it was. Null keeps it in this window only, as before.
+     */
+    keep: String? = null,
     onRead: (PayslipRead) -> Unit,
 ) {
     val context = LocalContext.current
     val fixes = remember { com.bamnat.app.data.ReadFixBook.get(context) }
-    var text by remember { mutableStateOf(initialScan?.text.orEmpty()) }
-    var second by remember { mutableStateOf("") }
-    var typing by remember { mutableStateOf(false) }
-    var read by remember { mutableStateOf<PayslipRead?>(null) }
+    val work = remember(keep) { keep?.let(PayslipWorks::of) ?: PayslipWork() }
+    if (work.text.isEmpty() && work.read == null && initialScan != null) { work.text = initialScan.text; work.scan = initialScan }
+    var text by work::text
+    var second by work::second
+    var typing by work::typing
+    var read by work::read
     // [READ-18] The photo read for each slot (its put-together lines and picture), and what was read before fixing.
-    var scan by remember { mutableStateOf(initialScan) }
-    var scanSecond by remember { mutableStateOf<PayslipScanner.Scan?>(null) }
-    var asRead by remember { mutableStateOf<PayslipRead?>(null) }
-    var unsure by remember { mutableStateOf(emptySet<Int>()) }
-    var same by remember { mutableStateOf<Boolean?>(null) }
+    var scan by work::scan
+    var scanSecond by work::scanSecond
+    var asRead by work::asRead
+    var unsure by work::unsure
+    var same by work::same
     // [RULE-ED-01] The rules written as 칸 with no photo: the result opens on them.
-    var byHandRules by remember { mutableStateOf(false) }
-    var reviewAsk by remember { mutableIntStateOf(0) }
+    var byHandRules by work::byHandRules
+    var reviewAsk by work::reviewAsk
     // 1.36 PC 사진 인식 W7: words read but no amount line found: said, with the words shown to fix, instead of an empty result.
-    var notice by remember { mutableStateOf<String?>(null) }
+    var notice by work::notice
     // [PAYIN-01] 1.37 B1: the photo that could not be read, kept on screen while the lines are typed by hand.
-    var handPhoto by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    val sheet = rememberRuleSheetState()
+    var handPhoto by work::handPhoto
+    val sheet = work.sheet
+    // [RVJ-62] Thrown away (닫기, 버리기, put in): the kept work goes too. Gone without that ('직접 문의하기'): it stays.
+    val close = onDismiss
+    val dismiss: () -> Unit = { keep?.let(PayslipWorks::drop); close() }
+    val away: () -> Unit = { close() }
     fun analyse() {
         val texts = listOf(text, second)
         val photos = PayPhotos.read(texts.filter { it.isNotBlank() }, rules?.kinds.orEmpty(), rules?.shiftTypes.orEmpty(), rules?.fiveOrMore ?: true)
@@ -220,8 +232,8 @@ fun PayslipFillDialog(
         read = null; text = ""; second = ""; scan = null; scanSecond = null; byHandRules = false; handPhoto = null
         sheet.reset(com.bamnat.core.pay.RuleSheet())
     }
-    androidx.compose.runtime.LaunchedEffect(initialScan) { if (initialScan != null) analyse() }
-    androidx.compose.runtime.LaunchedEffect(startByHand) { if (startByHand && rules != null && initialScan == null) rulesByHand() }
+    androidx.compose.runtime.LaunchedEffect(initialScan) { if (initialScan != null && read == null) analyse() }
+    androidx.compose.runtime.LaunchedEffect(startByHand) { if (startByHand && rules != null && initialScan == null && read == null) rulesByHand() }
     val photo = scan?.takeIf { it.text == text }?.image ?: handPhoto
     val r = read
     if (r == null) {
@@ -232,7 +244,7 @@ fun PayslipFillDialog(
             onScan = { s -> scan = s; text = s.text; if (rules == null || second.isBlank() && !typing) analyse() },
             onScanSecond = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text },
             onPaste = { t -> text = t; scan = null; if (rules == null) analyse() },
-            onEmpty = { p -> byHand(p) }, onByHand = ::rulesByHand, onAnalyse = ::analyse, onDismiss = onDismiss,
+            onEmpty = { p -> byHand(p) }, onByHand = ::rulesByHand, onAnalyse = ::analyse, onDismiss = dismiss,
         )
         return
     }
@@ -266,11 +278,11 @@ fun PayslipFillDialog(
             scan?.takeIf { it.text == text && r.lines.isNotEmpty() && it.boxes.isNotEmpty() }?.let { s -> fixes.learnTemplate(r, s.boxes) }
             if (rules != null && chosen.isNotEmpty()) rules.onRules(chosen, r.month)
             when {
-                r.lines.isNotEmpty() -> onRead(r)
+                r.lines.isNotEmpty() -> { keep?.let(PayslipWorks::drop); onRead(r) }
                 // [PAYIN-03] 1.37 B3: rules put in with no payslip line went on and the window shut with no word (the setup then said
                 // nothing about them); now the caller hears it as an empty payslip with its month, as 규칙으로 계산하기 does.
-                chosen.isNotEmpty() -> onRead(PayslipRead(emptyList(), r.month))
-                else -> onDismiss()
+                chosen.isNotEmpty() -> { keep?.let(PayslipWorks::drop); onRead(PayslipRead(emptyList(), r.month)) }
+                else -> dismiss()
             }
         }
     }
@@ -285,18 +297,20 @@ fun PayslipFillDialog(
         // [PAYIN-01] PC E10: a payslip typed by hand from its photo opens on the payslip's lines, not the company's rules.
         rulesOnly = (rulesOnly || byHandRules) && handPhoto == null,
         preview = shown.value, working = shown.working, action = action,
-        onDismiss = onDismiss, onRetake = ::retake, reviewAsk = reviewAsk, plaza = plaza,
+        onDismiss = dismiss, onRetake = ::retake, reviewAsk = reviewAsk, plaza = plaza,
         startTab = if (byHandRules) ResultTab.RULES else if (handPhoto != null) ResultTab.SLIP else null,
         slipExtras = {
             // [PHOTO-26] 1.30 AV: a payslip too long for one photo: '+ 한 장 더', read and put together with this one.
             scan?.takeIf { it.text == text && photo != null }?.let { s -> MorePageButton(s) { both -> scan = both; text = both.text; analyse() } }
             // [PHOTO-09] Read from a photo: '사진이 달라요'.
-            if (scan != null) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.PAYSLIP, onAsk = onDismiss)
+            // 2.0.0 [RVJ-62] 검토 PAYU-42: '직접 문의하기' closed the window and what was read and fixed went with it. With [keep] it stays,
+            // and the place that opened it says '넣던 명세서 이어서'.
+            if (scan != null) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.PAYSLIP, onAsk = away)
             // [READ-41] PC 11차: what the photo was read as, line by line, as the roster's 무엇을 읽었는지 보기 shows it.
             scan?.let { s -> ReadTextButton(s.text) }
         },
         rulesExtras = {
-            if (scanSecond != null || scan != null && r.lines.isEmpty()) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.RULES, onAsk = onDismiss)
+            if (scanSecond != null || scan != null && r.lines.isEmpty()) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.RULES, onAsk = away)
             (scanSecond ?: scan?.takeIf { r.lines.isEmpty() })?.let { s -> ReadTextButton(s.text) }
         },
     )
@@ -389,6 +403,8 @@ internal fun RuleSentenceBox(
     fiveOrMore: Boolean,
     /** 2.0.0 [RVL-17] (검토 SCAN-30) The pay as set now: a sentence read as a much different pay starts off and says so. */
     current: RuleChange.Base? = null,
+    /** 2.0.0 [RVJ-63] Whether something is written, picked or read here (the window around it asks before closing then). */
+    onStarted: (Boolean) -> Unit = {},
     onApply: (List<RuleChange>) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
@@ -405,6 +421,8 @@ internal fun RuleSentenceBox(
         RuleSheetHost(PhotoCellsLogic.blank, com.bamnat.app.data.ScheduleSnapshot(shiftTypes, emptyList(), emptyList()), month)
     }
     val employer = com.bamnat.app.ui.flags.rememberScreenStyle()?.employer ?: "회사" // [J133-77]
+    val started = text.isNotBlank() || built.isNotEmpty() || read
+    androidx.compose.runtime.LaunchedEffect(started) { onStarted(started) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!read) {
             // In the long rules editor the builder opens on a tap, so the sections under it stay close.
@@ -473,4 +491,57 @@ internal fun CustomRuleList(
             }
         }
     }
+}
+
+/**
+ * 2.0.0 [RVJ-62] 검토 PAYU-42·50·U05-03: what one [PayslipFillDialog] has read and fixed (the photos, the lines, the 칸). Kept in
+ * [PayslipWorks] by the place that opens the window, it outlives the window: '직접 문의하기' and back, or the screen made again (the
+ * phone turning dark at sunset, a bigger text size), and the window goes on where it was. On the phone only, in memory only.
+ */
+@androidx.compose.runtime.Stable
+internal class PayslipWork {
+    var text by mutableStateOf("")
+    var second by mutableStateOf("")
+    var typing by mutableStateOf(false)
+    var read by mutableStateOf<PayslipRead?>(null)
+    var scan by mutableStateOf<PayslipScanner.Scan?>(null)
+    var scanSecond by mutableStateOf<PayslipScanner.Scan?>(null)
+    var asRead by mutableStateOf<PayslipRead?>(null)
+    var unsure by mutableStateOf(emptySet<Int>())
+    var same by mutableStateOf<Boolean?>(null)
+    var byHandRules by mutableStateOf(false)
+    var reviewAsk by mutableIntStateOf(0)
+    var notice by mutableStateOf<String?>(null)
+    var handPhoto by mutableStateOf<android.graphics.Bitmap?>(null)
+    val sheet = com.bamnat.app.ui.pay.rulesheet.RuleSheetState(com.bamnat.core.pay.RuleSheet())
+
+    /** Lines read and 칸 filled: what going away would lose. */
+    val kept: Int get() = (read?.lines?.size ?: 0) + sheet.sheet.toChanges().size
+}
+
+/** 2.0.0 [RVJ-62] The [PayslipWork]s waiting, by the place that opens them (a key of [PayslipFillDialog]'s `keep`). */
+internal object PayslipWorks {
+    private val works = HashMap<String, PayslipWork>()
+    /** Turns when one is thrown away or put in, so a place showing '넣던 명세서 이어서' hears it. */
+    private val turn = mutableIntStateOf(0)
+
+    fun of(key: String): PayslipWork = works.getOrPut(key) { PayslipWork() }
+
+    /** One with something read or filled, to go on with; null when there is none. */
+    fun waiting(key: String): PayslipWork? {
+        turn.intValue
+        return works[key]?.takeIf { it.read != null && it.kept > 0 }
+    }
+
+    fun drop(key: String) {
+        if (works.remove(key) != null) turn.intValue++
+    }
+
+    internal fun clearForTest() { works.clear(); turn.intValue++ }
+
+    /** The places that open the window, one key each. */
+    const val MATCH = "pay.match"
+    const val WIZARD = "pay.wizard"
+    const val QUICK = "pay.quick"
+    const val WAY = "company.way"
 }

@@ -63,10 +63,12 @@ internal fun PhotoThumb(photo: Bitmap, modifier: Modifier = Modifier.fillMaxWidt
     if (big) Dialog(onDismissRequest = { big = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().padding(12.dp)) {
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    Image(image, contentDescription = "읽은 사진", contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { big = false }) { Text("닫기") } }
+                // 2.0.0 [RVJ-61] HQ-81 같은 구조: the whole photo opened to compare was a page to scroll with no zoom; it is the pinned
+                // photo's own (two fingers, double tap, ⊖ ⊕, read-aloud actions), one finger moving a long payslip up and down.
+                // (HQ-102) ⊖ ⊕ in the 닫기 row under it, never on the photo (they hid its last line).
+                val zoom = rememberPhotoZoom(photo)
+                ZoomablePhoto(photo, Modifier.weight(1f).fillMaxWidth(), zoom)
+                PhotoBand(zoom, close = BandAction("닫기") { big = false })
             }
         }
     }

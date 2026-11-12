@@ -325,7 +325,10 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
     val wageDay = wageOn(month)
     val minimum = RateTable.on(wageDay).minimumHourlyWage.toLong()
     fun save() { store.update(calendarId) { it.copy(roster = roster) }; onClose() }
-    ToolScreen("직원 근무표", onClose, action = "저장", onAction = ::save) {
+    // 2.0.0 [RVJ-63] 검토 BOSS-62: 더한 직원·시급·요일 시간은 ←·뒤로 한 번에 말없이 사라지지 않고 한 번 물어요(앱의 한 가지 물음).
+    val opened = remember { roster }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = roster != opened, onLeave = onClose)
+    ToolScreen("직원 근무표", guard::close, action = "저장", onAction = ::save) {
         if (roster.staff.isNotEmpty()) {
             SectionCard(title = "한 주 근무표") {
                 // 2.0.0 [RVJ-20] 검토 BOSS-62: the grid (64 + 56 × 7 = 456dp) only where it fits; a phone's width (접은 폴드 약 369dp)

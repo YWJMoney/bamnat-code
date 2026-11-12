@@ -23,9 +23,13 @@ object BossFilings {
      * always employed, so someone added today would land in last month's 신고), and what the line would come to with them in.
      */
     data class Missing(val staffIds: List<String>, val names: List<String>, val amount: Long? = null) {
-        /** One line said right by the amount: who is left out, and what putting the 입사일 in would make it. */
+        /**
+         * One line said right by the amount: who is left out, and what putting the 입사일 in would make it. 2.0.0 [RVJ-59] 검토 J-488 ★14
+         * (PC 3차 T3): the figure counts them in from the month's first day, so a date in the middle (첫 주 주휴가 덜 붙음) comes out a
+         * little less: "넣으면 약 1,716,000원" (9월 1일을 넣자 1,702,800원).
+         */
         fun line(shown: Long?): String = "입사일 없는 ${names.joinToString(", ")}님 빼고예요 · 그 달에 일했으면 입사일을 넣어요" +
-            (amount?.takeIf { it != (shown ?: 0L) && it > 0 }?.let { "(넣으면 ${"%,d원".format(it)})" } ?: "")
+            (amount?.takeIf { it != (shown ?: 0L) && it > 0 }?.let { "(넣으면 약 ${"%,d원".format(it)})" } ?: "")
     }
 
     data class Due(

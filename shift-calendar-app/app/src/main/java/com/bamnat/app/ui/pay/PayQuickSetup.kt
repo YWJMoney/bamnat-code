@@ -204,8 +204,9 @@ fun PayQuickSetup(
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
 
-    var slipOpen by remember { mutableStateOf(false) }
-    var slipByHand by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-62] Open again after the screen is made again, the payslip being read with it ([PayslipWorks]).
+    var slipOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var slipByHand by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (slipOpen) SlipRulesDialog(
         infer = { read, rules ->
             val f = form ?: guessed ?: WorkForm.OFFICE
@@ -281,7 +282,8 @@ fun PayQuickSetup(
                     if (hourlyWork) StepTitle("시급으로 받나요, 일당으로 받나요?", "고르면 주휴수당·세금 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     else StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
-                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사",
+                        resume = PayslipWorks.waiting(PayslipWorks.QUICK)?.kept) { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
                     val first = cycleForm?.let { PublicPay.form(it.first, it.second) } ?: guessed
                     val forms = if (hourlyWork) listOf(WorkForm.PART_TIME, WorkForm.DAILY) else WorkForm.entries
@@ -312,7 +314,8 @@ fun PayQuickSetup(
                         onDone = { if ((amount ?: 0) > 0) next() else tried = true },
                         missing = tried, focus = baseFocus)
                     if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false, fiveFrom) { fromSlip = null; fiveFrom = null; fiveOrMore = it }
-                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사",
+                        resume = PayslipWorks.waiting(PayslipWorks.QUICK)?.kept) { slipOpen = true }
                 }
                 HOLIDAY -> {
                     StepTitle("빨간날(공휴일)에 일하면 어떻게 받나요?", "회사마다 달라요. 모르면 ‘법대로’로 두고 명세서 사진으로 맞춰요.")
@@ -437,13 +440,14 @@ private fun FromCycleNote(cycle: PublicCycle, codes: String) {
 
 /** 명세서 사진으로 한 번에: the way for a user who does not know the amounts or the company's rules. */
 @Composable
-private fun SlipEntry(onByHand: (() -> Unit)? = null, employer: String = "회사", onClick: () -> Unit) {
+private fun SlipEntry(onByHand: (() -> Unit)? = null, employer: String = "회사", resume: Int? = null, onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Icon(Icons.Filled.ReceiptLong, null, Modifier.size(18.dp))
-        Text("  모르겠으면 명세서 사진으로 맞추기")
+        // 2.0.0 [RVJ-62] 검토 U05-03: what was read and fixed waits ([PayslipWorks]); this goes on with it.
+        Text(if (resume != null) "  넣던 명세서 이어서 · ${resume}줄" else "  모르겠으면 명세서 사진으로 맞추기")
     }
     // [RULE-ED-01] 1.30 통합: 촬영이 안 되는 회사 — the same 칸 without a photo, one tap from where the photo is offered.
-    onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 ${employer} 규칙을 칸으로 적기") } }
+    if (resume == null) onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 ${employer} 규칙을 칸으로 적기") } }
 }
 
 /** 1.36 E2·W2: 포괄임금 on the first setup's last page. [hours] null when the salary has no 고정 연장. */
@@ -642,7 +646,7 @@ internal fun SlipRulesDialog(
     }
 
     // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
-    PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
+    PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true, keep = PayslipWorks.QUICK,
         rules = RuleTarget(kinds, shiftTypes, fiveOrMore, profile, snapshot, effectOf) { changes, _ -> ticked = changes },
         preview = { r, changes -> infer(r, changes)?.let(::sheetPreviewOf) },
         plaza = plaza, startByHand = byHand,

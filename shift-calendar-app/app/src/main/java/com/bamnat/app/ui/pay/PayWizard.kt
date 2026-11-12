@@ -555,11 +555,11 @@ fun PayWizard(
     }
 
     // [PAYS-04][PAYS-05] 명세서로 한 번에 채우기, and what it filled.
-    var slipFill by remember { mutableStateOf(false) }
+    var slipFill by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) } // [RVJ-62] back after the screen is made again
     var slipNote by remember { mutableStateOf<String?>(null) }
     // [READ-08] The company's way of counting as a second photo: its ticked rules go on the profile when the setup is done.
     var photoRules by remember { mutableStateOf(emptyList<com.bamnat.core.pay.RuleChange>() to Today.month()) }
-    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false },
+    if (slipFill) PayslipFillDialog("명세서로 한 번에 채우기", onDismiss = { slipFill = false }, keep = PayslipWorks.WIZARD,
         rules = RuleTarget(emptyList(), snapshot?.shiftTypes.orEmpty(), initial?.fiveOrMoreEmployees ?: true) { changes, m ->
             photoRules = changes to (m ?: Today.month())
         }) { read ->
@@ -603,7 +603,7 @@ fun PayWizard(
                             if (payFind == null || payFind.step == com.bamnat.app.ui.company.PayFindStep.NAME) {
                                 if (payFind != null) Text("없으면 직접 만들어요", style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.padding(top = 12.dp))
-                                WageStep(s, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
+                                WageStep(s, resume = PayslipWorks.waiting(PayslipWorks.WIZARD)?.kept, onSlip = { slipFill = true }) { w -> answerAndGo { s.wage = w; s.wageChosen = true } }
                             }
                         }
                         key == AMOUNT -> AmountStep(s, today, slipNote)
@@ -735,7 +735,7 @@ private fun StakeNote(effect: UnknownEffect?) {
 }
 
 @Composable
-private fun WageStep(s: PaySetupState, onSlip: () -> Unit, onPick: (Wage) -> Unit) {
+private fun WageStep(s: PaySetupState, resume: Int? = null, onSlip: () -> Unit, onPick: (Wage) -> Unit) {
     // [PAYS-04] The easiest way first: a payslip photo fills the pay and the allowances in one go.
     Surface(
         onClick = onSlip,
@@ -747,8 +747,11 @@ private fun WageStep(s: PaySetupState, onSlip: () -> Unit, onPick: (Wage) -> Uni
             Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("명세서로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                Text("가장 쉬워요. 명세서 사진이나 캡처 한 장으로 기본급과 수당을 채워요.", style = MaterialTheme.typography.bodySmall,
+                // 2.0.0 [RVJ-62] A payslip being read waits to go on ([PayslipWorks]).
+                Text(if (resume != null) "넣던 명세서 이어서" else "명세서로 한 번에 채우기", style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Text(if (resume != null) "읽고 고친 ${resume}줄이 그대로 있어요. 누르면 하던 데서 이어서 봐요."
+                    else "가장 쉬워요. 명세서 사진이나 캡처 한 장으로 기본급과 수당을 채워요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

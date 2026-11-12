@@ -184,6 +184,9 @@ data class ItemEffect(val amount: Long, val times: Int,
 @Stable
 internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var kind by mutableStateOf(kind)
+
+    /** 2.0.0 [RVJ-63] 검토 PAYU-05·U05-13: what the user puts in, to ask before closing throws it away (a kind picked alone is not). */
+    fun typed(): List<Any?> = listOf(name.trim(), amount, percent, shifts, days, window, from, to, overHours, minYears, maxYears)
     var name by mutableStateOf("")
     /**
      * [PAYX-53] 1.38 PC 12.4.1: the names already in the pay setup, so an item put in with no name gets a number of its own
@@ -563,9 +566,13 @@ internal fun CustomItemDialog(
     val huge = rememberHugeCheck()
     // [PAYX-50] One window has no list of kinds to go back to.
     val pickBack = draft.kind != null && !isEdit && !oneWindow
-    fun back() { if (pickBack) draft.kind = null else onDismiss() }
+    // 2.0.0 [RVJ-63] 검토 PAYU-05·U05-13: ✕ and 뒤로 threw what was typed away in one tap; with something typed they ask once
+    // ('적은 내용을 버릴까요?', the app's one way, [com.bamnat.app.ui.components.rememberCloseGuard]).
+    val opened = remember { draft.typed() }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = draft.typed() != opened, onLeave = onDismiss)
+    fun back() { if (pickBack) draft.kind = null else guard.close() }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = guard::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler(enabled = pickBack) { back() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
@@ -574,7 +581,7 @@ internal fun CustomItemDialog(
                         title = { Text(if (isEdit) "항목 고치기" else if (oneWindow) "수당 추가" else "우리 $place 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
                             if (pickBack) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
-                            else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
+                            else IconButton(onClick = guard::close) { Icon(Icons.Filled.Close, "닫기") }
                         },
                     )
                 },
@@ -1130,19 +1137,32 @@ internal fun MakeItemCard(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** [PAYS-07] An item just made, said back in a sentence with the way to take it back. */
+/**
+ * [PAYS-07] An item just made, said back in a sentence with the way to take it back. 2.0.0 [RVJ-56] 검토 PC-137: [lands] is the month
+ * it first counts in when the month on screen is closed ("12월 급여부터 들어가요."); it had said '합계에 바로 들어갔어요' above the band
+ * '11월은 마감돼 그대로예요 · 12월 급여부터 +200,000원'.
+ */
 @Composable
-internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
+internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?, lands: YearMonth? = null) {
+    // [RVJ-56] With big letters the sentence had a third of the width beside '되돌리기' (a word a line); the button goes under it.
+    val big = com.bamnat.app.ui.components.bigLetters()
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            // 2.0.0 [RVJ-51] 검토 PC-119: an item put in with no amount yet adds nothing; it said '합계에 바로 들어갔어요'.
-            val noAmount = made is MadeItem.Item && made.item.percentOfBase == null && made.item.amount.entries.all { it.value == 0L }
-            Text("‘${made.name}’ 항목을 만들었어요. " + if (noAmount) "금액을 넣으면 합계에 들어가요." else "합계에 바로 들어갔어요.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-            if (onUndo != null) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+        Column(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                // 2.0.0 [RVJ-51] 검토 PC-119: an item put in with no amount yet adds nothing; it said '합계에 바로 들어갔어요'.
+                val noAmount = made is MadeItem.Item && made.item.percentOfBase == null && made.item.amount.entries.all { it.value == 0L }
+                val where = lands?.let { "${it.monthValue}월 급여부터 들어가요." }
+                Text("‘${made.name}’ 항목을 만들었어요. " + when {
+                    noAmount -> "금액을 넣으면 " + (where ?: "합계에 들어가요.")
+                    else -> where ?: "합계에 바로 들어갔어요."
+                },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).padding(end = if (big) 10.dp else 0.dp))
+                if (onUndo != null && !big) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+            }
+            if (onUndo != null && big) TextButton(onClick = onUndo, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("되돌리기") }
         }
     }
 }
