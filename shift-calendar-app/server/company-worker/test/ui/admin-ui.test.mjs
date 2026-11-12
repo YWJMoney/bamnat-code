@@ -3546,3 +3546,12 @@ test("[RVQ-47] 검토 HQ-88 큰 글자: 머리의 제목은 16rem을 지키고 �
   assert.match(css, /\.home-grid\{display:flex;flex-wrap:wrap\}/);
   assert.match(css, /\.flow-cols\{grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(22rem,calc\(50% - \.4rem\)\)\),1fr\)\)/);
 });
+
+// 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 좁은 막대는 판 알약을 점으로, 제목은 한 줄. 최근 활동은 좁으면 시각을 글 위로.
+test("[RVA-61] 좁은 막대(380·200%)에서 판 알약은 점, 제목은 한 줄 말줄임, 최근 활동 시각은 글 위로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /@container bar \(width < 22rem\)\{\s*\.dl-pill:not\(\.warn,\.bad\)\{[^}]*font-size:0/);
+  assert.match(css, /@container bar \(width < 22rem\)\{[^@]*\.bar h1 \.t\{-webkit-line-clamp:1\}/);
+  assert.match(css, /\.feed\{container:feed\/inline-size\}/);
+  assert.match(css, /@container feed \(width < 22rem\)\{\.feed li\{grid-template-columns:1fr/);
+});

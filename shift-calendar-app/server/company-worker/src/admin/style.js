@@ -313,6 +313,9 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 .feed li:first-child{border-top:0}
 .feed .when{grid-row:span 2;color:var(--muted);font-size:.75rem;min-width:3.4rem;padding-top:.1rem}
 .feed .who{color:var(--muted);font-size:.78rem}
+/* 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 칸이 좁으면 시각을 글 위로(시각 칸이 폭을 먹어 글이 네댓 글자씩 줄바꿈되던 것). */
+.feed{container:feed/inline-size}
+@container feed (width < 22rem){.feed li{grid-template-columns:1fr;gap:.1rem}.feed .when{grid-row:auto;min-width:0;padding-top:0}}
 .day-head{margin:1rem .25rem .4rem;font-size:.8rem;font-weight:800;color:var(--muted)}
 
 /* ---- conversation ---- */
@@ -1759,6 +1762,13 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
   .dl-pill.live{background:var(--accent-soft);color:var(--accent)}
   .dl-pill.warn{background:var(--warn-bg);color:var(--warn)}
   .dl-pill.bad{background:var(--bad-bg);color:var(--bad)}
+}
+/* 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 막대가 좁으면(약 22글자 아래) 판 알약은 점 하나(이름은 읽어 주는 이름과 title에, '판 다름'·'서버 닿지 않음'은 글 그대로),
+   제목은 한 줄 말줄임(본문 첫 줄에 같은 제목이 다시 나와요). 전에는 '로컬 2.0.0'에 밀려 제목이 두세 글자씩 두 줄로 섰어요. */
+@container bar (width < 22rem){
+  .dl-pill:not(.warn,.bad){width:min(.7rem,12px);height:min(.7rem,12px);padding:0;font-size:0;line-height:0;background:var(--muted)}
+  .dl-pill.live{background:var(--accent)}
+  .bar h1 .t{-webkit-line-clamp:1}
 }
 @media (pointer:coarse){
   .waiting a,.alert-list a,.stage-strip a{min-height:2.75rem}
