@@ -129,8 +129,11 @@ data class LedgerView(
     val filter: LedgerFilter = LedgerFilter(),
     val sort: LedgerSort = LedgerSort.NEWEST,
 ) {
-    fun range(month: YearMonth): Pair<LocalDate?, LocalDate?> = period.range(month)
-    fun applied(month: YearMonth): LedgerFilter = range(month).let { (from, to) -> filter.copy(from = from, to = to) }
+    /** 2.0.0 [RVK-20] (U06a-07·MONEY-18) With 급여일 주기 on, '이 달' is the pay [cycle] ("10/25~11/24"). */
+    fun range(month: YearMonth, cycle: com.bamnat.core.money.PayCycle.Range? = null): Pair<LocalDate?, LocalDate?> =
+        if (period == LedgerPeriod.MONTH && cycle != null) cycle.from to cycle.to else period.range(month)
+    fun applied(month: YearMonth, cycle: com.bamnat.core.money.PayCycle.Range? = null): LedgerFilter =
+        range(month, cycle).let { (from, to) -> filter.copy(from = from, to = to) }
     val narrowed: Boolean get() = filter.count > 0 || filter.query.isNotBlank()
 }
 
@@ -182,8 +185,10 @@ fun LedgerListPane(
     actions: LedgerListActions,
     wide: Boolean,
     onAdd: () -> Unit,
+    /** 2.0.0 [RVK-20] The pay cycle '이 달' stands for, with 급여일 주기 on. */
+    cycle: com.bamnat.core.money.PayCycle.Range? = null,
 ) {
-    val filter = remember(view, month) { view.applied(month) }
+    val filter = remember(view, month, cycle) { view.applied(month, cycle) }
     val shown = remember(book, filter, view.sort) { Ledger.search(book.entries, filter, view.sort, book.accounts) }
     // 1.37 [LEDH-36] 평소보다 큰 지출, marked quietly on its line.
     val bigOnes = remember(book.entries) { com.bamnat.core.money.LedgerSmarts.unusual(book.entries, com.bamnat.core.time.Today.date()) }
@@ -238,7 +243,7 @@ fun LedgerListPane(
                     item(key = "tools") {
                         Column(Modifier.padding(horizontal = 16.dp).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SearchRow(view, onView, onFilter = { filtering = true }, onExport = { exporting = true })
-                            PeriodChips(view, month, onView)
+                            PeriodChips(view, month, onView, cycle)
                             ActiveConditions(book, view, onView)
                             if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
                             // PC 확인 bad7d860 사용성 제안: the 판 chips show before the first line too, so they are found.
@@ -311,7 +316,7 @@ fun LedgerListPane(
             Column(Modifier.weight(1f).fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SearchRow(view, onView, onFilter = null, onExport = { exporting = true })
-                PeriodChips(view, month, onView)
+                PeriodChips(view, month, onView, cycle)
                 if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
                 // [TAB-06] The 판 chips on a wide screen too.
                 LedgerBoardChips(board, pickBoard)
@@ -333,10 +338,10 @@ fun LedgerListPane(
     }
 
     if (filtering) {
-        FilterSheet(book, view, month, onApply = { onView(it); filtering = false }, onDismiss = { filtering = false })
+        FilterSheet(book, view, month, cycle, onApply = { onView(it); filtering = false }, onDismiss = { filtering = false })
     }
     if (exporting) {
-        ExportDialog(shown, book, view.range(month), actions::message) { exporting = false }
+        ExportDialog(shown, book, view.range(month, cycle), actions::message) { exporting = false }
     }
     if (askingDelete && picked.isNotEmpty()) {
         val done = { askingDelete = false }
@@ -401,11 +406,11 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
 }
 
 @Composable
-private fun PeriodChips(view: LedgerView, month: YearMonth, onView: (LedgerView) -> Unit) {
+private fun PeriodChips(view: LedgerView, month: YearMonth, onView: (LedgerView) -> Unit, cycle: com.bamnat.core.money.PayCycle.Range? = null) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LedgerPeriod.entries.forEach { p ->
             val label = when (p) {
-                LedgerPeriod.MONTH -> Fmt.monthShort(month)
+                LedgerPeriod.MONTH -> cycle?.label ?: Fmt.monthShort(month)
                 LedgerPeriod.YEAR -> "${month.year}년"
                 else -> p.label
             }
@@ -767,9 +772,10 @@ private fun FilterTitle(text: String) {
 /** [LEDG-07] The conditions in a sheet, with how many lines they would leave before they are applied. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FilterSheet(book: MoneyBook, view: LedgerView, month: YearMonth, onApply: (LedgerView) -> Unit, onDismiss: () -> Unit) {
+private fun FilterSheet(book: MoneyBook, view: LedgerView, month: YearMonth, cycle: com.bamnat.core.money.PayCycle.Range?,
+                        onApply: (LedgerView) -> Unit, onDismiss: () -> Unit) {
     var f by remember { mutableStateOf(view.filter) }
-    val count = remember(book, f, view.period, month) { Ledger.search(book.entries, view.copy(filter = f).applied(month), view.sort, book.accounts).size }
+    val count = remember(book, f, view.period, month, cycle) { Ledger.search(book.entries, view.copy(filter = f).applied(month, cycle), view.sort, book.accounts).size }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {

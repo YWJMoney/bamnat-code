@@ -20,6 +20,15 @@ export function adminLib() {
     second_on: "두 번째 확인이 이미 켜져 있어요",
     second_off: "두 번째 확인이 이미 꺼져 있어요",
     second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
+    // 2.0.0 [RVQ-06][RVQ-07] 패스키 전 비밀번호 다시 확인, 로그인 목록
+    reauth: "비밀번호가 맞지 않아요. 한 시간에 5번까지 다시 넣을 수 있어요",
+    // 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 급변은 사람이 넘겨요.
+    human_check: "사용 통계에서 갑자기 나온 신호라 사람이 확인한 뒤에 개발사항으로 넘겨요",
+    // 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 시행일을 앞당길 때.
+    policy_confirm: "시행일이 오늘보다 앞이거나 게시일에서 알림 기간(7일, 불리하면 30일)이 안 돼요. 정말 이대로면 '알림 기간 안으로 옮기는 걸 알아요'를 켜고 다시 저장해요",
+    // 2.0.0 [RVQ-13] 검토 SRV-23: workers.dev 주소의 관리자 길.
+    use_domain: "관리자 앱은 밤낮 도메인 주소에서 열어요. 예전 주소로는 열리지 않아요",
+    current: "지금 이 기기의 로그인은 '로그아웃'으로 끝내요",
     // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
     counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
     screen: "사진이 달라요 화면 종류를 알 수 없어요",
@@ -90,6 +99,8 @@ export function adminLib() {
     // 1.39 [CARE-05] 마을 돌봄.
     ambiguous: "그 표시로 여러 사람이 찾아져요. 글 번호나 더 긴 표시로 찾아 주세요",
     warn_first: "먼저 경고를 보내 주세요. 불법·성적인 내용·개인 정보 노출만 바로 쉬게 할 수 있어요",
+    // 2.0.0 [RVA-03] 1분이 지나 되돌리기 대신 거두기·풀기로
+    late: "되돌릴 시간이 지났어요. 그 줄의 거두기·풀기로 해 주세요",
     off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
     name: "이름을 1~30자로 적어 주세요",
     nick: "별명을 다시 확인해 주세요",
@@ -102,6 +113,9 @@ export function adminLib() {
     note: "메모가 너무 길어요. 1000자까지예요",
     off: "꺼 둔 기능이에요",
     offline: "인터넷에 연결되지 않았어요",
+    // 2.0.0 [RVA-10] 검토 U24-15·조건 7: 연결 없음·서버 바쁨·시간 넘김을 나눠 말해요.
+    unreachable: "서버에 닿지 않아요(인터넷은 연결돼 있어요). 잠시 뒤 다시 해 주세요",
+    timeout: "서버가 답하는 데 시간이 너무 걸려요. 잠시 뒤 다시 해 주세요",
     ok: "값을 다시 골라 주세요",
     own: "내 항목에는 할 수 없어요",
     not_yours: "내가 쓴 질문에만 고를 수 있어요",
@@ -1016,6 +1030,37 @@ export function adminLib() {
     return false;
   }
 
+  /** 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발의 카탈로그 처리방침 조건 가운데 [given]에 없는 것. */
+  const isLegalCondition = (c) => c?.type === "policy" || (c?.type === "date" && Boolean(c.policy));
+  function legalKept(flag, given) {
+    if (flag?.risk !== "LEGAL") return [];
+    const have = new Set((given ?? []).map((c) => JSON.stringify(c)));
+    return (flag.conditions ?? []).filter((c) => isLegalCondition(c) && !have.has(JSON.stringify(c)));
+  }
+
+  /**
+   * 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 날짜를 이렇게 바꾸면 한 번 더 물어야 하는지(서버 flags.js setPolicy와 관리자 화면이 같은 규칙).
+   * [before]는 그 판의 지금 값(새 판이면 null), [today]는 한국 날짜("2026-11-12"). 날짜·불리함을 그대로 두면 묻지 않아요.
+   * 답: null, 또는 { why: "past"(시행일이 오늘보다 앞) | "notice"(게시일에서 알림 기간 7일·불리하면 30일 안), days, need }.
+   */
+  function policyEarly(before, next, today) {
+    const { posted, effective } = next ?? {};
+    if (!/^20\d\d-\d{2}-\d{2}$/.test(posted ?? "") || !/^20\d\d-\d{2}-\d{2}$/.test(effective ?? "")) return null;
+    const moved = !before || before.effective !== effective || before.posted !== posted || Boolean(before.unfavourable) !== Boolean(next.unfavourable);
+    if (!moved) return null;
+    const days = Math.round((Date.parse(`${effective}T00:00:00Z`) - Date.parse(`${posted}T00:00:00Z`)) / 86400e3);
+    const need = next.unfavourable ? 30 : 7;
+    const why = effective < today && effective !== before?.effective ? "past" : days < need ? "notice" : null;
+    return why ? { why, days, need } : null;
+  }
+
+  /** 2.0.0 [RVQ-15] [policyEarly]의 답을 관리자 화면 한 줄로. */
+  function policyEarlyText(e) {
+    if (!e) return "";
+    return e.why === "past" ? "시행일이 오늘보다 앞이에요. 지난 날로 시행하면 그동안 알리지 않고 켠 것이 돼요."
+      : `게시일에서 시행일까지 ${e.days}일이에요. 처리방침 9항의 알림 기간은 ${e.need}일이에요.`;
+  }
+
   /** 1.28 통합 [FLAG-36] An app versionCode range in words ("39~45", "39 이상", "45 이하", "모든 판"). */
   const appRange = (lo, hi) => (lo != null && hi != null ? `${lo}~${hi}` : lo != null ? `${lo} 이상` : hi != null ? `${hi} 이하` : "모든 판");
 
@@ -1030,7 +1075,9 @@ export function adminLib() {
   function evalFlag(flag, override, ctx) {
     const now = ctx.now ?? Date.now();
     const c2 = { ...ctx, now };
-    const conds = Array.isArray(override?.conditions) ? override.conditions : flag.conditions ?? [];
+    // 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발은 카탈로그의 처리방침 조건(policy·처리방침 날짜)을 덮어쓴 조건과 늘 함께 봐요. 조건 고치기로 그 줄을
+    // 빼도 처리방침 시행 전에는 서버의 문(통계 항목 받기 등)이 열리지 않아요.
+    const conds = Array.isArray(override?.conditions) ? [...override.conditions, ...legalKept(flag, override.conditions)] : flag.conditions ?? [];
     const conditions = conds.map((c) => ({ c, label: conditionLabel(c, ctx.policy), met: conditionMet(c, c2) }));
     const dates = [];
     const walk = (c) => {
@@ -1295,12 +1342,13 @@ export function adminLib() {
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
+    passkey_add: "패스키 만듦", passkey_remove: "패스키 지움", session_end: "로그인 하나 끊음", // 2.0.0 [RVQ-06][RVQ-07]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_undo: "마을 경고·쉬기 되돌림(1분 안)", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
     inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
@@ -1463,7 +1511,7 @@ export function adminLib() {
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion, undoPlace,
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
-    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
+    evalFlag, legalKept, policyEarly, policyEarlyText, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
     // AT 1.29 [ADMCP-01][ADMCP-02][ADMCP-03]
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,

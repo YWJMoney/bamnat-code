@@ -171,7 +171,8 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .card h3{font-size:.98rem}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
 .grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
-@media (min-width:600px){.grid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.grid.two>.card{margin:0}}
+/* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
+@media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
 @media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem}
 .head>:first-child{flex:1;min-width:0}
@@ -206,9 +207,10 @@ summary::-webkit-details-marker{display:none}
 summary::after{content:" ▾"}
 details[open]>summary::after{content:" ▴"}
 .lines{margin:.4rem 0 0;display:grid;gap:.4rem}
-.lines div{display:grid;grid-template-columns:minmax(5.5rem,30%) 1fr;gap:.6rem;font-size:.88rem}
-.lines dt{color:var(--muted)}
-.lines dd{margin:0}
+/* 2.0.0 [RVA-04] 조건 12: 좁은 폭·큰 글자에서는 이름 줄 아래로 값이 내려가요(값이 한 글자씩 세로로 서지 않게). */
+.lines div{display:flex;flex-wrap:wrap;column-gap:.6rem;row-gap:.1rem;font-size:.88rem}
+.lines dt{color:var(--muted);flex:1 1 5.5rem}
+.lines dd{margin:0;flex:999 1 11rem;min-width:0}
 .diff{margin:.75rem 0 0;padding:.6rem .75rem;border-radius:var(--r-sm);background:var(--soft)}
 .diff-title{margin:0 0 .4rem;font-size:.8rem;font-weight:800;color:var(--muted)}
 .diff ul{margin:0;padding:0;list-style:none;display:grid;gap:.25rem}
@@ -271,7 +273,9 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 a.tile:hover{border-color:var(--accent)}
 .tile .k{font-size:.8rem;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:.4rem}
 .tile .k svg{width:1.05rem;height:1.05rem}
-.tile .v{font-size:1.9rem;font-weight:900;line-height:1.1;letter-spacing:-.02em}
+.tile .v{font-size:1.9rem;font-weight:900;line-height:1.1;letter-spacing:-.02em;overflow-wrap:normal;word-break:keep-all}
+/* 숫자와 단위는 한 낱말로 붙여 두고(낱말 가운데서 끊지 않음, '살아 있음 · 판 다름'처럼 띄어 쓴 글은 띄어쓰기에서 줄을 바꿔요), 칸이 좁으면 한 단계 작게(칸 폭 기준, rem이라 글자가 크면 같이 커져요). */
+.tile{container-type:inline-size}@container (max-width:9.5rem){.tile .v{font-size:1.45rem}}@container (max-width:7rem){.tile .v{font-size:1.15rem}}
 .tile .d{font-size:.78rem;color:var(--muted);margin-top:auto}
 @media (max-width:599.98px){.tile{min-height:0;padding:.7rem .85rem;gap:.15rem}.tile .v{font-size:1.5rem}.tile .d{display:none}}
 /* The phone lists what waits; wider screens show the counts as tiles, with the activity beside. [ADMUX-06] The
@@ -360,6 +364,10 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks .off span{background:var(--soft);color:var(--muted)}
 .checks .bad span{background:var(--bad-bg);color:var(--bad)}
 .checks .bad{color:var(--bad);font-weight:700}
+/* 2.0.0 [RVQ-14] 총괄 사진 검토(840·글자 200%): 넘치는 칸은 통째로 다음 줄로(좁은 칸에 밀려 두세 글자씩 서지 않게). */
+.checks-row{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin:0 0 .9rem}.checks-row li{flex:0 0 auto;max-width:100%}
+.server-sum{overflow-wrap:anywhere}
+@media (max-width:480px){.checks-row{grid-auto-flow:row}}
 .card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
 .kv dt{color:var(--muted)}
@@ -381,13 +389,16 @@ padding:.75rem;box-shadow:var(--shadow)}
 
 /* ---- sign-in, invite and install pages ---- */
 .gate{max-width:28rem;margin:0 auto;padding:calc(2.5rem + env(safe-area-inset-top)) 1rem 2rem}
+/* 2.0.0 [RVA-14] 검토 T24-12: 로그인과 패스키 단추 사이를 띄워요 */
+.gate form .btn.wide+.btn.wide{margin-top:.6rem}
 .brand{text-align:center;margin-bottom:1.5rem}
 .brand img{border-radius:1.35rem;box-shadow:var(--shadow)}
 .brand h1{font-size:1.5rem;margin:.85rem 0 .25rem}
 .brand p{margin:0;color:var(--muted)}
 .error{min-height:1.4em;margin:.5rem 0;color:var(--bad);font-size:.88rem;font-weight:600}
 .alt{text-align:center;margin:1rem 0 0;font-size:.88rem;color:var(--muted)}
-.toast{position:fixed;left:50%;bottom:calc(5.25rem + env(safe-area-inset-bottom));transform:translate(-50%,1rem);max-width:min(92vw,32rem);padding:.75rem 1.1rem;
+/* 2.0.0 [RVA-16] 조건 12: 알림은 글 길이만큼 넓어져요(left:50%에 갇혀 큰 글자에서 좁은 기둥이 되지 않게). */
+.toast{position:fixed;left:50%;bottom:calc(5.25rem + env(safe-area-inset-bottom));transform:translate(-50%,1rem);width:max-content;max-width:min(92vw,32rem);padding:.75rem 1.1rem;
 border-radius:var(--r);background:var(--fg);color:var(--bg);font-size:.88rem;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
 z-index:60;text-align:center;box-shadow:var(--shadow-lg)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -396,7 +407,21 @@ dialog.wide{width:min(94vw,40rem)}
 dialog::backdrop{background:rgba(8,10,20,.55);backdrop-filter:blur(2px)}
 dialog[open]{animation:pop .18s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(.6rem) scale(.98)}to{opacity:1;transform:none}}
-dialog form,dialog .box{padding:1.35rem 1.25rem 1.1rem}
+dialog form,dialog .box,dialog .key-once{padding:1.35rem 1.25rem 1.1rem}
+/* 2.0.0 [RVA-04] 확인 창의 누구에게·무엇을·며칠·보일 글, [RVA-02] 입력 창의 미리 보기, [RVA-08] 닫기 전 경고 */
+.confirm-rows{margin:.1rem 0 .4rem;padding:.7rem .8rem;border-radius:var(--r-sm);background:var(--soft)}
+.confirm-rows dd{font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere}
+/* 2.0.0 [RVA-02] 조건 창 안에서 펴는 한 줄 칸(앱 판 번호): 칸과 단추가 한 줄, 좁으면 단추가 아래로. */
+.inline-ask{margin-top:.6rem}
+.inline-ask .row-input{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}
+.inline-ask .row-input input{flex:1 1 8rem;min-width:0}
+.ask-preview{margin:0 0 .25rem;padding:.75rem;border-radius:var(--r-sm);background:var(--soft);max-height:16rem;overflow:auto}
+.ask-preview .thread{margin:0}
+dialog .secret-warn{margin:.75rem 0 0}
+dialog .error:empty{display:none}
+/* 2.0.0 [RVA-05] 틀린 칸: 빨간 테와 그 아래 이유 한 줄 */
+[aria-invalid=true]{border-color:var(--bad)!important;box-shadow:0 0 0 1px var(--bad)}
+.field-error{display:block;margin:.3rem 0 0;color:var(--bad);font-size:.84rem;font-weight:700}
 dialog h2{font-size:1.15rem;margin-bottom:.35rem}
 dialog p{margin:0 0 .75rem;color:var(--muted);font-size:.88rem}
 dialog .actions:last-child{position:sticky;bottom:0;margin:1rem -1.25rem -1.1rem;padding:.75rem 1.25rem calc(.9rem + env(safe-area-inset-bottom));
@@ -476,9 +501,15 @@ background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;tex
 .banner .btn{min-height:2.25rem}
 .failed{text-align:center;padding:2.5rem 1rem;color:var(--muted)}
 .failed h2{color:var(--fg);font-size:1.06rem;margin:.5rem 0 .25rem}
+/* 2.0.0 [RVA-10] 검토 ADMX-19: 실패 화면 그림은 빈 화면보다 작고 차분하게 */
+.empty.failed svg{width:2.25rem;height:2.25rem;color:var(--muted)}
+.empty .actions.mid{justify-content:center;margin-top:1rem}.empty .actions.mid .btn{margin-top:0}
 .toast .undo{margin-left:.75rem;border:0;border-radius:var(--r);padding:.45rem .9rem;background:var(--accent-soft);color:var(--fg);font-size:.95rem;font-weight:900;cursor:pointer;pointer-events:auto;min-height:2.75rem}
 .toast.has-undo{font-size:.95rem;padding:.6rem .8rem .6rem 1.1rem;display:flex;align-items:center;gap:.25rem}
 .toast.show.has-undo{pointer-events:auto}
+.toast.has-undo.mini{left:auto;right:max(1rem,env(safe-area-inset-right));transform:none;padding:.3rem;box-shadow:var(--shadow-lg)}
+.toast.has-undo.mini>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.toast.has-undo.mini .undo{margin-left:0}
 /* Two panes: on a wide screen the list stays beside the open item. */
 @media (min-width:1024px){.split{display:grid;grid-template-columns:minmax(17rem,24rem) minmax(0,1fr);gap:1rem;align-items:start}
 .split>.pane-list{position:sticky;top:4.75rem;max-height:calc(100vh - 6rem);max-height:calc(100dvh - 6rem);overflow:auto;border-radius:var(--r-lg)}
@@ -537,7 +568,7 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .saved{font-size:.75rem;color:var(--muted)}
 .prefs .field select{flex:1}
 .check-row{display:flex;align-items:center;gap:.5rem;margin:.4rem 0;font-weight:600;font-size:.92rem}
-.check-row input{width:1.2rem;height:1.2rem;accent-color:var(--accent)}
+.check-row input{flex:none;width:1.2rem;height:1.2rem;accent-color:var(--accent)}
 .who.link{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:2px}
 .btn.disabled{opacity:.45;pointer-events:none}
 .pane-main{min-width:0}
@@ -580,9 +611,10 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .bar,.main{max-width:80rem}
 .hubtabs{max-width:80rem;margin-left:auto;margin-right:auto}
 /* [ADMX-01] The four numbers that need a hand: 2×2 on a phone, a row of four on a wide screen. */
-.tiles.core{grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}
-@media (min-width:900px){.tiles.core{grid-template-columns:repeat(4,minmax(0,1fr))}.tiles.core.metric-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
-@media (min-width:600px) and (max-width:899.98px){.tiles.core.metric-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* 2.0.0 [RVQ-14] 총괄 사진 검토(글자 200%): '50ms'가 '50m/s'로 끊겼어요. 칸 수(--cols)는 넘지 않되 칸마다 9rem은 있게 해서 글자가 크면 칸 수가 줄어요. */
+.tiles.core{--cols:2;grid-template-columns:repeat(auto-fit,minmax(min(100%,max(9rem,calc(100% / var(--cols) - .6rem))),1fr));gap:.6rem}
+@media (min-width:900px){.tiles.core{--cols:4}.tiles.core.metric-kpis{--cols:6}}
+@media (min-width:600px) and (max-width:899.98px){.tiles.core.metric-kpis{--cols:3}}
 .tile.kpi{position:relative;min-height:0;padding:.75rem .85rem .6rem;gap:.15rem}
 .tile.kpi .v{display:flex;align-items:baseline;gap:.4rem;font-size:1.7rem}
 .tile.kpi .d{font-size:.75rem;line-height:1.35;color:var(--muted);display:block}
@@ -1059,6 +1091,8 @@ a.chip{text-decoration:none;color:inherit;padding:.4rem .8rem}
 .rollout-pick{margin:.25rem 0 .75rem}
 .rollout-pick .chips{margin:.35rem 0 0}
 .rows.wrap .row-main b,.person .rows .row-main b,.held-row .row-main b{white-space:normal;overflow:visible;text-overflow:clip}
+/* 2.0.0 [RVQ-07] 좁은 폭·큰 글자에서 줄 끝 단추(끊기·지우기)가 글 칸을 눌러 글자가 한 자씩 꺾였어요: 글 칸이 12rem보다 좁아지면 단추를 아래 줄로. */
+.rows.side-wrap .row{flex-wrap:wrap}.rows.side-wrap .row-main{flex:1 1 12rem}.rows.side-wrap .row-main b{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
 
 @media (max-width:719.98px){.flow-cols{grid-template-columns:minmax(0,1fr)}}
@@ -1080,7 +1114,7 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 /* 편 화면(폴드 안쪽 가로 ~840–1023px): 문의 목록과 열린 문의를 나란히(두 칸), 오른쪽 칸 아래로 사람 패널. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
 @media (min-width:720px) and (max-width:1023.98px){
   .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
-  .tiles.core{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .tiles.core{--cols:4}
 }
 @media (min-width:840px) and (max-width:1023.98px){
   .split{display:grid;grid-template-columns:minmax(13rem,15rem) minmax(0,1fr);gap:.85rem;align-items:start}

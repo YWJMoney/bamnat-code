@@ -61,6 +61,17 @@ object FxAccess {
         return true
     }
 
+    /**
+     * 2.0.0 [RVO-01] (PC-54) 디버그 빌드의 등급 미리 보기에서만: 작품마다 한 번인 하루 써 보기를 처음으로 돌려, PC 확인이 같은 휴대폰에서
+     * '쓸 수 있음 → 쓰는 중 → 끝난 뒤 한 장'을 다시 볼 수 있게 해요.
+     */
+    fun forgetTries(c: AppContainer) {
+        c.appContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(TRIED).remove(SUM).remove(SAID).apply()
+        _taste.value = FxTaste.decode(null)
+        FxOutside.sync(c)
+        LogicRunner.rulesChanged(c)
+    }
+
     /** The 프로 기능 장치 a whole work carries in its 규칙·단추 piece (none: free to put in and to send up). */
     fun partsOf(r: com.bamnat.core.recipe.Recipe): Set<FxPro.Part> =
         (r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) } +

@@ -264,6 +264,9 @@ class AppContainer(context: Context) {
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext), com.bamnat.app.ui.memo.MemoPhotoFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
         staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles },
+        // 2.0.0 [RVL-04][RVL-02] The night sounds' clips, and where the data as it was waits while a restore writes.
+        sleepClips = java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR),
+        guard = java.io.File(appContext.noBackupFilesDir, "restore_guard"),
         settingsFiles = {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
                 com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
@@ -285,6 +288,23 @@ class AppContainer(context: Context) {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
             filesOf = { id -> com.bamnat.app.data.CalendarStorage.filesOf(appContext, id) }, workTools = com.bamnat.app.data.WorkToolsStore.get(appContext),
             autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
+    }
+    /** 2.0.0 [RVL-02] True after this start put back a restore the app was closed in the middle of (said once above the calendar). */
+    val restoreStopped = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /**
+     * 2.0.0 [RVL-05][RVL-06][RVL-07] (검토 DATA-02·DATA-10·U12-03) What Android's own backup leaves out of the preference files, kept where it
+     * takes it (the keys only sealed), and the card that says what came on a phone the data came to.
+     */
+    val phoneMove by lazy {
+        com.bamnat.app.data.PhoneMove(
+            carry = java.io.File(appContext.filesDir, com.bamnat.app.data.PhoneMove.CARRY),
+            keys = java.io.File(appContext.dataDir, com.bamnat.app.data.PhoneMove.KEYS),
+            here = java.io.File(appContext.noBackupFilesDir, "phone_here"),
+            state = java.io.File(appContext.noBackupFilesDir, "phone_moved.json"),
+            out = backupManager::carryOut, outKeys = backupManager::carryKeys, received = { received.links() },
+            take = backupManager::carryIn,
+            sealedKeys = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P,
+        )
     }
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
@@ -871,6 +891,23 @@ class AppContainer(context: Context) {
         }
         keep("schedule") {
             scheduleRepository.ensureDefaults()
+            // 2.0.0 [RVL-02] (검토 DATA-08) A restore the app was closed in the middle of: the data as it was goes back whole, first.
+            runCatching {
+                if (backupManager.finishInterrupted()) {
+                    restoreStopped.value = true
+                    journal.note(com.bamnat.core.journal.JournalKind.RESTORE_BACK)
+                }
+            }
+            // 2.0.0 [RVL-05][RVL-06] (검토 DATA-02·U12-03) A phone the data came to by Android's own backup (구글 계정, 휴대폰 옮기기) takes the
+            // settings kept apart in, once, and plans its alarms (Android plans none until the app opens); then the carry is kept fresh.
+            // On every other start this is one look at a file; writing the carry waits off the way to the first month.
+            runCatching {
+                phoneMove.arrive()?.let {
+                    journal.note(com.bamnat.core.journal.JournalKind.PHONE_MOVED)
+                    rescheduleAlarms()
+                }
+            }
+            launch { runCatching { phoneMove.keep() } }
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
             // 1.38 사용자 2026-11-06: a calendar of work without 교대 (일근·알바·현장·자영업·투자) keeps 주간·오후·야간 put away until the user brings one back

@@ -55,6 +55,24 @@ object PolicyConsent {
     val PEOPLE_EFFECTIVE: LocalDate = LocalDate.of(2026, 11, 9)
     val SHARE_PEOPLE_HELD_UNTIL: LocalDate = LocalDate.of(2026, 12, 9)
 
+    /**
+     * 2.0.0 [RVO-08] 처리방침 3.13·이용약관 1.4 (사용자 2026-11-12 18:28 KST "게시해", 범위는 카드 '준비된 줄 먼저, 나머지는 3.14'):
+     * 정식 출시 뒤 첫 개정이라 동의 카드 없이 9항대로 앱 공지와 페이지로 먼저 알리고, 사실 바로잡기·받는 것 그대로인 줄은 7일 뒤
+     * ([REVISION_EFFECTIVE]), 이용자에게 불리할 수 있는 줄(보상 확인 뒤 지급·1년 12개월 상한, 사용 통계 4가지, 약관 1.4)은 30일 뒤
+     * ([REVISION_EFFECTIVE_30])에 시행해요. 3.13은 [ASKED_VERSIONS]에 넣지 않아요(3.12에 '동의'해도 3.13 날짜는 앞당겨지지 않음).
+     * 게시일은 이 한 줄만 바꿔요: `python3 tools/legal_dates.py <게시일>`이 이 줄과 privacy·terms의 날짜를 함께 고쳐요.
+     * 서버는 관리자 앱 › 기능 관리 › 일정 › 처리방침 일정의 3.13(시행일 = [REVISION_EFFECTIVE_30])을 읽어요(`stats.disc`, 보상 상한).
+     * SEED에는 넣지 않아요(3.12와 같은 까닭: 서버 기본 일정이 바뀌어 일정을 안 정한 시험 서버의 깃발이 달라져요).
+     */
+    const val REVISION_VERSION = "3.13"
+    val REVISION_POSTED: LocalDate = LocalDate.of(2026, 11, 12)
+    /** 7일 줄: 체험 3일 전 알림, 생체 인증 설명, 백업·글꼴 바로잡기, 장터 카드 글꼴(앱 2.0.0, 갈래 M은 이날 전에는 받지 않음), 코드 넣는 곳. */
+    val REVISION_EFFECTIVE: LocalDate = REVISION_POSTED.plusDays(7)
+    /** 30일 줄: 1-7·1-12항 보상 확인 뒤 지급·1년 12개월 상한, 1-9항 사용 통계 4가지(`stats.disc`), 이용약관 1.4 전부. */
+    val REVISION_EFFECTIVE_30: LocalDate = REVISION_POSTED.plusDays(30)
+    /** 이용약관 판, 처리방침 3.13과 함께 게시. 설정 › 앱 정보의 줄과 페이지 머리글이 같아요(LegalPagesTest). */
+    const val TERMS_VERSION = "1.4"
+
     /** The newest version the calendar card asks for and a yes writes (a yes to it counts for every older one). */
     const val ASK_VERSION = PEOPLE_VERSION
 

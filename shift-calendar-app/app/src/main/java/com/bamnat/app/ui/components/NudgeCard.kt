@@ -72,7 +72,9 @@ fun NudgeCard(
         // 총괄 #445 검토 (조건 12): with big letters or on a narrow screen the button and the X left the words a sliver, and a line
         // like '잠금 화면에 알람 화면이 안 떠요' ended in '…'. The words are never cut now; there, the button goes under them.
         BoxWithConstraints {
-            val stacked = action != null && (LocalDensity.current.fontScale >= STACK_FONT_SCALE || maxWidth < STACK_WIDTH)
+            // 갈래 J (조건 12): a card with no button was held to two lines with big letters too; 'big' is worked out apart from the button.
+            val big = LocalDensity.current.fontScale >= STACK_FONT_SCALE || maxWidth < STACK_WIDTH
+            val stacked = action != null && big
             val lead: @Composable () -> Unit = {
                 if (kani != null && LocalShowKani.current) Kani(kani, night = isDarkSurface(), size = 36.dp)
                 else Icon(mark, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
@@ -81,7 +83,7 @@ fun NudgeCard(
                 Column(m.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                     if (!detail.isNullOrBlank()) Text(detail, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (stacked) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (big) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             val close: @Composable () -> Unit = {

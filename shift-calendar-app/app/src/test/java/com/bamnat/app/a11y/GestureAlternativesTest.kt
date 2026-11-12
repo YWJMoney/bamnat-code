@@ -67,9 +67,14 @@ class GestureAlternativesTest {
         // 2.0.0 [RVI-35] (검토 MEMO-24) 체크리스트 줄 손잡이 끌어 순서 바꾸기.
         "MemoEditorScreen.kt" to "체크리스트 줄 손잡이 끌기 → 그 줄의 접근성 동작 '위로 옮기기·아래로 옮기기'",
         "Kani.kt" to "칸이 누르기(말랑하게 눌리는 움직임뿐, 하는 일 없음) → 할 일은 옆의 단추, 칸이는 '칸이, 기분'으로 읽어 줘요",
+        // 2.0.0 [RVK-24] (총괄 #472 리뷰) Rows that slide (SwipeToDismissBox) are gestures too.
+        "LedgerList.kt" to "내역 줄을 밀어 오늘로 복사·지우기 → 줄을 눌러 여는 돈 적기 창의 '오늘 날짜로 복사'·'지우기', 접근성 동작 '오늘로 복사·지우기'",
+        "PendingRecords.kt" to "확인 대기 줄을 밀어 확인·지우기 → 줄 오른쪽 ✓ '확인'(48dp), 줄을 눌러 여는 돈 적기 창의 저장·'지우기'",
+        "OwedScreen.kt" to "받을 돈 줄을 밀어 다 받음·알림 문자 → 줄을 눌러 여는 창의 '알림 문자'·받은 돈 적기, 접근성 동작 '다 받음·알림 문자 보내기'",
+        "InvestAlertsCard.kt" to "찾은 거래 줄을 밀어 적기·넘기기 → 줄 오른쪽 ✓ '적기'(48dp), 줄을 눌러 여는 매매 창의 저장·'넘기기', 접근성 동작 '적기·넘기기'",
     )
 
-    private val gesture = Regex("""\.pointerInput\(|detect(Tap|Drag|HorizontalDrag|VerticalDrag|Transform)Gestures""")
+    private val gesture = Regex("""\.pointerInput\(|detect(Tap|Drag|HorizontalDrag|VerticalDrag|Transform)Gestures|SwipeToDismissBox\(""")
 
     @Test fun everyGestureHasAWayTalkBackCanUse() {
         val found = ui.walkTopDown().filter { it.isFile && it.extension == "kt" && gesture.containsMatchIn(it.readText()) }

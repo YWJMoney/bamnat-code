@@ -399,7 +399,7 @@ class PayScreenshotTest : ScreenshotBase() {
         // 1.27 AJ's two cards under the total too.
         openPayGuides()
         reveal("계산 방식 찾기", exact = true)
-        reveal("상담용 묶음 (급여·근무시간·연차)", exact = true)
+        reveal("다른 리포트", exact = true)
         reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)
     }

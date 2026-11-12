@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
-            NoticeLinks.read(intent)
+            NoticeLinks.read(this, intent)
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
@@ -122,6 +122,11 @@ class MainActivity : ComponentActivity() {
         // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
         DisposableEffect(settings.appLock) {
             AppLock.secure(window, settings.appLock)
+            onDispose { }
+        }
+        // 2.0.0 [RVL-09] (검토 DATA-11) 금액 가리기 keeps the recents list from showing the app's amounts too.
+        DisposableEffect(settings.hideAmounts, settings.appLock) {
+            AppLock.hideRecents(this@MainActivity, settings.hideAmounts && !settings.appLock)
             onDispose { }
         }
         // Status bar icons follow the app theme, not only the system one.
@@ -203,12 +208,15 @@ class MainActivity : ComponentActivity() {
                 }
                 val consent by container.consentStore.seen.collectAsStateWithLifecycle()
                 // [J133-87] A size already picked (settings, or the first screen of 1.32) is an answer too.
-                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                // 2.0.0 [RVP-22] With the other opening windows, one at a time (OpenAsk).
+                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone &&
+                    com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.TEXT_SIZE)) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // 1.39 [LOOP-13] The update downloaded behind the app: 다시 시작 when the user wants, never by itself.
                 val updateReady by com.bamnat.app.review.InAppUpdate.ready.collectAsStateWithLifecycle()
-                if (updateReady) com.bamnat.app.ui.components.AlertDialog(
+                // 2.0.0 [RVP-22] (검토 U13b-08) Never over a sheet being filled in, and one opening window at a time (OpenAsk).
+                if (updateReady && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.UPDATE_READY)) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { com.bamnat.app.review.InAppUpdate.later() },
                     title = { androidx.compose.material3.Text("새 버전을 받았어요") },
                     text = { androidx.compose.material3.Text("다시 시작하면 바로 새 버전으로 열려요. 몇 초면 끝나고, 기록은 그대로예요.") },
@@ -234,9 +242,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openLink(intent)
-        IncomingRoster.read(intent) // [ROST-09] shared while the app was open
+        // [ROST-09] shared while the app was open. 2.0.0 [RVL-14] (검토 DATA-06): a backup or a 회사 설정 file opened while the app was
+        // open came here and was never read (the app only came forward); it is offered now as on a first open.
+        if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
-        if (NoticeLinks.read(intent)) HomeRequests.followingLink()
+        if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
@@ -335,6 +345,12 @@ class MainActivity : ComponentActivity() {
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 2.0.0 [RVL-09] (검토 DATA-11) A screen's result came in just before this: the lock that waited for it closes now.
+        AppLock.onResume()
+    }
+
     override fun onStop() {
         super.onStop()
         com.bamnat.app.diag.MainStall.stop()
@@ -345,6 +361,9 @@ class MainActivity : ComponentActivity() {
         startDone = false
         HomeRequests.onStop(isChangingConfigurations)
         AppLock.onStop(isChangingConfigurations)
+        // 2.0.0 [RVL-05] (검토 DATA-02) What Android's own backup takes is written as the app goes to the background: its backup runs
+        // while the phone rests, so a setting changed today is in it.
+        if (!isChangingConfigurations) appContainer.let { c -> c.appScope.launch { runCatching { c.phoneMove.keep() } } }
     }
 
     private companion object {

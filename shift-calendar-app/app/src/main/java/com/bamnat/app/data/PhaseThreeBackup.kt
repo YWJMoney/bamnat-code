@@ -66,7 +66,12 @@ object PhaseThreeBackup {
 
     /** The rows a backup's [TEAMS] holds, read before anything on the phone changes; null when it has none. */
     class Teams(val teams: List<TeamEntity>, val members: List<TeamMemberEntity>, val cells: List<TeamCellEntity>, val months: List<TeamMonthEntity>,
-                val wishes: List<com.bamnat.app.data.db.TeamWishEntity> = emptyList())
+                val wishes: List<com.bamnat.app.data.db.TeamWishEntity> = emptyList()) {
+        companion object {
+            /** 2.0.0 [RVL-01] No teams: what the app's own whole copy means when it has none (a team made after it goes). */
+            val NONE = Teams(emptyList(), emptyList(), emptyList(), emptyList())
+        }
+    }
 
     fun readTeams(root: JSONObject): Teams? {
         val o = root.optJSONObject(TEAMS) ?: return null
@@ -84,7 +89,12 @@ object PhaseThreeBackup {
     }
 
     class Places(val places: List<WorkplaceEntity>, val staff: List<StaffEntity>, val work: List<StaffWorkEntity>, val months: List<PayrollMonthEntity>, val lines: List<PayrollLineEntity>,
-                 val punches: List<com.bamnat.app.data.db.StaffPunchEntity> = emptyList())
+                 val punches: List<com.bamnat.app.data.db.StaffPunchEntity> = emptyList()) {
+        companion object {
+            /** 2.0.0 [RVL-01] No 사업장: what the app's own whole copy means when it has none (a 대장 made after it goes). */
+            val NONE = Places(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+        }
+    }
 
     fun readWorkplaces(root: JSONObject): Places? {
         val o = root.optJSONObject(WORKPLACES) ?: return null

@@ -1117,12 +1117,12 @@ internal fun MakeItemCard(enabled: Boolean, onClick: () -> Unit) {
 /** [PAYS-07] An item just made, said back in a sentence with the way to take it back. */
 @Composable
 internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("‘${made.name}’ 항목을 만들었어요. 합계에 바로 들어갔어요.", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.weight(1f))
+                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
             if (onUndo != null) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
         }
     }

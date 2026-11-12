@@ -440,7 +440,9 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: 
     // 2.0.0 [RVI-87] Kept above the night look, which draws the page anew when it turns on or off: '깼어요' in the morning ends
     // the sleep that kept it on, and the '…잤어요' line with its 되돌리기 went with the old page at once, as did the part
     // (오늘·패턴·기록) and how far down it was.
-    val snackbar = remember { SnackbarHostState() }
+    // 2.0.0 [RVP-23] The app's one line at the bottom (갈래 P): the lane is kept here, above the night look, so a line on its way
+    // still shows when the page is drawn again ([RVI-87]).
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val part = rememberSaveable { mutableStateOf(0) }
     // The three folded parts and the two wide columns, each where it was scrolled to (디자인 품질 11).
     val scrolls = List(5) { rememberScrollState() }
@@ -496,7 +498,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             com.bamnat.app.ui.components.AddFab("기록 추가", onClick = { adding = true }, open = fab.open)
         },

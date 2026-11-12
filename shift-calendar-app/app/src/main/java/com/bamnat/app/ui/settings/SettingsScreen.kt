@@ -355,6 +355,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
         viewModelScope.launch {
+            // 2.0.0 [RVL-13] (검토 DATA-13) What a file without a password left out, said after saving too.
+            val gaps = if (password == null) runCatching { container.backupManager.plainLeavesOut() }.getOrNull() else null
             _message.value = SettingsMessage(runCatching {
                 // [REL-15] A file of format 3: the photos stream from their files, sealed as they go when there is a password.
                 withContext(Dispatchers.IO) {
@@ -369,6 +371,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 if (opens) container.backupNudge.saved() // 1.32 [STAB-08]
                 when {
                     !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
+                    password == null && gaps != null && !gaps.isEmpty ->
+                        "백업 파일을 저장하고 확인했어요. 암호 없이 저장해 ${gaps.words}${com.bamnat.app.data.PlainLeavesOut.topic(gaps.words)} 빠졌어요"
                     password == null -> "백업 파일을 저장하고, 다시 열어 확인했어요"
                     else -> "암호 건 백업을 저장하고 확인했어요. 암호를 잊으면 열 수 없어요"
                 }
@@ -715,8 +719,10 @@ fun SettingsScreen(
     if (wide) {
         val shown = page ?: SettingsPage.WORK
         BoxWithConstraints(Modifier.fillMaxSize()) {
-        // The list takes two fifths: its lines are short, the group's explanations are long.
-        val hubWidth = (maxWidth * 0.4f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH)
+        // The list takes two fifths: its lines are short, the group's explanations are long. 2.0.0 [RVO-02] (HQ-01) With big letters it
+        // takes up to half, so its cards keep whole words on a line.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        val hubWidth = if (big) (maxWidth * 0.5f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH_BIG) else (maxWidth * 0.4f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH)
         Row(Modifier.fillMaxSize()) {
             hub(Modifier.width(hubWidth).fillMaxHeight(), shown)
             VerticalDivider()
@@ -753,6 +759,7 @@ fun SettingsScreen(
 private const val PAGE_MILLIS = 250
 private val HUB_MIN_WIDTH = 260.dp
 private val HUB_MAX_WIDTH = 360.dp
+private val HUB_MAX_WIDTH_BIG = 440.dp
 
 /** A group's page: its title (with back when folded), then its sections, scrolling. */
 @Composable
@@ -854,8 +861,11 @@ private fun SettingsHub(
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
         val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
+            // 2.0.0 [RVO-03] (SET-05·T11a-14) One rule: a calendar's pages (내 근무, 알람, 급여) by the calendar on screen, the phone's
+            // pages (알림과 잠, 화면과 글자, 데이터, 개인정보) by 내 달력 — the summary reads like the page it opens.
+            val ofCalendar = p in CALENDAR_PAGES
             GroupRow(p.icon, p.titleFor(work.workStyle), if (p == SettingsPage.WORK && mineCal != null) mineCal.mineLine(short = true)
-                else summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
+                else summary(p, if (ofCalendar) work else settings, snapshot, profile != null, notificationsOk, if (ofCalendar) work.workStyle else settings.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -1092,6 +1102,9 @@ internal fun shortcutLabel(title: String, style: com.bamnat.core.work.WorkStyle?
     }
 }
 
+/** 2.0.0 [RVO-03] The settings pages that belong to one calendar (the others belong to the phone and go by 내 달력). */
+internal val CALENDAR_PAGES = setOf(SettingsPage.WORK, SettingsPage.ALARM, SettingsPage.PAY)
+
 /** [UX-04] The search result that opens the help answers rather than the question form. */
 internal const val HELP_TITLE = "자주 묻는 질문"
 
@@ -1112,7 +1125,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     // [SET-02] Notices first (or that they are off), then sleep, in one line.
     SettingsPage.NOTICES -> (
         (if (!notificationsOk) listOf("알림이 꺼져 있어요") else listOfNotNull(
-            // [J133-79] The calendar on screen's kind of work, as the rest of the hub: no 연차 for a shop, no 퇴근길 for trades.
+            // [J133-79] The kind of work's words: no 연차 for a shop, no 퇴근길 for trades. 2.0.0 [RVO-03] 내 달력's, as the page.
             "브리핑".takeIf { s.briefing },
             (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "마감 뒤" else "퇴근길").takeIf { s.commuteNotice && style != com.bamnat.core.work.WorkStyle.INVEST },
             "잘 준비".takeIf { s.bedtimeNotice },
@@ -1157,6 +1170,16 @@ internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
     !gate.live -> "지금은 모든 기능 무료 · 출시 소식은 앱에서 알려 드려요" // [J133-43] 순번 723
     gate.access.pro -> gate.access.reason.words
     else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
+}
+
+/**
+ * 2.0.0 [RVO-02] (T11a-07: 가게·투자·현장의 알람 카드 단추가 늘 '근무 종류'): the button that opens where the alarms are turned on, in the
+ * work's own word.
+ */
+internal fun alarmKindsButton(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    null, com.bamnat.core.work.WorkStyle.SHIFT -> "근무 종류"
+    com.bamnat.core.work.WorkStyle.INVEST -> "투자 알람"
+    else -> style.words().types
 }
 
 /** "7시간", "6시간 반". */
@@ -1233,11 +1256,13 @@ private fun AlarmReadyCard(
         color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
+            // 2.0.0 [RVO-02] (HQ-01: 편 폭·글자 200%에서 설정 왼쪽 목록이 좁아 이 카드 글이 한 낱말씩 세로로 쌓였어요): 글과 단추는
+            // SideOrBelow로, 글이 좁아지면 단추가 그 아래로 내려가요(조건 12).
+            com.bamnat.app.ui.components.SideOrBelow(minStart = 160.dp, start = { Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, null, tint = tint)
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
+                Column {
                     Text(headline, style = MaterialTheme.typography.titleMedium)
                     // [J133-77] 1.33 (유형별 점검: 가게 달력의 설정에 '다음 알람 … 저녁 알바'): the alarms are 내 달력's; with
                     // another calendar on screen the line says whose they are.
@@ -1269,11 +1294,12 @@ private fun AlarmReadyCard(
                     }
                     nudge?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning) }
                 }
+            } }, end = {
                 when {
                     !settings.alarmsEnabled -> TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }
-                    next == null && fixes.isEmpty() -> TextButton(onClick = onOpenShiftTypes) { Text("근무 종류") }
+                    next == null && fixes.isEmpty() -> TextButton(onClick = onOpenShiftTypes) { Text(alarmKindsButton(settings.workStyle)) }
                 }
-            }
+            })
             snoozeAt?.let { at ->
                 LineWithButton("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", "지금 끄기", vm::cancelSnooze)
             }
