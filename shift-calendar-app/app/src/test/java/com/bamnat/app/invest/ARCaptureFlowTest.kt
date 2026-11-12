@@ -22,6 +22,7 @@ import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.Trade
 import com.bamnat.core.invest.TradeAlerts
 import com.bamnat.core.time.Today
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,6 +60,8 @@ class ARCaptureFlowTest {
     private val zone = ZoneId.of("Asia/Seoul")
     private val today = LocalDate.of(2026, 10, 27)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+    /** The screens' models made here, put away after each test so their collectors don't run on into the next ones. */
+    private val made = mutableListOf<InvestViewModel>()
 
     /** 삼성전자 written already · NAVER new and sure · 기아 the waiting notification's · SK하이닉스 yellow (3 × 182,000 ≠ 548,000). */
     private val capture = """
@@ -73,21 +76,32 @@ class ARCaptureFlowTest {
 
     @After fun reset() {
         scope.cancel()
+        made.forEach { it.viewModelScope.cancel() }
         com.bamnat.app.pay.PayslipScanner.fake = null
         Today.reset()
     }
 
     private fun at(h: Int, m: Int) = today.atTime(h, m).atZone(zone).toInstant().toEpochMilli()
 
-    /** Waits for the model's work (the database runs on its own threads) without sleeping the screen's thread. */
+    /**
+     * Waits for the model's work (the database runs on its own threads) without sleeping the screen's thread. The wait is
+     * long (real clock: a loaded test JVM — the whole suite in a few forks — can stall for seconds) and says where it stopped.
+     */
     private fun until(what: String, ok: () -> Boolean) {
-        val end = System.currentTimeMillis() + 10_000
+        val end = System.currentTimeMillis() + 60_000 // real clock: how long to wait, not what the app sees (Today is fixed)
         while (!ok()) {
             ShadowLooper.idleMainLooper()
-            check(System.currentTimeMillis() < end) { "기다렸지만 안 됨: $what" }
+            check(System.currentTimeMillis() < end) { "기다렸지만 안 됨: $what · ${where()}" }
             runBlocking { delay(15) }
         }
     }
+
+    private var last: InvestViewModel? = null
+    private fun where(): String = runCatching {
+        val vm = last
+        "체결 ${trades().map { it.name }} · 기다림 ${runBlocking { repo().alertsNow() }.size} · 시트 ${vm?.capturing?.value} · " +
+            "읽음 ${vm?.captureRead?.value?.let { "${it.fills.size}줄 done=${it.done} error=${it.error}" }} · 읽는 중 ${vm?.captureReading?.value}"
+    }.getOrElse { "상태 못 읽음: $it" }
 
     private fun setUp(): Pair<InvestViewModel, MutableList<UndoMessage>> {
         val c = context.appContainer
@@ -98,7 +112,7 @@ class ARCaptureFlowTest {
             repo.saveTrade(Trade(accountId = acc, date = today, minute = 9 * 60 + 12, symbol = "005930", name = "삼성전자", side = Side.BUY, quantity = 10.0, price = 71_500.0))
             repo.addAlert(TradeAlerts.Pending(at(13, 2), "키움", Side.BUY, "", "기아", 5.0, 0.0, Market.KR_STOCK))
         }
-        val vm = InvestViewModel(c, PersonalCalendar.MAIN)
+        val vm = InvestViewModel(c, PersonalCalendar.MAIN).also { made += it; last = it }
         val said = mutableListOf<UndoMessage>()
         scope.launch { vm.messages.collect { said += it } }
         return vm to said

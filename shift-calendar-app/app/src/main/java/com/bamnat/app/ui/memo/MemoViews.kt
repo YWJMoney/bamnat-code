@@ -46,6 +46,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import com.bamnat.app.ui.components.DropdownMenu
@@ -82,40 +83,70 @@ import androidx.compose.ui.semantics.Role
  * [TAB-02] 1.36 메모장 보기 칩: 목록 · 보드 · 표 · 갤러리, and for a 보드 what makes its 칸 and for every view the order. The 칸 names the
  * memos on screen carry ([MemoProps.columns]) are offered as 묶음 and 정렬, so a 틀 with 매출·상태 칸 can be seen by them at once.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun MemoViewChips(
     view: MemoView, columns: List<Pair<String, MemoProps.Type>>, onChange: (MemoView) -> Unit,
     // PC 확인 fe5eb3cd 사용성 제안 "정렬이 위 아이콘과 칩 두 곳": the 메모장's own orders (최근 수정순…) are offered here too, and the icon is gone.
     baseOptions: List<Pair<String, String>> = listOf("" to "기본 순서"), baseLabel: String = "기본 순서",
     onSort: (String) -> Unit = { onChange(view.copy(sort = it)) },
-) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp),
+) = androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+    // 2.0.0 [RVIB-20] HQ-86 (조건 1·12): where the five views and 정렬 do not fit on one line (a phone, a folded Fold, the list pane, big
+    // letters) they are one chip that says what is on screen ('목록 · 날짜순 ▾') and opens both lists; the row is never cut at the edge
+    // to be slid along, and takes one line. Wide enough, each view keeps its own chip, one tap away.
+    val fits = maxWidth >= 520.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val sortLabel = when {
+        view.sort.isEmpty() -> baseLabel
+        view.sort == MemoView.SORT_TITLE -> "제목순"
+        view.sort.startsWith("-") -> view.sort.drop(3) + " 큰 순"
+        else -> view.sort.drop(2) + " 작은 순"
+    }
+    val sorts = baseOptions + columns.flatMap { (c, _) -> listOf("p:$c" to "$c 작은 순", "-p:$c" to "$c 큰 순") }
+    val viewLabel = MemoView.LABELS[view.view] ?: MemoView.LABELS[MemoView.VIEWS.first()]!!
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        for (v in MemoView.VIEWS) {
+        if (fits) for (v in MemoView.VIEWS) {
             FilterChip(
                 selected = view.view == v,
                 onClick = { onChange(view.copy(view = v)) },
                 label = { Text(MemoView.LABELS[v]!!) },
                 modifier = Modifier.semantics { contentDescription = "${MemoView.LABELS[v]}${Fmt.ro(MemoView.LABELS[v]!!)} 보기" },
             )
-        }
+        } else ViewSortChip(viewLabel, sortLabel, view.view, view.sort, sorts, onView = { onChange(view.copy(view = it)) }, onSort = onSort)
         if (view.view == MemoView.BOARD) {
             val byLabel = MemoView.BY_LABELS[view.by] ?: view.by.removePrefix("p:")
             PickChip("묶음: $byLabel", MemoView.BY_FIXED.map { it to MemoView.BY_LABELS[it]!! } + columns.map { "p:${it.first}" to it.first }) {
                 onChange(view.copy(by = it))
             }
         }
-        val sortLabel = when {
-            view.sort.isEmpty() -> baseLabel
-            view.sort == MemoView.SORT_TITLE -> "제목순"
-            view.sort.startsWith("-") -> view.sort.drop(3) + " 큰 순"
-            else -> view.sort.drop(2) + " 작은 순"
+        if (fits) PickChip("정렬: $sortLabel", sorts) { onSort(it) }
+    }
+}
+
+/** [RVIB-20] HQ-86 보기 and 정렬 in one chip: what is on screen as its words, both lists under it, the ones in use ticked. */
+@Composable
+private fun ViewSortChip(
+    viewLabel: String, sortLabel: String, current: String, currentSort: String, sorts: List<Pair<String, String>>,
+    onView: (String) -> Unit, onSort: (String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(selected = false, onClick = { open = true }, label = { Text("$viewLabel · $sortLabel", maxLines = 1) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) },
+            modifier = Modifier.semantics { contentDescription = "보기 $viewLabel, 정렬 $sortLabel. 바꾸기" })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text("보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).semantics { heading() })
+            for (v in MemoView.VIEWS) DropdownMenuItem(text = { Text(MemoView.LABELS[v]!!) }, onClick = { open = false; onView(v) },
+                trailingIcon = { if (v == current) Icon(Icons.Filled.Check, null) })
+            androidx.compose.material3.HorizontalDivider()
+            Text("정렬", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).semantics { heading() })
+            for ((key, text) in sorts) DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onSort(key) },
+                trailingIcon = { if (key == currentSort || (key.startsWith("ms:") && text == sortLabel)) Icon(Icons.Filled.Check, null) })
         }
-        PickChip("정렬: $sortLabel", baseOptions +
-            columns.flatMap { (c, _) -> listOf("p:$c" to "$c 작은 순", "-p:$c" to "$c 큰 순") }) { onSort(it) }
     }
 }
 

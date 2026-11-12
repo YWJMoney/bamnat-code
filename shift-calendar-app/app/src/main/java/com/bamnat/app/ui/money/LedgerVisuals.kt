@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.Canvas
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -339,7 +340,7 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
     val line = cal.expense
     val before = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
     val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-    val warn = cal.warning
+    val warn = MaterialTheme.bamnat.caution
     val top = maxOf(current.maxOrNull() ?: 0, previous.maxOrNull() ?: 0, budget ?: 0).coerceAtLeast(1)
     Column(modifier.semantics(mergeDescendants = true) { contentDescription = description }) {
         Row {
