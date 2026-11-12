@@ -86,7 +86,7 @@ internal fun FxHeadLine(parts: Set<FxPro.Part>) {
     val locked = !gate.allows(com.bamnat.app.tier.Feature.FX_WORKS)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ProBadge(locked = locked)
-        Text("✦ " + FxPro.say(parts), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+        Text("✦ " + FxPro.plain(parts), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
     }
 }
 
@@ -115,16 +115,21 @@ internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, ladd
                 Text("프로 기능이 든 작품", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.semantics { heading() })
             }
-            Text("✦ 들어 있는 것: " + FxPro.say(parts), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text("✦ 들어 있는 것: " + FxPro.plain(parts), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
             // 1.39 [MKD-13] 장치마다 무엇인지: 누르면 한 줄 설명.
-            var told by remember(parts) { mutableStateOf<FxPro.Part?>(null) }
+            // [RVM-12] PC-59: one chip a thing it does for me (홈 화면 단추·알림 단추·자동 기록 …), its parts told under it.
+            var told by remember(parts) { mutableStateOf<FxPro.Plain?>(null) }
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                parts.forEach { p ->
+                FxPro.Plain.of(parts).forEach { p ->
                     com.bamnat.app.ui.components.FilterChip(selected = told == p, onClick = { told = if (told == p) null else p },
-                        label = { Text("✦ " + p.label + " ?") })
+                        label = { Text("✦ " + p.label + " ?") }, modifier = Modifier.heightIn(min = 48.dp))
                 }
             }
-            told?.let { p -> Text(p.label + ": " + FxMarket.explain(p), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer) }
+            told?.let { p ->
+                parts.filter { it in p.parts }.forEach { part ->
+                    Text(part.label + ": " + FxMarket.explain(part), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                }
+            }
             Text("1.38까지 있던 모양·규칙·단추는 무료 그대로예요. 1.39부터 새로 연 ✦ 장치만 프로에서 돌아요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer)
             Text(FxMarket.stateLine(pro, status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
@@ -162,7 +167,7 @@ internal fun FxTasteAsk(parts: Set<FxPro.Part>, code: String, onDismiss: () -> U
         onDismissRequest = onDismiss,
         title = { Text("하루 써 보기를 시작할까요?") },
         text = {
-            Text("이 작품을 내 앱에 진짜로 넣고, ${FxMarket.HOURS}시간 동안 ✦ ${FxPro.say(parts)}까지 다 써 봐요. 작품마다 한 번뿐이에요. " +
+            Text("이 작품을 내 앱에 진짜로 넣고, ${FxMarket.HOURS}시간 동안 ✦ ${FxPro.plain(parts)}까지 다 써 봐요. 작품마다 한 번뿐이에요. " +
                 "끝나면 넣은 것 가운데 무료인 것은 그대로 두고 ✦ 장치만 쉬어요. 값 칸에 쌓인 것은 지우지 않아서 프로가 되면 이어서 돌아요")
         },
         confirmButton = {

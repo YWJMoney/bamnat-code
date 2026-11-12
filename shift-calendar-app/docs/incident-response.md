@@ -21,11 +21,12 @@
      4. 관리 › Claude 열쇠(운영 열쇠)를 모두 폐기하고 필요하면 새로 만들어요.
      5. GitHub 저장소 Settings › Secrets의 `CLOUDFLARE_API_TOKEN`·`BAMNAT_SYNC_KEY`와 Cloudflare API 토큰을 폐기하고 새로 만들어 넣어요.
    - **서버 비밀값이 새었으면**: Cloudflare 대시보드에서 새은 것을 새 값으로 바꾸고 다시 배포해요. 지금 쓰는 비밀값(이름만, 2026-11-12 코드 기준):
-     - 회사 서버: `ADMIN_PASSWORD`, `RATE_SALT`, `SHARE_ADMIN_TOKEN`, `MAIL_API_KEY`, `PLAY_SERVICE_ACCOUNT`, `FCM_SERVICE_ACCOUNT`, `VAPID_PRIVATE_KEY`(공개 키 `VAPID_PUBLIC_KEY`와 짝), `AUTHOR_KEY`(바꿀 때 앞 값은 `AUTHOR_KEY_OLD`로)
+     - 회사 서버: `ADMIN_PASSWORD`, `RATE_SALT`, `SHARE_ADMIN_TOKEN`, `MAIL_API_KEY`, `PLAY_SERVICE_ACCOUNT`, `FCM_SERVICE_ACCOUNT`, `VAPID_PRIVATE_KEY`(공개 키 `VAPID_PUBLIC_KEY`와 짝), `AUTHOR_KEY`(바꿀 때 앞 값은 `AUTHOR_KEY_OLD`로), `SEAL_KEY`(2.0.0, 2단계 키·백업 비밀 칸 잠금, 16자 이상. 바꿀 때 앞 값은 `SEAL_KEY_OLD`로), `INTEGRITY_MODE`·`ADMIN_2FA_RESET`(비밀 아님, 스위치)
      - 공유 서버: `RATE_SALT`, `SHARE_ADMIN_TOKEN`(회사 서버와 같은 값)
      - GitHub Actions: `CLOUDFLARE_API_TOKEN`(배포, 2.0.0부터 배포 workflow의 올리기 단계에만), `BAMNAT_SYNC_KEY`
      - 관리자 앱 안: 운영 열쇠(`bko_…`, 관리 › Claude 열쇠). 저장은 해시만이라 서버가 새어도 열쇠 자체는 나가지 않지만, 의심되면 폐기해요.
      `RATE_SALT`를 바꾸면 설치·네트워크 해시가 모두 바뀌어(한도·익명 표시가 처음부터) 최고 관리자 로그인도 모두 끊겨요.
+     2.0.0부터 `SEAL_KEY`가 없으면 `RATE_SALT`로 2단계 키와 백업 비밀 칸을 잠가요. 그래서 `RATE_SALT`를 바꿀 때는 옛 값을 `SEAL_KEY_OLD`에 넣어 두어야(16자 이상일 때) 2단계 키가 열리고, 넣지 않으면 로그인이 '2단계 확인을 다시 켜야 해요'로 막혀 `ADMIN_2FA_RESET`을 1로 두고 다시 켜야 해요. 바꾼 날은 관리 › 보안 한 장이 적어요(값은 보이지 않아요).
    - **기능 하나가 문제면**: 관리자 앱 › 운영 › 기능 스위치로 그 기능을 잠시 꺼요(광장 글쓰기, 문의 사진, 근무표 링크 만들기 등). 앱은 '잠시 쉬고 있어요'를 보여 주고 서버를 부르지 않아요.
    - **공유 링크 하나가 문제면**: 관리자 앱 › 공유 링크 신고 › 내리기(공유 서버에서 바로 410).
    - **Cloudflare 계정이 의심되면**: 계정 비밀번호와 2단계 인증 다시 설정, API 토큰 모두 폐기.

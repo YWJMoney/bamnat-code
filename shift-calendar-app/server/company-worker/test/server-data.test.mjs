@@ -2,25 +2,21 @@
 // writes, so a new table cannot go out without its reason and its deletion. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const doc = read("../../../docs/server-data.md");
 /** The first cell of each table row in the document, without its backticks. */
 const listed = new Set([...doc.matchAll(/^\| `([^`]+)`/gm)].map((m) => m[1]));
 
-test("[SRV-03] every table in the company server's SCHEMA has a line in docs/server-data.md", () => {
-  const src = read("../src/index.js");
-  // R131 1.31: the tables made after COLUMNS (usage_startup, photo_wrong) too.
-  const schema = src.slice(src.indexOf("const SCHEMA = ["), src.indexOf("const FTS_SQL = ["));
-  const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
-  // The search index (FTS_SQL) is made after SCHEMA, so a failed index never stops the server.
-  for (const m of src.matchAll(/CREATE VIRTUAL TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
-  // 1.36 [LIM-10] The 쓰기 제한 tables are kept next to their rules (write-limits.js, spread into SCHEMA).
-  for (const m of read("../src/write-limits.js").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
-  // 1.36 [VIL-11] 마을 운영 tables live in village.js, spread into SCHEMA the same way.
-  for (const m of read("../src/village.js").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
-  assert.ok(tables.length > 30, "found the tables");
+test("[SRV-03] every table the company server makes has a line in docs/server-data.md", () => {
+  // 2.0.0 [RVQ-16] 검토 SRV-10: SCHEMA와 몇 파일만 보던 것을 src 아래 모든 파일로(그 사이 55개 표가 문서 밖에 있었어요). 줄은 보관 장부
+  // (src/retention.js)에서 만들어지고, 장부와 문서가 같은지는 test/retention.test.mjs가 봐요.
+  const tables = [];
+  for (const f of readdirSync(new URL("../src/", import.meta.url), { recursive: true }).map(String).filter((x) => x.endsWith(".js"))) {
+    for (const m of read(`../src/${f}`).matchAll(/CREATE (?:VIRTUAL )?TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
+  }
+  assert.ok(tables.length > 100, "found the tables");
   const missing = tables.filter((t) => !listed.has(t));
   assert.deepEqual(missing, [], "docs/server-data.md needs a line for these tables");
   // And no line for a table that is not there any more (the old sessions table is dropped).

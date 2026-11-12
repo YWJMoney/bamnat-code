@@ -1,0 +1,36 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E4 유리 목록",
+ "summary": "메모 카드 유리, 가계부 줄 셰이더, 카드 반짝",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "id": "memo.card",
+     "paint": "gl.80FFFFFF.24",
+     "motion": "shimmer"
+    },
+    {
+     "id": "money.row",
+     "paint": "sh.aurora.FF1A237E,FF651FFF,FF00BFA5.2"
+    },
+    {
+     "id": "money.day",
+     "paint": "sh.aurora.FF1A237E,FF651FFF,FF00BFA5.2",
+     "motion": "shimmer"
+    }
+   ]
+  }
+ ]
+}
