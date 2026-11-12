@@ -273,6 +273,47 @@ class RvmScreenshotTest : ScreenshotBase() {
     }
 
     /**
+     * 2.0.0 [RVM-37] 총괄 HQ-83 (조건 4·12): at 200% the 추천 mark beside the name cut '야간 회복 스테이션' to '야간 회복 …' (rvm_28·61).
+     * At large text 추천 goes over the picture's corner (above 프로) in the grid, and under the name in a list row, so the name has its
+     * width; at 100% it stays beside the name.
+     */
+    @Test fun theNameKeepsItsWidthAtLargeText() {
+        fun Screen.titles(): List<Pair<String, Boolean>> = nodes(merged = false).mapNotNull { n ->
+            val action = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action ?: return@mapNotNull null
+            val out = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            if (action(out) != true) return@mapNotNull null
+            out.firstOrNull { it.layoutInput.text.text == "야간 회복 스테이션" }?.let { it.layoutInput.text.text to it.isLineEllipsized(it.lineCount - 1) }
+        }
+        for ((name, qualifiers) in listOf("rvm_69_market_name_folded_200" to FOLDED, "rvm_70_market_name_folded_dark_200" to DARK)) {
+            shoot(name, qualifiers, 2f) {
+                market()(this)
+                val t = titles()
+                check(t.isNotEmpty()) { "이름이 안 보여요" }
+                check(t.none { it.second }) { "200%에서 이름이 잘려요: $t" }
+                check(appears("추천", exact = true)) { "추천 표시는 남아요" }
+            }
+        }
+        shoot("rvm_71_market_list_row_folded_200", FOLDED, 2f) {
+            val market = Market().also { c.recipeApi = it }
+            style(WorkStyle.SHIFT)
+            val item = runBlocking { market.list(WorkStyle.SHIFT, "", "야간 회복", 0, null).items.first() }
+            content { Surface { Column(Modifier.padding(16.dp)) { com.bamnat.app.ui.recipe.RecipeRow(item, onClick = {}) } } }
+            settle()
+            check(titles().none { it.second }) { "목록 줄에서도 이름이 잘려요: ${titles()}" }
+            check(appears("추천", exact = true))
+        }
+        shoot("rvm_72_market_name_folded", FOLDED) {
+            market()(this)
+            // At 100% 추천 stays beside the name, on its line.
+            fun text(n: androidx.compose.ui.semantics.SemanticsNode) = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString()
+            val all = nodes(merged = false)
+            val title = all.first { text(it) == "야간 회복 스테이션" }.boundsInWindow
+            check(all.any { n -> text(n) == "추천" && n.boundsInWindow.left >= title.right - 1f &&
+                kotlin.math.abs(n.boundsInWindow.center.y - title.center.y) < title.height }) { "100%에서는 이름 옆" }
+        }
+    }
+
+    /**
      * 2.0.0 [RVM-35] 총괄 HQ-66 (갈래 H PC-88과 같은 구조): 크게 넘겨 보기에서 빠르게 세 번 밀면 세 작품을 넘겨요. 페이저 그대로는 넘기는 중에
      * 민 것을 손가락 밑 작품부터 세어, 이미 가고 있는 작품에 다시 내려앉았어요. 달력과 같은 [com.bamnat.app.ui.calendar.queuedTurns]를 써요.
      * 되돌아 두 번이면 두 작품 앞으로, 멈춘 뒤 한 번은 한 작품, '다음 ▶'을 빠르게 두 번 누르면 두 작품이에요.
