@@ -247,6 +247,25 @@ class SetupViewModel(
         if (d.linkTitle.isBlank() || style !in LINK_WORK) d else d.copy(workAs = style.takeIf { it != d.style })
     }
 
+    /**
+     * [RVG-19] 2.0.0 검토 HQ-09 (조건 10): '가족·동료 근무표였어요' on a link's summary, for '내 근무표예요' pressed by mistake (← only
+     * went to earlier questions). Nothing is in the calendar yet: the link stays beside as theirs (only seen, never put in), the setup
+     * goes, and the first screen says where the link went and asks the user's own work. The link's name for that line; null when this
+     * is not a setup started from a link.
+     */
+    fun notMine(): String? {
+        val d = current
+        if (d.linkTitle.isBlank() || calendarId != null || again) return null
+        c.received.mine()?.let { cal ->
+            c.received.notMine(cal.id)
+            com.bamnat.app.share.RosterFollower.close(c, cal.id)
+            com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
+        }
+        c.telemetry.event("setup_link", "not_mine_summary")
+        store.clear()
+        return d.linkTitle
+    }
+
     fun pickStyle(style: WorkStyle, roster: Boolean = false) {
         val d = current
         when (style) {
