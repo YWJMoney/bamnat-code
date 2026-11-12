@@ -285,6 +285,15 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
                     }
                 }
             }
+            // 2.0.0 [RVL-30] #476 사진 검토(HQ-61, 조건 1·12): reading failed is said right under the card above, before the settings; under
+            // them it was below the fold at 200%. The card reads again itself, so the answer is where the problem is said.
+            if (ui.allowed && ui.failed && ui.proposals?.isEmpty() == true) item {
+                com.bamnat.app.ui.components.NudgeCard(
+                    "캘린더를 읽지 못했어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    detail = "잠시 뒤 다시 읽어 보세요. 계속되면 캘린더 앱에서 동기화를 켜 주세요",
+                    action = "다시 읽기", onAction = vm::read,
+                )
+            }
             if (ui.allowed) {
                 item {
                     SectionCard(title = "가져올 캘린더") {
@@ -323,13 +332,10 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
             }
             if (ui.loading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             ui.proposals?.let { list ->
-                if (list.isEmpty()) item {
-                    // The 다시 읽기 button is just above: the card says what happened and what helps, without a second one.
-                    if (ui.failed) com.bamnat.app.ui.components.NudgeCard(
-                        "캘린더를 읽지 못했어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
-                        detail = "잠시 뒤 ‘다시 읽기’를 눌러 주세요. 계속되면 캘린더 앱에서 동기화를 켜 주세요",
-                    )
-                    else Text("이 기간에 일정이 없어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (list.isEmpty()) {
+                    if (!ui.failed) item {
+                        Text("이 기간에 일정이 없어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } else {
                     item {
                         Text("눌러서 근무·메모를 바꾸거나 빼요. 같은 일정은 두 번 가져오지 않아요.", style = MaterialTheme.typography.bodySmall,
@@ -348,18 +354,25 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
     }
 }
 
+/** At this text size and up the date of a row goes over its title (`NudgeCard` stacks its button from the same size). */
+private const val BIG_TEXT = 1.3f
+
 @Composable
 private fun ProposalRow(p: CalendarImport.Proposal, left: Boolean, type: ShiftType?, onClick: () -> Unit) {
     val muted = left || p.skip != null
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)) {
+        // 2.0.0 [RVL-30] #476 사진 검토(HQ-61, 조건 12): at large text the 64dp date column broke '11/17 화' into three lines; there the
+        // date goes over the title on one line and the title takes the whole width.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= BIG_TEXT
         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.width(64.dp)) {
+            if (!big) Column(Modifier.width(64.dp)) {
                 Text(Fmt.shortDate(p.date), style = MaterialTheme.typography.titleSmall)
                 Text(Fmt.dayOfWeekShort(p.date.dayOfWeek), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column(Modifier.weight(1f)) {
+                if (big) Text("${Fmt.shortDate(p.date)} ${Fmt.dayOfWeekShort(p.date.dayOfWeek)}", style = MaterialTheme.typography.titleSmall, maxLines = 1)
                 Text(p.event.title.ifBlank { "(제목 없음)" }, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                 Text(
