@@ -123,8 +123,9 @@ abstract class ScreenshotBase {
         // [CAL-17] The one-time tip on the first date tap has its own shot (295); the others tap dates past it.
         com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
         // [GUIDE-02][GUIDE-03] A settled user: the first-days card and the tips are put away, so the shots show the screens.
+        // [DISC-01] So is the occasional '이런 기능도 있어요' card (its own shots are DiscScreenshotTest's).
         com.bamnat.app.data.GuideStore.get(app).let { g ->
-            listOf("guide.checklist", "guide.tips").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
+            listOf("guide.checklist", "guide.tips", "guide.discover").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
         }
         // [EASY-05] Today's questions already asked, so the shots show the screens; 묶음 N's shots clear it.
         c.asks.set(com.bamnat.app.data.PersonalCalendar.MAIN, com.bamnat.core.profile.AskState(day = today, shownToday = com.bamnat.core.profile.AskScheduler.PER_DAY))
