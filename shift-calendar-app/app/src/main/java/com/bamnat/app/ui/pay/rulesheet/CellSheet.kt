@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,7 +92,10 @@ internal fun CellSheet(start: CellStart, host: RuleSheetHost, onDismiss: () -> U
         if (p.isPremium) premium = p.premium() else draft = ItemDraft.ofPreset(p, id).also { it.source = sentence }
     }
 
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 고른 칸과 넣은 금액은 아래로 쓸거나 밖을 누르거나 뒤로 가도 말없이 사라지지 않고 한 번 물어요
+    // (앱의 한 가지 물음, [com.bamnat.app.ui.components.GuardedSheet]).
+    val opened = remember { premium to draft?.typed() }
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = (premium to draft?.typed()) != opened) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Column(
                 Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

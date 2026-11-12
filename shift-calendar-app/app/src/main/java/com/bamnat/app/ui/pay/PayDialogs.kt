@@ -76,7 +76,11 @@ internal fun MoneyField(
     // [PAYIN-02] 1.37 PC 5566ff20 (칸을 눌러 2,600,000 뒤에 250을 쳐서 26억이 경고 없이 저장됨): a tap on the field selects what is
     // in it, so typing replaces it; an amount over 1억 원 says so in red under the field (it can still be kept).
     var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "")) }
-    if ((field.text.toLongOrNull()) != value) field = androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "", androidx.compose.ui.text.TextRange((value?.toString() ?: "").length))
+    var focused by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-65] 검토 PAYU-44: where the screen keeps the old amount until a new one comes (규칙 칸의 금액, which cannot be 0), the
+    // field emptied under the finger got the old number back, so its last digit never went. Emptied while typed in, it stays empty for
+    // the new amount; left empty, it shows again the amount that still counts.
+    if ((field.text.toLongOrNull()) != value && !(focused && field.text.isEmpty())) field = androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "", androidx.compose.ui.text.TextRange((value?.toString() ?: "").length))
     // PC 3e347ec6 (누를 때 전체 선택이 안 돼 200,000에 150000을 치니 1,500,020,000): the tap that focuses the field moves the cursor
     // after the focus, sometimes more than once. For a short while after the focus every cursor-only move is taken back to
     // all-selected, and once more after the tap has settled; a later tap places the cursor as usual.
@@ -107,6 +111,7 @@ internal fun MoneyField(
         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
         modifier = modifier.fillMaxWidth().onFocusChanged { f ->
+            focused = f.isFocused
             if (f.isFocused && focusedAt == 0L) { focusedAt = android.os.SystemClock.uptimeMillis(); all() }
             else if (!f.isFocused) focusedAt = 0L
         },
@@ -403,9 +408,12 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
         if (byPercent) RaiseRule(month, percent = n, unit = unit, rounding = rounding)
         else RaiseRule(month, amount = n.toLong(), unit = unit, rounding = rounding)
     }.getOrNull()
+    // 2.0.0 [RVJ-63] 검토 PAYU-45 (같은 구조): 밖을 누르거나 뒤로·취소 한 번에 고친 인상 규칙이 사라지지 않게 한 번 물어요.
+    val opened = remember { listOf(month, byPercent, text, unit, rounding) }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = listOf(month, byPercent, text, unit, rounding) != opened, onLeave = onDismiss)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("매년 인상 규칙") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -464,7 +472,7 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
         dismissButton = {
             Row {
                 if (existing != null) TextButton(onClick = { vm.setRaise(target, null); onDismiss() }) { Text("규칙 없애기") }
-                TextButton(onClick = onDismiss) { Text("취소") }
+                TextButton(onClick = guard::close) { Text("취소") }
             }
         },
     )
@@ -480,8 +488,11 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
     val settings by vm.settings.collectAsState()
     val profile by vm.profile.collectAsState()
     var from by remember { mutableStateOf(month) }
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 적던 규칙(글·골라 담은 것·읽은 칸)은 밖·뒤로·닫기 한 번에 사라지지 않고 한 번 물어요.
+    var started by remember { mutableStateOf(false) }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = started, onLeave = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("규칙을 말로 적기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -490,14 +501,14 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                 Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall)
                 MonthStepper(from, { from = it })
                 RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true,
-                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date())) { changes ->
+                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date()), onStarted = { started = it }) { changes ->
                     vm.applyRuleChanges(changes, from)
                     onDismiss()
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = guard::close) { Text("닫기") } },
     )
 }
 
@@ -524,8 +535,12 @@ fun AddBonusDialog(
     var festivals by remember { mutableStateOf(emptySet<com.bamnat.core.pay.Festival>()) }
     var festivalBefore by remember { mutableStateOf(false) }
     val times = months.size + festivals.size
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 고른 달·금액이 밖을 누르거나 뒤로·취소 한 번에 사라지지 않게 한 번 물어요.
+    val now = listOf(name, byPercent, percent, annual, amount, months, ordinary, festivals, festivalBefore)
+    val opened = remember { now }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = now != opened, onLeave = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("상여금 추가") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -613,7 +628,7 @@ fun AddBonusDialog(
                 enabled = times > 0 && (byPercent || (amount ?: 0) > 0),
             ) { Text("추가") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = { TextButton(onClick = guard::close) { Text("취소") } },
     )
 }
 
@@ -637,8 +652,11 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
     val scale = steps.takeIf { it.isNotEmpty() }?.let {
         runCatching { PayScale(it, stepMonth, step.coerceIn(it.keys.min(), it.keys.max()), since) }.getOrNull()
     }
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 호봉표는 40줄까지 넣어요. 밖을 누르거나 뒤로·취소 한 번에 넣은 줄이 사라지지 않게 한 번 물어요.
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(
+        unsaved = rows.any { it != null } || text.isNotBlank() || stepMonth != 1 || step != 1, onLeave = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("호봉표로 기본급 넣기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -694,7 +712,7 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
                 onDismiss()
             }) { Text("적용") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = { TextButton(onClick = guard::close) { Text("취소") } },
     )
 }
 

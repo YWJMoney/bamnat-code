@@ -206,6 +206,15 @@ private fun PercentAsk(view: HourlyFacts.View?, shown: PayProfile?, month: YearM
         }
     }
     var typed by rememberSaveable { mutableStateOf<Long?>(null) }
-    MoneyField("통상시급을 알면 직접 (선택)", typed, onChange = { v -> typed = v; if (v != null && v > 0) onTerms(terms.withHourly(v.toDouble())) },
+    // 2.0.0 [RVJ-65] 검토 PAYU-43: emptied, the 통상시급 typed last went on counting. Now emptying it puts back what was there before
+    // anything was typed here (the one read from the payslip, or worked out again).
+    val before = remember { terms }
+    MoneyField("통상시급을 알면 직접 (선택)", typed, onChange = { v ->
+        val had = (typed ?: 0) > 0
+        typed = v
+        if (v != null && v > 0) onTerms(terms.withHourly(v.toDouble()))
+        else if (had) onTerms(terms.copy(hourly = before.hourly, hourlySource = before.hourlySource, hourlyWhy = before.hourlyWhy,
+            roundUp = before.roundUp, roundDown = before.roundDown, estimated = before.estimated))
+    },
         placeholder = "명세서의 통상시급")
 }

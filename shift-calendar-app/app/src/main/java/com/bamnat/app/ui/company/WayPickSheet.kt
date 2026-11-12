@@ -96,13 +96,13 @@ internal fun WayPickSheet(
     val parts = remember { mutableStateMapOf<SlipGlance.Part, Long>() }
     var allowances by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var more by rememberSaveable { mutableStateOf(false) }
-    var reading by remember { mutableStateOf(false) }
+    var reading by rememberSaveable { mutableStateOf(false) } // 2.0.0 [RVJ-62] back after the screen is made again
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<WayPicker.Result?>(null) }
     var chosen by remember { mutableStateOf<String?>(null) }
     val clear = { result = null; chosen = null }
     if (reading) {
-        com.bamnat.app.ui.pay.PayslipFillDialog(title = "명세서 읽기", onDismiss = { reading = false }) { read ->
+        com.bamnat.app.ui.pay.PayslipFillDialog(title = "명세서 읽기", onDismiss = { reading = false }, keep = com.bamnat.app.ui.pay.PayslipWorks.WAY) { read ->
             reading = false
             val slip = read.payslip() ?: return@PayslipFillDialog
             read.month?.let { month = it }
@@ -124,7 +124,11 @@ internal fun WayPickSheet(
             Text("‘${way.company}’ 급여 방식 가운데 ${month.monthValue}월 명세서와 가장 맞는 것을 골라요. ${WayPickWords.PRIVATE}",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             MonthChips(month) { month = it; clear() }
-            OutlinedButton(onClick = { reading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("명세서 사진이나 글로 채우기") }
+            // 2.0.0 [RVJ-62] 검토 PAYU-42: a payslip read and fixed before '직접 문의하기' waits here.
+            val waiting = com.bamnat.app.ui.pay.PayslipWorks.waiting(com.bamnat.app.ui.pay.PayslipWorks.WAY)?.kept
+            OutlinedButton(onClick = { reading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (waiting != null) "넣던 명세서 이어서 · ${waiting}줄" else "명세서 사진이나 글로 채우기")
+            }
             MoneyField("지급 총액 (세전)", gross, onChange = { gross = it; clear() }, placeholder = "명세서의 ‘지급 합계’ 또는 ‘총 지급액’")
             MoneyField("기본급", base, onChange = { base = it; clear() }, placeholder = "명세서의 기본급 줄")
             if (allowances.isNotEmpty()) Text("명세서에서 읽은 수당 ${allowances.size}개도 같이 맞춰 봐요: ${allowances.keys.joinToString(", ")}",
