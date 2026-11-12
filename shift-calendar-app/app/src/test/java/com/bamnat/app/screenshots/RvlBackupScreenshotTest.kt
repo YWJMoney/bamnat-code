@@ -59,6 +59,9 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
         settle()
     }
 
+    /** Unfolded, the settings page is the right part of the screen: it scrolls there. */
+    private fun side(wide: Boolean) = if (wide) 0.75f else 0.5f
+
     private fun folder() = File(app.filesDir, "drive/밤낮 백업").apply { deleteRecursively(); mkdirs() }
 
     /** 자동 백업 on in a folder (or one file), with its first backup made. */
@@ -71,22 +74,22 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
     }
 
     // ---- RVL-52: a folder, seven days kept ----
-    private fun folderRow(): Screen.() -> Unit = {
+    private fun folderRow(wide: Boolean = false): Screen.() -> Unit = {
         on(inFolder = true)
-        settingsPage("데이터")
-        reveal("위치 바꾸기", exact = true)
+        settingsPage("데이터", wide)
+        reveal("위치 바꾸기", exact = true, across = side(wide))
         assertTrue(appears("밤낮 백업 폴더에 1일치"))
     }
 
     @Test fun folderRowFoldLight() = shoot("rvl52_row_fold_light_100", FOLDED, folderRow())
     @Test fun folderRowFoldDarkHuge() = shoot("rvl52_row_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, folderRow())
-    @Test fun folderRowOpenLight() = shoot("rvl52_row_open_light_100", UNFOLDED, folderRow())
+    @Test fun folderRowOpenLight() = shoot("rvl52_row_open_light_100", UNFOLDED, folderRow(wide = true))
 
     /** Turning it on: the password, then the filled 폴더 고르기 or 파일 하나로 for Google Drive. */
-    private fun asking(): Screen.() -> Unit = {
-        settingsPage("데이터")
-        reveal(com.bamnat.app.ui.settings.AUTO_BACKUP_ROW, exact = true)
-        tapText(com.bamnat.app.ui.settings.AUTO_BACKUP_ROW, exact = true)
+    private fun asking(wide: Boolean = false): Screen.() -> Unit = {
+        settingsPage("데이터", wide)
+        reveal(com.bamnat.app.ui.settings.AUTO_BACKUP_ROW, exact = true, across = side(wide))
+        tapText(com.bamnat.app.ui.settings.AUTO_BACKUP_ROW, exact = true, across = side(wide))
         assertTrue(appears("자동 백업 암호"))
         assertTrue(appears(PICK_FOLDER, exact = true))
         assertTrue(appears(ONE_FILE, exact = true))
@@ -94,7 +97,7 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
 
     @Test fun askingFoldLight() = shoot("rvl52_password_fold_light_100", FOLDED, asking())
     @Test fun askingFoldDarkHuge() = shoot("rvl52_password_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, asking())
-    @Test fun askingOpenLight() = shoot("rvl52_password_open_light_100", UNFOLDED, asking())
+    @Test fun askingOpenLight() = shoot("rvl52_password_open_light_100", UNFOLDED, asking(wide = true))
 
     private fun where(): Screen.() -> Unit = {
         on(inFolder = false)
@@ -109,27 +112,28 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
     @Test fun whereFoldDarkHuge() = shoot("rvl52_where_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, where())
 
     // ---- RVL-51: 프로 ended ----
-    private fun stopped(): Screen.() -> Unit = {
+    private fun stopped(wide: Boolean = false): Screen.() -> Unit = {
         on(inFolder = true)
         runBlocking {
             c.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
             c.featureGate.state.first { it.locked(Feature.AUTO_BACKUP) }
         }
-        settingsPage("데이터")
-        reveal(SAVE_ONCE, exact = true)
+        settingsPage("데이터", wide)
+        reveal(SAVE_ONCE, exact = true, across = side(wide))
         assertTrue(appears("매일 저장은 쉬고 있어요"))
     }
 
     @Test fun stoppedFoldLight() = shoot("rvl51_stopped_fold_light_100", FOLDED, stopped())
     @Test fun stoppedFoldDarkHuge() = shoot("rvl51_stopped_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, stopped())
-    @Test fun stoppedOpenLight() = shoot("rvl51_stopped_open_light_100", UNFOLDED, stopped())
+    @Test fun stoppedOpenLight() = shoot("rvl51_stopped_open_light_100", UNFOLDED, stopped(wide = true))
 
     @Test fun savingOnceWhileStopped() = shoot("rvl51_saved_once_fold_light_100", FOLDED) {
         stopped().invoke(this)
         val before = c.autoBackup.state.value.lastOk!!
         tapText(SAVE_ONCE, exact = true)
-        waitFor("the save") { c.autoBackup.state.value.lastOk?.isAfter(before) == true || c.autoBackup.state.value.lastOk != before }
-        assertTrue(appears("매일 저장은 프로를 다시 쓰면 이어져요"))
+        // The test clock stands still, so the saved time may not move: the line the app says once it has saved.
+        waitFor("the save") { !c.autoBackup.state.value.running && appears("매일 저장은 프로를 다시 쓰면 이어져요") }
+        assertTrue(c.autoBackup.state.value.lastOk!! >= before)
     }
 
     // ---- RVL-50: what a restore changes, first ----
@@ -143,9 +147,9 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
         return Uri.fromFile(File(app.cacheDir, "older.${BackupManager.EXTENSION}").apply { writeText(json.toString()) })
     }
 
-    private fun restoring(): Screen.() -> Unit = {
+    private fun restoring(wide: Boolean = false): Screen.() -> Unit = {
         val file = olderFile()
-        settingsPage("데이터")
+        settingsPage("데이터", wide)
         com.bamnat.app.IncomingFiles.read(Intent(Intent.ACTION_VIEW, file))
         settle()
         assertTrue(appears("백업을 불러올까요?"))
@@ -155,20 +159,20 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
 
     @Test fun restoringFoldLight() = shoot("rvl50_restore_fold_light_100", FOLDED, restoring())
     @Test fun restoringFoldDarkHuge() = shoot("rvl50_restore_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, restoring())
-    @Test fun restoringOpenLight() = shoot("rvl50_restore_open_light_100", UNFOLDED, restoring())
+    @Test fun restoringOpenLight() = shoot("rvl50_restore_open_light_100", UNFOLDED, restoring(wide = true))
 
     // ---- RVL-49: to a new phone in one go ----
-    private fun moving(): Screen.() -> Unit = {
-        settingsPage("데이터")
-        reveal(MOVE_ROW, exact = true)
-        tapText(MOVE_ROW, exact = true)
+    private fun moving(wide: Boolean = false): Screen.() -> Unit = {
+        settingsPage("데이터", wide)
+        reveal(MOVE_ROW, exact = true, across = side(wide))
+        tapText(MOVE_ROW, exact = true, across = side(wide))
         assertTrue(appears(SEND_BACKUP, exact = true))
         assertTrue(appears("파일로 저장", exact = true))
     }
 
     @Test fun movingFoldLight() = shoot("rvl49_move_fold_light_100", FOLDED, moving())
     @Test fun movingFoldDarkHuge() = shoot("rvl49_move_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, moving())
-    @Test fun movingOpenLight() = shoot("rvl49_move_open_light_100", UNFOLDED, moving())
+    @Test fun movingOpenLight() = shoot("rvl49_move_open_light_100", UNFOLDED, moving(wide = true))
 
     @Test fun sendingOpensAndroidsSendWithTheCheckedFile() = shoot("rvl49_send_password_fold_light_100", FOLDED) {
         moving().invoke(this)

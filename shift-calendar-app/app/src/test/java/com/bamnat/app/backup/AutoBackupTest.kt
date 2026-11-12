@@ -262,7 +262,7 @@ class AutoBackupTest {
         now = now.plus(Duration.ofDays(1))
         assertEquals(AutoBackup.Result.Locked, auto.runIfDue())
         assertEquals("said on the day it would have run", 1, stopped())
-        nm.cancelAll()
+        app.getSystemService(NotificationManager::class.java).cancelAll()
         now = now.plus(Duration.ofDays(1))
         assertEquals(AutoBackup.Result.Locked, auto.runIfDue())
         assertEquals("once, not every day", 0, stopped())
