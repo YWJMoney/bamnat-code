@@ -234,7 +234,8 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("캘린더에서 가져오기") },
+                // 2.0.0 [RVL-30] 사진 검토 (글자 200%의 접은 폭에서 제목이 두 줄이 되어 둘째 줄이 막대 밖으로 잘렸어요, 조건 12): one line.
+                title = { Text("캘린더에서 가져오기", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 // [UX-05] Help about this screen, with the question already about it.
                 actions = {
@@ -247,7 +248,8 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         bottomBar = {
             val todo = ui.todo
-            if (ui.proposals != null) Surface(tonalElevation = 3.dp) {
+            // 2.0.0 [RVL-30] Reading failed: the card above says to read again; a greyed "가져올 새 일정이 없어요" under it said otherwise.
+            if (ui.proposals != null && !ui.failed) Surface(tonalElevation = 3.dp) {
                 val c = CalendarImport.count(todo)
                 Button(onClick = vm::bringIn, enabled = todo.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp).heightIn(min = 52.dp)) {

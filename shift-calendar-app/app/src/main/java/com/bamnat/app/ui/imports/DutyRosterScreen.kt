@@ -889,7 +889,8 @@ private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, onAnswer: (Du
                         FilterChip(selected = false, onClick = { onAnswer(DutyCell.Shift(t.id)) }, label = { Text(t.name) },
                             leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) })
                     }
-                    FilterChip(selected = false, onClick = { onAnswer(DutyCell.Leave()) }, label = { Text("연차") })
+                    // 2.0.0 [RVL-21] 사진 검토: 'V' asked as 연차 first showed a second '연차' here, the same answer twice (조건 4).
+                    if (guess?.second != DutyCell.Leave()) FilterChip(selected = false, onClick = { onAnswer(DutyCell.Leave()) }, label = { Text("연차") })
                     FilterChip(selected = false, onClick = onNewKind, label = { Text("새 근무로 만들기") })
                 }
             }

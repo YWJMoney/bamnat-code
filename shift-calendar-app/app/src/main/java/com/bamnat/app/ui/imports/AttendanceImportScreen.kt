@@ -56,6 +56,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.imports.AttendanceField
 import com.bamnat.core.imports.AttendanceImport
@@ -380,8 +381,9 @@ private fun CompareCard(vm: AttendanceImportViewModel, days: List<AttendanceRow>
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var all by remember { mutableStateOf(false) }
     SectionCard(title = "내 기록과 비교") {
+        // 2.0.0 [RVL-26] 사진 검토: fewer hours on the company's record is to be checked, not a danger (조건 6): 주의, not the red of Sundays.
         Text(result.summary, style = MaterialTheme.typography.titleSmall,
-            color = if (result.shortMinutes > 0) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else MaterialTheme.colorScheme.primary)
+            color = if (result.shortMinutes > 0) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.primary)
         if (result.leftEarlierDays > 0) Text("회사 퇴근이 내 기록보다 이른 날 ${result.leftEarlierDays}일: 조퇴로 처리되지 않았는지 확인해 보세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val shown = if (all) result.diffs else result.diffs.take(10)
