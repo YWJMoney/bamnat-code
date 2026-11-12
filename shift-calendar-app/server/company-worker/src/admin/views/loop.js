@@ -251,8 +251,8 @@ export function loopViews(A) {
     // 2.0.0 [RVA-25] 검토 T24-04·T24-20·U24-04: 급함 문의와 같은 줄 틀(줄 전체가 문의를 열고, 왜 걸렸는지는 오른쪽 낱말 하나). '열기' 단추를 빼
     // 380에서 제목과 겹치지 않고 1440에서 멀리 떨어지지 않아요. Claude 초안과 '초안 보내기'는 줄 아래 한 칸(채운 단추는 화면에 하나라 글자 단추).
     const asks = d.asks.length ? `<ul class="rows decide-rows">${d.asks.map((x) => `<li><a class="row" href="${href("inquiries", x.id)}"><span class="row-main"><b>${esc(x.no ?? "")} ${esc(x.title ?? "")}</b>
-        <small>${x.draft ? "Claude 초안 있음" : "초안 없음"}${x.late ? " · 기한 넘김" : ""}</small></span>
-        <span class="row-side">${x.why ? `<span class="pill ${x.late ? "bad" : "warn"}">${esc(x.why)}</span>` : ""}</span>${icon(P.chevron)}</a>
+        <small>${x.draft ? "Claude 초안 있음" : "초안 없음"}${x.late ? ' · <b class="due-late">기한 넘김</b>' : ""}</small></span>
+        <span class="row-side">${x.why ? `<span class="pill warn">${esc(x.why)}</span>` : ""}</span>${icon(P.chevron)}</a>
         ${x.draft ? `<div class="draft-line"><p class="answer">${esc(x.draft.text)}</p>${x.draft.why ? `<small class="meta">이유: ${esc(x.draft.why)}</small>` : ""}
           ${can("inquiries", "edit") ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-draft-send" data-id="${esc(x.id)}" data-key="${esc(x.key)}">초안 보내기</button></div>` : ""}</div>` : ""}</li>`).join("")}</ul>`
       : empty("최고 관리자가 볼 문의가 없어요", "환불·결제·보상, 법·안전, 개인정보, 크게 화난 민원, 약관·처리방침 질문은 여기에 모여요.");
@@ -261,9 +261,12 @@ export function loopViews(A) {
         <span class="pill warn">요금 정하기</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : '<p class="hint">요금을 정할 새 기능이 없어요.</p>')
       : '<p class="hint">새 기능의 무료·프로는 최고 관리자가 정해요.</p>';
     const urgent = d.urgent ?? [];
-    const hurry = urgent.length ? `<section class="card">${head("급함 문의", `답 기다림 ${urgent.length}건`)}
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6): 급함은 머리의 빨간 칩 하나로 말하고 줄마다 되풀이하지 않아요. 최고 관리자 확인 줄의 이유 낱말은 주황 하나,
+    // 기한을 넘긴 줄은 '기한 넘김'을 굵은 글로(색만으로 뜻을 전하지 않게).
+    const lateAsks = d.asks.filter((x) => x.late).length;
+    const hurry = urgent.length ? `<section class="card">${head("급함 문의", "", `<span class="pill bad">답 기다림 ${urgent.length}건</span>`)}
       <ul class="rows">${urgent.map((x) => `<li><a class="row" href="${href("inquiries", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
-        <small>${x.topic ? `${esc(x.topic)} · ` : ""}${esc(ago(x.at))}</small></span><span class="pill bad">급함</span>${icon(P.chevron)}</a></li>`).join("")}</ul>
+        <small>${x.topic ? `${esc(x.topic)} · ` : ""}${esc(ago(x.at))}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
       <p class="hint">알람이 안 울림·앱이 안 열림·데이터 사라짐·결제·수면 긴급 넷을 말하는 문의예요. 조용한 시간에도 폰에 알려요.</p></section>` : "";
     const back = d.back ?? [];
     const halts = d.halts ?? [];
@@ -273,7 +276,7 @@ export function loopViews(A) {
       ${back.length ? `<ul class="rows">${back.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
-    return `<div class="decide-view">${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
+    return `<div class="decide-view">${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건${lateAsks ? ` · 기한 넘김 ${lateAsks}` : ""}`)}${asks}</section>
       <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
         <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section></div>`;
   }

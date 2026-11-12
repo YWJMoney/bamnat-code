@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { server, device, signIn } from "./helpers.mjs";
 import { askOwner } from "../src/ledger.js";
 import { billingWordOf } from "../src/ask-check.js";
+import { requiredSetup } from "../src/ops-watch.js";
 
 const ask = (call, n, text, kind = "bug") =>
   call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info: { app: "2.0.0 (54)" } }).then((r) => r.data.id);
@@ -26,6 +27,11 @@ test("[RVA-38] 자동 순환 연결 점검: 줄마다 주인의 말로(Play 연�
   const sync = again.lines.find((x) => x.key === "syncKey");
   assert.equal(sync.state, "ok");
   assert.match(sync.text, /있음 · (아직 안 씀|마지막 사용 \d{1,2}\. \d{1,2}\. \d\d:\d\d)/);
+  // 같은 구조: 오늘 › 주의 필요의 '꼭 필요한 설정 N개 빠짐'도 변수 이름 대신 하는 일 이름(변수 이름은 서버 상태에만).
+  const setup = requiredSetup({ DB: {} });
+  assert.ok(setup.names.length >= 3);
+  assert.doesNotMatch(setup.names.join(" · "), /[A-Z][A-Z_]{4,}|\(/);
+  assert.ok(setup.names.includes("Play 연결 열쇠") && setup.names.includes("관리자 휴대폰 알림"), setup.names.join(","));
 });
 
 test("[RVA-41] 결제·환불 기록과 사람이 보낼 답: 걸린 말을 보여 주고, '아니에요'는 그 말을 기록으로 남겨요", async (t) => {

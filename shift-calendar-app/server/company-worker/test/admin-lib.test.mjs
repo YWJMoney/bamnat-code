@@ -233,7 +233,7 @@ test("[ADMUX-01] a slow answer for a screen the admin left is not drawn", () => 
 test("[ADMUX-06] answer targets as words", () => {
   assert.deepEqual(L.slaText(30), { text: "30분 남음", tone: "warn" });
   assert.deepEqual(L.slaText(300), { text: "5시간 남음", tone: "" });
-  assert.deepEqual(L.slaText(-90), { text: "목표 1시간 넘김", tone: "bad" });
+  assert.deepEqual(L.slaText(-90), { text: "목표 1시간 넘김", tone: "late" }); // [RVA-46] HQ-69: 굵은 보통 글자
   assert.equal(L.slaText(null), null);
   assert.deepEqual(L.appVersion("1.22.0 (33)"), [33, "1.22.0"]);
 });

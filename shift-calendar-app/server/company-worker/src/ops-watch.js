@@ -424,7 +424,9 @@ export function requiredSetup(env) {
     { key: "PLAY_REPORTS_BUCKET", need: "nice", ok: has("PLAY_REPORTS_BUCKET"), what: "Play 보고서(설치·삭제·스토어 전환·출처)", lose: "숫자 › 한눈에의 전체 사용자 칸이 비어요" },
     { key: "SHARE_BASE_URL·SHARE_ADMIN_TOKEN", need: "nice", ok: has("SHARE_BASE_URL") && has("SHARE_ADMIN_TOKEN"), what: "공유 서버 신고·상태 보기", lose: "공유 링크 신고와 공유 서버 상태를 못 봐요" },
   ];
-  return { items, missing: items.filter((i) => i.need === "must" && !i.ok).map((i) => i.key) };
+  const must = items.filter((i) => i.need === "must" && !i.ok);
+  // 2.0.0 [RVA-38] 검토 ADM-14 같은 구조(오늘 › 주의 필요): 주인이 읽는 줄에는 환경 변수 이름 대신 하는 일 이름(names). 변수 이름은 넣는 곳(서버 상태)에만.
+  return { items, missing: must.map((i) => i.key), names: must.map((i) => i.what.replace(/\s*\(.*?\)/g, "").trim()) };
 }
 
 /** 공유 서버가 살아 있는지(있을 때만): 걸린 시간과 답. */

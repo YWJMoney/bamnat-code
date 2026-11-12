@@ -877,7 +877,7 @@ h1,h2,h3{letter-spacing:-.018em}
 .btn.primary{box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 1px 2px rgba(15,23,42,.18)}
 @media (hover:hover){.btn:not(.primary):not(.ghost):not(.danger):hover{border-color:color-mix(in srgb,var(--fg) 22%,var(--line))}}
 .pill{font-weight:650;font-size:.76rem;padding:.16rem .55rem;border:1px solid color-mix(in srgb,currentColor 14%,transparent)}
-.pill:not(.ok):not(.warn):not(.bad):not(.info):not(.gold){border-color:var(--line)}
+.pill:not(.ok):not(.warn):not(.bad):not(.info):not(.gold):not(.late){border-color:var(--line)}
 .tile{border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .tile .k{font-weight:650;letter-spacing:0}
 .tile .v{font-weight:750;letter-spacing:-.03em}
@@ -981,6 +981,13 @@ details.card.loop-fold>summary::after{flex:none;margin:0 .2rem}
 details.card.loop-fold[open]>summary{margin-bottom:.6rem}
 .check-seen.just b{color:var(--ok)}
 .row-main .changed{color:var(--fg);font-weight:600}
+/* 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 넘긴 줄은 빨간 띠·칩 대신 '기한 넘김 N' 머리 하나, 줄의 칸은 굵은 보통 글자('넘음'·'넘김'은 글로) */
+.pill.late{background:transparent;border-color:transparent;color:var(--fg);font-weight:800;padding-inline:0}
+.seg .n.warm{color:var(--warn)}
+.due-late{color:var(--fg);font-weight:800}
+.rows.ledger>li.lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;padding:.5rem .85rem;background:var(--soft)}
+.rows.ledger>li.lg-group small{font-size:min(.8rem,16px);color:var(--muted)}
+.rows.ledger>li.lg-group.rest b{font-size:min(.8rem,16px);font-weight:700;color:var(--muted)}
 .next-bar{display:flex;align-items:center;gap:.7rem;padding:.7rem .75rem .7rem 1rem;margin:0 0 .9rem;border-radius:var(--r);background:var(--accent-soft);
 border:1px solid color-mix(in srgb,var(--accent) 22%,transparent)}
 .next-bar>svg{flex:none;width:1.1rem;height:1.1rem;color:var(--accent)}
@@ -1102,7 +1109,6 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .lg-pick{grid-area:no;display:flex;align-items:center}
 .lg-table.picking .lg-row{grid-template-columns:auto auto minmax(0,1fr) auto;grid-template-areas:"pk no sum due" "pk st st who"}
 .lg-table.picking .lg-row .lg-pick{grid-area:pk}
-.lg-line.late .lg-row{box-shadow:inset 3px 0 0 var(--bad)}
 .lg-line.shut .lg-row .c-sum>b{color:var(--muted);font-weight:600}
 .lg-line details[open]>.lg-row{background:var(--hover)}
 .lg-detail{padding:.25rem .85rem .9rem;display:grid;gap:.5rem;border-top:1px dashed var(--line)}

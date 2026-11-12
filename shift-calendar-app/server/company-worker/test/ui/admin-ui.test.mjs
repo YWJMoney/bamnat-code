@@ -3193,3 +3193,48 @@ test("[RVA-45] 내 계정: 이름·권한·로그아웃만 펴고, '로그인·�
   assert.ok(seen.length <= 1);
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-46] 운영 장부·결정함·문의 목록: 기한 넘긴 줄은 '기한 넘김 N' 머리 하나만 빨강, 줄의 칸은 굵은 보통 글자 '넘음'", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-69(조건 6·14): 줄마다 빨간 띠 + 빨간 칩이 한 화면에 열 번 나오던 것을 머리 하나로, '넘음'은 글로 남아요.
+  assert.doesNotMatch(css, /\.lg-line\.late \.lg-row\{box-shadow/);
+  assert.match(css, /\.pill\.late\{background:transparent;border-color:transparent;color:var\(--fg\);font-weight:800/);
+  const t0 = Date.parse("2026-11-12T03:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { env } = await world();
+  t.mock.timers.setTime(t0 + 10 * 864e5);
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const list = u.$("#main .rows.ledger");
+  const lines = [...list.querySelectorAll(":scope > li.lg-line")];
+  const late = lines.filter((li) => li.classList.contains("late"));
+  assert.ok(late.length >= 2, "several lines are late");
+  const heads = [...list.querySelectorAll(":scope > li.lg-group")];
+  assert.match(heads[0].textContent, new RegExp(`기한 넘김 ${late.length}`));
+  assert.ok(heads[0].querySelector(".pill.bad"), "the one red mark");
+  assert.equal(list.firstElementChild, heads[0], "the head comes first");
+  for (const li of late) {
+    assert.match(li.querySelector(".c-due").textContent, /넘음/, "'넘음' stays as words");
+    assert.ok(li.querySelector(".c-due .pill.late"), "plain bold, not red");
+  }
+  const reds = [...list.querySelectorAll(".pill.bad")].filter((p) => p.textContent.trim() !== "급함");
+  assert.equal(reds.length, 1, "besides 급함 (danger), red only on the head");
+  if (lines.length > late.length) assert.match(heads[1].textContent, new RegExp(`그 밖에 ${lines.length - late.length}줄`));
+  // '기한 넘음' 보기는 모두 넘긴 줄이라 머리가 없어요.
+  await u.click('#main [data-act="ledger-view"][data-key="late"]');
+  await u.settle(30);
+  assert.equal(u.$$("#main .rows.ledger > li.lg-group").length, 0);
+  assert.equal(u.$$("#main .seg .n.hot").length, 1, "one red number in the bar: 기한 넘음");
+  // 사람과 글 › 문의: 목표를 넘긴 줄도 굵은 보통 글자.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  const sla = u.$$("#main .rows .row-side .pill.late");
+  assert.ok(sla.length >= 1 && sla.every((p) => /넘김$/.test(p.textContent)));
+  assert.equal(u.$$("#main .rows .pill.bad").filter((p) => p.textContent.trim() !== "급함").length, 0);
+  // 결정함: 급함은 머리 칩 하나, 줄마다 되풀이하지 않아요.
+  await u.go("#/decide");
+  await u.settle(30);
+  assert.ok(u.$$("#main .pill.bad").length <= 1, u.$$("#main .pill.bad").map((p) => p.textContent).join(","));
+  assert.deepEqual(u.errors, []);
+});

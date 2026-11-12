@@ -236,7 +236,8 @@ export function adminLib() {
   function slaText(minutes) {
     if (minutes === null || minutes === undefined) return null;
     const span = (m) => (m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.floor(m / 60)}시간` : `${Math.floor(m / 1440)}일`);
-    if (minutes < 0) return { text: `목표 ${span(-minutes)} 넘김`, tone: "bad" };
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 목록 줄마다 빨간 칩이 되풀이되지 않게, 넘긴 줄은 굵은 보통 글자('넘김'은 글로).
+    if (minutes < 0) return { text: `목표 ${span(-minutes)} 넘김`, tone: "late" };
     return { text: `${span(minutes)} 남음`, tone: minutes < 120 ? "warn" : "" };
   }
 

@@ -1996,7 +1996,7 @@ function adminApp(L, BUILD, M) {
         ${q.typing?.length ? `<span class="typing">${esc(q.typing.join(", "))}님이 답 쓰는 중</span>` : ""}</span>
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${slaPill(q.slaLeft)}
         ${compact ? "" : `${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}
-        ${q.rating ? `<span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "도움 됐어요" : "아쉬워요"}</span>` : ""}
+        ${q.rating ? `<span class="pill ${q.rating > 0 ? "ok" : "warn"}">${q.rating > 0 ? "도움 됐어요" : "아쉬워요"}</span>` : ""}
         ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}${copyPill(q) /* AT 1.29 */}`}
         ${q.assignee ? `<span class="pill${q.assignee.id === S.me.id ? " info" : ""}">${q.assignee.id === S.me.id ? "내가 맡음" : esc(q.assignee.name)}</span>` : ""}</span>`;
     if (picking) {
@@ -2149,7 +2149,7 @@ function adminApp(L, BUILD, M) {
       <section>
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
-          <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
+          <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "warn"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
             <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? `<b>사람이 보내야 해요</b>${heldWhyText(h)}` : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
             <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>${h.person && h.why && !h.why.reply ? `<button class="linkish" type="button" data-act="held-miss" data-id="${h.id}">판정이 틀렸어요</button>` : ""}` : ""}</span>`).join("")}</div>
