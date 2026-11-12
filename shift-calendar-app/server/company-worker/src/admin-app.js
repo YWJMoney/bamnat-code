@@ -872,6 +872,8 @@ function adminApp(L, BUILD, M) {
       if (name === "audit") jobs.push(api(`/audit${auditQuery()}`).then(keep((d) => { S.data.audit = d; })));
       // [ADMUX-32] 운영 in tabs of 출시: 앱 공지 and 이달 할 일 (its 기능 스위치 are flags in 기능 관리 now).
       if (name === "notices") jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })));
+      // 1.40 [PAYP-19] 옛 앱 급여 끊기, under 앱 공지 (its notice goes to apps up to 1.38 by itself).
+      if (name === "notices") jobs.push(api("/old-pay").then(keep((d) => { S.data.oldPay = d; })).catch(() => {}));
       if (name === "chores") jobs.push(api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
       if (name === "metrics" || name === "gates") {
         const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
@@ -2726,7 +2728,19 @@ function adminApp(L, BUILD, M) {
           <small>${esc(kstDate(x.from))} ~ ${esc(kstDate(x.until))}${esc(range)}</small><small>${esc(x.body)}</small></span>
           <span class="row-side"><span class="pill ${tone}">${label}</span>${edit ? `<button class="btn small" data-act="notice-edit" data-id="${x.id}">고치기</button>
             <button class="btn small" data-act="notice-remove" data-id="${x.id}">내리기</button>` : ""}</span></div></li>`;
-      }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>`;
+      }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>${oldPayCard(edit)}`;
+  }
+
+  /** 1.40 [PAYP-19] 공유급여 결정 1: when apps up to 1.38 stop getting a company's pay way, and the switch to hold or force it. */
+  function oldPayCard(edit) {
+    const o = S.data.oldPay;
+    if (!o) return "";
+    const modes = [["auto", `${o.from} 나간 날 저절로`], ["on", "지금 끊기"], ["off", "끊지 않기"]];
+    const state = o.on ? `<span class="pill bad">끊었어요</span>` : `<span class="pill">아직 줘요</span>`;
+    return `<section class="card"><div class="card-head"><h2>옛 앱 급여 끊기</h2>${state}</div>
+      <p class="hint">앱 ${esc(String(o.maxApp))}번(1.38) 이하에 회사 판 급여 계산식을 주지 않아요. 끊긴 동안 그 앱에는 업데이트 공지가 30일 떠요. 이미 넣은 급여는 폰에 그대로 남아요.
+        지금 저장된 나간 판: ${esc(o.shipped ?? "없음")}${o.at ? ` · 끊은 때 ${esc(kstDate(new Date(o.at).toISOString()))}` : ""}</p>
+      <div class="row">${modes.map(([m, label]) => `<button class="btn small${o.mode === m ? " primary" : ""}" ${edit && o.mode !== m ? `data-act="old-pay-mode" data-mode="${m}"` : "disabled"}>${esc(label)}</button>`).join(" ")}</div></section>`;
   }
 
   function openNotice(x) {
@@ -5390,6 +5404,11 @@ function adminApp(L, BUILD, M) {
       if (o) S.data.ops = o;
       load();
     },
+    "old-pay-mode": ({ mode }) => confirmBox("옛 앱 급여 끊기를 바꿀까요?", mode === "off" ? "1.38 이하 앱이 회사 판 급여 계산식을 다시 받아요." : mode === "on" ? "지금부터 1.38 이하 앱은 근무만 받고, 업데이트 공지를 받아요." : "1.40이 나간 것으로 저장되는 날부터 저절로 끊어요.", "바꾸기", async () => {
+      const d = await act(() => api("/old-pay", "POST", { mode }), "바꿨어요");
+      if (d) S.data.oldPay = d;
+      render({ keepScroll: true });
+    }),
     "notice-new": () => openNotice(null),
     "notice-edit": ({ id }) => openNotice(S.data.notices?.notices.find((x) => x.id === id)),
     "notice-remove": ({ id }) => confirmBox("공지를 내릴까요?", "앱은 다음에 새로 받을 때 이 공지를 빼요.", "내리기", async () => {

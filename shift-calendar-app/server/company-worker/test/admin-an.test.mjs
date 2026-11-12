@@ -148,7 +148,10 @@ test("[ADMUX-40][FLAG-28] /badges carries 기능 관리's number and 오늘's le
   assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "Play 승인" }, owner)).status, 200);
   const after = (await call("GET", "/api/admin/badges", undefined, owner)).data;
   // 1.38: 3.11 takes effect 2026-11-07, so on a real clock past it share.look may turn on in the same 24 hours; billing is the one forced.
-  assert.deepEqual(after.flagAlerts.map((a) => a.key).filter((k) => k !== "share.look"), ["billing"]);
+  // 1.39.1: on the real clock of 2026-11-12 (3.9's 정식 출시일) every 3.2~3.9 flag turns on by date in the same 24 hours too, so only
+  // billing is looked for, and it is the only one forced.
+  assert.ok(after.flagAlerts.some((a) => a.key === "billing"));
+  assert.deepEqual(after.flagAlerts.filter((a) => a.forced || a.force).map((a) => a.key).filter((k) => k !== "billing"), []);
   assert.equal(after.billingLive, true);
   // 운영 without 기능 관리 (flags none): no flag numbers, and the flag screens are closed.
   const s = (await call("GET", "/api/admin/badges", undefined, support)).data;
