@@ -21,7 +21,19 @@ too; random numbers still are not.
 
   python3 tools/shot_hashes.py check app/build/screenshots --results app/build/test-results/testDebugUnitTest
   python3 tools/shot_hashes.py names          # only the source checks (no pictures needed)
+
+2.0.0 [RVR-39] (검토 TEST-12 ①·I60b-03) every shot, not just the 43, and a '어제와 다른 장' report:
+- `prints` keeps, for every PNG of a run, the exact pixels' sha1 (any change at all, a letter or one colour), a 32x48 grey
+  print and an 8x12 colour print (how big and what kind of change). 1,260 shots are about 5 MB of JSON, kept as a CI artifact,
+  not in git, so no golden file has to be redrawn for it.
+- `diff` compares two runs' prints: shots that differ by even one pixel are listed biggest first with a kind
+  (배치: things moved, 색: colours, 작은 바뀜: a few letters or dots), plus new and gone shots, and with --sheet a picture of
+  the most changed ones (today's shot beside yesterday's grey print and a heat map of where).
+
+  python3 tools/shot_hashes.py prints app/build/screenshots --out build/shot-prints.json
+  python3 tools/shot_hashes.py diff <어제 shot-prints.json> build/shot-prints.json [--shots app/build/screenshots --sheet build/shot-diff.png]
 """
+import hashlib
 import glob
 import json
 import os
@@ -105,7 +117,120 @@ def distance(a, b):
     return sum(abs(p - q) for p, q in zip(x, y)) / len(x)
 
 
+CSIZE = (8, 12)
+
+
+def prints(folder):
+    """[RVR-39] name -> {px: sha1 of the RGB pixels, g: 32x48 grey hex, c: 8x12 colour hex} for every PNG in folder."""
+    out = {}
+    for n in sorted(os.listdir(folder)):
+        if not n.endswith(".png"):
+            continue
+        im = Image.open(os.path.join(folder, n)).convert("RGB")
+        out[n[:-4]] = {"px": hashlib.sha1(im.tobytes() + f"{im.size}".encode()).hexdigest(),
+                       "g": im.convert("L").resize(SIZE, Image.BILINEAR).tobytes().hex(),
+                       "c": im.resize(CSIZE, Image.BILINEAR).tobytes().hex()}
+    return out
+
+
+def edges(g):
+    """Where the 32x48 grey print has an edge (a neighbour differs by more than 12)."""
+    x, w, h = bytes.fromhex(g), SIZE[0], SIZE[1]
+    out = set()
+    for j in range(h):
+        for i in range(w):
+            p = x[j * w + i]
+            if (i + 1 < w and abs(p - x[j * w + i + 1]) > 12) or (j + 1 < h and abs(p - x[(j + 1) * w + i]) > 12):
+                out.add(j * w + i)
+    return out
+
+
+def kind(grey, colour, old_g=None, new_g=None):
+    """작은 바뀜: a few letters or dots; 색: the same edges in other colours (a colour, the dark theme); 배치: things moved."""
+    if grey < 1.0 and colour < 2.0:
+        return "작은 바뀜"
+    if old_g is not None:
+        a, b = edges(old_g), edges(new_g)
+        if not a and not b or (a | b and len(a & b) / len(a | b) >= 0.8):
+            return "색"
+    return "배치"
+
+
+def compare_prints(old, new):
+    """[RVR-39] -> (changed [(name, grey, colour, kind)] biggest first, new names, gone names, same count)."""
+    changed, same = [], 0
+    for name in sorted(set(old) & set(new)):
+        a, b = old[name], new[name]
+        if a["px"] == b["px"]:
+            same += 1
+            continue
+        g, c = distance(a["g"], b["g"]), distance(a["c"], b["c"])
+        changed.append((name, g, c, kind(g, c, a["g"], b["g"])))
+    changed.sort(key=lambda x: (-(x[1] + x[2]), x[0]))
+    return changed, sorted(set(new) - set(old)), sorted(set(old) - set(new)), same
+
+
+def sheet(changed, old, folder, out, top=24):
+    """Today's shot | yesterday's grey print | where it changed, for the most changed shots (one row each)."""
+    rows = [c for c in changed if os.path.exists(os.path.join(folder, c[0] + ".png"))][:top]
+    if not rows:
+        return 0
+    W, H = 120, 180
+    canvas = Image.new("RGB", (3 * W + 40, len(rows) * (H + 24) + 10), "white")
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(canvas)
+    for i, (name, g, c, k) in enumerate(rows):
+        y = 10 + i * (H + 24)
+        now = Image.open(os.path.join(folder, name + ".png")).convert("RGB")
+        was = Image.frombytes("L", SIZE, bytes.fromhex(old[name]["g"])).resize((W, H), Image.NEAREST)
+        heat = Image.frombytes("L", SIZE, bytes(min(255, abs(p - q) * 4) for p, q in zip(
+            now.convert("L").resize(SIZE, Image.BILINEAR).tobytes(), bytes.fromhex(old[name]["g"])))).resize((W, H), Image.NEAREST)
+        canvas.paste(now.resize((W, H)), (10, y + 18))
+        canvas.paste(was.convert("RGB"), (20 + W, y + 18))
+        canvas.paste(Image.merge("RGB", (heat, Image.new("L", (W, H)), Image.new("L", (W, H)))), (30 + 2 * W, y + 18))
+        draw.text((10, y + 2), f"{name}  {k}  {g:.1f}/{c:.1f}", fill="black")
+    canvas.save(out)
+    return len(rows)
+
+
+def diff_main(argv):
+    folder = sheet_out = None
+    if "--shots" in argv:
+        i = argv.index("--shots"); folder = argv[i + 1]; argv = argv[:i] + argv[i + 2:]
+    if "--sheet" in argv:
+        i = argv.index("--sheet"); sheet_out = argv[i + 1]; argv = argv[:i] + argv[i + 2:]
+    if len(argv) != 2:
+        print(__doc__)
+        return 2
+    old, new = (json.load(open(f, encoding="utf-8")) for f in argv)
+    changed, added, gone, same = compare_prints(old, new)
+    print(f"### 어제와 다른 화면 사진: {len(changed)}장 (같음 {same}, 새로 {len(added)}, 없어짐 {len(gone)})\n")
+    if changed:
+        print("| 사진 | 무엇이 | 회색 | 색 |\n| --- | --- | ---: | ---: |")
+        for name, g, c, k in changed:
+            print(f"| {name} | {k} | {g:.2f} | {c:.2f} |")
+    for title, names in (("새로 생긴 사진", added), ("없어진 사진", gone)):
+        if names:
+            print(f"\n{title} {len(names)}장: " + ", ".join(names[:40]) + (" …" if len(names) > 40 else ""))
+    if sheet_out and folder and changed:
+        n = sheet(changed, old, folder, sheet_out)
+        print(f"\n가장 많이 바뀐 {n}장을 나란히(오늘 · 어제 회색 · 바뀐 곳): 결과 묶음 shot-diff")
+    return 0
+
+
 def main(argv):
+    if argv[:1] == ["prints"]:
+        if len(argv) != 4 or argv[2] != "--out":
+            print(__doc__)
+            return 2
+        p = prints(argv[1])
+        os.makedirs(os.path.dirname(os.path.abspath(argv[3])), exist_ok=True)
+        with open(argv[3], "w", encoding="utf-8") as fh:
+            json.dump(p, fh, sort_keys=True)
+        print(f"{len(p)}장의 지문을 {argv[3]}에 적었어요")
+        return 0 if p else 1
+    if argv[:1] == ["diff"]:
+        return diff_main(argv[1:])
     results = None
     if "--results" in argv:
         i = argv.index("--results")

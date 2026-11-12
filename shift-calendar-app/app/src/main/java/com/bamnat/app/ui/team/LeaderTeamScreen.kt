@@ -181,20 +181,28 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     // 1.39 G6 [SETUP-18]: with the first setup put off, the calendar's times are the app's samples, not the team's.
     val appSettings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val ownTimes = appSettings.setupDone || calendarId != com.bamnat.app.data.PersonalCalendar.MAIN
-    val pickFile = rememberAnyFilePicker { uri ->
+    // 2.0.0 [RVL-41] (검토 U07b-10) A locked roster PDF asks for its password here and is read again with it.
+    var unlock: com.bamnat.app.ui.imports.PdfUnlock? = null
+    fun readRoster(uri: android.net.Uri, password: CharArray? = null) {
         scope.launch {
             reading = "파일을 읽고 있어요…"
             val shifts = kinds.map(com.bamnat.core.team.TeamTimes::of)
-            when (val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date())) {
+            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date(), password = password)
+            if (got !is com.bamnat.app.imports.ManageImport.Got.Locked) unlock?.done()
+            when (got) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
                     from = got.value to got.fromPhoto
                     names = got.value.rows.joinToString("\n") { r -> r.name + (r.role?.let { " $it" } ?: "") }.take(3000)
-                    reading = null
+                    // 2.0.0 [RVL-43] A file of more pages than were read says so.
+                    reading = got.note
                 }
                 is com.bamnat.app.imports.ManageImport.Got.Failed -> reading = got.why
+                is com.bamnat.app.imports.ManageImport.Got.Locked -> { reading = null; unlock?.ask(uri, got.lock) }
             }
         }
     }
+    unlock = com.bamnat.app.ui.imports.rememberPdfUnlock { uri, pw -> readRoster(uri, pw) }
+    val pickFile = rememberAnyFilePicker { uri -> readRoster(uri) }
     // 1.38 PC 1차 (ESC·뒤로에 명단이 사라짐): with something typed, a tap outside or 뒤로 does not close it; 닫기 does.
     val typed = name.isNotBlank() || names.isNotBlank()
     AlertDialog(onDismissRequest = { if (!typed) onDismiss() }, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = !typed, dismissOnClickOutside = !typed),
@@ -311,26 +319,35 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     var checkCells by remember(team.id, month) { mutableStateOf<List<Pair<String, LocalDate>>>(emptyList()) }
     // 2.0.0 [RVL-33] (검토 T07b-07) A team roster that could not be read: why, and the ways on (the fix, another file, the keypad).
     var readFailed by remember { mutableStateOf<com.bamnat.app.imports.ManageImport.Got.Failed?>(null) }
-    val pickFile = rememberAnyFilePicker { uri ->
+    var importNote by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVL-41] (검토 U07b-10) A locked roster PDF asks for its password here and is read again with it.
+    var unlock: com.bamnat.app.ui.imports.PdfUnlock? = null
+    fun readRoster(uri: android.net.Uri, password: CharArray? = null) {
         scope.launch {
             busy = "파일을 읽고 있어요…"
             // 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down is said, with how far it got.
-            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date()) { p ->
+            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date(), password = password) { p ->
                 busy = "글자 읽기 준비물 받는 중" + (if (p != null) " · $p%" else "") + " (처음 한 번만)"
             }
             busy = null
+            if (got !is com.bamnat.app.imports.ManageImport.Got.Locked) unlock?.done()
             when (got) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
                     if (got.value.month != month) monthText = got.value.month.toString()
                     importing = got.value to got.fromPhoto
+                    // 2.0.0 [RVL-43] A file of more pages than were read says so in the import window.
+                    importNote = got.note
                 }
                 is com.bamnat.app.imports.ManageImport.Got.Failed -> {
                     c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "import")
                     readFailed = got
                 }
+                is com.bamnat.app.imports.ManageImport.Got.Locked -> unlock?.ask(uri, got.lock)
             }
         }
     }
+    unlock = com.bamnat.app.ui.imports.rememberPdfUnlock { uri, pw -> readRoster(uri, pw) }
+    val pickFile = rememberAnyFilePicker { uri -> readRoster(uri) }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
     // 2.0.0 [RVJ-27] 검토 PAYU-57 ③: the board as the last 가져오기 left it and the members it added; 되돌리기 from that board asks
@@ -882,7 +899,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     // Shown once the board of the file's month is there, so ① matches the names against this team as it is now.
     importing?.let { (grid, photo) ->
         val now = board
-        if (now != null && now.month == grid.month) TeamImportDialog(grid, photo, now.members, team.shifts, onDismiss = { importing = null }) { choice ->
+        if (now != null && now.month == grid.month) TeamImportDialog(grid, photo, now.members, team.shifts, onDismiss = { importing = null }, note = importNote) { choice ->
             importing = null
             scope.launch {
                 val rows = com.bamnat.core.team.TeamGridImport.rows(grid)

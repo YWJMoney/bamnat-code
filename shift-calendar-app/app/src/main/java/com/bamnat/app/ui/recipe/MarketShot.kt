@@ -118,7 +118,7 @@ internal object MarketShots {
             recipes.get(k) ?: withContext(Dispatchers.IO) {
                 runCatching { c.recipeApi.show(item.code, null, null) }.getOrNull()?.let { doc ->
                     keepDoc(c, doc)
-                    runCatching { doc.recipe() }.getOrNull() ?: known(doc.body)
+                    runCatching { doc.recipe() }.getOrNull()
                 }
             }
         }
@@ -126,12 +126,14 @@ internal object MarketShots {
         return got
     }
 
-    /** The work in [body], checked by its [hash] as [com.bamnat.app.recipe.RecipeDoc.recipe] does (a newer app's: what this app knows of it). */
+    /**
+     * The work in [body], checked by its [hash] as [com.bamnat.app.recipe.RecipeDoc.read] does: a newer app's work is drawn as far as this
+     * app knows it (2.0.0 [RVS-05], which took the place of PC 확인 7b219467 MED-1's picture-only reading of known pieces).
+     */
     private suspend fun read(hash: String, body: String): Recipe? = withContext(Dispatchers.Default) {
         runCatching {
-            val r = com.bamnat.core.recipe.RecipeCodec.read(body)
-            r.takeIf { com.bamnat.core.recipe.RecipeCodec.hash(it) == hash }
-        }.getOrNull() ?: known(body)
+            if (com.bamnat.core.recipe.RecipeCodec.sha256(body) != hash) null else com.bamnat.core.recipe.RecipeCodec.readSoft(body).recipe
+        }.getOrNull()
     }
 
     // ---- 1.39 [MKP-01][MKP-03] 장터 로딩: what a list brought, for the cards and for opening a work at once ----
@@ -182,21 +184,6 @@ internal object MarketShots {
 
     /** Whether this card's work could not be had (offline, gone): it keeps its small picture for good. */
     fun gaveUp(item: RecipeItem): Boolean = key(item) in failed
-
-    /**
-     * PC 확인 7b219467 MED-1 (가계부 틀이 든 작품은 그림이 끝내 안 나옴): a work made by a newer app carries a kind of piece this app does
-     * not know, and the whole work is refused. For the picture only (never to put in), the pieces this app knows are drawn and the
-     * rest left out, so a newer work still shows what this app can show of it.
-     */
-    internal fun known(body: String): Recipe? = runCatching {
-        val o = org.json.JSONObject(body)
-        val keys = PieceKind.entries.map { it.key }.toSet()
-        val all = o.optJSONArray("pieces") ?: return null
-        val kept = org.json.JSONArray()
-        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("kind") in keys }?.let(kept::put)
-        if (kept.length() == 0 || kept.length() == all.length()) return null
-        com.bamnat.core.recipe.RecipeCodec.read(o.put("pieces", kept).toString())
-    }.getOrNull()
 
     /** What a card shows: the tab the work changes, or one of the pictures that are not a tab. */
     sealed interface Face {

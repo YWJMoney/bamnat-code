@@ -151,6 +151,24 @@ class PayWayViewModel(
         }
     }
 
+    /** 2.0.0 [RVN-18] 검토 COMP-22-1: 맞아요 ✓ pressed again takes it back; [done] gets null when it went, else what to say. */
+    fun takeBack(done: (String?) -> Unit) {
+        val w = way.value ?: return done(null)
+        viewModelScope.launch {
+            val error = try {
+                c.companyApi.unvote(scope.store.device, w.companyId, w.setup)
+                scope.payWays.voted(null, null)
+                if (scope.store.applied.value?.setup == w.setup) scope.store.voted(null)
+                c.telemetry.event("pay_way_vote", "taken_back")
+                load()
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            done(error)
+        }
+    }
+
     /** This phone's own setup (amounts left out), for 내 설정으로 채우기 in the proposal. */
     suspend fun mine(): String? = runCatching { scope.share.exportForServer().toString() }.getOrNull()
 
@@ -265,10 +283,10 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                 Column(Modifier.weight(1f)) {
                     Text(if (w.shared) "공유받은 ‘${w.company}’ 급여 방식" else "‘${w.company}’ 급여 방식", style = MaterialTheme.typography.bodyMedium, maxLines = 1,
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    Text(if (voted) "‘맞았어요’라고 알려 주셨어요" else "‘달라요’라고 알려 주셨어요", style = MaterialTheme.typography.bodySmall,
+                    Text(if (voted) "‘맞아요’라고 알려 주셨어요" else "‘달라요’라고 알려 주셨어요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val known = BaseAsk.known(profile, month)
-                    if (known != null && BaseAsk.needed(profile, month)) Text("기본급 ${won(known)}은 대략이에요", style = MaterialTheme.typography.bodySmall,
+                    if (known != null && BaseAsk.needed(profile, month)) Text("${profile.wageType.baseWord()} ${won(known)}은 대략이에요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error)
                 }
                 TextButton(onClick = { unfolded = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("펼치기") }
@@ -278,7 +296,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (w.shared) {
                 Text(SharedPayWords.TITLE, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                Text("${SharedPayWords.from(w)}이에요. ${SharedPayWords.HIDDEN}", style = MaterialTheme.typography.bodyMedium,
+                Text("${SharedPayWords.from(w)}이에요. ${SharedPayWords.hidden(profile.wageType)}", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(SharedPayWords.ASK, style = MaterialTheme.typography.bodyMedium)
             } else {
@@ -292,7 +310,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
             val known = BaseAsk.known(profile, month)
             if (known != null && BaseAsk.needed(profile, month)) {
                 Row(Modifier.fillMaxWidth()) {
-                    Text("기본급 ${won(known)}은 대략이에요. 명세서대로 넣어 주세요",
+                    Text("${profile.wageType.baseWord()} ${won(known)}은 대략이에요. 명세서대로 넣어 주세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f).padding(top = 12.dp))
                     TextButton(onClick = { baseOpen = true }) { Text("넣기") }
                 }
@@ -314,7 +332,11 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                     // 달라요: straight on to what it should be, on the company's own values.
                     if (e == null && !ok && text != null) proposing = true
                 }
-            }, opinion)
+            }, opinion, onTakeBack = {
+                // 2.0.0 [RVN-18] COMP-22-1 ✓ again takes 맞아요 back (before: the same vote went again).
+                said = null
+                vm.takeBack { e -> said = e ?: "‘맞아요’를 거뒀어요" }
+            })
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             // Side by side; one under the other when the letters are large (200%), so neither breaks into syllables.
             val large = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
@@ -347,7 +369,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                 sendError = null
                 vm.propose(lines, setup, why) { e ->
                     sending = false
-                    if (e == null) { proposing = false; said = "제안을 올렸어요. 같은 회사 분들이 맞아요를 누르면 다음 버전이 돼요" } else sendError = e
+                    if (e == null) { proposing = false; said = "제안을 올렸어요. 같은 회사 분들이 맞아요를 누르면 다음 판이 돼요" } else sendError = e
                 }
             },
             onDismiss = { proposing = false },
@@ -370,8 +392,10 @@ fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () 
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("기본급을 확인해 주세요", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text(if (locked) SharedPayWords.BASE_ONLY else "회사 방식은 규칙만 가져와요. 금액은 내 명세서대로 넣어야 예상 급여가 맞아요.",
+            // 2.0.0 [RVN-18] T10a-03 a 시급·일당 worker is asked the 시급·일당.
+            val baseWord = profile.wageType.baseWord()
+            Text("$baseWord${com.bamnat.core.text.Josa.eulreul(baseWord)} 확인해 주세요", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+            Text(if (locked) SharedPayWords.baseOnly(profile.wageType) else "회사 방식은 규칙만 가져와요. 금액은 내 명세서대로 넣어야 예상 급여가 맞아요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month, hideHours = locked)
             Button(onClick = { base?.let { onSave(it, hours) } }, enabled = (base ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {

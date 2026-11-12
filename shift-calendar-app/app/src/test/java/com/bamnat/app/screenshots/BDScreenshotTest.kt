@@ -298,7 +298,7 @@ class BDScreenshotTest : ScreenshotBase() {
         on()
         company.twins = true
         detail()
-        assertTrue(appears("대표 판 v2", exact = true))
+        assertTrue(appears("대표 판 · 2판", exact = true))
         reveal("같은 부서 다른 판 2개 보기", exact = true)
         // The others are folded: no second 생산팀 card until asked.
         assertTrue(gone("대표 판과 비교", exact = true))

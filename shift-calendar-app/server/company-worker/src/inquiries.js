@@ -5,7 +5,7 @@ import { replyRisk } from "./ledger.js";
 import { isBillingRecord } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
-import { DESK, isOut, shippedVersion } from "./desk.js";
+import { DESK, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
 import { fcmTell, stillHere } from "./fcm.js";
 import { kstDay } from "./usage.js";
@@ -22,7 +22,8 @@ import { LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAn
 
 export const INQUIRY = {
   // [INQ-01] Since 1.14.1 suggestions, anything else and a company's way the app cannot set come here too.
-  kinds: ["question", "bug", "idea", "company", "other", "studio"],
+  // 2.0.0 [RVQ-30] billing: 앱의 '결제·환불'(프로 화면에서 연 문의). 운영자만 보고, 글과 상관없이 결제·환불 기록(3년 보관)이에요.
+  kinds: ["question", "bug", "idea", "company", "other", "studio", "billing"],
   text: 2000,
   diag: 6000,
   pay: 3000,
@@ -47,6 +48,8 @@ export const INQUIRY = {
  */
 // [RVD-05] 검토 ADMX-03: '더해지는'의 '해지', '달력 구독', '통신 요금'은 아니에요. 글을 고른 뒤 짝으로 봐요(src/ask-check.js).
 export const BILLING_RECORD = { test: (text) => isBillingRecord(text) };
+/** 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 기록인지 글만이 아니라 문의 종류로도(앱의 '결제·환불'은 늘). 관리자 표시는 /billing이 따로 켜고 꺼요. */
+export const billingRecordOf = (kind, text) => kind === "billing" || isBillingRecord(text);
 
 /**
  * 1.40 [RVD-05] 검토 ADMX-03: 옛 식('해지' 하나로)이 결제·환불 기록으로 찍은 평범한 문의를 지금 식으로 다시 봐요. 관리자가 손으로
@@ -65,6 +68,27 @@ export async function rescanBilling(env, now, limit = 300) {
   await batch(env, stmts);
   if (off.length) await audit(env, now, "inquiry_billing_rescan", `${off.length}건`, "결제·환불 기록 아님(검토 ADMX-03)");
   return off.length;
+}
+
+/**
+ * 2.0.0 [RVQ-30] 검토 SVC-21: 2.0.0의 새 기준으로 남아 있는 문의를 한 번 더 봐요. 이번에는 양쪽으로(빠뜨렸던 결제 문의는 켜고, 잘못 잡았던
+ * 평범한 문의는 꺼요). 관리자가 손으로 정한 것('inquiry_billing')과 보낸 분이 지운 것(gone)은 그대로. 한 번에 [limit]건, 다 보면 멈춰요.
+ */
+export async function rescanBilling2(env, now, limit = 300) {
+  if (await one(env, "SELECT value FROM settings WHERE key = 'billing_rescan2'")) return { on: 0, off: 0 };
+  const rows = await all(env, `SELECT i.id, i.kind, i.billing_at, i.created_at, (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words
+    FROM inquiries i WHERE i.device NOT LIKE 'gone%' AND i.id > COALESCE((SELECT value FROM settings WHERE key = 'billing_rescan2_at'), '')
+      AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.action = 'inquiry_billing' AND a.target = i.id) ORDER BY i.id LIMIT ?`, limit);
+  const on = rows.filter((r) => !r.billing_at && billingRecordOf(r.kind, r.words ?? ""));
+  const off = rows.filter((r) => r.billing_at && !billingRecordOf(r.kind, r.words ?? ""));
+  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", r.created_at, r.id)),
+    ...off.map((r) => stmt(env, "UPDATE inquiries SET billing_at = NULL WHERE id = ?", r.id))];
+  stmts.push(rows.length < limit
+    ? stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan2', ?)", String(now))
+    : stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan2_at', ?)", rows.at(-1).id));
+  await batch(env, stmts);
+  if (on.length || off.length) await audit(env, now, "inquiry_billing_rescan", `켬 ${on.length}건 · 끔 ${off.length}건`, "2.0.0 결제·환불 기록 기준(검토 SVC-21)");
+  return { on: on.length, off: off.length };
 }
 
 /** 1.36 [INQ-07] The questions old enough to go: half a year without a word, three years for a 결제·환불 record. */
@@ -102,7 +126,7 @@ export const INQUIRY_INFO = [
 ];
 
 /** [INQ-01] A company's way names the workplace: it stays with the developer, whatever the app asks. */
-export const PRIVATE_KINDS = ["company"];
+export const PRIVATE_KINDS = ["company", "billing"];
 
 // ---- sorting questions without reading each one [ADMIN-02] ----
 //
@@ -150,6 +174,8 @@ export function triage(kind, text, info) {
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
+  // 2.0.0 [RVQ-30] 앱의 '결제·환불'은 글과 상관없이 결제 주제.
+  if (kind === "billing") topic = "billing";
   const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) || SLEEP_URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
@@ -258,7 +284,7 @@ export async function ask(request, env) {
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, billing_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
       id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now,
-      BILLING_RECORD.test(text) ? now : null),
+      billingRecordOf(body.kind, text) ? now : null),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all (결제·환불: 3 years).
     ...dropInquiries(env, ...expiredInquiries(now)),
@@ -285,7 +311,8 @@ export async function ask(request, env) {
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
   // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
-  const studio = await needFromInquiry(env, id, dev, body.kind, text, info, now);
+  // 2.0.0 [RVQ-29] 검토 SVC-17: 장터로 셀 때 네트워크도 달라야 해요(그날의 네트워크 해시는 하루짜리 한도 칸으로만 봐요).
+  const studio = await needFromInquiry(env, id, dev, body.kind, text, info, now, net.day);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
   return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}), ...(studio ? { studio } : {}) }, 201);
@@ -1283,10 +1310,13 @@ export async function devUpdate(env, row, body, now) {
   // 1.37 [ADM2-10] 미리 써 두는 출시 답(판이 나간 날 묶인 문의에)과 업데이트 소식 공지 한 줄.
   if (body.shipReply !== undefined) {
     const text = body.shipReply === null ? "" : plainText(body.shipReply, 1000, "shipReply");
+    // 2.0.0 [RVQ-28] 검토 SVC-10: 판이 나갈 때 사람 확인 없이 나가는 글이라 답 글 검사를 지나야 적혀요.
+    if (broadcastRisk(text)) throw new Refuse("notice_risk", "shipReply");
     if (text !== (row.ship_reply ?? "")) [edit.shipReply, set.ship_reply] = [[cut(row.ship_reply ?? ""), cut(text)], text];
   }
   if (body.news !== undefined) {
     const text = body.news === null ? "" : plainText(body.news, 80, "news");
+    if (broadcastRisk(text)) throw new Refuse("notice_risk", "news");
     if (text !== (row.news ?? "")) [edit.news, set.news] = [[row.news ?? "", text], text];
   }
   // 1.39 [LOOP-17][LOOP-08] 알려진 문제판에 보일 쉬운 제목·보일지, 전달 길·크기: 저장소 동기화와 같은 칸을 관리자 앱에서도(요금은 따로, 최고 관리자만).

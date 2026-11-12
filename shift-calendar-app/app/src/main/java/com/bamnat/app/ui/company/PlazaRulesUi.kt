@@ -153,7 +153,7 @@ fun RulesLink(modifier: Modifier = Modifier) {
         modifier = modifier.heightIn(min = 48.dp)) { Text("운영 규칙 보기") }
 }
 
-/** [COMM-09] Asks before hiding a writer; the list can be undone in 내 활동 > 가린 사람. */
+/** [COMM-09] Asks before hiding a writer; the list can be undone in 내 활동 › 안 보는 사람 (마을 › 팔로잉 › 차단). */
 @Composable
 fun HideWriterDialog(post: TalkPost?, onDismiss: () -> Unit, onHide: (TalkPost) -> Unit) {
     val p = post ?: return
@@ -258,12 +258,12 @@ fun PlazaPhoneSettings() {
                 modifier = Modifier.heightIn(min = 48.dp)) { Text("휴대폰 알림 설정에서 ‘밤낮 소식’ 보기") }
         }
         val openBlocked = LocalOpenBlocked.current
-        Text("가린 사람 ${hidden.writers.size}", style = MaterialTheme.typography.titleSmall)
-        Text(if (hidden.writers.isEmpty()) "토론 글의 ⋮ > 이 사람 글 안 보기로 가린 분은 장터·프로필에서 차단한 분과 한 목록에 모여요. 가린 분은 이 휴대폰에만 남아요."
+        Text("${com.bamnat.core.plaza.PlazaWords.HIDDEN} ${hidden.writers.size}", style = MaterialTheme.typography.titleSmall)
+        Text(if (hidden.writers.isEmpty()) "글의 ⋮ › 이 사람 글 안 보기로 고른 분은 장터·프로필에서 차단한 분과 한 목록(마을 › 팔로잉 › 차단)에 모여요. 이 휴대폰에만 남아요."
             else hidden.writers.take(3).joinToString(" · ") { it.label } + if (hidden.writers.size > 3) " 외 ${hidden.writers.size - 3}명" else "",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (openBlocked != null) {
-            OutlinedButton(onClick = openBlocked, modifier = Modifier.heightIn(min = 48.dp)) { Text("가린 분·차단한 분 보기") }
+            OutlinedButton(onClick = openBlocked, modifier = Modifier.heightIn(min = 48.dp)) { Text("안 보는 사람·차단한 분 보기") }
         } else hidden.writers.forEach { w ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(w.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))

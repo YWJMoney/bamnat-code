@@ -41,6 +41,14 @@ class DevStatusTest(unittest.TestCase):
     def test_news_is_one_short_line(self):
         self.assertTrue(any("80자" in e for e in errors({**GOOD, "news": "가" * 81})))
 
+    def test_broadcast_lines_pass_the_reply_check(self):
+        # 2.0.0 [RVQ-28] 검토 SVC-10: 사람 확인 없이 나가는 글. 서버 desk.js broadcastRisk와 같은 뜻.
+        for k, bad in (("news", "자세한 건 bamnat.app/help 에서"), ("news", "오픈 채팅방에서 알려 드려요"), ("shipReply", "AI 상담원이 답해 드려요"),
+                       ("shipReply", "관리자 페이지에서 고쳤어요"), ("news", "Claude가 고쳤어요")):
+            self.assertTrue(any("사람 확인 없이" in e for e in errors({**GOOD, k: bad})), bad)
+        for ok in ("AI 근무표 읽기가 더 정확해졌어요", "시급 10,030원부터 주휴수당까지 맞게 계산해요"):
+            self.assertEqual(errors({**GOOD, "news": ok}), [], ok)
+
     def test_personal_info_never_goes_in(self):
         for bad in ("someone@example.com 님이", "010-1234-5678로 연락", "qAbCdEfGhIjKlMnOpQrStU 문의"):
             self.assertTrue(any("서버에만" in e for e in errors({**GOOD, "title": bad})), bad)

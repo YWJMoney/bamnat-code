@@ -277,7 +277,9 @@ test("[RCP-28] 모두 지우기 takes a phone's recipes, votes and trust; a new 
   const nv = await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: recipe({ summary: "새 판이에요" }) }, from(1));
   assert.equal(nv.data.version, 2);
   assert.equal((await call("POST", `/api/recipes/${code}/versions`, { device: device(2), recipe: recipe({ summary: "남의 것" }) }, from(2))).status, 403);
-  const old = await call("GET", `/api/recipes/${code}?v=1`, undefined, { "x-device": device(3) });
+  // 2.0.0 [RVQ-26] 검토 SVC-23: a past 판 opens for its maker only; anyone else gets the one up now.
+  assert.equal((await call("GET", `/api/recipes/${code}?v=1`, undefined, { "x-device": device(3) })).data.version, 2);
+  const old = await call("GET", `/api/recipes/${code}?v=1`, undefined, { "x-device": device(1) });
   assert.equal(old.data.version, 1);
   await call("POST", `/api/recipes/${code}/vote`, { device: device(2), value: 1 }, from(2));
   const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
