@@ -191,7 +191,7 @@ test("[ADMUX-15] remote files: version, signature checked with the app's keys, a
   assert.equal(f.wages.valid, false, "a file changed after signing does not check out");
   assert.equal(f["alarm-guide"].found, false);
   // minApp 33: 1.22.0 (33) and 1.23.0 (34) can, 1.30.0 is a code the server does not know yet.
-  assert.deepEqual([f.rates.reach, f.rates.unknown], [75, 70]);
+  assert.deepEqual([f.rates.reach, f.rates.able, f.rates.unknown], [75, 210, 70], "[RVA-29] how many of how many, too");
   assert.equal(r.phones, 280);
   // A question that carried "1.30.0 (41)" teaches the server that code.
   DB.db.prepare("INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES ('q000000000000000000002', 'd', 'bug', ?, 'open', ?, ?)")
