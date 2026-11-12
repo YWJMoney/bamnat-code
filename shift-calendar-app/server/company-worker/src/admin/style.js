@@ -1280,7 +1280,13 @@ a.gl-gauge:hover{border-color:var(--g)}
 /* 2.0.0 [RVQ-16] 검토 U21-08: 되살리기 연습의 표마다 줄 수. 표가 아니라 줄바꿈 되는 목록이라 좁은 폭·큰 글자에서도 글자가 서지 않아요. */
 /* 2.0.0 [RVQ-17] 검토 U21-07: 데이터 요청 줄. 단추는 가로로(좁으면 글 아래로), 대신 한 증빙은 줄 안쪽에 들여서. */
 .req-rows .req-side{flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;max-width:55%}
-@media (max-width:600px){.req-rows .row{flex-wrap:wrap}.req-rows .row-main{flex:1 1 100%}.req-rows .req-side{max-width:none;width:100%;justify-content:flex-start}}
+/* 2.0.0 [RVQ-17][RVQ-18] 총괄 사진 검토(380·200%에서 글이 두세 글자씩 세로로 섬): 칸이 좁거나 글자가 크면(rem이라 글자를 키우면 함께 커져요)
+   상태·단추는 글 아래로 내리고, 제목은 자르지 않고 줄을 바꿔요. 폭이 아니라 이 목록의 너비로 봐요. */
+.req-rows,.security-rows{container-type:inline-size}
+.req-rows .row-main b,.security-rows .row-main b{white-space:normal;overflow-wrap:anywhere}
+@container (max-width:34rem){.req-rows .row,.security-rows .row{flex-wrap:wrap;row-gap:.45rem}.req-rows .row-main,.security-rows .row-main{flex:1 1 100%}
+.req-rows .req-side,.security-rows .row-side{max-width:none;width:100%;flex-direction:row;flex-wrap:wrap;justify-content:flex-start;align-items:center}}
+.card-head.wraps{flex-wrap:wrap;row-gap:.25rem}.card-head.wraps h2{flex:0 1 auto;min-width:0}.card-head.wraps .meta{flex:1 1 12rem}
 .req-rows ul.proof{margin:-.25rem 1rem .75rem;padding:.35rem .7rem;border-left:3px solid var(--line-strong);font-size:.8rem;color:var(--muted)}
 .drill-rows{list-style:none;margin:.4rem 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,16rem),1fr));gap:.15rem 1rem;font-variant-numeric:tabular-nums}
 .drill-rows li{display:flex;flex-wrap:wrap;gap:0 .5rem;padding:.25rem 0;border-bottom:1px solid var(--line);min-width:0}

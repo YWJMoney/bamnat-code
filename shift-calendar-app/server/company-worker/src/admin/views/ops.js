@@ -18,7 +18,8 @@ export function opsViews(A) {
     return h < 48 ? `${h}시간 남음` : `${Math.floor(h / 24)}일 남음`;
   };
   const tile = (k, v, d, tone = "", to = "") => `<${to ? `a href="${to}"` : "div"} class="tile kpi${tone ? ` ${tone}` : ""}"><span class="k">${esc(k)}</span><span class="v">${v}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}</${to ? "a" : "div"}>`;
-  const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
+  // 2.0.0 [RVQ-16][RVQ-18] 총괄 사진 검토: 좁거나 큰 글자에서 제목이 '하루/백업'처럼 세로로 서지 않게, 설명이 다음 줄로 내려가요.
+  const head = (title, meta = "", side = "") => `<div class="card-head wraps"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
   const segs = (act, list, current) => `<div class="segmented" role="group">${list.map(([k, label, n]) => seg(act, k, current, label, n)).join("")}</div>`;
   const bytes = (n) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)}GB` : n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)}MB` : `${Math.round((n ?? 0) / 1024)}KB`);
 
