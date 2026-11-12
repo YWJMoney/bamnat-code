@@ -997,6 +997,33 @@ object SlipReading {
         return SlipVote.Result(fixed.read, fixed.unsure, read.joinToString("\n") { it.text })
     }
 
+    /**
+     * 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A file of several payslips (months, or people) taken apart: its pages, by index, in
+     * payslips. A page that reads as a payslip and names another month than the one before, or states another 실수령액 or
+     * 지급 총액, starts the next; a page with none of its own (the 공제 half of a long payslip, a page of notes) goes with the one
+     * before, as [pages] puts them together. 1.39 put every page in one payslip, lines of two months mixed with no word.
+     */
+    fun slips(results: List<SlipVote.Result>): List<List<Int>> {
+        val out = mutableListOf<MutableList<Int>>()
+        var month: java.time.YearMonth? = null
+        var net: Long? = null
+        var gross: Long? = null
+        for ((i, r) in results.withIndex()) {
+            val read = r.read
+            val slip = read.statedGross != null || read.lines.count { it.amount != null } >= 3
+            val m = read.month
+            val n = read.lines.firstOrNull { it.role == SlipRole.NET && it.amount != null }?.amount
+            val g = read.statedGross
+            val other = slip && (m != null && month != null && m != month || n != null && net != null && n != net || g != null && gross != null && g != gross)
+            if (out.isEmpty() || other) {
+                out += mutableListOf(i)
+                month = null; net = null; gross = null
+            } else out.last() += i
+            if (slip) { month = m ?: month; net = n ?: net; gross = g ?: gross }
+        }
+        return out
+    }
+
     /** The better of the table and the text reading of one picture. */
     fun best(words: List<OcrLine>, template: SlipTemplate? = null): SlipVote.Result {
         var table = SlipTable.read(words, template)

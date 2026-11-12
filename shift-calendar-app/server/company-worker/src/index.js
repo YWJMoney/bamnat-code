@@ -61,7 +61,8 @@ import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
 import { cutFrom, oldPayCut, oldPayRoute } from "./old-pay.js";
 import { glance } from "./glance.js";
-import { OBS_BADGE_SQL, observeRoute, observeTick } from "./observe.js";
+import { OBS_BADGE_SQL, observeRoute, observeTick, SIGNAL_FLOW_SQL, signalFlowFrom } from "./observe.js";
+import { marketHealthRoute } from "./market-health.js";
 import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
 import { similarCompanies, skipSimilar } from "./company-similar.js";
 import { adminLib } from "./admin-lib.js";
@@ -83,7 +84,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
-import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
@@ -115,7 +116,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
+import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
 import { sealLegacyTotp, totpOf, totpSealed } from "./seal.js";
@@ -317,7 +318,7 @@ export const fiveMinuteSteps = (env) => [
 export const hourlySteps = (env, half = 0) => allHourlySteps(env).filter(([step]) => !half || (half === 2) === SECOND_HALF.has(step));
 const allHourlySteps = (env) => [
   // 1.40 [RVD-05] 옛 식으로 잘못 찍힌 결제·환불 기록을 한 번 다시 봐요(다 보면 멈춤).
-  ["prune", () => prune(env, Date.now()).then(() => rescanBilling(env, Date.now()))],
+  ["prune", () => prune(env, Date.now()).then(() => rescanBilling(env, Date.now())).then(() => rescanBilling2(env, Date.now()))],
   ["trials", () => stopUnconsentedTrials(env, Date.now())],
   ["lapsed", () => recheckLapsed(env, Date.now())],
   ["rest", () => autoRest(env, Date.now())],
@@ -506,10 +507,27 @@ const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, 
   // 1.34 [RCP-29] the 나눔 판's lists and recipes.
   /^\/api\/recipes$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}(\/talk)?$/,
   // 2.0.0 [RVQ-10] 검토 SRV-12 (가)(나): 설치 ID 없이 두 표를 훑는 마을 찾기와, workers.dev 주소에서는 엣지 캐시가 없는 공개 회사 목록.
-  /^\/api\/village\/search$/, /^\/api\/public\/firms$/];
+  /^\/api\/village\/search$/, /^\/api\/public\/firms$/,
+  // 2.0.0 [RVQ-27] 검토 SVC-63: 창작자 프로필(질의 15개 안팎)·그 웹 페이지·계보·이달의 제작자·고른 것·모음·요청 판·글꼴 이름도 같은 몫으로.
+  /^\/api\/recipes\/makers\/([0-9a-f]{12}|operator)$/, /^\/m\/[^/]+$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}\/lineage$/, /^\/api\/recipes\/makers\/month$/,
+  /^\/api\/recipes\/picks$/, /^\/api\/recipes\/sets\/s[0-9a-f]{12}$/, /^\/api\/recipes\/requests$/, /^\/api\/recipes\/fonts\/u[0-9a-f]{16}(\/look)?$/];
+
+/**
+ * 2.0.0 [RVQ-27] 검토 SVC-63: 장터 카드의 사진과 나눈 글꼴 파일. 한 쪽에 사진이 수십 장이라 위 몫과 따로, 더 넉넉히 세요(병원 와이파이 하나에
+ * 100명이 한 쪽씩 열어도 막히지 않게). 가장자리 사본이 있는 것도 세어, 주소 하나를 되풀이해 불러 D1을 태우는 일은 이 몫에서 멈춰요.
+ */
+const ASSET_READS = [/^\/api\/recipes\/images\/[0-9a-f]{16}$/, /^\/api\/recipes\/fonts\/u[0-9a-f]{16}\/file$/];
+const ASSET_PER_HOUR = 20000;
+/** How long the edge keeps a picture or a font file that is ok (a hidden one leaves the edge within this). */
+const ASSET_EDGE_SECONDS = 300;
 
 async function publicAllowed(request, env, path) {
-  if (request.method !== "GET" || !PUBLIC_READS.some((r) => r.test(path))) return true;
+  if (request.method !== "GET") return true;
+  if (ASSET_READS.some((r) => r.test(path))) {
+    const now = Date.now();
+    return (await sharedCount(env, `asset|${(await network(request, env, now)).now}`, HOUR, now, 50)) <= ASSET_PER_HOUR;
+  }
+  if (!PUBLIC_READS.some((r) => r.test(path))) return true;
   const now = Date.now();
   // 2.0.0 [RVQ-10] 검토 SRV-12 (마): Worker 사본마다 따로 세던 것을 여럿이 함께(50번에 한 번 D1에 더해요).
   return (await sharedCount(env, `pub|${(await network(request, env, now)).now}`, HOUR, now, 50)) <= PUBLIC_PER_HOUR;
@@ -671,6 +689,12 @@ async function routeOnce(request, env, url, ctx) {
     // 1.38 [STM-01] 밤낮 재료(운영자 색 아이콘·배경).
     const mats = await materialRoute(recipeDeps, request, env, path, url);
     if (mats) return mats;
+    // 2.0.0 [RVQ-27] 검토 SVC-63: a picture or font file asked with no phone named is the same for everyone once it is ok: kept at the
+    // edge a few minutes (an owner's own waiting one names the phone and is never kept).
+    if (method === "GET" && !request.headers.get("x-device") && ASSET_READS.some((r) => r.test(path))) {
+      return edgeCached(request, ctx, ASSET_EDGE_SECONDS, async () => (await communityRoute(recipeDeps, request, env, path, url))
+        ?? (await fontRoute(recipeDeps, request, env, path)) ?? json({ error: "not_found" }, 404));
+    }
     const more = await communityRoute(recipeDeps, request, env, path, url);
     if (more) return more;
     // 1.36 [MAT-06] 내 글꼴 나누기.
@@ -3962,7 +3986,10 @@ async function vote(request, env) {
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
   if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
-  if (typeof body.ok !== "boolean") refuse("ok", "ok");
+  // 2.0.0 [RVN-18] 검토 COMP-22-1: ok null takes this phone's 맞아요·달라요 back (pressing ✓ again, as a post's 공감 does). Before, the
+  // ✓ button sent the same vote again. Points come back without it; a version already adopted stays adopted.
+  const takeBack = body.ok === null;
+  if (!takeBack && typeof body.ok !== "boolean") refuse("ok", "ok");
   // AH 1.27 [PLAZA-15] 달라요 says where: the order, the times or the pay items (AH-D9).
   const why = body.ok ? null : VOTE_WHY.includes(body.why) ? body.why : "wrong";
   // AI 1.27 [PLAZA-30] A pay-slip 맞았어요 needs the month the phone matched; an older app's bare one counts as a plain 맞았어요.
@@ -3985,6 +4012,10 @@ async function vote(request, env) {
   const pending = rule ? null : await one(env, `SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND ${pgShown()} LIMIT 1`, c.id, grp);
   if (!rule && !pending) return voteGone(env, c.id, grp);
   const dev = await deviceHash(device);
+  if (takeBack) {
+    await run(env, "DELETE FROM votes WHERE company_id = ? AND grp = ? AND device = ?", c.id, grp, dev);
+    return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(rule)));
+  }
   await forgetNetworks(env, now);
   const cluster = await clusterFor(env, c.id, net);
   await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -5304,7 +5335,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/basics" && method === "GET") return json(await basics(env));
   if (path === "/servers" && method === "GET") return json(await serverVersions(env));
   // AX 1.30 [ADMX-08] 찾기·이동: companies, questions, 개발사항 and admins in one ask.
-  if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
+  if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }, 3, now));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") {
@@ -5444,9 +5475,12 @@ async function signedRoute(request, env, url, path, method, now, session) {
     if (g) return g;
   }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
-    const more = await communityAdmin(recipeDeps, request, env, path, url, now);
+    // 2.0.0 [RVA-56] 검토 SX-04: 장터 건강(작품 전체 사진 대조·옛 앱 열기 결과).
+    const health = await marketHealthRoute(request, env, path, request.method, now);
+    if (health) return health;
+    const more = await communityAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (more) return more;
-    const font = await fontAdmin(recipeDeps, request, env, path, url, now);
+    const font = await fontAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (font) return font;
     const mats = await materialAdmin(recipeDeps, request, env, path, url, now);
     if (mats) return mats;
@@ -6605,6 +6639,10 @@ async function today(env, actor, now) {
   if (actor.owner) Object.assign(q, OPS_ALERT_SQL(now));
   // 1.39 [LOOP-40] 열면 끝나 있는 관리자 앱: 지난 12시간 동안 저절로 끝난 일과 사람 손이 필요한 것만(같은 batch).
   Object.assign(q, nightQueries(actor, now));
+  // 2.0.0 [RVA-37] 검토 I24c-01: 읽지 못해 빼 둔 줄(장부·정리함·오늘)도 같은 batch로.
+  if (actor.owner || can(actor, "inquiries") || can(actor, "dev")) q.stuck = rowTroubleQuery(now);
+  // 2.0.0 [RVA-54] 숫자 → 개발 → 효과(숫자를 보는 사람에게)도 같은 batch로.
+  if (can(actor, "metrics")) Object.assign(q, SIGNAL_FLOW_SQL);
   // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
   Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
     metrics: can(actor, "metrics") }, start));
@@ -6614,7 +6652,15 @@ async function today(env, actor, now) {
   const inbox = Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]]));
   const out = { todo: inboxItems(inbox, actor, now), doneToday: got.doneToday[0].n };
   // 1.39 [ADM3-37] 같은 말로 읽히는 문의는 할 일에서 한 줄로(묶음 첫 줄에 others, 나머지에 bundle).
-  if (inbox.inquiries) bundleInquiries(out.todo.items, new Map(inbox.inquiries.map((r) => [r.id, r.first])));
+  // 2.0.0 [RVA-37] 검토 I24b-02: 묶기가 실패해도 할 일은 묶지 않은 채로 보여요(오류 묶음에 적고).
+  const bad = [];
+  if (inbox.inquiries) {
+    try {
+      bundleInquiries(out.todo.items, new Map(inbox.inquiries.map((r) => [r.id, r.first])));
+    } catch (e) {
+      bad.push({ key: "todo:bundle", e });
+    }
+  }
   for (const k of ["inquiriesToday", "inquiriesYesterday", "inquiriesBad", "reports", "posts", "companies", "rules"]) if (got[k]) out[k] = got[k][0].n;
   if (inbox.inquiries) {
     // How many waiting questions reach their answer target before today ends.
@@ -6635,6 +6681,20 @@ async function today(env, actor, now) {
   out.night = night.summary;
   out.alerts = [...night.alerts, ...out.alerts];
   if (got.versionConflicts) out.versionConflicts = got.versionConflicts[0].n;
+  if (bad.length) await recordRowErrors(env, "today", bad, now).catch(() => {});
+  // 그 사람이 볼 수 있는 줄만: 문의는 문의 권한, 개발사항은 개발 권한, 묶기 같은 화면 오류는 최고 관리자.
+  if (got.stuck) {
+    out.stuck = rowTroubleRows(got.stuck).filter((r) => actor.owner || (r.type === "inquiry" ? can(actor, "inquiries") : r.type === "dev" ? can(actor, "dev") : false));
+  }
+  // 2.0.0 [RVA-54] 검토 I23c-03: 숫자 → 개발 → 효과 한 줄(숫자를 보는 사람에게).
+  if (got.flowSignals) {
+    try {
+      out.selfLoop = signalFlowFrom(got, now);
+    } catch (e) {
+      out.selfLoop = [];
+      await recordRowErrors(env, "today", [{ key: "today:selfLoop", e }], now).catch(() => {});
+    }
+  }
   return out;
 }
 

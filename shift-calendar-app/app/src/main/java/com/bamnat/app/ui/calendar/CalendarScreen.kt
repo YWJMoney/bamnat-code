@@ -910,6 +910,8 @@ fun CalendarScreen(
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.TODAY) return@LaunchedEffect
+        // [RVIB-19] Read before it is taken: an alarm's way to today.
+        val fromAlarm = NoticeLinks.payload.value == NoticeLinks.TODAY_DAY
         NoticeLinks.consume(NoticeLinks.Target.TODAY)
         received.view(null)
         // [MCAL-01] Day notices follow the main calendar; [GUIDE-01] a feature of today opens on its own calendar, with the day open.
@@ -918,7 +920,11 @@ fun CalendarScreen(
         vm.setPaint(null)
         // 2.0.0 [RVI-68] (PC-49) 오늘 보기 opens on today's flow, not its folded line.
         if (feature == null) vm.openFlowNow()
-        sheetOpen = feature != null && !showsDay
+        // 2.0.0 [RVIB-19] (PC-150) From an alarm's '끄고 오늘 보기': where 오늘의 흐름 is not on the page (달력만 크게 보기, the new
+        // phone's default, or the part taken off in 카드 배치), today's own day opens instead: its work, the alarms still to ring and its
+        // memos, as the button says.
+        val flowHere = partShown(CalendarPart.TODAY_FLOW) && settings.sleepTips && settings.partFits(CalendarPart.TODAY_FLOW, fitAdded)
+        sheetOpen = (feature != null || (fromAlarm && !flowHere)) && !showsDay
         vm.select(Today.date())
         pagerState.scrollToPage(monthToPage(baseMonth, Today.month()))
         pageScroll.scrollTo(0)
@@ -2396,6 +2402,14 @@ internal fun CalendarHeader(
     val navPart = bp.style("cal.head.nav", scope = headScope)
     val todayPart = bp.style("cal.head.today", scope = headScope)
     val titlePart = bp.style("cal.head.title", scope = headScope)
+    // 2.0.0 [RVS-14] A work's 달력 머리 with room at its sides (E9: 6 + 10) leaves the month less of the line: it drops the year and 오늘 is
+    // an icon, as on a narrow phone, so the month itself is never squeezed out.
+    val headTight = (headPart.out ?: 0) + (headPart.padH ?: 0) >= 8
+    // Under 340dp (a small phone, the studio's example) the work's side room gives way first, so ‹ 10월 › keeps its line.
+    val small = maxWidth < 340.dp
+    val headBox = if (small) headPart.copy(out = headPart.out?.coerceAtMost(2), padX = headPart.padH?.coerceAtMost(2), padY = headPart.padV) else headPart
+    // [RVS-14] with [RVH-52]: the sides [HeadRoom] keeps for the box are the ones drawn ([headSides] less what a small phone gives way).
+    val sideRoom = if (small) 2 * ((headBox.out ?: 0) + (headBox.padH ?: 0)) else headSides.toInt()
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
     val baseTitle = when {
@@ -2415,7 +2429,7 @@ internal fun CalendarHeader(
     // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
     val teamRow = otherRows.firstOrNull { (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
-        maxWidth.value, fontScale, sp, reserved = headSides, monthDp = monthDp, quick = quick.size, bell = bell != null, me = me, others = others,
+        maxWidth.value, fontScale, sp, reserved = sideRoom.toFloat(), monthDp = monthDp, quick = quick.size, bell = bell != null, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
         team = teamRow != null,
     ).let { if (chip == null) it.copy(name = false) else it }
@@ -2443,7 +2457,7 @@ internal fun CalendarHeader(
             else com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp + (headPart.out ?: 0).dp, side = 4.dp + (headPart.out ?: 0).dp,
                 bottom = (headPart.out ?: 0).dp, shape = com.bamnat.app.ui.parts.PartMods.shapeOf(headPart, MaterialTheme.shapes.medium))
         ).partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD, taps = com.bamnat.app.ui.decor.LocalDecorTap.current == null).padding(start = 4.dp, end = 4.dp, top = 8.dp)
-            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
+            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headBox, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // [RVP-45] Whose calendar: its face (and its name where there is room), the list of calendars a tap away.
@@ -2482,7 +2496,7 @@ internal fun CalendarHeader(
                 // buttons around it. [RVP-45] HQ-22: never below 14sp either (it used to shrink to a few pixels).
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
-                com.bamnat.app.ui.FitText(monthTitle(month, short = room.shortTitle, yearInk = yearInk), titleText,
+                com.bamnat.app.ui.FitText(monthTitle(month, short = room.shortTitle || headTight, yearInk = yearInk), titleText,
                     Modifier.weight(1f, fill = false).partSpot("cal.head.title").then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }),
                     minSp = MONTH_TITLE_MIN_SP)
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2494,7 +2508,7 @@ internal fun CalendarHeader(
         else quick.take(quickShown).forEach { HeadQuickButton(it, onQuick) }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
-        else if (!room.todayWords) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        else if (!room.todayWords || headTight) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
         // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
         // keeps most of the ink (still lighter than when it can be pressed).
         else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,

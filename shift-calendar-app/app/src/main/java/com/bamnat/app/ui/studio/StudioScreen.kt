@@ -89,6 +89,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -398,6 +399,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val studioFacts = com.bamnat.app.logic.rememberAppDayFacts()
     // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
+    // 2.0.0 [RVS-13] 검토 U09a-13: kept at once when the studio goes behind (홈·화면 끄기·다른 앱), and the draft open is remembered
+    // with the screen, so if Android closes the app meanwhile it opens again by itself instead of only being offered.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { vm.keepNow() }
+    var openDraft by rememberSaveable { mutableStateOf(0L) }
+    LaunchedEffect(s.draftId) { if (!vm.cameBack(openDraft)) openDraft = s.draftId }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // 1.38 PC 19차 LOW (다시 열면 화면 고르기가 늘 '앱 전체'): with nothing asked for, the studio opens on the screen picked last.
     val studioPrefsEarly = LocalContext.current.let { ctx -> remember { ctx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) } }
@@ -596,7 +602,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         Scaffold(
             snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
             topBar = {
+                // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
+                val feelLine = vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
+                    vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }
+                // 2.0.0 [RVS-16] (총괄 #495 사진, 조건 12: 글자 200%에서 제목 ‘지금 …’의 아래가 잘렸어요) The bar is as tall as its lines at this
+                // text size (스튜디오 · the start's name · 지금: …), never under the app bar's own height.
+                val typo = MaterialTheme.typography
+                val barHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
+                    fun lh(t: androidx.compose.ui.text.TextStyle) = (if (t.lineHeight.isSpecified) t.lineHeight else t.fontSize * 1.4f).toDp()
+                    lh(typo.labelMedium) + lh(typo.titleMedium) + (if (feelLine != null) lh(typo.labelSmall) else 0.dp) + 16.dp
+                }.coerceAtLeast(androidx.compose.material3.TopAppBarDefaults.TopAppBarExpandedHeight)
                 TopAppBar(
+                    expandedHeight = barHeight,
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
@@ -607,9 +624,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
-                            // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
-                            vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
-                                vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }?.let {
+                            feelLine?.let {
                                 Text("지금: ${it.second}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -657,6 +672,30 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // 2.0.0 [RVS-07] 작품 크기 (검토 SD-04 ①③·SN-08·SI-04): from 80% of what 올리기 takes it says so, and past it which pieces
+                        // to take out first, before 올리기 fails; nothing while it is small. Worked out off the main thread (STU-28).
+                        val size by androidx.compose.runtime.produceState<Pair<com.bamnat.core.recipe.WorkSize.Of, String?>?>(null, s.pieces, s.extras) {
+                            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                val z = vm.size(s)
+                                z to (if (z.over) com.bamnat.core.recipe.WorkSize.takeOutLine(vm.takeOut(s)) else null)
+                            }
+                        }
+                        size?.takeIf { it.first.near || it.first.over }?.let { (z, out) ->
+                            com.bamnat.app.ui.components.ToneLine(
+                                if (z.over) listOfNotNull(z.overLine, out).joinToString(" · ")
+                                else "작품 크기 ${z.line} · 장터에 올릴 수 있는 만큼에 가까워요",
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                        // 2.0.0 [RVS-14] 첫 줄 먼저 (총괄 HQ-56, 조건 1): a 달력 머리·요일 줄 that pushes the month's first row down past what the app
+                        // keeps says so here, beside 작품 크기, and that it is drawn smaller; tapping it opens 달력 머리 in 부품.
+                        val push by androidx.compose.runtime.produceState(0, d.parts) {
+                            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                runCatching { com.bamnat.core.recipe.Blueprint.decode(d.parts).abovePush() }.getOrDefault(0)
+                            }
+                        }
+                        if (push > com.bamnat.core.recipe.PartFloor.ABOVE_DP) com.bamnat.app.ui.components.ToneLine(
+                            "달력 머리·요일 줄이 첫 줄을 ${push}dp 내려요 · 달력이 먼저 보이게 ${com.bamnat.core.recipe.PartFloor.ABOVE_DP}dp까지만 줄여 그려요",
+                            style = MaterialTheme.typography.labelMedium, tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { selectPart("cal.head"); openPanel(PanelMode.PART) })
                         Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(when {
@@ -998,7 +1037,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     val bp = remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) }
                                     Text("이름을 누르면 화면에서 그 부품을 골라요. ●는 꾸민 부품이에요", style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList()),
+                                    LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList(), vm.style),
                                         onPart = { p -> selectPart(p) },
                                         onDecor = { i -> decorFocus = i; openTool(area.takeIf { Tool.DECOR in it.tools } ?: Area.CALENDAR, Tool.DECOR) })
                                 }
@@ -1137,7 +1176,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     Text("내 앱에 입히고 나가기")
                 }
                 TextButton(onClick = { leaving = false; saving = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 테마로 저장하고 나가기") }
-                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
+                TextButton(onClick = { leaving = false; vm.keepNow(); onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
                 TextButton(onClick = { leaving = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("계속 꾸미기") }
             }
         },
@@ -1514,12 +1553,12 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                         Cell(tomorrow, day0.plusDays(1), true, false, 14, Modifier.fillMaxWidth())
                     }
                     WidgetKind.WEEK -> {
-                        Head("이번 주 근무")
+                        Head(com.bamnat.core.work.TypeWords.say(style, "이번 주 근무"))
                         val mon = day0.minusDays((day0.dayOfWeek.value - 1).toLong())
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             (0 until 7).forEach { i ->
                                 val d = mon.plusDays(i.toLong())
-                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${WEEK_SAMPLE[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
+                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${weekSample(style)[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
                             }
                         }
                     }
@@ -1587,7 +1626,15 @@ private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK(
 /** 1.39 [TASK-07] The 할 일 widget's example rows: the words, and whether each is late, finished or neither. */
 private val TASK_SAMPLE = listOf(Triple("서류 내기", true, false), Triple("택배 받기", false, false), Triple("약 먹기", false, true))
 
-private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
+/** 2.0.0 [RVS-10] 검토 STU-27: the week widget's example days, in the words of the studio's own kind of work (월~일). */
+private fun weekSample(style: WorkStyle?): List<String> = when (style) {
+    WorkStyle.DAY -> listOf("출근", "출근", "출근", "출근", "출근", "휴무", "휴무")
+    WorkStyle.HOURLY -> listOf("출근", "휴무", "출근", "출근", "휴무", "출근", "출근")
+    WorkStyle.FIELD -> listOf("현장", "현장", "빈 날", "현장", "현장", "빈 날", "빈 날")
+    WorkStyle.BUSINESS -> listOf("휴무", "영업", "영업", "영업", "영업", "영업", "영업")
+    WorkStyle.INVEST -> listOf("장중", "장중", "장중", "장중", "장중", "휴장", "휴장")
+    else -> listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
+}
 
 /** "오늘 · 야간 19:00" and "내일 · 휴무" from my own calendar, or null while nothing is set for either day. */
 @Composable

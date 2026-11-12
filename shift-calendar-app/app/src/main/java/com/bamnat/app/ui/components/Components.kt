@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.components
 
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.core.model.ShiftIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -274,29 +275,34 @@ fun StatTile(
     // 2.0.0 [RVK-25] (검토 MONEY-69, 조건 6) A caption that asks for care ('9일 전 가격') is written in the caution colour while
     // the tile and its number keep their own colours: [warning] is red, kept for danger.
     captionTone: Tone = Tone.Plain,
+    // 2.0.0 [RVK-45] (조건 6) A tile that asks for care (약속일 지남, 아직 받을 돈, 남은 돈이 모자람, 현금 부족) in the caution colour,
+    // the same shape as [warning]; [warning] stays for danger.
+    caution: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
-    val bg = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLowest
+    val careInk = MaterialTheme.bamnat.caution
+    val ink = when { warning -> cal.warning; caution -> careInk; else -> null }
+    val bg = when { warning -> cal.warningContainer; caution -> careInk.copy(alpha = 0.12f); else -> MaterialTheme.colorScheme.surfaceContainerLowest }
     Surface(
         modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
         color = bg,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (warning) cal.warning.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            ink?.copy(alpha = 0.5f) ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         ),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (warning) {
-                    Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(14.dp))
+                if (ink != null) {
+                    Icon(Icons.Filled.WarningAmber, null, tint = ink, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                 }
                 // Three tiles share the narrow folded screen, so text shrinks instead of being cut off.
                 BasicText(
                     label,
                     style = MaterialTheme.typography.labelMedium.copy(
-                        color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ink ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                     maxLines = 2,
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
@@ -308,7 +314,7 @@ fun StatTile(
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
-                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                    color = ink ?: MaterialTheme.colorScheme.onSurface,
                 ),
                 maxLines = if (big) 2 else 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),

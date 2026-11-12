@@ -403,12 +403,21 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, focusNo
         }
     }
     val flashColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f * flash.value)
-    Row(Modifier.fillMaxWidth().onSizeChanged { rowSize = it }.bringIntoViewRequester(bring).background(flashColor, MaterialTheme.shapes.small)
-        .clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+    // 2.0.0 [RVS-16] (총괄 #495, 조건 12) The same name line as 색 고르기: with big text on a narrow phone the name and sample have their own line.
+    com.bamnat.app.ui.components.NameLine(
+        modifier = Modifier.fillMaxWidth().onSizeChanged { rowSize = it }.bringIntoViewRequester(bring).background(flashColor, MaterialTheme.shapes.small)
+            .clickable(onClickLabel = "$label 고르기") { open = true },
+        name = {
+            Column {
+                Text(label, style = MaterialTheme.typography.bodyMedium)
+                Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+        widest = {
+            Text(name, style = MaterialTheme.typography.labelMedium)
+            TextButton(onClick = {}) { Text("처음대로") }
+        },
+    ) {
         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }

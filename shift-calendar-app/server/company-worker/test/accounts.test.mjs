@@ -239,7 +239,8 @@ test("the developer app's pages: the app, the invite link and installing", async
     const res = await call("GET", path);
     assert.equal(res.status, 200, path);
     assert.match(res.headers.get("content-security-policy"), /script-src 'self'/);
-    assert.match(res.text, /<script src="\/admin\/app.js" defer><\/script>/);
+    // 2.0.0 [RVA-57] 첫 묶음은 내용의 해시가 든 이름이에요.
+    assert.match(res.text, /<script src="\/admin\/app\.[0-9a-z]+\.js" defer><\/script>/);
   }
   const js = await call("GET", "/admin/app.js");
   assert.doesNotThrow(() => new Function(js.text));

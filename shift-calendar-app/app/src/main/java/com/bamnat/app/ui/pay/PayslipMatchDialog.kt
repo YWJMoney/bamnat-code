@@ -214,15 +214,23 @@ fun PayslipMatchDialog(
     val appTotal by produceState<Long?>(null, chosen) { value = null; value = vm.calculateOff(profile, snapshot, chosen).total }
     // [PAYS-05] 명세서 사진으로 채우기, and what it filled.
     var scanning by remember { mutableStateOf(false) }
+    // 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A PDF of several payslips picked a little while ago: the ones not yet looked at wait on
+    // the first step, so the next month is one tap (then the roster question) away instead of finding the file again.
+    var waiting by remember { mutableStateOf(PdfSlips.get()) }
+    var picked by remember { mutableStateOf<com.bamnat.app.pay.PayslipScanner.Scan?>(null) }
+    var pickedLabel by remember { mutableStateOf("") }
+    var opening by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     var filled by remember { mutableStateOf<String?>(null) }
     // [READ-08] With the company's way of counting as a second photo: its ticked rules go into the pay setup from that month.
     val payAppSettings by vm.settings.collectAsState()
-    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false },
+    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false; picked = null }, initialScan = picked,
         rules = RuleTarget(payAppSettings.extraKinds.kinds, snapshot.shiftTypes, profile.fiveOrMoreEmployees) { changes, m ->
             vm.applyRuleChanges(changes, m ?: chosen)
             filled = "회사 규칙 ${changes.size}개를 급여 설정에 넣었어요"
         }) { read ->
         // [PAYIN-03] Only the company's rules came (no payslip line): the figures typed here stay as they are.
+        picked = null
         if (read.lines.isEmpty()) { scanning = false; return@PayslipFillDialog }
         form.fill(read, profile)
         vm.observePayslip(read, chosen) // [TAX-04] 세금 예측도 이 명세서로 맞춰요
@@ -346,10 +354,32 @@ fun PayslipMatchDialog(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             when (s) {
-                                MatchStage.MONTH -> MonthStage(profile, chosen, latest, appTotal, { chosen = it }) { same ->
-                                    stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
+                                MatchStage.MONTH -> {
+                                    waiting?.let { held ->
+                                        PdfSlipsChooser(held, again = true, enabled = !opening, onPick = { i ->
+                                            opening = true
+                                            scope.launch {
+                                                val scan = try { com.bamnat.app.pay.PayslipScanner.shown(context, held.read, i) }
+                                                    catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                                                opening = false
+                                                if (scan != null) {
+                                                    PdfSlips.looked(held.id, i)
+                                                    waiting = PdfSlips.get()
+                                                    picked = scan
+                                                    pickedLabel = PdfSlips.labels(held.read.scans).getOrElse(i) { "${i + 1}번째 명세서" }
+                                                    scan.slip.read.month?.takeIf { !it.isAfter(latest) }?.let { chosen = it }
+                                                }
+                                            }
+                                        }, onForget = { PdfSlips.forget(); waiting = null })
+                                    }
+                                    picked?.let { p -> PickedLine(pickedLabel, PdfSlips.amount(p)) }
+                                    MonthStage(profile, chosen, latest, appTotal, { chosen = it }) { same ->
+                                        stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
+                                        // The payslip picked above goes on as soon as the amounts are asked for.
+                                        if (same && picked != null) scanning = true
+                                    }
                                 }
-                                MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS })
+                                MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS; if (picked != null) scanning = true })
                                 MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
@@ -405,6 +435,17 @@ private fun ColumnScope.MonthStage(
     StepTitle("그 달 근무가 달력과 같았나요?", "근무, 잔업·특근·대근, 쉬는 날이 달력과 같아야 정확히 맞춰 볼 수 있어요.")
     AnswerCard("네, 같았어요", null, false) { onRoster(true) }
     AnswerCard("아니요, 달라요", "달력을 먼저 고치면 더 정확해요", false) { onRoster(false) }
+}
+
+/** 2.0.0 [RVL-44] The payslip picked from the waiting list: it fills the amounts once the roster question is answered. */
+@Composable
+private fun PickedLine(label: String, amount: String?) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(listOfNotNull("$label 골랐어요", amount).joinToString(" · ") + ". 아래 물음에 답하면 바로 채워요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
 }
 
 @Composable

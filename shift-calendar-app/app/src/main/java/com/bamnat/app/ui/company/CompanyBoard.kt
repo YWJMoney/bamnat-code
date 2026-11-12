@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -79,6 +78,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.focus.onFocusChanged
@@ -143,15 +143,21 @@ fun CompanyBoardScreen(
         if (onRates != null) TextButton(onClick = onRates) { Text("임금표") }
         TextButton(onClick = vm.activity::show) { Text("내 활동") }
     }
+    // 2.0.0 [RVN-18] 총괄 HQ-89 (조건 12): at big letters on a narrow screen the two text buttons took the bar and '규칙 광장' broke
+    // into two lines, the second cut under the bar. There the buttons go on a row of their own under the bar, the title keeps one line.
+    val barBelow = barButtonsBelow()
     Scaffold(
         topBar = {
             // 사용자 2026-11-03 (마을 스크롤, 겹친 상단 막대): in 마을 (no 뒤로) the title and its buttons are the list's first row,
             // under 마을's own tabs, so two bars never stack and the row scrolls away with the list.
-            if (onBack != null) TopAppBar(
-                title = { Text(boardTitle) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
-                actions = { boardActions() },
-            )
+            if (onBack != null) Column {
+                TopAppBar(
+                    title = { Text(boardTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                    actions = { if (!barBelow) boardActions() },
+                )
+                if (barBelow) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) { boardActions() }
+            }
         },
         floatingActionButton = {
             // [SETUP-10] F-98: at the top the button is in the list (under the search and its chips, never on them); the round one
@@ -171,10 +177,10 @@ fun CompanyBoardScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (onBack == null) item(key = "title") {
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(boardTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
-                        boardActions()
-                    }
+                    // [RVN-18] HQ-89: the same at big letters in 마을 — the buttons under the title, never the title squeezed to a letter a line.
+                    com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().padding(top = 4.dp), start = {
+                        Text(boardTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                    }, end = { boardActions() })
                 }
                 if (header != null) item(key = "calendars") { header() }
                 // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
@@ -227,7 +233,7 @@ fun CompanyBoardScreen(
                 item(key = "about") {
                     Text(
                         if (adopted) "같은 회사 분들이 맞다고 했거나 개발자가 확인한 규칙이에요. 누구나 그대로 가져다 쓸 수 있어요. 금액은 각자 넣어요."
-                        else "같은 회사 분들이 올린 규칙이에요. 다니는 회사라면 맞는지 알려 주세요. 맞았어요가 ${terms?.agree ?: 75}% 이상이고 " +
+                        else "같은 회사 분들이 올린 규칙이에요. 다니는 회사라면 맞는지 알려 주세요. 맞아요가 ${terms?.agree ?: 75}% 이상이고 " +
                             "${terms?.threshold ?: 3}점이 모이면 채택돼서 모두가 쓸 수 있어요. 개발자가 확인해 채택하기도 해요.",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -278,7 +284,9 @@ fun CompanyBoardScreen(
         }
     }
     TalkSheet(vm.talk)
-    ActivitySheet(vm.activity)
+    // 2.0.0 [RVN-18] 검토 U10a-16: a rule I sent opens that company, scrolled to that rule set.
+    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+    ActivitySheet(vm.activity, onOpen = { r -> vm.activity.close(); app.pendingCompanySetup = r.companyId to r.setup; onOpen(r.companyId) })
 }
 
 private fun BoardItem.title() = "$company · ${dept.ifEmpty { "회사 전체" }}"
@@ -293,7 +301,7 @@ private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit, l
                     Text(listOfNotNull(label, item.dept.ifEmpty { "회사 전체" }, item.cycle, if (item.pay) "급여 계산 포함" else "근무표만").filter { it.isNotEmpty() }.joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (item.adopted) StatusChip("대표 판${item.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
+                if (item.adopted) StatusChip("대표 판${item.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD) else StatusChip("투표 중", Tone.WAIT)
             }
             // [PLZ-12] Its plaza and region, and whether it is a whole job's rule rather than one place's.
             val place = listOfNotNull(
@@ -340,7 +348,7 @@ fun TrustLine(trust: Int, agree: Int, persons: Int, bad: Int, adopted: Boolean) 
         Text(
             // [SETUP-10] 맞았어요 once, its share beside it: "맞았어요 2명 (67%) · 달라요 1명".
             when {
-                persons > 0 -> "맞았어요 ${persons}명 (${agree}%)" + if (bad > 0) " · 달라요 ${bad}명" else ""
+                persons > 0 -> "맞아요 ${persons}명 (${agree}%)" + if (bad > 0) " · 달라요 ${bad}명" else ""
                 bad > 0 -> "달라요 ${bad}명"
                 else -> "아직 확인한 분이 없어요"
             },
@@ -355,16 +363,21 @@ fun VoteButtons(
     mine: Boolean?, onVote: (Boolean, String?) -> Unit, opinion: com.bamnat.app.company.Opinion? = null,
     /** [J133-55] 달라요 straight on to what it should be: the proposal form, or the talk on 고치자는 제안. */
     onPropose: (() -> Unit)? = null,
+    /** 2.0.0 [RVN-18] 검토 COMP-22-1: 맞아요 ✓ pressed again takes it back (before, it sent the same vote again). */
+    onTakeBack: (() -> Unit)? = null,
 ) {
     var asking by remember { mutableStateOf(false) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        val okText = if (mine == true) "맞았어요 ✓" else "맞았어요"
-        val badText = if (mine == false) "달라요 ✓" else "달라요"
-        if (mine == true) FilledTonalButton(onClick = { onVote(true, null) }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.ThumbUp, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(okText) }
-        else OutlinedButton(onClick = { onVote(true, null) }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.ThumbUp, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(okText) }
-        if (mine == false) FilledTonalButton(onClick = { asking = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.ThumbDown, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(badText) }
-        else OutlinedButton(onClick = { asking = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.ThumbDown, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(badText) }
-    }
+    val okText = if (mine == true) "맞아요 ✓" else "맞아요"
+    val badText = if (mine == false) "달라요 ✓" else "달라요"
+    // 2.0.0 [RVN-18] COMP-22-6 one under the other with big letters (PairRow).
+    com.bamnat.app.ui.components.PairRow(first = { m ->
+        if (mine == true) FilledTonalButton(onClick = { onTakeBack?.invoke() ?: onVote(true, null) }, modifier = m
+            .semantics { if (onTakeBack != null) stateDescription = "누르면 거둬요" }) { Icon(Icons.Outlined.ThumbUp, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(okText) }
+        else OutlinedButton(onClick = { onVote(true, null) }, modifier = m) { Icon(Icons.Outlined.ThumbUp, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(okText) }
+    }, second = { m ->
+        if (mine == false) FilledTonalButton(onClick = { asking = true }, modifier = m) { Icon(Icons.Outlined.ThumbDown, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(badText) }
+        else OutlinedButton(onClick = { asking = true }, modifier = m) { Icon(Icons.Outlined.ThumbDown, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(badText) }
+    })
     // [PLAZA-15] 1.27 AH: how others answered, 달라요 by where; one answer per phone, changed by answering again.
     opinion?.let { o -> opinionLine(o)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
     if (asking) {
@@ -507,7 +520,8 @@ fun TalkSheet(holder: TalkHolder) {
                         // 1.36 [VIL-12] 마을 V12 야간 이야기: on 교대·현장 plazas, what was written between 22시 and 6시, worked out here from when.
                         val nightRoom = o.company == com.bamnat.core.plaza.StylePlaza.SHIFT || o.company == com.bamnat.core.plaza.StylePlaza.FIELD
                         if (o.room && (allTops.any { it.kind != "talk" } || (nightRoom && allTops.any { nightPost(it) }))) {
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            // 2.0.0 [RVN-18] 검토 U10a-04: one line, all of it with 펼치기.
+                            com.bamnat.app.ui.components.FoldRow("room.kinds", what = "골라 보기 칩") {
                                 // PC 확인 f39bcfbe: says it picks which posts show, apart from 쓸 글 below.
                                 Text("골라 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 (listOf<Pair<String?, String>>(null to "전체") + ROOM_KIND_LABELS.filter { it.first != "talk" } +
@@ -555,7 +569,7 @@ fun TalkSheet(holder: TalkHolder) {
                 }
                 // [COMM-09] Said plainly, so a quiet talk is not mistaken for an empty one.
                 o.talk?.hiddenByYou?.takeIf { it > 0 }?.let { n ->
-                    Text("가리거나 차단한 분의 글 ${n}개는 보이지 않아요. 마을 › 팔로잉 › 차단에서 다시 볼 수 있어요.",
+                    Text("안 보기로 했거나 차단한 분의 글 ${n}개는 보이지 않아요. 마을 › 팔로잉 › 차단에서 다시 볼 수 있어요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -565,10 +579,10 @@ fun TalkSheet(holder: TalkHolder) {
             }
             val muted = o.talk?.mutedUntil
             if (o.talk?.past == true) {
-                Text("지금은 새 버전이 쓰이고 있어요. 이 토론은 지난 버전의 기록이라 읽기만 할 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                Text("지금은 새 판이 쓰이고 있어요. 이 토론은 지난 판의 기록이라 읽기만 할 수 있어요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             } else if (muted != null) {
-                Text("운영 원칙을 지키지 않은 글이 있어 ${day(muted)}까지 글을 쓸 수 없어요.", style = MaterialTheme.typography.bodySmall,
+                Text(com.bamnat.core.plaza.CommunityCare.mutedText(muted.toEpochMilli()), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
             } else if (holder.writePaused) {
                 // [SRV-04] The developer paused writing; reading, 맞아요 and 신고 still work.
@@ -634,7 +648,7 @@ fun TalkSheet(holder: TalkHolder) {
                 }
                 if (styleRoom && kind == "show" && replyTo == null && showable.isNotEmpty()) {
                     Text("내 작품 붙이기 (보는 분이 바로 입어 봐요)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.app.ui.components.FoldRow("room.works", what = "내 작품 칩") {
                         showable.forEach { r ->
                             com.bamnat.app.ui.components.FilterChip(selected = attach?.first == r.first,
                                 onClick = { attach = if (attach?.first == r.first) null else r }, label = { Text(r.second, maxLines = 1) })
@@ -949,7 +963,7 @@ private fun PostRow(
         }
         val stanceChip = when (p.stance) {
             "sender" -> "올린 분" to Tone.QUIET
-            "ok" -> "맞았어요" to Tone.GOOD
+            "ok" -> "맞아요" to Tone.GOOD
             "bad" -> "달라요" to Tone.BAD
             else -> null
         }
@@ -1164,6 +1178,18 @@ private fun PollEditor(options: List<String>, onChange: (List<String>) -> Unit) 
     }
 }
 
+/**
+ * 2.0.0 [RVN-18] HQ-89 Whether a bar's text buttons go on a row under it: big letters (from 130%) on a screen under 600dp, where a title
+ * and two text buttons do not share one bar.
+ */
+@Composable
+internal fun barButtonsBelow(): Boolean =
+    androidx.compose.ui.platform.LocalDensity.current.fontScale >= BAR_BELOW_FONT &&
+        androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < BAR_BELOW_WIDTH_DP
+
+private const val BAR_BELOW_FONT = 1.3f
+private const val BAR_BELOW_WIDTH_DP = 600
+
 /** 1.36 [VIL-08] 마을 V8: the kinds of a room's post, as the server takes them (ROOM_KINDS). */
 internal val ROOM_KIND_LABELS = listOf("talk" to "이야기", "question" to "질문", "tip" to "팁", "show" to "자랑")
 
@@ -1214,7 +1240,7 @@ private fun ProposalEditor(
         if (change.size < 6) TextButton(onClick = { onChange(change + blankChange()) }) { Text("한 줄 더") }
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onWithSetup(!withSetup) }, verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material3.Checkbox(checked = withSetup, onCheckedChange = onWithSetup)
-            Text("내 앱 설정(금액 빼고)을 고친 규칙으로 함께 보내요. 맞아요가 모이면 이 설정이 다음 버전이 돼요.", style = MaterialTheme.typography.bodySmall)
+            Text("내 앱 설정(금액 빼고)을 고친 규칙으로 함께 보내요. 맞아요가 모이면 이 설정이 다음 판이 돼요.", style = MaterialTheme.typography.bodySmall)
         }
         Text("금액 대신 ‘기본급의 10%’, ‘1.5배’처럼 비율로 적어 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

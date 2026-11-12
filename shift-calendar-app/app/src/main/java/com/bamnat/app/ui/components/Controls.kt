@@ -166,3 +166,30 @@ fun StepperRow(
 
 /** Narrower than this, the words and the stepper (about 200dp) cannot share a line with room for the words. */
 private val STACK_BELOW = 300.dp
+
+/**
+ * 2.0.0 [RVN-18] 검토 COMP-22-6·I10aa-05 (디자인 품질 12): two buttons side by side, one under the other with big letters (150% and up)
+ * or on a narrow screen, so neither breaks its words syllable by syllable. Each is given its [Modifier] (half the row, or the whole
+ * width); [second] null leaves [first] the row.
+ */
+@Composable
+fun PairRow(
+    modifier: Modifier = Modifier,
+    spacing: Dp = 8.dp,
+    first: @Composable (Modifier) -> Unit,
+    second: (@Composable (Modifier) -> Unit)?,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stacked = second != null && (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f || maxWidth < PAIR_STACK_BELOW)
+        if (stacked) Column(Modifier.fillMaxWidth(), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(spacing)) {
+            first(Modifier.fillMaxWidth())
+            second?.invoke(Modifier.fillMaxWidth())
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(spacing)) {
+            first(Modifier.weight(1f))
+            second?.invoke(Modifier.weight(1f))
+        }
+    }
+}
+
+/** Narrower than this, two buttons of a few words each cannot share a line. */
+private val PAIR_STACK_BELOW = 280.dp
