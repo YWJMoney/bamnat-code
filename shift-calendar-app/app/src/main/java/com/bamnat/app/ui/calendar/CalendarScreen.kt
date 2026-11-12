@@ -542,7 +542,11 @@ fun CalendarScreen(
 
     val baseMonth = BASE_MONTH
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
-    val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
+    // 2.0.0 [RVH-67] 검토 PC-25·CAL-03 (달 넘기기 느린 프레임 18%): the month everything under the head counts (the month's sums, pay,
+    // rest checks, the cards, the cells' height) is the one a turn settles on. Read from the page passing halfway, all of it was worked
+    // out again in the middle of the turn, on the frames the turn draws. The head's month follows the turn as before, read in its own
+    // scope ([header]), so a turn redraws the head only.
+    val visibleMonth = pageToMonth(baseMonth, pagerState.settledPage)
     // 2.0.0 [RVP-75] (검토 REST-18) 기능 찾기 › 이번 달 전부 넣기 opens the keypad for the month on screen, as the tool's own button does
     // (before, it opened today's sheet).
     com.bamnat.app.ui.guide.FocusedTool("typeMonth", "shift.dutyTyping") {
@@ -1106,11 +1110,14 @@ fun CalendarScreen(
             if (decorTap == null || viewingReceived != null) emptyList()
             else HeadQuick.of(decorLayer) { id -> runCatching { com.bamnat.app.logic.LogicRunner.logic(context.appContainer).button(id) }.getOrNull() }
         }
-        val header: @Composable (Modifier) -> Unit = { headerPlace -> CalendarHeader(
+        val header: @Composable (Modifier) -> Unit = { headerPlace ->
+            // [RVH-67] The month as it turns, read here: only the head is drawn again while the month turns.
+            val headMonth = if (weekOnly && !wide) YearMonth.from(selected) else pageToMonth(baseMonth, pagerState.currentPage)
+            CalendarHeader(
             modifier = headerPlace,
             quick = headQuick,
             onQuick = { id -> decorTap?.invoke(id, null) },
-            month = if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth,
+            month = headMonth,
             // [CAL-03] With one week on screen, ‹ › go a week back or on.
             onPrev = { if (weekOnly) onDateChange(selected.minusWeeks(1)) else slideToMonth(headingMonth().minusMonths(1)) },
             onNext = { if (weekOnly) onDateChange(selected.plusWeeks(1)) else slideToMonth(headingMonth().plusMonths(1)) },
@@ -1119,7 +1126,7 @@ fun CalendarScreen(
                 slideToMonth(Today.month())
             },
             // [285] Already on today: the button stays where it is, greyed, so the bar does not jump.
-            atToday = selected == Today.date() && (if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth) == Today.month(),
+            atToday = selected == Today.date() && headMonth == Today.month(),
             onPickMonth = { showMonthPicker = true },
             onRecentChanges = if (viewingReceived == null) ({ recentChangesOpen = true }) else null,
             byWeek = weekOnly,
