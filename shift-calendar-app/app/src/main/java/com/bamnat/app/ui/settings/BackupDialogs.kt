@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Icon
 import com.bamnat.app.ui.components.AlertDialog
@@ -148,18 +150,29 @@ fun UnlockBackupDialog(locked: LockedBackup, onUnlock: (CharArray) -> Unit, onDi
     )
 }
 
+/**
+ * A password typed, hidden as it is typed. 2.0.0 [RVL-41] Shared with the locked PDF's window ([com.bamnat.app.ui.imports.PdfPasswordDialog]):
+ * the eye shows what was typed (a 생년월일 is easy to mistype with no one to see), and [onDone] is the keyboard's 완료.
+ */
 @Composable
-private fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null) {
+internal fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null, onDone: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    var shown by remember { mutableStateOf(false) }
     // 총괄 검토 #458 (rvl13 200%: 칸이 글 폭보다 좁았어요): as wide as the window's words, in every window that asks for a password.
     OutlinedTextField(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         value = value,
         onValueChange = { onChange(it.take(64)) },
         label = { Text(label) },
         singleLine = true,
         isError = error != null,
         supportingText = error?.let { { Text(it) } },
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        visualTransformation = if (shown) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = onDone?.let { { it() } }),
+        trailingIcon = {
+            androidx.compose.material3.IconButton(onClick = { shown = !shown }) {
+                Icon(if (shown) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, if (shown) "암호 숨기기" else "암호 보기")
+            }
+        },
     )
 }
