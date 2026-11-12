@@ -126,11 +126,17 @@ data class RecipeDoc(
     /** 신고 2번으로 다른 분께 잠시 가려진 사진 수. */
     val photosHeld: Int = 0,
 ) {
-    /** The recipe itself, checked again on this phone: the written form hashes to what the server named it (S10). */
-    fun recipe(): Recipe {
-        val r = RecipeCodec.read(body)
-        if (RecipeCodec.hash(r) != hash) throw com.bamnat.core.recipe.RecipeException("hash")
-        return r
+    /** The recipe itself, checked again on this phone (S10), as far as this app knows it ([read]). */
+    fun recipe(): Recipe = read().recipe
+
+    /**
+     * 2.0.0 [RVS-05] (검토 RCP-07·SD-03): the text that came is the text the server named ([hash] is the SHA-256 of [body] as served),
+     * then read as far as this app knows it ([RecipeCodec.readSoft]). Before, the work was read first and its rewritten form hashed, so
+     * a field only a newer app knew was dropped on reading and the work failed as '오는 길에 바뀌었어요' though nothing had changed.
+     */
+    fun read(): RecipeCodec.Soft {
+        if (RecipeCodec.sha256(body) != hash) throw com.bamnat.core.recipe.RecipeException("hash")
+        return RecipeCodec.readSoft(body)
     }
 }
 

@@ -30,11 +30,32 @@ object RecipeCodec {
     val CODE = Regex("^[2-9A-HJ-NP-Z]{8}$")
 
     /** [text] as a clean recipe, or [RecipeException] with why. */
-    fun read(text: String): Recipe {
+    fun read(text: String): Recipe = clean(parse(text))
+
+    /**
+     * 2.0.0 [RVS-05] 받는 쪽 읽기 (검토 SD-03·RCP-07·U09b-12): a work that came from the server (its text already checked against its
+     * hash), read as far as this app knows it. What [read] would refuse the whole work for, a name only a newer app knows (a part, a
+     * state, a 꾸밈 날, a font, a motion, a fill, a choice, a field, a kind of piece), is left out here and named in [Soft.skipped]:
+     * an optional field, or one item of a list, or (when a field it must have fails) the piece. The rest is checked exactly as [read]
+     * does, so nothing a maker could not send gets in. The server lists a work only to apps that read it whole (parts-since.js);
+     * this is for what still gets through (a link, a phone that kept an older list, a server not yet updated).
+     * Never for a work being made or sent: the studio and the upload use [read].
+     */
+    fun readSoft(text: String): Soft {
+        val skipped = ArrayList<String>()
+        return Soft(clean(parse(text), skipped), skipped)
+    }
+
+    /** What [readSoft] read: the work as far as this app knows it, and the paths it left out (empty when it read the whole work). */
+    class Soft(val recipe: Recipe, val skipped: List<String>) {
+        /** How many things the work has that only a newer app draws (a piece, a field or a list's line each). */
+        val left: Int get() = skipped.size
+    }
+
+    private fun parse(text: String): Any? {
         if (RecipePlatform.utf8(text).size > MAX_BYTES) throw RecipeException("too_big")
         if (depth(text) > MAX_DEPTH) throw RecipeException("too_deep")
-        val raw = try { Json.parse(text) } catch (e: Exception) { throw RecipeException("json") }
-        return clean(raw)
+        return try { Json.parse(text) } catch (e: Exception) { throw RecipeException("json") }
     }
 
     /** How deep [text]'s objects and arrays go, counted before parsing so a deep one costs nothing (S2). */
@@ -61,8 +82,9 @@ object RecipeCodec {
         return max
     }
 
+    /** [raw] (parsed JSON) as a clean recipe. With [soft] ([readSoft]), what this app does not know is left out and its path added there. */
     @Suppress("UNCHECKED_CAST")
-    fun clean(raw: Any?): Recipe {
+    fun clean(raw: Any?, soft: MutableList<String>? = null): Recipe {
         val m = raw as? Map<String, Any?> ?: throw RecipeException("format")
         if (m["format"] != Recipe.FORMAT) throw RecipeException("format", "format")
         val v = (m["v"] as? Long) ?: throw RecipeException("version", "v")
@@ -79,17 +101,18 @@ object RecipeCodec {
             }
         if (tokens.map { it.name }.toSet().size != tokens.size) throw RecipeException("tokens", "tokens")
         val inputs = (m["inputs"] as? List<Any?> ?: emptyList()).also { if (it.size > MAX_INPUTS) throw RecipeException("inputs", "inputs") }
-            .mapIndexed { i, o -> input(o, "inputs.$i") }
+            .mapIndexedNotNull { i, o -> softly(soft, "inputs.$i") { input(o, "inputs.$i") } }
         if (inputs.map { it.id }.toSet().size != inputs.size) throw RecipeException("inputs", "inputs")
-        val ctx = Ctx(inputs.associateBy { it.id }, tokens.map { it.name }.toSet())
+        val ctx = Ctx(inputs.associateBy { it.id }, tokens.map { it.name }.toSet(), soft)
         val rawPieces = m["pieces"] as? List<Any?> ?: throw RecipeException("pieces", "pieces")
         if (rawPieces.size > MAX_PIECES) throw RecipeException("pieces", "pieces")
         val seen = HashSet<PieceKind>()
         val pieces = rawPieces.mapIndexedNotNull { i, p ->
             val o = p as? Map<String, Any?> ?: throw RecipeException("pieces", "pieces.$i")
-            val kind = PieceKind.of(o["kind"] as? String ?: "") ?: return@mapIndexedNotNull null // a kind this app does not know
+            // A kind this app does not know is left out, in both readings (the work still opens); [readSoft] says so.
+            val kind = PieceKind.of(o["kind"] as? String ?: "") ?: return@mapIndexedNotNull null.also { soft?.add("pieces.$i") }
             if (!seen.add(kind)) throw RecipeException("pieces", "pieces.$i")
-            Piece(kind, fields(kind.fields, o, "pieces.$i", ctx))
+            softly(soft, "pieces.$i") { Piece(kind, fields(kind.fields, o, "pieces.$i", ctx)) }
         }
         if (pieces.isEmpty()) throw RecipeException("pieces", "pieces")
         val fits = pieces.flatMapTo(HashSet()) { it.kind.styles }
@@ -113,7 +136,15 @@ object RecipeCodec {
         return Recipe(title, summary, desc, styles, cover, tokens, inputs.filter { it.id in used || it.label in named }, pieces, parent)
     }
 
-    private class Ctx(val inputs: Map<String, Input>, val tokens: Set<String>)
+    private class Ctx(val inputs: Map<String, Input>, val tokens: Set<String>, val soft: MutableList<String>? = null)
+
+    /** [read]: [block], or its [RecipeException]. [readSoft] ([soft] given): [block], or null with [path] noted (once, not what is in it). */
+    private inline fun <T> softly(soft: MutableList<String>?, path: String, block: () -> T): T? =
+        if (soft == null) block() else try { block() } catch (e: RecipeException) {
+            soft.removeAll { it.startsWith("$path.") }
+            soft += path
+            null
+        }
 
     private fun collectInputs(v: Any?, into: MutableSet<String>) {
         when (v) {
@@ -189,8 +220,11 @@ object RecipeCodec {
     private val TIME = Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")
 
     @Suppress("UNCHECKED_CAST")
-    private fun fields(schema: List<Field>, o: Map<String, Any?>, path: String, ctx: Ctx): Map<String, Any?> {
+    private fun fields(schema: List<Field>, o: Map<String, Any?>, path: String, ctx: Ctx, item: Boolean = false): Map<String, Any?> {
         val out = LinkedHashMap<String, Any?>()
+        // [RVS-05] A field only a newer app knows is dropped in both readings (an older app's hash then differs: RCP-07); [readSoft]
+        // names it. Soft reading never keeps less than [read] does, so a work [read] takes is the same work either way.
+        ctx.soft?.let { s -> o.keys.filter { k -> k != "kind" && schema.none { it.key == k } }.sorted().forEach { s += "$path.$it" } }
         for (f in schema) {
             val p = "$path.${f.key}"
             val v = o[f.key]
@@ -198,38 +232,43 @@ object RecipeCodec {
                 if (!f.optional) throw RecipeException("missing", p)
                 continue
             }
-            val r = ref(f, v, p, ctx)
-            if (r != null) {
-                out[f.key] = r
-                continue
-            }
-            val value: Any? = when (f) {
-                is Field.Text -> text(v, f.max, p, f.min, f.lines, f.guard).also { t ->
-                    f.check?.invoke(t)?.let { throw RecipeException(it, p) }
-                }.takeUnless { it.isEmpty() && f.optional }
-                is Field.Num -> number(v, f.decimals, p).also { if (it.toDouble() < f.lo || it.toDouble() > f.hi) throw RecipeException("range", p) }
-                is Field.Money -> (v as? Long ?: throw RecipeException("number", p)).also { if (it < f.lo || it > f.hi) throw RecipeException("range", p) }
-                is Field.Color -> color(v, p)
-                is Field.Emoji -> (v as? String)?.let(RecipeText::oneEmoji) ?: throw RecipeException("emoji", p)
-                is Field.Flag -> v as? Boolean ?: throw RecipeException("flag", p)
-                is Field.Pick -> (v as? String)?.takeIf { it in f.values } ?: throw RecipeException("pick", p)
-                is Field.Clock -> (v as? String)?.takeIf { TIME.matches(it) } ?: throw RecipeException("time", p)
-                is Field.Texts -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max) throw RecipeException("list", p) }
-                    .mapIndexed { i, t -> text(t, f.itemMax, "$p.$i", min = 1) }.takeUnless { it.isEmpty() && f.optional }
-                is Field.Nums -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max) throw RecipeException("list", p) }
-                    .mapIndexed { i, n -> number(n, f.decimals, "$p.$i").also { if (it.toDouble() < f.lo || it.toDouble() > f.hi) throw RecipeException("range", "$p.$i") } }
-                    .distinct().takeUnless { it.isEmpty() && f.optional }
-                is Field.Days -> (v as? List<Any?> ?: throw RecipeException("list", p)).map { d ->
-                    (d as? String)?.takeIf { it in PieceKind.DAYS } ?: throw RecipeException("pick", p)
-                }.distinct().sortedBy { PieceKind.DAYS.indexOf(it) }
-                is Field.Items -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max || it.size < f.min) throw RecipeException("list", p) }
-                    .mapIndexed { i, item -> fields(f.fields, item as? Map<String, Any?> ?: throw RecipeException("list", "$p.$i"), "$p.$i", ctx) }
-                    .also { list -> f.check?.invoke(list)?.let { throw RecipeException(it, p) } }
-                    .takeUnless { it.isEmpty() && f.optional }
-            }
+            // [RVS-05] Soft: an optional field of a piece this app cannot read is left out (the piece draws as if it were not set); one
+            // the piece must have takes the piece with it, and anything in a list's line takes the line (a line's `on` names its state).
+            val value: Any? = if (ctx.soft != null && f.optional && !item) softly(ctx.soft, p) { field(f, v, p, ctx) } ?: continue else field(f, v, p, ctx)
             if (value != null) out[f.key] = value
         }
         return out
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun field(f: Field, v: Any, p: String, ctx: Ctx): Any? {
+        ref(f, v, p, ctx)?.let { return it }
+        return when (f) {
+            is Field.Text -> text(v, f.max, p, f.min, f.lines, f.guard).also { t ->
+                f.check?.invoke(t)?.let { throw RecipeException(it, p) }
+            }.takeUnless { it.isEmpty() && f.optional }
+            is Field.Num -> number(v, f.decimals, p).also { if (it.toDouble() < f.lo || it.toDouble() > f.hi) throw RecipeException("range", p) }
+            is Field.Money -> (v as? Long ?: throw RecipeException("number", p)).also { if (it < f.lo || it > f.hi) throw RecipeException("range", p) }
+            is Field.Color -> color(v, p)
+            is Field.Emoji -> (v as? String)?.let(RecipeText::oneEmoji) ?: throw RecipeException("emoji", p)
+            is Field.Flag -> v as? Boolean ?: throw RecipeException("flag", p)
+            is Field.Pick -> (v as? String)?.takeIf { it in f.values } ?: throw RecipeException("pick", p)
+            is Field.Clock -> (v as? String)?.takeIf { TIME.matches(it) } ?: throw RecipeException("time", p)
+            is Field.Texts -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max) throw RecipeException("list", p) }
+                .mapIndexed { i, t -> text(t, f.itemMax, "$p.$i", min = 1) }.takeUnless { it.isEmpty() && f.optional }
+            is Field.Nums -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max) throw RecipeException("list", p) }
+                .mapIndexed { i, n -> number(n, f.decimals, "$p.$i").also { if (it.toDouble() < f.lo || it.toDouble() > f.hi) throw RecipeException("range", "$p.$i") } }
+                .distinct().takeUnless { it.isEmpty() && f.optional }
+            is Field.Days -> (v as? List<Any?> ?: throw RecipeException("list", p)).map { d ->
+                (d as? String)?.takeIf { it in PieceKind.DAYS } ?: throw RecipeException("pick", p)
+            }.distinct().sortedBy { PieceKind.DAYS.indexOf(it) }
+            is Field.Items -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max || it.size < f.min) throw RecipeException("list", p) }
+                // [RVS-05] Soft: a line this app cannot read (a newer part, state or 꾸밈 날) is left out, and the rest kept.
+                .mapIndexedNotNull { i, item -> softly(ctx.soft, "$p.$i") { fields(f.fields, item as? Map<String, Any?> ?: throw RecipeException("list", "$p.$i"), "$p.$i", ctx, item = true) } }
+                .also { if (it.size < f.min) throw RecipeException("list", p) }
+                .also { list -> f.check?.invoke(list)?.let { throw RecipeException(it, p) } }
+                .takeUnless { it.isEmpty() && f.optional }
+        }
     }
 
     /** [v] as a reference to an input or a token, where [f] may hold one; null when [v] is a plain value. */
