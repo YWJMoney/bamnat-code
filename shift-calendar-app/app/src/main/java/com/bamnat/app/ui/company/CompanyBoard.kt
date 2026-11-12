@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
@@ -385,7 +386,7 @@ fun VoteButtons(
  * [COMM-06] The talk on one rule set, in a sheet: each writer is only 참여자 N of this talk, with what
  * they said about it. Writing asks for no name, and the server refuses contacts and amounts.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TalkSheet(holder: TalkHolder) {
     val open by holder.open.collectAsStateWithLifecycle()
@@ -472,18 +473,10 @@ fun TalkSheet(holder: TalkHolder) {
             // 1.36 [VIL-11] 이번 주 이야기 주제.
             o.talk?.topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp)) }
-            // [TOWN-05] 1.37 (후보 26, PC 확인: 회사 토론에서 투표가 무엇을 하는지 몰라요): what 맞아요·달라요 do on a company's rule talk.
-            if (!o.room) Text(holder.voteLine(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 4.dp))
-            Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 8.dp)) {
-                Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(6.dp))
-                Text((if (styleRoom) "다른 분께는 마을 이름(없으면 ‘참여자 번호’)으로 보여요. " else "다른 분께는 ‘참여자 번호’로만 보여요. ") +
-                    "이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                RulesLink()
-            }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 2.0.0 [RVN-06] COMP-08 디자인 품질 1·12: the how-to lines scroll with the posts instead of standing above them; at 200%
+                // they filled the sheet, the posts were not seen at all and the box to write in was squeezed shut (no hint, no room).
+                TalkHowTo(if (o.room) null else holder.voteLine(), styleRoom)
                 val talk = o.talk
                 // [SPD-13] The talk kept on the phone is on screen while it is read again.
                 if (talk != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::reload)
@@ -581,7 +574,15 @@ fun TalkSheet(holder: TalkHolder) {
                     // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
                     // 1.36 [VIL-08] 마을 V8: a room's post is 이야기 · 질문 · 팁 · 자랑.
                     val kinds = if (o.room) ROOM_KIND_LABELS else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")
-                    androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                    // 2.0.0 [RVN-06] 디자인 품질 12: at 200% the bar cut '고치자는 제안' to '고치자' (and a room's four kinds the same way);
+                    // with big letters the kinds are chips that go on to a second line instead.
+                    if (com.bamnat.app.ui.components.bigLetters()) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        kinds.forEach { (k, label) ->
+                            com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null },
+                                label = { Text(label) }, modifier = Modifier.heightIn(min = 48.dp))
+                        }
+                    } else androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 2.dp)) {
                         kinds.forEachIndexed { i, (k, label) ->
                             SegmentedButton(selected = kind == k, onClick = { kind = k; error = null },
                                 shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(i, kinds.size),
@@ -754,6 +755,43 @@ private fun ProposalRedoSheet(holder: TalkHolder, company: String, setup: String
     )
 }
 
+/**
+ * [TOWN-05] What 맞아요·달라요 do on a company's rule talk ([vote], null in a room) and the 참여자 번호 note, at the top of the posts.
+ * 2.0.0 [RVN-06] COMP-08 디자인 품질 4·12: from 130% text they fold to one line with ⓘ (펼치면 다 보여요), and 운영 규칙 보기 sits under
+ * the words rather than beside them, where it squeezed them to a word a line.
+ */
+@Composable
+private fun TalkHowTo(vote: String?, styleRoom: Boolean) {
+    val big = com.bamnat.app.ui.components.bigLetters()
+    var open by rememberSaveable { mutableStateOf(false) }
+    val note = (if (styleRoom) "다른 분께는 마을 이름(없으면 ‘참여자 번호’)으로 보여요. " else "다른 분께는 ‘참여자 번호’로만 보여요. ") +
+        "이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요."
+    if (big && !open) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "펼치기") { open = true },
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Info, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(6.dp))
+            Text(if (vote != null) "투표와 글 쓰는 규칙" else "글 쓰는 규칙", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        vote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        Row(verticalAlignment = Alignment.Top) {
+            Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(6.dp))
+            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            if (!big) RulesLink()
+        }
+        if (big) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            RulesLink()
+            TextButton(onClick = { open = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
+        }
+    }
+}
+
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PostRow(
@@ -800,14 +838,17 @@ private fun PostRow(
             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
         // 2.0.0 [RVN-06] COMP-08 이름·시각·⋮ 한 줄(⋮는 늘 끝), 표식·칩은 둘째 줄: 이름과 칩이 길면 ⋮(신고·안 보기)가 밀려 사라졌어요.
         val name = p.nick ?: "참여자 ${p.who}"
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
-            val maker = p.maker
-            com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
-                onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
-                modifier = Modifier.weight(1f, fill = false), maxLines = 1)
-            Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            Spacer(Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every post (a name with
+            // fill = false beside a weighted spacer took half the row and moved the ⋮ with the name's length).
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
+                val maker = p.maker
+                com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
+                    onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
+                    modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+                Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            }
             Box {
                 // [J133-70] 1.33 (실사용 테스트: 손가락에 작은 단추, 메뉴를 그냥 닫는 줄이 없었어요): a finger-sized button and a 닫기 line.
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(20.dp)) } // [RVP-10] 48dp

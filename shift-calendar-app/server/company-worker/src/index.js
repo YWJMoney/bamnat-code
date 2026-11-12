@@ -3868,7 +3868,8 @@ async function forgetMine(request, env) {
   const dev = await deviceHash(device);
   // [PLZ-04] Adopted rules and the posts that proposed them stay, cut loose from this install (결정 D34).
   const gone = `gone${randomId(12)}`;
-  await batch(env, [
+  // 2.0.0 [RVN-09] U10b-04 the adopted rules and 시세 that stay are counted, so the phone's receipt says what is left as well as what went.
+  const [, adoptedRules, , , , , , , , , , adoptedRates] = await batch(env, [
     stmt(env, `UPDATE posts SET device = ?2 WHERE device = ?1 AND report_id IN (SELECT id FROM reports WHERE device = ?1 AND status = 'adopted')`, dev, gone),
     stmt(env, "UPDATE reports SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     // [PLZ-01] Their votes on posts come off the posts' counts.
@@ -3940,6 +3941,7 @@ async function forgetMine(request, env) {
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes,
     // 1.36 [INQ-07] how many of those the law keeps with the developer, said on the phone.
     ...(kept.meta.changes ? { inquiriesKept: kept.meta.changes } : {}),
+    ...(adoptedRules.meta.changes ? { adoptedKept: adoptedRules.meta.changes } : {}), ...(adoptedRates.meta.changes ? { ratesKept: adoptedRates.meta.changes } : {}),
     ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
 }
 

@@ -1201,7 +1201,8 @@ class CompanyClient(
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
         ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"), inquiriesKept = o.optInt("inquiriesKept"),
-            recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"))
+            recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"),
+            adoptedKept = o.optInt("adoptedKept"), ratesKept = o.optInt("ratesKept"))
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
@@ -1313,8 +1314,10 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
     val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0,
     /** 1.39 [PRIV-06] 공유 서버: links cut with this phone's keys, and those left for want of a connection. */
     val links: Int = 0, val linksLeft: Int = 0,
-    /** 2.0.0 [RVN-09] COMP-42COMP-43 광장 바로 알림 and 저절로 나누기 were on and went off with the rest (the phone's, not the server's). */
-    val alertsOff: Boolean = false, val autoShareOff: Boolean = false) {
+    /** 2.0.0 [RVN-09] COMP-42·43 광장 바로 알림 and 저절로 나누기 were on and went off with the rest (the phone's, not the server's). */
+    val alertsOff: Boolean = false, val autoShareOff: Boolean = false,
+    /** 2.0.0 [RVN-09] U10b-04 채택된 규칙·시세 that stay for the people using them, cut loose from this phone. */
+    val adoptedKept: Int = 0, val ratesKept: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
@@ -1325,9 +1328,12 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
         val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
+        val stay = listOfNotNull("채택된 규칙 ${adoptedKept}개".takeIf { adoptedKept > 0 }, "채택된 시세 ${ratesKept}개".takeIf { ratesKept > 0 })
+        val stayLine = if (stay.isEmpty()) "" else ". ${stay.joinToString("·")}는 다른 분들이 쓰고 있어 남고, 나와의 연결만 지웠어요"
         val off = listOfNotNull("광장 바로 알림".takeIf { alertsOff }, "저절로 나누기".takeIf { autoShareOff })
         val offLine = if (off.isEmpty()) "" else ". ${off.joinToString("과 ")}도 껐어요. 설정에서 다시 켤 수 있어요"
-        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left + offLine
+        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) +
+            stayLine + left + offLine
     }
 }
 

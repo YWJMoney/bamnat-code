@@ -142,5 +142,23 @@ class N200CompanyTrustTest {
             ForgetCounts(posts = 2, alertsOff = true, autoShareOff = true).words())
         assertEquals("서버에 지울 것이 없었어요. 저절로 나누기도 껐어요. 설정에서 다시 켤 수 있어요", ForgetCounts(autoShareOff = true).words())
         assertEquals("서버에 지울 것이 없었어요", ForgetCounts().words())
+        // U10b-04 what stays is said as well as what went.
+        assertEquals("보낸 규칙 1을 지웠어요. 채택된 규칙 2개·채택된 시세 1개는 다른 분들이 쓰고 있어 남고, 나와의 연결만 지웠어요",
+            ForgetCounts(reports = 1, adoptedKept = 2, ratesKept = 1).words())
+    }
+
+    /** COMP-03 Posts that slid off a refreshed first page go down into the older ones once older pages were read. */
+    @Test fun refreshedFirstPageKeepsWhatSlidOff() {
+        val t0 = java.time.Instant.parse("2026-11-10T00:00:00Z")
+        fun post(id: String, h: Long, parent: String? = null) = TalkPost(id, 1, null, false, id, t0.plusSeconds(h * 3600), false, parent = parent)
+        val before = listOf(post("p5", 5), post("p4", 4), post("p3", 3), post("a3", 3, parent = "p3"))
+        val older = listOf(post("p2", 2), post("p1", 1))
+        // Two new posts on top: p3 and its answer fall off the first page, between it and the older pages.
+        val fresh = listOf(post("p7", 7), post("p6", 6), post("p5", 5), post("p4", 4))
+        assertEquals(listOf("p3", "a3", "p2", "p1"), com.bamnat.app.ui.company.PlazaHomeViewModel.keepBetween(before, fresh, older).map { it.id })
+        // Nothing read below the first page yet: nothing to keep (지난 글 더 보기 brings them).
+        assertEquals(emptyList<TalkPost>(), com.bamnat.app.ui.company.PlazaHomeViewModel.keepBetween(before, fresh, emptyList()))
+        // A post gone from the server (newer than the new page's oldest) is not brought back.
+        assertEquals(listOf("p2", "p1"), com.bamnat.app.ui.company.PlazaHomeViewModel.keepBetween(before, listOf(post("p6", 6), post("p5", 5), post("p3", 3), post("a3", 3, parent = "p3")), older).map { it.id })
     }
 }

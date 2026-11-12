@@ -4,6 +4,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -387,7 +388,7 @@ internal class FeedMenu(val onFlag: (TalkPost) -> Unit, val onHide: (TalkPost) -
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOpen: () -> Unit, onVote: (Boolean?) -> Unit,
+internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOpen: () -> Unit, onVote: (Boolean?) -> Unit,
     /** PC 4차 c0ca3d9f: '답 남기기'·'환영 답 남기기' open the sheet with the answer box on this post. */
     onReply: () -> Unit = onOpen) {
     var reveal by rememberSaveable(p.id) { mutableStateOf(false) }
@@ -396,14 +397,16 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOpe
     SoftCard {
         Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "신고된 글 펼쳐 보기" else "이 글 보기") { if (folded) reveal = true else onOpen() }
             .padding(start = 14.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val maker = p.maker
-                // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
-                com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
-                    onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
-                    modifier = Modifier.weight(1f, fill = false), maxLines = 1)
-                Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                Spacer(Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every card.
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    val maker = p.maker
+                    // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
+                    com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
+                        onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
+                        modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+                    Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
                 FeedMenuButton(p, menu)
             }
             val kindChip = when (p.kind) {
@@ -438,11 +441,12 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOpe
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("이의 제기") }
                 }
             }
-            if (p.hidden == null) Row(Modifier.padding(end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (!p.mine) MeToo(p.agree, p.myVote, onVote)
+            // 2.0.0 [RVN-06] 디자인 품질 12: at 200% '아직 답이 없어요 · 답 남기기' stood beside 나도요 a word a line; it now goes under it.
+            if (p.hidden == null) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(end = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                if (!p.mine) Box(Modifier.align(Alignment.CenterVertically)) { MeToo(p.agree, p.myVote, onVote) }
                 else Text("🙋 나도요 ${p.agree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp))
-                Spacer(Modifier.weight(1f))
+                    modifier = Modifier.align(Alignment.CenterVertically).padding(horizontal = 8.dp))
                 val helped = p.answer != null
                 Text(when {
                     answers.isEmpty() && p.first && !p.mine -> "첫 글이에요 · 환영 답 남기기"

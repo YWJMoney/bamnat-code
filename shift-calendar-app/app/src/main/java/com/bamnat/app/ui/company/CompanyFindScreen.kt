@@ -849,13 +849,21 @@ internal fun PhaseSheet(
                 Text("조를 고르면 아래에서 그 조의 줄이 골라져요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // 2.0.0 [RVN-08] 디자인 품질 12: at 200% the week's seven badges grew past their cells and ran into one bar, and '오늘' stood
+            // on two lines. The grid is a picture of the order (each row's spoken name says every day in full, and '바뀌는 것' below
+            // keeps the whole text size), so its letters stop at 130% and the badges drop their icon once the text is big.
+            val base = androidx.compose.ui.platform.LocalDensity.current
+            val bigText = base.fontScale > WEEK_GRID_ICON_SCALE
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides
+                androidx.compose.ui.unit.Density(base.density, base.fontScale.coerceAtMost(WEEK_GRID_MAX_SCALE))) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 8.dp, top = 4.dp)) {
                 (0 until 7).forEach { d ->
                     val day = today.plusDays(d.toLong())
                     Text(if (d == 0) "오늘" else Fmt.dayOfWeekShort(day.dayOfWeek), style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (d == 0) FontWeight.Bold else FontWeight.Normal,
                         color = if (d == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                        textAlign = TextAlign.Center, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
                 }
             }
             phases.options.forEachIndexed { row, o ->
@@ -883,10 +891,12 @@ internal fun PhaseSheet(
                     RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(horizontal = 10.dp))
                     o.days.forEach { t ->
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            ShiftBadge(t, size = 30.dp, text = t?.label ?: "휴", outlined = t == null || t.isOff)
+                            ShiftBadge(t, size = 30.dp, text = t?.label ?: "휴", outlined = t == null || t.isOff, showIcon = !bigText)
                         }
                     }
                 }
+            }
+            }
             }
             if (changes != null) SetupChanges(changes, replacing)
             else if (replacing) {
@@ -904,6 +914,12 @@ internal fun PhaseSheet(
         }
     }
 }
+
+/** 2.0.0 [RVN-08] How large the letters of the '오늘은 어떤 근무예요?' week grid grow (seven badges share one row). */
+private const val WEEK_GRID_MAX_SCALE = 1.3f
+
+/** 2.0.0 [RVN-08] Past this text size the week grid's badges show their letter without the icon, so seven fit in a row. */
+private const val WEEK_GRID_ICON_SCALE = 1.15f
 
 /** [PLAZA-02][PLAZA-05] What the compare sheet shows: [setup] is the second one, ready to apply; [back] for a past version. */
 private data class Compare(

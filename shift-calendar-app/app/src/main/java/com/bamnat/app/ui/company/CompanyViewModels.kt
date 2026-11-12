@@ -1088,7 +1088,10 @@ class CompanyBoardViewModel(
             val done = try {
                 val b = c.companyApi.board(adopted, from, q, fl.job, fl.region, fl.sort)
                 if (from == 0) cache.keepBoard(key, b)
-                f.value.copy(items = (if (from == 0) emptyList() else f.value.items) + b.items, next = b.next, loading = false, fromCache = false)
+                // 2.0.0 [RVN-12] COMP-04 A rule that moved between pages (new votes reorder them) came twice, and two rows with one
+                // key closed the app: each rule once, where it was first.
+                f.value.copy(items = ((if (from == 0) emptyList() else f.value.items) + b.items).distinctBy { it.companyId to it.setup },
+                    next = b.next, loading = false, fromCache = false)
             } catch (e: CompanyException) {
                 val shown = f.value.items.isNotEmpty()
                 f.value.copy(loading = false, error = if (shown) null else companyProblem(e), stale = shown && from == 0)
