@@ -1,0 +1,28 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E10 위젯",
+ "summary": "위젯 칸 투명도 40, 그라데이션, 그림자",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "id": "widget.cell",
+     "alpha": 40,
+     "paint": "lg.180.FFC5CAE9,FFE8EAF6",
+     "shadow": 6
+    }
+   ]
+  }
+ ]
+}

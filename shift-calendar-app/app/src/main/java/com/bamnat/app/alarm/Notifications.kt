@@ -221,7 +221,7 @@ object Notifications {
             group = GROUP_MONEY
         }
         val roster = NotificationChannel(ROSTER_CHANNEL_ID, "받은 근무표 바뀜", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "리더가 팀 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
+            description = "보낸 분이 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
             group = GROUP_DAY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }

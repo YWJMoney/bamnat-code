@@ -10,6 +10,7 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoRepeat
 import com.bamnat.core.memo.MemoSharing
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -153,6 +154,16 @@ class MemoRepository(
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return null
         return save(Memo(date = date, body = trimmed, calendars = calendars))
+    }
+
+    /**
+     * 2.0.0 [RVL-19] (검토 SCAN-12) [addQuick] unless [date] already has a memo with the same line: the same roster put in again
+     * does not leave a second '듀티표 표시' memo.
+     */
+    suspend fun addQuickOnce(date: LocalDate, text: String, calendars: Set<String> = emptySet()): Memo? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || memosOn(date).first().any { it.body.trim() == trimmed }) return null
+        return addQuick(date, trimmed, calendars)
     }
 
     /** Copies a memo (as a new, unpinned memo) and returns the copy. */
