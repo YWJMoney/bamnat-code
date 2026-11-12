@@ -124,7 +124,7 @@ internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 /** [ALRM-21] 1.35: the row in 설정 › 알람 › 울리는 방식. */
 internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
 /** [PRF-05] 1.36 PC 사용성 P8: the row in 설정 › 개인정보. */
-internal const val SENT_ROW = "내가 보낸 정보·모두 지우기"
+internal const val SENT_ROW = "내가 보낸 정보 보기"
 
 /** PC e20cfe53: where a search result lives, starting with 설정 once ("설정 › 도움말과 문의", never "설정 › 설정 › …"). */
 internal fun settingsPath(where: String): String =
@@ -378,11 +378,11 @@ internal object SettingsIndex {
         row(C, "큰 지출을 근무 시간으로", "근무 시간 환산", "몇 시간 일한 돈", "시급으로 보기", "공수"), // 1.37 [LEDH-07]
         row(C, "위젯에 메모 보이기", "위젯", "홈 화면", "메모 첫 줄", "위젯 메모"), // [DAILY-01]
         row(C, "메모 공유", "달력별 메모", "메모 함께 보기", "메모 따로", "공용 메모"), // [MEMO-02]
-        row(C, "날짜를 누르면", "미리보기", "하루 화면", "그 주만 보기", "바로 크게"),
+        // 2.0.0 [RVO-21] 검토 U11a-19: '한 번 눌러 고르기'·'달력 아래 하루 카드' are choices of this one row now.
+        row(C, DAY_TAP_ROW, "미리보기", "하루 화면", "그 주만 보기", "바로 크게", "한 번 눌러 고르기", "한 번 눌러 선택", "두 번 눌러 열기",
+            "잘못 눌러 열림", "고르기만", "달력 아래 하루 카드", "아래 카드", "하루 카드"),
         // B 1.32 [CALX-04]
         row(C, "달력만 보기", "카드 숨기기", "달력만", "요소 끄기", "화면 단순하게", "깔끔하게"),
-        // B 1.32 [CALX-03]
-        row(C, "한 번 눌러 고르기", "한 번 눌러 선택", "두 번 눌러 열기", "잘못 눌러 열림", "고르기만"),
         row(C, "하루 화면 순서", "순서 바꾸기", "하루 화면"),
         row(D, "백업 저장", "백업", "휴대폰 바꾸기", "옮기기", "암호", "저장"),
         row(D, "백업 안 한 지 30일 알림", "백업 알림", "마지막 백업", "백업 언제", "기록 잃어버림"), // 1.32 [STAB-08]

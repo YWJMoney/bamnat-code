@@ -5,6 +5,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.appContainer
 import com.bamnat.app.company.InquiryKind
 import com.bamnat.app.data.PersonalCalendar
+import com.bamnat.core.work.words
 
 /** [UX-05] What a help answer's button opens: a screen, a group of settings at a row, or a tab. */
 sealed interface HelpAction {
@@ -205,7 +206,9 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "widget", "위젯", "홈 화면에 근무표를 띄우고 싶어요",
-            "홈 화면 빈 곳을 길게 누르고 ‘위젯’에서 밤낮을 찾아요. ‘오늘’, ‘이번 주’, ‘한 달 달력’, ‘다음 일정까지’가 있고, 교대 근무표면 ‘오늘 모든 조’도 있어요. " +
+            // 2.0.0 [RVO-23] 검토 SET-14: the widgets the phone lists (AndroidManifest, nine), not the first four.
+            "홈 화면 빈 곳을 길게 누르고 ‘위젯’에서 밤낮을 찾아요. ‘오늘’, ‘이번 주’, ‘한 달 달력’, ‘다음 일정까지’, ‘오늘 쓸 돈’, ‘할 일’, ‘할 일 한 줄’, " +
+                "‘밤낮 단추’가 있고, 교대 근무표면 ‘오늘 모든 조’도 있어요. " +
                 "배달·대리 달력은 오늘 위젯의 ‘+1건’, 현장 일당 달력은 ‘오늘 1공’을 바로 눌러 적어요(기능 켜고 끄기 › 위젯 +1건·오늘 1공에서 꺼요).",
             listOf("위젯", "홈 화면", "바탕화면", "잠금 화면에"),
             listOf("달력"),
@@ -272,7 +275,8 @@ internal object HelpFaq {
         ),
         // [DAILY-01][BACK-01][DAILY-16][INV-34] 1.22: on by default, and how to turn each off (S10).
         HelpTopic(
-            "defaultsOff", "끄는 법", "1.22에 새로 켜진 기능을 끄고 싶어요",
+            // 2.0.0 [RVO-23] 검토 SET-14: no version in the question (1.22 means nothing to someone who came later).
+            "defaultsOff", "끄는 법", "처음부터 켜져 있는 기능을 끄고 싶어요",
             "끄는 법: 위젯 메모 줄은 설정 › 화면과 글자 › ‘위젯에 메모 보이기’, 백업 속 사진은 설정 › 데이터 › ‘사진도 백업’, " +
                 "급여 화면의 광장 시세 카드는 설정 › 급여와 연차 › ‘광장 시세와 내 단가 견주기’, 투자 월말 요약은 투자 › ⋮ › 목표와 수익률 › ‘월말 요약 알림’에서 꺼요. " +
                 "돈·메모 화면의 카드는 각 화면의 ‘화면 꾸미기’에서 숨겨요.",
@@ -329,10 +333,11 @@ internal object HelpFaq {
         HelpTopic(
             "plaza", "광장", "광장에서 불쾌한 글을 봤어요. 그 사람 글을 안 보고 싶어요",
             "글 옆 ⋮에서 ‘신고’를 누르면 운영자가 확인하고, ‘이 사람 글 안 보기’를 누르면 그 사람 글이 이 휴대폰에서 바로 사라져요. " +
-                "가린 사람은 광장 › 내 활동 › ‘가린 사람’에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
+                "가린 사람은 마을 › 광장 › 내 활동 › ‘가린 사람’에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
             listOf("광장", "차단", "가리기", "안 보기", "신고", "욕설", "운영 규칙"),
             listOf("광장", "회사 규칙 광장"),
-            "밤낮 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "밤낮 소식"),
+            // 2.0.0 [RVO-23] 검토 SET-14: the button goes where the answer sends someone (가린 사람), not to the notices.
+            "광장 열기" to HelpAction.Go(SettingsGo.BOARD),
         ),
         // [STAT-01] 1.22.0: what 사용 통계 sends, and that it stays off without a yes.
         HelpTopic(
@@ -432,7 +437,7 @@ internal object HelpFaq {
         HelpTopic(
             "creatorProfile", "마을", "내 프로필과 팔로잉은 어디서 보나요? 차단·지우기는요?",
             "팔로우한 분은 마을 › 광장·장터 맨 위 얼굴 줄에 모이고, 새 작품이 오면 얼굴에 테두리가 생겨요. 맨 앞 내 얼굴은 내 프로필(최근 알림, 소개, 대표 작품, 작품 통계)이에요. " +
-                "분마다 알림만 끄거나 차단할 수 있고(프로필 ⋮), 차단은 사람들 › 차단에서 풀어요. 모두 지우려면 설정 › 개인정보·앱 정보 › 내가 보낸 정보·모두 지우기예요.",
+                "분마다 알림만 끄거나 차단할 수 있고(프로필 ⋮), 차단은 사람들 › 차단에서 풀어요. 모두 지우려면 설정 › 개인정보·앱 정보 맨 아래 ‘내가 보낸 정보’ › ‘이 휴대폰이 보낸 정보 모두 지우기’예요.",
             listOf("프로필", "팔로워", "팔로잉", "차단", "모음", "소개", "탈퇴", "삭제", "모두 지우기"),
             listOf("장터"),
             "내가 보낸 정보 열기" to HelpAction.Go(SettingsGo.SENT),
@@ -798,8 +803,9 @@ internal object HelpFaq {
         // ---- 1.28 통합 [FLAG-39] → S 1.32 [SECX-04]: no 기능 상태 screen on the phone any more; plain words only ----
         HelpTopic(
             "flagState", "새 기능", "결제·광고나 새 기능은 언제 생기나요?",
-            "새 기능은 준비가 끝나면 업데이트와 ‘새로 생긴 기능’으로 알려 드려요. 프로 결제와 광고는 처리방침에 미리 알린 날부터 시작하고, " +
-                "그 전에는 모든 기능이 무료예요. 시간 단위 연차는 법이 시행되는 2027년 6월 10일부터 쓸 수 있어요. " +
+            // 2.0.0 [RVO-23] 검토 SET-14 (HQ-46 같은 구조: 정식 출시 11-12 뒤라 '그 전에는 모든 기능이 무료'가 아니에요).
+            "새 기능은 준비가 끝나면 업데이트와 ‘새로 생긴 기능’으로 알려 드려요. 프로 결제와 광고는 정식 출시와 함께 시작했고, " +
+                "처리방침 3.1 동의 전인 휴대폰은 처리방침에 알린 날까지 모든 기능이 무료예요. 시간 단위 연차는 법이 시행되는 2027년 6월 10일부터 쓸 수 있어요. " +
                 "궁금한 점은 문의하기로 물어봐 주세요.",
             listOf("새 기능", "언제 생겨", "언제 켜져", "결제 언제", "광고 언제", "시간 단위 연차"),
             listOf("새로 생긴 기능"),
@@ -977,12 +983,98 @@ internal object HelpFaq {
         "wishOff", "rosterPhoto")
     /** [J133-77] Answers about wages (급여·연차·추가 근무): 교대·일근·알바. */
     private val WAGES_ONLY = setOf("pay", "takeHome", "leave", "extra", "holidayWork", "payEasySetup", "payGap", "payslipPhotos", "payDeposit",
-        "rulesOnly", "callout", "leaveTime", "roster", "memoShiftRemind")
+        "rulesOnly", "callout", "leaveTime", "roster", "memoShiftRemind",
+        // 2.0.0 [RVO-19] 검토 T11a-16: 주휴수당 and 연말정산 are a wage earner's (가게·현장·투자 have 종합소득세 and their own answers).
+        "holidayPay", "yearEndInput")
     /** [J133-77] Answers about a repeating order of shifts. */
     private val PATTERN_ONLY = setOf("pattern", "realign")
     /** [J133-77] Answers about a business's or freelancer's tax, and the jobs' own. */
     private val JOBS_ONLY = setOf("jobOwed", "jobTax", "platformCut", "unitRules")
     private val SELF_EMPLOYED = setOf("bizTax")
+
+    /**
+     * 2.0.0 [RVO-19] 검토 T11a-16: an answer written for 교대 that a word swap ([kindWords]) cannot say well for [style], written for it:
+     * a clause about a kind's tool it does not have (교대 근무표의 '오늘 모든 조', 급여 차이, 회사 설정 파일) is left out, and an example is
+     * the kind's own. 교대 reads every answer as written.
+     */
+    internal fun said(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): HelpTopic {
+        val w = style.words()
+        val wages = style.usesPayEngine
+        // The kinds that have no nights or no 연차 at all ([com.bamnat.core.work.TypeWords.forbidden]).
+        val noNights = style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST
+        val noLeave = !wages
+        fun HelpTopic.say(question: String = this.question, answer: String = this.answer) = copy(question = question, answer = answer)
+        fun HelpTopic.drop(vararg parts: Pair<String, String>) = copy(answer = parts.fold(answer) { a, (from, to) -> a.replace(from, to) })
+        return when (t.id) {
+            "back" -> if (wages) t else t.drop("급여 설정은 앞 단계, " to "")
+            "backup" -> if (wages) t else t.drop("급여 설정이" to "설정이", "직원·급여 대장과 " to "")
+            "callout" -> if (style == com.bamnat.core.work.WorkStyle.HOURLY) t.drop("급여와 52시간에" to "급여에") else t
+            "defaultsOff" -> if (wages) t else t.drop("급여 화면의 광장 시세 카드는 설정 › 급여와 연차 › ‘광장 시세와 내 단가 견주기’, " to "")
+            "fitFeatures" -> t.drop("하는 일(교대·평일·시급·현장·자영업·투자)" to "하는 일(근무 유형)")
+            "flagState" -> if (noLeave) t.drop("시간 단위 연차는 법이 시행되는 2027년 6월 10일부터 쓸 수 있어요. " to "") else t
+            "holidayWork" -> t.drop(
+                "‘빨간날(공휴일)에 일하면’에서 네 가지 중 회사 방식을 고르세요." to "‘빨간날(공휴일)에 일하면’에서 회사 방식을 고르세요.",
+                "대체휴일, 교대제라 상관없음이 있어요." to "대체휴일 같은 방식이 있어요.",
+            )
+            "inquiryPublic" -> if (style.usesCompany) t else t.drop(" 회사 방식 알려 주기는 늘 개발자만 봐요." to "")
+            "jumpMonth" -> if (wages) t else t.drop("가계부·급여 화면" to "가계부·${w.tab} 화면")
+            "memoSearch" -> when (style) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> t.say("메모를 빨리 찾고 싶어요 (초성·날짜·영업)",
+                    "검색 칸에 초성(ㅎㅁ → 휴무), 날짜(10월 19일, 10/19, 어제), 그날 영업 이름(휴무), #태그 앞부분을 써도 찾아요. " +
+                        "달력 메모 필터의 ‘휴무 날’ 칩은 그날 메모만 보여 줘요.")
+                com.bamnat.core.work.WorkStyle.INVEST -> t.say("메모를 빨리 찾고 싶어요 (초성·날짜·태그)",
+                    "검색 칸에 초성(ㅁㅅ → 매수), 날짜(10월 19일, 10/19, 어제), #태그 앞부분을 써도 찾아요. " +
+                        "달력 메모 필터의 날 이름 칩은 그날 메모만 보여 줘요.")
+                else -> t
+            }
+            "movePhone" -> if (wages) t else t.drop("(근무 형태별 연장 상한·세금 방식, 적용한 회사 규칙, 화면 배치, 결제 알림 조정까지)" to "(세금 방식, 화면 배치, 결제 알림 조정까지)")
+            "pattern" -> if (style == com.bamnat.core.work.WorkStyle.DAY) t.say("일하는 요일을 바꾸고 싶어요",
+                "설정 › 내 근무 › ‘${w.pattern}’에서 ${w.patternHint}을 정해요. 달력 위 메뉴의 ‘${w.pattern} 설정’으로도 열 수 있어요.") else t
+            "payEasySetup" -> when (style) {
+                com.bamnat.core.work.WorkStyle.DAY -> t.drop("(3교대·2교대·간호 듀티·시급 등)" to "(주5일 낮 근무·당직이 있는 근무·시급 파트타임 등)")
+                com.bamnat.core.work.WorkStyle.HOURLY -> t.drop("(3교대·2교대·간호 듀티·시급 등)" to "(시급 파트타임·일당 등)")
+                else -> t
+            }
+            "privacy" -> if (style == com.bamnat.core.work.WorkStyle.INVEST) t.drop("돈 기록, 급여는" to "돈 기록, 투자 기록은") else t
+            "proSheet" -> if (wages) t else t.drop("급여·돈 통계·인쇄·알람 미션은" to "돈 통계·인쇄·알람 미션은")
+            "publicPay" -> t.drop("교대·현업이 아니면" to "현업이 아니면")
+            "quicktext" -> if (!noLeave) t else t.say("메모처럼 적어서 달력에 넣을 수 있나요",
+                "날짜를 누르고 빠른 메모에 ‘11/3 ${w.offDay}’, ‘다음주 월화 ${w.offDay}’처럼 날짜와 달력의 일정 이름을 적어요. 넣을 수 있는 말이면 " +
+                    "‘이렇게 넣을까요?’가 떠서 ‘넣기’를 누를 때만 달력에 들어가요. 그냥 보내면 메모로 남아요.")
+            "recipe" -> if (wages) t else t.drop("바뀌는 모습과 급여 차이를 먼저" to "바뀌는 모습을 먼저")
+            "restRules" -> t.say("휴식 점검이 우리 회사 기준과 달라요 · 끄고 싶어요",
+                "달력의 휴식 점검 카드에서 ‘기준 바꾸기’를 누르면 근무 사이 휴식 시간과 연속 근무 같은 기준을 바꿔요. " +
+                    "0으로 두면 그 항목은 보지 않아요. 끄려면 같은 화면 맨 위 ‘근무표 점검’을 끄거나 설정 › 알림과 잠 › 휴식 점검을 꺼요. " +
+                    "알려만 주고 저장은 막지 않아요.")
+            "setupAgain" -> if (style.usesCompany) t else t.drop("회사 찾기부터 " to "")
+            "share" -> when {
+                !wages -> t.drop("가족·친구는 근무와 휴가만, 동료는 연장·휴무일 근무까지, 회사 설정은 ‘회사 설정 파일도 보내기’로 따로 가요(금액·입사일 빼고). " to "")
+                !style.usesCompany -> t.drop("동료는 연장·휴무일 근무까지, 회사 설정은 ‘회사 설정 파일도 보내기’로 따로 가요(금액·입사일 빼고)." to "동료는 연장·휴무일 근무까지 보여요.")
+                else -> t
+            }
+            "stretch" -> t.say("이어서 일한 시간이 너무 길어요", "설정 › 알림과 잠 › 연속 근무 경고에서 정한 시간을 넘게 이어서 일하면 알려 줘요. 0으로 두면 보지 않아요.")
+            "studioMax" -> when (style) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> t.say("색 하나로 앱 전체를 꾸미거나, 휴무 날만 다르게 바꿀 수 있나요?",
+                    t.answer.replace("‘근무에 따라’에서 야간·쉬는 날 모양을 정하고", "‘근무에 따라’에서 휴무 모양을 정하고"))
+                // The studio's 근무에 따라 is a shift's; an investor's days are said there once the studio speaks each kind's words (갈래 S).
+                com.bamnat.core.work.WorkStyle.INVEST -> t.say("색 하나로 앱 전체를 꾸밀 수 있나요?",
+                    t.answer.replace("‘근무에 따라’에서 야간·쉬는 날 모양을 정하고, 잠그기로", "잠그기로"))
+                else -> t
+            }
+            "tabSlots" -> if (noLeave) t.drop("잠·연차·받을 돈·급여 같은 화면" to "잠·가계부·메모 같은 화면") else t
+            "turnOff" -> t.drop(*listOfNotNull(
+                ("소리가 없고, 퇴근길 안전은 야간이 끝날 때 한 번뿐이에요." to "소리가 없어요.").takeIf { noNights },
+                ("달력·급여 화면" to "달력·${w.tab} 화면").takeIf { !wages },
+            ).toTypedArray())
+            "widget" -> t.drop(*listOfNotNull(
+                ("‘밤낮 단추’가 있고, 교대 근무표면 ‘오늘 모든 조’도 있어요." to "‘밤낮 단추’가 있어요."),
+                // 배달·대리 is an 알바's or a freelancer's calendar, 현장 일당 a freelancer's.
+                (" 배달·대리 달력은 오늘 위젯의 ‘+1건’, 현장 일당 달력은 ‘오늘 1공’을 바로 눌러 적어요(기능 켜고 끄기 › 위젯 +1건·오늘 1공에서 꺼요)." to "")
+                    .takeIf { style != com.bamnat.core.work.WorkStyle.HOURLY && style != com.bamnat.core.work.WorkStyle.FIELD },
+            ).toTypedArray())
+            else -> t
+        }
+    }
 
     internal fun fits(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): Boolean = when {
         t.id in COMPANY_ONLY -> style.usesCompany
@@ -998,7 +1090,7 @@ internal object HelpFaq {
 
     /** [J133-77] Each kind's own answers, in this order, before the rest. */
     internal fun firstFor(style: com.bamnat.core.work.WorkStyle): List<String> = when (style) {
-        com.bamnat.core.work.WorkStyle.HOURLY -> listOf("hourlyCover", "pay", "takeHome", "payDeposit", "roster", "calendars")
+        com.bamnat.core.work.WorkStyle.HOURLY -> listOf("holidayPay", "hourlyCover", "pay", "takeHome", "payDeposit", "roster", "calendars")
         com.bamnat.core.work.WorkStyle.FIELD -> listOf("jobOwed", "jobTax", "bizTax", "platformCut", "unitRules", "incomeKinds")
         com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("shopCash", "shopVat", "bizTax", "receiptScan")
         com.bamnat.core.work.WorkStyle.INVEST -> listOf("investFee", "investCapture", "investCaptureTrust", "investYearEnd")
@@ -1077,8 +1169,10 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
         .map { t ->
             if (style == com.bamnat.core.work.WorkStyle.SHIFT) t
-            else t.copy(question = kindWords(style, t.question), answer = kindWords(style, t.answer),
-                action = t.action?.let { (label, go) -> kindWords(style, label) to go })
+            else HelpFaq.said(t, style).let { s ->
+                s.copy(question = kindWords(style, s.question), answer = kindWords(style, s.answer),
+                    action = s.action?.let { (label, go) -> kindWords(style, label) to go })
+            }
         }
 }
 
@@ -1088,7 +1182,10 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
  * is '영업시간', '일정 종류'), so an answer never sends someone to a row their settings do not have. 알바 also reads 근무지 for 회사.
  */
 internal fun kindWords(style: com.bamnat.core.work.WorkStyle, text: String): String {
+    // The settings pages as that kind's settings name them ('내 가게', '시급과 주휴수당', [com.bamnat.core.guide.FeatureRegistry.settingsPage]).
+    fun page(title: String) = com.bamnat.core.guide.FeatureRegistry.settingsPage(title, style)
     val rows = text.replace("근무 종류와 시간", style.words().types).replace("근무 주기", style.words().pattern)
+        .replace(Regex("설정 › 내 근무(?!표)"), "설정 › ${page("내 근무")}").replace("급여와 연차", page("급여와 연차"))
     val said = com.bamnat.core.work.TypeWords.say(style, rows)
     return if (style == com.bamnat.core.work.WorkStyle.HOURLY) workplaceWords(said) else said
 }

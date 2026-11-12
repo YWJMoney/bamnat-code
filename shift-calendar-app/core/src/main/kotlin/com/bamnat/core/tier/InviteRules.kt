@@ -13,10 +13,12 @@ data class InviteTerms(val need: Int, val days: Int, val months: Int, val capMon
     /**
      * AG 1.27 [INVITE-09] As the user meant it (리뷰 2026-10-25): months for each [need] different friends who each used
      * the app [days] days, not for one friend's days. "친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또
-     * 1개월(상한 없음)".
+     * 1개월".
+     * 2.0.0 [RVO-24] 통합 3차 PC-133: no '(상한 없음)' — the year's cap comes with 처리방침 3.13's 30-day line (12-13) and the server says it
+     * then ([capMonths] > 0); before it the words say nothing of a cap rather than promise none.
      */
     fun words(): String = "친구 ${need}명이 각자 ${days}일 이상 쓰면 나에게 프로 ${months}개월, ${need}명 더 채울 때마다 또 ${months}개월" +
-        if (capMonths > 0) "(1년에 ${capMonths}개월까지)" else "(상한 없음)"
+        if (capMonths > 0) "(1년에 ${capMonths}개월까지)" else ""
 
     /** AG 1.27 [INVITE-09] The short form for a button or a line: "친구 5명이 7일 쓰면 프로 1개월". */
     fun short(): String = "친구 ${need}명이 ${days}일 쓰면 프로 ${months}개월"

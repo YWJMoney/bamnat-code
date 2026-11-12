@@ -204,15 +204,21 @@ class NtcScreenshotTest : ScreenshotBase() {
         assertTrue(appears("합쳐서 켜기", exact = true))
     }
 
-    /** 알림 한눈에 펼침: 겹침 표시와 두 목록. */
+    /**
+     * 알림 한눈에: 겹침 표시와 두 목록. 2.0.0 [RVO-22] 검토 U11a-05: 설정 › 알림과 잠에서는 판이 펼쳐진 채 나오고(그 쪽의 알림 스위치는 판뿐),
+     * 같은 스위치가 쪽에 두 번 나오지 않아요.
+     */
     @Test fun theBoardMarksTheOverlap() = shoot("1595_ntc_board", PHONE) {
         lockOn()
         c.settingsRepository.update { it.copy(logic = Logic.encode(Logic.from(summaryWork.pieces.single().values))) }
         settingsPage("알림과 잠")
         settle()
         assertTrue(appears("겹침 1", exact = false))
-        tapText("알림 한눈에 펼치기", exact = true)
-        settle()
+        assertTrue("opened on the page", appears("알림 한눈에 접기", exact = true))
         assertTrue(appears("‘오늘 요약’ 규칙과 겹쳐 하나로 합쳐 보여요", exact = false))
+        for (row in listOf("잠금 화면 오늘 근무", "하루 브리핑", "밤낮 소식", "자는 중 표시")) {
+            assertTrue(row, scrolledTo(row, exact = true))
+            assertEquals("‘$row’ once on the page", 1, shownTimes(row))
+        }
     }
 }

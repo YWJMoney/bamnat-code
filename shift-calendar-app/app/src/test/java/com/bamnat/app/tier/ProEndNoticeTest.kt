@@ -114,7 +114,7 @@ class ProEndNoticeTest {
     /** PRO-29 '아침 한 줄': the alarm rang without the mission set for it; said once after it is off, again only after it was open. */
     @Test fun theMorningItRangWithoutTheMissionSaysSoOnce() = kotlinx.coroutines.runBlocking {
         val c = context.appContainer
-        val ring = com.bamnat.app.alarm.RingRequest("주간", java.time.LocalDate.now(), java.time.LocalTime.of(7, 0), 60, null, System.currentTimeMillis())
+        val ring = com.bamnat.app.alarm.RingRequest("주간", com.bamnat.core.time.Today.date(), java.time.LocalTime.of(7, 0), 60, null, com.bamnat.core.time.Today.millis())
         c.settingsRepository.update { it.copy(alarmMission = "math") }
         ProEndNotice.afterRing(context, ring, c)
         assertNull("the mission is open: it rang with it", shadowOf(nm).getNotification(Notifications.MISSION_END_ID))

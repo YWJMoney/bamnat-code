@@ -97,6 +97,30 @@ class ReviewOSettingsTest {
         assertFalse(shop.any { "근무 종류와 시간" in it.answer })
     }
 
+    /**
+     * 2.0.0 [RVO-23] 검토 SET-14: no help answer is out of date. The widget answer names every widget the phone lists (a widget's name in
+     * strings.xml), no question names an old version, the answer on 결제·광고 says they started with the launch (not '그 전에는 모두
+     * 무료'), and the answer on hiding someone in the plaza opens the plaza, not the notices.
+     */
+    @Test fun theHelpAnswersAreUpToDate() {
+        val topics = HelpFaq.topics(true, InviteTerms.DEFAULT)
+        val widgets = Regex("""name="widget_\w+_name">([^<]+)<""").findAll(java.io.File("src/main/res/values/strings.xml").readText())
+            .map { it.groupValues[1] }.toList()
+        assertEquals("the widgets in strings.xml: $widgets", 9, widgets.size)
+        val widget = topics.single { it.id == "widget" }.answer
+        for (w in widgets) assertTrue("the widget answer names ‘$w’", "‘$w’" in widget)
+        assertTrue(topics.none { Regex("""\b1\.\d\d(에|부터)""").containsMatchIn(it.question) })
+        val flag = topics.single { it.id == "flagState" }.answer
+        assertFalse(flag, "그 전에는 모든 기능이 무료" in flag)
+        assertTrue(flag, "정식 출시와 함께 시작했고" in flag)
+        assertEquals(HelpAction.Go(SettingsGo.BOARD), topics.single { it.id == "plaza" }.action?.second)
+        // Each kind's widget answer lists what it has: 오늘 모든 조 only where the calendar is a rotation.
+        for (style in WorkStyle.entries) {
+            val said = HelpFaq.topics(true, InviteTerms.DEFAULT).forStyle(style).single { it.id == "widget" }.answer
+            assertEquals(style.toString(), style == WorkStyle.SHIFT, "오늘 모든 조" in said)
+        }
+    }
+
     /** 2.0.0 [RVO-19] 검토 SET-06·T11a-08: 화면과 글자 in each kind's words; nothing about nights where the kind has none. */
     @Test fun theDisplayPageSpeaksEachKindsWords() {
         assertEquals("밤 영업 중 어둡게", DisplayWords.nightTheme(WorkStyle.BUSINESS))
@@ -154,5 +178,60 @@ class ReviewOSettingsTest {
         AppLock.check(activity, "앱 잠금 끄기", onOk = { ok++ }, confirm = { asked = it })
         assertEquals("not changed before the phone's lock says yes", 0, ok)
         assertTrue("the phone's lock screen is asked for: $asked", asked?.action == "android.app.action.CONFIRM_DEVICE_CREDENTIAL")
+    }
+
+    /**
+     * 2.0.0 [RVO-21] 검토 SET-08·U11a-18: every row 설정 찾기 finds on 화면과 글자 is in one of its four folds, or one of the rows that stay
+     * open (꾸미기, 내 달력), so a found row always opens the group it is in.
+     */
+    @Test fun everyFoundRowOnTheScreenPageHasItsFold() {
+        val open = setOf(FREE_LOOK_ROW, WATCH_CALENDAR_ROW, "메모 공유")
+        val found = WorkStyle.entries.flatMap { st -> SettingsIndex.entries(style = st) }.plus(SettingsIndex.entries())
+            .mapNotNull { (it.place as? SettingPlace.Row)?.takeIf { r -> r.page == SettingsPage.CALENDAR }?.row }.toSet()
+        val folded = CALENDAR_FOLDS.flatMap { it.rows }
+        assertEquals("a row is in one fold only", folded.size, folded.toSet().size)
+        (found - open).forEach { assertTrue("$it is in a fold", it in folded) }
+        assertEquals(4, CALENDAR_FOLDS.size)
+        assertEquals(setOf(CALENDAR_FOLDS[2].key), foldsFor(SettingsFocus(TAB_ORDER_ROW), CALENDAR_FOLDS))
+        assertTrue(foldsFor(SettingsFocus(WATCH_CALENDAR_ROW), CALENDAR_FOLDS).isEmpty())
+        assertTrue(foldsFor(null, CALENDAR_FOLDS).isEmpty())
+    }
+
+    /** 2.0.0 [RVO-21] 검토 U11a-19: 날짜를 누르면 is one choice that writes the three settings the calendar reads, and reads them back. */
+    @Test fun theDayTapIsOneChoice() {
+        val s = com.bamnat.app.data.AppSettings()
+        DayTap.entries.forEach { t -> assertEquals(t, DayTap.of(t.applied(s))) }
+        // an old phone with both 한 번 눌러 고르기 and 달력 아래 하루 카드 on: the card is what the calendar does first.
+        assertEquals(DayTap.CARD, DayTap.of(s.copy(showDayCard = true, tapSelectFirst = true)))
+        assertEquals(DayTap.OPEN, DayTap.of(s.copy(showDayCard = false, tapSelectFirst = false, phoneDayView = com.bamnat.app.data.PhoneDayView.SHEET)))
+        assertFalse(DayTap.OPEN.applied(s.copy(showDayCard = true, tapSelectFirst = true)).let { it.showDayCard || it.tapSelectFirst })
+        assertTrue(SettingsIndex.search("한 번 눌러 고르기").any { it.title == DAY_TAP_ROW })
+    }
+
+    /** 2.0.0 [RVO-21] 검토 I11aa-03·U11a-03: 방금 바꾼 것 keeps the value before the first change, forgets a setting changed back, keeps three. */
+    @Test fun theRecentChangesPutBackWhatWasChanged() {
+        val owner = Any()
+        val a = com.bamnat.app.data.AppSettings()
+        val b = a.copy(compact = !a.compact)
+        RecentSettings.note(owner, a, b)
+        assertEquals(listOf("촘촘하게"), RecentSettings.of(owner).map { it.watched.row })
+        assertEquals(a.compact, RecentSettings.undo(RecentSettings.of(owner).single(), b).compact)
+        // changed back by hand: nothing left to put back.
+        RecentSettings.note(owner, b, a)
+        assertTrue(RecentSettings.of(owner).isEmpty())
+        var s = a
+        listOf<(com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings>(
+            { it.copy(clock12 = !it.clock12) }, { it.copy(dayStory = !it.dayStory) }, { it.copy(textStep = it.textStep + 1) }, { it.copy(spendHeat = !it.spendHeat) },
+        ).forEach { f -> val n = f(s); RecentSettings.note(owner, s, n); s = n }
+        assertEquals(RecentSettings.MAX, RecentSettings.of(owner).size)
+        assertEquals("지출 히트맵", RecentSettings.of(owner).first().watched.row)
+        assertTrue("another store starts empty", RecentSettings.of(Any()).isEmpty())
+        // The switches a result can turn are plain switches of rows 설정 찾기 finds.
+        val rows = SettingsIndex.entries().mapNotNull { (it.place as? SettingPlace.Row)?.row }.toSet()
+        WatchedSettings.all.filter { it.on != null }.forEach { w ->
+            assertTrue("${w.row} is found", w.row in rows)
+            assertEquals(true, w.read(w.on!!(a, true)))
+            assertEquals(false, w.read(w.on!!(a, false)))
+        }
     }
 }

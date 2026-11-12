@@ -498,7 +498,7 @@ class RecipePieces(private val c: AppContainer) {
                 Side("단추", "${mine.buttons.size}개", "${after.buttons.size}개").takeIf { l.buttons.isNotEmpty() },
             ) + overlaps(values).map { h ->
                 // 1.39 [NTC-03] 겹치는 알림이 넣은 뒤 어떻게 되는지.
-                val what = h.builtIn?.let { "${it.label} 알림" } ?: "내 ‘${h.other?.name}’ 규칙"
+                val what = h.builtIn?.let { if (it.label.endsWith("알림")) it.label else "${it.label} 알림" } ?: "내 ‘${h.other?.name}’ 규칙"
                 Side(what, "켬", when {
                     mode == Mode.REPLACE -> "끔(‘${h.rule.name}’으로)"
                     h.builtIn == com.bamnat.core.formula.NoticeOverlap.BuiltIn.TODAY -> "켬 · 알림 하나로 합쳐요"

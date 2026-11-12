@@ -1100,7 +1100,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
             // 2.0.0 [RVP-23] A 되돌리기 goes first by itself; it no longer closes another's line by hand.
-            if (com.bamnat.app.ui.components.AppSnack.ask("${d.message} · 설정 › 내 근무 › 근무 종류와 시간 맨 아래에 있어요", "되돌리기")) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
+            // 2.0.0 [RVO-19] 검토 T11a-16: the page and row as the new kind's settings name them ('설정 › 내 가게 › 영업시간').
+            val kind = container.settingsRepository.settings.value.workStyle
+            val where = "설정 › ${com.bamnat.core.guide.FeatureRegistry.settingsPage("내 근무", kind)} › ${kind.words().types}"
+            if (com.bamnat.app.ui.components.AppSnack.ask("${d.message} · $where 맨 아래에 있어요", "되돌리기")) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
         }
     }
 

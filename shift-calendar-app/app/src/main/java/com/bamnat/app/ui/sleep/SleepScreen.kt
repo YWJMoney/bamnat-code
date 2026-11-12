@@ -477,7 +477,8 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 // [UX-06] Where the target and the watch are set, and help, from the screen that uses them.
                 actions = {
-                    IconButton(onClick = { SettingsLinks.open(SettingsPage.NOTICES, "목표 수면 시간") }) {
+                    // 2.0.0 [RVO-22] 검토 U11a-06: the gear opens 알림과 잠's one group '잠', at its top.
+                    IconButton(onClick = { SettingsLinks.open(SettingsPage.NOTICES, com.bamnat.app.ui.settings.SLEEP_GROUP) }) {
                         Icon(Icons.Outlined.Tune, "수면 설정")
                     }
                     IconButton(onClick = { InquiryLinks.ask(InquiryStart(about = "수면 기록", help = true)) }) {

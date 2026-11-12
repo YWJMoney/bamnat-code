@@ -131,7 +131,8 @@ class SettingsSearchTest {
         assertFalse("jobOwed" in business)
         assertFalse("investFee" in business)
         val hourlyHelp = all.forStyle(com.bamnat.core.work.WorkStyle.HOURLY).map { it.id }
-        assertEquals("hourlyCover", hourlyHelp.first())
+        // 2.0.0 [RVO-21] 검토 U11a-13: 알바 asks about 주휴수당 most, so it is the first of the five shown.
+        assertEquals(listOf("holidayPay", "hourlyCover"), hourlyHelp.take(2))
         assertFalse("plazaPayFind" in hourlyHelp)
         assertFalse("shopCash" in hourlyHelp)
         assertEquals(all.map { it.id }, all.forStyle(null).map { it.id })

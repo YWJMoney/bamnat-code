@@ -254,7 +254,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
-    fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
+    /** 2.0.0 [RVO-21] 검토 I11aa-03: a change made on the settings screens is noted for 방금 바꾼 것 (one place, before and after). */
+    fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update { s -> transform(s).also { RecentSettings.note(container.settingsRepository, s, it) } }
+    /** 2.0.0 [RVO-21] 되돌리기 on 방금 바꾼 것: puts that one setting back, and the list forgets it. */
+    internal fun undo(c: RecentSettings.Change) = update { RecentSettings.undo(c, it) }
+    /** Whose changes 방금 바꾼 것 shows. */
+    val recentOwner: Any get() = container.settingsRepository
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
 
     private val _missed = MutableStateFlow(0)
@@ -843,7 +848,7 @@ private fun SettingsHub(
         if (query.isNotBlank()) {
             val searchCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
             val entries = rememberSettingsEntries(board = onOpenBoard != null, share = vm.shareOn, style = work.workStyle, calendar = searchCalendar)
-            SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick)
+            SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick, settings) { f -> vm.update(f) }
             return@Column
         }
         // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
@@ -867,6 +872,8 @@ private fun SettingsHub(
                 else summary(p, if (ofCalendar) work else settings, snapshot, profile != null, notificationsOk, if (ofCalendar) work.workStyle else settings.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
+        // 2.0.0 [RVO-21] 검토 I11aa-03: what was just changed, to put back in one tap (shown only after a change).
+        RecentChangesCard(vm.recentOwner, onUndo = { c -> vm.undo(c) }, modifier = Modifier.padding(top = 8.dp))
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
         // 보였어요): the groups come first; 내 정보 and 함께 만들어요 under them.
         Spacer(Modifier.size(8.dp))
@@ -898,7 +905,7 @@ private fun SettingsHub(
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
             val inviteRules by LocalContext.current.appContainer.invites.store.state.collectAsStateWithLifecycle()
-            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 받은 코드 넣기", false) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${com.bamnat.core.tier.InviteRules.promise(inviteRules.rules)} · 받은 코드 넣기", false) {
                 SettingsLinks.go(SettingsGo.PRO)
             }
         }
@@ -995,23 +1002,31 @@ internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.
 }
 
 @Composable
-private fun SearchResults(query: String, results: List<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit) {
+private fun SearchResults(query: String, results: List<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit,
+                          settings: AppSettings? = null, onChange: ((AppSettings) -> AppSettings) -> Unit = {}) {
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     Text(if (results.isEmpty()) "‘$query’에 맞는 설정이 없어요" else "찾은 설정 ${results.size}개",
         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
     for (e in results) {
+        // 2.0.0 [RVO-21] 검토 U11a-03·I11aa-02: a found switch is turned here, without going in (the row still opens its page).
+        val quick = (e.place as? SettingPlace.Row)?.let { WatchedSettings.switchOf(it.row) }?.takeIf { settings != null }
+        val title = com.bamnat.core.work.TypeWords.say(screenStyle, e.title)
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
                 .clickable(role = Role.Button) { onFound(e) }.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(com.bamnat.core.work.TypeWords.say(screenStyle, e.title), style = MaterialTheme.typography.bodyLarge)
+                Text(title, style = MaterialTheme.typography.bodyLarge)
                 Text(settingsPath(whereFor(e.where, screenStyle)), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+            if (quick != null && settings != null) {
+                val on = quick.read(settings) as Boolean
+                androidx.compose.material3.Switch(on, onCheckedChange = { v -> onChange { quick.on!!(it, v) } },
+                    modifier = Modifier.padding(start = 8.dp).semantics { contentDescription = title })
+            } else Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
         }
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.

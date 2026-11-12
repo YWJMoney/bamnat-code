@@ -122,7 +122,8 @@ class AGScreenshotTest : ScreenshotBase() {
         // [INVITE-13] On the calendar, no question to find: what was said, and the friend's own chance to invite.
         reveal("초대한 분께 알렸어요")
         assertTrue(gone("친구 초대로 오셨나요?"))
-        assertTrue(appears("당신도 친구 5명이 각자 7일 이상 쓰면"))
+        // 2.0.0 [RVO-24] PC-133: the same one-line promise as 설정 › 프로 (InviteRules.promise).
+        assertTrue(appears("내 링크로 친구를 부르면 당신도 받아요. 친구 5명이 7일 쓰면 프로 1개월.", exact = true))
         assertTrue(appears("내 초대 링크 만들기", exact = true))
     })
 
@@ -177,7 +178,9 @@ class AGScreenshotTest : ScreenshotBase() {
     @Test fun settingsStartsWithGrowingTogether() = shoot("1085_ag_settings_top", FOLDED, style(WorkStyle.SHIFT) {
         tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)
-        assertTrue(appears("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)."))
+        // 2.0.0 [RVO-24] PC-133: the one line of 설정 › 프로, never '상한 없음'.
+        assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월.", exact = true))
+        assertTrue(gone("상한 없음"))
         assertTrue(appears("불편한 점 알려 주기"))
         assertTrue(appears("개발자가 직접 읽고 답을 드리고"))
         // [J133-77] 1.33: while this card says 친구 초대, the 더 보기 row does not say it again.

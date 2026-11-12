@@ -1341,8 +1341,20 @@ private fun HelpHome(
                 SectionLabel("‘${about.orEmpty().substringAfterLast("> ").trim()}’ 도움말")
                 here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
             }
+            // 2.0.0 [RVO-21] 검토 U11a-13 (답 109개가 한 번에 그려졌어요): the five this kind of work asks most ([forStyle] puts them
+            // first), then the rest only when asked for, twenty at a time.
+            val rest = remember(topics, here) { topics - here.toSet() }
             SectionLabel("자주 묻는 질문")
-            (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            rest.take(HELP_FIRST).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            var shown by rememberSaveable { mutableStateOf(0) }
+            // An answer opened from a link stays in view even when it is past the first five.
+            val open = rest.indexOfFirst { it.id == expanded }
+            val upTo = maxOf(shown, if (open >= HELP_FIRST) open + 1 else 0).coerceAtMost(rest.size - HELP_FIRST).coerceAtLeast(0)
+            rest.drop(HELP_FIRST).take(upTo).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            val left = rest.size - HELP_FIRST - upTo
+            if (left > 0) TextButton(onClick = { shown = upTo + HELP_PAGE }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (upTo == 0) "질문 모두 보기 (${left}개 더)" else "더 보기 (${left}개 남음)")
+            }
         } else {
             val found = remember(query, topics) { HelpFaq.search(query, topics) }
             // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
@@ -1514,3 +1526,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
         }
     }
 }
+
+/** 2.0.0 [RVO-21] 검토 U11a-13: the answers shown before 질문 모두 보기, and how many each 더 보기 adds. */
+private const val HELP_FIRST = 5
+private const val HELP_PAGE = 20

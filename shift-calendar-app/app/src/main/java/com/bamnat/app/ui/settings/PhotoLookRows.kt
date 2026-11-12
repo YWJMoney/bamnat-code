@@ -82,8 +82,9 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
     val c = context.appContainer
     val scope = rememberCoroutineScope()
     // Which place the next picked photo is for: a slot, and for 근무 그림 the kind of day.
-    var target by remember { mutableStateOf<Pair<Slot, String?>?>(null) }
-    var framing by remember { mutableStateOf<Uri?>(null) }
+    // 2.0.0 [RVO-21] 검토 SET-17: kept across the trip to the photo picker, which can end this process before the photo comes back.
+    var target by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Pair<Slot, String?>?>(null) }
+    var framing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     // [J135-07] F-67: 없애기·처음으로 ask first (a framed photo cannot be got back without framing it again).
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
