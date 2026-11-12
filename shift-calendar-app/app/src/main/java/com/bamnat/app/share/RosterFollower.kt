@@ -288,10 +288,12 @@ object RosterFollower {
         // PC a483ca15: the same words twice and '12/2은'; the days are named after a colon, with no 은/는 to get wrong.
         val keptDays = note.kept.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" }
         val kept = if (note.kept.isEmpty()) "" else " · 직접 바꿔서 그대로 둔 날: $keptDays"
+        // [RVG-35] 이/가 by the link's word (‘민지’ 영업일이 바뀌었어요).
+        val who = cal.roster + com.bamnat.app.ui.Fmt.iga(cal.roster)
         return when (note.kind) {
-            FollowNote.DONE -> "${cal.roster}가 바뀌어 내 달력에 넣었어요" to "$days$kept. 근무 알람도 바뀐 근무대로 울려요."
-            FollowNote.ASK -> if (note.lines.isEmpty()) "${cal.roster}가 바뀌었어요" to "직접 바꾼 날이라 그대로 뒀어요: $keptDays"
-            else "${cal.roster}가 바뀌었어요 · 내 달력에 넣을까요?" to "$days$kept. 넣으면 근무 알람도 따라가요."
+            FollowNote.DONE -> "$who 바뀌어 내 달력에 넣었어요" to "$days$kept. 근무 알람도 바뀐 근무대로 울려요."
+            FollowNote.ASK -> if (note.lines.isEmpty()) "$who 바뀌었어요" to "직접 바꾼 날이라 그대로 뒀어요: $keptDays"
+            else "$who 바뀌었어요 · 내 달력에 넣을까요?" to "$days$kept. 넣으면 근무 알람도 따라가요."
             else -> "${cal.roster} 링크가 끊겼어요" to "내 달력은 그대로예요. 새 링크를 받으면 다시 이어서 받아요."
         }
     }

@@ -239,6 +239,14 @@ abstract class ScreenshotBase {
                     dv.draw(canvas)
                     canvas.restore()
                 }
+                // 2.0.0 [RVI-61] A menu (DropdownMenu) is a popup window of its own: drawn last, where it was put.
+                for (popup in shownPopups(activity)) {
+                    val lp = popup.layoutParams as android.view.WindowManager.LayoutParams
+                    canvas.save()
+                    canvas.translate(lp.x.toFloat(), lp.y.toFloat())
+                    popup.draw(canvas)
+                    canvas.restore()
+                }
             }
             val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
             out.outputStream().use { s -> bmp.compress(Bitmap.CompressFormat.PNG, 100, s) }
@@ -247,6 +255,25 @@ abstract class ScreenshotBase {
 
     /** Dialogs still open, oldest first: a time picker over a sheet is two. */
     internal fun shownDialogs() = ShadowDialog.getShownDialogs().filter { it.isShowing }.distinct()
+
+    /**
+     * 2.0.0 [RVI-61] Popup windows open over [activity] (Compose's DropdownMenu): neither the activity's window nor a dialog, so
+     * [shoot] did not draw them and [Screen.inPopup] reads them.
+     */
+    internal fun shownPopups(activity: android.app.Activity): List<View> {
+        val global = Class.forName("android.view.WindowManagerGlobal")
+        val instance = global.getMethod("getInstance").invoke(null)
+        @Suppress("UNCHECKED_CAST")
+        val views = (global.getDeclaredField("mViews").apply { isAccessible = true }.get(instance) as List<View>).toList()
+        fun android.content.Context.of(a: android.app.Activity) =
+            generateSequence(this) { (it as? android.content.ContextWrapper)?.baseContext }.any { it === a }
+        return views.filter { v ->
+            v.isAttachedToWindow && v.width > 0 && v.context.of(activity) &&
+                // A panel over the activity's window (Compose's Popup is a sub panel, 1002).
+                (v.layoutParams as? android.view.WindowManager.LayoutParams)?.type in
+                    android.view.WindowManager.LayoutParams.FIRST_SUB_WINDOW..android.view.WindowManager.LayoutParams.LAST_SUB_WINDOW
+        }
+    }
 
     /**
      * Lets Room deliver on its background threads and the UI draw, then finishes animations. State
@@ -456,12 +483,58 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /**
+         * 2.0.0 [RVO-09] (PC-82) The keyboard up, [heightDp] tall over the foot of the screen, as the phone tells an app drawn edge to edge
+         * (it does not shrink the window): the window insets say so, and what is drawn under them is out of reach. 0 puts it away.
+         * Returns the keyboard's top in window pixels.
+         */
+        fun keyboard(heightDp: Int): Float {
+            var top = 0f
+            scenario.onActivity { activity ->
+                val decor = activity.window.decorView
+                val h = (heightDp * activity.resources.displayMetrics.density).toInt()
+                val ime = androidx.core.view.WindowInsetsCompat.Type.ime()
+                val insets = androidx.core.view.WindowInsetsCompat.Builder()
+                    .setInsets(ime, androidx.core.graphics.Insets.of(0, 0, 0, h))
+                    .setVisible(ime, h > 0)
+                    .build().toWindowInsets()
+                if (insets != null) decor.dispatchApplyWindowInsets(insets)
+                top = (decor.height - h).toFloat()
+            }
+            settle()
+            return top
+        }
+
+        /** 2.0.0 [RVO-13] PC-112: how many places on screen now say [text] (a line said twice is a fault). */
+        fun shownTimes(text: String): Int {
+            var n = 0
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                n = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).count { node ->
+                    val b = node.boundsInWindow
+                    b.width > 1f && b.height > 1f && node.words().any { w -> text in w }
+                }
+            }
+            return n
+        }
+
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
         /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
         fun enabled(text: String): Boolean =
             find(text, exact = true, prefix = false)?.let { !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) } == true
+
+        /** 2.0.0 [RVI-61] Whether an open menu (a popup window, see [shownPopups]) says [text], waiting as [appears] does. */
+        fun inPopup(text: String, ms: Long = SOON_MS): Boolean = until(ms) {
+            var hit = false
+            scenario.onActivity { activity ->
+                hit = shownPopups(activity).any { p ->
+                    rootOf(p)?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = true)?.any { n -> text in n.words() } == true
+                }
+            }
+            hit
+        }
 
         /**
          * [J133-45] Whether [text] comes on screen, waiting while it has not yet: a sheet, a saved row or
@@ -659,6 +732,9 @@ abstract class ScreenshotBase {
         fun settingsPage(title: String, wide: Boolean = false) {
             tab(SETTINGS_TAB, wide)
             // Wide, the list is the left part of the screen: it scrolls there.
+            // 2.0.0 [RVI-38] Brought up first: with the alarm card's problem lines above it, the row could sit under the bottom bar,
+            // where a tap goes to the bar (Robolectric's alarm volume is 0, one of 설정 › 알람's checks).
+            reveal(title, exact = true, across = if (wide) 0.2f else 0.5f)
             tapText(title, exact = true, across = if (wide) 0.2f else 0.5f)
         }
 
@@ -1686,7 +1762,23 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         ))
     }
 
-    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
+    /** 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기 as the server says it. */
+    var roomMoney = false
+    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3, roomMoney = roomMoney)
+
+    /** 2.0.0 [RVN-17] COMP-12 This calendar held by another company: the look before choosing and the join say so. */
+    var held: com.bamnat.app.company.Membership? = null
+    /** 2.0.0 [RVN-17] COMP-12 Why '잘못 골랐어요' fails (null: it frees the calendar). */
+    var undoFails: String? = null
+    override suspend fun joinCheck(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(false, company)
+    override suspend fun join(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(true, company)
+    override suspend fun undoJoin(device: String, cal: String): Boolean {
+        undoFails?.let { throw com.bamnat.app.company.CompanyException(it) }
+        held = null
+        return true
+    }
 
     /** [SPAT-05] What was sent: the note and the setup file, to check that no amount went. */
     val reports = mutableListOf<Pair<String, org.json.JSONObject>>()

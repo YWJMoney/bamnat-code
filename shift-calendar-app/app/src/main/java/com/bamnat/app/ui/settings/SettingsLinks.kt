@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.getAndUpdate
  */
 enum class SettingsGo {
     WORK_STYLE, PATTERN, SHIFT_TYPES, EXTRA_KINDS, PAY, CALENDARS, DIAGNOSTICS, INQUIRY, BOARD,
+    /** 2.0.0 [RVO-06] 프로, with the '코드를 받으셨나요?' box open and in view. */
+    PRO_CODE,
     SHARE, RECEIVE, SLEEP, CALENDAR_IMPORT,
     /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] */
     DUTY_ROSTER, HEALTH_REPORT, ATTENDANCE_IMPORT, COMMUTE,
@@ -98,6 +100,7 @@ object SettingsLinks {
             SettingsGo.HEALTH_REPORT -> NoticeLinks.open(NoticeLinks.Target.HEALTH_REPORT)
             SettingsGo.ATTENDANCE_IMPORT -> NoticeLinks.open(NoticeLinks.Target.ATTENDANCE_IMPORT)
             SettingsGo.COMMUTE -> NoticeLinks.open(NoticeLinks.Target.COMMUTE)
+            SettingsGo.PRO_CODE -> { com.bamnat.app.ui.pro.ProCodeLink.ask(); _target.value = SettingsLink.Go(SettingsGo.PRO) }
             else -> _target.value = SettingsLink.Go(go)
         }
     }
