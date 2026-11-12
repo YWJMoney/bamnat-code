@@ -37,7 +37,10 @@ object ShareContent {
             val kit = if (options.kit && open) kitFile(c, calendar, title, withCycle = setup == null) else null
             val sleep = if (options.sleepNow && calendar == PersonalCalendar.MAIN) sleepNow(c) else null
             val plan = if (options.sleepPlan && calendar == PersonalCalendar.MAIN) sleepPlan(c, snapshot) else emptyList()
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan)
+            // 2.0.0 [RVH-45] The 1일 기준 an hour's leave is told against, for an older receiver (설계 4-4절).
+            val leaveDay = runCatching { c.calendars.pay(calendar).profile.value?.rules?.leave?.dayMinutes }.getOrNull()
+                ?: com.bamnat.core.model.Leave.DAY_MINUTES
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan, leaveDay)
         }
 
     /** 1.38 [SLEEP-11] Whether a link may say 지금 자는 중 (`sleep.share`, from the 처리방침 date). */
