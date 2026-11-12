@@ -119,6 +119,17 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
         assertEquals(null, c.shareLinks.dropped.value)
     }
 
+    /** 검토 S7-3 (갈래 R 의견 3): the automatic update turned down twice running for something it cannot leave out; one line, its X. */
+    private fun calendarRefused(): Screen.() -> Unit = {
+        c.shareLinks.save(ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
+            Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
+        c.shareLinks.setDropped(com.bamnat.app.share.ShareLinkPayload.REFUSED_AGAIN)
+        settle()
+        assertTrue(appears("바뀐 근무가 링크에 안 갔어요", exact = false))
+    }
+    @Test fun calendarRefusedFoldLight() = shoot("rvg27_calendar_refused_again_fold_light_100", FOLDED, calendarRefused())
+    @Test fun calendarRefusedFoldDarkHuge() = shoot("rvg27_calendar_refused_again_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, calendarRefused())
+
     /** A link sent without a name by an app before 2.0.0 (no breaks): 민지's days, no title, no rest. */
     private fun oldNoName(): JSONObject = JSONObject(minjiShare().schedule.toString()).apply {
         put("title", "")
@@ -184,6 +195,101 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun putInUndoneFoldLight() = shoot("rvg31_put_in_undone_fold_light_100", FOLDED, putInUndone())
     @Test fun putInUndoneFoldDarkHuge() = shoot("rvg31_put_in_undone_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, putInUndone())
     @Test fun putInUndoneOpenLight() = shoot("rvg31_put_in_undone_open_light_100", UNFOLDED, putInUndone(wide = true))
+
+    /** HQ-55 (조건 4·13): '내 이름' left empty says what the link really shows ('받은 근무표'), never the example name's. */
+    private fun blankName(): Screen.() -> Unit = {
+        c.shareLinks.clear()
+        c.shareLinks.typedName = null
+        sheet(Refusing())
+        assertTrue(appears("적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요", exact = false))
+        assertTrue(gone("‘민지의", exact = false))
+        typeInto("내 이름 (선택)", "민지")
+        assertTrue(appears("받는 분 화면에 ‘민지의 근무표’로 보여요", exact = false))
+        typeInto("내 이름 (선택)", "")
+        assertTrue(appears("적지 않으면", exact = false))
+    }
+    @Test fun blankNameFoldLight() = shoot("rvg33_share_blank_name_fold_light_100", FOLDED, blankName())
+    @Test fun blankNameFoldDarkHuge() = shoot("rvg33_share_blank_name_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, blankName())
+
+    /** HQ-55, the same structure: the picture's title field, left empty, says the title the picture really gets. */
+    @Test fun blankPictureNameFoldLight() = shoot("rvg33_picture_blank_name_fold_light_100", FOLDED) {
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ImageShareSheet(snap, Today.month(), java.time.DayOfWeek.SUNDAY, emptyList(), {}, {}) }
+        settle()
+        reveal("제목에 넣을 이름 (선택)", exact = true)
+        assertTrue(appears("적지 않으면 ‘${Today.month().year}년 ${Today.month().monthValue}월", exact = false))
+        assertTrue(gone("‘민지의", exact = false))
+    }
+
+    /** HQ-55 for 현장: the receiving app still says '받은 근무표' for a nameless link; a named one takes 으로 after 일정. */
+    @Test fun blankNameFieldFoldDarkHuge() = shoot("rvg33_share_blank_name_field_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {
+        c.settingsRepository.update { it.copy(workStyle = com.bamnat.core.work.WorkStyle.FIELD) }
+        c.shareLinks.clear()
+        c.shareLinks.typedName = null
+        sheet(Refusing())
+        assertTrue(appears("적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요", exact = false))
+        typeInto("내 이름 (선택)", "민지")
+        assertTrue(appears("받는 분 화면에 ‘민지의 일정’으로 보여요", exact = false))
+    }
+
+    /** The picture's title for 투자: '달력' takes 으로. */
+    @Test fun blankPictureNameInvestFoldLight() = shoot("rvg33_picture_blank_name_invest_fold_light_100", FOLDED) {
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ImageShareSheet(snap, Today.month(), java.time.DayOfWeek.SUNDAY, emptyList(), {}, {},
+            style = com.bamnat.core.work.WorkStyle.INVEST) }
+        settle()
+        reveal("제목에 넣을 이름 (선택)", exact = true)
+        assertTrue(appears("월 달력’으로 보여요", exact = false))
+    }
+
+    /**
+     * HQ-55 (조건 4): the received link's '내 달력에 넣기' card on a later visit: the days in one line, what happens after 넣기 in one
+     * line with ⓘ ([com.bamnat.app.ui.components.Explain]); before, it filled a 200% folded screen like a page.
+     */
+    private fun putInCard(wide: Boolean = false): Screen.() -> Unit = {
+        // A later visit: the 'seen this visit' set outlives a test in the same JVM, so it starts over first.
+        com.bamnat.app.ui.components.ExplainSeen.reset(c.appContext)
+        com.bamnat.app.ui.components.ExplainSeen.saw(c.appContext, "adopt:after")
+        noNameReceived().invoke(this)
+        val across = if (wide) 0.75f else 0.5f
+        reveal("일 내 달력에 넣기", exact = false, across = across)
+        assertTrue(appears("바뀌면 다시 받아요", exact = true))
+        assertTrue(gone("6시간 안에 받아서", exact = false))
+        assertTrue(gone("급여 설정을 하면", exact = false))
+    }
+    @Test fun putInCardFoldLight() = shoot("rvg33_put_in_card_fold_light_100", FOLDED, putInCard())
+    @Test fun putInCardFoldDarkHuge() = shoot("rvg33_put_in_card_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, putInCard())
+    @Test fun putInCardOpenLight() = shoot("rvg33_put_in_card_open_light_100", UNFOLDED, putInCard(wide = true))
+
+    /**
+     * PC-132 ([RVG-34]): a member who started from the 팀 리더's link sees, at the calendar's head, a face that says 팀 근무표; with
+     * large text on the folded screen there is no room for the words, so the face alone, read out as the link's full name.
+     */
+    private val teamId = "Tm3dEfGh5JkLmNoPqRsTuv"
+    private fun memberHead(words: Boolean): Screen.() -> Unit = {
+        c.shareApi = shares
+        val body = JSONObject(minjiShare().schedule.toString()).apply { put("title", "3병동 김간호"); put("team", true) }
+        val share = ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
+        shares.links[teamId] = share
+        LinkStart.keepMine(c.received, teamId, share)
+        settle()
+        assertTrue(appears("3병동 김간호의 근무표 보기", exact = true))
+        assertEquals("팀", c.received.get(teamId)!!.initial)
+        if (words) assertTrue(appears("팀 근무표", exact = true)) else assertTrue(gone("팀 근무표", exact = true))
+    }
+    @Test fun memberHeadFoldLight() = shoot("rvg34_member_head_fold_light_100", FOLDED, memberHead(words = true))
+    @Test fun memberHeadFoldBig() = shoot("rvg34_member_head_fold_light_130", FOLDED, fontScale = 1.3f, memberHead(words = true))
+    @Test fun memberHeadFoldDarkHuge() = shoot("rvg34_member_head_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, memberHead(words = false))
+    // The open screen puts the bar beside the month (42% of the width): at 200% the face stands alone there too.
+    @Test fun memberHeadOpenDarkHuge() = shoot("rvg34_member_head_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, memberHead(words = false))
+    @Test fun memberHeadOpenLight() = shoot("rvg34_member_head_open_light_100", UNFOLDED, memberHead(words = true))
+    /** The list the calendar's name ▾ opens says it is the 팀 근무표. */
+    @Test fun memberSwitcherFoldDarkHuge() = shoot("rvg34_member_switcher_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {
+        memberHead(words = false).invoke(this)
+        tapText("달력 바꾸기, 지금 내 달력", exact = true)
+        assertTrue(appears("어느 달력을 볼까요?", exact = true))
+        assertTrue(appears("팀 근무표 · ", exact = false))
+    }
 
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"

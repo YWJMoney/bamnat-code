@@ -234,7 +234,10 @@ fun ShareDialog(
                 val quickKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
                 OutlinedTextField(value = title, onValueChange = ::typed, singleLine = true,
                     label = { Text("내 이름 (선택)") }, placeholder = { Text("예: 민지") },
-                    supportingText = { Text("받는 분 화면에 ‘${title.trim().ifEmpty { "민지" }}의 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요") },
+                    // 2.0.0 [RVG-33] 검토 HQ-55: left empty, the link shows as '받은 근무표' ([RVG-32]), not as the example name's.
+                    // The receiving app calls a nameless link '받은 근무표' whatever the sender's 유형 ([LinkStart.roster]); 로/으로 by the word (일정으로).
+                    supportingText = { Text(title.trim().let { n -> if (n.isEmpty()) "적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요"
+                        else "받는 분 화면에 ‘${n}의 ${com.bamnat.core.work.scheduleWord(style).let { it + "’" + com.bamnat.app.ui.Fmt.ro(it) }} 보여요" }) },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { quickKeyboard?.hide() }))
@@ -248,7 +251,7 @@ fun ShareDialog(
                     options = ShareOptions.forAudience(com.bamnat.app.share.ShareAudience.FAMILY, employee, field).copy(memos = false, pay = false)
                     run {
                         val sent = payload()
-                        val (made, left) = client.createLeaving(sent)
+                        val (made, left) = client.createLeaving(sent, store)
                         keep(made, sent)
                         leftOut = left
                         container.telemetry.event("share_link_create", "quick_family")
@@ -496,7 +499,7 @@ fun ShareDialog(
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
                         val sent = payload()
-                        val (made, left) = client.createLeaving(sent)
+                        val (made, left) = client.createLeaving(sent, store)
                         keep(made, sent)
                         leftOut = left
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" } + if (slot > 1) ",slot$slot" else "")
@@ -519,7 +522,7 @@ fun ShareDialog(
                     OutlinedButton(enabled = !busy && !empty, onClick = {
                         run {
                             val sent = payload(null)
-                            val (made, left) = client.updateLeaving(current, sent)
+                            val (made, left) = client.updateLeaving(current, sent, store)
                             keep(made, sent)
                             leftOut = left
                         }
@@ -532,7 +535,7 @@ fun ShareDialog(
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
-                        val (made, left) = client.updateLeaving(current, sent)
+                        val (made, left) = client.updateLeaving(current, sent, store)
                         keep(made, sent)
                         leftOut = left
                         container.telemetry.event("share_link_extend", "sheet")

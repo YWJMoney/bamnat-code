@@ -446,9 +446,10 @@ class CompanyDetailViewModel(
                             if (ways.pending.value == w) { ways.cancel(w); ways.forgetDropped(); scope.payWays.askBase(false) }
                         }
                         scope.autoShare.rebase()
-                        runCatching { c.companyApi.use(store.device, page.id, setup.id, false, scope.serverCal) }
+                        // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+                        com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(page.id, setup.id, false, scope.serverCal))
                         if (usedBefore != null && usedBefore.setup != setup.id) {
-                            runCatching { c.companyApi.use(store.device, usedBefore.companyId, usedBefore.setup, true, scope.serverCal) }
+                            com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(usedBefore.companyId, usedBefore.setup, true, scope.serverCal))
                         }
                         c.telemetry.event("company_apply", "undone")
                         true
@@ -461,9 +462,10 @@ class CompanyDetailViewModel(
                 // [PLZ-08] 쓰는 사람: this calendar now uses this rule set, and no longer the one before (by the company's id; 1.29 sent its name).
                 val before = store.applied.value
                 if (before != null && before.setup != setup.id) {
-                    launch { runCatching { c.companyApi.use(store.device, before.companyId, before.setup, false, scope.serverCal) } }
+                    launch { com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(before.companyId, before.setup, false, scope.serverCal)) }
                 }
-                launch { runCatching { c.companyApi.use(store.device, page.id, setup.id, true, scope.serverCal) } }
+                // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+                launch { com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(page.id, setup.id, true, scope.serverCal)) }
                 store.setApplied(AppliedSetup(page.id, page.name, setup.dept, setup.id, setup.version, setup.adopted, Today.instant()))
                 store.setDraft(null)
                 // [PLAZA-32] 1.27 AI: a member already (page.member) is one here too, so 광장 opens to this company's room.
@@ -511,6 +513,15 @@ class CompanyDetailViewModel(
                 }
                 null
             } catch (e: CompanyException) {
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    // 2.0.0 [RVN-16] 검토 U10b-03: no connection: the vote waits on the phone and goes by itself; one line says so.
+                    com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.vote(page.id, setup.id, ok, why = why))
+                    _votes.value = _votes.value + (setup.id to ok)
+                    if (scope.store.applied.value?.setup == setup.id) scope.store.voted(ok)
+                    com.bamnat.app.ui.PutOnNotice.say(com.bamnat.app.company.SmallSends.waitsLine(ok))
+                    done(null)
+                    return@launch
+                }
                 companyProblem(e)
             }
             done(error)
@@ -632,6 +643,9 @@ object TalkSheets {
     val pending = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.NoticeLinks.FixTalk?>(null)
 }
 
+/** 2.0.0 [RVN-16] 검토 U10a-07: the line said when a writer is hidden (with 되돌리기 beside it). */
+internal fun hiddenLine(p: com.bamnat.app.company.TalkPost) = "${p.nick ?: "참여자 ${p.who}"}님 글을 안 보기로 했어요 · 마을 › 팔로잉 › 차단에서도 다시 볼 수 있어요"
+
 class TalkHolder(
     private val c: AppContainer,
     private val scope: kotlinx.coroutines.CoroutineScope,
@@ -744,13 +758,25 @@ class TalkHolder(
             "다음 버전으로 채택돼요. 다니는 회사일 때만 눌러 주세요."
     }
 
-    /** [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. */
-    fun hide(p: com.bamnat.app.company.TalkPost) {
+    /**
+     * [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. 2.0.0 [RVN-16] 검토 U10a-07: the line under
+     * says so with 되돌리기 (8 seconds), which shows the writer again, unless [quiet] (a caller that says it itself).
+     */
+    fun hide(p: com.bamnat.app.company.TalkPost, quiet: Boolean = false) {
         val mark = p.author ?: return
         c.settingsRepository.update { s ->
             s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, p.nick ?: "참여자 ${p.who}", Today.millis()).encode())
         }
         c.telemetry.event("plaza_hide")
+        changed = true
+        reload()
+        if (!quiet) com.bamnat.app.ui.PutOnNotice.say(hiddenLine(p)) { unhide(mark); true }
+    }
+
+    /** 2.0.0 [RVN-16] U10a-07 되돌리기 of [hide]: the writer shows again in every talk. */
+    fun unhide(mark: String) {
+        c.settingsRepository.update { s -> s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).show(mark).encode()) }
+        c.telemetry.event("plaza_hide", "undone")
         changed = true
         reload()
     }
@@ -988,7 +1014,9 @@ class CompanyBoardViewModel(
      * top, the cards stay); [stale] when reading it again failed.
      */
     data class Tab(val items: List<com.bamnat.app.company.BoardItem> = emptyList(), val next: Int? = 0, val loading: Boolean = false, val error: String? = null,
-        val fromCache: Boolean = false, val stale: Boolean = false)
+        val fromCache: Boolean = false, val stale: Boolean = false,
+        /** 2.0.0 [RVN-13] COMP-15 Why the next page did not come, said at the list's end with 다시 시도 (null when it did). */
+        val moreFailed: String? = null)
 
     val enabled: Boolean = c.companyApi.enabled
     private val _adopted = MutableStateFlow(false)
@@ -1077,8 +1105,8 @@ class CompanyBoardViewModel(
         val key = "$adopted|$q|${fl.job}|${fl.region}|${fl.sort}"
         val cache = c.companySearch.cache
         val kept = if (from == 0) cache.board(key)?.value else null
-        f.value = if (kept != null) f.value.copy(items = kept.items, next = kept.next, loading = true, error = null, fromCache = true, stale = false)
-        else f.value.copy(loading = true, error = null, stale = false)
+        f.value = if (kept != null) f.value.copy(items = kept.items, next = kept.next, loading = true, error = null, fromCache = true, stale = false, moreFailed = null)
+        else f.value.copy(loading = true, error = null, stale = false, moreFailed = null)
         viewModelScope.launch {
             if (from == 0 && kept == null && !cache.loaded) {
                 cache.load()
@@ -1094,7 +1122,8 @@ class CompanyBoardViewModel(
                     next = b.next, loading = false, fromCache = false)
             } catch (e: CompanyException) {
                 val shown = f.value.items.isNotEmpty()
-                f.value.copy(loading = false, error = if (shown) null else companyProblem(e), stale = shown && from == 0)
+                f.value.copy(loading = false, error = if (shown) null else companyProblem(e), stale = shown && from == 0,
+                    moreFailed = if (shown && from > 0) companyProblem(e) else null)
             }
             // A page for a name no longer in the box is dropped; the new name's pages are on their way.
             if (q == asked && fl == _filter.value) {
@@ -1816,12 +1845,18 @@ class CompanyNudgeViewModel(
                 null
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (e: CompanyException) {
-                // A version that is gone will not take a vote later either: the card stops asking about it.
-                if (e.code in GONE) store.voted(ok)
-                companyProblem(e)
             } catch (e: Exception) {
-                companyProblem("server")
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    // 2.0.0 [RVN-16] 검토 U10b-03: no connection: 맞아요·달라요 waits on the phone and goes once online, said in one line.
+                    com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.vote(a.companyId, a.setup, ok, verified, why))
+                    store.voted(ok)
+                    com.bamnat.app.ui.PutOnNotice.say(com.bamnat.app.company.SmallSends.waitsLine(ok))
+                    null
+                } else if (e is CompanyException) {
+                    // A version that is gone will not take a vote later either: the card stops asking about it.
+                    if (e.code in GONE) store.voted(ok)
+                    companyProblem(e)
+                } else companyProblem("server")
             }
             done(problem)
         }
