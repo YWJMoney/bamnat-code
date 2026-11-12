@@ -618,9 +618,12 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
                 else row.cells[day]?.takeIf { it is com.bamnat.core.imports.DutyCell.Unknown }
             cell?.let { day to it }
         }.toMap()
+        val looked by vm.rosterLooked.collectAsStateWithLifecycle()
+        val yellow = row.doubtful(month.lengthOfMonth())
         com.bamnat.app.ui.imports.SameAsPhotoCard(
-            photoScan, row, vm.rosterRank, cells, if (same == true) emptySet() else row.doubtful(month.lengthOfMonth()), d.types,
+            photoScan, row, vm.rosterRank, cells, if (same == true) emptySet() else yellow - looked, d.types,
             month.lengthOfMonth(), same, onAnswer = { vm.rosterSame(it) }, onFix = { fixing = it }, onAgain = { vm.rosterSame(null) },
+            onRight = { vm.rosterRight(it, yellow) },
         )
     }
     fixing?.let { day ->
