@@ -51,7 +51,8 @@ const FIXES = /mock\.timers|fixClock\(|server\(\s*\{[^}]*\bt\b/;
 test("진짜 시계로 도는 서버 시험 파일이 늘지 않아요", () => {
   const files = readdirSync(here).filter((n) => n.endsWith(".test.mjs"));
   const real = files.filter((f) => {
-    const text = readFileSync(here + f, "utf8");
+    // 주석의 'server({ t })' 같은 글은 세지 않아요: 코드만.
+    const text = readFileSync(here + f, "utf8").replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     return /\bserver\(/.test(text) && !FIXES.test(text);
   });
   const fresh = real.filter((f) => !REAL_CLOCK.includes(f));
