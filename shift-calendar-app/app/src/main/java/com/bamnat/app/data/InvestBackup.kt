@@ -37,6 +37,7 @@ object InvestBackup {
         val rows = Rows(dao.allAccounts(), dao.allTrades(), dao.allCash(), dao.allQuotes(), dao.allJournal(), dao.allEvents(),
             dao.allAlarms(), dao.allSnapshots(), dao.allSettings())
         if (rows.isEmpty) return JSONObject()
+        val (trades, changes) = partition(rows.trades)
         return JSONObject()
             .put("accounts", JSONArray().apply {
                 rows.accounts.forEach { a ->
@@ -44,15 +45,10 @@ object InvestBackup {
                         .putOpt("fee", a.feeRate).put("order", a.sortOrder).put("hidden", a.hidden))
                 }
             })
-            .put("trades", JSONArray().apply {
-                rows.trades.forEach { t ->
-                    put(JSONObject().put("id", t.id).put("account", t.accountId).put("day", t.epochDay).putOpt("minute", t.minuteOfDay)
-                        .put("symbol", t.symbol).put("name", t.name).put("market", t.market).put("side", t.side)
-                        .put("qty", t.quantity).put("price", t.price).put("currency", t.currency).put("fx", t.fxRate)
-                        .put("fee", t.fee).put("tax", t.tax).put("reason", t.reason).put("emotions", t.emotions).put("tags", t.tags)
-                        .putOpt("rules", t.followedRules).put("memo", t.memo).putOpt("alarm", t.alarmId).put("created", t.createdAt))
-                }
-            })
+            .put("trades", JSONArray().apply { trades.forEach { put(tradeJson(it)) } })
+            // 2.0.0 [RVK-27] (검토 MONEY-64) Splits and shares moved in or out under their own key: an older app restoring this backup
+            // skips them instead of reading a 1:5 split as five shares bought for nothing (it read any side it did not know as 매수).
+            .putOpt("quantityChanges", changes.takeIf { it.isNotEmpty() }?.let { JSONArray().apply { it.forEach { t -> put(tradeJson(t)) } } })
             .put("cash", JSONArray().apply {
                 rows.cash.forEach { c ->
                     put(JSONObject().put("id", c.id).put("account", c.accountId).put("day", c.epochDay).putOpt("minute", c.minuteOfDay)
@@ -98,7 +94,7 @@ object InvestBackup {
             InvestAccountEntity(a.getLong("id"), a.optString("name"), a.optString("type", "GENERAL"), a.optString("broker"),
                 a.optDoubleOrNull("fee"), a.optInt("order"), a.optBoolean("hidden"))
         },
-        trades = o.objects("trades").map { t ->
+        trades = (o.objects("trades") + o.objects("quantityChanges")).map { t ->
             InvestTradeEntity(
                 id = t.getLong("id"), accountId = t.getLong("account"), epochDay = t.getLong("day"), minuteOfDay = t.optIntOrNull("minute"),
                 symbol = t.optString("symbol"), name = t.optString("name"), market = t.optString("market", "KR_STOCK"), side = t.optString("side", "BUY"),
@@ -150,6 +146,17 @@ object InvestBackup {
         dao.clearSnapshots(); dao.restoreSnapshots(rows.snapshots)
         dao.clearSettings(); dao.restoreSettings(rows.settings)
     }
+
+    /** 2.0.0 [RVK-27] 매수·매도 under "trades", 분할·입고·출고 under "quantityChanges" (see [put]). */
+    internal fun partition(trades: List<InvestTradeEntity>): Pair<List<InvestTradeEntity>, List<InvestTradeEntity>> =
+        trades.partition { it.side == "BUY" || it.side == "SELL" }
+
+    private fun tradeJson(t: InvestTradeEntity): JSONObject =
+        JSONObject().put("id", t.id).put("account", t.accountId).put("day", t.epochDay).putOpt("minute", t.minuteOfDay)
+            .put("symbol", t.symbol).put("name", t.name).put("market", t.market).put("side", t.side)
+            .put("qty", t.quantity).put("price", t.price).put("currency", t.currency).put("fx", t.fxRate)
+            .put("fee", t.fee).put("tax", t.tax).put("reason", t.reason).put("emotions", t.emotions).put("tags", t.tags)
+            .putOpt("rules", t.followedRules).put("memo", t.memo).putOpt("alarm", t.alarmId).put("created", t.createdAt)
 
     private fun JSONObject.objects(key: String): List<JSONObject> =
         optJSONArray(key)?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.orEmpty()

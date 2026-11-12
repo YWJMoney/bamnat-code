@@ -269,7 +269,7 @@ data class WidgetData(
             val book = com.bamnat.app.data.InvestRepository.of(container.database).now()
             val result = com.bamnat.core.invest.Portfolio.build(book)
             val days = com.bamnat.core.invest.Portfolio.dailyPnl(result, book.cash)
-            return InvestLine(days[today] ?: 0L, book.trades.count { it.date == today }, result.summary.simpleReturn, days,
+            return InvestLine(days[today] ?: 0L, book.trades.count { it.date == today && it.side.trade }, result.summary.simpleReturn, days,
                 book.settings.hideAmounts, book.isEmpty)
         }
     }

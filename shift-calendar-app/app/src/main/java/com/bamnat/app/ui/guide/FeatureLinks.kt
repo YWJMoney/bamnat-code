@@ -97,6 +97,8 @@ val TOOL_KEYS = setOf(
     // [GUIDE-01] The investor tab's sheets and tabs (InvestScreen).
     "invest.cash", "invest.dividend", "invest.trade", "invest.quotes", "invest.goal", "invest.journal", "invest.event",
     "invest.alarms", "invest.stats", "invest.records", "invest.overview",
+    // 2.0.0 [RVK-27]·[RVK-28] (검토 MONEY-64·U06b-04) 수량 바뀜 창과 종목 탭(기록 한 장은 카드에서 열어요).
+    "invest.quantity", "invest.holdings",
     // [CUST-01] 화면 꾸미기 over the calendar (CalendarScreen); 2.0.0 [RVP-75] 이번 달 전부 넣기's keypad there too.
     "customize", "typeMonth",
     // [RVG-04] 사장님 급여 대장 from the 직원 인건비 card (ShopTools).
