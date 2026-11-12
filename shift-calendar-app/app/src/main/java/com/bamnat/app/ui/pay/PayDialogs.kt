@@ -298,17 +298,19 @@ fun EditValueDialog(
                     val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) } else scope = k }
                     Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = scope == k, onClick = pick)
-                        Text(
-                            when (k) {
-                                ScopeKind.ALL -> if (hasPast) "모든 달 같게 (처음 값을 잘못 넣었을 때 · 지난달도 바뀌어요)" else "모든 달 같게 (지난달·다음 달 모두)"
-                                ScopeKind.ONLY -> "${month.monthValue}월만 (다음 달부터는 원래대로)"
-                                ScopeKind.FROM -> "${month.monthValue}월 급여부터 계속 (오른 달처럼 그 전 달은 예전 값 그대로)" +
-                                    (if (periodStart != month.atDay(1)) " · ${periodStart.monthValue}/${periodStart.dayOfMonth} 근무부터" else "")
-                                ScopeKind.DATE -> "이 날짜부터 (1월 1일에 오른 최저임금처럼 그날 근무부터)"
-                                ScopeKind.RANGE -> "기간 지정"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        // 2.0.0 [RVJ-08] 품질 조건 4 (#444 사진 08: 200%에서 고르기 글이 줄마다 세 줄): 고르는 말 한 줄 + 작은 설명 한 줄.
+                        val (say, more) = when (k) {
+                            ScopeKind.ALL -> "모든 달 같게" to (if (hasPast) "처음 값을 잘못 넣었을 때 · 지난달도 바뀌어요" else "지난달·다음 달 모두")
+                            ScopeKind.ONLY -> "${month.monthValue}월만" to "다음 달부터는 원래대로"
+                            ScopeKind.FROM -> "${month.monthValue}월 급여부터 계속" to ("그 전 달은 예전 값 그대로" +
+                                (if (periodStart != month.atDay(1)) " · ${periodStart.monthValue}/${periodStart.dayOfMonth} 근무부터" else ""))
+                            ScopeKind.DATE -> "이 날짜부터" to "1월 1일에 오른 최저임금처럼 그날 근무부터"
+                            ScopeKind.RANGE -> "기간 지정" to null
+                        }
+                        Column(Modifier.weight(1f, fill = false).padding(vertical = 4.dp)) {
+                            Text(say, style = MaterialTheme.typography.bodyMedium)
+                            more?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
                         if (k == ScopeKind.RANGE) com.bamnat.app.ui.money.ProPill(Modifier.padding(start = 8.dp), locked = locked) // [TIER-06]
                     }
                 }
@@ -326,13 +328,17 @@ fun EditValueDialog(
                         // 주의(주황): 빨강은 위험에만 (디자인 품질 조건 6).
                         style = MaterialTheme.typography.titleSmall, color = com.bamnat.app.ui.theme.Tone.Caution.color())
                     val changed = p.changedMonths.filter { it.month >= month }
+                    val same = v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1
                     Text(
                         // PC 3e347ec6: '그대로예요' under a new amount read as if it had not been taken.
-                        if (v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1) "지금 값과 같아요"
-                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요 (이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요)"
+                        if (same) "지금 값과 같아요"
+                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요"
                         else "앞으로 ${changed.size}개월이 바뀌어요 · 합계 ${signed(changed.filterNot { it.locked }.sumOf { it.delta })}",
                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                     )
+                    // 2.0.0 품질 조건 4: 까닭은 작은 줄로 (200%에서 제목 글이 네 줄이던 것).
+                    if (!same && changed.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
                         (past + changed).forEach { d ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
