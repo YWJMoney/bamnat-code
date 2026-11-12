@@ -82,7 +82,8 @@ class NtcScreenshotTest : ScreenshotBase() {
         // lock-screen 오늘 근무 on first, so the preview is in once the overlap it finds is in the state.
         check(waitFor { vm.state.value.pieces.any { it.overlaps.isNotEmpty() } }) {
             "내 달력 미리 보기에 겹침이 없어요. 만든 바로 뒤: $first / 기다린 뒤: ${said(vm)} " +
-                "now=${c.recipes.pieces.overlaps(summaryWork.pieces.single().values).size}"
+                "now=${c.recipes.pieces.overlaps(summaryWork.pieces.single().values).size} " +
+                "log=${org.robolectric.shadows.ShadowLog.getLogsForTag("BamnatRecipe").map { "${it.msg}: ${it.throwable}" }}"
         }
     }
 

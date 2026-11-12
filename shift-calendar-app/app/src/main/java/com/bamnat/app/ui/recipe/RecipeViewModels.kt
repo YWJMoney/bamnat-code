@@ -375,23 +375,33 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         _state.value = _state.value.copy(pieces = _state.value.pieces.map { if (it.kind == kind) f(it) else it })
     }
 
-    /** 내 달력에서 미리 보기: what each chosen piece would change here, worked out again when an answer changes. */
+    /** [RVM-13] The newest [preview]; an older one that ends after it does not write over it. */
+    private var previewTurn = 0
+
+    /**
+     * 내 달력에서 미리 보기: what each chosen piece would change here, worked out again when an answer changes.
+     *
+     * 2.0.0 [RVM-13] (총괄 #489, NtcScreenshotTest가 통합 나무에서 흔들림: 상세를 연 바로 뒤 겹침 1건이 기다린 뒤 0건): a part that could not
+     * be worked out this time keeps what it said before (a failure is not '바뀌는 것이 없어요'), says why in the log, and only the newest
+     * preview writes, so an older or failed one never empties a preview that was right.
+     */
     fun preview(): kotlinx.coroutines.Job? {
         val r = _state.value.recipe ?: return null
+        val turn = ++previewTurn
         return viewModelScope.launch {
             val answers = RecipeResolve.answers(r, _state.value.answers)
             val lines = r.pieces.associate { p ->
-                p.kind to runCatching { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
+                p.kind to tried("lines ${p.kind.key}") { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }
             }
             val look = r.pieces.firstOrNull { it.kind == PieceKind.SHIFT_LOOK }?.let { p ->
-                runCatching { c.recipes.pieces.lookPairs(RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
-            }.orEmpty()
+                tried("look") { c.recipes.pieces.lookPairs(RecipeResolve.piece(r, p, answers), calendar) }
+            }
             val clashes = r.pieces.firstOrNull { it.kind == PieceKind.MEMO_TEMPLATES }?.let { p ->
-                runCatching { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
-            }.orEmpty()
+                tried("clashes") { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }
+            }
             val overlaps = r.pieces.firstOrNull { it.kind == PieceKind.LOGIC }?.let { p ->
-                runCatching { c.recipes.pieces.overlaps(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
-            }.orEmpty()
+                tried("overlaps") { c.recipes.pieces.overlaps(RecipeResolve.piece(r, p, answers)) }
+            }
             // 1.39 [MKP-05] 지금 ↔ 넣으면, with the 바꾸기 / 둘 다 두기 chosen for each piece.
             val modes = _state.value.pieces.associate { it.kind to it.mode }
             val sides = r.pieces.associate { p ->
@@ -405,11 +415,20 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             }.orEmpty()
             val weaker = _state.value.alarmWeaker
             fun shown(l: RecipePieces.Change) = if (l.weak && guard && !weaker) l.copy(text = l.text + " · 넣지 않아요(지금 것 그대로)", skipped = true) else l
+            if (turn != previewTurn) return@launch
             _state.value = _state.value.copy(pieces = _state.value.pieces.map {
-                it.copy(lines = lines[it.kind].orEmpty().map(::shown), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList(), sides = sides[it.kind].orEmpty(),
-                    overlaps = if (it.kind == PieceKind.LOGIC) overlaps else emptyList())
-            }, looks = look, alarmWeak = weak)
+                it.copy(lines = if (it.kind in lines) lines[it.kind]?.map(::shown) ?: it.lines else emptyList(),
+                    clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes ?: it.clashes else emptyList(), sides = sides[it.kind].orEmpty(),
+                    overlaps = if (it.kind == PieceKind.LOGIC) overlaps ?: it.overlaps else emptyList())
+            }, looks = look ?: if (r.pieces.any { it.kind == PieceKind.SHIFT_LOOK }) _state.value.looks else emptyList(), alarmWeak = weak)
         }
+    }
+
+    /** One part of [preview]: its answer, or null (said in the log) when it could not be worked out; a cancel goes on as a cancel. */
+    private inline fun <T> tried(what: String, f: () -> List<T>): List<T>? = try { f() } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("BamnatRecipe", "미리 보기 $what", e); null
     }
 
     /**
