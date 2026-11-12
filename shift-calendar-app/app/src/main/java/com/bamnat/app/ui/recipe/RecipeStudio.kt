@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -242,7 +243,8 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
       CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint, com.bamnat.app.logic.LocalDayFacts provides facts, com.bamnat.app.ui.parts.LocalBlueprintRaw provides rawParts) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.widthIn(max = 340.dp).fillMaxWidth().height(560.dp)
+                // 2.0.0 [RVS-03] 검토 U09a-06: '편 화면' shows the example at a Fold's open width (673dp), as it lays out there.
+                (if (LocalMockWide.current) Modifier.requiredWidth(com.bamnat.app.ui.studio.WIDE_W) else Modifier.widthIn(max = 340.dp).fillMaxWidth()).height(560.dp)
                     .border(6.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(32.dp))
                     .padding(6.dp)
                     .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(26.dp))
@@ -325,6 +327,9 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
  * screen's own ([MockPhone] onPick).
  */
 val LocalMockPick = androidx.compose.runtime.compositionLocalOf<((String) -> Unit)?> { null }
+
+/** 2.0.0 [RVS-03] U09a-06: the example at a Fold's open width (the studio's '편 화면' chip). */
+val LocalMockWide = androidx.compose.runtime.compositionLocalOf { false }
 
 /** A part of the example that opens its own tool when [LocalMockPick] listens. */
 @Composable

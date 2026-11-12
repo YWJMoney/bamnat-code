@@ -499,6 +499,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var seeDark by rememberSaveable { mutableStateOf(false) }
     var seeBig by rememberSaveable { mutableStateOf(false) }
     var seeCvd by rememberSaveable { mutableStateOf(false) }
+    var seeWide by rememberSaveable { mutableStateOf(false) }
 
     val d = s.draft
     val looks = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks) }
@@ -813,7 +814,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
-                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it })
+                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it }, seeWide, { seeWide = it })
                     }
                     com.bamnat.app.ui.components.FoldRow("studio.tools", what = "도구 줄", over = true) {
                         // [CNV-07] 숨긴 카드 다시 넣기 (빈 판에서 카드 넣기도 여기서).
@@ -865,14 +866,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 LaunchedEffect(quick) { if (quick != null) { kotlinx.coroutines.delay(180); sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } } }
                 Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLowest)) {
-                    ZoomCanvas(zoom, Modifier.fillMaxSize(), picking = Modifier
+                    ZoomCanvas(zoom, Modifier.fillMaxSize(), width = if (seeWide) WIDE_W else CANVAS_W, picking = Modifier
                         .holdToPeek(enabled = s.prevPieces != null) { peeking = it; if (!it) peekMarks = 0 }
                         .partPicking(if (spotsOn) spots else null, sel) { id -> selectPart(id) }, onEmptyTap = { if (sel != null) selectPart(null) }) {
                         Box(Modifier.fillMaxSize()
                             // [STU-41] What the example shows is kept as a picture, for 올리기's 표지.
                             .drawWithContent { shotLayer.record { this@drawWithContent.drawContent() }; drawLayer(shotLayer) }) {
                         CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked,
-                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null), LocalRealLook provides !shotExample) {
+                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null), LocalRealLook provides !shotExample,
+                            com.bamnat.app.ui.recipe.LocalMockWide provides seeWide) {
                         Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor) {
                         if (!detail && !area.detailOnly) {
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.

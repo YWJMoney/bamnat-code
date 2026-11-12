@@ -192,4 +192,18 @@ class S3ScreenshotTest : ScreenshotBase() {
         assertTrue("월 판으로", gone("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", exact = true))
         assertTrue(com.bamnat.core.layout.TabViews.decode(c.settingsRepository.current.tabViews).cal == com.bamnat.core.layout.CalendarBoard.MONTH)
     }
+
+    /** RVS-03 (검토 U09a-06): the studio's '편 화면' shows the example at a Fold's open width, laid out as it is there. */
+    @Test fun theStudioShowsTheOpenFold() = shoot("s3/u09a06_studio_open_fold_light_100_folded", FOLDED) {
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        settle()
+        runCatching { tapText("화면 줄 모두 펼쳐 보기", exact = true, scrolls = 0) }
+        settle()
+        tapText("편 화면", exact = true)
+        settle()
+        val ex = nodes(merged = true).first { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.any { d -> d == "예시 앱 화면" } == true }
+        // Drawn smaller to fit, but 673 × 560: wider than tall (a folded phone's example is 340 × 560).
+        assertTrue("편 화면 예시가 가로로 넓어요: ${ex.size}", ex.size.width > ex.size.height)
+    }
 }

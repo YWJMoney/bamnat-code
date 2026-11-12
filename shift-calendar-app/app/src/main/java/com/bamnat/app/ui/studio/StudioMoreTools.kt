@@ -177,9 +177,12 @@ internal fun Conditioned(dark: Boolean, big: Boolean, cvd: Boolean, accent: Long
 
 /** [STU-36] The chips that turn the conditions on, in a row under the example's own chips. */
 @Composable
-internal fun ConditionChips(dark: Boolean, big: Boolean, cvd: Boolean, onDark: (Boolean) -> Unit, onBig: (Boolean) -> Unit, onCvd: (Boolean) -> Unit) {
+internal fun ConditionChips(dark: Boolean, big: Boolean, cvd: Boolean, onDark: (Boolean) -> Unit, onBig: (Boolean) -> Unit, onCvd: (Boolean) -> Unit,
+                            wide: Boolean = false, onWide: (Boolean) -> Unit = {}) {
     FilterChip(selected = dark, onClick = { onDark(!dark) }, label = { Text("어두운 화면") })
     FilterChip(selected = big, onClick = { onBig(!big) }, label = { Text("큰 글자") })
+    // 2.0.0 [RVS-03] 검토 U09a-06: how the work lays out on a Fold opened (673dp); the example is a folded phone's width otherwise.
+    FilterChip(selected = wide, onClick = { onWide(!wide) }, label = { Text("편 화면") })
     if (canSeeAsCvd) FilterChip(selected = cvd, onClick = { onCvd(!cvd) }, label = { Text("색약 눈") })
 }
 
