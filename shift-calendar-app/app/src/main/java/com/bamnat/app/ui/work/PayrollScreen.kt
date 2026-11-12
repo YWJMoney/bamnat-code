@@ -752,7 +752,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         if (shortWeek && !s.insurance.any) when (s.insurance.tax) {
             com.bamnat.core.boss.StaffTax.BIZ -> Unit
             com.bamnat.core.boss.StaffTax.DAILY -> Hint("일용직은 한 주 15시간이 안 돼도 고용보험은 첫날부터 들어요. 실제로 든 보험을 골라 주세요.")
-            else -> Hint("한 주 15시간(월 60시간)이 안 돼 국민연금·건강보험은 가입 대상이 아니에요. 고용보험은 3개월 넘게 이어서 일하면 들어요.")
+            else -> Hint("한 주 15시간(월 60시간)이 안 돼 국민연금·건강보험은 가입 대상이 아니에요. 고용보험은 3개월 이상 이어서 일하면 들어요.")
         }
         // 2.0.0 [RVJ-16] 검토 BOSS-74: 외국인 직원은 국민연금·고용보험이 나라·체류자격에 따라 달라요.
         FilterChip(selected = s.insurance.foreign, onClick = { s = s.copy(insurance = s.insurance.copy(foreign = !s.insurance.foreign)) }, label = { Text("외국인 직원") })

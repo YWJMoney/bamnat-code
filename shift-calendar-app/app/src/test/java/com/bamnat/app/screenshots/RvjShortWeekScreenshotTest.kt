@@ -55,7 +55,7 @@ class RvjShortWeekScreenshotTest : ScreenshotBase() {
     @Test fun aShortWeekSaysWhyTheChipsAreOff() = shoot("rvj_112_short_week_insurance_said_folded", FOLDED) {
         staff(StaffTax.WAGE).invoke(this)
         assertTrue(scrolledTo("한 주 15시간(월 60시간)이 안 돼 국민연금·건강보험은 가입 대상이 아니에요"))
-        assertTrue(scrolledTo("고용보험은 3개월 넘게 이어서 일하면 들어요"))
+        assertTrue(scrolledTo("고용보험은 3개월 이상 이어서 일하면 들어요"))
     }
 
     @Test fun aDailyWorkerHearsOfTheFirstDay() = shoot("rvj_113_short_week_daily_folded", FOLDED) {
