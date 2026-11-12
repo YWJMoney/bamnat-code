@@ -30,8 +30,10 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -84,6 +86,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
@@ -452,9 +455,8 @@ private fun PayResult(
     val result = v.result
     val closedSnap = closed[result.month]
     // A closed month shows what was saved, not today's recalculation [PAYX-03].
-    val shown = remember(result, closedSnap) {
-        closedSnap?.let { result.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: result
-    }
+    // 2.0.0 [RVJ-18] 굳은 달: its days and 세후 too, so 날짜별 내역 adds up to the 합계 shown.
+    val shown = remember(result, closedSnap) { closedSnap?.frozen(result) ?: result }
     val year = v.year
     val range = v.range.takeIf { closedSnap == null }
     val context = LocalContext.current
@@ -507,9 +509,14 @@ private fun PayResult(
         val y = reportY
         if (focus == PayFocus.REPORT && y != null) resultScroll.animateScrollTo(y)
     }
+    // 2.0.0 [RVJ-21] 펼친 폭(조건 12): cards sit in the middle up to 640dp like PayWizard·PayQuickSetup, and only the 날짜별 표 takes the
+    // whole width (ledgerWidth), so on 673dp+ the body no longer stretches edge to edge.
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+    val ledgerWidth = maxWidth - 32.dp
     Column(
         // 1.39 [CALX-08] 좌우로 밀어 달 넘기기.
-        Modifier.fillMaxSize().monthSwipe(Unit) { vm.moveMonth(it.toLong()) }.verticalScroll(resultScroll).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().monthSwipe(Unit) { vm.moveMonth(it.toLong()) }.verticalScroll(resultScroll).padding(horizontal = 16.dp, vertical = 12.dp)
+            .wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 640.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:
@@ -600,6 +607,20 @@ private fun PayResult(
             val older = remember(profile, month) { com.bamnat.core.pay.PaySameness.of(profile, month) }
             if (!older.same) OlderValuesCard(older.line, onUnify = { vm.unifyMonths() }, onHistory = { editTarget = ValueTarget.Base })
         }
+        // 2.0.0 [RVJ-18] 검토 U05-01·I05a-02: after the 급여일, "이대로 마감할까요?" once for that month ('나중에' keeps it away),
+        // or, with 저절로 마감 on, the month closes by itself and 도구 › ○월 마감 says so.
+        if (unlocked && !locked && !noBase) {
+            val asked by vm.closeAsked.collectAsStateWithLifecycle()
+            val paid by vm.payRecords.collectAsStateWithLifecycle(emptyList())
+            val due = remember(profile, closed, asked, paid) { vm.closeDue(profile, paid) }
+            val auto = settings.payAutoClose
+            androidx.compose.runtime.LaunchedEffect(due, auto) { if (due != null && auto) vm.closeMonthOf(profile, snapshot, due) }
+            if (!auto) due?.let { m ->
+                CloseAskCard(m, deposited = vm.paidOn(paid, m) != null,
+                    onClose = { vm.closeMonthOf(profile, snapshot, m) }, onLater = { vm.closeAskLater(m) },
+                    onAlways = { vm.setAutoClose(true); vm.closeMonthOf(profile, snapshot, m) })
+            }
+        }
         if (noBase) guides()
         // [J133-98] 1.33 빌드 8 확인 ("첫 급여 방식 카드가 '내 급여 값' 탭 안에만 있어요"): on 결과, where the pay screen opens.
         val first by vm.firstPay.collectAsStateWithLifecycle()
@@ -610,8 +631,9 @@ private fun PayResult(
         if (payTab == PayTab.RESULT) {
         // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
         val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
-        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
-            value = vm.takeHome(profile, shown.total, month)
+        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate, closedSnap) {
+            // [RVJ-18] A closed month keeps the 세후 of the day it was closed (그때 표·그때 기록).
+            value = closedSnap?.takeHome ?: vm.takeHome(profile, shown.total, month)
         }
         takeHome?.let { f ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -691,7 +713,8 @@ private fun PayResult(
 
         GuideFold(guides)
 
-        if (payLook.days != false) DayLedger(result, unlocked)
+        if (payLook.days != false) DayLedger(shown, unlocked, keptDays = closedSnap?.hasDays,
+            modifier = if (ledgerWidth > 640.dp) Modifier.requiredWidth(ledgerWidth) else Modifier)
 
         } // RESULT
         // U 1.32 [UX132-03] 도구: 만약에, 연말정산, 마감, 리포트.
@@ -714,7 +737,7 @@ private fun PayResult(
         }
 
         if (unlocked && !month.isAfter(Today.month())) {
-            CloseMonthCard(vm, result, closedSnap)
+            CloseMonthCard(vm, result, closedSnap, autoClose = settings.payAutoClose)
         }
 
         // [PROV-01] The month or its year as a PDF or CSV (프로).
@@ -922,6 +945,7 @@ private fun PayResult(
             modifier = Modifier.padding(bottom = 24.dp),
         )
     }
+    } // BoxWithConstraints [RVJ-21]
 
     // [PAYS-20] 1.27 "정보가 뜰 때 바로 고칠수 있게": the line's own value fixed from its explanation.
     detail?.let { line ->
@@ -1282,30 +1306,31 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
             .padding(horizontal = (part.padH ?: 0).dp, vertical = part.padV?.dp ?: when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(kindColor(line.kind)))
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line.label, style = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.bodyLarge), modifier = Modifier.weight(1f, fill = false))
-                if (line.estimated) { Spacer(Modifier.width(6.dp)); EstimatedChip("추정", onClick = onEstimate.takeIf { unlocked }) }
-            }
-            // [PAYX-55] 1.38 PC 12.5: a line with no one rate (회사 규칙, 직접 넣은 규칙) read '4시간 × 0%'; it says how it was worked out.
-            val how = when {
-                line.minutes <= 0 -> null
-                LocalPayLocked.current -> PayCalculator.hours(line.minutes)
-                line.multiplier > 0 && line.hourly > 0 -> "${PayCalculator.hours(line.minutes)} × ${won(line.hourly)} × ${PayCalculator.pct(line.multiplier)}"
-                line.multiplier > 0 -> "${PayCalculator.hours(line.minutes)} × ${PayCalculator.pct(line.multiplier)}"
-                else -> line.formula.ifBlank { PayCalculator.hours(line.minutes) }
-            }
-            if (how != null) {
-                Text(how, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            }
-        }
+        // [RVJ-21] 2.0.0 #448 사진 13 (글자 200%에서 '연장근로'가 '연장근/로'로, 칩과 금액이 '[추정]3,000,000원'처럼 붙음): 공통 부품
+        // [com.bamnat.app.ui.components.AmountRow]가 큰 글자에서 이름을 첫 줄에 두고 칩 + 금액을 둘째 줄로 내려요(금액은 줄이지 않음).
         // [FREE-07] What is taken off in 급여 모양's own colour, when it reads on the page.
         val minus = look.minus?.takeIf { line.amount < 0 }?.let { Color((it or 0xFF000000L).toInt()) }
-        Text(if (unlocked) won(line.amount) else "●●●,●●●원", style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.titleSmall),
-            color = part.ink?.let { Color(it.toInt()) } ?: minus ?: Color.Unspecified)
+        // [PAYX-55] 1.38 PC 12.5: a line with no one rate (회사 규칙, 직접 넣은 규칙) read '4시간 × 0%'; it says how it was worked out.
+        val how = when {
+            line.minutes <= 0 -> null
+            LocalPayLocked.current -> PayCalculator.hours(line.minutes)
+            line.multiplier > 0 && line.hourly > 0 -> "${PayCalculator.hours(line.minutes)} × ${won(line.hourly)} × ${PayCalculator.pct(line.multiplier)}"
+            line.multiplier > 0 -> "${PayCalculator.hours(line.minutes)} × ${PayCalculator.pct(line.multiplier)}"
+            else -> line.formula.ifBlank { PayCalculator.hours(line.minutes) }
+        }
+        com.bamnat.app.ui.components.AmountRow(
+            name = line.label,
+            amount = if (unlocked) won(line.amount) else "●●●,●●●원",
+            nameStyle = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.bodyLarge),
+            amountStyle = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.titleSmall),
+            amountColor = part.ink?.let { Color(it.toInt()) } ?: minus ?: Color.Unspecified,
+            leading = { Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(kindColor(line.kind))) },
+            chip = if (line.estimated) { { EstimatedChip("추정", onClick = onEstimate.takeIf { unlocked }) } } else null,
+            detail = how?.let { h -> {
+                Text(h, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            } },
+        )
     }
 }
 
@@ -1443,13 +1468,16 @@ private fun Glossary() {
  * holiday, so a change on the calendar can be traced to the money.
  */
 @Composable
-private fun DayLedger(result: MonthPay, unlocked: Boolean) {
+private fun DayLedger(result: MonthPay, unlocked: Boolean, keptDays: Boolean? = null, modifier: Modifier = Modifier) {
     val days = result.days.filter { it.amount > 0 }
     if (days.isEmpty()) return
+    // 2.0.0 [RVJ-18] 검토 PC-02: 날짜별 합 + 달로 주는 몫 = 합계, said under the list so the two never read as different sums.
+    val split = remember(result) { com.bamnat.core.pay.DaySplit.of(result) }
     var expanded by rememberSaveable(result.month) { mutableStateOf(false) }
     var open by remember(result.month) { mutableStateOf<java.time.LocalDate?>(null) }
     val shown = if (expanded) days else days.take(6)
-    SectionCard(title = "날짜별 내역 (${days.size}일)", trailing = {
+    val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= com.bamnat.app.ui.components.TWO_LINES_FROM
+    SectionCard(title = "날짜별 내역 (${days.size}일)", modifier = modifier, trailing = {
         Text("달력과 연결돼 있어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }) {
         shown.forEach { d ->
@@ -1471,11 +1499,12 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
             Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(part.copy(ink = null, pad = null, padX = null, padY = null), shape))
                 .clip(shape).clickable(role = Role.Button, enabled = unlocked) { open = if (open == d.date) null else d.date }
                 .padding(horizontal = (part.padH ?: 0).dp, vertical = (part.padV ?: 6).dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                val dateText: @Composable (Modifier) -> Unit = { m ->
                     Text("${d.date.monthValue}/${d.date.dayOfMonth} (${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge,
-                        color = if (d.holidayName != null) MaterialTheme.colorScheme.error else ink ?: MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.labelWidth(76.dp))
-                    Column(Modifier.weight(1f)) {
+                        color = if (d.holidayName != null) MaterialTheme.colorScheme.error else ink ?: MaterialTheme.colorScheme.onSurface, modifier = m)
+                }
+                val kinds: @Composable (Modifier) -> Unit = { m ->
+                    Column(m) {
                         Text(listOfNotNull(d.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
                             color = ink ?: androidx.compose.ui.graphics.Color.Unspecified)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1484,13 +1513,25 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
                             }
                         }
                     }
-                    Text(if (unlocked) won(d.amount) else "●●,●●●원", color = ink ?: androidx.compose.ui.graphics.Color.Unspecified,
+                }
+                val amountText: @Composable () -> Unit = {
+                    Text(if (unlocked) won(d.amount) else "●●,●●●원", color = ink ?: androidx.compose.ui.graphics.Color.Unspecified, maxLines = 1, softWrap = false,
                         style = with(com.bamnat.app.ui.parts.PartMods) { text(part.copy(ink = null), MaterialTheme.typography.titleSmall) })
+                }
+                // [RVJ-21] 2.0.0 #448 사진 16 (글자 200%에서 가운데 칸 '공휴일'이 '공휴/일'로 끊김): at a big font the date and the amount take the
+                // first line and the day's kinds the whole second line, as the pay lines do ([com.bamnat.app.ui.components.AmountRow]).
+                if (bigText) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { dateText(Modifier.weight(1f)); amountText() }
+                    kinds(Modifier.fillMaxWidth())
+                } else Row(verticalAlignment = Alignment.CenterVertically) {
+                    dateText(Modifier.labelWidth(76.dp))
+                    kinds(Modifier.weight(1f))
+                    amountText()
                 }
                 if (open == d.date) {
                     val locked = LocalPayLocked.current
                     d.parts.forEach { part ->
-                        Row(Modifier.fillMaxWidth().padding(start = 76.dp, top = 2.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(start = if (bigText) 12.dp else 76.dp, top = 2.dp)) {
                             Text(if (locked) part.label else "${part.label} · ${part.formula}", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             Text(won(part.amount), style = MaterialTheme.typography.bodySmall)
@@ -1501,6 +1542,17 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
         }
         if (days.size > 6) {
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "${days.size - 6}일 더 보기") }
+        }
+        if (unlocked) {
+            Text("날짜별 합 ${won(split.days)}" + when {
+                split.month > 0L -> " + 달로 주는 몫(${split.kinds.joinToString("·")}) ${won(split.month)}"
+                split.month < 0L -> " − 달로 빼는 몫(${split.kinds.joinToString("·")}) ${won(-split.month)}"
+                else -> ""
+            } +
+                " = 합계 ${won(split.total)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp))
+            if (keptDays == false) Text("2.0.0 전에 마감한 달이라 날짜별 내역은 지금 설정으로 다시 셌어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1597,10 +1649,30 @@ private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearM
         return
     }
     SectionCard(title = "연차", trailing = { TextButton(onClick = onOpenLeave) { Text("연차 화면") } }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LeaveStat("쓸 수 있는", LeaveBook.days(summary.available), Modifier.weight(1f), warn = summary.available < 0)
-            LeaveStat("예정", LeaveBook.days(summary.planned), Modifier.weight(1f))
-            LeaveStat("예정 뒤 남는", LeaveBook.days(summary.afterPlanned), Modifier.weight(1f), warn = summary.afterPlanned < 0)
+        val stats = listOf(
+            Triple("쓸 수 있는", LeaveBook.days(summary.available), summary.available < 0),
+            Triple("예정", LeaveBook.days(summary.planned), false),
+            Triple("예정 뒤 남는", LeaveBook.days(summary.afterPlanned), summary.afterPlanned < 0),
+        )
+        // [RVJ-21] 2.0.0 #448 사진 16 (글자 200%에서 '14.5/일'·'쓸 수/있는'·'예정/뒤/남는'으로 끊김): at a big font, or on a card too narrow
+        // for three tiles (under 280dp: a 360dp phone's card is 296dp and keeps them), the three go one under another, the name
+        // on the left and the days on the right.
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= com.bamnat.app.ui.components.TWO_LINES_FROM || maxWidth < 280.dp) {
+                androidx.compose.material3.Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        stats.forEach { (label, value, warn) ->
+                            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                Text(value, style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false,
+                                    color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+                }
+            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                stats.forEach { (label, value, warn) -> LeaveStat(label, value, Modifier.weight(1f), warn = warn) }
+            }
         }
         // [LEAVE-03] The next lapse with what would go after the planned days.
         summary.nextLapse?.takeIf { it.second > 0 && !it.first.isAfter(summary.today.plusMonths(6)) }?.let { (date, days) ->
@@ -1687,9 +1759,27 @@ private fun FitMonthsCard(vm: PayViewModel, profile: PayProfile, snapshot: Sched
     }
 }
 
+/**
+ * 2.0.0 [RVJ-18] 검토 U05-01: the day after the 급여일, one card for that month. 마감하기 keeps it as it is (날짜별·세후까지); 나중에 puts
+ * it away for that month (the 도구 탭's 마감 is still there).
+ */
+@Composable
+private fun CloseAskCard(month: YearMonth, deposited: Boolean, onClose: () -> Unit, onLater: () -> Unit, onAlways: () -> Unit) {
+    SectionCard(title = if (deposited) "${month.monthValue}월 급여가 들어왔어요. 이대로 마감할까요?" else "${month.monthValue}월 급여, 이대로 마감할까요?") {
+        Text("마감하면 규칙·요율이 바뀌어도 이 달 금액·날짜별·세후가 그대로예요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+            OutlinedButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Icon(Icons.Filled.Lock, null); Text(" 마감하기") }
+            TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에") }
+            // I05a-02 (자동/물어보기 선택): 도구 › ○월 마감과 설정 › 알림 › 돈에서 다시 끌 수 있어요.
+            TextButton(onClick = onAlways, modifier = Modifier.heightIn(min = 48.dp)) { Text("앞으로 저절로") }
+        }
+    }
+}
+
 /** 마감 [PAYX-03]: keeps a month's result fixed once the pay slip is in, with a way to compare and redo. */
 @Composable
-private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?) {
+private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?, autoClose: Boolean) {
     SectionCard(title = "${result.month.monthValue}월 마감") {
         if (closed == null) {
             Text("급여를 받은 달은 마감해 두세요. 나중에 규칙이나 요율이 바뀌어도 이 달 결과는 그대로 남아요.",
@@ -1722,8 +1812,14 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
                 TextButton(onClick = { vm.reopenMonth(result.month) }) { Text("마감 풀기") }
             }
         }
+        // 2.0.0 [RVJ-18] 검토 I05a-02: 묻기 대신 저절로 (설정 › 알림 › 돈에도 같은 줄).
+        com.bamnat.app.ui.settings.SwitchRow(AUTO_CLOSE_TITLE, AUTO_CLOSE_TEXT, autoClose) { on -> vm.setAutoClose(on) }
     }
 }
+
+/** 2.0.0 [RVJ-18] The 저절로 마감 row, the same words on 도구 › ○월 마감 and 설정 › 알림 › 돈. */
+internal const val AUTO_CLOSE_TITLE = "급여 저절로 마감"
+internal const val AUTO_CLOSE_TEXT = "급여일 다음 날 그 달을 묻지 않고 마감해요. 꺼 두면 2주 동안 한 번 물어요"
 
 /** 오류 제보 [PAY-09]: the user picks where to send it; nothing leaves the phone otherwise. */
 private fun reportProblem(context: android.content.Context, profile: PayProfile, result: MonthPay) {

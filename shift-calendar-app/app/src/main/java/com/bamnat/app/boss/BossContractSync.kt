@@ -66,6 +66,13 @@ object BossContractSync {
         return c.phaseThree.updateContract(s.id) { cur -> cur?.replacedBy(sent) ?: sent }
     }
 
+    /**
+     * 2.0.0 [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': the day the signed contract was handed over (근로기준법 제17조 제2항),
+     * kept on the contract and printed on its PDF; [given] false (the switch turned off) takes a mistaken press back.
+     */
+    suspend fun given(c: AppContainer, s: StaffMember, given: Boolean = true): StaffContract.Sent? =
+        c.phaseThree.updateContract(s.id) { cur -> cur?.takeIf { it.signed }?.copy(givenAt = if (given) cur.givenAt ?: Today.millis() else null) ?: cur }
+
     fun message(place: Workplace, s: StaffMember, sent: StaffContract.Sent): String =
         "${s.name.ifBlank { "직원" }}님, ${place.name} ${sent.title}예요. 링크에서 내용을 읽고 이름을 써서 동의해 주세요. 서명하면 계약서 PDF를 보내 드려요." +
             "\n${sent.url.orEmpty()}"

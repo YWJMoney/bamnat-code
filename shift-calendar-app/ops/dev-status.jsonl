@@ -181,7 +181,7 @@
 {"track": "RVP-23", "title": "알림 줄은 앱에 하나, 되돌리기가 먼저", "status": "check", "size": "polish", "route": "app", "check": "메모를 지우고 바로 다른 안내가 와도 되돌리기 줄이 먼저 8초 뜸. 같은 말은 한 번만, 시간은 화면에 뜬 때부터"}
 {"track": "RVP-24", "title": "적던 글 지키기(날이 바뀌거나 다른 앱에 다녀와도)", "status": "check", "size": "polish", "route": "app", "check": "시트에 적다가 다른 앱에 갔다 와도, 자정을 넘겨도 글이 그대로. 닫거나 뒤로 가면 버릴지 한 번 물음"}
 {"track": "RVP-26", "title": "알림·링크로 넘긴 값은 한 번 쓰고 비움", "status": "check", "size": "fix", "route": "app", "check": "알림으로 '같이 보는 근무'를 연 뒤 달력에 갔다 와도 처음 날로 다시 안 감"}
-{"track": "RVP-37", "title": "뼈대 고침 시험 묶음(창 차례·알림 줄)", "status": "doing", "size": "polish", "route": "app", "check": "SnackQueueTest·OpenAskTest와 뼈대 사진 시험"}
+{"track": "RVP-37", "title": "뼈대 고침 시험 묶음(창 차례·알림 줄)", "status": "check", "size": "polish", "route": "app", "check": "SnackQueueTest·OpenAskTest와 뼈대 사진 시험 RootFixScreenshotTest 2711~2714"}
 {"track": "RVP-64", "title": "견적서 사진의 긴 메모·품목 이름이 잘리지 않게", "status": "check", "size": "fix", "route": "app", "check": "견적서에 200자 메모(계좌 포함)와 '욕실 타일 철거 및 방수 공사'를 넣고 사진으로 보내면 끝까지 다 보임", "test": "QuoteImageTest"}
 {"track": "RVP-73", "title": "내 글꼴을 구글 자동 백업에서 빼기", "status": "check", "size": "fix", "route": "app", "check": "내 글꼴을 넣어도 근무표·가계부 자동 백업이 25MB 한도에 막히지 않음(폰 옮기기에는 글꼴도 감)"}
 {"track": "RVP-74", "title": "잠금 화면 오늘 위젯에 메모 숨기기", "status": "check", "size": "fix", "route": "app", "check": "잠금 화면에 놓은 오늘 위젯에는 근무·알람만, 홈 화면 위젯에는 메모 첫 줄 그대로"}
@@ -196,3 +196,6 @@
 {"track": "RVP-66", "title": "꾸미기 예시와 근무별 패턴을 내 유형 말로", "status": "check", "size": "polish", "route": "app", "check": "알바로 스튜디오 › 급여 꾸미기를 열면 '시급 10,030원 × 96시간·주휴수당', 가게 달력의 칸 디자인 › 패턴에는 야간·24시간 당직 줄이 없음", "test": "LookEditorsTest"}
 {"track": "RVP-67", "title": "꾸미기 편집기마다 같은 자리 '처음대로', 색 안내가 실제 화면대로", "status": "check", "size": "polish", "route": "app", "check": "메모장·가계부·급여·마을 꾸미기 맨 아래에 '처음대로'가 같은 모양, 어두운 화면에서 글자색 경고가 실제와 맞음", "test": "LookEditorsTest"}
 {"track": "RVP-75", "title": "기능 찾기의 '어디'를 내 달력 말로, 바로 가기는 글이 말하는 곳으로", "status": "check", "size": "fix", "route": "app", "check": "알바 달력에서 기능 찾기 '주휴'의 어디가 '출근·시급 › …', 가게에서 '일 유형별 광장' 바로 가기가 마을을 엶, 투자 달력에 근무표 공유가 안 나옴", "test": "FeatureWhereTest"}
+{"track": "RVJ-18", "title": "굳은 달: 마감한 달은 어느 화면에서나 한 값, 급여일 뒤 마감 묻기", "status": "check", "size": "fix", "route": "app", "check": "9월 급여일(10/10) 다음 날 결과 탭 '9월 급여, 이대로 마감할까요?' → 마감 → 회사 규칙·수당을 바꿔도 급여·통계·가계부·세후·PDF의 9월이 그대로, 날짜별 아래 '날짜별 합 + 달로 주는 몫 = 합계'"}
+{"track": "RVJ-20", "title": "새해 값: 코드에 박힌 해 숫자 없애기와 새해 전환 점검 시험", "status": "check", "size": "fix", "route": "app", "check": "시계 2027-01-02 → 사장님 근무표 안내 '국민연금 5%', 세금·실수령 요율 원문 '국민연금 10% (근로자 5%)·장기요양 0.9994%', 새 직원 시급 10,700원"}
+{"track": "RVJ-21", "title": "급여 결과 탭: 큰 글자·폴드에서 이름이 낱말 가운데서 끊기지 않게(이름·칩·금액 공통 부품)", "status": "check", "size": "polish", "route": "app", "check": "글자 200% 접은 폭 → 급여 결과 › 항목별 내역: 이름이 첫 줄, 추정 칩 + 금액이 아래 줄(금액 오른쪽). 날짜별 내역: 날짜·금액 한 줄, 종류는 아래 줄. 연차 세 칸은 세로 줄. 편 폭: 카드가 가운데 640dp, 날짜별 내역만 가득"}

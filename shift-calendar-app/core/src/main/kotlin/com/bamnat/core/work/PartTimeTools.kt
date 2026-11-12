@@ -65,7 +65,7 @@ data class OfferResult(
  * as time spent, so a nearer job with a lower wage can come out ahead.
  */
 object OfferCompare {
-    fun of(offer: JobOffer, minimumWage: Long = 10_320): OfferResult {
+    fun of(offer: JobOffer, minimumWage: Long = com.bamnat.core.pay.RateTable.minimumWage()): OfferResult {
         val wage = offer.hourlyWage.coerceAtLeast(0)
         val hours = offer.hoursPerWeek.coerceIn(0.0, 7 * 24.0)
         val base = (hours * wage).roundToLong()
