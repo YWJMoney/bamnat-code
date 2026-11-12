@@ -118,6 +118,8 @@ class OutboxJob : JobService() {
                 c.companyScopes().count { it.autoShare.waiting } +
                 // 2.0.0 [RVN-10] COMP-46 a 되돌리기 that waits for a connection.
                 c.companyScopes().count { it.autoShare.takingBack } +
+                // 2.0.0 [RVN-13] COMP-48 쓰고 있어요·맞아요·회사 빼기 that wait for a connection.
+                c.companyScopes().sumOf { it.store.keptCalls.size } +
                 (if (c.flags.on(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG)) c.photoWrong.waiting else 0)
 
         /** Sends everything waiting; true when nothing is left. */
@@ -130,6 +132,8 @@ class OutboxJob : JobService() {
             for (s in c.companyScopes()) share = s.autoShare.flush() && share
             // 2.0.0 [RVN-10] COMP-46 and what a 되돌리기 could not take off the 광장 then.
             for (s in c.companyScopes()) share = s.autoShare.takeBackWaiting() && share
+            // 2.0.0 [RVN-13] COMP-48 and 쓰고 있어요·맞아요·회사 빼기 that could not go then.
+            for (s in c.companyScopes()) share = SmallSends.flush(c, s.store) && share
             // [PHOTO-09] 1.29 AQ: '사진이 달라요' counts, only with the photo.wrong row on (처리방침 3.3).
             val photos = c.photoWrong.flush(c.flags.on(com.bamnat.core.flags.FlagCatalog.PHOTO_WRONG))
             return consent && questions && links && share && photos

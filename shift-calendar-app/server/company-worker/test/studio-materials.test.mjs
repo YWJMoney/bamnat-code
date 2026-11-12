@@ -56,6 +56,14 @@ test("[STM-02] the operator puts materials in waiting, opens them with the app v
   // 다시 넣어도 공개 상태는 그대로예요.
   await call("POST", "/api/admin/recipes/materials", { items: [items[1]] }, admin);
   assert.deepEqual((await call("GET", "/api/recipes/materials?app=52")).data.items.map((x) => x.id), [bg]);
+  // 2.0.0 [RVN-15] 검토 SVC-99: '모두'는 출시 대기 → 공개만이라 숨긴 묶음이 되살아나지 않고, 모두 숨기기는 없어요.
+  await call("POST", "/api/admin/recipes/materials/state", { state: "ok", all: true }, admin);
+  assert.deepEqual((await call("GET", "/api/recipes/materials?app=52")).data.items.map((x) => x.id), [bg]);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/state", { state: "hidden", all: true }, admin)).status, 400);
+  // 올리기·공개·숨기기가 활동 기록에 남아요.
+  const log = (await call("GET", "/api/admin/audit", undefined, admin)).data;
+  const acts = log.entries.map((e) => e.action);
+  for (const a of ["material_add", "material_state"]) assert.ok(acts.includes(a), `${a} in ${acts.join(" ")}`);
 });
 
 test("[STM-10] 무료·광고 나누기: 묶음마다 모두 무료·모두 광고·앞쪽 3분의 1만 무료", async () => {
