@@ -684,6 +684,101 @@ B.shareButton($('share'),'퇴직금 계산 결과');
      ('야간·연장 수당도 들어가나요?', '네. 매달 받은 야간·연장·휴일 수당도 임금이라 평균임금에 들어가요. 교대 근무자는 수당이 많은 달이 마지막 3개월이면 퇴직금이 커져요.'),
      ('세금은 얼마나 떼나요?', '퇴직금에는 퇴직소득세가 따로 붙어요. 근속 연수가 길수록 공제가 커서 근로소득세보다 훨씬 적어요. 이 계산기는 세전 금액이에요.')],
     'severance', '퇴직 전 3개월 수당까지 기록해 두세요', '밤낮에 근무를 넣어 두면 달마다 야간·연장 수당을 담은 예상 월급이 남아 퇴직금 평균임금을 맞춰 보기 좋아요.', 2))
+
+# ---------- 2.0.0 [RVR-32] (검토 I50b-04) 그만두거나 쉴 때: 실업급여 ----------
+write('calc/jobless/', page(
+    'calc/jobless/', '실업급여 계산기 (구직급여 하루 금액·받는 날 수) | 밤낮',
+    '퇴직 전 3개월 임금과 나이·고용보험 가입 기간으로 하루 구직급여와 받는 날 수, 모두 받으면 얼마인지 계산해요.',
+    '실업급여 계산기', '마지막 근무일과 최근 석 달 월급, 나이와 고용보험에 든 기간만 넣으면 하루 구직급여와 받는 날 수가 나와요.',
+    f'''<div class="card">
+  <label for="last">마지막 근무일 (이직일)</label>
+  <input id="last" type="date" min="2019-10-01">
+  <label for="pay">최근 3개월 월 평균 세전 임금 (원)<span class="hint">기본급과 매달 받은 수당(야간·연장 포함)을 더한 금액, 세금 떼기 전</span></label>
+  <input id="pay" {DATA_MONEY} value="3,000,000" data-max="1000000000">
+  <label for="hours">하루 일하기로 정한 시간<span class="hint">근로계약서의 1일 소정근로시간. 8시간보다 적으면 하루 최저 금액도 그만큼 줄어요.</span></label>
+  <input id="hours" inputmode="numeric" value="8" data-min="1" data-max="8" data-unit="시간">
+  <span class="glabel" id="ageL">그만둘 때 나이</span>
+  <div class="chips" id="age" role="group" aria-labelledby="ageL"><button type="button" class="chip" data-v="0" aria-pressed="true">50세 미만</button><button type="button" class="chip" data-v="1" aria-pressed="false">50세 이상·장애인</button></div>
+  <span class="glabel" id="yearsL">고용보험에 든 기간 (모두 합쳐)</span>
+  <div class="chips" id="years" role="group" aria-labelledby="yearsL"><button type="button" class="chip" data-v="0" aria-pressed="false">1년 미만</button><button type="button" class="chip" data-v="1" aria-pressed="true">1~3년</button><button type="button" class="chip" data-v="2" aria-pressed="false">3~5년</button><button type="button" class="chip" data-v="3" aria-pressed="false">5~10년</button><button type="button" class="chip" data-v="4" aria-pressed="false">10년 이상</button></div>
+  <label for="ordinary">1일 통상임금 (모르면 비워 둬요)<span class="hint">평균임금이 통상임금보다 낮으면 통상임금으로 셈해요(고용보험법 제45조 제2항).</span></label>
+  <input id="ordinary" {DATA_MONEY} data-max="10000000">
+</div>
+{result('하루 구직급여 (예상)')}''',
+    r'''(function(){
+var B=Bamnat,F=B.f,$=B.$,D=B.d,save=function(){};
+var age=B.chips($('age'),function(){calc();}),yrs=B.chips($('years'),function(){calc();});
+function calc(){
+  var l=D.parse($('last').value);
+  if(!l||$('last').value<'2019-10-01'){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:l?'2019.10.1. 전에 그만둔 분은 받는 날 수 표가 달라요. 고용센터에 물어봐 주세요.':'마지막 근무일을 넣어 주세요.'}]);save();return;}
+  var retire=D.plusDays(l,1),n3=Math.max(1,D.between(D.plusMonths(retire,-3),retire)),day=D.iso(l);
+  var r=F.jobless({left:day,pay3:B.val('pay')*3,days3:n3,ordinaryDaily:B.val('ordinary'),hours:B.val('hours')||8,older:age.get()==='1',years:+yrs.get(),minWage:B.rateOn(day).minimumHourlyWage});
+  var rows=[['1일 평균임금 (3개월 ÷ '+n3+'일)',B.won(r.avg)]];
+  if(r.byOrdinary)rows.push(['통상임금이 더 높아 그 값으로',B.won(r.base)]);
+  if(r.capped)rows.push(['하루 상한 ('+B.won(r.cap)+' × 60%)',B.won(r.capDaily)]);
+  if(r.byFloor)rows.push(['하루 최저 (최저시급 × '+(B.val('hours')||8)+'시간 × 80%)',B.won(r.floor)]);
+  rows.push(['받는 날 수',r.days+'일'],['한 달(30일)에 약',B.won(r.month)],['모두 받으면',B.won(r.total),'sum']);
+  if(!r.sure)rows.push({note:'2027년에 그만두면 하루 상한이 바뀔 수 있어요. 아직 고시 전이라 지금 상한으로 셈했어요(확인 필요).',warn:1});
+  rows.push({note:'그만두기 전 18개월 동안 고용보험에 든 날이 180일 이상이고, 권고사직·계약 만료처럼 스스로 그만두지 않았을 때 받아요. 처음 7일은 기다리는 기간이라 주지 않아요.'});
+  $('out').textContent=B.won(r.daily);$('lines').innerHTML=B.rows(rows);save();
+}
+B.ready.then(function(){var t=D.today();if(!$('last').value)$('last').value=D.iso(t);
+  save=B.keep(['last','pay','hours','ordinary'],{age:age,years:yrs});
+  ['last','pay','hours','ordinary'].forEach(function(i){$(i).addEventListener('input',calc);});calc();});
+B.shareButton($('share'),'실업급여 계산 결과');
+})();''',
+    [('실업급여는 누가 받나요?', '그만두기 전 18개월 동안 고용보험에 든 날(피보험 단위기간)이 180일 이상이고, 권고사직·계약 만료·폐업처럼 스스로 원하지 않게 그만둔 뒤 일할 곳을 찾고 있는 분이 받아요(고용보험법 제40조). 스스로 그만둬도 임금 체불·통근 곤란처럼 정해진 까닭이면 받을 수 있어요(제58조, 시행규칙 별표 2).'),
+     ('하루 얼마를 받나요?', '퇴직 전 3개월 평균임금의 60%예요(제46조). 2026.1.1.부터 그만둔 분은 하루 68,100원까지, 2025.12.31.까지 그만둔 분은 66,000원까지 받아요(시행령 제68조, 대통령령 제35934호). 반대로 최저시급 × 하루 소정근로시간 × 80%보다 적으면 그 금액을 받아요. 2026년 8시간이면 66,048원이에요.'),
+     ('며칠 동안 받나요?', '그만둘 때 나이와 고용보험에 든 기간으로 정해요(별표 1, 2019.10.1. 이후 이직). 50세 미만은 1년 미만 120일, 1~3년 150일, 3~5년 180일, 5~10년 210일, 10년 이상 240일이고, 50세 이상과 장애인은 120·180·210·240·270일이에요.'),
+     ('교대 근무로 야간수당이 많았어요. 들어가나요?', '네. 평균임금에는 마지막 3개월에 받은 야간·연장·휴일 수당이 모두 들어가요. 다만 하루 상한이 있어서 평균임금이 113,500원(2026년 이직)을 넘으면 더 늘지 않아요.'),
+     ('어디서 신청하나요?', '고용24에서 구직 등록과 수급자격 인정 신청을 하고, 정해진 날마다 실업 인정을 받아요. 회사가 이직확인서를 내야 해요. 정확한 금액은 고용센터가 정해요.')],
+    'jobless', '다음 일을 시작하면 밤낮으로', '새 일의 근무를 넣는 대로 이번 달 예상 월급이 보여요. 현장 일용직은 근무일 증빙 PDF로 실업급여 신청 때 낼 일한 날을 정리해요(프로).', 2))
+
+# ---------- 2.0.0 [RVR-32] (검토 I50b-04) 그만두거나 쉴 때: 출산휴가·육아휴직 ----------
+write('calc/parental/', page(
+    'calc/parental/', '출산휴가·육아휴직 급여 계산기 (6+6·한부모) | 밤낮',
+    '월 통상임금으로 출산전후휴가 90일과 육아휴직 달마다 받는 돈, 6+6 부모 함께·한부모 상한까지 계산해요.',
+    '출산휴가·육아휴직 급여 계산기', '월 통상임금과 쉴 달 수만 넣으면 육아휴직 달마다 받는 돈과 출산전후휴가 90일에 받는 돈이 나와요.',
+    f'''<div class="card">
+  <label for="month">월 통상임금 (원)<span class="hint">기본급과 매달 정해진 수당. 야간·연장처럼 달마다 다른 수당은 빼요.</span></label>
+  <input id="month" {DATA_MONEY} value="3,000,000" data-max="100000000">
+  <label for="months">육아휴직 몇 달 쉬나요<span class="hint">한 자녀에 1년, 부모가 각각 3개월 이상 쓰면 1년 6개월까지(2025.2.23.부터)</span></label>
+  <input id="months" inputmode="numeric" value="12" data-min="1" data-max="18" data-unit="개월">
+  <span class="glabel" id="kindL">육아휴직 방식</span>
+  <div class="chips" id="kind" role="group" aria-labelledby="kindL"><button type="button" class="chip" data-v="normal" aria-pressed="true">보통</button><button type="button" class="chip" data-v="sixsix" aria-pressed="false">6+6 부모 함께</button><button type="button" class="chip" data-v="single" aria-pressed="false">한부모</button></div>
+  <span class="glabel" id="birthL">출산전후휴가</span>
+  <div class="chips" id="birth" role="group" aria-labelledby="birthL"><button type="button" class="chip" data-v="single" aria-pressed="true">한 명</button><button type="button" class="chip" data-v="multi" aria-pressed="false">둘 이상 (쌍둥이 등)</button></div>
+</div>
+{result('육아휴직 급여 합계 (예상)')}''',
+    r'''(function(){
+var B=Bamnat,F=B.f,$=B.$,save=function(){};
+var kind=B.chips($('kind'),function(){calc();}),birth=B.chips($('birth'),function(){calc();});
+function calc(){
+  var w=B.val('month');
+  if(!w){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:'월 통상임금을 넣어 주세요.'}]);save();return;}
+  var p=F.parental({month:w,months:B.val('months')||12,kind:kind.get()}),rows=[],i=0;
+  // 같은 금액이 이어지는 달은 한 줄로: '1~3개월 월 2,500,000원'.
+  while(i<p.months.length){var j=i;while(j+1<p.months.length&&p.months[j+1]===p.months[i])j++;
+    rows.push([(i===j?(i+1)+'개월째':(i+1)+'~'+(j+1)+'개월')+' 월',B.won(p.months[i])]);i=j+1;}
+  rows.push(['육아휴직 '+p.months.length+'개월 모두',B.won(p.total),'sum']);
+  if(p.full>p.total)rows.push(['같은 기간 통상임금과 차이',B.minus(p.full-p.total)]);
+  var m=F.maternity({month:w,kind:birth.get()});
+  rows.push({note:'<b>출산전후휴가 '+m.days+'일</b>'},['처음 '+m.paid+'일 (회사가 통상임금 그대로)',B.won(m.company)],
+    ['마지막 '+m.rest+'일 (고용보험, 30일에 220만 원까지)',B.won(m.insured)],['출산전후휴가 모두',B.won(m.total),'sum']);
+  rows.push({note:'통상임금이 아주 낮을 때의 하한은 고용24에서 확인해 주세요.'});
+  $('out').textContent=B.won(p.total);$('lines').innerHTML=B.rows(rows);save();
+}
+save=B.keep(['month','months'],{kind:kind,birth:birth});
+['month','months'].forEach(function(i){$(i).addEventListener('input',calc);});calc();
+B.shareButton($('share'),'육아휴직 급여 계산 결과');
+})();''',
+    [('육아휴직 급여는 얼마인가요?', '2025.1.1.부터 처음 3개월은 통상임금 100%(월 250만 원까지), 4~6개월은 100%(월 200만 원까지), 7개월부터는 80%(월 160만 원까지)예요. 쉬는 동안 다 받고, 복직 뒤에 나눠 주던 사후지급금은 없어졌어요(고용24 육아휴직급여 안내).'),
+     ('6+6은 무엇인가요?', '아이가 생후 18개월이 되기 전에 부모가 함께 또는 차례로 육아휴직을 쓰면 각각 처음 6개월은 통상임금 100%를 받고, 달마다 상한이 250·250·300·350·400·450만 원으로 올라가요. 7개월부터는 보통과 같아요.'),
+     ('한부모는 다른가요?', '한부모 근로자는 처음 3개월 통상임금 100%를 월 300만 원까지 받고, 4개월부터는 보통과 같아요.'),
+     ('출산전후휴가 90일은 어떻게 받나요?', '90일(쌍둥이처럼 한 번에 둘 이상이면 120일) 가운데 처음 60일(75일)은 회사가 유급으로 줘요(근로기준법 제74조). 마지막 30일(45일)은 고용보험이 통상임금을 주는데, 2026년에는 90일에 660만 원, 30일에 220만 원까지예요(고용노동부고시 제2026-67호). 회사가 우선지원대상기업이면 처음 60일도 고용보험이 상한까지 먼저 주고 회사가 나머지를 줘요. 미숙아를 낳으면 100일(7,333,330원까지)이에요.'),
+     ('배우자 출산휴가는요?', '20일이고 유급이에요(2025.2.23.부터). 우선지원대상기업 근로자는 고용보험이 20일에 1,684,210원까지 줘요(고용노동부고시 제2026-67호).'),
+     ('교대 근무 수당도 통상임금에 들어가나요?', '매달 정해진 교대수당·직책수당처럼 일한 시간과 상관없이 정해진 돈은 들어가요. 야간·연장·휴일수당처럼 달마다 다른 돈은 들어가지 않아요. 통상임금은 통상임금 계산기에서 구할 수 있어요.')],
+    'parental', '복직하면 근무와 월급을 밤낮으로', '다시 일을 시작하면 근무를 넣는 대로 이번 달 예상 월급과 남은 연차를 보여 줘요.', 2))
 print('calc ok')
 
 # ---------- 교대 근무 달력 ----------
@@ -972,6 +1067,8 @@ hub_body = '<ul class="links">' + ''.join(f'<li><a href="{u}"><strong>{t}</stron
     ('salary/', '월급·연봉 실수령액 계산기', '4대보험과 간이세액표 소득세를 뺀 통장 금액'),
     ('leave/', '연차 계산기', '입사일·회계연도 기준으로 지금 연차와 근속별 개수'),
     ('severance/', '퇴직금 계산기', '평균임금 × 30일 × 재직일수/365, 통상임금 비교'),
+    ('jobless/', '실업급여 계산기', '마지막 3개월 임금과 나이·가입 기간으로 하루 구직급여와 받는 날 수'),
+    ('parental/', '출산휴가·육아휴직 급여 계산기', '월 통상임금으로 출산전후휴가 90일과 육아휴직 달마다 받는 돈'),
     ('daily/', '일당 계산기 (일용직 세금)', '현장·인테리어·건설 일당의 세금과 실수령, 날마다·모아서'),
     ('../shift/', '교대 근무 달력 만들기', '4조2교대·3조2교대·주야비휴 순서로 석 달 달력, 교대 순서별 설명'),
     ('../holiday/', '공휴일·연휴 달력', '올해·내년 공휴일, 다음 공휴일까지 남은 날, 교대 근무자 쉬는 공휴일'),

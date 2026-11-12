@@ -118,6 +118,41 @@ test('Play 링크 출처는 늘 bamnat_web, 방문 출처는 utm_term에만', ()
   assert.equal(link, 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=juhyu');
 });
 
+// 2.0.0 [RVR-32] (I50b-04) 그만두거나 쉴 때. 금액은 고용보험법 제45·46조·별표 1, 시행령 제68조(대통령령 제35934호), 고용노동부고시 제2026-67호, 고용24.
+test('실업급여: 60%, 2026년 이직 상한 68,100원, 최저시급 80% 하한, 받는 날 수', () => {
+  // 월 300만 원 석 달(90일): 평균 100,000원 × 60% = 60,000원 < 하한 10,320 × 8 × 80% = 66,048원.
+  let r = B.f.jobless({ left: '2026-03-31', pay3: 9000000, days3: 90, hours: 8, years: 1, minWage: 10320 });
+  assert.deepEqual([r.avg, r.floor, r.daily, r.byFloor, r.days, r.total], [100000, 66048, 66048, true, 150, 9907200]);
+  // 월 500만 원: 평균 164,835원 → 상한 113,500원 × 60% = 68,100원, 50세 이상 10년 이상 270일.
+  r = B.f.jobless({ left: '2026-06-30', pay3: 15000000, days3: 91, hours: 8, older: true, years: 4, minWage: 10320 });
+  assert.deepEqual([r.daily, r.capped, r.days, r.total, r.month], [68100, true, 270, 18387000, 2043000]);
+  // 2025년 이직은 옛 상한 66,000원, 그해 최저시급 10,030원(하한 64,192원).
+  r = B.f.jobless({ left: '2025-12-31', pay3: 15000000, days3: 92, hours: 8, minWage: 10030, years: 0 });
+  assert.deepEqual([r.daily, r.floor, r.days], [66000, 64192, 120]);
+  // 하루 4시간이면 하한도 절반. 통상임금이 평균임금보다 크면 통상임금.
+  r = B.f.jobless({ left: '2026-11-12', pay3: 3000000, days3: 92, hours: 4, ordinaryDaily: 50000, minWage: 10320, years: 2 });
+  assert.deepEqual([r.byOrdinary, r.base, r.floor, r.daily, r.days], [true, 50000, 33024, 33024, 180]);
+  assert.equal(B.f.jobless({ left: '2019-09-30', pay3: 1, days3: 90 }), null);
+  assert.equal(B.f.jobless({ left: '2027-01-04', pay3: 9000000, days3: 90, minWage: 10700 }).sure, false);
+});
+
+test('출산전후휴가: 처음 60일은 회사, 마지막 30일은 고용보험 220만 원까지', () => {
+  assert.deepEqual(pick(B.f.maternity({ month: 3000000 }), ['company', 'insured', 'total', 'cut']), { company: 6000000, insured: 2200000, total: 8200000, cut: true });
+  assert.deepEqual(pick(B.f.maternity({ month: 2000000 }), ['total', 'full', 'cut']), { total: 6000000, full: 6000000, cut: false });
+  // 둘 이상: 120일, 처음 75일 회사, 마지막 45일은 880만 원 ÷ 120일 × 45일 = 330만 원까지.
+  assert.deepEqual(pick(B.f.maternity({ month: 3000000, kind: 'multi' }), ['days', 'company', 'insured']), { days: 120, company: 7500000, insured: 3300000 });
+});
+
+test('육아휴직: 1~3개월 250만, 4~6개월 200만, 7개월부터 80% 160만, 6+6·한부모', () => {
+  const r = B.f.parental({ month: 3000000, months: 12 });
+  assert.deepEqual(Array.from(r.months.slice(0, 7)), [2500000, 2500000, 2500000, 2000000, 2000000, 2000000, 1600000]);
+  assert.equal(r.total, 7500000 + 6000000 + 9600000);
+  assert.equal(B.f.parental({ month: 1800000, months: 8 }).months[7], 1440000);
+  assert.deepEqual(Array.from(B.f.parental({ month: 5000000, months: 6, kind: 'sixsix' }).months), [2500000, 2500000, 3000000, 3500000, 4000000, 4500000]);
+  assert.deepEqual(Array.from(B.f.parental({ month: 3500000, months: 4, kind: 'single' }).months), [3000000, 3000000, 3000000, 2000000]);
+  assert.equal(B.f.parental({ month: 3000000, months: 30 }).months.length, 18);
+});
+
 // 2.0.0 [RVR-31] (I50c-01·03, SPREAD-30) 웹 → 앱 이어받기: core WebHandoff가 읽는 모양과 같아요(WebHandoffTest).
 test('이어받기: 순서·첫날·한 번만·시급만 utm_content에, 고른 것만', () => {
   assert.equal(B.handoff({ p: 'DNBO', s: '2026-11-10', o: 1, w: 10320, t: 'slip' }), 'p-DNBO_s-20261110_o-1_w-10320_t-slip');

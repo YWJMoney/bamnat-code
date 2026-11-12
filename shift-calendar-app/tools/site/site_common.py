@@ -72,7 +72,7 @@ PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 
 PLAY = 'https://play.google.com/store/apps/details?id=com.bamnat.app'
 NAV = [('calc/', '무료 계산기'), ('shift/', '교대 근무 달력'), ('holiday/', '공휴일'), ('form/', '근무표 양식')]
 MENU = [('계산기', [('calc/juhyu/', '주휴수당'), ('calc/alba/', '알바 월급'), ('calc/allowance/', '야간·연장·휴일수당'), ('calc/week/', '한 주 연장·52시간'), ('calc/ordinary/', '통상임금·명세서'), ('calc/daily/', '일당'),
-                  ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/boss/', '사장님 인건비'), ('calc/', '계산기 모두')]),
+                  ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/jobless/', '실업급여'), ('calc/parental/', '출산·육아휴직'), ('calc/boss/', '사장님 인건비'), ('calc/', '계산기 모두')]),
         ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/print/', f'{PRINT_YEAR} 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/', '공휴일·연휴')])]
 
 
@@ -133,7 +133,7 @@ def cta_shot(c):
     if c == 'form_duty': return SHOTS['roster']
     if c == 'form_shift_team': return SHOTS['team']
     if c in ('form_alba_week', 'boss'): return SHOTS['boss']
-    if c in ('juhyu', 'allowance', 'week', 'ordinary', 'alba', 'salary', 'severance'): return SHOTS['pay']
+    if c in ('juhyu', 'allowance', 'week', 'ordinary', 'alba', 'salary', 'severance', 'jobless', 'parental'): return SHOTS['pay']
     return SHOTS['calendar']
 
 

@@ -223,6 +223,7 @@ input { min-width: 0; }
 .big {
   font-size: clamp(32px, 8vw, 44px); font-weight: 800; letter-spacing: -0.04em; line-height: 1.15; margin: 4px 0 10px;
   font-variant-numeric: tabular-nums; color: #fff;
+  overflow-wrap: normal; word-break: keep-all;
 }
 .card:not(.result) .big { color: var(--text); }
 .big.bump { animation: bump 0.45s var(--ease); }
@@ -394,6 +395,8 @@ table.lines tr.noterow td { text-align: left; white-space: normal; padding-left:
 /* [I50b-02] 좁은 칸(글자 200%·접은 폴드)에서는 이름 줄 아래에 값: 긴 금액이 이름을 세로로 세우지 않게(디자인 조건 12). 모든 계산기 결과 표. */
 .card { container-type: inline-size; }
 @container (max-width: 280px) {
+  /* 큰 금액은 한 단계 낮춰 쉼표 뒤에서 두 줄 안에(조건 12: 줄이지 말고 줄 바꾸거나 한 단계 낮춤). */
+  .big { font-size: 26px; }
   table.lines, table.lines tbody, table.lines tr, table.lines th, table.lines td { display: block; width: auto; }
   table.lines tr { border-bottom: 1px solid var(--line); }
   .result table.lines tr { border-bottom-color: rgba(255, 255, 255, 0.09); }

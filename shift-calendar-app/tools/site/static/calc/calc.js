@@ -440,6 +440,51 @@
     return { days: days, n3: n3, total: total, avg: avg, daily: daily, byOrdinary: ordinary > avg, fullYear: fullYear, amount: fullYear ? Math.round(daily * 30 * days / 365) : 0 };
   };
 
+  // ---------- 2.0.0 [RVR-32] (검토 I50b-04) 그만두거나 쉴 때 ----------
+  // 구직급여(실업급여): 고용보험법 제45조(기초일액 = 평균임금, 통상임금이 더 크면 통상임금, 최저기초일액 = 최저임금 × 1일 소정근로시간),
+  // 제46조(구직급여일액 = 기초일액 × 60%, 최저구직급여일액 = 최저기초일액 × 80%보다 적으면 그 금액), 제50조 [별표 1](소정급여일수, 2019.10.1. 이후 이직).
+  // 기초일액 상한은 시행령 제68조: 2019.1.1.~2025.12.31. 이직 11만 원(구직급여 6만6천 원), 2026.1.1. 이후 이직 11만3,500원(6만8,100원,
+  // 대통령령 제35934호 2025.12.23. 공포, 부칙 제1조·제4조). 2027년 이직의 상한은 아직 고시 전이라 11만3,500원으로 셈하고 '확인 필요'로 보여 줘요.
+  // 원 단위는 버림으로 셈해요(고용센터 결정액과 몇 원 다를 수 있어요).
+  F.JOBLESS = [{ from: '2019-10-01', cap: 110000 }, { from: '2026-01-01', cap: 113500 }];
+  F.JOBLESS_DAYS = [[120, 150, 180, 210, 240], [120, 180, 210, 240, 270]];
+  F.JOBLESS_SURE = '2026-12-31';
+  F.jobless = function (o) {
+    var left = o.left || '', rule = null;
+    F.JOBLESS.forEach(function (r) { if (left >= r.from) rule = r; });
+    if (!rule) return null;
+    var avg = o.days3 > 0 ? Math.floor((o.pay3 || 0) / o.days3) : 0, ord = Math.floor(o.ordinaryDaily || 0);
+    var hours = Math.min(8, Math.max(1, o.hours || 8)), lowBase = Math.floor((o.minWage || 0) * hours);
+    var base = Math.max(avg, ord), capped = Math.min(base, rule.cap);
+    var floor = Math.floor(lowBase * 0.8), byRate = Math.floor(capped * 0.6), daily = Math.max(byRate, floor);
+    var days = F.JOBLESS_DAYS[o.older ? 1 : 0][Math.min(4, Math.max(0, o.years || 0))];
+    return { avg: avg, base: base, byOrdinary: ord > avg, cap: rule.cap, capDaily: Math.floor(rule.cap * 0.6), capped: base > rule.cap,
+      floor: floor, byFloor: floor > byRate, daily: daily, days: days, total: daily * days, month: daily * 30, sure: left <= F.JOBLESS_SURE };
+  };
+  // 출산전후휴가: 근로기준법 제74조(90일, 한 번에 둘 이상이면 120일, 처음 60일·75일은 회사가 유급), 고용보험법 제75·76조.
+  // 고용보험 급여 상한은 고용노동부고시 제2026-67호(2026.9.18.~12.31.): 90일 660만 원, 120일 880만 원(30일에 220만 원).
+  // 마지막 30일(둘 이상이면 45일)은 고용보험이 통상임금을 상한까지 주고, 처음 60일·75일은 회사가 통상임금 그대로(우선지원대상기업은
+  // 고용보험이 상한까지 먼저 주고 회사가 나머지, 근로기준법 제74조 제4항 단서). 통상임금이 최저임금보다 낮을 때의 하한은 확인 필요라 셈하지 않아요.
+  F.MATERNITY = { single: { days: 90, paid: 60, cap30: 2200000 }, multi: { days: 120, paid: 75, cap30: 2200000 } };
+  F.maternity = function (o) {
+    var k = F.MATERNITY[o.kind] || F.MATERNITY.single, w = Math.max(0, o.month || 0), rest = k.days - k.paid;
+    var company = Math.round(w * k.paid / 30), insured = Math.round(Math.min(w, k.cap30) * rest / 30);
+    return { days: k.days, paid: k.paid, rest: rest, company: company, insured: insured, total: company + insured, full: Math.round(w * k.days / 30), cut: w > k.cap30 };
+  };
+  // 육아휴직 급여(2025.1.1.~, 사후지급금 없음): 1~3개월 통상임금 100%(월 250만 원), 4~6개월 100%(200만 원), 7개월부터 80%(160만 원).
+  // 6+6(부모가 아이 생후 18개월 안에 함께·차례로): 처음 6개월 100%, 달마다 상한 250·250·300·350·400·450만 원. 한부모: 처음 3개월 100%(300만 원).
+  // 출처: 고용24 '육아휴직급여' 제도 안내, 고용노동부 '달라지는 육아지원제도 2025 자주묻는 질문'. 하한액은 확인 필요라 셈하지 않아요.
+  F.PARENTAL = { normal: [2500000, 2500000, 2500000, 2000000, 2000000, 2000000], sixsix: [2500000, 2500000, 3000000, 3500000, 4000000, 4500000],
+    single: [3000000, 3000000, 3000000, 2000000, 2000000, 2000000], late: 1600000 };
+  F.parental = function (o) {
+    var caps = F.PARENTAL[o.kind] || F.PARENTAL.normal, w = Math.max(0, o.month || 0), n = Math.min(18, Math.max(1, o.months || 12)), out = [], sum = 0;
+    for (var m = 1; m <= n; m++) {
+      var pay = m <= 6 ? Math.min(w, caps[m - 1]) : Math.min(Math.floor(w * 0.8), F.PARENTAL.late);
+      out.push(pay); sum += pay;
+    }
+    return { months: out, total: sum, full: w * n };
+  };
+
   // ---------- 자료 받기 ----------
   var getJson = function (name) {
     if (typeof fetch !== 'function') return Promise.resolve(null);
@@ -696,11 +741,15 @@
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && head.classList.contains('open')) { btn.click(); btn.focus(); } });
       if (wide && wide.addEventListener) wide.addEventListener('change', function () { if (wide.matches && head.classList.contains('open')) btn.click(); });
     }
+    // [RVR-32 길에 찾음] 큰 금액은 쉼표 뒤에서만 줄을 바꿔요: 글자 200%·접은 폭에서 '23,100' / ',000원'처럼 쉼표가 줄 머리로 가지 않게(조건 12).
+    var wrapMoney = function (el) { var t = el.textContent; if (/^-?[\d,]+원$/.test(t) && el.innerHTML.indexOf('<wbr>') < 0) el.innerHTML = t.replace(/,/g, ',<wbr>'); };
     if (window.MutationObserver) document.querySelectorAll('.big').forEach(function (el) {
       var last = el.textContent;
+      wrapMoney(el);
       new MutationObserver(function () {
         if (el.textContent === last) return; last = el.textContent;
         el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+        wrapMoney(el);
       }).observe(el, { childList: true, characterData: true, subtree: true });
     });
     // 휴대폰 아래 받기 띠: 머리 그림을 지나 내려가면 나오고, 아래 앱 카드·앱에서 이어지는 것·바닥이 보이거나 입력 중(자판이 열림)이면 숨어요.
