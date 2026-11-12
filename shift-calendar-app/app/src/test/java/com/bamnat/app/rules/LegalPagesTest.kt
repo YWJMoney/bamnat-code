@@ -480,7 +480,7 @@ class LegalPagesTest {
     @Test fun policy313AndTerms14FollowOnePostedDay() {
         val policy = File(site, "privacy/index.html")
         val termsFile = File(site, "terms/index.html")
-        assumeTrue(policy.exists() && termsFile.exists())
+        needs("privacy·terms index.html", policy.exists() && termsFile.exists())
         val text = policy.readText()
         val terms = termsFile.readText()
         val c = com.bamnat.core.ops.PolicyConsent
@@ -537,7 +537,7 @@ class LegalPagesTest {
      */
     @Test fun theRepoPagesAreTheOnesPublished() {
         val record = File("../docs/legal-published.txt")
-        assumeTrue(record.exists())
+        needs("docs/legal-published.txt", record.exists())
         val want = record.readLines().filter { it.isNotBlank() && !it.startsWith("#") }.associate { line ->
             val (sum, path) = line.trim().split(Regex("\\s+"), limit = 2)
             path to sum
