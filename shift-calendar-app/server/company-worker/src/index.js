@@ -90,7 +90,7 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen,
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
-import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
+import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage, settleRequests } from "./recipe-community.js";
 import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit, writeRules } from "./write-limits.js";
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
@@ -351,6 +351,8 @@ export async function prune(env, now) {
   await carryMerged(env);
   // 1.34 [RCP-33] a hidden recipe nobody restored goes after 90 days (처리방침 3.8).
   await pruneRecipes(recipeDeps, env, now);
+  // 2.0.0 [RVQ-44] 요청 판: 7일 답 없는 '완성'은 끝, 14일 지난 '만들게요'는 다시 열림.
+  await settleRequests(recipeDeps, env, now);
   await batch(env, [
     stmt(env, "UPDATE reports SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),

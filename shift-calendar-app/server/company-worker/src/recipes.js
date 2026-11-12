@@ -834,7 +834,47 @@ export async function sha256hex(text) {
 /** [PAYP-08] cleanRecipe's {recipe, text, hash} as others may read it. */
 async function sharedOnly(clean) {
   const out = await sharedPayOut(clean.text, clean.hash);
-  return out.body === clean.text ? {} : { text: out.body, hash: out.hash, recipe: JSON.parse(out.body) };
+  // 2.0.0 [RVQ-41] 검토 SVC-72·T22b-06: a 회사 설정 조각 others can read goes through the company 광장's check too: the fields the app reads,
+  // the company's name left empty, and every name in it through the same filter as the work's own words.
+  const co = sharedCompany(out.body);
+  if (co.problem) return { problem: co.problem };
+  if (co.text === clean.text) return {};
+  const hash = co.text === out.body ? out.hash : await sha256hex(co.text);
+  return { text: co.text, hash, recipe: JSON.parse(co.text) };
+}
+
+/** [RVQ-41] The 회사 설정 조각s of [text] as the company 광장 keeps them, or {problem} for a name it would not take. */
+export function sharedCompany(text) {
+  if (typeof text !== "string" || !text.includes('"company"')) return { text };
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return { text };
+  }
+  let changed = false;
+  for (const p of Array.isArray(v?.pieces) ? v.pieces : []) {
+    if (p?.kind !== "company" || typeof p.setup !== "string") continue;
+    const texts = [];
+    let kept;
+    try {
+      const file = JSON.parse(p.setup);
+      if (file && typeof file === "object") delete file.pay;
+      kept = cleanSetup(file, texts);
+    } catch {
+      return { problem: "setup" };
+    }
+    for (const [, t] of texts) {
+      const why = textProblem(t);
+      if (why) return { problem: why };
+    }
+    const next = JSON.stringify(kept);
+    if (next !== p.setup) {
+      p.setup = next;
+      changed = true;
+    }
+  }
+  return { text: changed ? recipeCanonical(v) : text };
 }
 
 /**
@@ -974,8 +1014,18 @@ export const RECIPE_LIMITS = {
    */
   reviewFirst: 0,
   votesPerHour: 60,
-  /** S8: more votes than this from one network in an hour wait (held) and count nowhere until the operator lets them. */
+  /**
+   * S8: more votes than this from one network in an hour on one work wait (held) and count nowhere until the operator lets them (or they
+   * come from installs older than 3 days and a day has passed). 2.0.0 [RVQ-39] 검토 SVC-53: one work's, not every work's together, so one
+   * hospital's wifi liking many works is not held; [networkVotesAllHour] is the network's hour on every work.
+   */
   networkVotesHour: 30,
+  networkVotesAllHour: 300,
+  /** [RVQ-39] Held votes wait this long before the hourly job counts those from installs that were not new; past [heldDropDays] the rest go. */
+  heldReleaseMs: DAY,
+  heldDropDays: 30,
+  /** 2.0.0 [RVQ-40] 검토 SVC-62·I22bc-02: one network's likes on one 요청·이야기 a day (past it, 429). */
+  likesPerTargetNetworkDay: 10,
   appliedPerNetworkDay: 200,
   /** 1.36 보안 점검 M9: one network counts at most this many 넣기 (and as many 7일 유지) for one recipe a day; past it, not counted. */
   appliedPerRecipeNetworkDay: 3,
@@ -1035,6 +1085,18 @@ export const RECIPE_COLUMNS = [
   // 1.39 판 정리 (작품 갈래 부탁): a retired work stays in the lists of apps below this versionCode, whose 장터 would otherwise be
   // nearly empty (the new 판's works are min_app 53 and newer). null: off for every app.
   "ALTER TABLE recipes ADD COLUMN retired_below INTEGER",
+  // 2.0.0 [RVQ-36] 검토 SVC-04·I22a-03·I22bc-01: 장터 색인. 올릴 때·새 판 때 한 번 재서 적어 두면, 목록은 작품 본문을 풀지 않고 SQL로 걸러요.
+  // ix_v는 잰 규칙의 판(IX_READING)이고, 비었거나 낮은 줄은 목록이 본문으로 재고 매시 정리가 다시 적어요.
+  "ALTER TABLE recipes ADD COLUMN ix_v INTEGER",
+  "ALTER TABLE recipes ADD COLUMN ix_scope TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_tabs TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_unit TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_made TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_tools TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_fx TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_kinds TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_look TEXT",
+  "ALTER TABLE recipes ADD COLUMN ix_emoji TEXT",
 ];
 
 export function newCode() {
@@ -1323,6 +1385,46 @@ export function toolsOf(body, scope) {
 }
 
 /**
+ * 2.0.0 [RVQ-36] 검토 SVC-04·I22bc-01: 장터 색인을 잰 규칙의 판. sectionOf·madeOf·toolsOf·fxPartsOf·lookOf·RECIPE_KINDS가 다르게 읽게
+ * 바뀌면 하나 올려요(매시 정리가 모든 작품을 다시 재요).
+ */
+export const IX_READING = 1;
+/** [RVQ-36] The 장터 색인 columns of one work, from its stored body and cover: what the list filters and draws its card from. */
+export function marketIndex(text, cover) {
+  const s = sectionOf(text);
+  const made = s.scope === "tab" || s.scope === "theme" ? madeOf(text) : null;
+  const tools = toolsOf(text, s.scope);
+  const fx = fxPartsOf(text);
+  const kinds = Object.entries(RECIPE_KINDS).filter(([, ks]) => carries(text, ks)).map(([k]) => k);
+  const look = lookOf(text);
+  let emoji = null;
+  try {
+    emoji = (typeof cover === "string" ? JSON.parse(cover) : cover)?.emoji ?? null;
+  } catch {
+    emoji = null;
+  }
+  // Lists are written ",a,b," so a LIKE '%,a,%' finds one, and the first tab is LIKE ',a,%'.
+  const list = (xs) => (xs.length ? `,${xs.join(",")},` : "");
+  return { ix_v: IX_READING, ix_scope: s.scope ?? null, ix_tabs: list(s.tabs), ix_unit: s.unit ?? null, ix_made: made, ix_tools: list(tools),
+    ix_fx: list(fx), ix_kinds: list(kinds), ix_look: look ? JSON.stringify(look) : null, ix_emoji: emoji };
+}
+const IX_COLS = ["ix_v", "ix_scope", "ix_tabs", "ix_unit", "ix_made", "ix_tools", "ix_fx", "ix_kinds", "ix_look", "ix_emoji"];
+/** [RVQ-36] `ix_v = ?, ix_scope = ?, …` and its values, for an UPDATE that writes a work's body. */
+export function ixSet(text, cover) {
+  const ix = marketIndex(text, cover);
+  return { sql: IX_COLS.map((c) => `${c} = ?`).join(", "), args: IX_COLS.map((c) => ix[c]) };
+}
+/** [RVQ-36] Read back from a row: the index as listItem wants it, or null when the row was measured by an older rule (or never). */
+function rowIndex(r) {
+  if (r.ix_v !== IX_READING) return null;
+  const list = (v) => String(v ?? "").split(",").filter(Boolean);
+  let look = null;
+  try { look = r.ix_look ? JSON.parse(r.ix_look) : null; } catch { look = null; }
+  return { scope: r.ix_scope ?? null, tabs: list(r.ix_tabs), unit: r.ix_unit ?? undefined, made: r.ix_made ?? null, tools: list(r.ix_tools),
+    fx: list(r.ix_fx), kinds: list(r.ix_kinds), look };
+}
+
+/**
  * 1.39 [FX-01] 프로 문 (core formula/FxPro.uses, the same list in the same order): the 1.39 기능 장치 a work's 규칙·단추 use, each needing 프로
  * to put in and to use. Empty when everything in it is free (모양, 1.38까지의 규칙·단추).
  */
@@ -1404,11 +1506,13 @@ export function fxPartsOf(body) {
 
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
-  const look = r.body ? lookOf(r.body) : null;
-  const { scope, tabs, unit } = r.body ? sectionOf(r.body) : { scope: null, tabs: [] };
-  const made = r.body && (scope === "tab" || scope === "theme") ? madeOf(r.body) : null;
-  const tools = r.body ? toolsOf(r.body, scope) : [];
-  const fx = r.body ? fxPartsOf(r.body) : [];
+  // 2.0.0 [RVQ-36] SVC-04: a row measured into the 장터 색인 draws its card without its body.
+  const ix = rowIndex(r);
+  const look = ix ? ix.look : r.body ? lookOf(r.body) : null;
+  const { scope, tabs, unit } = ix ?? (r.body ? sectionOf(r.body) : { scope: null, tabs: [] });
+  const made = ix ? ix.made : r.body && (scope === "tab" || scope === "theme") ? madeOf(r.body) : null;
+  const tools = ix ? ix.tools : r.body ? toolsOf(r.body, scope) : [];
+  const fx = ix ? ix.fx : r.body ? fxPartsOf(r.body) : [];
   return {
     // 1.39 [FX-01] 프로 기능 장치: the card says '프로 기능' and what.
     ...(fx.length ? { fx } : {}),
@@ -1608,15 +1712,47 @@ export function withNewMakers(list, isNew, block = 10) {
   return out;
 }
 
-/** 1.38 장터 검색: a kind of work's everyday names → its style key. */
-export const STYLE_WORDS = { 교대: "SHIFT", 교대근무: "SHIFT", 일근: "DAY", 일근직: "DAY", 알바: "HOURLY", 아르바이트: "HOURLY",
-  현장: "FIELD", 자영업: "BUSINESS", 가게: "BUSINESS", 사장님: "BUSINESS", 투자: "INVEST" };
+/**
+ * 1.38 장터 검색: a kind of work's everyday names → its style key. 2.0.0 [RVQ-37] 검토 T22b-02·U22b-06: 일상에서 쓰는 말(간호·3교대·배달·매장·
+ * 주식·프리랜서 …)도 그 유형으로 이어져요(제목에 그 말이 없어도 그 유형의 작품이 나와요).
+ */
+export const STYLE_WORDS = {
+  교대: "SHIFT", 교대근무: "SHIFT", "2교대": "SHIFT", "3교대": "SHIFT", "4교대": "SHIFT", "4조2교대": "SHIFT", "3조2교대": "SHIFT", 주야: "SHIFT", 주야간: "SHIFT",
+  야간: "SHIFT", 나이트: "SHIFT", 간호: "SHIFT", 간호사: "SHIFT", 병원: "SHIFT", 병동: "SHIFT", 공장: "SHIFT", 생산직: "SHIFT", 소방: "SHIFT", 경찰: "SHIFT",
+  경비: "SHIFT", 일근: "DAY", 일근직: "DAY", 직장인: "DAY", 회사원: "DAY", 사무직: "DAY", 회사: "DAY", 출근: "DAY",
+  알바: "HOURLY", 아르바이트: "HOURLY", 파트타임: "HOURLY", 시급: "HOURLY", 편의점: "HOURLY", 카페: "HOURLY",
+  현장: "FIELD", 현장직: "FIELD", 건설: "FIELD", 공사: "FIELD", 일용직: "FIELD", 출장: "FIELD",
+  자영업: "BUSINESS", 가게: "BUSINESS", 사장님: "BUSINESS", 사장: "BUSINESS", 매장: "BUSINESS", 식당: "BUSINESS", 배달: "BUSINESS", 프리랜서: "BUSINESS",
+  장사: "BUSINESS", 투자: "INVEST", 주식: "INVEST", 코인: "INVEST", 적금: "INVEST", 배당: "INVEST", 재테크: "INVEST", 펀드: "INVEST", 부동산: "INVEST",
+};
 
 /** A search box's words: split on spaces, empty ones dropped, at most 4 (a whole sentence would be 30 LIKEs). */
 export function searchWords(q) {
   const words = String(q ?? "").trim().split(/\s+/).filter(Boolean);
   return words.length ? words.slice(0, 4) : [];
 }
+
+/** 2.0.0 [RVQ-37] 검토 SVC-55: a word with no letter or digit, as an emoji the 표지 can carry (one grapheme that is a pictograph), else null. */
+const coverEmojiOf = (w) => (/\p{Extended_Pictographic}/u.test(w) && !/[\p{L}\p{Nd}]/u.test(w) ? w : null);
+
+/**
+ * 2.0.0 [RVQ-36] 검토 SVC-60·I22ba-06: D1 takes at most 100 bound values in one statement. [make](part, marks) gives one query for a part of
+ * [list] (90 at a time; [marks] is "?,?,…" for it) as [sql, ...args]; the rows of every part come back together.
+ */
+export async function allIn(d, env, list, make, size = 90) {
+  const uniq = [...new Set(list)];
+  const out = [];
+  for (let i = 0; i < uniq.length; i += size) {
+    const part = uniq.slice(i, i + size);
+    const [sql, ...args] = make(part, part.map(() => "?").join(","));
+    out.push(...(await d.all(env, sql, ...args)));
+  }
+  return out;
+}
+
+/** [RVQ-36] Every column a list row needs but the body (read only for a row the 장터 색인 has not measured, and for the page's cards). */
+const LIST_COLS = ["code", "owner", "title", "summary", "styles", "cover", "scope", "state", "official", "public_data", "parent", "version", "likes", "dislikes",
+  "wlikes", "wdislikes", "applied", "kept7", "created_at", "updated_at", "maker", "showcase", "min_app", ...IX_COLS].map((c) => `r.${c}`).join(", ");
 
 async function recipeList(d, env, url) {
   const style = url.searchParams.get("style");
@@ -1640,20 +1776,35 @@ async function recipeList(d, env, url) {
   if (sort === "data") where.push("r.public_data = 1");
   // [RCX-32] 보여주기: the operator's showcases, newest first.
   if (sort === "showcase") where.push("r.showcase = 1");
+  // 2.0.0 [RVQ-37] 검토 SVC-55·U22b-06: a search with no letter or digit in it says so (ask: "words") instead of listing every work.
+  let ask = null;
   if (q) {
     // 1.38 (장터 그림 LOW, PC 확인: '교대 가계부'가 안 나와요): each word on its own (all must match, at most 4), and a kind of work's
     // name also finds the works made for that kind of work, so '교대 가계부' is a 가계부 for 교대 and not the one phrase.
-    for (const w of searchWords(q)) {
-      const like = `%${w.replace(/[%_]/g, "")}%`;
-      const st = STYLE_WORDS[w];
-      where.push(`(r.title LIKE ? OR r.summary LIKE ? OR r.cover LIKE ? OR r.title_skel LIKE ?${st ? " OR (',' || r.styles || ',') LIKE ?" : ""})`);
-      args.push(like, like, like, `%${nameSkeleton(w)}%`);
-      if (st) args.push(`%,${st},%`);
+    // [RVQ-37] SVC-55: the 표지 is matched by its emoji alone (not its whole JSON, where 'a' or '0' matched every colour), and a word with
+    // no letter, digit or emoji is left out.
+    const words = searchWords(q);
+    let lettered = 0;
+    for (const w of words) {
+      const st = STYLE_WORDS[w] ?? STYLE_WORDS[w.toLowerCase()];
+      const skel = nameSkeleton(w);
+      const emoji = coverEmojiOf(w);
+      if (skel) {
+        lettered++;
+        const like = `%${w.replace(/[%_]/g, "")}%`;
+        where.push(`(r.title LIKE ? OR r.summary LIKE ? OR r.title_skel LIKE ?${st ? " OR (',' || r.styles || ',') LIKE ?" : ""})`);
+        args.push(like, like, `%${skel}%`);
+        if (st) args.push(`%,${st},%`);
+      } else if (emoji) {
+        where.push("(r.ix_emoji = ? OR (r.ix_v IS NOT ? AND r.cover LIKE ?))");
+        args.push(emoji, IX_READING, `%"emoji":"${emoji.replace(/[%_"\\]/g, "")}"%`);
+      }
+    }
+    if (!lettered) ask = "words";
+    if (!lettered && !words.some(coverEmojiOf)) {
+      return d.json({ style: style ?? null, sort, items: [], next: null, ask }, 200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
     }
   }
-  // 좋은 순 and 요즘 뜨는 are worked out here from the counts (a few hundred rows a plaza); 새로 is by time.
-  const rows0 = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}
-    ORDER BY r.updated_at DESC LIMIT 600`, ...args);
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
   // 1.36 [MKX-05] and scope=part / scope=logic (부품·규칙·단추), each with an optional tab= of the tab it touches.
@@ -1666,20 +1817,44 @@ async function recipeList(d, env, url) {
   const made = (scope === "tab" || scope === "theme") && ["look", "func"].includes(url.searchParams.get("made")) ? url.searchParams.get("made") : null;
   const tool = scope === "tool" && TOOL_KINDS.includes(url.searchParams.get("tool")) ? url.searchParams.get("tool") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
-  // 1.39 [FX-01] fx=1: only the works with a 프로 기능 장치 (the '✦ 프로 기능' chip), with any scope or none.
   // 1.39 [FX-01] fx=1 기능 작품만(✦ 프로 기능), fx=0 무료로 다 되는 것만 (장터 MKD-11).
   const fxWant = url.searchParams.get("fx");
-  const rows1 = fxWant === "1" ? rows0.filter((r) => fxPartsOf(r.body).length > 0) : fxWant === "0" ? rows0.filter((r) => fxPartsOf(r.body).length === 0) : rows0;
-  const rows = scope ? rows1.filter((r) => {
-    const s = sectionOf(r.body);
-    const inScope = scope === "tool" ? s.scope === "part" || s.scope === "logic" : s.scope === scope;
-    if (!inScope) return false;
-    if (tab && !(scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) return false;
-    if (unit && s.unit !== unit) return false;
-    if (made) { const m = madeOf(r.body); if (m !== made && m !== "both") return false; }
-    if (tool && !toolsOf(r.body, s.scope).includes(tool)) return false;
-    return true;
-  }) : kind ? rows1.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows1;
+  // 2.0.0 [RVQ-36] 검토 SVC-04·I22a-03 (장터 느림의 뿌리): the 장터 색인 filters in SQL, so a list no longer reads and parses 600 bodies. A row
+  // measured by an older rule (or not yet, right after this 판 goes up) passes here and is filtered below from its body, as before.
+  const ixw = [];
+  const ixa = [];
+  if (fxWant === "1") ixw.push("r.ix_fx != ''");
+  else if (fxWant === "0") ixw.push("r.ix_fx = ''");
+  if (scope === "tool") ixw.push("r.ix_scope IN ('part', 'logic')");
+  else if (scope) { ixw.push("r.ix_scope = ?"); ixa.push(scope); }
+  if (tab) { ixw.push("r.ix_tabs LIKE ?"); ixa.push(scope === "tab" ? `,${tab},%` : `%,${tab},%`); }
+  if (unit) { ixw.push("r.ix_unit = ?"); ixa.push(unit); }
+  if (made) { ixw.push("r.ix_made IN (?, 'both')"); ixa.push(made); }
+  if (tool) { ixw.push("r.ix_tools LIKE ?"); ixa.push(`%,${tool},%`); }
+  if (kind) { ixw.push("r.ix_kinds LIKE ?"); ixa.push(`%,${kind},%`); }
+  if (ixw.length) {
+    where.push(`(r.ix_v IS NOT ? OR (${ixw.join(" AND ")}))`);
+    args.push(IX_READING, ...ixa);
+  }
+  // 좋은 순 and 요즘 뜨는 are worked out here from the counts (a few hundred rows a plaza); 새로 is by time.
+  const rows0 = await d.all(env, `SELECT ${LIST_COLS}, CASE WHEN r.ix_v IS ? THEN NULL ELSE r.body END AS body, n.nick
+    FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")} ORDER BY r.updated_at DESC LIMIT 600`, IX_READING, ...args);
+  const byBody = (r) => {
+    if (fxWant === "1" && !fxPartsOf(r.body).length) return false;
+    if (fxWant === "0" && fxPartsOf(r.body).length) return false;
+    if (scope) {
+      const s = sectionOf(r.body);
+      const inScope = scope === "tool" ? s.scope === "part" || s.scope === "logic" : s.scope === scope;
+      if (!inScope) return false;
+      if (tab && !(scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) return false;
+      if (unit && s.unit !== unit) return false;
+      if (made) { const m = madeOf(r.body); if (m !== made && m !== "both") return false; }
+      if (tool && !toolsOf(r.body, s.scope).includes(tool)) return false;
+      return true;
+    }
+    return kind ? carries(r.body, RECIPE_KINDS[kind]) : true;
+  };
+  const rows = rows0.filter((r) => r.body === null || byBody(r));
   let scored = rows;
   if (sort === "good") {
     scored = rows.map((r) => ({ r, s: rankGood(r.wlikes, r.wdislikes, r.applied, r.kept7) })).filter((x) => x.s !== null)
@@ -1688,21 +1863,31 @@ async function recipeList(d, env, url) {
     scored = rows.map((r) => ({ r, s: rankHot(r.wlikes, r.applied, (now - r.created_at) / HOUR) })).sort((a, b) => b.s - a.s).map((x) => x.r);
   }
   // 1.36 [VIL-18] 새 창작자 자리: in 요즘 뜨는 and 좋은 순, each ten has at least one first work of a new maker (Roblox-style cold start).
-  const counts = new Map();
-  for (const r of rows0) counts.set(r.owner, (counts.get(r.owner) ?? 0) + 1);
-  const newMaker = (r) => r.owner !== "operator" && counts.get(r.owner) === 1 && now - r.created_at < NEW_MAKER_DAYS * DAY;
+  // 2.0.0 [RVQ-37] 검토 SVC-56: '첫 작품'은 그분의 모든 작품을 세어 정해요(걸러진 목록 안에서만 세면 작품이 많은 분도 새 창작자였어요).
+  let firsts = new Set();
+  if (sort === "hot" || sort === "good") {
+    const young = rows.filter((r) => r.owner !== "operator" && now - r.created_at < NEW_MAKER_DAYS * DAY).map((r) => r.owner);
+    const counted = await allIn(d, env, young, (part, marks) => [`SELECT owner, COUNT(*) AS n FROM recipes WHERE state != 'deleted' AND owner IN (${marks})
+      GROUP BY owner`, ...part]);
+    firsts = new Set(counted.filter((c) => c.n === 1).map((c) => c.owner));
+  }
+  const newMaker = (r) => r.owner !== "operator" && firsts.has(r.owner) && now - r.created_at < NEW_MAKER_DAYS * DAY;
   if (sort === "hot" || sort === "good") scored = withNewMakers(scored, newMaker);
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
   // 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): body=1 sends each work's written form and hash with its
   // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
+  // [RVQ-36] Only the page's bodies are read for it (30 at most).
   const withBody = url.searchParams.get("body") === "1";
+  const bodies = withBody && page.length
+    ? new Map((await d.all(env, `SELECT code, body, hash FROM recipes WHERE code IN (${page.map(() => "?").join(",")})`, ...page.map((r) => r.code)))
+      .map((x) => [x.code, x])) : new Map();
   // 1.39 [PLZC-40] 만든 분 표식·팔로워 수(장터 카드의 만든 분 줄).
   const marks = await makerMarks(d, env, page.map((r) => r.maker), now);
-  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
+  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}), ...(ask ? { ask } : {}),
     // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part. 2.0.0 [PC-28] and, to an app before 2.0.0, with
     // a safe 달 넘김.
     items: await Promise.all(page.map(async (r) => ({ ...listItem(r, now), ...markFields(marks, r.maker),
-      ...(withBody ? await servedOut(r.body, r.hash, app) : {}) }))),
+      ...(withBody && bodies.has(r.code) ? await servedOut(bodies.get(r.code).body, bodies.get(r.code).hash, app) : {}) }))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1714,7 +1899,7 @@ async function recipeList(d, env, url) {
  * or by reports ('admin', 'flags') still closes it to everyone but its maker.
  */
 export const RETIRED = "retired";
-const openable = (r) => r.state === "visible" || (r.state === "hidden" && r.hidden_reason === RETIRED);
+export const openable = (r) => r.state === "visible" || (r.state === "hidden" && r.hidden_reason === RETIRED);
 /**
  * 2.0.0 [RVQ-26] 검토 SVC-51: whether [dev] may open [r] at all, as `show` decides: its maker always (but a deleted one), anyone else
  * one that is up (or retired) and not 나만 보기. Votes, reports and talk ask the same, so a 나만 보기 work's code alone opens nothing.
@@ -1727,6 +1912,11 @@ async function show(d, env, request, code, url) {
   const r = await d.one(env, "SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE r.code = ?", code);
   const mine = Boolean(r && dev && r.owner === dev);
   if (!r || r.state === "deleted" || (!mine && (!openable(r) || r.scope === "private"))) return d.json({ error: "not_found" }, 404);
+  // 2.0.0 [RVQ-42] 검토 SVC-54·U22b-05·I22ba-01: a work its app cannot read is not sent to it ({error: "update", minApp}); the app says
+  // which 판 reads it and opens the store. An app that sends no app= is before 2.0.0 (1.36~1.39 alike), so only a work that needs 2.0.0
+  // or newer is kept from it; 1.39 and its maker's own always open.
+  const asks = appCodeOf(url);
+  if (!mine && r.min_app && (asks ? asks < r.min_app : r.min_app > FX_SINCE_APP)) return d.json({ error: "update", minApp: r.min_app }, 426);
   const ver = Number(url.searchParams.get("v"));
   let version = { version: r.version, hash: r.hash, body: r.body };
   // 2.0.0 [RVQ-26] 검토 SVC-23: a past 판 opens for its maker only. Anyone else asking ?v= for one gets the 판 up now (an app asks only for
@@ -1749,6 +1939,8 @@ async function show(d, env, request, code, url) {
     for (const x of reasons) tally[x.reason] = (tally[x.reason] ?? 0) + 1;
     out.state = r.state;
     out.note = r.note || null;
+    // [RVQ-42] 검토 I22bb-06: the maker learns which apps see it (an older app's 장터 leaves it out).
+    if (r.min_app) out.minApp = r.min_app;
     out.reasons = { tally, opinions: reasons.filter((x) => x.opinion).map((x) => ({ reason: x.reason, text: x.opinion, at: new Date(x.at).toISOString() })) };
     if (r.state === "hidden") out.hidden = r.hidden_reason;
     // 1.36 [GRW-08] 새싹 첫 사진·신고로 가린 사진: 만든 분께만 '사진 확인 중'.
@@ -1820,7 +2012,11 @@ async function publish(d, env, request) {
   const trust = await recipeTrust(d, env, dev, now);
   const scope = readScope(body.scope);
   // 1.39 [PAYP-08] What others can read carries no company pay part.
-  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
+  if (scope !== "private") {
+    const shared = await sharedOnly(clean);
+    if (shared.problem) return d.json({ error: shared.problem, field: "recipe.company" }, 400);
+    Object.assign(clean, shared);
+  }
   const gate = await sharedGate(d, env, request, dev, clean, scope, now);
   if (gate) return gate;
   const r = clean.recipe;
@@ -1837,10 +2033,13 @@ async function publish(d, env, request) {
     state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev),
     // 1.39 [FX-01] An app before 1.39 cannot read a 기능 장치, so it never lists the work; parts keep their own minApp (TASK-07).
     minAppOf(clean.text)),
+    // 2.0.0 [RVQ-36] 장터 색인
+    ((ix) => d.stmt(env, `UPDATE recipes SET ${ix.sql} WHERE code = ?`, ...ix.args, code))(ixSet(clean.text, r.cover)),
     d.stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", dev, await makerId(dev), now),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
   ]);
-  return d.json({ code, version: 1, hash: clean.hash, state, scope, trust: trust.level }, 201);
+  const need = minAppOf(clean.text);
+  return d.json({ code, version: 1, hash: clean.hash, state, scope, trust: trust.level, ...(need ? { minApp: need } : {}) }, 201);
 }
 
 async function owned(d, env, request, code, body) {
@@ -1869,7 +2068,11 @@ async function newVersion(d, env, request, code) {
   }
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
   // 1.39 [PAYP-08]
-  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
+  if (scope !== "private") {
+    const shared = await sharedOnly(clean);
+    if (shared.problem) return d.json({ error: shared.problem, field: "recipe.company" }, 400);
+    Object.assign(clean, shared);
+  }
   const same = clean.hash === r.hash;
   if (same && scope === r.scope) return d.json({ error: "same", field: "recipe" }, 409);
   // 2.0.0 [RVQ-26] 검토 SVC-15: the checks a first 판 passes (말 못 하기·쓰기 제한·네트워크 몫·Integrity·프로·비슷한 이름).
@@ -1896,10 +2099,12 @@ async function newVersion(d, env, request, code) {
     d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, scope = ?, state = ?, version = ?, hash = ?, body = ?,
       updated_at = ?, note = '', min_app = MAX(COALESCE(min_app, 0), COALESCE(?, 0)) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
     state, v, clean.hash, clean.text, now, minAppOf(clean.text), code),
+    ((ix) => d.stmt(env, `UPDATE recipes SET ${ix.sql} WHERE code = ?`, ...ix.args, code))(ixSet(clean.text, rec.cover)),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", code, v, clean.hash, clean.text, now),
     ...(r.state === "returned" ? [d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'again', ?, '', ?)", code, `새 판 ${v}`, now)] : []),
   ]);
-  return d.json({ code, version: v, hash: clean.hash, state, scope });
+  const need = minAppOf(clean.text);
+  return d.json({ code, version: v, hash: clean.hash, state, scope, ...(need ? { minApp: need } : {}) });
 }
 
 /**
@@ -1931,6 +2136,8 @@ export function dropRecipe(d, env, code) {
     d.stmt(env, "DELETE FROM post_votes WHERE post_id IN (SELECT id FROM posts WHERE company_id = 'recipe' AND grp = ?)", code),
     d.stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE company_id = 'recipe' AND grp = ?)", code),
     d.stmt(env, "DELETE FROM posts WHERE company_id = 'recipe' AND grp = ?", code),
+    // 2.0.0 [RVQ-40] 검토 SVC-57: a 요청 it answered waits again (it pointed at a work that is gone).
+    d.stmt(env, "UPDATE recipe_requests SET state = 'waiting', code = NULL, maker = NULL, taken_at = NULL, done_at = NULL, checked = NULL, updated_at = ? WHERE code = ?", Date.now(), code),
   ];
 }
 
@@ -1947,6 +2154,15 @@ export function readReason(body) {
 }
 
 /** POST /api/recipes/:code/vote — 좋아요 (1), 안좋아요 (-1, with its reason) or taking it back (null). */
+/**
+ * 2.0.0 [RVQ-40] 검토 SVC-62·I22bc-02 '한 사람 한 번': one network's voices on one target a day ([kind]: tlike 이야기 좋아요, rqlike 요청
+ * 좋아요). The network is the hour-salted hash the counter keeps for a day (처리방침 2시간: nothing is written on the row). A 429 past it.
+ */
+export async function oneVoice(d, env, request, kind, ref, now) {
+  const net = await d.network(request, env, now);
+  return d.overLimit(env, now, [["network", `${kind}|${ref}|${net.day}`, RECIPE_LIMITS.likesPerTargetNetworkDay, DAY]]);
+}
+
 async function recipeVote(d, env, request, code) {
   const body = await d.readJson(request, 2048);
   const dev = await readDevice(d, request, body);
@@ -1971,8 +2187,9 @@ async function recipeVote(d, env, request, code) {
   const hit = await d.overLimit(env, now, [["device", `rvote|${dev}|${Math.floor(now / HOUR)}`, RECIPE_LIMITS.votesPerHour, HOUR]]);
   if (hit) return hit;
   const trust = await recipeTrust(d, env, dev, now);
-  // S8: a burst from one network waits; it counts nowhere until the operator lets it through.
-  const burst = await d.allow(env, `rvotenet|${net.now}`, RECIPE_LIMITS.networkVotesHour, HOUR, now);
+  // S8: a burst from one network waits; it counts nowhere until the operator lets it through. [RVQ-39] SVC-53: on this work, and on all.
+  const burst = (await d.allow(env, `rvotenet|${code}|${net.now}`, RECIPE_LIMITS.networkVotesHour, HOUR, now))
+    && (await d.allow(env, `rvotenetall|${net.now}`, RECIPE_LIMITS.networkVotesAllHour, HOUR, now));
   const held = burst ? 0 : 1;
   const before = await d.one(env, "SELECT value, weight, held FROM recipe_votes WHERE code = ? AND device = ?", code, dev);
   const stmts = [];
@@ -2095,13 +2312,24 @@ async function recipeTalk(d, env, request, code) {
   const r = await d.one(env, "SELECT code, owner, state, scope, hidden_reason FROM recipes WHERE code = ?", code);
   if (!canOpen(r, dev)) return d.json({ error: "not_found" }, 404);
   const now = Date.now();
-  const [rows, nicks, myVotes, muted] = await Promise.all([
-    d.all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 300", RECIPE_TABLE, talkGrp(code)),
+  // 2.0.0 [RVQ-43] 검토 U22-05: the newest 300 (it was the first 300, so a busy work's new talk never came), older with ?before=<ISO>.
+  // Each answer's question comes along even when it is older, and 'who' numbers count over the whole talk, so they stay the same.
+  const before = Date.parse(new URL(request.url).searchParams.get("before") ?? "");
+  const [newest, nicks, myVotes, muted] = await Promise.all([
+    d.all(env, `SELECT * FROM posts WHERE company_id = ? AND grp = ?${Number.isFinite(before) ? " AND created_at < ?" : ""} ORDER BY created_at DESC, rowid DESC LIMIT 301`,
+      RECIPE_TABLE, talkGrp(code), ...(Number.isFinite(before) ? [before] : [])),
     d.all(env, "SELECT device, nick FROM nicks WHERE device IN (SELECT device FROM posts WHERE company_id = ? AND grp = ?)", RECIPE_TABLE, talkGrp(code)),
     dev ? d.all(env, `SELECT v.post_id, v.ok FROM post_votes v JOIN posts p ON p.id = v.post_id WHERE v.device = ? AND p.company_id = ? AND p.grp = ?`,
       dev, RECIPE_TABLE, talkGrp(code)) : [],
     dev ? d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now) : null,
   ]);
+  const more = newest.length > 300;
+  const window = newest.slice(0, 300).reverse();
+  const have = new Set(window.map((p) => p.id));
+  const askedFor = [...new Set(window.filter((p) => p.parent && !have.has(p.parent)).map((p) => p.parent))];
+  const parents = await allIn(d, env, askedFor, (part, marks) => [`SELECT * FROM posts WHERE id IN (${marks})`, ...part]);
+  const rows = [...parents.sort((a, b) => a.created_at - b.created_at), ...window];
+  const order = await d.all(env, "SELECT device, MIN(created_at) AS first FROM posts WHERE company_id = ? AND grp = ? GROUP BY device ORDER BY first", RECIPE_TABLE, talkGrp(code));
   const nick = new Map(nicks.map((n) => [n.device, n.nick]));
   const voted = new Map(myVotes.map((v) => [v.post_id, v.ok === 1 ? 1 : -1]));
   const hidden = await d.hiddenAuthors(env, request);
@@ -2109,7 +2337,7 @@ async function recipeTalk(d, env, request, code) {
   const blocked = dev ? new Set((await d.all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", dev)).map((b) => b.maker)) : new Set();
   if (blocked.size) for (const p of rows) if (blocked.has(await makerId(p.device))) hidden.add(p.device);
   const key = await d.authorKey(env);
-  const numbers = new Map();
+  const numbers = new Map(order.map((o, i) => [o.device, i + 1]));
   const mineIds = rows.filter((p) => p.device === dev).map((p) => p.id);
   const reasons = mineIds.length ? await d.all(env, `SELECT post_id, why, note FROM post_votes WHERE ok = 0 AND post_id IN (${mineIds.map(() => "?").join(",")})`, ...mineIds) : [];
   const posts = [];
@@ -2135,14 +2363,16 @@ async function recipeTalk(d, env, request, code) {
   }
   // 1.36 [LIM-10] How many more today only while strikes restrict this install; otherwise nothing, there is no cap.
   const used = dev ? await writeLeft(d, env, dev, "rtalk", now) : {};
-  return d.json({ code, posts, ...(muted ? { mutedUntil: new Date(muted.until).toISOString() } : {}),
+  return d.json({ code, posts, ...(more ? { more: true, before: new Date(window[0].created_at).toISOString() } : {}), ...(muted ? { mutedUntil: new Date(muted.until).toISOString() } : {}),
     ...(used.limit ? { left: used.limit.left, limit: used.limit } : {}) });
 }
 
 /** POST /api/recipes/:code/talk — {body, kind, parent?, usingDays?}. */
 async function talkPost(d, env, request, code) {
   if (await d.paused(env, "PLAZA_WRITE")) return d.json({ error: "paused" }, 503);
-  const body = await d.readJson(request, 4096);
+  // 2.0.0 [RVQ-43] 검토 SVC-74·U22b-13: the post is 500 letters (graphemes); a letter can be many bytes (an emoji with skin tone and ZWJ is up to
+  // ~35), so 4096 bytes cut a 500-letter post short with 413. The letters are still counted below.
+  const body = await d.readJson(request, 20_000);
   const dev = await readDevice(d, request, body);
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
@@ -2203,6 +2433,11 @@ async function talkVote(d, env, request, postId) {
   }
   const hit = await d.overLimit(env, now, [["device", `rvote|${dev}|${Math.floor(now / HOUR)}`, RECIPE_LIMITS.votesPerHour, HOUR]]);
   if (hit) return hit;
+  // 2.0.0 [RVQ-40] 검토 SVC-62·I22bc-02: one network's likes on one 이야기 a day count up to a few (installs alone no longer add up).
+  if (body.value !== null) {
+    const capped = await oneVoice(d, env, request, "tlike", postId, now);
+    if (capped) return capped;
+  }
   const before = await d.one(env, "SELECT ok FROM post_votes WHERE post_id = ? AND device = ?", postId, dev);
   const stmts = [];
   if (before) stmts.push(d.stmt(env, `UPDATE posts SET ${before.ok ? "agree = agree - 1" : "disagree = disagree - 1"} WHERE id = ?`, postId));
@@ -2271,10 +2506,16 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       hidden: `state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}'`, retired: `state = 'hidden' AND hidden_reason = '${RETIRED}'`, visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
       one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'",
       // 2.0.0 [RVQ-26] 검토 SVC-52: returned, then up again with a changed 판, and nothing the operator did since.
-      again: `state != 'deleted' AND (SELECT a.action FROM recipe_actions a WHERE a.code = recipes.code ORDER BY a.id DESC LIMIT 1) = 'again'` }[tab]
+      again: `state != 'deleted' AND (SELECT a.action FROM recipe_actions a WHERE a.code = recipes.code ORDER BY a.id DESC LIMIT 1) = 'again'`,
+      // 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: works with votes a network's burst held (they count nowhere until let through).
+      votes: "state != 'deleted' AND EXISTS (SELECT 1 FROM recipe_votes v WHERE v.code = recipes.code AND v.held = 1)" }[tab]
       ?? "state = 'pending'";
     // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개 중 200개만 보이고 구간 수가 틀려요): 출시 대기 lists the whole batch.
-    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" || tab === "retired" ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
+    // 2.0.0 [RVQ-39] 검토 SVC-57: those two long lists (1,200) come without their bodies (2MB to the phone): each row says its pieces, and
+    // 본문 보기 opens the one work.
+    const long = tab === "waiting" || tab === "retired";
+    const rows = await d.all(env, `SELECT ${long ? `${LIST_COLS.replaceAll("r.", "")}, note, hash, release_at, batch, retired_below, hidden_reason, body` : "*"} FROM recipes
+      WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${long ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
     // D1 takes at most 100 bound values in one query, so the codes go in groups (a list of 200 failed on the real server).
     const byCodes = async (sql) => {
       const out = [];
@@ -2294,7 +2535,15 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       const n = (why) => q.find((x) => x.why === why)?.n ?? 0;
       return q.length ? { fresh: n("new"), net: n("net") } : null;
     };
-    return d.json({ tab, ...(tab === "one" ? { code } : {}), items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
+    // [RVQ-39] SVC-53: each work's held votes by the network that sent them (a short mark of the hour's network, never the hash itself).
+    const heldRows = tab === "votes" ? await byCodes((marks) => `SELECT code, substr(net, 1, 8) AS grp, SUM(value = 1) AS likes, SUM(value = -1) AS dislikes,
+      COUNT(*) AS n, MIN(at) AS since FROM recipe_votes WHERE held = 1 AND code IN (${marks}) GROUP BY code, grp ORDER BY n DESC`) : [];
+    const heldAll = await d.one(env, "SELECT COUNT(*) AS n, COUNT(DISTINCT code) AS works FROM recipe_votes WHERE held = 1");
+    const piecesOf = (text) => { try { const v = JSON.parse(text); return { pieces: (v.pieces ?? []).map((p) => p.kind), inputs: (v.inputs ?? []).length }; } catch { return { pieces: [], inputs: 0 }; } };
+    return d.json({ tab, ...(tab === "one" ? { code } : {}), held: { votes: heldAll?.n ?? 0, works: heldAll?.works ?? 0 }, items: rows.map((r) => ({ ...listItem(r, now),
+      section: rowIndex(r)?.scope ?? sectionOf(r.body).scope, state: r.state, scope: r.scope, ...(long ? piecesOf(r.body) : { body: r.body }), hash: r.hash, note: r.note,
+      ...(tab === "votes" ? { heldVotes: heldRows.filter((h) => h.code === r.code).map((h) => ({ group: h.grp, likes: h.likes ?? 0, dislikes: h.dislikes ?? 0,
+        n: h.n, since: new Date(h.since).toISOString() })) } : {}),
       ...(r.release_at ? { releaseAt: new Date(r.release_at).toISOString() } : {}), ...(r.min_app ? { minApp: r.min_app } : {}), ...(r.batch ? { batch: r.batch } : {}),
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
       quiet: quietOf(r.code), hidden: r.hidden_reason ?? null, ...(r.retired_below ? { retiredBelow: r.retired_below } : {}) })) });
@@ -2327,6 +2576,10 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const r = clean.recipe;
     const rel = releaseOf(body, now);
     if (!rel) return d.json({ error: "release", field: "releaseAt" }, 400);
+    // 2.0.0 [RVQ-42] 검토 SVC-54: the operator's '이 판부터' may be newer than what the work needs, never older (it was taken as sent, and
+    // an upload without one cleared what the hourly job had measured).
+    const needs = minAppOf(clean.text);
+    if (needs && (rel.minApp ?? 0) < needs) rel.minApp = needs;
     const state = rel.hold ? "waiting" : "visible";
     const same = body.replace === true ? await d.one(env, `SELECT code, version, hash, state FROM recipes WHERE owner = 'operator' AND title_skel = ?
       AND state != 'deleted' ORDER BY created_at DESC LIMIT 1`, nameSkeleton(r.title)) : null;
@@ -2339,10 +2592,12 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       // A 판 already on the 장터 stays there; one still waiting takes the new settings.
       const next = same.state === "visible" ? "visible" : state;
       await d.batch(env, [
+        // 2.0.0 [RVQ-39] 검토 SVC-74: a 판 정리 work put in again leaves 'retired' (its reason and retired_below went on).
         d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, state = ?, public_data = ?, showcase = ?, version = ?,
-          hash = ?, body = ?, updated_at = ?, release_at = ?, min_app = ?, batch = ? WHERE code = ?`, r.title, nameSkeleton(r.title), r.summary ?? "",
+          hash = ?, body = ?, updated_at = ?, release_at = ?, min_app = ?, batch = ?, hidden_reason = NULL, hidden_at = NULL, retired_below = NULL WHERE code = ?`, r.title, nameSkeleton(r.title), r.summary ?? "",
         r.styles.join(","), JSON.stringify(r.cover), next, body.publicData === true ? 1 : 0, body.showcase === true ? 1 : 0, v, clean.hash, clean.text, now,
         rel.releaseAt, rel.minApp, rel.batch, same.code),
+        ((ix) => d.stmt(env, `UPDATE recipes SET ${ix.sql} WHERE code = ?`, ...ix.args, same.code))(ixSet(clean.text, r.cover)),
         d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", same.code, v, clean.hash, clean.text, now),
         act(same.code, "official", `새 판 ${v}${rel.batch ? ` · ${rel.batch}` : ""}`),
       ]);
@@ -2356,6 +2611,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
         VALUES (?, 'operator', ?, ?, ?, ?, ?, 'public', ?, 1, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)`, code, r.title, nameSkeleton(r.title), r.summary ?? "",
       r.styles.join(","), JSON.stringify(r.cover), state, body.publicData === true ? 1 : 0, body.showcase === true ? 1 : 0, clean.hash, clean.text, now, now, now,
       rel.releaseAt, rel.minApp, rel.batch),
+      ((ix) => d.stmt(env, `UPDATE recipes SET ${ix.sql} WHERE code = ?`, ...ix.args, code))(ixSet(clean.text, r.cover)),
       d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
       act(code, state === "waiting" ? "waiting" : "official", [body.publicData === true ? "공개 자료" : body.showcase === true ? "보여주기" : "시작 레시피", rel.batch].filter(Boolean).join(" · ")),
     ]);
@@ -2381,7 +2637,9 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       return d.json({ scheduled: res.meta?.changes ?? 0, at: at ? new Date(at).toISOString() : null });
     }
     const n = await releaseWaiting(d, env, now, where, args, actorName);
-    return d.json({ released: n });
+    // 2.0.0 [RVQ-39] 검토 SVC-57: 400 at a time; the answer says how many still wait so the screen goes on by itself.
+    const left = await d.one(env, `SELECT COUNT(*) AS n FROM recipes WHERE ${where}`, ...args);
+    return d.json({ released: n, left: left?.n ?? 0 });
   }
   // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목(이나 코드)으로 한 번에 숨겨요. 지우지 않아요.
   // 1.39 판 정리: 이유는 'retired'라 이미 넣은 분은 코드로 계속 열고(목록·찾기·추천에서만 빠짐), show-titles로 한 번에 되돌려요.
@@ -2455,6 +2713,9 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     let strike = null;
     let unstrike = null;
     if (what === "approve") {
+      // 2.0.0 [RVQ-39] 검토 SVC-57: 올리기·괜찮아요 is for one waiting for it (pending, returned, or up again after a return). A hidden one is
+      // shown with 'show' (which clears its reports), a 출시 대기 one with 공개.
+      if (!["pending", "returned", "visible"].includes(r.state)) return d.json({ error: "state", state: r.state }, 409);
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', decided_at = ?, note = '' WHERE code = ?", now, code));
       if (r.state === "pending") stmts.push(d.stmt(env, "UPDATE recipe_trust SET approved = approved + 1 WHERE device = ?", r.owner));
     } else if (what === "return") {
@@ -2492,20 +2753,14 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     if (unstrike) await strikeTakenBack(d, env, unstrike, now);
     return d.json({ code, done: what });
   }
-  if (path === "/recipes/votes/release" && method === "POST") {
-    // S8: held votes the operator looked at and found real.
+  if ((path === "/recipes/votes/release" || path === "/recipes/votes/drop") && method === "POST") {
+    // S8: held votes the operator looked at and found real. 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: or not (버리기), and for one network's group
+    // ({group}: the mark the list shows) or the whole work.
     const body = await d.readJson(request, 512);
     if (typeof body.code !== "string" || !CODE.test(body.code)) return d.json({ error: "code" }, 400);
-    const held = await d.all(env, "SELECT value, weight FROM recipe_votes WHERE code = ? AND held = 1", body.code);
-    const likes = held.filter((v) => v.value === 1);
-    const dislikes = held.filter((v) => v.value === -1);
-    await d.batch(env, [
-      d.stmt(env, "UPDATE recipe_votes SET held = 0 WHERE code = ? AND held = 1", body.code),
-      d.stmt(env, `UPDATE recipes SET likes = likes + ?, dislikes = dislikes + ?, wlikes = wlikes + ?, wdislikes = wdislikes + ? WHERE code = ?`,
-        likes.length, dislikes.length, likes.reduce((s, v) => s + v.weight, 0), dislikes.reduce((s, v) => s + v.weight, 0), body.code),
-      act(body.code, "release", `${held.length}`),
-    ]);
-    return d.json({ released: held.length });
+    const group = typeof body.group === "string" && /^[0-9a-f]{8}$/.test(body.group) ? body.group : null;
+    const n = path.endsWith("/release") ? await releaseHeldVotes(d, env, body.code, group, actorName) : await dropHeldVotes(d, env, body.code, group, actorName);
+    return d.json(path.endsWith("/release") ? { released: n } : { dropped: n });
   }
   return null;
 }
@@ -2551,7 +2806,22 @@ export async function releaseWaiting(d, env, now, where, args, actor) {
 export function minAppOf(text) {
   let rec = null;
   try { rec = JSON.parse(text); } catch { return null; }
-  return Math.max(partsMinApp(rec) ?? 0, fxPartsOf(text).length ? FX_SINCE_APP : 0) || null;
+  return Math.max(partsMinApp(rec) ?? 0, fxPartsOf(text).length || fxTasteOf(rec) ? FX_SINCE_APP : 0) || null;
+}
+
+/**
+ * 2.0.0 [RVQ-42] 검토 SVC-54·T22b-03: the free 맛보기 (one 값 칸, one widget button counting it) is free to put in, but it is still a 1.39
+ * 기능 장치: an app before 1.39 reads neither the 값 칸 nor its 동작 and refuses the whole work. So it needs 1.39 too (fxPartsOf leaves it
+ * out because it is not 프로).
+ */
+function fxTasteOf(rec) {
+  for (const p of Array.isArray(rec?.pieces) ? rec.pieces : []) {
+    if (p?.kind !== "logic") continue;
+    if ((p.values ?? []).length) return true;
+    const acts = [...(p.buttons ?? []), ...(p.rules ?? [])].flatMap((a) => [a, ...(a.more ?? []), ...(a.else ?? [])]);
+    if (acts.some((a) => VALUE_VERBS.includes(a?.do))) return true;
+  }
+  return false;
 }
 
 /**
@@ -2591,8 +2861,75 @@ async function recheckPage(d, env, now, sig, limit) {
   return raise.length;
 }
 
+/**
+ * 2.0.0 [RVQ-36] 검토 SVC-04: 장터 색인이 없거나 옛 규칙(IX_READING)으로 잰 작품을 [limit]개씩 다시 재요(매시 정리, 한 번에 [pages]쪽).
+ * 올리기·새 판은 그때 바로 재니, 이 일은 이 판을 처음 올린 뒤와 규칙이 바뀐 뒤에만 할 일이 있어요. 잰 수를 돌려줘요.
+ */
+export async function reindexRecipes(d, env, limit = 200, pages = 5) {
+  let n = 0;
+  for (let page = 0; page < pages; page++) {
+    const rows = await d.all(env, "SELECT code, body, cover FROM recipes WHERE state != 'deleted' AND (ix_v IS NULL OR ix_v != ?) LIMIT ?", IX_READING, limit);
+    if (!rows.length) break;
+    const stmts = rows.map((r) => { const ix = ixSet(r.body, r.cover); return d.stmt(env, `UPDATE recipes SET ${ix.sql} WHERE code = ?`, ...ix.args, r.code); });
+    for (let i = 0; i < stmts.length; i += 90) await d.batch(env, stmts.slice(i, i + 90));
+    n += rows.length;
+    if (rows.length < limit) break;
+  }
+  return n;
+}
+
+/** [RVQ-39] Count held votes of [code] (one network's [group] or all): they go into the work's numbers as they would have. */
+async function releaseHeldVotes(d, env, code, group, actor, devices = null) {
+  const held = await d.all(env, `SELECT device, value, weight FROM recipe_votes WHERE code = ? AND held = 1${group ? " AND substr(net, 1, 8) = ?" : ""}`,
+    code, ...(group ? [group] : []));
+  const pick = devices ? held.filter((v) => devices.has(v.device)) : held;
+  if (!pick.length) return 0;
+  const likes = pick.filter((v) => v.value === 1);
+  const dislikes = pick.filter((v) => v.value === -1);
+  const stmts = pick.map((v) => d.stmt(env, "UPDATE recipe_votes SET held = 0 WHERE code = ? AND device = ? AND held = 1", code, v.device));
+  stmts.push(d.stmt(env, `UPDATE recipes SET likes = likes + ?, dislikes = dislikes + ?, wlikes = wlikes + ?, wdislikes = wdislikes + ? WHERE code = ?`,
+    likes.length, dislikes.length, likes.reduce((s, v) => s + v.weight, 0), dislikes.reduce((s, v) => s + v.weight, 0), code));
+  stmts.push(d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'release', ?, ?, ?)", code,
+    `보류된 표 ${pick.length}개 셈${group ? " · 네트워크 묶음 하나" : ""}`, actor, Date.now()));
+  for (let i = 0; i < stmts.length; i += 90) await d.batch(env, stmts.slice(i, i + 90));
+  return pick.length;
+}
+
+/** [RVQ-39] Throw held votes of [code] away (one network's [group] or all): they never count; the phones may vote again. */
+async function dropHeldVotes(d, env, code, group, actor) {
+  const res = await d.run(env, `DELETE FROM recipe_votes WHERE code = ? AND held = 1${group ? " AND substr(net, 1, 8) = ?" : ""}`, code, ...(group ? [group] : []));
+  const n = res?.meta?.changes ?? 0;
+  if (n) await d.run(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'drop_held', ?, ?, ?)", code,
+    `보류된 표 ${n}개 버림${group ? " · 네트워크 묶음 하나" : ""}`, actor, Date.now());
+  return n;
+}
+
+/**
+ * [RVQ-39] 검토 SVC-53 (교대 근무자들이 병원 와이파이 하나로 누른 좋아요가 끝내 안 세어짐): a day after, held votes from installs that were not
+ * new when they voted (3 days on the 나눔 판, as their weight) count by themselves; the rest wait for the operator, and go after 30 days.
+ */
+export async function settleHeldVotes(d, env, now) {
+  const rows = await d.all(env, `SELECT v.code, v.device FROM recipe_votes v JOIN recipe_trust t ON t.device = v.device
+    WHERE v.held = 1 AND v.at < ? AND t.first_at <= v.at - ? LIMIT 500`, now - RECIPE_LIMITS.heldReleaseMs, 3 * DAY);
+  const byCode = new Map();
+  for (const r of rows) byCode.set(r.code, (byCode.get(r.code) ?? new Set()).add(r.device));
+  let n = 0;
+  for (const [code, devices] of byCode) n += await releaseHeldVotes(d, env, code, null, "자동 정리", devices);
+  const old = await d.all(env, "SELECT DISTINCT code FROM recipe_votes WHERE held = 1 AND at < ? LIMIT 50", now - RECIPE_LIMITS.heldDropDays * DAY);
+  for (const r of old) {
+    const res = await d.run(env, "DELETE FROM recipe_votes WHERE code = ? AND held = 1 AND at < ?", r.code, now - RECIPE_LIMITS.heldDropDays * DAY);
+    if (res?.meta?.changes) await d.run(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'drop_held', ?, '자동 정리', ?)", r.code,
+      `${RECIPE_LIMITS.heldDropDays}일 지난 보류된 표 ${res.meta.changes}개`, now);
+  }
+  return n;
+}
+
 export async function pruneRecipes(d, env, now) {
+  // 2.0.0 [RVQ-39] 보류된 표: 하루 지난 오래된 설치의 표는 저절로 세요.
+  await settleHeldVotes(d, env, now);
   await releaseWaiting(d, env, now, "state = 'waiting' AND release_at IS NOT NULL AND release_at <= ?", [now], "예약");
+  // 2.0.0 [RVQ-36] 장터 색인을 아직 안 잰 작품
+  await reindexRecipes(d, env);
   // 2.0.0 [RVD-24] SN-07 판 호환표가 바뀌면 이미 올라간 작품의 min_app도 다시 봐요.
   await recheckMinApp(d, env, now);
   // 1.39 판 정리로 내린 운영자 작품('retired')은 넣은 분이 계속 열어서 지우지 않아요(사용자 작품이 아니라 처리방침 3.8의 가린 것이 아니에요).

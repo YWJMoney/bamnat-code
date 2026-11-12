@@ -1,5 +1,5 @@
 // [COMM-04] A worker on an in-memory D1 and a company settings file as the app sends it, for the tests.
-import worker from "../src/index.js";
+import worker, { deviceHash } from "../src/index.js";
 import { d1 } from "./d1.mjs";
 
 export const ORIGIN = "https://company.example";
@@ -101,6 +101,17 @@ export const from = (n) => ({ "cf-connecting-ip": `198.51.100.${n}` });
 export async function seasoned(call, t, ns) {
   for (const n of ns) await call("GET", "/api/recipes/mine", undefined, { "x-device": device(n) });
   t.mock.timers.tick(3 * 24 * 60 * 60 * 1000 + 1000);
+}
+
+/**
+ * 2.0.0 [RVQ-44] Make phones [ns] 이웃 on the 나눔 판 (first seen 4 days ago) without moving the clock: '만들게요' waits for that.
+ */
+export async function neighbour(DB, ...ns) {
+  for (const n of ns) {
+    const h = await deviceHash(device(n));
+    await DB.prepare("INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)").bind(h, Date.now()).run();
+    await DB.prepare("UPDATE recipe_trust SET first_at = ? WHERE device = ?").bind(Date.now() - 4 * 24 * 60 * 60 * 1000, h).run();
+  }
 }
 
 export async function signIn(call) {
