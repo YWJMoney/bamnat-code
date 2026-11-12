@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.parts.partSpot
 import com.bamnat.core.work.words
 import com.bamnat.app.ui.decor.decor
 import com.bamnat.app.ui.theme.monthTurn
@@ -1292,6 +1293,9 @@ fun CalendarScreen(
         // '달력만 볼까요' is a notice, the open one, so the others fold under it; it waits while the start card is up and while the
         // first setup's month fills.
         val fillingNow = SetupFill.now.collectAsStateWithLifecycle().value?.calendar == activeCalendar.id
+        // 2.0.0 [RVG-27] 검토 SN-13: this calendar's link went out without a part the server would not take (an emoji 근무 그림);
+        // said once over the month, so the sender knows without opening the share sheet (before, it said nothing and never went).
+        val shareLeftOut = com.bamnat.app.share.ShareLinkKey.all(activeCalendar.id).map { k -> k to c31.shareLinksOf(k).dropped.collectAsStateWithLifecycle().value }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             if (!settings.viewAsked && paint == null && viewingReceived == null && !startCardUp && !fillingNow) add(Notice("viewAsk", "보기 고르기") {
                 CalendarViewAsk(settings.calendarOnly, onAnswer = { only -> vm.updateSettings { it.copy(calendarOnly = only, viewAsked = true) } },
@@ -1305,6 +1309,21 @@ fun CalendarScreen(
             receivedList.filter { it.note != null }.forEach { cal ->
                 if (paint == null && viewingReceived == null) add(Notice("rosterFollow:${cal.id}", "받은 근무표 바뀜") {
                     RosterFollowLine(cal, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                })
+            }
+            // 2.0.0 [RVL-02][RVL-06][RVL-09] (검토 DATA-08·U12-03·DATA-11·U12-08): a restore put back whole, a phone the data came to by
+            // Android's own backup, 앱 잠금 resting for want of the phone's lock. What the user trusts the app with comes right after the
+            // 리더's change, so it is the open one; each draws nothing (and is not counted) when it has nothing to say.
+            if (paint == null && viewingReceived == null) {
+                add(Notice("restoreStopped", "불러오기 멈춤") { com.bamnat.app.ui.settings.RestoreStoppedNotice() })
+                add(Notice("phoneMoved", "옮겨 온 것 확인") { com.bamnat.app.ui.settings.PhoneMovedNotice() })
+                add(Notice("appLockResting", "앱 잠금 쉼") { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
+            }
+            shareLeftOut.forEach { (k, words) ->
+                if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "링크에 빼고 보낸 것") {
+                    com.bamnat.app.ui.components.NudgeCard(words, tone = com.bamnat.app.ui.theme.Tone.Caution,
+                        onClose = { c31.shareLinksOf(k).setDropped(null) }, closeLabel = "링크 안내 닫기",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 })
             }
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
@@ -2186,8 +2205,9 @@ private fun MonthShiftCounts(snapshot: ScheduleSnapshot, month: YearMonth, modif
     }
 }
 
+/** [RVM-18] PC-46: also drawn as the 달력 머리 of a work's 미리 그림 ([com.bamnat.app.ui.recipe.MockMonth]), so the two are one drawing. */
 @Composable
-private fun CalendarHeader(
+internal fun CalendarHeader(
     month: YearMonth,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -2257,8 +2277,12 @@ private fun CalendarHeader(
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
         // [RVH-42] Where a tap presses the work's buttons (the phone's own calendar), they are the row's buttons below, not drawn over it.
-        Modifier.fillMaxWidth().then(com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp))
-            .decor(com.bamnat.core.recipe.Decor.HEAD, taps = com.bamnat.app.ui.decor.LocalDecorTap.current == null).padding(start = 4.dp, end = 4.dp, top = 8.dp)
+        Modifier.fillMaxWidth().then(
+            // [PC-62] A head with its own box (바깥 여백·모서리) has the photo's ground under that box, not round the row.
+            if (headPart.out == null && headPart.corners.all { it == null }) com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp)
+            else com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp + (headPart.out ?: 0).dp, side = 4.dp + (headPart.out ?: 0).dp,
+                bottom = (headPart.out ?: 0).dp, shape = com.bamnat.app.ui.parts.PartMods.shapeOf(headPart, MaterialTheme.shapes.medium))
+        ).partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD, taps = com.bamnat.app.ui.decor.LocalDecorTap.current == null).padding(start = 4.dp, end = 4.dp, top = 8.dp)
             .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2289,7 +2313,7 @@ private fun CalendarHeader(
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
                 com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded || quickRound || headTight, yearInk = yearInk), titleText,
-                    (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
+                    (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).partSpot("cal.head.title").then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (navPart.hide != true) IconButton(onClick = onNext, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달", tint = navTint) }

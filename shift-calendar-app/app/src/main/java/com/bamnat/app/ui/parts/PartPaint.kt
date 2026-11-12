@@ -190,19 +190,21 @@ fun Modifier.partLine(s: PartStyle, shape: Shape): Modifier {
     if (kind == "solid") return border(w, color, shape)
     val corners = s.corners.map { (it ?: 0).toFloat() }
     return drawWithContent {
-        drawContent()
         val px = w.toPx()
         val r = CornerRadius(corners.maxOrNull()?.dp?.toPx() ?: 0f)
+        // 2.0.0 [PC-33] 야간 회복 스테이션의 공휴일 칸 (두 줄 테두리의 안쪽 줄이 날짜·'11h'·'대체공휴일' 글자를 가로질러요): the inner line of
+        // 두 줄 lies inside the part, so it is drawn under what is in it; the outer one stays on top at the edge.
+        if (kind == "double") {
+            val gap = px * 3
+            drawRoundRect(color, Offset(gap, gap), Size(size.width - gap * 2, size.height - gap * 2), r, style = Stroke(px))
+        }
+        drawContent()
         val effect = when (kind) {
             "dash" -> PathEffect.dashPathEffect(floatArrayOf(px * 4, px * 3))
             "dot" -> PathEffect.dashPathEffect(floatArrayOf(px, px * 2))
             else -> null
         }
         drawRoundRect(color, Offset(px / 2, px / 2), Size(size.width - px, size.height - px), r, style = Stroke(px, pathEffect = effect))
-        if (kind == "double") {
-            val gap = px * 3
-            drawRoundRect(color, Offset(gap, gap), Size(size.width - gap * 2, size.height - gap * 2), r, style = Stroke(px))
-        }
     }
 }
 

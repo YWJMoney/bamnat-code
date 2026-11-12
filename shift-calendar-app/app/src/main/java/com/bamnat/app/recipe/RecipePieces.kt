@@ -306,7 +306,7 @@ class RecipePieces(private val c: AppContainer) {
                 // 1.37 [SHR-32] A 근무표 링크's 근무 주기 has no pay part: it says so.
                 "근무 ${s.shiftTypes.size}가지와 순서" + if (s.hasRules || s.items.isNotEmpty()) ", 급여 규칙" else "" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
-        PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
+        PieceKind.BUNDLE -> listOf(Change("묶음 안 작품 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
         PieceKind.LEDGER -> listOfNotNull(
             texts(values, "costs").takeIf { it.isNotEmpty() }?.let { Change("지출 분류 ${it.size}개 (없는 것만 더하기)") },
             texts(values, "incomes").takeIf { it.isNotEmpty() }?.let { Change("수입 분류 ${it.size}개 (없는 것만 더하기)") },

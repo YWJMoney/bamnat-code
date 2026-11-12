@@ -38,6 +38,18 @@ object PushPhone {
     private fun wanted(c: AppContainer): Boolean = configured && (
         (c.inquiryApi.enabled && c.inquiryStore.asked && c.settingsRepository.current.plazaNews) || PlazaPush.wanted(c))
 
+    /**
+     * 2.0.0 [RVN-09] COMP-42 After 모두 지우기 (the server forgot the token with the rest): the phone forgets that it sent one and asks
+     * Firebase for a new one, so the old token reaches nothing. True when a token had been given.
+     */
+    fun forget(c: AppContainer): Boolean {
+        val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val had = prefs.getString(K_SENT, null) != null
+        prefs.edit().remove(K_SENT).apply()
+        if (had && configured && app(c.appContext) != null) runCatching { FirebaseMessaging.getInstance().deleteToken() }
+        return had
+    }
+
     /** After a question went, the app opened, or 밤낮 소식 changed: the token goes to the server, or is taken back. */
     suspend fun sync(c: AppContainer, token: String? = null) {
         val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

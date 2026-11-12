@@ -263,6 +263,9 @@ class AppContainer(context: Context) {
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext), com.bamnat.app.ui.memo.MemoPhotoFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
         staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles },
+        // 2.0.0 [RVL-04][RVL-02] The night sounds' clips, and where the data as it was waits while a restore writes.
+        sleepClips = java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR),
+        guard = java.io.File(appContext.noBackupFilesDir, "restore_guard"),
         settingsFiles = {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
                 com.bamnat.app.data.WorkTypePrefs.get(appContext).reload()
@@ -284,6 +287,23 @@ class AppContainer(context: Context) {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
             filesOf = { id -> com.bamnat.app.data.CalendarStorage.filesOf(appContext, id) }, workTools = com.bamnat.app.data.WorkToolsStore.get(appContext),
             autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
+    }
+    /** 2.0.0 [RVL-02] True after this start put back a restore the app was closed in the middle of (said once above the calendar). */
+    val restoreStopped = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /**
+     * 2.0.0 [RVL-05][RVL-06][RVL-07] (검토 DATA-02·DATA-10·U12-03) What Android's own backup leaves out of the preference files, kept where it
+     * takes it (the keys only sealed), and the card that says what came on a phone the data came to.
+     */
+    val phoneMove by lazy {
+        com.bamnat.app.data.PhoneMove(
+            carry = java.io.File(appContext.filesDir, com.bamnat.app.data.PhoneMove.CARRY),
+            keys = java.io.File(appContext.dataDir, com.bamnat.app.data.PhoneMove.KEYS),
+            here = java.io.File(appContext.noBackupFilesDir, "phone_here"),
+            state = java.io.File(appContext.noBackupFilesDir, "phone_moved.json"),
+            out = backupManager::carryOut, outKeys = backupManager::carryKeys, received = { received.links() },
+            take = backupManager::carryIn,
+            sealedKeys = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P,
+        )
     }
     /** [SET-01] The data as it was before the last import, to take the import back. */
     val importUndo by lazy { com.bamnat.app.data.ImportUndo(java.io.File(appContext.noBackupFilesDir, "before_import.json"), backupManager, recordsTrash = { recordsTrash }) }
@@ -589,6 +609,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
         // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
         com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
+        // 2.0.0 [RVM-21] 장터 카드 글꼴은 처리방침 3.13 시행일부터 공개 자료에서(그 전에는 휴대폰 글꼴).
+        com.bamnat.app.ui.recipe.MarketFonts.allowed = { flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
@@ -860,16 +882,35 @@ class AppContainer(context: Context) {
             }
             var first = true
             settingsRepository.settings.map { it.logic }.distinctUntilChanged().collect {
+                val opening = first
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
                 // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
                 com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
-                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
+                // [RVM-19] PC-48: only the app's start is an opening; a work put in does not run its 앱을 열면 rule there and then.
+                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer, opened = opening)
             }
         }
         keep("schedule") {
             scheduleRepository.ensureDefaults()
+            // 2.0.0 [RVL-02] (검토 DATA-08) A restore the app was closed in the middle of: the data as it was goes back whole, first.
+            runCatching {
+                if (backupManager.finishInterrupted()) {
+                    restoreStopped.value = true
+                    journal.note(com.bamnat.core.journal.JournalKind.RESTORE_BACK)
+                }
+            }
+            // 2.0.0 [RVL-05][RVL-06] (검토 DATA-02·U12-03) A phone the data came to by Android's own backup (구글 계정, 휴대폰 옮기기) takes the
+            // settings kept apart in, once, and plans its alarms (Android plans none until the app opens); then the carry is kept fresh.
+            // On every other start this is one look at a file; writing the carry waits off the way to the first month.
+            runCatching {
+                phoneMove.arrive()?.let {
+                    journal.note(com.bamnat.core.journal.JournalKind.PHONE_MOVED)
+                    rescheduleAlarms()
+                }
+            }
+            launch { runCatching { phoneMove.keep() } }
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
             // 1.38 사용자 2026-11-06: a calendar of work without 교대 (일근·알바·현장·자영업·투자) keeps 주간·오후·야간 put away until the user brings one back

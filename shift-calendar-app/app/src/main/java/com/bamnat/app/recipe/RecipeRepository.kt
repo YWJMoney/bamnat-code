@@ -268,7 +268,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         val now = Today.millis()
         inUse().filter { canUndo(it, now) && now - it.appliedAt >= (UNDO_DAYS - 1) * DAY_MILLIS && !prefs.getBoolean("$K_UNDO_SAID${it.id}", false) }
             .forEach { e ->
-                lines += "‘${e.title}’${com.bamnat.app.ui.Fmt.eun(e.title)} 내일까지 되돌릴 수 있어요 (설정 › 장터·내 레시피)"
+                lines += "‘${e.title}’${com.bamnat.app.ui.Fmt.eun(e.title)} 내일까지 되돌릴 수 있어요 (설정 › 장터·내 작품)"
                 prefs.edit().putBoolean("$K_UNDO_SAID${e.id}", true).apply()
             }
         // [LIN-04] 1.35 A 수정판 of my recipe is news whether or not I follow anyone (the news call says it).
@@ -284,7 +284,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 val n = all.copy(recipes = all.recipes.filter { "r:${it.code}" !in told }, remixes = all.remixes.filter { "x:${it.first.code}" !in told })
                 prefs.edit().putString(K_NEWS_TOLD, keyListJson(keyList(K_NEWS_TOLD),
                     n.recipes.map { "r:${it.code}" } + n.remixes.map { "x:${it.first.code}" })).apply()
-                if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
+                if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 작품 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
                 if (followNews()) n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
                 // [PRF-03] 1.36 My own profile's news, once: new followers and a milestone passed (the rest waits in 내 프로필).
                 // Asked only of a phone with recipes up (내 프로필 has something to say), with the same since as 소식.
@@ -298,7 +298,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 }
                 // 1.36 [VIL-15] A request of mine someone finished is news whether or not I follow anyone.
                 n.requests.firstOrNull()?.let { (_, title, _) ->
-                    lines += "부탁한 레시피가 ‘$title’${com.bamnat.app.ui.Fmt.ro("‘$title’")} 완성됐어요 (마을 › 공방 › 요청)" +
+                    lines += "부탁한 작품이 ‘$title’${com.bamnat.app.ui.Fmt.ro("‘$title’")} 완성됐어요 (마을 › 공방 › 요청)" +
                         if (n.requests.size > 1) " 외 ${n.requests.size - 1}개" else ""
                 }
                 n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’${com.bamnat.app.ui.Fmt.obj("‘$mine’")} 고친 수정판 ‘${r.title}’${com.bamnat.app.ui.Fmt.iga("‘${r.title}’")} 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +

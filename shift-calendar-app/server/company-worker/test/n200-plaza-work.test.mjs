@@ -40,7 +40,7 @@ async function plaza(t) {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const s = server({ FCM_SERVICE_ACCOUNT: sa });
   const h = await signIn(s.call);
-  const r = await s.call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
+  const r = await s.call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험", confirm: true }, h);
   assert.equal(r.status, 200, JSON.stringify(r.data));
   return { ...s, sent, fail };
 }
@@ -167,4 +167,29 @@ test("SVC-97: 할 일함을 두 번 동시에 읽어도 '다시 열림'은 한 �
   const reopens = (await DB.prepare("SELECT COUNT(*) AS n FROM work_log WHERE key = ? AND action = 'reopen'").bind(key).first()).n;
   assert.equal(reopens, 1);
   assert.equal((await DB.prepare("SELECT reopened FROM work_states WHERE key = ?").bind(key).first()).reopened, 1);
+});
+
+test("COMP-42: 모두 지우기 takes the push token, the watched 광장, the last told time and the 오늘 출근 tap with it", async (t) => {
+  const { call, DB } = await plaza(t);
+  for (const n of [1, 2]) {
+    assert.equal((await call("POST", "/api/push/phone", { device: device(n), token: token(n) }, from(n))).status, 200);
+    assert.equal((await call("POST", "/api/plaza/watch", { device: device(n), room: "style-shift", form: "FOUR_TEAM" }, from(n))).data.ok, true);
+    await call("POST", "/api/plaza/checkin", { device: device(n), room: "style-shift", kind: "night" }, from(n));
+  }
+  // Phone 2 is told of phone 1's question, so it has a 'last told' row too.
+  await write(call, 1, "4조 2교대 야간 이틀째 어떻게 버텨요?", { kind: "question", tag: { s: "SHIFT", f: "FOUR_TEAM" } });
+  const mine = await deviceHash(device(2));
+  const rows = async () => {
+    const out = {};
+    for (const table of ["push_phones", "plaza_watch", "plaza_pushed", "plaza_checkin"]) {
+      out[table] = (await DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE device = ?`).bind(mine).first()).n;
+    }
+    return out;
+  };
+  assert.deepEqual(await rows(), { push_phones: 1, plaza_watch: 1, plaza_pushed: 1, plaza_checkin: 1 });
+  assert.equal((await call("DELETE", "/api/mine", undefined, { "x-device": device(2) })).status, 200);
+  assert.deepEqual(await rows(), { push_phones: 0, plaza_watch: 0, plaza_pushed: 0, plaza_checkin: 0 });
+  // The other phone's stay.
+  const other = await deviceHash(device(1));
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM push_phones WHERE device = ?").bind(other).first()).n, 1);
 });

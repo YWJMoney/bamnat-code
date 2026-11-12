@@ -67,7 +67,7 @@ object RecipeLint {
         if (NameSkeleton.mixedScript(r.title + " " + r.summary)) out += Line("script", Level.WARN, "이름에 다른 나라 글자가 섞여 있어요", 3)
         out += if (NameSkeleton.reserved(r.title)) Line("reserved", Level.ERROR, RecipeText.problemText("name_taken"), 3)
             else Line("reserved", Level.OK, "이름이 괜찮아요", 3)
-        similar(r, others)?.let { (title, why) -> out += Line("similar", Level.WARN, "‘$title’와 $why. 그 레시피를 고쳐 만들어도 돼요", 1) }
+        similar(r, others)?.let { (title, why) -> out += Line("similar", Level.WARN, "‘$title’${com.bamnat.core.text.Josa.fit(title, "와")} $why. 그 작품을 고쳐 만들어도 돼요", 1) }
         return out
     }
 
@@ -88,7 +88,7 @@ object RecipeLint {
             path.startsWith("inputs") -> "받는 사람이 정할 칸"
             path.startsWith("tokens") -> "테마 색"
             path.startsWith("pieces") -> "조각"
-            else -> "레시피"
+            else -> "작품"
         }
         return when (code) {
             "text" -> "$where 글자 수를 맞춰 주세요"

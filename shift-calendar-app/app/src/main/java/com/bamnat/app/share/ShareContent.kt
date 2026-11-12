@@ -102,6 +102,11 @@ object ShareContent {
         ShareKit.lookText(r)
     }.getOrNull()
 
+    /** 2.0.0 [RVG-29] 검토 SN-14: the look on the phone is a theme too big for a link (it would go without it, saying nothing). */
+    suspend fun lookTooBig(c: AppContainer): Boolean = runCatching {
+        ShareKit.lookTooBig(com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(c.wardrobe.wornTitle() ?: "테마")))
+    }.getOrDefault(false)
+
     /**
      * 1.37 [SHR-32] The calendar's 근무 설정 as a recipe ([ShareKit.KINDS]): 근무 이름·글자·색, the alarms before each kind of shift and,
      * for the main calendar of 교대·일근 [withCycle], the 근무 주기 (shifts, times and order) with no pay part at all. Never 급여 규칙,

@@ -106,7 +106,8 @@ class ReceivedViewModelTest {
         api.failure = IOException("offline")
         vm.previewId(id)
         settle()
-        assertTrue((vm.preview.value as ReceivedViewModel.Preview.Failed).message.startsWith("인터넷에"))
+        // [RVG-24] 검토 PC-92: what failed first, then the one of three phrases for the net.
+        assertEquals("근무표를 받지 못했어요. " + com.bamnat.app.ui.components.NetWords.OFFLINE, (vm.preview.value as ReceivedViewModel.Preview.Failed).message)
     }
 
     @Test fun aCutLinkGoesFromThisPhone() {

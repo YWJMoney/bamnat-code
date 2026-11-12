@@ -21,7 +21,8 @@ const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "ty
   "plaza.fix_request" /* 1.39 PAYP-05, on from 처리방침 3.12 */,
   "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day and 2026-12-09 (2.0.0 RVD-18) */, "community.confirmed" /* 2.0.0 RVD-18, 3.12 */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
   "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */,
-  "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */, "stats.disc" /* 1.40 DISC-06, 3.13 */];
+  "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */, "stats.disc" /* 1.40 DISC-06, 3.13 */,
+  "market.cardfonts" /* 2.0.0 RVM-21 MKT-32, 3.13 7일 줄 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
@@ -318,7 +319,11 @@ test("[FLAG-29][FLAG-33] the owner moves a policy's dates; too little notice is 
   assert.deepEqual((await statsMore()).warnings, []);
   assert.equal((await call("POST", "/api/admin/policy", { version: "3.2", posted: "2026-10-28", effective: "2026-10-20", why: "x" }, owner)).data.error, "policy");
   // [PRIV-05] stats.more follows 3.9 (3.2 brought to 정식 출시일).
-  const moved = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐" }, owner);
+  // 2.0.0 [RVQ-15] 검토 SRV-17: 알림 기간(불리하면 30일) 안으로 옮기면 한 번 더 확인해요.
+  const asked = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐" }, owner);
+  assert.equal(asked.status, 409);
+  assert.deepEqual([asked.data.error, asked.data.why, asked.data.days, asked.data.need], ["policy_confirm", "notice", 15, 30]);
+  const moved = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐", confirm: true }, owner);
   assert.equal(moved.status, 200);
   const row = await statsMore();
   assert.match(row.warnings[0], /15일.*30일/);

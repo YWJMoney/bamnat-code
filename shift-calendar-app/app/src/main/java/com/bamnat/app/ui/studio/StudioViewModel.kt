@@ -96,6 +96,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** One line said after 입히기 or 저장, with 되돌리기 for 입히기. */
         val said: String? = null,
         val canUndoWear: Boolean = false,
+        /**
+         * [RVM-17] PC-57: a look the studio put on earlier (the app closed since), still on and less than a day old: the bottom row
+         * offers '입히기 전 모양으로' (the calendar's band only shows for a moment).
+         */
+        val keptWear: Boolean = false,
         /** 1.36: the line said after 얹기 offers 되돌리기, which takes that one step back. */
         val canUndoLayer: Boolean = false,
         /** PC 14차 (얹은 것 빼기가 아무 안내 없이 빠짐): what was just taken off, so the line said can lay it on again. */
@@ -140,6 +145,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         set(v) { lockedNow = v; lockPrefs.edit().putString("locked", v.joinToString(",")).apply() }
 
     init {
+        // [RVM-17] PC-57: 입히기 from an earlier visit, still on: its 되돌리기 is here.
+        com.bamnat.app.data.LookUndo.read(c.appContext)?.first?.takeIf { it != c.recipes.pieces.lookSnapshot() }?.let { kept ->
+            beforeWear = kept
+            _state.value = _state.value.copy(keptWear = true)
+        }
         when {
             start == START_PLAIN -> startPlain()
             start.startsWith(START_THEME) -> c.wardrobe.lease.value.history.firstOrNull { it.key == start.removePrefix(START_THEME) }
@@ -784,7 +794,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         beforeWear = null
         com.bamnat.app.data.LookUndo.clear(c.appContext)
         val now = c.settingsRepository.current
-        _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false, wornNow = false)
+        _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false, wornNow = false, keptWear = false)
         refresh(both = true)
     }
 
@@ -839,7 +849,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val r0 = lookOnto(live, _state.value.pieces)
         val r = if (w.bare) LookParts.withoutPhotos(r0) else r0
         if (!RecipeLint.ready(RecipeLint.check(r))) {
-            _state.value = _state.value.copy(said = "저장했어요. 장터 판은 고칠 곳이 있어 그대로예요. 공방 › 내 레시피에서 확인해 주세요")
+            _state.value = _state.value.copy(said = "저장했어요. 장터 판은 고칠 곳이 있어 그대로예요. 공방 › 내 작품에서 확인해 주세요")
             return
         }
         val sent = runCatching {

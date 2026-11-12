@@ -283,26 +283,46 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     val shown = style?.takeIf { it in item.styles || item.styles.isEmpty() } ?: item.styles.firstOrNull() ?: style
     val key = MarketShots.key(item) + "|" + shown?.name + "|" + dark + "|" + width.value.toInt()
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
+    // 2.0.0 [RVM-21] MKT-32 The picture kept in the phone's own fonts, shown while the card is drawn again in its own.
+    var drawnBefore by remember(key) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     var fonts by remember(key) { mutableStateOf(emptyMap<String, androidx.compose.ui.text.font.FontFamily>()) }
     val recipe by produceState<Recipe?>(null, key) {
         if (picture != null) return@produceState
         // 1.39 [MKP-02] The picture this phone kept from before (the 장터 opened again, or after the app was closed): no drawing at all.
         MarketDisk.shot(c.appContext, key)?.let { MarketShots.keep(key, it); picture = it; return@produceState }
+        // 2.0.0 [RVM-21] MKT-32 One kept in the phone's fonts shows at once; it is drawn again only if its own fonts are here now.
+        val before = MarketDisk.standIn(c.appContext, key)
+        if (before != null) picture = before
         val r = MarketShots.recipe(c, item) ?: return@produceState
         // 1.39 [MKP-06] Its fonts as a card's small fonts first (0.2~0.3 MB once for each font, shared by every card), so it is drawn once, in them.
-        MarketShots.body(MarketShots.key(item))?.let { body ->
+        val body = MarketShots.body(MarketShots.key(item))
+        if (body != null) {
             fonts = kotlinx.coroutines.withTimeoutOrNull(MarketShots.FONTS_MS) { MarketFonts.ready(c.appContext, MarketFonts.ids(body)) }.orEmpty()
+            if (before != null) {
+                if (!MarketFonts.complete(c.appContext, MarketFonts.ids(body))) { MarketShots.keep(key, before); return@produceState }
+                drawnBefore = before
+                picture = null
+            }
         }
         value = r
     }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
     ShotFrame(key, width, height, picture, { got ->
         picture = got
-        // 1.39 [MKP-02] Kept on the phone too, when all it names (pictures, fonts) was there to draw it as it really looks.
+        // 1.39 [MKP-02] Kept on the phone too, when all it names (pictures, fonts) was there to draw it as it really looks; 2.0.0 [RVM-21] MKT-32
+        // in the phone's fonts too (a stand-in), when only its fonts were missing.
         val body = MarketShots.body(MarketShots.key(item))
-        if (body != null) c.appScope.launch { if (MarketDisk.complete(c.appContext, body)) MarketDisk.keepShot(c.appContext, key, got) }
+        if (body != null) c.appScope.launch {
+            when (MarketDisk.kept(c.appContext, body)) {
+                MarketDisk.Kept.FULL -> MarketDisk.keepShot(c.appContext, key, got)
+                MarketDisk.Kept.STAND_IN -> MarketDisk.keepShot(c.appContext, key, got, standIn = true)
+                null -> Unit
+            }
+        }
     }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
-        face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) }, fonts = fonts)
+        face = { MarketShots.faceOf(item, it) }, standIn = {
+            drawnBefore?.let { Image(it, null, Modifier.size(width, height), contentScale = ContentScale.FillBounds) } ?: ShotStandIn(item, width, height, shown)
+        }, fonts = fonts)
 }
 
 /** [MKV-05] A theme that comes with the app (처음이라면 이런 테마부터), drawn the same way as the 장터 cards. */

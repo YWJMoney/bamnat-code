@@ -94,7 +94,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
-            NoticeLinks.read(intent)
+            NoticeLinks.read(this, intent)
+            com.bamnat.app.logic.FxOutside.pressOpened(container, intent) // [RVM-14] a 위젯·타일·알림 단추 that opens a screen
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
@@ -122,6 +123,11 @@ class MainActivity : ComponentActivity() {
         // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
         DisposableEffect(settings.appLock) {
             AppLock.secure(window, settings.appLock)
+            onDispose { }
+        }
+        // 2.0.0 [RVL-09] (검토 DATA-11) 금액 가리기 keeps the recents list from showing the app's amounts too.
+        DisposableEffect(settings.hideAmounts, settings.appLock) {
+            AppLock.hideRecents(this@MainActivity, settings.hideAmounts && !settings.appLock)
             onDispose { }
         }
         // Status bar icons follow the app theme, not only the system one.
@@ -155,6 +161,18 @@ class MainActivity : ComponentActivity() {
         val motion = androidx.compose.runtime.remember(settings.motion) {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
+        // 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 'Google 요청은 글꼴을 고를 때만'): a theme tried on the real app draws its open fonts as card
+        // fonts from our public files (or the phone's closest), never the whole font from Google Fonts; that comes with 입기.
+        val trial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
+        val trialFonts = androidx.compose.runtime.remember(trial) {
+            trial?.takeIf { it.showing && it.hasLook }?.let { t -> com.bamnat.app.ui.recipe.MarketFonts.ids(t.look.values.joinToString("|")) }
+        }
+        val trialCards = trialFonts?.let { ids ->
+            androidx.compose.runtime.produceState(emptyMap<String, androidx.compose.ui.text.font.FontFamily>(), ids) {
+                value = com.bamnat.app.ui.recipe.MarketFonts.ready(applicationContext, ids)
+            }.value
+        }
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalCardFonts provides trialCards) {
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor, night = night,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
@@ -223,6 +241,7 @@ class MainActivity : ComponentActivity() {
                 if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
             }
         }
+        }
     }
 
     // Every ActivityResult launcher (file pickers, permission requests) goes through here.
@@ -237,9 +256,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openLink(intent)
-        IncomingRoster.read(intent) // [ROST-09] shared while the app was open
+        // [ROST-09] shared while the app was open. 2.0.0 [RVL-14] (검토 DATA-06): a backup or a 회사 설정 file opened while the app was
+        // open came here and was never read (the app only came forward); it is offered now as on a first open.
+        if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
-        if (NoticeLinks.read(intent)) HomeRequests.followingLink()
+        if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
+        com.bamnat.app.logic.FxOutside.pressOpened(appContainer, intent) // [RVM-14]
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
@@ -338,6 +360,12 @@ class MainActivity : ComponentActivity() {
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 2.0.0 [RVL-09] (검토 DATA-11) A screen's result came in just before this: the lock that waited for it closes now.
+        AppLock.onResume()
+    }
+
     override fun onStop() {
         super.onStop()
         com.bamnat.app.diag.MainStall.stop()
@@ -348,6 +376,9 @@ class MainActivity : ComponentActivity() {
         startDone = false
         HomeRequests.onStop(isChangingConfigurations)
         AppLock.onStop(isChangingConfigurations)
+        // 2.0.0 [RVL-05] (검토 DATA-02) What Android's own backup takes is written as the app goes to the background: its backup runs
+        // while the phone rests, so a setting changed today is in it.
+        if (!isChangingConfigurations) appContainer.let { c -> c.appScope.launch { runCatching { c.phoneMove.keep() } } }
     }
 
     private companion object {

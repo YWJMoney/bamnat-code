@@ -67,6 +67,16 @@ object PlazaPush {
         }
     }
 
+    /**
+     * 2.0.0 [RVN-09] COMP-42 After 모두 지우기 (the server forgot what this phone watched and its token): 광장 바로 알림 goes off on
+     * the phone too, so nothing is given to the server again by itself. True when it was on; 설정 › 알림 turns it back on.
+     */
+    fun forget(c: AppContainer): Boolean {
+        val was = wanted(c)
+        prefs(c.appContext).edit().apply { if (was) putBoolean(K_ANSWERS, false).putBoolean(K_SAME, false) }.remove(K_WATCHED).apply()
+        return was
+    }
+
     /** Whether a 근무형태 can be watched now (the tag shows one in my own 광장); the switch says why not otherwise. */
     suspend fun watchable(c: AppContainer): Boolean = watchRoom(c)?.let { runCatching { c.plazaTags.tagFor(it)?.form }.getOrNull() } != null
 

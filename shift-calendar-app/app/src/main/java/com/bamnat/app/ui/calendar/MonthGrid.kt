@@ -1347,6 +1347,10 @@ internal fun CustomCellBody(
                     fontWeight = dp.weight?.let { FontWeight(it) } ?: if (isToday) FontWeight.ExtraBold else if (l?.dateBold == false) FontWeight.Normal else if (l?.dateBold == true) FontWeight.Bold else FontWeight.SemiBold,
                     fontSize = size, lineHeight = size, maxLines = 1,
                     color = when {
+                        // 2.0.0 [PC-62] 야간 회복 스테이션 (오늘 숫자가 분홍색으로 하늘색 동그라미 위에): a date colour of the blueprint (요일·조건부)
+                        // that does not read on the date's own round (오늘) gives way to the letters that do (3:1 at least).
+                        dp.ink != null && chip.alpha >= 0.5f && com.bamnat.core.layout.Contrast.ratio(dp.ink!!, chip.copy(alpha = 1f).toArgb().toLong() and 0xFFFFFFFFL) < 3.0 ->
+                            com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
                         dp.ink != null -> Color(dp.ink!!.toInt())
                         // [BLU-05] A fill the blueprint gives the date brings letters that read on it (PC 1차: 노랑 위 흰 글자).
                         dp.fillColor != null && chip.alpha >= 0.5f -> com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
@@ -1503,7 +1507,9 @@ internal fun cellFillAlpha(look: com.bamnat.core.recipe.CellLook?): Float = if (
 
 /** [MAT-01] What a cell's fill reads as (for the date's ink), when it is strong enough to matter. */
 internal fun cellFillGround(look: com.bamnat.core.recipe.CellLook?): Color? = look?.fill?.average?.let { Color(it.toInt()) }
-    ?.copy(alpha = cellFillAlpha(look))?.takeIf { it.alpha >= 0.5f }
+    // 2.0.0 [PC-33] 야간 회복 스테이션 (야간 칸의 '11h'가 어두워 안 읽혀요): a fill of see-through colours (10~40 of 255) is that see-through
+    // on the cell too, so its own alpha counts; it used to be taken as solid and the lines read in black on what is a dark cell.
+    ?.let { it.copy(alpha = it.alpha * cellFillAlpha(look)) }?.takeIf { it.alpha >= 0.5f }
 
 /** [FREE-01] A cell's corners by its look, else 달력 모양's. */
 internal fun cellShape(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): androidx.compose.ui.graphics.Shape =
