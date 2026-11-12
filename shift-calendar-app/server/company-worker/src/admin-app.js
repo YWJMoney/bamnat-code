@@ -1349,7 +1349,9 @@ function adminApp(L, BUILD, M) {
 
   const empty = (title, text, action = "") => `<div class="empty">${icon(P.moon)}<h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}${action}</div>`;
   const skeleton = (n = 2) => Array.from({ length: n }, () => '<div class="card skeleton"></div>').join("");
-  const lines = (list) => `<dl class="lines">${list.map(([label, text]) => `<div><dt>${esc(label)}</dt><dd>${esc(text)}</dd></div>`).join("")}</dl>`;
+  /** 2.0.0 [RVD-20] HQ-08: a shift's time range never breaks, and the comma between two parts stays with the first (사진 D/HQ-13 06). */
+  const times = (text) => esc(text).replace(/\d{1,2}:\d{2}~\d{1,2}:\d{2},?/g, (m) => `<span class="nw">${m}</span>`);
+  const lines = (list) => `<dl class="lines">${list.map(([label, text]) => `<div><dt>${esc(label)}</dt><dd>${times(text)}</dd></div>`).join("")}</dl>`;
   const seg = (act, key, current, label, n) =>
     `<button class="seg" data-act="${act}" data-key="${key}" aria-pressed="${current === key}">${esc(label)}${n ? `<span class="n">${n}</span>` : ""}</button>`;
   /** [ADMIN-16] 더 보기 under a paged list. */
@@ -3649,6 +3651,9 @@ function adminApp(L, BUILD, M) {
   function openDialog(html, size = "") {
     dialog.className = size;
     dialog.innerHTML = html;
+    // 2.0.0 [RVN-02] (총괄 11-12, 디자인 조건 10) A box marked data-keep keeps what was typed when the box is closed by 취소, a tap
+    // outside or Esc, and has it again when the same box opens; it goes once the form went through (act).
+    for (const el of dialog.querySelectorAll("[data-keep]")) if (!el.value) el.value = readDraft(el.dataset.keep);
     if (!dialog.open) {
       dialog.showModal();
       // [ADMUX-10] The phone's back closes the box first: it gets a step of its own in the history, same address.
@@ -3842,6 +3847,7 @@ function adminApp(L, BUILD, M) {
         for (const id of KEEP) if (form.querySelector(`#${id}`)) writeDraft(id, "");
         form.reset();
       }
+      for (const el of form?.querySelectorAll?.("[data-keep]") ?? []) writeDraft(el.dataset.keep, "");
       if (done) toast(typeof done === "function" ? done(r) : done, undo ? () => undo(r) : undefined);
       else if (toastBox.textContent === "처리 중…") { clearTimeout(toastTimer); toastBox.classList.remove("show"); }
       return r;
@@ -6632,7 +6638,7 @@ function adminApp(L, BUILD, M) {
    * back its screens, and its own buttons and forms, which join ACTIONS and FORMS.
    */
   const A = {
-    S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
+    S, L, esc, times, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
@@ -6694,6 +6700,7 @@ function adminApp(L, BUILD, M) {
       const box = document.getElementById("nt-preview");
       if (box) box.innerHTML = noticePreview(v("title"), v("body"), nf.querySelector('input[name="level"]:checked')?.value);
     }
+    if (t.dataset?.keep && t.closest("dialog")) writeDraft(t.dataset.keep, t.value);
     if (KEEP.includes(t.id) && t.closest("#main")) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
