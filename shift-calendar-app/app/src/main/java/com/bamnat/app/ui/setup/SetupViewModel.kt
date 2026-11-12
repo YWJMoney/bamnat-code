@@ -95,6 +95,36 @@ class SetupViewModel(
     /** The shifts as they will be saved: the draft's, with what [kept] keeps ( 검토 WORK-04); the summary's month and alarm say these. */
     fun typesToSave(d: SetupDraft): List<ShiftType> = if (again) d.typesToSave(kept.value, today) else d.typesToSave()
 
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31: the order periods the calendar has before this setup is saved (its own for a calendar being added), so the
+     * summary's month is filled as saving fills it ([previewSnapshot]).
+     */
+    val periods: StateFlow<List<com.bamnat.core.model.WorkPattern>> =
+        (calendarId?.let { runCatching { c.calendars.repository(it) }.getOrNull() } ?: c.scheduleRepository).patterns
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31 (통합 1차 PC: '이대로 저장할까요?'의 달은 11/1~11/11이 비었는데 저장한 달력은 1일부터 차 있어서 '오늘부터만
+     * 채워지나?'로 읽혔어요): the month as [com.bamnat.app.data.ScheduleRepository.applySetup] will save it. A first setup's order
+     * fills the past too (two years back); a calendar being added starts today; a setup again keeps the days before today as they
+     * were and its new order from today. Null when nothing would be on the calendar.
+     */
+    fun previewSnapshot(d: SetupDraft, before: List<com.bamnat.core.model.WorkPattern> = periods.value): ScheduleSnapshot? {
+        val kept = kept.value
+        // The ids saving gives: a shift of the same name the calendar has keeps its id, a new one takes one after them.
+        val next = (kept.maxOfOrNull { it.id } ?: 0L) + 1
+        val ids = d.types.withIndex().associate { (i, t) -> t.id to (kept.firstOrNull { k -> k.name.trim() == t.name.trim() }?.id ?: (next + i)) }
+        val saved = if (kept.isEmpty()) d else d.remap(ids)
+        val types = typesToSave(saved).let { mine -> mine + kept.filter { k -> mine.none { it.id == k.id } } }
+        val order = saved.pattern(today)
+        val patterns = when {
+            order == null -> before
+            before.isEmpty() -> listOf(if (calendarId == null) com.bamnat.core.schedule.PatternTimeline.first(order, today) else order)
+            else -> com.bamnat.core.schedule.PatternTimeline.changeFrom(before, order, today)
+        }
+        return ScheduleSnapshot(types, patterns, saved.paintedEntries()).takeIf { !it.isEmpty }
+    }
+
     /** The week as the calendar shows it, for the month previews. */
     val weekStart: DayOfWeek get() = c.settingsRepository.current.weekStart
 

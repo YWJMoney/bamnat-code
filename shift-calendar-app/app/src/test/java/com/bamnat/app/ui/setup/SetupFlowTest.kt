@@ -115,6 +115,24 @@ class SetupFlowTest {
     }
 
     /**
+     * 2.0.0 [RVH-43] 검토 PC-31 (통합 1차 PC: '이대로 저장할까요?'의 달은 1일~어제가 비었는데 저장한 달력은 1일부터 차 있었어요): the
+     * summary's month is the month saving makes, day by day.
+     */
+    @Test fun theSummarysMonthIsTheSavedMonthFromTheFirst() = runBlocking {
+        val vm = vm()
+        twoShiftToSummary(vm)
+        val preview = vm.previewSnapshot(draft)!!.resolver
+        val month = java.time.YearMonth.from(today)
+        assertTrue(preview.resolve(month.atDay(1)).shiftType != null)
+        vm.save()
+        waitFor("the save") { c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val saved = c.scheduleRepository.snapshot.first().resolver
+        (1..month.lengthOfMonth()).map(month::atDay).forEach { day ->
+            assertEquals(day.toString(), saved.resolve(day).shiftType?.name, preview.resolve(day).shiftType?.name)
+        }
+    }
+
+    /**
      * [RVH-28] 검토 WORK-04 처음 설정 다시 받기 over the calendar's shifts: the 주간 the user gave two alarms and a color of their own
      * keeps them, its new time is said on the summary before saving and saved. Before 2.0.0 it came back with one alarm, quietly.
      */
@@ -142,9 +160,22 @@ class SetupFlowTest {
         assertTrue(d.keptWork(again.kept.value).any { it.name == "주간" })
         // The month on the summary is drawn in the user's own color.
         assertEquals(0xFF123456, again.typesToSave(d).first { it.name == "주간" }.colorArgb)
+        // [RVH-43] 검토 PC-31: and it is the month saving makes, the days before today as they were.
+        waitFor("the calendar's order") { again.periods.value.isNotEmpty() }
+        val preview = again.previewSnapshot(d)!!.resolver
 
         again.save()
         waitFor("the save again") { c.againSetupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val month = java.time.YearMonth.from(today)
+        val after = c.scheduleRepository.snapshot.first().resolver
+        (1..month.lengthOfMonth()).map(month::atDay).forEach { day ->
+            assertEquals(day.toString(), after.resolve(day).shiftType?.name, preview.resolve(day).shiftType?.name)
+        }
+        // The days before keep the hours they had, on the summary as on the calendar (the save counts the new hours from the
+        // phone's own today, the summary from this test's, so only the past is compared by the hour).
+        val past = month.atDay(1).datesUntil(today.minusDays(1)).toList().first { after.resolve(it).shiftType?.name == "주간" }
+        assertEquals(mine.start, preview.resolve(past).start)
+        assertEquals(after.resolve(past).start, preview.resolve(past).start)
         val saved = c.scheduleRepository.shiftTypes.first().filter { it.name == "주간" }
         assertEquals(1, saved.size)
         assertEquals(listOf(60, 30), saved.single().alarms.map { it.offsetMinutes })

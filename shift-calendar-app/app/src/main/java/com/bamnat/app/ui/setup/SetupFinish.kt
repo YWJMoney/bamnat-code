@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.filled.ExpandMore
-import com.bamnat.app.data.ScheduleSnapshot
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -207,8 +206,10 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     // the answers in words fold into one line under it (opened, each has its '고치기').
     // [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has keep their colors and alarms, so the month shows them.
     val kept by vm.kept.collectAsStateWithLifecycle()
-    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff, kept) {
-        ScheduleSnapshot(vm.typesToSave(d), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
+    // 2.0.0 [RVH-43] 검토 PC-31: filled as saving fills it (a first setup from the 1st and before, not from today only).
+    val periods by vm.periods.collectAsStateWithLifecycle()
+    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff, kept, periods) {
+        vm.previewSnapshot(d, periods)
     }
     if (d.linkTitle.isNotBlank()) {
         // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
