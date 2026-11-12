@@ -3649,6 +3649,9 @@ function adminApp(L, BUILD, M) {
   function openDialog(html, size = "") {
     dialog.className = size;
     dialog.innerHTML = html;
+    // 2.0.0 [RVN-02] (총괄 11-12, 디자인 조건 10) A box marked data-keep keeps what was typed when the box is closed by 취소, a tap
+    // outside or Esc, and has it again when the same box opens; it goes once the form went through (act).
+    for (const el of dialog.querySelectorAll("[data-keep]")) if (!el.value) el.value = readDraft(el.dataset.keep);
     if (!dialog.open) {
       dialog.showModal();
       // [ADMUX-10] The phone's back closes the box first: it gets a step of its own in the history, same address.
@@ -3842,6 +3845,7 @@ function adminApp(L, BUILD, M) {
         for (const id of KEEP) if (form.querySelector(`#${id}`)) writeDraft(id, "");
         form.reset();
       }
+      for (const el of form?.querySelectorAll?.("[data-keep]") ?? []) writeDraft(el.dataset.keep, "");
       if (done) toast(typeof done === "function" ? done(r) : done, undo ? () => undo(r) : undefined);
       else if (toastBox.textContent === "처리 중…") { clearTimeout(toastTimer); toastBox.classList.remove("show"); }
       return r;
@@ -6694,6 +6698,7 @@ function adminApp(L, BUILD, M) {
       const box = document.getElementById("nt-preview");
       if (box) box.innerHTML = noticePreview(v("title"), v("body"), nf.querySelector('input[name="level"]:checked')?.value);
     }
+    if (t.dataset?.keep && t.closest("dialog")) writeDraft(t.dataset.keep, t.value);
     if (KEEP.includes(t.id) && t.closest("#main")) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
