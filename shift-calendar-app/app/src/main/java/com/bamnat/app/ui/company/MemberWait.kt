@@ -1,8 +1,10 @@
 package com.bamnat.app.ui.company
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -12,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.company.CompanyException
@@ -153,7 +156,8 @@ fun HeldDialog(wait: MemberWait, company: String, onCycleOnly: () -> Unit, onUnd
         title = { Text(wait.shown) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("‘$company’ 근무 순서는 지금 넣을 수 있어요. 회사와 급여 방식은 $held 그대로예요.", style = MaterialTheme.typography.bodyMedium)
+                // 총괄 사진 검토: one word for it, 근무주기, as the button says.
+                Text("‘$company’ 근무주기는 지금 넣을 수 있어요. 회사와 급여 방식은 $held 그대로예요.", style = MaterialTheme.typography.bodyMedium)
                 Text(if (wait.undo) "$held${Josa.fit(held.trim('‘', '’'), "을")} 잘못 골랐다면 한 번 풀고 ‘$company’ 설정을 그대로 쓸 수 있어요(한 해에 한 번)."
                     else wait.askLine() + ".",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -168,4 +172,24 @@ fun HeldDialog(wait: MemberWait, company: String, onCycleOnly: () -> Unit, onUnd
             }
         },
     )
+}
+
+/**
+ * 2.0.0 [RVN-17] 총괄 사진 검토 (rvn_95·97): on another company's page of a held calendar, what holds it and what can be done here, with
+ * the way out beside it: 잘못 골랐어요 (asked once more, [UndoDialog]) while this year's is unused, else why not and 문의하기. The page's use
+ * buttons then say 근무주기만 넣기 and do just that ([HELD_USE]).
+ */
+@Composable
+fun HeldNotice(wait: MemberWait, company: String, payHidden: Boolean, freeing: Boolean, onUndo: () -> Unit) {
+    var asking by remember { mutableStateOf(false) }
+    if (asking) UndoDialog(wait, company, onDismiss = { asking = false }, onConfirm = { asking = false; onUndo() })
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(wait.shown + " · 근무주기만 넣을 수 있어요." + (if (payHidden) " 급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요." else ""),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!wait.undo) Text(wait.askLine() + ".", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            if (wait.undo) TextButton(onClick = { asking = true }, enabled = !freeing) { Text(if (freeing) "푸는 중…" else "잘못 골랐어요") }
+            else TextButton(onClick = { InquiryLinks.ask(InquiryStart(about = "회사 바꾸기", text = "${wait.line}. ")) }) { Text("문의하기") }
+        }
+    }
 }

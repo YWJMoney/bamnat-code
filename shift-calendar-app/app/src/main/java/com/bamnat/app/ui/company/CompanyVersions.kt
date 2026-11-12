@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import com.bamnat.app.ui.components.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -103,6 +102,8 @@ fun OtherVersionCard(
     onUse: () -> Unit,
     onCompare: (() -> Unit)?,
     onTalk: (() -> Unit)?,
+    /** 2.0.0 [RVN-17] The use button's name while the calendar is held by another company ([HELD_USE]). */
+    useLabel: String? = null,
 ) {
     SoftCard(highlighted = using != null) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -121,8 +122,8 @@ fun OtherVersionCard(
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
             // 2.0.0 [RVN-18] COMP-22-6 one under the other with big letters.
             val use: @Composable (Modifier) -> Unit = { m ->
-                if (s.adopted) Button(onClick = onUse, modifier = m) { Text(if (using != null) "다시 넣기" else "이 설정 쓰기") }
-                else FilledTonalButton(onClick = onUse, modifier = m) { Text("확인 중이지만 써 보기") }
+                if (s.adopted) Button(onClick = onUse, modifier = m) { Text(useLabel ?: if (using != null) "다시 넣기" else "이 설정 쓰기") }
+                else OutlinedButton(onClick = onUse, modifier = m) { Text(useLabel ?: "확인 중이지만 써 보기") } // 2.0.0 [RVN-19] 총괄 사진 검토 rvn_91 (조건 2)
             }
             val compare = onCompare?.let { go -> @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("대표 판과 비교") } } }
             if (compare != null) com.bamnat.app.ui.components.PairRow(first = compare, second = use)

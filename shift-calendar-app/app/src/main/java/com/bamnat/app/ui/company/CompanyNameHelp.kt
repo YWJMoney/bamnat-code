@@ -118,16 +118,29 @@ private fun NameLikeRow(l: NameLike, action: String, onClick: () -> Unit) {
         Row(Modifier.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             NameInitial(l.name)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(listOf(CompanyNames.reason(l.why, l.site), behind).filter { it.isNotEmpty() }.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val words: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(listOf(CompanyNames.reason(l.why, l.site), behind).filter { it.isNotEmpty() }.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            Spacer(Modifier.width(8.dp))
-            Text(action, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            val act: @Composable () -> Unit = { Text(action, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+            // 2.0.0 [RVN-19] 총괄 사진 검토 (rvn_55·58, 조건 12): at 200% the action at the end left the name a narrow column ('(주)예 /
+            // 시정밀') and the line under it five lines. From 130%, or when the name would get less than 160dp, the action goes under
+            // the words at the end and the words take the whole width.
+            if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= BIG_FONT) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    words()
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { act() }
+                }
+            } else com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 160.dp, start = words, end = act)
         }
     }
 }
+
+/** From this font scale a row's action word goes under its words (as [com.bamnat.app.ui.components.PairRow] does at 150%). */
+private const val BIG_FONT = 1.3f
 
 /** A company's first letter in a circle, as the company rows of 회사 찾기 show it. */
 @Composable

@@ -49,7 +49,6 @@ import androidx.compose.material.icons.outlined.Search
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -432,6 +431,9 @@ fun CompanyDetailScreen(
         error = null
         started = p to s
         lastUse = null
+        // 2.0.0 [RVN-17] 총괄 사진 검토 (rvn_95·97): held, and the page already says so with its 잘못 골랐어요: the button is 근무주기만
+        // 넣기 and does that, with no window in between.
+        if (!p.member && vm.heldNow.value != null) { withPay = false; order(p, s); return }
         // 2.0.0 [RVN-17] COMP-12 A calendar held by another company hears it now, before an order is picked.
         vm.beforeUse(p, go = { startNow(p, s) }, held = { held = it })
     }
@@ -477,6 +479,7 @@ fun CompanyDetailScreen(
                     // 2.0.0 [RVN-17] PC-155 A calendar held by another company: known as the page opens, said in the line above.
                     val heldNow by vm.heldNow.collectAsStateWithLifecycle()
                     LaunchedEffect(p.id, p.member) { vm.lookHeld(p) }
+                    val heldHere = heldNow?.takeIf { !p.member }
                     // [SPD-13] 1.30 AP1: the page kept from before is on screen while it is read again.
                     RefreshLine(vm.refreshing.collectAsStateWithLifecycle().value, vm.stale.collectAsStateWithLifecycle().value, onRetry = vm::load)
                     if (p.aliases.isNotEmpty()) {
@@ -499,12 +502,13 @@ fun CompanyDetailScreen(
                         RoomSection(r, onTake = { card -> vm.take(card) { msg, ok -> if (ok) { error = null; notice = msg } else error = msg } })
                     }
                     // [PLAZA-08] Not a member: shift times and their order only; the pay way shows after joining.
-                    if (!p.member && p.setups.any { it.payHidden }) {
+                    // PC-155 Held by another company already: that, what can be done here (the 근무주기), and 잘못 골랐어요 beside it.
+                    if (heldHere != null && !p.limited) HeldNotice(heldHere, p.name, payHidden = p.setups.any { it.payHidden },
+                        freeing = freeing, onUndo = { vm.freeHeld(heldHere); vm.undoJoin { notice = "정해진 회사를 풀었어요. 이제 ‘${p.name}’ 설정을 그대로 쓸 수 있어요" } })
+                    else if (!p.member && p.setups.any { it.payHidden }) {
                         Text(if (p.limited) "오늘은 많이 봐서 근무 시각·순서만 보여요. 내일 다시 보여요."
-                            // PC-155 Held by another company already: that, and what can be done here (the order), not what joining holds.
-                            else heldNow?.let { "${it.shown} · 근무 순서만 넣을 수 있어요. 급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요." }
                             // 2.0.0 [RVN-17] 검토 COMP-12 고르기 전에 알리고: what joining holds, before the choice.
-                            ?: ("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여되고, " +
+                            else ("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여되고, " +
                                 "이 달력은 ${p.joinWaitDays}일 동안 ‘${p.name}’${com.bamnat.core.text.Josa.fit(p.name, "으로")} 정해져요."),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -549,7 +553,7 @@ fun CompanyDetailScreen(
                     @Composable
                     fun card(su: SharedSetup, lead: SharedSetup) = Box(Modifier.focusOn(su.id)) {
                         val using = applied?.takeIf { it.companyId == p.id && it.setup == su.id }
-                        SetupCard(su, diffs[su.id], using, onUse = { start(p, su) },
+                        SetupCard(su, diffs[su.id], using, onUse = { start(p, su) }, useLabel = HELD_USE.takeIf { heldHere != null },
                             // [PLAZA-09] A member reads the others' pay as 고친 점 cards above, the own one in full.
                             showPay = room == null || using != null || room?.page?.base?.setup == su.id,
                             // [COMM-06][COMM-07] Anyone who knows the company can vote and talk it over, using it or not.
@@ -579,7 +583,7 @@ fun CompanyDetailScreen(
                             OthersFold(folded.size, open) { opened = if (open) opened - key else opened + key }
                             if (open) folded.forEach { o ->
                                 Box(Modifier.focusOn(o.id)) {
-                                    OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) },
+                                    OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) }, useLabel = HELD_USE.takeIf { heldHere != null },
                                         onCompare = { comparing = Compare("대표 판과 비교", sec.lead.text, o.text, "대표 판", "이 판", o) },
                                         onTalk = { vm.talk.show(p.id, o.id, "${p.name} · ${o.dept.ifEmpty { "회사 전체" }}") })
                                 }
@@ -734,6 +738,11 @@ private fun SetupCard(
     showPay: Boolean = true,
     /** 2.0.0 [RVN-18] COMP-22-1 맞아요 ✓ pressed again takes it back. */
     onTakeBack: (() -> Unit)? = null,
+    /**
+     * 2.0.0 [RVN-17] 총괄 사진 검토 (rvn_95·97): the use button's name when this calendar is held by another company: what pressing it
+     * does (근무주기만 넣기), not 이 설정 쓰기 followed by a window saying it cannot.
+     */
+    useLabel: String? = null,
 ) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
@@ -788,8 +797,8 @@ private fun SetupCard(
                     Text("지금 이 설정을 쓰고 있어요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
             }
-            if (s.adopted) Button(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(if (applied != null) "다시 넣기" else "이 설정 쓰기") }
-            else FilledTonalButton(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text("확인 중이지만 써 보기") }
+            if (s.adopted) Button(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(useLabel ?: if (applied != null) "다시 넣기" else "이 설정 쓰기") }
+            else OutlinedButton(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(useLabel ?: "확인 중이지만 써 보기") } // 2.0.0 [RVN-19] 총괄 사진 검토 rvn_91 (조건 2): 대표 판의 채운 단추가 화면에 하나
             if (onVote != null) {
                 Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
@@ -1112,3 +1121,6 @@ internal fun TeamsTodayLine() {
 
 /** 2.0.0 [RVN-18] U10a-16 How long the page has to lay out an opened fold before it is scrolled to the rule set. */
 private const val FOCUS_SETTLE_MS = 120L
+
+/** 2.0.0 [RVN-17] 총괄 사진 검토: the use button's name while this calendar is held by another company (what it does). */
+internal const val HELD_USE = "근무주기만 넣기"

@@ -103,6 +103,14 @@ class Rvn6ScreenshotTest : ScreenshotBase() {
     @Test fun deptDarkBig() = shoot("rvn_92_dept_shifts_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, deptCard())
     @Test fun deptWide() = shoot("rvn_93_dept_shifts_unfolded_dark", Rvn5ScreenshotTest.DARK_WIDE, deptCard())
 
+    /** 총괄 사진 검토(rvn_91): 대표가 아닌 판(포장팀)의 '확인 중이지만 써 보기'는 테두리 단추, 채운 단추는 대표 판의 것 하나. */
+    private fun unadopted(): Screen.() -> Unit = {
+        deptCard()()
+        reveal("확인 중이지만 써 보기", exact = true)
+    }
+    @Test fun unadoptedLight() = shoot("rvn_98_unadopted_try_folded", FOLDED, unadopted())
+    @Test fun unadoptedDarkBig() = shoot("rvn_99_unadopted_try_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, unadopted())
+
     @Test fun startLight() = shoot("rvn_69_plaza_start_folded", FOLDED, startPlaza())
     @Test fun startDarkBig() = shoot("rvn_70_plaza_start_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, startPlaza())
     @Test fun startWide() = shoot("rvn_71_plaza_start_unfolded", UNFOLDED, startPlaza())
