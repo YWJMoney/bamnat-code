@@ -412,6 +412,12 @@ class ShareLinkTest {
         assertEquals(90, longer.ttlDays)
         assertTrue(longer.expiresAt.isAfter(v2.expiresAt))
         assertTrue("a longer link is downloaded again for its new end date", client.readIfChanged(made.id, tagged.etag) != null)
+        // 2.0.0 [RVM-29] SN-16: a 근무 글자 of joined emoji goes up whole and comes back whole (take(4) sent half of it).
+        val nurse = ShiftType(1, "간호 👩‍⚕️", "👩‍⚕️", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0))
+        val em = client.create(ShareLinkPayload.build(ScheduleSnapshot(listOf(nurse, off), WorkPattern.Rotation(start, listOf(1L, 3L)), emptyList()), start, "", 7))
+        val sent = client.read(em.id).schedule.getJSONArray("types").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.first { it.getInt("id") == 1 }
+        assertEquals(listOf("👩‍⚕️", "간호 👩‍⚕️"), listOf(sent.getString("short"), sent.getString("name")))
+        client.delete(em)
         client.delete(updated)
         client.delete(updated) // already gone: still fine
         assertEquals("not_found", runCatching { client.read(made.id) }.exceptionOrNull()?.message)
