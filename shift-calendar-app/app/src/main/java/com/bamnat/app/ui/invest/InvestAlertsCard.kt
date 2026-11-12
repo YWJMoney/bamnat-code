@@ -64,7 +64,7 @@ internal fun FoundTradesCard(vm: InvestViewModel, state: InvestState, open: (Inv
     val sure = alerts.filter { TradeAlerts.sure(it) }
     SectionCard(title = "알림으로 찾은 거래 ${alerts.size}건") {
         // 2.0.0 [RVK-24]·HQ-31 (총괄 #457 리뷰): said once for the card, like 가계부's 확인 대기함, instead of three buttons on every line.
-        Text("증권사·거래소 체결 알림에서 읽었어요. 맞으면 ✓로 적고, 다르면 눌러서 고쳐 적어요. 왼쪽으로 밀면 넘겨요.",
+        Text("증권사·거래소 체결 알림에서 읽었어요. 맞으면 ✓로 적고, 다르면 눌러서 고쳐 적거나 넘겨요(왼쪽으로 밀어도 넘겨요).",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // [RVK-17] Many waiting at once: the sure ones (a price that agrees) in one tap, one 되돌리기 for all. [RVK-24]·HQ-31 The card's one
         // filled button.

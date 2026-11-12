@@ -104,6 +104,31 @@ class RvkTwoScreenshotTest : ScreenshotBase() {
         reveal("알림으로 찾은 거래", exact = false)
     }
 
+    /**
+     * 2.0.0 [RVK-24] (총괄 #472 리뷰, 조건 9·14) Each ✓ reads '적기' and is a 48dp place to press, and a line opened to its sheet is
+     * let go there with '넘기기', without the swipe to the left.
+     */
+    private fun letGo(): Screen.() -> Unit {
+        val base = trades()
+        return {
+            base()
+            val dp = app.resources.displayMetrics.density
+            val ticks = nodes().filter {
+                it.config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { emptyList() }.contains("적기")
+            }
+            org.junit.Assert.assertEquals(2, ticks.size)
+            ticks.forEach { t ->
+                val touch = t.touchBoundsInRoot
+                org.junit.Assert.assertTrue("✓ 누르는 곳 $touch", touch.width >= 48 * dp - 1 && touch.height >= 48 * dp - 1)
+            }
+            tapText("삼성전자", exact = false)
+            org.junit.Assert.assertTrue(appears("넘기기", exact = true))
+            tapText("넘기기", exact = true)
+            settle()
+            org.junit.Assert.assertEquals(1, runBlocking { com.bamnat.app.data.InvestRepository.of(app.container.database).alertsNow().size })
+        }
+    }
+
     @Test fun spendOnlyLight() = shoot("rvk2_01_spend_only_summary_folded", FOLDED, spendOnly())
     @Test fun spendOnlyDarkBig() = shoot("rvk2_02_spend_only_summary_folded_dark_200", DARK, 2f, spendOnly())
     @Test fun cycleSummaryLight() = shoot("rvk2_03_pay_cycle_summary_folded", FOLDED, payCycle(null))
@@ -120,6 +145,7 @@ class RvkTwoScreenshotTest : ScreenshotBase() {
     @Test fun tradesLight() = shoot("rvk2_13_found_trades_folded", FOLDED, trades())
     @Test fun tradesDarkBig() = shoot("rvk2_14_found_trades_folded_dark_200", DARK, 2f, trades())
     @Test fun tradesWide() = shoot("rvk2_15_found_trades_unfolded", UNFOLDED, trades(wide = true))
+    @Test fun letGoLight() = shoot("rvk2_16_found_trade_let_go_folded", FOLDED, letGo())
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
