@@ -72,8 +72,12 @@ private fun repeatOf(a: InvestAlarm): Repeat = when {
  * on a shut day comes on the next open day.
  */
 @Composable
-internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKind, editing: InvestAlarm?, onDismiss: () -> Unit) {
-    val start = editing ?: InvestAlarms.default(kind0)
+internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKind, editing: InvestAlarm?, onDismiss: () -> Unit,
+                        from: com.bamnat.core.invest.TradeDraft? = null) {
+    // 2.0.0 [RVK-34] (검토 U06b-03) From a 종목 card: that 종목, market and account are already there.
+    val start = editing ?: InvestAlarms.default(kind0).let { a ->
+        from?.let { h -> a.copy(name = h.name, symbol = h.symbol, market = h.market, accountId = h.accountId ?: a.accountId) } ?: a
+    }
     var kind by rememberSaveable { mutableStateOf(start.kind) }
     var label by rememberSaveable { mutableStateOf(start.label) }
     var time by rememberSaveable { mutableStateOf(minuteText(start.minute)) }
@@ -169,7 +173,7 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
             ChoiceChips(Side.TRADES, { it == side }, { it.label }, { side = it })
             ChoiceChips(listOf(true, false), { it == byAmount }, { if (it) "금액으로" else "수량으로" }, { byAmount = it })
             if (byAmount) AmountField(label = "한 번에 얼마어치", digits = amount, onChange = { amount = it }, modifier = Modifier.fillMaxWidth())
-            else DecimalField("한 번에 몇 주", qty, { qty = it }, Modifier.fillMaxWidth(), suffix = if (market == Market.CRYPTO) "개" else "주")
+            else DecimalField("한 번에 몇 ${market.unit}", qty, { qty = it }, Modifier.fillMaxWidth(), suffix = market.unit)
             Text("알림에서 ‘매매 기록’을 누르면 이 내용이 채워진 기록 창이 열려요. 현재가를 적어 두면 ‘바로 기록’ 한 번으로 끝나요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -211,6 +215,8 @@ internal fun EventSheet(vm: InvestViewModel, date0: LocalDate, editing: InvestEv
     var memo by rememberSaveable { mutableStateOf(editing?.memo ?: "") }
     var remind by rememberSaveable { mutableStateOf(editing?.remind ?: true) }
     var picking by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-34] (검토 U06b-10) Asked first, as a 매매·알람·계좌 is: an 일정 alone went at one tap.
+    var deleting by remember { mutableStateOf(false) }
     val day = runCatching { LocalDate.parse(date) }.getOrDefault(date0)
     InvestSheetFrame(
         title = if (editing == null) "투자 일정 적기" else "투자 일정 고치기",
@@ -221,7 +227,7 @@ internal fun EventSheet(vm: InvestViewModel, date0: LocalDate, editing: InvestEv
             onDismiss()
         },
         actions = {
-            if (editing != null) IconButton(onClick = { vm.deleteEvent(editing); onDismiss() }) {
+            if (editing != null) IconButton(onClick = { deleting = true }) {
                 Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error)
             }
         },
@@ -236,6 +242,11 @@ internal fun EventSheet(vm: InvestViewModel, date0: LocalDate, editing: InvestEv
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (picking) InvestDatePicker(day, { date = it.toString() }) { picking = false }
+    if (deleting && editing != null) com.bamnat.app.ui.components.ConfirmDialog(
+        title = "이 일정을 지울까요?", message = "‘${editing.label}’ 일정이 없어져요. 바로 되돌릴 수 있어요.",
+        confirmLabel = "지우기", destructive = true, onDismiss = { deleting = false },
+        onConfirm = { deleting = false; vm.deleteEvent(editing); onDismiss() },
+    )
 }
 
 /**
@@ -273,8 +284,8 @@ internal fun GoalSheet(vm: InvestViewModel, state: InvestState, onDismiss: () ->
         AmountField(label = "매달 더 넣을 돈 (선택)", digits = monthly, onChange = { monthly = it }, modifier = Modifier.fillMaxWidth())
         if (preview.hasGoal) Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
-                preview.amountRatio?.let { Text("총자산 목표의 ${"%.0f".format(it * 100)}% · 남은 ${InvestFmt.short(preview.amountLeft ?: 0, hide)}") }
-                preview.returnRatio?.let { Text("수익률 목표의 ${"%.0f".format(it)}%") }
+                preview.amountRatio?.let { Text("총자산 목표의 ${"%.0f".format(java.util.Locale.ROOT, it * 100)}% · 남은 ${InvestFmt.short(preview.amountLeft ?: 0, hide)}") }
+                preview.returnRatio?.let { Text("수익률 목표의 ${"%.0f".format(java.util.Locale.ROOT, it)}%") }
                 preview.monthsLeft?.let { Text(if (it == 0) "벌써 닿았어요" else "매달 넣으면 약 ${it}개월 뒤 (수익 없이 계산)") }
                 preview.perMonthToDate?.let { Text("날짜까지 닿으려면 매달 ${InvestFmt.short(it, hide)}씩") }
             }

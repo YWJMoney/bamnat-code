@@ -186,7 +186,7 @@ private fun FoundTradeWords(
         Text(
             listOfNotNull(
                 "${InvestFmt.quantity(p.quantity)}${p.market.unit}" + (if (p.price > 0) " × ${InvestFmt.price(p.price, p.market)}" else " · 단가 없음"),
-                "${time.monthValue}/${time.dayOfMonth} ${"%02d:%02d".format(time.hour, time.minute)}",
+                "${time.monthValue}/${time.dayOfMonth} ${"%02d:%02d".format(java.util.Locale.ROOT, time.hour, time.minute)}",
                 "${p.app} 알림",
             ).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

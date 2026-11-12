@@ -102,6 +102,19 @@ object RecipeText {
         return PERSONAL.firstOrNull { (code, re) -> code != skip && re.containsMatchIn(t) }?.first
     }
 
+    /**
+     * 2.0.0 [RVM-24] STU-13 (받은 규칙의 알림 글로 주소·전화를 보내 앱 알림처럼 속일 수 있어요): words a received rule shows, with every mail,
+     * phone, link, chat room and long number (9자리 이상) made "…". The catalog already refuses them when a work is put up and read;
+     * this is for what {formulas} put together only when the rule runs.
+     */
+    fun masked(text: String): String {
+        var t = RecipePlatform.nfkc(text).replace('。', '.')
+        val cover = PERSONAL.filter { (code, _) -> code != "amount" }.map { it.second } + LONG_NUMBER
+        for (re in cover) t = re.replace(t, "…")
+        return if (t == RecipePlatform.nfkc(text).replace('。', '.')) text else t
+    }
+    private val LONG_NUMBER = Regex("\\d{9,}")
+
     /** [RCP-15] What 투자 광장 never takes (결정 AI-D8): 리딩방, promised returns, 종목 추천 — the server's INVEST_ADVICE. */
     private val INVEST_ADVICE = Regex(
         "리딩\\s*방|리딩해|수익\\s*(보장|확정)|원금\\s*보장|무조건\\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\\s*채팅|단톡)\\s*방?\\s*(으로|에|들어|입장|초대)|" +
@@ -122,6 +135,8 @@ object RecipeText {
         // F-99: say which part, so the ✕ can be fixed (a bare "넣을 수 없는 내용" left no way out).
         "parent" -> "원래 판 표시가 맞지 않아요. 스튜디오에서 올리기를 다시 눌러 주세요"
         "cover" -> "표지를 다시 골라 주세요"
+        // 2.0.0 [RVM-23] RCP-17·STU-19: the server's decor_tap (decor.js decorTapProblem).
+        "decor_tap" -> "보이지 않거나 단추보다 큰 꾸밈은 누르는 단추가 될 수 없어요. 올리기 점검의 ‘고치기’로 그림으로만 남겨요"
         // [BLU-07] PC 5차: a 꾸밈 newer than the server (부품 꾸미기 before the server knows it) is dropped there, leaving nothing.
         "pieces" -> "서버가 아직 모르는 새 꾸밈이라 올라가지 않았어요. 서버가 새 판이 되면 다시 올려 주세요. 그동안은 스튜디오의 ‘저장’으로 내 휴대폰에 둘 수 있어요"
         else -> "넣을 수 없는 내용이 있어요"

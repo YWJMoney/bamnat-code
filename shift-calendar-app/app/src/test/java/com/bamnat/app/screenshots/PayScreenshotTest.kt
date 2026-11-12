@@ -125,9 +125,9 @@ class PayScreenshotTest : ScreenshotBase() {
     @Test fun foldedExtraReviewDialog() = shoot("102b_folded_extra_review_dialog", FOLDED) {
         runBlocking { app.container.scheduleRepository.addExtra(today.minusDays(5), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)) }
         settle()
-        // [CAL-50] Under the alarm warning the review card waits folded in "알림 1개 더 보기".
-        tapText("알림 1개 더 보기", prefix = true, scrolls = 0)
-        tapText("확인하기", exact = true, scrolls = 0)
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함; a tap on it does what its button says (확인하기).
+        tapText("알림 ", prefix = true, scrolls = 0)
+        tapText("추가 근무 1건 확인", exact = true, scrolls = 0)
         check(shownDialogs().isNotEmpty()) { "확인 창이 열리지 않았어요" }
     }
     @Test fun foldedKindReport() = shoot("103_folded_kind_report", FOLDED) {

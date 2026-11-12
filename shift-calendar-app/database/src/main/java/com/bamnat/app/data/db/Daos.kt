@@ -151,6 +151,10 @@ interface MemoDao {
     @Query("SELECT * FROM memos WHERE id = :id")
     suspend fun get(id: Long): MemoEntity?
 
+    /** 2.0.0 [RVI-53] (검토 MEMO-19) One memo as it changes, for its editor (not the whole table at each save). */
+    @Query("SELECT * FROM memos WHERE id = :id")
+    fun observe(id: Long): Flow<MemoEntity?>
+
     @Query("SELECT * FROM memos")
     suspend fun getAll(): List<MemoEntity>
 

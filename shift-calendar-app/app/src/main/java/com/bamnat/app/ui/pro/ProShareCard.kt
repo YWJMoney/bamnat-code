@@ -33,7 +33,7 @@ import java.time.ZoneId
  * 1.36 [PSH-01] 프로 나눔 1인 (사용자 결정 2026-10-31): someone who bought 프로 gives it to one person of their choosing, for
  * as long as they keep it. Receivers of a shared calendar see it free either way; this is the one person who also gets
  * the 프로 features. The buyer makes a one-time code and sends it to that person only; a new person takes the place of
- * the one before. Anyone can put a code in here, and the person given 프로 can give it back.
+ * the one before. The person given 프로 can give it back; the code goes in at the bottom of 프로 ([CodeInbox], 2.0.0 [RVO-06]).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -41,8 +41,6 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var share by remember { mutableStateOf<ProShare?>(null) }
-    var entering by remember { mutableStateOf(false) }
-    var code by remember { mutableStateOf("") }
     var ending by remember { mutableStateOf(false) }
     val bought = gate.boughtPro
     val given = gate.access.reason == com.bamnat.core.tier.ProReason.SHARED
@@ -74,7 +72,7 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(androidx.compose.ui.unit.Dp(8f))) {
                     val made = s?.code
                     if (made != null) Button(onClick = {
-                        val text = "밤낮 프로를 나눠 드려요. 밤낮 › 설정 › 프로 › 프로 나눠 주기 › 코드 넣기에 이 코드를 넣어 주세요: $made"
+                        val text = shareCodeText(made)
                         runCatching { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "코드 보내기")) }
                     }) { Text("코드 보내기") }
                     OutlinedButton(onClick = {
@@ -88,22 +86,6 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
                 TextButton(onClick = { ending = true }) { Text("나눠 받은 프로 돌려주기") }
             }
             else -> Text(shareLead(gate), style = MaterialTheme.typography.bodyMedium)
-        }
-        if (!bought && !given) {
-            TextButton(onClick = { entering = !entering }) { Text("코드 넣기") }
-            if (entering) {
-                OutlinedTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(8) },
-                    label = { Text("나눔 코드 (8자리)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Button(enabled = code.length == 8, onClick = {
-                    scope.launch {
-                        runServer(onMessage) {
-                            after(c.tierApi.shareClaim(c.companyStore.device, code))
-                            entering = false; code = ""
-                            onMessage("나눠 받은 프로를 켰어요.")
-                        }
-                    }
-                }) { Text("프로 받기") }
-            }
         }
     }
     if (ending) AlertDialog(
@@ -127,6 +109,11 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
  */
 internal fun shareLead(gate: Gate): String = when {
     gate.live && gate.access.pro && gate.access.reason == com.bamnat.core.tier.ProReason.TRIAL ->
-        "체험이 끝나고 결제되면 1명에게 나눌 수 있어요. 받은 코드가 있으면 넣어 주세요."
-    else -> "프로를 결제하면 1명에게 프로를 나눠 줄 수 있어요. 받은 코드가 있으면 넣어 주세요."
+        "체험이 끝나고 결제되면 1명에게 나눌 수 있어요."
+    // 2.0.0 [RVO-06] 받은 코드는 프로 화면 맨 아래 '코드를 받으셨나요?'에서 받아요.
+    else -> "프로를 결제하면 1명에게 프로를 나눠 줄 수 있어요."
 }
+
+/** 2.0.0 [RVO-06] What the buyer sends with the code: where it goes in (프로 화면 맨 아래 한 칸). */
+internal fun shareCodeText(code: String): String =
+    "밤낮 프로를 나눠 드려요. 밤낮 › 설정 › 프로 › 맨 아래 ‘$CODE_INBOX_TITLE’에 이 코드를 넣어 주세요: ${com.bamnat.core.tier.InviteRules.shown(code)}"

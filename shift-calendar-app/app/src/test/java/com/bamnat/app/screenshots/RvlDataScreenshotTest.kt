@@ -28,10 +28,26 @@ import java.io.File
 class RvlDataScreenshotTest : ScreenshotBase() {
     private val c get() = app.container
 
+    /**
+     * 갈래 P 3/3 [RVP-43] HQ-49: a card that comes while the calendar is open (the alarm's line already the band) waits in the 알림함 (종),
+     * so the month does not move (PC-81); there it opens whole, the card these shots are about. [band] is the same card known at the
+     * app's start: then it is the one band over the month, before the alarm's line.
+     */
     private fun stopped(): Screen.() -> Unit = {
         c.restoreStopped.value = true
         settle()
+        openNotice("불러오기 멈춤")
         assertTrue(appears("불러오기가 멈춰 전 기록으로"))
+    }
+
+    private fun band(line: String): Screen.() -> Unit = {
+        assertTrue(appears(line, exact = true))
+        assertTrue(!shows("잠금 화면에 알람", exact = false))
+    }
+
+    @Test fun stoppedBandFoldLight() {
+        c.restoreStopped.value = true
+        shoot("rvl02_stopped_band_fold_light_100", FOLDED, band("불러오기가 멈춰 전 기록으로 돌려놓았어요"))
     }
 
     @Test fun stoppedFoldLight() = shoot("rvl02_stopped_fold_light_100", FOLDED, stopped())
@@ -54,6 +70,7 @@ class RvlDataScreenshotTest : ScreenshotBase() {
     private fun moved(sealed: Boolean = true): Screen.() -> Unit = {
         arrived(sealed)
         settle()
+        openNotice("옮겨 온 것 확인")
         assertTrue(appears("새 휴대폰으로 옮겨 왔어요"))
     }
 
@@ -105,7 +122,15 @@ class RvlDataScreenshotTest : ScreenshotBase() {
         shadowOf(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).setIsDeviceSecure(false)
         c.settingsRepository.update { it.copy(appLock = true) }
         settle()
+        openNotice("앱 잠금 쉼")
         assertTrue(appears("휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요"))
+    }
+
+    /** 200% on the cover screen: the band's line takes two lines beside its '보기' and stays one band (조건 1·12). */
+    @Test fun restingBandFoldDarkHuge() {
+        shadowOf(app.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager).setIsDeviceSecure(false)
+        c.settingsRepository.update { it.copy(appLock = true) }
+        shoot("rvl09_resting_band_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, band("휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요"))
     }
 
     @Test fun restingFoldLight() = shoot("rvl09_resting_fold_light_100", FOLDED, resting())
@@ -121,6 +146,9 @@ class RvlDataScreenshotTest : ScreenshotBase() {
         tapText("이 안내 닫기", exact = true)
         assertTrue(gone("휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요"))
         assertTrue(!com.bamnat.app.AppLock.restingCardShown(app, on = true))
+        // Its row left the 알림함 with it; the sheet closes by its own 닫기.
+        assertTrue(!shows("앱 잠금 쉼", exact = true))
+        tapText("닫기", exact = true, scrolls = 0)
         settingsPage(com.bamnat.app.ui.settings.SettingsPage.PRIVACY.title)
         reveal("앱 잠금", exact = true)
         assertTrue(appears(com.bamnat.app.ui.settings.APP_LOCK_RESTING_LINE))

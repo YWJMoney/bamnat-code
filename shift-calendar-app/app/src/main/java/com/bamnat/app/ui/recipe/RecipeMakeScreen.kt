@@ -479,6 +479,9 @@ class RecipeMakeViewModel(
                 }
                 note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts)).joinToString("\n").ifBlank { null }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
+            } catch (e: PictureLimit) {
+                // 2.0.0 [RVM-30] SN-15: how far the pictures got, and that 다시 올리기 goes on from there (the draft stays as it is).
+                _state.value = _state.value.copy(sending = false, error = e.say(), errorCode = "photos_today")
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
             } catch (e: Exception) {
@@ -503,16 +506,49 @@ class RecipeMakeViewModel(
 }
 
 
-/** [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id. */
+/**
+ * 2.0.0 [RVM-30] SN-15 (스튜디오 제작 오류 조사): the day's pictures ran out while a work's pictures went up. [sent] of [total] went up and
+ * stay on the server, which does not count the same picture from this phone again (D #471 RVD-27), so 다시 올리기 goes on from the
+ * rest; [limit] is the day's number when the server said it, [retryAfter] its seconds. Before 2.0.0 the words said 'N시간 뒤에 다시'
+ * and a work of 13 pictures or more never went up.
+ */
+class PictureLimit(val sent: Int, val total: Int, val limit: Int?, val retryAfter: Int?) : java.io.IOException("photos_today") {
+    /** What the person reads: how far it got, and that doing it [again] ('올리면', '저장하면') goes on from there. */
+    fun say(again: String = "올리면"): String {
+        val w = com.bamnat.app.company.RateLimits.wait(retryAfter ?: 86_400)
+        return (limit?.let { "오늘 올릴 수 있는 사진 ${it}장을 다 썼어요" } ?: "오늘 올릴 수 있는 사진을 다 썼어요") +
+            ". 사진 ${total}장 중 ${sent}장은 올라갔고, ${w}에 다시 $again 남은 사진부터 이어서 올라가요"
+    }
+}
+
+/**
+ * [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id.
+ * 2.0.0 [RVM-30] SN-15: the day's limit met on the way is a [PictureLimit] that says how many of how many went.
+ */
 internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
     if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK || it.kind == PieceKind.DECOR }) return r
-    val sent = mutableMapOf<String, String>()
-    suspend fun server(id: Any?): Any? {
-        val local = id as? String ?: return id
-        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return local
-        return sent.getOrPut(local) { com.bamnat.app.recipe.LookImages.upload(c, local) }
+    val mine = mutableSetOf<String>()
+    pictures(r) { id ->
+        (id as? String)?.takeIf { com.bamnat.app.recipe.LookImages.has(c.appContext, it) && !com.bamnat.app.recipe.StudioMaterials.isMaterial(c.appContext, it) }
+            ?.let(mine::add)
+        id
     }
-    return r.copy(pieces = r.pieces.map { p ->
+    val sent = mutableMapOf<String, String>()
+    return pictures(r) { id ->
+        val local = id as? String ?: return@pictures id
+        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return@pictures local
+        sent[local] ?: try {
+            com.bamnat.app.recipe.LookImages.upload(c, local).also { sent[local] = it }
+        } catch (e: com.bamnat.app.company.CompanyException) {
+            if (e.code != "rate_limited") throw e
+            throw PictureLimit(sent.keys.count { it in mine }, mine.size, e.limit, e.retryAfter)
+        }
+    }
+}
+
+/** Each picture [r] names, in turn, as [server] gives it back. */
+private suspend fun pictures(r: com.bamnat.core.recipe.Recipe, server: suspend (Any?) -> Any?): com.bamnat.core.recipe.Recipe =
+    r.copy(pieces = r.pieces.map { p ->
         // [FREE-05] 화면 색·배경's pictures, each screen's in turn.
         if (p.kind == PieceKind.SCREEN_LOOK) (p.values["screens"] as? String)?.let { line ->
             val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
@@ -532,7 +568,6 @@ internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamna
             p.copy(values = v)
         }
     })
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable

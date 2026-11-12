@@ -198,4 +198,24 @@ class WorkKitTest {
         assertEquals("main", CaptureRoute.pick(null, null, "x", places, mapOf("x" to "gone"), "gone"))
         assertEquals("KB국민", CaptureRoute.issuerKey("KB국민카드"))
     }
+
+    /**
+     * 2.0.0 [RVG-35] 검토 HQ-64: a link's word comes from what it carries, the same for the sender's hint, the receiving app and
+     * the web page: 매출 → 영업일, 일감 or 일감 수입 → 일정, else 근무표 (a shop or an investor that sends only the days stays 근무표).
+     */
+    @Test
+    fun linkWordFromWhatTheLinkCarries() {
+        val sales = com.bamnat.core.work.MoneyShare.SALES
+        val jobs = com.bamnat.core.work.MoneyShare.JOBS
+        val pay = com.bamnat.core.work.MoneyShare.PAY
+        assertEquals("영업일", com.bamnat.core.work.linkWord(setOf("pay"), sales))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("jobs"), jobs))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("pay"), jobs))
+        assertEquals("일정", com.bamnat.core.work.linkWord(listOf("jobs", "pay"), jobs))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(setOf("pay"), pay))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(setOf("leaveKinds", "extras"), pay))
+        // A shop that ticks nothing to go with the days: the link cannot tell, so 근무표 (HQ-64 비고, B안 3.14 후보).
+        assertEquals("근무표", com.bamnat.core.work.linkWord(emptySet(), sales))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(emptySet(), null))
+    }
 }

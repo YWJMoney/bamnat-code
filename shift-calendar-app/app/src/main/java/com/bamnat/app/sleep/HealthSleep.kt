@@ -119,7 +119,9 @@ class HealthSleep(private val context: Context, private val clock: () -> Long = 
                 endTime = end.toInstant(), endZoneOffset = end.offset,
                 title = if (e.auto) "밤낮 자동" else "밤낮",
                 metadata = androidx.health.connect.client.records.metadata.Metadata.manualEntry(
-                    clientRecordId = "bamnat-sleep-${e.id}", clientRecordVersion = end.toInstant().toEpochMilli()),
+                    // 2.0.0 [RVI-14] (검토 ALM-26) The version is when it is written, not when the sleep ended: a wake time moved
+                    // earlier gave a smaller version, and Health Connect kept the old sleep.
+                    clientRecordId = "bamnat-sleep-${e.id}", clientRecordVersion = Today.millis()),
             )
         }
         if (records.isEmpty()) return 0

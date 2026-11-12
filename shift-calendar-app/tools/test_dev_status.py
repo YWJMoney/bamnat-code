@@ -78,6 +78,19 @@ class DevStatusTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ds.payload([], "1.39", "", 0)
 
+    def test_payloads_split_under_the_servers_limit(self):
+        # 2.0.0 [HQ-77] 574줄을 한 덩어리로 보내면 서버가 통째로 거절해요(한 번에 200줄까지).
+        rows = list(enumerate([{**GOOD, "track": f"LOOP-{n}"} for n in range(1, 575)], 1))
+        parts = ds.payloads(rows, "", "abcdef1", 0)
+        self.assertEqual(len(parts), 12)
+        self.assertTrue(all(1 <= len(b["items"]) <= ds.SYNC_CHUNK <= 200 for b in parts))
+        self.assertEqual([x["track"] for b in parts for x in b["items"]], [f"LOOP-{n}" for n in range(1, 575)])
+        # 통합 브랜치에서는 판 번호 없이 보내요: 서버가 '고친 판'을 적지도, 문의에 '곧 나와요'를 보내지도 않아요.
+        self.assertTrue(all(b["version"] is None and b["sha"] == "abcdef1" for b in parts))
+        self.assertEqual(len(ds.payloads([], "1.39.0", "", 0)), 1)
+        with self.assertRaises(SystemExit):
+            ds.payloads(rows, "", "", 0, chunk=201)
+
     def test_read_reports_bad_json(self):
         with tempfile.TemporaryDirectory() as d:
             p = pathlib.Path(d) / "s.jsonl"
@@ -130,6 +143,24 @@ class DevStatusTest(unittest.TestCase):
                 self.assertNotIn("새 판", out.getvalue())
             finally:
                 ds.STATUS_FILE, ds.TRACKER = keep
+
+    def test_reopen_is_only_for_a_line_opened_again(self):
+        # 2.0.0 [HQ-78] 서버는 동기화로 상태를 뒤로 돌리지 않아요. 다시 연 줄만 reopen: true로 알려요.
+        self.assertEqual(errors({**GOOD, "status": "doing", "reopen": True}), [])
+        self.assertTrue(errors({**GOOD, "reopen": True}))
+        self.assertTrue(errors({**GOOD, "status": "doing", "reopen": "yes"}))
+
+    def test_the_workflow_sends_from_the_integration_branch_named_in_claude_md(self):
+        # 2.0.0 [HQ-78] 통합 브랜치 이름이 바뀌면 workflow의 branches 줄도 바꿔야 해요.
+        with tempfile.TemporaryDirectory() as d:
+            rules, flow = pathlib.Path(d, "CLAUDE.md"), pathlib.Path(d, "dev-status.yml")
+            rules.write_text("- 통합 브랜치 `claude/project-thread-new123`(PR #9 → main)\n- 통합 브랜치 `claude/project-thread-old999`\n", encoding="utf-8")
+            flow.write_text('on:\n  push:\n    branches: [main, "claude/project-thread-old999"]\n', encoding="utf-8")
+            self.assertEqual(len(ds.workflow_branch_problems(rules, flow)), 1)
+            flow.write_text('on:\n  push:\n    branches: [main, "claude/project-thread-new123"]\n', encoding="utf-8")
+            self.assertEqual(ds.workflow_branch_problems(rules, flow), [])
+        # 이 저장소는 맞아요.
+        self.assertEqual(ds.workflow_branch_problems(), [])
 
     def test_repository_file_is_clean(self):
         items, errs = ds.read()

@@ -943,7 +943,8 @@ fun LogicEditor(
         askOn?.let { r ->
             AlertDialog(onDismissRequest = { askOn = null },
                 title = { Text("받은 규칙을 켤까요?") },
-                text = { Text("‘${r.name}’${com.bamnat.app.ui.Fmt.eun(r.name)} ${r.sayWhen()} ${r.act.say()}를 해요. 메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요.") },
+                // [RVM-23] STU-23: every step and its condition (not the first step alone), and the 쓰기 line only when a step writes.
+                text = { Text("‘${r.name}’: ${r.say()}\n\n" + (if (r.acts.any { it.verb.writes }) "메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요." else "켜면 바로 움직여요. 끄면 멈춰요.")) },
                 confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c); saidOn(r) }) { Text("켜기") } },
                 dismissButton = { TextButton(onClick = { askOn = null }) { Text("그대로 두기") } })
         }

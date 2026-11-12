@@ -105,7 +105,10 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("보관함", prefix = true)
         tapText("장터 ‘탭별 작품 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
-        assertTrue(appears("탭 하나를 위해", exact = true))
+        // 2.0.0 [RVM-31] HQ-42: the 구간 are chips now; 탭별 작품 is the one picked.
+        assertTrue(appears("🗂 탭별 작품", exact = true))
+        assertTrue("탭별 작품이 골라져 있어요", nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "🗂 탭별 작품" } &&
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Selected) == true })
         back()
         assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
     } }
@@ -135,7 +138,8 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeListViewModel(c)
         content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
-        assertTrue(appears("요즘 뜨는", exact = true))
+        // 2.0.0 [RVM-31]: the order the list is in is the 정렬 chip in the one row of chips (slid in, or under ▾ on a 360dp phone).
+        assertTrue(nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "요즘 뜨는" } })
         assertTrue(appears("야간 파랑", exact = true))
         // A 알바 recipe is not in the 교대 list.
         assertTrue(gone("주휴", exact = false))

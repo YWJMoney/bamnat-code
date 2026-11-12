@@ -29,7 +29,27 @@ class TierTest {
     @Test fun beforeLaunchEverythingIsOpen() {
         val a = ProAccess.resolve(ProSources(billingLive = false), now, zone)
         assertTrue(a.pro)
-        assertEquals(ProReason.NOT_LAUNCHED, a.reason)
+        assertEquals(ProReason.ALL_OPEN, a.reason)
+    }
+
+    /** 2.0.0 [RVO-12] 검토 HQ-46: 처리방침 3.1's hold says its last free day, never '정식 출시 전'. */
+    @Test fun theHoldSaysItsLastFreeDay() {
+        val ends = java.time.LocalDate.of(2026, 11, 24).atStartOfDay(zone).toInstant()
+        val a = ProAccess.resolve(ProSources(billingLive = false, heldUntil = ends), now, zone)
+        assertTrue(a.pro)
+        assertEquals(ProReason.HELD, a.reason)
+        assertEquals("처리방침 3.1 동의 전이라 11월 23일까지 모든 기능이 무료예요", a.say(zone))
+        assertEquals("지금은 모든 기능이 무료로 열려 있어요", ProAccess.resolve(ProSources(billingLive = false), now, zone).say(zone))
+        assertTrue(ProReason.entries.none { it.words.contains("정식 출시 전") })
+        // Billing on: the hold is over whatever the sources say.
+        assertEquals(ProReason.NONE, ProAccess.resolve(ProSources(billingLive = true, heldUntil = ends), now, zone).reason)
+    }
+
+    /** 2.0.0 [RVO-12] A phone from before the 출시 has its 감사 month from the moment a release build knows. */
+    @Test fun thanksFromTheLaunchARelaseBuildKnows() {
+        val until = ProAccess.thanksUntil(at("2026-10-20T00:00:00Z"), com.bamnat.core.flags.Released.AT, com.bamnat.core.flags.Released.THANKS_MONTHS, zone)
+        assertEquals(java.time.LocalDate.of(2026, 12, 12), until!!.atZone(zone).toLocalDate())
+        assertNull(ProAccess.thanksUntil(at("2026-11-13T00:00:00Z"), com.bamnat.core.flags.Released.AT, 1, zone))
     }
 
     @Test fun afterLaunchNothingMeansFree() {

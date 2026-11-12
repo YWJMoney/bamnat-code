@@ -60,6 +60,12 @@ data class WatchPayload(
     val moneyCategories: List<String> = emptyList(),
     /** 1.38 [SLEEP-14] The next sleep as the phone's 오늘의 흐름 says it ("잘 시간 08:00–15:00", "낮잠 15:00–16:30"), or empty. */
     val sleepLine: String = "",
+    /** 2.0.0 [RVI-08] An 알바 calendar (출근·퇴근 from the watch), so a new day's 출근 shows before the phone sends again. */
+    val hourly: Boolean = false,
+    /** 2.0.0 [RVI-09] What a working day is called on this calendar: 근무, 영업 (가게), 일감 (현장), 일정 (투자). */
+    val noun: String = "근무",
+    /** 2.0.0 [RVI-10] (검토 U03-10) The amounts most written lately on the phone's 가계부, for one-tap chips on 돈 적기. */
+    val recentAmounts: List<Long> = emptyList(),
 ) {
     enum class Clock { NONE, IN, OUT }
 }
@@ -147,7 +153,9 @@ object WatchDays {
         // [WEAR-01][WEAR-03] Fields 6 on are new in 1.23; an older watch reads the first six and ignores them.
         val head = listOf(VERSION, p.syncedAt.toString(), p.nextAlarm?.toString().orEmpty(), clean(p.alarmLabel), clean(p.calendar), p.sentAtMillis.toString(),
             p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0",
-            if (p.ringOnWatch) "1" else "0", p.moneyCategories.joinToString(",") { clean(it).replace(",", " ") }, clean(p.sleepLine))
+            if (p.ringOnWatch) "1" else "0", p.moneyCategories.joinToString(",") { clean(it).replace(",", " ") }, clean(p.sleepLine),
+            // 2.0.0 [RVI-08][RVI-09][RVI-10] Fields 14 on; an older watch ignores them.
+            if (p.hourly) "1" else "0", clean(p.noun), p.recentAmounts.joinToString(","))
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
@@ -178,8 +186,50 @@ object WatchDays {
             alarmToday = head.getOrNull(10) == "1",
             ringOnWatch = head.getOrNull(11) == "1",
             moneyCategories = head.getOrNull(12)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.take(WatchMoney.MAX_CATEGORIES).orEmpty(),
-            sleepLine = head.getOrNull(13).orEmpty())
+            sleepLine = head.getOrNull(13).orEmpty(),
+            hourly = head.getOrNull(14) == "1",
+            noun = head.getOrNull(15)?.takeIf { it.isNotBlank() } ?: "근무",
+            recentAmounts = head.getOrNull(16)?.split(',')?.mapNotNull { it.trim().toLongOrNull()?.takeIf { a -> a in 1..WatchMoney.MAX_AMOUNT } }
+                ?.take(WatchMoney.MAX_AMOUNTS).orEmpty())
     }
+
+    /*
+     * 2.0.0 [RVI-08] (검토 ALM-09) What the phone said about "today" holds for the day it was sent on. After midnight the watch
+     * works it out itself from what it has (the next alarm, the days), so the tile's 오늘 알람 끄기, an 알바's 출근, this week's hours
+     * and the 잘 시간 line are never yesterday's.
+     */
+
+    /** The phone's date when it sent [p]. */
+    fun sentOn(p: WatchPayload): LocalDate = p.syncedAt.toLocalDate()
+
+    /** Today has an alarm still to ring that 오늘 알람 끄기 can turn off. */
+    fun alarmTodayNow(p: WatchPayload, now: LocalDateTime): Boolean {
+        val next = p.nextAlarm
+        if (next != null && next.toLocalDate() == now.toLocalDate() && next.isAfter(now)) return true
+        return p.alarmToday && sentOn(p) == now.toLocalDate() && (next == null || next.isAfter(now))
+    }
+
+    /** What 출근·퇴근 the watch offers now: the phone's word on its own day, a new working day's 출근 after it. */
+    fun clockNow(p: WatchPayload, now: LocalDateTime): WatchPayload.Clock {
+        val today = now.toLocalDate()
+        if (sentOn(p) == today) return p.clock
+        if (!p.hourly && p.clock == WatchPayload.Clock.NONE) return WatchPayload.Clock.NONE
+        val d = on(p.days, today) ?: return WatchPayload.Clock.NONE
+        return if (!d.off && d.start != null) WatchPayload.Clock.IN else WatchPayload.Clock.NONE
+    }
+
+    /** This week's minutes as sent, only while it is still the week they were counted in (Monday to Sunday); −1 after. */
+    fun weekMinutesNow(p: WatchPayload, today: LocalDate): Int {
+        if (p.weekMinutes < 0) return -1
+        fun monday(d: LocalDate) = d.minusDays((d.dayOfWeek.value - 1).toLong())
+        return if (monday(sentOn(p)) == monday(today)) p.weekMinutes else -1
+    }
+
+    /** The 잘 시간 line for a while after it was sent (it names times of one night or day), else empty. */
+    fun sleepLineNow(p: WatchPayload, now: LocalDateTime): String =
+        if (p.sleepLine.isNotBlank() && !now.isBefore(p.syncedAt) && java.time.Duration.between(p.syncedAt, now).toHours() < SLEEP_LINE_HOURS) p.sleepLine else ""
+
+    const val SLEEP_LINE_HOURS = 8L
 
     /**
      * [SHFT-08] Whether [next] may replace [kept] on the watch: by the epoch milliseconds both were sent at; a copy
@@ -232,8 +282,14 @@ object WatchDays {
     }
 
     /** [WEAR-03] "이번 주 38시간 / 52시간": the week's share of the limit for the ranged complication. */
-    fun weekText(p: WatchPayload): String? =
-        if (p.weekMinutes < 0) null else "이번 주 ${p.weekMinutes / 60}시간" + (if (p.weekMinutes % 60 != 0) " ${p.weekMinutes % 60}분" else "") + " / ${p.weekLimitMinutes / 60}시간"
+    fun weekText(p: WatchPayload, today: LocalDate? = null): String? {
+        // 2.0.0 [RVI-08] Last week's hours are not shown as this week's.
+        val m = if (today == null) p.weekMinutes else weekMinutesNow(p, today)
+        return if (m < 0) null else "이번 주 ${m / 60}시간" + (if (m % 60 != 0) " ${m % 60}분" else "") + " / ${p.weekLimitMinutes / 60}시간"
+    }
+
+    /** 2.0.0 [RVI-11] (검토 ALM-10) Turning 오늘 알람 끄기 back from the tile (워치에서 되돌리기). */
+    const val ALARM_ON_PATH = "/bamnat/sync/alarm-on"
 
     /** [WEAR-03] Messages the watch sends the phone: turn today's alarm off, and an 알바's 출근·퇴근. */
     const val ALARM_OFF_PATH = "/bamnat/sync/alarm-off"
@@ -265,6 +321,23 @@ private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
 object WatchMoney {
     const val MAX_CATEGORIES = 5
     const val MAX_AMOUNT = 10_000_000L
+    /** 2.0.0 [RVI-10] How many recent amounts the phone sends for the watch's chips. */
+    const val MAX_AMOUNTS = 3
+    /** 2.0.0 [RVI-10] Chips when the phone sent none: 5천·1만·2만. */
+    val CHIPS = listOf(5_000L, 10_000L, 20_000L)
+
+    /** The amounts written most often among [amounts] (lately spent), the most frequent first, at most [MAX_AMOUNTS]. */
+    fun recentAmounts(amounts: List<Long>): List<Long> =
+        amounts.filter { it in 1..MAX_AMOUNT }.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<Long, Int>> { it.value }.thenBy { it.key }).map { it.key }.take(MAX_AMOUNTS)
+
+    /** "5천", "1만", "1만 2천", "37,500": a chip's short word. */
+    fun short(amount: Long): String = when {
+        amount % 1_000L != 0L -> String.format(java.util.Locale.KOREA, "%,d", amount)
+        amount >= 10_000L && amount % 10_000L == 0L -> "${amount / 10_000}만"
+        amount >= 10_000L -> "${amount / 10_000}만 ${(amount % 10_000) / 1_000}천"
+        else -> "${amount / 1_000}천"
+    }
     /** The watch's ± steps. */
     val STEPS = listOf(1_000L, 10_000L)
     /** When the phone sent none: the most common everyday ones. */

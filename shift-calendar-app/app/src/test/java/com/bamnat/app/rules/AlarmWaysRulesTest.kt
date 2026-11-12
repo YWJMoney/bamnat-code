@@ -21,6 +21,7 @@ class AlarmWaysRulesTest {
         "alarm/AlarmScheduler.kt" to Way.CLOCK,
         "alarm/AlarmService.kt" to Way.CLOCK, // a snooze from the ringing screen
         "alarm/BootAlarms.kt" to Way.CLOCK, // the next ring and snooze put back after a restart, before unlock
+        "alarm/Receivers.kt" to Way.CLOCK, // 2.0.0 [RVI-02] 다시 울림 from the fallback notice, before unlock: the ringing screen's way
         "memo/MemoScheduleAlarm.kt" to Way.CLOCK, // a memo's schedule that rings (a notice-only one is EXACT)
         "invest/InvestNotices.kt" to Way.CLOCK, // an investor's alarm that rings (a notice-only one is EXACT)
         // On the minute, without the alarm icon.
@@ -30,6 +31,7 @@ class AlarmWaysRulesTest {
         "money/JobReminderScheduler.kt" to Way.EXACT,
         "sleep/DayNoticeScheduler.kt" to Way.EXACT,
         "sleep/SmartWake.kt" to Way.EXACT, // the smart wake's window opens
+        "widget/WidgetRefresher.kt" to Way.EXACT, // 2.0.0 [RVI-37] the widgets' new day at midnight (a 1-minute window when refused)
         // Notices for which some minutes do not matter.
         "alarm/AlarmGuard.kt" to Way.ROUGH,
         "alarm/LeaveTimeNotice.kt" to Way.ROUGH,
@@ -42,7 +44,6 @@ class AlarmWaysRulesTest {
         "share/ShareExpiryReminder.kt" to Way.ROUGH,
         "sleep/QuietHold.kt" to Way.ROUGH,
         "tier/TrialNotice.kt" to Way.ROUGH,
-        "widget/WidgetRefresher.kt" to Way.ROUGH,
     )
 
     private val root = File("src/main/java/com/bamnat/app")

@@ -124,10 +124,15 @@ export function loopViews(A) {
 
   function trainCard(d) {
     const t = d.train;
-    return fold("train", "정기 출시 열차", t.next ? `다음 출발 ${t.next} · ${t.days}일마다` : "", `
-      <p class="hint">앱 판으로 고친 것은 ${t.days}일마다 한 번 모아 나가요. 고친 직후 문의에는 '○월 ○일 정기 업데이트에 들어가요'가 날짜와 함께 가요. 알람·데이터·결제·앱이 안 열림 같은 긴급은 열차를 기다리지 않아요.</p>
+    // 2.0.0 [HQ-78] 열차 밖의 판(끝나는 즉시 나가는 판): 그 판으로 고친 문의에는 날짜 없이 '곧 나올 판'.
+    const outside = (t.outside ?? []).join(", ");
+    return fold("train", "정기 출시 열차", t.next ? `다음 출발 ${t.next} · ${t.days}일마다${outside ? ` · 열차 밖 ${outside}` : ""}` : "", `
+      <p class="hint">앱 판으로 고친 것은 ${t.days}일마다 한 번 모아 나가요. 고친 직후 문의에는 '○월 ○일 정기 업데이트에 들어가요'가 날짜와 함께 가요. 알람·데이터·결제·앱이 안 열림 같은 긴급은 열차를 기다리지 않아요.
+        ${outside ? `${esc(outside)}은 열차 밖의 판이라 끝나는 즉시 나가고, 그 판으로 고친 문의에는 날짜 없이 '곧 나올 ${esc(t.outside[0])} 업데이트'라고 가요.` : ""}</p>
       ${owner() ? `<form class="inline-form" data-form="loop-train"><label for="lt-start">첫 출발일</label><input id="lt-start" name="start" type="date" required value="${esc(t.start)}">
         <label for="lt-days">며칠마다</label><input id="lt-days" name="days" type="number" min="7" max="60" required value="${t.days}">
+        <label for="lt-outside">열차 밖의 판</label><input id="lt-outside" name="outside" placeholder="예: 2.0.0" value="${esc(outside)}" aria-describedby="lt-outside-h">
+        <small id="lt-outside-h" class="hint">끝나는 즉시 나가는 판, 쉼표로 여럿</small>
         <div class="actions"><button class="btn small primary" type="submit">저장</button></div></form>` : ""}`);
   }
 
@@ -408,7 +413,8 @@ export function loopViews(A) {
   const forms = {
     "loop-train": async (form) => {
       const f = new FormData(form);
-      if (await act(() => api("/loop/train", "POST", { start: f.get("start"), days: Number(f.get("days")) }), (r) => `다음 출발 ${r.next}`)) reload("loopState");
+      const outside = String(f.get("outside") ?? "").split(/[,\s]+/).map((v) => v.trim()).filter(Boolean);
+      if (await act(() => api("/loop/train", "POST", { start: f.get("start"), days: Number(f.get("days")), outside }), (r) => `다음 출발 ${r.next}`)) reload("loopState");
     },
     /**
      * 2.0.0 [RVA-05] 검토 ADM-06·U24-10: 빈 칸은 바꾸지 않아요(전에는 0이 됐어요). 바뀐 것만 '앞 → 뒤 · 걸리는 폰'으로 한 번 보여 주고 묻고,

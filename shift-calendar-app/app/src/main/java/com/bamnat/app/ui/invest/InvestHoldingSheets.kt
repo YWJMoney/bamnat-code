@@ -25,6 +25,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.Fmt
@@ -260,6 +264,22 @@ internal fun ShotFindings(found: List<HoldingShots.Found>, go: (InvestSheet) -> 
             else -> null
         },
     )
+    // 2.0.0 [RVK-36] (총괄 HQ-63 ②) Several holdings that differ from the book were a stack of questions with two buttons each, and at
+    // 200% the prices were below the first screen: more than one waits under '장부와 다른 종목 N개 ▾', the prices first.
+    val differ = gaps.size + missing.size
+    var open by rememberSaveable { mutableStateOf(false) }
+    if (differ > 1) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = if (open) "접기" else "펼치기") { open = !open }
+                .semantics { stateDescription = if (open) "펼침" else "접힘" },
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text("장부와 다른 종목 ${differ}개", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+        }
+        if (!open) return
+    }
     gaps.forEach { f ->
         val h = f.holding!!
         val gap = f.gap!!

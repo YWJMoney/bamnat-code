@@ -76,7 +76,7 @@ internal object MarketFonts {
     @androidx.annotation.VisibleForTesting internal var get: (String) -> ByteArray? = ::download
     /**
      * 2.0.0 [RVM-21] Whether the phone may ask our public files now: [com.bamnat.core.flags.FlagCatalog.CARD_FONTS], on from 처리방침
-     * 3.13's effective day ([com.bamnat.app.AppContainer] sets it). Off, nothing is asked and the cards draw in the phone's fonts.
+     * 3.13's 7-day line (PolicyConsent.REVISION_EFFECTIVE) ([com.bamnat.app.AppContainer] sets it). Off, nothing is asked and the cards draw in the phone's fonts.
      */
     @Volatile internal var allowed: () -> Boolean = { false }
     /** The sha256 of every card font this app takes, by "<id>-r"·"<id>-b". */

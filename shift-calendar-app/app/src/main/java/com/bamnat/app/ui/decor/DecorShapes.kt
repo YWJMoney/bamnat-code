@@ -16,7 +16,7 @@ import kotlin.math.sin
  */
 internal object DecorShapes {
     /** Shapes that are lines: drawn as a stroke. */
-    val STROKES = setOf("ring", "frame", "line_h", "line_v", "line_d", "dash_h", "zigzag", "squiggle", "check", "underline", "circle_mark", "snow")
+    val STROKES: Set<String> get() = com.bamnat.core.recipe.DecorTapRule.STROKES
 
     /** [id]'s outline in a [w]×[h] box; [r] corners in px where the shape has corners. */
     fun path(id: String, w: Float, h: Float, r: Float = 0f): Path {

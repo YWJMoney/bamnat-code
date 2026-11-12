@@ -172,7 +172,7 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
                 "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
         }
         if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,
-            "‘완전히 무음’ 방해 금지가 켜져 있어 알람도 울리지 않아요. 알람은 허용하는 방해 금지로 바꿔 주세요.", "방해 금지 설정 열기",
+            "방해 금지가 알람까지 막고 있어 울리지 않아요. 방해 금지에서 알람을 허용해 주세요.", "방해 금지 설정 열기",
             Fix.OpenFirst(listOf(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS), Intent(Settings.ACTION_SETTINGS)))))
         if (Notifications.makerLockScreenPermission()) add(AlarmCheck("제조사 잠금 화면 표시", null,
             "이 휴대폰은 ‘잠금 화면에 표시’·‘백그라운드에서 팝업 창 표시’ 권한이 따로 있어요. 앱 정보 › 권한(기타 권한)에서 둘 다 허용해 주세요.",

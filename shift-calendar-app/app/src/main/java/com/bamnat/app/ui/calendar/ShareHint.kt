@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.calendar
 
 import android.content.Context
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,22 +10,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 
@@ -47,6 +39,9 @@ internal class HintStore(context: Context) {
         /** The calendar's 공유 was pointed out, or used. */
         const val SHARE = "share_hint"
 
+        /** 2.0.0 [RVP-43] The empty calendar's first step was the band over the month once: from then on it is a row of the 알림함. */
+        const val START_BAND = "start_band"
+
         /** [CAL-17] A long press on a date opens 빠른 설정: said once on the first tap, or found already. */
         const val LONG_PRESS = "long_press_hint"
 
@@ -59,42 +54,8 @@ internal class HintStore(context: Context) {
     }
 }
 
-/**
- * [UX-03] The first time a calendar has shifts and has never been shared, a quiet card under the bar
- * points up at 공유: people did not find it. Closed with ×, or gone once 공유 is used.
- */
-@Composable
-internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
-    /** 2.0.0 [RVH-20] 검토 CAL-25: what is sent, in the calendar's words (근무표, 영업일, 일정). */
-    word: String = "근무표") {
-    val color = MaterialTheme.colorScheme.secondaryContainer
-    val onColor = MaterialTheme.colorScheme.onSecondaryContainer
-    Column(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
-        // A small point under 공유, so the card reads as being about that button.
-        Box(Modifier.fillMaxWidth().padding(end = 26.dp), contentAlignment = Alignment.CenterEnd) {
-            Box(Modifier.size(width = 16.dp, height = 8.dp).drawBehind {
-                drawPath(Path().apply {
-                    moveTo(size.width / 2, 0f)
-                    lineTo(size.width, size.height)
-                    lineTo(0f, size.height)
-                    close()
-                }, color)
-            })
-        }
-        // The whole card opens 공유; × puts the hint away for good.
-        Surface(onClick = onShare, shape = MaterialTheme.shapes.large, color = color, contentColor = onColor) {
-            Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Share, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
-                    Text("‘공유’로 $word${com.bamnat.app.ui.Fmt.obj(word)} 보낼 수 있어요", style = MaterialTheme.typography.titleSmall)
-                    Text("동료·가족에게 이미지나 링크로 보내요. 링크는 앱이 없어도 열려요.", style = MaterialTheme.typography.bodySmall)
-                }
-                IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "공유 안내 닫기") }
-            }
-        }
-    }
-}
+// [UX-03] The first time a calendar has shifts and has never been shared, 공유 is pointed out once: 2.0.0 [RVP-45] the 'shareHint'
+// notice of the calendar (CalendarScreen), in the one shape of a nudge, gone once read or once 공유 is used.
 
 /**
  * 1.38 [EASE-30] 같이 보기: the two ways a couple or a family sees each other's shifts, side by side, both without an

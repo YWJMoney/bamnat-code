@@ -119,19 +119,24 @@ data class ProState(
         return (subs + passes).filter { now < it }.maxOrNull()
     }
 
-    /** [FLAG-08] [live] is the `billing` row on this phone (the retired 정식 출시 switch). */
-    fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId, live: Boolean, now: Instant = com.bamnat.core.time.Today.instant()): ProSources = ProSources(
+    /**
+     * [FLAG-08] [live] is the `billing` row on this phone (the retired 정식 출시 switch). 2.0.0 [RVO-12] [heldUntil] the day 처리방침 3.1's hold
+     * ends when that is what keeps it off; the 출시 moment and 감사 months fall back to [com.bamnat.core.flags.Released] in a release build.
+     */
+    fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId, live: Boolean, now: Instant = com.bamnat.core.time.Today.instant(),
+                heldUntil: Instant? = null): ProSources = ProSources(
         billingLive = live,
         subscription = sub?.play(),
         passUntil = passes?.until,
         admin = passes?.admin?.let { AdminLink(it.approved, passes.checkedAt) },
         installedAt = installedAt,
-        launchedAt = config.launchedAt,
-        thanksMonths = config.thanksMonths,
+        launchedAt = config.launchAt(),
+        thanksMonths = config.thanks(),
         dayPassUntil = dayPass?.let { AdRules.dayPassUntil(it, zone) },
         sharedUntil = passes?.sharedUntil,
         yearPassUntil = yearPassUntil,
         workUntil = workUntil(now),
+        heldUntil = heldUntil,
     )
 
     /** [MON-06] Consent to the paid month after the trial: the server's record, or the answer given here. */

@@ -136,6 +136,8 @@ class MKVScreenshotTest : ScreenshotBase() {
         model.kind(RecipeClient.SCOPE_LOGIC)
         settle()
         assertTrue("규칙·단추는 도구로", model.state.value.kind == RecipeClient.SCOPE_TOOL)
+        // 2.0.0 [RVM-31] HQ-42: 장터 has one row of chips; ▾ shows all of it.
+        openChips()
         assertTrue(appears("🧱 부품", exact = true))
         assertTrue(appears("⚡ 자동 규칙", exact = true))
         assertTrue("쓰는 화면 칩은 둘째 줄에 펼쳐져 있어요", appears("모든 화면", exact = true))
@@ -150,10 +152,11 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_TAB)
         settle()
+        openChips()
         tapText("🎨 꾸미기", exact = true)
         settle()
         assertTrue(model.state.value.kind == RecipeClient.tabKind("", "look"))
-        assertTrue(appears("탭별 작품", exact = true))
+        assertTrue(appears("🗂 탭별 작품", exact = true))
     }
 
     /** 1.39 [MKC-02][MKC-03] 도구 전후 해 보기: 새 단추를 눌러 보면 무엇을 하는지, 규칙은 상황을 만들어 지금 ↔ 넣으면. */
@@ -291,6 +294,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_TOOL)
         settle()
+        openChips()
         tapText("✦ 프로 기능", exact = true)
         settle()
         assertTrue(model.state.value.kind == RecipeClient.toolKind("", null, fx = true))
@@ -365,7 +369,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         model.kind(RecipeClient.SCOPE_THEME)
         settle()
         // 1.39 [MKD-60] 칩 줄은 한 줄로 밀어 보고, 넘치면 ▾로 펼쳐요.
-        repeat(3) { if (shows("칩 모두 펼쳐 보기", exact = true)) { tapText("칩 모두 펼쳐 보기", exact = true); settle() } }
+        openChips()
         tapText("작게 보기", exact = true)
         settle()
         assertTrue("이 폰에 기억해요", app.getSharedPreferences("market_view", 0).getBoolean("small", false))
@@ -404,5 +408,10 @@ class MKVScreenshotTest : ScreenshotBase() {
         tapText("밤샘간호사", exact = true)
         settle()
         assertTrue("만든 분을 누르면 프로필로", maker == "mk1")
+    }
+
+    /** 1.39 [MKD-60] 2.0.0 [RVM-31]: 장터's row of chips starts as one line; ▾ shows all of it, as a person would to see the rest. */
+    private fun Screen.openChips() {
+        repeat(3) { if (shows("칩 모두 펼쳐 보기", exact = true)) { tapText("칩 모두 펼쳐 보기", exact = true); settle() } }
     }
 }
