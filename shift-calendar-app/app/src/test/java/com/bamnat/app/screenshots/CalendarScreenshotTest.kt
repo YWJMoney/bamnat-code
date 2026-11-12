@@ -112,6 +112,32 @@ class CalendarScreenshotTest : ScreenshotBase() {
         assertTrue(bmp.height > bmp.width)
     }
 
+    // 1.40 [SPREAD-37] 연말 근무 결산 picture: a 교대 year and a shop's, money off (left off the picture) and on.
+    @Test fun yearRecapImage() {
+        val shift = com.bamnat.core.work.YearRecap(
+            year = 2026, from = java.time.LocalDate.of(2026, 1, 1), to = java.time.LocalDate.of(2026, 12, 31),
+            focus = com.bamnat.core.work.CalendarFocus.SHIFTS, workDays = 182, workMinutes = 182 * 600, nights = 91, nightMinutes = 91 * 480,
+            holidayWorkDays = 9, extras = listOf("특근" to 12, "대근" to 3), leaveDays = 11.5,
+            longestRest = com.bamnat.core.work.YearRecap.Rest(java.time.LocalDate.of(2026, 9, 23), java.time.LocalDate.of(2026, 9, 29)),
+            busiestMonth = java.time.YearMonth.of(2026, 3) to 19, sleepDays = 210, sleepAverageMinutes = 6 * 60 + 40,
+            money = 52_340_000, moneyLabel = "급여 (세전 예상)")
+        val hidden = com.bamnat.app.share.YearRecapImage.tilesOn(shift, com.bamnat.app.share.YearRecapImage.Look(money = false))
+        assertTrue(hidden.none { it.money })
+        val shown = com.bamnat.app.share.YearRecapImage.tilesOn(shift, com.bamnat.app.share.YearRecapImage.Look(money = true))
+        assertTrue(shown.any { it.money } && shown.any { it.label == "평균 잠" } && shown.size <= 6)
+        val shop = com.bamnat.core.work.YearRecap(
+            year = 2026, from = java.time.LocalDate.of(2026, 3, 4), to = java.time.LocalDate.of(2026, 12, 22),
+            focus = com.bamnat.core.work.CalendarFocus.SALES, openDays = 251, holidayOpenDays = 7, bestDay = java.time.LocalDate.of(2026, 5, 5),
+            busiestMonth = java.time.YearMonth.of(2026, 12) to 0, money = 31_200_000, moneyLabel = "가게 순수익")
+        listOf("41_year_recap_shift" to com.bamnat.app.share.YearRecapImage.render(shift),
+            "41b_year_recap_shift_money" to com.bamnat.app.share.YearRecapImage.render(shift, com.bamnat.app.share.YearRecapImage.Look(money = true)),
+            "41c_year_recap_shop" to com.bamnat.app.share.YearRecapImage.render(shop)).forEach { (name, bmp) ->
+            val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
+            out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            assertTrue(bmp.height > bmp.width)
+        }
+    }
+
     @Test fun foldedDayRestWarning() = shoot("78_folded_day_rest_warning", FOLDED) {
         nightIntoDay().invoke(this); openDay(today.minusDays(3)); reveal("몸", exact = true)
     }
