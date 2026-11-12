@@ -149,6 +149,9 @@ class AutoBackup(
         val now = clock()
         val result = try {
             withContext(Dispatchers.IO) { write() }.let { Result.Ok(now, it) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            _state.value = _state.value.copy(running = false)
+            throw e
         } catch (e: KeyBox.KeyGone) {
             Result.Failed("휴대폰의 암호 열쇠가 없어졌어요. 자동 백업을 껐다 켜 주세요")
         } catch (e: SecurityException) {
@@ -163,6 +166,11 @@ class AutoBackup(
             Result.Failed("백업 파일에 쓰지 못했어요. 인터넷이나 저장 공간을 확인해 주세요")
         } catch (e: IllegalArgumentException) {
             Result.Failed("이 위치에는 덮어쓸 수 없어요. ‘위치 바꾸기’로 다른 곳을 골라 주세요")
+        } catch (e: OutOfMemoryError) {
+            // 2.0.0 [RVL-10] (검토 DATA-09) Not caught before: no failure was kept, no notice came after 3 days, and every start tried again.
+            Result.Failed("휴대폰 메모리가 모자라 백업을 만들지 못했어요. 사진이 많다면 ‘사진도 백업’을 끄고 다시 해 주세요")
+        } catch (e: Exception) {
+            Result.Failed("백업을 만들지 못했어요")
         }
         record(now, result)
         result
@@ -170,31 +178,56 @@ class AutoBackup(
 
     private class Verify : IOException("verify")
 
-    /** The file's bytes are the backup and nothing after it, read back the same; the size written. */
+    /**
+     * The file's bytes are the backup and nothing after it, read back the same; the size written.
+     * 2.0.0 [RVL-10] (검토 DATA-09) Made into a file in the app's cache as it is written and copied over the user's file from there; read
+     * back as a SHA-256 of what came, and opened from the cache file. Before, the whole file was held in memory three or four times
+     * over (made, read back, opened, unzipped), and a phone with many photos ran out of memory.
+     */
     private suspend fun write(): Int {
         val uri = Uri.parse(prefs.getString(K_URI, null) ?: throw FileNotFoundException())
         val salt = B64.decode(prefs.getString(K_SALT, null) ?: throw KeyBox.KeyGone())
         val iterations = prefs.getInt(K_ITER, ITERATIONS)
         val key = keys().unwrap(B64.decode(prefs.getString(K_KEY, null) ?: throw KeyBox.KeyGone()))
+        val work = java.io.File(c.appContext.cacheDir, "auto-backup")
         try {
+            work.deleteRecursively()
+            work.mkdirs()
+            val file = java.io.File(work, "backup.bamnat")
             // [REL-15] A sealed file of format 3, its photos as files inside.
-            val bytes = java.io.ByteArrayOutputStream().also { c.backupManager.exportFileWithKey(it, key, salt, iterations) }.toByteArray()
-            overwrite(uri, bytes)
-            val back = c.appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: throw FileNotFoundException()
-            if (!back.contentEquals(bytes)) throw Verify()
-            // The file opens and every part of it checks out.
-            runCatching { c.backupManager.verifyWithKey(back, key) }.getOrElse { throw Verify() }
-            return bytes.size
+            val made = java.security.MessageDigest.getInstance(SUM)
+            java.security.DigestOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(file), BUFFER), made).use { out ->
+                c.backupManager.exportFileWithKey(out, key, salt, iterations)
+            }
+            val size = file.length()
+            overwrite(uri, file)
+            val back = java.security.MessageDigest.getInstance(SUM)
+            val read = c.appContext.contentResolver.openInputStream(uri)?.use { input ->
+                var n = 0L
+                val buf = ByteArray(BUFFER)
+                while (true) {
+                    val got = input.read(buf)
+                    if (got < 0) break
+                    back.update(buf, 0, got)
+                    n += got
+                }
+                n
+            } ?: throw FileNotFoundException()
+            if (read != size || !java.security.MessageDigest.isEqual(made.digest(), back.digest())) throw Verify()
+            // The file opens and every part of it checks out (the user's file is the same bytes, by the sum just taken).
+            runCatching { c.backupManager.verifyWithKey(file, key) }.getOrElse { if (it is OutOfMemoryError) throw it else throw Verify() }
+            return size.toInt()
         } finally {
             key.fill(0)
+            work.deleteRecursively()
         }
     }
 
     /**
-     * Writes [bytes] over the file and cuts what a longer earlier backup left after them. "rwt" first, as
+     * Writes [file] over the user's file and cuts what a longer earlier backup left after it. "rwt" first, as
      * Google Drive and the phone's own files take it; a place that takes only "wt" or "w" gets that.
      */
-    private fun overwrite(uri: Uri, bytes: ByteArray) {
+    private fun overwrite(uri: Uri, file: java.io.File) {
         val resolver = c.appContext.contentResolver
         val fd = MODES.firstNotNullOfOrNull { mode ->
             try {
@@ -206,10 +239,10 @@ class AutoBackup(
             }
         } ?: throw IllegalArgumentException("mode")
         ParcelFileDescriptor.AutoCloseOutputStream(fd).use { out ->
-            out.write(bytes)
+            java.io.FileInputStream(file).use { it.copyTo(out, BUFFER) }
             out.flush()
             // A pipe from a cloud provider has no length to cut; "t" in the mode already emptied it.
-            runCatching { out.channel.truncate(bytes.size.toLong()) }
+            runCatching { out.channel.truncate(file.length()) }
             runCatching { out.fd.sync() }
         }
     }
@@ -286,6 +319,9 @@ class AutoBackup(
         val DUE_AFTER: Duration = Duration.ofHours(20)
         val RETRY_AFTER: Duration = Duration.ofHours(3)
         private val MODES = listOf("rwt", "wt", "w")
+        /** 2.0.0 [RVL-10] How the written file is checked against what was made, and the copy buffer. */
+        private const val SUM = "SHA-256"
+        private const val BUFFER = 64 * 1024
         private const val PREFS = "auto_backup"
         private const val K_URI = "uri"
         private const val K_NAME = "name"
