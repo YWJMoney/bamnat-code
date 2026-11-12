@@ -53,15 +53,32 @@ class RvlScanScreenshotTest : ScreenshotBase() {
     }
 
     // ---- RVL-18: 방금 넣은 것, over the calendar for 10분 ----
+    // 갈래 P 3/3 [RVP-43] HQ-49: the user comes back to the calendar from the screen that put the month in, so the calendar opens with
+    // it: the one band over the month, its line and 되돌리기 (the '10분' line is in the card opened whole in the 알림함, 조건 1·4).
+    private fun fill() = RecentFill.recordKeeping("근태 12일을 달력에 넣었어요", PersonalCalendar.MAIN, c.appScope) { 0 }
+
     private fun recentFill(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
-        RecentFill.recordKeeping("근태 12일을 달력에 넣었어요", PersonalCalendar.MAIN, c.appScope) { 0 }
         settle()
-        assertTrue(appears("근태 12일을 달력에 넣었어요"))
+        assertTrue(appears("근태 12일을 달력에 넣었어요", exact = true))
+        assertTrue(appears("되돌리기", exact = true))
+        assertTrue(!shows("10분 동안"))
     }
 
-    @Test fun recentFillFoldLight() = shoot("rvl18_recent_fill_fold_light_100", FOLDED, recentFill())
-    @Test fun recentFillFoldDarkHuge() = shoot("rvl18_recent_fill_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, recentFill())
-    @Test fun recentFillOpenLight() = shoot("rvl18_recent_fill_open_light_100", UNFOLDED, recentFill())
+    @Test fun recentFillFoldLight() { fill(); shoot("rvl18_recent_fill_fold_light_100", FOLDED, recentFill()) }
+    @Test fun recentFillFoldDarkHuge() { fill(); shoot("rvl18_recent_fill_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, recentFill()) }
+    @Test fun recentFillOpenLight() { fill(); shoot("rvl18_recent_fill_open_light_100", UNFOLDED, recentFill()) }
+
+    /** The band's 되돌리기 takes the month back; what it did is said once, as a row of the 알림함 (not a second band). */
+    @Test fun recentFillTakenBack() {
+        fill()
+        shoot("rvl18_recent_fill_taken_back_fold_light_100", FOLDED, style(WorkStyle.SHIFT) {
+            settle()
+            tapText("되돌리기", exact = true, scrolls = 0)
+            assertTrue(gone("근태 12일을 달력에 넣었어요", exact = true))
+            openNotice("되돌림")
+            assertTrue(appears("방금 넣은 것을 되돌렸어요", exact = true))
+        })
+    }
 
     // ---- RVL-20: 한 달 근무 넣기 brought back after the app closed ----
     private fun resumed(): Screen.() -> Unit = style(WorkStyle.SHIFT) {

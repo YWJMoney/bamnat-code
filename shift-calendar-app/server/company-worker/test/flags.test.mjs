@@ -50,7 +50,9 @@ test("[FLAG-20] the server's catalog has the contract's keys, each with its word
     assert.ok(f.basis && Object.values(f.basis).some(Boolean), `${f.key} basis`);
     assert.ok(["NORMAL", "LEGAL"].includes(f.risk));
     assert.deepEqual(L.checkConditions(f.conditions).list, f.conditions, `${f.key} conditions are what the API accepts`);
-    if (f.risk === "LEGAL") assert.ok(f.conditions.some((c) => c.type === "policy" || (c.type === "date" && c.policy)), `${f.key} policy`);
+    // 2.0.0 총괄 11-12 (나): a 7-day line after launch rests on its own day (core PolicyConsent.REVISION_EFFECTIVE), the server
+    // calendar's 3.13 being the 30-day line (market.cardfonts).
+    if (f.risk === "LEGAL") assert.ok(f.conditions.some((c) => c.type === "policy" || (c.type === "date" && (c.policy || c.from))), `${f.key} policy`);
   }
   // The two that replace 정식 출시 wait on the 3.1 effective day, the 3.1 hold and Play (core FlagCatalog.launch).
   const billing = FLAG_CATALOG.find((f) => f.key === "billing");

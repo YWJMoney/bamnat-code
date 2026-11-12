@@ -68,9 +68,9 @@ class ACScreenshotTest : ScreenshotBase() {
     private fun usePublic(cycleId: String, company: String, form: String, codes: String, picked: Boolean) =
         c.companyStore.setPublicUse(PublicUse(cycleId, company, form, codes, picked, Today.millis()))
 
-    /** The calendar's cards are stacked; the public cycle's is opened from its line. */
+    /** 2.0.0 [RVP-43] HQ-49: the calendar's notices wait in the 알림함; the public cycle's is opened from its row there. */
     private fun Screen.openWayCard(title: String) {
-        if (!shows(title, exact = true)) tapText("근무주기 다음 단계")
+        if (!shows(title, exact = true)) openNotice("근무주기 다음 단계")
         reveal(title, exact = true)
     }
 

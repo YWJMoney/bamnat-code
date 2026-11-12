@@ -161,7 +161,9 @@ class RvjPc117ScreenshotTest : ScreenshotBase() {
         reveal("월급날", exact = true)
         tapText("25일", exact = true)
         repeat(2) { settle() }
-        assertTrue(scrolledTo("10월 급여는 10월 25일에 들어와요. 일이 끝나기 전에 미리 받는 날이에요."))
+        // 2026-10-25 is a Sunday: with K's 쉬는 날 칩 (RVK-38, 처음 값 '앞당겨 받아요') the one sentence says the moved day and why, and
+        // '미리 받는 날' is judged on the 25th itself (J·K 맞춤).
+        assertTrue(scrolledTo("10월 급여는 10월 23일에 들어와요(25일이 쉬는 날이라 앞당겨요). 일이 끝나기 전에 미리 받는 날이에요."))
     }
 
     // ── [RVJ-53] PC-130: a team made today opens on this month ──

@@ -74,7 +74,7 @@ object InvestAlarms {
 
     /** "평일 09:00", "매달 25일 09:10", "11월 3일 20:00". */
     fun describe(alarm: InvestAlarm): String {
-        val time = "%02d:%02d".format(alarm.minute / 60, alarm.minute % 60)
+        val time = "%02d:%02d".format(java.util.Locale.ROOT, alarm.minute / 60, alarm.minute % 60)
         val days = when {
             alarm.once != null -> "${alarm.once.monthValue}월 ${alarm.once.dayOfMonth}일"
             alarm.monthDay != null -> "매달 ${alarm.monthDay}일"

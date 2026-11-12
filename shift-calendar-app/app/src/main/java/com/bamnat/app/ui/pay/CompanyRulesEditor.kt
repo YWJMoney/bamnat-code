@@ -357,10 +357,23 @@ fun CompanyRulesEditor(
                     Toggle("마감한 다음 달에 지급", "예: 말일 마감, 다음 달 10일 지급", period.payNextMonth) {
                         draft = draft.copy(period = period.copy(payNextMonth = it))
                     }
-                    // [RVJ-52] 검토 PC-120: a day inside the period itself is said as such (당월 지급), so '11월 10일' for 11월's work reads as meant.
-                    period.payDate(month)?.let {
-                        val early = it.isBefore(period.end(month))
-                        Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요." + if (early) " 일이 끝나기 전에 미리 받는 날이에요." else "")
+                    // 2.0.0 [RVK-38] (검토 MONEY-79) A pay day on a weekend or 공휴일: when it comes, for 미래 잔액 and the money cards.
+                    Label("쉬는 날이면")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.pay.PayDayOff.entries.forEach { h ->
+                            FilterChip(selected = period.payDayOff == h, onClick = { draft = draft.copy(period = period.copy(payDayOff = h)) },
+                                label = { Text(h.label) })
+                        }
+                    }
+                    // One sentence (J 5차와 맞춤, 조건 4): the day it comes, and why when a 쉬는 날 moved it. [RVJ-52] 검토 PC-120: a day
+                    // inside the period itself is said as such (당월 지급), judged on the day before any move (a 31일 moved to a Friday the 29th
+                    // is not paid early on purpose).
+                    period.payDate(month)?.let { d ->
+                        val w = period.payDateWorkday(month) ?: d
+                        val early = d.isBefore(period.end(month))
+                        Hint("${month.monthValue}월 급여는 ${w.monthValue}월 ${w.dayOfMonth}일에 들어와요" +
+                            (if (w != d) "(${d.dayOfMonth}일이 쉬는 날이라 ${if (w.isBefore(d)) "앞당겨요" else "미뤄요"})." else ".") +
+                            if (early) " 일이 끝나기 전에 미리 받는 날이에요." else "")
                     }
                 }
                 // 1.32 [CALX-06] 주급: the weekday it arrives; the week runs from the 주휴 week's first day.

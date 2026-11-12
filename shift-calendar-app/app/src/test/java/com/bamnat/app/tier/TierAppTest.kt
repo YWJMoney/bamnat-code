@@ -134,13 +134,18 @@ class TierAppTest {
     }
 
     @Test fun everyProFeatureIsOnTheProScreenAndTheServerCanOpenIt() {
-        // [PROV-08] Each 프로 feature under exactly one pillar, nothing promised for later, 리더 not shown.
-        val shown = com.bamnat.app.ui.pro.PRO_PILLARS.flatMap { it.features }
-        assertEquals(shown.size, shown.toSet().size)
-        assertEquals(Feature.entries.filter { it.minTier == Tier.PRO }.toSet(), shown.toSet())
-        assertTrue(com.bamnat.app.ui.pro.PRO_PILLARS.all { p -> p.lines.isNotEmpty() && p.lines.none { "곧" in it } })
-        assertTrue("점점 커지는 소리 stays free", com.bamnat.app.ui.pro.PRO_COMPARE.any { (what, free, _) -> free && "점점 커지는 소리" in what })
-        assertTrue(com.bamnat.app.ui.pro.PRO_PILLARS.flatMap { it.lines }.none { "점점 커지는 소리" in it })
+        // [PROV-08] Every 프로 feature is on the 프로 screen. 2.0.0 [RVO-05] (검토 PRO-12: 표에 프로 기능 넷이 빠졌어요) one list, made from
+        // ProCatalog, so none can be left out; with 광고 없음 it is all, as the screen says.
+        for (style in listOf(null) + com.bamnat.core.work.WorkStyle.entries) {
+            val (mine, others) = com.bamnat.app.ui.pro.proOrder(style)
+            val shown = (mine + others).mapNotNull { com.bamnat.app.ui.pro.proFeatureOf(it.id) }.toSet() + Feature.NO_ADS
+            assertEquals("$style", Feature.entries.filter { it.minTier == Tier.PRO }.toSet(), shown)
+            assertEquals("$style: 이 유형의 다섯이 맨 앞", com.bamnat.core.tier.ProPitch.first(style), mine.take(com.bamnat.app.ui.pro.PRO_FIRST).map { it.id })
+            assertTrue(com.bamnat.app.ui.pro.proAllSaid(mine.size + others.size).contains("${mine.size + others.size}개와 광고 없음이 전부"))
+            // 알람은 늘 무료라고 말해요(투자는 투자 알람으로).
+            val alarm = if (style == com.bamnat.core.work.WorkStyle.INVEST) "투자 알람" else "점점 커지는 소리"
+            assertTrue("$style: $alarm stays free", com.bamnat.core.tier.ProPitch.freeAlways(style).any { alarm in it })
+        }
         // The admin app's 모두에게 무료로 연 프로 기능 takes the names; each opens alone after the launch.
         Feature.entries.filter { it.minTier == Tier.PRO }.forEach { f ->
             val answer = JSONObject().put("billingLive", true).put("freeFeatures", org.json.JSONArray(listOf(f.name)))
@@ -155,7 +160,7 @@ class TierAppTest {
         val g = gate(LaunchConfig(billingLive = false))
         assertFalse(g.live)
         Feature.entries.forEach { assertTrue(it.name, g.allows(it)) }
-        assertEquals(ProReason.NOT_LAUNCHED, g.access.reason)
+        assertEquals(ProReason.ALL_OPEN, g.access.reason)
     }
 
     @Test fun afterTheLaunchFreeLocksProAndTheServerCanOpenOne() {
@@ -295,6 +300,25 @@ class TierAppTest {
         assertEquals("민지 관리자", com.bamnat.app.ui.pro.adminWhose("민지"))
     }
 
+    /**
+     * 2.0.0 [RVO-13] 통합 2차 PC-113: an inviter whose only tie to the server is its invite link. The admin paid the month its friends
+     * earned; opening 프로 asks for the passes, so 보상 이용권 lists it (before, nothing else had been sent and it never asked).
+     */
+    @Test fun anInviterAsksForThePassItsFriendsEarned() = runBlocking {
+        val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        val pass = Passes(null, 1, listOf(PassItem(1, now, "invite")), 0, null, false, com.bamnat.core.time.Today.instant())
+        val api = FakeTierApi(passesAnswer = pass)
+        c.tierApi = api
+        c.inviteApi = FakeInviteApi()
+        c.phoneMark = { "test-phone-mark" }
+        c.syncPasses(force = true)
+        assertEquals("초대 링크도 없으면 묻지 않아요", emptyList<String>(), api.calls)
+        c.invites.makeLink()
+        c.syncPasses(force = true)
+        assertEquals(listOf("passes"), api.calls)
+        assertEquals("invite", c.proStore.current.passes?.items?.single()?.why)
+    }
+
     // ---- The trial's answer waits until it reaches the server [SRV-07] ----
 
     @Test fun aTrialAnswerGivenOfflineWaitsAndGoesAtTheNextSync() = runBlocking {
@@ -382,6 +406,13 @@ class TierAppTest {
         assertTrue("청약철회와 그 제한", all.contains("7일 안에는 청약철회") && all.contains("전자상거래법 제17조 제2항"))
         assertTrue("약관 동의", all.contains("이용약관과 개인정보처리방침"))
         assertTrue("판매자", all.contains("통신판매업 신고 제2026-전남여수-0424호") && all.contains("사업자등록번호 327-25-02565"))
+        // 2.0.0 [RVO-07] (검토 PRO-05) 1년 이용권도, 결제 창 머리의 알림 날도 같은 말로.
+        val withPass = proDisclosures(listOf(monthly, yearly), LocalDate.of(2027, 3, 10), pass = "45,000원").joinToString("\n")
+        assertTrue(withPass, withPass.contains("1년 이용권(45,000원)은 한 번 결제하고 자동 결제가 없어요"))
+        assertEquals("오늘 0원 · 4월 10일부터 연 39,000원 · 끝나기 7일 전과 3일 전에 알려 드려요",
+            com.bamnat.app.ui.pro.trialHead(LocalDate.of(2027, 3, 10), "연 39,000원"))
+        assertEquals("구독은 같은 날 자동 결제 · 1년 이용권은 자동 결제 없음 · 해지는 Play에서 언제든 · 결제 7일 안 청약철회",
+            com.bamnat.app.ui.pro.payNoticeLine(listOf(monthly, yearly), "45,000원"))
         val noTrial = proDisclosures(listOf(monthly.copy(trial = false)), LocalDate.of(2027, 3, 10)).joinToString("\n")
         assertFalse("체험이 없으면 체험 문장도 없어요", noTrial.contains("무료 체험"))
         assertTrue(NoBilling().plans.value.isEmpty())
