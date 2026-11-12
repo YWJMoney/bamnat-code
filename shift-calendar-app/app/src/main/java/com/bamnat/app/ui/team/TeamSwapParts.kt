@@ -33,6 +33,8 @@ import com.bamnat.core.team.TeamSwap
 @Composable
 internal fun SwapCard(
     team: Team, round: SwapRound, board: TeamBoard, rules: RestRules, busy: Boolean,
+    /** 2.0.0 [RVJ-30] Last and next month, so a trade in a week over the month's edge is checked over the whole week. */
+    prev: TeamBoard? = null, next: TeamBoard? = null,
     onDecide: (TeamSwap.Ask, Boolean) -> Unit, onPull: () -> Unit, onSend: () -> Unit, onRefresh: () -> Unit, onEnd: () -> Unit,
 ) {
     val names = board.members.associate { it.id to it.name }
@@ -44,7 +46,7 @@ internal fun SwapCard(
     SectionCard(title = "${round.month.monthValue}월 바꾸기 요청" + if (agreed.isNotEmpty()) " · 승인할 것 ${agreed.size}" else "") {
         Text("요청한 사람 ${round.asks.map { it.from }.toSet().size}명 · 기다리는 것 ${waiting.size} · 끝난 것 ${settled.size}", style = MaterialTheme.typography.bodyMedium)
         agreed.forEach { a ->
-            val signs = TeamCheck.swapCheck(team, board, a.from, a.to, a.date, rules).filter { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
+            val signs = TeamCheck.swapCheck(team, board, a.from, a.to, a.date, rules, prev, next).filter { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
             val locked = board.cell(a.from, a.date)?.locked == true || board.cell(a.to, a.date)?.locked == true
             Text("${Fmt.monthDay(a.date)} ${names[a.from] ?: "?"} ${label(a.from, a)} ↔ ${names[a.to] ?: "?"} ${label(a.to, a)} · 둘 다 좋대요",
                 style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)

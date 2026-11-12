@@ -142,7 +142,7 @@ private fun RuleEditor(
                 val key = if (contains) PaymentParser.CONTAINS + clean else clean
                 val changes = remember(key, category, entries) { com.bamnat.core.money.LedgerSmarts.ruleWouldChange(entries, key, category) }
                 if (changes.isNotEmpty()) {
-                    Text("지난 거래 ${changes.size}건이 ‘$category’(으)로 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    Text("지난 거래 ${changes.size}건이 ‘$category’${com.bamnat.app.ui.Fmt.ro(category)} 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     changes.take(5).forEach { e ->
                         Text("${e.date.monthValue}/${e.date.dayOfMonth} ${e.title} · ${com.bamnat.app.ui.Fmt.won(e.amount)} · ${e.category} → $category",
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
