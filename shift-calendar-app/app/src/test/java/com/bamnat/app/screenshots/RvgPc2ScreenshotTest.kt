@@ -196,6 +196,50 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun putInUndoneFoldDarkHuge() = shoot("rvg31_put_in_undone_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, putInUndone())
     @Test fun putInUndoneOpenLight() = shoot("rvg31_put_in_undone_open_light_100", UNFOLDED, putInUndone(wide = true))
 
+    /** HQ-55 (조건 4·13): '내 이름' left empty says what the link really shows ('받은 근무표'), never the example name's. */
+    private fun blankName(): Screen.() -> Unit = {
+        c.shareLinks.clear()
+        c.shareLinks.typedName = null
+        sheet(Refusing())
+        assertTrue(appears("적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요", exact = false))
+        assertTrue(gone("‘민지의", exact = false))
+        typeInto("내 이름 (선택)", "민지")
+        assertTrue(appears("받는 분 화면에 ‘민지의 근무표’로 보여요", exact = false))
+        typeInto("내 이름 (선택)", "")
+        assertTrue(appears("적지 않으면", exact = false))
+    }
+    @Test fun blankNameFoldLight() = shoot("rvg33_share_blank_name_fold_light_100", FOLDED, blankName())
+    @Test fun blankNameFoldDarkHuge() = shoot("rvg33_share_blank_name_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, blankName())
+
+    /** HQ-55, the same structure: the picture's title field, left empty, says the title the picture really gets. */
+    @Test fun blankPictureNameFoldLight() = shoot("rvg33_picture_blank_name_fold_light_100", FOLDED) {
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ImageShareSheet(snap, Today.month(), java.time.DayOfWeek.SUNDAY, emptyList(), {}, {}) }
+        settle()
+        reveal("제목에 넣을 이름 (선택)", exact = true)
+        assertTrue(appears("적지 않으면 ‘${Today.month().year}년 ${Today.month().monthValue}월", exact = false))
+        assertTrue(gone("‘민지의", exact = false))
+    }
+
+    /**
+     * HQ-55 (조건 4): the received link's '내 달력에 넣기' card on a later visit: the days in one line, what happens after 넣기 in one
+     * line with ⓘ ([com.bamnat.app.ui.components.Explain]); before, it filled a 200% folded screen like a page.
+     */
+    private fun putInCard(wide: Boolean = false): Screen.() -> Unit = {
+        // A later visit: the 'seen this visit' set outlives a test in the same JVM, so it starts over first.
+        com.bamnat.app.ui.components.ExplainSeen.reset(c.appContext)
+        com.bamnat.app.ui.components.ExplainSeen.saw(c.appContext, "adopt:after")
+        noNameReceived().invoke(this)
+        val across = if (wide) 0.75f else 0.5f
+        reveal("일 내 달력에 넣기", exact = false, across = across)
+        assertTrue(appears("바뀌면 다시 받아요", exact = true))
+        assertTrue(gone("6시간 안에 받아서", exact = false))
+        assertTrue(gone("급여 설정을 하면", exact = false))
+    }
+    @Test fun putInCardFoldLight() = shoot("rvg33_put_in_card_fold_light_100", FOLDED, putInCard())
+    @Test fun putInCardFoldDarkHuge() = shoot("rvg33_put_in_card_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, putInCard())
+    @Test fun putInCardOpenLight() = shoot("rvg33_put_in_card_open_light_100", UNFOLDED, putInCard(wide = true))
+
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"

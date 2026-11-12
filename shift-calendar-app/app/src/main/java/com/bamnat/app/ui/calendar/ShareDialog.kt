@@ -234,7 +234,9 @@ fun ShareDialog(
                 val quickKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
                 OutlinedTextField(value = title, onValueChange = ::typed, singleLine = true,
                     label = { Text("내 이름 (선택)") }, placeholder = { Text("예: 민지") },
-                    supportingText = { Text("받는 분 화면에 ‘${title.trim().ifEmpty { "민지" }}의 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요") },
+                    // 2.0.0 [RVG-33] 검토 HQ-55: left empty, the link shows as '받은 근무표' ([RVG-32]), not as the example name's.
+                    supportingText = { Text(title.trim().let { n -> if (n.isEmpty()) "적지 않으면 받는 분 화면에 ‘받은 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요"
+                        else "받는 분 화면에 ‘${n}의 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요" }) },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { quickKeyboard?.hide() }))

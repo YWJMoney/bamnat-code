@@ -1319,7 +1319,7 @@ fun CalendarScreen(
                 add(Notice("appLockResting", "앱 잠금 쉼") { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
             }
             shareLeftOut.forEach { (k, words) ->
-                if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "근무표 링크 안내") {
+                if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "링크에 빼고 보낸 것") {
                     com.bamnat.app.ui.components.NudgeCard(words, tone = com.bamnat.app.ui.theme.Tone.Caution,
                         onClose = { c31.shareLinksOf(k).setDropped(null) }, closeLabel = "링크 안내 닫기",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
