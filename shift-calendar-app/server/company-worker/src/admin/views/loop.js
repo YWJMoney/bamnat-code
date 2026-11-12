@@ -5,7 +5,7 @@
 //   오늘 › 결정함 #/decide: 최고 관리자 확인 문의(Claude 초안)와 요금을 정할 새 기능 [LOOP-09]
 //   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만), 요금 기준(새 기능만 묻기)·고르기 칸 [LOOP-10][LOOP-11][LOOP-35]
 export function loopViews(A) {
-  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl, copy } = A;
+  const { L, S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl, copy } = A;
 
   const owner = () => Boolean(S.me?.owner);
   const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
@@ -490,7 +490,7 @@ export function loopViews(A) {
       const over = live ? Object.entries(body).filter(([, v]) => v > live) : [];
       const name = { urgentMin: "긴급(바로 업데이트)", flexibleMin: "정기(한 번 권함)" };
       A.danger({ title: over.length ? "지금 나간 번호보다 큰 기준이에요" : "인앱 업데이트 기준을 바꿀까요?",
-        text: over.length ? `지금 나간 판 번호는 ${live}이에요. 이대로면 모든 폰이 ${over.some(([k]) => k === "urgentMin") ? "앱을 쓰기 전에 업데이트 화면을" : "업데이트 창을"} 보고, 아직 받을 판이 없을 수 있어요.`
+        text: over.length ? `지금 나간 판 번호는 ${L.eyo(live)}. 이대로면 모든 폰이 ${over.some(([k]) => k === "urgentMin") ? "앱을 쓰기 전에 업데이트 화면을" : "업데이트 창을"} 보고, 아직 받을 판이 없을 수 있어요.`
           : "앱이 하루 안에 이 기준을 읽어요.",
         rows: Object.entries(body).map(([k, v]) => [name[k], `${sw[k] ?? 0} → ${v} · ${reachText(d, v)}`]),
         label: over.length ? "그래도 저장" : "저장", tone: over.length || body.urgentMin ? "danger" : "primary",

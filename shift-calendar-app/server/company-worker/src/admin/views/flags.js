@@ -311,7 +311,7 @@ export function flagsViews(A) {
         <div class="fieldset inline-ask" id="flag-minapp-row" hidden><label for="flag-minapp-n">이 앱 판부터 켜기 · 앱 판 번호(versionCode)</label>
           <div class="row-input"><input id="flag-minapp-n" inputmode="numeric" maxlength="6" autocomplete="off" data-enter="flag-minapp-put">
           <button type="button" class="btn small" data-act="flag-minapp-put">조건에 넣기</button></div>
-          <span class="help">${r.versionCode ? `지금 나간 판은 ${esc(r.versionCode)}이에요.` : "예: 54"} 넣으면 'app >= 번호' 한 줄이 조건에 들어가요.</span></div></div>
+          <span class="help">${r.versionCode ? `지금 나간 판은 ${L.eyo(esc(r.versionCode))}.` : "예: 54"} 넣으면 'app >= 번호' 한 줄이 조건에 들어가요.</span></div></div>
       <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
       <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
       <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}

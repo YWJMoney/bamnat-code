@@ -1530,8 +1530,20 @@ export function adminLib() {
     return /^\d{4}-\d{2}-\d{2}$/.test(from ?? "") ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일부터` : "처리방침 3.13 시행일부터";
   }
 
+  /**
+   * 2.0.0 [RVA-60] PC-147: "…이에요" or "…예요" by the last sound, for words put into a sentence ("시행일부터예요", "54예요", "53이에요").
+   * Closing ")"·quotes are skipped; a number ends in its last digit's sound (2·4·5·9 open; 0 is 십·백·영, closed).
+   */
+  function eyo(s) {
+    const t = String(s ?? "").replace(/[)\]'"’”\s]+$/u, "");
+    const c = t.at(-1) ?? "";
+    const code = c.charCodeAt(0);
+    const open = code >= 0xac00 && code <= 0xd7a3 ? (code - 0xac00) % 28 === 0 : "2459".includes(c) && c !== "";
+    return `${s}${open ? "예요" : "이에요"}`;
+  }
+
   return {
-    rewardYearWords, capFromWords,
+    rewardYearWords, capFromWords, eyo,
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, draftEmpty, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,

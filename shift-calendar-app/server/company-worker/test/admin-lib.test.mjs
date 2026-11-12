@@ -426,3 +426,18 @@ test("[CYC-03] a 제보 with an order becomes one line of the public cycle table
   // No order (a monthly roster or weekdays only): nothing to copy.
   assert.equal(L.cycleCsvRow({ company: { name: "나" }, lines: [["근무", "주간 06:00~14:00"]] }), null);
 });
+
+test("[RVA-60] PC-147: 받침 없는 말 뒤는 '예요', 값을 끼운 문장은 L.eyo로 이어요", () => {
+  assert.equal(L.eyo("처리방침 3.13 시행일부터"), "처리방침 3.13 시행일부터예요");
+  assert.equal(L.eyo("12월 12일부터"), "12월 12일부터예요");
+  assert.equal(L.eyo("이분의 1년 보상 3/12개월"), "이분의 1년 보상 3/12개월이에요");
+  assert.equal(L.eyo(54), "54예요");
+  assert.equal(L.eyo(53), "53이에요");
+  assert.equal(L.eyo(50), "50이에요");
+  assert.equal(L.eyo("2.0.0"), "2.0.0이에요");
+  assert.equal(L.eyo("2.0.0(번호 54)"), "2.0.0(번호 54)예요");
+  assert.equal(L.eyo("1.39.2"), "1.39.2예요");
+  // 끼운 값 바로 뒤에 '이에요'·'예요'를 붙이면 값에 따라 틀려요(PC-147 '시행일부터이에요').
+  const files = ["../src/admin-app.js", "../src/admin-lib.js", ...readdirSync(new URL("../src/admin/views/", import.meta.url)).map((f) => `../src/admin/views/${f}`)];
+  for (const f of files) assert.doesNotMatch(read(f), /\}(이에요|예요)|부터이에요/, f);
+});

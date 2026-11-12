@@ -3447,7 +3447,7 @@ function adminApp(L, BUILD, M) {
           <div class="fieldset"><label for="nt-sdk-max">까지</label><input id="nt-sdk-max" name="maxSdk" type="number" min="21" max="99" value="${a.maxSdk ?? ""}"></div></div>
         <div class="two-fields"><div class="fieldset"><label for="nt-min">앱 번호부터</label><input id="nt-min" name="minApp" type="number" min="1" value="${x?.minApp ?? ""}"></div>
           <div class="fieldset"><label for="nt-max">앱 번호까지</label><input id="nt-max" name="maxApp" type="number" min="1" value="${x?.maxApp ?? ""}"></div></div>
-        <span class="help">${S.data.notices?.latestApp ? `최근 문의에 온 가장 새 앱은 ${esc(S.data.notices.latestApp.name)}(번호 ${S.data.notices.latestApp.code})예요.` : "앱 번호는 앱 설정 › 앱 정보의 괄호 안 숫자예요."} 휴대폰에 대한 것은 서버로 오지 않고, 앱이 받아서 스스로 골라요.</span></details>
+        <span class="help">${S.data.notices?.latestApp ? `최근 문의에 온 가장 새 앱은 ${L.eyo(`${esc(S.data.notices.latestApp.name)}(번호 ${esc(S.data.notices.latestApp.code)})`)}.` : "앱 번호는 앱 설정 › 앱 정보의 괄호 안 숫자예요."} 휴대폰에 대한 것은 서버로 오지 않고, 앱이 받아서 스스로 골라요.</span></details>
       <p class="label">앱에서 보이는 모양</p><div class="notice-preview" id="nt-preview" aria-live="polite">${noticePreview(x?.title ?? "", x?.body ?? "", x?.level, act)}</div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">${x ? "저장" : "올리기"}</button></div></form>`);
   }
@@ -4182,7 +4182,7 @@ function adminApp(L, BUILD, M) {
     const choices = [...own, ...[[1, "제안 채택"], [3, "회사 방식 채택"], [6, "큰 개선"], [12, "아주 큰 개선"]].filter(([n]) => !own.some(([m]) => m === n))]
       .filter(([n]) => n <= left);
     if (!choices.length) return toast("이분은 1년에 받을 수 있는 보상 12개월을 다 받았어요");
-    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.${w?.year ? ` ${L.rewardYearWords(w.year)}이에요.` : ""}</p>
+    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.${w?.year ? ` ${L.eyo(L.rewardYearWords(w.year))}.` : ""}</p>
       <p class="label">기간</p><div class="chips" role="radiogroup" aria-label="기간">${choices.map(([n, why]) => `<label class="chip pick"><input type="radio" name="months" value="${n}"${Number(months) === n ? " checked" : ""}> ${n}개월 · ${why}</label>`).join("")}</div>
       <label for="memo">메모 (선택)</label><input id="memo" name="memo" maxlength="200" placeholder="예: 근태 방식 제보 채택">
       <p class="help">보낸 분의 이름이나 연락처는 적지 마세요.</p>
