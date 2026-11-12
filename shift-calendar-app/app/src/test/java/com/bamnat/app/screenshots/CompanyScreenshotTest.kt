@@ -249,7 +249,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
     }
     /**
      * 2.0.0 [RVP-45] 검토 U13-01: someone else's calendar from the calendar chip's list, as the head is one row now and the other
-     * calendars' faces wait in that list on a phone (the way back is the face beside the chip, [HomeFace]).
+     * calendars' faces wait in that list on a phone (the received calendar's own bar keeps '내 달력으로', one tap back).
      */
     private fun Screen.viewReceived(name: String) {
         tapText("달력 바꾸기", prefix = true, scrolls = 0)

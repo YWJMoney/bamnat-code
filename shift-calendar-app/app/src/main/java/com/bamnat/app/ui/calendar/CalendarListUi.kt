@@ -292,25 +292,7 @@ internal data class HeadChip(
     val onTogether: (() -> Unit)? = null,
     val togetherShop: Boolean = false,
     val togetherField: Boolean = false,
-    /** Someone else's calendar is on screen: the user's own, to go back to with one tap. */
-    val home: CalendarRow? = null,
 )
-
-/**
- * 2.0.0 [RVP-45] Someone else's calendar on screen (a family member's 근무표): the user's own a tap away, as its face beside the chip,
- * read '내 달력으로' (the line the head row took had it as a chip). Folded last of the row ([HeadRoom.home]).
- */
-@Composable
-internal fun HomeFace(home: CalendarRow, onPick: (CalendarRow) -> Unit) {
-    val cal = (home as? CalendarRow.Mine)?.cal
-    val words = if (cal == null || cal.isMain) "내 달력으로" else "${cal.name}${Fmt.ro(cal.name)}"
-    Surface(
-        onClick = { onPick(home) }, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.padding(start = 4.dp).size(48.dp).semantics { contentDescription = words },
-    ) {
-        Box(Modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) { home.Avatar(size = 30.dp) }
-    }
-}
 
 /**
  * 2.0.0 [RVP-45] 검토 HQ-29 (작품을 입은 접은 폭·글자 200%에서 '내 달력' 칩이 '내 달…'): the calendar chip says the calendar's name only

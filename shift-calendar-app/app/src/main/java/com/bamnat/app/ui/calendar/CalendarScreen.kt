@@ -1129,8 +1129,6 @@ fun CalendarScreen(
                 onTogether = togetherAt,
                 togetherShop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
                 togetherField = togetherStyle == com.bamnat.core.work.WorkStyle.FIELD,
-                home = if (viewingReceived == null) null
-                    else calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null),
             ),
             bell = notices,
         ) }
@@ -2370,7 +2368,6 @@ internal fun CalendarHeader(
     fun roomFor(sp: Float) = HeadRoom.of(
         maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null && !HeadBell.atMe, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
-        home = chip?.home != null,
     ).let { if (chip == null) it.copy(name = false) else it }
     val titleSp = workTitle.fontSize.takeIf { it.isSp }?.value ?: baseTitle.fontSize.value
     // 검토 HQ-22 (큰 달 제목 26~30의 작품을 입으면 접은 폭에서 달 제목이 '2026'으로 아주 작게 줄어요, 조건 12): the month is never shrunk
@@ -2397,7 +2394,6 @@ internal fun CalendarHeader(
         chip?.let { c ->
             CalendarChip(c.current, name = room.name, onOpen = c.onOpenSwitcher)
             if (room.faces > 0) CalendarFaces(c.rows.filter { it.key != c.current.key }, room.faces, c.onPick)
-            else if (room.home) c.home?.let { HomeFace(it, c.onPick) }
             if (room.together && c.onTogether != null) TogetherChip(c.onTogether, shop = c.togetherShop, field = c.togetherField, words = true)
         }
         if (room.arrows && navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }
