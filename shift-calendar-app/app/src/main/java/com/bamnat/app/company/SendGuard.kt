@@ -113,9 +113,10 @@ class SendGuard(private val c: AppContainer, val calendar: String = com.bamnat.a
             }
         }
         val before = store.applied.value
-        if (before != null && before.setup != s.id) runCatching { c.companyApi.use(store.device, before.companyId, before.setup, false, scope.serverCal) }
-        runCatching { c.companyApi.use(store.device, v.page.id, s.id, true, scope.serverCal) }
-        runCatching { c.companyApi.vote(store.device, v.page.id, s.id, ok = true, verified = verified) }
+        // 2.0.0 [RVN-13] COMP-48 One that could not reach the server waits on the phone and goes once online (not forgotten).
+        if (before != null && before.setup != s.id) SmallSends.send(c, store, SmallSends.use(before.companyId, before.setup, false, scope.serverCal))
+        SmallSends.send(c, store, SmallSends.use(v.page.id, s.id, true, scope.serverCal))
+        SmallSends.send(c, store, SmallSends.vote(v.page.id, s.id, ok = true, verified = verified))
         store.setApplied(AppliedSetup(v.page.id, v.page.name, s.dept, s.id, s.version, s.adopted, Today.instant(), vote = true))
         store.setMember(v.page.id, v.page.name)
         store.setDraft(null)
