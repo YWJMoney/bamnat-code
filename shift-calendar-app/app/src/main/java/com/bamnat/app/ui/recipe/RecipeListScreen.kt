@@ -118,7 +118,7 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
     showcase: List<RecipeItem> = emptyList()) {
     Card(modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("장터 · 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("장터 · 작품", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text(entryLine(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (showcase.isNotEmpty()) ShowcaseStrip(showcase, onItem)
@@ -129,20 +129,20 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
                 shown += rest.map { it.code }
                 Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
                 rest.forEach { item ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) },
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "작품 보기") { onItem(item.code) },
                         verticalAlignment = Alignment.CenterVertically) {
                         RecipeCover(item.cover, size = 32.dp)
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(item.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("좋아요 ${item.likes} · 넣은 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
+                            Text("좋아요 ${item.likes} · 넣어 본 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text("레시피 보기") }
+                FilledTonalButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text("작품 보기") }
                 OutlinedButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 설정 나누기") }
             }
             // [RCX-20] 요청 판 보이기 off (설정 › 나눔 판) hides the way in.
@@ -160,7 +160,7 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
                         }
                     }
                 }
-                TextButton(onClick = open, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (wishes.isEmpty()) "요청 판: 이런 레시피 있었으면" else "요청 판 전체 보기") }
+                TextButton(onClick = open, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (wishes.isEmpty()) "요청 판: 이런 작품 있었으면" else "요청 판 전체 보기") }
             }
         }
     }
@@ -175,7 +175,7 @@ internal fun ShowcaseStrip(items: List<RecipeItem>, onItem: (String) -> Unit) {
     Text("이런 것도 만들 수 있어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         items.take(SHOWCASE_SHOWN).forEach { item ->
-            OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) }) {
+            OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "작품 보기") { onItem(item.code) }) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // [MKV-01] 1.37: every work as it really looks (a theme on its calendar, a tab on its page, rules as their notifications).
                     MarketShot(item, 148.dp, LocalContext.current.appContainer.settingsRepository.current.workStyle, onClick = { onItem(item.code) })
@@ -286,13 +286,13 @@ fun RecipeListScreen(
     Scaffold(
         topBar = {
             if (onBack != null) TopAppBar(
-                title = { Text(title + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: "")) },
+                title = { Text(title + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: ""), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     // [R136-13] In 마을 these live in 공방 (내 것 한곳, 코드로 받기 하나); a 장터 opened on its own keeps them.
                     if (onBack != null) {
                         TextButton(onClick = { codeAsk = true }) { Text("코드로 받기") }
-                        TextButton(onClick = onMine) { Text("내 레시피") }
+                        TextButton(onClick = onMine) { Text("내 작품") }
                     }
                 },
             )
@@ -494,11 +494,11 @@ fun RecipeListScreen(
             } }
             if (state.tab == RecipeListViewModel.Tab.GOOD || state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.DATA) item(key = "notes") {
                 Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (state.tab == RecipeListViewModel.Tab.GOOD) Text("좋아요가 5개 넘은 레시피만 여기 나와요. 표가 적으면 ‘새로’에서 볼 수 있어요",
+                    if (state.tab == RecipeListViewModel.Tab.GOOD) Text("좋아요가 5개 넘은 작품만 여기 나와요. 표가 적으면 ‘새로’에서 볼 수 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (state.tab == RecipeListViewModel.Tab.SHOWCASE) Text("장터 레시피로 이만큼 꾸밀 수 있다는 걸 보여 주려고 운영자가 만든 판이에요. 미리 보고 마음에 드는 것만 넣어요",
+                    if (state.tab == RecipeListViewModel.Tab.SHOWCASE) Text("장터 작품으로 이만큼 꾸밀 수 있다는 걸 보여 주려고 운영자가 만든 판이에요. 미리 보고 마음에 드는 것만 넣어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (state.tab == RecipeListViewModel.Tab.DATA) Text("공공 자료를 바탕으로 운영자가 만든 레시피예요. 출처가 함께 적혀 있어요",
+                    if (state.tab == RecipeListViewModel.Tab.DATA) Text("공공 자료를 바탕으로 운영자가 만든 작품이에요. 출처가 함께 적혀 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -514,67 +514,9 @@ fun RecipeListScreen(
                 }
             } }
             if (!state.loading && state.error == null && state.items.isEmpty()) item {
-                // [R136-05] 1.36 (리뷰 R-11, 관리자 개발사항 d8quAdDH7r3QKNMp): an empty list could only be read again by closing the
-                // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // 1.39 [MKC-04] '✦ 프로 기능'만 골랐는데 없으면: 무엇이 없는지와 모든 작품으로 돌아가는 길, 처음 만들 곳.
-                    if (RecipeClient.price(state.kind).isNotEmpty() && state.query.isBlank()) {
-                        Text(if (RecipeClient.fxOnly(state.kind)) "이 칸에는 ✦ 프로 기능 작품이 아직 없어요. 값 칸·단추 위젯 같은 새 기능 장치로 처음 만들어 보세요"
-                            else "이 칸에는 무료로 다 되는 작품이 아직 없어요", style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row {
-                            TextButton(onClick = { vm.kind(RecipeClient.plain(state.kind)) }) { Text("모든 작품 보기") }
-                            TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
-                        }
-                        return@Column
-                    }
-                    // PC 제안 1.36 (기능별 탭 › 달력이 비면 무엇이 없는지 말이 없음): that tab's name, and the way to make the first.
-                    val tabNow = state.kind?.takeIf { it.startsWith(RecipeClient.SCOPE_TAB) }?.let { RecipeClient.tabOf(it) }?.takeIf { it.isNotEmpty() }
-                    if (tabNow != null && state.query.isBlank()) {
-                        Text("${marketTabLabel(tabNow, vm.style)} 탭 ${madeLabel(RecipeClient.madeOf(state.kind))?.let { "$it " }.orEmpty()}작품이 아직 없어요", style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row { TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }; TextButton(onClick = { vm.load() }) { Text("다시 불러오기") } }
-                        return@Column
-                    }
-                    // PC 제안 1.36 (찾기 결과가 없는데 '처음으로 나눠 보세요'): what was looked for, and the other 구간 to look in.
-                    // PC 제안 1.36: a code typed has its own 작품 열기 above; no 없어요 under it.
-                    if (com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 }) != null) return@Column
-                    if (state.query.isNotBlank()) {
-                        // 1.39.1 [P391-01] 9차 PC: searching from the half left open last time said '이 구간에 없어요' first. Look in all three and say where
-                        // it is ('테마에 1개'), with a way there, before saying none.
-                        val here = if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"
-                        val found = state.elsewhere.filterKeys { it != vm.halfNow() }
-                        Text(when {
-                            state.looking -> "‘${state.query.trim()}’ — 다른 구간도 찾는 중이에요…"
-                            found.isNotEmpty() -> "‘${state.query.trim()}’에 맞는 작품이 $here 없고, " +
-                                found.entries.joinToString(", ") { (h, n) -> "${RecipeListViewModel.halfName(h)}에 $n" } + " 있어요"
-                            else -> "‘${state.query.trim()}’에 맞는 작품이 $here 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else ""
-                        }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (!state.looking && found.isNotEmpty()) {
-                            found.keys.forEach { h -> FilledTonalButton(onClick = { vm.jump(h) }) { Text("${RecipeListViewModel.halfName(h)}에서 보기") } }
-                            return@Column
-                        }
-                        if (!state.looking) TextButton(onClick = { vm.kind(if (state.kind == RecipeClient.SCOPE_THEME) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME) }) {
-                            Text(if (state.kind == RecipeClient.SCOPE_THEME) "탭별 작품에서 찾기" else "테마에서 찾기")
-                        }
-                        return@Column
-                    }
-                    Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
-                        "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    // PC 확인 38d63451: the other half's, and a way to make the first one.
-                    val inTheme = state.kind == RecipeClient.SCOPE_THEME
-                    if (state.other > 0) Text(if (inTheme) "탭별 작품에는 ${state.other}개 있어요. 달력 같은 탭 하나만 바꾸는 작품이에요"
-                        else "테마에는 ${state.other}개 있어요. 앱 전체를 한 벌로 바꾸는 작품이에요",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        if (state.other > 0) androidx.compose.material3.FilledTonalButton(onClick = {
-                            vm.kind(if (inTheme) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME)
-                        }) { Text(if (inTheme) "탭별 작품 보기" else "테마 보기") }
-                        TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
-                        TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
-                    }
-                }
+                // [R136-05] 1.36 (리뷰 R-11): an empty list can be read again (다시 불러오기). [RVM-09] PC-64 (찾기 결과 없음에 칸이가 없고
+                // 단추가 글과 줄이 안 맞아요): every empty 장터 is the empty-screen part, 칸이 + one line + one button, centred as one.
+                MarketEmpty(state, vm, onMake)
             }
             // [HUB-04] Themes are picked by eye: two big pictures a row. [MKV-01] 1.37 (사용자 2026-11-05 "실제로 해당 테마나 기능들의 모습을"):
             // 탭별 작품 and 도구 too, each drawn as it really looks, so every 구간 is picked by eye the same way.
@@ -651,7 +593,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
     style: com.bamnat.core.work.WorkStyle? = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle,
     onClick: () -> Unit) {
     val fxLocked = item.fx.isNotEmpty() && !com.bamnat.app.logic.FxAccess.pro(androidx.compose.ui.platform.LocalContext.current.appContainer)
-    Card(modifier.fillMaxWidth().clickable(onClickLabel = "레시피 보기", onClick = onClick)) {
+    Card(modifier.fillMaxWidth().clickable(onClickLabel = "작품 보기", onClick = onClick)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             // [MKV-01] 1.37: the work as it really looks, in place of its cover and small swatch.
             MarketShot(item, 64.dp, style, onClick)
@@ -671,7 +613,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                 // 1.39 [MKC-04] 무엇이 프로 기능 장치인지 한 줄 ("✦ 값 칸 · 단추 위젯·빠른 설정·바로가기").
                 fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Text(buildString {
-                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users}")
+                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣어 본 분 ${item.users}")
                     item.kept?.let { append(" · 7일 유지 $it%") }
                     append(" · ").append(RecipeDescribe.styles(com.bamnat.core.recipe.Recipe(item.title, styles = item.styles, pieces = emptyList())))
                 }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -706,7 +648,7 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
             // 1.39 [MKC-04] 프로 기능 장치가 무엇인지 (값 칸 · 알림 단추 …).
             if (!small) fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
-            Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
+            Text("♥ ${item.likes} · 넣어 본 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 1.39 [MKD-41] 누가 만들었는지 (표식 · 팔로워). 표식이 있으면 이름 색으로도.
             if (!small) Text(MarketMaker.line(item), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -801,7 +743,7 @@ internal const val WIDGET_SIZES = "오늘 2×1 · 주 4×1 · 달 4×3"
 
 /** 1.39 [MKC-04] 작품에 든 1.39 새 기능 장치 ("✦ 값 칸 · 알림 단추"); null when it has none (모두 무료). */
 internal fun fxLine(item: com.bamnat.app.recipe.RecipeItem): String? =
-    item.fx.mapNotNull(com.bamnat.core.formula.FxPro.Part::of).takeIf { it.isNotEmpty() }?.let { "✦ " + com.bamnat.core.formula.FxPro.say(it) }
+    item.fx.mapNotNull(com.bamnat.core.formula.FxPro.Part::of).takeIf { it.isNotEmpty() }?.let { "✦ " + com.bamnat.core.formula.FxPro.plain(it) }
 
 /** 1.39 [MKC-01] 탭별 작품이 바꾸는 것. */
 internal fun madeLabel(m: String?): String? = when (m) { "look" -> "꾸미기"; "func" -> "기능"; "both" -> "꾸미기+기능"; else -> null }
@@ -864,4 +806,74 @@ internal fun marketTabFits(t: String, style: WorkStyle?): Boolean = when (t) {
     "pay" -> style != WorkStyle.BUSINESS && style != WorkStyle.INVEST
     "alarm" -> style == null || style == WorkStyle.SHIFT || style == WorkStyle.DAY || style == WorkStyle.HOURLY
     else -> true
+}
+
+/** [RVM-09] PC-64: an empty 장터 (a 구간, a 탭, a filter or a search with nothing) as one 빈 화면: what is not here, and the one way on. */
+@Composable
+private fun MarketEmpty(state: RecipeListViewModel.State, vm: RecipeListViewModel, onMake: () -> Unit) {
+    val q = state.query.trim()
+    // A code typed has its own 작품 열기 above; no 없어요 under it.
+    if (q.isNotEmpty() && com.bamnat.app.recipe.RecipeLinks.find(q.takeIf { it.length in 8..80 }) != null) return
+    val more = mutableListOf<Pair<String, () -> Unit>>()
+    var title: String
+    var detail: String? = null
+    var mood = com.bamnat.app.ui.components.KaniMood.Point
+    var action: Pair<String, () -> Unit>? = null
+    val tabNow = state.kind?.takeIf { it.startsWith(RecipeClient.SCOPE_TAB) }?.let { RecipeClient.tabOf(it) }?.takeIf { it.isNotEmpty() }
+    when {
+        // 1.39 [MKC-04] '✦ 프로 기능'·'무료'만 골랐는데 없으면: 무엇이 없는지와 모든 작품으로 돌아가는 길, 처음 만들 곳.
+        RecipeClient.price(state.kind).isNotEmpty() && q.isEmpty() -> {
+            val fx = RecipeClient.fxOnly(state.kind)
+            title = if (fx) "✦ 프로 기능 작품이 아직 없어요" else "무료로 다 되는 작품이 아직 없어요"
+            detail = if (fx) "값 칸·단추 위젯 같은 새 기능 장치로 처음 만들어 보세요" else null
+            action = "모든 작품 보기" to { vm.kind(RecipeClient.plain(state.kind)) }
+            more += "스튜디오에서 만들기" to onMake
+        }
+        // PC 제안 1.36 (기능별 탭 › 달력이 비면): that tab's name, and the way to make the first.
+        tabNow != null && q.isEmpty() -> {
+            title = "${marketTabLabel(tabNow, vm.style)} 탭 ${madeLabel(RecipeClient.madeOf(state.kind))?.let { "$it " }.orEmpty()}작품이 아직 없어요"
+            action = "스튜디오에서 만들기" to onMake
+            more += "다시 불러오기" to { vm.load() }
+        }
+        // 1.39.1 [P391-01]: a search looks in all three 구간 and says where it is ('테마에 1개'), with a way there, before saying none.
+        q.isNotEmpty() -> {
+            val here = if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"
+            val found = state.elsewhere.filterKeys { it != vm.halfNow() }
+            when {
+                state.looking -> { title = "‘$q’, 다른 구간도 찾는 중이에요"; mood = com.bamnat.app.ui.components.KaniMood.Basic }
+                found.isNotEmpty() -> {
+                    title = "‘$q’에 맞는 작품이 $here 없어요"
+                    detail = found.entries.joinToString(", ") { (h, n) -> "${RecipeListViewModel.halfName(h)}에 $n" } + " 있어요"
+                    val first = found.keys.first()
+                    action = "${RecipeListViewModel.halfName(first)}에서 보기" to { vm.jump(first) }
+                    found.keys.drop(1).take(2).forEach { h -> more += "${RecipeListViewModel.halfName(h)}에서 보기" to { vm.jump(h) } }
+                }
+                else -> {
+                    title = "‘$q’에 맞는 작품이 없어요"
+                    detail = "다른 낱말로 찾거나, 없으면 직접 만들어 볼 수 있어요"
+                    mood = com.bamnat.app.ui.components.KaniMood.Worry
+                    action = "스튜디오에서 만들기" to onMake
+                }
+            }
+        }
+        else -> {
+            val ready = state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA
+            val inTheme = state.kind == RecipeClient.SCOPE_THEME
+            title = if (ready) "아직 준비된 작품이 없어요" else "아직 작품이 없어요"
+            // PC 확인 38d63451: the other half's, and a way to make the first one.
+            detail = if (state.other > 0) (if (inTheme) "탭별 작품에는 ${state.other}개 있어요" else "테마에는 ${state.other}개 있어요")
+                else if (ready) null else "내 설정을 처음으로 나눠 보세요"
+            if (state.other > 0) {
+                action = (if (inTheme) "탭별 작품 보기" else "테마 보기") to { vm.kind(if (inTheme) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME) }
+                more += "스튜디오에서 만들기" to onMake
+            } else action = "스튜디오에서 만들기" to onMake
+            more += "다시 불러오기" to { vm.load() }
+        }
+    }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        com.bamnat.app.ui.components.EmptyState(title, detail, mood = mood, action = action)
+        if (more.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            more.take(2).forEach { (words, go) -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(words) } }
+        }
+    }
 }

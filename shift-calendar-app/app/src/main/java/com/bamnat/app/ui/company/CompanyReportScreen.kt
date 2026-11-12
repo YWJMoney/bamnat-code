@@ -420,7 +420,7 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                         HeroIcon(Icons.Outlined.Inbox)
                         Text("나눈 회사 설정은 아직 없어요", style = MaterialTheme.typography.titleMedium)
                         // 1.36 PC 확인: 레시피·프로필만 올린 분(알바 등)도 여기서 모두 지워요; 이 화면은 회사 설정만 줄로 보여요.
-                        Text("마을에 올린 레시피·프로필·팔로우·차단, 광장 글과 앱 문의는 아래 ‘모두 지우기’로 한 번에 지울 수 있어요.",
+                        Text("마을에 올린 작품·프로필·팔로우·차단, 광장 글과 앱 문의는 아래 ‘모두 지우기’로 한 번에 지울 수 있어요.",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                         if (vm.companyFits) OutlinedButton(onClick = onShare) { Text("내 설정 나누기") }
                     }

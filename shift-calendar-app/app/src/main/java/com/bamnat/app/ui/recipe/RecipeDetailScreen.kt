@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -107,6 +108,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     val adGate = confirming && vm.looksNeedAd()
     var folded by remember { mutableStateOf(true) }
     var undoing by remember { mutableStateOf(false) }
+    // [RVM-08] PC-66 ('이 작품 넣기'가 한 번 내려야 보여요): the 넣기 step sits in a bar on the bottom edge, with the line that says why it waits.
+    var putBar by remember { mutableStateOf<PutBar?>(null) }
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
         // PC 확인 보안 6차: a tab laid on the theme is taken back here too (with 마을 › 테마's 빼기 as before).
@@ -120,15 +123,16 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
+        bottomBar = { putBar?.let { StickyPut(it) } },
         topBar = {
             TopAppBar(
-                title = { Text(s.doc?.item?.title ?: "레시피") },
+                title = { Text(s.doc?.item?.title ?: "작품", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, // 2.0.0 [RVM-08] 큰 글자에서 둘째 줄이 탭 칩 밑에 잘렸어요
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     val doc = s.doc
                     if (doc != null && doc.scope != "private") IconButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, RecipeLinks.shareText(doc.item.title, vm.code))
-                        runCatching { context.startActivity(Intent.createChooser(send, "레시피 링크 보내기")) }
+                        runCatching { context.startActivity(Intent.createChooser(send, "작품 링크 보내기")) }
                     }) { Icon(Icons.Filled.Share, "링크 보내기") }
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
                     DropdownMenu(menu, { menu = false }) {
@@ -147,6 +151,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         val doc = s.doc
         val r = s.recipe
         if (doc == null || r == null) {
+            androidx.compose.runtime.SideEffect { putBar = null }
             Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (s.error != null) {
                     Text(s.error!!)
@@ -197,7 +202,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     } else if (fxParts.isNotEmpty() && (s.appliedAt ?: s.laidAt) != null && !fxOn)
                         Text("✦ 쉬는 중 · 무료인 것은 그대로 돌고, ✦ 장치는 프로에서 다시 켜져요", style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.tertiary)
-                    Text(listOfNotNull("넣은 분 ${doc.item.users + s.usersPlus}명", doc.item.kept?.let { "7일 뒤에도 쓰는 분 $it%" }, RecipeDescribe.styles(r).takeIf { it.isNotBlank() })
+                    // [RVM-07] PC-53: the count is phones that ever put it in (once each), so it stays after 되돌리기 and says so.
+                    Text(listOfNotNull("넣어 본 분 ${doc.item.users + s.usersPlus}명", doc.item.kept?.let { "7일 뒤에도 쓰는 분 $it%" }, RecipeDescribe.styles(r).takeIf { it.isNotBlank() })
                         .joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (tool) ToolTryout(r, vm.style)
@@ -291,7 +297,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         if (hasLooks) { vm.lookParts(allLooks); confirming = true } else confirming = true
                     })
                 }
-                TryLadder(steps) {
+                val putStep = steps.firstOrNull { it.main }
+                TryLadder(steps.filterNot { it.main })
+                // [RVM-16] PC-68: put in with a 빠른 설정 button, the tile is one tap away (안드로이드 13부터 더하기 요청).
+                if (putIn != null && inside.buttons.any { it.place == com.bamnat.core.formula.ButtonPlace.TILE }) TileOffer()
+                val putNote: @Composable () -> Unit = {
                     liveNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                     // 1.39 [NTC-03] 겹치는 알림은 접힌 '자세히 보기'에 묻히지 않게 넣기 단추 아래에도 한 줄 (넣기 창에서 골라요).
                     s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
@@ -305,6 +315,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     else if (outside.isNotEmpty()) Text("‘자세히 보기’의 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
                 }
+                androidx.compose.runtime.SideEffect { putBar = putStep?.let { PutBar(it, putNote) } }
                 if (tasting) FxTasteAsk(fxParts, vm.code, onDismiss = { tasting = false }, onRefused = { tasteRefused = true }) {
                     if (hasLooks) tryOn = true else confirming = true
                 }
@@ -443,7 +454,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
 
                 // [RCX-11] 묶음: each recipe in it opens on its own, to be chosen piece by piece.
                 r.pieces.firstOrNull { it.kind == PieceKind.BUNDLE }?.let { b ->
-                    Text("묶음 안 레시피", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                    Text("묶음 안 작품", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                     @Suppress("UNCHECKED_CAST")
                     (b.values["items"] as? List<Map<String, Any?>>).orEmpty().forEach { i ->
                         val c = i["code"] as? String ?: return@forEach
@@ -456,7 +467,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 if (doc.mine != true) SoftCard {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("거의 마음에 들면 내 것으로 고쳐요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                        Text("스튜디오에서 이 레시피부터 시작해요. 만든 분 표시는 늘 남고, 세 곳 이상 직접 바꾸면 내 창작으로 올릴 수 있어요",
+                        Text("스튜디오에서 이 작품부터 시작해요. 만든 분 표시는 늘 남고, 세 곳 이상 직접 바꾸면 내 창작으로 올릴 수 있어요",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         OutlinedButton(onClick = { vm.body()?.let(onRemake) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("스튜디오에서 고치기") }
                     }
@@ -486,10 +497,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         title = { Text("이렇게 바뀌어요") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // [RVM-13] PC-59·60·34: four short lines first (모양·단추·알람·그 밖에), '알람은 빼고 넣기' on the 알람 line, and the full list folded.
+                val fxOn = com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
+                PutBrief(putBrief(s, fxOn), onLetters = vm::letters) { vm.toggle(PieceKind.ALARMS, it) }
+                // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
+                s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
+                    com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }
+                }
+                var more by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+                TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (more) "바뀌는 것 접기" else "바뀌는 것 모두 보기") }
                 // PC 확인 보안 9차 (단추는 '고른 모양 2개'인데 창은 '달력 모양' 한 줄): the looks ticked in 입어 보기 are listed part by part,
                 // as many as the button said, instead of the whole look piece they come from (which also told changes not ticked).
                 val parts = s.lookParts?.mapNotNull { com.bamnat.core.recipe.LookParts.byId(it) }?.sortedBy { com.bamnat.core.recipe.LookParts.ALL.indexOf(it) }
-                if (!parts.isNullOrEmpty()) {
+                if (more && !parts.isNullOrEmpty()) {
                     Text("모양 ${parts.size}개", style = MaterialTheme.typography.labelLarge)
                     // One line a screen, as 입어 보기 shows them by tab ('위젯 · 위젯' said once).
                     parts.groupBy { it.tab }.forEach { (tab, ps) ->
@@ -498,11 +518,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         Text("• " + if (labels == listOf(name)) name else name + ": " + labels.joinToString(", "), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
-                s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
-                    com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }
-                }
-                s.pieces.filter { it.on && it.fits && (parts == null || it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) }.forEach { p ->
+                if (more) s.pieces.filter { it.on && it.fits && (parts == null || it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) }.forEach { p ->
                     Text(p.kind.label, style = MaterialTheme.typography.labelLarge)
                     p.lines.ifEmpty { listOf(RecipePieces.Change("바뀌는 것이 없어요", true)) }.forEach { l ->
                         Text("• " + l.text, style = MaterialTheme.typography.bodySmall,
@@ -516,7 +532,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     val r = s.recipe; val c = app?.container
                     value = if (r == null || c == null) emptyList() else runCatching { com.bamnat.app.recipe.RecipeFonts.comingLines(c, r) }.getOrDefault(emptyList())
                 }
-                if (fontLines.isNotEmpty()) {
+                if (fontLines.isNotEmpty() && !more) Text("글꼴 ${fontLines.size}개도 함께 와요", style = MaterialTheme.typography.bodyMedium)
+                if (fontLines.isNotEmpty() && more) {
                     Text("글꼴", style = MaterialTheme.typography.labelLarge)
                     fontLines.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
@@ -559,12 +576,12 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // PC 확인 7525ccff (두 번 넣은 것 중 무엇이 돌아가는지 몰라요): each put-on it takes back, when and what.
                 // PC 확인 보안 6차 (목록이 없어요): always, one line a put-on, a tab laid on the theme as well.
-                if (s.undoable.size >= 2) Text("이 레시피를 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
+                if (s.undoable.size >= 2) Text("이 작품을 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
                 s.undoable.forEach { (at, what) ->
                     Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " " + what,
                         style = MaterialTheme.typography.bodySmall)
                 }
-                Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
+                Text("이 작품이 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
             }
         },
         confirmButton = { TextButton(onClick = { undoing = false; vm.undo() }) { Text("되돌리기") } },
@@ -597,7 +614,7 @@ private fun VoteRow(s: RecipeDetailViewModel.State, vm: RecipeDetailViewModel, o
 private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() -> Unit)? = null) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("내 레시피", style = MaterialTheme.typography.titleSmall)
+            Text("내 작품", style = MaterialTheme.typography.titleSmall)
             Text(stateLabel(doc.state, doc.scope), style = MaterialTheme.typography.bodyMedium)
             // 1.36 [GRW-08] PC 8d290ec3: 새싹 첫 사진은 운영자가 본 뒤에 다른 분께 보여요.
             if (doc.photosWaiting > 0) com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
@@ -878,14 +895,14 @@ private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) ->
     if (l.parents.isEmpty() && l.children.isEmpty()) return
     Text("계보", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
     l.parents.forEachIndexed { i, p ->
-        if (p == null) Text("${"↑".repeat(i + 1)} 지워진 레시피에서 고쳐 만들었어요", style = MaterialTheme.typography.bodySmall,
+        if (p == null) Text("${"↑".repeat(i + 1)} 지워진 작품에서 고쳐 만들었어요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         else RecipeRow(p, Modifier) { onOpen(p.code) }
     }
-    if (l.parents.isNotEmpty()) Text("위 레시피에서 고쳐 만들었어요. 원래 만든 분 표시는 늘 남아요", style = MaterialTheme.typography.bodySmall,
+    if (l.parents.isNotEmpty()) Text("위 작품에서 고쳐 만들었어요. 원래 만든 분 표시는 늘 남아요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (l.children.isNotEmpty()) {
-        Text("이 레시피를 고쳐 만든 것 ${l.children.size}개", style = MaterialTheme.typography.labelLarge)
+        Text("이 작품을 고쳐 만든 것 ${l.children.size}개", style = MaterialTheme.typography.labelLarge)
         l.children.take(5).forEach { k -> ForkRow(k, look, l.changed[k.code].orEmpty()) { onOpen(k.code) } }
     }
 }
@@ -916,7 +933,7 @@ private fun ForkRow(k: com.bamnat.app.recipe.RecipeItem, mineLook: com.bamnat.ap
                 Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text("바꾼 곳: $words", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 넣은 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
+                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 넣어 본 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -930,7 +947,7 @@ private fun AppliedCard(at: Long, laidOnly: Boolean = false, onUndo: () -> Unit)
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("내 달력에 넣어 둔 레시피예요", style = MaterialTheme.typography.titleSmall)
+                Text("내 달력에 넣어 둔 작품이에요", style = MaterialTheme.typography.titleSmall)
                 Text(java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(at)) +
                     (if (laidOnly) " 테마 위에 얹음 · 언제든 되돌릴 수 있어요" else " 넣음 · ${left}일 안에 되돌릴 수 있어요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1032,4 +1049,40 @@ internal fun TriedCard(line: String, onClose: () -> Unit) {
             TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
         }
     }
+}
+
+/** [RVM-08] PC-66: the 넣기 step and the line about it, kept on the bottom edge of 작품 상세. */
+internal class PutBar(val step: LadderStep, val note: @Composable () -> Unit)
+
+@Composable
+private fun StickyPut(bar: PutBar) {
+    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 3.dp, shadowElevation = 6.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                bar.note()
+                PutRow(bar.step)
+            }
+        }
+    }
+}
+
+/** [RVM-16] PC-68: '빠른 설정에 넣기' after a work with a 빠른 설정 button went in; one line, its answer in the same place. */
+@Composable
+private fun TileOffer() {
+    val ctx = LocalContext.current
+    val c = ctx.appContainer
+    var b by remember { mutableStateOf(com.bamnat.app.logic.FxOutside.tileOffer(c)) }
+    var said by remember { mutableStateOf<String?>(null) }
+    said?.let { line ->
+        com.bamnat.app.ui.components.NudgeCard(line, tone = com.bamnat.app.ui.theme.Tone.Good, onClose = { said = null })
+        return
+    }
+    val button = b ?: return
+    val activity = generateSequence(ctx) { (it as? android.content.ContextWrapper)?.baseContext }.firstNotNullOfOrNull { it as? android.app.Activity } ?: return
+    com.bamnat.app.ui.components.NudgeCard(
+        "빠른 설정에도 ‘${listOfNotNull(button.emoji, button.label).joinToString(" ")}’${com.bamnat.core.text.Josa.eulreul(button.label)} 둘 수 있어요",
+        action = "빠른 설정에 넣기",
+        onAction = { com.bamnat.app.logic.FxOutside.askTile(activity, button) { said = it; b = null } },
+        onClose = { com.bamnat.app.logic.FxOutside.closeTileOffer(c); b = null },
+    )
 }

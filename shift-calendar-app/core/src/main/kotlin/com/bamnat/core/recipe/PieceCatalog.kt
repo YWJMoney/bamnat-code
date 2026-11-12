@@ -216,7 +216,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
 
     /** [RCX-11] 1.35 묶음: other recipes by their codes, put in one after another (each piece still chosen on its own). */
     BUNDLE(
-        "bundle", "레시피 묶음", WorkStyle.entries.toSet(),
+        "bundle", "작품 묶음", WorkStyle.entries.toSet(),
         listOf(
             Field.Items(
                 "items", 8, min = 2,

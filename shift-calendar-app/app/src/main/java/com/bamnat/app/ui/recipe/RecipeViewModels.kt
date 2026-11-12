@@ -62,7 +62,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         private const val PAGES = 16
     }
 
-    enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
+    enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 작품"), DATA("data", "공개 자료") }
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
         val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false,
@@ -249,6 +249,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val usersPlus: Int = 0,
         /** PC 확인 7525ccff: reported from this page, so its menu says so (the line below goes in a few seconds). */
         val flagged: Boolean = false,
+        /** 2.0.0 [PC-33] '글자 남기기' in the 넣기 창: a 칸 디자인 that shows shifts by colour alone goes in keeping their letters. */
+        val letters: Boolean = false,
     )
     private suspend fun undoableNow(): List<Pair<Long, String>> = (c.recipes.undoable(code).map { e ->
         e.appliedAt to ("넣음" + e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.takeIf { it.isNotEmpty() }?.joinToString("·", prefix = " · ").orEmpty())
@@ -314,7 +316,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     a != null && (0 until a.length()).any { a.optJSONObject(it)?.optString("kind") !in keys }
                 }.getOrDefault(false) } == true
                 _state.value = _state.value.copy(error = if (newer) "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
-                    else "레시피가 오는 길에 바뀌었어요. 받지 않았어요")
+                    else "작품이 오는 길에 바뀌었어요. 받지 않았어요")
             } catch (e: Exception) {
                 // 1.39 [MKP-03] Shown from the card already: it stays, and the problem is said once below.
                 _state.value = if (_state.value.doc != null) _state.value.copy(message = RecipeClient.problem(e)) else _state.value.copy(error = RecipeClient.problem(e))
@@ -355,6 +357,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     }
 
     fun toggle(kind: PieceKind, on: Boolean) = set(kind) { it.copy(on = on) }
+    /** [PC-33] Keep the shift letters in the cells (or the work's colour-only mark again). */
+    fun letters(keep: Boolean) { _state.value = _state.value.copy(letters = keep) }
     fun mode(kind: PieceKind, m: RecipePieces.Mode) { set(kind) { it.copy(mode = m) }; preview() }
     fun answer(id: String, v: Any?) { _state.value = _state.value.copy(answers = _state.value.answers + (id to v)); preview() }
 
@@ -427,7 +431,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 return@launch
             }
             // [CELL-02] 1.39 Someone else's 달력 모양 changes how my cells look, not what they show (mine as the whole read says).
-            val r = if (doc.mine) r0 else r0.keepMyCellContent()
+            val r = (if (doc.mine) r0 else r0.keepMyCellContent()).let { if (s.letters) com.bamnat.core.recipe.CellLetters.keep(it) else it }
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
@@ -441,7 +445,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val fx = if (picks.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) com.bamnat.app.logic.FxAccess.partsOf(r) else emptySet()
             if (fx.isNotEmpty() && !com.bamnat.app.logic.FxAccess.pro(c) &&
                 com.bamnat.app.logic.FxAccess.status(c, code) !is com.bamnat.core.formula.FxTaste.Status.Using) {
-                _state.value = _state.value.copy(applying = false, message = "프로 기능 장치(${com.bamnat.core.formula.FxPro.say(fx)})가 든 작품이에요. " +
+                _state.value = _state.value.copy(applying = false, message = "프로 기능(${com.bamnat.core.formula.FxPro.plain(fx)})가 든 작품이에요. " +
                     "하루 써 보기로 넣어 보거나 프로에서 넣어요. 규칙·단추를 끄면 모양만 지금 넣을 수 있어요")
                 return@launch
             }

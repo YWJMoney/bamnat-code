@@ -507,7 +507,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
         when (val r = UserFonts.add(ctx, uri, name)) {
             is UserFonts.Result.Added -> {
                 mine = UserFonts.list(ctx); stamp++
-                problem = if (r.font.sold) "‘${r.font.name}’ 글꼴은 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(레시피와 함께 나눌 수 없어요)" else null
+                problem = if (r.font.sold) "‘${r.font.name}’ 글꼴은 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(작품과 함께 나눌 수 없어요)" else null
                 note = if (!r.font.hangul) (FontCatalog.byId(r.font.fallback)?.name ?: "기본 글꼴").let { like ->
                     "‘${r.font.name}’ 글꼴에는 한글이 없어요. 숫자·영문만 이 글꼴로, 한글은 $like${com.bamnat.app.ui.Fmt.ro(like)} 보여요" } else null
             }
@@ -549,7 +549,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                                     Text("+ 내 글꼴 넣기")
                                 }
                             }
-                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 레시피와 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요",
+                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 작품과 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         items(mine.filter { hit(it.name) }, key = { it.id + stamp }) { f ->
@@ -558,7 +558,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (f.received) {
                                     // [MAT-06] A font that came with a recipe: its sender said it is open; 신고 if it is not.
-                                    Text("레시피와 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    Text("작품과 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     TextButton(onClick = { reportOf = f }) { Text("신고") }
                                 } else if (f.sold) {
                                     // PC 확인 6차: told when it goes in, not only after 올리기.

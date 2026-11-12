@@ -74,7 +74,7 @@ object RecipeDescribe {
         ).joinToString(" · ")
         PieceKind.INVEST -> "원칙 ${items(p, "rules").size}개" + texts(p, "journal").takeIf { it.isNotEmpty() }?.let { " · 일지 칸 ${it.size}개" }.orEmpty()
         PieceKind.COMPANY -> "근무 주기와 급여 방식 (회사 설정 파일)"
-        PieceKind.BUNDLE -> "레시피 ${items(p, "items").size}개 묶음"
+        PieceKind.BUNDLE -> "작품 ${items(p, "items").size}개 묶음"
         PieceKind.LAYOUT -> listOfNotNull(
             texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { tabName(it, style) } },
             (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },

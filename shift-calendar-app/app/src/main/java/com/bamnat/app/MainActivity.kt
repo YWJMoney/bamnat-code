@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
             container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
             NoticeLinks.read(intent)
+            com.bamnat.app.logic.FxOutside.pressOpened(container, intent) // [RVM-14] a 위젯·타일·알림 단추 that opens a screen
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
@@ -237,6 +238,7 @@ class MainActivity : ComponentActivity() {
         IncomingRoster.read(intent) // [ROST-09] shared while the app was open
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
         if (NoticeLinks.read(intent)) HomeRequests.followingLink()
+        com.bamnat.app.logic.FxOutside.pressOpened(appContainer, intent) // [RVM-14]
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */

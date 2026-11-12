@@ -191,7 +191,8 @@ fun OverlapAsk(overlaps: List<NoticeOverlap.Hit>, mode: RecipePieces.Mode, onMod
     if (overlaps.isEmpty()) return
     val today = overlaps.any { it.builtIn == NoticeOverlap.BuiltIn.TODAY }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("기존 설정을 바꿀까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+        // [RVM-13] 조건 6: a question, not a danger (넣기 창의 바뀌는 것 요약 아래).
+        Text("기존 설정을 바꿀까요?", style = MaterialTheme.typography.labelLarge)
         overlaps.forEach { Text("• " + it.say(), style = MaterialTheme.typography.bodySmall) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             com.bamnat.app.ui.components.FilterChip(mode == RecipePieces.Mode.REPLACE, { onMode(RecipePieces.Mode.REPLACE) }, label = { Text("기존 것 끄고 이걸로") })

@@ -860,12 +860,14 @@ class AppContainer(context: Context) {
             }
             var first = true
             settingsRepository.settings.map { it.logic }.distinctUntilChanged().collect {
+                val opening = first
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
                 // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
                 com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
-                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
+                // [RVM-19] PC-48: only the app's start is an opening; a work put in does not run its 앱을 열면 rule there and then.
+                com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer, opened = opening)
             }
         }
         keep("schedule") {

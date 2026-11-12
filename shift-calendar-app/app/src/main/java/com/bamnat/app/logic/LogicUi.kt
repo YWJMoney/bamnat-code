@@ -83,12 +83,15 @@ fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
             if (m == null) return@collect
             LogicRunner.consumeMessage()
             val resting = com.bamnat.app.diag.StartGuard.safe.value
-            val canUndo = !resting && LogicStore(c.appContext).undo != null
-            val action = when { resting -> "평소대로"; canUndo -> "되돌리기"; else -> null }
+            // [RVM-11] PC-34: a resting 프로 단추 offers its 하루 써 보기 on the line itself (not 되돌리기 of something earlier).
+            val tryKey = LogicRunner.restingTry.also { LogicRunner.restingTry = null }?.takeIf { m.contains("프로에서 켜져요") }
+            val canUndo = !resting && tryKey == null && !m.contains("프로에서 켜져요") && LogicStore(c.appContext).undo != null
+            val action = when { resting -> "평소대로"; tryKey != null -> "하루 써 보기"; canUndo -> "되돌리기"; else -> null }
             // 1.37 PC 5차: 되돌리기 줄이 너무 빨리 사라졌어요. 되돌릴 게 있으면 길게.
             val r = snackbar.showSnackbar(m, actionLabel = action, duration = if (action != null) SnackbarDuration.Long else SnackbarDuration.Short)
             if (r == SnackbarResult.ActionPerformed) when {
                 resting -> c.wakeAfterSafe()
+                tryKey != null -> snackbar.showSnackbar(if (FxAccess.start(c, tryKey)) "하루 동안 써 봐요. 다시 눌러 보세요" else "이미 써 본 작품이에요. 프로에서 켜져요")
                 canUndo -> snackbar.showSnackbar(if (LogicRunner.undo(c)) "되돌렸어요" else "되돌릴 것이 없어요")
             }
         }
