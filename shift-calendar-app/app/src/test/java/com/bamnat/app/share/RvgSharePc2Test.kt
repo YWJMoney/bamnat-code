@@ -7,6 +7,7 @@ import com.bamnat.app.ui.components.NetWords
 import com.bamnat.app.ui.setup.LinkStart
 import com.bamnat.core.model.ShiftIcon
 import com.bamnat.core.model.ShiftOverride
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -21,10 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
 import java.time.LocalTime
-import java.time.YearMonth
 
 /**
  * 2.0.0 검토 PC 2차(ac6c21ce) 갈래 G: [RVG-24] PC-92 실패 글에 서버 코드 없음, [RVG-27] SN-13 서버 거절과 끊김 나누기 (P-13 재현),
@@ -56,7 +54,7 @@ class RvgSharePc2Test {
         override suspend fun create(payload: JSONObject): ShareLinkState {
             check(payload); got += payload
             return ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://share.example/s/Ab3dEfGh5JkLmNoPqRsTuv", "token",
-                Instant.now().plus(Duration.ofDays(30)), payload.optString("title"), 30, YearMonth.now())
+                Today.instant().plus(Duration.ofDays(30)), payload.optString("title"), 30, Today.month())
         }
         override suspend fun update(state: ShareLinkState, payload: JSONObject): ShareLinkState {
             check(payload); got += payload
@@ -67,7 +65,7 @@ class RvgSharePc2Test {
     }
 
     private fun link() = ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://share.example/s/Ab3dEfGh5JkLmNoPqRsTuv", "token",
-        Instant.now().plus(Duration.ofDays(20)), "민지", 30, YearMonth.now())
+        Today.instant().plus(Duration.ofDays(20)), "민지", 30, Today.month())
 
     @Before fun setUp() {
         c.shareApi = server
@@ -76,7 +74,7 @@ class RvgSharePc2Test {
         runBlocking {
             c.scheduleRepository.ensureDefaults()
             val day = c.scheduleRepository.shiftTypes.first().first { !it.isOff }.id
-            c.scheduleRepository.setOverride(LocalDate.now().plusDays(1), ShiftOverride.Shift(day))
+            c.scheduleRepository.setOverride(Today.date().plusDays(1), ShiftOverride.Shift(day))
         }
     }
 
@@ -97,13 +95,13 @@ class RvgSharePc2Test {
     @Test fun anEmojiPictureOnAnOldServerGoesWithoutItAndTheChangeArrives() = runBlocking {
         c.shareLinks.save(link())
         c.scheduleRepository.saveShiftType(dayType().copy(icon = ShiftIcon.emojiKey("☀️")))
-        c.scheduleRepository.setOverride(LocalDate.now().plusDays(2), ShiftOverride.Shift(dayType().id))
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(dayType().id))
         val sync = ShareSync(c)
         assertEquals(ShareSync.Result.Sent, sync.sync())
         val went = server.got.single()
         assertTrue("the 그림 the old server refuses stayed home", went.icons().none { it.startsWith("e:") })
         val dates = (0 until went.getJSONArray("days").length()).map { went.getJSONArray("days").getJSONObject(it).getString("date") }
-        assertTrue("the changed day reached the link", LocalDate.now().plusDays(2).toString() in dates)
+        assertTrue("the changed day reached the link", Today.date().plusDays(2).toString() in dates)
         assertFalse("not waiting as if offline", c.shareLinks.unsent.value)
         assertFalse(c.shareLinks.refused.value)
         val said = c.shareLinks.dropped.value
@@ -118,7 +116,7 @@ class RvgSharePc2Test {
 
         // The 2.0.0 share server (RVD-22, 46d91ace) takes the 그림: the next change carries it, nothing said.
         server.oldRules = false
-        c.scheduleRepository.setOverride(LocalDate.now().plusDays(3), ShiftOverride.Shift(dayType().id))
+        c.scheduleRepository.setOverride(Today.date().plusDays(3), ShiftOverride.Shift(dayType().id))
         assertEquals(ShareSync.Result.Sent, sync.sync())
         assertEquals(listOf("e:☀️"), server.got.last().icons().filter { it.startsWith("e:") })
         assertNull(c.shareLinks.dropped.value)
@@ -183,7 +181,7 @@ class RvgSharePc2Test {
         val night = types[1].copy(start = LocalTime.of(19, 0), end = LocalTime.of(7, 0), breakMinutes = 60, breakStart = LocalTime.of(6, 30))
         c.scheduleRepository.saveShiftType(day)
         c.scheduleRepository.saveShiftType(night)
-        c.scheduleRepository.setOverride(LocalDate.now().plusDays(2), ShiftOverride.Shift(night.id))
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(night.id))
         c.shareLinks.save(link())
         assertEquals(ShareSync.Result.Sent, ShareSync(c).sync())
         val sent = server.got.single().getJSONArray("types").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
@@ -254,7 +252,7 @@ class RvgSharePc2Test {
         assertEquals("받은 근무표", LinkStart.roster(""))
         assertEquals("받은 근무표", LinkStart.roster(LinkStart.NO_NAME))
         assertEquals("‘민지’ 근무표", LinkStart.roster(" 민지 "))
-        val cal = ReceivedCalendar("Ab3dEfGh5JkLmNoPqRsTuv", "", 0xFF2196F3, Instant.now(), Instant.now(), null, null,
+        val cal = ReceivedCalendar("Ab3dEfGh5JkLmNoPqRsTuv", "", 0xFF2196F3, Today.instant(), Today.instant(), null, null,
             JSONObject("""{"title":"","types":[],"days":[]}"""), null)
         assertEquals("받은 표", cal.name)
         assertEquals("받은 근무표", cal.roster)
@@ -267,11 +265,11 @@ class RvgSharePc2Test {
      */
     @Test fun undoingPutInGoesBackToBeforeOnly() = runBlocking {
         val day = dayType()
-        val date = LocalDate.now().plusDays(4)
+        val date = Today.date().plusDays(4)
         val schedule = JSONObject("""{"title":"민지","types":[{"id":1,"name":"${day.name}","short":"${day.label}","color":"#2196F3"}],
             "days":[{"date":"$date","type":1}]}""")
         val id = "Pc95LinkAb3dEfGh5JkLmN"
-        c.received.put(id, ReceivedShare(schedule, Instant.now().plus(Duration.ofDays(30)), null, null))
+        c.received.put(id, ReceivedShare(schedule, Today.instant().plus(Duration.ofDays(30)), null, null))
         val before = c.received.get(id)!!
         val dayBefore = c.scheduleRepository.entryNow(date)
         val undo = PutIn.apply(c, id, mapOf(date to ShiftOverride.Shift(day.id)))

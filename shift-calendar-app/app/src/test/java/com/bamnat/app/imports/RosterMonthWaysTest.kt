@@ -17,6 +17,7 @@ import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.Leave
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -34,7 +35,6 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -52,9 +52,9 @@ class RosterMonthWaysTest {
     private val dir get() = File(app.noBackupFilesDir, "roster_drafts")
 
     private fun idleUntil(what: String, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 30_000
+        val end = System.currentTimeMillis() + 30_000  // real clock: a timeout for waiting, not a date
         while (!done()) {
-            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }
+            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }  // real clock: a timeout for waiting, not a date
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
         }
@@ -154,7 +154,7 @@ class RosterMonthWaysTest {
         val day = DutyCell.Shift(id("주간"))
         val row = RosterRow("김민지", (1..5).associateWith { day }, unsure = setOf(2, 4))
         RosterDraftStore(dir).write(PersonalCalendar.MAIN, RosterDraftStore.Draft(nov, listOf(row), 0, emptyMap(), emptyMap(), 1,
-            RosterFrom.PHOTO, nov, chosen = true, withOutside = true, at = Instant.now()))
+            RosterFrom.PHOTO, nov, chosen = true, withOutside = true, at = Today.instant()))
         val vm = DutyRosterViewModel(c, PersonalCalendar.MAIN, nov)
         assertEquals(setOf(2, 4), vm.ui.value.doubtful)
         vm.rightAsRead(2)
@@ -193,7 +193,7 @@ class RosterMonthWaysTest {
         assertEquals(Leave(), entry(5)?.leave)
         // Brought back after the app closed, the choice is still there.
         assertTrue(RosterDraftStore.decode(RosterDraftStore.encode(RosterDraftStore.Draft(nov, null, 0, emptyMap(), emptyMap(), 1,
-            RosterFrom.TYPED, null, true, true, Instant.now(), keepMine = true))).keepMine)
+            RosterFrom.TYPED, null, true, true, Today.instant(), keepMine = true))).keepMine)
     }
 
     @Test fun leaveKeysOnlyForWorkWithLeave() {

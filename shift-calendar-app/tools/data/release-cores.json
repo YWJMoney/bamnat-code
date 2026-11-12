@@ -1,0 +1,10 @@
+{
+  "note": "2.0.0 [RVR-21] (검토 SD-07 S6-4) 나간 판마다 그 판 core가 든 커밋. tools/old_core_check.py가 이 커밋의 core를 따로 빌드해 장터 작품을 읽어 봐요. 새 판이 나가면 한 줄 더해요(출시 PR 머리 커밋).",
+  "releases": [
+    {"versionCode": 49, "name": "1.36.0", "commit": "1716e688d36ae93e022869dcd8ff52b580eb1b36", "source": "1.36.0 출시 커밋(main, 크기 예산·HANDOFF 0-136). 갈래 S vocab 사진도 이 파일을 정본으로 읽어요"},
+    {"versionCode": 50, "name": "1.36.1", "commit": "d8c2dca204d07278818e541a078f06cc288d82a9", "source": "PR #161 머리. 출시 서명은 bf4203c6, 그 뒤는 시험·문서만 바뀜(PR 본문)"},
+    {"versionCode": 51, "name": "1.37.0", "commit": "d892e64f9acda74f61bdbba50c37f44e047fcf43", "source": "PR #177 머리(1.37 통합 p23w4m, main에 합침 11-05)"},
+    {"versionCode": 52, "name": "1.38.0", "commit": "2230d3af6636e6ff74b6f72514c77a1316513016", "source": "PR #178 마지막 커밋(HANDOFF 0-138)"},
+    {"versionCode": 53, "name": "1.39.0", "commit": "2c93ea1710221fbfb5ca906675c88da4ae55a770", "source": "PR #280 머리(11-08 합침). 9차 PC 5bfd19a4와 core가 같아요"}
+  ]
+}
