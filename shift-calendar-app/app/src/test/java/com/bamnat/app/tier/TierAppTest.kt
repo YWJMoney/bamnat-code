@@ -300,6 +300,25 @@ class TierAppTest {
         assertEquals("민지 관리자", com.bamnat.app.ui.pro.adminWhose("민지"))
     }
 
+    /**
+     * 2.0.0 [RVO-13] 통합 2차 PC-113: an inviter whose only tie to the server is its invite link. The admin paid the month its friends
+     * earned; opening 프로 asks for the passes, so 보상 이용권 lists it (before, nothing else had been sent and it never asked).
+     */
+    @Test fun anInviterAsksForThePassItsFriendsEarned() = runBlocking {
+        val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        val pass = Passes(null, 1, listOf(PassItem(1, now, "invite")), 0, null, false, Instant.now())
+        val api = FakeTierApi(passesAnswer = pass)
+        c.tierApi = api
+        c.inviteApi = FakeInviteApi()
+        c.phoneMark = { "test-phone-mark" }
+        c.syncPasses(force = true)
+        assertEquals("초대 링크도 없으면 묻지 않아요", emptyList<String>(), api.calls)
+        c.invites.makeLink()
+        c.syncPasses(force = true)
+        assertEquals(listOf("passes"), api.calls)
+        assertEquals("invite", c.proStore.current.passes?.items?.single()?.why)
+    }
+
     // ---- The trial's answer waits until it reaches the server [SRV-07] ----
 
     @Test fun aTrialAnswerGivenOfflineWaitsAndGoesAtTheNextSync() = runBlocking {

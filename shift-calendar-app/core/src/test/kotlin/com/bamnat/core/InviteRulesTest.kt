@@ -77,4 +77,12 @@ class InviteRulesTest {
         assertEquals("받은 프로 2개월 · 확인 기다리는 1개월 · 기다리는 친구 3명", InviteRules.status(2, 1, 3))
         assertEquals("기다리는 친구 1명", InviteRules.status(0, 0, 1))
     }
+
+    /** 2.0.0 [RVO-13] 통합 2차 PC-114: 1개월 받고 11개월이 확인 전이면 '모두 받았어요'가 아니에요. */
+    @Test fun theCapSaysWhatStillWaits() {
+        val waiting = InviteRules.capped(12, 11)
+        assertFalse(waiting, waiting.contains("모두 받았어요"))
+        assertEquals("프로 11개월은 운영팀이 확인한 뒤 들어와요. 확인이 끝나면 올해 받을 수 있는 12개월이 모두 차요. 친구는 계속 셀게요.", waiting)
+        assertEquals("올해 받을 수 있는 12개월을 모두 받았어요. 친구는 계속 셀게요.", InviteRules.capped(12, 0))
+    }
 }

@@ -773,7 +773,10 @@ class AppContainer(context: Context) {
             }
         }
         val made = appContext.getSharedPreferences(MAKER_PREFS, Context.MODE_PRIVATE).getBoolean("made", false)
-        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made
+        // 2.0.0 [RVO-13] PC-113: a phone that made an invite link has a reason too. Before, an inviter with nothing else sent never asked,
+        // so the month an admin paid for its friends showed on the invite card but never in 보상 이용권 (nor in its 프로).
+        val invited = inviteApi.enabled && invites.store.current.view?.code != null
+        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made || invited
         val last = proStore.current.passes?.checkedAt
         if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))

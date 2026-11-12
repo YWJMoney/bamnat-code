@@ -239,6 +239,8 @@ class AEScreenshotTest : ScreenshotBase() {
         tapText("동의하고 넣기", exact = true)
         assertEquals(listOf("FRND2345" to "typed"), api.uses)
         reveal("초대한 분께 알렸어요")
+        // 2.0.0 [RVO-13] 통합 2차 PC-112: said once, under 넣기, not again in the 친구 초대 card above it.
+        assertEquals(1, shownTimes("초대한 분께 알렸어요"))
         assertFalse("once only", app.container.invites.mayType())
     }
 

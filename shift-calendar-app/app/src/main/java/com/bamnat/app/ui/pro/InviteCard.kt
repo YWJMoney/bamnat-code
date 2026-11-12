@@ -152,26 +152,24 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
             view?.let { v -> InviteRules.status(v.given, v.pending, v.waiting) }?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             }
+            // PC-114: at the year's cap the promise above is not a promise any more; said here too, not only behind '자세히'.
+            if (view?.capReached == true && !more) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
         }
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
         if (!short || more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (view?.code != null && (!short || more)) {
             InviteProgressLines(c)
             Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
-            // 2.0.0 [RVD-14] 확인 뒤 들어와요.
-            if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            if (view.capReached) {
-                Text("올해 받을 수 있는 ${terms.capMonths}개월을 모두 받았어요. 친구는 계속 셀게요.", style = MaterialTheme.typography.bodySmall)
-            }
+            // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
+            if (view.capReached) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
+            else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
         }
         // 2.0.0 [RVO-06] 조건 2: 이 화면의 채운 단추는 '프로 시작하기' 하나라, 초대 링크는 옅은 채움 단추.
         InviteShareAction(c, onMessage, tonal = true) {
             if (short) TextButton(onClick = { more = !more }) { Text(if (more) "접기" else "자세히") }
         }
-        state.answer?.takeIf { state.reportedCode != null }?.let {
-            Text(inviteAnswerWords(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        // 2.0.0 [RVO-13] PC-112: what the friend's phone was told lives once, in '코드를 받으셨나요?' ([CodeInbox]), not here as well.
     }
 }
 

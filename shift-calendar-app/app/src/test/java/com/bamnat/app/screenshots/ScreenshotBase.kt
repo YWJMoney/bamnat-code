@@ -478,6 +478,19 @@ abstract class ScreenshotBase {
             return top
         }
 
+        /** 2.0.0 [RVO-13] PC-112: how many places on screen now say [text] (a line said twice is a fault). */
+        fun shownTimes(text: String): Int {
+            var n = 0
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                n = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).count { node ->
+                    val b = node.boundsInWindow
+                    b.width > 1f && b.height > 1f && node.words().any { w -> text in w }
+                }
+            }
+            return n
+        }
+
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 

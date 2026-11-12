@@ -204,6 +204,10 @@ internal fun CodeInbox(c: AppContainer, gate: Gate, startOpen: Boolean = false, 
             Text(CODE_INBOX_TITLE, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
             Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 2.0.0 [RVO-13] PC-112: a friend's code told the inviter: what it was told, once, as this row's one-line summary (조건 3);
+        // right after 넣기 the same words are [said] below, so this line waits until then.
+        val told = inviteState.answer?.takeIf { inviteState.reportedCode != null }?.let(::inviteAnswerWords)
+        if (told != null && said == null) Text(told, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (!open) return@SectionCard
         Text("받은 코드를 넣으면 어떤 코드인지 알아서 가려요. 가족 프로·친구 초대·프로 나눔·이용권 복구 코드를 여기에 넣어요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -112,6 +112,14 @@ object InviteRules {
     /** 2.0.0 [RVD-14] "프로 1개월은 운영팀이 확인한 뒤 들어와요". */
     fun pending(months: Int): String = "프로 ${months}개월은 운영팀이 확인한 뒤 들어와요"
 
+    /**
+     * 2.0.0 [RVO-13] 통합 2차 PC-114: the year's months are all spoken for. Some may still wait for the 운영팀 ([pending]): then it is not
+     * '모두 받았어요' but how many come in after the look; the friends go on being counted either way.
+     */
+    fun capped(capMonths: Int, pending: Int): String =
+        if (pending > 0) "프로 ${pending}개월은 운영팀이 확인한 뒤 들어와요. 확인이 끝나면 올해 받을 수 있는 ${capMonths}개월이 모두 차요. 친구는 계속 셀게요."
+        else "올해 받을 수 있는 ${capMonths}개월을 모두 받았어요. 친구는 계속 셀게요."
+
     /** [INVITE-08] Toward the next months: "3/5명 · 2명은 사용 기간 채우는 중". */
     fun progress(progress: Int, need: Int, waiting: Int): String =
         "$progress/${need}명" + if (waiting > 0) " · ${waiting}명은 사용 기간 채우는 중" else ""
