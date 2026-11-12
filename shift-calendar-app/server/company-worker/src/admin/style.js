@@ -753,6 +753,8 @@ table.list tr.picked td{background:var(--accent-soft)}
    카드 머리의 긴 단추(자동 순환 '동기화 열쇠 만들기' 등)는 칸 폭에서 줄을 바꿔요. */
 .card-head>.btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25}
 .table-wrap .lab{left:0;top:0}
+/* 표는 상자 안에서 밀리니 칸을 글자 하나 폭까지 줄이지 않아요(몸의 overflow-wrap:anywhere 때문에 '투자 이야기'가 '이야/기'로 갈라졌어요). */
+@media (min-width:600px){.table-wrap table.list th,.table-wrap table.list td{overflow-wrap:break-word}}
 @media (max-width:599.98px){
   .table-wrap:has(table.list){border:0;overflow:visible}
   table.list,table.list tbody{display:block}
@@ -1445,7 +1447,7 @@ details.row-more>summary{list-style:none;cursor:pointer}
 details.row-more>summary::-webkit-details-marker{display:none}
 details.row-more>summary::after,details.row-more[open]>summary::after{content:none}
 details.row-more[open]>summary{background:var(--hover)}
-details.row-more>.menu{position:absolute;right:0;top:calc(100% + .25rem);z-index:4;display:grid;gap:.25rem;min-width:11rem;max-width:min(18rem,80vw);padding:.4rem;
+details.row-more>.menu{position:absolute;right:0;top:calc(100% + .25rem);z-index:4;transform:translateX(var(--menu-dx,0));display:grid;gap:.25rem;min-width:11rem;max-width:min(18rem,80vw);padding:.4rem;
   border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);box-shadow:var(--shadow-lg)}
 details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:transparent;background:none}
 @media (hover:hover){details.row-more>.menu .btn:hover{background:var(--hover)}}

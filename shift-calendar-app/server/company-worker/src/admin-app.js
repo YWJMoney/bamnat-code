@@ -3427,7 +3427,7 @@ function adminApp(L, BUILD, M) {
         : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>`
           : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`;
     const rows = shown.length ? `<ul class="rows recipe-rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
-        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}${r.tabs?.length ? ` · ${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")}` : ""}</span>` : ""} <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
+        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}</span>` : ""} <small>${r.tabs?.length ? `${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")} · ` : ""}${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
         ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
@@ -7310,6 +7310,20 @@ function adminApp(L, BUILD, M) {
     for (const m of document.querySelectorAll("details.row-more[open]")) {
       if (m !== mine || e.target.closest?.(".menu [data-act]")) m.open = false;
     }
+  }, true);
+  // 열린 메뉴는 화면 안에(조건 12): ⋯이 줄 가운데에 있으면 왼쪽·오른쪽 맞춤 둘 다 넘칠 수 있어(380·글자 200% 장터 줄 282px)
+  // 열 때 재어 화면 가장자리 8px 안으로 옮겨요. 닫으면 처음 자리로.
+  document.addEventListener("toggle", (e) => {
+    const m = e.target;
+    if (!m.matches?.("details.row-more")) return;
+    const menu = m.querySelector(":scope>.menu");
+    if (!menu) return;
+    menu.style.removeProperty("--menu-dx");
+    if (!m.open) return;
+    const r = menu.getBoundingClientRect();
+    const room = document.documentElement.clientWidth - 8;
+    const dx = r.right > room ? room - r.right : r.left < 8 ? 8 - r.left : 0;
+    if (dx) menu.style.setProperty("--menu-dx", `${Math.round(Math.max(dx, 8 - r.left))}px`);
   }, true);
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
