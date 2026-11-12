@@ -37,6 +37,8 @@ export function ledgerViews(A) {
     if (!a) return '<span class="meta">—</span>';
     if (a.key === "sent") return `<span class="pill ok" title="${esc(a.text)}">보냄${a.byKind === "claude" ? " · Claude" : a.byKind === "auto" ? " · 자동" : ""}</span>`;
     if (a.key === "owner") return `<span class="pill bad" title="${esc(a.why)}">확인 필요</span>`;
+    // 2.0.0 [RVQ-34] 검토 U22-03: 적어 둔 답이 사람 확인을 기다려요.
+    if (a.key === "person") return `<span class="pill warn" title="${esc(a.why)}">사람 확인 대기</span>`;
     return `<span class="pill">${esc(a.name)}</span>`;
   }
 
@@ -103,7 +105,14 @@ export function ledgerViews(A) {
       parts.push(`<p class="lg-block"><b>묶음</b> <a href="${href("dev", r.bundle.id)}">${esc(r.bundle.title)}</a> · ${esc(r.bundle.statusName)}${r.bundle.releasedIn ? ` ${esc(r.bundle.releasedIn)}${r.bundle.out ? " (나감)" : " (출시 전)"}` : ""} · 묶인 문의 ${r.bundle.asks}건${r.bundle.told ? " · 나왔다고 알림" : ""}</p>`);
     }
     if (r.answer?.key === "owner") parts.push(`<p class="note bad">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
-    if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
+    // 2.0.0 [RVQ-34] 검토 U22-03: 서버가 멈춘 답은 무엇 때문인지와 그 답, '지금 보내기'·'고치기'·'보내지 않기'를 장부에서 바로.
+    if (r.answer?.key === "person") {
+      parts.push(`<div class="lg-block lg-held"><p class="note warn">사람 확인 대기 · ${esc(r.answer.why)}${r.answer.ship ? " · 출시 안내" : ""}: 저절로 가지 않아요. 읽어 보고 보내 주세요.</p>
+        <p><b>적어 둔 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
+        ${editAsk ? `<div class="actions start"><button class="btn small primary" type="button" data-act="ledger-held-send" data-inquiry="${esc(r.id)}" data-id="${r.answer.held}">지금 보내기</button>
+          <a class="btn small" href="${href("inquiries", r.id)}">고치기</a>
+          <button class="btn small ghost" type="button" data-act="ledger-held-cancel" data-inquiry="${esc(r.id)}" data-id="${r.answer.held}">보내지 않기</button></div>` : ""}</div>`);
+    } else if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
     // 정리함의 처리 [DESK-03]: 서버가 미리 쓴 답을 고쳐 보내거나, 개발사항에 묶거나, 새 개발사항으로 넘기거나, 빼 두기.
     if (r.sort && editAsk && !r.closed) {
       const k = r.sort.pile;
@@ -265,6 +274,13 @@ export function ledgerViews(A) {
   }
 
   const actions = {
+    // 2.0.0 [RVQ-34] 검토 U22-03: 사람 확인을 기다리는 답을 장부에서 바로.
+    "ledger-held-send": ({ inquiry, id }) => A.confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+      if (await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { send: true }), "보냈어요")) load();
+    }, "primary"),
+    "ledger-held-cancel": ({ inquiry, id }) => A.confirmBox("이 답을 보내지 않을까요?", "적어 둔 답만 지워요. 문의는 그대로 남아 다시 답할 수 있어요.", "보내지 않기", async () => {
+      if (await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요")) load();
+    }),
     "ledger-view": ({ key }) => { S.deskView = key; refilter(); },
     "ledger-group": ({ key }) => { S.deskGroup = key; refilter(); },
     "ledger-pick-mode": () => { S.ledgerPick = S.ledgerPick ? null : new Set(); render({ keepScroll: true }); },

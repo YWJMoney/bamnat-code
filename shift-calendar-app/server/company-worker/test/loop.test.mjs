@@ -15,6 +15,8 @@ const DAY = 24 * HOUR;
 const kst = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
 /** [LOOP-32] 이 판으로 쓰는 휴대폰(어제 하루). */
 const phones = (env, app, n) => env.DB.db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)").run(kst(Date.now() - DAY), app, n);
+// 2.0.0 [RVQ-34] 검토 SVC-19: 트랙 100%를 본 날부터 늘어난 휴대폰만 세요(그 전 날은 테스트 트랙 사람).
+const phonesToday = (env, app, n) => env.DB.db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)").run(kst(Date.now()), app, n);
 
 const ask = (call, n, text, kind = "bug", app = "1.38.0 (52)") =>
   call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info: { app } }).then((r) => r.data.id);
@@ -102,13 +104,14 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
 
   // [LOOP-32] 트랙 100%: Play는 검토 중인 판도 completed로 보여 줘요(1.39 실서버 11-08, 1.38.0 검토 중). 그래서 '검토 중일 수 있음'으로만 적고 아무것도 보내지 않아요.
   track.releases = [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }];
-  phones(env, "1.39.0", 12); // 테스트 트랙 사람 정도
+  phones(env, "1.39.0", 12); // 테스트 트랙 사람 정도(100% 전날)
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].version, "1.39.0");
   assert.equal(loop.ships[0].status, "review");
-  assert.deepEqual(loop.play.seen, { phones: 12, need: 30, live: false });
-  assert.match((await call("GET", "/api/admin/loop/check", undefined, admin)).data.lines.find((x) => x.key === "play").text, /검토 중이거나 아직 안 나갔을 수 있어요\(이 판 휴대폰 12\/30대\)/);
+  assert.deepEqual(loop.play.seen, { phones: 0, before: 12, need: 30, testers: 12, live: false });
+  assert.match((await call("GET", "/api/admin/loop/check", undefined, admin)).data.lines.find((x) => x.key === "play").text,
+    /검토 중이거나 아직 안 나갔을 수 있어요\(100% 뒤 늘어난 휴대폰 0\/30대 · 테스터 12대보다 많아야 해요\)/);
   t.mock.timers.tick(3 * HOUR);
   await fiveMinutes(env);
   await hourly(env);
@@ -118,7 +121,11 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
   assert.equal((await call("POST", "/api/admin/loop/ship/1.39.0/now", {}, admin)).status, 404);
 
   // 이 판으로 쓰는 휴대폰이 기준을 넘으면 그때 1시간 보류 안내가 서요. 그 안에는 답이 가지 않아요.
-  phones(env, "1.39.0", 30);
+  // 2.0.0 [RVQ-34] 늘어난 수만 세요: 41대는 29대 는 것이라 아직이고, 42대(30대 늘어남)면 서요.
+  phonesToday(env, "1.39.0", 41);
+  await hourly(env);
+  assert.equal((await call("GET", "/api/admin/loop", undefined, admin)).data.ships[0].status, "review");
+  phonesToday(env, "1.39.0", 42);
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "waiting");
@@ -172,10 +179,10 @@ test("[LOOP-32] 검토 중 판: 사람이 '게시됨 확인'을 누르면 1시�
   await call("POST", `/api/admin/dev/${d}`, { status: "done", releasedIn: "1.39.0", news: "잠금 화면에서도 알람 소리가 나요" }, admin);
   // 앞 판 휴대폰이 1000대면 기준은 50대(5%): 40대로는 아직이에요.
   phones(env, "1.38.0", 1000);
-  phones(env, "1.39.0", 40);
+  phonesToday(env, "1.39.0", 40);
   await hourly(env);
   let loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
-  assert.deepEqual(loop.play.seen, { phones: 40, need: 50, live: false });
+  assert.deepEqual(loop.play.seen, { phones: 40, before: 0, need: 50, testers: 12, live: false });
   assert.equal(loop.ships[0].status, "review");
   // 열쇠는 못 누르고, 사람이 Play Console에서 보고 누르면 1시간 보류가 시작돼요.
   const made = (await call("POST", "/api/admin/keys", { label: "Claude" }, admin)).data;
@@ -198,7 +205,7 @@ test("[LOOP-32] 검토 중 판: 사람이 '게시됨 확인'을 누르면 1시�
 });
 
 // [LOOP-33] 사용자 2026-11-08 '30대가 떠야지 인지하는 거야?': 통계 동의 휴대폰이 적어도 Play 보고서(동의와 상관없이 Play가 세는 판별 설치)로 나간 것을 봐요.
-test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 번호로 새로 깔거나 올린 기기가 3대면 나간 것으로 보고 1시간 보류해요; 그 전 날(테스트 트랙)은 세지 않아요", async (t) => {
+test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 번호로 새로 깔거나 올린 기기가 테스터보다 많으면(13대) 나간 것으로 보고 1시간 보류해요; 그 전 날(테스트 트랙)은 세지 않아요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const track = { releases: [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }] };
   const play = fakePlay(t, track);
@@ -212,15 +219,20 @@ test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 �
   await hourly(env);
   let loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "review");
-  assert.deepEqual(loop.play.seen, { phones: 0, need: 30, live: false, play: 0, playNeed: 3 });
-  // 그날부터 2대 + 다음 날 1대 = 3대: 나간 것으로 봐요.
+  assert.deepEqual(loop.play.seen, { phones: 0, before: 0, need: 30, testers: 12, live: false, play: 0, playNeed: 13 });
+  // 2.0.0 [RVQ-34] 검토 SVC-19: 그날부터 2대 + 다음 날 1대 = 3대는 테스터(12)보다 적어 아직이에요.
   reports([[kst(Date.now() - DAY), 53, 5], [kst(Date.now()), 53, 2], [kst(Date.now() + DAY), 53, 1]]);
+  t.mock.timers.tick(HOUR);
+  await hourly(env);
+  assert.equal((await call("GET", "/api/admin/loop", undefined, admin)).data.ships[0].status, "review");
+  // 그날부터 8대 + 다음 날 5대 = 13대: 나간 것으로 봐요.
+  reports([[kst(Date.now() - DAY), 53, 5], [kst(Date.now()), 53, 8], [kst(Date.now() + DAY), 53, 5]]);
   t.mock.timers.tick(HOUR);
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "waiting");
   const seen = env.DB.db.prepare("SELECT detail FROM audit WHERE action = 'loop_ship_seen'").get();
-  assert.match(seen.detail, /Play 보고서: 이 판을 새로 깔거나 올린 기기 3대/);
+  assert.match(seen.detail, /Play 보고서: 100% 뒤 이 판을 새로 깔거나 올린 기기 13대/);
 });
 
 test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 개발사항을 만들고, 고친 판·다음 정기 출발일을 답해요; 요금은 못 정해요", async (t) => {
@@ -551,11 +563,12 @@ test("[LOOP-12] 믿을수록 더 맡기기: 종류마다 그대로 나간 수를
   // 최고 관리자가 '자주 쓰는 답'을 바로 보내기로 켜면 열쇠 답이 바로 가요.
   assert.deepEqual((await call("POST", "/api/admin/loop/switches", { instant: ["faq", "new"] }, owner)).data.instant, ["faq"]);
   const q2 = await ask(call, 2, "위젯은 어디서 켜나요", "question");
-  await call("POST", `/api/admin/inquiries/${q2}/reply`, { text: "홈 화면을 길게 눌러 위젯에서 밤낮을 골라요.", pile: "faq" }, key);
+  // 2.0.0 [RVQ-34] 검토 I22a-02: 바로 가려면 Claude 판정 꼬리표 check가 'none'이어야 해요.
+  await call("POST", `/api/admin/inquiries/${q2}/reply`, { text: "홈 화면을 길게 눌러 위젯에서 밤낮을 골라요.", pile: "faq", check: "none" }, key);
   assert.equal((await thread(call, q2, 2)).messages.length, 2);
   // 결제·환불 말이 있으면 켜 두어도 보류해요.
   const q3 = await ask(call, 3, "구독 환불은 어떻게 하나요", "question");
-  await call("POST", `/api/admin/inquiries/${q3}/reply`, { text: "Play 스토어 › 결제 및 구독에서 환불을 요청해요.", pile: "faq" }, key);
+  await call("POST", `/api/admin/inquiries/${q3}/reply`, { text: "Play 스토어 › 결제 및 구독에서 환불을 요청해요.", pile: "faq", check: "none" }, key);
   assert.equal((await thread(call, q3, 3)).messages.length, 1);
   // 사람이 취소한 답은 연속을 끊어요.
   const held = (await call("GET", `/api/admin/inquiries/${q3}`, undefined, owner)).data.held;
@@ -777,14 +790,19 @@ test("[LOOP-37][LOOP-38] 사람이 봐야 할 문의·보안·AI 질문은 자�
 
 test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤트 비율, 없으면 다시 온 문의", async () => {
   const { effectVerdict, effectTick, reachedAt } = await import("../src/loop.js");
-  assert.equal(effectVerdict({ events: "a", before: 30, after: 60, beforeDays: 300, afterDays: 300 }).effect, "better");
-  assert.equal(effectVerdict({ events: "a", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "worse");
-  assert.equal(effectVerdict({ events: "a", before: 60, after: 62, beforeDays: 300, afterDays: 300 }).effect, "same");
-  assert.equal(effectVerdict({ events: "a", before: 30, after: 60, beforeDays: 300, afterDays: 300, back: 2, yes: 1 }).effect, "same");
+  // 2.0.0 [RVQ-34] 검토 SVC-20: 좋은 방향(good)을 알아야 좋아짐·나빠짐이에요.
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 30, after: 60, beforeDays: 300, afterDays: 300 }).effect, "better");
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "worse");
+  assert.equal(effectVerdict({ events: "a", good: "down", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "better");
+  // 그대로는 구간이 ±10% 안에 들 만큼 표본이 클 때만이에요.
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 1200, after: 1210, beforeDays: 6000, afterDays: 6000 }).effect, "same");
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 60, after: 62, beforeDays: 300, afterDays: 300 }).effect, "unknown");
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 30, after: 60, beforeDays: 300, afterDays: 300, back: 2, yes: 1 }).effect, "same");
   assert.equal(effectVerdict({ events: "", asks: 3, yes: 2 }).effect, "better");
   assert.equal(effectVerdict({ events: "", asks: 3, back: 1 }).effect, "same");
   assert.equal(effectVerdict({ events: "", asks: 0 }).effect, "none");
   assert.equal(effectVerdict({ events: "a", before: 1, after: 2, beforeDays: 5, afterDays: 5 }).pct, null);
+  assert.equal(effectVerdict({ events: "a", before: 1, after: 2, beforeDays: 5, afterDays: 5 }).effect, "unknown");
   // 앱 판은 그 판 이상이 나간 날, 서버는 실제로 닿은 날.
   assert.equal(reachedAt({ route: "", released_in: "1.39.0" }, [{ v: "1.38.0", at: 1 }, { v: "1.39.1", at: 5 }]), 5);
   assert.equal(reachedAt({ route: "server", live_at: 9, released_in: "" }, []), 9);
@@ -796,7 +814,7 @@ test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤�
   const id = (await call("POST", "/api/admin/dev", { title: "위젯 글씨 크기" }, owner)).data.id;
   await call("POST", `/api/admin/dev/${id}`, { status: "done" }, owner);
   const db = env.DB.db;
-  db.prepare("UPDATE dev_items SET route = 'server', live_at = ?, events = 'widget_size' WHERE id = ?").run(at, id);
+  db.prepare("UPDATE dev_items SET route = 'server', live_at = ?, events = 'widget_size', good = 'up' WHERE id = ?").run(at, id);
   for (let i = 1; i <= 14; i++) {
     for (const [day, used] of [[kst(at - i * DAY), 2], [kst(at + (i - 1) * DAY), 6]]) {
       db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, '1.39.0 (53)', 10)").run(day);
@@ -810,7 +828,7 @@ test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤�
   assert.equal(await effectTick(env, now), 1);
   const d = (await call("GET", `/api/admin/dev/${id}`, undefined, owner)).data;
   assert.equal(d.effect.key, "better");
-  assert.match(d.effect.why, /widget_size 쓰는 비율 \+200%/);
+  assert.match(d.effect.why, /widget_size 쓰는 비율 \+200%\(늘면 좋아요\)/);
   assert.equal((await call("GET", `/api/admin/dev/${young}`, undefined, owner)).data.effect.key, "");
   assert.equal(await effectTick(env, now), 0);
   // 오늘 화면: 효과 판정이 '저절로 끝난 일'에, 나빠진 것은 주의 필요에.

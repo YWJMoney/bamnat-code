@@ -12,7 +12,7 @@
 
 칸(쓰는 것만): id(d로 시작하는 서버 개발사항 번호) 또는 track(추적 번호, 예 LOOP-17) 하나는 꼭,
 title, status(todo·doing·check·done·rejected), size(fix·polish·feature), route(server·remote·flag·app·hotfix),
-remote("kind@번호"), flag, events, tierAsk(free·pro·pass·trial·later, Claude의 제안일 뿐), tierWhy,
+remote("kind@번호"), flag, events, good(up·down, 잴 이벤트가 늘면·줄면 좋음), tierAsk(free·pro·pass·trial·later, Claude의 제안일 뿐), tierWhy,
 publicTitle(앱 '지금 알려진 문제'에 보일 쉬운 제목, 60자), known(true·false), styles(보일 근무 유형 목록, 없으면 모두), test, check, pr,
 news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인 문의에 가는 답), reason(반려 이유).
 요금(tier)은 사용자만 관리자 앱에서 정해요. 이 파일에 tier를 적으면 검사가 막아요.
@@ -32,7 +32,7 @@ GRADLE = ROOT / "gradle.properties"
 # 2.0.0 [RVR-10] (검토 TEST-15·U60-05) 판이 합쳐진 것: 1.39.1은 따로 내지 않고 2.0.0으로(사용자 2026-11-12), 1.40은 2.0.0이 됐어요.
 MERGED = {"1.39.1": "2.0.0", "1.40.0": "2.0.0"}
 
-KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "tierAsk", "tierWhy", "publicTitle",
+KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "good", "tierAsk", "tierWhy", "publicTitle",
         "known", "styles", "test", "check", "pr", "news", "shipReply", "reason"}
 STATUS = {"todo", "doing", "check", "done", "rejected"}
 SIZES = {"fix", "polish", "feature"}
@@ -114,6 +114,11 @@ def check_item(n, x):
         say("route flag에는 flag 이름이 있어야 해요")
     if "events" in x and not (isinstance(x["events"], list) and all(isinstance(e, str) and EVENT.match(e) for e in x["events"]) and len(x["events"]) <= 8):
         say("events는 소문자 이름 8개까지의 목록이에요")
+    # 2.0.0 [RVQ-34] 검토 SVC-20: 잴 이벤트가 늘면 좋은지(up) 줄면 좋은지(down). 없으면 숫자만으로 '좋아졌어요'를 붙이지 않아요.
+    if "good" in x and x["good"] not in ("up", "down"):
+        say("good은 up(늘면 좋음)이나 down(줄면 좋음)이에요")
+    if "good" in x and not x.get("events"):
+        say("good은 잴 이벤트(events)와 함께 적어요")
     if "tierAsk" in x and not one_of(x["tierAsk"], TIERS):
         say("tierAsk는 free·pro·pass·trial·later 중 하나예요")
     if "styles" in x and not (isinstance(x["styles"], list) and all(one_of(v, STYLES) for v in x["styles"])):

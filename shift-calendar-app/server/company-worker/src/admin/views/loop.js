@@ -26,7 +26,9 @@ export function loopViews(A) {
   /** [LOOP-32] Play 트랙 100% 판이 실제로 나갔는지(이 판으로 쓰는 휴대폰). */
   // [LOOP-33] 통계 동의한 휴대폰과, 동의와 상관없는 Play 보고서(트랙 100%를 본 뒤 새로 깔거나 올린 기기) 둘 중 하나면 나간 것으로 봐요.
   const playText = (s) => (s.play !== undefined ? ` · Play 보고서 ${s.play}${s.live ? "" : `/${s.playNeed}`}대` : " · Play 보고서는 아직(권한·하루 늦음)");
-  const seenText = (s) => (s.live ? `실제로 나갔어요 · 이 판 휴대폰 ${s.phones}대${playText(s)}` : `검토 중이거나 아직 안 나갔을 수 있어요 · 통계 동의 휴대폰 ${s.phones}/${s.need}대${playText(s)}`);
+  // 2.0.0 [RVQ-34] 검토 SVC-19: 휴대폰은 100% 뒤 늘어난 수, 두 기준은 테스터 수보다 커요.
+  const seenText = (s) => (s.live ? `실제로 나갔어요 · 100% 뒤 늘어난 휴대폰 ${s.phones}대${playText(s)}`
+    : `검토 중이거나 아직 안 나갔을 수 있어요 · 100% 뒤 늘어난 통계 동의 휴대폰 ${s.phones}/${s.need}대${playText(s)}${s.testers ? ` · 테스터 ${s.testers}대보다 많아야 해요` : ""}`);
   const REWARD_NAMES = [["bugDays", "문제 신고가 고쳐짐", "문제 신고(버그)를 보낸 폰에, 그 개발사항이 완료되면"], ["polishDays", "제안이 다듬기로 들어감", "건의·제안이 '다듬기' 크기로 완료되면"],
     ["featureDays", "제안이 새 기능으로 들어감", "건의·제안이 '새 기능' 크기로 완료되면"], ["knownDays", "알려진 문제에 '나도 겪어요'", "목록에서 나도 겪어요만 누른 폰에, 고쳐지면(0이면 안 줌)"],
     ["monthCap", "한 휴대폰 한 달 상한", "위 날을 다 더해 한 달(한국 시간)에 받을 수 있는 날"]];
@@ -44,7 +46,7 @@ export function loopViews(A) {
       : `<p class="hint">${p.ready ? "매시 17분에 프로덕션 트랙을 읽어요. 아직 한 번도 읽지 않았어요." : "서버 비밀값 PLAY_SERVICE_ACCOUNT에 '앱 정보 보기' 권한이 있으면 매시 Play 프로덕션 트랙을 읽어요. 없으면 지금처럼 흐름 › '나간 판 저장'을 눌러요."}</p>`;
     // 2.0.0 [RVQ-28] 좁은 폭에서는 판 이름·설명이 한 줄을 다 쓰고 표·단추가 아래로(380에서 글자가 한 자씩 세로로 서던 것).
     const ships = d.ships.length ? `<ul class="rows side-wrap">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
-        <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 이 판으로 쓰는 휴대폰이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
+        <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 그 뒤 이 판으로 쓰는 휴대폰이 테스터보다 많이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 늘어난 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
           : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
         <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
         ${s.status === "review" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
@@ -52,8 +54,26 @@ export function loopViews(A) {
         ${s.status === "waiting" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small primary" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
     return `<section class="card">${head("Play 출시 감지", "판이 실제로 나가면 1시간 뒤 스스로 '나간 판 저장'", can("devStatus", "edit") && p.ready ? '<button class="btn small" type="button" data-act="loop-play">지금 읽기</button>' : "")}
-      <p>${pills}</p>${track}${ships}
-      <p class="hint">Play는 검토 중인 판도 '100%'로 보여 줘서, 이 판으로 쓰는 휴대폰이 보이거나 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
+      <p>${pills}</p>${outboxLine(d)}${track}${ships}
+      <p class="hint">Play는 검토 중인 판도 '100%'로 보여 줘서, 트랙이 지금도 100% 완료이고 그 뒤 이 판으로 쓰는 휴대폰(또는 Play 보고서의 새로 깔거나 올린 기기)이 테스터 ${esc(String(d.testers ?? 12))}대보다 많이 늘거나, 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
+  }
+
+  /**
+   * 2.0.0 [RVQ-34] 검토 U22-02: 나간 판 저장이 끊겨도 '끝'으로 보였어요. 지금 나간 판의 안내 편지함 한 줄: '안내 12/20건 · 사람 확인 2 ·
+   * 실패 1 · 공지 안 나감'과 '다시 보내기'. 사람 확인은 장부의 '사람 확인 대기' 줄로 가요.
+   */
+  function outboxLine(d) {
+    const s = d.shipped;
+    const o = d.outbox;
+    if (!s || !o) return "";
+    const noNotice = s.noticeWanted === true && !s.noticeId;
+    if (!o.total && !noNotice && !s.pending) return "";
+    const parts = [o.total ? `안내 ${o.sent}/${o.total}건` : "안내할 문의 없음", o.wait ? `보내는 중 ${o.wait}` : "", o.failed ? `실패 ${o.failed}` : "",
+      o.gone ? `닫힌 문의 ${o.gone}` : "", noNotice ? "공지 안 나감" : s.noticeId ? "공지 올림" : ""].filter(Boolean);
+    const bad = o.failed > 0 || noNotice;
+    const edit = can("devStatus", "edit");
+    return `<div class="note ${bad ? "warn" : o.person ? "warn" : "info"} ship-line"><span><b>${esc(s.v)}</b> ${esc(parts.join(" · "))}${o.person ? ` · <a href="${href("desk")}">사람 확인 ${o.person}</a>` : ""}</span>
+      ${bad && edit ? `<button class="btn small" type="button" data-act="loop-ship-retry" data-v="${esc(s.v)}">다시 보내기</button>` : ""}</div>`;
   }
 
   // [LOOP-18] 연결 점검: 실제 Play·GitHub에 처음 붙기 전에 한 화면에서.
@@ -140,7 +160,8 @@ export function loopViews(A) {
     // [LOOP-32] 체크하면 바로 저장돼요(전에는 아래 '저장'을 눌러야 해서 화면만 바뀐 줄 몰랐어요, 실서버 11-08).
     const box = (k, label, hint) => `<label class="chk"><input type="checkbox" name="${k}" data-change="loop-switch" data-label="${esc(label)}"${sw[k] ? " checked" : ""}${owner() ? "" : " disabled"}><span><b>${esc(label)}</b> <small>${esc(hint)}</small></span></label>`;
     const off = ["autoShip", "sync", "phone", "halt"].filter((k) => !sw[k]).length;
-    return fold("switches", "멈춤 스위치 · 인앱 업데이트", off ? `${off}개 꺼짐` : "모두 켜짐", `
+    // 2.0.0 [RVQ-34] 검토 SVC-19: 접힌 줄에도 출시 감지에서 뺄 테스터 수를 보여요(펴지 않고 기준을 알게).
+    return fold("switches", "멈춤 스위치 · 인앱 업데이트 · 테스터", `${off ? `${off}개 꺼짐` : "모두 켜짐"} · 테스터 ${d.testers ?? sw.testers ?? 12}대`, `
       ${owner() ? '<p class="hint">스위치는 누르면 바로 저장돼요.</p>' : ""}
       <div class="switches">${box("autoShip", "Play 출시를 보고 스스로 안내", "끄면 지금처럼 '나간 판 저장'을 사람이 눌러요")}
         ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 받지 않아요(409)")}
@@ -153,7 +174,12 @@ export function loopViews(A) {
           <span class="help" id="ls-urgent-reach" aria-live="polite">${esc(reachText(d, sw.urgentMin))}</span></div>
         <div class="fieldset"><label for="ls-flex">정기(한 번 권함) 기준 판 번호</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}" aria-describedby="ls-flex-reach"${owner() ? "" : " disabled"}>
           <span class="help" id="ls-flex-reach" aria-live="polite">${esc(reachText(d, sw.flexibleMin))}</span></div>
-        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">기준 저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
+        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">기준 저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>
+      <form data-form="loop-testers" data-guard="출시 감지 테스터 수"><h3>출시 감지에서 뺄 테스터</h3>
+        <p class="hint">테스트 트랙 사람과 관리자 폰은 새 판을 먼저 받아요. 나갔다고 보는 두 기준(늘어난 휴대폰·Play 보고서)이 이 수보다 커요. 관리자 앱에 연결된 폰이 더 많으면 그 수로 봐요.</p>
+        <div class="fieldset"><label for="ls-testers">테스터 수</label><input id="ls-testers" name="testers" type="number" min="0" max="500" inputmode="numeric" value="${sw.testers ?? 12}" aria-describedby="ls-testers-now"${owner() ? "" : " disabled"}>
+          <span class="help" id="ls-testers-now">지금 기준 ${esc(String(d.testers ?? sw.testers ?? 12))}대</span></div>
+        ${owner() ? '<div class="actions"><button class="btn small" type="submit">테스터 수 저장</button></div>' : ""}</form>`);
   }
 
   function autonomyCard(d) {
@@ -308,6 +334,10 @@ export function loopViews(A) {
     "loop-ship-live": ({ v }) => confirmBox(`${v}이 Play에 게시된 걸 확인했나요?`, "Play Console › 게시 개요에서 '검토 중'이 아니라 게시됨인지 보고 눌러요. 누르면 1시간 뒤 묶인 문의 안내와 업데이트 소식이 나가요(그 사이 멈출 수 있어요).", "게시됨 확인", async () => {
       if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/live`, "POST", {}), "1시간 보류를 시작했어요")) reload("loopState");
     }, "primary"),
+    // 2.0.0 [RVQ-34] 검토 U22-02: 실패한 안내와 못 올린 공지를 다시.
+    "loop-ship-retry": ({ v }) => confirmBox(`${v} 안내를 다시 보낼까요?`, "실패한 문의 안내를 다시 보내고, 못 올린 업데이트 소식 공지가 있으면 다시 올려요. 이미 간 안내는 다시 가지 않아요.", "다시 보내기", async () => {
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/retry`, "POST", {}), (r) => `안내 ${r.outbox?.sent ?? 0}/${r.outbox?.total ?? 0}건${r.notice ? " · 공지 올림" : ""}`)) reload("loopState");
+    }, "primary"),
     "loop-ship-now": ({ v }) => confirmBox(`${v} 안내를 지금 보낼까요?`, "나간 판으로 저장하고 묶인 문의에 업데이트 안내를, 앱에 업데이트 소식 공지를 올려요.", "지금 보내기", async () => {
       if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
     }, "primary"),
@@ -401,6 +431,13 @@ export function loopViews(A) {
         rows: Object.entries(body).map(([k, v]) => [name[k], `${sw[k] ?? 0} → ${v} · ${reachText(d, v)}`]),
         label: over.length ? "그래도 저장" : "저장", tone: over.length || body.urgentMin ? "danger" : "primary",
         run: async () => { if (await act(() => api("/loop/switches", "POST", body), "인앱 업데이트 기준을 저장했어요")) reload("loopState"); } });
+    },
+    /** 2.0.0 [RVQ-34] 검토 SVC-19: 출시 감지에서 뺄 테스터 수(0~500). */
+    "loop-testers": async (form) => {
+      const raw = String(form.elements.testers.value ?? "").trim();
+      if (!/^\d{1,3}$/.test(raw) || Number(raw) > 500) return A.fieldError(form.elements.testers, "0~500 숫자만 적어 주세요");
+      if (Number(raw) === Number(S.data.loopState?.switches?.testers ?? 12)) return toast("바뀐 값이 없어요");
+      if (await act(() => api("/loop/switches", "POST", { testers: Number(raw) }), "테스터 수를 저장했어요")) reload("loopState");
     },
     "loop-rewards": async (form) => {
       const body = {};
