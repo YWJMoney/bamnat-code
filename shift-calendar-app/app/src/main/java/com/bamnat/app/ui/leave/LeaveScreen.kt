@@ -93,6 +93,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [LEAVE-06] 연차 화면: one calendar's 연차 원장 — what is usable now, what lapses when, every line that changed
@@ -310,8 +312,8 @@ private fun RulesCard(profile: PayProfile?, hasPay: Boolean, onEditRules: () -> 
             style = MaterialTheme.typography.bodyLarge,
         )
         if (!profile.fiveOrMoreEmployees) {
-            Text("5인 미만 사업장은 법으로 정한 연차가 없어요(근로기준법 시행령 제7조 별표 1). 회사가 주는 날이 있으면 ‘받은 연차’로 넣어 주세요.",
-                style = MaterialTheme.typography.bodyMedium, color = LocalCalendarColors.current.warning)
+            com.bamnat.app.ui.components.ToneLine("5인 미만 사업장은 법으로 정한 연차가 없어요(근로기준법 시행령 제7조 별표 1). 회사가 주는 날이 있으면 ‘받은 연차’로 넣어 주세요.",
+                style = MaterialTheme.typography.bodyMedium)
         }
         Hint("1년을 다 채운 다음 날 15일이 생기고 2년마다 1일씩 늘어 25일까지예요. 1년이 안 되면 한 달 개근마다 1일(최대 11일)이에요. " +
             "쓰지 않은 연차는 1년이 지나면 없어져요(근로기준법 제60조).")
@@ -423,7 +425,7 @@ private fun PayoutCard(
             if (dayMinutes != null && dayMinutes < 8 * 60) Hint("근무표의 하루가 ${dayMinutes / 60.0}시간이라 1일 통상임금도 그만큼으로 셌어요(단시간 근로자).")
             check?.let {
                 Text(it.text, style = MaterialTheme.typography.bodySmall,
-                    color = if (it.done) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning)
+                    color = if (it.done) MaterialTheme.colorScheme.onSurfaceVariant else Tone.Caution.color())
             }
             if (shortfall > 1e-9) {
                 val more = LeavePayout.estimate(shortfall, profile, YearMonth.from(profile.leaveDate ?: s.today), dayMinutes)
@@ -455,7 +457,7 @@ private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?, left: Double?
                     Text("연차: " + b.leave.joinToString(", ") { "${Fmt.shortDate(it)}(${Fmt.dayOfWeekShort(it.dayOfWeek)})" },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     LeaveBridges.shortNote(b, left)?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                        com.bamnat.app.ui.components.ToneLine(it)
                     }
                 }
                 Text(b.text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
@@ -539,7 +541,7 @@ private fun PromotionCard(s: LeaveSummary, records: List<LeavePromotion.Record>,
             AddButton(st.label.substringBefore(" ("), onClick = { step = st })
         }
         Text(check.text, style = MaterialTheme.typography.bodySmall,
-            color = if (check.done) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning)
+            color = if (check.done) MaterialTheme.colorScheme.onSurfaceVariant else Tone.Caution.color())
         Hint("회사가 보낸 문서·메일의 날짜를 적어 두면, 나중에 연차수당을 받을 수 있는지 따질 때 도움이 돼요. 기록은 이 휴대폰에만 있어요.")
     }
     step?.let { st ->

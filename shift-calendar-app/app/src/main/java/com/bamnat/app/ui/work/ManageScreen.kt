@@ -235,8 +235,7 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
             StatTile("지급·명세서", if (isClosed) "${g.lastPaid}/${g.lastLines} · ${g.lastSent}/${g.lastLines}" else "-", Modifier.weight(1f),
                 caption = place.payDate(last)?.let { "지급일 ${Fmt.monthDay(it)}" } ?: "지급일 미정")
         }
-        if (place.fivePlus == null) Text("5인 이상인지 아직 안 골랐어요", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning, modifier = Modifier.padding(top = 6.dp))
+        if (place.fivePlus == null) com.bamnat.app.ui.components.ToneLine("5인 이상인지 아직 안 골랐어요", Modifier.padding(top = 6.dp))
     }
 }
 

@@ -16,6 +16,7 @@ import java.io.File
  * - 조건 7: 토스트·화면 코드 속 색 값은 늘지 않아요 ([toastsAndRawColoursOnlyGoDown])
  * - 조건 7·10: 알림 줄은 앱에 하나(AppSnack), 화면이 따로 만들지 않아요 ([oneLineForTheWholeApp])
  * - 조건 3·5: 카드 바탕은 조용한 면, primaryContainer는 고른 것·채운 단추에만 ([cardsStandOnTheQuietGround])
+ * - 조건 6: 주의는 Tone.Caution, 위험은 Tone.Danger. 일요일 빨강인 달력 색 warning은 화면이 쓰지 않아요 ([cautionIsNotSundaysRed])
  * - 조건 1: 달력 시작 높이는 화면 사진 시험 `CalendarStartScreenshotTest`가 봐요.
  *
  * 실패하면 무엇을 써야 하는지 메시지가 알려 줘요. 정말 예외라면(그림 속 휴대폰 틀처럼) 이 파일의 예외 목록에 까닭과 함께 넣어요.
@@ -217,6 +218,23 @@ class DesignRulesTest {
             s.text.split('\n').mapIndexedNotNull { i, l -> if (own.containsMatchIn(l)) "${s.path}:${i + 1}" else null }
         }
         assertEquals("화면이 따로 만든 알림 줄: AppSnack.rememberLane()과 AppSnackHost()를 써요(docs/design/공통-부품.md 9절)", emptyList<String>(), bad)
+    }
+
+    /**
+     * 2.0.0 [RVP-13] (검토 HQ-54·UIX-15, 조건 6) The calendar colours' `warning`·`warningContainer` are Sunday's red under another name:
+     * screens that wrote '확인할 것' in them painted a thing to check as a danger, and one screen had red four or five times. A screen says
+     * 주의 with `Tone.Caution` and 위험 (넘김·밀림·법 위반·울리지 않을 알람) with `Tone.Danger` (`Tone.color()`, `Tone.container()`, or the
+     * one alert line [com.bamnat.app.ui.components.ToneLine]).
+     */
+    @Test fun cautionIsNotSundaysRed() {
+        val read = Regex("""(?<![A-Za-z0-9_])(\w+)\.warning(Container)?\b(?!\s*=[^=])""")
+        val notColours = setOf("standing") // 마을 돌봄의 경고(서버가 보낸 글)
+        val bad = screens.filter { !it.path.startsWith("ui/theme/") }.flatMap { s ->
+            s.joined.flatMap { (n, l) -> read.findAll(l).filter { it.groupValues[1] !in notColours }.map { "${s.path}:$n" }.toList() }
+        }
+        report("화면이 쓴 달력 색 warning(일요일 빨강)", bad.size, 0, 0)
+        assertEquals("주의는 Tone.Caution.color()·ToneLine, 위험(넘김·밀림·법 위반)은 Tone.Danger. 바탕은 Tone.container() (docs/design/공통-부품.md 4절)",
+            emptyList<String>(), bad)
     }
 
     /** The numbers for the PR (도약 숫자): build/reports/design-rules.txt. */

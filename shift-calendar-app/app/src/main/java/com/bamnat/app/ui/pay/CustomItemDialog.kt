@@ -1081,7 +1081,7 @@ private fun EffectBar(
             }
             if (askName != null) Text(
                 "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 비운 채 ‘$label’을 누르면 ‘$askName’(으)로 넣어요",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, // [RVP-13] UIX-15: 권하는 말은 조용한 색
             )
             Button(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(label) }
         }

@@ -98,6 +98,8 @@ import java.util.UUID
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [HRLY-09][HRLY-10][HRLY-11] 알바 도구 on a part-time calendar's 통계: 두 알바 비교, 근로계약서 and
@@ -133,7 +135,7 @@ fun HourlyToolsCard(calendarId: String, profile: PayProfile?, snapshot: Schedule
                 else -> "사진 ${contract.photos.size}장" + if (contract.hourlyWage > 0) " · 시급 ${Fmt.won(contract.hourlyWage)}" else ""
             },
             { open = "contract" },
-            accent = if (contract.wageDiffers(HourlyWork.hourlyRate(profile, today))) LocalCalendarColors.current.warning else null,
+            accent = if (contract.wageDiffers(HourlyWork.hourlyRate(profile, today))) Tone.Caution.color() else null,
         )
         HorizontalDivider()
         ToolLink(
@@ -233,7 +235,7 @@ private fun OfferEditor(offer: JobOffer, result: com.bamnat.core.work.OfferResul
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(offer.name, { onChange(offer.copy(name = it.take(16))) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             AmountField("시급", amountDigits(offer.hourlyWage), { onChange(offer.copy(hourlyWage = it.toAmount())) })
-            if (result.belowMinimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+            if (result.belowMinimum) com.bamnat.app.ui.components.ToneLine("최저임금 ${Fmt.won(minimum)}보다 적어요", tone = Tone.Danger) // 2.0.0 [RVP-13] 법 위반: 위험
             // [INPUT-02] Hours and days are stepped (held, they run), not typed.
             StepperRow("한 주 시간") {
                 MinutesStepper(offer.hoursPerWeek.minutes(), { onChange(offer.copy(hoursPerWeek = it / 60.0)) }, step = 60, max = 80 * 60,
@@ -381,8 +383,7 @@ private fun ContractScreen(calendarId: String, profile: PayProfile?, today: Loca
                 AmountField("시급", amountDigits(draft.hourlyWage), { draft = draft.copy(hourlyWage = it.toAmount()) })
                 val payWage = HourlyWork.hourlyRate(profile, today)
                 if (draft.wageDiffers(payWage)) {
-                    Text("급여 설정의 시급은 ${Fmt.won(payWage!!)}이에요. 어느 쪽이 맞는지 확인해 보세요.",
-                        style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                    com.bamnat.app.ui.components.ToneLine("급여 설정의 시급은 ${Fmt.won(payWage!!)}이에요. 어느 쪽이 맞는지 확인해 보세요.")
                 }
                 Text("근무 요일", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

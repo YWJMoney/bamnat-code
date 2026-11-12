@@ -110,6 +110,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.color
 
 /**
  * [SLP-16] The sleep log as something to use: what the two taps are for, the user's own averages
@@ -701,7 +702,7 @@ private fun Findings(findings: List<SleepInsights.Finding>) {
         findings.forEachIndexed { i, f ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val (icon, tint) = when (f.tone) {
-                SleepInsights.Tone.WARN -> Icons.Filled.WarningAmber to cal.warning
+                SleepInsights.Tone.WARN -> Icons.Filled.WarningAmber to com.bamnat.app.ui.theme.Tone.Caution.color()
                 SleepInsights.Tone.GOOD -> Icons.Filled.CheckCircle to cal.income
                 SleepInsights.Tone.NOTE -> Icons.Filled.Info to MaterialTheme.colorScheme.primary
             }
@@ -899,7 +900,7 @@ private fun SleepEditDialog(
                         else -> "${Fmt.shortDate(startAt.toLocalDate())} ${hm(startAt)}부터 ${SleepInsights.hours(minutes)}"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning,
+                    color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else com.bamnat.app.ui.theme.Tone.Caution.color(),
                 )
             }
         },

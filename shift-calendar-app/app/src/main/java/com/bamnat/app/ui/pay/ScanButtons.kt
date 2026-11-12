@@ -45,6 +45,8 @@ import com.bamnat.core.imports.PhotoQuality
 import com.bamnat.core.pay.PhotoTurn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [PAYS-05] Two buttons that read the text of a photo on the phone: one picks a photo or screenshot, one takes a
@@ -220,7 +222,7 @@ internal fun ScanButtons(
                 }
             }
         }
-        advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+        advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color()) } // [RVP-13] UIX-15
         // A 1.32 [FIX132-01] The way up the phone chose was wrong: the same photo turned by the user, read again.
         last?.takeIf { !reading && error == null }?.let { (uri, taken, scanned) ->
             Row(verticalAlignment = Alignment.CenterVertically) {

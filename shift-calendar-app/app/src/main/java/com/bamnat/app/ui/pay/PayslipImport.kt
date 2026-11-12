@@ -56,6 +56,8 @@ import com.bamnat.core.pay.RuleChange
 import com.bamnat.core.pay.RuleText
 import com.bamnat.core.pay.SlipNames
 import com.bamnat.core.pay.SlipRole
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 // [PHOTO-20] 1.30 AV: ScanButtons moved to ScanButtons.kt.
 
@@ -97,7 +99,7 @@ internal fun SlipPreview(read: PayslipRead) {
                     Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                     Text("  항목을 더하면 지급 총액 ${won(g)}과 맞아요", style = MaterialTheme.typography.bodySmall)
                 } else Text("항목 합 ${won(read.earningsSum)} · 지급 총액 ${won(g)}. 빠진 줄이 있으면 맞춰 보기 화면에서 고쳐 주세요",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                    style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
             }
         }
     }

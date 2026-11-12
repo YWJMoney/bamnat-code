@@ -46,6 +46,8 @@ import com.bamnat.core.model.ShiftType
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.container
 
 /**
  * [READ-17] 1.27 순번 447 (사용자 "사진과 내용이 같은가요? 물어보고 다르면 직접 수정 버튼을 줘서 해당 부분만 수정할수
@@ -212,11 +214,11 @@ private fun Cell(day: Int, cell: DutyCell?, doubt: Boolean, byId: Map<Long, Shif
         is DutyCell.Leave -> "휴가"
         is DutyCell.Unknown -> "‘${cell.raw}’ 모르는 글자"
     }
-    // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour, not a yellow of its own.
-    val warn = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning
+    // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour, not a yellow of its own; [RVP-13] (HQ-54) its own soft ground.
+    val warn = Tone.Caution.container()
     Column(
         modifier.width(32.dp)
-            .then(if (doubt) Modifier.background(warn.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
+            .then(if (doubt) Modifier.background(warn, MaterialTheme.shapes.extraSmall) else Modifier)
             .then(if (tappable) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.extraSmall)
                 .clickable(role = Role.Button, onClickLabel = "${day}일 고치기") { onFix(day) } else Modifier)
             .semantics { contentDescription = "${day}일 $name" + if (doubt) ", 확인 필요" else "" }

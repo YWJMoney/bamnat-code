@@ -58,6 +58,7 @@ import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
 
 /** A won amount typed as digits; shows the grouped value underneath so long numbers stay readable. */
 @Composable
@@ -207,7 +208,7 @@ fun LineDetailDialog(
                 Fact("요율 기준", result.ratesVersion)
                 if (line.estimated) {
                     Text("입력하지 않은 값을 앱이 짐작해 넣은 부분이 있어요. ‘내 급여 값’에서 실제 값으로 바꾸면 정확해져요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
+                        style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color(), modifier = Modifier.padding(top = 8.dp)) // [RVP-13] UIX-15
                 }
                 // 1.36 PC 급여 검토 W5: the days this line came from, so "연장 60시간" can be checked day by day.
                 val from = remember(line, result) {

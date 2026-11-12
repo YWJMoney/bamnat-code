@@ -38,6 +38,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.YearMonth
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** 했어요 ticks, on this phone (a reminder list: a restore without them shows a past duty again for a week at most). */
 private object Filed {
@@ -74,7 +76,9 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
     val due = remember(got, staff, place, today) { BossFilings.upcoming(place, staff, today, ledgerOf) }
     val open = due.filter { it.key !in done }
     if (due.isEmpty()) return
-    val warn = LocalCalendarColors.current.warning
+    // 2.0.0 [RVP-13] (HQ-54) 지난 신고·지급은 위험, 사흘 안은 주의.
+    val late = Tone.Danger.color()
+    val warn = Tone.Caution.color()
     SectionCard(title = "다가올 신고·지급" + if (open.isNotEmpty()) " ${open.size}" else " ✓") {
         (if (all) due else open.take(4)).forEach { d ->
             val n = d.daysFrom(today)
@@ -82,7 +86,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
                     Text("${Fmt.monthDay(d.date)} · " + when { ticked -> "했어요"; n < 0 -> "${-n}일 지났어요"; n == 0L -> "오늘"; else -> "${n}일 남음" },
-                        style = MaterialTheme.typography.labelMedium, color = if (!ticked && n <= 3) warn else MaterialTheme.colorScheme.onSurfaceVariant)
+                        style = MaterialTheme.typography.labelMedium, color = if (!ticked && n < 0) late else if (!ticked && n <= 3) warn else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(d.title + (d.amount?.takeIf { it > 0 }?.let { " ${Fmt.won(it)}" } ?: ""), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Hint(d.detail + if (d.where.isNotEmpty()) " · ${d.where}" else "")
                     if (d.kind == BossFilings.Kind.WITHHOLD) {

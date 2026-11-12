@@ -82,6 +82,8 @@ import kotlinx.coroutines.launch
 import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** A month of hours, 31일 × 24시간: more than this cannot be one month's premium. */
 private const val MAX_MONTH_MINUTES = 744 * 60
@@ -451,7 +453,7 @@ private fun ColumnScope.AmountsStage(
         Text(
             "앱 계산(${won(appTotal)})보다 많이 적어요. 실수령액을 넣으셨다면 공제 전 지급 총액으로 바꿔 주세요.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = Tone.Caution.color(), // 2.0.0 [RVP-13] (UIX-15) 주황은 주의 하나
         )
         // [PAYX-23] A 실수령액 typed in: the pay before tax that leaves it, by the same 4대보험·간이세액표 the app uses.
         val mode = profile.taxMode.takeIf { it != com.bamnat.core.pay.TaxMode.NONE } ?: com.bamnat.core.pay.TaxMode.INSURANCE_4
@@ -581,7 +583,7 @@ private fun ResultStage(
                 // A gap this wide is more often a day or an allowance missing than a way of calculating.
                 if (!m.matched && abs(m.gapPercent) >= FAR_PERCENT) {
                     Text("차이가 커요. 그 달 근무와 수당이 실제와 같은지 먼저 봐 주세요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 4.dp))
+                        color = Tone.Caution.color(), modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }
@@ -597,11 +599,11 @@ private fun ResultStage(
                 if (CustomRule.looksOneMonth(name)) "명세서에만 있는 소급분 · ${m.month.monthValue}월만 ${won(amount)}" else "명세서에만 있는 수당 · 매달 ${won(amount)}", name in adds) { onToggleAdd(name) } }
             if (ways.isNotEmpty()) {
                 Text("계산 방식 (회사가 정말 이렇게 계산하는지 알 때만)", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
+                    color = Tone.Caution.color(), modifier = Modifier.padding(top = 8.dp))
                 ways.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
             }
             if (keep.size < m.changes.size || adds.size < m.unmatched.size) Text("다 고르지 않으면 이 달 계산이 명세서와 다를 수 있어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
             added.forEach { a ->
                 val now = m.profile.items.firstOrNull { it.id == a.id } ?: a
                 ChangeRow(now.name, "새 수당 · ${now.cadence.label} ${won(now.amount.on(m.month).value)} · 통상임금 ${if (now.ordinary) "포함" else "제외"}")

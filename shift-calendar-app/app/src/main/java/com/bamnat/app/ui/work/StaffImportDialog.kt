@@ -20,6 +20,8 @@ import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.StaffImport
 import com.bamnat.core.boss.WageForm
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * 1.38 가져오기 (사용자 2026-11-05 "어떤 형식이든"): the staff list read from a file or photo, one line a person with what was read
@@ -48,7 +50,7 @@ internal fun StaffImportDialog(lines: List<StaffImport.Line>, fromPhoto: Boolean
                             }
                             Text("$form ${Fmt.won(m.base)}$week" + (m.job.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""),
                                 style = MaterialTheme.typography.bodySmall)
-                            if (l.check.isNotEmpty()) Text("확인: " + l.check.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = LocalCalendarColors.current.warning)
+                            if (l.check.isNotEmpty()) Text("확인: " + l.check.joinToString(", "), style = MaterialTheme.typography.labelSmall, color = Tone.Caution.color())
                             if (on[i] && i !in fits) Text("직원 요금제가 있어야 더할 수 있어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                         }
                     }

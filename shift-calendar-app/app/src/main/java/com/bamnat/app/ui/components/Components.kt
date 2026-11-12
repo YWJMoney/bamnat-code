@@ -63,8 +63,6 @@ import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
-import com.bamnat.app.ui.theme.Tone
-import com.bamnat.app.ui.theme.color
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
