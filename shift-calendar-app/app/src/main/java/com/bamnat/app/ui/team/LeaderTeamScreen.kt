@@ -64,7 +64,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.ScheduleSnapshot
-import com.bamnat.app.data.rules
 import com.bamnat.app.share.ShareLinkPayload
 import com.bamnat.app.share.ShareLinkState
 import com.bamnat.app.ui.Fmt
@@ -120,7 +119,7 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
     val open = teams?.firstOrNull { it.id == openId }
     // PC 10차(낮음): with two or more teams, 뒤로 from a team goes to the team list first (표 이름 목록), not past it; with one, there is no list to see.
     val several = teams.orEmpty().count { !it.archived } >= 2
-    if (open != null) { TeamBoardScreen(open, onBack = { madeFrom = null; if (startTeam != null && !several) onBack() else openId = null }, startImport = madeFrom); return }
+    if (open != null) { TeamBoardScreen(open, calendarId, onBack = { madeFrom = null; if (startTeam != null && !several) onBack() else openId = null }, startImport = madeFrom); return }
     Scaffold(topBar = {
         TopAppBar(title = { Text("내가 짜는 팀 근무표") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
@@ -185,7 +184,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     val pickFile = rememberAnyFilePicker { uri ->
         scope.launch {
             reading = "파일을 읽고 있어요…"
-            val shifts = kinds.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+            val shifts = kinds.map(com.bamnat.core.team.TeamTimes::of)
             when (val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date())) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
                     from = got.value to got.fromPhoto
@@ -218,7 +217,8 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
         TextButton(enabled = name.isNotBlank() && people.isNotEmpty() && snap != null, onClick = {
             val s = snap ?: return@TextButton
             val id = UUID.randomUUID().toString()
-            val shifts = teamKinds(s.shiftTypes, folded).sortedBy { it.sortOrder }.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+            // 2.0.0 [RVJ-29] with the 휴게 the leader's own kinds have (none set there: what the law asks for).
+            val shifts = teamKinds(s.shiftTypes, folded).sortedBy { it.sortOrder }.map(com.bamnat.core.team.TeamTimes::of)
                 .let { if (ownTimes) it else com.bamnat.core.team.TeamTimes.blank(it) }
             scope.launch {
                 c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
@@ -235,7 +235,7 @@ private const val CELL = 34
 /** The board of one team and month: the grid, the keypad under it, and what to do with the month. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<com.bamnat.core.imports.RosterGrid, Boolean>? = null) {
+private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, startImport: Pair<com.bamnat.core.imports.RosterGrid, Boolean>? = null) {
     val context = LocalContext.current
     val c = context.appContainer
     val store = c.phaseThree
@@ -248,6 +248,11 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     val wishes by store.wishes(team.id, month).collectAsStateWithLifecycle(emptyList())
     // 1.38 병동 신청표의 왼쪽 'NN off': last month, read with this one by the checks and auto-fill.
     val prev by store.board(team.id, month.minusMonths(1)).collectAsStateWithLifecycle(null)
+    // 2.0.0 [RVJ-30] (검토 PAYU-08) Next month's first days too: the month's last week is one week with them, read whole.
+    val next by store.board(team.id, month.plusMonths(1)).collectAsStateWithLifecycle(null)
+    val nextBoard = next?.takeIf { n -> n.cells.isNotEmpty() }
+    // 2.0.0 [RVJ-31] (검토 T05-01) The checks' rules for this team: 주 52시간 is not told to a 5인 미만 사업장.
+    val rules = teamRules(team, calendarId)
     val lastWishes by store.wishes(team.id, month.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
     // The board being painted: an editor over the saved one, written back a moment after each change.
     var editor by remember(team.id, month) { mutableStateOf<TeamEditor?>(null) }
@@ -338,7 +343,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         val prevBoard = prev?.takeIf { p -> p.cells.isNotEmpty() }
         // 1.38 [P3-X-04]: the 6 months before lean the fill, so nights and weekends even out across months too.
         val past = com.bamnat.core.team.TeamLedger.past(com.bamnat.core.team.TeamLedger.of(t, now.members, ledgerMonths(store, t, month, 6)))
-        plans = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { TeamAuto.plans(t, now, wishes, settings.rules, prev = prevBoard, past = past) }
+        plans = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { TeamAuto.plans(t, now, wishes, rules, prev = prevBoard, past = past, next = nextBoard) }
     }
     // 1.38 [P3-L-14] 신청 받기: the round of this month, read again each time the board opens.
     val round = team.ask?.takeIf { it.month == month }
@@ -370,12 +375,19 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     // own kinds of the same name too. The app's own sample times change at once (said once); a time the leader set by hand is asked.
     var mineAsk by remember(team.id) { mutableStateOf<List<com.bamnat.core.team.TeamTimes.MineChange>>(emptyList()) }
     fun span(a: java.time.LocalTime?, b: java.time.LocalTime?) = "${a ?: "–"}–${b ?: "–"}"
-    if (settingTimes) TeamTimesDialog(team, onDismiss = { settingTimes = false }) { t ->
+    // 2.0.0 [RVJ-29] The leader's own kinds, to say when the team's times are no longer the calendar's (검토 PC-18). Not while the
+    // first setup is put off: the calendar then holds the app's sample times ([SETUP-18]).
+    val mineKinds by remember(calendarId) { c.scopeOf(calendarId).schedule.shiftTypes }.collectAsStateWithLifecycle(emptyList())
+    val apart = remember(team, mineKinds, settings.setupDone) { if (settings.setupDone) com.bamnat.core.team.TeamTimes.apart(team, mineKinds) else emptyMap() }
+    if (settingTimes) TeamHoursSheet(team, if (settings.setupDone) mineKinds else emptyList(), rules.weekLimit, onDismiss = { settingTimes = false }) { t ->
         settingTimes = false
         scope.launch {
             store.saveTeam(t)
+            // [RVJ-29] Only the kinds whose times this save moved: the sheet opens any day now, and changing one kind's 휴게 must
+            // not carry the team's other times to the leader's own calendar.
             val changes = runCatching {
-                com.bamnat.core.team.TeamTimes.mine(t, c.scheduleRepository.shiftTypes.first(), com.bamnat.app.data.DefaultShiftTypes.all())
+                com.bamnat.core.team.TeamTimes.mine(t, c.scheduleRepository.shiftTypes.first(), com.bamnat.app.data.DefaultShiftTypes.all(),
+                    only = com.bamnat.core.team.TeamTimes.moved(team, t))
             }.getOrDefault(emptyList())
             val now = changes.filter { !it.ask }
             now.forEach { ch -> runCatching { c.scheduleRepository.saveShiftType(ch.type.copy(start = ch.start, end = ch.end)) } }
@@ -409,9 +421,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             })
     }) { padding ->
         if (b == null) { Box(Modifier.padding(padding)) { Text("불러오는 중…", Modifier.padding(16.dp)) }; return@Scaffold }
-        val rules = settings.rules
         val prevBoard = prev?.takeIf { p -> p.cells.isNotEmpty() }
-        val signs = remember(b, team, rules, prevBoard) { TeamCheck.check(team, b, rules, prevBoard) }
+        val signs = remember(b, team, rules, prevBoard, nextBoard) { TeamCheck.check(team, b, rules, prevBoard, nextBoard) }
         val cellSigns = remember(signs) { signs.filter { it.memberId != null }.groupBy { it.memberId!! to it.date } }
         val daySigns = remember(signs) { signs.filter { it.memberId == null }.groupBy { it.date } }
         val types = team.shifts.associateBy { it.id }
@@ -506,7 +517,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                                     .clickable(role = Role.Button) {
                                         val from = swapFrom
                                         if (from != null && from.second == d && from.first != m.id) {
-                                            val news = TeamCheck.swapCheck(team, b, from.first, m.id, d, rules)
+                                            val news = TeamCheck.swapCheck(team, b, from.first, m.id, d, rules, prevBoard, nextBoard)
                                             change { it.swap(from.first, m.id, d) }; swapFrom = null
                                             if (news.isNotEmpty()) dialog = "맞바꿨어요. 확인할 것:\n" + news.joinToString("\n") { it.text }
                                         } else { member = m.id; cursor = d.dayOfMonth; if (toCheck) checkCells = checkCells - (m.id to d); warn?.let { w -> dialog = w.joinToString("\n") { it.text } } }
@@ -532,6 +543,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             if (current != null) Keypad(team, b, current, month, cursor, onCursor = { cursor = it }, onMember = { member = it }, change = ::change,
                 swapping = swapFrom != null, onSwap = { swapFrom = if (swapFrom == null) current.id to month.atDay(cursor) else null },
                 onCover = { gap -> coverGap = gap })
+            // 2.0.0 [RVJ-29] (검토 PC-18·T05-04) The times and 휴게 the kinds go out with, and the way to change them.
+            TeamHoursLine(team, apart.isNotEmpty()) { settingTimes = true }
             // 1.38 가져오기 ③: the cells read without being sure, or with a code not paired, one after another.
             if (checkCells.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning,
@@ -593,21 +606,21 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     onTake = { m -> change { com.bamnat.core.team.TeamCover.apply(team, it, k.gap, m.id) }; scope.launch { com.bamnat.app.team.TeamCallSync.take(c, team, k.id, m.id) } },
                     onEnd = { scope.launch { com.bamnat.app.team.TeamCallSync.end(c, team, k.id) } })
             }
-            if (swap != null) SwapCard(team, swap, b, settings.rules, busy != null,
+            if (swap != null) SwapCard(team, swap, b, rules, busy != null, prev = prevBoard, next = nextBoard,
                 onDecide = { ask, yes ->
                     val after = if (yes) com.bamnat.core.team.TeamSwap.apply(b, ask) else b
                     if (yes) change { com.bamnat.core.team.TeamSwap.apply(it, ask) }
                     scope.launch {
                         busy = "링크에 알리고 있어요…"
-                        runCatching { com.bamnat.app.team.TeamSwapSync.decide(c, store.teamNow(team.id) ?: team, ask, yes, after, settings.rules, prevBoard) }
+                        runCatching { com.bamnat.app.team.TeamSwapSync.decide(c, store.teamNow(team.id) ?: team, ask, yes, after, rules, prevBoard, nextBoard) }
                             .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: if (yes) "표는 바꿨어요. 인터넷이 될 때 '고친 표 올리기'를 눌러 팀원 링크에도 알려 주세요." else "인터넷이 될 때 다시 눌러 주세요." }
                         busy = null
                     }
                 },
                 onPull = { scope.launch { busy = "요청을 가져오고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.pull(c, team) }.onFailure { e ->
                     dialog = if (e.message == "not_found") "바꾸기 링크가 서버에 없어요. 끝났거나 지워졌어요." else "인터넷이 될 때 다시 가져와 주세요." }; busy = null } },
-                onSend = { send(context, com.bamnat.app.team.TeamSwapSync.message(team, swap, b.members), "근무 바꾸기 링크 보내기") },
-                onRefresh = { scope.launch { busy = "고친 표를 올리고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.refresh(c, team, b, settings.rules, prevBoard) }
+                onSend = { send(context, com.bamnat.app.team.TeamSwapSync.message(team, swap, b.members, rules.weekLimit), "근무 바꾸기 링크 보내기") },
+                onRefresh = { scope.launch { busy = "고친 표를 올리고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.refresh(c, team, b, rules, prevBoard, nextBoard) }
                     .onSuccess { dialog = "팀원 링크에 고친 표와 바꿀 수 있는 날을 새로 올렸어요." }.onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 눌러 주세요." }; busy = null } },
                 onEnd = { scope.launch { com.bamnat.app.team.TeamSwapSync.end(c, team) } })
             // The month's tools.
@@ -618,8 +631,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     scope.launch {
                         busy = "바꿀 수 있는 날을 찾고 있어요…"
                         val members = swapPeople(b)
-                        runCatching { com.bamnat.app.team.TeamSwapSync.open(c, store.teamNow(team.id) ?: team, b, members, settings.rules, prevBoard) }
-                            .onSuccess { t -> t.swap?.let { send(context, com.bamnat.app.team.TeamSwapSync.message(t, it, members), "근무 바꾸기 링크 보내기") } }
+                        runCatching { com.bamnat.app.team.TeamSwapSync.open(c, store.teamNow(team.id) ?: team, b, members, rules, prevBoard, nextBoard) }
+                            .onSuccess { t -> t.swap?.let { send(context, com.bamnat.app.team.TeamSwapSync.message(t, it, members, rules.weekLimit), "근무 바꾸기 링크 보내기") } }
                             .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "바꾸기 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
                         busy = null
                     }
@@ -826,10 +839,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     coverGap?.let { gap ->
         val now = board
         if (now != null) {
-            val list = remember(gap, now, wishes, prev, settings.rules) {
-                com.bamnat.core.team.TeamCover.candidates(team, now, gap, settings.rules, wishes, prev?.takeIf { it.cells.isNotEmpty() })
+            val list = remember(gap, now, wishes, prev, nextBoard, rules) {
+                com.bamnat.core.team.TeamCover.candidates(team, now, gap, rules, wishes, prev?.takeIf { it.cells.isNotEmpty() }, nextBoard)
             }
-            CoverDialog(team, gap, now.members.firstOrNull { it.id == gap.memberId }, list, busy != null, onDismiss = { coverGap = null },
+            CoverDialog(team, gap, now.members.firstOrNull { it.id == gap.memberId }, list, busy != null, weekLimit = rules.weekLimit, onDismiss = { coverGap = null },
                 onPut = { m -> coverGap = null; change { com.bamnat.core.team.TeamCover.apply(team, it, gap, m.id) }
                     dialog = "${m.name}님을 넣었어요. 되돌리기로 바로 물릴 수 있어요. 확정을 다시 누르면 두 사람 링크도 고쳐져요." },
                 onAsk = { people ->
@@ -891,11 +904,13 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     plans?.let { list ->
         AlertDialog(onDismissRequest = { plans = null }, title = { Text("빈칸 자동 채우기") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("칠한 칸과 잠근 칸은 그대로 두고 빈칸만 채워요. 주 52시간·연속 근무·휴식을 먼저 지키고, 그래도 모자란 날은 부족으로 남겨요.",
+                // 2.0.0 [RVJ-31] a 5인 미만 사업장 is not held to 주 52시간, so the words and the two notes below leave it out.
+                Text("칠한 칸과 잠근 칸은 그대로 두고 빈칸만 채워요. ${if (rules.weekLimit) "주 52시간·" else ""}연속 근무·휴식을 먼저 지키고, 그래도 모자란 날은 부족으로 남겨요.",
                     style = MaterialTheme.typography.bodySmall)
                 // 1.38 PC 2차: what the need asks of each person, said before any 안, so a short 안 is not a surprise.
                 val asks = remember(team, b) { b?.let { TeamAuto.weekHoursNeeded(team, it) } ?: 0.0 }
-                if (asks > TeamCheck.WEEK_LIMIT_MINUTES / 60.0) Text("이 인원으로 근무별 인원을 다 채우면 한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 주 52시간을 지킬 수 없어요. 사람을 더하거나 근무별 인원을 줄여 주세요.",
+                if (!rules.weekLimit) Unit
+                else if (asks > TeamCheck.WEEK_LIMIT_MINUTES / 60.0) Text("이 인원으로 근무별 인원을 다 채우면 한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 주 52시간을 지킬 수 없어요. 사람을 더하거나 근무별 인원을 줄여 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color()) // [RVP-13] 주의
                 else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
@@ -1314,40 +1329,4 @@ private fun TeamTimesCard(missing: List<TeamShift>, onSet: () -> Unit) {
             TextButton(onClick = onSet, modifier = Modifier.heightIn(min = 48.dp)) { Text("정하기") }
         }
     }
-}
-
-/**
- * 1.39 G6 [SETUP-18] 근무 시간 정하기: each kind of work's start and end, set once for the team. When the leader's own calendar has
- * its times by now (the first setup finished meanwhile), they are offered first.
- */
-@Composable
-private fun TeamTimesDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) -> Unit) {
-    val c = LocalContext.current.appContainer
-    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-    val mine by c.scheduleRepository.shiftTypes.collectAsStateWithLifecycle(emptyList())
-    val work = team.shifts.filter { !it.isOff }
-    // 1.39 G6 발굴 [SETUP-19] (PC 5c4ad849): the usual times by name already in, so a 3교대 team is one 저장 when they are its own.
-    val suggested = remember(team.id) { com.bamnat.core.team.TeamTimes.suggest(team.shifts) }
-    val times = remember(team.id) { androidx.compose.runtime.mutableStateMapOf<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>().apply {
-        work.forEach { s -> put(s.id, suggested[s.id]?.let { (a, b) -> (s.start ?: a) to (s.end ?: b) } ?: (s.start to s.end)) } } }
-    val fromMine = if (settings.setupDone) work.mapNotNull { s -> mine.firstOrNull { it.id == s.id && it.start != null && it.end != null }?.let { s.id to (it.start to it.end) } }.toMap() else emptyMap()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("근무 시간 정하기") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. " + (if (suggested.isNotEmpty()) "흔한 시간으로 채워 두었으니 다른 것만 고쳐요. " else "") +
-                "쉬는 날은 시간이 없어요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (fromMine.isNotEmpty()) TextButton(onClick = { times.putAll(fromMine) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 달력 근무 시간 가져오기") }
-            work.forEach { s ->
-                val (a, b) = times[s.id] ?: (null to null)
-                Text("${s.label} · ${s.name}", style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    com.bamnat.app.ui.components.TimeField("시작", a, { times[s.id] = it to times[s.id]?.second }, Modifier.weight(1f), empty = "정하기")
-                    com.bamnat.app.ui.components.TimeField("끝", b, { times[s.id] = times[s.id]?.first to it }, Modifier.weight(1f), empty = "정하기",
-                        start = a?.plusHours(8) ?: java.time.LocalTime.of(18, 0))
-                }
-            }
-        }
-    }, confirmButton = {
-        TextButton(onClick = { onSave(com.bamnat.core.team.TeamTimes.set(team, times.toMap())) }) { Text("저장") }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("나중에") } })
 }
