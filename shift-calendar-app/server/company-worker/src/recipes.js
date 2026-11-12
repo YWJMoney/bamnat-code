@@ -2311,12 +2311,19 @@ async function mine(d, env, request) {
   const trust = await recipeTrust(d, env, dev, now);
   const lim = await writeLeft(d, env, dev, "recipe", now);
   return d.json({ trust: trust.level, leftToday: lim.limit ? lim.limit.left : null, ...lim, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
-    items: await Promise.all(rows.map(async (r) => {
-      // 1.36 [GRW-08] PC 6ec395bf: 목록 카드에도 '사진 확인 중'·'사진이 신고로 잠시 가려졌어요'.
-      const p = await waitingPhotos(env, r.body, r.cover);
-      return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash, photos: p.held ? "held" : p.pending ? "pending" : null,
-        past: past.get(r.code) ?? 0 };
-    })) });
+    items: await (async () => {
+      // 1.36 [GRW-08] PC 6ec395bf: 목록 카드에도 '사진 확인 중'·'사진이 신고로 잠시 가려졌어요'. 2.0.0 [RVQ-43] 검토 SVC-34: 작품마다 두 번씩
+      // 묻던 것(100개면 200번)을, 모든 작품의 사진 번호를 모아 한 번(90개씩)에 물어요.
+      const idsOf = (r) => [...new Set(`${r.body ?? ""} ${r.cover ?? ""}`.match(/(?<![0-9a-f])[0-9a-f]{16}(?![0-9a-f])/g) ?? [])].slice(0, 20);
+      const all = [...new Set(rows.flatMap(idsOf))];
+      const waiting = new Map((await allIn(d, env, all, (part, marks) => [`SELECT id, state FROM recipe_images WHERE state IN ('pending', 'held') AND id IN (${marks})`, ...part]))
+        .map((x) => [x.id, x.state]));
+      return rows.map((r) => {
+        const states = idsOf(r).map((id) => waiting.get(id));
+        return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash,
+          photos: states.includes("held") ? "held" : states.includes("pending") ? "pending" : null, past: past.get(r.code) ?? 0 };
+      });
+    })() });
 }
 
 // ---- a recipe's talk (RCP-35) ----
@@ -2726,13 +2733,14 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const r = await d.one(env, "SELECT * FROM recipes WHERE code = ?", code);
     if (!r) return d.json({ error: "not_found" }, 404);
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    // 2.0.0 [RVQ-39] 검토 SVC-57·I22ba-05: 올리기·괜찮아요 is for one waiting for it (pending, returned, or up again after a return). A hidden
+    // one is shown with 'show' (which clears its reports), a 출시 대기 one with 공개; nothing brings a deleted one back.
+    const off = (what === "official" || what === "showcase") && body.on === false;
+    if (!off && !RECIPE_MOVES[what].includes(r.state)) return d.json({ error: "state", state: r.state }, 409);
     const stmts = [];
     let strike = null;
     let unstrike = null;
     if (what === "approve") {
-      // 2.0.0 [RVQ-39] 검토 SVC-57: 올리기·괜찮아요 is for one waiting for it (pending, returned, or up again after a return). A hidden one is
-      // shown with 'show' (which clears its reports), a 출시 대기 one with 공개.
-      if (!["pending", "returned", "visible"].includes(r.state)) return d.json({ error: "state", state: r.state }, 409);
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', decided_at = ?, note = '' WHERE code = ?", now, code));
       if (r.state === "pending") stmts.push(d.stmt(env, "UPDATE recipe_trust SET approved = approved + 1 WHERE device = ?", r.owner));
     } else if (what === "return") {
@@ -2894,6 +2902,21 @@ export async function reindexRecipes(d, env, limit = 200, pages = 5) {
   }
   return n;
 }
+
+/**
+ * 2.0.0 [RVQ-39] 검토 I22ba-05 (SVC-52·57·58): 운영 조치의 상태 전이 표. 조치마다 받을 수 있는 작품 상태만 적고, 다른 상태면 409
+ * {error: "state"}예요(지운 작품을 되살리거나, 가린 작품을 '괜찮아요'로 신고·경고를 그대로 둔 채 보이게 하던 길). 공식 표시를 끄는 것과
+ * 보여주기를 빼는 것은 어느 상태에서나 돼요.
+ */
+export const RECIPE_MOVES = {
+  approve: ["pending", "returned", "visible"],
+  return: ["pending", "visible", "returned", "hidden"],
+  hide: ["pending", "visible", "returned", "hidden", "waiting"],
+  show: ["hidden", "visible"],
+  delete: ["pending", "visible", "returned", "hidden", "waiting"],
+  official: ["pending", "visible", "returned", "hidden", "waiting"],
+  showcase: ["visible"],
+};
 
 /** [RVQ-39] Count held votes of [code] (one network's [group] or all): they go into the work's numbers as they would have. */
 async function releaseHeldVotes(d, env, code, group, actor, devices = null) {
