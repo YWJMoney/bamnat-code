@@ -367,6 +367,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
         viewModelScope.launch {
+            // 2.0.0 [RVL-13] (검토 DATA-13) What a file without a password left out, said after saving too.
+            val gaps = if (password == null) runCatching { container.backupManager.plainLeavesOut() }.getOrNull() else null
             _message.value = SettingsMessage(runCatching {
                 // [REL-15] A file of format 3: the photos stream from their files, sealed as they go when there is a password.
                 withContext(Dispatchers.IO) {
@@ -381,6 +383,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 if (opens) container.backupNudge.saved() // 1.32 [STAB-08]
                 when {
                     !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
+                    password == null && gaps != null && !gaps.isEmpty ->
+                        "백업 파일을 저장하고 확인했어요. 암호 없이 저장해 ${gaps.words}${com.bamnat.app.data.PlainLeavesOut.topic(gaps.words)} 빠졌어요"
                     password == null -> "백업 파일을 저장하고, 다시 열어 확인했어요"
                     else -> "암호 건 백업을 저장하고 확인했어요. 암호를 잊으면 열 수 없어요"
                 }

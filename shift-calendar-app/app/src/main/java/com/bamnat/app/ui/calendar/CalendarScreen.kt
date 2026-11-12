@@ -1289,6 +1289,14 @@ fun CalendarScreen(
                     RosterFollowLine(cal, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 })
             }
+            // 2.0.0 [RVL-02][RVL-06][RVL-09] (검토 DATA-08·U12-03·DATA-11·U12-08): a restore put back whole, a phone the data came to by
+            // Android's own backup, 앱 잠금 resting for want of the phone's lock. What the user trusts the app with comes right after the
+            // 리더's change, so it is the open one; each draws nothing (and is not counted) when it has nothing to say.
+            if (paint == null && viewingReceived == null) {
+                add(Notice("restoreStopped", "불러오기 멈춤") { com.bamnat.app.ui.settings.RestoreStoppedNotice() })
+                add(Notice("phoneMoved", "옮겨 온 것 확인") { com.bamnat.app.ui.settings.PhoneMovedNotice() })
+                add(Notice("appLockResting", "앱 잠금 쉼") { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
+            }
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
             // screen too, for a phone whose notices are off.

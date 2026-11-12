@@ -9,6 +9,9 @@
         <include domain="database" path="." />
         <include domain="sharedpref" path="settings.xml" />
         <include domain="file" path="." />
+        <!-- 2.0.0 [RVL-05] (검토 DATA-02) The settings kept apart go as files/carry/ (PhoneMove); the 프로 recovery code, the keys of
+             the links the user made and the received links followed only when the backup is encrypted with the phone's lock. -->
+        <include domain="root" path="carry_keys/" requireFlags="clientSideEncryption" />
         <exclude domain="file" path="diag/" />
         <exclude domain="file" path="receipts/" />
         <!-- [SLEEP-07] 1.38 잠 소리 클립은 이 휴대폰에만(7일 뒤 지움), 클라우드로 올리지 않아요. -->
@@ -22,6 +25,8 @@
         <include domain="database" path="." />
         <include domain="sharedpref" path="settings.xml" />
         <include domain="file" path="." />
+        <!-- 2.0.0 [RVL-05] A move from phone to phone goes by cable or the phones' own link: the keys go too. -->
+        <include domain="root" path="carry_keys/" />
         <exclude domain="file" path="diag/" />
         <exclude domain="file" path="sleep_clips/" />
     </device-transfer>

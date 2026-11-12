@@ -341,6 +341,25 @@ class ReceivedCalendarStore(
         write(_calendars.value.map { if (it.id == id) it.copy(note = note) else it })
     }
 
+    /**
+     * 2.0.0 [RVL-07] (검토 DATA-10·T12-04) Which links this phone follows, without what they hold (someone else's days are not the
+     * user's to back up, SHR-02): a phone the data came to ([com.bamnat.app.data.PhoneMove]) reads each again once the user says so.
+     */
+    fun links(): JSONArray = JSONArray().apply {
+        _calendars.value.filter { !it.gone }.forEach { cal ->
+            put(JSONObject().put("id", cal.id).put("title", cal.title).put("color", cal.color)
+                .apply { if (cal.mine) put("mine", true); if (cal.adopted) put("adopted", true); cal.follow?.let { put("follow", it) } })
+        }
+    }
+
+    /** 2.0.0 [RVL-07] A link read again on a phone the data came to, kept as the old phone had it (내 근무표, 따라가기). */
+    fun relink(id: String, share: ReceivedShare, mine: Boolean, adopted: Boolean, follow: String?) {
+        // What it shows now is what the days the user brought along were matched to: nothing is put in twice.
+        put(id, share, mine = mine, basis = share.schedule)
+        if (adopted) markAdopted(id)
+        if (follow != null) setFollow(id, follow)
+    }
+
     fun remove(id: String) {
         write(_calendars.value.filter { it.id != id })
         if (_viewing.value == id) _viewing.value = null

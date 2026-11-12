@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
-            NoticeLinks.read(intent)
+            NoticeLinks.read(this, intent)
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
@@ -122,6 +122,11 @@ class MainActivity : ComponentActivity() {
         // [SRV-08] P9: with 앱 잠금 on, the recents screen and screenshots show no calendar or money.
         DisposableEffect(settings.appLock) {
             AppLock.secure(window, settings.appLock)
+            onDispose { }
+        }
+        // 2.0.0 [RVL-09] (검토 DATA-11) 금액 가리기 keeps the recents list from showing the app's amounts too.
+        DisposableEffect(settings.hideAmounts, settings.appLock) {
+            AppLock.hideRecents(this@MainActivity, settings.hideAmounts && !settings.appLock)
             onDispose { }
         }
         // Status bar icons follow the app theme, not only the system one.
@@ -234,9 +239,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openLink(intent)
-        IncomingRoster.read(intent) // [ROST-09] shared while the app was open
+        // [ROST-09] shared while the app was open. 2.0.0 [RVL-14] (검토 DATA-06): a backup or a 회사 설정 file opened while the app was
+        // open came here and was never read (the app only came forward); it is offered now as on a first open.
+        if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
-        if (NoticeLinks.read(intent)) HomeRequests.followingLink()
+        if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
@@ -335,6 +342,12 @@ class MainActivity : ComponentActivity() {
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 2.0.0 [RVL-09] (검토 DATA-11) A screen's result came in just before this: the lock that waited for it closes now.
+        AppLock.onResume()
+    }
+
     override fun onStop() {
         super.onStop()
         com.bamnat.app.diag.MainStall.stop()
@@ -345,6 +358,9 @@ class MainActivity : ComponentActivity() {
         startDone = false
         HomeRequests.onStop(isChangingConfigurations)
         AppLock.onStop(isChangingConfigurations)
+        // 2.0.0 [RVL-05] (검토 DATA-02) What Android's own backup takes is written as the app goes to the background: its backup runs
+        // while the phone rests, so a setting changed today is in it.
+        if (!isChangingConfigurations) appContainer.let { c -> c.appScope.launch { runCatching { c.phoneMove.keep() } } }
     }
 
     private companion object {

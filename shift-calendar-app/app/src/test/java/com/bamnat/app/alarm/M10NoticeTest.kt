@@ -101,18 +101,37 @@ class M10NoticeTest {
         assertEquals(1, money.size)
         assertEquals("오늘 나갈 돈 2건", money.single().extras.getString(Notification.EXTRA_TITLE))
         val open = shadowOf(money.single().contentIntent).savedIntent
-        assertTrue(NoticeLinks.read(open))
+        assertTrue(NoticeLinks.read(context, open))
         assertEquals(NoticeLinks.Target.MONEY, NoticeLinks.target.value)
     }
 
     @Test fun aNoticeOpenedAgainFromRecentsDoesNotJumpAgain() {
         val intent = NoticeLinks.intent(context, NoticeLinks.Target.LEAVE)
-        assertFalse(NoticeLinks.read(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)))
+        assertFalse(NoticeLinks.read(context, Intent(intent).addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)))
         assertNull(NoticeLinks.target.value)
-        assertTrue(NoticeLinks.read(intent))
+        assertTrue(NoticeLinks.read(context, intent))
         // Followed once: the same intent handed back later says nothing.
         NoticeLinks.consume(NoticeLinks.Target.LEAVE)
-        assertFalse(NoticeLinks.read(intent))
+        assertFalse(NoticeLinks.read(context, intent))
+    }
+
+    /**
+     * 2.0.0 [RVL-08] (검토 DATA-03) Another app can start the launcher activity with the same extras a notice carries: without the value
+     * only this app knows, nothing is followed (no screen inside, no 밤 소리 측정).
+     */
+    @Test fun anIntentAnotherAppMadeIsNotFollowed() {
+        val own = NoticeLinks.intent(context, NoticeLinks.Target.SLEEP, payload = com.bamnat.app.sleep.SleepRecordService.FROM_NOTICE)
+        val forged = Intent(context, com.bamnat.app.MainActivity::class.java).putExtras(own.extras!!).apply { removeExtra("com.bamnat.app.extra.KEY") }
+        assertFalse(NoticeLinks.read(context, forged))
+        assertNull(NoticeLinks.target.value)
+        assertNull(NoticeLinks.payload.value)
+        val guessed = Intent(forged).putExtra("com.bamnat.app.extra.KEY", "0".repeat(32))
+        assertFalse(NoticeLinks.read(context, guessed))
+        assertNull(NoticeLinks.target.value)
+        // The app's own notice still opens where it says.
+        assertTrue(NoticeLinks.read(context, own))
+        assertEquals(NoticeLinks.Target.SLEEP, NoticeLinks.target.value)
+        NoticeLinks.consume(NoticeLinks.Target.SLEEP)
     }
 
     @Test fun onlyTheCommuteNoticeMakesASoundAndItShowsOnTheLockScreen() {

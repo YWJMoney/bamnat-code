@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.Icon
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +20,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.bamnat.app.ui.theme.color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -39,6 +45,10 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
     val photos by androidx.compose.runtime.produceState<com.bamnat.app.data.BackupPhotos.Size?>(null) {
         value = c?.takeIf { it.settingsRepository.current.backupPhotos }?.let { runCatching { it.backupManager.photoSize() }.getOrNull() }
     }
+    // 2.0.0 [RVL-13] (검토 DATA-13·U12-01·T12-02) What a file without a password leaves out on this phone, said first and plainly.
+    val gaps by androidx.compose.runtime.produceState<com.bamnat.app.data.PlainLeavesOut?>(null) {
+        value = c?.let { runCatching { it.backupManager.plainLeavesOut() }.getOrNull() }
+    }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     val mismatch = second.isNotEmpty() && first != second
@@ -48,6 +58,13 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
         title = { Text("백업에 암호를 걸까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                gaps?.takeIf { !it.isEmpty }?.let { g ->
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.WarningAmber, contentDescription = null,
+                            tint = com.bamnat.app.ui.theme.Tone.Caution.color(), modifier = Modifier.size(18.dp))
+                        Text(g.line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { contentDescription = "주의, ${g.line}" })
+                    }
+                }
                 Text(
                     "암호를 걸면 파일을 다른 사람이 열어 볼 수 없어요. 암호는 어디에도 저장하지 않아서 잊으면 이 백업을 열 수 없어요.",
                     style = MaterialTheme.typography.bodySmall,

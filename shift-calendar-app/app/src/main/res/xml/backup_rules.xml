@@ -6,6 +6,9 @@
     <include domain="database" path="." />
     <include domain="sharedpref" path="settings.xml" />
     <include domain="file" path="." />
+    <!-- 2.0.0 [RVL-05] (검토 DATA-02) The 프로 recovery code, the keys of the links the user made and the received links followed
+         (PhoneMove): only when Android encrypts the backup with the phone's lock (from Android 9; before it the app never writes them). -->
+    <include domain="root" path="carry_keys/" requireFlags="clientSideEncryption" />
     <exclude domain="file" path="diag/" />
     <exclude domain="file" path="receipts/" />
     <!-- [SLEEP-07] 1.38 잠 소리 클립은 이 휴대폰에만(7일 뒤 지움), 클라우드로 올리지 않아요. -->

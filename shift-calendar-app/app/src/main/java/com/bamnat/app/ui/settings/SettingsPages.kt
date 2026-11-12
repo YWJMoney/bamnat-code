@@ -958,7 +958,7 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         )
     }
     SectionCard(title = "백업") {
-        Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정, 내가 만든 근무표 링크를 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없어요.")
+        Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없고, 사업장·직원·급여 대장과 내가 만든 근무표 링크의 열쇠도 같이 들어가요.")
         // 1.32 [STAB-08] When the last backup was, said where it is made.
         val c = LocalContext.current.appContainer
         val nudge by c.backupNudge.state.collectAsStateWithLifecycle()
@@ -1469,13 +1469,17 @@ internal fun MoveToNewPhoneDialog(onSave: () -> Unit, onDismiss: () -> Unit) {
                 Text("1. 이 휴대폰에서 ‘백업 저장’으로 파일을 만들어요(암호를 걸 수 있어요).\n2. 파일을 새 휴대폰으로 보내요(카톡 나에게 보내기, 클라우드, 케이블).\n3. 새 휴대폰에서 밤낮을 열고 ‘백업이나 회사 파일로 시작할게요’ 또는 설정 › 데이터 › ‘파일 불러오기’.",
                     style = MaterialTheme.typography.bodyMedium)
                 Text("옮겨지는 것", style = MaterialTheme.typography.titleSmall)
-                Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록과 영수증 사진, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
-                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, 내가 만든 근무표 링크, " +
+                Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
+                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, " +
                     "마을 › 테마의 내 서랍(입은 테마·입어 본 테마·내 테마·담아 둔 조각·묶음)·받은 레시피·만들던 것",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVL-13] (검토 T12-02·T12-08) What goes only on a condition, said where the user decides.
+                Text("이럴 때만 옮겨지는 것", style = MaterialTheme.typography.titleSmall)
+                Text("영수증·계약서·메모 사진은 ‘사진도 백업’을 켰을 때. 사업장·직원·급여 대장, 내가 만든 공유 링크(고치는 열쇠), 프로 복구 코드는 백업에 암호를 걸었을 때",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("이 휴대폰에만 남는 것", style = MaterialTheme.typography.titleSmall)
-                Text("출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 받은 동료 달력, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
-                    "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록",
+                Text("밤 소리 클립, 출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
+                    "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록. 받은 동료 달력은 새 휴대폰에서 다시 이어요",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },

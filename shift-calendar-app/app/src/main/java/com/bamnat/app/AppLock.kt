@@ -46,13 +46,32 @@ object AppLock {
     /** The phone has a lock of its own; without one there is nothing to ask, so the switch is not offered. */
     fun available(context: Context): Boolean = context.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
 
+    /**
+     * 2.0.0 [RVL-09] (검토 DATA-11) Away long enough while a screen the app opened (a file picker, a permission page) was in front: the
+     * lock waits only for its result to come in ([onResume]), it no longer stays open however long the phone was left.
+     */
+    private var lockAfterResult = false
+
     fun onStart(context: Context, on: Boolean, awaitingResult: Boolean) {
         val away = stoppedAt > 0 && SystemClock.elapsedRealtime() - stoppedAt >= AWAY_MILLIS
         if (on && available(context) && (!started || away && !awaitingResult)) _locked.value = true
+        lockAfterResult = on && available(context) && started && away && awaitingResult
         if (!on) _locked.value = false
         started = true
         stoppedAt = 0L
     }
+
+    /** 2.0.0 [RVL-09] Android hands the screen's result in before this: now the app locks as it would have on coming back. */
+    fun onResume() {
+        if (lockAfterResult) _locked.value = true
+        lockAfterResult = false
+    }
+
+    /**
+     * 2.0.0 [RVL-09] (검토 DATA-11·U12-08) 앱 잠금 is on but the phone has no lock of its own any more (it was taken off in the phone's
+     * settings): there is nothing to ask, so the app opens as it is. Said over the calendar instead of in silence.
+     */
+    fun resting(context: Context, on: Boolean): Boolean = on && !available(context)
 
     fun onStop(changingConfigurations: Boolean) {
         if (!changingConfigurations) stoppedAt = SystemClock.elapsedRealtime()
@@ -65,6 +84,15 @@ object AppLock {
     fun secure(window: android.view.Window, on: Boolean) {
         if (on) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
         else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    /**
+     * 2.0.0 [RVL-09] (검토 DATA-11) With 금액 가리기 on (and 앱 잠금 off), the recents screen shows no picture of the app either (Android 13+):
+     * pay and money hidden on screen were still there in the recents list. Screenshots stay allowed: the user shares the calendar on
+     * purpose, and the amounts in it are hidden already.
+     */
+    fun hideRecents(activity: Activity, on: Boolean) {
+        if (Build.VERSION.SDK_INT >= 33) activity.setRecentsScreenshotEnabled(!on)
     }
 
     /** Turned off in settings: no cover from now on. */
