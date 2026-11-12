@@ -233,6 +233,6 @@ internal fun OldTasksSheet(
             }
         },
         dismissButton = { TextButton(onClick = onClose) { Text("닫기") } },
-        confirmButton = { androidx.compose.material3.Button(onClick = { onAll(OldWay.DONE) }) { Text(OldWay.DONE.label, maxLines = 1) } },
+        confirmButton = { com.bamnat.app.ui.components.Button(onClick = { onAll(OldWay.DONE) }) { Text(OldWay.DONE.label, maxLines = 1) } },
     )
 }
