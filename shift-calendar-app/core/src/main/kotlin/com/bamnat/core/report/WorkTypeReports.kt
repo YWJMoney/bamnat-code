@@ -49,7 +49,8 @@ object YearShiftReport {
             "일한 시간" to hm(months.sumOf { it.minutes }),
             "추가 근무" to hm(months.sumOf { it.extraMinutes }),
             pays.takeIf { it.isNotEmpty() }?.let { "예상 급여 합계(세전)" to won(it.sum()) },
-            who.takeIf { it.isNotBlank() }?.let { "이름" to it },
+            // 2.0.0 [RVJ-47] 검토 PC-111 같은 틀: [who] is the 직업 the pay setup holds ('제조·생산 교대'), not a name.
+            who.takeIf { it.isNotBlank() }?.let { "직업" to it },
         ))
         blocks += ReportDoc.Heading("달마다")
         blocks += ReportDoc.Table(
@@ -108,7 +109,8 @@ object FieldDaysProof {
     fun doc(who: String, from: LocalDate, to: LocalDate, days: List<Day>, made: LocalDate): ReportDoc {
         val blocks = mutableListOf<ReportDoc.Block>()
         blocks += ReportDoc.Facts(listOfNotNull("기간" to "$from ~ $to", "일한 날" to "${days.size}일",
-            "신청 전 1개월 일한 날" to "${lastMonthDays(days, to)}일", who.takeIf { it.isNotBlank() }?.let { "이름" to it }))
+            // 2.0.0 [RVJ-47] 검토 PC-111 같은 틀: a proof handed in has a 이름 칸; the app keeps no name, so it is left to write by hand.
+            "신청 전 1개월 일한 날" to "${lastMonthDays(days, to)}일", "이름" to who.trim()))
         blocks += ReportDoc.Heading("달마다 일한 날")
         val byMonth = days.groupBy { YearMonth.from(it.date) }.toSortedMap()
         blocks += ReportDoc.Table(listOf("달", "일한 날", "공수"), byMonth.map { (m, l) ->

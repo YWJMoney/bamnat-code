@@ -133,9 +133,13 @@ object ShiftHealth {
     fun worked(day: ResolvedDay): Boolean =
         (day.isWorkDay && day.leave?.isFullDay != true) || day.extras.any { it.minutes > 0 }
 
-    /** A day whose work reaches into 22:00~06:00: its own shift, or extra work on the clock such as a 야간 대근. */
+    /**
+     * A day whose work reaches into 22:00~06:00: its own shift, or extra work on the clock such as a 야간 대근. [RVH-44] A day of two parts
+     * asks each part: 06~09 and 17~21 is not a night for its outer 06~21.
+     */
     fun night(day: ResolvedDay): Boolean {
-        val own = day.isWorkDay && day.leave?.isFullDay != true && day.start != null && day.end != null && NightShift.crosses(day.start, day.end)
+        val own = day.isWorkDay && day.leave?.isFullDay != true &&
+            day.segments.any { NightShift.crosses(it.start.toLocalTime(), it.endInclusive.toLocalTime()) }
         return own || day.extras.any { e -> e.start != null && e.end != null && NightShift.crosses(e.start!!, e.end!!) }
     }
 }

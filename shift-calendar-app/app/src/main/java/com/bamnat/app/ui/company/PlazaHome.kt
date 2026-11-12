@@ -582,12 +582,9 @@ private fun InfoCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit) {
             val r = state.room
             if (state.facts.isEmpty()) Text(if (r == null) "불러오는 중이에요" else "아직 정리된 정보가 없어요",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            state.facts.forEach { (label, value) ->
-                Row {
-                    Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(88.dp))
-                    Text(value, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            // 2.0.0 [RVN-20] HQ-90: the same label·value row as the company page's department card (one shift a line, the label above the
+            // value from 130% or under 280dp), not a fixed 88dp column that left the shifts a word or two a line.
+            state.facts.forEach { (label, value) -> SetupLine(label, value) }
             r?.base?.let { b ->
                 Text((if (b.adopted) "채택된 설정" else "확인 중인 설정") + " · 쓰는 분 ${b.uses}명" + (b.version?.let { " · ${it}판" } ?: ""),
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)

@@ -242,11 +242,14 @@ internal object SettingsIndex {
         screen(N.title, "수면 기록 보기", SettingsGo.SLEEP, "수면 기록", "잠든 시간", "잠들었어요", "깼어요"),
         // 1.38 [SLEEP-19] 수면 도약의 새 스위치와 화면.
         row(N, com.bamnat.app.ui.sleep.SLEEP_AUTO_ROW, "자동 수면", "수면 감지", "잠 자동", "자동 기록", "활동 인식").takeIf { sleepAuto },
+        row(N, com.bamnat.app.sleep.SleepNoTap.ROW, "충전", "누르지 않는 수면", "잠 자동", "자동 기록").takeIf { sleepAuto },
         row(N, HEALTH_WRITE_ROW, "헬스 커넥트", "삼성 헬스", "수면 내보내기", "다른 건강 앱"),
         row(N, SLEEP_DND_ROW, "방해 금지", "무음", "중요한 알림만", "잘 때 알림 끄기"),
         screen(N.title, "잠드는 소리", SettingsGo.SLEEP, "백색 소음", "빗소리", "파도", "수면 소리", "자장가", "소음"),
         screen(N.title, "자는 동안 소리 재기", SettingsGo.SLEEP, "코골이", "잠꼬대", "이갈이", "기침", "녹음", "측정 시작").takeIf { sleepSound },
         screen(N.title, "깨우는 구간", SettingsGo.SLEEP, "스마트 알람", "얕은 잠", "일찍 깨우기", "스마트 기상").takeIf { sleepSound },
+        // 2.0.0 [RVI-89]
+        row(N, com.bamnat.app.sleep.SleepRecordOffer.ROW, "충전", "소리 재기 알림", "측정 권하기", "코골이 재기 잊음").takeIf { sleepSound },
         screen(N.title, "근무 맞춤 회복 도전", SettingsGo.SLEEP, "도전", "21일", "수면 챌린지"),
         row(N, "휴식 점검", "11시간", "연속 야간", "휴식"),
         // [REST-01] The limits sheet, also opened from the calendar's check card.
@@ -282,6 +285,9 @@ internal object SettingsIndex {
         // 2.0.0 [RVN-14] HQ-51
         row(N, "알림함에 올 반응", "내 글 반응", "답 알림", "나도요", "좋아요 알림", "맞아요 알림", "시세 반응", "부탁 반응", "공모 뽑힘", "알림함"),
         row(N, "자는 동안 미루기", "방해 금지", "조용히"),
+        // 2.0.0 [RVIB-05] (검토 I07ac-02)
+        row(N, MEMO_HOLD_ROW, "근무 중 알림", "메모 알림 모으기", "퇴근 때 알림", "일하는 중 방해"),
+        row(N, MEMO_REST_ROW, "밀린 할 일", "못 끝낸 할 일", "쉬는 날 정리", "할 일 정리"),
         screen(P.title, "급여 계산", SettingsGo.PAY, "월급", "기본급", "수당", "연차", "시급", "명세서", "통상임금",
             // [SET-03] 1.22 묶음 A·C·D: what is set in the pay settings.
             "부양가족", "자녀 수", "간이세액", "공무원 봉급", "계급", "호봉", "호봉표", "탄력근무", "포괄임금", "연차 세는 기준", "회계연도"),
@@ -403,7 +409,9 @@ internal object SettingsIndex {
         // 1.25 Z
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
         // ---- 1.25 묶음 X [PLAZA-06] ----
-        row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
+        // 2.0.0 [RVH-53] HQ-27: '회사 찾기' finds it only where the work has a company (the row says so only there, [J133-71]).
+        row(W, SETUP_AGAIN_ROW, *(listOf("첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "초기 설정", "처음부터") +
+            listOfNotNull("회사 찾기".takeIf { company })).toTypedArray()),
         // [EASE-27] 1.38 내 규칙 한눈에.
         row(W, RULE_CARDS_ROW, "규칙", "내 규칙", "조건", "공휴일 규칙", "알람 조건", "수당 조건", "문장"),
         // ---- 1.26 묶음 AD [NAV-07] ----
