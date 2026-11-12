@@ -309,6 +309,11 @@ data class AppSettings(
     val moneyLayout: String = "",
     /** 1.37 [LEDH-20] 가계부 요약의 '점검' 묶음이 펼쳐져 있는지. */
     val moneyCheckOpen: Boolean = false,
+    /**
+     * 2.0.0 [RVK-19] (검토 U06a-06·MONEY-19) The big figure at the top of 요약: "" (저절로: 나간 돈 while nothing came in, else 수입 − 지출),
+     * "NET" or "SPENT" once the user swapped it. In the backup.
+     */
+    val moneyHero: String = "",
     /** 1.37 [LEDH-34] 예산 넘김: the categories whose budget left over (or gone over) carries to the next month, tab-separated. */
     val budgetRollover: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
@@ -581,6 +586,7 @@ class SettingsRepository(context: Context) {
             backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
             moneyCheckOpen = prefs.getBoolean(K_MONEY_CHECK_OPEN, d.moneyCheckOpen),
+            moneyHero = prefs.getString(K_MONEY_HERO, null) ?: d.moneyHero,
             budgetRollover = prefs.getString(K_BUDGET_ROLLOVER, null) ?: d.budgetRollover,
             calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
             widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
@@ -722,6 +728,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
             .putBoolean(K_MONEY_CHECK_OPEN, s.moneyCheckOpen)
+            .putString(K_MONEY_HERO, s.moneyHero)
             .putString(K_BUDGET_ROLLOVER, s.budgetRollover)
             .putString(K_CAL_THEME, s.calTheme)
             .putString(K_WIDGET_LOOK, s.widgetLook)
@@ -807,6 +814,7 @@ class SettingsRepository(context: Context) {
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MONEY_CHECK_OPEN = "money_check_open"
+        const val K_MONEY_HERO = "money_hero"
         const val K_BUDGET_ROLLOVER = "budget_rollover"
         const val K_MONEY_CYCLE = "money_pay_cycle"
         const val K_WORK_TIME = "work_time_from"
