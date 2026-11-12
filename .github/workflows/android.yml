@@ -176,6 +176,39 @@ jobs:
         run: |
           python3 -m pip install --quiet pillow
           python3 tools/shot_hashes.py check app/build/screenshots --results app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
+      # 2.0.0 [RVR-39] (검토 TEST-12 ①·I60b-03) 43장 골든 밖의 모든 사진도: 사진마다 지문(픽셀 sha1, 회색 32x48, 색 8x12)을 남기고,
+      # 지난 실행(같은 브랜치의 앞 실행, 없으면 가장 최근 실행)의 지문과 견줘 '어제와 다른 장'을 요약에 적어요(실패로 막지는 않아요).
+      # 가장 많이 바뀐 24장은 오늘·어제 회색·바뀐 곳을 나란히 한 그림(shot-diff 결과 묶음)으로.
+      - name: 어제와 다른 화면 사진
+        if: always() && startsWith(matrix.set, 'shots-')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.head_ref || github.ref_name }}
+          NAME: shot-prints-${{ matrix.set }}
+        run: |
+          python3 tools/shot_hashes.py prints app/build/screenshots --out build/shot-prints/prints.json || exit 0
+          got=""
+          for q in "--branch $HEAD" ""; do
+            for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow android.yml $q --status completed --limit 10 --json databaseId --jq '.[].databaseId'); do
+              [ "$id" = "$GITHUB_RUN_ID" ] && continue
+              if gh run download "$id" -R "$GITHUB_REPOSITORY" -n "$NAME" -D build/shot-base 2>/dev/null; then got=$id; break 2; fi
+            done
+          done
+          if [ -n "$got" ]; then
+            echo "기준: 실행 $got ($(gh run view "$got" -R "$GITHUB_REPOSITORY" --json headBranch,headSha --jq '.headBranch + " " + .headSha[0:8]'))" >> "$GITHUB_STEP_SUMMARY"
+            python3 tools/shot_hashes.py diff build/shot-base/prints.json build/shot-prints/prints.json --shots app/build/screenshots --sheet build/shot-prints/shot-diff.png >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### 어제와 다른 화면 사진: 견줄 지난 지문이 없어요(첫 실행이거나 지난 결과가 지워짐)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: always() && startsWith(matrix.set, 'shots-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: shot-prints-${{ matrix.set }}
+          path: |
+            shift-calendar-app/build/shot-prints/prints.json
+            shift-calendar-app/build/shot-prints/shot-diff.png
+          if-no-files-found: ignore
+          retention-days: 14
       # 2.0.0 [U60-01] (검토 2026-11-12) 기준 브랜치(PR이면 합칠 곳, push면 같은 브랜치)의 마지막 실행에서 같은 일의 결과를 받아,
       # 요약 맨 위 실패를 '이 PR에서 처음 깨짐'과 '기준에서도 깨짐(날짜·바깥 탓)'으로 나눠요. 못 받으면 그렇다고 적고 지나가요.
       - name: 기준 브랜치 결과 받기
