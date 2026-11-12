@@ -53,7 +53,7 @@ jobs:
         with:
           cache-read-only: false
       - run: python3 tools/check_tracker.py
-      - run: python3 tools/test_check_checklist.py
+      - run: python3 tools/test_check_checklist.py && python3 tools/test_app_size.py
       - run: python3 tools/test_dev_status.py
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
       # 믿는 열쇠로 서명됐는지(.sig2), 핵심 화면 사진 이름이 시험에 그대로 있는지, 그리고 그 도구들의 시험.
@@ -112,10 +112,13 @@ jobs:
           changed=$(git ls-files --others --modified --exclude-standard database/schemas)
           for f in $changed; do echo "::group::$f"; cat "$f"; echo "::endgroup::"; done
           test -z "$changed" || { echo "Commit these schema files: $changed"; exit 1; }
-      # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json).
+      # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json). [RVR-19] (검토 TEST-20 ④)
+      # Here they must be there: the servers job skips them (no app run), so this is the one place they are checked.
       - if: matrix.set == 'unit'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker
+        env:
+          BAMNAT_NEED_APP_PAYLOADS: "1"
       # [QA-06] 43 key screenshots (drawn on a fixed day, QA-08) against their fingerprints (tools/shot_hashes.py); a change that was meant
       # comes with `python3 tools/shot_hashes.py update app/build/screenshots` in the same pull request. [RVR-11] With --results, a key
       # shot whose test class ran in this shard but left no picture fails ('비교 못 함') instead of passing without a word.
@@ -187,6 +190,8 @@ jobs:
       - if: steps.changed.outputs.server == '1'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker
+        env:
+          BAMNAT_NEED_APP_PAYLOADS: "1"
       - if: always() && steps.changed.outputs.server == '1'
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
       - if: always() && steps.changed.outputs.server == '1'

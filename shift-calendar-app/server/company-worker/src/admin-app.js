@@ -1595,7 +1595,8 @@ function adminApp(L, BUILD, M) {
       ${edit && !current && x.entries.length ? `<div class="actions"><button class="btn primary" data-act="contest-pick" data-id="${esc(x.month)}|${esc(x.style)}">고른 작품을 이달의 테마로 (3개까지)</button></div>` : ""}
     </article>`;
     return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 마을 › 공방 맨 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
-      앱에 ‘지난 달 이달의 테마’로 보여요. 고르면 작품 주인에게 프로 한 달(만든 작품 보상, 작품·달마다 한 번, 1년 12달 상한)이 바로 들어가요.</p>
+      앱에 ‘지난 달 이달의 테마’로 보여요. 고르면 작품 주인의 프로 한 달(만든 작품 보상, 작품·달마다 한 번, 1년 12달 상한)이 ‘드릴 보상’에 생기고 보상 화면에서 확인한 뒤 나가요.
+      다시 고르면 저장하기 전에 새로 생기는 보상과 빠지는 작품의 보상을 보여 줘요.</p>
       <div class="grid">${now.map((x) => card(x, true)).join("")}</div>
       ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
   }
@@ -5448,15 +5449,26 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // 2.0.0 [RVA-04] 검토 ADM-05: 공모 뽑기는 보상이 따르니 한 번 묻고(되돌리기는 그대로).
-    "contest-pick": ({ id }) => {
+    "contest-pick": async ({ id }) => {
       const [month, style] = id.split("|");
       const codes = [...document.querySelectorAll(`input[data-pick="${id}"]:checked`)].map((el) => el.value);
       if (codes.length > 3) return toast("3개까지 골라 주세요");
       const x = S.data.contests?.items.find((c) => c.month === month && c.style === style);
-      const names = codes.map((c) => x?.entries.find((e) => e.code === c)?.title ?? c);
+      const name = (c) => x?.entries.find((e) => e.code === c)?.title ?? c;
+      const names = codes.map(name);
+      // 2.0.0 [RVR-20] (검토 TEST-18 ①) 다시 고를 때 바뀌는 보상을 먼저 보여 줘요: 새로 생기는 보상, 빠지는 작품의 대기·지급된 보상.
+      const change = await act(() => api("/village/contests/pick", "POST", { month, style, codes, dry: true }));
+      if (!change) return;
+      const fresh = change.added.filter((a) => a.reward === "new").map((a) => name(a.code));
+      const owed = change.dropped.filter((a) => a.reward === "owed").map((a) => name(a.code));
+      const paid = change.dropped.filter((a) => a.reward === "paid").map((a) => name(a.code));
+      const rows = [["유형", STYLE_NAMES[style] ?? style], ["고른 작품", names.join(", ") || "없음"]];
+      if (fresh.length) rows.push(["새로 생기는 보상", `${fresh.join(", ")} (프로 한 달씩, 확인 뒤 지급)`]);
+      if (owed.length) rows.push(["빠지는 작품의 대기 보상", `${owed.join(", ")} · 보상 화면에서 취소해 주세요`]);
+      if (paid.length) rows.push(["빠지는 작품의 지급된 보상", `${paid.join(", ")} · 이미 나가서 거두지 못해요`]);
       danger({ title: codes.length ? "이달의 테마로 고를까요?" : "고른 것을 비울까요?",
-        text: codes.length ? "앱 공방에 '지난 달 이달의 테마'로 보이고, 작품 주인의 프로 한 달 보상이 '드릴 보상'에 생겨요(확인 뒤 지급)." : "앱 공방에서 빠져요.",
-        rows: [["유형", STYLE_NAMES[style] ?? style], ["고른 작품", names.join(", ")]], label: codes.length ? "고르기" : "비우기", tone: "primary",
+        text: codes.length ? "앱 공방에 '지난 달 이달의 테마'로 보이고, 새로 고른 작품 주인의 프로 한 달 보상이 '드릴 보상'에 생겨요(확인 뒤 지급)." : "앱 공방에서 빠져요.",
+        rows, label: codes.length ? "고르기" : "비우기", tone: paid.length ? "danger" : "primary",
         run: () => ACTIONS["contest-run"]({ id, month, style, codes }) });
     },
     "contest-run": async ({ month, style, codes }) => {

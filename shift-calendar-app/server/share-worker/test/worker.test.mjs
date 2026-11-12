@@ -358,10 +358,13 @@ test("asset links name the app only once a certificate is set", async () => {
 });
 
 // [SHR-01] What the app's ShareLinkTest wrote (app/build), when it ran first: the server takes the
-// app's own payloads whole and keeps what the sharer ticked.
+// app's own payloads whole and keeps what the sharer ticked. 2.0.0 [RVR-19] (검토 TEST-20 ④) With BAMNAT_NEED_APP_PAYLOADS=1
+// (CI's app jobs, right after the app tests) a missing file fails instead of skipping, so the check is never lost without a word.
+const needPayloads = process.env.BAMNAT_NEED_APP_PAYLOADS === "1";
 for (const name of ["share-payload.json", "share-payload-v2.json", "share-payload-field.json"]) {
   const file = new URL(`../../../app/build/${name}`, import.meta.url);
-  test(`the app's ${name} passes`, { skip: !existsSync(file) && "run the app's ShareLinkTest first" }, () => {
+  test(`the app's ${name} passes`, { skip: !needPayloads && !existsSync(file) && "run the app's ShareLinkTest first" }, () => {
+    assert.ok(existsSync(file), `${name} is missing: the app's ShareLinkTest did not write it (did it run, or fail?)`);
     const body = JSON.parse(readFileSync(file, "utf8"));
     const out = validate(body);
     assert.equal(out.error, undefined, `error ${out.error}`);
