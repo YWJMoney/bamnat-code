@@ -65,6 +65,11 @@ object NoticeLinks {
         VILLAGE_POSTS,
         /** [TOWN-01] 1.37 마을 › 장터, from a 소식 that says only what came new in 장터. */
         MARKET,
+        /**
+         * 2.0.0 [RVP-43] One work of 장터 by its code in [payload], from the 알림함 ('부탁하신 꾸미기가 풀렸어요', U13b-10; a reaction to
+         * one's own work, HQ-52).
+         */
+        RECIPE,
         /** [GUIDE-20] 1.31: 회사 찾기, from the first week's 시작 단계 card. */
         COMPANY_FIND,
         /** [INQ-05] 문의하기 on 내 문의, from 밤낮 소식's answer line. */
