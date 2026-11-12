@@ -120,3 +120,5 @@
 {"track": "RVP-59", "title": "새 캐릭터 말랑 칸이 10표정", "status": "check", "size": "polish", "route": "app", "check": "빈 화면·안내에 말랑 칸이가 보이고, 설정 › 칸이 보이기를 끄면 사라짐"}
 {"track": "RVP-83", "title": "디자인 규칙을 세는 시험", "status": "check", "size": "polish", "route": "app", "check": "화면에 닿지 않음(시험)"}
 {"track": "RVP-84", "title": "공통 부품과 값 문서", "status": "check", "size": "polish", "route": "app", "check": "화면에 닿지 않음(문서)"}
+{"track": "MKS-05", "title": "나간 판을 저장하면(Play 자동 감지 포함) 그 판 앱부터 읽는 출시 대기 장터 작품을 함께 공개", "status": "check", "size": "polish", "route": "server", "check": "출시 대기에 minApp 53 묶음 → 1.39.0 나간 판 저장(dry에 장터 작품 수) → 앱 53 장터에만 보임, 예약·다음 판·minApp 없는 묶음은 그대로"}
+{"track": "PC-28", "title": "달 넘김 효과나 움직임 끄기를 써도 달력에서 누른 날짜가 그대로 열림", "status": "check", "size": "fix", "route": "app", "test": "MonthTurnTapTest", "check": "달 넘김 스르륵·책장 넘기기·움직이지 않기 작품, 움직임 끄기, 휴대폰 애니메이션 삭제에서 11월 12일을 누르고 길게 눌러 근무 넣기 → 11월 12일에 열리고 저장, 달 넘김 모양은 그대로"}

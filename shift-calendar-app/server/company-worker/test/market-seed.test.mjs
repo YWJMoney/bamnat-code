@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
 import { server, signIn } from "./helpers.mjs";
+import { resumeShip, shippedVersion } from "../src/desk.js";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
 const recipe = (title, extra = {}) => ({
@@ -185,4 +186,52 @@ test("1.39 판 정리 belowApp: 그 판 미만 옛 앱의 장터에는 계속 �
   // 되돌리면 모두에게 다시.
   await call("POST", "/api/admin/recipes/show-titles", { titles: ["옛 테마 하나", "옛 테마 둘"] }, admin);
   assert.equal(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")).length, 2);
+});
+
+test("[MKS-05] 나간 판 저장이 그 판 앱부터 읽는 출시 대기 작품을 함께 공개해요 (예약·다음 판·minApp 없는 것은 그대로)", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, env } = server({ plaza: true });
+  const admin = await signIn(call);
+  const put = (title, extra) => call("POST", "/api/admin/recipes", { recipe: recipe(title), hold: true, ...extra }, admin);
+  await put("1.39 정상급 테마", { batch: "1.39 정상급 작품", minApp: 53 });
+  await put("1.38 남은 작품", { batch: "옛 묶음", minApp: 52 });
+  await put("1.40 작품", { batch: "1.40", minApp: 54 });
+  await put("판 없는 작품", { batch: "아무 판" });
+  await put("예약한 작품", { batch: "예약", minApp: 53 });
+  const at = new Date(AFTER + 30 * 86400_000).toISOString();
+  assert.equal((await call("POST", "/api/admin/recipes/release", { batch: "예약", at }, admin)).data.scheduled, 1);
+  // 판 번호를 모르면(옛 표에도, Play 트랙에도 없으면) 아무것도 공개하지 않아요.
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.39.0", dry: true }, admin)).data.market, 0);
+  // Play 트랙에서 읽은 판 번호(워치 100053은 빼고 53)로 셈해요.
+  await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('play_track', ?)").bind(JSON.stringify({ done: "1.39.0", doneCodes: [100053, 53] })).run();
+  const dry = (await call("POST", "/api/admin/desk/ship", { version: "1.39.0", dry: true }, admin)).data;
+  assert.deepEqual([dry.code, dry.market], [53, 2]);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")), []);
+  const shipped = (await call("POST", "/api/admin/desk/ship", { version: "1.39.0" }, admin)).data;
+  assert.equal(shipped.market, 2);
+  assert.deepEqual(new Set(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53"))), new Set(["1.39 정상급 테마", "1.38 남은 작품"]));
+  // 1.38 앱에는 53 작품이 여전히 안 보여요.
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")), ["1.38 남은 작품"]);
+  const left = (await call("GET", "/api/admin/recipes/release", undefined, admin)).data.items.map((b) => b.batch).sort();
+  assert.deepEqual(left, ["1.40", "아무 판", "예약"]);
+  // 관리자가 판 번호를 직접 주면 그 번호로.
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.40.0", code: 54 }, admin)).data.market, 1);
+});
+
+// 2.0.0 통합: [RVD-11](끊긴 나간 판 저장을 5분마다 이어 보냄)과 [MKS-05](나간 판에 맞는 출시 대기 작품 공개)가 함께 돌 때, 이어 보내는
+// 쪽도 처음 저장할 때의 판 번호('보내는 중' 기록의 code)로 남은 작품을 공개하고, 끝난 뒤에는 다시 하지 않아요.
+test("[MKS-05][RVD-11] 끊겼다 이어 보내는 나간 판 저장도 기록해 둔 판 번호로 출시 대기 작품을 한 번만 공개해요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, env } = server({ plaza: true });
+  const admin = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/recipes", { recipe: recipe("2.0 작품"), hold: true, batch: "2.0", minApp: 54 }, admin)).status, 201);
+  assert.equal((await call("POST", "/api/admin/recipes", { recipe: recipe("다음 판 작품"), hold: true, batch: "다음", minApp: 55 }, admin)).status, 201);
+  // 문의 답 하나가 실패해 '보내는 중'으로 남은 판: 관리자가 준 판 번호 54가 기록에 남아 있어요(Play 트랙·옛 표에는 2.0.0이 없어요).
+  await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)").bind(JSON.stringify({
+    v: "2.0.0", at: AFTER, by: "자동", pending: true, was: "1.39.0", notify: false, post: false, noticeId: null, tries: 1, code: 54 })).run();
+  const again = await resumeShip(env, Date.now(), async () => true);
+  assert.deepEqual([again.code, again.market, again.failed], [54, 1, 0]);
+  assert.equal((await shippedVersion(env)).pending, undefined);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=54")), ["2.0 작품"]);
+  assert.equal(await resumeShip(env, Date.now(), async () => true), null);
 });
