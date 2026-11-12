@@ -194,7 +194,9 @@ export async function changeMarks(env, from, to) {
     notice_remove: "공지 내림", flag_force: "기능 강제", flag_policy: "처리방침 날짜", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝",
     // 1.39 [STAT2-05] 서버가 새 판으로 처음 뜬 때(사고 때 가장 먼저 의심할 일).
     server_deployed: "서버 배포" };
-  const marks = auditRows.map((r) => ({ at: r.at, day: kstDay(r.at), kind: r.action, text: `${words[r.action] ?? r.action} ${r.target ?? ""}`.trim() }));
+  // 2.0.0 [RVN-02] 사고의 목표는 안쪽 번호라, 사고 줄은 번호 대신 무엇이 보였는지(신호·한 일) 앞 40자를 붙여요.
+  const what = (r) => (r.action.startsWith("incident_") ? `· ${[...String(r.detail ?? "")].slice(0, 40).join("")}` : r.target ?? "");
+  const marks = auditRows.map((r) => ({ at: r.at, day: kstDay(r.at), kind: r.action, text: `${words[r.action] ?? r.action} ${what(r)}`.trim() }));
   for (const f of flagRows) marks.push({ at: f.at, day: kstDay(f.at), kind: "flag", text: `기능 ${f.key} ${f.action}` });
   const notices = await noticeRows(env).catch(() => []);
   for (const n of notices) if (n.from >= from && n.from < to) marks.push({ at: n.from, day: kstDay(n.from), kind: "notice", text: `공지 ${String(n.title ?? "").slice(0, 20)}` });

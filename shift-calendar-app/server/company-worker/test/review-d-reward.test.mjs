@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import worker from "../src/index.js";
 import { server, device, from, signIn } from "./helpers.mjs";
 import { grantMakerReward } from "../src/maker-reward.js";
+import { rewardCapFromPolicy } from "../src/flags.js";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
 const DAY = 86400000;
@@ -29,6 +30,12 @@ async function friends(call, admin, n, start = 10) {
   return code;
 }
 const seenAll = async (call, n, start = 10) => { for (let i = start; i < start + n; i++) await call("POST", "/api/invites/seen", {}, phone(i)); };
+/**
+ * 2.0.0 [RVD-21] 처리방침 3.13 in the calendar as the owner enters it in 기능 관리 › 일정 (posted, effective): the 1년 12달 counts from
+ * posted + 30 days (or a later effective). The [RVD-15]·[RVD-16] tests put it a month and a half back so the cap is on.
+ */
+const policy313 = (DB, posted = "2026-10-01", effective = posted) => DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+  .bind(JSON.stringify({ "3.13": { posted, effective, heldUntil: null } })).run();
 
 test("[RVD-13] a work that reaches 모두의 도구 by its numbers waits for an admin: nothing is paid by itself", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
@@ -94,6 +101,7 @@ test("[RVD-15] one person gets at most 12 months of rewards in 365 days, all kin
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call, env, DB } = server({ plaza: true });
   const admin = await signIn(call);
+  await policy313(DB);
   await call("POST", "/api/recipes", { device: device(3), recipe: recipe("작품 3"), scope: "public" }, from(3));
   const old = await hashOf(DB, 3);
   // 11 months paid this year: a company rule's 6, an invite's 2, a maker's 3.
@@ -126,8 +134,9 @@ test("[RVD-15] one person gets at most 12 months of rewards in 365 days, all kin
 
 test("[RVD-15] PC 확인 D-442: the phone says owed months only up to what the year's cap leaves, and none at the cap", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
-  const { call } = server();
+  const { call, DB } = server();
   const admin = await signIn(call);
+  await policy313(DB);
   await call("POST", "/api/admin/settings/invite", { friends: 1, days: 1, months: 12 }, admin);
   const code = (await call("POST", "/api/invites/code", { phone: mark(1) }, phone(1))).data.code;
   const friend = async (n) => {
@@ -157,9 +166,10 @@ test("[RVD-15] PC 확인 D-442: the phone says owed months only up to what the y
 });
 
 test("[RVD-15] the invite rules say the cap: 12 months a year unless the developer set a lower one", async () => {
-  const { call } = server();
-  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 12 });
+  const { call, DB } = server();
   const admin = await signIn(call);
+  await policy313(DB);
+  assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 12 });
   await call("POST", "/api/admin/settings/invite", { capMonths: 3 }, admin);
   assert.equal((await call("GET", "/api/invites/rules")).data.capMonths, 3);
   await call("POST", "/api/admin/settings/invite", { capMonths: 30 }, admin);
@@ -170,6 +180,7 @@ test("[RVD-16] many owed rewards: pick several and pay or cancel them at once; o
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call, DB } = server();
   const admin = await signIn(call);
+  await policy313(DB);
   await friends(call, admin, 3);
   t.mock.timers.tick(DAY);
   await seenAll(call, 3);
@@ -188,4 +199,53 @@ test("[RVD-16] many owed rewards: pick several and pay or cancel them at once; o
   assert.deepEqual([v.data.done, v.data.skipped.length], [1, 0]);
   assert.equal((await call("POST", "/api/admin/rewards/bulk", { ids: [], status: "paid" }, admin)).status, 400);
   assert.equal((await call("POST", "/api/admin/rewards/bulk", { ids: Array(51).fill(ids[0]), status: "paid" }, admin)).status, 400);
+});
+
+test("[RVD-21] the 1년 12달 starts on 처리방침 3.13's posted day + 30 (or its later 시행일), KST; without 3.13 in the calendar there is none", () => {
+  assert.equal(rewardCapFromPolicy(undefined), null);
+  assert.equal(rewardCapFromPolicy(JSON.stringify({ "3.12": { posted: "2026-11-09", effective: "2026-11-09" } })), null);
+  assert.equal(rewardCapFromPolicy(JSON.stringify({ "3.13": { posted: "2026-11-12", effective: "2026-11-19" } })), "2026-12-12");
+  assert.equal(rewardCapFromPolicy(JSON.stringify({ "3.13": { posted: "2026-11-12", effective: "2026-12-20" } })), "2026-12-20");
+  assert.equal(rewardCapFromPolicy(JSON.stringify({ "3.13": { posted: "2026-12-31", effective: "2026-12-31" } })), "2027-01-30");
+});
+
+test("[RVD-21] before 3.13's 30-day date nothing is refused or held back by the 1년 12달; from that KST day it is", async (t) => {
+  // 2026-12-10 12:00 KST. 약관 1.3·처리방침 3.12 promise no cap, so until the words change the server pays and says as before.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-10T03:00:00Z") });
+  const { call, DB } = server();
+  const admin = await signIn(call);
+  await friends(call, admin, 3);
+  t.mock.timers.tick(DAY);
+  await seenAll(call, 3);
+  const inviter = (await DB.prepare("SELECT device FROM invite_codes").first()).device;
+  await DB.prepare(`INSERT INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
+    VALUES ('wFULLaaaaaaaaaaaaaaaaaa', 'full', 'rule-y', ?, 12, 'paid', '', ?, ?, 0)`).bind(inviter, Date.now(), Date.now()).run();
+  const said = async () => {
+    const v = (await call("GET", "/api/invites", undefined, phone(1))).data;
+    const p = (await call("GET", "/api/passes", undefined, phone(1))).data;
+    return [v.capMonths, v.pending, v.capReached, p.pending.length, (await call("GET", "/api/invites/rules")).data.capMonths];
+  };
+  // Not in the calendar: no cap, and the admin sees 12 used with no 상한 and from when it would count.
+  let rows = (await owed(call, admin)).rewards;
+  assert.deepEqual([rows.length, rows[0].year, rows[0].capped], [3, { used: 12, cap: null, left: null, from: null }, false]);
+  assert.deepEqual(await said(), [0, 3, false, 3, 0]);
+  assert.equal((await call("POST", `/api/admin/rewards/${rows[0].id}`, { status: "paid" }, admin)).status, 200);
+  // 3.13 posted 11-12 (시행 7일 줄은 11-19): the cap counts from 12-12. On 12-11 still none, and the date is said.
+  await policy313(DB, "2026-11-12", "2026-11-19");
+  t.mock.timers.setTime(Date.parse("2026-12-11T14:59:00Z"));
+  rows = (await owed(call, admin)).rewards;
+  assert.deepEqual([rows[0].year.cap, rows[0].year.from, rows[0].capped], [null, "2026-12-12", false]);
+  const set = (await call("GET", "/api/admin/settings/invite", undefined, admin)).data;
+  assert.deepEqual([set.yearCap, set.yearCapFrom], [null, "2026-12-12"]);
+  assert.deepEqual((await call("POST", "/api/admin/rewards/bulk", { ids: [rows[0].id], status: "paid" }, admin)).data.done, 1);
+  // 12-12 00:00 KST: 14 paid this year, so the last owed one is past the cap, refused, and the phone promises nothing more.
+  t.mock.timers.setTime(Date.parse("2026-12-11T15:00:00Z"));
+  rows = (await owed(call, await signIn(call))).rewards;
+  assert.deepEqual([rows.length, rows[0].year, rows[0].capped], [1, { used: 14, cap: 12, left: 0, from: "2026-12-12" }, true]);
+  const no = await call("POST", `/api/admin/rewards/${rows[0].id}`, { status: "paid" }, await signIn(call));
+  assert.deepEqual([no.status, no.data.error], [409, "cap"]);
+  assert.deepEqual(await said(), [12, 0, true, 0, 12]);
+  // A 시행일 the owner set later than posted + 30 wins.
+  await policy313(DB, "2026-11-12", "2026-12-20");
+  assert.equal((await owed(call, await signIn(call))).rewards[0].year.cap, null);
 });

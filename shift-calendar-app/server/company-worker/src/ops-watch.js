@@ -96,7 +96,8 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
   const r = b.rows.get(k) ?? { hour, route, n: 0, err: 0, sum: 0, max: 0, b: new Array(WATCH.edges.length + 1).fill(0) };
   const t = Math.max(0, Math.round(Number(ms) || 0));
   r.n += 1;
-  if (status >= 500) r.err += 1;
+  // 2.0.0 [RVN-03] 500만 오류로 세요(SVC-84): 일부러 쉬게 한 기능의 503과 Play·공유 서버가 안 닿을 때의 502·504는 서버가 망가진 것이 아니에요.
+  if (status === 500) r.err += 1;
   r.sum += t;
   r.max = Math.max(r.max, t);
   r.b[bucketOf(t)] += 1;
@@ -192,6 +193,7 @@ export const JOB_NAMES = {
   flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", held: "보류 끝난 Claude 답 보내기",
   play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기", effect: "출시 2주 뒤 효과 판정",
   watch: "응답 속도 모으기·정리", reviews: "스토어 리뷰 가져오기", backup: "하루 백업", incident: "사고 살피기", requests: "데이터 요청 기한 알림",
+  five: "5분 작업(보류 끝난 답·자동 출시 안내)", // 2.0.0 [RVN-02]
 };
 
 /**

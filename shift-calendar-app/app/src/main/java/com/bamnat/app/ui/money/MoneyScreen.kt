@@ -117,6 +117,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -357,9 +359,27 @@ class MoneyViewModel(
     fun delete(list: List<MoneyEntry>) {
         if (list.isEmpty()) return
         container.appScope.launch {
+            // 2.0.0 [RVK-10] (MONEY-04·U06a-11): kept 30 days in 최근 지운 기록 first, so a slip in a long list is not lost with the
+            // bar that says 되돌리기 (it goes when the tab changes).
+            val detail = (if (list.size == 1) list.single().title + " · " else "${list.size}건 · ") + Fmt.won(list.sumOf { abs(it.amount) })
+            val kept = runCatching { container.recordsTrash.keepLines(calendarId, list.map { it.id }, detail) }.getOrNull()
             money.deleteAll(list)
             val text = if (list.size == 1) "‘${list.single().title}’ 기록을 지웠어요" else "기록 ${list.size}건을 지웠어요"
-            _undo.tryEmit(UndoMessage(text) { money.saveAll(list) })
+            _undo.tryEmit(UndoMessage(text + if (kept != null && list.size > 1) ". 최근 지운 기록에 30일 있어요" else "", long = list.size > 1) {
+                money.saveAll(list)
+                kept?.let { container.recordsTrash.forget(listOf(it.id)) }
+            })
+        }
+    }
+
+    /** [RVK-10] This calendar's removed 가계부 lines, for 가계부 › 최근 지운 기록. */
+    val removedLines = container.recordsTrash.entries.map { all -> all.filter { it.kind == com.bamnat.app.data.RecordsTrash.Kind.LINES && it.calendarId == calendarId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun restoreLines(entry: com.bamnat.app.data.RecordsTrash.Entry) {
+        container.appScope.launch {
+            val ok = container.recordsTrash.restore(entry.id)
+            _undo.tryEmit(UndoMessage(if (ok) "지운 기록을 되살렸어요" else "되살리지 못했어요. 30일이 지났거나 파일을 읽지 못했어요", undo = null))
         }
     }
 
@@ -467,6 +487,21 @@ class MoneyViewModel(
     /** [LEDG-08] Saves an account. */
     fun saveAccount(a: MoneyAccount) { container.appScope.launch { money.save(a) } }
 
+    /**
+     * 2.0.0 [RVK-18] (검토 U06a-09): '실제 잔액으로 맞추기' — the difference to what the bank app shows goes in as one '잔액 맞춤'
+     * transfer today (no month's 수입·지출 changes), with 되돌리기.
+     */
+    fun adjustBalance(a: MoneyAccount, actual: Long) {
+        val b = book.value ?: return
+        val counted = com.bamnat.core.money.MoneyAccounts.balances(b.accounts, b.entries)[a.id] ?: return
+        val line = com.bamnat.core.money.MoneyAccounts.adjustment(a, counted, actual, Today.date())
+        if (line == null) { _undo.tryEmit(UndoMessage("${a.name} 잔액이 이미 ${Fmt.won(actual)}이에요", undo = null)); return }
+        container.appScope.launch {
+            val saved = money.save(line)
+            _undo.tryEmit(UndoMessage("${a.name} 잔액을 ${Fmt.won(actual)}으로 맞췄어요") { money.delete(saved) })
+        }
+    }
+
     /** [LEDG-08] Removes an account, or puts it away when lines use it; either can be undone. */
     fun removeAccount(a: MoneyAccount) {
         container.appScope.launch {
@@ -518,9 +553,15 @@ class MoneyViewModel(
     /** [LEDG-14] Renames first (taking their lines along), then the order and hidden ones. */
     fun saveCategories(kind: MoneyKind, edits: List<CategoryEdit>, renames: List<Pair<String, String>>) {
         container.appScope.launch {
-            renames.forEach { (from, to) -> money.renameCategory(kind, from, to) }
+            // 2.0.0 [RVK-09] (MONEY-02): every rename at once, so a chain or a swap keeps categories apart, and 되돌리기 puts the
+            // names, the order and what was hidden back as they were.
+            val before = book.value?.categories.orEmpty().filter { it.kind == kind }
+            val done = money.renameCategories(kind, renames)
             money.saveCategories(kind, edits)
-            _undo.tryEmit(UndoMessage("${kind.label} 분류를 저장했어요", undo = null))
+            _undo.tryEmit(UndoMessage("${kind.label} 분류를 저장했어요") {
+                money.renameCategories(kind, done.map { (from, to) -> to to from })
+                money.saveCategories(kind, before)
+            })
         }
     }
 
@@ -566,21 +607,22 @@ fun MoneyScreen(
     androidx.activity.compose.BackHandler(enabled = page != MoneyViewModel.Page.SUMMARY && selection.isEmpty()) {
         vm.showPage(MoneyViewModel.Page.SUMMARY)
     }
-    var adding by remember { mutableStateOf<MoneyKind?>(null) }
-    var addRound by remember { mutableIntStateOf(0) }
-    var editing by remember { mutableStateOf<MoneyEntry?>(null) }
-    var editingJob by remember { mutableStateOf<Job?>(null) }
-    var pasting by remember { mutableStateOf(false) }
-    var firstFilling by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-03] (검토 MONEY-01): every sheet's 'open' flag is saveable, so a rebuilt screen or an app closed by the phone
+    // while the user checked the bank app comes back with the sheet and what was typed in it. Saved lines are kept by id below.
+    var adding by rememberSaveable { mutableStateOf<MoneyKind?>(null) }
+    var addRound by rememberSaveable { mutableIntStateOf(0) }
+    // U06a-02 / MONEY-27: 저장하고 하나 더 keeps the day and the account of the line just saved, for a pile of yesterday's receipts.
+    var nextDay by rememberSaveable { mutableStateOf<String?>(null) }
+    var nextAccount by rememberSaveable { mutableStateOf<Long?>(null) }
+    var pasting by rememberSaveable { mutableStateOf(false) }
+    var firstFilling by rememberSaveable { mutableStateOf(false) }
     var pickingChallenge by rememberSaveable { mutableStateOf(false) }
-    var finishing by remember { mutableStateOf<Capture?>(null) }
-    var editingFixed by remember { mutableStateOf<FixedCost?>(null) }
-    var addingFixed by remember { mutableStateOf(false) }
-    var budgeting by remember { mutableStateOf(false) }
-    var editingAccount by remember { mutableStateOf<MoneyAccount?>(null) }
-    var addingAccount by remember { mutableStateOf<AccountType?>(null) }
-    var addingAnyAccount by remember { mutableStateOf(false) }
-    var editingCategories by remember { mutableStateOf(false) }
+    var addingFixed by rememberSaveable { mutableStateOf(false) }
+    var budgeting by rememberSaveable { mutableStateOf(false) }
+    var addingAccount by rememberSaveable { mutableStateOf<AccountType?>(null) }
+    var addingAnyAccount by rememberSaveable { mutableStateOf(false) }
+    var editingCategories by rememberSaveable { mutableStateOf(false) }
+    var seeingRemoved by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var autoRecording by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
@@ -640,6 +682,11 @@ fun MoneyScreen(
     val captures by vm.captures.collectAsStateWithLifecycle()
     val autoRecord by vm.autoRecord.collectAsStateWithLifecycle()
     val book = bookOrNull ?: MoneyBook.EMPTY
+    var editing by rememberOpenLine<MoneyEntry>({ it.id }) { id -> book.entries.firstOrNull { it.id == id } ?: book.pending.firstOrNull { it.id == id } }
+    var editingJob by rememberOpenLine<Job>({ it.id }) { id -> book.jobs.firstOrNull { it.id == id } }
+    var finishing by rememberOpenLine<Capture>({ it.id }) { id -> captures.firstOrNull { it.id == id } }
+    var editingFixed by rememberOpenLine<FixedCost>({ it.id }) { id -> book.fixed.firstOrNull { it.id == id } }
+    var editingAccount by rememberOpenLine<MoneyAccount>({ it.id }) { id -> book.accounts.firstOrNull { it.id == id } }
     val style = settings.workStyle
     // Records show at once; the wage estimate joins when the pay engine has run.
     // [UX-10] 1.25 Z (U7): opened again, the month shows with its wage estimate from the first frame, not without it and then with.
@@ -743,7 +790,8 @@ fun MoneyScreen(
             NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
                 onFinish = { finishing = it }, onDrop = vm::dropCapture,
                 waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete,
-                guesses = { e -> learner.guess(e).filter { it.category != "기타" } }, onPick = { e, c -> vm.recategorize(listOf(e), c) })
+                guesses = { e -> learner.guess(e).filter { it.category != "기타" } }, onPick = { e, c -> vm.recategorize(listOf(e), c) },
+                calendarId = vm.calendarId)
         },
         MoneyPart.AHEAD to {
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
@@ -902,6 +950,8 @@ fun MoneyScreen(
                         // 1.38 [LEDH-31]
                         DropdownMenuItem(text = { Text("도전 시작하기") }, onClick = { menuOpen = false; pickingChallenge = true; vm.showPage(MoneyViewModel.Page.SUMMARY) })
                         DropdownMenuItem(text = { Text("분류 고치기") }, onClick = { menuOpen = false; editingCategories = true })
+                        // 2.0.0 [RVK-10] (MONEY-04·U06a-11): lines removed in the last 30 days, here as well as in 설정.
+                        DropdownMenuItem(text = { Text("최근 지운 기록") }, onClick = { menuOpen = false; seeingRemoved = true })
                         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
                         DropdownMenuItem(text = { Text("카드 배치") }, onClick = { menuOpen = false; com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MONEY) })
                         DropdownMenuItem(text = { Text(if (settings.hideAmounts) "금액 보이기" else "금액 가리기") }, onClick = { menuOpen = false; flipHide() })
@@ -975,11 +1025,13 @@ fun MoneyScreen(
             ?.takeIf { at.toLocalDate() == today } ?: today
     } else month.atEndOfMonth()
     adding?.let { k ->
-        // A new round for 저장하고 하나 더, so the sheet starts empty again.
+        // A new round for 저장하고 하나 더, so the sheet starts empty again, on the day and account of the line just saved.
         key(addRound) {
-            EntryDialog(addDate, null, k, onSave = { vm.saveEntry(it); adding = null }, onDismiss = { adding = null },
+            val done = { nextDay = null; nextAccount = null; adding = null }
+            EntryDialog(nextDay?.let(LocalDate::parse) ?: addDate, null, k, onSave = { vm.saveEntry(it); done() }, onDismiss = done,
                 frequent = vm::frequentAmounts, rules = rules, book = book,
-                onSaveAndNext = { vm.saveEntry(it); addRound++ }, onEditCategories = { editingCategories = true })
+                onSaveAndNext = { vm.saveEntry(it); nextDay = it.date.toString(); nextAccount = it.accountId; addRound++ },
+                onEditCategories = { editingCategories = true }, startAccount = nextAccount)
         }
     }
     editing?.let { e ->
@@ -1019,7 +1071,8 @@ fun MoneyScreen(
         AccountEditor(editingAccount, addingAccount, book,
             onSave = { vm.saveAccount(it); editingAccount = null; addingAccount = null; addingAnyAccount = false },
             onRemove = { vm.removeAccount(it); editingAccount = null },
-            onDismiss = { editingAccount = null; addingAccount = null; addingAnyAccount = false })
+            onDismiss = { editingAccount = null; addingAccount = null; addingAnyAccount = false },
+            onAdjust = { a, actual -> vm.adjustBalance(a, actual) })
     }
     if (takingHome) takeHome?.let { v ->
         TakeHomeSheet(v, onAdd = vm::savePayRecord, onDelete = vm::deletePayRecord, onNotPay = vm::notPay,
@@ -1029,6 +1082,10 @@ fun MoneyScreen(
         yearOf = { p -> com.bamnat.core.tax.BusinessTax.year(month.year, today, p, book.jobs, book.sales, book.entries) },
         onSave = { vm.saveBusiness(it); bizTax = false }, onDismiss = { bizTax = false })
     if (arranging) MoneyEditSheet(settings.moneyLayout, vm::updateSettings, onDismiss = { arranging = false }, style = style, calendar = vm.calendarId)
+    if (seeingRemoved) {
+        val removed by vm.removedLines.collectAsStateWithLifecycle()
+        com.bamnat.app.ui.settings.RecordsTrashDialog(removed, onRestore = vm::restoreLines, onDismiss = { seeingRemoved = false }, linesOnly = true)
+    }
     if (editingCategories) {
         CategoryEditor(book, onSave = { k, edits, renames -> vm.saveCategories(k, edits, renames); editingCategories = false },
             onDismiss = { editingCategories = false }, startKind = editing?.kind ?: adding ?: MoneyKind.EXPENSE)
