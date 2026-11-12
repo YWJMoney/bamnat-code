@@ -298,12 +298,13 @@ class RvjTrustTest : ScreenshotBase() {
         settle()
         typeInto("1회 금액", "")
         settle()
-        assertFalse(shows("50000"))
+        // The field reads as it shows (grouped); the line under it still says the amount that counts (50,000원 · 5만원).
+        assertFalse(shows("50,000", exact = true))
         assertEquals(50_000L, kept)
         typeInto("1회 금액", "70000")
         settle()
         assertEquals(70_000L, kept)
-        assertTrue(shows("70000"))
+        assertTrue(shows("70,000", exact = true))
     }
 
     companion object {
