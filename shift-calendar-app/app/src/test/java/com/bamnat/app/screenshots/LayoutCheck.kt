@@ -54,6 +54,28 @@ internal object LayoutCheck {
         return singles >= 2
     }
 
+    /**
+     * 2.0.0 [RVP-01] 검토 HQ-76 (조건 9): the words a floating button ([fabWords], read by its description) stands on. A day number of
+     * next month's faded last row may go under it (CAL-15); any other words may not.
+     */
+    fun underFab(nodes: List<SemanticsNode>, fabWords: Set<String> = FAB_WORDS): List<String> {
+        fun words(n: SemanticsNode) = n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+            n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+        val fabs = nodes.filter { n -> n.config.contains(SemanticsActions.OnClick) && words(n).any { it in fabWords } }
+        return fabs.flatMap { fab ->
+            val f = fab.boundsInWindow
+            nodes.filter { n ->
+                val b = n.boundsInWindow
+                val w = words(n).filter { it.isNotBlank() }
+                n.id != fab.id && w.isNotEmpty() && w.none { it in fabWords } && w.any { t -> !t.all { it.isDigit() } } &&
+                    b.width >= 1f && b.height >= 1f && b.overlaps(f)
+            }.map { n -> words(n).joinToString(" ") }
+        }.distinct()
+    }
+
+    /** The calendar's floating buttons ('빠른 입력', and the day's job·sales·trade for work written day by day). */
+    val FAB_WORDS = setOf("빠른 입력", "매출 적기", "일감 적기", "매매 기록")
+
     /** The top of the bottom navigation bar (its tabs), or the window's bottom with a rail or none. */
     fun contentBottom(nodes: List<SemanticsNode>, windowHeight: Int): Float {
         val tabs = nodes.filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }

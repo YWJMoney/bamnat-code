@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,6 +53,8 @@ import com.bamnat.core.text.Josa
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.container
 
 /**
  * [READ-17] 1.27 순번 447 (사용자 "사진과 내용이 같은가요? 물어보고 다르면 직접 수정 버튼을 줘서 해당 부분만 수정할수

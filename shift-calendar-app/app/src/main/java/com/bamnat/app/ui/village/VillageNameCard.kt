@@ -121,7 +121,7 @@ fun VillageNameCard(c: AppContainer, unnamed: String, modifier: Modifier = Modif
                 TextButton(onClick = { VillageName.skip(c); skipped = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이대로 둘게요") }
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.width(8.dp))
-                androidx.compose.material3.FilledTonalButton(enabled = !busy && nick.trim().length >= 2, onClick = {
+                com.bamnat.app.ui.components.FilledTonalButton(enabled = !busy && nick.trim().length >= 2, onClick = {
                     busy = true
                     scope.launch {
                         val p = VillageName.set(c, nick)

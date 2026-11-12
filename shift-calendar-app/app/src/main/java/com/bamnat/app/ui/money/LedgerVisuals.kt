@@ -60,7 +60,7 @@ import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material.icons.outlined.WorkOutline
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -102,6 +102,8 @@ import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Reports
 import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. */
 fun categoryIcon(name: String): ImageVector = when (name) {

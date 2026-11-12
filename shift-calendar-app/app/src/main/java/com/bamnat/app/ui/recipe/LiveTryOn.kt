@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -304,13 +304,13 @@ fun LiveTryOnBand(c: AppContainer) {
                 }
             }
             val buttons: @Composable () -> Unit = {
-                if (trial.hasLook) androidx.compose.material3.OutlinedButton(onClick = { LiveTryOn.show(c, !trial.showing) }, enabled = !ending,
+                if (trial.hasLook) com.bamnat.app.ui.components.OutlinedButton(onClick = { LiveTryOn.show(c, !trial.showing) }, enabled = !ending,
                     modifier = Modifier.heightIn(min = 40.dp),
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.inverseOnSurface),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)) {
                     Text(if (trial.showing) "지금 모습" else "입은 모습", style = MaterialTheme.typography.labelMedium)
                 }
-                androidx.compose.material3.OutlinedButton(onClick = {
+                com.bamnat.app.ui.components.OutlinedButton(onClick = {
                     if (!fn) LiveTryOn.end(c)
                     else scope.launch {
                         val made = runCatching { com.bamnat.app.recipe.FunctionTrial(c).made() }.getOrNull()

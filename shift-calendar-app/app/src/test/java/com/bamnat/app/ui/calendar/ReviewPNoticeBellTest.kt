@@ -118,6 +118,101 @@ class ReviewPNoticeBellTest {
         }
     }
 
+    /**
+     * 검토 PC-139 (통합 4차 PC, 높음): 알림을 끈 폰에서 '전체 지움'이 '알림이 꺼져 있어 …' 경고까지 지워, 앱을 다시 열거나 권한을 켰다 꺼도 다시
+     * 안 나왔어요. What keeps an alarm from working stays in the bell until fixed (no X, no ⋮), 전체 지움 leaves it, and fixed then broken
+     * again its band comes back. PC-140: what was cleared is taken back inside the sheet, not behind it.
+     */
+    @Test fun whatKeepsAnAlarmFromWorkingStaysUntilFixed() {
+        var broken by mutableStateOf(true)
+        val state = NoticeStackState()
+        show({
+            Column {
+                NoticeStack(buildList {
+                    if (broken) add(Notice("alarm:notifications", "알림 꺼짐", line = "알림이 꺼져 있어 알람이 소리만 나요", urgent = true, keep = true) { box() })
+                    add(Notice("tip", "오늘의 팁", line = "팁 한 줄") { box() })
+                }, state = state)
+                NoticeBell(state)
+            }
+        }) {
+            compose.onNodeWithText("알림이 꺼져 있어 알람이 소리만 나요").assertIsDisplayed()
+            state.openSheet(null)
+            compose.waitForIdle()
+            compose.onNodeWithContentDescription("닫기: 알림 꺼짐").assertDoesNotExist()
+            compose.onNodeWithContentDescription("더 보기: 알림 꺼짐").assertDoesNotExist()
+            compose.onNodeWithText("전체 지움").performClick()
+            compose.waitForIdle()
+            assertEquals("남는 것은 알람 경고 하나", 1, state.inBell)
+            compose.onNodeWithText("알림 꺼짐").assertExists()
+            // PC-140: 되돌리기 is in the sheet, under its title.
+            compose.onNodeWithText("되돌리기").performClick()
+            compose.waitForIdle()
+            assertEquals(2, state.inBell)
+            compose.onNodeWithText("전체 지움").performClick()
+            compose.waitForIdle()
+            state.sheetOpen = false
+            compose.waitForIdle()
+            assertTrue("띠는 그대로", state.snoozed.none { it.startsWith("alarm") })
+            // The band's X puts it in the bell for this visit only; fixed and broken again, the band comes again.
+            compose.onNodeWithContentDescription("알림함에 넣기").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText("알림이 꺼져 있어 알람이 소리만 나요").assertDoesNotExist()
+            assertEquals("종에는 남아요", 1, state.inBell)
+            assertTrue("앱을 다시 열면 다시 띠", "alarm:notifications" !in NoticeSnooze.today(app))
+            broken = false
+            compose.waitForIdle()
+            broken = true
+            compose.waitForIdle()
+            assertTrue("고쳤다 다시 꺼지면 다시 알려요", "alarm:notifications" !in state.snoozed)
+        }
+    }
+
+    /**
+     * 검토 HQ-91 (갈래 O) with PC-139: 전체 지움 closed a 권유 for today only (it came back the next day), while its own X rests it two
+     * weeks; and what keeps an alarm from working must not go with it. Now 전체 지움 closes each 권유 as its X does once 되돌리기 is no
+     * longer offered (taken back, it is not closed), and the alarm warning stays.
+     */
+    @Test fun clearAllRestsSuggestionsLikeTheirXAndKeepsAlarmWarnings() {
+        var restedUntil: java.time.LocalDate? = null
+        var day by mutableStateOf(java.time.LocalDate.of(2026, 11, 13))
+        var state by mutableStateOf(NoticeStackState())
+        show({
+            Column {
+                NoticeStack(buildList {
+                    add(Notice("alarm:notifications", "알림 꺼짐", line = "알림이 꺼져 있어 알람이 소리만 나요", urgent = true, keep = true) { box() })
+                    if (restedUntil?.let { day < it } != true) add(Notice("invite", "친구 초대", line = "친구를 부르면 1개월", section = InboxSection.SUGGEST,
+                        onClose = { restedUntil = day.plusDays(14) }) { box() })
+                }, state = state)
+                NoticeBell(state)
+            }
+        }) {
+            // Taken back: nothing is closed.
+            state.openSheet(null)
+            compose.waitForIdle()
+            compose.onNodeWithText("전체 지움").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText("되돌리기").performClick()
+            compose.waitForIdle()
+            state.sheetOpen = false
+            compose.waitForIdle()
+            assertEquals("되돌리면 닫지 않아요", null, restedUntil)
+            // Cleared and the sheet closed: the 권유 is closed as by its X; the warning stays.
+            state.openSheet(null)
+            compose.waitForIdle()
+            compose.onNodeWithText("전체 지움").performClick()
+            compose.waitForIdle()
+            state.sheetOpen = false
+            compose.waitForIdle()
+            assertEquals("X와 같은 2주 쉼", java.time.LocalDate.of(2026, 11, 27), restedUntil)
+            // The next day (a new visit: nothing snoozed for that day), the 권유 does not come back; the warning is still there.
+            day = day.plusDays(1)
+            state = NoticeStackState()
+            compose.waitForIdle()
+            assertEquals("다음 날에는 경고만", 1, state.inBell)
+            compose.onNodeWithText("알림이 꺼져 있어 알람이 소리만 나요").assertIsDisplayed()
+        }
+    }
+
     @Test fun theInboxPutsPeopleFirstSuggestionsLastAndEmptiesWithClearAll() {
         Inbox.post(app, InboxRow("market.work:1", "market.reaction", InboxSection.PEOPLE, "내 작품 ‘봄’", "댓글 2개 · 좋아요 5개",
             target = NoticeLinks.Target.MONEY))

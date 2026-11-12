@@ -43,6 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.YearMonth
+import com.bamnat.app.ui.theme.color
 
 /** 했어요 ticks, on this phone (a reminder list: a restore without them shows a past duty again for a week at most). */
 private object Filed {

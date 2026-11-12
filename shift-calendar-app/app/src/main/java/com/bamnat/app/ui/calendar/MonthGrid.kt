@@ -120,6 +120,9 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 const val GRID_ROWS = 6
 
@@ -372,7 +375,8 @@ fun MonthGrid(
                 HourlyWork.week(rowStart.plusDays(3).with(java.time.temporal.TemporalAdjusters.previousOrSame(h.holidayWeekStart)), snapshot.resolver::resolve)
             } }
             // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
-            val barColor = cal.warning
+            // 2.0.0 [RVP-13] (HQ-54) Over the legal week: the one red on the month (위험).
+            val barColor = Tone.Danger.color()
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -1147,7 +1151,7 @@ private fun DayCell(
 private fun JobMark(span: JobSpan?, count: Int, owed: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
-    val barColor = if (span?.owed == true) cal.warningContainer else scheme.secondaryContainer
+    val barColor = if (span?.owed == true) Tone.Caution.container() else scheme.secondaryContainer
     Box(
         Modifier
             .fillMaxWidth()
@@ -1174,14 +1178,14 @@ private fun JobMark(span: JobSpan?, count: Int, owed: Boolean) {
 @Composable
 internal fun JobBadge(count: Int, owed: Boolean) {
     val scheme = MaterialTheme.colorScheme
-    val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
+    val bg = if (owed) Tone.Caution.container() else scheme.secondaryContainer
     Box(
         // [CAL-52] At least 22dp, taller with large text: a fixed 22dp cut the "일" in half at 200%.
         Modifier.heightIn(min = 22.dp).clip(MaterialTheme.shapes.extraSmall).background(bg).padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold,
-            color = if (owed) LocalCalendarColors.current.warning else scheme.onSecondaryContainer, maxLines = 1)
+            color = if (owed) Tone.Caution.color() else scheme.onSecondaryContainer, maxLines = 1)
     }
 }
 
@@ -1218,8 +1222,8 @@ internal fun CornerMark(mark: Corner, dot: Boolean = false) {
         val color = when (mark) {
             is Corner.Kind -> mark.kind.colorArgb.asColor()
             is Corner.PartLeave -> com.bamnat.app.ui.components.leaveColor(mark.leave.kind, cal)
-            is Corner.Job -> if (mark.owed) cal.warning else MaterialTheme.colorScheme.secondary
-            is Corner.Attend -> if (mark.attendance == com.bamnat.core.model.Attendance.ABSENT) MaterialTheme.colorScheme.error else cal.warning
+            is Corner.Job -> if (mark.owed) Tone.Caution.color() else MaterialTheme.colorScheme.secondary
+            is Corner.Attend -> if (mark.attendance == com.bamnat.core.model.Attendance.ABSENT) MaterialTheme.colorScheme.error else Tone.Caution.color()
             Corner.Changed -> cal.changed
         }
         Box(Modifier.padding(1.dp).size(CORNER_DOT).clip(CircleShape).background(color))
@@ -1229,7 +1233,7 @@ internal fun CornerMark(mark: Corner, dot: Boolean = false) {
         is Corner.Kind -> ExtraKindMark(mark.kind, size = 13.dp)
         is Corner.PartLeave -> LeaveMark(mark.leave, size = 13.dp)
         is Corner.Job -> Icon(Icons.Filled.Work, contentDescription = null, modifier = Modifier.size(13.dp),
-            tint = if (mark.owed) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.secondary)
+            tint = if (mark.owed) Tone.Caution.color() else MaterialTheme.colorScheme.secondary)
         // Days the user changed by hand.
         Corner.Changed -> Box(Modifier.padding(2.dp).size(5.dp).clip(CircleShape).background(LocalCalendarColors.current.changed))
         is Corner.Attend -> AttendanceMark(mark.attendance)

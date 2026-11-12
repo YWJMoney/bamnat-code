@@ -39,7 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -51,7 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -733,8 +733,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
         if (s.step == 1 && s.sent == null && !mockShown) {
             if (miniOpen) Column(Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalAlignment = Alignment.End) {
                 MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, MaterialTheme.shapes.medium))
-                androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
-            } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
+                com.bamnat.app.ui.components.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
+            } else com.bamnat.app.ui.components.FilledTonalButton(onClick = { miniOpen = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
         }
         }

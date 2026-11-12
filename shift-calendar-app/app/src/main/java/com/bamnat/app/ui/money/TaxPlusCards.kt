@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -286,8 +286,7 @@ internal fun CardMatchLines(calendarId: String, book: MoneyBook, today: LocalDat
                 Text("${Fmt.shortDate(m.date)} 매출 ${Fmt.won(m.card)} → 입금 ${Fmt.won(m.paid)}", style = MaterialTheme.typography.bodyMedium)
                 Muted("수수료 ${Fmt.won(m.fee)}" + (if (feeBp > 0) " (설정 ${"%.2f".format(java.util.Locale.ROOT, feeBp / 100.0).trimEnd('0').trimEnd('.')}%면 ${Fmt.won(m.card - m.expected)})" else "") +
                     " · " + m.deposits.joinToString(", ") { "${Fmt.shortDate(it.date)} ${it.merchant}" })
-                if (m.overFee >= TaxPlus.OVER_FEE_NOTE) Text("설정한 수수료보다 ${Fmt.won(m.overFee)} 더 빠졌어요. 카드사 가맹점 앱에서 수수료율이나 보류를 확인해 보세요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution)
+                if (m.overFee >= TaxPlus.OVER_FEE_NOTE) com.bamnat.app.ui.components.ToneLine("설정한 수수료보다 ${Fmt.won(m.overFee)} 더 빠졌어요. 카드사 가맹점 앱에서 수수료율이나 보류를 확인해 보세요.")
             }
             TextButton(onClick = {
                 val day = book.sales.firstOrNull { it.date == m.date } ?: return@TextButton

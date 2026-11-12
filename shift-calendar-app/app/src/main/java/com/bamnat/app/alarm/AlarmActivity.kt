@@ -29,8 +29,8 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Snooze
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.FilledTonalButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme

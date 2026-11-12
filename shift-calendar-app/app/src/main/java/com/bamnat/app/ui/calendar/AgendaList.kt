@@ -97,9 +97,9 @@ internal fun AgendaList(
                 // PC 확인 f249a365 사용성 제안: with no days listed there is no date to press, so 다른 날 고르기 sits beside the button.
                 var picking by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
                 Row(Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.FilledTonalButton(onClick = { onQuickAction(day, QuickAction.Open) },
+                    com.bamnat.app.ui.components.FilledTonalButton(onClick = { onQuickAction(day, QuickAction.Open) },
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("${Fmt.monthDay(day)} $add") }
-                    androidx.compose.material3.OutlinedButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 날 고르기") }
+                    com.bamnat.app.ui.components.OutlinedButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 날 고르기") }
                 }
                 Text("고른 날짜에 바로 적을 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp))

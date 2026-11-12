@@ -44,7 +44,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -96,6 +96,8 @@ import java.time.ZoneOffset
 import kotlin.math.abs
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** Most months a card payment is spread over. */
 private const val MAX_INSTALLMENTS = 36
@@ -698,7 +700,7 @@ private fun SplitEditor(main: String, categories: List<String>, amount: Long, pa
         Text(
             if (left < 0) "나눈 금액이 전체보다 ${Fmt.won(-left)} 많아요" else "나머지 ${Fmt.won(left)}은 $main",
             style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold,
-            color = if (left < 0) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (left < 0) Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

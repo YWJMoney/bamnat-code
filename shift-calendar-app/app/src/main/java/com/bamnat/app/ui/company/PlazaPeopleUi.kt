@@ -15,7 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -297,7 +297,7 @@ internal fun CheckinRow(room: String?, checkin: com.bamnat.app.company.Checkin, 
             } else if (kinds.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     kinds.forEach { k ->
-                        androidx.compose.material3.OutlinedButton(onClick = { onTap(k) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        com.bamnat.app.ui.components.OutlinedButton(onClick = { onTap(k) }, modifier = Modifier.heightIn(min = 48.dp)) {
                             Text(checkinWords(k).first)
                         }
                     }

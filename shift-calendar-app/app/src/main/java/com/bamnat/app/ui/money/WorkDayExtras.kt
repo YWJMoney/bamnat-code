@@ -27,6 +27,8 @@ import com.bamnat.core.money.JobStatus
 import com.bamnat.core.money.ReceivableKind
 import com.bamnat.core.work.CardSettlement
 import com.bamnat.core.work.ShopMoney
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import kotlinx.coroutines.launch
 
 /**

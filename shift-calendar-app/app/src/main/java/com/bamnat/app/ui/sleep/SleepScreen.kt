@@ -35,7 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -43,7 +43,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -113,6 +113,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.color
 
 /**
  * [SLP-16] The sleep log as something to use: what the two taps are for, the user's own averages
@@ -769,7 +770,7 @@ private fun Findings(findings: List<SleepInsights.Finding>) {
         findings.forEachIndexed { i, f ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val (icon, tint) = when (f.tone) {
-                SleepInsights.Tone.WARN -> Icons.Filled.WarningAmber to cal.warning
+                SleepInsights.Tone.WARN -> Icons.Filled.WarningAmber to com.bamnat.app.ui.theme.Tone.Caution.color()
                 SleepInsights.Tone.GOOD -> Icons.Filled.CheckCircle to cal.income
                 SleepInsights.Tone.NOTE -> Icons.Filled.Info to MaterialTheme.colorScheme.primary
             }
@@ -984,7 +985,7 @@ private fun SleepEditDialog(
                         else -> "${Fmt.shortDate(startAt.toLocalDate())} ${hm(startAt)}부터 ${SleepInsights.hours(minutes)}"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning,
+                    color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else com.bamnat.app.ui.theme.Tone.Caution.color(),
                 )
                 // 2.0.0 [RVI-57] (검토 U03-04) A measured night's clips, gone now with one button (not while it is still being measured).
                 if (initial != null && initial.id != 0L && initial.end != null) NightClipsRow(initial.id)

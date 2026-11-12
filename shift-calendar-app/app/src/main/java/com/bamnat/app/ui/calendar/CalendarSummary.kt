@@ -42,8 +42,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.FilledTonalIconButton
+import com.bamnat.app.ui.components.OutlinedButton
+import com.bamnat.app.ui.components.FilledTonalIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -86,6 +86,8 @@ import com.bamnat.core.work.CalendarStart
 import com.bamnat.core.work.MonthOverview
 import java.time.LocalDate
 import java.time.YearMonth
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [CAL-06] One figure of the month summary: its name, its value, an optional line under it. */
 /**
@@ -149,7 +151,7 @@ internal fun MonthSummaryBar(
             // 1.37 PC: 번 돈은 끝난 일감만, 아직 할 일감은 따로.
             Figure("번 돈", Fmt.wonShort(overview.jobEarned), listOfNotNull(overview.jobReceived.takeIf { it > 0 }?.let { "받음 ${Fmt.wonShort(it)}" },
                 overview.jobAhead.takeIf { it > 0 }?.let { "할 일 ${Fmt.wonShort(it)}" }), cal.income),
-            Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, if (overview.jobOwed > 0) cal.warning else null),
+            Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, if (overview.jobOwed > 0) Tone.Caution.color() else null),
         )
         CalendarFocus.SALES -> listOf(
             Figure("${month}월 매출", Fmt.wonShort(overview.sales), "${overview.openDays}일 적음", cal.income),
@@ -295,7 +297,7 @@ internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit
         IconButton(onClick = onLegend) { Icon(Icons.Outlined.Info, "달력 표시 안내", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (boardLabel != null) {
             // [TAB-04] PC 확인 bad7d860 사용성 제안: an icon alone did not say it opens 판 고르기, so the button reads "월 ▾".
-            androidx.compose.material3.FilledTonalButton(
+            com.bamnat.app.ui.components.FilledTonalButton(
                 onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 10.dp, end = 6.dp),
                 modifier = Modifier.heightIn(min = 40.dp).semantics { contentDescription = "달력 판 고르기, 지금 $boardLabel" },
@@ -413,7 +415,7 @@ internal fun CalendarLegendSheet(
                     // [RVH-09] 주휴 ✓ is drawn on an 알바 (시급) calendar only.
                     if (style == com.bamnat.core.work.WorkStyle.HOURLY) LegendRow("주휴 ✓", "주 15시간 이상, 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
-                        Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
+                        Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(Tone.Danger.color()))
                     }
                 }
                 CalendarFocus.JOBS -> {
@@ -557,7 +559,7 @@ internal fun TodayJobsCard(today: LocalDate, jobs: List<Job>, onOpen: (LocalDate
                 TextButton(onClick = onAdd) { Text("일감 적기") }
             }
             for (j in todays.take(3)) {
-                JobRow(j, today, onClick = { onOpen(today) }, owedColor = cal.warning)
+                JobRow(j, today, onClick = { onOpen(today) }, owedColor = Tone.Caution.color())
             }
             if (todays.isEmpty() && next != null) {
                 Row(

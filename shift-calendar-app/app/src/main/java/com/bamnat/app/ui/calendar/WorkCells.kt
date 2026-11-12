@@ -78,7 +78,8 @@ internal fun FieldJobMarks(jobs: List<Job>, date: LocalDate) {
     Column(Modifier.fillMaxWidth().height(22.dp), verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
         shown.forEach { j -> FieldBar(j, date, dark, Modifier.weight(1f, fill = false)) }
         if (jobs.size > 2) {
-            val small = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(8.sp.toDp(), 8.5.dp).toSp() }
+            // 2.0.0 [RVP-11] (검토 UIX-11, 조건 4) 10sp like every word in a cell, held to the 10dp left under the bar.
+            val small = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(10.sp.toDp(), 10.dp).toSp() }
             Text("+${jobs.size - 1}", fontSize = small, lineHeight = small, maxLines = 1, style = FooterTrim, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally))
         }
@@ -116,8 +117,9 @@ private fun FieldBar(job: Job, date: LocalDate, dark: Boolean, modifier: Modifie
             val label = if (com.bamnat.core.money.PlatformWork.isPlatform(job)) "${job.client.take(2)}${com.bamnat.core.money.PlatformWork.count(job)}"
                 else job.units?.let { DayRate.cell(it) } ?: job.client.ifBlank { job.title }.trim().take(4)
             // [CELL-01] 1.39 (사용자 사진: 큰 글자에서 '스윈이'의 위아래가 잘림) 8sp grew past the 10dp bar with the font setting; the
-            // letters stay inside it (at most 8.5dp) and keep no font padding.
-            val small = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(8.sp.toDp(), 8.5.dp).toSp() }
+            // letters stay inside it and keep no font padding. 2.0.0 [RVP-11] (검토 UIX-11, 조건 4): 10sp, the bar's full height, never
+            // under 10sp and never past the bar (the 10dp cap is 10sp at the usual size; 큰 글자 keeps it 10dp, as [CardDueMark]).
+            val small = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(10.sp.toDp(), 10.dp).toSp() }
             Text(
                 label, fontSize = small, lineHeight = small, maxLines = 1, overflow = TextOverflow.Clip, fontWeight = FontWeight.Bold,
                 style = FooterTrim,

@@ -47,6 +47,22 @@ class HeadRoomTest {
         assertEquals("팀 링크가 없으면 없어요", 0, HeadRoom.of(707f, 1f, 24f, bell = true, others = 1).team)
     }
 
+    /** 2.0.0 [RVP-45] 검토 HQ-62: someone else's calendar on screen has one row too, with the way back to the user's own in it. */
+    @Test fun aReceivedCalendarKeepsTheWayHomeInItsOneRow() {
+        val home = "내 달력으로".length
+        val wide = HeadRoom.of(900f, 1f, 22f, others = 1, share = false, homeChars = home)
+        assertEquals("넓은 화면에서는 '내 달력으로' 글자로: $wide", HeadRoom.WORDS, wide.home)
+        assertTrue(wide.arrows)
+        val phone = HeadRoom.of(392f, 1f, 18f, others = 1, share = false, homeChars = home)
+        assertEquals("휴대폰에서는 얼굴로 남고 ‹ ›가 먼저 빠져요(밀어 넘기기): $phone", HeadRoom.ICON, phone.home)
+        assertFalse(phone.stepDown)
+        val folded = HeadRoom.of(369f, 2f, 16f, others = 1, share = false, homeChars = home)
+        assertEquals("접은 폭 200%에서도 돌아가는 길은 얼굴로 남아요: $folded", HeadRoom.ICON, folded.home)
+        assertFalse("달 제목은 그대로", folded.stepDown)
+        assertEquals("내 달력에서는 없어요", 0, HeadRoom.of(392f, 1f, 18f, others = 1).home)
+        assertEquals("돌아가는 길은 얼굴 수에서 빠져요", 1, HeadRoom.of(1000f, 1f, 24f, others = 2, share = false, homeChars = home).faces)
+    }
+
     @Test fun aWorksBigMonthStepsDownOneSizeInsteadOfShrinking() {
         assertTrue("HQ-22: 28sp 달 제목은 접은 폭 200%에서 한 단계 낮춰요", HeadRoom.of(369f, 2f, 28f, bell = true).stepDown)
         assertFalse(HeadRoom.of(369f, 2f, 16f, bell = true).stepDown)
@@ -72,6 +88,15 @@ class HeadRoomTest {
         val phone = HeadRoom.of(412f, 1f, 22f, bell = true, others = 2, together = true, nameChars = 3)
         assertEquals("폰에서는 달력 칩의 목록에", 0, phone.faces)
         assertFalse(phone.together)
+    }
+
+    /** 검토 PC-143 (사용자 '종은 공유 옆에 따로', 폴드): 공유 stays beside the bell as its icon on the folded and the usual phone at 100%. */
+    @Test fun shareStaysBesideTheBellOnAPhone() {
+        for (w in listOf(369f, 411f)) HeadRoom.of(w, 1f, if (w < 392f) 16f else 22f, bell = true, nameChars = 3).let { r ->
+            assertEquals("$w: 공유는 종 옆에 아이콘으로 $r", HeadRoom.ICON, r.share)
+            assertFalse("$w: ‹ ›가 먼저 빠져요(밀어 넘기기·TalkBack)", r.arrows)
+        }
+        assertEquals("접은 폭 200%에서만 도구 안에", 0, HeadRoom.of(369f, 2f, 16f, bell = true, nameChars = 3).share)
     }
 
     /** 총괄 HQ-59: a 360dp phone keeps the month at its size at 100% and 200% (no step down, the year goes). */

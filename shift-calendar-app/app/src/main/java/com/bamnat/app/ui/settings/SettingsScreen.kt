@@ -149,6 +149,9 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /**
  * [SET-01] The settings in groups, in the order people look for them, under the alarm's state.
@@ -1253,13 +1256,13 @@ private fun AlarmReadyCard(
     val next = upcoming
     val (icon, headline, tint) = when {
         !settings.alarmsEnabled -> Triple(Icons.Filled.AlarmOff, "알람이 모두 꺼져 있어요", MaterialTheme.colorScheme.error)
-        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", cal.warning)
+        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", Tone.Danger.color()) // 2.0.0 [RVP-13] (HQ-54) 울리지 않을 수 있는 알람: 위험
         next == null -> Triple(Icons.Outlined.Alarm, "울릴 알람이 없어요", MaterialTheme.colorScheme.onSurfaceVariant)
         else -> Triple(Icons.Filled.CheckCircle, "알람 준비 완료", MaterialTheme.colorScheme.secondary)
     }
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) Tone.Danger.container() else MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
@@ -1298,7 +1301,7 @@ private fun AlarmReadyCard(
                             }
                         }.getOrNull()
                     }
-                    nudge?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning) }
+                    nudge?.let { com.bamnat.app.ui.components.ToneLine(it) } // 쉬는 시간은 주의
                 }
             } }, end = {
                 when {

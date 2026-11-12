@@ -102,9 +102,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.bamnat.app.ui.theme.pill
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.semantics.contentDescription
 import java.time.LocalDate
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /** The day's alarms as they ring with its switch on, so a day turned off still shows what it would ring. */
 internal fun plannedAlarms(snapshot: ScheduleSnapshot, day: ResolvedDay): List<PlannedAlarm> =
@@ -473,7 +482,7 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
         }
         }, end = {
             if (job.unpaid > 0) {
-                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = Tone.Caution.color())
             } else if (job.payable > 0) {
                 Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
             }
@@ -541,7 +550,7 @@ private fun Token(t: DayToken) {
     val (bg, fg) = when (t.tone) {
         DayToken.Tone.PLAIN -> scheme.surfaceContainerHigh to scheme.onSurfaceVariant
         DayToken.Tone.ACCENT -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        DayToken.Tone.WARNING -> cal.warningContainer to cal.warning
+        DayToken.Tone.WARNING -> Tone.Caution.container() to Tone.Caution.color()
         DayToken.Tone.ERROR -> scheme.errorContainer to scheme.onErrorContainer
     }
     Text(
@@ -829,7 +838,7 @@ private fun MoreButton(text: String, said: String, icon: androidx.compose.ui.gra
     modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = CircleShape,
+        shape = MaterialTheme.pill /* [RVP-05] PC-128: 칩 줄의 칩과 같은 모서리 */,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shadowElevation = 2.dp,
@@ -877,12 +886,8 @@ fun DayPreview(
 /** [CAL-01] "이 주 73시간 30분 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
 @Composable
 internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
-    val warning = LocalCalendarColors.current.warning
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.WarningAmber, null, tint = warning, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = warning)
-    }
+    // 2.0.0 [RVP-13] (HQ-54) Over the legal week is 위험: the one alert line, its mark red like the week's bar.
+    com.bamnat.app.ui.components.ToneLine(text, modifier, tone = Tone.Danger, style = MaterialTheme.typography.bodySmall.merge(NumberStyle))
 }
 
 /** [CAL-52] A line's room in the day's header: one more line with text at 150% and up, so large text wraps before it is cut. */

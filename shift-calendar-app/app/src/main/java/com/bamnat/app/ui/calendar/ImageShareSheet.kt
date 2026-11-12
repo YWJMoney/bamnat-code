@@ -19,7 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -104,7 +104,7 @@ fun ImageShareSheet(
         ) {
             Text("${month.monthValue}월 사진으로 보내기", style = MaterialTheme.typography.titleLarge)
             yearRecap?.let { (y, open) ->
-                androidx.compose.material3.OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                com.bamnat.app.ui.components.OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("${y}년 근무 결산 사진 만들기")
                 }
             }

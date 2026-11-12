@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,6 +34,8 @@ import com.bamnat.core.team.TeamCall
 import com.bamnat.core.team.TeamCover
 import com.bamnat.core.team.TeamMember
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * 1.38 [P3-X-01] 결원 메우기 ①: who could come instead, best first, with what weighs on each. The ones who break nothing are
@@ -103,7 +105,7 @@ internal fun CallCard(
             Text("${taken.name}님이 들어가요. 표에 넣었어요.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             // 1.39 G2 PC 5066b027 (상): the small grey line was missed; the leader's next step is said as one, in the warning colour.
             Text("남은 일: 아래 '다시 확정'을 눌러야 두 사람 링크와 달력·알람에 바뀐 근무가 들어가요.", style = MaterialTheme.typography.bodyMedium,
-                color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+                color = Tone.Caution.color())
             TextButton(onClick = onEnd) { Text("이 카드 닫기") }
             return@SectionCard
         }

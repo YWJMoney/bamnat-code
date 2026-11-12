@@ -18,7 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -137,7 +137,7 @@ fun PlazaRulesCard(gate: PlazaRulesGate, onAgreed: () -> Unit, modifier: Modifie
                 TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "광장 운영 규칙") },
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("전체 보기") }
                 Spacer(Modifier.weight(1f))
-                androidx.compose.material3.FilledTonalButton(onClick = { gate.agreeNow(); onAgreed() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                com.bamnat.app.ui.components.FilledTonalButton(onClick = { gate.agreeNow(); onAgreed() }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text("동의해요")
                 }
             }

@@ -180,7 +180,9 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
         settle()
         cc.received.view(noNameId)
         settle()
-        assertTrue(appears("받은 표", exact = false))
+        // 2.0.0 [RVP-45] HQ-62: the chip now stands in the one-row head, its words a picture and its spoken name 받은 근무표 (the photo
+        // shows '받은 표' whole where the row has room).
+        assertTrue(appears("지금 받은 근무표", exact = false))
         assertTrue(gone("이름 없", exact = false))
     }
     @Test fun noNameReceivedFoldLight() = shoot("rvg32_received_no_name_fold_light_100", FOLDED, noNameReceived())

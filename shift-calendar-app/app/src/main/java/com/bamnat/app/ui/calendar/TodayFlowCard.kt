@@ -35,13 +35,13 @@ import androidx.compose.material.icons.outlined.WorkOutline
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
+import com.bamnat.app.ui.components.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -87,6 +87,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /** The clock to the minute, moving on at each minute's turn, for what changes with the time of day. */
 @Composable
@@ -235,7 +238,8 @@ internal fun TodayFlowCard(
     // 1.38 [FLOW-07] The same one card wears the time of day: work, the night's sleep and a day off each have their own
     // colour, so the calendar's top tells which part of the day this is before a word is read (no card is added, EASE-03).
     val face = when {
-        warning -> cal.warningContainer
+        // 2.0.0 [RVP-13] (HQ-54) An alarm that will not ring is the one danger here.
+        warning -> Tone.Danger.container()
         card.state == TodayFlow.State.ON_SHIFT -> MaterialTheme.colorScheme.primaryContainer
         card.state == TodayFlow.State.SLEEPING || card.state == TodayFlow.State.SLEEP_TIME -> cal.sleepContainer
         card.state == TodayFlow.State.REST_DAY -> MaterialTheme.colorScheme.secondaryContainer
@@ -262,7 +266,7 @@ internal fun TodayFlowCard(
                     .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Icon(stateIcon(card), null, tint = if (warning) Tone.Danger.color() else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(card.headline, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 // [CAL-16] A warning keeps its one button on the folded line: an alarm is turned back on without opening.
@@ -290,7 +294,7 @@ internal fun TodayFlowCard(
                             modifier = Modifier.padding(start = 32.dp, end = 84.dp, bottom = 2.dp))
                     }
                     Row {
-                        Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary,
+                        Icon(stateIcon(card), null, tint = if (warning) Tone.Danger.color() else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 1.dp, end = 10.dp).size(22.dp))
                         Text(card.headline, style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f).padding(end = 84.dp))
@@ -307,11 +311,8 @@ internal fun TodayFlowCard(
                 }
             }
             card.rest?.let { rest ->
-                Row(Modifier.padding(start = 32.dp, top = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(rest, style = MaterialTheme.typography.bodySmall, color = cal.warning)
-                }
+                // 2.0.0 [RVP-13] (HQ-54) Short rest is a thing to mind (주의), said in the one alert line.
+                com.bamnat.app.ui.components.ToneLine(rest, Modifier.padding(start = 32.dp, top = 4.dp, end = 12.dp))
             }
             FlowStrip(card, Modifier.padding(top = 12.dp, end = 12.dp))
             if (card.action != null || onSleepLog != null) {

@@ -29,7 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.Composable
@@ -74,6 +74,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.work.ShiftMonth
 import java.time.temporal.TemporalAdjusters
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [CAL-22] 1년 달력: the twelve months of a year in small, each day in its shift's colour, with the year's
@@ -262,7 +264,7 @@ private fun heatColor(h: Heat): Color {
         Heat.WORK -> scheme.surfaceContainerHighest
         Heat.NIGHT -> scheme.primary.copy(alpha = 0.55f)
         Heat.NIGHT_RUN -> scheme.primary
-        Heat.SHORT_REST -> cal.warning
+        Heat.SHORT_REST -> Tone.Caution.color()
     }
 }
 

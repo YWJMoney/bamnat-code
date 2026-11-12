@@ -47,13 +47,33 @@ fun OfflineLine(
     text: String = NetWords.OFFLINE,
     onRetry: (() -> Unit)? = null,
 ) {
-    Row(
-        modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        if (onRetry != null) TextButton(onClick = onRetry) { Text("다시 하기") }
+    // 2.0.0 [RVP-13] (조건 4·12, 장터를 못 읽은 360dp 폰 글자 200%: '장터는 아직 / 열리지 / 않았어요' 세 줄 옆에 '다시 하기'가 떨어져
+    // 있었어요): where the words beside '다시 하기' would take more than two lines, '다시 하기' goes under them (as the nudge card does).
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val style = MaterialTheme.typography.bodyMedium
+        val button = MaterialTheme.typography.labelLarge
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val stacked = onRetry != null && with(density) {
+            val room = maxWidth - LEAD - (measurer.measure("다시 하기", button).size.width.toDp() + 24.dp)
+            room <= 0.dp || measurer.measure(text, style, constraints = androidx.compose.ui.unit.Constraints(maxWidth = room.roundToPx())).lineCount > 2
+        }
+        val words: @Composable (Modifier) -> Unit = { m ->
+            Row(m, verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(text, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (stacked) androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth()) {
+            words(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+            TextButton(onClick = onRetry!!, modifier = Modifier.padding(start = LEAD - 12.dp).heightIn(min = 48.dp)) { Text("다시 하기") }
+        } else Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            words(Modifier.weight(1f))
+            if (onRetry != null) TextButton(onClick = onRetry) { Text("다시 하기") }
+        }
     }
 }
+
+/** The cloud and the space after it, which the words start after. */
+private val LEAD = 30.dp
