@@ -136,6 +136,22 @@ export function stack(rows, launchedAt) {
  */
 export const REWARD_CAP = { months: 12, days: 365 };
 
+/**
+ * 2.0.0 [RVD-15] PC 확인 D-442 (클라우드 로컬 서버에서 재현): owed 친구 초대·만든 작품 months as the phone may say them, the oldest
+ * first and cut to what the year's cap still [left] (an admin pays no more: '11개월만 지급', or none past it). Before, a person at
+ * the cap read '프로 12개월은 운영팀이 확인한 뒤 들어와요' beside '올해 받을 수 있는 12개월을 모두 받았어요'.
+ */
+export function pendingWithin(rows, left) {
+  const out = [];
+  for (const r of rows.filter((x) => x.status === "owed" && PENDING_RULES.includes(x.rule_id)).sort((a, b) => a.created_at - b.created_at)) {
+    const months = Math.min(r.months, left);
+    if (months <= 0) break;
+    out.push({ ...r, months });
+    left -= months;
+  }
+  return out;
+}
+
 /** How much of the year's cap [dev] used, as { used, cap, left }. */
 export async function rewardYear(env, dev, now) {
   const r = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status IN ('paid', 'moved') AND paid_at > ?",
@@ -240,11 +256,12 @@ function makerWhat(memo) {
 
 /** [MON-08][MON-09] What this install has: its passes, its admin link and whether it holds a recovery code. */
 export async function passes(env, dev, now) {
-  const [rows, link, code, s] = await Promise.all([
-    all(env, "SELECT months, status, paid_at, deferred, rule_id, memo FROM rewards WHERE device = ?", dev),
+  const [rows, link, code, s, year] = await Promise.all([
+    all(env, "SELECT months, status, paid_at, deferred, rule_id, memo, created_at FROM rewards WHERE device = ?", dev),
     one(env, "SELECT status, admin_name, admin, previews FROM admin_devices WHERE device = ?", dev),
     one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
     launchState(env),
+    rewardYear(env, dev, now),
   ]);
   if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
   const p = stack(rows, s.launchedAt);
@@ -259,7 +276,8 @@ export async function passes(env, dev, now) {
     // 1.36 [GRW-09] 만든 분 보상은 무엇 때문인지까지("이달의 주제에 뽑힘 · 테마 이름").
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     // 2.0.0 [RVD-13][RVD-14] 친구 초대·만든 작품 보상은 운영팀이 확인한 뒤 들어와요: the phone says them as waiting, not given.
-    pending: rows.filter((r) => r.status === "owed" && PENDING_RULES.includes(r.rule_id))
+    // [RVD-15] PC 확인 D-442: only as much as the year's cap still leaves, so it never promises months an admin cannot pay.
+    pending: pendingWithin(rows, year.left)
       .map((r) => ({ months: r.months, why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
@@ -591,9 +609,10 @@ export async function inviteView(env, dev, origin, now) {
     waiting: n("waiting"),
     friends: n("credited") + n("capped") + n("qualified"),
     given: months,
-    // 2.0.0 [RVD-14] 확인 뒤 들어와요: the app says these apart from the months given.
-    pending: pending.m,
-    capReached: (set.capMonths > 0 && recent + set.months > set.capMonths) || year.used + pending.m + set.months > year.cap,
+    // 2.0.0 [RVD-14] 확인 뒤 들어와요: the app says these apart from the months given. [RVD-15] PC 확인 D-442: no more than the
+    // year's cap leaves, so '프로 12개월은 운영팀이 확인한 뒤 들어와요' never stands beside '올해 … 모두 받았어요'.
+    pending: Math.min(pending.m, year.left),
+    capReached: (set.capMonths > 0 && recent + set.months > set.capMonths) || year.used + Math.min(pending.m, year.left) + set.months > year.cap,
     // The invite this phone itself came by, as this phone reported it.
     used: used?.status ?? null,
   };

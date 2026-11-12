@@ -124,6 +124,38 @@ test("[RVD-15] one person gets at most 12 months of rewards in 365 days, all kin
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM rewards WHERE status = 'moved'").first()).n, 0);
 });
 
+test("[RVD-15] PC 확인 D-442: the phone says owed months only up to what the year's cap leaves, and none at the cap", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server();
+  const admin = await signIn(call);
+  await call("POST", "/api/admin/settings/invite", { friends: 1, days: 1, months: 12 }, admin);
+  const code = (await call("POST", "/api/invites/code", { phone: mark(1) }, phone(1))).data.code;
+  const friend = async (n) => {
+    await call("POST", "/api/invites/use", { code, source: "typed", phone: mark(n) }, phone(n));
+    t.mock.timers.tick(DAY);
+    assert.equal((await call("POST", "/api/invites/seen", {}, phone(n))).data.status, "credited");
+    return (await owed(call, admin)).rewards.find((w) => w.invite);
+  };
+  const said = async () => {
+    const v = (await call("GET", "/api/invites", undefined, phone(1))).data;
+    const p = (await call("GET", "/api/passes", undefined, phone(1))).data;
+    return [v.pending, v.capReached, p.pending.map((x) => [x.months, x.why])];
+  };
+  // Nothing paid yet: all 12 months are said as waiting.
+  const first = await friend(10);
+  assert.deepEqual(await said(), [12, true, [[12, "invite"]]]);
+  assert.equal((await call("POST", `/api/admin/rewards/${first.id}`, { status: "paid", months: 1 }, admin)).status, 200);
+  // 1 month paid: the next 12 can only be paid as 11 ('11개월만 지급'), so the phone says 11.
+  const second = await friend(11);
+  assert.deepEqual([second.year.left, second.capped], [11, true]);
+  assert.deepEqual(await said(), [11, true, [[11, "invite"]]]);
+  assert.equal((await call("POST", `/api/admin/rewards/${second.id}`, { status: "paid", months: 11 }, admin)).status, 200);
+  // At the cap: the owed row stays for the admin to cancel, but the phone promises nothing (only '모두 받았어요').
+  const third = await friend(12);
+  assert.deepEqual([third.year.left, third.capped], [0, true]);
+  assert.deepEqual(await said(), [0, true, []]);
+});
+
 test("[RVD-15] the invite rules say the cap: 12 months a year unless the developer set a lower one", async () => {
   const { call } = server();
   assert.deepEqual((await call("GET", "/api/invites/rules")).data, { need: 5, days: 7, months: 1, capMonths: 12 });
