@@ -2430,4 +2430,4 @@ RVD-08,"검토 2026-11-12 SRV-03: 배포 뒤 health가 DB를 안 건드려 고�
 RVD-09,"검토 2026-11-12 SVC-89: 광장 글 표(posts)에 parent·answer 색인 없음",1.40,진행 중,,"index.js posts_parent·posts_answer, plaza-people.js"
 RVD-10,"검토 2026-11-12 SVC-65: 개발 결과 붙여 넣기를 두 번 하면 문의 답이 두 번 감",1.40,진행 중,,"inbox.js applyResult already_applied, inboxAnswer 같은 답"
 RVD-11,"검토 2026-11-12 SVC-01: 나간 판 저장이 중간에 끊기면 남은 출시 안내·공지가 다시 가지 않음",1.40,진행 중,,"desk.js shipNow pending·resumeShip, loop.js shipTick"
-RVD-12,"검토 2026-11-12 WEB-01~04·06: 공개 웹 계산기 숫자(연봉 칩 12배, 퇴직금 윤년·3개월 일수, 연차 달 끝 입사, 주 40시간 월급 쪽마다 다름)",1.40,대기,,
+RVD-12,"검토 2026-11-12 WEB-01~04·06: 공개 웹 계산기 숫자(연봉 칩 12배, 퇴직금 윤년·3개월 일수, 연차 달 끝 입사, 주 40시간 월급 쪽마다 다름)",1.40,진행 중,,"tools/site/public_pages.py 실수령액 칩·퇴직금 addM·연차 addM·주휴 tot, 공개 저장소 PR"
