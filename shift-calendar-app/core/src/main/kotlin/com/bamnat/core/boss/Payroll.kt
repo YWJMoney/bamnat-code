@@ -90,6 +90,21 @@ data class Workplace(
             v > 100 -> (v - 100).coerceIn(1, 31) to false
             else -> v.coerceIn(1, 31) to true
         }
+
+        /**
+         * 2.0.0 [RVJ-31] (검토 T05-01) Whether a 리더 팀 근무표 belongs to a 5인 미만 사업장, so its 주 52시간 sign is left out the way
+         * this ledger's [BOSS-10] one is: the place tied to the team (else the boss's only place) once it has answered [fivePlus];
+         * while it has not, or with no place, what the leader's own 급여 설정 says of their workplace ([ownFiveOrMore]: null when
+         * not set up or only guessed). Not known anywhere is 5인 이상, as the ledger takes it.
+         */
+        fun teamUnderFive(teamId: String, places: List<Workplace>, ownFiveOrMore: Boolean?): Boolean {
+            val place = places.firstOrNull { it.teamId == teamId } ?: places.singleOrNull()
+            return when (place?.fivePlus) {
+                true -> false
+                false -> true
+                null -> ownFiveOrMore == false
+            }
+        }
     }
 }
 

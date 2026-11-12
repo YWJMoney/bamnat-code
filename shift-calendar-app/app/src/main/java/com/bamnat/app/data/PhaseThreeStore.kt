@@ -388,15 +388,17 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         fun encodeShifts(l: List<TeamShift>): String = JSONArray().apply {
             l.forEach { s ->
+                // 2.0.0 [RVJ-29] "brk": the team's own 휴게(분); left out while the law's is taken, as every team before 2.0.0 reads.
                 put(JSONObject().put("id", s.id).put("label", s.label).put("name", s.name).put("color", s.colorArgb).put("off", s.isOff)
-                    .putOpt("start", s.start?.toString()).putOpt("end", s.end?.toString()))
+                    .putOpt("start", s.start?.toString()).putOpt("end", s.end?.toString()).putOpt("brk", s.breakMinutes))
             }
         }.toString()
 
         fun decodeShifts(text: String): List<TeamShift> = runCatching {
             JSONArray(text).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.map { o ->
                 TeamShift(o.getLong("id"), o.optString("label"), o.optString("name"), o.optLong("color"), o.optBoolean("off"),
-                    o.optString("start").takeIf { it.isNotEmpty() }?.let(LocalTime::parse), o.optString("end").takeIf { it.isNotEmpty() }?.let(LocalTime::parse))
+                    o.optString("start").takeIf { it.isNotEmpty() }?.let(LocalTime::parse), o.optString("end").takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
+                    if (o.has("brk") && !o.isNull("brk")) o.optInt("brk").coerceIn(0, com.bamnat.core.team.TeamTimes.MAX_BREAK) else null)
             }
         }.getOrDefault(emptyList())
 

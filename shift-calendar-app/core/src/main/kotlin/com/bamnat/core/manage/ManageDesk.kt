@@ -18,6 +18,8 @@ object ManageDesk {
         val nextConfirmed: Boolean, val nextEmpty: Int,
         /** Cells painted this month: a team made for next month has none, and this month is not asked of it. */
         val painted: Int = 1,
+        /** 2.0.0 [RVJ-31] false for a 5인 미만 사업장, whose signs hold no 주 52시간 (근로기준법 제11조). */
+        val weekLimit: Boolean = true,
     )
 
     /** One shop's month (last month's ledger, the one paid now) as the 관리 화면 sees it. */
@@ -38,7 +40,7 @@ object ManageDesk {
         val next = now.plusMonths(1)
         val out = ArrayList<Todo>()
         teams.filter { it.members > 0 }.forEach { t ->
-            if (t.danger > 0) out += Todo("team-danger-${t.id}-$now", Where.TEAM, t.id, "${t.name} ${now.monthValue}월: 위험 ${t.danger}개(휴식·연속·주 52시간)", urgent = true)
+            if (t.danger > 0) out += Todo("team-danger-${t.id}-$now", Where.TEAM, t.id, "${t.name} ${now.monthValue}월: 위험 ${t.danger}개(휴식·연속${if (t.weekLimit) "·주 52시간" else ""})", urgent = true)
             if (!t.confirmed && t.painted > 0) out += Todo("team-confirm-${t.id}-$now", Where.TEAM, t.id,
                 "${t.name} ${now.monthValue}월 근무표가 확정 전이에요" + (if (t.empty > 0) " · 빈칸 ${t.empty}" else ""), urgent = true)
             if (t.short > 0) out += Todo("team-short-${t.id}-$now", Where.TEAM, t.id, "${t.name} ${now.monthValue}월: 인원이 모자란 날 ${t.short}일", urgent = false)
