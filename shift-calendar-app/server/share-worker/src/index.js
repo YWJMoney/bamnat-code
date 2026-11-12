@@ -78,13 +78,15 @@
 // when it expires.
 
 import { SERVER_VERSION } from "./version.js";
+// 2.0.0 [RVD-28] SD-08: 근무 종류 한 규칙표, written by core ShiftRulesExportTest (the company server reads the same file).
+import { SHIFT_RULES } from "./shift-rules.js";
 
 export const LIMITS = {
   // 1.37 [SHR-31][SHR-32] Room for a 테마 (32 KB) and 근무 설정 (24 KB) next to a company setup (24 KB) and the days.
   bodyBytes: 128 * 1024,
   days: 200,
-  types: 24,
-  text: 20,
+  // [RVD-28] SD-08 How many kinds of day, from core ShiftRules (a name and a 근무 글자 too: nameOf, shortOf).
+  types: SHIFT_RULES.types,
   title: 30,
   // 연차, 반차 … up to "0.75일 무급 휴가".
   leave: 12,
@@ -2028,13 +2030,15 @@ export function validate(body) {
   if (!Array.isArray(body.types) || body.types.length > LIMITS.types) return { error: "types" };
   const types = [];
   for (const t of body.types) {
-    const name = cleanText(t?.name, LIMITS.text);
-    // 2.0.0 [RVD-26] SN-16: 근무 글자 as the app and a 작품 keep it, two letters (👩‍⚕️ is one) up to 16 code units ([shortOf]).
-    const short = shortOf(t?.short);
+    // 2.0.0 [RVD-28] SD-08 (core ShiftRules, 근무 종류 한 규칙표): a name of 20 letters, cut to them when longer, never the link's end.
+    const name = nameOf(t?.name);
+    // 2.0.0 [RVD-26] SN-16: 근무 글자 as the app and a 작품 keep it, two letters (👩‍⚕️ is one) up to 16 code units ([shortOf]). [RVD-28] One whose
+    // first letter alone is longer (a long joined emoji) takes the name's first letter, as the app does for an empty one.
+    const short = shortOf(t?.short) ?? (typeof t?.short === "string" && t.short.trim() && name ? shortOf(letters(name)[0]) : null);
     if (!Number.isInteger(t?.id) || !name || !short || !isColor(t?.color)) return { error: "type" };
     if (t.time != null && !isTimeRange(t.time)) return { error: "type_time" };
     // [SHR-02] The shift's icon key (sun, moon …), so the app draws the badge as the sharer sees it. 2.0.0 [RVD-22] or an emoji ('e:🌙').
-    if (t.icon != null && !iconOk(t.icon)) return { error: "type_icon" };
+    // [RVD-28] SD-08 One the rule does not know is dropped and the link made (총괄 11-12 '버리기, 거절 아님'): the badge shows the 글자.
     // 2.0.0 [RVD-20] HQ-13 하루 두 구간 (설계 4-4절): where the shift stops between its two parts ('15:00-17:00'), inside `time` with 30
     // minutes or more each side, as the app's WorkTime.gapFits. A receiver before 2.0.0 reads `time` alone, first start to last end.
     if (t.gap != null && !(t.time != null && t.off !== true && isTimeRange(t.gap) && gapFits(t.time, t.gap))) return { error: "type_gap" };
@@ -2042,7 +2046,7 @@ export function validate(body) {
     // as work. 0 is '휴게 없음' and differs from no field (an app before 2.0.0, not known). Older receivers ignore both.
     // 총괄 11-12 (PC-92의 교훈): a rest that is not the app's is dropped, never the link; the receiver then asks for the 휴게 itself.
     const rest = restOf(t);
-    types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: t.icon ?? null, ...(t.gap != null ? { gap: t.gap } : {}),
+    types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: iconOk(t.icon) ? t.icon : null, ...(t.gap != null ? { gap: t.gap } : {}),
       ...rest });
   }
   const ids = new Set(types.map((t) => t.id));
@@ -2247,9 +2251,12 @@ const isTimeRange = (t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d-([
  */
 export function letters(s) {
   const out = [];
+  let lead = "";
   const cps = [...s];
   let flagHalf = false;
-  const join = (x) => { if (out.length) out[out.length - 1] += x; else out.push(x); };
+  // [RVD-28] SD-08 core ShiftRules.letters: marks with no letter before them go with the next (so the count is graphemes' always).
+  const join = (x) => { if (out.length) out[out.length - 1] += x; else lead += x; };
+  const push = (x) => { out.push(lead + x); lead = ""; };
   for (let i = 0; i < cps.length; i++) {
     const cp = cps[i].codePointAt(0);
     if (cp === 0x200d) {
@@ -2258,11 +2265,23 @@ export function letters(s) {
     } else if ((cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0x1f3fb && cp <= 0x1f3ff) || (cp >= 0xe0020 && cp <= 0xe007f) || /[\p{Mn}\p{Me}]/u.test(cps[i])) {
       join(cps[i]);
     } else if (cp >= 0x1f1e6 && cp <= 0x1f1ff) {
-      if (flagHalf) join(cps[i]); else out.push(cps[i]);
+      if (flagHalf) join(cps[i]); else push(cps[i]);
       flagHalf = !flagHalf;
       continue;
-    } else out.push(cps[i]);
+    } else push(cps[i]);
     flagHalf = false;
+  }
+  return out;
+}
+
+/** [RVD-28] SD-08 core ShiftRules.cut: [s] when it has at most [max] letters in [units] code units, else as many of its first letters as fit. */
+export function cutLetters(s, max, units) {
+  const all = letters(s);
+  if (s.length <= units && all.length <= max) return s;
+  let out = "";
+  for (const l of all.slice(0, max)) {
+    if ((out + l).length > units) break;
+    out += l;
   }
   return out;
 }
@@ -2270,22 +2289,33 @@ export function letters(s) {
 /**
  * [RVD-26] SN-16 근무 글자: what 4 code units took before goes as it is; longer is its first two letters up to 16 code units (an app before
  * 2.0.0 cut it at 4, half an emoji). More is cut, not refused: a 근무 글자 never stops the link (총괄 11-12, PC-92의 교훈). Null when empty.
+ * [RVD-28] SD-08 The numbers are core ShiftRules' (shift-rules.js).
  */
 export function shortOf(v) {
+  const { letters: max, units, before } = SHIFT_RULES.label;
   const s = cleanText(v, 200);
   if (!s) return null;
-  if (s.length <= 4) return s;
-  let out = "";
-  for (const l of letters(s).slice(0, 2)) {
-    if ((out + l).length > 16) break;
-    out += l;
-  }
-  return out || null;
+  if (s.length <= before.link) return s;
+  return cutLetters(s, max, units) || null;
 }
 
-const EMOJI_PART = String.raw`(?:[#*0-9]️?⃣|\p{Regional_Indicator}{2}|\p{Extended_Pictographic}️?\p{Emoji_Modifier}?️?(?:[\u{E0020}-\u{E007E}]+\u{E007F})?)`;
-const EMOJI_ICON = new RegExp(`^e:${EMOJI_PART}(?:\\u200D${EMOJI_PART})*$`, "u");
-export const iconOk = (icon) => typeof icon === "string" && (/^[a-z0-9]{1,16}$/.test(icon) || ([...icon].length <= 14 && EMOJI_ICON.test(icon)));
+/**
+ * [RVD-28] SD-08 A kind of day's name (core ShiftRules): what 20 code units took before (an app before 2.0.0 cut it so), or 20 letters up to
+ * 80 code units (a 작품's 근무 꾸미기 counts letters); longer is cut to its first letters that fit, never refused. Null when empty.
+ */
+export function nameOf(v) {
+  const { letters: max, units, before } = SHIFT_RULES.name;
+  const s = cleanText(v, 2000);
+  if (!s) return null;
+  if (s.length <= before.link) return s;
+  return cutLetters(s, max, units) || null;
+}
+
+// [RVD-28] SD-08 The pattern and the numbers are core ShiftRules' (shift-rules.js); the company server checks a 근무 그림 with the same.
+const ICON_KEY = new RegExp(SHIFT_RULES.icon.key);
+const EMOJI_ICON = new RegExp(SHIFT_RULES.icon.emoji, "u");
+export const iconOk = (icon) => typeof icon === "string" &&
+  (ICON_KEY.test(icon) || ([...icon].length - SHIFT_RULES.icon.prefix.length <= SHIFT_RULES.icon.emojiCodePoints && EMOJI_ICON.test(icon)));
 const DAY_MINUTES = 24 * 60;
 const minuteOf = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 /** 2.0.0 [RVD-20] HQ-13 "HH:mm-HH:mm" as minutes of the day, the end past midnight when it is not after the start (a whole day when equal). */
@@ -2298,7 +2328,8 @@ function gapFits(time, gap) {
   const shift = rangeMinutes(time);
   const between = rangeMinutes(gap);
   const first = (between.from - shift.from + DAY_MINUTES) % DAY_MINUTES;
-  return between.length >= 30 && between.length < DAY_MINUTES && first >= 30 && first + between.length + 30 <= shift.length;
+  const { min, part } = SHIFT_RULES.gap;
+  return between.length >= min && between.length < DAY_MINUTES && first >= part && first + between.length + part <= shift.length;
 }
 /**
  * 2.0.0 [RVD-23] PC-94 (갈래 G와 맞춤, 11-12): `rest` whole minutes 0~720, shorter than the shift (with its gap, if any); `restStart` 'HH:MM' when the
@@ -2308,7 +2339,7 @@ function gapFits(time, gap) {
  */
 function restOf(t) {
   if (t.rest == null || t.time == null || t.off === true) return {};
-  if (!Number.isInteger(t.rest) || t.rest < 0 || t.rest > 720) return {};
+  if (!Number.isInteger(t.rest) || t.rest < 0 || t.rest > SHIFT_RULES.rest.max) return {};
   const shift = rangeMinutes(t.time);
   if (t.rest + (t.gap != null ? rangeMinutes(t.gap).length : 0) >= shift.length) return {};
   if (t.restStart == null || t.rest === 0) return { rest: t.rest };

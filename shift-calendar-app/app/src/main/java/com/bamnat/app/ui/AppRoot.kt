@@ -465,7 +465,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 com.bamnat.app.ui.setup.LinkStart.keepTheirs(container.received, id, waitingShare)
                                 container.telemetry.event("setup_link", "theirs")
                                 container.telemetry.event("received_add", "new")
-                                theirsKept = waitingTitle ?: "받은"
+                                theirsKept = waitingTitle ?: com.bamnat.app.ui.setup.LinkStart.NO_NAME
                             } else {
                                 // Not read (no signal): the link stays waiting, and the calendar offers it as a 받은 달력 after the setup.
                                 container.telemetry.event("setup_link", "theirs_later")

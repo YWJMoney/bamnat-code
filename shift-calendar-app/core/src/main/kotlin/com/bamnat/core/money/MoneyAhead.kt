@@ -262,6 +262,25 @@ object PayCycle {
         return Range(last, next.minusDays(1))
     }
 
+    /**
+     * 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) The cycle [k] cycles after (or before, when negative) the one holding [today], so
+     * the month [k] months from today's shows as its cycle: one after another, never the same cycle twice and none skipped,
+     * also when a pay day moved to the Friday before. [payDays] must reach two months past the cycle wanted.
+     */
+    fun nth(today: LocalDate, payDays: List<LocalDate>, k: Int): Range? {
+        var r = around(today, payDays) ?: return null
+        repeat(kotlin.math.abs(k)) { r = (if (k > 0) around(r.to.plusDays(1), payDays) else around(r.from.minusDays(1), payDays)) ?: return null }
+        return r
+    }
+
+    /** 2.0.0 [RVK-20] The cycle shown as [month]: today's for today's month, then one cycle for each month away from it. */
+    fun forMonth(today: LocalDate, month: java.time.YearMonth, payDate: (java.time.YearMonth) -> LocalDate?): Range? {
+        val now = java.time.YearMonth.from(today)
+        val k = ChronoUnit.MONTHS.between(now, month).toInt()
+        val days = (minOf(0, k) - 2L..maxOf(0, k) + 2L).mapNotNull { payDate(now.plusMonths(it)) }
+        return nth(today, days, k)
+    }
+
     /** The pay days of the months around [today] from a monthly pay day (1..31, past the month's end its last day). */
     fun monthlyPayDays(today: LocalDate, payDay: Int, shift: (LocalDate) -> LocalDate = { it }): List<LocalDate> =
         (-2L..2L).map { java.time.YearMonth.from(today).plusMonths(it) }.map { m -> shift(m.atDay(payDay.coerceIn(1, m.lengthOfMonth()))) }
