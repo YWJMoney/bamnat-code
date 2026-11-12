@@ -23,7 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +67,8 @@ import java.time.LocalTime
 import java.time.YearMonth
 import java.util.UUID
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [SHOP-09][SHOP-10][SHOP-11] A shop's extra cards on 매출·영업: 간이과세 기준 against this year's sales,
@@ -91,7 +93,7 @@ private fun SimpleTaxCard(book: MoneyBook, today: LocalDate) {
         Text("${Fmt.won(y.sales)} / ${Fmt.won(SimpleTaxLimit.LIMIT)} · ${y.percent}%", style = MaterialTheme.typography.titleMedium)
         LinearProgressIndicator(
             progress = { (y.percent / 100f).coerceIn(0f, 1f) },
-            color = if (warn) cal.warning else MaterialTheme.colorScheme.primary,
+            color = if (warn) Tone.Caution.color() else MaterialTheme.colorScheme.primary, // 2.0.0 [RVP-13] (HQ-54) 과세 기준은 주의
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         )
         y.projected?.let { Text("이대로면 올해 약 ${wonBrief(it)}", style = MaterialTheme.typography.bodyMedium) }
@@ -103,7 +105,7 @@ private fun SimpleTaxCard(book: MoneyBook, today: LocalDate) {
                 SimpleTaxLimit.Level.UNDER -> "기준까지 ${Fmt.won(y.left)} 남았어요."
             },
             style = MaterialTheme.typography.bodyMedium,
-            color = if (warn) cal.warning else MaterialTheme.colorScheme.onSurface,
+            color = if (warn) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface,
         )
         Hint(
             "간이과세는 한 해(1~12월) 매출이 부가세 포함 1억 400만 원 미만일 때 받을 수 있어요(2024년 7월부터, 부동산임대업 등은 4,800만 원). " +
@@ -262,7 +264,7 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
             StatTile("인건비", Fmt.won(cost.total), Modifier.weight(1f), caption = "${roster.staff.size}명 · ${cost.minutes / 60}시간")
             val ratio = cost.ratio(sales)
             StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
-                warning = (ratio ?: 0) >= 35)
+                caution = (ratio ?: 0) >= 35)
         }
         Column(Modifier.padding(top = 8.dp)) {
             cost.lines.forEach { l ->
@@ -295,7 +297,7 @@ private fun LedgerCostCard(place: com.bamnat.core.boss.Workplace, sales: Long, m
                 StatTile("인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${ledger.lines.size}명 · ${ledger.lines.sumOf { it.workMinutes } / 60}시간")
                 val ratio = if (sales > 0) (ledger.total * 100 / sales).toInt() else null
                 StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
-                    warning = (ratio ?: 0) >= 35)
+                    caution = (ratio ?: 0) >= 35)
             }
             Column(Modifier.padding(top = 8.dp)) {
                 ledger.lines.forEach { l -> ValueLine(l.staff.name.ifBlank { "이름 없음" }, Fmt.won(l.employerTotal)) }
@@ -420,7 +422,7 @@ private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, breaks: Boolean, 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(s.name, { onChange(s.copy(name = it.take(12))) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             AmountField("시급", amountDigits(s.hourlyWage), { onChange(s.copy(hourlyWage = it.toAmount())) })
-            if (s.hourlyWage in 1 until minimum) Text("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+            if (s.hourlyWage in 1 until minimum) com.bamnat.app.ui.components.ToneLine("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요", tone = Tone.Danger) // 법 위반: 위험
             SwitchLine("주휴수당 주기", s.holidayPay, { onChange(s.copy(holidayPay = it)) }, "한 주 15시간이 안 되면 저절로 빠져요")
             // 2.0.0 [RVJ-54]: under 15 hours a week only the 고용보험 share is counted ([LaborCost.shortWeek]); the line says so.
             SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) },

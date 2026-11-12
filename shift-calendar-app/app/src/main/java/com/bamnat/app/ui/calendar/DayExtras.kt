@@ -60,6 +60,7 @@ import com.bamnat.core.pay.ExtraMinutes
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ResolvedExtra
 import java.time.LocalTime
+import com.bamnat.app.ui.theme.Tone
 
 /**
  * [EXTRA-01][EXTRA-02][EXTRA-05] The day's extra work: each piece with its hours, what the law makes
@@ -82,19 +83,10 @@ internal fun ExtrasContent(
     var editing by rememberSaveable(day.date) { mutableStateOf<Int?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (day.extras.any { it.entry.needsReview }) {
-            Surface(color = cal.warningContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("예전 기록에서 옮겨 온 추가 근무예요", style = MaterialTheme.typography.titleSmall, color = cal.warning)
-                        Text(
-                            "이제 추가 근무마다 시각이 있어요. 종류와 시간이 맞는지 보고, 틀리면 눌러서 고치거나 빼 주세요.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    TextButton(onClick = { vm.markExtrasReviewed(day.date) }) { Text("맞아요") }
-                }
-            }
+            // 2.0.0 [RVP-13] (검토 HQ-54, 조건 3·6) A thing to check, in the one notice-card shape with the 주의 mark (it was red).
+            com.bamnat.app.ui.components.NudgeCard("예전 기록에서 옮겨 온 추가 근무예요", tone = Tone.Caution,
+                detail = "이제 추가 근무마다 시각이 있어요. 종류와 시간이 맞는지 보고, 틀리면 눌러서 고치거나 빼 주세요.",
+                action = "맞아요", onAction = { vm.markExtrasReviewed(day.date) })
         }
 
         day.extras.forEachIndexed { i, e ->
@@ -108,12 +100,7 @@ internal fun ExtrasContent(
         }
 
         if (ExtraText.overlaps(day)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.WarningAmber, null, Modifier.size(18.dp), tint = cal.warning)
-                Spacer(Modifier.width(8.dp))
-                Text("시간이 겹치는 근무가 있어요. 겹친 시간도 따로따로 세니 시각을 확인해 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = cal.warning)
-            }
+            com.bamnat.app.ui.components.ToneLine("시간이 겹치는 근무가 있어요. 겹친 시간도 따로따로 세니 시각을 확인해 주세요.")
         }
 
         val folded = com.bamnat.app.ui.shifts.foldedHere()
@@ -214,12 +201,8 @@ private fun ExtraRow(
             )
         }
         if (extra.estimated) {
-            Text(
-                "근무가 없는 날이라 시각을 몰라 야간 시간은 빼고 셌어요. 눌러서 시각을 적어 주세요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = cal.warning,
-                modifier = Modifier.padding(start = 36.dp, end = 12.dp, top = 2.dp),
-            )
+            com.bamnat.app.ui.components.ToneLine("근무가 없는 날이라 시각을 몰라 야간 시간은 빼고 셌어요. 눌러서 시각을 적어 주세요.",
+                Modifier.padding(start = 36.dp, end = 12.dp, top = 2.dp))
         }
         AnimatedVisibility(open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             ExtraEditor(day, index, extra, snapshot, vm, onDone = onToggle)

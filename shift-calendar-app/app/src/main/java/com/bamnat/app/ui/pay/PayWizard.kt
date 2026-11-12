@@ -49,7 +49,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -113,6 +113,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [PAYS-01] How the pay is stated. 연봉 is worked out to a monthly 기본급 the engine runs on. */
 internal enum class Wage(val title: String, val subtitle: String, val type: WageType) {
@@ -1182,7 +1184,7 @@ internal fun PayslipPreview(range: PayRange, expandedByDefault: Boolean = false)
                     Row(Modifier.fillMaxWidth()) {
                         Text(m.name + (m.times?.let { " · ${it}회" } ?: ""), style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        Text(if (m.guess > 0) "확인 필요 (+${won(m.guess)})" else "금액 모름", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
+                        Text(if (m.guess > 0) "확인 필요 (+${won(m.guess)})" else "금액 모름", style = MaterialTheme.typography.bodyMedium, color = Tone.Caution.color())
                     }
                 }
                 if (!range.exact) {

@@ -24,7 +24,7 @@ import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -1122,7 +1122,7 @@ fun FxDoor(logic: Logic, key: String = com.bamnat.core.formula.FxTaste.OWN) {
                 else -> "만들기와 미리 보기는 무료예요. 내 앱에서 돌리고 장터에 올리는 건 프로예요. 그동안 ✦ 없는 단추·규칙은 그대로 돌아요"
             }, style = MaterialTheme.typography.bodySmall)
             if (!pro && running == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (status is com.bamnat.core.formula.FxTaste.Status.Ready) androidx.compose.material3.Button(onClick = {
+                if (status is com.bamnat.core.formula.FxTaste.Status.Ready) com.bamnat.app.ui.components.Button(onClick = {
                     if (FxAccess.start(c, key)) LogicRunner.say("하루 동안 프로 기능 장치를 써 봐요. 끝나면 한 일을 알려 드려요")
                 }) { Text("하루 써 보기") }
                 OutlinedButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PRO) }) { Text("프로 보기") }
