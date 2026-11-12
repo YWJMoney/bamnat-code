@@ -118,6 +118,10 @@ class LinkOwnerTest {
         window({ FirstStyleScreen(onPick = {}, onSkip = {}, theirsKept = "민지", onTheirsClose = { closed = true }) }) {
             compose.onNodeWithText("‘민지’ 근무표는 받은 달력에 넣었어요").assertExists()
             compose.onNodeWithText("내 근무표예요").assertDoesNotExist()
+            // 디자인 품질 조건 3: answered, the card is one sentence (the question under it already asks for the user's own work).
+            compose.onNodeWithText("이제 내 일을 골라 주세요.").assertDoesNotExist()
+            compose.onNodeWithContentDescription("자세한 설명 보기").performClick()
+            compose.onNodeWithText("달력 이름을 눌러", substring = true).assertExists()
             compose.onNodeWithContentDescription("받은 달력 안내 닫기").performClick()
             assertTrue(closed)
         }

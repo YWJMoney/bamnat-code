@@ -102,11 +102,12 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                     }
                     LinkOwnerButton("가족·동료 것이에요", lead = !mineLeads, enabled = enabled && onLinkTheirs != null) { onLinkTheirs?.invoke() }
                 }
-                // [RVG-15] Kept as someone else's: where it went, and that the question below is the user's own work.
+                // [RVG-15] Kept as someone else's: one sentence of where it went (디자인 품질 조건 3, answered → one line). The big
+                // question right under it already asks for the user's own work; ⓘ says where to see the kept one after the setup.
                 if (!linkWaiting && (theirsKept != null || theirsLater)) LinkCard(
                     title = if (theirsKept != null) "‘$theirsKept’ 근무표는 받은 달력에 넣었어요" else "받은 근무표는 첫 설정 뒤에 넣어요",
-                    line = "이제 내 일을 골라 주세요.",
-                    more = if (theirsKept != null) "내 달력과 따로 있어요. 첫 설정을 마치면 달력 이름을 눌러 받은 달력으로 바꿔 볼 수 있어요. 보낸 분이 고치면 받은 달력에만 보여요."
+                    line = null,
+                    more = if (theirsKept != null) "첫 설정을 마치면 달력 이름을 눌러 ‘$theirsKept’ 근무표로 바꿔 봐요. 내 달력과 알람은 그대로이고, 보낸 분이 고치면 받은 달력에만 보여요."
                         else "지금은 근무표를 읽지 못했어요. 첫 설정을 마치면 달력에서 받은 달력으로 넣을지 물어요.",
                     mood = com.bamnat.app.ui.components.KaniMood.Done, live = true,
                     onClose = onTheirsClose, closeLabel = "받은 달력 안내 닫기",
@@ -132,30 +133,35 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
  * runs the card's whole width, so at 200% text it wraps in a few lines rather than a narrow column beside 칸이.
  */
 @Composable
-private fun LinkCard(title: String, line: String, more: String, mood: com.bamnat.app.ui.components.KaniMood, live: Boolean,
+private fun LinkCard(title: String, line: String?, more: String, mood: com.bamnat.app.ui.components.KaniMood, live: Boolean,
                      onClose: (() -> Unit)?, closeLabel: String, actions: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null) {
     val openState = androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val open = openState.value
     val on = MaterialTheme.colorScheme.onPrimaryContainer
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 16.dp, top = 4.dp, end = 4.dp, bottom = if (actions != null) 16.dp else 8.dp)) {
+        Column(Modifier.padding(start = 16.dp, top = 4.dp, end = 4.dp, bottom = if (actions != null) 16.dp else if (line == null && !open) 4.dp else 8.dp)) {
+            val info: @Composable () -> Unit = {
+                androidx.compose.material3.IconButton(onClick = { openState.value = !open }) {
+                    androidx.compose.material3.Icon(Icons.Outlined.Info, if (open) "자세한 설명 접기" else "자세한 설명 보기", tint = on)
+                }
+            }
+            val liveIf = if (live) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (com.bamnat.app.ui.components.LocalShowKani.current) {
                     com.bamnat.app.ui.components.Kani(mood, night = com.bamnat.app.ui.components.isDarkSurface(), size = 40.dp,
                         modifier = Modifier.padding(end = 10.dp))
                 }
                 Text(title, style = MaterialTheme.typography.titleSmall, color = on, modifier = Modifier.weight(1f).padding(vertical = 8.dp)
-                    .semantics { heading() })
+                    .semantics { heading() }.then(if (line == null) liveIf else Modifier))
+                // An answered card is one row: 칸이, the sentence, ⓘ and X.
+                if (line == null) info()
                 if (onClose != null) androidx.compose.material3.IconButton(onClick = onClose) {
                     androidx.compose.material3.Icon(Icons.Filled.Close, closeLabel, tint = on)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line, style = MaterialTheme.typography.bodyMedium, color = on,
-                    modifier = Modifier.weight(1f).then(if (live) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier))
-                androidx.compose.material3.IconButton(onClick = { openState.value = !open }) {
-                    androidx.compose.material3.Icon(Icons.Outlined.Info, if (open) "자세한 설명 접기" else "자세한 설명 보기", tint = on)
-                }
+            if (line != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(line, style = MaterialTheme.typography.bodyMedium, color = on, modifier = Modifier.weight(1f).then(liveIf))
+                info()
             }
             if (open) Text(more, style = MaterialTheme.typography.bodySmall, color = on, modifier = Modifier.padding(end = 12.dp, bottom = 4.dp))
             if (actions != null) Column(Modifier.padding(top = 8.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = actions)
