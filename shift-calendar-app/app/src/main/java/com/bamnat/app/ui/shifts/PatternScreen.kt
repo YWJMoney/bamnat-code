@@ -347,7 +347,7 @@ fun PatternScreen(
                         PatternPreview(types = types, pattern = draft, today = today, weekStart = weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
-                        PatternCheck(speed, issues)
+                        PatternCheck(speed, issues, vm.style)
                     }
                 }
 
@@ -469,7 +469,7 @@ fun PatternScreen(
                         PatternPreview(types = types, pattern = draft, today = today, weekStart = weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
-                        PatternCheck(speed, issues)
+                        PatternCheck(speed, issues, vm.style)
                     }
                 }
             }
@@ -696,7 +696,9 @@ private fun ChangeFromDialog(
                     Text(
                         "지금 순서를 고치면 기록이 있는 지난 ${moved.size}일의 근무도 바뀌어요: " +
                             moved.take(4).joinToString { Fmt.monthDay(it) } + (if (moved.size > 4) " 외" else "") +
-                            ". 연차·잔업·특근 기록은 남지만 그날 근무 시간이 달라져 급여가 바뀔 수 있어요.",
+                            // 2.0.0 [RVH-53] (조건 13): 잔업·특근 are a 교대's words; the others keep '기록' as the other lines here.
+                            (if (shiftWork) ". 연차·잔업·특근 기록은 남지만 그날 근무 시간이 달라져 급여가 바뀔 수 있어요."
+                            else ". 적어 둔 기록은 남지만 그날 시간이 달라져 계산이 바뀔 수 있어요."),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -797,19 +799,26 @@ internal fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, today:
  * and the first few signs over two cycles. Only a hint; saving is never stopped.
  */
 @Composable
-private fun PatternCheck(speed: com.bamnat.core.schedule.RotationSpeed, issues: List<com.bamnat.core.schedule.RestCheck.Issue>) {
+private fun PatternCheck(
+    speed: com.bamnat.core.schedule.RotationSpeed,
+    issues: List<com.bamnat.core.schedule.RestCheck.Issue>,
+    /** 2.0.0 [RVH-53] (조건 13): 현장's is 일정 점검, not 근무표 점검. */
+    style: com.bamnat.core.work.WorkStyle?,
+) {
     if (speed == com.bamnat.core.schedule.RotationSpeed.NONE) return
     Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("이 순서: ${speed.label}", style = MaterialTheme.typography.labelLarge)
         if (issues.isEmpty()) {
-            Text("근무표 점검에 걸리는 날이 없어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(com.bamnat.core.work.TypeWords.say(style, "근무표 점검에 걸리는 날이 없어요."), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             val kinds = issues.groupBy { it.kind }
             kinds.entries.take(4).forEach { (kind, list) ->
                 Text("· ${kind.label} ${list.size}번 — ${list.first().text}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error, maxLines = 2)
             }
-            Text("두 바퀴를 내 근무표 점검 기준으로 본 참고예요. 저장은 그대로 할 수 있어요.", style = MaterialTheme.typography.labelSmall,
+            Text(com.bamnat.core.work.TypeWords.say(style, "두 바퀴를 내 근무표 점검 기준으로 본 참고예요. 저장은 그대로 할 수 있어요."),
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

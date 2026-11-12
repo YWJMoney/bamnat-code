@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.Role
+import kotlin.math.roundToInt
 
 /**
  * [PAYIN-01] 1.37 B1 (사용자 2026-11-04 "넣은 사진을 보면서 쉽게 입력… 지금은 클릭하고 닫고 입력하는 불편함"): the payslip photo stays
@@ -222,7 +223,7 @@ internal fun ZoomablePhoto(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(onClick = { zoomBy(1 / STEP); onZoom() }, enabled = scale > 1.01f) { Icon(Icons.Filled.ZoomOut, contentDescription = "사진 작게") }
                 FilledTonalIconButton(onClick = { zoomBy(STEP); onZoom() }, enabled = scale < MAX_ZOOM - 0.01f) { Icon(Icons.Filled.ZoomIn, contentDescription = "사진 크게") }
-                if (scale > 1.01f) Text("${(scale * 100).toInt()}%", style = MaterialTheme.typography.labelMedium,
+                if (scale > 1.01f) Text("${(scale * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.inverseOnSurface,
                     modifier = Modifier.padding(start = 4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.7f), MaterialTheme.shapes.small)
                         .padding(horizontal = 8.dp, vertical = 4.dp))
