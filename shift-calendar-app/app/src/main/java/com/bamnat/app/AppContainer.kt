@@ -653,6 +653,9 @@ class AppContainer(context: Context) {
             owner = admin?.owner == true,
             // S 1.32 [SECX-01] Only what the developer app set for this approved phone (nothing is switched on the phone).
             previews = admin?.previews?.toSet().orEmpty(),
+            // 2.0.0 [RVO-12] (HQ-46) A release build knows the 정식 출시 happened (debug builds and tests: every feature open).
+            knownDay = com.bamnat.core.flags.Released.DAY.takeIf { com.bamnat.app.tier.ReleaseBuild.on },
+            knownChecks = if (com.bamnat.app.tier.ReleaseBuild.on) com.bamnat.core.flags.Released.CHECKS else emptyMap(),
         )
     }
     private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }
@@ -778,7 +781,10 @@ class AppContainer(context: Context) {
             }
         }
         val made = appContext.getSharedPreferences(MAKER_PREFS, Context.MODE_PRIVATE).getBoolean("made", false)
-        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made
+        // 2.0.0 [RVO-13] PC-113: a phone that made an invite link has a reason too. Before, an inviter with nothing else sent never asked,
+        // so the month an admin paid for its friends showed on the invite card but never in 보상 이용권 (nor in its 프로).
+        val invited = inviteApi.enabled && invites.store.current.view?.code != null
+        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null || made || invited
         val last = proStore.current.passes?.checkedAt
         if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))

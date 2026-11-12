@@ -2600,7 +2600,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.INQUIRY -> Routes.INQUIRY
     SettingsGo.BOARD -> Routes.companyBoard()
     SettingsGo.FEATURES -> Routes.FEATURES
-    SettingsGo.PRO -> Routes.PRO
+    SettingsGo.PRO, SettingsGo.PRO_CODE -> Routes.PRO
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL

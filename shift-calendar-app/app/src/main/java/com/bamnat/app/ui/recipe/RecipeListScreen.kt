@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.lazy.items
@@ -341,7 +343,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
         },
     ) { padding ->
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
+            // 2.0.0 [RVO-09] Same as 설정 찾기 (PC-82): the found works end above the keyboard.
+            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(),
             state = listState,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
             // [RVM-31] HQ-42: 8dp between rows, as between the cards of a row ([MARKET_GAP]).
