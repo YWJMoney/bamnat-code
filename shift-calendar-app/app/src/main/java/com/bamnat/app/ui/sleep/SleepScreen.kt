@@ -675,8 +675,8 @@ private fun HowItWorks(style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {
         listOf(
             // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 card to press in.
-            if (style?.usesPayEngine == false) "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 오늘 날짜와 자는 중 알림에 버튼이 있어요."
-            else "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
+            if (style?.usesPayEngine == false) "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 오늘 날짜와 자는 중 알림에 단추가 있어요."
+            else "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 단추가 있어요.",
             "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 알림과 잠에서 헬스 커넥트를 켜면 함께 세요.",
             // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): 야간 뒤 is said to 교대 only.
             when (style) {

@@ -29,6 +29,7 @@ import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
@@ -104,11 +105,16 @@ fun SoundPickerRow(
         }
     }
 
-    val soundLabel = remember(sound, defaultLabel) { SoundNames.describe(context, sound, defaultLabel) }
+    // 2.0.0 [RVP-31] (검토 UIX-54) The name is asked of the media store off the main thread (a sound on an SD card or a cloud
+    // was slow to answer while the row was drawn).
+    val soundLabel by androidx.compose.runtime.produceState(if (sound == null) defaultLabel else "…", sound, defaultLabel) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SoundNames.describe(context, sound, defaultLabel) }
+    }
     var previewing by remember { mutableStateOf<Ringtone?>(null) }
     DisposableEffect(Unit) {
         onDispose { previewing?.stop() }
     }
+    PreviewStops(previewing) { previewing = null }
 
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -249,6 +255,7 @@ private fun SoundListDialog(
     }
     var chosen by remember { mutableStateOf(current) }
     var playing by remember { mutableStateOf<Ringtone?>(null) }
+    PreviewStops(playing) { playing = null } // [RVP-31]
     DisposableEffect(Unit) { onDispose { playing?.stop() } }
     // The phone's own sound picker, for sounds the list above cannot see.
     val systemPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -295,7 +302,9 @@ private fun SoundListDialog(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(MaterialTheme.shapes.small)
-                                .clickable(role = Role.Button) {
+                                // 2.0.0 [RVP-31] (검토 UIX-54) 48dp rows read as radio buttons.
+                                .heightIn(min = 48.dp)
+                                .selectable(selected = chosen == s.value, role = Role.RadioButton) {
                                     chosen = s.value
                                     playing?.stop()
                                     playing = playPreview(context, s.value)
@@ -354,4 +363,27 @@ private fun playPreview(context: Context, sound: String?): Ringtone? {
             play()
         }
     }.getOrNull()
+}
+
+/**
+ * 2.0.0 [RVP-31] (검토 UIX-54 '미리듣기가 안 멈춰요') A preview stops when the app goes to the background, and the ■ goes back to ▶
+ * when the sound has ended by itself.
+ */
+@Composable
+private fun PreviewStops(playing: Ringtone?, onStopped: () -> Unit) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val stopped by androidx.compose.runtime.rememberUpdatedState(onStopped)
+    DisposableEffect(owner, playing) {
+        val watch = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP && playing != null) { playing.stop(); stopped() }
+        }
+        owner.lifecycle.addObserver(watch)
+        onDispose { owner.lifecycle.removeObserver(watch) }
+    }
+    androidx.compose.runtime.LaunchedEffect(playing) {
+        if (playing == null) return@LaunchedEffect
+        kotlinx.coroutines.delay(600)
+        while (runCatching { playing.isPlaying }.getOrDefault(false)) kotlinx.coroutines.delay(500)
+        stopped()
+    }
 }

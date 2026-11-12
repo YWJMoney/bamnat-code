@@ -1509,8 +1509,9 @@ private fun AppNavHost(
                 // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
                 wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
-                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) },
-                onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
+                // 2.0.0 [RVP-34] (검토 UIX-58) Two quick taps open one editor, not two stacked.
+                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) { launchSingleTop = true } },
+                onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) { launchSingleTop = true } },
                 // [MCAL-01] The calendar on screen is the one these edit.
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
                 onOpenShiftTypes = { nav.openTypes(container, container.calendars.active.value) },
@@ -1717,8 +1718,8 @@ private fun AppNavHost(
             val list = @Composable {
                 MemoListScreen(
                     vm = vm,
-                    onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) },
-                    onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
+                    onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) { launchSingleTop = true } }, // [RVP-34]
+                    onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) { launchSingleTop = true } },
                     onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
                     style = memoStyle,
                 )

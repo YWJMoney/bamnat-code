@@ -157,4 +157,5 @@ private fun goingLabel(kind: StoryKind) = when (kind) {
     else -> "지금"
 }
 
-private fun hm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)
+// 2.0.0 [RVP-27] (검토 UIX-50) In the clock the settings chose.
+private fun hm(t: LocalDateTime) = com.bamnat.app.ui.Fmt.time(t.toLocalTime())

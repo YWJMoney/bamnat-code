@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -153,7 +154,9 @@ private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Bo
             IconButton(onClick = { onMove(-1) }, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, if (crossUp) "${row.label} 달력 위로 옮기기" else "${row.label} 위로") }
             IconButton(onClick = { onMove(1) }, enabled = !last) { Icon(Icons.Filled.KeyboardArrowDown, if (crossDown) "${row.label} 달력 아래로 옮기기" else "${row.label} 아래로") }
         }
-        Switch(checked = row.shown, onCheckedChange = onShow, modifier = Modifier.padding(start = 4.dp))
+        // 2.0.0 [RVP-32] (검토 UIX-55) TalkBack says whose switch it is, not only "스위치, 켬".
+        Switch(checked = row.shown, onCheckedChange = onShow, modifier = Modifier.padding(start = 4.dp)
+            .semantics { contentDescription = "${row.label} 보이기" })
     }
 }
 

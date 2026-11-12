@@ -269,15 +269,16 @@ private fun TaskCircle(done: Boolean, color: ColorProvider, check: PartStyle) {
         modifier = GlanceModifier.widgetBox(check, 18).width(side.dp).height(side.dp))
 }
 
-/** The small line under a row: "늦음 · 11/5 10:00", "늦음 · 09:21" (today's, its time gone), "15:00 · 2/5", "고정", or nothing. */
+/**
+ * The small line under a row: "11/5 10:00 · 늦음", "09:21 · 늦음" (today's, its time gone), "15:00 · 2/5", "고정", or nothing.
+ * 2.0.0 [RVP-54] (검토 U13-23 '"늦음 · 18:03"과 "18:03 늦음"') When first and 늦음 after, as the one-line widget says it.
+ */
 internal fun note(row: TaskList.Row, late: Boolean): String? = listOfNotNull(
-    when (row.kind) {
-        TaskList.Kind.LATE -> "늦음 · ${row.day?.let { Fmt.shortDate(it) }.orEmpty()}"
-        TaskList.Kind.PINNED -> "고정"
-        TaskList.Kind.TODAY -> "늦음".takeIf { late }
-    },
+    row.day?.takeIf { row.kind == TaskList.Kind.LATE }?.let { Fmt.shortDate(it) },
+    if (row.kind == TaskList.Kind.PINNED) "고정" else null,
     row.time?.let { Fmt.time(it) },
     row.count,
+    "늦음".takeIf { row.kind == TaskList.Kind.LATE || (row.kind == TaskList.Kind.TODAY && late) },
 ).joinToString(" · ").ifEmpty { null }
 
 /**
