@@ -575,10 +575,16 @@ class MoneyViewModel(
         }
     }
 
-    fun saveBudgets(values: Map<String, Long>) {
+    /**
+     * [LEDG-06] Every month's budgets, and 2.0.0 [RVK-46] (검토 I06aa-05) [month]'s own ones (-1 takes a category of that month back to
+     * every month's).
+     */
+    fun saveBudgets(values: Map<String, Long>, own: Map<String, Long>? = null, month: YearMonth? = null) {
         container.appScope.launch {
             values.forEach { (c, v) -> money.setBudget(c, v) }
-            _undo.tryEmit(UndoMessage("예산을 저장했어요", undo = null))
+            if (month != null) own?.forEach { (c, v) -> money.setBudget(c, v, month) }
+            val monthOnly = month != null && own?.values?.any { it >= 0 } == true
+            _undo.tryEmit(UndoMessage(if (monthOnly) "예산을 저장했어요 · ${month!!.monthValue}월은 따로" else "예산을 저장했어요", undo = null))
         }
     }
 
@@ -881,7 +887,7 @@ fun MoneyScreen(
             onLedgerNet = vm::setLedgerTakeHome) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
-            OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
+            OwedCard(owed, today, toPay = book.payables.filter { it.left > 0 }, style = style, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
                 when (o) {
                     is com.bamnat.core.money.Owed.FromJob -> editingJob = o.job
                     is com.bamnat.core.money.Owed.Written -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED)
@@ -959,7 +965,9 @@ fun MoneyScreen(
 
     // 1.37 [LEDH-07] 근무 시간 환산 for the lines and the 돈 적기 sheet of this tab.
     val workTime = remember(style, settings.workTimeFrom, book, today, aheadPay) { WorkTimeSay.of(style, settings.workTimeFrom, book, today, aheadPay?.hourly) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime) {
+    // 2.0.0 [RVK-46] This calendar's own category looks (the app gives the main calendar's).
+    val looks = remember(book.categories) { com.bamnat.core.money.CategoryLook.byName(book.categories) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime, LocalCategoryLooks provides looks) {
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
@@ -1119,7 +1127,9 @@ fun MoneyScreen(
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
             onDelete = { vm.deleteJob(it); editingJob = null }, onDismiss = { editingJob = null })
     }
-    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false; budgetFocus = null },
+    val budgetMonth = cycle?.let { Budgets.monthOf(it.from, it.to) } ?: month
+    if (budgeting) BudgetEditor(book, month, onSave = { v, own -> vm.saveBudgets(v, own, budgetMonth); budgeting = false; budgetFocus = null },
+        budgetMonth = budgetMonth,
         onDismiss = { budgeting = false; budgetFocus = null }, focus = budgetFocus,
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
@@ -1234,18 +1244,36 @@ private fun Line(label: String, value: String, muted: Boolean = false, strong: B
     }
 }
 
+/** 2.0.0 [RVK-47] (PC-169) What 받을 돈 is, in the words of the user's kind of work. */
+internal fun owedHint(style: WorkStyle?): String = when (style) {
+    WorkStyle.BUSINESS -> "외상 매출, 거래처 미수금처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+    WorkStyle.FIELD -> "일감 잔금, 밀린 일당처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+    else -> "빌려준 돈, 대신 내 준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+}
+
 /** [WORK-02][RECV-02] Work done but not fully paid, and money written down as owed; the real worry of field work and shops. */
 @Composable
-private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit, onOpen: (com.bamnat.core.money.Owed) -> Unit) {
+private fun OwedCard(
+    owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit,
+    toPay: List<com.bamnat.core.money.Receivable> = emptyList(), style: WorkStyle? = null, onOpen: (com.bamnat.core.money.Owed) -> Unit,
+) {
     val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
     val overdue = owed.filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE }
     SectionCard(
         title = if (owed.isEmpty()) "받을 돈 (미수금)" else "받을 돈 ${Fmt.won(owed.sumOf { it.left })}",
         trailing = { TextButton(onClick = onOpenAll) { Text(if (owed.isEmpty()) "적기" else "모두 보기") } },
     ) {
+        // 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈 under it in one quiet line, never in the 받을 돈 sum; the list is one tap away.
+        val payLine: @Composable () -> Unit = {
+            if (toPay.isNotEmpty()) Text("줄 돈 ${toPay.size}건 · ${Fmt.won(toPay.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onOpenAll).padding(vertical = 8.dp))
+        }
         if (owed.isEmpty()) {
-            Text("외상, 밀린 일당, 빌려준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요.",
+            // 2.0.0 [RVK-47] (PC-169) In each kind of work's own words: a shop's 외상 매출, a field's 일감 잔금, everyone else's 빌려준 돈.
+            Text(owedHint(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            payLine()
             return@SectionCard
         }
         if (overdue.isNotEmpty()) {
@@ -1274,6 +1302,8 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
         if (owed.size > 4) {
             Text("그 밖에 ${owed.size - 4}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (toPay.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        payLine()
     }
 }
 

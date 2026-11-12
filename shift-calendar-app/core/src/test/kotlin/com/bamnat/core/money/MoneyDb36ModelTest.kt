@@ -107,4 +107,29 @@ class MoneyDb36ModelTest {
         assertEquals(listOf(ReceivableKind.SALE, ReceivableKind.WORK, ReceivableKind.LOAN, ReceivableKind.OTHER), ReceivableKind.of(toPay = false))
         assertEquals(listOf(ReceivableKind.SUPPLY, ReceivableKind.WAGE, ReceivableKind.BORROWED, ReceivableKind.OTHER), ReceivableKind.of(toPay = true))
     }
+
+    @Test
+    fun moneyOwedOnADayLeavesOnThatDayAhead() {
+        val today = LocalDate.of(2026, 11, 20)
+        val supply = Receivable(id = 1, who = "가나다 자재상", amount = 450_000, date = LocalDate.of(2026, 11, 2), due = LocalDate.of(2026, 11, 25),
+            kind = ReceivableKind.SUPPLY, toPay = true, payments = listOf(ReceivablePayment(1, 1, LocalDate.of(2026, 11, 10), 150_000)))
+        val late = supply.copy(id = 2, due = LocalDate.of(2026, 11, 1))
+        val book = MoneyBook(entries = emptyList(), jobs = emptyList(), sales = emptyList(), fixed = emptyList(), payables = listOf(supply, late))
+        val (flows, _) = MoneyAhead.flows(book, today, today.plusDays(30), emptyList())
+        assertEquals(listOf(MoneyFlow(LocalDate.of(2026, 11, 25), -300_000, FlowKind.PAYABLE, supply.name)), flows)
+        assertEquals("줄 돈은 늦은 받을 돈이 아님", 0L, MoneyAhead.late(book, today))
+    }
+
+    @Test
+    fun aCategorysOwnLookIsKeptByName() {
+        val looks = CategoryLook.byName(listOf(
+            CategoryEdit(MoneyKind.EXPENSE, "운동", 0, icon = "fitness", color = 3),
+            CategoryEdit(MoneyKind.EXPENSE, "식비", 1),
+            CategoryEdit(MoneyKind.EXPENSE, "새것", 2, icon = "rocket", color = 99),
+        ))
+        assertEquals(setOf("운동"), looks.keys)
+        assertEquals("", CategoryLook.icon("rocket"))
+        assertEquals(0, CategoryLook.color(99))
+        assertTrue(CategoryLook.ICONS.size == CategoryLook.ICONS.toSet().size)
+    }
 }

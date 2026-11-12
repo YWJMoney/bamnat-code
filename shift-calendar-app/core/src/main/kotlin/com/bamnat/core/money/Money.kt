@@ -311,6 +311,30 @@ data class CategoryEdit(
     val icon: String = "", val color: Int = 0,
 )
 
+/**
+ * 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The looks a category can be given: a picture by key (the app draws each) and a place in the
+ * ledger's palette, so a color follows light and dark. A key or place this app does not know (a newer app's backup) keeps the usual look.
+ */
+object CategoryLook {
+    val ICONS = listOf(
+        "food", "cafe", "store", "delivery", "cart", "bus", "car", "fuel", "hospital", "phone", "bill", "subscribe",
+        "home", "gift", "school", "game", "clean", "clothes", "insurance", "pet", "child", "fitness", "travel", "music",
+        "beauty", "drink", "laptop", "tools", "work", "savings", "money", "heart",
+    )
+
+    /** Palette places 1 to [COLORS]; 0 is the usual color. */
+    // The palette's 11th, red, is left out: red is for danger only (조건 6).
+    const val COLORS = 10
+
+    fun icon(key: String): String = key.takeIf { it in ICONS }.orEmpty()
+
+    fun color(place: Int): Int = place.takeIf { it in 1..COLORS } ?: 0
+
+    /** The user's look for each name that has one; a name in two kinds takes the first that set one. */
+    fun byName(edits: List<CategoryEdit>): Map<String, CategoryEdit> =
+        edits.filter { icon(it.icon).isNotEmpty() || color(it.color) != 0 }.groupBy { it.name }.mapValues { it.value.first() }
+}
+
 data class CategoryTotal(val category: String, val amount: Long, val count: Int)
 
 /**

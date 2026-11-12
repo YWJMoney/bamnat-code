@@ -700,6 +700,8 @@ fun FixedCostDialog(
         mutableStateOf(initial?.category ?: if (kind == MoneyKind.TRANSFER) UpcomingPayments.CARD_BILL else "주거")
     }
     var account by rememberSaveable { mutableStateOf(initial?.accountId) }
+    // 2.0.0 [RVK-46] (검토 MONEY-07) A repeating 이체's '어디로': 적금 통장, 대출, 내 다른 계좌.
+    var toAccount by rememberSaveable { mutableStateOf(initial?.toAccountId) }
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
     var auto by rememberSaveable { mutableStateOf(initial?.auto ?: false) }
     var start by rememberSaveable { mutableStateOf((initial?.start ?: if (initial == null) today else null)?.toString()) }
@@ -710,7 +712,8 @@ fun FixedCostDialog(
 
     // 1.37 PC 확인 6a4efc92: 끌어서 닫을 때 적은 것을 묻기 (같은 구조의 돈 시트 모두).
     val typed = name.trim() != initial?.name.orEmpty() || digits != amountDigits(initial?.amount ?: 0) ||
-        (initial != null && (day != initial.day || repeat != initial.repeat || category != initial.category || account != initial.accountId))
+        (initial != null && (day != initial.day || repeat != initial.repeat || category != initial.category || account != initial.accountId ||
+            toAccount != initial.toAccountId))
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -775,8 +778,25 @@ fun FixedCostDialog(
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         FilterChip(selected = account == null, onClick = { account = null }, label = { Text("안 고름") })
                         accounts.forEach { a ->
-                            FilterChip(selected = account == a.id, onClick = { account = a.id }, label = { Text(a.label) },
+                            FilterChip(selected = account == a.id, onClick = { account = a.id; if (toAccount == a.id) toAccount = null }, label = { Text(a.label) },
                                 leadingIcon = { Icon(accountIcon(a.type), null, Modifier.size(18.dp)) })
+                        }
+                    }
+                    // 2.0.0 [RVK-46] (검토 MONEY-07) Where a 이체 goes, so 적금·대출 상환·내 계좌 move money between the user's own accounts instead
+                    // of the balances and 순자산 falling every month.
+                    val targets = accounts.filter { it.id != account }
+                    if (kind == MoneyKind.TRANSFER && targets.isNotEmpty()) {
+                        Text("어디로", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            FilterChip(selected = toAccount == null, onClick = { toAccount = null }, label = { Text("안 고름") })
+                            targets.forEach { a ->
+                                FilterChip(selected = toAccount == a.id, onClick = { toAccount = a.id }, label = { Text(a.label) },
+                                    leadingIcon = { Icon(accountIcon(a.type), null, Modifier.size(18.dp)) })
+                            }
+                        }
+                        if (toAccount == null && chosenCategory != UpcomingPayments.CARD_BILL) {
+                            Text("고르면 그 계좌 잔액에 더해져요. 안 고르면 나간 돈처럼 잔액이 줄어요.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -796,6 +816,7 @@ fun FixedCostDialog(
                         day = if (repeat == Repeat.WEEK) weekday else day, kind = kind, category = chosenCategory, remind = remind,
                         repeat = repeat, monthOfYear = month, accountId = account, auto = auto,
                         start = start?.let(LocalDate::parse), end = end?.let(LocalDate::parse),
+                        toAccountId = toAccount.takeIf { kind == MoneyKind.TRANSFER && it != account && accounts.any { a -> a.id == it } },
                     ))
                 },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),

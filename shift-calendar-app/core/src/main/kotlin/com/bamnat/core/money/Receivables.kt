@@ -86,8 +86,11 @@ data class Receivable(
     }
 }
 
-enum class ReceivableStatus(val label: String) {
-    OVERDUE("약속일 지남"), DUE_SOON("곧 받을 날"), PARTLY("일부 받음"), OPEN("받을 돈"), PAID("다 받음"), CLOSED("받지 않기로 함"),
+enum class ReceivableStatus(val label: String, /** 2.0.0 [RVK-46] The same state for 줄 돈. */ val payLabel: String) {
+    OVERDUE("약속일 지남", "약속일 지남"), DUE_SOON("곧 받을 날", "곧 갚을 날"), PARTLY("일부 받음", "일부 갚음"), OPEN("받을 돈", "줄 돈"),
+    PAID("다 받음", "다 갚음"), CLOSED("받지 않기로 함", "안 갚아도 됨");
+
+    fun labelFor(toPay: Boolean): String = if (toPay) payLabel else label
 }
 
 /**
@@ -149,18 +152,18 @@ object Receivables {
     val AGING_LABELS = listOf("30일 안", "31~60일", "61~90일", "90일 넘음")
 
     /** Everything still owed up to [today], most pressing first: overdue, due soon, then oldest. */
-    fun owed(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate): List<Owed> {
-        // 2.0.0 [RVK-46] 줄 돈 is never money to come in.
-        val written = receivables.filter { !it.toPay && it.left > 0 }.map { Owed.Written(it) }
-        val fromJobs = MoneyCalculator.unpaid(jobs, today).map { Owed.FromJob(it) }
+    fun owed(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate, toPay: Boolean = false): List<Owed> {
+        // 2.0.0 [RVK-46] 줄 돈 is never money to come in; with [toPay] it is the list (and a job is never money the user owes).
+        val written = receivables.filter { it.toPay == toPay && it.left > 0 }.map { Owed.Written(it) }
+        val fromJobs = if (toPay) emptyList() else MoneyCalculator.unpaid(jobs, today).map { Owed.FromJob(it) }
         val rank = listOf(ReceivableStatus.OVERDUE, ReceivableStatus.DUE_SOON, ReceivableStatus.PARTLY, ReceivableStatus.OPEN)
         return (written + fromJobs).sortedWith(
             compareBy<Owed> { rank.indexOf(it.status(today)) }.thenBy { it.due ?: it.since }.thenBy { it.since }.thenBy { it.name },
         )
     }
 
-    fun summary(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate): OwedSummary {
-        val owed = owed(receivables, jobs, today)
+    fun summary(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate, toPay: Boolean = false): OwedSummary {
+        val owed = owed(receivables, jobs, today, toPay)
         val overdue = owed.filter { it.status(today) == ReceivableStatus.OVERDUE }
         val aging = LongArray(4)
         for (o in owed) {
@@ -178,7 +181,7 @@ object Receivables {
                 .map { (who, list) -> who to list.sumOf { it.left } }
                 .sortedWith(compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first }),
             aging = aging.toList(),
-            receivedThisMonth = receivables.filter { !it.toPay }.flatMap { it.payments }.filter { java.time.YearMonth.from(it.date) == month }.sumOf { it.amount },
+            receivedThisMonth = receivables.filter { it.toPay == toPay }.flatMap { it.payments }.filter { java.time.YearMonth.from(it.date) == month }.sumOf { it.amount },
         )
     }
 
@@ -280,6 +283,14 @@ object Receivables {
 enum class OwedFilter(val label: String) {
     ALL("전체"), OVERDUE("약속일 지남"), DUE_SOON("곧 받을 날"), PARTLY("일부 받음"), JOBS("일감 잔금"), WRITTEN("직접 적은 것");
 
+    /** 2.0.0 [RVK-46] The chip's words on the 줄 돈 side. */
+    fun labelFor(toPay: Boolean): String = when {
+        !toPay -> label
+        this == DUE_SOON -> "곧 갚을 날"
+        this == PARTLY -> "일부 갚음"
+        else -> label
+    }
+
     fun keeps(o: Owed, today: LocalDate): Boolean = when (this) {
         ALL -> true
         OVERDUE -> o.status(today) == ReceivableStatus.OVERDUE
@@ -311,6 +322,8 @@ object ReceivableAlerts {
     fun of(r: Receivable): List<Pair<LocalDate, String>> {
         if (r.left <= 0) return emptyList()
         val due = r.due
+        // 2.0.0 [RVK-46] 줄 돈 is reminded on the day it is to be paid, and once a week after, never a month later.
+        if (r.toPay) return if (due != null) listOf(due to "오늘 갚기로 한 날", due.plusDays(7) to "갚기로 한 날이 일주일 지났어요") else emptyList()
         return if (due != null) listOf(due to "오늘 받기로 한 날", due.plusDays(3) to "약속일이 3일 지났어요", due.plusDays(7) to "약속일이 일주일 지났어요")
         else listOf(r.date.plusDays(30) to "받을 돈이 한 달째 남았어요")
     }

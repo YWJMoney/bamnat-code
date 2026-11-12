@@ -172,7 +172,7 @@ class OwedViewModel(
     fun save(r: Receivable) {
         container.appScope.launch {
             val saved = money.save(r)
-            if (r.id == 0L) _messages.emit(UndoMessage("${saved.name} ${Fmt.won(saved.amount)}을 받을 돈으로 적었어요") { money.delete(saved) })
+            if (r.id == 0L) _messages.emit(UndoMessage("${saved.name} ${Fmt.won(saved.amount)}을 ${OwedWords.of(r.toPay).title}으로 적었어요") { money.delete(saved) })
         }
     }
 
@@ -188,8 +188,9 @@ class OwedViewModel(
         container.appScope.launch {
             val p = money.receive(r, amount, date) ?: return@launch
             val left = (r.amount - r.received - p.amount).coerceAtLeast(0)
-            val text = if (left == 0L) "${r.name} 다 받았어요" else "${Fmt.won(p.amount)} 받았어요 · ${Fmt.won(left)} 남았어요"
-            _messages.emit(UndoMessage(text + if (p.entryId != null) " (수입에 적음)" else "") { money.delete(p) })
+            val w = OwedWords.of(r.toPay)
+            val text = if (left == 0L) "${r.name} 다 ${w.did}" else "${Fmt.won(p.amount)} ${w.did} · ${Fmt.won(left)} 남았어요"
+            _messages.emit(UndoMessage(text + if (p.entryId != null) w.lineWritten else "") { money.delete(p) })
         }
     }
 
@@ -211,11 +212,12 @@ class OwedViewModel(
         }
     }
 
-    fun deletePayment(p: ReceivablePayment) {
+    fun deletePayment(p: ReceivablePayment, toPay: Boolean = false) {
         container.appScope.launch {
             // 2.0.0 [RVK-42] (검토 MONEY-10·U06a-19) Like every other step here, with 되돌리기: the payment and its income line come back.
             val back = money.takeBack(p)
-            _messages.emit(UndoMessage("받은 기록을 지웠어요" + if (p.entryId != null) " (수입에서도 뺌)" else "") { back() })
+            val w = OwedWords.of(toPay)
+            _messages.emit(UndoMessage("${w.record}을 지웠어요" + if (p.entryId != null) w.lineTaken else "") { back() })
         }
     }
 
@@ -223,16 +225,77 @@ class OwedViewModel(
     fun close(r: Receivable, closed: Boolean) {
         container.appScope.launch {
             money.save(r.copy(closedOn = if (closed) Today.date() else null))
-            if (closed) _messages.emit(UndoMessage("받을 돈에서 뺐어요") { money.save(r) })
+            if (closed) _messages.emit(UndoMessage("${OwedWords.of(r.toPay).title}에서 뺐어요") { money.save(r) })
         }
     }
 
     fun saveJob(job: Job) { container.appScope.launch { money.save(job) } }
 
+    /** 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) Part of a job's money came in on a day: 계약금·중도금 or any part. */
+    fun receiveJobPart(job: Job, payment: com.bamnat.core.money.JobPayment) {
+        container.appScope.launch {
+            val p = money.receive(job, payment) ?: return@launch
+            val left = (job.unpaid - p.amount).coerceAtLeast(0)
+            val text = if (left == 0L) "‘${job.title}’ 다 받았어요" else "${Fmt.won(p.amount)} 받았어요 · ${Fmt.won(left)} 남았어요"
+            val back = suspend { money.takeBack(p) }
+            _messages.emit(UndoMessage("$text (들어온 돈에 더함)") { back() })
+        }
+    }
+
     fun runUndo(m: UndoMessage) { m.undo?.let { u -> container.appScope.launch { u() } } }
 }
 
-private enum class Show(val label: String) { OWED("받을 것"), DONE("끝난 것") }
+private enum class Show { OWED, DONE }
+
+/**
+ * 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) The screen's words for 받을 돈 and for 줄 돈 (거래처 외상 매입, 자재상 미지급, 일용직 품삯): the same
+ * screen, the money going the other way.
+ */
+internal class OwedWords private constructor(val toPay: Boolean) {
+    val title = if (toPay) "줄 돈" else "받을 돈"
+    val add = "$title 적기"
+    val edit = "$title 고치기"
+    /** 받았어요 / 갚았어요 */
+    val did = if (toPay) "갚았어요" else "받았어요"
+    /** 받음 / 갚음 */
+    val done = if (toPay) "갚음" else "받음"
+    val record = if (toPay) "갚은 기록" else "받은 기록"
+    val lineWritten = if (toPay) " (지출에 적음)" else " (수입에 적음)"
+    val lineTaken = if (toPay) " (지출에서도 뺌)" else " (수입에서도 뺌)"
+    val showOwed = if (toPay) "줄 것" else "받을 것"
+    val doneEmpty = if (toPay) "다 갚았거나 안 갚아도 되는 것이 여기에 모여요." else "다 받았거나 받지 않기로 한 것이 여기에 모여요."
+    val total = if (toPay) "아직 안 갚은 돈" else "아직 못 받은 돈"
+    val none = "${title}이 없어요"
+    val dueSoon = if (toPay) "3일 안에 갚을 날" else "3일 안에 받을 날"
+    val monthDone = if (toPay) "이번 달 갚은 돈" else "이번 달 받은 돈"
+    val swipe = if (toPay) "오른쪽으로 밀면 다 갚음으로 적어요." else "오른쪽으로 밀면 다 받음, 왼쪽으로 밀면 알림 문자를 보내요."
+    val emptyTitle = "${title}을 적어 두세요"
+    val noMatch = "조건에 맞는 ${title}이 없어요"
+    val today = if (toPay) "오늘 갚기로 함" else "오늘 받기로 함"
+    val left = if (toPay) "아직 갚을 돈" else "아직 받을 돈"
+    val ask = if (toPay) "돈을 갚았나요?" else "돈이 들어왔나요?"
+    val amountDone = if (toPay) "갚은 금액" else "받은 금액"
+    val writeOn = if (toPay) "갚은 돈은 가계부 탭 나간 돈에도 적어요." else "받은 돈은 가계부 탭 들어온 돈에도 적어요."
+    val writeOffPrefix = if (toPay) "나간 돈에는 적지 않아요" else "들어온 돈에는 적지 않아요"
+    val lineIn = if (toPay) " · 나간 돈에 적음" else " · 들어온 돈에 적음"
+    val close = if (toPay) "안 갚아도 돼요" else "받지 않기로"
+    val reopen = if (toPay) "다시 줄 돈으로" else "다시 받을 돈으로"
+    val deleteBody = if (toPay) "갚은 기록과 그때 나간 돈에 적은 줄도 함께 지워요. 바로 되돌릴 수 있어요."
+        else "받은 기록과 그때 들어온 돈에 적은 줄도 함께 지워요. 바로 되돌릴 수 있어요."
+    val who = if (toPay) "누구에게 (거래처·자재상·사람)" else "누가 (손님·거래처·사람)"
+    val what = if (toPay) "무슨 돈 (예: 타일 30박스, 3일치 품삯)" else "무슨 돈 (예: 10월 납품, 3일치 일당)"
+    val dueAsk = if (toPay) "언제 갚기로 했나요" else "언제 받기로 했나요"
+    val writeSwitch = if (toPay) "갚으면 지출로 적기" else "받으면 수입으로 적기"
+
+    companion object {
+        private val IN = OwedWords(false)
+        private val OUT = OwedWords(true)
+        fun of(toPay: Boolean) = if (toPay) OUT else IN
+    }
+}
+
+/** 2.0.0 [RVK-46] The side the screen shows, for the parts drawn below it. */
+private val LocalOwedWords = androidx.compose.runtime.staticCompositionLocalOf { OwedWords.of(false) }
 
 /** What a line is, in one picture: a job, a sale on credit, pay, a loan, anything else. */
 private fun Owed.icon(): ImageVector = when (this) {
@@ -253,7 +316,7 @@ private fun ReceivableKind.icon(): ImageVector = when (this) {
 }
 
 /** [RECV-05] The kinds an empty list offers first, by how the user works. */
-private fun startKinds(style: WorkStyle?): List<ReceivableKind> = when (style) {
+private fun startKinds(style: WorkStyle?, toPay: Boolean = false): List<ReceivableKind> = if (toPay) ReceivableKind.of(toPay = true).take(3) else when (style) {
     WorkStyle.BUSINESS -> listOf(ReceivableKind.SALE, ReceivableKind.LOAN, ReceivableKind.OTHER)
     WorkStyle.FIELD -> listOf(ReceivableKind.WORK, ReceivableKind.SALE, ReceivableKind.LOAN)
     else -> listOf(ReceivableKind.WORK, ReceivableKind.LOAN, ReceivableKind.OTHER)
@@ -291,6 +354,13 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     var openJobId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editingJob by remember { mutableStateOf<Job?>(null) }
     var show by rememberSaveable { mutableStateOf(Show.OWED) }
+    // 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 받을 돈 or 줄 돈: offered to 가게·현장 (거래처 외상 매입, 자재상 미지급, 품삯), and to anyone
+    // who already wrote 줄 돈 down; anyone else finds it in one quiet line under the list (빌린 돈 is everyone's).
+    var toPay by rememberSaveable { mutableStateOf(false) }
+    val sides = style == WorkStyle.FIELD || style == WorkStyle.BUSINESS || book.payables.isNotEmpty() || toPay
+    val words = OwedWords.of(toPay)
+    val written = if (toPay) book.payables else book.receivables
+    val jobsOwed = if (toPay) emptyList() else book.jobs
     var filter by rememberSaveable { mutableStateOf(OwedFilter.ALL) }
     var sort by rememberSaveable { mutableStateOf(OwedSort.URGENT) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -302,10 +372,10 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     // 2.0.0 [RVK-42] (검토 MONEY-14·U06a-19) A 되돌리기 shows at once and for 8 s (it was 4 s, behind the line before: 밀어서 '다 받음'을
     // 잘못했을 때 되돌리기가 이미 지나갔어요).
     LaunchedEffect(vm) { vm.messages.collect { m -> com.bamnat.app.ui.components.AppSnack.post(m, vm::runUndo) } }
-    val owed = remember(book, today) { book.owed(today) }
-    val summary = remember(book, today) { Receivables.summary(book.receivables, book.jobs, today) }
+    val owed = remember(book, today, toPay) { Receivables.owed(written, jobsOwed, today, toPay) }
+    val summary = remember(book, today, toPay) { Receivables.summary(written, jobsOwed, today, toPay) }
     val counts = remember(owed, today) { Receivables.counts(owed, today) }
-    val done = remember(book) { book.receivables.filter { it.left == 0L }.sortedByDescending { it.lastPaid ?: it.closedOn ?: it.date } }
+    val done = remember(book, toPay) { written.filter { it.left == 0L }.sortedByDescending { it.lastPaid ?: it.closedOn ?: it.date } }
     val shown = remember(owed, today, filter, query, sort, person) {
         Receivables.narrow(person?.let { Receivables.of(owed, it) } ?: owed, today, filter, query, sort)
     }
@@ -320,15 +390,16 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     val actions = RowActions(
         open = { o -> when (o) { is Owed.Written -> openId = o.r.id; is Owed.FromJob -> openJobId = o.job.id } },
         receiveAll = { o -> vm.receiveAll(o, today) },
-        remind = { o -> shareText(context, Receivables.reminder(o, today)) },
+        remind = { o -> if (!toPay) shareText(context, Receivables.reminder(o, today)) },
     )
     val pickFilter = { f: OwedFilter -> show = Show.OWED; filter = if (filter == f) OwedFilter.ALL else f }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalOwedWords provides words) {
     Scaffold(
         modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
-                title = { Text("받을 돈") },
+                title = { Text(if (sides) "받을 돈·줄 돈" else "받을 돈") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
@@ -336,7 +407,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
                     }
                     SortMenu(sort) { sort = it }
                     // [LEDG-27] Every 받을 돈 written down, as a CSV file through the share sheet.
-                    if (book.receivables.isNotEmpty()) {
+                    if (!toPay && book.receivables.isNotEmpty()) {
                         val scope = androidx.compose.runtime.rememberCoroutineScope()
                         IconButton(onClick = {
                             scope.launch {
@@ -355,13 +426,18 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
             // [RVP-06] The shared rule (icon alone with big letters too).
             AnimatedVisibility(!bigLetters || fab.open || atTop, enter = fadeIn() + androidx.compose.animation.scaleIn(),
                 exit = fadeOut() + androidx.compose.animation.scaleOut()) {
-                com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
+                com.bamnat.app.ui.components.AddFab(words.add, onClick = { adding = startKinds(style, toPay).first() }, open = atTop || wide)
             }
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {
             // [MCAL-06] Whose money is owed, once there are several calendars.
             com.bamnat.app.ui.calendar.CalendarScopeChips(androidx.compose.ui.platform.LocalContext.current.appContainer)
+            if (sides) {
+                com.bamnat.app.ui.components.ChoiceRow(listOf("받을 돈", "줄 돈"), selected = if (toPay) 1 else 0, onSelect = { i ->
+                    if ((i == 1) != toPay) { toPay = i == 1; show = Show.OWED; filter = OwedFilter.ALL; person = null }
+                })
+            }
             Totals(summary, filter, onFilter = pickFilter, onShowDone = { show = Show.DONE })
             if (summary.byWho.size > 1 || summary.aging.drop(1).any { it > 0 }) {
                 Breakdown(summary, person, startOpen = wide) { who -> show = Show.OWED; person = if (person == who) null else who }
@@ -378,7 +454,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
             }
             when (show) {
                 Show.OWED -> when {
-                    owed.isEmpty() -> item(key = "empty") { Empty(style) { adding = it } }
+                    owed.isEmpty() -> item(key = "empty") { Empty(style, toPay) { adding = it } }
                     shown.isEmpty() -> item(key = "none") {
                         NoMatch { filter = OwedFilter.ALL; query = ""; person = null }
                     }
@@ -392,15 +468,20 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
                         items(shown, key = { it.key() }) { o ->
                             SwipeRow(o, today, actions, Modifier.animateItem())
                         }
-                        item(key = "hint") { SwipeHint() }
+                        item(key = "hint") { SwipeHint(words) }
                     }
                 }
                 Show.DONE -> if (doneShown.isEmpty()) item(key = "done-empty") {
-                    Text(if (done.isEmpty()) "다 받았거나 받지 않기로 한 것이 여기에 모여요." else "찾는 기록이 없어요.",
+                    Text(if (done.isEmpty()) words.doneEmpty else "찾는 기록이 없어요.",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp))
                 } else items(doneShown, key = { "done-${it.id}" }) { r ->
                     OwedCard(Owed.Written(r), today, Modifier.animateItem()) { openId = r.id }
+                }
+            }
+            if (!sides) item(key = "to-pay") {
+                TextButton(onClick = { toPay = true; adding = ReceivableKind.BORROWED }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("빌린 돈처럼 갚을 돈도 적을 수 있어요")
                 }
             }
             item(key = "end") { Spacer(Modifier.height(88.dp)) }
@@ -420,18 +501,19 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
             }
         }
     }
+    }
 
-    val names = remember(book) { (book.receivables.map { it.who } + book.jobs.map { it.client }).map { it.trim() }.filter { it.isNotBlank() }.distinct() }
-    adding?.let { k -> ReceivableDialog(null, names, today, kindDefault = k, onDismiss = { adding = null }) { vm.save(it); adding = null } }
-    editing?.let { r -> ReceivableDialog(r, names, today, onDismiss = { editing = null }) { vm.save(it); editing = null } }
-    val opened = openId?.let { id -> book.receivables.firstOrNull { it.id == id } }
+    val names = remember(book, toPay) { (written.map { it.who } + jobsOwed.map { it.client }).map { it.trim() }.filter { it.isNotBlank() }.distinct() }
+    adding?.let { k -> ReceivableDialog(null, names, today, kindDefault = k, toPay = toPay, onDismiss = { adding = null }) { vm.save(it); adding = null } }
+    editing?.let { r -> ReceivableDialog(r, names, today, toPay = r.toPay, onDismiss = { editing = null }) { vm.save(it); editing = null } }
+    val opened = openId?.let { id -> (book.receivables + book.payables).firstOrNull { it.id == id } }
     // Deleted meanwhile (or by its own button): the sheet closes. Waits for the book to load first.
     LaunchedEffect(opened == null, bookOrNull == null) { if (opened == null && bookOrNull != null) openId = null }
     opened?.let { r ->
         ReceivableSheet(r, today,
             onDismiss = { openId = null },
             onReceive = { amount, date -> vm.receive(r, amount, date) },
-            onDeletePayment = vm::deletePayment,
+            onDeletePayment = { p -> vm.deletePayment(p, r.toPay) },
             onRemind = { shareText(context, Receivables.reminder(Owed.Written(r), today)) },
             onEdit = { editing = r; openId = null },
             onClose = { vm.close(r, it); if (it) openId = null },
@@ -443,6 +525,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         JobOwedSheet(j, today,
             onDismiss = { openJobId = null },
             onReceive = { after -> vm.receiveJob(j, after); if (after.unpaid == 0L) openJobId = null },
+            onReceivePart = { p -> vm.receiveJobPart(j, p); if (p.amount >= j.unpaid) openJobId = null },
             onRemind = { shareText(context, Receivables.reminder(Owed.FromJob(j), today)) },
             onEdit = { editingJob = j; openJobId = null })
     }
@@ -476,10 +559,11 @@ private fun SortMenu(sort: OwedSort, onSort: (OwedSort) -> Unit) {
 @Composable
 private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) -> Unit, onShowDone: () -> Unit) {
     val cal = LocalCalendarColors.current
-    SectionCard(title = "아직 못 받은 돈") {
+    val words = LocalOwedWords.current
+    SectionCard(title = words.total) {
         Text(Fmt.won(rolling(s.total)), style = MaterialTheme.typography.displaySmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { contentDescription = "아직 못 받은 돈 ${Fmt.won(s.total)}" })
-        Text(if (s.count == 0) "받을 돈이 없어요" else "${s.count}건" + if (s.overdueCount > 0) " · 약속일 지난 것 ${s.overdueCount}건" else "",
+            modifier = Modifier.semantics { contentDescription = "${words.total} ${Fmt.won(s.total)}" })
+        Text(if (s.count == 0) words.none else "${s.count}건" + if (s.overdueCount > 0) " · 약속일 지난 것 ${s.overdueCount}건" else "",
             style = MaterialTheme.typography.bodyMedium,
             color = if (s.overdueCount > 0) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
         // How much of this month's money has come back against what is still out.
@@ -489,7 +573,7 @@ private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) ->
             Spacer(Modifier.height(10.dp))
             Bar(fraction, cal.income, height = 8.dp)
             Row(Modifier.padding(top = 4.dp)) {
-                Text("이번 달 ${Fmt.won(s.receivedThisMonth)} 받음", style = MaterialTheme.typography.labelMedium, color = cal.income,
+                Text("이번 달 ${Fmt.won(s.receivedThisMonth)} ${words.done}", style = MaterialTheme.typography.labelMedium, color = cal.income,
                     modifier = Modifier.weight(1f))
                 Text("${(fraction * 100).toInt()}%", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -504,9 +588,9 @@ private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) ->
         val tiles: List<@Composable (Modifier) -> Unit> = listOf(
             { m -> StatTile("약속일 지남", Fmt.won(s.overdue), m.selectedRing(filter == OwedFilter.OVERDUE),
                 caption = "${s.overdueCount}건 · 눌러서 보기", caution = s.overdue > 0, onClick = { onFilter(OwedFilter.OVERDUE) }) },
-            { m -> StatTile("3일 안에 받을 날", Fmt.won(s.dueSoon), m.selectedRing(filter == OwedFilter.DUE_SOON),
+            { m -> StatTile(words.dueSoon, Fmt.won(s.dueSoon), m.selectedRing(filter == OwedFilter.DUE_SOON),
                 caption = "눌러서 보기", onClick = { onFilter(OwedFilter.DUE_SOON) }) },
-            { m -> StatTile("이번 달 받은 돈", Fmt.won(s.receivedThisMonth), m, caption = "끝난 것 보기", onClick = onShowDone) },
+            { m -> StatTile(words.monthDone, Fmt.won(s.receivedThisMonth), m, caption = "끝난 것 보기", onClick = onShowDone) },
         )
         if (stacked) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { tiles.forEach { it(Modifier.fillMaxWidth()) } }
         else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { tiles.forEach { it(Modifier.weight(1f)) } }
@@ -585,7 +669,8 @@ private fun Controls(
     person: String?, onClearPerson: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        com.bamnat.app.ui.components.ChoiceRow(Show.entries.map { s -> "${s.label} ${if (s == Show.OWED) owedCount else doneCount}" }, selected = show.ordinal,
+        val words = LocalOwedWords.current
+        com.bamnat.app.ui.components.ChoiceRow(Show.entries.map { s -> "${if (s == Show.OWED) words.showOwed else "끝난 것"} ${if (s == Show.OWED) owedCount else doneCount}" }, selected = show.ordinal,
             onSelect = { onShow(Show.entries[it]) })
         AnimatedVisibility(searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             OutlinedTextField(
@@ -602,7 +687,7 @@ private fun Controls(
                 OwedFilter.entries.filter { it == OwedFilter.ALL || it == filter || (counts[it] ?: 0) > 0 }.forEach { f ->
                     FilterChip(selected = filter == f, onClick = { onFilter(f) },
                         leadingIcon = if (filter == f) { { Icon(Icons.Filled.Check, null, Modifier.size(16.dp)) } } else null,
-                        label = { Text("${f.label} ${counts[f] ?: 0}") })
+                        label = { Text("${f.labelFor(words.toPay)} ${counts[f] ?: 0}") })
                 }
             }
         }
@@ -615,30 +700,35 @@ private fun Controls(
 }
 
 @Composable
-private fun SwipeHint() {
-    Text("오른쪽으로 밀면 다 받음, 왼쪽으로 밀면 알림 문자를 보내요.", style = MaterialTheme.typography.bodySmall,
+private fun SwipeHint(words: OwedWords) {
+    Text(words.swipe, style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
 }
 
 /** [RECV-05] Ways in for each kind of user, so the first line takes one tap to start. */
 @Composable
-private fun Empty(style: WorkStyle?, onAdd: (ReceivableKind) -> Unit) {
+private fun Empty(style: WorkStyle?, toPay: Boolean, onAdd: (ReceivableKind) -> Unit) {
+    val words = OwedWords.of(toPay)
     SectionCard(title = null) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
                 Icon(Icons.Filled.Payments, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(32.dp))
             }
             Spacer(Modifier.height(12.dp))
-            Text("받을 돈을 적어 두세요", style = MaterialTheme.typography.titleMedium)
+            Text(words.emptyTitle, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
-            Text(when (style) {
+            Text(if (toPay) when (style) {
+                WorkStyle.BUSINESS -> "거래처 외상 매입처럼 아직 안 낸 돈을 적어 두면 갚을 날에 알려 주고, 나눠 갚은 것도 남은 금액으로 계산해요."
+                WorkStyle.FIELD -> "자재상 미지급이나 같이 일한 사람 품삯처럼 아직 안 준 돈을 적어 두면 갚을 날에 알려 줘요."
+                else -> "아직 갚지 않은 돈을 적어 두면 갚을 날에 알려 줘요."
+            } else when (style) {
                 WorkStyle.BUSINESS -> "외상 매출이나 거래처 미수금을 적어 두면 약속일에 알려 주고, 나눠 받은 것도 남은 금액으로 계산해요."
                 WorkStyle.FIELD -> "달력에 적은 일감 중 돈 받음을 켜지 않은 것은 여기에 저절로 모여요. 그 밖의 돈도 적어 둘 수 있어요."
                 else -> "밀린 일당이나 빌려준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
             }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             Spacer(Modifier.height(12.dp))
-            startKinds(style).forEachIndexed { i, k ->
+            startKinds(style, toPay).forEachIndexed { i, k ->
                 val label = "${k.label} 적기"
                 if (i == 0) Button(onClick = { onAdd(k) }, modifier = Modifier.fillMaxWidth()) { Text(label) }
                 else OutlinedButton(onClick = { onAdd(k) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Text(label) }
@@ -650,7 +740,7 @@ private fun Empty(style: WorkStyle?, onAdd: (ReceivableKind) -> Unit) {
 @Composable
 private fun NoMatch(onClear: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("조건에 맞는 받을 돈이 없어요", style = MaterialTheme.typography.bodyLarge)
+        Text(LocalOwedWords.current.noMatch, style = MaterialTheme.typography.bodyLarge)
         TextButton(onClick = onClear) { Text("조건 모두 끄기") }
     }
 }
@@ -659,7 +749,7 @@ private fun NoMatch(onClear: () -> Unit) {
 private fun StatusChip(status: ReceivableStatus) {
     val (bg, fg) = statusColors(status)
     Surface(color = bg, shape = MaterialTheme.shapes.extraSmall) {
-        Text(status.label, style = MaterialTheme.typography.labelSmall, color = fg, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+        Text(status.labelFor(LocalOwedWords.current.toPay), style = MaterialTheme.typography.labelSmall, color = fg, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
 
@@ -676,13 +766,13 @@ private fun statusColors(status: ReceivableStatus): Pair<Color, Color> {
 }
 
 /** "D-3", "오늘", "5일 지남", or how long ago it began when no day was promised. */
-private fun dueText(o: Owed, today: LocalDate): String {
+private fun dueText(o: Owed, today: LocalDate, words: OwedWords = OwedWords.of((o as? Owed.Written)?.r?.toPay == true)): String {
     val due = o.due
     if (due != null) {
         val d = ChronoUnit.DAYS.between(today, due)
         return when {
             d > 0 -> "${Fmt.shortDate(due)}까지 · D-$d"
-            d == 0L -> "오늘 받기로 함"
+            d == 0L -> words.today
             else -> "${Fmt.shortDate(due)} 약속 · ${-d}일 지남"
         }
     }
@@ -713,9 +803,12 @@ private fun SwipeRow(o: Owed, today: LocalDate, actions: RowActions, modifier: M
         }
     }
     val cal = LocalCalendarColors.current
+    val words = LocalOwedWords.current
     SwipeToDismissBox(
         state = state,
         modifier = modifier.clip(MaterialTheme.shapes.large),
+        // 2.0.0 [RVK-46] 줄 돈 has no reminder to send.
+        enableDismissFromEndToStart = !words.toPay,
         backgroundContent = {
             val toRight = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             val armed = state.targetValue != SwipeToDismissBoxValue.Settled
@@ -732,7 +825,7 @@ private fun SwipeRow(o: Owed, today: LocalDate, actions: RowActions, modifier: M
                 if (toRight) {
                     Icon(Icons.Filled.Check, null, tint = fg)
                     Spacer(Modifier.width(8.dp))
-                    Text("${Fmt.won(o.left)} 다 받음", color = fg, style = MaterialTheme.typography.labelLarge)
+                    Text("${Fmt.won(o.left)} 다 ${words.done}", color = fg, style = MaterialTheme.typography.labelLarge)
                 } else if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
                     Text("알림 문자", color = fg, style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.width(8.dp))
@@ -742,9 +835,9 @@ private fun SwipeRow(o: Owed, today: LocalDate, actions: RowActions, modifier: M
         },
     ) {
         OwedCard(o, today, Modifier.semantics {
-            customActions = listOf(
-                CustomAccessibilityAction("${Fmt.won(o.left)} 다 받음") { actions.receiveAll(o); true },
-                CustomAccessibilityAction("알림 문자 보내기") { actions.remind(o); true },
+            customActions = listOfNotNull(
+                CustomAccessibilityAction("${Fmt.won(o.left)} 다 ${words.done}") { actions.receiveAll(o); true },
+                if (words.toPay) null else CustomAccessibilityAction("알림 문자 보내기") { actions.remind(o); true },
             )
         }) { actions.open(o) }
     }
@@ -792,7 +885,7 @@ private fun OwedCard(o: Owed, today: LocalDate, modifier: Modifier = Modifier, o
             if (got > 0 && !finished) {
                 Spacer(Modifier.height(10.dp))
                 Bar(got.toFloat() / of.coerceAtLeast(1), LocalCalendarColors.current.income)
-                Text("${Fmt.won(got)} 받음 · 전체 ${Fmt.won(of)}", style = MaterialTheme.typography.labelSmall,
+                Text("${Fmt.won(got)} ${LocalOwedWords.current.done} · 전체 ${Fmt.won(of)}", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
             }
         }
@@ -823,14 +916,15 @@ private fun LeftFigure(left: Long, got: Long, of: Long) {
     val cal = LocalCalendarColors.current
     Column {
         // 2.0.0 [RVK-43] (검토 MONEY-25) '남은 돈' is 가계부's 들어온 돈 − 나간 돈; here it is what is still to come in.
-        Text("아직 받을 돈", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val words = LocalOwedWords.current
+        Text(words.left, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(Fmt.won(rolling(left)), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle), fontWeight = FontWeight.Bold,
             color = if (left == 0L) cal.income else MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(8.dp))
         val fraction by animateFloatAsState(got.toFloat() / of.coerceAtLeast(1), tween(600, easing = FastOutSlowInEasing), label = "sheet")
         Bar(fraction, cal.income, height = 8.dp)
         Row(Modifier.padding(top = 4.dp)) {
-            Text("${Fmt.won(got)} 받음", style = MaterialTheme.typography.labelMedium, color = cal.income, modifier = Modifier.weight(1f))
+            Text("${Fmt.won(got)} ${words.done}", style = MaterialTheme.typography.labelMedium, color = cal.income, modifier = Modifier.weight(1f))
             Text("전체 ${Fmt.won(of)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -856,7 +950,9 @@ private fun ReceivableSheet(
     var confirmDelete by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val o = Owed.Written(r)
+    val words = OwedWords.of(r.toPay)
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalOwedWords provides words) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 16.dp).navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             SheetHeader(o, today, listOfNotNull(r.who.takeIf { it.isNotBlank() && it != r.name }, r.kind.label).joinToString(" · "))
@@ -873,8 +969,8 @@ private fun ReceivableSheet(
                 Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("돈이 들어왔나요?", style = MaterialTheme.typography.titleSmall)
-                        AmountField("받은 금액", amount, { amount = it }, imeAction = ImeAction.Done)
+                        Text(words.ask, style = MaterialTheme.typography.titleSmall)
+                        AmountField(words.amountDone, amount, { amount = it }, imeAction = ImeAction.Done)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             FilterChip(selected = amount.toAmount() == r.left, onClick = { amount = amountDigits(r.left) }, label = { Text("남은 금액 전부") })
                             if (r.left >= 20_000) FilterChip(selected = amount.toAmount() == r.left / 2, onClick = { amount = amountDigits(r.left / 2) },
@@ -884,7 +980,7 @@ private fun ReceivableSheet(
                                 label = { Text(if (date == today.toString()) "다른 날" else Fmt.shortDate(LocalDate.parse(date))) })
                         }
                         Text(
-                            if (r.countAsIncome) "받은 돈은 가계부 탭 들어온 돈에도 적어요." else "들어온 돈에는 적지 않아요 (${r.kind.hint}).",
+                            if (r.countAsIncome) words.writeOn else "${words.writeOffPrefix} (${r.kind.hint}).",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         val a = Receivables.clampPayment(r, amount.toAmount())
@@ -894,13 +990,13 @@ private fun ReceivableSheet(
                         }, enabled = a > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Icon(Icons.Filled.Check, null)
                             Spacer(Modifier.width(8.dp))
-                            Text(if (a > 0) "${Fmt.won(a)} 받았어요" else "받았어요")
+                            Text(if (a > 0) "${Fmt.won(a)} ${words.did}" else words.did)
                         }
                     }
                 }
             }
             if (r.payments.isNotEmpty()) {
-                Text("받은 기록 ${r.payments.size}번", style = MaterialTheme.typography.titleSmall)
+                Text("${words.record} ${r.payments.size}번", style = MaterialTheme.typography.titleSmall)
                 Column {
                     r.payments.sortedByDescending { it.date }.forEachIndexed { i, p ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -912,7 +1008,7 @@ private fun ReceivableSheet(
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(Fmt.won(p.amount), style = MaterialTheme.typography.bodyLarge.merge(NumberStyle), fontWeight = FontWeight.Medium)
-                                Text(Fmt.dayTitle(p.date) + if (p.entryId != null) " · 들어온 돈에 적음" else "",
+                                Text(Fmt.dayTitle(p.date) + if (p.entryId != null) words.lineIn else "",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             TextButton(onClick = { onDeletePayment(p) }) { Text("취소") }
@@ -922,14 +1018,15 @@ private fun ReceivableSheet(
             }
             HorizontalDivider()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (r.left > 0) FilledTonalButton(onClick = onRemind) {
+                if (r.left > 0 && !r.toPay) FilledTonalButton(onClick = onRemind) {
                     Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("알림 문자")
                 }
                 OutlinedButton(onClick = onEdit) { Text("고치기") }
-                if (r.closedOn == null && r.left > 0) OutlinedButton(onClick = { onClose(true) }) { Text("받지 않기로") }
-                if (r.closedOn != null) OutlinedButton(onClick = { onClose(false) }) { Text("다시 받을 돈으로") }
+                if (r.closedOn == null && r.left > 0) OutlinedButton(onClick = { onClose(true) }) { Text(words.close) }
+                if (r.closedOn != null) OutlinedButton(onClick = { onClose(false) }) { Text(words.reopen) }
                 TextButton(onClick = { confirmDelete = true }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
             }
+        }
         }
     }
     if (pickDate) PickDate(LocalDate.parse(date), onDismiss = { pickDate = false }) { date = it.toString(); pickDate = false }
@@ -937,7 +1034,7 @@ private fun ReceivableSheet(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("이 기록을 지울까요?") },
-            text = { Text("받은 기록과 그때 들어온 돈에 적은 줄도 함께 지워요. 바로 되돌릴 수 있어요.") },
+            text = { Text(words.deleteBody) },
             confirmButton = { TextButton(onClick = { confirmDelete = false; onDelete() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("취소") } },
         )
@@ -947,7 +1044,15 @@ private fun ReceivableSheet(
 /** [RECV-05] A job still owed: tick its deposit or all of it as paid here, or open the job itself. */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun JobOwedSheet(job: Job, today: LocalDate, onDismiss: () -> Unit, onReceive: (Job) -> Unit, onRemind: () -> Unit, onEdit: () -> Unit) {
+private fun JobOwedSheet(
+    job: Job, today: LocalDate, onDismiss: () -> Unit, onReceive: (Job) -> Unit, onRemind: () -> Unit, onEdit: () -> Unit,
+    /** 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) Part of it came in (계약금·중도금…), on a day. */
+    onReceivePart: (com.bamnat.core.money.JobPayment) -> Unit = {},
+) {
+    var part by rememberSaveable(job.id, job.unpaid) { mutableStateOf("") }
+    var partLabel by rememberSaveable(job.id) { mutableStateOf("") }
+    var partDate by rememberSaveable(job.id) { mutableStateOf(today.toString()) }
+    var pickPartDate by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     val o = Owed.FromJob(job)
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -959,8 +1064,21 @@ private fun JobOwedSheet(job: Job, today: LocalDate, onDismiss: () -> Unit, onRe
             if (job.deposit > 0) {
                 Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        PartLine("선금", job.deposit.coerceAtMost(job.payable), job.depositPaid)
-                        PartLine("잔금", job.balance, job.balancePaid)
+                        // 2.0.0 [RVK-47] (HQ-101) '안 받음' is the caution color only once the promised day has passed.
+                        val late = (job.due ?: job.lastDate).isBefore(today)
+                        PartLine("선금", job.deposit.coerceAtMost(job.payable), job.depositPaid, late)
+                        // What came in as 중도금 and the like comes off the 잔금 still to come.
+                        PartLine("잔금", if (job.balancePaid) job.balance else (job.balance - job.payments.sumOf { it.amount }).coerceAtLeast(0), job.balancePaid, late)
+                    }
+                }
+            }
+            // 2.0.0 [RVK-46] What came in besides 선금·잔금, each on its day.
+            if (job.payments.isNotEmpty()) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainer, shape = MaterialTheme.shapes.medium) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        job.payments.forEach { p ->
+                            PartLine(Fmt.shortDate(p.date) + (p.label.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), p.amount, true)
+                        }
                     }
                 }
             }
@@ -978,6 +1096,33 @@ private fun JobOwedSheet(job: Job, today: LocalDate, onDismiss: () -> Unit, onRe
                 Spacer(Modifier.width(8.dp))
                 Text("남은 ${Fmt.won(job.unpaid)} 다 받았어요")
             }
+            // 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) 계약금·중도금처럼 일부만 들어왔을 때.
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("일부만 들어왔나요?", style = MaterialTheme.typography.titleSmall)
+                    AmountField("받은 금액", part, { part = it }, imeAction = ImeAction.Done)
+                    // A job with 선금·잔금 already has them above, so only 중도금 is offered as a name here.
+                    val labels = com.bamnat.core.money.JobPayment.LABELS.filter { job.deposit <= 0 || it == "중도금" }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        labels.forEach { l ->
+                            FilterChip(selected = partLabel == l, onClick = { partLabel = if (partLabel == l) "" else l }, label = { Text(l) })
+                        }
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                        Text("받은 날", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 4.dp))
+                        FilterChip(selected = partDate == today.toString(), onClick = { partDate = today.toString() }, label = { Text("오늘") })
+                        FilterChip(selected = partDate != today.toString(), onClick = { pickPartDate = true },
+                            label = { Text(if (partDate == today.toString()) "다른 날" else Fmt.shortDate(LocalDate.parse(partDate))) })
+                    }
+                    val a = part.toAmount().coerceAtMost(job.unpaid)
+                    OutlinedButton(enabled = a > 0, onClick = {
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        onReceivePart(com.bamnat.core.money.JobPayment(date = LocalDate.parse(partDate), amount = a, label = partLabel)); part = ""
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (a > 0) "${Fmt.won(a)} 받았어요" else "받았어요") }
+                }
+            }
             HorizontalDivider()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = onRemind) {
@@ -987,17 +1132,18 @@ private fun JobOwedSheet(job: Job, today: LocalDate, onDismiss: () -> Unit, onRe
             }
         }
     }
+    if (pickPartDate) PickDate(LocalDate.parse(partDate), onDismiss = { pickPartDate = false }) { partDate = it.toString(); pickPartDate = false }
 }
 
 @Composable
-private fun PartLine(label: String, amount: Long, paid: Boolean) {
+private fun PartLine(label: String, amount: Long, paid: Boolean, late: Boolean = false) {
     val cal = LocalCalendarColors.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
         Spacer(Modifier.width(8.dp))
         Text(if (paid) "받음" else "안 받음", style = MaterialTheme.typography.labelMedium,
-            color = if (paid) cal.income else MaterialTheme.bamnat.caution)
+            color = if (paid) cal.income else if (late) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1010,9 +1156,12 @@ private fun ReceivableDialog(
     today: LocalDate,
     /** [RECV-05] The kind a new one starts as: what the user tapped, or what fits their work. */
     kindDefault: ReceivableKind = ReceivableKind.SALE,
+    /** 2.0.0 [RVK-46] 줄 돈 rather than 받을 돈. */
+    toPay: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (Receivable) -> Unit,
 ) {
+    val words = OwedWords.of(toPay)
     var who by rememberSaveable { mutableStateOf(initial?.who.orEmpty()) }
     var title by rememberSaveable { mutableStateOf(initial?.title.orEmpty()) }
     var amount by rememberSaveable { mutableStateOf(amountDigits(initial?.amount ?: 0)) }
@@ -1037,11 +1186,11 @@ private fun ReceivableDialog(
     com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
         unsaved = unsaved,
-        title = { Text(if (initial == null) "받을 돈 적기" else "받을 돈 고치기") },
+        title = { Text(if (initial == null) words.add else words.edit) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = who, onValueChange = { who = it.take(30) }, singleLine = true,
-                    label = { Text("누가 (손님·거래처·사람)") }, modifier = Modifier.fillMaxWidth())
+                    label = { Text(words.who) }, modifier = Modifier.fillMaxWidth())
                 val suggestions = names.filter { it != who && (who.isBlank() || it.contains(who.trim())) }.take(6)
                 if (suggestions.isNotEmpty()) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1050,14 +1199,14 @@ private fun ReceivableDialog(
                 }
                 AmountField("얼마", amount, { amount = it })
                 if (amount.toAmount() in 1 until minAmount) {
-                    Text("이미 ${Fmt.won(minAmount)} 받았어요. 그보다 적게 할 수 없어요.", style = MaterialTheme.typography.bodySmall,
+                    Text("이미 ${Fmt.won(minAmount)} ${words.did}. 그보다 적게 할 수 없어요.", style = MaterialTheme.typography.bodySmall,
                         color = LocalCalendarColors.current.warning)
                 }
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
-                    label = { Text("무슨 돈 (예: 10월 납품, 3일치 일당)") }, modifier = Modifier.fillMaxWidth())
+                    label = { Text(words.what) }, modifier = Modifier.fillMaxWidth())
                 Text("어떤 돈인가요", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ReceivableKind.of(toPay = false).forEach { k ->
+                    ReceivableKind.of(toPay).forEach { k ->
                         FilterChip(selected = kind == k, onClick = {
                             kind = k
                             if (!touchedIncome) income = k.incomeByDefault
@@ -1065,7 +1214,7 @@ private fun ReceivableDialog(
                     }
                 }
                 Text(kind.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("언제 받기로 했나요", style = MaterialTheme.typography.labelLarge)
+                Text(words.dueAsk, style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = dueDate == null, onClick = { due = null }, label = { Text("정하지 않음") })
                     listOf(7L to "1주 뒤", 14L to "2주 뒤").forEach { (d, label) ->
@@ -1086,8 +1235,9 @@ private fun ReceivableDialog(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("받으면 수입으로 적기", style = MaterialTheme.typography.bodyLarge)
-                        Text(if (kind == ReceivableKind.SALE) "그날 매출에 이미 넣었다면 꺼 두세요. 두 번 세지 않게요."
+                        Text(words.writeSwitch, style = MaterialTheme.typography.bodyLarge)
+                        Text(if (toPay) { if (kind == ReceivableKind.BORROWED) "빌린 돈은 갚아도 지출이 아니에요." else "갚은 날 가계부 탭에 지출 한 줄이 생겨요." }
+                            else if (kind == ReceivableKind.SALE) "그날 매출에 이미 넣었다면 꺼 두세요. 두 번 세지 않게요."
                             else if (kind == ReceivableKind.LOAN) "빌려준 돈은 돌려받아도 수입이 아니에요."
                             else "받은 날 가계부 탭에 수입 한 줄이 생겨요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1102,7 +1252,7 @@ private fun ReceivableDialog(
             Button(enabled = valid, onClick = {
                 onSave((initial ?: Receivable(who = "", amount = 0, date = start)).copy(
                     who = who.trim(), title = title.trim(), amount = amount.toAmount(), date = start, due = dueDate,
-                    kind = kind, note = note.trim(), countAsIncome = income,
+                    kind = kind, note = note.trim(), countAsIncome = income, toPay = toPay,
                 ))
             }) { Text("저장") }
         },

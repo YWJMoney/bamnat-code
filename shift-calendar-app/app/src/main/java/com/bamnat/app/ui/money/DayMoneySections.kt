@@ -121,7 +121,10 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
                 job.cancelled || job.status == com.bamnat.core.money.JobStatus.TENTATIVE -> JobStatusTag(job)
                 job.amount == 0L -> Unit
                 job.unpaid == 0L -> Text("다 받음", style = MaterialTheme.typography.labelSmall, color = cal.income)
-                else -> Text("받을 돈 ${Fmt.won(job.unpaid)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.bamnat.caution)
+                // 2.0.0 [RVK-47] (검토 HQ-101, 조건 6) 주의 only once the promised day has gone by; money still to come in is plain.
+                else -> Text("받을 돈 ${Fmt.won(job.unpaid)}", style = MaterialTheme.typography.labelSmall,
+                    color = if (job.due?.let { com.bamnat.core.time.Today.date().isAfter(it) } == true) MaterialTheme.bamnat.caution
+                        else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     })
