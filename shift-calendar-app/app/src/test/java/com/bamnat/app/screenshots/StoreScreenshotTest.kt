@@ -92,7 +92,8 @@ class StoreScreenshotTest : ScreenshotBase() {
 
     @Test fun sleep() = shoot("store_5_sleep", STORE) {
         sleep7()
-        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
+        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
+        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
     }
 
     @Config(sdk = [33])
@@ -107,7 +108,8 @@ class StoreScreenshotTest : ScreenshotBase() {
 
     @Test fun sleepLower() = shoot("store_5b_sleep_lower", STORE) {
         sleep7()
-        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
+        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
+        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
         settle()
         scrollUp(700); scrollUp(700)
     }
@@ -270,13 +272,15 @@ class StoreScreenshotTest : ScreenshotBase() {
     /** 13 수면 */
     @Test fun sleep2() = shoot("store_13_sleep", STORE) {
         sleep7()
-        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
+        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
+        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
     }
 
     /** 13 수면, further down. */
     @Test fun sleep2Lower() = shoot("store_13b_sleep_lower", STORE) {
         sleep7()
-        content { com.bamnat.app.ui.sleep.SleepScreen(com.bamnat.app.ui.sleep.SleepViewModel(c), wide = false, onBack = {}) }
+        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
+        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
         settle()
         scrollUp(700); scrollUp(700)
     }
