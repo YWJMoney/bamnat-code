@@ -96,12 +96,13 @@ class SetupViewModel(
     fun typesToSave(d: SetupDraft): List<ShiftType> = if (again) d.typesToSave(kept.value, today) else d.typesToSave()
 
     /**
-     * 2.0.0 [RVH-43] 검토 PC-31: the order periods the calendar has before this setup is saved (its own for a calendar being added), so the
-     * summary's month is filled as saving fills it ([previewSnapshot]).
+     * 2.0.0 [RVH-43] 검토 PC-31: the order periods the calendar has before this setup is saved, so the summary's month is filled as saving
+     * fills it ([previewSnapshot]). A calendar being added has none yet, and its database is not opened for them: #451 CI
+     * (PersonalCalendarsTest) caught the read, still running, making the file again after 그만두기 had deleted it.
      */
     val periods: StateFlow<List<com.bamnat.core.model.WorkPattern>> =
-        (calendarId?.let { runCatching { c.calendars.repository(it) }.getOrNull() } ?: c.scheduleRepository).patterns
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        if (calendarId != null) MutableStateFlow(emptyList<com.bamnat.core.model.WorkPattern>()).asStateFlow()
+        else c.scheduleRepository.patterns.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /**
      * 2.0.0 [RVH-43] 검토 PC-31 (통합 1차 PC: '이대로 저장할까요?'의 달은 11/1~11/11이 비었는데 저장한 달력은 1일부터 차 있어서 '오늘부터만
