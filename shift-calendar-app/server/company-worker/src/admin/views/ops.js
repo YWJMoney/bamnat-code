@@ -61,9 +61,11 @@ export function opsViews(A) {
     const d = S.data.incident;
     if (!d) return skeleton(3);
     const o = d.open;
-    // 2.0.0 [RVN-01] 신호마다 확실·의심, 표본, 평소 값, 다시 묻지 않기(U22c-01, I22ca-01).
-    const sigLine = (s) => `<li class="${s.off || s.muted ? "" : "bad"}"><span><b>${esc(s.text)}</b><small>${esc([s.sure ? "확실(밤에도 알림)" : "의심(아침에 알림)",
-      s.n ? `표본 ${s.n}` : "", s.was ?? "", s.off ? "지금은 잠잠해요" : "", s.muted ? "다시 묻지 않기로 한 신호" : ""].filter(Boolean).join(" · "))}</small></span></li>`;
+    // 2.0.0 [RVN-01] 신호마다 확실·의심, 표본, 평소 값, 다시 묻지 않기(U22c-01, I22ca-01). 글에 이미 있는 값은 둘째 줄에 되풀이하지 않고,
+    // 점 색은 확실만 빨강·의심은 주황·잠잠하거나 다시 묻지 않는 신호는 회색(디자인 조건 6).
+    const SAMPLE = { errors: (n) => `요청 ${n}번`, rate: (n) => `요청 ${n}번` };
+    const sigLine = (s) => `<li class="${s.off || s.muted ? "quiet" : s.sure ? "bad" : ""}"><span><b>${esc(s.text)}</b><small>${esc([s.sure ? "확실 · 밤에도 바로 알려요" : "의심 · 아침에 알려요",
+      s.n && SAMPLE[s.key] ? SAMPLE[s.key](s.n) : "", s.was && !s.text.includes(s.was) ? s.was : "", s.off ? "지금은 잠잠해요" : "", s.muted ? "다시 묻지 않기로 한 신호" : ""].filter(Boolean).join(" · "))}</small></span></li>`;
     const MUTE_NAMES = { errors: "서버 오류", rate: "서버 오류 비율", bugs: "문제 신고", jobs: "정기 작업 실패", stale: "5분 작업 멈춤", crash: "비정상 종료", anr: "ANR" };
     const muteLine = (d.mutes ?? []).length ? `<p class="hint">다시 묻지 않는 신호: ${esc(d.mutes.map((m) => `${MUTE_NAMES[m.key] ?? m.key}(${m.until ? `${when(m.until)}까지` : "한 번 꺼질 때까지"})`).join(", "))}</p>` : "";
     const sig = (d.signals.length ? `<ul class="alert-list">${d.signals.map(sigLine).join("")}</ul>`
@@ -484,8 +486,8 @@ export function opsViews(A) {
     "incident-close": ({ id }) => openDialog(`<form data-form="incident-close" data-id="${esc(id)}"><h2>무엇을 했나요?</h2><p>한 줄이면 돼요. 다음에 같은 일이 생기면 이 기록을 먼저 봐요.</p>
       <div class="fieldset"><label for="ic-note">한 일</label><textarea id="ic-note" name="note" maxlength="1000" required placeholder="예: 1.38.0 결제 화면 기능을 강제로 끄고 1.38.1로 고쳤어요"></textarea></div>
       <div class="fieldset"><label for="ic-days">지금 있는 신호를 다시 묻지 않기</label><select id="ic-days" name="days">
-        <option value="0" selected>한 번 꺼질 때까지(더 나빠지면 다시 열어요)</option><option value="1">하루</option><option value="3">3일</option><option value="7">7일</option><option value="14">14일</option></select>
-        <small class="hint">Play 비정상 종료·ANR은 28일 평균이라 몇 주 남을 수 있어요. 닫을 때보다 1.3배 나빠지면 날 수와 상관없이 다시 열려요.</small></div>
+        <option value="0" selected>신호가 꺼질 때까지</option><option value="1">하루</option><option value="3">3일</option><option value="7">7일</option><option value="14">14일</option></select>
+        <small class="hint">닫을 때보다 1.3배 나빠지면 언제든 다시 열려요. Play 비정상 종료·ANR은 28일 평균이라 몇 주 남을 수 있어요.</small></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">닫기</button></div></form>`),
     "copy-text": async ({ target }) => {
       const el = document.getElementById(target);

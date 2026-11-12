@@ -996,6 +996,7 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 
 /* ---- 1.38 [ADM3] 새 화면들과 갤럭시 폴드(접은 화면 ~344–412px, 편 화면 ~690–884px)·데스크톱 ---- */
 .alert-list li>span{flex:1;min-width:0;padding:.5rem 0}
+.alert-list li>span>small{display:block;margin-top:.1rem}.alert-list li.quiet::before{background:var(--faint)}
 .banner.bad{background:var(--bad-bg);color:var(--bad)}
 .incident-band{justify-content:flex-start;text-align:left;text-decoration:none;gap:.5rem}
 .incident-band svg{flex:none;width:1.15rem;height:1.15rem}

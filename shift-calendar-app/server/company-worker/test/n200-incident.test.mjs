@@ -106,14 +106,18 @@ test("SVC-83: 5분 작업이 멈추면 매시 작업이, 매시 작업이 멈추
   assert.ok((await incidentSignals(env, T)).some((s) => s.key === "stale"));
   assert.equal(await hourlyAgo(env, T), 240);
   assert.deepEqual(await hourlyWatch(env, T), { stale: true, told: true });
-  assert.deepEqual(await hourlyWatch(env, T + 600000), { stale: true, told: false }, "여섯 시간에 한 번만 알려요");
+  assert.deepEqual(await hourlyWatch(env, T + 600000), { stale: true, told: false }, "같은 멈춤에는 한 번만 알려요");
+  // 매시 작업이 다시 돌면 풀리고(80분은 아직 괜찮아요), 다음 멈춤(90분 넘김)에 다시 알려요.
+  await DB.prepare("UPDATE job_runs SET last_at = ?, ok_at = ? WHERE step = 'prune'").bind(T + HOUR, T + HOUR).run();
+  assert.deepEqual(await hourlyWatch(env, T + HOUR + 80 * 60000), { stale: false });
+  assert.deepEqual(await hourlyWatch(env, T + HOUR + 91 * 60000), { stale: true, told: true });
 });
 
 test("/api/admin/health?jobs=1은 마지막 매시 작업이 몇 분 전인지 숫자 하나만 내요", async () => {
   const { call, DB } = await ready();
   const r = await call("GET", "/api/admin/health?jobs=1");
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(r.data).sort(), ["hourlyAgoMin", "version"]);
+  assert.deepEqual(Object.keys(r.data), ["hourlyAgoMin"], "상태와 분만, 판·내부 값 없이");
   await DB.prepare("INSERT INTO job_runs (step, ok_at, last_at, runs) VALUES ('prune', ?, ?, 1)").bind(Date.now() - 3 * HOUR, Date.now() - 3 * HOUR).run();
   const late = await call("GET", "/api/admin/health?jobs=1");
   assert.equal(late.status, 503);

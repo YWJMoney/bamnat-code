@@ -493,12 +493,13 @@ async function routeOnce(request, env, url, ctx) {
   // AE 1.26: the invite link needs no database.
   if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
   if (path === "/api/admin/health" && method === "GET") {
-    // 2.0.0 [RVN-02] ?jobs=1: 마지막 매시 작업이 몇 분 전인지 숫자 하나(바깥 가동 감시가 60분 넘으면 알려요, SVC-83·I22cb-03).
+    // 2.0.0 [RVN-02] ?jobs=1: 마지막 매시 작업이 몇 분 전인지 숫자 하나(SVC-83·I22cb-03). 열쇠 없이 닿고, 답은 상태와 분만이에요
+    // (판·내부 값 없음). 읽기 한 번(job_runs)이라 5분마다 불러도 돼요. 운영 장부 자동 처리가 하루 두 번 봐요(docs/ops-desk.md).
     if (url.searchParams.get("jobs") === "1") {
       if (!env.DB) return json({ hourlyAgoMin: null }, 503);
       await ready(env);
       const ago = await hourlyAgo(env, Date.now());
-      return json({ version: SERVER_VERSION, hourlyAgoMin: ago }, ago == null || ago <= 90 ? 200 : 503);
+      return json({ hourlyAgoMin: ago }, ago == null || ago <= 90 ? 200 : 503);
     }
     return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
   }

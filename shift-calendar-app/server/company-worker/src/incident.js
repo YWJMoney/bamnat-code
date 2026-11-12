@@ -1,6 +1,6 @@
 import { all, audit, json, notifyAdmins, one, randomId, readJson, run } from "./index.js";
 import { changeMarks } from "./release-desk.js";
-import { watchHour } from "./ops-watch.js";
+import { JOB_NAMES, watchHour } from "./ops-watch.js";
 import { DAY, HOUR } from "./units.js";
 
 // ---- 1.38 [ADM3-32] 사고 모드 ----
@@ -25,7 +25,7 @@ export const INCIDENT = {
   /** 2.0.0 [RVN-02] 하루 넘게 열린 사고는 하루 한 번 '닫아 주세요'(SVC-83). */
   remindMs: DAY,
   /** 2.0.0 [RVN-02] 매시 작업이 이만큼 안 돌았으면 5분 작업이 알려요, 5분 작업이 이만큼 안 돌았으면 매시 작업이 알려요(서로 지켜보기). */
-  hourlyStaleMs: 2 * HOUR + 20 * 60 * 1000, fiveStaleMs: 30 * 60 * 1000,
+  hourlyStaleMs: 90 * 60 * 1000, fiveStaleMs: 30 * 60 * 1000,
 };
 
 /**
@@ -71,7 +71,7 @@ export async function incidentSignals(env, now = Date.now(), vitals = null) {
   const jobs = await all(env, "SELECT step, fails, ok_at, fail_at FROM job_runs WHERE fail_at IS NOT NULL AND (ok_at IS NULL OR fail_at > ok_at)").catch(() => []);
   // 매시 작업이라 마지막 성공 뒤 (jobFails - 1)시간 넘게 실패만 했으면 연달아 jobFails번이에요.
   const stuck = jobs.filter((j) => (j.ok_at ? j.fail_at - j.ok_at >= (INCIDENT.jobFails - 1) * HOUR : j.fails >= INCIDENT.jobFails));
-  if (stuck.length) out.push({ key: "jobs", text: `정기 작업이 계속 실패: ${stuck.map((j) => j.step).join(", ")}`, v: stuck.length, n: stuck.length, was: "" });
+  if (stuck.length) out.push({ key: "jobs", text: `정기 작업이 계속 실패: ${stuck.map((j) => JOB_NAMES[j.step] ?? j.step).join(", ")}`, v: stuck.length, n: stuck.length, was: "" });
   // SVC-83: 5분 작업(보류 끝난 답·자동 출시 안내)이 멈추면 매시 작업이 알려요.
   const five = await one(env, "SELECT last_at FROM job_runs WHERE step = ?", FIVE_STEP).catch(() => null);
   if (five?.last_at && now - five.last_at > INCIDENT.fiveStaleMs) {
@@ -166,21 +166,22 @@ export async function incidentTick(env, now = Date.now(), vitals = null) {
 }
 
 /**
- * 2.0.0 [RVN-02] 5분 작업이 한 번 돌 때: 매시 작업(job_runs prune)이 [INCIDENT.hourlyStaleMs] 넘게 안 돌았으면 알려요(6시간에 한 번).
- * 매시 작업 안의 '사고 살피기'는 매시 작업이 죽으면 스스로를 알릴 수 없어서 서로 지켜봐요(SVC-83).
+ * 2.0.0 [RVN-02] 5분 작업이 한 번 돌 때: 매시 작업이 [INCIDENT.hourlyStaleMs](90분) 넘게 안 돌았으면 급한 알림 한 번. 같은 멈춤에는
+ * 다시 알리지 않고(마지막 매시 작업 시각을 적어 둠), 매시 작업이 다시 돌면 풀려 다음 멈춤에 또 알려요. 매시 작업 안의 '사고 살피기'는
+ * 매시 작업이 죽으면 스스로를 알릴 수 없어서 서로 지켜봐요(SVC-83, 총괄 11-12).
  */
 export async function hourlyWatch(env, now = Date.now()) {
   const last = await one(env, "SELECT MAX(last_at) AS at FROM job_runs WHERE step <> ?", FIVE_STEP).catch(() => null);
   if (!last?.at || now - last.at <= INCIDENT.hourlyStaleMs) return { stale: false };
   const told = await one(env, "SELECT value FROM settings WHERE key = 'hourly_stale_told'").catch(() => null);
-  if (told && now - Number(told.value) < 6 * HOUR) return { stale: true, told: false };
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('hourly_stale_told', ?)", String(now));
+  if (told?.value === String(last.at)) return { stale: true, told: false };
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('hourly_stale_told', ?)", String(last.at));
   await notifyAdmins(env, "incident", { title: "매시 작업이 멈췄어요", body: `${Math.round((now - last.at) / 60000)}분째 안 돌았어요. 출시 안내·기능 날짜·백업·사고 살피기가 함께 멈춰요. 관리 › 서버 상태를 봐 주세요`,
     url: "/admin/#/server", urgent: true }, now, { ignoreQuiet: true });
   return { stale: true, told: true };
 }
 
-/** 2.0.0 [RVN-02] /api/health가 내는 숫자: 마지막 매시 작업이 몇 분 전인지(바깥 가동 감시가 60분 넘으면 알려요, I22cb-03). */
+/** 2.0.0 [RVN-02] /api/admin/health?jobs=1이 내는 숫자: 마지막 매시 작업이 몇 분 전인지(운영 장부 자동 처리가 하루 두 번 봐요, I22cb-03). */
 export async function hourlyAgo(env, now = Date.now()) {
   const last = await one(env, "SELECT MAX(last_at) AS at FROM job_runs WHERE step <> ?", FIVE_STEP).catch(() => null);
   return last?.at ? Math.max(0, Math.round((now - last.at) / 60000)) : null;
@@ -210,7 +211,9 @@ export async function incidentView(env, now = Date.now(), vitals = null) {
   return {
     // 2.0.0 [RVN-01] 다시 묻지 않기로 한 신호: 화면에 무엇을 언제까지 조용히 두는지 보여요(U22c-01).
     open: open ? read(open) : null, signals: signals.map((s) => ({ ...s, muted: Boolean(mutes[s.key]) && !(s.v >= mutes[s.key].v * INCIDENT.worse) })),
-    mutes: Object.entries(mutes).map(([key, m]) => ({ key, until: m.until ?? null, at: m.at ?? null })), marks, bugs: bugs.map((b) => ({ id: b.id, at: b.created_at, app: b.app, first: String(b.first ?? "").slice(0, 80) })),
+    mutes: Object.entries(mutes).map(([key, m]) => ({ key, until: m.until ?? null, at: m.at ?? null })),
+    // 2.0.0 [RVN-02] '그 전 48시간에 바꾼 것'에 이 사고가 열린 일 자체는 빼요.
+    marks: marks.filter((m) => !(open && m.kind === "incident_open" && m.at >= open.opened_at)), bugs: bugs.map((b) => ({ id: b.id, at: b.created_at, app: b.app, first: String(b.first ?? "").slice(0, 80) })),
     past: past.map(read),
     notice: "지금 일부 기능이 잘 안 될 수 있어요. 원인을 찾고 있고, 고치는 대로 다시 알려 드릴게요. 불편을 드려 죄송해요.",
     steps: ["무엇이 늘었는지 보기", "바로 전에 바꾼 것 되돌리기(판·기능)", "필요하면 기능 강제로 끄기", "공지 올리기", "문제 신고를 개발사항 하나로 묶기", "고친 뒤 무엇을 했는지 적고 닫기"],
