@@ -1,9 +1,10 @@
 import { fcmTell } from "./fcm.js";
 import { all, audit, batch, can, iso, json, one, randomId, readJson, refuse, run, stmt } from "./index.js";
-import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, holdReply, plainText, triage } from "./inquiries.js";
+import { DEV, HELD_FOR_PERSON, INQUIRY, actorName, cut, devEvent, devUpdate, holdForPerson, holdReply, plainText, releaseHeld, sendGate, triage } from "./inquiries.js";
 // 1.37 [ADM2-02] 나간 판: 반영 판이 Play에 나간 판 이하일 때만 '이미 고침'.
 import { DESK, isOut, laterText, markTold, shippedVersion } from "./desk.js";
 import { askOwner, replyRisk } from "./ledger.js";
+import { recordRowErrors } from "./ops-watch.js";
 
 // ---- 문의 정리함 [INBOX-01]~[INBOX-08] (1.35, 사용자 2026-10-30 "중복이나 이미 처리된 문의는 자동 대응 … 새롭거나 신규 문제
 // 개선사항을 개발에 넘겨서 … 올인원 관리 체계") ----
@@ -173,7 +174,14 @@ export async function known(env) {
     shipped,
     // 1.39 [DESK-05] 출시 노트 후보: 개발사항의 '업데이트 소식' 한 줄(사용자 말로 쓴 것)도 따로 비교해요.
     devs: devs.map((d) => ({ ...d, g: grams(`${d.title} ${d.title} ${d.body}`), ...(d.news ? { ng: grams(d.news) } : {}) })),
-    answered: answered.filter((a) => a.answer && a.first).map((a) => ({ ...a, g: grams(a.first), topic: triage(a.kind, a.first, JSON.parse(a.info)).topic })),
+    // 2.0.0 [RVA-37] 검토 I24b-02: 전에 답한 문의 하나를 못 읽어도 겹침 비교는 나머지로(그 줄은 비교에서만 빠져요).
+    answered: answered.filter((a) => a.answer && a.first).flatMap((a) => {
+      try {
+        return [{ ...a, g: grams(a.first), topic: triage(a.kind, a.first, JSON.parse(a.info)).topic }];
+      } catch {
+        return [];
+      }
+    }),
     templates: templates.map((t) => ({ ...t, g: grams(`${t.label} ${t.text}`) })),
   };
 }
@@ -240,8 +248,19 @@ async function waiting(env, ids = null) {
       AND NOT EXISTS (SELECT 1 FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = i.id)
       ${ids ? `AND i.id IN (${ids.map(() => "?").join(", ")})` : ""}
     ORDER BY i.created_at DESC LIMIT ${SORTING.candidates}`, back, ...(ids ?? []));
-  return rows.filter((r) => r.last === "user" && r.first).map((r) => ({ id: r.id, kind: r.kind, info: JSON.parse(r.info), text: r.first,
-    at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null, back: r.sorted_at !== null && r.sorted_at !== undefined }));
+  // 2.0.0 [RVA-37] 검토 I24b-02: 못 읽는 문의 한 줄은 정리함에서만 빼고(문의 목록에는 그대로) 오류 묶음에 그 줄을 적어요.
+  const out = [];
+  const bad = [];
+  for (const r of rows.filter((x) => x.last === "user" && x.first)) {
+    try {
+      out.push({ id: r.id, kind: r.kind, info: JSON.parse(r.info), text: r.first,
+        at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null, back: r.sorted_at !== null && r.sorted_at !== undefined });
+    } catch (e) {
+      bad.push({ key: `inquiry:${r.id}`, e });
+    }
+  }
+  if (bad.length) await recordRowErrors(env, "sort", bad).catch(() => {});
+  return out;
 }
 
 /** [INBOX-02] 자동 대응: which piles the server answers by itself as a question comes in (the owner's choice; off at first). */
@@ -259,13 +278,20 @@ export async function sortInbox(env, preloaded = null) {
   const [list, k, auto] = await Promise.all([waiting(env), preloaded ?? known(env), autoSettings(env)]);
   const piles = Object.fromEntries(PILES.map((p) => [p, []]));
   const fresh = [];
+  const bad = [];
   for (const q of list) {
-    const c = classify(q, k);
-    const item = { id: q.id, kind: q.kind, preview: [...q.text].slice(0, 160).join(""), app: q.info?.app ?? null, model: q.info?.model ?? null,
-      at: iso(q.at), same: q.same, ...triage(q.kind, q.text, q.info), match: c.match, reply: c.reply, ...(q.back ? { back: true } : {}) };
-    if (c.pile === "new") fresh.push({ item, g: grams(q.text), topic: c.topic });
-    else piles[c.pile].push(item);
+    try {
+      const c = classify(q, k);
+      const item = { id: q.id, kind: q.kind, preview: [...q.text].slice(0, 160).join(""), app: q.info?.app ?? null, model: q.info?.model ?? null,
+        at: iso(q.at), same: q.same, ...triage(q.kind, q.text, q.info), match: c.match, reply: c.reply, ...(q.back ? { back: true } : {}) };
+      if (c.pile === "new") fresh.push({ item, g: grams(q.text), topic: c.topic });
+      else piles[c.pile].push(item);
+    } catch (e) {
+      // 2.0.0 [RVA-37] 검토 I24b-02: 나누다 오류가 난 문의는 정리함에서만 빼요(자동 답도 가지 않아요).
+      bad.push({ key: `inquiry:${q.id}`, e });
+    }
   }
+  if (bad.length) await recordRowErrors(env, "sort", bad).catch(() => {});
   // Group the new ones: each joins the first group whose oldest question reads like it.
   const groups = [];
   for (const f of [...fresh].reverse()) {
@@ -292,10 +318,11 @@ export async function sortInbox(env, preloaded = null) {
 export async function applySort(request, env, now) {
   const body = await readJson(request, 256 * 1024);
   if (!Array.isArray(body.actions) || !body.actions.length || body.actions.length > SORTING.apply) refuse("actions", "actions");
-  const done = await sortActions(env, body.actions, now);
+  // [RVA-51] '그래도 보내기'(confirmed)는 결과 붙여 넣기의 미리 보기에서만 와요. 정리함은 늘 문을 지나요.
+  const done = await sortActions(env, body.actions.map((a) => (a && typeof a === "object" ? { ...a, confirmed: false } : a)), now, { typed: true });
   if (done instanceof Response) return done;
   await audit(env, now, "inbox_apply", `${body.actions.length}건`,
-    [done.replied && `답 ${done.replied}`, done.linked && `연결 ${done.linked}`, done.created.length && `개발사항 ${done.created.length}`,
+    [done.replied && `답 ${done.replied}`, done.held && `사람이 보내기 ${done.held}`, done.linked && `연결 ${done.linked}`, done.created.length && `개발사항 ${done.created.length}`,
       done.reopened && `다시 접수 ${done.reopened}`, done.skipped && `빼 둠 ${done.skipped}`].filter(Boolean).join(" · "));
   return json(done);
 }
@@ -304,13 +331,13 @@ export async function applySort(request, env, now) {
 const pileOf = (a) => (typeof a?.pile === "string" && PILES.includes(a.pile) ? a.pile : "");
 
 /** The 정리함 steps themselves, shared by applySort and 1.37 [ADM2-08] the 결과 block's 문의 lines; a Response when not allowed. */
-async function sortActions(env, actions, now) {
+async function sortActions(env, actions, now, { typed = false } = {}) {
   const body = { actions };
   const id22 = (v) => (typeof v === "string" && /^[A-Za-z0-9]{22}$/.test(v) ? v : refuse("id", "id"));
   const devId = (v) => (typeof v === "string" && /^d[A-Za-z0-9]{15}$/.test(v) ? v : refuse("item", "item"));
   const needsDev = body.actions.some((a) => a.do === "dev" || a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item));
   if (needsDev && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
-  const done = { replied: 0, linked: 0, created: [], reopened: 0, skipped: 0 };
+  const done = { replied: 0, linked: 0, created: [], reopened: 0, skipped: 0, held: 0 };
   const name = actorName(env);
   let shipped;
   for (const a of body.actions) {
@@ -328,7 +355,9 @@ async function sortActions(env, actions, now) {
       done.created.push({ id: item, title });
       for (const id of ids) {
         if (await link(env, item, id, now, name)) done.linked++;
-        if (a.text && (await inboxAnswer(env, id, a.text, now, name, pileOf(a)))) done.replied++;
+        const r = a.text ? await inboxAnswer(env, id, a.text, now, name, pileOf(a), { confirmed: a.confirmed === true, typed }) : false;
+        if (r === "held") done.held++;
+        else if (r) done.replied++;
       }
       continue;
     }
@@ -347,7 +376,9 @@ async function sortActions(env, actions, now) {
     if (a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item)) {
       if (await link(env, devId(a.item), id, now, name)) done.linked++;
     }
-    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name, pileOf(a)))) {
+    const said = (a.do === "reply" || a.do === "reopen") && a.text ? await inboxAnswer(env, id, a.text, now, name, pileOf(a), { confirmed: a.confirmed === true, typed }) : false;
+    if (said === "held") done.held++;
+    else if (said) {
       done.replied++;
       // 1.37 [ADM2-10] 이미 나간 판으로 고친 개발사항에 묶어 답했으면 그 답이 '나왔어요' 안내예요: 판을 저장할 때 다시 보내지 않아요.
       if (a.do === "reply" && a.item) {
@@ -374,20 +405,39 @@ async function link(env, item, id, now, by) {
  * (환불·결제·보상, 법·안전, 개인정보, 크게 화남, 약관, 회사 방식 = 결정함 '최고 관리자 확인'과 같은 기준). 그 이름, 아니면 null.
  */
 export async function needsPerson(env, id) {
-  const q = await one(env, `SELECT i.kind, (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words
-    FROM inquiries i WHERE i.id = ?`, id).catch(() => null);
-  return q ? askOwner(q.kind, q.words ?? "")?.name ?? null : null;
+  return (await needsPersonWhy(env, id))?.name ?? null;
 }
 
-/** An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it). */
-export async function inboxAnswer(env, id, text, now, by, pile = "") {
+/** 2.0.0 [RVA-41] 같은 판단을 걸린 말과 함께: { key, name, word } 또는 null. */
+export async function needsPersonWhy(env, id) {
+  const q = await one(env, `SELECT i.kind, (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words
+    FROM inquiries i WHERE i.id = ?`, id).catch(() => null);
+  return q ? askOwner(q.kind, q.words ?? "") : null;
+}
+
+/**
+ * An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it).
+ * 2.0.0 [RVA-51] 검토 I24b-03: 모든 길이 같은 문(sendGate)을 지나요. 걸리면 '사람이 보내야 해요' 보류 답으로 멈추고 "held"를 돌려줘요.
+ * [confirmed]: 사람이 미리 보기에서 까닭을 보고 '그래도 보내기'를 누른 것(결과 붙여 넣기 risky)이라 문을 지나가요.
+ */
+export async function inboxAnswer(env, id, text, now, by, pile = "", { confirmed = false, typed = false } = {}) {
   const t = plainText(text, INQUIRY.text, "text", true);
-  // 1.39 [LOOP-37] 사람 없이 가는 답(자동 정리·출시 안내·고친 판 안내)은 사람이 봐야 할 문의에 가지 않아요. 그 문의는 결정함에 남아요.
-  if (!env.actor || env.actor.auto || by === "자동 정리") {
-    const why = (await needsPerson(env, id)) || replyRisk(t);
-    if (why) {
-      await audit(env, now, "inquiry_auto_skip", id, why).catch(() => {});
-      return false;
+  const machine = !env.actor || env.actor.auto || by === "자동 정리";
+  // 열쇠는 holdReply 안에서 같은 문을 지나요(걸리면 사람이 보내기, 아니면 10분 보류).
+  const why = env.actor?.key || (confirmed && !machine) ? null : await sendGate(env, id, t, { typed: typed && !machine });
+  if (why) {
+    // 1.39 [LOOP-37] 사람 없이 가는 답(자동 정리·출시 안내·고친 판 안내)이 걸린 것도 이제 버리지 않고 같은 모양으로 멈춰요(결정함에도 그대로 남아요).
+    if (machine) await audit(env, now, "inquiry_auto_skip", id, why.name).catch(() => {});
+    return holdForPerson(env, id, t, why, now, { pile, by });
+  }
+  // [RVA-51] 사람이 까닭을 읽고 '그래도 보내기'를 골랐는데 같은 답이 이미 문에 멈춰 있으면 그 답을 지금 보내요(같은 답을 다시 쓰지 않아요).
+  if (confirmed && !machine) {
+    const h = await one(env, "SELECT id FROM held_replies WHERE inquiry_id = ? AND text = ? AND until >= ?", id, t, HELD_FOR_PERSON);
+    if (h) {
+      await run(env, "UPDATE held_replies SET until = ? WHERE id = ?", now, h.id);
+      await audit(env, now, "inquiry_reply_approve", id, by);
+      await releaseHeld(env, now);
+      return true;
     }
   }
   // [RVD-10] 검토 SVC-65: 같은 문의에 같은 답이 이미 갔거나 보류 중이면 다시 보내지 않아요(결과 덩어리를 두 번 붙여 넣어도 한 번).
@@ -721,10 +771,16 @@ export async function applyResult(request, env, now) {
   for (const r of linkTo.length ? await all(env, `SELECT id FROM dev_items WHERE deleted_at IS NULL AND id IN (${linkTo.map(() => "?").join(", ")})`, ...linkTo) : []) items.add(r.id);
   // [RVD-07] 검토 ADMX-07: 붙여 넣은 답도 사람 없이 가는 답과 같은 문을 지나요. 사람이 먼저 볼 문의에 가는 답, AI·보안 말이 든 답은
   // 미리 보기에 이유가 보이고, '그래도 보내기'(risky) 없이는 가지 않아요.
+  // [RVA-51] 미리 보기의 까닭도 같은 문(sendGate, 붙여 넣은 글이라 typed 아님): 보낼 때 멈추는 것과 미리 보기가 늘 같아요.
+  const gateOf = new Map();
+  for (const a of askLines) {
+    if (!a.text) continue;
+    for (const id of a.ids) if (asked.has(id) && !gateOf.has(`${id}|${a.text}`)) gateOf.set(`${id}|${a.text}`, await sendGate(env, id, a.text, { typed: false }));
+  }
   const askPlan = askLines.map((a) => {
-    const owner = a.text ? a.ids.map((id) => asked.get(id)).filter(Boolean).map((q) => askOwner(q.kind, q.first)?.name).find(Boolean) : null;
+    const why = a.text ? a.ids.map((id) => gateOf.get(`${id}|${a.text}`)).find(Boolean) : null;
     return { ...a, previews: a.ids.map((id) => oneLine(asked.get(id)?.first, 60)),
-      ...(a.text && (owner || replyRisk(a.text)) ? { risk: owner ? `관리자 확인: ${owner}` : replyRisk(a.text) } : {}),
+      ...(why ? { risk: why.reply ? why.name : `관리자 확인: ${why.name}` } : {}),
       problem: a.ids.some((id) => !asked.has(id)) ? "없는 문의" : a.do === "reply" && !a.text ? "답이 비어 있어요"
         : a.do === "link" && !(a.item && items.has(a.item)) ? "없는 개발사항" : a.do === "dev" && !a.title.trim() ? "제목이 없어요" : null };
   });
@@ -742,6 +798,7 @@ export async function applyResult(request, env, now) {
   let answered = 0;
   let noted = 0;
   let prepared = 0;
+  let gatedN = 0;
   const shipped = await shippedVersion(env);
   for (const l of plan.filter((x) => !x.problem)) {
     if (l.note) {
@@ -757,28 +814,32 @@ export async function applyResult(request, env, now) {
       if (Object.keys(extra).length) prepared++;
     }
     if (!l.status) continue;
-    if (body.notify === true && (l.status === "done" || l.status === "rejected" || l.text) && !(l.risk && !risky)) {
+    if (body.notify === true && (l.status === "done" || l.status === "rejected" || l.text)) {
       const waitingOnes = await all(env, `SELECT i.id FROM dev_links k JOIN inquiries i ON i.id = k.inquiry_id WHERE k.item_id = ? AND i.status != 'closed'`, l.id);
       // 1.37 [ADM2-02] 'Play 업데이트'는 그 판이 나갔을 때만. 나가기 전이면 "업데이트에 들어가요", 판을 저장할 때 다시 알려요.
       const text = l.text || (l.status === "done"
         ? (l.version && isOut(l.version, shipped) ? `말씀해 주신 내용을 ${l.version} 버전에서 고쳤어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요.` : laterText(l.version))
         : replyFor("declined", { reason: l.reason }));
-      for (const w of waitingOnes) if (await inboxAnswer(env, w.id, text, now, actorName(env))) answered++;
+      for (const w of waitingOnes) {
+        const r = await inboxAnswer(env, w.id, text, now, actorName(env), "", { confirmed: risky });
+        if (r === "held") gatedN++;
+        else if (r) answered++;
+      }
       // 이미 나간 판으로 고쳤다고 답했으면, 판을 저장할 때 같은 안내를 다시 보내지 않아요.
       if (l.status === "done" && l.version && isOut(l.version, shipped)) await markTold(env, l.id, waitingOnes.map((w) => w.id), now);
     }
   }
   // 1.37 [ADM2-08] 문의 lines, after the 개발사항 ones (a line may tie a question to an item the block just set).
   const actions = [];
-  const held = askPlan.filter((x) => !x.problem && x.risk && !risky).length + plan.filter((l) => !l.problem && l.risk && !risky).length;
-  // A held line still ties or makes its 개발사항; only its answer waits (a 답 line waits whole).
-  for (const raw of askPlan.filter((x) => !x.problem && !(x.risk && !risky && x.do === "reply"))) {
-    const a = raw.risk && !risky ? { ...raw, text: "" } : raw;
-    if (a.do === "dev") actions.push({ do: "dev", ids: a.ids, title: a.title, body: "", ...(a.text ? { text: a.text } : {}) });
+  // 2.0.0 [RVA-51] 검토 I24b-03: 걸린 줄의 답은 버리지 않고 같은 문에서 멈춰요(문의 화면 '사람이 보내야 해요' + 까닭). 묶기·새 개발사항은 그대로 해요.
+  // '그래도 보내기'(risky)는 사람이 미리 보기에서 까닭을 보고 고른 것이라 문을 지나가요.
+  for (const a of askPlan.filter((x) => !x.problem)) {
+    const ok = risky ? { confirmed: true } : {};
+    if (a.do === "dev") actions.push({ do: "dev", ids: a.ids, title: a.title, body: "", ...(a.text ? { text: a.text } : {}), ...ok });
     // 개발 with an answer is 정리함's "reply with item": tied and answered.
-    else for (const id of a.ids) actions.push({ do: a.do === "link" && a.text ? "reply" : a.do, id, ...(a.item ? { item: a.item } : {}), ...(a.text ? { text: a.text } : {}) });
+    else for (const id of a.ids) actions.push({ do: a.do === "link" && a.text ? "reply" : a.do, id, ...(a.item ? { item: a.item } : {}), ...(a.text ? { text: a.text } : {}), ...ok });
   }
-  let sorted = { replied: 0, linked: 0, created: [], skipped: 0 };
+  let sorted = { replied: 0, linked: 0, created: [], skipped: 0, held: 0 };
   if (actions.length) {
     const r = await sortActions(env, actions, now);
     if (r instanceof Response) return r;
@@ -791,7 +852,8 @@ export async function applyResult(request, env, now) {
   if (batchRow) await run(env, "UPDATE handoffs SET result_at = ?, result = ? WHERE id = ?", now, JSON.stringify(summary), batchRow.id);
   await audit(env, now, "dev_result", `${changed}개`, [batchRow && `묶음 ${batchRow.id}`, noted && `개발 기록 ${noted}줄`, prepared && `출시 안내 ${prepared}개`, answered && `문의 ${answered}건에 답`, sorted.replied && `문의 줄 답 ${sorted.replied}`,
     sorted.created.length && `새 개발사항 ${sorted.created.length}`].filter(Boolean).join(" · "));
-  if (held) await audit(env, now, "dev_result_held", `${held}줄`, "사람이 먼저 볼 문의·위험한 답이라 보내지 않음");
+  const held = gatedN + (sorted.held ?? 0);
+  if (held) await audit(env, now, "dev_result_held", `${held}건`, "사람이 먼저 볼 문의·위험한 답이라 '사람이 보내야 해요'로 멈춤");
   return json({ lines: plan, asks: askPlan, batch: batchInfo, unread, held, changed, noted, prepared, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created, skipped: sorted.skipped });
 }
 

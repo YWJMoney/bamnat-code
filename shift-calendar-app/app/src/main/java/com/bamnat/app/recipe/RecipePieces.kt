@@ -347,8 +347,8 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
             val l = raw.received()
             // [RVM-23] STU-23: a step after the first that writes (more·otherwise) is marked too, not the first step alone.
-            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + b.say()) } +
-                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + r.say() + if (w) " (꺼진 채로 들어와요)" else "") } +
+            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + com.bamnat.core.formula.FormulaText.blanks(b.say())) } +
+                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + com.bamnat.core.formula.FormulaText.blanks(r.say()) + if (w) " (꺼진 채로 들어와요)" else "") } +
                 // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
                 listOfNotNull(
                     Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },

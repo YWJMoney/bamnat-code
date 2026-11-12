@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.animation.AnimatedVisibility
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -1064,7 +1065,10 @@ fun MoneyScreen(
         val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
         var fabBack by remember { mutableStateOf(true) }
         LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
-        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the cards fill the width, so the button (already its icon alone) covered the
+        // ends of amounts ('838,282원 / 1,600,000원'): it steps aside while the page scrolls down and comes back on the way up.
+        val bigLetters = com.bamnat.app.ui.components.bigLetters()
+        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack && (fabExpanded || !bigLetters), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             // 2.0.0 [RVP-06] The shared floating-button rule (icon alone with big letters: 검토 UIX-19 '글자 200%의 가계부').
             com.bamnat.app.ui.components.AddFab("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, open = fabExpanded)
@@ -1246,7 +1250,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
         }
         if (overdue.isNotEmpty()) {
             Text("약속일 지난 돈 ${overdue.size}건 · ${Fmt.won(overdue.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
-                color = cal.warning, modifier = Modifier.padding(bottom = 4.dp))
+                color = MaterialTheme.bamnat.caution, modifier = Modifier.padding(bottom = 4.dp))
         }
         owed.take(4).forEachIndexed { i, o ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -1263,7 +1267,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(Fmt.won(o.left), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
-                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) cal.warning else MaterialTheme.colorScheme.onSurface)
+                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface)
                 }
             }
         }

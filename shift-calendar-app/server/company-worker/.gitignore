@@ -5,3 +5,4 @@ dist/
 wrangler.deploy.toml
 .deploy-out.ndjson
 local-backup/
+build/
