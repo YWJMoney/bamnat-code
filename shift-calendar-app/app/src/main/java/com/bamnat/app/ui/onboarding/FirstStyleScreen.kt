@@ -111,9 +111,10 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                 // [RVG-15] Kept as someone else's: one sentence of where it went (디자인 품질 조건 3, answered → one line). The big
                 // question right under it already asks for the user's own work; ⓘ says where to see the kept one after the setup.
                 if (!linkWaiting && (theirsKept != null || theirsLater)) LinkCard(
-                    title = if (theirsKept != null) "‘$theirsKept’ 근무표는 받은 달력에 넣었어요" else "받은 근무표는 첫 설정 뒤에 넣어요",
+                    // [RVG-32] 검토 PC-93: '받은 근무표는…' for a link sent without a name (was ‘받은’ 근무표).
+                    title = if (theirsKept != null) "${com.bamnat.app.ui.setup.LinkStart.roster(theirsKept)}는 받은 달력에 넣었어요" else "받은 근무표는 첫 설정 뒤에 넣어요",
                     line = null,
-                    more = if (theirsKept != null) "첫 설정을 마치면 달력 이름을 눌러 ‘$theirsKept’ 근무표로 바꿔 봐요. 내 달력과 알람은 그대로이고, 보낸 분이 고치면 받은 달력에만 보여요."
+                    more = if (theirsKept != null) "첫 설정을 마치면 달력 이름을 눌러 ${com.bamnat.app.ui.setup.LinkStart.roster(theirsKept)}로 바꿔 봐요. 내 달력과 알람은 그대로이고, 보낸 분이 고치면 받은 달력에만 보여요."
                         else "지금은 근무표를 읽지 못했어요. 첫 설정을 마치면 달력에서 받은 달력으로 넣을지 물어요.",
                     mood = com.bamnat.app.ui.components.KaniMood.Done, live = true,
                     onClose = onTheirsClose, closeLabel = "받은 달력 안내 닫기",

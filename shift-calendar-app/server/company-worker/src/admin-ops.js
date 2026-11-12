@@ -4,6 +4,7 @@ import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
 import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
 import { KEEP_SCHEMA, backupTick, keepRoute, requestTick } from "./keep.js";
+import { securityView } from "./security-board.js";
 import { REVIEW_SCHEMA, reviewCounts, reviewRoute, reviewTick } from "./store-reviews.js";
 import { INCIDENT_SCHEMA, incidentBadge, incidentRoute, incidentTick } from "./incident.js";
 import { DAY, HOUR } from "./units.js";
@@ -18,6 +19,7 @@ import { draftStats } from "./claude-drafts.js";
 //   /release(/<v>)                        출시 날 점검표 [ADM3-14]                  운영(ops) 권한
 //   /health/versions, /changes            판 건강·바뀐 일 [ADM3-15·33]              지표 권한
 //   /data-requests, /backup               데이터 요청·백업 [ADM3-16]               최고 관리자
+//   /security                             보안 한 장 [RVQ-18]                       최고 관리자
 //   /reviews                              스토어 리뷰 [ADM3-18]                     문의 권한(Play로 보내기는 주인)
 //   /incident                             사고 모드 [ADM3-32]                       최고 관리자
 //   /cockpit                              Claude 조종석 [ADM3-31]                   문의 권한
@@ -30,7 +32,7 @@ export function opsArea(path) {
   // 1.39 [ADM3-52] 응답 속도는 숫자를 보는 사람·Claude 열쇠도 읽어요(주소·건수·걸린 시간뿐, 개인 정보 없음). 로딩 개선을 숫자로 재려고.
   if (path === "/watch/speed") return "metrics";
   if (path.startsWith("/watch/") || path === "/money" || path.startsWith("/money/") || path === "/data-requests" || path.startsWith("/data-requests/")
-    || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/")) return "owner";
+    || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/") || path === "/security") return "owner";
   if (path === "/person") return "inquiries";
   if (path === "/release" || path.startsWith("/release/")) return "ops";
   if (path === "/health/versions" || path === "/changes") return "metrics";
@@ -282,6 +284,8 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     const r = await keepRoute(request, env, url, path, method, now);
     if (r) return r;
   }
+  // 2.0.0 [RVQ-18] 검토 I21b-01: 보안 한 장.
+  if (path === "/security" && method === "GET") return json(await securityView(env, now));
   if (path === "/reviews" || path.startsWith("/reviews/")) {
     const r = await reviewRoute(request, env, url, path, method, now);
     if (r) return r;

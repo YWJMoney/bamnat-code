@@ -44,7 +44,10 @@ data class LogicValue(
     /** "6/8잔", "12건"; a 시각 "18:30" (another day "11/6 18:30"). */
     fun show(v: Double, today: LocalDate? = null): String = when (kind) {
         ValueKind.TIME -> if (v <= 0) "아직 없음" else ValueBook.clock(v, today)
-        else -> Formula.numText(v) + (goal?.let { "/" + Formula.numText(it) } ?: "") + unit
+        // [RVM-05] PC-44: past the goal it was '7/6잔'; now the goal reads as reached and the count after it ('6잔 채움 · 7잔').
+        else -> goal?.takeIf { it > 0 && v >= it }?.let { g ->
+            Formula.numText(g) + unit + " 채움" + (if (v > g) " · " + Formula.numText(v) + unit else "")
+        } ?: (Formula.numText(v) + (goal?.let { "/" + Formula.numText(it) } ?: "") + unit)
     }
 
     /** As [show], the 글 of a 글 값 칸. */

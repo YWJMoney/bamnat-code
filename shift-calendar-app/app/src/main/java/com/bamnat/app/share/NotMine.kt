@@ -47,3 +47,27 @@ object NotMine {
         }
     }
 }
+
+/**
+ * 2.0.0 [RVG-31] 검토 PC-95 (조건 10): '내 달력에 넣기' on a received calendar and its 되돌리기. Putting the days in also made the
+ * link followed (its copy the one my days were matched to); 되돌리기 took the days back but left that, so the same days counted
+ * as '직접 바꾼 날' and the card said '0일 내 달력에 넣기'. The 되돌리기 now puts back only what this changed: the days, and the
+ * link's own answers as they were.
+ */
+object PutIn {
+    /** What [apply] put in, and the way back. */
+    class Undo(val days: Int, val back: suspend () -> Unit)
+
+    suspend fun apply(c: AppContainer, id: String, todo: Map<java.time.LocalDate, ShiftOverride>): Undo {
+        val before = c.received.get(id)
+        val was = todo.mapValues { (d, o) -> c.scheduleRepository.updateDay(d) { it.copy(override = o) } }
+        // 1.39 [TEAM-22] Put in once: when the 리더 changes this link later, the change is offered (or as set below).
+        c.received.markAdopted(id)
+        RosterFollower.sync(c.appContext, c)
+        return Undo(was.size) {
+            was.forEach { (d, e) -> c.scheduleRepository.restoreDay(d, e) }
+            before?.let { c.received.putBack(it) }
+            RosterFollower.sync(c.appContext, c)
+        }
+    }
+}

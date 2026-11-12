@@ -319,7 +319,7 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
         // PC 확인 7525ccff: the question lists what goes back.
-        assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
+        assertTrue(appears("이 작품을 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
         assertTrue(appears("근무 꾸미기", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
@@ -359,7 +359,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(scrolledTo("✓ 넣었어요 · 다시 넣기", exact = true))
         tapText("되돌리기", exact = true)
         settle()
-        assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
+        assertTrue(appears("이 작품을 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
         assertTrue(appears("테마 위에 얹음 · ‘달력’ 탭", exact = false))
         assertTrue(appears("넣음 · 근무 꾸미기", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
@@ -441,6 +441,10 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("이 테마 입기", exact = true)  // 1.38 PC 스튜디오: all ticked says it in one word
         settle()
         assertTrue(appears("이렇게 바뀌어요", exact = true))
+        // [RVM-13] PC-59: a short line first, the whole list folded under '바뀌는 것 모두 보기'.
+        assertTrue(appears("모양이 바뀌어요 · ", exact = false))
+        tapText("바뀌는 것 모두 보기", exact = true, scrolls = 0)
+        settle()
         assertTrue("단추와 같은 수", appears("모양 ${parts.size}개", exact = true))
         assertTrue(appears("• 달력: 칸 디자인, ", exact = false))
         parts.forEach { p -> assertTrue(p.label, appears(p.label, exact = false)) }
@@ -467,7 +471,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val model = RecipeMakeViewModel(c)
         content { RecipeMakeScreen(model, onBack = {}, onOpen = {}) }
         settle()
-        assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
+        assertTrue(appears("작품 만들기 1/5 · 꾸미기", exact = true))
     }
 
     /** PC 확인 d263030e: a draft opened at 마치기 goes back to 이름·표지 by its chip; a step ahead waits for the name, as 다음 does. */
@@ -482,7 +486,7 @@ class RCScreenshotTest : ScreenshotBase() {
         model.go(5)
         settle()
         assertTrue(model.state.value.recipe.pieces.isNotEmpty())
-        assertTrue(appears("레시피 만들기 5/5 · 마치기", exact = true))
+        assertTrue(appears("작품 만들기 5/5 · 마치기", exact = true))
         tapText("이름·표지", exact = true)
         settle()
         assertEquals(3, model.state.value.step)
@@ -503,7 +507,7 @@ class RCScreenshotTest : ScreenshotBase() {
         content { RecipeMineScreen(model, onBack = {}, onOpen = {}, onDraft = {}, onList = {}) }
         settle()
         assertTrue(appears("장터 쓰기", exact = true))
-        assertTrue(appears("받은 레시피", exact = true))
+        assertTrue(appears("받은 작품", exact = true))
         assertTrue(appears("앞으로 3개는 운영자가 보고 올려요", exact = false))
     }
 
@@ -586,7 +590,7 @@ class RCScreenshotTest : ScreenshotBase() {
         content { RequestsScreen(model, onBack = {}, onOpen = {}, onMake = {}) }
         settle()
         assertTrue(appears("간호사 3교대 근무별 알람 세트", exact = false))
-        assertTrue(appears("완성된 레시피 보기", exact = true))
+        assertTrue(appears("완성된 작품 보기", exact = true))
     }
     // ---- 1.35 꾸미기 자유도 [CVW-01]..[CVW-10] [STU-01]..[STU-06] [LIN-01]..[LIN-05] ----
 
@@ -628,7 +632,7 @@ class RCScreenshotTest : ScreenshotBase() {
         val vm = RecipeMakeViewModel(c)
         content { RecipeMakeScreen(vm, onBack = {}, onOpen = {}) }
         settle()
-        assertTrue(appears("레시피 만들기 1/5 · 꾸미기", exact = true))
+        assertTrue(appears("작품 만들기 1/5 · 꾸미기", exact = true))
         assertTrue(appears("어디서 시작할까요?", exact = true))
         tapText(api.item(0).title, exact = true)
         settle()
