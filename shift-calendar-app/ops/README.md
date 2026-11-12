@@ -14,4 +14,4 @@ main에 합쳐지면 GitHub Action(`.github/workflows/dev-status.yml`)이 서버
 
 칸 설명과 명령은 `tools/dev_status.py` 맨 위에 있어요. 상태: `todo` 접수 · `doing` 만드는 중 · `check` PC 확인 대기 · `done` 고침 · `rejected` 반려(이유 `reason`).
 보일 유형(`styles`): 알려진 문제를 보일 근무 유형 목록(SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST, 없으면 모두).
-전달 길(`route`): `server` 서버 배포로 닿음 · `remote` 원격 자료(`remote: "kind@번호"`) · `flag` 기능 스위치(`flag`) · `app` 2주 정기 앱 업데이트 · `hotfix` 긴급 앱 업데이트.
+전달 길(`route`): `server` 서버 배포로 닿음 · `remote` 원격 자료(`remote: "kind@번호"`) · `flag` 기능 스위치(`flag`) · `app` 1주 정기 앱 업데이트(사용자 2026-11-08, 서버 LOOP.trainDays 7) · `hotfix` 긴급 앱 업데이트.

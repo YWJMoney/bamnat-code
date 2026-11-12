@@ -918,8 +918,11 @@ export async function turnSafeOut(text, hash, app) {
   return { body: out, hash: await sha256hex(out) };
 }
 
-/** What someone else's phone at [app] reads of a stored [text]: no company pay part ([sharedPayOut]), a safe 달 넘김 ([turnSafeOut]). */
-async function servedOut(text, hash, app) {
+/**
+ * What someone else's phone at [app] reads of a stored [text]: no company pay part ([sharedPayOut]), a safe 달 넘김 ([turnSafeOut]).
+ * 2.0.0 [RVR-21] Exported for the 판 호환 시험 (tools/served-works.mjs), which reads every 장터 작품 as each old app would.
+ */
+export async function servedOut(text, hash, app) {
   const shared = await sharedPayOut(text, hash);
   return turnSafeOut(shared.body, shared.hash, app);
 }
