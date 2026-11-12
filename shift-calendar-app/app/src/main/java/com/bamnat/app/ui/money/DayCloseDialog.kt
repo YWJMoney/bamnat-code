@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -34,6 +33,7 @@ import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.MoneyBook
+import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Receivable
 import com.bamnat.core.money.ReceivableKind
 import com.bamnat.core.work.CashDrawer
@@ -46,6 +46,10 @@ import java.time.LocalDate
  * 배달앱) adding up as they are typed, the total typed by itself when nothing is split, the day's
  * costs and a memo. 센 현금 is checked against the cash that should be in the till, and a sale on
  * credit (외상) is written as a receivable with who owes it, and counted in the day's sales.
+ *
+ * 2.0.0 [RVK-05] (검토 MONEY-12·PC-04·T06a-04·U06a-20): twelve fields are too many to lose to a tap outside or two backs, so this is a
+ * [com.bamnat.app.ui.components.FormSheet] that asks before anything typed goes, and its open flag is saveable (SalesSection).
+ * [RVK-06] (MONEY-30·T06a-03): the day's spending already in the ledger is said under 경비, so the same 재료비 is not taken twice.
  */
 @Composable
 fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -> Unit, onDismiss: () -> Unit) {
@@ -78,6 +82,14 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
     val earlierCredit = if (initial != null && initial.byMethod > 0) (initial.sales - initial.byMethod).coerceAtLeast(0) else 0
     val sales = if (parts > 0) parts + earlierCredit + credit.toAmount() else total.toAmount() + credit.toAmount()
     val net = sales - costs.toAmount()
+    // [RVK-06] What the ledger already has for this day: it is taken off the month by itself, apart from 경비.
+    val spentInLedger = remember(book.entries, date) { book.entries.filter { it.date == date && it.kind == MoneyKind.EXPENSE && it.amount > 0 } }
+    val unsaved = card != amountDigits(initial?.card ?: 0) || cash != amountDigits(initial?.cash ?: 0) ||
+        transfer != amountDigits(initial?.transfer ?: 0) || delivery != amountDigits(initial?.delivery ?: 0) ||
+        total != amountDigits(initial?.sales ?: 0) || costs != amountDigits(initial?.costs ?: 0) ||
+        counted != initial?.cashCounted?.toString().orEmpty() || receipt != amountDigits(initial?.cashReceipt ?: 0) ||
+        proven != amountDigits(initial?.costsProven ?: 0) || credit.isNotBlank() || creditWho.isNotBlank() ||
+        note != initial?.note.orEmpty() || weather != savedWeather?.weather || temperature != savedWeather?.temperature?.toString().orEmpty()
 
     fun build() = DailySales(
         date = date, sales = sales, costs = costs.toAmount(), note = note.trim(),
@@ -87,8 +99,9 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
         costsProven = proven.toAmount().coerceAtMost(costs.toAmount()),
     )
 
-    AlertDialog(
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = unsaved,
         title = { Text("${Fmt.dayTitle(date)} 마감") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -120,6 +133,10 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                 Text(if (parts == 0L) "결제 수단을 나눠 적으면 합계가 저절로 나와요." else "결제 수단별 금액을 더한 합계예요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AmountField("경비 (재료비·인건비 등)", costs, { costs = it })
+                if (spentInLedger.isNotEmpty()) {
+                    Text("가계부에 적은 이날 지출 ${spentInLedger.size}건 ${Fmt.won(spentInLedger.sumOf { it.amount })}은 따로 빠져요. 경비에는 그 밖의 것만 적어요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 // [J133-29] 1.33 (실사용 테스트 "경비 칸에서 증빙 여부를 고를 수 없어 부가세가 크게 나와요").
                 val hasCosts = costs.toAmount() > 0
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -127,17 +144,18 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                     com.bamnat.app.ui.components.FilterChip(selected = hasCosts && proven.toAmount() == costs.toAmount(), enabled = hasCosts,
                         onClick = { proven = costs }, label = { Text("전부 있음") })
                 }
-                Text("세금계산서·카드 영수증·현금영수증을 받은 경비는 부가세 예상에서 빠져요. 인건비는 보통 증빙이 아니에요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain("dayclose.proven", "세금계산서·카드 영수증·현금영수증을 받은 경비는 부가세 예상에서 빠져요. " +
+                    "인건비는 보통 증빙이 아니에요.", summary = "증빙 있는 경비는 부가세 예상에서 빠져요")
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 CashCheck(initial?.copy(cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount())
                     ?: DailySales(date, sales, cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount()),
                     rules, book, counted) { counted = it }
                 // PC 8eae2521 (자판이 열린 채 현금을 넣으면 '센 현금' 칸이 172px 내려감): the note comes under 센 현금, so no field moves.
                 val missing = if (hasCash) (cash.toAmount() - receipt.toAmount()).coerceAtLeast(0) else 0
-                if (missing > 0) Text("현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요. 부가세·종소세 신고 때 빠뜨리지 마세요. " +
-                    "손님이 원하면 발행해야 하고, 의무발행업종은 10만 원 이상이면 원하지 않아도 발행해야 해요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (missing > 0) com.bamnat.app.ui.components.Explain("dayclose.cashreceipt",
+                    "현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요. 부가세·종소세 신고 때 빠뜨리지 마세요. " +
+                        "손님이 원하면 발행해야 하고, 의무발행업종은 10만 원 이상이면 원하지 않아도 발행해야 해요.",
+                    summary = "현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요", iconOnly = false)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 // [SHOP-06] 외상: a sale not paid yet, followed up in 받을 돈.
                 Text("외상 (나중에 받을 돈)", style = MaterialTheme.typography.labelLarge)
@@ -161,7 +179,7 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            com.bamnat.app.ui.components.Button(onClick = {
                 val owed = credit.toAmount()
                 if (owed > 0) {
                     val id = calendar.id

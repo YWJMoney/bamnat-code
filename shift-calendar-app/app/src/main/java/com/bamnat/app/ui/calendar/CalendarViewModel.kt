@@ -1663,8 +1663,16 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     override fun deleteEntry(entry: MoneyEntry) {
         val money = money
         container.appScope.launch {
+            // 2.0.0 [RVK-10] (MONEY-04): kept 30 days in 최근 지운 기록, as from 가계부.
+            val calendarId = container.calendars.active.value
+            val kept = runCatching {
+                container.recordsTrash.keepLines(calendarId, listOf(entry.id), "${entry.title} · ${com.bamnat.app.ui.Fmt.won(kotlin.math.abs(entry.amount))}")
+            }.getOrNull()
             money.delete(entry)
-            _messages.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") { money.save(entry) })
+            _messages.tryEmit(UndoMessage("‘${entry.note.ifBlank { entry.category }}’ 기록을 지웠어요") {
+                money.save(entry)
+                kept?.let { container.recordsTrash.forget(listOf(it.id)) }
+            })
         }
     }
 

@@ -571,7 +571,8 @@ private fun QuickChips(
     val focus = CalendarFocus.of(settings.workStyle)
     val moneyFirst = focus.moneyFirst
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
-    var addingMoney by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-05] (MONEY-12): 하루 마감·일감 sheets stay open through a rebuilt screen.
+    var addingMoney by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     // [HRLY-08][DAYW-03] Work run past midnight is clocked out on the day it started.
     val now = rememberMinute()
