@@ -2032,8 +2032,8 @@ export function validate(body) {
     const short = cleanText(t?.short, 4);
     if (!Number.isInteger(t?.id) || !name || !short || !isColor(t?.color)) return { error: "type" };
     if (t.time != null && !isTimeRange(t.time)) return { error: "type_time" };
-    // [SHR-02] The shift's icon key (sun, moon …), so the app draws the badge as the sharer sees it.
-    if (t.icon != null && !(typeof t.icon === "string" && /^[a-z0-9]{1,16}$/.test(t.icon))) return { error: "type_icon" };
+    // [SHR-02] The shift's icon key (sun, moon …), so the app draws the badge as the sharer sees it. 2.0.0 [RVD-22] or an emoji ('e:🌙').
+    if (t.icon != null && !iconOk(t.icon)) return { error: "type_icon" };
     // 2.0.0 [RVD-20] HQ-13 하루 두 구간 (설계 4-4절): where the shift stops between its two parts ('15:00-17:00'), inside `time` with 30
     // minutes or more each side, as the app's WorkTime.gapFits. A receiver before 2.0.0 reads `time` alone, first start to last end.
     if (t.gap != null && !(t.time != null && t.off !== true && isTimeRange(t.gap) && gapFits(t.time, t.gap))) return { error: "type_gap" };
@@ -2228,6 +2228,15 @@ const isColor = (c) => typeof c === "string" && /^#[0-9A-Fa-f]{6}$/.test(c);
 const isMonth = (m) => typeof m === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
 const isDate = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + "T00:00:00Z"));
 const isTimeRange = (t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(t);
+/**
+ * 2.0.0 [RVD-22] PC-92: one emoji as the app's 이모지 아이콘 sends it since 1.34 (ShiftIcon.emojiKey, "e:" + the emoji from the picker,
+ * Emoji 15.0). One picture, a keycap (#️⃣), a flag (🇰🇷, 🏴 with tags) or those joined by ZWJ, with the skin tone and VS16 forms; the
+ * longest the picker gives is 10 code points (🧑🏻‍❤️‍💋‍🧑🏼), so 12 at most. Letters, controls, '<', quotes and spaces are refused. The page and
+ * the calendar feed never print it; it goes back to the receiving app in the JSON only (an app before 1.34 draws no icon for it).
+ */
+const EMOJI_PART = String.raw`(?:[#*0-9]️?⃣|\p{Regional_Indicator}{2}|\p{Extended_Pictographic}️?\p{Emoji_Modifier}?️?(?:[\u{E0020}-\u{E007E}]+\u{E007F})?)`;
+const EMOJI_ICON = new RegExp(`^e:${EMOJI_PART}(?:\\u200D${EMOJI_PART})*$`, "u");
+export const iconOk = (icon) => typeof icon === "string" && (/^[a-z0-9]{1,16}$/.test(icon) || ([...icon].length <= 14 && EMOJI_ICON.test(icon)));
 const DAY_MINUTES = 24 * 60;
 const minuteOf = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 /** 2.0.0 [RVD-20] HQ-13 "HH:mm-HH:mm" as minutes of the day, the end past midnight when it is not after the start (a whole day when equal). */
