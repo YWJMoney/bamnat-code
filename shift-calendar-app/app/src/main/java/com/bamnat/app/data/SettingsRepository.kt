@@ -642,8 +642,54 @@ class SettingsRepository(context: Context) {
         )
     }
 
+    /**
+     * 2.0.0 [RVL-67] (검토 DATA-24) Only the keys whose value changed go to the file: every setting is laid out on a [Staged] editor
+     * first, then compared with what is saved. One switch used to put all of them again (the file is still written whole by
+     * SharedPreferences, but an update that changes nothing writes nothing, and listeners hear only the changed keys).
+     */
     private fun write(s: AppSettings) {
-        prefs.edit()
+        val staged = Staged()
+        stage(staged, s)
+        val now = prefs.all
+        val e = prefs.edit()
+        var any = false
+        for ((k, v) in staged.values) {
+            if (v == null) {
+                if (now.containsKey(k)) { e.remove(k); any = true }
+                continue
+            }
+            if (now[k] == v) continue
+            @Suppress("UNCHECKED_CAST")
+            when (v) {
+                is String -> e.putString(k, v)
+                is Int -> e.putInt(k, v)
+                is Long -> e.putLong(k, v)
+                is Boolean -> e.putBoolean(k, v)
+                is Float -> e.putFloat(k, v)
+                is Set<*> -> e.putStringSet(k, v as Set<String>)
+            }
+            any = true
+        }
+        if (any) e.apply()
+    }
+
+    /** [RVL-67] An editor that only keeps what was put (null: removed), for [write] to compare. */
+    private class Staged : SharedPreferences.Editor {
+        val values = LinkedHashMap<String, Any?>()
+        override fun putString(key: String, value: String?): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putStringSet(key: String, value: MutableSet<String>?): SharedPreferences.Editor { values[key] = value?.toSet(); return this }
+        override fun putInt(key: String, value: Int): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putLong(key: String, value: Long): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putFloat(key: String, value: Float): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putBoolean(key: String, value: Boolean): SharedPreferences.Editor { values[key] = value; return this }
+        override fun remove(key: String): SharedPreferences.Editor { values[key] = null; return this }
+        override fun clear(): SharedPreferences.Editor = throw UnsupportedOperationException("settings are never cleared whole")
+        override fun commit() = true
+        override fun apply() {}
+    }
+
+    private fun stage(into: SharedPreferences.Editor, s: AppSettings) {
+        into
             .putString(K_WEEK_START_V2, s.weekStart.name)
             .putInt(K_WEEKLY_LIMIT, s.weeklyLimitHours)
             .putInt(K_AVG_LIMIT, s.averageLimitHours)
@@ -786,7 +832,6 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
             .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
             .putBoolean(K_EXPORT_MARK, s.exportMark)
-            .apply()
     }
 
     private companion object {

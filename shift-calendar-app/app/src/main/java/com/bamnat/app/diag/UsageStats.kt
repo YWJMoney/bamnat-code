@@ -41,7 +41,20 @@ class UsageStats(
 
     private fun today(): Long = Today.date(zone()).toEpochDay()
 
-    private fun book(): UsageBook = UsageBook.decode(prefs.getString(K_BOOK, null))
+    /**
+     * 2.0.0 [RVL-67] (검토 DATA-24) The book as last read or written, with the text it came from: every screen move used to
+     * unpack the whole book's JSON again. It is read again only when the saved text is not the one held (cleared, sent, put
+     * back by a test or a backup). Writing stays one per event, so a count is kept even if the app is closed right after.
+     */
+    private var held: Pair<String?, UsageBook>? = null
+
+    private fun book(): UsageBook {
+        val raw = prefs.getString(K_BOOK, null)
+        held?.let { (text, b) -> if (text == raw) return b }
+        return UsageBook.decode(raw).also { held = raw to it }
+    }
+
+    private fun keep(book: UsageBook): String = book.encode().also { held = it to book }
 
     override fun send(name: String, detail: String) {
         val event = UsageEvent.fromLog(name, detail) ?: return
@@ -71,7 +84,7 @@ class UsageStats(
                 e.putLong(K_LAST_OPEN, day)
             }
         }
-        e.putString(K_BOOK, book.encode()).apply()
+        e.putString(K_BOOK, keep(book)).apply()
     }
 
     /** What is waiting, for the settings page's "보낼 내용 보기". */
@@ -141,7 +154,7 @@ class UsageStats(
             if (e.code == "offline" || e.code == "rate_limited" || e.code.startsWith("http_5")) return@withContext false
         }
         synchronized(lock) {
-            val e = prefs.edit().putString(K_BOOK, book().sent(day).encode()).putLong(K_SENT_DAY, day)
+            val e = prefs.edit().putString(K_BOOK, keep(book().sent(day))).putLong(K_SENT_DAY, day)
             if (prefs.getString(K_KEEP, null) == keepAt) e.remove(K_KEEP)
             e.apply()
         }

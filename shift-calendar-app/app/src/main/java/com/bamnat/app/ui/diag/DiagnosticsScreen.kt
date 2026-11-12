@@ -587,8 +587,13 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     Text("근무·기록 데이터가 온전한지, 백업이 제대로 만들어지는지 휴대폰 안에서 살펴봐요. 아무것도 바꾸거나 보내지 않아요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     lines?.forEach { line ->
-                        Text((if (line.ok) "✓ " else "! ") + line.text, style = MaterialTheme.typography.bodySmall,
-                            color = if (line.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+                        // 2.0.0 [RVL-65] (조건 6·14) A note is caution with a mark of its own (※), not red: red only for data that is broken.
+                        Text((if (line.ok) "✓ " else if (line.note) "※ " else "! ") + line.text, style = MaterialTheme.typography.bodySmall,
+                            color = when {
+                                line.ok -> MaterialTheme.colorScheme.onSurface
+                                line.note -> com.bamnat.app.ui.theme.Tone.Caution.color()
+                                else -> MaterialTheme.colorScheme.error
+                            })
                     }
                     OutlinedButton(onClick = { vm.runDataCheck() }, enabled = !checking) {
                         Text(if (checking) "점검하는 중…" else if (lines == null) "데이터 점검" else "다시 점검")

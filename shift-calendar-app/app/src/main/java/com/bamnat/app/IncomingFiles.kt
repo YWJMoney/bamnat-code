@@ -24,6 +24,12 @@ object IncomingFiles {
         return true
     }
 
+    /**
+     * What another app hands in, on a first open and while open (onNewIntent) alike: a roster shared to the app, else a 밤낮 file.
+     * 2.0.0 [RVL-64] (검토 DATA-29 ③) One place for both, so the open app takes a file as a first open does.
+     */
+    fun readAny(intent: Intent?): Boolean = IncomingRoster.read(intent) || read(intent)
+
     /** The waiting file, once: the screen that opens it takes it. */
     fun take(): Uri? = _file.value.also { _file.value = null }
 
@@ -44,7 +50,7 @@ object IncomingFiles {
      */
     internal fun fromOutside(uri: Uri): Boolean {
         if (uri.scheme != "content") return false
-        val authority = uri.authority ?: return false
+        val authority = uri.authority?.takeIf { it.isNotBlank() } ?: return false
         val own = BuildConfig.APPLICATION_ID
         return authority != own && !authority.startsWith("$own.")
     }

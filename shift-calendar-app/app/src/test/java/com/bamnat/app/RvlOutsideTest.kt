@@ -23,6 +23,31 @@ import org.robolectric.annotation.Config
 class RvlOutsideTest {
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
 
+    /**
+     * 2.0.0 [RVL-14] (검토 DATA-06·DATA-29 ③) A backup opened while the app is already open comes to onNewIntent: it is taken there
+     * as on a first open (before, the app only came forward and the file was never read). Both go through [IncomingFiles.readAny].
+     */
+    @Test fun aFileOpenedWhileTheAppIsOpenIsTaken() {
+        try {
+            val backup = Uri.parse("content://com.android.providers.downloads.documents/document/42")
+            assertTrue(IncomingFiles.readAny(Intent(Intent.ACTION_VIEW, backup)))
+            assertEquals(backup, IncomingFiles.take())
+            assertFalse(IncomingFiles.readAny(Intent(Intent.ACTION_VIEW, Uri.parse("file:///data/data/com.bamnat.app/files/x.bamnat"))))
+            assertNull(IncomingFiles.take())
+            // A shared roster photo still goes to 한 달 근무 넣기, not the backup dialog.
+            assertTrue(IncomingFiles.readAny(Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM,
+                Uri.parse("content://media/external/images/1"))))
+            assertNull(IncomingFiles.take())
+            assertTrue(IncomingRoster.take() is IncomingRoster.Shared.Photo)
+        } finally {
+            IncomingFiles.take(); IncomingRoster.take()
+        }
+        val main = java.io.File("src/main/java/com/bamnat/app/MainActivity.kt").readText()
+        val onNew = main.substringAfter("override fun onNewIntent(").substringBefore("\n    }\n")
+        assertTrue("onNewIntent reads what another app hands in", "IncomingFiles.readAny(intent)" in onNew)
+        assertTrue("onCreate too", main.substringBefore("override fun onNewIntent(").contains("IncomingFiles.readAny(intent)"))
+    }
+
     @Test fun aFileComesOnlyAsAnotherAppsContentAddress() {
         val messenger = Uri.parse("content://com.kakao.talk.FileProvider/external/밤낮-백업.bamnat")
         assertEquals(messenger, IncomingFiles.uriOf(Intent(Intent.ACTION_VIEW, messenger)))

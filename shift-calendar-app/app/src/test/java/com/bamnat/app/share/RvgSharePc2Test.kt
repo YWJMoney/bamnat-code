@@ -203,8 +203,10 @@ class RvgSharePc2Test {
         c.scheduleRepository.setOverride(Today.date().plusDays(3), ShiftOverride.Shift(dayType().id))
         assertEquals(ShareSync.Result.Refused, sync.sync())
         assertNull("said once", c.shareLinks.dropped.value)
-        // Sent at last: the count starts again.
+        // Sent at last: the count starts again. 2.0.0 [RVL-56] The refused change itself is not sent again by itself; the next change is.
         server.down = null
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        c.scheduleRepository.setOverride(Today.date().plusDays(5), ShiftOverride.Shift(dayType().id))
         assertEquals(ShareSync.Result.Sent, sync.sync())
         server.down = ShareLinkException("title")
         c.scheduleRepository.setOverride(Today.date().plusDays(4), ShiftOverride.Shift(dayType().id))
