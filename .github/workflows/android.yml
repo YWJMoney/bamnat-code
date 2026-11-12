@@ -52,6 +52,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      # The pinned tool packages below (pillow 11.1.0, cryptography 44.0.2) ship wheels for this Python; the runner's own newer one
+      # has none for pillow 11.1.0 and building it needs libjpeg (core job red on a8eb588e).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: python3 tools/check_tracker.py
       - run: python3 tools/test_check_checklist.py && python3 tools/test_app_size.py && python3 tools/test_market_works.py
       - run: python3 tools/test_dev_status.py

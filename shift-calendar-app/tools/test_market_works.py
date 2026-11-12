@@ -133,9 +133,12 @@ class MarketShotsTest(unittest.TestCase):
         self.assertIn("**넘어짐** `a#4`", market_shots.markdown(res, True))
 
     def test_a_calendar_work_that_changed_nothing_is_told_and_drift_fails(self):
-        works = [{"key": "a#1", "recipe": {"pieces": [{"kind": "parts"}]}}, {"key": "a#2", "recipe": {"pieces": [{"kind": "alarms"}]}},
-                 {"key": "a#3", "recipe": {"pieces": [{"kind": "calTheme"}, {"kind": "logic"}]}}]
-        self.assertEqual(market_shots.visible_keys(works), {"a#1", "a#3"})
+        works = [{"key": "a#1", "recipe": {"pieces": [{"kind": "parts", "parts": [{"id": "cal.cell.date"}, {"id": "memo.card"}]}]}},
+                 {"key": "a#2", "recipe": {"pieces": [{"kind": "alarms"}, {"kind": "screenLook"}]}},
+                 {"key": "a#3", "recipe": {"pieces": [{"kind": "calTheme"}, {"kind": "logic"}]}},
+                 {"key": "a#4", "recipe": {"pieces": [{"kind": "parts", "parts": [{"id": "cal.weekly.day"}, {"id": "widget.cell"}]}]}},
+                 {"key": "a#5", "recipe": {"pieces": [{"kind": "parts", "parts": [{"id": "app.card"}]}]}}]
+        self.assertEqual(market_shots.visible_keys(works), {"a#1", "a#3", "a#5"}, "the week view (cal.weekly) and a widget are not on the shot")
         cur = {"all": False, "drift": [], "works": {"a#1": {"title": "하나", "fp": self.fp(1), "px": 0},
                                                     "a#2": {"title": "둘", "fp": self.fp(1), "px": 0},
                                                     "a#3": {"title": "셋", "fp": self.fp(1), "px": 900}}}

@@ -8,8 +8,9 @@ app MarketWorksShotsTest(-Pbamnat.marketShots=all)가 작품마다 넣은 달력
 - 모두 찍었는데 작품 이름이 tools/market_works.py와 다름(두 목록이 어긋나면 대조가 말없이 빠져요)
 - 되돌린 뒤 달력이 처음과 다름(shots.json의 drift)
 
-달력을 꾸미는 조각(달력 테마·모양, 근무 모양, 부품, 꾸미기, 화면 색)이 있는데 넣어도 달력이 한 점도 바뀌지 않은 작품(px 0)은 따로
-알려요(실패 아님): 2.0.0에서 효과가 말없이 사라진 작품일 수 있어요. 시간·요일·조건에 따라 그날만 바뀌는 작품도 여기 나올 수 있어요.
+달력을 꾸미는 조각(달력 테마·모양, 근무 모양, 달력 칸·머리·주·바닥과 앱 막대·카드 부품)이 있는데 넣어도 달력이 한 점도 바뀌지 않은
+작품(px 0)은 따로 알려요(실패 아님): 효과가 말없이 사라진 작품일 수 있어요(2.0.0 첫 실행에서 수식 값 부품이 넣어지지 않던 8개를
+이렇게 찾음). 시험 폰에 맞는 날이 없는 조건(메모 3개 이상인 날 등)도 여기 나올 수 있어요.
 
   python3 tools/market_shots.py compare prev/shots.json app/build/market-shots/shots.json \\
       --png app/build/market-shots/png --changed-out app/build/market-shots/changed >> "$GITHUB_STEP_SUMMARY"
@@ -27,12 +28,29 @@ import market_works  # noqa: E402
 
 THRESHOLD = 6.0
 SHOW = 40
-# The kinds of piece that show on the calendar screen the shot is taken of.
-VISIBLE = {"calTheme", "calView", "shiftLook", "parts", "decor", "screenLook"}
+# What shows on the month calendar the shot is taken of: these kinds of piece, and parts on these ids (the first two words of the id,
+# or the app's own bars, cards and chips). Parts of other screens (가계부, 메모, 위젯, 알람), screen colours and 꾸밈 층 often change
+# nothing there (2.0.0 전체 실행: 그런 작품 660개 중 535개), so they are not named.
+VISIBLE = {"calTheme", "calView", "shiftLook"}
+VISIBLE_PARTS = {"cal.cell", "cal.head", "cal.week", "cal.foot"}
+
+
+def shows_on_calendar(work):
+    pieces = work["recipe"].get("pieces", [])
+    if VISIBLE & {p.get("kind") for p in pieces}:
+        return True
+    for p in pieces:
+        if p.get("kind") != "parts":
+            continue
+        for line in p.get("parts", []):
+            words = str(line.get("id", "")).split(".")
+            if ".".join(words[:2]) in VISIBLE_PARTS or words[0] == "app":
+                return True
+    return False
 
 
 def visible_keys(works):
-    return {w["key"] for w in works if VISIBLE & {p.get("kind") for p in w["recipe"].get("pieces", [])}}
+    return {w["key"] for w in works if shows_on_calendar(w)}
 
 
 def load(path):
