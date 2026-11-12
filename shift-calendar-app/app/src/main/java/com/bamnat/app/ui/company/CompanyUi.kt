@@ -78,7 +78,22 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 마을에서 쉬어 가요. 마을 맨 위에서 까닭을 볼 수 있어요"
     "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
-    else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
+    // 2.0.0 [RVN-13] 검토 COMP-52: what the server said, told as what to do. A busy server waits; a word the user can fix, or an app
+    // update would fix, says so rather than "서버에 문제" (which had people wait for something that waiting does not mend).
+    "server", "busy", "no_database" -> com.bamnat.app.ui.components.NetWords.BUSY.removeSuffix(".")
+    "bad_response" -> "받은 답을 읽지 못했어요. 와이파이 로그인 화면이 떠 있다면 로그인한 뒤 다시 해 주세요"
+    "own" -> "내가 올린 것에는 할 수 없어요"
+    "not_yours", "forbidden" -> "이 휴대폰에서 올린 것만 바꿀 수 있어요"
+    "taken" -> "다른 분이 쓰고 있는 별명이에요. 다른 별명을 적어 주세요"
+    "not_yet" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
+    else -> when {
+        code.startsWith("http_5") -> com.bamnat.app.ui.components.NetWords.BUSY.removeSuffix(".")
+        code == "http_404" -> companyProblem("not_found")
+        code == "http_413" -> companyProblem("too_large")
+        code == "http_429" -> com.bamnat.app.company.RateLimits.text()
+        // A word from a newer server, or a request this version no longer makes right: the update is what mends it.
+        else -> "이 앱이 모르는 답이 왔어요. 앱을 최신 버전으로 업데이트한 뒤 다시 해 주세요"
+    }
 }
 
 /** "채택되면 프로 3개월을 드려요" when the developer gives a reward; null while there is none. */

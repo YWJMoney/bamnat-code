@@ -37,14 +37,19 @@ on:
         description: 지금 도는 판보다 낮은 판도 올리기(되돌릴 때만)
         type: boolean
         default: false
+      skip_tests:
+        description: "[RVR-17] 날짜에 묶여 낡은 시험 넘기기 '시험 이름|까닭|기한 YYYY-MM-DD' (여러 개는 ;로, 기한 14일 안, 배포 기록에 남아요)"
+        required: false
+        default: ""
   pull_request:
-    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/deploy/**", ".github/workflows/deploy-server.yml"]
+    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/test_deploy_flow.py", "shift-calendar-app/tools/deploy/**", ".github/workflows/deploy-server.yml"]
 permissions:
   contents: read
 # 배포는 한 번에 하나씩, 도중에 끊지 않아요.
+# PR 시험(test 일)은 묶음을 따로 써요: 같은 묶음이면 PR에 push할 때마다 러너를 기다리던 배포 run이 밀려 취소돼요(2026-11-12, 갈래 D run 123).
 concurrency:
-  group: deploy-server
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('deploy-server-test-{0}', github.ref) || 'deploy-server' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     if: github.event_name == 'pull_request'
@@ -54,6 +59,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 shift-calendar-app/tools/test_deploy_worker.py
+      - run: python3 shift-calendar-app/tools/test_deploy_flow.py
 
   gate:
     # 다른 브랜치에서 누르면 그 브랜치의 workflow·도구가 쓰여 안전장치를 비켜 갈 수 있어서, main에서 누른 것만 받아요.
@@ -77,7 +83,9 @@ jobs:
         with:
           node-version: 22
       - name: 배포 도구 시험
-        run: python3 shift-calendar-app/tools/test_deploy_worker.py
+        run: |
+          python3 shift-calendar-app/tools/test_deploy_worker.py
+          python3 shift-calendar-app/tools/test_deploy_flow.py
       - name: ref 확인
         id: ref
         env:
@@ -101,6 +109,7 @@ jobs:
       contents: read
     env:
       IN_TARGET: ${{ inputs.target }}
+      IN_SKIP: ${{ inputs.skip_tests }}
     steps:
       # 도구는 main의 것, 서버 코드는 고른 커밋의 것, 앞 판 코드는 지금 도는 판의 커밋(스키마 호환).
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -122,9 +131,10 @@ jobs:
           node-version: 22
       - name: 시험·번들·스키마 호환 (토큰 없음)
         run: |
+          skip=(); [ -n "$IN_SKIP" ] && skip=(--skip-test "$IN_SKIP")
           BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
             python3 shift-calendar-app/tools/deploy_worker.py --phase build --worker "$IN_TARGET" \
-              --out "$RUNNER_TEMP/ship" --prev "$GITHUB_WORKSPACE/prev/shift-calendar-app/server"
+              --out "$RUNNER_TEMP/ship" --prev "$GITHUB_WORKSPACE/prev/shift-calendar-app/server" "${skip[@]}"
       - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: ship

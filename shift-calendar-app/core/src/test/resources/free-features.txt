@@ -299,3 +299,6 @@ watch.sleepTile
 watch.taskTile
 sleep.noTap
 shift.progress
+invest.holdingShot
+invest.quantity
+invest.story

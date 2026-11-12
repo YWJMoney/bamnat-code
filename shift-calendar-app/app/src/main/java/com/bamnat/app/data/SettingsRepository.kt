@@ -114,6 +114,11 @@ data class AppSettings(
     val plazaNews: Boolean = true,
     /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
     val plazaHidden: String = "",
+    /**
+     * 2.0.0 [RVN-14] 검토 HQ-51 The kinds of 내 것에 온 반응 the user turned off in 설정 › 알림 ([com.bamnat.core.plaza.Reactions.encodeOff]);
+     * "" is all on. Off, they do not come to the 알림함 nor count on its bell.
+     */
+    val reactionsOff: String = "",
     /** [COMM-08] The version of the community rules the user agreed to before posting; 0 is not yet. */
     val plazaRulesAgreed: Int = 0,
     /**
@@ -509,6 +514,7 @@ class SettingsRepository(context: Context) {
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
             plazaNews = prefs.getBoolean(K_PLAZA_NEWS, d.plazaNews),
             plazaHidden = prefs.getString(K_PLAZA_HIDDEN, null) ?: d.plazaHidden,
+            reactionsOff = prefs.getString(K_REACTIONS_OFF, null) ?: d.reactionsOff,
             plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             usageStatsMore = if (prefs.contains(K_STATS_MORE)) prefs.getBoolean(K_STATS_MORE, false) else null,
@@ -659,6 +665,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
             .putBoolean(K_PLAZA_NEWS, s.plazaNews)
             .putString(K_PLAZA_HIDDEN, s.plazaHidden)
+            .putString(K_REACTIONS_OFF, s.reactionsOff)
             .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
             .apply { if (s.usageStatsMore == null) remove(K_STATS_MORE) else putBoolean(K_STATS_MORE, s.usageStatsMore) }
@@ -876,6 +883,7 @@ class SettingsRepository(context: Context) {
         const val K_SHARE_STATS = "share_usage_stats"
         const val K_PLAZA_NEWS = "plaza_news"
         const val K_PLAZA_HIDDEN = "plaza_hidden"
+        const val K_REACTIONS_OFF = "reactions_off"
         const val K_PLAZA_RULES = "plaza_rules_agreed"
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"

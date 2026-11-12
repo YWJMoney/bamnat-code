@@ -505,6 +505,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- 2.0.0 [RVN-13] COMP-51 What a push asked for (문의 답, 광장 답), run as an expedited job so Doze does not hold it back. -->
+        <service
+            android:name=".company.PushCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [SRV-07][INQ-05][SHR-13] What could not reach a server, sent once the phone is online. -->
         <service
             android:name=".company.OutboxJob"
