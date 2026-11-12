@@ -1200,22 +1200,14 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
  */
 @Composable
 private fun LineWithButton(text: String, label: String, onClick: () -> Unit, color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified) {
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 36.dp)) {
-        val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
-        if (maxWidth >= 280.dp * scale) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
-                TextButton(onClick = onClick) { Text(label, maxLines = 1) }
-            }
-        } else {
-            Column {
-                Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
-                TextButton(onClick = onClick, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
-                    Text(label, maxLines = 1)
-                }
-            }
-        }
-    }
+    // The shared part, as the card's head (갈래 O RVO-02): side by side while the words keep room, else the button goes under them.
+    com.bamnat.app.ui.components.SideOrBelow(
+        modifier = Modifier.fillMaxWidth().padding(start = 36.dp),
+        minStart = 160.dp,
+        belowAlign = Alignment.Start,
+        start = { Text(text, style = MaterialTheme.typography.bodyMedium, color = color) },
+        end = { TextButton(onClick = onClick) { Text(label, maxLines = 1) } },
+    )
 }
 
 /**
