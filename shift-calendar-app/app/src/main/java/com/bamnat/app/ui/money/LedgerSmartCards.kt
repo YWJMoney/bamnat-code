@@ -51,7 +51,7 @@ internal fun PaceCard(
         }
         if (sayToday) pace.todayLeft?.let { Text("오늘 쓸 수 있는 돈 ${Fmt.won(it)} (남은 ${pace.daysLeft}일)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
             ?: Text("예산을 정하면 오늘 쓸 수 있는 돈을 알려 드려요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        val inst = remember(book, today) { LedgerSmarts.installmentsLeft(book.entries, today) }
+        val inst = remember(book, today) { LedgerSmarts.installmentsLeft(book.entries, today, book.accounts) }
         onGraph?.let { go -> androidx.compose.material3.TextButton(onClick = go, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("지난달과 그래프로 보기 › 통계") } }
         if (sayInstallments && inst > 0) Text("할부로 남은 돈 ${Fmt.won(inst)} (이번 달 회차 포함)", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

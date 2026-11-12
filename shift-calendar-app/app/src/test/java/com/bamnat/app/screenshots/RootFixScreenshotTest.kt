@@ -135,4 +135,29 @@ class RootFixScreenshotTest : ScreenshotBase() {
         check(gone("적은 내용을 버릴까요?")) { "the ask did not close" }
         check(appears("오늘 야간 끝나고 장보기")) { "the words went" }
     }
+
+    /**
+     * 2.0.0 [RVP-43] 검토 U13b-02: one window when the app opens, the others wait as rows of the 알림함 ([AskTurn.waiting], in their
+     * order), and a tap there brings one now ([AskTurn.request]) though a window was shown this visit.
+     */
+    @Test fun aWaitingWindowComesFromTheInbox() = shoot("2721_root_waiting_window", FOLDED) {
+        content {
+            Page {
+                Text("달력")
+                Opening(OpenAsk.WHATS_NEW, "새 소식")
+                Opening(OpenAsk.NEW_CONSENT, "처리방침 동의")
+                Opening(OpenAsk.THEME_EXPIRY, "테마 기간")
+            }
+        }
+        settle()
+        check(appears("처리방침 동의")) { "the law did not come first" }
+        check(AskTurn.waiting == listOf(OpenAsk.WHATS_NEW, OpenAsk.THEME_EXPIRY)) { "waiting: ${AskTurn.waiting}" }
+        tapText("처리방침 동의 닫기", exact = true)
+        settle()
+        check(!shows("새 소식") && !shows("테마 기간")) { "a second window came by itself in the same visit" }
+        AskTurn.request(OpenAsk.THEME_EXPIRY)
+        settle()
+        check(appears("테마 기간")) { "the window asked for from the 알림함 did not come" }
+        check(AskTurn.waiting == listOf(OpenAsk.WHATS_NEW)) { "still waiting: ${AskTurn.waiting}" }
+    }
 }

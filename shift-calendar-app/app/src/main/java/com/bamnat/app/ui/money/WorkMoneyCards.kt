@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -80,10 +81,16 @@ private fun DepositMatchCard(c: AppContainer, calendarId: String, book: MoneyBoo
                     // The line stays as money into its account when it had one, so the balance is kept.
                     val kept = DepositMatch.kept(m.entry, book.accounts, m.target.name)
                     if (kept != null) money.save(kept) else money.delete(m.entry)
-                    when (val t = m.target) {
-                        is DepositMatch.Target.ForJob -> money.save(DepositMatch.paid(t.job, t.part))
-                        is DepositMatch.Target.ForReceivable -> money.receive(t.r, m.entry.amount, m.entry.date)
+                    val back: suspend () -> Unit = when (val t = m.target) {
+                        is DepositMatch.Target.ForJob -> { money.save(DepositMatch.paid(t.job, t.part)); { money.save(t.job) } }
+                        is DepositMatch.Target.ForReceivable -> {
+                            val paid = money.receive(t.r, m.entry.amount, m.entry.date);
+                            { paid?.let { money.delete(it) } }
+                        }
                     }
+                    // 2.0.0 [RVK-42] (검토 MONEY-16·T06a-06) A wrong '맞아요' is one tap back: the job or 받을 돈 as it was, and the deposit
+                    // line again (it was taken out of 수입 or changed, with nowhere to undo it).
+                    com.bamnat.app.ui.components.AppSnack.show(what + com.bamnat.core.text.Josa.fit(what, "으로 적었어요"), undo = { back(); money.save(m.entry) })
                 }
             }) { Text("맞아요") }
         }
@@ -104,7 +111,9 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
     if (waiting.isEmpty()) return
     val cal = LocalCalendarColors.current
     SectionCard(title = "카드 입금 예정") {
-        waiting.take(6).forEachIndexed { i, e ->
+        // 2.0.0 [RVK-42] (검토 U06a-21) Six at a time, and how many more there are: '외 N건 더 보기' opens the rest here.
+        var all by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+        (if (all) waiting else waiting.take(SHOWN_DEPOSITS)).forEachIndexed { i, e ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
             val late = e.payDate.isBefore(today)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -117,16 +126,29 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
                 TextButton(onClick = {
                     val money = c.calendars.money(calendarId)
                     val day = book.sales.firstOrNull { it.date == e.saleDate } ?: return@TextButton
-                    c.appScope.launch { money.save(day.copy(cardSettled = true)) }
+                    c.appScope.launch {
+                        money.save(day.copy(cardSettled = true))
+                        // 2.0.0 [RVK-42] (검토 MONEY-16·U06a-21) 되돌리기 here, and '확인 풀기' on the day itself afterwards.
+                        com.bamnat.app.ui.components.AppSnack.show("${Fmt.shortDate(e.saleDate)} 카드 매출 입금을 확인했어요", undo = { money.save(day) })
+                    }
                 }) { Text("입금 확인") }
+            }
+        }
+        if (waiting.size > SHOWN_DEPOSITS) {
+            TextButton(onClick = { all = !all }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (all) "접기" else "외 ${waiting.size - SHOWN_DEPOSITS}건 더 보기")
             }
         }
         val total = waiting.sumOf { it.amount }
         // [J133-41] 순번 721 (1.32 실사용 테스트: 정한 적 없는 1.5%로 셌는데 어디서 바꾸는지 카드에 없었어요): the rate is changed right here.
         var feeOpen by remember { androidx.compose.runtime.mutableStateOf(false) }
-        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("들어올 카드 매출 ${Fmt.won(total)} · 수수료 ${rules.feeLabel}, ${rules.settleDays}영업일 뒤로 셌어요",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        val said = "들어올 카드 매출 ${Fmt.won(total)} · 수수료 ${rules.feeLabel}, ${rules.settleDays}영업일 뒤로 셌어요"
+        if (com.bamnat.app.ui.components.bigLetters()) {
+            // 2.0.0 [RVK-42] Big letters: the line over its button, so '6,305,970원' is not cut in two beside '수수료율 바꾸기'.
+            Text(said, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            TextButton(onClick = { feeOpen = true }, modifier = Modifier.align(Alignment.End)) { Text("수수료율 바꾸기") }
+        } else Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(said, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             TextButton(onClick = { feeOpen = true }) { Text("수수료율 바꾸기") }
         }
         if (feeOpen) com.bamnat.app.ui.components.AppSheet(onDismissRequest = { feeOpen = false }, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -137,6 +159,16 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
         // F 1.32 [TAXP-08] The deposits that came, set against the days they pay.
         val gate by c.featureGate.state.collectAsStateWithLifecycle()
         CardMatchLines(calendarId, book, today, gate)
+    }
+}
+
+/** 2.0.0 [RVK-40] One line of the platform month: what it is on the left, the amount on the right. */
+@Composable
+private fun PlatformLine(label: String, value: String, strong: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(end = 8.dp))
+        Text(value, style = if (strong) MaterialTheme.typography.titleSmall else MaterialTheme.typography.bodyMedium,
+            fontWeight = if (strong) androidx.compose.ui.text.font.FontWeight.Bold else null)
     }
 }
 
@@ -163,8 +195,13 @@ private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBo
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text("쓴 돈 ${Fmt.won(m.costs)} (유류비·정비·보험 포함)" + (if (m.fees > 0) " · 수수료 ${Fmt.won(m.fees)}" else "") + " · 남은 돈 ${Fmt.won(m.net)}",
-            style = MaterialTheme.typography.bodyMedium)
+        // 2.0.0 [RVK-40] (검토 MONEY-49·T06b-04) 남은 돈 is what came: the 3.3% is off it, and what it was before is under it. A line each
+        // (조건 4), not one sentence that ran to four lines with big letters.
+        PlatformLine("쓴 돈 (유류비·정비·보험)", Fmt.won(m.costs))
+        if (m.fees > 0) PlatformLine("수수료", Fmt.won(m.fees))
+        PlatformLine("남은 돈", Fmt.won(m.net), strong = true)
+        if (m.withheld > 0) Text("3.3% 떼기 전 ${Fmt.won(m.netBeforeTax)}", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.End)
         m.perHour?.let { Text("시간당 순수익 ${Fmt.won(it)} · 한 건 ${m.perCount?.let(Fmt::won) ?: "-"}", style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary) }
         payouts.take(4).forEach { p ->
@@ -178,9 +215,18 @@ private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBo
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(onClick = {
-                    c.appScope.launch { com.bamnat.core.money.PlatformWork.settle(p).forEach { c.calendars.money(calendarId).save(it) } }
+                    c.appScope.launch {
+                        val money = c.calendars.money(calendarId)
+                        com.bamnat.core.money.PlatformWork.settle(p).forEach { money.save(it) }
+                        // 2.0.0 [RVK-42] (검토 MONEY-16·T06a-06) The week's jobs back to unpaid if this was not its money.
+                        com.bamnat.app.ui.components.AppSnack.show("${p.platform} ${Fmt.shortDate(p.payDate)} 정산을 받은 것으로 적었어요",
+                            undo = { p.jobs.forEach { money.save(it) } })
+                    }
                 }) { Text("입금 확인") }
             }
         }
     }
 }
+
+/** 2.0.0 [RVK-42] (검토 U06a-21) How many 카드 입금 예정 lines show before '외 N건 더 보기'. */
+private const val SHOWN_DEPOSITS = 6

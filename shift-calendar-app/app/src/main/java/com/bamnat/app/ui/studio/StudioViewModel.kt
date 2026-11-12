@@ -852,14 +852,20 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             _state.value = _state.value.copy(said = "저장했어요. 장터 판은 고칠 곳이 있어 그대로예요. 공방 › 내 작품에서 확인해 주세요")
             return
         }
-        val sent = runCatching {
+        val tried = runCatching {
             val out = com.bamnat.app.ui.recipe.serverPictures(c, RecipeCodec.read(RecipeCodec.write(r)))
             com.bamnat.app.recipe.RecipeFonts.send(c, out)
             c.recipeApi.newVersion(c.companyStore.device, w.shared, out, null)
-        }.getOrNull()
+        }
+        val sent = tried.getOrNull()
         if (sent != null) c.wardrobe.markShared(ThemeLease.Wear(name, "", "", 0, 0, own = true).key, w.shared, sent.version, w.bare)
-        _state.value = _state.value.copy(said = if (sent != null) "저장하고 장터 판도 ${sent.version}판으로 바꿨어요. 입은 분들께는 바꿀지 물어봐요"
-            else "저장했어요. 장터 판은 인터넷에 연결되면 다시 저장해 주세요")
+        // 2.0.0 [RVM-30] SN-15: the day's pictures ran out is not 'no internet' (saying so sent people to wait for a connection they had).
+        val limit = tried.exceptionOrNull() as? com.bamnat.app.ui.recipe.PictureLimit
+        _state.value = _state.value.copy(said = when {
+            sent != null -> "저장하고 장터 판도 ${sent.version}판으로 바꿨어요. 입은 분들께는 바꿀지 물어봐요"
+            limit != null -> "저장했어요. 장터 판은 아직이에요. " + limit.say("저장하면")
+            else -> "저장했어요. 장터 판은 인터넷에 연결되면 다시 저장해 주세요"
+        })
     }
 
     /** The draft is one of my themes already in 장터 (저장 also sends its next 판). */

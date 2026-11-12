@@ -471,7 +471,7 @@ test("a way the app cannot set yet goes to the developer only", async () => {
 
 test("the app can say what adoption takes and earns", async () => {
   const { call } = server();
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75, firstMonths: 0 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75, firstMonths: 0, roomMoney: false });
   assert.equal((await server({ plaza: true }).call("GET", "/api/terms")).data.firstMonths, 1);
 });
 

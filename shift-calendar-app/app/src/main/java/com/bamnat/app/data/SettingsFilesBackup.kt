@@ -182,6 +182,8 @@ class SettingsFilesBackup(
             Part("fx_taste"), // 1.39 [FX-02] 작품마다 하루 써 보기를 쓴 것 (새로 깔아도 다시 주지 않게)
             Part("work_plans"), // 1.38 팀 요금제: 무료로 쓴 첫 확정 달 (팀을 지워도, 새로 깔아도 남게)
             Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
+            // 2.0.0 [RVP-43] 검토 HQ-50: 알림함에서 '다시 보지 않기'로 끈 종류와 권유 끄기 (새 휴대폰에서도 다시 묻지 않게).
+            Part(com.bamnat.app.inbox.Inbox.MUTED_FILE),
             Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays", "folders", "placed")),
         )
 
@@ -217,8 +219,14 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVI-17] 낮잠 깨우기: 이 휴대폰에 맞춘 알람 하나의 날·시각이라, 새 휴대폰에서 다시 울리지 않게 옮기지 않아요.
+            "nap_wake" to "낮잠 깨우기 알람의 날과 시각, 이 휴대폰에 맞춘 알람의 것",
+            // 2.0.0 [RVI-22] 꺼져 있던 사이 지나간 메모 알림을 어디까지 알렸는지: 이 휴대폰이 꺼져 있던 때의 일이라 옮기지 않아요.
+            "memo_schedule" to "꺼져 있던 사이 지나간 메모 알림을 어디까지 모아 알렸는지, 이 휴대폰의 것",
             // 2.0.0 [RVK-16] 결제 알림 읽기가 마지막으로 읽은 때·이번 달 건수: 이 휴대폰의 알림 읽기가 잘 도는지라 옮기지 않아요.
             "capture_health" to "결제 알림을 마지막으로 읽은 때와 이번 달 적은 건수, 이 휴대폰의 알림 읽기 것",
+            // 2.0.0 [RVK-42] (검토 MONEY-26) 가계부 '오랜만이에요'를 넘긴 공백(달력마다): 이 휴대폰을 쉰 동안의 일이라 옮기지 않아요.
+            "welcome_back" to "가계부 '오랜만이에요'를 넘긴 공백(달력마다), 이 휴대폰을 쉰 동안의 것",
             // 2.0.0 [RVP-08] 설명을 몇 번 봤는지: 새 휴대폰에서는 설명을 처음처럼 한 번 더 다 보여 줘요.
             "explain_seen" to "설명(ⓘ)을 이 휴대폰에서 본 횟수, 새 휴대폰은 처음처럼 다 보여 줘요",
             // 2.0.0 [RVP-24] 뿌리 고침 2: 쓰다 만 글(rememberDraft)은 이 휴대폰에서 이어 쓰는 것, 7일 뒤 저절로 지워요.
@@ -227,6 +235,9 @@ class SettingsFilesBackup(
             "calendar_place" to "달력에서 마지막으로 고른 날과 보던 달(6시간 안에 다시 열면 그 자리로), 이 휴대폰의 것",
             // 1.40 [DISC-01] 안 써 본 기능 카드를 언제 무엇을 보였는지: 이 휴대폰의 일이라, 새 휴대폰은 처음처럼 쉬었다가 시작해요.
             "discover" to "‘안 써 본 기능 알려 주기’ 카드를 보인 날과 답, 다음 카드까지의 간격, 이 휴대폰의 것",
+            // 2.0.0 [RVP-43] 알림함의 줄(사람들 반응·안내·권유)과 오늘 X로 넣어 둔 달력 알림: 이 휴대폰에 온 것이라, 새 휴대폰은 빈 알림함에서 시작해요.
+            "inbox" to "알림함의 줄(내 글·작품에 온 반응, 안내, 권유), 이 휴대폰에 온 것이고 30일 뒤 지워요",
+            "notice_snooze" to "달력 알림을 X로 오늘 하루 알림함에 넣어 둔 것, 이 휴대폰의 오늘 하루 것",
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.
             "in_app_update" to "Play 인앱 업데이트를 이 판에서 이미 물어봤는지, 이 휴대폰에 깔린 판의 것",
             "plaza_tag" to "광장 근무 태그 공개 범위(근무 형태·업종·밤낮 쓴 기간·지금 근무 중)는 이 휴대폰에만, 새 휴대폰에서 한 번 다시 골라요(PLZC-10)",

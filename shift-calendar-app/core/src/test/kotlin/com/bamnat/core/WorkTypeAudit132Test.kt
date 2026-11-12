@@ -115,9 +115,12 @@ class WorkTypeAudit132Test {
         assertTrue(com.bamnat.core.money.PlatformWork.isPlatform(j))
         val m = com.bamnat.core.money.PlatformWork.month(YearMonth.from(mon), listOf(j), rules = rules)
         assertEquals(25_000L, m.fees)
-        assertEquals(75_000L, m.net)
-        // Without a cut set nothing comes off, as before.
-        assertEquals(100_000L, com.bamnat.core.money.PlatformWork.month(YearMonth.from(mon), listOf(j)).net)
+        assertEquals(75_000L, m.netBeforeTax)
+        // 2.0.0 [RVK-40] (검토 MONEY-49) 남은 돈 is what comes in hand: the 3.3% is off too, as the deposit below.
+        assertEquals(71_700L, m.net)
+        // Without a cut set only the 3.3% comes off.
+        assertEquals(100_000L, com.bamnat.core.money.PlatformWork.month(YearMonth.from(mon), listOf(j)).netBeforeTax)
+        assertEquals(96_700L, com.bamnat.core.money.PlatformWork.month(YearMonth.from(mon), listOf(j)).net)
         // The deposit that comes is the amount after 3.3% and the cut.
         val p = com.bamnat.core.money.PlatformWork.payouts(listOf(j), rules).single()
         assertEquals(96_700L - 25_000L, p.expected)

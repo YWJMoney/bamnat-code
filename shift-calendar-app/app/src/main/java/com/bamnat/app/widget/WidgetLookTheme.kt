@@ -95,7 +95,21 @@ fun widgetBg(): ColorProvider {
     LocalWidgetBgColor.current?.let { return ColorProvider(it.copy(alpha = a)) }
     val base = GlanceTheme.colors.widgetBackground
     if (a >= 1f) return base
-    return ColorProvider(base.getColor(LocalContext.current).copy(alpha = a))
+    // 2.0.0 [RVI-06] (검토 ALM-13) A see-through ground keeps a light and a dark colour, so when the phone turns dark at
+    // sunset the ground turns with the words instead of staying light under light words until the next redraw.
+    val context = LocalContext.current
+    return androidx.glance.color.ColorProvider(
+        day = base.getColor(withNight(context, false)).copy(alpha = a),
+        night = base.getColor(withNight(context, true)).copy(alpha = a),
+    )
+}
+
+/** [context] as it would be in the light ([night] false) or dark look, for a colour that follows the look. */
+internal fun withNight(context: android.content.Context, night: Boolean): android.content.Context {
+    val config = android.content.res.Configuration(context.resources.configuration)
+    val mode = if (night) android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO
+    config.uiMode = (config.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or mode
+    return context.createConfigurationContext(config)
 }
 
 /**
