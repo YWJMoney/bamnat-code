@@ -3337,6 +3337,7 @@ function adminApp(L, BUILD, M) {
     const secChips = d.items.some((r) => r.section) ? `<div class="chips" role="group" aria-label="구간">${[["all", "모든 구간"], ...Object.entries(RECIPE_SECTIONS)].map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${k === "all" ? d.items.length : d.items.filter((r) => r.section === k).length}</button>`).join("")}</div>` : "";
     const shown = sec === "all" ? d.items : d.items.filter((r) => r.section === sec);
+    // 2.0.0 [RVQ-26] '다시 올라온 것'은 볼 일 셋(괜찮아요·다시 돌려주기·가리기)만, 공식·보여주기·지우기 같은 것은 '더 보기'(작품 하나 화면)에서.
     const rows = shown.length ? `<ul class="rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
         <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}${r.tabs?.length ? ` · ${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")}` : ""}</span>` : ""} <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
@@ -3350,13 +3351,15 @@ function adminApp(L, BUILD, M) {
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
           ${tab === "again" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button>` : ""}
+          ${tab === "again" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>
+          <button class="btn small ghost" data-act="recipe-open" data-id="${r.code}">더 보기</button>` : `
           ${r.state === "waiting" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
-            : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
-          ${r.official ? `<button class="btn small ghost" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
-          ${r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : ""}
-          ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
-          ${r.version > 1 ? `<button class="btn small ghost" data-act="recipe-past" data-id="${r.code}" data-key="${r.version}">지난 판 지우기</button>` : ""}
-          <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
+              : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
+            ${r.official ? `<button class="btn small ghost" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
+            ${r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : ""}
+            ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
+            ${r.version > 1 ? `<button class="btn small ghost" data-act="recipe-past" data-id="${r.code}" data-key="${r.version}">지난 판 지우기</button>` : ""}
+            <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button>`}</span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
     const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
       : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
