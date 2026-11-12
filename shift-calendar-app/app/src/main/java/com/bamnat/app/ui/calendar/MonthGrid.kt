@@ -4,6 +4,9 @@ import com.bamnat.app.ui.parts.partSpot
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
+import com.bamnat.app.ui.parts.cellPartInside
+import com.bamnat.app.ui.parts.cellPartOutside
+import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.parts.partStyle
 import com.bamnat.app.ui.parts.partLine
 import com.bamnat.app.ui.parts.shape
@@ -708,16 +711,17 @@ private fun DayCell(
 
     Box(
         modifier
-            .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, paint = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
+            // 2.0.0 [RVS-03] 칸 부품의 바깥(바깥 간격·그림자)·안(채우기·선·투명도·움직임)은 스튜디오 예시 칸과 같은 함수로
+            // (스튜디오 조사 SN-01: 움직임이 바깥 간격·그림자가 있을 때만 그려져 장터 394개 작품의 '오늘 칸 빛'이 안 보였어요).
+            .cellPartOutside(cellPart, partShape)
             .cellEdge(view, cellLook, partShape, scheme.outlineVariant)
-            .clip(partShape)
+            // 2.0.0 [RVS-02] cut as drawn only, so a round cell's corners still open its day (스튜디오 조사 SN-02).
+            .drawClip(partShape)
             // [MAT-01] 1.36 칸 채우기 under the day's wash; a shader moves only in today's cell (a month of moving cells is too much).
             .fillWith(cellLook?.fill, alpha = cellFillAlpha(cellLook), animate = isToday)
             .background(tint ?: Color.Transparent)
-            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour.
-            .then(run { cellPart.paint?.let { Modifier.fillWith(it, alpha = (cellPart.fillA ?: 100) / 100f, animate = isToday) } ?: cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
-            .then(run { Modifier.partLine(cellPart, partShape) })
-            .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
+            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour, its line, 투명도 and 2.0.0 [RVS-03] 움직임.
+            .cellPartInside(cellPart, partShape, isToday, isSelected)
             .decor(com.bamnat.core.recipe.Decor.CELL, decorDay, date = day.date)
             .then(
                 when {
