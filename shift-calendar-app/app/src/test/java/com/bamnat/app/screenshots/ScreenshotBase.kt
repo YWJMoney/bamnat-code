@@ -1825,7 +1825,7 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
             "특근" to "1회 정액 (금액은 각자 넣어요)",
             "수당" to "자격수당(매달) · 야간수당(근무마다) · 상여(2·4·6·8·10·12월 기본급 100%)",
         )
-        return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), listOf(
+        return com.bamnat.app.company.CompanyPage(id, "(주)예시정밀", listOf("예시정밀"), (listOf(
             com.bamnat.app.company.SharedSetup("s1", true, 5, 3, 1, 3, "생산팀", 2, file, main + pay, trust = 75, agree = 75, posts = 4),
             com.bamnat.app.company.SharedSetup("s2", false, 2, 1, 0, 3, "포장팀", null, file, main.take(2), trust = 67, agree = 100),
         ) + if (!twins) emptyList() else listOf(
@@ -1833,8 +1833,11 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
                 listOf("근무" to "주간 08:00~20:00 휴게 60분 · 야간 20:00~08:00 휴게 60분 · 휴무(쉬는 날)", "순서 4일" to "주간 야간 휴무 휴무") + pay, trust = 67, agree = 67),
             com.bamnat.app.company.SharedSetup("s4", false, 2, 2, 0, 3, "생산팀", null, file,
                 listOf(main[0], "순서 4일" to "주간 야간 휴무 휴무") + pay.take(3), trust = 67, agree = 100),
-        ))
+        )).map { if (payHidden) it.copy(payHidden = true) else it })
     }
+
+    /** A phone that has not joined (PLAZA-08): the pay ways hidden, shift times and order only. */
+    var payHidden = false
 
     /** 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기 as the server says it. */
     var roomMoney = false
@@ -1893,7 +1896,10 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         null,
     )
 
-    override suspend fun talk(device: String, company: String, setup: String) = com.bamnat.app.company.Talk(listOf(
+    /** 2.0.0 [RVN-20] The posts [talk] hands out instead of the usual five (empty: a plaza nobody wrote in yet). */
+    var talkPosts: List<com.bamnat.app.company.TalkPost>? = null
+
+    override suspend fun talk(device: String, company: String, setup: String) = talkPosts?.let { com.bamnat.app.company.Talk(it) } ?: com.bamnat.app.company.Talk(listOf(
         com.bamnat.app.company.TalkPost("p1", 1, "sender", true, "저희 품질팀은 이렇게 돌아요. 10월 명세서랑 맞춰 봤어요.", now.minus(java.time.Duration.ofHours(20)), false),
         com.bamnat.app.company.TalkPost("p2", 2, "ok", false, "저도 같은 팀인데 맞아요. 격주 토요일은 특근으로 넣고 있어요.", now.minus(java.time.Duration.ofHours(6)), false),
         com.bamnat.app.company.TalkPost("p3", 3, "bad", false, "올해부터 야간 시작이 18:30으로 바뀌었어요. 확인해 주세요!", now.minus(java.time.Duration.ofHours(2)), false),

@@ -51,4 +51,15 @@ class SlipGlanceTest {
         assertFalse(r.matched)
         assertEquals(listOf(Part.HOLIDAY), r.differs)
     }
+
+    /** 2.0.0 [RVN-20] U10a-15: a payslip read on the phone fills the check; a part it does not print stays empty (not 0). */
+    @Test fun aPayslipReadFillsTheTotalAndThePartsItPrints() {
+        val read = com.bamnat.core.pay.PayslipReader.read("기본급 2,508,000원\n연장근로수당 288,000원\n상여금 100,000원\n가족수당 50,000원\n지급합계 2,946,000원")
+        val (total, parts) = SlipGlance.fromSlip(read)
+        assertEquals(2_946_000L, total)
+        assertEquals(288_000L, parts[Part.OVERTIME])
+        assertEquals(150_000L, parts[Part.ALLOWANCE])
+        assertFalse(Part.NIGHT in parts)
+        assertFalse(Part.HOLIDAY in parts)
+    }
 }

@@ -39,6 +39,8 @@ class Rvn4ScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
+        // 2.0.0 [RVN-19] U10a-08: the card's other buttons are behind '이 판 더 보기'.
+        tapText("이 판 더 보기", exact = true)
         reveal("우리는 달라요 · 다른 점 말하기", exact = true)
     }
 

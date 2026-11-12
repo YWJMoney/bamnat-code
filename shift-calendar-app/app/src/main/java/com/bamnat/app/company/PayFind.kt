@@ -39,7 +39,8 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
         // [PAYG-09] SP1: the join answers with the page as a member reads it (one round trip less); an older server does not.
         val (m, joined) = api.joinWithPage(store.device, id, s.serverCal)
         // 2.0.0 [RVN-17] COMP-12 With the wait's company and whether '잘못 골랐어요' can free the calendar ([undo]).
-        if (!m.joined) throw CompanyException(m.error ?: "member", until = m.until?.toString(), undo = m.undo, held = m.held)
+        if (!m.joined) throw CompanyException(m.error ?: "member", until = m.until?.toString(), undo = m.undo, held = m.held,
+            undoAgain = m.undoAgain?.toString())
         val page = joined ?: api.company(id)
         runCatching { c.companySearch.keepPage(page) }
         // The server keeps a join for 30 days whatever happens next, so the phone says it truly (결정 D79: members see the way).

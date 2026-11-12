@@ -44,6 +44,22 @@ object SlipGlance {
         return Result(diff, matched && differs.isEmpty(), differs)
     }
 
+    /**
+     * 2.0.0 [RVN-20] 검토 U10a-15 (명세서 사진에서 읽어 채우기): what a payslip read on the phone ([PayslipReader]) gives the check, its
+     * 지급 총액 and the parts it prints (추가 근무 with 연장, 상여 with 수당); a part the payslip does not print is left out, so it is
+     * not taken as 0.
+     */
+    fun fromSlip(read: PayslipRead): Pair<Long?, Map<Part, Long>> {
+        fun sum(vararg roles: SlipRole): Long? = read.lines.filter { it.role in roles && it.amount != null }.takeIf { it.isNotEmpty() }?.sumOf { it.amount!! }
+        val parts = buildMap {
+            sum(SlipRole.OVERTIME, SlipRole.EXTRA_WORK)?.let { put(Part.OVERTIME, it) }
+            sum(SlipRole.NIGHT)?.let { put(Part.NIGHT, it) }
+            sum(SlipRole.HOLIDAY)?.let { put(Part.HOLIDAY, it) }
+            sum(SlipRole.ALLOWANCE, SlipRole.BONUS)?.let { put(Part.ALLOWANCE, it) }
+        }
+        return read.gross to parts
+    }
+
     /** One line for the result: "명세서와 맞아요 (차이 800원)", or how far apart and where it differs most. */
     fun line(r: Result, won: (Long) -> String): String = when {
         r.matched -> "지급 총액이 명세서와 맞아요" + if (r.diff != 0L) " (차이 ${won(abs(r.diff))})" else ""

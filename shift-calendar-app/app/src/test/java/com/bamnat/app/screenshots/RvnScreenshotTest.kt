@@ -195,6 +195,30 @@ class RvnScreenshotTest : ScreenshotBase() {
         roomTalk()()
     }
 
+    /**
+     * 2.0.0 [RVN-17] 검토 PC-155 (통합 4차 PC): a calendar held by ‘(주)가나다화학’ (the PC saw it with ‘(주)예시정밀’). [dialog] opens 이 설정 쓰기 (the window's title kept
+     * whole with its 조사, a caution mark); without it, the page's line above says the hold. [usedUp]: this year's undo already used.
+     */
+    private fun heldBy(dialog: Boolean, usedUp: Boolean = false): Screen.() -> Unit = {
+        val c = companyOn()
+        val zone = com.bamnat.core.time.Today.zone()
+        val until = LocalDate.of(2026, 12, 15).atTime(12, 0).atZone(zone).toInstant()
+        company.held = com.bamnat.app.company.Membership(false, "c1", "member_wait", until = until, undo = !usedUp, held = "(주)가나다화학",
+            undoAgain = if (usedUp) LocalDate.of(2027, 10, 20).atTime(12, 0).atZone(zone).toInstant() else null)
+        c.companyStore.setMember("c9", "(주)가나다화학")
+        company.payHidden = true
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(c, "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = dialog,
+            openPhasesFor = if (dialog) "s1" else null) }
+        settle()
+        if (dialog) check(appears("정해져 있어요")) { "잡힌 달력을 묻는 창이 뜨지 않았어요" }
+        else reveal("급여 계산 방식은", exact = false)
+    }
+
+    @Test fun heldNameLight() = shoot("rvn_95_held_name_folded", FOLDED, heldBy(dialog = true))
+    @Test fun heldUsedUpDarkBig() = shoot("rvn_96_held_used_up_folded_dark_200", DARK, 2f, heldBy(dialog = true, usedUp = true))
+    @Test fun heldPageLight() = shoot("rvn_97_held_page_folded", FOLDED, heldBy(dialog = false))
+
     @Test fun heldLight() = shoot("rvn_33_held_folded", FOLDED, held())
     @Test fun heldDarkBig() = shoot("rvn_34_held_folded_dark_200", DARK, 2f, held())
     @Test fun heldWide() = shoot("rvn_35_held_unfolded", UNFOLDED, held())

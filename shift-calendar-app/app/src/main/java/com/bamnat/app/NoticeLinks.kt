@@ -105,16 +105,26 @@ object NoticeLinks {
         MONEY_ADD,
         /** 1.39 발굴 (마을 돌봄 스레드 요청): the talk of the version in [payload] ([FixTalk]), from '보완 요청이 n개 왔어요'. */
         FIX_TALK,
+        /** 2.0.0 [RVN-19] HQ-51 A company's screen on the rule set in [payload] ("<company>/<setup>"), from the 알림함's 맞아요·달라요 row. */
+        COMPANY_SETUP,
+        /** 2.0.0 [RVN-19] HQ-51 광장 › 시세 (임금표), from the 알림함's row about a rate I sent. */
+        RATES,
+        /** 2.0.0 [RVN-19] HQ-51 장터 › 요청 판, from the 알림함's row about my 부탁. */
+        REQUESTS,
     }
 
-    /** 1.39 발굴: which version's talk [Target.FIX_TALK] opens, carried as one string (ids are plain; the title is encoded). */
-    data class FixTalk(val company: String, val setup: String, val title: String) {
-        val payload: String get() = "$company|$setup|" + java.net.URLEncoder.encode(title, "UTF-8")
+    /**
+     * 1.39 발굴: which version's talk [Target.FIX_TALK] opens, carried as one string (ids are plain; the title is encoded). 2.0.0
+     * [RVN-19] HQ-51 [focus]: the post to open it on (the 알림함's row about answers to my post), a fourth part an older one lacks.
+     */
+    data class FixTalk(val company: String, val setup: String, val title: String, val focus: String? = null) {
+        val payload: String get() = "$company|$setup|" + java.net.URLEncoder.encode(title, "UTF-8") + (focus?.let { "|$it" } ?: "")
 
         companion object {
             fun of(payload: String?): FixTalk? {
-                val p = payload?.split('|', limit = 3)?.takeIf { it.size == 3 && it[0].isNotBlank() && it[1].isNotBlank() } ?: return null
-                return FixTalk(p[0], p[1], runCatching { java.net.URLDecoder.decode(p[2], "UTF-8") }.getOrDefault(p[2]))
+                val p = payload?.split('|', limit = 4)?.takeIf { it.size >= 3 && it[0].isNotBlank() && it[1].isNotBlank() } ?: return null
+                return FixTalk(p[0], p[1], runCatching { java.net.URLDecoder.decode(p[2], "UTF-8") }.getOrDefault(p[2]),
+                    p.getOrNull(3)?.takeIf { Regex("p[A-Za-z0-9]{8,30}").matches(it) })
             }
         }
     }

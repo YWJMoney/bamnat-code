@@ -169,9 +169,25 @@ fun CompanyReportScreen(
                         if (!topic) OutlinedTextField(
                             value = company, onValueChange = { company = it.take(40) },
                             label = { Text(if (job == "nurse") "병원 이름" else "회사 이름") }, singleLine = true,
-                            supportingText = { Text("띄어쓰기나 (주)는 달라도 같은 곳으로 찾아요") },
+                            // 2.0.0 [RVN-19] 검토 COMP-20: a name still being typed, 초성 only or one letter is said here, not sent.
+                            isError = company.isNotBlank() && !nameReady(company),
+                            supportingText = { Text(nameHelp(company)) },
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        // 2.0.0 [RVN-19] 검토 COMP-20·I10ab-01: before a name nobody uses becomes a company of its own, the ones the
+                        // phone knows that it may mean ('이 이름으로' takes its name, and a 사업장 written after it goes below).
+                        if (!topic) {
+                            val used = remember { vm.usedCompany?.let(com.bamnat.app.company.CompanyText::norm) }
+                            // A 사업장 typed after the name ('얘시정밀 당진공장') is not part of the name looked for; it goes below.
+                            val split = remember(company) { com.bamnat.core.plaza.CompanyNames.split(company) }
+                            val likes = rememberNameLikes(split?.first ?: company).takeIf { com.bamnat.app.company.CompanyText.norm(company) != used }.orEmpty()
+                                .filter { it.why != com.bamnat.core.plaza.CompanyNames.Why.SAME }
+                            NameLikeList(likes, "이 이름으로", onPick = { l ->
+                                company = l.name.take(40)
+                                val site = l.site.ifEmpty { split?.second.orEmpty() }
+                                if (site.isNotEmpty() && (l.site.isNotEmpty() || dept.isBlank())) dept = site.take(SITE_MAX)
+                            })
+                        }
                         OutlinedTextField(
                             value = dept, onValueChange = { dept = it.take(20) },
                             label = { Text("부서·조 (선택)") }, singleLine = true,
@@ -213,7 +229,7 @@ fun CompanyReportScreen(
                         }
                         Button(
                             onClick = { vm.send(company, dept, verified, note, job, region, topic) },
-                            enabled = s != CompanyReportViewModel.Sending.Busy && (if (topic) job.isNotEmpty() else company.trim().length >= 2),
+                            enabled = s != CompanyReportViewModel.Sending.Busy && (if (topic) job.isNotEmpty() else nameReady(company)),
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                         ) {
                             if (s == CompanyReportViewModel.Sending.Busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)

@@ -474,7 +474,8 @@ class SetupViewModel(
         com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
         val text = PublicCycleFiles.text(cycle, codes)
         val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
-        useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)
+        useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey,
+            site = if (cycle.id.isEmpty()) cycle.site else ""), text, roster)
         // 1.38 출시 점검 D3 (사용자 2026-11-07, 추천안): a choice that sends something to a server starts unticked, like 사용 통계,
         // so the summary's 올리기 box starts empty even for a table made by '우리 회사 근무표 올리기'; the user ticks it there.
         shareCycle.value = false
@@ -1108,7 +1109,7 @@ class SetupViewModel(
                     // asked on the summary (one box), not in a window over the new calendar.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
                         c.leadShare.afterSetup(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN,
-                            firstGiven = s.id.isNullOrEmpty()), shareCycle.value)
+                            firstGiven = s.id.isNullOrEmpty(), site = s.site), shareCycle.value)
                     }
                     c.telemetry.event("setup_done", buildString {
                         append(d.savedStyle?.name)

@@ -2,7 +2,6 @@ package com.bamnat.app.ui.company
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -178,10 +176,20 @@ fun CompanyInlineResults(
     if (providing) {
         com.bamnat.app.ui.components.AppSheet(onDismissRequest = { providing = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState())) {
-                FirstProviderCard(q, rewardShort(cachedTerms()), onStart = { form ->
+                // 2.0.0 [RVN-19] 검토 COMP-20·U10a-11: the companies it may be first, then the name to check and the 사업장 apart.
+                NewCompanyStart(q, rewardShort(cachedTerms()), plaza = c.companyApi.enabled, server = serverOn, onStart = { name, site, form ->
                     providing = false
-                    open = PublicCycles.provided(q, form)
-                }, plaza = c.companyApi.enabled)
+                    open = PublicCycles.provided(name, form, site)
+                }, onLike = { l ->
+                    providing = false
+                    when (l) {
+                        is NameLike.Server -> onServer?.invoke(l.hit)
+                        is NameLike.Public -> l.row.let { row ->
+                            val codes = row.setupCodes()
+                            if (onPick != null && codes != null) onPick(row, codes) else open = row
+                        }
+                    }
+                })
             }
         }
     }
@@ -225,12 +233,7 @@ internal fun SkeletonRow() {
 internal fun InlineCompanyRow(hit: CompanyHit, onClick: () -> Unit) {
     SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onClick)) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(38.dp)) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(hit.name.trim().removePrefix("(주)").trim().take(1), style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-            }
+            NameInitial(hit.name)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(hit.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

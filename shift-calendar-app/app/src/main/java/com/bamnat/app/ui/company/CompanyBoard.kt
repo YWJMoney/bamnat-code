@@ -74,6 +74,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
@@ -438,6 +440,21 @@ fun TalkSheet(holder: TalkHolder) {
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
     // 1.36 [VIL-10] 마을 V10: a room's question may carry 2~4 choices to vote on; empty when it carries none.
     var pollDraft by remember(o.setup) { mutableStateOf(emptyList<String>()) }
+    // 2.0.0 [RVN-20] U10a-02 '투표 만들기' from an empty plaza: the question opens with its two choices out.
+    val pollStart by holder.pollStart
+    LaunchedEffect(pollStart) { if (pollStart) { pollDraft = listOf("", ""); holder.pollStart.value = false } }
+    // 2.0.0 [RVN-20] 검토 I10aa-01 '답 남기기' on a card (or 답글 here) and a way to start from an empty plaza: the box takes the keys
+    // at once, so writing is one tap away (before: one more tap on the box).
+    val box = remember { androidx.compose.ui.focus.FocusRequester() }
+    val keys = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val typeNow by holder.typeNow
+    LaunchedEffect(typeNow, replyId) {
+        if (!typeNow && replyId == null) return@LaunchedEffect
+        // After the sheet came up (the box is not there before).
+        kotlinx.coroutines.delay(TYPE_AFTER_MS)
+        if (runCatching { box.requestFocus() }.isSuccess) keys?.show()
+        holder.typeNow.value = false
+    }
     // 1.36 [VIL-16] 마을 V16: a 자랑 on a kind of work's plaza may carry one of my public recipes.
     var attach by remember(o.setup) { mutableStateOf<Pair<String, String>?>(null) }
     val styleRoom = o.room && o.company.startsWith("style-")
@@ -711,7 +728,7 @@ fun TalkSheet(holder: TalkHolder) {
                         // The box scrolls inside itself past these lines; two at big letters keep it and the bar within a quarter (HQ-38).
                         maxLines = if (big) 2 else 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
+                        modifier = Modifier.weight(1f).focusRequester(box).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
                     )
                     // 1.39 조사 ⑦ 쓰기 전 한마디: 거친 말이 보이면 보내기 전에 한 번만 묻고(막지 않아요), 폰 밖으로는 아무것도 안 나가요.
                     var nudge by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -1177,6 +1194,9 @@ private fun PollEditor(options: List<String>, onChange: (List<String>) -> Unit) 
         }
     }
 }
+
+/** 2.0.0 [RVN-20] I10aa-01 How long after the sheet opens the box takes the keys (the sheet's own way up first). */
+private const val TYPE_AFTER_MS = 300L
 
 /**
  * 2.0.0 [RVN-18] HQ-89 Whether a bar's text buttons go on a row under it: big letters (from 130%) on a screen under 600dp, where a title
