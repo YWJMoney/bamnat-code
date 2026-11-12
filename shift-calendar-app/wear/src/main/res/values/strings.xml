@@ -6,4 +6,7 @@
     <string name="complication_label">밤낮 오늘</string>
     <string name="week_complication_label">밤낮 이번 주 근무시간</string>
     <string name="next_complication_label">밤낮 다음 일정까지</string>
+    <!-- 2.0.0 [RVI-94][RVI-95] 잠들었어요·깼어요, 오늘 할 일. -->
+    <string name="sleep_tile_label">밤낮 잠</string>
+    <string name="task_tile_label">밤낮 오늘 할 일</string>
 </resources>

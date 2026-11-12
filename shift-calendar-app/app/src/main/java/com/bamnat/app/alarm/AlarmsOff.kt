@@ -40,9 +40,9 @@ object AlarmsOff {
 
     fun isOff(context: Context, now: Long = Today.millis()): Boolean = activeUntil(context, now) != null
 
-    /** [ring] is silenced: anything while off, except 알람 점검's own test. */
+    /** [ring] is silenced: anything while off, except 알람 점검's own test and a 쪽잠 just asked for (2.0.0 [RVI-93]). */
     fun silences(context: Context, ring: RingRequest, now: Long = Today.millis()): Boolean =
-        ring.label != AlarmScheduler.TEST_NAME && isOff(context, now)
+        ring.label != AlarmScheduler.TEST_NAME && !ShiftNap.isNap(ring) && isOff(context, now)
 
     /** The next midnight after [now], or [ring]'s shift start when that comes later (AB-1). */
     fun cutoff(ring: RingRequest?, now: LocalDateTime = Today.dateTime()): LocalDateTime {

@@ -29,7 +29,8 @@ object SleepDiary {
     ): ReportDoc {
         val from = today.minusDays(DAYS - 1)
         val dates = (0 until DAYS).map { from.plusDays(it) }
-        val done = entries.filter { (it.minutes ?: 0) in 1..SleepDebt.MAX_SLEEP_MINUTES }
+        // 2.0.0 [RVIB-14] (PC-124) A tap of a few minutes is not a sleep, in the diary as on the sleep page.
+        val done = entries.filter { (it.minutes ?: 0) in com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES..SleepDebt.MAX_SLEEP_MINUTES }
         val byDay = done.groupBy { it.wakeDate!! }
         val rows = dates.map { d ->
             val day = byDay[d].orEmpty().sortedBy { it.start }

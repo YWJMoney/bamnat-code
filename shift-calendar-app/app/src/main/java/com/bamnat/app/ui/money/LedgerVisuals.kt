@@ -256,11 +256,13 @@ fun wonBrief(amount: Long): String {
     val a = abs(amount)
     val sign = if (amount < 0) "-" else ""
     fun tenths(t: Long, unit: String) = "${t / 10}" + (if (t % 10 != 0L) ".${t % 10}" else "") + unit
+    // 2.0.0 [RVK-43] (검토 MONEY-23) Rounding that reaches the next unit says it in that unit: 9,980원 is "1만" (was "10천"),
+    // 99,996,000원 is "1억" (was "10000만").
     return sign + when {
         a >= 100_000_000 -> tenths((a + 5_000_000) / 10_000_000, "억")
-        a >= 1_000_000 -> "${(a + 5_000) / 10_000}만"
+        a >= 1_000_000 -> ((a + 5_000) / 10_000).let { if (it >= 10_000) "1억" else "${it}만" }
         a >= 10_000 -> tenths((a + 500) / 1_000, "만")
-        a >= 1_000 -> tenths((a + 50) / 100, "천")
+        a >= 1_000 -> ((a + 50) / 100).let { if (it >= 100) "1만" else tenths(it, "천") }
         else -> "$a"
     }
 }
@@ -348,14 +350,16 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
             val h = size.height
             fun x(day: Int) = if (days <= 1) 0f else w * (day - 1) / (days - 1)
             fun y(v: Long) = h - h * (v.toFloat() / top)
-            for (k in 0..2) drawLine(grid, Offset(0f, h * k / 2), Offset(w, h * k / 2), strokeWidth = 1f)
+            // 2.0.0 [RVK-43] (검토 MONEY-24) Lines in dp: in px they were half as thick on a 폴드's screen as on a small phone.
+            for (k in 0..2) drawLine(grid, Offset(0f, h * k / 2), Offset(w, h * k / 2), strokeWidth = 0.5.dp.toPx())
             if (budget != null && budget > 0) {
-                drawLine(warn, Offset(0f, y(budget)), Offset(w, y(budget)), strokeWidth = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                drawLine(warn, Offset(0f, y(budget)), Offset(w, y(budget)), strokeWidth = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
             }
             if (previous.size > 1) {
                 val p = Path()
                 previous.take(days).forEachIndexed { i, v -> if (i == 0) p.moveTo(x(1), y(v)) else p.lineTo(x(i + 1), y(v)) }
-                drawPath(p, before, style = Stroke(3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)), join = StrokeJoin.Round))
+                drawPath(p, before, style = Stroke(1.25.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())), join = StrokeJoin.Round))
             }
             if (current.isNotEmpty()) {
                 val p = Path()
@@ -367,8 +371,8 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
                     close()
                 }
                 drawPath(area, line.copy(alpha = 0.12f))
-                drawPath(p, line, style = Stroke(5f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                drawCircle(line, 7f, Offset(x(current.size), y(current.last())))
+                drawPath(p, line, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawCircle(line, 3.dp.toPx(), Offset(x(current.size), y(current.last())))
             }
         }
         Row {
@@ -385,8 +389,8 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
 fun LegendKey(color: Color, label: String, dashed: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Canvas(Modifier.size(width = 16.dp, height = 8.dp)) {
-            drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = 5f,
-                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(6f, 5f)) else null)
+            drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = 2.dp.toPx(),
+                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx())) else null)
         }
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
