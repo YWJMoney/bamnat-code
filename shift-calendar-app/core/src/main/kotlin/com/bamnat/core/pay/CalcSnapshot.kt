@@ -88,7 +88,11 @@ data class FrozenDay(
  * [days] + [month] = 합계 always, and [kinds] says what it is made of.
  */
 object DaySplit {
-    data class Split(val days: Long, val month: Long, val kinds: List<String>) {
+    /**
+     * [pieces] is [month] by what it is made of, for the line's ⓘ (2.0.0 [RVJ-35] 검토 PC-86: '달로 주는 몫 2,799,993원' read as a
+     * 기본급 of 2,800,000원 gone wrong; it is 기본급 2,800,000원 − 원 단위 끝전 7원).
+     */
+    data class Split(val days: Long, val month: Long, val kinds: List<String>, val pieces: List<Pair<String, Long>> = emptyList()) {
         val total: Long get() = days + month
     }
 
@@ -99,11 +103,12 @@ object DaySplit {
         // A kind worked out day by day rounds each day to the won: a few won apart from its line is 끝전, not a share of the month.
         val dayCounts = p.days.flatMap { d -> d.parts.map { it.kind }.distinct() }.groupingBy { it }.eachCount()
         var oddWon = false
-        val words = p.lines.groupBy { it.kind }.mapNotNull { (k, ls) ->
+        var odd = 0L
+        val named = p.lines.groupBy { it.kind }.mapNotNull { (k, ls) ->
             val rest = ls.sumOf { it.amount } - (dayKinds[k] ?: 0)
             if (rest == 0L) return@mapNotNull null
-            if (k in DAILY && kotlin.math.abs(rest) <= (dayCounts[k] ?: 0)) { oddWon = true; return@mapNotNull null }
-            when (k) {
+            if (k in DAILY && kotlin.math.abs(rest) <= (dayCounts[k] ?: 0)) { oddWon = true; odd += rest; return@mapNotNull null }
+            val word = when (k) {
                 LineKind.BASE -> "기본급"
                 LineKind.ALLOWANCE -> ls.filter { l -> p.days.none { d -> d.parts.any { it.label == l.label } } }.map { it.label }
                     .let { names -> if (names.any { it.startsWith("주휴") }) "주휴·월 수당" else "월 수당" }
@@ -114,8 +119,26 @@ object DaySplit {
                 LineKind.EXTRA -> "회사 규칙 몫"
                 LineKind.EXTRA_HOURS -> "소정 외 근로"
             }
-        }.distinct() + listOfNotNull("원 단위 끝전".takeIf { oddWon })
-        return Split(days, p.total - days, words)
+            word to rest
+        }
+        val words = named.map { it.first }.distinct() + listOfNotNull("원 단위 끝전".takeIf { oddWon })
+        // What is left after the named pieces (a line of a kind the days carry in part) stays in the last named piece, so the pieces
+        // always add up to the month's share.
+        val pieces = named.groupBy({ it.first }, { it.second }).map { (w, v) -> w to v.sum() } +
+            listOfNotNull(("원 단위 끝전" to odd).takeIf { odd != 0L })
+        return Split(days, p.total - days, words, pieces.takeIf { it.sumOf { x -> x.second } == p.total - days } ?: emptyList())
+    }
+
+    /**
+     * 2.0.0 [RVJ-35] PC-86: [Split.pieces] in words, "기본급 2,800,000원 − 원 단위 끝전 7원"; null with one piece or none (the line says it).
+     * [won] writes an amount ("2,800,000원").
+     */
+    fun piecesText(split: Split, won: (Long) -> String): String? {
+        if (split.pieces.size < 2) return null
+        return split.pieces.mapIndexed { i, (name, v) ->
+            val sign = if (v < 0) "− " else if (i == 0) "" else "+ "
+            "$sign$name ${won(kotlin.math.abs(v))}"
+        }.joinToString(" ")
     }
 
     /** Kinds the days carry in full, so what is left of them is rounding. */
