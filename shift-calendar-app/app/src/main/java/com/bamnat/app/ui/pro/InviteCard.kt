@@ -164,11 +164,12 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
         if (!short || more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (view?.code != null && (!short || more)) {
+            // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
+            // [RVO-25] PC-151: what came of it first (months the 운영팀 is looking at), the next goal under it, then the count.
+            if (view.capReached) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodyMedium)
+            else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             InviteProgressLines(c)
             Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
-            // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
-            if (view.capReached) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
-            else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
         }
         // 2.0.0 [RVO-06] 조건 2: 이 화면의 채운 단추는 '프로 시작하기' 하나라, 초대 링크는 옅은 채움 단추.

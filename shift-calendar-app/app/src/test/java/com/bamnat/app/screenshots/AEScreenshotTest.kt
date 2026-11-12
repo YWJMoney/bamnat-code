@@ -119,7 +119,8 @@ class AEScreenshotTest : ScreenshotBase() {
         assertTrue(text!!.contains("https://company.example/i/ABCD2345"))
         assertTrue(text.contains("ABCD-2345"))
         reveal("친구 5명이 더 7일 쓰면 프로 1개월", exact = true)
-        assertTrue(appears("초대한 친구 0명 · 프로 0개월"))
+        assertTrue(appears("초대한 친구 0명", exact = true))
+        assertFalse(appears("프로 0개월", ms = 0))
         assertTrue(appears("초대 링크 보내기", exact = true))
     }
 
@@ -133,6 +134,22 @@ class AEScreenshotTest : ScreenshotBase() {
         // Opening the screen asked the server afresh, once.
         assertTrue("view" in api.calls)
         noCuts("counts")
+    }
+
+    // 2.0.0 [RVO-25] (PC-151) A friend counted, the month waiting on the 운영팀: that first, the next goal under it, no '0/1명'·'프로 0개월'.
+    @Test fun aMonthBeingLookedAtComesFirst() = shoot("1043_ae_invite_pending", PHONE_393) {
+        api.viewAnswer = view(progress = 0, friends = 1, given = 0).copy(pending = 1)
+        runBlocking { app.container.invites.makeLink() }
+        openPro()
+        reveal(InviteRules.pending(1), exact = true)
+        assertTrue(appears("친구 5명이 더 7일 쓰면 프로 1개월", exact = true))
+        assertTrue(appears("초대한 친구 1명", exact = true))
+        assertFalse(appears("0/1명", ms = 0))
+        assertFalse(appears("프로 0개월", ms = 0))
+        fun top(t: String) = nodes(merged = false).first { n ->
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString("") { it.text } == t
+        }.boundsInRoot.top
+        assertTrue("the month being looked at is said first", top(InviteRules.pending(1)) < top("친구 5명이 더 7일 쓰면 프로 1개월"))
     }
 
     @Test fun overTheCapFriendsStillCount() = shoot("1043_ae_invite_cap", PHONE_393) {

@@ -50,6 +50,8 @@ class InviteRulesTest {
         assertTrue(text.contains("ABCD-2345"))
         assertTrue("no store review in it", !text.contains("리뷰") && !text.contains("별점"))
         assertEquals("초대한 친구 2명 · 프로 2개월", InviteRules.summary(2, 2))
+        // 2.0.0 [RVO-25] PC-151: nothing said of months before one came.
+        assertEquals("초대한 친구 1명", InviteRules.summary(1, 0))
         assertEquals("내 초대 코드는 넣을 수 없어요", InviteRules.refused("self"))
     }
 

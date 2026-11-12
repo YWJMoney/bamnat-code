@@ -108,8 +108,11 @@ object InviteRules {
         "기다리는 친구 ${waiting}명".takeIf { waiting > 0 },
     ).joinToString(" · ").ifEmpty { null }
 
-    /** [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". */
-    fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명 · 프로 ${months}개월"
+    /**
+     * [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". 2.0.0 [RVO-25] PC-151: no '프로 0개월' before any month came
+     * (it read as a loss next to months the 운영팀 is still looking at).
+     */
+    fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명" + if (months > 0) " · 프로 ${months}개월" else ""
 
     /** 2.0.0 [RVD-14] "프로 1개월은 운영팀이 확인한 뒤 들어와요". */
     fun pending(months: Int): String = "프로 ${months}개월은 운영팀이 확인한 뒤 들어와요"
