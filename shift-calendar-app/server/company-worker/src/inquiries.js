@@ -1,8 +1,8 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, version } from "./inbox.js";
+import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, needsPersonWhy, version } from "./inbox.js";
 import { replyRisk } from "./ledger.js";
-import { isBillingRecord } from "./ask-check.js";
+import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, broadcastRisk, isOut, shippedVersion } from "./desk.js";
@@ -10,7 +10,7 @@ import { needFromInquiry } from "./growth.js";
 import { fcmTell, stillHere } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { ASK_TIER_SQL, LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -385,7 +385,7 @@ export async function inquiryView(env, row, admin = false, app = null) {
     photos: row.photos ?? (await one(env, "SELECT COUNT(*) AS n FROM inquiry_photos WHERE inquiry_id = ?", row.id)).n,
   };
   if (!admin) return view;
-  const info = JSON.parse(row.info);
+  const info = readInfo(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
   const [reasons, notes, items] = (await batch(env, [
@@ -474,7 +474,7 @@ export function publicItem(r, me, sameByMe, author) {
     ...(author ? { author } : {}),
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
-    ...triage(r.kind, r.first, JSON.parse(r.info)),
+    ...triage(r.kind, r.first, readInfo(r.info)),
   };
 }
 
@@ -532,7 +532,7 @@ export async function publicThread(env, id, device, hide) {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     messages: messages.map((m) => ({ from: m.sender === "user" ? "user" : "admin", text: m.text, at: iso(m.at) })),
-    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, JSON.parse(row.info)),
+    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, readInfo(row.info)),
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
   });
 }
@@ -610,7 +610,11 @@ export async function adminInquiries(request, env, url, path, now) {
     return json({ ok: true });
   }
   if (m[2] === "/reply") {
-    await replyTo(env, row, body, now);
+    // 2.0.0 [RVA-51] 문에 걸려 멈췄으면 화면이 '보냈어요' 대신 까닭을 알려요.
+    if ((await replyTo(env, row, body, now)) === "held") {
+      const view = await adminInquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id));
+      return json({ ...view, gated: view.held?.findLast?.((h) => h.person)?.why ?? { name: "사람이 먼저 볼 답" } });
+    }
   } else if (m[2] === "/assign") {
     // [ADMIN-12] 내가 맡기, or let it go (to: null); one tap, so two admins do not answer the same question.
     if (body.to !== "me" && body.to !== null) refuse("to", "to");
@@ -627,6 +631,11 @@ export async function adminInquiries(request, env, url, path, now) {
     // cleared when they matched by chance; the activity log keeps who did which.
     if (typeof body.on !== "boolean") refuse("on", "on");
     await audit(env, now, "inquiry_billing", row.id, body.on ? "on" : "off");
+    // 2.0.0 [RVA-41] 검토 I24a-05: 말 때문에 잘못 잡힌 것을 '아니에요'로 빼면 그 말을 남겨 판정 식을 다듬는 근거로 써요.
+    if (!body.on && body.miss === true && row.billing_at) {
+      const words = (await all(env, "SELECT text FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id)).map((m) => m.text).join(" ");
+      await audit(env, now, "ask_miss", row.id, `billing '${billingWordOf(words) ?? ""}'`);
+    }
     // Its asker already deleted it, and it is no record the law keeps: it goes now, as they asked.
     if (!body.on && String(row.device).startsWith("gone")) {
       await batch(env, dropInquiries(env, "id = ?", row.id));
@@ -670,6 +679,9 @@ export async function replyTo(env, row, body, now, audited = true) {
   const text = body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim();
   // 1.38 [DESK-09] Claude 열쇠의 답은 바로 가지 않고 10분 '보류 중'이에요(운영 장부 설계 5-4). 사람이 그 사이 취소·고쳐요.
   if (env.actor?.key) return holdReply(env, row, text, body, now);
+  // 2.0.0 [RVA-51] 검토 I24b-03: 사람이 쓴 답도 같은 문을 지나요(걸리면 '사람이 보내야 해요' 보류 답과 까닭, '지금 보내기'로 가요).
+  const why = await sendGate(env, row.id, text);
+  if (why) return holdForPerson(env, row.id, text, why, now, { close: body.close === true, template: Number.isInteger(body.template) ? body.template : null });
   const status = body.close === true ? "closed" : "answered";
   const again = await one(env, `SELECT id FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ? AND by = ? AND at > ?
     ORDER BY id DESC LIMIT 1`, row.id, text, actorName(env), now - 60 * 1000);
@@ -690,6 +702,36 @@ export async function replyTo(env, row, body, now, audited = true) {
 }
 
 /**
+ * 2.0.0 [RVA-51] 검토 I24b-03(ADMX-06·07): 보내는 문 하나. 사람이 쓴 답·여러 문의에 같은 답·개발사항 답·정리함·결과 붙여 넣기·Claude 열쇠·자동 정리가
+ * 모두 이 검사를 지나요(전에는 길마다 검사가 달랐어요: 열쇠와 자동만 보고 사람이 쓴 답·개발사항 답은 안 봤어요).
+ * 걸리는 것: 답 글의 AI·자동 답 표현이나 보안 정보(누가 쓰든), 그리고 사람이 먼저 볼 문의(환불·법·개인정보·크게 화남·약관·회사 방식·보안·사람이냐).
+ * 최고 관리자가 직접 쓴 답은 그 확인이 된 것이라 문의 쪽은 지나가요. 걸리면 { key?, name, word?, reply? }(heldWhy와 같은 모양), 아니면 null.
+ */
+export async function sendGate(env, id, text, { typed = true } = {}) {
+  const risk = replyRiskOf(text);
+  if (risk) return { name: risk, reply: true };
+  const a = env.actor;
+  // [typed]: 최고 관리자가 그 답을 직접 쓰거나 읽고 고친 길(문의 화면·정리함). 붙여 넣은 Claude 결과는 아니에요.
+  if (typed && a && typeof a === "object" && a.owner && !a.key && !a.auto) return null;
+  const ask = await needsPersonWhy(env, id);
+  return ask ? { key: ask.key, name: ask.name, ...(ask.word ? { word: ask.word } : {}) } : null;
+}
+
+/**
+ * 2.0.0 [RVA-51] 문에 걸린 답은 어느 길에서 왔든 같은 모양으로 멈춰요: 문의 화면의 '사람이 보내야 해요' 보류 답과 까닭(heldWhy),
+ * 오늘의 '사람이 보낼 답' 알림. 문의 권한이 있는 관리자가 읽고 '지금 보내기'·고치기·보내지 않기를 눌러요. 같은 답이 이미 멈춰 있으면 다시 넣지 않아요.
+ * "held"를 돌려줘요(보낸 것과 따로 세요).
+ */
+export async function holdForPerson(env, id, text, why, now, { close = false, template = null, pile = "", by = actorName(env) } = {}) {
+  if (await one(env, "SELECT id FROM held_replies WHERE inquiry_id = ? AND text = ?", id, text)) return "held";
+  if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", id))) return false;
+  await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, text,
+    by, (typeof env.actor === "object" && env.actor?.id) || null, close ? 1 : 0, template, now, HELD_FOR_PERSON, pile);
+  await audit(env, now, "inquiry_reply_held", id, `사람이 보내기(${why.name})`);
+  return "held";
+}
+
+/**
  * 1.38 [DESK-09] A key's answer waits [DESK.hold] in held_replies: not in the thread, so the app sees nothing and no
  * notice goes. A day holds at most [DESK.claudeAnswersDay] (KST day); past it the key is told to stop and report.
  */
@@ -706,7 +748,8 @@ export async function holdReply(env, row, text, body, now) {
   // 1.39 [LOOP-37] 사람이 봐야 할 문의(최고 관리자 확인과 같은 기준)에 Claude가 적은 답은 시간이 지나도 저절로 가지 않아요:
   // 문의 권한이 있는 관리자가 '지금 보내기'(또는 고치기·보내지 않기)를 눌러야 가요.
   // 1.39 [LOOP-38] 답 글에 AI·자동 답 표현이나 보안 정보가 있어도 사람이 보고 보내요.
-  const person = (await needsPerson(env, row.id)) || replyRisk(text);
+  // 2.0.0 [RVA-51] 같은 문(sendGate): 걸리는 기준이 사람이 쓴 답·자동 답과 하나예요.
+  const person = (await sendGate(env, row.id, text))?.name ?? null;
   const instant = !person && await instantOk(env, pile, kind, text);
   await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
     actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, instant ? now : person ? HELD_FOR_PERSON : now + DESK.hold, pile);
@@ -716,6 +759,28 @@ export async function holdReply(env, row, text, body, now) {
 }
 
 /** 1.38 [DESK-09] The answers held for [id], for the admin view: each with when it goes. */
+/**
+ * 2.0.0 [RVA-41] 결제·환불 기록이 된 까닭: 마지막으로 손으로 켠 기록이 있으면 관리자, 아니면 보낸 분 글에서 걸린 말.
+ * 그 말이 틀렸으면 관리자가 '아니에요'로 빼고, 그 기록(ask_miss)이 판정 식을 다듬는 근거가 돼요(I24c-03).
+ */
+function billingWhy(events, messages) {
+  const hand = [...events].reverse().find((e) => e.action === "inquiry_billing");
+  if (hand?.detail === "on") return { by: "admin", who: plainActor(hand.actor) };
+  const words = (messages ?? []).filter((m) => m.from === "user").map((m) => m.text).join(" ");
+  return { by: "words", word: billingWordOf(words) };
+}
+
+/** 2.0.0 [RVA-41] 사람이 보내야 하는 보류 답마다 까닭: 답 글의 표현(AI·보안)이 먼저, 아니면 문의 글에서 걸린 말. */
+async function heldWhy(env, row, held) {
+  if (!held.some((h) => h.person)) return held;
+  const ask = await needsPersonWhy(env, row.id);
+  return held.map((h) => {
+    if (!h.person) return h;
+    const risk = replyRiskOf(h.text);
+    return { ...h, why: risk ? { name: risk, reply: true } : ask ? { name: ask.name, word: ask.word, key: ask.key } : null };
+  });
+}
+
 export async function heldOf(env, id) {
   const rows = await all(env, "SELECT id, text, by, close, until FROM held_replies WHERE inquiry_id = ? ORDER BY id", id).catch(() => []);
   // 1.39 [LOOP-37] person: 사람이 봐야 할 문의라 누가 보내기를 눌러야 가요.
@@ -753,6 +818,13 @@ export async function heldChange(env, inquiryId, heldId, body, now) {
   if (env.actor?.key) throw new Refuse("no_permission", "held", 403);
   const h = await one(env, "SELECT * FROM held_replies WHERE id = ? AND inquiry_id = ?", heldId, inquiryId);
   if (!h) return json({ error: "gone" }, 404);
+  // 2.0.0 [RVA-41] 검토 I24a-05: '판정이 틀렸어요'는 기록만 남겨요(답은 그대로 사람이 보내요). 판정 식을 다듬는 근거(I24c-03).
+  if (body.miss === true) {
+    if (!can(env.actor, "inquiries", "edit")) throw new Refuse("no_permission", "held", 403);
+    const why = await needsPersonWhy(env, inquiryId);
+    await audit(env, now, "ask_miss", inquiryId, why ? `owner:${why.key} '${why.word ?? ""}'` : "owner");
+    return null;
+  }
   // 1.39 [LOOP-37] 사람이 보내야 하는 답(또는 기다리는 답)을 지금 보내요.
   if (body.send === true) {
     if (!can(env.actor, "inquiries", "edit")) throw new Refuse("no_permission", "held", 403);
@@ -794,6 +866,7 @@ export async function inquiryBulk(request, env, now) {
   }
   const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
   let done = 0;
+  let held = 0;
   let skipped = ids.length - rows.length;
   const a = env.actor;
   for (const row of rows) {
@@ -807,8 +880,14 @@ export async function inquiryBulk(request, env, now) {
     } else if (body.action === "close" || body.action === "open") {
       await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.action === "close" ? "closed" : "open", row.id);
     } else if (body.action === "reply") {
-      if (!(await replyTo(env, row, { text: body.text, close: body.close === true, template: body.template }, now, false))) {
+      const r = await replyTo(env, row, { text: body.text, close: body.close === true, template: body.template }, now, false);
+      if (!r) {
         skipped++;
+        continue;
+      }
+      // [RVA-51] 문에 걸려 멈춘 것은 따로 세요.
+      if (r === "held") {
+        held++;
         continue;
       }
     } else {
@@ -818,8 +897,8 @@ export async function inquiryBulk(request, env, now) {
     done++;
   }
   if (item) await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
-  await audit(env, now, "inquiry_bulk", item ? item.title : "", `${body.action} ${done}${skipped ? ` (${skipped} 건너뜀)` : ""}`);
-  return json({ done, skipped });
+  await audit(env, now, "inquiry_bulk", item ? item.title : "", `${body.action} ${done}${skipped ? ` (${skipped} 건너뜀)` : ""}${held ? ` (사람이 보내기 ${held})` : ""}`);
+  return json({ done, skipped, ...(held ? { held } : {}) });
 }
 
 /**
@@ -852,21 +931,22 @@ export async function adminInquiryView(env, row) {
   const now = Date.now();
   const [events, links, typing] = (await batch(env, [
     stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
-      'inquiry_hide', 'inquiry_show', 'inquiry_billing', 'inquiry_reply_held', 'inquiry_reply_sent', 'inquiry_reply_cancel') ORDER BY id LIMIT 200`, row.id),
+      'inquiry_hide', 'inquiry_show', 'inquiry_billing', 'inquiry_reply_held', 'inquiry_reply_sent', 'inquiry_reply_cancel', 'ask_miss') ORDER BY id LIMIT 200`, row.id),
     stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
     stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
   ])).map((r) => r.results);
   const out = {
     ...view,
-    // 1.38 [DESK-09] Claude 답 중 아직 가지 않은 것.
-    held: await heldOf(env, row.id),
+    // 1.38 [DESK-09] Claude 답 중 아직 가지 않은 것. 2.0.0 [RVA-41] 사람이 보내야 하는 답에는 왜 그런지(걸린 말)를 같이.
+    held: await heldWhy(env, row, await heldOf(env, row.id)),
     events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
     // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
     ...copyFields(row),
     sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
     // 1.36 [INQ-07] A 결제·환불 record: since when, until when it is kept, and whether the asker deleted it.
-    billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs) } : null,
+    // 2.0.0 [RVA-41] 검토 U24-05·I24a-05: 왜 결제·환불 기록인지(관리자가 정했는지, 어떤 말 때문인지).
+    billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs), ...billingWhy(events, view.messages) } : null,
     leftByAsker: String(row.device).startsWith("gone"),
     // 1.39 [CARE-10] 마을 경고·쉬기에 대한 해명이면: 무엇에 대한 것인지와 결정.
     appeal: await careAppealOf({ one, all, run, batch, stmt, randomId }, env, row.id, now),
@@ -970,7 +1050,7 @@ export async function inquiryList(env, params, actorId = "") {
   const targets = readSla(slaRows);
   const writing = typingByInquiry(typing, actorId);
   const listed = rows.map((r) => {
-    const info = JSON.parse(r.info);
+    const info = readInfo(r.info);
     const waitingSince = r.status === "open" && r.last === "user" ? r.updated_at : null;
     return {
       id: r.id,
@@ -1261,6 +1341,19 @@ export async function devRoute(request, env, url, path, now) {
   return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)));
 }
 
+/**
+ * 2.0.0 [RVA-37] 검토 I24b-02: 문의에 붙은 기기 정보(info)를 못 읽어도 그 문의·목록이 500이 되지 않게. 못 읽으면 빈 정보에
+ * unreadable 표시만(화면은 '기기 정보를 읽지 못했어요'), 운영 장부·정리함은 그 줄을 오류 묶음에 따로 적어요.
+ */
+export function readInfo(raw) {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : { unreadable: true };
+  } catch {
+    return { unreadable: true };
+  }
+}
+
 /** A new item, by hand or from a question (inquiry): the question is linked in the same step. */
 export async function devCreate(request, env, now) {
   const body = await readJson(request, 16 * 1024);
@@ -1444,40 +1537,54 @@ export async function devReply(env, row, body, now) {
     return json({ answered: 0, held, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
   }
   const status = body.close === true ? "closed" : "answered";
+  // 2.0.0 [RVA-51] 개발사항 답도 같은 문: 걸린 문의에는 가지 않고 '사람이 보내야 해요'로 멈춰요(나머지는 바로 가요).
+  const gated = [];
+  for (const id of pick) {
+    const why = await sendGate(env, id, text);
+    if (why && (await holdForPerson(env, id, text, why, now, { close: body.close === true }))) gated.push(id);
+  }
+  if (gated.length === pick.length) {
+    await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id);
+    return json({ answered: 0, held: gated.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
+  }
+  const sendTo = pick.filter((id) => !gated.includes(id));
   await batch(env, [
-    ...pick.flatMap((id) => [
+    ...sendTo.flatMap((id) => [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, text, actorName(env), now),
       stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, id),
     ]),
     stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id),
-    devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
+    devEvent(env, row.id, now, "reply", { count: sendTo.length, text: cut(text), close: status === "closed" }),
   ]);
-  await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
-  await fcmTell(env, pick, now);
-  return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
+  await audit(env, now, "dev_reply", row.title, `${sendTo.length} ${status} ${row.id}${gated.length ? ` (사람이 보내기 ${gated.length})` : ""}`);
+  await fcmTell(env, sendTo, now);
+  return json({ answered: sendTo.length, ...(gated.length ? { held: gated.length } : {}), item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
 }
 
 /** The list: one status, open (접수 and 개발중), all, deleted ones, mine, or words in the title or body. */
 export async function devList(env, params) {
-  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
+  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["now", "open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const mine = params.get("who") === "mine" ? env.actor.id : "";
-  const [rows, countRows] = (await batch(env, [
+  const [rows, countRows, nowRows] = (await batch(env, [
     // Only links to questions still kept count.
     stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.kind = 'idea') AS ideas
       FROM dev_items d
       WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
-          AND (?1 = 'all' OR d.status = ?1 OR (?1 = 'open' AND d.status IN ('todo', 'doing')))))
+          AND (?1 = 'all' OR d.status = ?1 OR ((?1 = 'open' OR ?5 = 1) AND d.status IN ('todo', 'doing')))))
+        AND (?5 = 0 OR ${devNowSql()})
         AND (?2 = '' OR d.title LIKE ?3 ESCAPE '\\' OR d.body LIKE ?3 ESCAPE '\\')
         AND (?4 = '' OR d.assignee = ?4)
-      ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine),
+      ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine, status === "now" ? 1 : 0),
     stmt(env, `SELECT CASE WHEN deleted_at IS NULL THEN status ELSE 'deleted' END AS s, COUNT(*) AS n FROM dev_items GROUP BY s`),
+    stmt(env, `SELECT COUNT(*) AS n FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') AND ${devNowSql()}`),
   ])).map((r) => r.results);
   const counts = { todo: 0, doing: 0, done: 0, rejected: 0, deleted: 0 };
   for (const r of countRows) if (Object.hasOwn(counts, r.s)) counts[r.s] = r.n;
+  counts.now = nowRows[0]?.n ?? 0;
   counts.open = counts.todo + counts.doing;
   counts.all = counts.open + counts.done + counts.rejected;
   // Still to do: most asked for first. Finished: newest first.
@@ -1494,11 +1601,38 @@ export async function devList(env, params) {
   const kinds = Object.fromEntries(Object.keys(LOOP.basis).map((k) => [k, 0]));
   for (const r of rows) kinds[basisOf(r).key]++;
   const kind = Object.hasOwn(LOOP.basis, params.get("kind") ?? "") ? params.get("kind") : "";
-  const shown = rows.filter((r) => (!from || devSource(r) === from) && (!kind || basisOf(r).key === kind));
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 추적 번호 앞머리(RVI·RVH… 갈래)로도 세고 골라 봐요. 적은 앞머리는 '그 밖'.
+  const tracks = devTracks(rows);
+  const track = String(params.get("track") ?? "").slice(0, 12);
+  const inTrack = (r) => !track || (track === "etc" ? Boolean(trackOf(r)) && !Object.hasOwn(tracks, trackOf(r)) : trackOf(r) === track);
+  const shown = rows.filter((r) => (!from || devSource(r) === from) && (!kind || basisOf(r).key === kind) && inTrack(r));
   // [ADMIN-16] A page at a time, after sorting all of the view.
   const { items, next } = paged(shown, page(params));
   return { counts, statuses: DEV.statuses, sources, sourceNames: DEV_SOURCES, kinds, kindNames: LOOP.basis, firsts: rows.filter((r) => first(r) === 0).length,
-    items: items.map(devItem), next, total: shown.length };
+    tracks, items: items.map(devItem), next, total: shown.length };
+}
+
+/**
+ * 2.0.0 [RVA-58] '지금 볼 것': 끝나지 않은 것 가운데 사람이 손댈 것만. 1순위(직접 넣음), 문의·개선 요청이 걸린 것,
+ * 숫자 신호, 요금을 정할 새 기능. 저장소 계획 줄(Claude가 개발 중)은 할 일에 그대로 있어요.
+ */
+// loop.js와 서로 불러서(순환) 처음 읽을 때 ASK_TIER_SQL이 아직 없을 수 있어요: 부를 때 만들어요.
+export const devNowSql = () => `(d.origin = 'admin' OR d.body LIKE '관측 신호%' OR EXISTS (SELECT 1 FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id)
+  OR (${ASK_TIER_SQL} AND d.tier IN ('', 'later')))`;
+/** 추적 번호의 앞머리(RVI-03 → RVI). 없으면 ''. */
+export const trackOf = (r) => (/^([A-Z][A-Z0-9]{1,7})-/.exec(String(r.track ?? "")) ?? [])[1] ?? "";
+/** 앞머리마다 몇 개인지(5개 이상만 따로, 나머지는 etc), 많은 순. */
+export function devTracks(rows) {
+  const n = {};
+  for (const r of rows) {
+    const k = trackOf(r);
+    if (k) n[k] = (n[k] ?? 0) + 1;
+  }
+  const out = {};
+  let etc = 0;
+  for (const [k, v] of Object.entries(n).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) if (v >= 5) out[k] = v; else etc += v;
+  if (etc) out.etc = etc;
+  return out;
 }
 
 /** 1.39 [LOOP-34] 개발사항이 어디서 왔는지. 관리자가 무엇을 왜 개발하는지 한눈에 보게(사용자 11-09). */

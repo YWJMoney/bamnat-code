@@ -910,6 +910,8 @@ fun CalendarScreen(
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.TODAY) return@LaunchedEffect
+        // [RVIB-19] Read before it is taken: an alarm's way to today.
+        val fromAlarm = NoticeLinks.payload.value == NoticeLinks.TODAY_DAY
         NoticeLinks.consume(NoticeLinks.Target.TODAY)
         received.view(null)
         // [MCAL-01] Day notices follow the main calendar; [GUIDE-01] a feature of today opens on its own calendar, with the day open.
@@ -918,7 +920,11 @@ fun CalendarScreen(
         vm.setPaint(null)
         // 2.0.0 [RVI-68] (PC-49) 오늘 보기 opens on today's flow, not its folded line.
         if (feature == null) vm.openFlowNow()
-        sheetOpen = feature != null && !showsDay
+        // 2.0.0 [RVIB-19] (PC-150) From an alarm's '끄고 오늘 보기': where 오늘의 흐름 is not on the page (달력만 크게 보기, the new
+        // phone's default, or the part taken off in 카드 배치), today's own day opens instead: its work, the alarms still to ring and its
+        // memos, as the button says.
+        val flowHere = partShown(CalendarPart.TODAY_FLOW) && settings.sleepTips && settings.partFits(CalendarPart.TODAY_FLOW, fitAdded)
+        sheetOpen = (feature != null || (fromAlarm && !flowHere)) && !showsDay
         vm.select(Today.date())
         pagerState.scrollToPage(monthToPage(baseMonth, Today.month()))
         pageScroll.scrollTo(0)

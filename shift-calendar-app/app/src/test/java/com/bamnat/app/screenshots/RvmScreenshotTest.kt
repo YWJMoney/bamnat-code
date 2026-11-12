@@ -71,6 +71,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         /** [RVM-36] What 내 프로필's inbox answers (once), and the 글 under every work. */
         private var reactions: com.bamnat.app.recipe.ProfileInbox? = null,
         private val posts: List<com.bamnat.app.recipe.RecipePost> = emptyList(),
+        /** [RVM-40] Lists only the works for the kind of work asked (as the server does), all of them with none. */
+        private val byStyle: Boolean = false,
     ) : RecipeApi {
         private val codes = works.indices.associateBy { "MKT" + (10000 + it) }
         fun code(title: String) = codes.entries.first { works[it.value].title == title }.key
@@ -82,7 +84,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         }
         override val enabled = true
         override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
-            RecipePage(works.indices.filter { q.isBlank() || q in works[it].title }.take(12).map(::item), null)
+            RecipePage(works.indices.filter { (q.isBlank() || q in works[it].title) && (!byStyle || style == null || style in works[it].styles) }
+                .take(12).map(::item), null)
         override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc {
             val i = codes.getValue(code)
             return RecipeDoc(item(i), RecipeCodec.hash(works[i]), RecipeCodec.write(works[i]), "public", mine = false)
@@ -418,6 +421,81 @@ class RvmScreenshotTest : ScreenshotBase() {
         } finally {
             RecipeDetailViewModel.talkOpen = null
         }
+    }
+
+    /**
+     * 2.0.0 [RVM-39] PC-148 (조건 4·13): the 넣기 창 says what a work's rules will do with ○ where a number goes ('이달 야간 ○번째 · 물
+     * ○잔'), never {값("물 잔")}; so does every 1.39 장터 work's 바뀌는 것.
+     */
+    @Test fun aRuleSaysItsPlacesNotItsFormula() {
+        shoot("rvm_79_put_all_folded_dark_200", DARK, 2f) {
+            detail("야간 회복 스테이션", put = true)(this)
+            tapText("바뀌는 것 모두 보기")
+            settle()
+            check(scrolledTo("○시간 잤어요")) { "넣기 창 규칙 줄에 ○가 없어요" }
+        }
+        shoot("rvm_73_put_all_folded", FOLDED) {
+            detail("야간 회복 스테이션", put = true)(this)
+            tapText("바뀌는 것 모두 보기")
+            settle()
+            // The dialog's list scrolls; every line of it, in sight or not, has no formula letters.
+            val raw = nodes(merged = false).mapNotNull { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString() }
+                .filter { "{" in it }
+            check(raw.isEmpty()) { "넣기 창에 수식 글자가 그대로 보여요: $raw" }
+            check(scrolledTo("이달 야간 ○번째")) { "넣기 창 규칙 줄에 ○가 없어요" }
+            works.forEach { w ->
+                val answers = com.bamnat.core.recipe.RecipeResolve.answers(w, emptyMap())
+                w.pieces.filter { it.kind == PieceKind.LOGIC }.forEach { p ->
+                    val values = com.bamnat.core.recipe.RecipeResolve.piece(w, p, answers)
+                    runBlocking { c.recipes.pieces.preview(p.kind, values, PersonalCalendar.MAIN) }.forEach { ch ->
+                        check('{' !in ch.text) { "‘${w.title}’ 넣기 창: ${ch.text}" }
+                    }
+                }
+            }
+        }
+    }
+
+    /** 장터 찾기 for a word only another kind of work's works have (PC-149: '딥워크' on a 교대 phone). */
+    private fun otherKindSearch(): Screen.() -> Unit = {
+        Market(byStyle = true).also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        model.query("딥워크"); model.load()
+        settle()
+        check(appears("내 유형에는 없어요")) { "다른 유형에만 있는 작품을 찾았는데 '없어요'만 보여요" }
+    }
+
+    /**
+     * 2.0.0 [RVM-40] PC-149 (조건 7·8): a word found only in another kind of work's works says where ('다른 유형 작품: 탭별 작품에 1개'),
+     * and '다른 유형 작품 보기' shows it in one tap (before: '맞는 작품이 없어요' and ▾ › 다른 유형도).
+     */
+    @Test fun aWordOnlyAnotherKindHasSaysWhereItIs() {
+        shoot("rvm_74_market_other_kind_folded", FOLDED, otherKindSearch())
+        shoot("rvm_75_market_other_kind_folded_dark_200", DARK, 2f, otherKindSearch())
+        shoot("rvm_78_market_other_kind_unfolded_200", UNFOLDED, 2f, otherKindSearch())
+        shoot("rvm_76_market_other_kind_open_folded", FOLDED) {
+            otherKindSearch()(this)
+            tapText("다른 유형 작품 보기", exact = true)
+            settle()
+            check(appears("딥워크 데스크", exact = true)) { "'다른 유형 작품 보기'를 눌러도 작품이 안 보여요" }
+        }
+    }
+
+    /**
+     * 2.0.0 [RVM-41] PC-152 (조건 8·11): with 탭별 작품 picked the row slides to its 탭, the other 구간 out of sight; the 구간 picked,
+     * tapped again, slides it back so 테마 is one tap (before: ▾ or a swipe to the left).
+     */
+    @Test fun thePickedHalfTappedAgainShowsTheOthers() = shoot("rvm_77_market_halves_again_folded", FOLDED) {
+        market()(this)
+        tapText("🗂 탭별 작품", exact = true)
+        settle()
+        check(appears("모든 탭", exact = true)) { "탭별 작품을 골라도 탭 칩이 화면 밖이에요" }
+        check(!appears("🎨 테마", exact = true, ms = 0)) { "탭 칩으로 밀린 줄에 테마가 그대로 보여요(시험이 보는 것이 없어요)" }
+        tapText("🗂 탭별 작품", exact = true)
+        settle()
+        check(appears("🎨 테마", exact = true)) { "고른 구간을 다시 눌러도 테마가 안 보여요" }
     }
 
     private fun Screen.atTalk() {

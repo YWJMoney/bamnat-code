@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.Tier
@@ -231,6 +232,11 @@ class RvjPc137ScreenshotTest : ScreenshotBase() {
             }
         }
         settle()
+        // A short screen (320×568) starts with the photo folded into a row: open it as the user would.
+        if (shows("사진 펴기", exact = true)) {
+            tapText("사진 펴기", exact = true)
+            settle()
+        }
         if (zoomed) {
             tapText("사진 크게", exact = true)
             settle()
@@ -255,8 +261,8 @@ class RvjPc137ScreenshotTest : ScreenshotBase() {
     @Test fun pinnedPhotoButtonsDarkBig() = shoot("rvj_161_payslip_photo_zoom_folded_dark_200", DARK, 2f, pinned(true))
     @Test fun pinnedPhotoButtonsWide() = shoot("rvj_162_payslip_photo_zoom_unfolded", UNFOLDED, pinned(true))
 
-    /** [RVJ-61] (HQ-102): at big letters the row has no room for 사진 칸·접기, so they go into one ⋮ (and the zoom in words is left out). */
-    @Test fun bigLettersPutTheRoomButtonsInOne() = shoot("rvj_167_payslip_photo_band_more_folded_dark_200", DARK, 2f) {
+    /** [RVJ-61] (HQ-102): on a narrow phone at big letters the row has no room for 사진 칸·접기, so they go into one ⋮ (and the zoom in words is left out). On the folded 369dp they still fit (rvj_161). */
+    @Test fun bigLettersPutTheRoomButtonsInOne() = shoot("rvj_167_payslip_photo_band_more_small_dark_200", SMALL_DARK, 2f) {
         pinned(true).invoke(this)
         assertFalse(shows("접기", exact = true))
         assertFalse(shows("150%", exact = true))
@@ -321,5 +327,6 @@ class RvjPc137ScreenshotTest : ScreenshotBase() {
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
+        const val SMALL_DARK = "w320dp-h568dp-port-night-xhdpi"
     }
 }
