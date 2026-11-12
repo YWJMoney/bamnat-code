@@ -202,19 +202,27 @@ private fun NoticeBand(n: Notice, state: NoticeStackState) {
 private fun NoticeSheet(notices: List<Notice>, posted: List<InboxRow>, state: NoticeStackState, inbox: Inbox) {
     val context = LocalContext.current
     val total = notices.size + posted.size
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { state.sheetOpen = false; state.sheetUndo = null }) {
+    // HQ-91: closed (or gone to where a row leads), a 전체 지움 not taken back is done.
+    androidx.compose.runtime.DisposableEffect(state) { onDispose { state.settle() } }
+    // 검토 HQ-92 (글자 200%에서 알림함이 반 높이로 열려 한 줄 반만 보였어요): it opens whole, as tall as its rows (a short list stays short).
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { state.sheetOpen = false; state.settle() },
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (total == 0) "알림" else "알림 $total", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f).semantics { heading() })
             // PC-139: what keeps an alarm from working is not cleared (it stays until fixed), so 전체 지움 is there while anything else is.
             if (notices.any { !it.keep } || posted.isNotEmpty()) TextButton(onClick = {
                 val gone = inbox.clearAll()
-                val shut = notices.filterNot { it.keep }.map { it.key }
+                val cleared = notices.filterNot { it.keep }
+                val shut = cleared.map { it.key }
                 shut.forEach { NoticeSnooze.put(context, it) }
                 state.snoozed = state.snoozed + shut
                 // 조건 10: taken back once; 조건 16: what stays, in a person's words.
                 state.say(if (notices.any { it.keep }) "알림을 지웠어요. 알람에 꼭 필요한 것은 고칠 때까지 남겨 둬요"
-                    else "알림을 모두 지웠어요. 글·작품에 달린 댓글은 그대로예요") {
+                    else "알림을 모두 지웠어요. 글·작품에 달린 댓글은 그대로예요",
+                    // 검토 HQ-91 (갈래 O, 사용자 '거부를 하면 여러번 반복해서 알림으로 보여주지마'): 전체 지움 closes each notice the
+                    // way its own X does (a 권유 rests two weeks, not one day), once 되돌리기 is no longer offered.
+                    done = { cleared.forEach { it.onClose?.invoke() } }) {
                     inbox.putBack(gone)
                     shut.forEach { NoticeSnooze.remove(context, it) }
                     state.snoozed = state.snoozed - shut.toSet()
@@ -478,9 +486,30 @@ internal class NoticeStackState(sheet: Boolean = false, snoozed: Set<String> = e
     /** PC-140: what was just done in the open sheet and its 되돌리기, said inside the sheet. */
     internal var sheetUndo: Pair<String, () -> Unit>? by mutableStateOf(null)
 
-    /** Says [words] with 되돌리기: inside the 알림함 while it is open (a line behind it was not seen, PC-140), else on the app's line. */
-    internal fun say(words: String, undo: () -> Unit) {
-        if (sheetOpen) sheetUndo = words to undo else AppSnack.show(words, undo = undo)
+    /** HQ-91: what a 전체 지움 still has to do once its 되돌리기 is gone (each notice's own close). */
+    private var pending: (() -> Unit)? = null
+
+    /**
+     * Says [words] with 되돌리기: inside the 알림함 while it is open (a line behind it was not seen, PC-140), else on the app's line.
+     * [done] runs once 되돌리기 is no longer offered without being pressed: another line took its place, or the 알림함 closed ([settle]).
+     */
+    internal fun say(words: String, done: (() -> Unit)? = null, undo: () -> Unit) {
+        settle()
+        if (sheetOpen) {
+            pending = done
+            sheetUndo = words to { pending = null; undo() }
+        } else {
+            done?.invoke()
+            AppSnack.show(words, undo = undo)
+        }
+    }
+
+    /** The 되돌리기 inside the 알림함 is gone unpressed: what it held back is done now. */
+    internal fun settle() {
+        val p = pending
+        pending = null
+        sheetUndo = null
+        p?.invoke()
     }
 }
 

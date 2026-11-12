@@ -1194,15 +1194,16 @@ fun CalendarScreen(
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
             alarmsOffUntil != null -> AlarmNote("오늘 알람 끔",
                 "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지",
-                "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, com.bamnat.app.ui.theme.Tone.Caution)
+                "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, com.bamnat.app.ui.theme.Tone.Caution, keep = "today")
             !alarmSoon -> null
             // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
             // [EASY-01] The example never rings, so it has nothing to turn on.
             !calendarAlarmsOn -> if (activeCalendar.isExample) null else AlarmNote("‘${activeCalendar.name}’ 알람이 꺼져 있어요",
-                "‘${activeCalendar.name}’ 달력은 알람이 꺼져 있어요", "켜기", { vm.setCalendarAlarms(true) }, com.bamnat.app.ui.theme.Tone.Caution)
+                "‘${activeCalendar.name}’ 달력은 알람이 꺼져 있어요", "켜기", { vm.setCalendarAlarms(true) }, com.bamnat.app.ui.theme.Tone.Caution,
+                keep = "calendar:${activeCalendar.id}")
             // [SET-01] With the master switch off nothing rings: said where the user looks first.
             !settings.alarmsEnabled -> AlarmNote("알람이 모두 꺼져 있어요", "알람이 모두 꺼져 있어요", "켜기", { vm.setAlarmsEnabled(true) },
-                com.bamnat.app.ui.theme.Tone.Caution)
+                com.bamnat.app.ui.theme.Tone.Caution, keep = "all")
             // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
             // screen stops it. Asked here, where it is needed, instead of on the first start.
             // 1.38 PC 9차: the app's window that said why (화면이 안 뜨고 소리만) is gone, so the line says it.
@@ -2934,7 +2935,11 @@ internal class AlarmNote(
     val onAction: () -> Unit,
     val tone: com.bamnat.app.ui.theme.Tone,
     val picture: com.bamnat.app.ui.components.PermissionResult? = null,
-    /** 2.0.0 검토 PC-139: what keeps the alarm from working, by name, for a notice that stays until it is fixed; null for one turned off on purpose. */
+    /**
+     * 2.0.0 검토 PC-139: what keeps the alarm from working, by name, for a notice that stays until it is fixed (전체 지움 and 다시 보지
+     * 않기 leave it). Every alarm line has one (PC 2nd record 03:04 KST: '알람이 모두 꺼져 있어요 · 켜기' went with 전체 지움 too): an
+     * alarm due within a week that will not ring is what the top of the calendar is for.
+     */
     val keep: String? = null,
 )
 
