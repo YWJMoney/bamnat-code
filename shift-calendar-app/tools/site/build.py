@@ -30,6 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_REMOTE = os.path.normpath(os.path.join(HERE, '../../../remote/v1'))  # bamnat-code/remote/v1 (공개 저장소 remote/v1과 같은 파일)
 
 # 공개 저장소에 있어도 되는 것(맨 위 이름). 이 밖의 파일이 섞이면 실패해요.
+# 공개해야 하는 안내 글(md): 저장소 소개와 장터 카드 글꼴의 라이선스 안내(SIL OFL 1.1 2·5항, Apache 2.0 4(b)가 고친 판에 함께 두라는 글, MKT-32).
+LICENSE_NOTES = {'README.md', 'remote/card-fonts/README.md'}
 ALLOWED_TOP = {'.git', '.nojekyll', 'README.md', 'index.html', 'sitemap.xml', 'robots.txt', 'privacy.html',
                'assets', 'calc', 'shift', 'holiday', 'form', 'guide', 'r', 'og', 'css', 'privacy', 'terms', 'community', 'remote'}
 INDEXNOW_KEY = re.compile(r'^[0-9a-f]{32}\.txt$')
@@ -133,7 +135,7 @@ def check(root, sc):
         if '.git' in dirs: dirs.remove('.git')
         for f in files:
             full = os.path.join(dirpath, f); rel = os.path.relpath(full, root).replace(os.sep, '/')
-            if rel.endswith(('.py', '.mjs', '.kt', '.md')) and rel != 'README.md':
+            if rel.endswith(('.py', '.mjs', '.kt', '.md')) and rel not in LICENSE_NOTES:
                 problems.append(f'코드·문서 파일은 공개하지 않아요: {rel}')
             if not rel.startswith(GENERATED) or not rel.endswith(TEXT_EXT): continue
             t = open(full, encoding='utf-8', errors='replace').read()
