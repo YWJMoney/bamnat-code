@@ -16,6 +16,7 @@ import com.bamnat.app.ui.parts.verticalArrangement
 import com.bamnat.app.ui.parts.placeOf
 import com.bamnat.app.ui.parts.arrangement
 import com.bamnat.app.ui.parts.vertical
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.todayMotion
 import com.bamnat.app.ui.theme.fillWith
 import com.bamnat.core.holiday.KoreanLunar
@@ -236,6 +237,8 @@ internal class MonthMoneyCells(
     private val bestSales: Long,
     /** [FLD-04] The jobs on each day, for field work's client-coloured bars. */
     val field: Map<LocalDate, List<com.bamnat.core.money.Job>> = emptyMap(),
+    /** 2.0.0 [RVH-82] The days a job starts whose money is past its promised day ([com.bamnat.core.money.Job.overdue]). */
+    val late: Set<LocalDate> = emptySet(),
 ) {
     /** [CAL-06] How strong a shop's day was against the month's best, 0 for a day without sales. */
     fun heat(date: LocalDate): Float =
@@ -244,14 +247,14 @@ internal class MonthMoneyCells(
     companion object {
         val EMPTY = MonthMoneyCells(emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0)
 
-        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate): MonthMoneyCells {
+        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate, today: LocalDate = LocalDate.now()): MonthMoneyCells {
             if (money.jobs.isEmpty() && money.sales.isEmpty() && money.entries.isEmpty()) return EMPTY
             val days = months.distinct().fold(emptyMap<LocalDate, DayMoney>()) { acc, m -> acc + money.days(m) }
             val spans = HashMap<LocalDate, JobSpan>()
             for (j in money.jobs.filter { it.days > 1 && !it.lastDate.isBefore(from) && !it.date.isAfter(to) }.sortedBy { it.date }) {
                 var d = maxOf(j.date, from)
                 while (!d.isAfter(minOf(j.lastDate, to))) {
-                    spans.putIfAbsent(d, JobSpan(d == j.date, d == j.lastDate, j.unpaid > 0, j.title,
+                    spans.putIfAbsent(d, JobSpan(d == j.date, d == j.lastDate, j.overdue(today), j.title,
                         (d.toEpochDay() - j.date.toEpochDay()).toInt() + 1, j.days))
                     d = d.plusDays(1)
                 }
@@ -259,7 +262,8 @@ internal class MonthMoneyCells(
             val sales = money.sales.filter { it.date in from..to && it.sales > 0 }.associate { it.date to it.sales }
             val starts = money.jobs.filter { it.date in from..to }.groupingBy { it.date }.eachCount()
             return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0,
-                if (money.style == com.bamnat.core.work.WorkStyle.FIELD) fieldJobsOf(money, from, to) else emptyMap())
+                if (money.style == com.bamnat.core.work.WorkStyle.FIELD) fieldJobsOf(money, from, to) else emptyMap(),
+                money.jobs.filter { it.date in from..to && it.overdue(today) }.mapTo(HashSet()) { it.date })
         }
     }
 }
@@ -335,8 +339,8 @@ fun MonthGrid(
     // 2.0.0 [RVH-67] 검토 CAL-01: the grid's days made once a month. A day made again on each pass is a new object, so each cell's
     // tap (which holds its day) looked new and all 41 cells drew again on every pick; the same day objects let a cell skip.
     val dates = remember(firstCell) { List(GRID_ROWS * 7) { firstCell.plusDays(it.toLong()) } }
-    val cells = remember(money, month, firstCell) {
-        MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
+    val cells = remember(money, month, firstCell, today) {
+        MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1), today)
     }
     val cardDue = rememberCardDue(money)
     val shades = remember(cells, spendHeat, month) {
@@ -408,7 +412,8 @@ fun MonthGrid(
                 HourlyWork.week(rowStart.plusDays(3).with(java.time.temporal.TemporalAdjusters.previousOrSame(h.holidayWeekStart)), snapshot.resolver::resolve)
             } }
             // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
-            val barColor = if (preview) MaterialTheme.bamnat.caution else cal.warning
+            // 2.0.0 [RVH-82] (조건 6, RVH-59와 같은 주의) the week over the limit is for reference: orange, as in its 주의 line.
+            val barColor = MaterialTheme.bamnat.caution
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -441,6 +446,7 @@ fun MonthGrid(
                         isSelected = date == selected || remember(date) { derivedStateOf { date in dragged } }.value,
                         hasMemo = date in memoDates,
                         money = if (inMonth) cells.days[date] else null,
+                        jobLate = inMonth && date in cells.late,
                         memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
                         memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                         showHours = showHours,
@@ -535,8 +541,8 @@ fun WeekStrip(
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val month = YearMonth.from(selected)
-    val cells = remember(money, monday) {
-        MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6))
+    val cells = remember(money, monday, today) {
+        MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6), today)
     }
     val cardDue = rememberCardDue(money)
     // [RVH-67] CAL-01 as in [MonthGrid]: the week's days made once, so a pick draws the two days it changes.
@@ -555,6 +561,7 @@ fun WeekStrip(
                 isSelected = date == selected,
                 hasMemo = date in memoDates,
                 money = cells.days[date],
+                jobLate = date in cells.late,
                 memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
                 memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                 showHours = showHours,
@@ -590,6 +597,8 @@ private fun DayCell(
     showHours: Boolean,
     showLunar: Boolean = false,
     money: DayMoney? = null,
+    /** 2.0.0 [RVH-82] A job starting here is owed past its promised day: its mark in 주의 colour. */
+    jobLate: Boolean = false,
     memoText: String? = null,
     onClick: () -> Unit,
     onQuickAction: (QuickAction) -> Unit,
@@ -832,7 +841,7 @@ private fun DayCell(
             if (jobFirst && !fieldJobs.isNullOrEmpty()) {
                 FieldJobMarks(fieldJobs, date)
             } else if (jobFirst) {
-                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
+                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = jobLate || span?.owed == true && span.first)
             } else if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
                 LeaveMark(fullLeave, size = size)
@@ -942,7 +951,7 @@ private fun DayCell(
                     }
                     Spacer(Modifier.weight(1f))
                     if (day.alarmSkipped) Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff, modifier = Modifier.size(10.dp))
-                    else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern, preview)
+                    else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) jobLate || span?.owed == true else null, snapshot.hasPattern, preview)
                         .firstOrNull()?.let { CornerMark(it, dot = true) }
                     if (wishOff) Spacer(Modifier.width(8.dp))
                     if (hasMark && plainShift && beside) Box(Modifier.padding(start = 1.dp)) {
@@ -958,7 +967,7 @@ private fun DayCell(
             parts = cellParts,
             view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null } ?: cellFillGround(cellLook), date = date, isToday = isToday, numberColor = numberColor, weekendLine = weekendLine, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
-            marks = remember(day, jobs, snapshot.hasPattern, preview) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern, preview) },
+            marks = remember(day, jobs, snapshot.hasPattern, preview) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) jobLate || span?.owed == true else null, snapshot.hasPattern, preview) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
                 ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
             // [CELL-02] The jobs are lines of their own when the cell lists them, so their marks are not drawn twice.
@@ -997,7 +1006,7 @@ private fun DayCell(
                 // [CAL-01] Two corners, filled in order: 알람 꺼짐 (always top left, so it is never pushed out),
                 // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
                 // is still read out and shown under the calendar.
-                val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null
+                val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) jobLate || span?.owed == true else null
                 val marks = remember(day, jobCorner, snapshot.hasPattern, preview) { cornerMarks(day, jobCorner, snapshot.hasPattern, preview) }
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
@@ -1190,7 +1199,8 @@ private fun DayCell(
 private fun JobMark(span: JobSpan?, count: Int, owed: Boolean) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
-    val barColor = if (span?.owed == true) cal.warningContainer else scheme.secondaryContainer
+    // 2.0.0 [RVH-82] (조건 6) The bar stays the job's own colour; only the badge where it starts says 받을 날 지남, in 주의.
+    val barColor = scheme.secondaryContainer
     Box(
         Modifier
             .fillMaxWidth()
@@ -1217,14 +1227,15 @@ private fun JobMark(span: JobSpan?, count: Int, owed: Boolean) {
 @Composable
 internal fun JobBadge(count: Int, owed: Boolean) {
     val scheme = MaterialTheme.colorScheme
-    val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
+    // 2.0.0 [RVH-82] (조건 6) Owed past its day is 주의: an orange badge (red is kept for what cannot be undone).
+    val bg = if (owed) com.bamnat.app.ui.theme.Tone.Caution.color() else scheme.secondaryContainer
     Box(
         // [CAL-52] At least 22dp, taller with large text: a fixed 22dp cut the "일" in half at 200%.
         Modifier.heightIn(min = 22.dp).clip(MaterialTheme.shapes.extraSmall).background(bg).padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold,
-            color = if (owed) LocalCalendarColors.current.warning else scheme.onSecondaryContainer, maxLines = 1)
+            color = if (owed) scheme.surface else scheme.onSecondaryContainer, maxLines = 1)
     }
 }
 
@@ -1262,7 +1273,7 @@ internal fun CornerMark(mark: Corner, dot: Boolean = false) {
         val color = when (mark) {
             is Corner.Kind -> mark.kind.colorArgb.asColor()
             is Corner.PartLeave -> com.bamnat.app.ui.components.leaveColor(mark.leave.kind, cal)
-            is Corner.Job -> if (mark.owed) cal.warning else MaterialTheme.colorScheme.secondary
+            is Corner.Job -> if (mark.owed) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.secondary
             is Corner.Attend -> if (mark.attendance == com.bamnat.core.model.Attendance.ABSENT) MaterialTheme.colorScheme.error else cal.warning
             Corner.Changed -> cal.changed
         }
@@ -1273,7 +1284,7 @@ internal fun CornerMark(mark: Corner, dot: Boolean = false) {
         is Corner.Kind -> ExtraKindMark(mark.kind, size = 13.dp)
         is Corner.PartLeave -> LeaveMark(mark.leave, size = 13.dp)
         is Corner.Job -> Icon(Icons.Filled.Work, contentDescription = null, modifier = Modifier.size(13.dp),
-            tint = if (mark.owed) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.secondary)
+            tint = if (mark.owed) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.secondary)
         // Days the user changed by hand.
         Corner.Changed -> Box(Modifier.padding(2.dp).size(5.dp).clip(CircleShape).background(LocalCalendarColors.current.changed))
         is Corner.Attend -> AttendanceMark(mark.attendance)

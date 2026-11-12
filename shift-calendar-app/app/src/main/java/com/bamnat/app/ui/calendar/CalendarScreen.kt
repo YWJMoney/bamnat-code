@@ -2931,14 +2931,14 @@ private fun HoursLine(
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 HoursPart("이 주", HoursFormat.korean(week.totalMinutes),
-                    limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
+                    limits.weeklyLimitHours.takeIf { week.overLimit }, com.bamnat.app.ui.theme.Tone.Caution.color())
                 if (split != week.totalMinutes) {
                     Text("자정에 나눠 세면 ${HoursFormat.korean(split)}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 // Its own limit (52), not the week's (64), so the number it is over is said.
                 HoursPart("3개월 주평균", HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
-                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
+                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, com.bamnat.app.ui.theme.Tone.Caution.color())
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "$tabName 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

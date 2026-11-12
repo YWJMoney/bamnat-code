@@ -82,6 +82,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.ToneLine
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.alarm.AlarmPlanner
@@ -307,7 +308,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             }
         }
         // [CAL-05] A field worker's jobs and a shop's sales come first: they are what the day is about.
-        for (j in dayBook.jobs.take(MAX_JOB_LINES)) DayJobLine(j, day.date)
+        for (j in dayBook.jobs.take(MAX_JOB_LINES)) DayJobLine(j, day.date, today)
         if (dayBook.jobs.size > MAX_JOB_LINES) {
             Text("일감 외 ${dayBook.jobs.size - MAX_JOB_LINES}건", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
@@ -455,13 +456,13 @@ private const val MAX_JOB_LINES = 3
 
 /** [CAL-05] "09:00–17:00 욕실 타일 시공 · 3일 중 2일째", with what it pays or what is still owed. */
 @Composable
-private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
+private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate, today: LocalDate) {
     val cal = LocalCalendarColors.current
     // 2.0.0 [RVH-56] 검토 HQ-36 (L이 찾은 같은 구조, 조건 12): the badge sits on the job's first line, not in the middle of the block
     // once the amount goes under it at a big font (설정 WarningLine HQ-35 the same way). The box is the first line's height.
     val firstLine = with(androidx.compose.ui.platform.LocalDensity.current) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
     Row(verticalAlignment = Alignment.Top) {
-        Box(Modifier.heightIn(min = firstLine), contentAlignment = Alignment.Center) { JobBadge(count = 1, owed = job.unpaid > 0) }
+        Box(Modifier.heightIn(min = firstLine), contentAlignment = Alignment.Center) { JobBadge(count = 1, owed = job.overdue(today)) }
         Spacer(Modifier.width(8.dp))
         // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'09:0/0') the amount goes under the job when both do not fit.
         com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 168.dp, start = {
@@ -481,7 +482,10 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
         }
         }, end = {
             if (job.unpaid > 0) {
-                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+                // 2.0.0 [RVH-82] 총괄 (K 10차와 같은 빨강, 조건 6): 받을 돈 is news until its promised day passes, then 주의 (orange),
+                // never red: nothing here is lost or past undoing.
+                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                    color = if (job.overdue(today)) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (job.payable > 0) {
                 Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
             }

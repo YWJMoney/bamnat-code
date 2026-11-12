@@ -169,8 +169,9 @@ private val STACK_BELOW = 300.dp
 
 /**
  * 2.0.0 [RVH-81] 검토 HQ-98 (총괄 사진 검토, 편 폭 707dp 글자 100%: 달력 옆 하루 칸의 '휴게 시간'이 한 글자씩 세로로 섰어요): a row's
- * name and its control (− 1시간 +, a switch). They share the line while the name fits on it in one line; when the column is too
- * narrow the name takes its own line and the control sits under it at the end, so no word is ever set one letter per line (조건 12).
+ * name and its control (− 1시간 +, a switch), on the shared [SideOrBelow] (BIGTXT-01). They share the line only while the whole name
+ * fits on it in one line; when the column is too narrow the name takes its own line and the control sits under it at the end, so no
+ * word is ever set one letter per line (조건 12).
  */
 @Composable
 fun LabelControlRow(
@@ -178,33 +179,7 @@ fun LabelControlRow(
     modifier: Modifier = Modifier,
     style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
     control: @Composable () -> Unit,
-) {
-    val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.roundToPx() }
-    androidx.compose.ui.layout.Layout(
-        content = { Text(label, style = style); Box { control() } },
-        modifier = modifier.fillMaxWidth(),
-    ) { measurables, constraints ->
-        val (name, ctl) = measurables
-        val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val c = ctl.measure(loose)
-        val room = constraints.maxWidth - c.width - gap
-        val beside = labelFitsBeside(name.maxIntrinsicWidth(Int.MAX_VALUE), c.width, constraints.maxWidth, gap)
-        if (beside) {
-            val n = name.measure(loose.copy(maxWidth = room.coerceAtLeast(0)))
-            val h = maxOf(n.height, c.height)
-            layout(constraints.maxWidth, h) {
-                n.placeRelative(0, (h - n.height) / 2)
-                c.placeRelative(constraints.maxWidth - c.width, (h - c.height) / 2)
-            }
-        } else {
-            val n = name.measure(loose)
-            layout(constraints.maxWidth, n.height + c.height) {
-                n.placeRelative(0, 0)
-                c.placeRelative(constraints.maxWidth - c.width, n.height)
-            }
-        }
-    }
-}
+) = SideOrBelow(modifier.fillMaxWidth(), minStart = WHOLE_NAME, start = { Text(label, style = style) }, end = control)
 
-/** [RVH-81] Whether [labelWidth] fits beside a control of [controlWidth] in [width] (the rule [LabelControlRow] lays out by). */
-internal fun labelFitsBeside(labelWidth: Int, controlWidth: Int, width: Int, gap: Int): Boolean = labelWidth <= width - controlWidth - gap
+/** As [SideOrBelow]'s minStart: more than any name, so the name keeps all of itself beside the control or goes above it. */
+private val WHOLE_NAME = 10_000.dp

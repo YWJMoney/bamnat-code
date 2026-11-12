@@ -206,7 +206,10 @@ fun SetupHost(
     // 2.0.0 [RVH-47] 총괄 #451 사진 검토(글자 200%, 접은·편 폭): the card and the button under it took half the screen and the month to
     // check showed one row, cut through its cells (조건 1·12). At a large font the card goes in the scroll, under the month; only
     // '저장하고 달력 보기' stays at the bottom. At the usual size it stays just above the button, where 7차 PC 1-12 put it.
-    val statsInScroll = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+    // 2.0.0 [RVH-83] 총괄 (HQ-99, G가 본 것, 조건 1·9): a short screen too (a phone turned on its side, a split window): the card
+    // and the button took more than half of its height there, so the card goes in the scroll the same way.
+    val statsInScroll = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f ||
+        androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < SHORT_SCREEN_DP
     val statsAsk: @Composable () -> Unit = {
         com.bamnat.app.ui.onboarding.StatsAsk(statsSettings.shareUsageStats) { inviteContainer.setUsageStats(it) }
     }
@@ -511,3 +514,6 @@ private val SetupStep.title: String
 
 /** [VIS-02] A step slides over 260 ms. */
 private const val STEP_MILLIS = 260
+
+/** 2.0.0 [RVH-83] (HQ-99) Lower than this, only the save button stays fixed at the summary's bottom; the 사용 통계 card scrolls. */
+internal const val SHORT_SCREEN_DP = 600

@@ -22,13 +22,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * 2.0.0 [RVH-81] 검토 HQ-98: a row's name never stands one letter per line beside its control. Beside it while the name fits on
  * one line; under it, at the end, when the column is narrow (편 폭의 달력 옆 하루 칸).
  */
 @RunWith(AndroidJUnit4::class)
+@Config(sdk = [35], qualifiers = "w400dp-h640dp")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LabelControlRowTest {
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     private fun window(content: @Composable () -> Unit, test: () -> Unit) {
@@ -55,14 +60,10 @@ class LabelControlRowTest {
     @Test fun aNarrowRowPutsTheControlUnderTheNameOnOneLine() = window(row(170)) {
         val name = compose.onNodeWithText("휴게 시간").getUnclippedBoundsInRoot()
         val ctl = compose.onNodeWithTag("ctl").getUnclippedBoundsInRoot()
-        assertTrue("조절은 이름 밑", ctl.top >= name.bottom)
+        assertTrue("조절은 이름 밑: 이름 ${name.left}..${name.right}/${name.top}..${name.bottom}, 조절 ${ctl.left}..${ctl.right}/${ctl.top}..${ctl.bottom}", ctl.top >= name.bottom)
         // One line: at bodyLarge the name is about 24dp high; letter per line would be four times that.
-        assertFalse("세로로 선 이름 ${name.height}", name.height.value > 40f)
+        val h = (name.bottom - name.top).value
+        assertFalse("세로로 선 이름 $h", h > 40f)
         assertEquals(170f, ctl.right.value, 0.5f)
-    }
-
-    @Test fun theRuleIsTheNameWidthAgainstWhatTheControlLeaves() {
-        assertTrue(labelFitsBeside(labelWidth = 100, controlWidth = 150, width = 300, gap = 8))
-        assertFalse(labelFitsBeside(labelWidth = 100, controlWidth = 150, width = 240, gap = 8))
     }
 }

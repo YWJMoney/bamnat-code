@@ -139,6 +139,12 @@ data class Job(
 
     /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
     val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
+
+    /**
+     * 2.0.0 (HQ, 조건 6) Money still owed after the day it was promised (or the last day): the only 받을 돈 the calendar marks in
+     * 주의 colour. Before that day it is plain news, not a warning; a 가계약 is never late.
+     */
+    fun overdue(today: LocalDate): Boolean = unpaid > 0 && status != JobStatus.TENTATIVE && (due ?: lastDate).isBefore(today)
 }
 
 /** [WORK-02] Withholding on 사업소득: 소득세 3% + 지방소득세 (소득세의 10%), each below 10 won dropped. */

@@ -221,7 +221,7 @@ object MoneyAhead {
 
     /** [LEDH-01] Late money: jobs and money owed past their promised day. */
     fun late(book: MoneyBook, today: LocalDate): Long =
-        book.jobs.filter { it.unpaid > 0 && it.status != JobStatus.TENTATIVE && (it.due ?: it.lastDate).isBefore(today) }.sumOf { it.unpaid } +
+        book.jobs.filter { it.overdue(today) }.sumOf { it.unpaid } +
             book.receivables.filter { it.left > 0 && it.due?.isBefore(today) == true }.sumOf { it.left }
 
     /**

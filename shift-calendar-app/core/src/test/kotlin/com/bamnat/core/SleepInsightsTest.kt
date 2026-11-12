@@ -99,9 +99,9 @@ class SleepInsightsTest {
         val r = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), targetMinutes = 420)
         assertEquals(listOf("more-logs"), r.findings.map { it.key })
         assertTrue(r.findings.single().text.contains("야간 뒤·쉬는 날"))
-        // 1.39 PC c0ca3d9f 유형별 빈틈: 가게 has no 야간, so its words are its own.
+        // 1.39 PC c0ca3d9f 유형별 빈틈: 가게 has no 야간, so its words are its own. [RVH-74] 가게는 영업한 날.
         val store = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), 420, com.bamnat.core.work.WorkStyle.BUSINESS)
-        assertTrue(store.findings.single().text.contains("일한 날·쉬는 날") && !store.findings.single().text.contains("야간"))
+        assertTrue(store.findings.single().text.contains("영업한 날·쉬는 날") && !store.findings.single().text.contains("야간"))
         assertNull(SleepInsights.afterNightAverage(log.take(1), resolver, LocalDate.of(2026, 11, 4)))
         assertTrue(SleepInsights.report(emptyList(), resolver, today, 420).findings.isEmpty())
     }
@@ -134,7 +134,7 @@ class SleepInsightsTest {
         // One night after a 야간: one more of a kind; 3 mornings answered: 2 more.
         val one = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), targetMinutes = 420)
         val some = com.bamnat.core.sleep.SleepUnlocks.of(one, answeredMornings = 3, style = com.bamnat.core.work.WorkStyle.BUSINESS)
-        assertTrue(some[0].line.contains("1번 더") && some[0].line.contains("일한 날·쉬는 날"))
+        assertTrue(some[0].line.contains("1번 더") && some[0].line.contains("영업한 날·쉬는 날"))
         assertTrue(some[1].line.contains("2번 더"))
         // All open: nothing left to say.
         val full = SleepInsights.report(log, resolver, LocalDate.of(2026, 11, 12), targetMinutes = 420)

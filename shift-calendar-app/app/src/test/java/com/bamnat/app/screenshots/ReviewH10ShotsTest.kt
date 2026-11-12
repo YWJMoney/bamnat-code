@@ -45,7 +45,8 @@ class ReviewH10ShotsTest : ScreenshotBase() {
         settle()
         openDay(today.minusDays(3))
         settle()
-        assertTrue(appears("영업", exact = true))
+        // The shop's own day: 매출 적기 is its first chip.
+        assertTrue(shownWords().joinToString(" | ").take(1500), appears("매출 적기", exact = true))
         assertFalse("가게에 근로자 휴식 경고", shows("휴식 부족") || shows("연속 근무") || shows("연속 야간"))
     }
     @Test fun shopRestA() = one("50_shop_rest_head", 0, WorkStyle.BUSINESS, shopRest())
@@ -80,7 +81,31 @@ class ReviewH10ShotsTest : ScreenshotBase() {
     @Test fun manageC() = one("52_manage", 2, WorkStyle.FIELD, manage())
     @Test fun manageD() = one("52_manage", 3, WorkStyle.FIELD, manage())
 
+    /**
+     * HQ-99 (G가 본 것, 조건 1·9): on a short screen (a phone on its side) the summary's bottom keeps only '저장하고 달력 보기'; the
+     * 사용 통계 card waits in the scroll, under the month, as at a big font ([RVH-47]).
+     */
+    @Test fun shortSummary() {
+        // A new phone on its first screen, as [ReviewH3ShotsTest.setupSummary] starts it.
+        app.container.consentStore.forget()
+        app.container.consentStore.availableForTest = setOf(com.bamnat.core.consent.ConsentItem.CALENDAR)
+        app.container.setupDrafts.clear()
+        shoot("rvh10_53_short_summary", SHORT, 1f, fresh(null) {
+        setupToToday(); tapText("회사 근무표와 같아요")
+        assertTrue(appears("이대로 저장할까요?"))
+        val tall = nodes(false).maxOf { it.boundsInWindow.bottom }
+        val save = nodes(false).first { n -> n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
+            ?.any { it.text == "저장하고 달력 보기" } == true }.boundsInWindow
+        val card = nodes(false).firstOrNull { n -> n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
+            ?.any { it.text.startsWith("앱을 고치는 데 도움을") } == true }?.boundsInWindow
+        assertFalse("통계 카드가 저장 단추 바로 위 고정 띠에: 카드 $card, 단추 $save", card != null && card.top >= 0f && card.bottom <= save.top && card.top > tall / 3)
+        assertTrue("저장 단추가 화면 아래에: $save / $tall", save.top > tall / 2)
+        })
+    }
+
     private companion object {
+        /** A folded phone on its side. */
+        const val SHORT = "w905dp-h369dp-land-420dpi"
         const val FOLDED_ACROSS = 0.5f
         const val OPEN_ACROSS = 0.8f
     }

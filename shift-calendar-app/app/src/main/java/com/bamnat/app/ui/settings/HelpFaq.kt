@@ -5,6 +5,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.appContainer
 import com.bamnat.app.company.InquiryKind
 import com.bamnat.app.data.PersonalCalendar
+import com.bamnat.core.work.words
 
 /** [UX-05] What a help answer's button opens: a screen, a group of settings at a row, or a tab. */
 sealed interface HelpAction {
@@ -1098,7 +1099,25 @@ internal fun dayQuestionWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyl
     val noun = com.bamnat.app.ui.shifts.lockNoun(style)
     val board = if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "영업일" else "일정"
     val q = t.question.replace("근무표", board).replace("근무", noun)
-    return t.copy(question = q)
+    return t.copy(question = particlesAfter(particlesAfter(q, board), noun))
+}
+
+/** Puts 을/를, 이/가, 은/는, 과/와 and (으)로 right after [word] once it took the place of 근무 or 근무표 (영업을, 일정이). */
+internal fun particlesAfter(text: String, word: String): String {
+    val last = word.lastOrNull() ?: return text
+    val code = last.code - 0xAC00
+    if (code !in 0..11171) return text
+    val jong = code % 28
+    val closed = jong != 0
+    val pairs = listOf("을" to "를", "이" to "가", "은" to "는", "과" to "와")
+    var out = text
+    for ((c, o) in pairs) {
+        out = out.replace(Regex("${Regex.escape(word)}[$c$o](?![가-힣])|${Regex.escape(word)}[$c$o](?=[ ,.?·])")) { word + if (closed) c else o }
+    }
+    // (으)로: 으로 after a closed syllable but not after ㄹ.
+    val ro = if (closed && jong != 8) "으로" else "로"
+    out = out.replace(Regex("${Regex.escape(word)}(으로|로)")) { word + ro }
+    return out
 }
 
 private val DAY_QUESTIONS = setOf("oneday", "quicktext", "widget", "phoneCalendar", "watchNext", "import")
