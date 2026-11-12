@@ -336,7 +336,7 @@ private fun PressBand(said: String?, onClose: () -> Unit) {
             modifier = androidx.compose.ui.Modifier.widthIn(max = 640.dp).fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
         ) {
             androidx.compose.material3.Text(said ?: "누르는 중이에요", style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
-                modifier = androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 14.dp))
+                modifier = androidx.compose.ui.Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
         }
     }
 }

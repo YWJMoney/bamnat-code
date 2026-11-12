@@ -141,7 +141,7 @@ class FxButtonWidget : GlanceAppWidget() {
         Spacer(GlanceModifier.height(6.dp))
         Row(GlanceModifier.fillMaxWidth().height(height), verticalAlignment = Alignment.Bottom) {
             recent.forEach { v ->
-                Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(horizontal = 1.5.dp), contentAlignment = Alignment.BottomCenter) {
+                Box(GlanceModifier.defaultWeight().fillMaxHeight().padding(horizontal = 2.dp), contentAlignment = Alignment.BottomCenter) {
                     Box(GlanceModifier.fillMaxWidth().height((v / top * height.value).coerceIn(2.0, height.value.toDouble()).dp).cornerRadius(3.dp)
                         .background(if (goal != null && v >= goal) GlanceTheme.colors.primary else GlanceTheme.colors.secondaryContainer)) {}
                 }
