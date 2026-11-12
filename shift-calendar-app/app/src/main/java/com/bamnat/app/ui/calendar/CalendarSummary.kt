@@ -120,6 +120,8 @@ internal fun MonthSummaryBar(
     takeHome: Long? = null,
     /** [PAYS-17] 1.27: how many values the pay still needs to be exact ("2개만 넣으면 정확해져요"). */
     payNeeds: Int = 0,
+    /** 2.0.0 [RVH-27] 검토 낱말 검사: the hours-and-money tab as this calendar's bar names it (알바 '출근·시급'). */
+    tabName: String = "근무·급여",
     /** 1.32 [CALX-06] "9/21~10/20" when the days and hours are the 급여 기간's, as 통계 counts them. */
     rangeLabel: String? = null,
     /**
@@ -161,7 +163,7 @@ internal fun MonthSummaryBar(
     }
     val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + f.notes.joinToString("") { " $it" } } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
-        CalendarFocus.SHIFTS -> "근무·급여 열기"
+        CalendarFocus.SHIFTS -> "$tabName 열기"
         // [R136-17] 1.36 (리뷰 R-34): a shop's and field work's tab is 장부.
         CalendarFocus.JOBS, CalendarFocus.SALES -> "장부 탭 열기"
         else -> "가계부 탭 열기"
@@ -335,6 +337,8 @@ internal fun CalendarLegendSheet(
      * 월급날 can be put in on its own; without it the pay setup comes first and says so.
      */
     hasPay: Boolean = true,
+    /** 2.0.0 [RVH-09] 검토 CAL-14: the calendar's kind of work, for the rows only it has (주휴 ✓) and its words (야근·대타). */
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cal = LocalCalendarColors.current
@@ -354,7 +358,8 @@ internal fun CalendarLegendSheet(
                 Box(Modifier.size(width = 30.dp, height = 24.dp).clip(MaterialTheme.shapes.extraSmall).background(scheme.primary.copy(alpha = 0.08f))
                     .border(2.dp, scheme.primary, MaterialTheme.shapes.extraSmall))
             }
-            LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름 · 쉬는 날이에요") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
+            // [RVH-09] 검토 CAL-14: not '쉬는 날이에요' (a 교대 worker, a shop works them): only what the mark is.
+            LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
             // [EASE-04] 1.38 (통합 7차): 업종 기념일 next to 공휴일, so the two are told apart; where to turn it on when off.
             val orgDays = com.bamnat.core.plaza.IndustryGroups.byKey(orgGroup)?.days.orEmpty()
             if (orgDays.isNotEmpty()) {
@@ -380,7 +385,9 @@ internal fun CalendarLegendSheet(
                     }
                     LegendRow("연차·반차", "하루 쉬면 칸 전체, 반차는 모서리") { LeaveMark(Leave(LeaveKind.ANNUAL, 4), size = 20.dp) }
                     snapshot.kinds.kinds.firstOrNull()?.let { k ->
-                        LegendRow("추가 근무", "잔업·특근·대근은 모서리 표시, 시간은 +2h처럼") { ExtraKindMark(k, size = 18.dp) }
+                        // [RVH-09] in the calendar's own words: 야근 for 일근, 대타 for 알바.
+                        val over = ExtraText.word("잔업", com.bamnat.core.model.ExtraKind.OVERTIME_ID, style)
+                        LegendRow("추가 근무", "$over·특근·${ExtraText.coverWord(style)}은 모서리 표시, 시간은 +2h처럼") { ExtraKindMark(k, size = 18.dp) }
                     }
                     LegendRow("부업 일감", "가계부 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
                     // [EASE-04] 1.38: every mark the cells can show is said here (오늘근무 분석: 뜻 모를 표시가 없게).
@@ -401,7 +408,8 @@ internal fun CalendarLegendSheet(
                             CardDueMark(text = "급여")
                         }
                     }
-                    LegendRow("주휴 ✓", "알바: 주 15시간 이상, 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
+                    // [RVH-09] 주휴 ✓ is drawn on an 알바 (시급) calendar only.
+                    if (style == com.bamnat.core.work.WorkStyle.HOURLY) LegendRow("주휴 ✓", "주 15시간 이상, 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
                     }
@@ -435,7 +443,7 @@ internal fun CalendarLegendSheet(
             val shifts = focus == CalendarFocus.SHIFTS || snapshot.hasPattern
             if (shifts) {
                 LegendRow("알람 끔", "이 날은 알람이 울리지 않아요") { Icon(Icons.Filled.AlarmOff, null, tint = cal.alarmOff, modifier = Modifier.size(18.dp)) }
-                LegendRow("직접 바꿈", "패턴과 다르게 바꾼 날") { Box(Modifier.size(7.dp).clip(CircleShape).background(cal.changed)) }
+                LegendRow("직접 바꿈", "${snapshot.cycleWord}${Fmt.wa(snapshot.cycleWord)} 다르게 바꾼 날") /* [RVH-05] */ { Box(Modifier.size(7.dp).clip(CircleShape).background(cal.changed)) }
             }
             LegendRow("메모", "메모가 있는 날 · 설정에서 켜면 칸 아래에 메모 첫 글자") { ColorDot(cal.memoDot, size = 7.dp) }
             LegendRow("쓴 돈", "칸 아래 빨간 숫자: 그날 가계부에 적은 지출 (켜 둔 경우)") { Text("3만", color = cal.expense, fontWeight = FontWeight.Bold, style = NumberStyle) }

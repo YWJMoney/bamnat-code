@@ -58,6 +58,17 @@ data class FieldRules(
         return copy(rateFrom = list, dayRate = list.last().second)
     }
 
+    /**
+     * 2.0.0 [RVH-23] 검토 CAL-28: what one day's 일당 leaves behind. With '이 날부터 바꾸기' ([fromHere]) it is the 일당 from [from] on;
+     * without, that day only, and the remembered 일당 is set only when there was none yet (the first one written). Before, a calendar
+     * without changes yet took a one-off 일당 (a day with 특별 수당) as the 일당 of every day written after it.
+     */
+    fun afterDayRate(from: LocalDate, rate: Long, fromHere: Boolean): FieldRules = when {
+        fromHere -> withRateFrom(from, rate)
+        dayRate > 0 || rate <= 0 -> this
+        else -> copy(dayRate = rate)
+    }
+
     companion object {
         /** Lines remembered as 아니에요; older ones drop off. */
         const val KEEP_NOT_MATCHED = 50

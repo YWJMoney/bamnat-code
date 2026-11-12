@@ -1591,6 +1591,11 @@ private fun AppNavHost(
                 onShiftTypes = { nav.navigate(Routes.shiftTypes(id)) { launchSingleTop = true } },
                 onPay = { nav.navigate(Routes.pay(id)) { launchSingleTop = true } },
                 onMoney = { container.calendars.setActive(id); nav.navigateTopLevel(TopLevel.MONEY.route) },
+                // 2.0.0 [RVH-18] 검토 CAL-23: an investor's 원금과 수익률 is the 투자 tab, not the 급여 setup.
+                onInvest = {
+                    container.calendars.setActive(id)
+                    com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(Place.STATS, "invest.overview"))
+                },
                 onShare = {
                     container.calendars.setActive(id)
                     nav.navigateTopLevel(TopLevel.CALENDAR.route)
@@ -2517,6 +2522,9 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.JOURNAL -> screen(Routes.JOURNAL)
         Place.RECIPES -> screen(if (c.recipes.on.value) Routes.recipes(cal) else Routes.RECIPE_MINE)
         Place.RECIPE_MINE -> screen(Routes.RECIPE_MINE)
+        // 2.0.0 [RVH-25] 검토 WORK-11: 광장's features opened the pay screen; they open 마을 › 광장 and the 회사 규칙 광장.
+        Place.PLAZA -> NoticeLinks.open(NoticeLinks.Target.PLAZA)
+        Place.BOARD -> screen(Routes.companyBoard(cal))
         Place.SETTINGS_WORK, Place.SETTINGS_ALARM, Place.SETTINGS_NOTICES, Place.SETTINGS_PAY,
         Place.SETTINGS_CALENDAR, Place.SETTINGS_DATA, Place.SETTINGS_PRIVACY ->
             link.place.settingsPage()?.let { SettingsLinks.open(it, link.focus) }

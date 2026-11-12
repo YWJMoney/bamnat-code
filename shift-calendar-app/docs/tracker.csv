@@ -2590,6 +2590,33 @@ RVP-81,검토 I14c-02: 근무에 따라 바뀌는 화면,2.0.0,진행 중,,
 RVP-82,검토 I14c-03: 말로 기능 찾기,2.0.0,진행 중,,
 RVP-83,"검토 UIX-24·I13c-01·I13c-03: 디자인 규칙을 세는 시험(달력 시작 높이·채운 단추·모서리·여백·8~9sp·44dp·토스트·색, DesignRulesTest·CalendarStartScreenshotTest)",2.0.0,진행 중,,
 RVP-84,"뿌리 고침 1(지시서 5장): 공통 부품과 값 문서 docs/design/공통-부품.md(달력 위 한 줄·안내 카드·단추 위계·창과 시트·상태·말 표·칸이 놓는 곳·뿌리 고침 2~4 쓰는 법)",2.0.0,진행 중,,
+RVH-01,검토 CAL-05·T01-13: 받은 근무표 따라가기에서 답하지 않은 '넣을까요?'가 다음 변경 때 사라짐 → 답하지 않은 물음은 다음 변경 때도 남김,2.0.0,진행 중,,"share/RosterFollower.kt, core/schedule/RosterFollow.kt; RosterFollowTest, RosterFollowerTest"
+RVH-02,검토 CAL-06: 링크에 새로 생긴 날이 내가 직접 넣은 근무를 덮어씀 → 내가 넣은 날은 물음으로,2.0.0,진행 중,,core/schedule/RosterFollow.kt; RosterFollowTest
+RVH-03,"검토 CAL-04: '그 주만 보기'가 주 시작 요일 설정을 따르지 않음 → 달 보기와 같은 첫 요일, 'n월 n째 주'",2.0.0,진행 중,,ui/calendar/CalendarScreen.kt weekFirstDay·weekOfMonthLabel; ReviewHCalendarTest
+RVH-04,"검토 CAL-07·T01-02: 주기가 없는 달력의 칠하기 막대·알림에 '근무 주기대로' → 그 달력 말로, 주기 없으면 숨김",2.0.0,진행 중,,ui/calendar/CalendarViewModel.kt backWord·backDone
+RVH-05,검토 CAL-13: 같은 것을 '패턴'과 '근무 주기'로 부름 → 근무 주기(일근은 평소) 한 말로,2.0.0,진행 중,,ui/calendar/CalendarSummary.kt cycleWord
+RVH-06,검토 CAL-09·PC-17 일부: 한 줄 입력이 '저녁 7시'·'밤 10시'를 오전으로 읽음 → 저녁·밤은 오후,2.0.0,진행 중,,"core/time/KoreanHour.kt, core/schedule/QuickText.kt; CalendarI123Test"
+RVH-07,검토 CAL-11·T01-03: 대근 묻기 창이 알바 달력에서도 '대근' → 알바는 '대타',2.0.0,진행 중,,ui/calendar/DayHeader.kt·DayExtras.kt coverWord
+RVH-08,검토 CAL-12: 같은 근무를 다시 고르면 '되돌리기' 알림이 3초 늦게 뜸 → 바뀐 것이 없으면 바로 끝,2.0.0,진행 중,,ui/calendar/CalendarViewModel.kt
+RVH-09,"검토 CAL-14·T01-04·T01-05: 범례에 유형과 맞지 않는 줄·'쉬는 날이에요' → 그 유형 줄만, 표시만 설명",2.0.0,진행 중,,ui/calendar/CalendarSummary.kt legend
+RVH-10,검토 CAL-15: 타임라인·주 판의 주말 색과 시각 표기가 달력과 다름 → 같은 색·같은 시각 표기,2.0.0,진행 중,,ui/calendar/CalendarBoards.kt
+RVH-11,검토 CAL-16: 글자를 크게 하면 잘릴 수 있는 고정 크기 칸 → 글자 크기를 따라 칸이 커짐,2.0.0,진행 중,,"ui/calendar/ReceivedCalendarUi.kt, WorkCells.kt, CalendarBoards.kt"
+RVH-12,"검토 CAL-17: 조 설정을 고치다 폰을 접거나 돌리면 고친 것이 사라짐 → 저장되는 상태, 넘기기 문턱 56dp",2.0.0,진행 중,,ui/calendar/TeamsScreen.kt TeamRosterSaver; ReviewHCalendarTest
+RVH-13,검토 CAL-18: '−'·'+' 단추에 읽어 주는 이름이 없음 → 이름 붙임(같은 모양 함께),2.0.0,진행 중,,"ui/calendar/WorkTypeDay.kt, ui/shifts/ShiftPremium.kt"
+RVH-14,검토 CAL-19: 새 공휴일 파일을 받아도 열려 있는 달력은 그대로 → 공휴일 판이 바뀌면 달력 다시 그림,2.0.0,진행 중,,"core/holiday/KoreanHolidays.kt revision, remote/RemoteFilesStore.kt, data/ScheduleRepository.kt; K310Test, ReviewHAppTest"
+RVH-15,검토 CAL-20·I01a-04: 고른 날·보던 달이 프로세스가 죽으면 오늘로 → 6시간 안에 다시 열면 그 자리로(이 휴대폰 설정),2.0.0,진행 중,,"data/CalendarPlaceStore.kt, AppContainer.kt, CalendarViewModel.kt; ReviewHAppTest"
+RVH-16,검토 CAL-21·T01-06: '달력 모양' 미리 보기가 어느 유형에서나 주·야·휴·대근 → 그 유형의 예시 한 주,2.0.0,진행 중,,ui/calendar/CalendarViewEditor.kt sampleDays; ReviewHCalendarTest
+RVH-17,"검토 CAL-22·T01-07: '하루 화면 순서' 창이 가게·투자에도 추가 근무·휴가 → 그 유형에 있는 묶음만, 그 유형 이름",2.0.0,진행 중,,ui/calendar/DayGroupOrder.kt; ReviewHCalendarTest
+RVH-18,"검토 CAL-23·T01-08: 투자 달력 고치기의 '원금과 수익률'이 급여 화면으로 → 투자 › 한눈에, 형태 안내에 투자, 알람 말",2.0.0,진행 중,,"ui/calendar/CalendarEditScreen.kt, ui/AppRoot.kt"
+RVH-19,"검토 CAL-24·T01-09: 1년 달력·합쳐 보기가 유형과 상관없이 '근무' → 그 유형 말, 교대만 야간·휴식 칩",2.0.0,진행 중,,"ui/calendar/YearScreen.kt, CombinedScreen.kt, CalendarBoards.kt"
+RVH-20,검토 CAL-25·TYPE-16·T30-26·T30-101·T01-10·T01-11: 공유 그림·링크·만료 알림·달력 바꾸기의 '근무표·근무' 고정 → 그 유형 말(영업일·일정·달력),2.0.0,진행 중,,"share/MonthImage.kt, ReceivedCalendars.kt, ShareExpiryReminder.kt, ui/calendar/ImageShareSheet.kt·ShareHint.kt·ShareDialog.kt·CalendarListUi.kt; ShareLinksProTest"
+RVH-21,검토 CAL-26: 알림 더미가 첫 프레임에 다 펼쳐졌다가 접힐 수 있음 → 처음부터 접힌 수만 놓음,2.0.0,진행 중,,ui/calendar/NoticeStack.kt; ReviewHNoticeStackTest
+RVH-22,검토 CAL-27: 둘러보기 중 몇 가지 쓰기가 '내 달력으로 시작' 묻기를 건너뜀 → 모두 WriteGate,2.0.0,진행 중,,ui/calendar/CalendarViewModel.kt
+RVH-23,검토 CAL-28·T01-12: 현장 공수 창에서 '이 날부터 바꾸기'를 안 눌러도 다음 날 기본 일당이 바뀜 → 기본 일당이 없을 때만 채움,2.0.0,진행 중,,"core/money/FieldWork.kt afterDayRate, ui/calendar/FieldDaySheet.kt; ReviewHTest"
+RVH-24,"검토 뿌리 고침 5번(도약 38): 유형 규칙 한 곳(core TypeWords)과 낱말 검사 시험(core 기능 글, 앱 화면 다섯 유형 훑기), 처음 잰 새는 말 목록은 줄어드는 쪽으로만",2.0.0,진행 중,,"core/work/TypeWords.kt; TypeWordsTest, TypeWordsScreenTest"
+RVH-25,"검토 뿌리 고침 13번(도약 39)·WORK-11·WORK-12: 광장 기능 바로 가기가 급여 화면 → 마을 › 광장·회사 규칙 광장(Place.PLAZA·BOARD), '어디'를 그 유형 탭 이름으로(whereFor), 어디 첫 마디와 바로 가기 곳 대조 시험, 유형마다 실제로 열어 보는 시험",2.0.0,진행 중,,"core/guide/FeatureRegistry.kt whereFor·homeOf, ui/AppRoot.kt, ui/guide/FeatureSearch.kt·FeatureSwitchesScreen.kt; TypeWordsTest, FeatureWayScreenTest"
+RVH-26,검토 T30-96: 시작 단계가 가게·현장에도 '근무 넣기'·'근무가 들어 있어요' → 영업일·일정 말,2.0.0,진행 중,,"core/guide/StartSteps.kt, ui/guide/StartStepsCard.kt; TypeWordsTest"
+RVH-27,검토 낱말 검사(처음 훑기에서 찾음): 알바 달력의 달 요약·이번 주 시간 줄이 '근무·급여 열기' → 그 유형 탭 이름(출근·시급 열기),2.0.0,진행 중,,"ui/calendar/CalendarSummary.kt, CalendarScreen.kt HoursLine; TypeWordsScreenTest"
 PC-28,"2.0.0 통합 1차 PC 확인(2026-11-12, 빌드 3413f50b): 달 넘김이 스르륵·책장 넘기기·움직이지 않기일 때(움직임 끄기·휴대폰 '애니메이션 삭제' 포함) 달력에서 누른 날이 다음 달 같은 자리 날짜로 열리고 길게 누른 근무도 그 날에 저장됨(1.36.1부터 같은 코드) → 달 넘김은 그릴 때만 옮기고 안 보이는 달은 옮기지 않음",2.0.0,진행 중,,"MotionUi.kt monthTurn·monthTurnShift, MonthTurnTapTest(실제 달력 칸으로 여섯 달 넘김 모두), MonthTurnDrawTest"
 RVJ-19,"검토 품질 조건 6(PR #444 총괄 검토): 사장님 급여 직원 창의 '월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요…' 줄이 빨강(위험색) → 주의 색(Tone.Caution), 갈래 P 색 부품(#445) 합친 뒤",2.0.0,대기,,ui/work/PayrollScreen.kt 직원 창 4대보험 줄
 QA-10,"2.0.0 통합: 화면 사진 시험이 누르는 때에 따라 흔들림(NtcScreenshotTest.replaceTurnsTheOldOneOffAndUndoBringsItBack 161줄, #444·#446 CI와 로컬 재현). 작품 상세 '규칙 1개 넣기'는 글이 먼저 보이고 '내 달력 미리 보기'가 끝나야 켜지는데, 시험이 꺼진 단추를 눌러 넣기 창이 안 열림 → tapText가 꺼진 단추는 켜질 때까지(5초까지) 기다렸다 눌러요(건너뛰기 없음)",2.0.0,진행 중,,"ScreenshotBase.tapText, NtcScreenshotTest 7개(고친 뒤 로컬에서 4번 이어 돌려 모두 통과, 2026-11-12)"

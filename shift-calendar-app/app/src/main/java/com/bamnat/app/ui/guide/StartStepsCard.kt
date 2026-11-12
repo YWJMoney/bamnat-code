@@ -140,11 +140,11 @@ fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: 
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows.forEach { row ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 48.dp)
-                    .semantics(mergeDescendants = true) { contentDescription = if (row.done) row.step.doneLabel else "${row.label}, 아직 안 했어요" }) {
+                    .semantics(mergeDescendants = true) { contentDescription = if (row.done) row.doneLabel else "${row.label}, 아직 안 했어요" }) {
                     Icon(if (row.done) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked, contentDescription = null,
                         tint = if (row.done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text(if (row.done) row.step.doneLabel else row.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text(if (row.done) row.doneLabel else row.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     if (!row.done) FilledTonalButton(onClick = { open(row.step) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(row.step.action) }
                 }
             }
