@@ -291,6 +291,21 @@ class CompanyDetailViewModel(
     fun closeWait() { _wait.value = null }
 
     /**
+     * 2.0.0 [RVN-17] 검토 PC-155 This calendar is held by another company, looked up as the page opens (nothing joined), so the line
+     * above says '…까지 A로 정해져 있어요 · 근무 순서만 넣을 수 있어요' instead of what joining would hold. Null when free or unknown.
+     */
+    private val _heldNow = MutableStateFlow<MemberWait?>(null)
+    val heldNow: StateFlow<MemberWait?> = _heldNow.asStateFlow()
+
+    fun lookHeld(page: CompanyPage) {
+        val heldBy = scope.store.member.value?.first
+        if (page.member || heldBy == null || heldBy == page.id) { _heldNow.value = null; return }
+        viewModelScope.launch {
+            _heldNow.value = runCatching { c.companyApi.joinCheck(scope.store.device, page.id, scope.serverCal) }.getOrNull()?.let(MemberWait::of)
+        }
+    }
+
+    /**
      * 2.0.0 [RVN-17] 검토 COMP-12 (보고서 11장 결정 10 '고르기 전에 알리고'): before an order is picked, a calendar held by another
      * company asks the server whether it could take [page] (nothing joined). [held] gets the wait (the screen asks: 근무주기만 넣기 or
      * '잘못 골랐어요'); [go] runs when it could, or when the look itself failed (offline: the end of the way still says it, as before).
@@ -318,6 +333,7 @@ class CompanyDetailViewModel(
                 scope.store.setMember(null)
                 c.telemetry.event("company_undo", "detail")
                 _wait.value = null
+                _heldNow.value = null
                 then()
             } catch (e: com.bamnat.app.company.CompanyException) {
                 _wait.value = _wait.value?.failed(e)

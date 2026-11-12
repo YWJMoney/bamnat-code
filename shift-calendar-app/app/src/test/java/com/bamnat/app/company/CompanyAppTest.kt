@@ -1,5 +1,6 @@
 package com.bamnat.app.company
 
+import com.bamnat.app.ui.company.askLine
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -214,6 +215,17 @@ class CompanyAppTest {
         assertFalse(used.undo)
         assertEquals("잘못 고른 회사 풀기를 이미 썼어요(한 해에 한 번)", used.why)
         assertTrue(w.failed(CompanyException("offline")).undo)
+        // PC-155 On screen the name and its 조사 never part ('…‘(주)예시정밀’ / 로'), and the words are the same.
+        val held = com.bamnat.app.ui.company.MemberWait("(주)예시정밀", until, false)
+        assertTrue(held.shown.contains("‘\u2060(\u2060주\u2060)\u2060예\u2060시\u2060정\u2060밀\u2060’\u2060로"))
+        assertEquals(held.line, held.shown.replace("\u2060", ""))
+        // PC-155 Used this year: the wait says why there is no undo and the day it opens again; a server that does not say keeps 문의 only.
+        val again = LocalDate.of(2027, 11, 13).atTime(12, 0).atZone(com.bamnat.core.time.Today.zone()).toInstant()
+        val usedUp = com.bamnat.app.ui.company.MemberWait("가나상사", until, false, again = again)
+        assertEquals("잘못 고른 회사 풀기를 이미 썼어요(한 해에 한 번 · 2027년 11월 13일부터 다시). 꼭 바꿔야 하면 문의해 주세요",
+            usedUp.askLine())
+        assertNull(com.bamnat.app.ui.company.MemberWait("가나상사", until, true, again = again).noUndo)
+        assertEquals("꼭 바꿔야 할 사정이 있으면 문의해 주세요", held.askLine())
     }
 
     /**
@@ -241,6 +253,9 @@ class CompanyAppTest {
         assertTrue(api.join(me, ids[1], "app").joined)
         val again = api.join(me, ids[2], "app")
         assertEquals(listOf<Any?>("member_wait", "다라상사", false), listOf(again.error, again.held, again.undo))
+        // PC-155 …and why: the day it opens again, said on the wait.
+        assertNotNull(again.undoAgain)
+        assertNotNull(com.bamnat.app.ui.company.MemberWait.of(again)?.noUndo)
         val used = runCatching { api.undoJoin(me, "app") }.exceptionOrNull() as CompanyException
         assertEquals("undo_used", used.code)
         assertFalse(api.terms().roomMoney)

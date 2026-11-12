@@ -2325,10 +2325,14 @@ function readFix(raw) {
 export const MEMBER = { perPhone: 2, waitDays: 30, readsPerDay: 120, joinsPerDay: 10, joinsPerNetworkDay: 300, stablePhones: 3, stableDays: 30,
   undoOnce: true, undoDays: 365 };
 const undoKey = (dev) => `member_undo|${dev}`;
-/** Whether [dev] may still undo a company it picked by mistake (the switch on, not used in the last [MEMBER.undoDays]). */
-async function undoOpen(env, dev, now) {
-  if (!MEMBER.undoOnce) return false;
-  return !(await one(env, "SELECT 1 AS used FROM counters WHERE key = ? AND expires > ? AND count >= 1", undoKey(dev), now));
+/**
+ * 2.0.0 [RVN-17] 검토 PC-155 (통합 4차 PC): when [dev]'s '잘못 골랐어요' opens again after it was used (ms), so a held calendar's wait
+ * says why there is no undo now; null while it is open, or with the switch off (then nothing is said, as there is nothing to wait for).
+ */
+async function undoAgain(env, dev, now) {
+  if (!MEMBER.undoOnce) return null;
+  const row = await one(env, "SELECT expires FROM counters WHERE key = ? AND expires > ? AND count >= 1", undoKey(dev), now);
+  return row?.expires ?? null;
 }
 const CAL = /^[A-Za-z0-9_-]{1,24}$/;
 /** What a calendar is called here: the app's own id for it, or "app" from an app that does not say. */
@@ -2404,9 +2408,12 @@ async function joinCompany(env, dev, companyId, cal, now, dry = false) {
   if (same) return { joined: true, company: companyId, since: iso(same.since), changeAfter: iso(same.since + MEMBER.waitDays * DAY) };
   if (here && here.company_id !== companyId && now - here.since < MEMBER.waitDays * DAY) {
     // 2.0.0 [RVN-17] COMP-12 Which company holds the calendar and whether '잘못 골랐어요' can free it, so the app says both at once.
+    // PC-155 And, when the undo was used this year, the day it opens again (the app says why there is no undo, not only 문의).
     const held = await one(env, "SELECT name FROM companies WHERE id = ?", here.company_id);
+    const again = await undoAgain(env, dev, now);
     return { joined: false, error: "member_wait", until: iso(here.since + MEMBER.waitDays * DAY),
-      held: { id: here.company_id, name: held?.name ?? "" }, ...((await undoOpen(env, dev, now)) ? { undo: true } : {}) };
+      held: { id: here.company_id, name: held?.name ?? "" }, ...(MEMBER.undoOnce && again == null ? { undo: true } : {}),
+      ...(again != null ? { undoAgain: iso(again) } : {}) };
   }
   const others = new Set(rows.filter((r) => r.left === 0 && r.cal !== cal).map((r) => r.company_id));
   if (others.size >= MEMBER.perPhone) return { joined: false, error: "member_limit", limit: MEMBER.perPhone };

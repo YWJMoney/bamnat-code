@@ -474,6 +474,9 @@ fun CompanyDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     val p = s.page
+                    // 2.0.0 [RVN-17] PC-155 A calendar held by another company: known as the page opens, said in the line above.
+                    val heldNow by vm.heldNow.collectAsStateWithLifecycle()
+                    LaunchedEffect(p.id, p.member) { vm.lookHeld(p) }
                     // [SPD-13] 1.30 AP1: the page kept from before is on screen while it is read again.
                     RefreshLine(vm.refreshing.collectAsStateWithLifecycle().value, vm.stale.collectAsStateWithLifecycle().value, onRetry = vm::load)
                     if (p.aliases.isNotEmpty()) {
@@ -498,9 +501,11 @@ fun CompanyDetailScreen(
                     // [PLAZA-08] Not a member: shift times and their order only; the pay way shows after joining.
                     if (!p.member && p.setups.any { it.payHidden }) {
                         Text(if (p.limited) "오늘은 많이 봐서 근무 시각·순서만 보여요. 내일 다시 보여요."
+                            // PC-155 Held by another company already: that, and what can be done here (the order), not what joining holds.
+                            else heldNow?.let { "${it.shown} · 근무 순서만 넣을 수 있어요. 급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요." }
                             // 2.0.0 [RVN-17] 검토 COMP-12 고르기 전에 알리고: what joining holds, before the choice.
-                            else "급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여되고, " +
-                                "이 달력은 ${p.joinWaitDays}일 동안 ‘${p.name}’${com.bamnat.core.text.Josa.fit(p.name, "으로")} 정해져요.",
+                            ?: ("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여되고, " +
+                                "이 달력은 ${p.joinWaitDays}일 동안 ‘${p.name}’${com.bamnat.core.text.Josa.fit(p.name, "으로")} 정해져요."),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // [PLAZA-05] The rule set this phone used is no longer the department's 대표 판 (결정 D74): say so once, with
