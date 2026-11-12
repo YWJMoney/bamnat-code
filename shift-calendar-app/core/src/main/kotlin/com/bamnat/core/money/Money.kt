@@ -310,7 +310,15 @@ data class MonthMoney(
     val otherIncome: Long,
     val expenses: Long,
     val expenseByCategory: List<CategoryTotal>,
+    /** 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) Counted over a pay cycle (급여일 주기) instead of the calendar month; null for the month. */
+    val range: PayCycle.Range? = null,
 ) {
+    /** The first and last day counted: the cycle's, or the month's. */
+    val from: LocalDate get() = range?.from ?: month.atDay(1)
+    val to: LocalDate get() = range?.to ?: month.atEndOfMonth()
+    /** "11월" or "10/25~11/24", for a title. */
+    val label: String get() = range?.label ?: "${month.monthValue}월"
+
     /**
      * [TAX-01] One of the two, never both. [J133-02] 1.33 (보고서 A10): the salary written down wins once it came in (it is
      * the money in the account); before that the estimate stands in, as [payExpected] (들어올 돈).
@@ -347,8 +355,18 @@ object MoneyCalculator {
         payEstimate: Long? = null,
         /** 1.37 PC 6차: counted on this day, a job is earned once done or past ([Job.isDone]), as the calendar's 번 돈. */
         today: LocalDate? = null,
-    ): MonthMoney {
-        val inMonth = { d: LocalDate -> YearMonth.from(d) == month }
+    ): MonthMoney = counted(month, null, entries, jobs, sales, payEstimate, today)
+
+    /**
+     * 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) The same sums over a pay cycle, from a pay day to the day before the next, shown as
+     * [month]'s. The pay that starts the cycle is in it as written down; no estimate (the next pay starts the next cycle).
+     */
+    fun cycle(month: YearMonth, range: PayCycle.Range, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>,
+              today: LocalDate? = null): MonthMoney = counted(month, range, entries, jobs, sales, null, today)
+
+    private fun counted(month: YearMonth, range: PayCycle.Range?, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>,
+                        payEstimate: Long?, today: LocalDate?): MonthMoney {
+        val inMonth = { d: LocalDate -> if (range != null) range.contains(d) else YearMonth.from(d) == month }
         val e = entries.filter { inMonth(it.date) }
         val all = jobs.filter { inMonth(it.date) }
         val j = if (today == null) all else all.filter { it.cancelled || it.isDone(today) }
@@ -381,6 +399,7 @@ object MoneyCalculator {
             expenseByCategory = shares.groupBy { it.first }
                 .map { (c, list) -> CategoryTotal(c, list.sumOf { it.second }, list.size) }
                 .sortedWith(compareByDescending<CategoryTotal> { it.amount }.thenBy { it.category }),
+            range = range,
         )
     }
 
@@ -457,6 +476,8 @@ data class MoneyBook(
     }
 
     fun month(month: YearMonth, payEstimate: Long? = null, today: LocalDate? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate, today)
+    /** 2.0.0 [RVK-20] [month] counted over the pay cycle [range]. */
+    fun cycle(month: YearMonth, range: PayCycle.Range, today: LocalDate? = null) = MoneyCalculator.cycle(month, range, entries, jobs, sales, today)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */
     fun owed(today: LocalDate) = Receivables.owed(receivables, jobs, today)
