@@ -1,6 +1,7 @@
 package com.bamnat.app.company
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
@@ -175,7 +176,7 @@ class CompanySearchTest {
 
             withTimeoutOrNull(5_000) { while (!File(dir, "company_all.json").exists()) delay(20) }
             assertFalse(File(dir, "company_all.json").readText().contains("device"))
-            val next = CompanySearch({ CompanyClient(server.base) }, file, now = { System.currentTimeMillis() + CompanySearch.ALL_FRESH_MS + 1 })
+            val next = CompanySearch({ CompanyClient(server.base) }, file, now = { Today.millis() + CompanySearch.ALL_FRESH_MS + 1 })
             next.load()
             assertEquals("가상화학2", next.peek("가상화학2").hits.first().name)
             assertFalse("ten minutes old: asked again", next.peek("가상화학2").enough)

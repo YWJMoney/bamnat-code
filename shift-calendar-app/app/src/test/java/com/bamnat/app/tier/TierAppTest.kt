@@ -16,6 +16,7 @@ import com.bamnat.app.ui.pro.trialPrice
 import com.bamnat.core.tier.PlaySub
 import com.bamnat.core.tier.ProReason
 import com.bamnat.core.tier.TrialConsent
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -264,7 +265,7 @@ class TierAppTest {
 
     @Test fun onlyAPhoneWithAReasonAsksForPassesAndABackupCodeIsClaimedOnce() = runBlocking {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
-        val pass = Passes(null, 2, listOf(PassItem(2, now, "idea")), 0, null, true, Instant.now())
+        val pass = Passes(null, 2, listOf(PassItem(2, now, "idea")), 0, null, true, Today.instant())
         val api = FakeTierApi(passesAnswer = pass)
         c.tierApi = api
         c.syncPasses()
@@ -282,7 +283,7 @@ class TierAppTest {
     /** PC 확인 7525ccff: a new phone tied to an admin asks for its passes then, so the card shows the link and why it is approved. */
     @Test fun aNewPhoneJustLinkedAsksForItsPasses() = runBlocking {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
-        val pass = Passes(null, 0, emptyList(), 0, AdminState("approved", "최고 관리자", owner = true), false, Instant.now())
+        val pass = Passes(null, 0, emptyList(), 0, AdminState("approved", "최고 관리자", owner = true), false, Today.instant())
         val api = FakeTierApi(passesAnswer = pass)
         c.tierApi = api
         c.syncPasses(force = true)
@@ -301,7 +302,7 @@ class TierAppTest {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
         val api = FakeTierApi()
         c.tierApi = api
-        val tapped = Instant.now().minusSeconds(3_600)
+        val tapped = Today.instant().minusSeconds(3_600)
         val q = PendingConsent("keep", tapped, ProductIds.PRO, "4,990원", tapped.plusSeconds(86_400 * 3), "계속 쓸까요?")
         c.proStore.answer("keep", tapped, q)
         assertEquals("다시 열어도 남아 있어요", q, ProStore(context).current.pendingConsent)
@@ -319,11 +320,11 @@ class TierAppTest {
         assertEquals("답은 그대로 휴대폰에 있어요", tapped, c.proStore.current.consentAt)
 
         // A refusal of the answer itself is not sent again and again; an old one is let go.
-        c.proStore.answer("cancel", Instant.now(), q.copy(answer = "cancel", answeredAt = Instant.now()))
+        c.proStore.answer("cancel", Today.instant(), q.copy(answer = "cancel", answeredAt = Today.instant()))
         api.consentFails = "answer"
         assertFalse(c.sendConsent())
         assertNull(c.proStore.current.pendingConsent)
-        c.proStore.answer("keep", tapped, q.copy(answeredAt = Instant.now().minusSeconds(86_400L * 36)))
+        c.proStore.answer("keep", tapped, q.copy(answeredAt = Today.instant().minusSeconds(86_400L * 36)))
         assertTrue(c.sendConsent())
         assertNull(c.proStore.current.pendingConsent)
     }

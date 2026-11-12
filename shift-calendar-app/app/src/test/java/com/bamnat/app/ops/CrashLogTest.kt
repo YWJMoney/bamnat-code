@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BamnatApp
 import com.bamnat.app.diag.CrashLog
 import com.bamnat.app.diag.Telemetry
+import com.bamnat.core.time.Today
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,7 +22,7 @@ class CrashLogTest {
 
     @Test fun aStopLeavesWhereButNotWhatWasTyped() {
         val error = IllegalStateException("회사 이름 우리병원", RuntimeException("홍길동 근무"))
-        val note = CrashLog.write(app, "main", error, System.currentTimeMillis()).readText()
+        val note = CrashLog.write(app, "main", error, Today.millis()).readText()
         assertTrue(note, note.contains("java.lang.IllegalStateException"))
         assertTrue(note, note.contains("caused by java.lang.RuntimeException"))
         assertTrue(note, note.contains("CrashLogTest.aStopLeavesWhereButNotWhatWasTyped"))
@@ -36,7 +37,7 @@ class CrashLogTest {
     }
 
     @Test fun theReportShowsTheLatestStop() {
-        CrashLog.write(app, "main", ArithmeticException(), System.currentTimeMillis())
+        CrashLog.write(app, "main", ArithmeticException(), Today.millis())
         val lines = CrashLog.reportLines(app)
         assertTrue(lines.toString(), lines.any { it == "남은 기록: 1개" })
         assertTrue(lines.toString(), lines.any { it.contains("ArithmeticException") })
