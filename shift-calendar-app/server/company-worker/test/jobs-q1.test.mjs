@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import worker, { CF_PLANS, CRONS, SECOND_HALF, SURGE, autoRest, cfPlan, hourlySteps, plazaSurge } from "../src/index.js";
 import { JOB_NAMES } from "../src/ops-watch.js";
+import { hourlyAgo } from "../src/incident.js";
 import { server, device, from, signIn } from "./helpers.mjs";
 
 const NOW = Date.parse("2026-11-20T03:20:00Z");
@@ -42,6 +43,8 @@ test("[RVQ-12] SRV-14 5분 작업도 단계마다 기록되고, 실패하면 오
   await tick(env, CRONS.five);
   const rows = DB.db.prepare("SELECT step, ok_at, fail_at FROM job_runs WHERE step IN ('held5', 'ship5', 'surge') ORDER BY step").all();
   assert.deepEqual(rows.map((r) => [r.step, Boolean(r.ok_at), r.fail_at]), [["held5", true, null], ["ship5", true, null], ["surge", true, null]]);
+  // [RVN-02] 5분 작업의 단계는 '매시 작업이 몇 분 전에 돌았나'에 들어가지 않아요(매시 작업이 멈춘 것을 가리지 않게).
+  assert.equal(await hourlyAgo(env, NOW), null);
   // 광장 글 급증 살피기가 실패하면(여기서는 표를 지워서) 그 단계만 실패로 남고 다른 단계는 돌아요.
   DB.db.exec("ALTER TABLE flag_overrides RENAME TO flag_overrides_gone");
   t.mock.timers.tick(5 * 60e3);

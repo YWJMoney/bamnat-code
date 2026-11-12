@@ -102,7 +102,8 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
   const r = b.rows.get(k) ?? { hour, route, n: 0, err: 0, sum: 0, max: 0, b: new Array(WATCH.edges.length + 1).fill(0) };
   const t = Math.max(0, Math.round(Number(ms) || 0));
   r.n += 1;
-  if (status >= 500) r.err += 1;
+  // 2.0.0 [RVN-03] 500만 오류로 세요(SVC-84): 일부러 쉬게 한 기능의 503과 Play·공유 서버가 안 닿을 때의 502·504는 서버가 망가진 것이 아니에요.
+  if (status === 500) r.err += 1;
   r.sum += t;
   r.max = Math.max(r.max, t);
   r.b[bucketOf(t)] += 1;
@@ -249,6 +250,7 @@ export const JOB_NAMES = {
   held5: "보류 끝난 답 보내기(5분)", ship5: "출시 안내 보내기(5분)", surge: "광장 글 급증 살피기(5분)",
   // 1.39 [OBS2-01] 이름이 없어 서버 상태에 'observe'로 보였어요.
   observe: "Play 보고서·개선 신호 합치기",
+  five: "5분 작업(보류 끝난 답·자동 출시 안내)", // 2.0.0 [RVN-02]
 };
 
 /**

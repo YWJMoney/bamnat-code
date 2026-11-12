@@ -636,6 +636,11 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .review-rows>li.picked>details>summary{background:var(--accent-soft)}
 .row-side.inline{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:.35rem;max-width:60%}
 @media (max-width:599.98px){.review-rows .row{flex-wrap:wrap}.review-rows .row-side.inline{max-width:none;width:100%;justify-content:flex-start;padding-left:1rem}}
+/* 2.0.0 [RVD-20] HQ-08: large letters on a wide screen too: the buttons go under the words once the list is under 40 of its letters wide (사진 D/HQ-13 06). */
+.review-rows{container-type:inline-size}
+.nw{white-space:nowrap}
+.review-rows .row-acts{display:inline-flex;gap:.35rem}
+@container (max-width:40rem){.review-rows .row{flex-wrap:wrap}.review-rows .row-side.inline{max-width:none;width:100%;justify-content:flex-start;padding-left:1rem}}
 .score.mini{margin:0;gap:.3rem}.score.mini meter{width:3.5rem;height:.5rem}.score.mini b{font-size:.78rem}
 .rv-body{padding:.25rem 1rem 1rem 1.85rem;border-top:1px dashed var(--line)}
 @media (max-width:599.98px){.rv-body{padding-left:1rem}}
@@ -998,6 +1003,7 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 
 /* ---- 1.38 [ADM3] 새 화면들과 갤럭시 폴드(접은 화면 ~344–412px, 편 화면 ~690–884px)·데스크톱 ---- */
 .alert-list li>span{flex:1;min-width:0;padding:.5rem 0}
+.alert-list li>span>small{display:block;margin-top:.1rem}.alert-list li.quiet::before{background:var(--faint)}
 .banner.bad{background:var(--bad-bg);color:var(--bad)}
 .incident-band{justify-content:flex-start;text-align:left;text-decoration:none;gap:.5rem}
 .incident-band svg{flex:none;width:1.15rem;height:1.15rem}
