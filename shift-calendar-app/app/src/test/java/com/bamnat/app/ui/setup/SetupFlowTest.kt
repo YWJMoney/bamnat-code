@@ -552,6 +552,28 @@ class SetupFlowTest {
         assertTrue(snap.resolver.resolve(today.plusDays(1)).shiftType?.isOff != false)
     }
 
+    /** [RVG-18] 검토 PC-22 (도약 14): a 리더 confirmed next month; the member's summary and calendar open on it, not on an empty month. */
+    @Test fun aLinkOfNextMonthOpensOnIt() = runBlocking {
+        val next = java.time.YearMonth.from(today).plusMonths(1)
+        fun day(d: Int, type: Long?) = com.bamnat.app.share.SharedDay(next.atDay(d), type, null, null, null, emptyList(), null)
+        val schedule = com.bamnat.app.share.SharedSchedule(
+            "3병동 김간호",
+            listOf(com.bamnat.app.share.SharedType(1, "데이", "D", 0xFF2196F3, "07:00-15:00", false, null),
+                com.bamnat.app.share.SharedType(2, "오프", "O", 0xFF9E9E9E, null, true, null)),
+            mapOf(next.atDay(1) to day(1, 1), next.atDay(2) to day(2, 1), next.atDay(3) to day(3, 2)),
+            emptyList(), emptySet(),
+        )
+        val d = LinkStart.draft(schedule, today)!!
+        assertEquals(next, d.openingMonth(today))
+        // A roster with a working day this month opens on this month.
+        assertEquals(java.time.YearMonth.from(today), d.copy(painted = d.painted + (today to d.painted.values.first { it != null })).openingMonth(today))
+        c.setupDrafts.save(d)
+        val vm = vm()
+        vm.save()
+        waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        assertEquals(next, c.shownMonth.month.value)
+    }
+
     @Test fun aLinkWithoutTimesAsksTheTimesOnly() {
         val schedule = com.bamnat.app.share.SharedSchedule(
             "팀", listOf(com.bamnat.app.share.SharedType(1, "주간", "주", 0xFF2196F3, null, false, null)),

@@ -4,6 +4,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
@@ -52,9 +53,10 @@ class LinkOwnerTest {
         assertEquals(LinkStart.Owner.THEIRS, LinkStart.lean(raw("friend")))
         // A 팀 리더 makes each member a link of their own days only: it is the receiver's.
         assertEquals(LinkStart.Owner.MINE, LinkStart.lean(raw(team = true)))
-        // A coworker's link, or one from before 1.33, could be either: both buttons alike.
-        assertNull(LinkStart.lean(raw("coworker")))
-        assertNull(LinkStart.lean(raw()))
+        // A coworker's link, or one from before 1.33, holds the sender's own days: kept beside unless the user says it is theirs.
+        assertEquals(LinkStart.Owner.THEIRS, LinkStart.lean(raw("coworker")))
+        assertEquals(LinkStart.Owner.THEIRS, LinkStart.lean(raw()))
+        assertEquals("not read yet: the side that changes nothing leads", LinkStart.Owner.THEIRS, LinkStart.lean(null))
     }
 
     @Test fun theirsIsKeptBesideAndNeverPutIntoMyDays() {
@@ -112,9 +114,37 @@ class LinkOwnerTest {
     }
 
     @Test fun theirsKeptSaysWhereItWent() {
-        window({ FirstStyleScreen(onPick = {}, onSkip = {}, theirsKept = "민지") }) {
-            compose.onNodeWithText("‘민지’ 근무표는 받은 달력으로 넣었어요").assertExists()
+        var closed = false
+        window({ FirstStyleScreen(onPick = {}, onSkip = {}, theirsKept = "민지", onTheirsClose = { closed = true }) }) {
+            compose.onNodeWithText("‘민지’ 근무표는 받은 달력에 넣었어요").assertExists()
             compose.onNodeWithText("내 근무표예요").assertDoesNotExist()
+            compose.onNodeWithContentDescription("받은 달력 안내 닫기").performClick()
+            assertTrue(closed)
         }
+    }
+
+    /** 디자인 품질 조건 9: the card has a visible close; closed, neither answer is taken (the calendar offers the link later). */
+    @Test fun theLinkCardClosesWithoutAnAnswer() {
+        var closed = 0
+        var answered = 0
+        window({
+            FirstStyleScreen(onPick = { answered++ }, onSkip = {}, onLater = {}, linkWaiting = true, linkTitle = "민지",
+                onLinkStart = { answered++ }, onLinkTheirs = { answered++ }, onLinkClose = { closed++ })
+        }) {
+            compose.onNodeWithContentDescription("받은 근무표 카드 닫기, 첫 설정 뒤에 다시 물어요").performClick()
+            assertEquals(1, closed)
+            assertEquals(0, answered)
+            // 디자인 품질 조건 2: '파일로 시작' at the top is the only file start (no second one at the bottom).
+            compose.onNodeWithText("백업이나 회사 파일로 시작할게요").assertDoesNotExist()
+            compose.onNodeWithText("파일로 시작").assertExists()
+        }
+    }
+
+    /** [RVG-17] 디자인 품질 조건 7: no signal, a slow server, a link gone, each in its own words. */
+    @Test fun aLinkNotReadSaysWhy() {
+        assertTrue(LinkStart.problem(java.io.IOException()).startsWith("인터넷에 연결되지 않았어요"))
+        assertTrue(LinkStart.problem(java.net.SocketTimeoutException()).startsWith("근무표를 읽는 데 시간이 너무 걸렸어요"))
+        assertTrue(LinkStart.problem(com.bamnat.app.share.ShareLinkException("not_found")).startsWith("이 링크는 끊겼거나"))
+        assertTrue(LinkStart.problem(com.bamnat.app.share.ShareLinkException("server")).startsWith("서버가 잠시 바빠요"))
     }
 }

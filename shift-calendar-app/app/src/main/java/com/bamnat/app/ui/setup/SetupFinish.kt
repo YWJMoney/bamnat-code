@@ -179,15 +179,22 @@ private fun ringLine(t: ShiftType, minutes: Int?): String {
 private fun LinkWorkAs(vm: SetupViewModel, d: SetupDraft) {
     val shown = com.bamnat.app.ui.flags.typeChoices()
     val now = d.savedStyle
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("어떻게 일하세요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SetupViewModel.LINK_WORK.filter { shown.shows(it) }.forEach { s ->
-                FilterChip(selected = now == s, onClick = { vm.workAs(s) }, label = { Text(LINK_WORK_WORDS.getValue(s)) })
+    // The same card as the alarm's below (디자인 품질 조건 5).
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("어떻게 일하세요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SetupViewModel.LINK_WORK.filter { shown.shows(it) }.forEach { s ->
+                    FilterChip(selected = now == s, onClick = { vm.workAs(s) }, label = { Text(LINK_WORK_WORDS.getValue(s)) })
+                }
             }
+            Text("날짜는 그대로, 급여와 메뉴만 이 일에 맞춰요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("고른 일에 맞춰 급여 설정과 메뉴가 정해져요. 날짜는 받은 근무표 그대로예요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -203,14 +210,17 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     }
     if (d.linkTitle.isNotBlank()) {
         // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
-        StepHeader("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", "받은 근무표의 근무 이름과 시간, 근무한 날을 그대로 넣었어요. 이름이 맞으면 아래 단추 하나로 시작해요.")
-        LinkWorkAs(vm, d)
+        // 디자인 품질 조건 1·4: one line under the title, so the month starts within the screen's top quarter.
+        StepHeader("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", "근무 이름과 시간, 날짜를 그대로 넣었어요.")
     } else StepHeader("이대로 저장할까요?",
         if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
     if (preview != null) {
         val thisMonth = remember(vm.today) { java.time.YearMonth.from(vm.today) }
-        var month by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(thisMonth.toString()) }
+        // [RVG-18] 검토 PC-22 (도약 14): a link's roster of next month opens on that month, not on an empty this month.
+        var month by androidx.compose.runtime.saveable.rememberSaveable {
+            mutableStateOf((if (d.linkTitle.isNotBlank()) d.openingMonth(vm.today).coerceAtMost(thisMonth.plusMonths(2)) else thisMonth).toString())
+        }
         SetupMonth(
             month = java.time.YearMonth.parse(month),
             snapshot = preview,
@@ -224,6 +234,8 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             onDayClick = { vm.fix(if (d.usesRotation && SetupStep.TODAY in d.steps) SetupStep.TODAY else SetupStep.ORDER) },
         )
     }
+    // [RVG-16] Under the month (디자인 품질 조건 1: the month first): how the user works, the days staying the link's.
+    if (d.linkTitle.isNotBlank()) LinkWorkAs(vm, d)
     if (d.linkTitle.isNotBlank()) SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
         onFix = { vm.fix(SetupStep.TIMES) })
     var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(preview == null) }
@@ -330,7 +342,8 @@ private fun SummaryFold(text: String, onOpen: () -> Unit) {
 
 /** 1.39 [FLOW-04] The folded line: the kind of work, where the order came from and the first shift's hours. */
 internal fun foldLine(d: SetupDraft, withMonth: Boolean): String = buildList {
-    add(styleTitle(d).substringBefore(" · "))
+    // [RVG-16] A setup from a link says the kind of work its summary was told.
+    add(d.workAs?.let { LINK_WORK_WORDS[it] } ?: styleTitle(d).substringBefore(" · "))
     d.source?.name?.takeIf { it.isNotBlank() }?.let(::add) ?: d.companyName.takeIf { it.isNotBlank() }?.let(::add)
     val work = d.workTypes
     work.firstOrNull()?.let { t -> add("${t.name} ${hoursOf(t)}" + if (work.size > 1) " 외 ${work.size - 1}" else "") }

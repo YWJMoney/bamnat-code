@@ -413,6 +413,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go.
                     var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }
+                    // [RVG-15] The card's X: neither answer now; the link waits and the calendar offers it after the setup.
+                    var linkClosed by rememberSaveable { mutableStateOf(false) }
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
@@ -428,10 +430,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
-                        linkWaiting = waitingLink != null && !theirsLater, linkTitle = waitingTitle,
+                        linkWaiting = waitingLink != null && !theirsLater && !linkClosed, linkTitle = waitingTitle,
                         linkLoading = waitingLink != null && waitingRead == null,
-                        linkLean = waitingRaw?.let(com.bamnat.app.ui.setup.LinkStart::lean),
+                        // [RVG-17] Said in place of the line: no signal, the server, or a link that is gone (ShareLinkException's own words).
+                        linkProblem = waitingRead?.exceptionOrNull()?.let(com.bamnat.app.ui.setup.LinkStart::problem),
+                        linkLean = com.bamnat.app.ui.setup.LinkStart.lean(waitingRaw),
+                        onLinkClose = { container.telemetry.event("setup_link", "closed"); linkClosed = true },
                         theirsKept = theirsKept, theirsLater = theirsLater,
+                        onTheirsClose = { theirsKept = null; theirsLater = false; linkClosed = true },
                         onLinkStart = linkDraft?.let { draft -> {
                             sizeSeen()
                             com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
