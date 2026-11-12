@@ -3,6 +3,7 @@ package com.bamnat.app.screenshots
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.ui.imports.DutyRosterViewModel
+import com.bamnat.app.ui.settings.titleFor
 import com.bamnat.core.imports.DutyCell
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
@@ -107,6 +108,20 @@ class RvlTimeSheetScreenshotTest : ScreenshotBase() {
 
     @Test fun unitsFoldLight() = shoot("rvl72_units_fold_light_100", FOLDED, units())
     @Test fun unitsFoldDarkHuge() = shoot("rvl72_units_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, units())
+
+    /** 2.0.0 [RVL-72] 내 근무 of an 알바·현장 calendar has its own row to 한 달 근무 넣기 (only 교대 had one). */
+    private fun settingsRow(s: WorkStyle, row: String, wide: Boolean = false): Screen.() -> Unit = style(s) {
+        settingsPage(com.bamnat.app.ui.settings.SettingsPage.WORK.titleFor(s), wide)
+        reveal(row, exact = true, across = if (wide) 0.75f else 0.5f)
+        assertTrue(appears(row, exact = true))
+    }
+
+    @Test fun hourlyRowFoldLight() = shoot("rvl72_row_hourly_fold_light_100", FOLDED,
+        settingsRow(WorkStyle.HOURLY, com.bamnat.app.ui.settings.HOURLY_ROSTER_ROW))
+    @Test fun fieldRowFoldDarkHuge() = shoot("rvl72_row_field_fold_dark_200", FOLDED_NIGHT, fontScale = 2f,
+        settingsRow(WorkStyle.FIELD, com.bamnat.app.ui.settings.FIELD_ROSTER_ROW))
+    @Test fun hourlyRowOpenLight() = shoot("rvl72_row_hourly_open_light_100", UNFOLDED,
+        settingsRow(WorkStyle.HOURLY, com.bamnat.app.ui.settings.HOURLY_ROSTER_ROW, wide = true))
 
     companion object {
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"

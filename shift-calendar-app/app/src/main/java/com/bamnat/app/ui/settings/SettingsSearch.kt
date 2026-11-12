@@ -179,6 +179,10 @@ internal object SettingsIndex {
         // 2.0.0 [RVG-40] 검토 PC-175: a shop, a field worker or an investor reads 다른 사람 달력 받기, as 달력 › 도구 says it.
         (e.place as? SettingPlace.Screen)?.go == SettingsGo.RECEIVE && e.title == "동료 근무표 받기" && com.bamnat.core.work.receiveTitle(style) != e.title ->
             e.copy(title = com.bamnat.core.work.receiveTitle(style), keywords = e.keywords + e.title)
+        // 2.0.0 [RVL-72] 알바·현장 read 한 달 근무 넣기 as their own row on 내 근무 says it.
+        (style == com.bamnat.core.work.WorkStyle.HOURLY || style == com.bamnat.core.work.WorkStyle.FIELD) &&
+            (e.place as? SettingPlace.Screen)?.go == SettingsGo.DUTY_ROSTER && e.title == "한 달 근무 넣기" ->
+            e.copy(title = if (style == com.bamnat.core.work.WorkStyle.HOURLY) HOURLY_ROSTER_ROW else FIELD_ROSTER_ROW, keywords = e.keywords + e.title)
         style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
             e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
         // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;
@@ -218,6 +222,8 @@ internal object SettingsIndex {
         if (style == com.bamnat.core.work.WorkStyle.HOURLY && e.title in HOURLY_HIDDEN) return false
         if (style == null || style.usesPayEngine) return true
         val place = e.place
+        // 2.0.0 [RVL-72] 현장's 공수표 goes in through 한 달 근무 넣기.
+        if (style == com.bamnat.core.work.WorkStyle.FIELD && place is SettingPlace.Screen && place.go == SettingsGo.DUTY_ROSTER) return true
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
         // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
         // 1.39 G6: unless the user put it on the calendar themselves.
@@ -258,7 +264,9 @@ internal object SettingsIndex {
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
         screen(W.title, "한 달 근무 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "듀티표 넣기", "직접 입력", "키패드", "반차", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",
             // [IMPORT-03]
-            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동"),
+            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동",
+            // 2.0.0 [RVL-72]
+            "시간표", "알바 시간표", "스케줄표", "공수표", "공수", "출력표"),
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),

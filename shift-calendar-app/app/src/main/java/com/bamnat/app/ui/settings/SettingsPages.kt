@@ -258,6 +258,10 @@ private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, 
 
 private const val RULES_FOLDED = 6
 
+/** 2.0.0 [RVL-72] 내 근무's row to 한 달 근무 넣기 on an 알바·현장 calendar, the same words in 설정 찾기. */
+internal const val HOURLY_ROSTER_ROW = "시간표로 한 달 넣기"
+internal const val FIELD_ROSTER_ROW = "공수표로 한 달 넣기"
+
 /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Tools of the calendar's own kind of work, for the calendar picked above. */
 @Composable
 private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
@@ -276,6 +280,14 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
             NavRow("출퇴근 자동 기록", if (commute.enabled) "켜져 있어요 · 회사 위치에 들어오고 나갈 때 적어요" else "꺼져 있어요 · 회사 위치로 출근·퇴근 시각을 적어요") {
                 open(com.bamnat.app.NoticeLinks.Target.COMMUTE)
             }
+        }
+        // 2.0.0 [RVL-72] (검토 T07b-01·T07b-02) 알바 시간표·현장 공수표도 한 달 근무 넣기가 읽어요: those calendars had no row to it
+        // (only 교대 had), so the reading was found only through 설정 찾기.
+        com.bamnat.core.work.WorkStyle.HOURLY -> SectionCard(title = "알바 도구") {
+            NavRow(HOURLY_ROSTER_ROW, "가게 시간표 사진·엑셀·글을 읽어 일한 날과 시간을 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+        }
+        com.bamnat.core.work.WorkStyle.FIELD -> SectionCard(title = "현장 도구") {
+            NavRow(FIELD_ROSTER_ROW, "공수표 사진·엑셀·글을 읽어 날마다 공수(1·0.5·1.5)를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
         }
         else -> Unit
     }
