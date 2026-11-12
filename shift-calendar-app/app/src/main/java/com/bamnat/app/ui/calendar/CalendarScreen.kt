@@ -1393,8 +1393,11 @@ fun CalendarScreen(
             // 2.0.0 [RVH-64] 검토 PC-72 (설계 4절): one line, the 주의 mark, 확인 and X; a day whose alarm will not ring may be among
             // them, so it stands with what the user trusts the app with. X folds it: the update notice's line stays.
             if (paint == null && viewingReceived == null) slipCard?.let { a ->
-                add(Notice("turnSlip", "지난 판 확인") {
-                    com.bamnat.app.ui.components.NudgeCard("지난 판에서 누른 날과 다른 날에 들어갔을 수 있어요 · ${a.rows.size}개",
+                // [RVH-64] 총괄 사진 검토(11-13): the band over the month like the others, one line of 56dp at 접은 폭 100%
+                // (it was a card of its own, two lines, under P's 한 줄 머리); the rest of the notices wait in the bell.
+                add(Notice("turnSlip", "지난 판 확인", line = turnSlipLine(a.rows.size), tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    action = "확인", onAction = { TurnSlipAsk.show() }, onClose = { TurnSlipAsk.fold(context) }, urgent = true) {
+                    com.bamnat.app.ui.components.NudgeCard(turnSlipLine(a.rows.size),
                         tone = com.bamnat.app.ui.theme.Tone.Caution, action = "확인", onAction = { TurnSlipAsk.show() },
                         onClose = { TurnSlipAsk.fold(context) }, closeLabel = "지난 판 확인 접기",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -1707,7 +1710,7 @@ fun CalendarScreen(
                 }
                 CalendarPart.REST -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
                     val rules = settings.rules
-                    val rest = remember(snap, visibleMonth, rules) { vm.restIssues(snap, visibleMonth, rules) }
+                    val rest = remember(snap, visibleMonth, rules, settings.restSigns) { if (settings.restSigns) vm.restIssues(snap, visibleMonth, rules) else emptyList() }
                     // [NURS-05][JOB-03] Nights, night pay and a 공무원's 시간외, worked out off the main thread.
                     val nights by produceState<CalendarViewModel.MonthNights?>(null, payProfile, snap, visibleMonth) {
                         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.monthNights(payProfile, snap, visibleMonth) }
@@ -1755,7 +1758,7 @@ fun CalendarScreen(
                     com.bamnat.app.ui.invest.InvestMonthBar(investVm, visibleMonth, onOpen = onOpenStats, modifier = place.padding(horizontal = 16.dp, vertical = 4.dp))
                 } else if (!(focus == com.bamnat.core.work.CalendarFocus.SHIFTS && overview.isEmpty && payEstimate == null)) {
                     // [SRV-10] N5: the month's rest signs, counted where the month is summed up.
-                    val restSigns = if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || !settings.restCheck) 0
+                    val restSigns = if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || !settings.restSigns) 0
                         else remember(snap, visibleMonth, settings.rules) { vm.restIssues(snap, visibleMonth, settings.rules).size }
                     MonthSummaryBar(
                         overview = overview,
@@ -3564,3 +3567,6 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
     // 2.0.0 [RVH-61] The Play 별점 창 is never a row to tap (Play asks apps not to prompt for it): it just waits for a later visit.
     com.bamnat.core.guide.OpenAsk.REVIEW -> null
 }
+
+/** 2.0.0 [RVH-64] The 지난 판 확인 band's one line, short enough for 접은 폭 100% (총괄 사진 검토 11-13). */
+internal fun turnSlipLine(count: Int): String = "최근에 넣은 ${count}개, 날짜를 한 번 봐 주세요"

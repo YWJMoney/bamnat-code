@@ -913,8 +913,7 @@ private fun TimingContent(
                 TimeBox(label = "끝", time = t.end, onClick = { onPick("end") }, modifier = Modifier.weight(1f))
             }
             val span = WorkTime.spanMinutes(t.start, t.end)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow("휴게 시간", Modifier.padding(top = 4.dp)) { // [RVH-81] HQ-98
                 MinutesStepper(
                     minutes = t.breakMinutes,
                     onChange = { b -> onTiming(t.copy(breakMinutes = b, breakStart = if (b == 0) null else t.breakStart)) },
@@ -941,8 +940,7 @@ private fun TimingContent(
         }
         is ExtraTiming.AfterShift, is ExtraTiming.BeforeShift -> {
             val minutes = (t as? ExtraTiming.AfterShift)?.minutes ?: (t as ExtraTiming.BeforeShift).minutes
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                Text(if (t is ExtraTiming.AfterShift) "근무 끝나고" else "근무 시작 전", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow(if (t is ExtraTiming.AfterShift) "근무 끝나고" else "근무 시작 전", Modifier.padding(top = 8.dp)) { // [RVH-81]
                 MinutesStepper(
                     minutes = minutes,
                     onChange = { m -> onTiming(if (t is ExtraTiming.AfterShift) ExtraTiming.AfterShift(m.coerceAtLeast(10)) else ExtraTiming.BeforeShift(m.coerceAtLeast(10))) },

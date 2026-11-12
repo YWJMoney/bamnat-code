@@ -890,7 +890,7 @@ private fun SettingsHub(
         val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
         val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
         val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
-        if (leaderOn || bossOn) GroupRow(Icons.Outlined.Groups, "팀·가게 관리",
+        if (leaderOn || bossOn) GroupRow(Icons.Outlined.Groups, com.bamnat.app.ui.work.manageTitle(leaderOn, bossOn),
             listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.

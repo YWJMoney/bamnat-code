@@ -135,10 +135,12 @@ object Notifications {
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannelGroups(listOf(
-            NotificationChannelGroup(GROUP_ALARMS, "근무 알람"),
+            NotificationChannelGroup(GROUP_ALARMS, "알람"),
             NotificationChannelGroup(GROUP_DAY, "하루 안내"),
             NotificationChannelGroup(GROUP_MONEY, "돈과 휴가"),
         ))
+        // 2.0.0 [RVH-80] 검토 TYPE-13: the phone's 알림 설정 lists these for every kind of work, so their names are no 교대 근무자's
+        // ('근무 알람', '잠금 화면 오늘 근무', '근무표 링크 기간'). The ids stay, so a channel the user turned down keeps its setting.
         val alarm = NotificationChannel(ALARM_CHANNEL_ID, context.getString(R.string.channel_alarm_name), NotificationManager.IMPORTANCE_HIGH).apply {
             description = context.getString(R.string.channel_alarm_description)
             group = GROUP_ALARMS
@@ -147,7 +149,7 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         // Used only when the ringing service cannot start, so this channel makes the sound itself.
-        val fallback = NotificationChannel(FALLBACK_CHANNEL_ID, "근무 알람 예비 소리", NotificationManager.IMPORTANCE_HIGH).apply {
+        val fallback = NotificationChannel(FALLBACK_CHANNEL_ID, "알람 예비 소리", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "알람 화면을 띄우지 못할 때만 대신 울려요. 끄면 알람을 놓칠 수 있어요"
             group = GROUP_ALARMS
             setSound(
@@ -199,12 +201,12 @@ object Notifications {
             group = GROUP_DAY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        val share = NotificationChannel(SHARE_CHANNEL_ID, "근무표 링크 기간", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "보낸 근무표 링크가 닫히기 며칠 전에 알려요. 알림에서 바로 늘릴 수 있어요"
+        val share = NotificationChannel(SHARE_CHANNEL_ID, "공유 링크 기간", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "보낸 공유 링크가 닫히기 며칠 전에 알려요. 알림에서 바로 늘릴 수 있어요"
             group = GROUP_DAY
         }
-        val today = NotificationChannel(TODAY_CHANNEL_ID, "잠금 화면 오늘 근무", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요"
+        val today = NotificationChannel(TODAY_CHANNEL_ID, "잠금 화면 오늘 줄", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "오늘과 내일 근무·영업·일정을 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요"
             group = GROUP_DAY
             setShowBadge(false)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
@@ -463,9 +465,9 @@ object Notifications {
         val channel = nm.getNotificationChannel(ALARM_CHANNEL_ID)
         return when {
             channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE && channel.importance < NotificationManager.IMPORTANCE_HIGH ->
-                "‘근무 알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요"
+                "‘알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요"
             channel != null && channel.lockscreenVisibility == android.app.Notification.VISIBILITY_SECRET ->
-                "‘근무 알람’ 알림이 잠금 화면에서 숨겨져 있어요"
+                "‘알람’ 알림이 잠금 화면에서 숨겨져 있어요"
             else -> null
         }
     }

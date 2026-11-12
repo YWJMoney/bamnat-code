@@ -260,8 +260,8 @@ fun NightScreen(
                             Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 sleepButton()
                                 soundCard()
-                                note(if (clockOn) "충전 중이라 화면을 켜 둬요. 시계는 화면에 자국이 남지 않게 조금씩 자리를 옮겨요. 근무 알람은 이 화면과 상관없이 울려요."
-                                    else "충전기에 꽂으면 화면이 꺼지지 않는 탁상 시계가 돼요. 근무 알람은 이 화면과 상관없이 울려요.")
+                                note(if (clockOn) "충전 중이라 화면을 켜 둬요. 시계는 화면에 자국이 남지 않게 조금씩 자리를 옮겨요. 정해 둔 알람은 이 화면과 상관없이 울려요."
+                                    else "충전기에 꽂으면 화면이 꺼지지 않는 탁상 시계가 돼요. 정해 둔 알람은 이 화면과 상관없이 울려요.")
                             }
                         }
                     }
@@ -292,7 +292,7 @@ fun NightScreen(
                 Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     soundCard()
                     sleepButton()
-                    note("화면이 꺼지는 시간은 휴대폰 설정 그대로예요. 근무 알람은 이 화면과 상관없이 울려요.")
+                    note("화면이 꺼지는 시간은 휴대폰 설정 그대로예요. 정해 둔 알람은 이 화면과 상관없이 울려요.")
                 }
                 Spacer(Modifier.height(24.dp))
             }

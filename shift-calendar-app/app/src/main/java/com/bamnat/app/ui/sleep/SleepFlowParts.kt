@@ -98,7 +98,7 @@ internal fun SleepDays(s: SleepViewModel.State, settings: AppSettings, target: I
             val res = s.resolver ?: return@remember emptyList()
             runCatching {
                 val tips = SleepPlan.tips(SleepSchedule.of(res, day, day.plusDays(1), settings.alarmsEnabled,
-                    settings.sleepTargetMinutes, settings.commuteMinutes), day)
+                    settings.sleepTargetMinutes, settings.commuteMinutes), day, settings.workStyle)
                 val near = s.log.filter { it.start.toLocalDate() in day.minusDays(1)..day }
                 DayStoryItems.of(day, res, sleeps = near, plans = tips)
                     .filter { it.kind == StoryKind.Shift || it.kind == StoryKind.Sleep || it.kind == StoryKind.SleepPlan }

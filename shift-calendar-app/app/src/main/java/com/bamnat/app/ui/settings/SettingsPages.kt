@@ -458,7 +458,7 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         }
         HealthSleepRow(vm, settings.healthSleep)
         // [SLP-16] Where the taps go, and what they say about the user's own sleep.
-        NavRow("수면 기록 보기", if (settings.workStyle == WorkStyle.INVEST) "평균, 내 기록에서 보이는 것, 기록 고치기·추가" else "근무별 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
+        NavRow("수면 기록 보기", "${com.bamnat.core.sleep.SleepInsights.groupsWord(settings.workStyle)} 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
         }
         // 2.0.0 [RVH-41] 검토 T30-77: 야간 is a shift worker's; others hear of a late night.
@@ -470,14 +470,18 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     if (com.bamnat.core.work.CalendarFocus.of(settings.workStyle) != com.bamnat.core.work.CalendarFocus.SHIFTS) return
     // [SLP-01][MKT-07][MKT-11]
     SectionCard(title = "휴식 점검") {
-        SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
+        // 2.0.0 [RVH-73] 검토 T30-79: 야간 is a 교대 worker's word; 일근·알바 hear of 연속 근무 (the rule that reaches them).
+        val shifts = settings.workStyle == null || settings.workStyle == WorkStyle.SHIFT
+        SwitchRow("휴식 점검", if (shifts) "근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요"
+            else "근무 사이 휴식이 짧거나 쉬는 날 없이 이어지면 달력에 알려 줘요. 회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
             vm.update { it.copy(restCheck = v) }
         }
         if (settings.restCheck) {
             // [REST-01] 1.21's '더 엄격하게' is a preset of the same 근무표 점검 기준 the calendar card opens.
             var rulesOpen by remember { mutableStateOf(false) }
             val r = settings.rules
-            NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, 연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일") {
+            NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, " +
+                if (shifts) "연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일" else "연속 근무 ${r.maxWorkDaysInRow}일") {
                 rulesOpen = true
             }
             if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->

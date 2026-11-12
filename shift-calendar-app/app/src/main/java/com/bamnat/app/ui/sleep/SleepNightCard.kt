@@ -123,7 +123,7 @@ internal fun SleepNightCard(
                         label = { Text(com.bamnat.core.sleep.SmartWakeRule.label(m)) })
                 }
             }
-            if (smartWake > 0) Text("근무 알람은 정시에 그대로 울려요. 구간 안에 뒤척이면 그때 먼저 깨우고, 정시 알람은 꺼요.",
+            if (smartWake > 0) Text("정해 둔 알람은 정시에 그대로 울려요. 구간 안에 뒤척이면 그때 먼저 깨우고, 정시 알람은 꺼요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (r == null && last != null && last.end.isAfter(Today.dateTime().minusHours(18))) {

@@ -262,8 +262,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 TimeBox(label = "끝", time = to, onClick = { picking = "end" }, modifier = Modifier.weight(1f))
             }
             val span = WorkTime.spanMinutes(from, to)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow("휴게 시간") { // [RVH-81] HQ-98
                 MinutesStepper(
                     minutes = extra.breakMinutes,
                     onChange = { b -> update(e.copy(start = from, end = to, breakMinutes = b, breakStart = e.breakStart ?: extra.breakStart)) },
@@ -281,15 +280,12 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    when (extra.kind.timing) {
-                        is ExtraTiming.BeforeShift -> "근무 전 시간"
-                        else -> if (day.isWorkDay) "근무 뒤 시간" else "일한 시간"
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
+            com.bamnat.app.ui.components.LabelControlRow( // [RVH-81] HQ-98
+                when (extra.kind.timing) {
+                    is ExtraTiming.BeforeShift -> "근무 전 시간"
+                    else -> if (day.isWorkDay) "근무 뒤 시간" else "일한 시간"
+                },
+            ) {
                 MinutesStepper(
                     minutes = e.minutes,
                     onChange = { m -> update(e.copy(minutes = m)) },
@@ -332,8 +328,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 label = { Text("인정된 시간이 달라요") },
             )
             e.approvedMinutes?.let { ok ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("인정된 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.components.LabelControlRow("인정된 시간") { // [RVH-81] HQ-98
                     MinutesStepper(minutes = ok.coerceAtMost(extra.minutes), onChange = { m -> update(e.copy(approvedMinutes = m.coerceIn(0, extra.minutes))) },
                         step = 30, max = extra.minutes, dialogTitle = "인정된 시간")
                 }

@@ -290,7 +290,7 @@ private fun DayGroups(
     val insight = insightFor?.takeIf { it.first == date }?.second ?: DayInsight()
     val alarms = remember(snapshot, date) { plannedAlarms(snapshot, day) }
     val rest = remember(snapshot, date, settings.rules) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, date, settings.rules) else emptyList()
+        if (settings.restSigns) vm.restIssuesOn(snapshot, date, settings.rules) else emptyList()
     }
     val tips = remember(snapshot, date, settings) {
         if (settings.sleepTips) vm.sleepTips(snapshot, date, settings) else emptyList()
@@ -795,8 +795,7 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
             color = com.bamnat.app.ui.components.QuietInk, // [RVP-13] neutral, not 주의
         )
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+    com.bamnat.app.ui.components.LabelControlRow("휴게 시간") { // [RVH-81] HQ-98
         MinutesStepper(
             minutes = day.plannedBreakMinutes,
             onChange = { vm.setBreak(day.date, it) },
@@ -962,7 +961,8 @@ private fun AlarmContent(
     }
     Text(
         when {
-            custom != null -> "이 날 알람이에요. 근무 알람 대신 울려요."
+            // 2.0.0 [RVH-73] 검토 T30-86·87·88·TYPE-11: words for every kind of work (가게·현장·투자 have no 근무 알람).
+            custom != null -> "이 날 알람이에요. 평소 알람 대신 울려요."
             day.alarmSkipped -> "이 날은 알람이 울리지 않아요. 위 스위치로 다시 켤 수 있어요."
             type != null && type.alarmEnabled -> "${com.bamnat.core.alarm.AlarmWords.alarm(type.name)} 설정을 따라요." // 1.39 [SHOP-13] 영업 알람, 주간 근무 알람
             // 1.39 [SHOP-12] 가게는 처음부터 영업 알람이 없어요: 그렇게 둔 까닭과 한 번에 켜는 곳.
@@ -971,7 +971,7 @@ private fun AlarmContent(
             type != null -> com.bamnat.core.alarm.AlarmWords.work(type.name).let { "$it${Fmt.eun(it)} 알람이 꺼져 있어요." }
             planned.isNotEmpty() -> "대근한 근무의 알람이 울려요."
             // [CAL-05] A field or shop day without work is not called a day off.
-            focus == com.bamnat.core.work.CalendarFocus.JOBS -> "근무 알람이 없는 날이에요. 일감 알림은 일감에서 정하고, 이 날만 알람을 정할 수도 있어요."
+            focus == com.bamnat.core.work.CalendarFocus.JOBS -> "울릴 알람이 없는 날이에요. 일감 알림은 일감에서 정하고, 이 날만 알람을 정할 수도 있어요."
             focus == com.bamnat.core.work.CalendarFocus.SALES -> "울릴 알람이 없는 날이에요. 필요하면 이 날만 알람을 정할 수 있어요."
             else -> "쉬는 날이에요. 필요하면 이 날만 알람을 정할 수 있어요."
         },
@@ -989,7 +989,7 @@ private fun AlarmContent(
             Spacer(Modifier.width(6.dp))
             Text(if (custom != null) "이 날 알람 고치기" else "이 날만 알람 정하기")
         }
-        if (custom != null) TextButton(onClick = { vm.setDayAlarms(day.date, null) }) { Text("근무 알람으로") }
+        if (custom != null) TextButton(onClick = { vm.setDayAlarms(day.date, null) }) { Text("평소 알람으로") }
         if (type != null && !type.alarmEnabled && custom == null) {
             // 1.39 [SHOP-12] 가게 영업 날은 이 자리에서 바로 켜요(문 열기 1시간 전, 되돌리기). 근무 종류 화면을 거치지 않아요.
             if (focus == com.bamnat.core.work.CalendarFocus.SALES) TextButton(onClick = { vm.turnOnTypeAlarm(type) }) { Text("${type.name} 알람 켜기") }
@@ -1035,7 +1035,7 @@ private fun DayAlarmEditorDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    "이 날은 아래 알람만 울려요. 근무 알람 대신 쓰여요.",
+                    "이 날은 아래 알람만 울려요. 평소 알람 대신 쓰여요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1418,7 +1418,7 @@ private fun SleepSection(
                     modifier = Modifier.width(104.dp),
                 )
                 Column(Modifier.weight(1f)) {
-                    Text(tip.kind.label, style = MaterialTheme.typography.bodyMedium)
+                    Text(tip.label, style = MaterialTheme.typography.bodyMedium)
                     Text("${tip.text} · ${tip.basis.label}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -1434,7 +1434,7 @@ private fun SleepSection(
             }
         }
         if (tips.isNotEmpty()) {
-            Text("일정에 맞춘 수면 시간 제안이에요. 몸 상태와 회사 사정에 맞게 조절하세요.",
+            Text("일정에 맞춘 수면 시간 제안이에요. 몸 상태와 그날 사정에 맞게 조절하세요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp))
         }
@@ -1462,7 +1462,7 @@ private fun SleepSection(
             }
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
-                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(${com.bamnat.core.sleep.SleepInsights.groupsWord(style)})을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
+                if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 ${com.bamnat.core.sleep.SleepInsights.groupsWord(style)} 평균을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
                 // 1.39 (PC 5c4ad849): the sleep screen's head, word for word ("평균 7시간 10분 · 목표보다 10분 더 잤어요 ·
                 // 7일 중 5일 적음"); this used to add up each short day ("0시간 30분 부족") while that compared the average.
                 else com.bamnat.core.sleep.SleepHead.of(debt, targetMinutes).let { "평균 ${it.value} · ${it.caption}" },

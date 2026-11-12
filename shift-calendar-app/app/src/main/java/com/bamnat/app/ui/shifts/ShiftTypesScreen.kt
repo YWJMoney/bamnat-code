@@ -741,8 +741,7 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            com.bamnat.app.ui.components.LabelControlRow("휴게 시간") { // [RVH-81] HQ-98
                                 MinutesStepper(
                                     minutes = draft.breakMinutes,
                                     onChange = { draft = draft.copy(breakMinutes = it) },

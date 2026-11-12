@@ -382,6 +382,12 @@ data class AppSettings(
     val limits: HourLimits get() = if (workStyle?.usesPayEngine == false) OWNER_HOURS
         else HourLimits(weeklyLimitHours, averageLimitHours)
 
+    /**
+     * 2.0.0 [RVH-72] 검토 TYPE-03·T30-11·T30-90 (가게 날짜 창에 '연속 근무·연속 야간'): rest signs are a worker's (근로기준법 휴식), so only
+     * where the pay engine counts work (교대·일근·알바); a 가게, 현장 or 투자 calendar shows none, whatever [restCheck] says.
+     */
+    val restSigns: Boolean get() = restCheck && workStyle?.usesPayEngine != false
+
     companion object {
         /** [CELL-01] What [AppSettings.cellList] can be. */
         val CELL_LISTS = setOf("auto", "on", "off")

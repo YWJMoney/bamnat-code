@@ -329,7 +329,7 @@ class AlarmButtonsAllOffTest {
         assertNull(Notifications.alarmChannelTrouble(app))
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(Notifications.ALARM_CHANNEL_ID, "근무 알람", NotificationManager.IMPORTANCE_LOW))
-        assertEquals("‘근무 알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요", Notifications.alarmChannelTrouble(app))
+        assertEquals("‘알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요", Notifications.alarmChannelTrouble(app))
         manager.deleteNotificationChannel(Notifications.ALARM_CHANNEL_ID)
         Notifications.createChannels(app)
         assertTrue(Notifications.makerLockScreenPermission("Xiaomi"))

@@ -545,8 +545,8 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
  */
 @Composable
 private fun dayCaution(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, weekNote: String?): String? {
-    val rest = remember(snapshot, day.date, settings.rules, settings.restCheck) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
+    val rest = remember(snapshot, day.date, settings.rules, settings.restSigns) {
+        if (settings.restSigns) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
     }
     return (rest.map { it.kind.label }.distinct() + listOfNotNull(weekNote)).joinToString(" · ").ifEmpty { null }
 }
@@ -851,8 +851,9 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, lines: I
         var more: androidx.compose.ui.layout.Placeable? = null
         if (at == null) {
             val hiddenMost = shown.size
-            // The button's width as it will be: 10dp + "+n" + 18dp arrow + 4dp ([MoreButton]), and 4dp before it.
-            val reserve = measurer.measure("+$hiddenMost", moreStyle, maxLines = 1, softWrap = false).size.width + 32.dp.roundToPx()
+            // The button's width as it will be: 10dp + "+n" + 18dp arrow + 4dp ([MoreButton]), and 4dp before it ([chipLines] puts a
+            // chip gap before it, so the 4dp is counted less that gap: the same room as before two lines).
+            val reserve = measurer.measure("+$hiddenMost", moreStyle, maxLines = 1, softWrap = false).size.width + 36.dp.roundToPx() - gap
             val free = shown.filter { it !in pinned }
             val keep = shown.filter { it in pinned }.takeIf { k -> chipLines(k.map { widths[it] }, room, gap, lines, reserve) != null }.orEmpty()
             var k = 0
