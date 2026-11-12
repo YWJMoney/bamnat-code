@@ -116,8 +116,11 @@ internal fun PartsTool(
     if (families.size >= 3) com.bamnat.app.ui.components.FoldRow("studio.families", what = "부품 묶음") {
         FilterChip(selected = family == null, onClick = { family = null }, label = { Text("모두") })
         families.forEach { f ->
-            FilterChip(selected = family == f, onClick = { family = f; if (!(id == f || id.startsWith("$f."))) id = f },
-                label = { Text(BlueprintParts.LABELS[f] ?: f) })
+            // 2.0.0 [RVS-16] The picked one stays in view of the folded row.
+            com.bamnat.app.ui.components.KeepInView(family == f) {
+                FilterChip(selected = family == f, onClick = { family = f; if (!(id == f || id.startsWith("$f."))) id = f },
+                    label = { Text(BlueprintParts.LABELS[f] ?: f) })
+            }
         }
     }
     val shown = family?.let { f -> ids.filter { it == f || it.startsWith("$f.") } } ?: ids
@@ -142,7 +145,9 @@ internal fun PartsTool(
     val states = statesFor(id, style, keep = on)
     if (states.isNotEmpty()) com.bamnat.app.ui.components.FoldRow("studio.states", what = "어떤 때") {
         (listOf<String?>(null) + states).forEach { st ->
-            FilterChip(selected = st == on, onClick = { on = st }, label = { Text(stateWord(id, st, style)) })
+            com.bamnat.app.ui.components.KeepInView(st == on) {
+                FilterChip(selected = st == on, onClick = { on = st }, label = { Text(stateWord(id, st, style)) })
+            }
         }
     }
     // [BLU-12] 어두운 화면 colours show in the example once it is seen dark.
@@ -170,8 +175,10 @@ internal fun PartsTool(
     if (dated || conds.isNotEmpty()) com.bamnat.app.ui.components.FoldRow("studio.conds", what = "조건") {
         FilterChip(selected = cond == null, onClick = { cond = null }, label = { Text("조건 없이") })
         conds.forEach { w ->
-            FilterChip(selected = cond == w, onClick = { cond = w },
-                label = { Text("만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(18), maxLines = 1) })
+            com.bamnat.app.ui.components.KeepInView(cond == w) {
+                FilterChip(selected = cond == w, onClick = { cond = w },
+                    label = { Text("만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(18), maxLines = 1) })
+            }
         }
         if (dated && cond?.isBlank() != true) FilterChip(selected = false, onClick = { cond = "" }, label = { Text("＋ 조건으로 꾸미기") })
     }

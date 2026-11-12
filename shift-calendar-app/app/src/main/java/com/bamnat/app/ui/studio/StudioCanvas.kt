@@ -272,7 +272,10 @@ internal fun PartBar(
                 }
             }
             StudioEdit.tools(sel).forEach { q ->
-                FilterChip(selected = quick == q, onClick = { onQuick(if (quick == q) null else q) }, label = { Text(q.label) })
+                // 2.0.0 [RVS-16] The open tool's chip is kept in view of the folded row.
+                com.bamnat.app.ui.components.KeepInView(quick == q) {
+                    FilterChip(selected = quick == q, onClick = { onQuick(if (quick == q) null else q) }, label = { Text(q.label) })
+                }
             }
             FilterChip(selected = false, onClick = onMore, label = { Text("더 보기 ›") })
             // PC 확인 1.37 A10 (펼친 줄에서 잘못 눌려 메모 제목이 숨겨짐): 숨기기 last, after the tools, away from where the next tap goes.
@@ -294,13 +297,10 @@ private fun QuickEditor(q: Quick, id: String, line: Map<String, Any?>, set: (Arr
     fun one(k: String, v: Any?) = set(arrayOf(k to v))
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
+    // 2.0.0 [RVS-16] (총괄 #495, 조건 12) 처음대로 in the slider's own line (beside it, the slider and its name were squeezed at 200%).
     @Composable fun slider(label: String, k: String, start: Float, range: ClosedFloatingPointRange<Float>, unit: String, step: Int = 1) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                LabeledSlider(label, num(k) ?: start, range, unit, unset = if (line[k] == null) "처음대로" else null, step = step) { one(k, Math.round(it).toLong()) }
-            }
-            if (line[k] != null) TextButton(onClick = { one(k, null) }) { Text("처음대로") }
-        }
+        LabeledSlider(label, num(k) ?: start, range, unit, unset = if (line[k] == null) "처음대로" else null, step = step,
+            onReset = if (line[k] != null) ({ one(k, null) }) else null) { one(k, Math.round(it).toLong()) }
     }
     when (q) {
         Quick.FILL -> {

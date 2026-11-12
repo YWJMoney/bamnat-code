@@ -89,6 +89,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -601,7 +602,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         Scaffold(
             snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
             topBar = {
+                // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
+                val feelLine = vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
+                    vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }
+                // 2.0.0 [RVS-16] (총괄 #495 사진, 조건 12: 글자 200%에서 제목 ‘지금 …’의 아래가 잘렸어요) The bar is as tall as its lines at this
+                // text size (스튜디오 · the start's name · 지금: …), never under the app bar's own height.
+                val typo = MaterialTheme.typography
+                val barHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
+                    fun lh(t: androidx.compose.ui.text.TextStyle) = (if (t.lineHeight.isSpecified) t.lineHeight else t.fontSize * 1.4f).toDp()
+                    lh(typo.labelMedium) + lh(typo.titleMedium) + (if (feelLine != null) lh(typo.labelSmall) else 0.dp) + 16.dp
+                }.coerceAtLeast(androidx.compose.material3.TopAppBarDefaults.TopAppBarExpandedHeight)
                 TopAppBar(
+                    expandedHeight = barHeight,
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
@@ -612,9 +624,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
-                            // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
-                            vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
-                                vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }?.let {
+                            feelLine?.let {
                                 Text("지금: ${it.second}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
