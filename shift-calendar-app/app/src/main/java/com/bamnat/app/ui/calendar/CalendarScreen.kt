@@ -17,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
@@ -428,8 +429,15 @@ fun CalendarScreen(
     // The version is noted on the first opening of 내 달력 whether or not a moment is due; looked at again on each visit.
     val visit by com.bamnat.app.HomeRequests.count.collectAsStateWithLifecycle()
     remember { InAppReview.firstRunNow(context, visit = visit) }
-    val reviewHeld = remember(reviewMoment != null, visit) {
-        reviewMoment != null && InAppReview.held(InAppReview.firstRunNow(context, visit = visit), context.appContainer.policyAsks())
+    // 2.0.0 [RVH-64] 검토 PC-72: the card '지난 판에서 누른 날과 다른 날에…' over the calendar, on a phone whose month turn could have
+    // put a day a month on before 2.0.0 (스르륵·책장·움직이지 않기, 움직임 끄기, the phone's animations off). Not folded by X yet.
+    val slipAsk by TurnSlipAsk.ask.collectAsStateWithLifecycle()
+    val slipRisky = com.bamnat.app.ui.theme.LocalMotionOff.current ||
+        com.bamnat.app.ui.theme.LocalMotion.current.turn in TurnSlipAsk.RISKY_TURNS
+    val slipCard = slipAsk?.takeIf { !it.folded && slipRisky }
+    val reviewHeld = remember(reviewMoment != null, visit, slipCard != null) {
+        reviewMoment != null && InAppReview.held(InAppReview.firstRunNow(context, visit = visit), context.appContainer.policyAsks(),
+            slipCard = slipCard != null)
     }
     var reviewCalm by remember(reviewMoment) { mutableStateOf(false) }
     LaunchedEffect(reviewMoment, reviewHeld) {
@@ -745,6 +753,8 @@ fun CalendarScreen(
     var explainingSwap by remember { mutableStateOf(false) }
 
     var showMonthPicker by remember { mutableStateOf(false) }
+    // 2.0.0 [RVH-65] 검토 PC-73 달력 도구 › 최근 바꾼 기록.
+    var recentChangesOpen by rememberSaveable { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
     // 1.38 [EASE-28] The month about to go out as a picture: the sheet shows it and what rides on it first.
     var imageMonth by remember { mutableStateOf<YearMonth?>(null) }
@@ -1111,6 +1121,7 @@ fun CalendarScreen(
             // [285] Already on today: the button stays where it is, greyed, so the bar does not jump.
             atToday = selected == Today.date() && (if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth) == Today.month(),
             onPickMonth = { showMonthPicker = true },
+            onRecentChanges = if (viewingReceived == null) ({ recentChangesOpen = true }) else null,
             byWeek = weekOnly,
             onShare = shareCalendar,
             onOpenPattern = onOpenPattern,
@@ -1335,6 +1346,16 @@ fun CalendarScreen(
                 add(Notice("restoreStopped", "불러오기 멈춤") { com.bamnat.app.ui.settings.RestoreStoppedNotice() })
                 add(Notice("phoneMoved", "옮겨 온 것 확인") { com.bamnat.app.ui.settings.PhoneMovedNotice() })
                 add(Notice("appLockResting", "앱 잠금 쉼") { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
+            }
+            // 2.0.0 [RVH-64] 검토 PC-72 (설계 4절): one line, the 주의 mark, 확인 and X; a day whose alarm will not ring may be among
+            // them, so it stands with what the user trusts the app with. X folds it: the update notice's line stays.
+            if (paint == null && viewingReceived == null) slipCard?.let { a ->
+                add(Notice("turnSlip", "지난 판 확인") {
+                    com.bamnat.app.ui.components.NudgeCard("지난 판에서 누른 날과 다른 날에 들어갔을 수 있어요 · ${a.rows.size}개",
+                        tone = com.bamnat.app.ui.theme.Tone.Caution, action = "확인", onAction = { TurnSlipAsk.show() },
+                        onClose = { TurnSlipAsk.fold(context) }, closeLabel = "지난 판 확인 접기",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                })
             }
             shareLeftOut.forEach { (k, words) ->
                 if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "링크에 빼고 보낸 것") {
@@ -2147,6 +2168,17 @@ fun CalendarScreen(
         )
     }
 
+    if (recentChangesOpen) RecentChangesSheet(
+        calendarId = activeCalendar.id, style = settings.workStyle,
+        onOpenDay = { d ->
+            recentChangesOpen = false
+            vm.select(d)
+            goToMonth(YearMonth.from(d))
+            if (!wide) sheetOpen = true
+        },
+        onDismiss = { recentChangesOpen = false },
+    )
+
     if (showMonthPicker) {
         MonthPickerDialog(
             initial = visibleMonth,
@@ -2259,6 +2291,8 @@ internal fun CalendarHeader(
     onPushToday: () -> Unit = {},
     /** 2.0.0 [RVH-42] 검토 PC-29·30: the work's 바로 단추 on the head, as buttons of the head's row. */
     quick: List<HeadQuick> = emptyList(),
+    /** 2.0.0 [RVH-65] 검토 PC-73 최근 바꾼 기록; null while a received calendar is shown. */
+    onRecentChanges: (() -> Unit)? = null,
     onQuick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -2445,6 +2479,8 @@ internal fun CalendarHeader(
                     add(at, CalendarTool(if (only) "카드도 함께 보기" else "달력만 보기", Icons.Outlined.Apps, onClick = {
                         context.appContainer.settingsRepository.update { it.copy(calendarOnly = !only, viewAsked = true) }
                     }))
+                    // 2.0.0 [RVH-65] 검토 PC-73: the days changed by hand, across months, in one place (before, a day at a time).
+                    onRecentChanges?.let { add(at, CalendarTool("최근 바꾼 기록", Icons.Outlined.History, onClick = it)) }
                     recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
                     // [RVH-42] The work's 바로 단추 the head had no room for.
                     quick.drop(quickShown).forEach { q ->
@@ -2462,6 +2498,9 @@ internal fun CalendarHeader(
     }
     }
 }
+
+/** [RVH-65] A tool tile's width for each step of 글자 크기 over 130%: at 200% a tile is 200dp or more. */
+private val TOOL_TILE_PER_SCALE = 100.dp
 
 /** [CAL-52] Room for the pattern and new-calendar icons beside the month, 오늘 and 도구. */
 private val HEADER_ICONS_WIDTH = 480.dp
@@ -2559,10 +2598,14 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
         Text("달력 도구", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp).semantics { heading() })
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val perRow = if (maxWidth >= 480.dp) 4 else 3
+            // 2.0.0 [RVH-65] 조건 12: with big letters a name was cut at two lines ('동료 근무표', '최근 바꾼', '오늘부터 하루' on a
+            // folded phone at 200%). Fewer tiles to a row then, each as tall as its row's longest name, never a name cut.
+            val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            val usual = if (maxWidth >= 480.dp) 4 else 3
+            val perRow = if (scale <= 1.3f) usual else minOf(usual, (maxWidth / (TOOL_TILE_PER_SCALE * scale)).toInt().coerceAtLeast(2))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 tools.filter { !it.away }.chunked(perRow).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { tool ->
                             val click = tool.onClick
                             Surface(
@@ -2570,7 +2613,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                 enabled = click != null,
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.weight(1f).heightIn(min = 84.dp)
+                                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 84.dp)
                                     .alpha(if (click != null) 1f else 0.5f),
                             ) {
                                 Column(
@@ -2579,7 +2622,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     Icon(tool.icon, null, tint = MaterialTheme.colorScheme.primary)
-                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
+                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
                                     if (click == null && tool.note != null) {
                                         Text(tool.note, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)

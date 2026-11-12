@@ -932,10 +932,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             container.inquiryStore.fixedNow(container.inquiryApi.mine(container.companyStore.device), com.bamnat.app.BuildConfig.VERSION_NAME)
         }.getOrDefault(emptyList())
     }
+    // 2.0.0 [RVH-64] 검토 PC-72 (설계 4절): every phone that came from 1.36.1~1.39.0 with a line found gets one line in the update
+    // notice, '최근에 넣은 근무를 한 번 봐 주세요', whatever its month turn; the notice waits for the look (one query per calendar).
+    LaunchedEffect(Unit) { com.bamnat.app.ui.calendar.TurnSlipAsk.load(container) }
+    val slipLoaded by com.bamnat.app.ui.calendar.TurnSlipAsk.loaded.collectAsStateWithLifecycle()
+    val slipAsk by com.bamnat.app.ui.calendar.TurnSlipAsk.ask.collectAsStateWithLifecycle()
+    val slipTold by com.bamnat.app.ui.calendar.TurnSlipAsk.toldNow.collectAsStateWithLifecycle()
+    val slipLine = slipAsk?.takeIf { !slipTold }?.rows?.size ?: 0
     // 2.0.0 [RVP-22] (검토 UIX-43·U13b-02) Each opening window takes its turn (OpenAsk): one at a time, one per visit, the law first,
     // never over a sheet or writing. The update notice was the only rule before (it held back four windows, which then came all at once).
-    if (whatsNew.value.isNotEmpty() && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.WHATS_NEW, asked = whatsNewAsked)) {
+    if (slipLoaded && (whatsNew.value.isNotEmpty() || slipLine > 0) &&
+        com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.WHATS_NEW, asked = whatsNewAsked)) {
         val closeNew = {
+            if (slipLine > 0) com.bamnat.app.ui.calendar.TurnSlipAsk.markTold(container.appContext)
             container.inquiryStore.markThanked(fixedForMe.map { it.first })
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
             com.bamnat.app.data.GuideStore.get(container.appContext).switchedSeen(
@@ -946,10 +955,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
         // [RVH-40] 검토 WORK-14 Nothing new for this kind of work and nothing else to say: no window, only marked as seen.
         val nothingMine = com.bamnat.core.guide.WhatsNew.forStyle(whatsNew.value, settingsNow.workStyle).let { it.mine.isEmpty() && it.moreMine.isEmpty() }
-        if (nothingMine && fixedForMe.isEmpty() && recommendOff == 0) LaunchedEffect(Unit) { closeNew() }
+        if (nothingMine && fixedForMe.isEmpty() && recommendOff == 0 && slipLine == 0) LaunchedEffect(Unit) { closeNew() }
         else com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
             style = settingsNow.workStyle,
+            slip = slipLine,
+            onSlip = { closeNew(); com.bamnat.app.ui.calendar.TurnSlipAsk.show() },
             recommendOff = recommendOff,
             onRecommend = { closeNew(); SettingsLinks.go(SettingsGo.RECOMMENDED) },
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
@@ -957,6 +968,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             onDismiss = closeNew,
             thanks = fixedForMe.map { it.second },
             onOpenAsks = { closeNew(); SettingsLinks.go(SettingsGo.INQUIRY) },
+        )
+    }
+    // 2.0.0 [RVH-64] 검토 PC-72 '이 날 맞아요?', from the calendar's card or the update notice's line.
+    val slipShowing by com.bamnat.app.ui.calendar.TurnSlipAsk.showing.collectAsStateWithLifecycle()
+    slipAsk?.takeIf { slipShowing }?.let { a ->
+        com.bamnat.app.ui.calendar.TurnSlipSheet(
+            rows = a.rows, today = com.bamnat.core.time.Today.date(), style = settingsNow.workStyle,
+            onApply = { container.turnSlip.apply(it) },
+            onUndo = { container.turnSlip.undo(it) },
+            onAnswered = { com.bamnat.app.ui.calendar.TurnSlipAsk.answered(container.appContext, it) },
+            onDone = { com.bamnat.app.ui.calendar.TurnSlipAsk.done(container.appContext) },
+            onDismiss = { com.bamnat.app.ui.calendar.TurnSlipAsk.closed() },
         )
     }
     // [MON-06][MON-10] Each in its turn (above).

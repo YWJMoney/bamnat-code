@@ -539,6 +539,19 @@ class AppContainer(context: Context) {
             info.lastUpdateTime.takeIf { it > 0 && it - info.firstInstallTime > 60_000 }?.let(java.time.Instant::ofEpochMilli)
         }.getOrNull()
     }
+    /**
+     * 2.0.0 [RVH-64] PC-72: what the month turn of 1.36.1~1.39.0 may have put on another day, on 내 달력 and every added calendar
+     * (an example is not the user's). The grid's week starts as the calendar's settings say.
+     */
+    val turnSlip: com.bamnat.app.data.TurnSlipCheck by lazy {
+        com.bamnat.app.data.TurnSlipCheck(
+            calendars = { listOf(PersonalCalendar.MAIN) + calendars.added().map { it.id } },
+            schedule = { calendars.repository(it) },
+            money = { calendars.money(it) },
+            memos = memoRepository,
+            weekStart = { settingsRepository.current.weekStart },
+        )
+    }
     /** [MON-02] What the company server says once a day: [FLAG-06] the dark-merge overrides, notices, 처리방침 dates. */
     val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
