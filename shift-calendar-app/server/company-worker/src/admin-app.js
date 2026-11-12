@@ -214,6 +214,7 @@ function adminApp(L, BUILD, M) {
     refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
     chevron: '<path d="M9 5l7 7-7 7"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
     share: '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5"/><path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/>',
@@ -842,6 +843,15 @@ function adminApp(L, BUILD, M) {
     el.title = title;
     el.setAttribute("aria-label", title.replace("\n", ", "));
     el.hidden = false;
+    // 2.0.0 [RVA-21] 검토 ADMX-17·HQ-03: 폰 폭에서는 머리띠 한 줄(28px, 누르기 작음) 대신 제목 줄 안의 알약 하나. 판은 그대로 위에 보여요.
+    const mini = document.getElementById("dl-mini");
+    if (mini) {
+      const down = !v.company.ok && !v.company.version;
+      mini.innerHTML = `<span class="dl-pill${down ? " bad" : differ ? " warn" : live ? " live" : ""}">${down ? "서버 닿지 않음" : `${live ? "" : "로컬 "}${esc(v.company.version ?? "?")}${differ ? " · 판 다름" : ""}`}</span>`;
+      mini.title = title;
+      mini.setAttribute("aria-label", `${live ? "지금 도는 서버" : "로컬 서버"}, ${title.replace("\n", ", ")}`);
+      mini.hidden = false;
+    }
   }
 
   /** [ADMUX-37] What the screens share and rarely changes (/basics): 채택 settings, answer targets, reason words. */
@@ -1086,6 +1096,7 @@ function adminApp(L, BUILD, M) {
     if (key !== shellKey || !document.getElementById("main")) {
       app.innerHTML = shell(list, bottom);
       shellKey = key;
+      watchFrame();
     }
     paintFrame(list, bottom);
     paintMain();
@@ -1128,7 +1139,8 @@ function adminApp(L, BUILD, M) {
           <header class="top">
             <a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a>
             <div class="bar" id="bar"></div>
-            <nav class="hubtabs" id="hubtabs" hidden></nav>
+            <div class="hubrow" id="hubrow" hidden><nav class="hubtabs" id="hubtabs" hidden></nav>
+              <button class="chip pick hub-all" id="hub-all" type="button" data-act="hub-all" aria-haspopup="dialog" hidden>${icon(P.down)}<span>모두</span></button></div>
             <div id="progress" class="progress${S.busy ? " on" : ""}"></div>
           </header>
           <main class="main" id="main" tabindex="-1"></main>
@@ -1146,10 +1158,12 @@ function adminApp(L, BUILD, M) {
     const bar = document.getElementById("bar");
     if (bar) {
       bar.innerHTML = `${back ? `<a class="icon-btn" href="${back}" aria-label="뒤로">${icon(P.back)}</a>` : '<img class="mark" src="/admin/icon.svg" alt="">'}
-        <h1 tabindex="-1" id="title">${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</h1>
+        <h1 tabindex="-1" id="title"><span class="t">${esc(title)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</h1>
+        <a class="dl-mini" id="dl-mini" href="${href("server")}" data-tab="server" hidden></a>
         <button class="icon-btn" data-act="palette" aria-label="찾기·이동" title="찾기·이동 (Ctrl+K)">${icon('<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>')}</button>
         <button class="icon-btn" data-act="shortcuts" aria-label="단축키" title="단축키 (?)">${icon(P.help)}</button>
         <button class="icon-btn" data-act="refresh" aria-label="새로 고침" title="새로 고침 (R)">${icon(P.refresh)}</button>`;
+      if (S.servers?.company) paintDeployLine();
     }
     // [ADMUX-30] The open hub's tabs under the title: none for a hub of one tab, or on a detail with its back button.
     const hub = list.find((h) => h.key === here);
@@ -1159,8 +1173,12 @@ function adminApp(L, BUILD, M) {
       row.hidden = !show;
       row.setAttribute("aria-label", hub ? `${hub.label} 안 화면` : "화면");
       row.innerHTML = show ? hub.tabs.map((t) => `<a href="${href(t)}" data-tab="${t}"${t === S.route.name ? ' aria-current="page"' : ""}>${esc(tabName(t))}<i class="badge" data-badge="tab:${t}"></i></a>`).join("") : "";
-      row.querySelector("[aria-current]")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      const wrap = document.getElementById("hubrow");
+      if (wrap) wrap.hidden = !show;
+      const all = document.getElementById("hub-all");
+      if (all) all.setAttribute("aria-label", hub ? `${hub.label}의 모든 화면` : "모든 화면");
     }
+    if (here && L.TABS[S.route.name] && !S.route.id) countVisit(S.route.name);
     for (const el of document.querySelectorAll("[data-nav]")) {
       const k = el.dataset.nav;
       const lit = el.classList.contains("tab") ? k === bottom.lit : k === here;
@@ -1176,6 +1194,8 @@ function adminApp(L, BUILD, M) {
       el.setAttribute("href", href(el.dataset.tab));
     }
     updateBadges(list, bottom);
+    // 2.0.0 [RVA-19] 검토 ADMX-05·T24-02·T24-15: 배지 숫자가 들어간 뒤(탭 폭이 바뀐 뒤) 지금 탭을 줄 가운데로.
+    fitHubTabs(true);
     const left = (S.overview?.inquiries ?? 0) + (S.overview?.pending ?? 0);
     // [ADMX-11] A dot in the tab's title while something needs a look.
     document.title = `${S.alertsN ? "● " : ""}${left ? `(${left}) ` : ""}밤낮 관리자`;
@@ -1257,6 +1277,78 @@ function adminApp(L, BUILD, M) {
    * AN 1.28 [ADMUX-34] Every number in the frame from the last /badges: a hub's is what the admin must do there,
    * each thing once; a tab's is its own; 더 보기 adds only the hubs it holds. The '지금 기다리는 것' line follows.
    */
+  /**
+   * 2.0.0 [RVA-19] 검토 ADMX-05·ADM-15·U23-07: 허브 탭 줄. [center]면 지금 탭을 가운데로 옮기고(페이지는 움직이지 않게 scrollLeft로),
+   * 양 끝에 더 있으면 흐림(data-more)과 '모두' 단추를 보여요.
+   */
+  function fitHubTabs(center = false) {
+    const row = document.getElementById("hubtabs");
+    const all = document.getElementById("hub-all");
+    if (!row || row.hidden) return;
+    const cur = row.querySelector("[aria-current]");
+    if (center && cur && row.scrollWidth > row.clientWidth) row.scrollLeft = Math.max(0, cur.offsetLeft - (row.clientWidth - cur.offsetWidth) / 2);
+    const left = row.scrollLeft > 4;
+    const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 4;
+    row.dataset.more = left && right ? "both" : left ? "left" : right ? "right" : "";
+    if (all) all.hidden = row.scrollWidth <= row.clientWidth + 4;
+  }
+
+  /**
+   * 2.0.0 [RVA-17] 검토 ADM-07·I23a-02: 머리(머리띠 + 제목 줄 + 허브 탭)의 높이를 --top-h 하나로 재요. 붙박이 막대(큐 모드·기간 막대·
+   * 목록 칸)와 scroll-padding이 이 값을 써서, 머리에 줄이 더해지거나 글자가 커져도 머리 밑에 숨지 않아요.
+   */
+  let frameWatch = null;
+  function watchFrame() {
+    const top = document.querySelector(".top");
+    const row = document.getElementById("hubtabs");
+    const set = () => {
+      const h = Math.round(top?.getBoundingClientRect().height ?? 0);
+      if (h) document.documentElement.style.setProperty("--top-h", `${h}px`);
+      fitHubTabs();
+    };
+    frameWatch?.disconnect?.();
+    frameWatch = typeof ResizeObserver === "function" ? new ResizeObserver(set) : null;
+    if (top) frameWatch?.observe(top);
+    if (row) frameWatch?.observe(row);
+    row?.addEventListener("scroll", () => fitHubTabs(), { passive: true });
+    set();
+  }
+
+  /** 2.0.0 [RVA-19] 창 안의 링크로 다른 화면에 갈 때: 창이 넣은 기록 칸을 먼저 거두고 가요(뒤로 가기가 빈 칸에서 헛돌지 않게). */
+  let pendingGo = "";
+  function goFromDialog(to) {
+    if (history.state?.dialog) {
+      pendingGo = to;
+      dialog.close();
+      return;
+    }
+    dialog.close();
+    if (location.hash === to) load();
+    else location.hash = to;
+  }
+
+  /** 2.0.0 [RVA-19] 검토 U23-07: 이 기기에서 자주 여는 화면(허브 '모두' 창 맨 위에 보여요). 브라우저에만 남아요. */
+  const VISITS = "bamnat-admin-visits";
+  function visits() {
+    try {
+      return JSON.parse(localStorage.getItem(VISITS) || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+  let lastCounted = "";
+  function countVisit(tab) {
+    if (tab === lastCounted) return;
+    lastCounted = tab;
+    try {
+      const v = visits();
+      v[tab] = (v[tab] ?? 0) + 1;
+      localStorage.setItem(VISITS, JSON.stringify(v));
+    } catch {
+      // 저장소를 못 쓰면 순서 없이 보여요.
+    }
+  }
+
   function updateBadges(list = hubs(), bottom = L.bottomHubs(list, S.prefs.tabs, S.route.name)) {
     const o = S.overview ?? {};
     const rest = list.filter((h) => !bottom.tabs.includes(h.key)).reduce((n, h) => n + L.hubBadge(h, o, S.me), 0);
@@ -2946,7 +3038,10 @@ function adminApp(L, BUILD, M) {
       <p class="hint">앱 달력 위에 한 줄로 보이고, 누르면 내용이 열려요. 사용자가 닫으면 그 공지는 다시 보이지 않아요. 앱은 하루에 한 번, 그리고 열 때 새로 받아요.</p>
       ${n.notices.length ? `<ul class="rows">${n.notices.map((x) => {
         const [tone, label] = NOTICE_STATE[x.state] ?? ["", x.state];
-        const range = x.minApp || x.maxApp ? ` · 앱 ${x.minApp ?? "처음"}~${x.maxApp ?? "최신"}` : "";
+        // [RVA-23] 누구에게·어떤 단추로.
+        const aim = noticeAudience(x.audience, x.minApp, x.maxApp);
+        const btn = x.action ? (x.action.label || (NOTICE_KINDS.find(([k]) => k === x.action.kind)?.[2] ?? "열기")) : "";
+        const range = `${aim ? ` · ${aim}` : " · 모두에게"}${btn ? ` · 단추 '${btn}'` : ""}`;
         return `<li><div class="row"><span class="row-main"><b>${x.level === "important" ? '<span class="pill bad">중요</span> ' : ""}${esc(x.title)}</b>
           <small>${esc(kstDate(x.from))} ~ ${esc(kstDate(x.until))}${esc(range)}</small><small>${esc(x.body)}</small></span>
           <span class="row-side"><span class="pill ${tone}">${label}</span>${edit ? `<button class="btn small" data-act="notice-edit" data-id="${x.id}">고치기</button>
@@ -2963,31 +3058,148 @@ function adminApp(L, BUILD, M) {
     return `<section class="card"><div class="card-head"><h2>옛 앱 급여 끊기</h2>${state}</div>
       <p class="hint">앱 ${esc(String(o.maxApp))}번(1.38) 이하에 회사 판 급여 계산식을 주지 않아요. 끊긴 동안 그 앱에는 업데이트 공지가 30일 떠요. 이미 넣은 급여는 폰에 그대로 남아요.
         지금 저장된 나간 판: ${esc(o.shipped ?? "없음")}${o.at ? ` · 끊은 때 ${esc(kstDate(new Date(o.at).toISOString()))}` : ""}</p>
-      <div class="row">${modes.map(([m, label]) => `<button class="btn small${o.mode === m ? " primary" : ""}" ${edit && o.mode !== m ? `data-act="old-pay-mode" data-mode="${m}"` : "disabled"}>${esc(label)}</button>`).join(" ")}</div></section>`;
+      <div class="actions start">${modes.map(([m, label]) => `<button class="btn small${o.mode === m ? " primary" : ""}" ${edit && o.mode !== m ? `data-act="old-pay-mode" data-mode="${m}"` : "disabled"}>${esc(label)}</button>`).join(" ")}</div></section>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-23] 검토 HQ-33: 공지 단추가 여는 곳. 서버 NOTICE_ACTIONS(usage.js)와 앱 NoticeAction.LABELS(core AppNotices.kt)의
+   * 이름·기본 글을 그대로 따라요(단추 글을 비우면 앱이 이 글을 써요).
+   */
+  const NOTICE_KINDS = [["ALARM_CHECK", "알람 점검", "알람 점검 열기"], ["BACKUP", "백업", "백업 열기"], ["PRO", "프로", "프로 보기"], ["INQUIRY", "문의하기", "문의하기"],
+    ["SHARE", "근무표 공유", "근무표 공유"], ["PLAZA", "광장", "광장 열기"], ["WHATS_NEW", "새 기능 소식", "새 기능 보기"], ["URL", "웹 주소(https)", "자세히 보기"]];
+  /** [RVA-23] 대상: 서버 AUDIENCE(usage.js)와 앱 NoticeAudience.Phone의 이름. 비우면 모두에게. */
+  const NOTICE_WORK = [["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "가게"], ["INVEST", "투자"]];
+  const NOTICE_USE = [["ALARM", "알람"], ["SHARE", "근무표 공유"], ["PAY", "급여"], ["PLAZA", "광장"], ["BACKUP", "자동 백업"]];
+  const PUBLIC_PAGES = { privacy: "https://ywjmoney.github.io/-/privacy/", terms: "https://ywjmoney.github.io/-/terms/" };
+
+  /**
+   * 2.0.0 [RVA-23] 검토 HQ-33: 자주 올리는 공지의 틀. 처리방침은 기능 관리 › 처리방침 일정의 가장 새 판(게시·시행일)으로 날짜와 글을 채워요
+   * (처리방침 9항: 시행 7일 전, 불리하면 30일 전부터 알림). 말투는 앱의 다른 안내처럼 따뜻하게(조건 16).
+   */
+  function noticeTemplate(key) {
+    const day = (ms) => kstDate(new Date(ms).toISOString());
+    const md = (iso) => { const [, m, d] = iso.split("-").map(Number); return `${m}월 ${d}일`; };
+    const now = Date.now();
+    const plus = (iso, n) => day(Date.parse(`${iso}T00:00:00+09:00`) + n * 864e5);
+    if (key === "check") {
+      const at = day(now + 864e5);
+      return { title: `${md(at)} 새벽 서버 점검`, body: `${md(at)} 새벽 2시부터 4시까지 서버를 점검해요. 그동안 근무표 공유·문의·광장이 잠깐 멈출 수 있어요. 근무표와 알람은 휴대폰 안에서 그대로 울려요.`,
+        level: "important", from: day(now), until: at, action: null, audience: null };
+    }
+    if (key === "privacy") {
+      // 가장 높은 판(3.13 > 3.6): 아직 시행 전이면 '바뀌어요', 이미 시행됐으면 '바뀌었어요'. 일정이 없으면 7일 뒤로 두고 날짜를 고쳐 쓰게 해요.
+      const n = (v) => String(v ?? "").split(".").map(Number);
+      const p = [...(S.data.noticePolicy ?? S.data.flags?.policy ?? [])].filter((x) => x?.version && x.effective)
+        .sort((a, b) => n(b.version)[0] - n(a.version)[0] || n(b.version)[1] - n(a.version)[1])[0];
+      const today = day(now);
+      const eff = p?.effective ?? plus(today, 7);
+      const ahead = eff >= today;
+      const from = ahead && p?.posted && p.posted > today ? p.posted : today;
+      const ver = p?.version ? `(${p.version}판)` : "";
+      return { title: ahead ? "개인정보 처리방침이 바뀌어요" : "개인정보 처리방침이 바뀌었어요",
+        body: ahead ? `${md(eff)}부터 새 개인정보 처리방침${ver}이 시행돼요. 무엇이 바뀌는지 아래 단추로 확인해 주세요. 궁금한 점은 앱의 문의하기로 편하게 물어봐 주세요.`
+          : `${md(eff)}부터 새 개인정보 처리방침${ver}이 시행됐어요. 무엇이 바뀌었는지 아래 단추로 확인해 주세요. 궁금한 점은 앱의 문의하기로 편하게 물어봐 주세요.`,
+        level: "info", from, until: [plus(ahead ? eff : from, 7), plus(from, 89)].sort()[0], action: { kind: "URL", url: PUBLIC_PAGES.privacy, label: "처리방침 보기" }, audience: null };
+    }
+    if (key === "terms") {
+      const eff = plus(day(now), 7);
+      return { title: "이용약관이 바뀌어요", body: `${md(eff)}부터 새 이용약관이 시행돼요. 무엇이 바뀌는지 아래 단추로 확인해 주세요. 궁금한 점은 앱의 문의하기로 편하게 물어봐 주세요.`,
+        level: "info", from: day(now), until: plus(eff, 7), action: { kind: "URL", url: PUBLIC_PAGES.terms, label: "약관 보기" }, audience: null };
+    }
+    if (key === "release") {
+      return { title: "새 판이 나왔어요", body: "더 편하게 쓰시도록 여러 곳을 다듬었어요. 무엇이 바뀌었는지 아래 단추로 한눈에 볼 수 있어요.",
+        level: "info", from: day(now), until: plus(day(now), 13), action: { kind: "WHATS_NEW" }, audience: null };
+    }
+    return { title: "알람이 잘 울리는지 한 번 봐 주세요", body: "휴대폰 설정이 바뀌면 알람이 늦게 울릴 수 있어요. 알람 점검에서 1분이면 확인할 수 있어요.",
+      level: "info", from: day(now), until: plus(day(now), 13), action: { kind: "ALARM_CHECK" }, audience: { features: ["ALARM"] } };
+  }
+  const NOTICE_TEMPLATES = [["check", "서버 점검"], ["privacy", "처리방침 바뀜"], ["terms", "약관 바뀜"], ["release", "새 판 소식"], ["alarm", "알람 점검 부탁"]];
+
+  /** [RVA-23] 대상 한 줄(목록·접힌 줄·확인 글): 비었으면 '모두'. */
+  function noticeAudience(a, minApp, maxApp) {
+    const parts = [];
+    if (a?.workTypes?.length) parts.push(a.workTypes.map((k) => NOTICE_WORK.find(([v]) => v === k)?.[1] ?? k).join("·"));
+    if (a?.features?.length) parts.push(`${a.features.map((k) => NOTICE_USE.find(([v]) => v === k)?.[1] ?? k).join("·")} 쓰는 분`);
+    if (a?.makers?.length) parts.push(a.makers.join("·"));
+    if (a?.minSdk || a?.maxSdk) parts.push(`안드로이드 SDK ${a.minSdk ?? "처음"}~${a.maxSdk ?? "끝"}`);
+    if (minApp || maxApp) parts.push(`앱 번호 ${minApp ?? "처음"}~${maxApp ?? "끝"}`);
+    return parts.length ? parts.join(" · ") : "";
   }
 
   function openNotice(x) {
     const now = new Date();
     const from = x ? kstDate(x.from) : kstDate(now.toISOString());
     const until = x ? kstDate(new Date(new Date(x.until).getTime() - 1).toISOString()) : kstDate(new Date(now.getTime() + 7 * 864e5).toISOString());
+    const a = x?.audience ?? {};
+    const act = x?.action ?? null;
+    const who = noticeAudience(a, x?.minApp, x?.maxApp);
+    const box = (name, [value, label], on) => `<label class="pickbox"><input type="checkbox" name="${name}" value="${value}"${on ? " checked" : ""}><span>${esc(label)}</span></label>`;
+    // [RVA-23] 처리방침 틀이 쓸 일정: 아직 안 받았으면 미리 받아 둬요(최고 관리자·기능 관리 권한).
+    if (!x && !S.data.noticePolicy && can("flags")) api("/flags").then((d) => { S.data.noticePolicy = d?.policy ?? []; }).catch(() => {});
     openDialog(`<form data-form="notice" data-id="${x?.id ?? ""}"><h2>${x ? "공지 고치기" : "새 공지"}</h2>
-      <p>이름·연락처·금액은 적지 않아요. 앱을 쓰는 모두에게 보여요.</p>
+      <p>이름·연락처·금액은 적지 않아요. 대상을 고르지 않으면 앱을 쓰는 모두에게 보여요.</p>
+      ${x ? "" : `<div class="fieldset"><p class="label" id="nt-tpl-l">틀에서 시작(선택)</p><div class="chips" role="group" aria-labelledby="nt-tpl-l">${NOTICE_TEMPLATES.map(([k, label]) =>
+        `<button type="button" class="chip pick" data-act="notice-template" data-key="${k}">${esc(label)}</button>`).join("")}</div></div>`}
       <div class="fieldset"><label for="nt-title">제목</label><input id="nt-title" name="title" maxlength="40" required value="${esc(x?.title ?? "")}" placeholder="예: 10월 25일 새벽 서버 점검"></div>
       <div class="fieldset"><label for="nt-body">내용</label><textarea id="nt-body" name="body" maxlength="500" required>${esc(x?.body ?? "")}</textarea></div>
       <div class="radios"><label class="radio"><input type="radio" name="level" value="info"${x?.level === "important" ? "" : " checked"}><span>알림</span></label>
         <label class="radio"><input type="radio" name="level" value="important"${x?.level === "important" ? " checked" : ""}><span>중요(색을 넣어 보여요)</span></label></div>
-      <div class="fieldset"><label for="nt-from">시작(한국 시간 0시)</label><input id="nt-from" name="from" type="date" required value="${from}"></div>
-      <div class="fieldset"><label for="nt-until">마지막 날(그날 밤까지, 90일 안)</label><input id="nt-until" name="until" type="date" required value="${until}"></div>
-      <div class="fieldset"><label for="nt-min">앱 버전 번호부터(선택)</label><input id="nt-min" name="minApp" type="number" min="1" value="${x?.minApp ?? ""}">
-        <span class="help">특정 버전에만 보일 때. ${S.data.notices?.latestApp ? `최근 문의에 온 가장 새 앱은 ${esc(S.data.notices.latestApp.name)}(번호 ${S.data.notices.latestApp.code})예요.` : "앱 설정 › 앱 정보의 괄호 안 숫자예요."}</span></div>
-      <div class="fieldset"><label for="nt-max">앱 버전 번호까지(선택)</label><input id="nt-max" name="maxApp" type="number" min="1" value="${x?.maxApp ?? ""}"></div>
-      <p class="label">앱에서 보이는 모양</p><div class="notice-preview" id="nt-preview" aria-live="polite">${noticePreview(x?.title ?? "", x?.body ?? "", x?.level)}</div>
+      <div class="two-fields"><div class="fieldset"><label for="nt-from">시작(한국 시간 0시)</label><input id="nt-from" name="from" type="date" required value="${from}"></div>
+        <div class="fieldset"><label for="nt-until">마지막 날(그날 밤까지, 90일 안)</label><input id="nt-until" name="until" type="date" required value="${until}"></div></div>
+      <div class="fieldset"><label for="nt-act">단추(선택)</label><select id="nt-act" name="actKind">
+          <option value="">없음(확인만)</option>${NOTICE_KINDS.map(([k, label]) => `<option value="${k}"${act?.kind === k ? " selected" : ""}>${esc(label)}</option>`).join("")}</select>
+        <span class="help">공지를 연 사람이 누르면 앱 안 그 화면이나 웹 주소가 열려요.</span>
+        <div class="act-more" id="nt-act-more"${act ? "" : " hidden"}>
+          <div id="nt-url-box"${act?.kind === "URL" ? "" : " hidden"}><label for="nt-url">주소</label><input id="nt-url" name="actUrl" type="url" inputmode="url" maxlength="300" placeholder="https://" value="${esc(act?.url ?? "")}"></div>
+          <label for="nt-label">단추 글(12자, 비우면 '${esc(NOTICE_KINDS.find(([k]) => k === act?.kind)?.[2] ?? "열기")}')</label><input id="nt-label" name="actLabel" maxlength="12" value="${esc(act?.label ?? "")}" placeholder="${esc(NOTICE_KINDS.find(([k]) => k === act?.kind)?.[2] ?? "")}"></div></div>
+      <details class="fold-field" data-key="nt-who"${who ? " open" : ""}><summary>대상(선택) <span class="meta" id="nt-who-sum">${esc(who || "모두에게")}</span></summary>
+        <p class="label">근무 유형</p><div class="pickset">${NOTICE_WORK.map((w) => box("workTypes", w, a.workTypes?.includes(w[0]))).join("")}</div>
+        <p class="label">쓰는 기능(하나라도 쓰면)</p><div class="pickset">${NOTICE_USE.map((f) => box("features", f, a.features?.includes(f[0]))).join("")}</div>
+        <div class="fieldset"><label for="nt-makers">휴대폰 회사(쉼표로, 10개까지)</label><input id="nt-makers" name="makers" maxlength="220" value="${esc((a.makers ?? []).join(", "))}" placeholder="예: samsung, google"></div>
+        <div class="two-fields"><div class="fieldset"><label for="nt-sdk-min">안드로이드 SDK부터</label><input id="nt-sdk-min" name="minSdk" type="number" min="21" max="99" value="${a.minSdk ?? ""}" placeholder="예: 34"></div>
+          <div class="fieldset"><label for="nt-sdk-max">까지</label><input id="nt-sdk-max" name="maxSdk" type="number" min="21" max="99" value="${a.maxSdk ?? ""}"></div></div>
+        <div class="two-fields"><div class="fieldset"><label for="nt-min">앱 번호부터</label><input id="nt-min" name="minApp" type="number" min="1" value="${x?.minApp ?? ""}"></div>
+          <div class="fieldset"><label for="nt-max">앱 번호까지</label><input id="nt-max" name="maxApp" type="number" min="1" value="${x?.maxApp ?? ""}"></div></div>
+        <span class="help">${S.data.notices?.latestApp ? `최근 문의에 온 가장 새 앱은 ${esc(S.data.notices.latestApp.name)}(번호 ${S.data.notices.latestApp.code})예요.` : "앱 번호는 앱 설정 › 앱 정보의 괄호 안 숫자예요."} 휴대폰에 대한 것은 서버로 오지 않고, 앱이 받아서 스스로 골라요.</span></details>
+      <p class="label">앱에서 보이는 모양</p><div class="notice-preview" id="nt-preview" aria-live="polite">${noticePreview(x?.title ?? "", x?.body ?? "", x?.level, act)}</div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">${x ? "저장" : "올리기"}</button></div></form>`);
   }
 
-  /** [ADMUX-07] One notice line as the phone shows it: the title, the first lines of the text, 중요 in colour. */
-  function noticePreview(title, body, level) {
-    return `<div class="np${level === "important" ? " important" : ""}"><b>${esc(title.trim() || "제목")}</b><span>${esc(body.trim() || "내용이 여기에 보여요")}</span></div>`;
+  /** [RVA-23] 창의 값으로 단추·대상을 서버 모양으로. 틀린 칸은 { field, why }. */
+  function noticeParts(form) {
+    const data = new FormData(form);
+    const kind = String(data.get("actKind") ?? "");
+    const label = String(data.get("actLabel") ?? "").trim();
+    let action = null;
+    if (kind === "URL") {
+      const url = String(data.get("actUrl") ?? "").trim();
+      if (!/^https:\/\/[^\s/]+\.[^\s]+$/i.test(url)) return { bad: ["actUrl", "https://로 시작하는 주소를 적어 주세요"] };
+      action = { kind, url, ...(label ? { label } : {}) };
+    } else if (kind) action = { kind, ...(label ? { label } : {}) };
+    const num = (v) => (String(v ?? "").trim() ? Number(v) : null);
+    const makers = String(data.get("makers") ?? "").split(/[,\s]+/).map((m) => m.trim().toLowerCase()).filter(Boolean);
+    if (makers.length > 10) return { bad: ["makers", "10개까지 적을 수 있어요"] };
+    if (makers.some((m) => !/^[a-z0-9][a-z0-9 _-]{0,19}$/.test(m))) return { bad: ["makers", "영어 소문자·숫자로 적어 주세요(예: samsung)"] };
+    const minSdk = num(data.get("minSdk"));
+    const maxSdk = num(data.get("maxSdk"));
+    for (const [k, v] of [["minSdk", minSdk], ["maxSdk", maxSdk]]) if (v !== null && !(Number.isInteger(v) && v >= 21 && v <= 99)) return { bad: [k, "21~99 사이 숫자예요(34 = 안드로이드 14)"] };
+    if (minSdk !== null && maxSdk !== null && maxSdk < minSdk) return { bad: ["maxSdk", "'부터'보다 작아요"] };
+    const audience = {};
+    if (makers.length) audience.makers = [...new Set(makers)];
+    if (minSdk !== null) audience.minSdk = minSdk;
+    if (maxSdk !== null) audience.maxSdk = maxSdk;
+    for (const k of ["workTypes", "features"]) {
+      const v = data.getAll(k).map(String);
+      if (v.length) audience[k] = v;
+    }
+    return { action, audience: Object.keys(audience).length ? audience : null };
+  }
+
+  /** [ADMUX-07] One notice line as the phone shows it: the title, the first lines of the text, 중요 in colour. [RVA-23] 열면 보이는 단추까지. */
+  function noticePreview(title, body, level, action = null) {
+    const words = action ? (action.label || (NOTICE_KINDS.find(([k]) => k === action.kind)?.[2] ?? "열기")) : "확인";
+    return `<div class="np${level === "important" ? " important" : ""}"><b>${esc(title.trim() || "제목")}</b><span>${esc(body.trim() || "내용이 여기에 보여요")}</span>
+      <span class="np-acts" aria-label="공지를 열면 보이는 단추"><i>다시 보지 않기</i><i class="on">${esc(words)}</i></span></div>`;
   }
 
   // ---- [ADMUX-17] 받은함: AN 1.28 [ADMUX-33] now 오늘's 할 일 ----
@@ -3135,7 +3347,7 @@ function adminApp(L, BUILD, M) {
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
       <textarea name="recipe" rows="8"${tab === "waiting" ? "" : " required"}></textarea>
-      ${tab === "waiting" ? `<label>또는 파일로 (docs/recipes/market-….json, 휴대폰에서 긴 글을 붙여 넣기 어려울 때) <input type="file" name="file" accept=".json,application/json"></label>` : ""}
+      ${tab === "waiting" ? `<p class="label">또는 파일로 <span class="meta">(docs/recipes/market-….json, 휴대폰에서 긴 글을 붙여 넣기 어려울 때)</span></p>${filePick("file", ".json,application/json")}` : ""}
       ${tab === "showcase" ? `<p class="hint">showcase-recipes.json 전체를 붙여 넣으면 30개가 한 번에 올라가요. 하나만 붙여 넣어도 보여주기로 올라가요.</p><input type="hidden" name="showcase" value="on">`
         : tab === "waiting" ? "" : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
       ${recipeHoldFields(tab === "waiting")}
@@ -3199,8 +3411,17 @@ function adminApp(L, BUILD, M) {
   function materialUploadForm() {
     return `<form data-form="material-upload" class="card"><h3>재료 파일 올리기</h3>
       <p class="hint">tools/materials-seed.mjs --files로 만든 재료-01.json … 을 모두 골라요. 대기로 들어가고, 공개는 위 묶음마다 해요. 같은 그림을 다시 올리면 이름·순서만 바뀌어요.</p>
-      <input type="file" name="files" accept=".json,application/json" multiple required>
+      ${filePick("files", ".json,application/json", { multiple: true, required: true })}
       <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-21] 검토 T24-13·ADMX-17: 파일 고르기. 브라우저 기본 'Choose Files / No file chosen' 대신 앱의 단추(44px)와 고른 파일 이름 한 줄.
+   * 칸은 그대로 <input type=file>이라 폼·검사·파일 읽기는 바뀌지 않아요.
+   */
+  function filePick(name, accept, { multiple = false, required = false } = {}) {
+    return `<label class="filepick"><input type="file" name="${name}" accept="${esc(accept)}"${multiple ? " multiple" : ""}${required ? " required" : ""}>
+      <span class="btn">${icon(P.plus)}${multiple ? "파일 고르기(여러 개)" : "파일 고르기"}</span><span class="meta" data-file-names>아직 고르지 않았어요</span></label>`;
   }
 
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
@@ -3213,7 +3434,7 @@ function adminApp(L, BUILD, M) {
     return `<form data-form="recipe-retire" class="card"><h3>판 정리 붙여 넣기</h3>
       <p class="hint">정리 계획 JSON 전체, 또는 제목(이나 작품 코드)을 한 줄에 하나씩. 운영자 작품만 찾고 사용자 작품은 건드리지 않아요. 한 번에 1,200개까지.</p>
       <textarea name="plan" rows="6" required></textarea>
-      <label>또는 파일로 <input type="file" name="file" accept=".json,.txt,application/json,text/plain"></label>
+      <p class="label">또는 파일로</p>${filePick("file", ".json,.txt,application/json,text/plain")}
       <label>메모 <input name="note" maxlength="200" placeholder="1.39 장터 정리"></label>
       <label>옛 앱에는 남기기: 이 앱 판 미만에는 계속 보여요(계획 파일의 belowApp이 먼저) <input name="below" inputmode="numeric" pattern="\\d{1,6}" placeholder="53"></label>
       <div class="actions"><button class="btn" type="submit" name="go" value="dry">몇 개인지 보기</button>
@@ -3768,7 +3989,22 @@ function adminApp(L, BUILD, M) {
       if (!history.state?.dialog) history.pushState({ dialog: true }, "", location.href);
     }
     dialog.querySelector("input:not([type=radio]):not([type=hidden]):not([readonly]),textarea")?.focus();
+    fitDialogFoot();
   }
+
+  /**
+   * 2.0.0 [RVA-22] 총괄 #465 사진(3), 조건 1·12: 창 아래 고정 띠(취소·채운 단추)가 창의 4분의 1을 넘으면(큰 글자·좁은 폭)
+   * 띠를 내용과 함께 내려가게 해서, 적을 칸이 첫 화면에 보이게 해요. 창이 바뀌거나 폭·글자가 바뀌면 다시 재요.
+   */
+  function fitDialogFoot() {
+    if (!dialog.open) return;
+    const foot = dialog.querySelector(":scope > form > .actions:last-child, :scope > .box > .actions:last-child");
+    if (!foot) return;
+    foot.classList.remove("loose");
+    const h = dialog.getBoundingClientRect().height;
+    if (h && foot.getBoundingClientRect().height > h / 4 && dialog.scrollHeight > dialog.clientHeight + 4) foot.classList.add("loose");
+  }
+  addEventListener("resize", () => fitDialogFoot(), { passive: true });
 
   /**
    * 1.39 [PAYP-17] (7차 PC) What a merge carries, in numbers, for its confirm: the company page's [c] (companyInfo, its `carry`).
@@ -4808,6 +5044,22 @@ function adminApp(L, BUILD, M) {
         render();
       }
     },
+    // 2.0.0 [RVA-19] 검토 ADM-15·U23-07: 허브의 모든 화면을 한눈에(자주 여는 것 먼저). 가로로 밀지 않아도 돼요.
+    "hub-all": () => {
+      const here = L.hubOf(S.route.name);
+      const hub = hubs().find((h) => h.key === here);
+      if (!hub) return;
+      const v = visits();
+      const often = [...hub.tabs].filter((t) => v[t] > 1).sort((a, b) => v[b] - v[a]).slice(0, 3);
+      const cell = (t) => `<a class="chip pick" href="${href(t)}" data-act="hub-go" data-tab="${t}"${t === S.route.name ? ' aria-current="page"' : ""}>
+        ${esc(tabName(t))}<i class="badge" data-badge="tab:${t}"></i></a>`;
+      openDialog(`<div class="box"><h2>${esc(hub.label)}의 모든 화면</h2>
+        ${often.length ? `<p class="label">자주 여는 화면</p><div class="chips">${often.map(cell).join("")}</div><p class="label">모두</p>` : ""}
+        <div class="chips">${hub.tabs.map(cell).join("")}</div>
+        <div class="actions"><button class="btn" type="button" data-act="close">닫기</button></div></div>`);
+      updateBadges();
+    },
+    "hub-go": ({ tab }) => goFromDialog(href(tab)),
     // 1.38 [ADM3-17] 단계 출시: 'rollout N%' 한 줄을 넣거나 바꾸고(100이면 빼요), '이 앱 판 이상만'은 'app >= 번호' 한 줄.
     "flag-rollout": ({ key }) => {
       const box = document.getElementById("flag-cond");
@@ -5872,6 +6124,37 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     }),
     "notice-new": () => openNotice(null),
+    // 2.0.0 [RVA-23] 검토 HQ-33: 틀을 고르면 제목·내용·날짜·단추·대상이 채워져요. 적던 글이 있으면 한 번 더 눌러야 바뀌어요(조건 10).
+    "notice-template": ({ key }, el) => {
+      const form = el.closest('form[data-form="notice"]');
+      if (!form) return;
+      const typed = ["title", "body"].some((k) => form.elements[k].value.trim()) && form.dataset.tpl !== key;
+      if (typed && form.dataset.tplAsk !== key) {
+        form.dataset.tplAsk = key;
+        const note = form.querySelector(".tpl-ask") ?? el.closest(".fieldset").appendChild(document.createElement("p"));
+        note.className = "note warn tpl-ask";
+        note.setAttribute("role", "status");
+        note.textContent = "적던 제목·내용이 이 틀로 바뀌어요. 한 번 더 누르면 바꿔요.";
+        return;
+      }
+      delete form.dataset.tplAsk;
+      form.querySelector(".tpl-ask")?.remove();
+      const t = noticeTemplate(key);
+      const set = (name, v) => { if (form.elements[name]) form.elements[name].value = v ?? ""; };
+      set("title", t.title);
+      set("body", t.body);
+      set("from", t.from);
+      set("until", t.until);
+      for (const r of form.querySelectorAll('input[name="level"]')) r.checked = r.value === t.level;
+      set("actKind", t.action?.kind ?? "");
+      set("actUrl", t.action?.url ?? "");
+      set("actLabel", t.action?.label ?? "");
+      for (const b of form.querySelectorAll('input[name="workTypes"], input[name="features"]')) b.checked = Boolean(t.audience?.[b.name]?.includes(b.value));
+      for (const k of ["makers", "minSdk", "maxSdk", "minApp", "maxApp"]) set(k, "");
+      form.dataset.tpl = key;
+      for (const c of form.querySelectorAll('[data-act="notice-template"]')) c.setAttribute("aria-pressed", String(c.dataset.key === key));
+      form.elements.title.dispatchEvent(new Event("input", { bubbles: true }));
+    },
     "notice-edit": ({ id }) => openNotice(S.data.notices?.notices.find((x) => x.id === id)),
     "notice-remove": ({ id }) => confirmBox("공지를 내릴까요?", "앱은 다음에 새로 받을 때 이 공지를 빼요.", "내리기", async () => {
       const n = await act(() => api(`/notices/${id}/remove`, "POST", {}), "공지를 내렸어요");
@@ -6510,6 +6793,15 @@ function adminApp(L, BUILD, M) {
         title: data.get("title"), body: data.get("body"), level: data.get("level"),
         from: at(data.get("from")), until: at(data.get("until"), 864e5), minApp: num(data.get("minApp")), maxApp: num(data.get("maxApp")),
       };
+      // 2.0.0 [RVA-23] 검토 HQ-33: 단추와 대상(서버 readAction·readAudience 모양).
+      const parts = noticeParts(form);
+      if (parts.bad) {
+        const fold = form.querySelector("details.fold-field");
+        if (fold && fold.contains(form.elements[parts.bad[0]])) fold.open = true;
+        return fieldError(form.elements[parts.bad[0]], parts.bad[1]);
+      }
+      body.action = parts.action;
+      body.audience = parts.audience;
       // 2.0.0 [RVA-05] 검토 U24-10·ADMX-20: 틀린 칸은 그 칸에 빨간 테와 이유로.
       if (String(data.get("until")) < String(data.get("from"))) return fieldError(form.elements.until, "마지막 날이 시작보다 앞이에요");
       if (Date.parse(body.until) - Date.parse(body.from) > 91 * 864e5) return fieldError(form.elements.until, "90일 안으로 골라 주세요");
@@ -6517,7 +6809,8 @@ function adminApp(L, BUILD, M) {
       // 2.0.0 [RVA-04] 검토 ADMX-20: 새 공지는 앱을 쓰는 모두에게 가니, 같은 창 안에서 한 번 더 물어요(적은 글이 사라지지 않게 창을 바꾸지 않아요).
       if (!form.dataset.id && !form.dataset.sure) {
         form.dataset.sure = "1";
-        const who = body.minApp || body.maxApp ? `앱 번호 ${body.minApp ?? "처음"}~${body.maxApp ?? "끝"}을 쓰는 분` : "앱을 쓰는 모든 분";
+        const aim = noticeAudience(body.audience, body.minApp, body.maxApp);
+        const who = aim ? `${aim}에 맞는 분` : "앱을 쓰는 모든 분";
         const box = form.querySelector(".sure") ?? form.querySelector(".actions").insertAdjacentElement("beforebegin", document.createElement("p"));
         box.className = "note warn sure";
         box.setAttribute("role", "alert");
@@ -6947,6 +7240,12 @@ function adminApp(L, BUILD, M) {
 
   document.addEventListener("change", (e) => {
     const t = e.target;
+    // [RVA-21] 고른 파일 이름을 단추 옆에.
+    if (t.type === "file" && t.closest(".filepick")) {
+      const names = [...(t.files ?? [])].map((f) => f.name);
+      const line = t.closest(".filepick").querySelector("[data-file-names]");
+      if (line) line.textContent = names.length ? (names.length > 1 ? `${names[0]} 외 ${names.length - 1}개` : names[0]) : "아직 고르지 않았어요";
+    }
     // PC 확인 보안 11차 (가리기 이유가 첫 칸으로 미리 골라져 있었어요): nothing is picked for the admin; 가리기 waits for a reason.
     if (t.name === "reason" && t.form?.dataset.form === "hide-post") {
       t.form.querySelector('button[type="submit"]').disabled = false;
@@ -7089,8 +7388,25 @@ function adminApp(L, BUILD, M) {
     }
     if (nf) {
       const v = (name) => nf.elements[name]?.value ?? "";
+      // [RVA-23] 단추 종류에 따라 주소·단추 글 칸을 펴고, 대상 줄과 미리 보기를 새로.
+      const kind = v("actKind");
+      const words = NOTICE_KINDS.find(([k]) => k === kind)?.[2] ?? "";
+      const more = document.getElementById("nt-act-more");
+      if (more) more.hidden = !kind;
+      const urlBox = document.getElementById("nt-url-box");
+      if (urlBox) urlBox.hidden = kind !== "URL";
+      const lab = nf.elements.actLabel;
+      if (lab) {
+        lab.placeholder = words;
+        const l = nf.querySelector('label[for="nt-label"]');
+        if (l) l.textContent = `단추 글(12자, 비우면 '${words || "열기"}')`;
+      }
+      const parts = noticeParts(nf);
+      const sum = document.getElementById("nt-who-sum");
+      if (sum) sum.textContent = parts.bad ? "고칠 칸이 있어요" : noticeAudience(parts.audience, Number(v("minApp")) || null, Number(v("maxApp")) || null) || "모두에게";
       const box = document.getElementById("nt-preview");
-      if (box) box.innerHTML = noticePreview(v("title"), v("body"), nf.querySelector('input[name="level"]:checked')?.value);
+      const action = kind ? { kind, label: v("actLabel").trim() } : null;
+      if (box) box.innerHTML = noticePreview(v("title"), v("body"), nf.querySelector('input[name="level"]:checked')?.value, action);
     }
     if (t.dataset?.keep && t.closest("dialog")) writeDraft(t.dataset.keep, t.value);
     if (KEEP.includes(t.id) && t.closest("#main")) {
@@ -7414,6 +7730,13 @@ function adminApp(L, BUILD, M) {
     // [RVA-07] 창을 단추로 닫아 거둔 칸이면 아무것도 하지 않아요.
     if (dialogBack) {
       dialogBack = false;
+      // [RVA-19] 창 안의 링크로 가던 길이면 칸을 거둔 다음 그 화면으로.
+      if (pendingGo) {
+        const to = pendingGo;
+        pendingGo = "";
+        if (location.hash === to) load();
+        else location.hash = to;
+      }
       return;
     }
     if (dialog.open && !S.relogin && !history.state?.dialog) {

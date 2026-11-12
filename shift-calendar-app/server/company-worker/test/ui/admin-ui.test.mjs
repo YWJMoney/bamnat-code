@@ -292,7 +292,7 @@ test("[ADMUX-07] a notice shows as the phone will show it, and lists go out as C
   await t.type("#nt-body", "새벽 2시에 <잠시> 멈춰요");
   assert.equal(t.text("#nt-preview b"), "점검 안내");
   assert.equal(t.$("#nt-preview span").innerHTML, "새벽 2시에 &lt;잠시&gt; 멈춰요", "escaped");
-  assert.match(t.text('form[data-form="notice"] .help'), /1\.22\.0\(번호 33\)/, "the newest app a question came from");
+  assert.match(t.text('form[data-form="notice"] details.fold-field .help'), /1\.22\.0\(번호 33\)/, "the newest app a question came from");
   t.$("dialog").close();
   await t.settle();
   await t.go("#/inquiries");
@@ -2388,4 +2388,110 @@ test("[RVA-11] 연기 시험: odd words in questions and a company with two vers
   assert.match(t.text("#main"), /2공장/);
   assert.deepEqual(t.errors, []);
   assert.deepEqual(t.broken, []);
+});
+
+test("[RVA-23] 새 공지: 틀에서 시작하면 글·날짜·단추가 차고, 단추와 대상이 서버에 그대로 가요", async () => {
+  const { env, call } = await world();
+  const t = await signedIn(env);
+  await t.go("#/notices");
+  await t.click('[data-act="notice-new"]');
+  const form = t.$('form[data-form="notice"]');
+  assert.match(t.text("#nt-who-sum"), /모두에게/);
+  assert.ok(t.$("#nt-act-more").hidden, "no button yet: no button boxes");
+  assert.match(t.text("#nt-preview .np-acts"), /다시 보지 않기\s*확인/, "the phone's two buttons");
+  // 틀: 알람 점검 부탁 fills the words, the button and who it is for.
+  await t.click('[data-act="notice-template"][data-key="alarm"]');
+  assert.match(t.$("#nt-title").value, /알람이 잘 울리는지/);
+  assert.equal(t.$("#nt-act").value, "ALARM_CHECK");
+  assert.ok(!t.$("#nt-act-more").hidden, "the label box opens with a button");
+  assert.match(t.text("#nt-preview .np-acts .on"), /알람 점검 열기/, "the app's own words when the label is empty");
+  assert.match(t.text("#nt-who-sum"), /알람 쓰는 분/);
+  // Typed words are not thrown away by the next 틀 at once.
+  await t.type("#nt-title", "직접 쓴 제목");
+  await t.click('[data-act="notice-template"][data-key="check"]');
+  assert.equal(t.$("#nt-title").value, "직접 쓴 제목", "asked first");
+  assert.match(t.text(".tpl-ask"), /한 번 더 누르면/);
+  await t.click('[data-act="notice-template"][data-key="check"]');
+  assert.match(t.$("#nt-title").value, /서버 점검/);
+  // A web address: only https, said at the box.
+  t.$("#nt-act").value = "URL";
+  t.$("#nt-act").dispatchEvent(new t.window.Event("input", { bubbles: true }));
+  await t.settle();
+  assert.ok(!t.$("#nt-url-box").hidden, "the address box opens");
+  await t.type("#nt-url", "http://example.com/x");
+  await t.type("#nt-label", "자세히");
+  for (const b of t.$$('input[name="workTypes"]')) b.checked = ["SHIFT", "DAY"].includes(b.value);
+  await t.type("#nt-makers", "Samsung, google");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.equal(t.$("#nt-url").getAttribute("aria-invalid"), "true");
+  assert.match(t.text("#nt-url-error"), /https/);
+  await t.type("#nt-url", "https://example.com/x");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.match(t.text(".sure"), /교대·일근 · samsung·google에 맞는 분/, "the ask says who");
+  form.requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(call);
+  const n = (await call("GET", "/api/admin/notices", undefined, owner)).data.notices[0];
+  assert.deepEqual(n.action, { kind: "URL", url: "https://example.com/x", label: "자세히" });
+  assert.deepEqual(n.audience, { makers: ["samsung", "google"], workTypes: ["SHIFT", "DAY"] });
+  assert.match(t.text("#main"), /교대·일근 · samsung·google · 단추 '자세히'/, "the list says who and which button");
+  // 고치기 opens with them in place.
+  await t.click(`[data-act="notice-edit"][data-id="${n.id}"]`);
+  // (happy-dom keeps the last picked option of an earlier select with the same id; Chromium reads 'URL' here.)
+  assert.ok(t.$('#nt-act option[value="URL"]').hasAttribute("selected"));
+  assert.equal(t.$("#nt-url").value, "https://example.com/x");
+  assert.ok(t.$('input[name="workTypes"][value="SHIFT"]').checked);
+  assert.ok(t.$("details.fold-field").open, "who it is for is open when it is set");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[RVA-19][RVA-21] 허브의 '모두' 창, 파일 고르기 단추, 폰 폭의 판 알약", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/review");
+  await t.click("#hub-all");
+  assert.match(t.text("dialog h2"), /사람과 글의 모든 화면/);
+  assert.ok(t.$('dialog a.chip.pick[data-tab="review"][aria-current="page"]'), "here is marked");
+  await t.click('dialog [data-act="hub-go"][data-tab="community"]');
+  await t.settle(20);
+  assert.ok(!t.$("dialog").open, "the box closed");
+  assert.equal(t.window.location.hash.split("?")[0], "#/community");
+  // 레시피 › 출시 대기의 재료 파일: the app's button, not the browser's.
+  await t.go("#/recipes?tab=waiting");
+  const pick = t.$(".filepick");
+  if (pick) {
+    assert.match(pick.textContent, /파일 고르기/);
+    assert.match(pick.textContent, /아직 고르지 않았어요/);
+    assert.ok(pick.querySelector('input[type="file"]'), "still a file box for the form");
+  }
+  // The server's version is in the title bar too (shown on a phone instead of the thin line).
+  const mini = t.$("#dl-mini");
+  assert.ok(mini && !mini.hidden, "the pill is filled");
+  assert.match(mini.getAttribute("aria-label"), /로컬 서버|지금 도는 서버/);
+  assert.deepEqual(t.errors, []);
+});
+
+test("[RVA-18][RVA-20][RVA-22] 막대 배지는 한 줄, 대비 값, 마우스 올림은 마우스 화면에서만", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.badge\{white-space:nowrap;overflow-wrap:normal/, "two digits never break into two lines");
+  // Every :hover sits under (hover:hover): a tap leaves no hover colour on a phone (the 'dull' filled button in #465's photos).
+  const stack = [];
+  let bare = 0;
+  for (let i = 0, start = 0; i < css.length; i++) {
+    if (css[i] === "{") {
+      const head = css.slice(start, i);
+      if (head.includes(":hover") && !head.trim().startsWith("@") && !stack.some(Boolean)) bare++;
+      stack.push(head.includes("hover:hover"));
+      start = i + 1;
+    } else if (css[i] === "}") {
+      stack.pop();
+      start = i + 1;
+    } else if (css[i] === ";") start = i + 1;
+  }
+  assert.equal(stack.length, 0, "braces balance");
+  assert.equal(bare, 0, "no :hover outside (hover:hover)");
+  assert.match(css, /--on-bad:#2B0D0A/, "dark red badge words");
+  assert.doesNotMatch(css, /font-size:\.(6\d|7[0-4])rem/, "nothing under 12px");
 });
