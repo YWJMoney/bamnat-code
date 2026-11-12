@@ -225,7 +225,7 @@ class AHScreenshotTest : ScreenshotBase() {
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
         reveal("맞아요 4 · 달라요 1 (순서 1)", exact = true)
-        assertTrue(appears("맞았어요 ✓", exact = true))
+        assertTrue(appears("맞아요 ✓", exact = true))
         tapText("달라요", exact = true)
         assertTrue(appears("근무 순서가 달라요", exact = true))
         assertTrue(appears("근무 시간이 달라요", exact = true))

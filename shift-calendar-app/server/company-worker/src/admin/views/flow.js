@@ -4,7 +4,7 @@
 //         다음 할 일 단추 하나, 30일 운영 숫자와 8주 추이, 'Play에 나간 판' 저장(묶음 답 미리 보기 뒤).
 //   운영 열쇠: 주인이 만드는 열쇠 하나 = 'Claude' 관리자 하나. 한 번만 보이고, 끊기·기한·하루 한도.
 export function flowViews(A) {
-  const { S, esc, can, href, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, confirmBox, ago } = A;
+  const { L, S, esc, can, href, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, confirmBox, ago } = A;
 
   const waitText = (h) => (h < 1 ? "방금" : h < 48 ? `${h}시간` : `${Math.floor(h / 24)}일`);
   const num = (v, unit = "") => (v === null || v === undefined ? "—" : `${v}${unit}`);
@@ -120,7 +120,7 @@ export function flowViews(A) {
     const missing = fresh.filter((d) => d.asks && !d.shipReply).length;
     const noNews = fresh.filter((d) => !d.news).length;
     openDialog(`<form data-form="flow-ship-go" data-version="${esc(r.version)}"><h2>${esc(r.version)}을 나간 판으로 저장할까요?</h2>
-      <p>${r.was ? `지금은 ${esc(r.was)}이에요. ` : ""}${esc(r.version)} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
+      <p>${r.was ? `지금은 ${L.eyo(esc(r.was))}. ` : ""}${esc(r.version)} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
       ${fresh.length ? `<h3>이번에 나가는 개발사항 ${fresh.length}개</h3><ul class="mini">${fresh.map((d) => `<li>${esc(d.title)} <small>${esc(d.releasedIn)} · 문의 ${d.asks}건</small>
           ${d.news ? `<small class="answer">공지: ${esc(d.news)}</small>` : ""}<span>${d.asks ? `<span class="pill ${d.shipReply ? "ok" : "warn"}">${d.shipReply ? "출시 답 준비됨" : "출시 답 없음(기본 답)"}</span>` : ""}
           <span class="pill ${d.news ? "ok" : "warn"}">${d.news ? "공지 한 줄 있음" : "공지 한 줄 없음"}</span></span></li>`).join("")}</ul>

@@ -57,7 +57,11 @@ fun Modifier.fillWith(fill: Fill?, shape: Shape = RectangleShape, alpha: Float =
     if (fill == null) this else composed {
         val density = LocalDensity.current.density
         val tile = remember(fill, density) { FillTiles.tile(fill, density) }
-        val moving = animate && fill is Fill.Shader && fill.speed > 0 && Build.VERSION.SDK_INT >= 33 && !LocalMotionOff.current
+        val wants = animate && fill is Fill.Shader && fill.speed > 0 && Build.VERSION.SDK_INT >= 33 && !LocalMotionOff.current
+        // 2.0.0 [RVS-06] 움직임 예산 (검토 SN-03): at most [MovingShaders.MAX] shaders move on the screen at once; the rest are drawn still.
+        val slot = remember { Any() }
+        val moving = remember(slot, wants) { wants && MovingShaders.take(slot) }
+        androidx.compose.runtime.DisposableEffect(slot, moving) { onDispose { if (moving) MovingShaders.give(slot) } }
         val time: State<Float> = if (moving) {
             rememberInfiniteTransition(label = "fill").animateFloat(0f, 3600f, infiniteRepeatable(tween(3_600_000, easing = LinearEasing)), label = "t")
         } else remember { mutableFloatStateOf(0f) }
@@ -78,6 +82,25 @@ fun Modifier.fillWith(fill: Fill?, shape: Shape = RectangleShape, alpha: Float =
             }
         }
     }
+
+/**
+ * 2.0.0 [RVS-06] 움직임 예산 (검토 SN-03, 스튜디오 조사 5장 S2, 디자인 품질 조건 15): a look may give 셰이더 채우기 to a part drawn many
+ * times (메모 카드, 가계부 줄, 달력 칸), and each one moving on its own costs a frame each on a month of cells. The first [MAX] to be drawn
+ * move; the others show the same colours still until one of the moving ones leaves the screen and they are drawn again.
+ */
+object MovingShaders {
+    const val MAX = 2
+    private val holders = LinkedHashSet<Any>()
+
+    fun take(key: Any): Boolean = synchronized(holders) { key in holders || (holders.size < MAX && holders.add(key)) }
+
+    fun give(key: Any) {
+        synchronized(holders) { holders.remove(key) }
+    }
+
+    /** How many move now (for tests). */
+    val moving: Int get() = synchronized(holders) { holders.size }
+}
 
 /** Whether 움직임 끄기 or the phone's 'remove animations' is on (MainActivity provides it). */
 val LocalMotionOff = androidx.compose.runtime.staticCompositionLocalOf { false }

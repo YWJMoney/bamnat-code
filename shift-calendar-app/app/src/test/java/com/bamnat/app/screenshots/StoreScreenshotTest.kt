@@ -294,6 +294,8 @@ class StoreScreenshotTest : ScreenshotBase() {
     @Test fun memoBoard() = shoot("store_15_memo_board", STORE) {
         photoMemo()
         tab(2, wide = false)
+        // [RVIB-20] On a phone 보기 and 정렬 are one chip (목록 · 날짜순 ▾) that lists them.
+        if (!shows("보드", exact = true)) tapText("보기 목록", prefix = true, scrolls = 0)
         tapText("보드", exact = true, scrolls = 0)
     }
 

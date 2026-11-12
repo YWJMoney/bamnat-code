@@ -25,6 +25,7 @@ import com.bamnat.app.ui.monthSwipe
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Visibility
@@ -974,6 +975,9 @@ fun MoneyScreen(
             // and the title gives its room to the month: the 가계부 tab below already says where this is.
             // 2.0.0 [RVK-35] (PC-126) And on the folded phone (under 400dp): with ‹ 달 ›, 찾기, ⋮ and 나, '장부' was squeezed to small letters.
             val roomy = LocalDensity.current.fontScale < 1.3f && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= ROOMY_HEAD_DP
+            // 2.0.0 [RVK-48] (PC-161) On the most common phone (411dp, 글자 100%) ‹ 달 ›, 눈, 찾기, ⋮ and 나 left the title no room ('가계부'
+            // showed as a sliver). 찾기 waits in ⋮ unless the title still has its room beside it (without a title, folded or large text, it stays).
+            val searchInRow = !roomy || moneyHeadRoom(com.bamnat.core.work.moneyTab(style), month, me = com.bamnat.app.ui.LocalMe.current.let { it.show && !it.inRail })
             Row(Modifier.padding(top = 12.dp).then(com.bamnat.app.ui.theme.PhotoGround.head()).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (roomy) {
                     FitText(com.bamnat.core.work.moneyTab(style), MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
@@ -1001,10 +1005,12 @@ fun MoneyScreen(
                 }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
                 // 2.0.0 [RVK-35] (PC-126) 찾기 stood in the menu's Box, drawn on the same spot as ⋮, so '위 ⋮ › 자동 기록' had no ⋮ to see.
-                com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
+                if (searchInRow) com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "${com.bamnat.core.work.moneyTab(style)} 메뉴") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (!searchInRow) DropdownMenuItem(text = { Text("기능·설정 찾기") }, leadingIcon = { Icon(androidx.compose.material.icons.Icons.Filled.Search, null) },
+                            onClick = { menuOpen = false; com.bamnat.app.ui.settings.SettingsLinks.search() })
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
                         // 1.38 [LEDH-31]
@@ -1402,3 +1408,25 @@ internal fun MoneyEditSheet(
 
 /** 2.0.0 [RVK-35] Below this width the 가계부 head keeps ‹ 달 ›, 찾기, ⋮ and 나; its name and the eye (in ⋮ too) wait. */
 private const val ROOMY_HEAD_DP = 400
+
+/**
+ * 2.0.0 [RVK-48] (PC-161) Whether the money tab's head has room for 찾기 as well as its title: the width left after the padding,
+ * ‹ ›, 눈, ⋮, 나 (when it is in the row) and the month, against the title at its own size. Measured, so it holds for every width
+ * and 글자 크기 (411dp at 100% has no room; the unfolded phone has).
+ */
+@Composable
+private fun moneyHeadRoom(title: String, month: java.time.YearMonth, me: Boolean): Boolean {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    val monthStyle = MaterialTheme.typography.titleMedium
+    val titleStyle = MaterialTheme.typography.headlineSmall
+    val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+    return remember(title, month, me, width, density, monthStyle, titleStyle) {
+        with(density) {
+            val monthW = measurer.measure(Fmt.month(month), monthStyle, maxLines = 1).size.width.toDp() + 8.dp
+            val titleW = measurer.measure(title, titleStyle, maxLines = 1).size.width.toDp()
+            val icons = 48.dp * (5 + if (me) 1 else 0)
+            width - 20.dp - icons - monthW >= titleW
+        }
+    }
+}

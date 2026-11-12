@@ -18,8 +18,8 @@ import java.time.ZonedDateTime
  * that fixes the clock draws the same screen on any day. A line that needs the real clock (a new item's id) says
  * so with a `// real clock:` comment.
  */
-/** [RVR-15] How many direct clock reads the tests may still have; it only goes down. */
-private const val TEST_CLOCK_CAP = 218
+/** [RVR-15] How many direct clock reads the tests may still have; it only goes down (2.0.0 [RVR-24]: 218 → 147, the tests the 2027-01-01 run broke read Today). */
+private const val TEST_CLOCK_CAP = 147
 
 class ClockRulesTest {
     private val roots = listOf("src/main", "../core/src/main", "../wear/src/main", "../database/src/main").map(::File)

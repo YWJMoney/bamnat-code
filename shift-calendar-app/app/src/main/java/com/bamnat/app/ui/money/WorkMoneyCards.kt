@@ -166,7 +166,7 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
 @Composable
 private fun PlatformLine(label: String, value: String, strong: Boolean = false, hint: String? = null) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
-        // 2.0.0 [HQ-75] What the line holds goes under it as its own small line, so big letters never leave one syllable ('험') alone.
+        // 2.0.0 [RVK-44] (HQ-75) What the line holds goes under it as its own small line, so big letters never leave one syllable ('험') alone.
         Column(Modifier.weight(1f).padding(end = 8.dp)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -177,7 +177,7 @@ private fun PlatformLine(label: String, value: String, strong: Boolean = false, 
 }
 
 /**
- * 2.0.0 [HQ-75] A waiting deposit with its '입금 확인'. Side by side as before; with big letters (130% and up) the words take the whole
+ * 2.0.0 [RVK-44] (HQ-75) A waiting deposit with its '입금 확인'. Side by side as before; with big letters (130% and up) the words take the whole
  * width and the button sits under them at the start, so the money does not break a word to a line and the button keeps clear of the
  * floating + at the end.
  */
@@ -231,7 +231,7 @@ private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBo
         payouts.take(4).forEach { p ->
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             val dep = remember(p, book.entries) { com.bamnat.core.money.PlatformWork.depositFor(p, book.entries) }
-            // 2.0.0 [HQ-75] A late week is 주의 (orange), not 위험 red; the words take the width with big letters.
+            // 2.0.0 [RVK-44] (HQ-75) A late week is 주의 (orange), not 위험 red; the words take the width with big letters.
             DepositRow(words = {
                 Text("${p.platform} ${Fmt.shortDate(p.payDate)} 정산 ${Fmt.won(p.expected)}", style = MaterialTheme.typography.bodyLarge,
                     color = if (p.payDate.isBefore(today.minusDays(2)) && dep == null) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface)
