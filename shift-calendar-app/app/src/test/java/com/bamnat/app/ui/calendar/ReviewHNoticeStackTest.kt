@@ -8,6 +8,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -54,5 +60,34 @@ class ReviewHNoticeStackTest {
         assertTrue("$heights", heights.isNotEmpty())
         // One card and the '알림 2개 더 보기' line; three cards would be 300dp.
         assertTrue("$heights vs $card", heights.all { it < card * 2 })
+    }
+
+    /**
+     * [RVH-21] 통합 합친 뒤 CI '큰 글자 달력' 사진: a notice that drew and then went quiet left the next one folded away, as the count
+     * was kept in each notice's own layout and the quiet one was measured again alone. The next notice comes up in its place.
+     */
+    @Test fun aNoticeThatGoesQuietGivesItsPlaceToTheNext() {
+        app.container.consentStore.markSeen(ConsentItem.entries)
+        var first by mutableStateOf(true)
+        ActivityScenario.launch(MainActivity::class.java).use { s ->
+            s.onActivity { a ->
+                a.setContent {
+                    BamnatTheme {
+                        Column {
+                            NoticeStack(listOf(
+                                Notice("a", "알림 a") { if (first) Box(Modifier.fillMaxWidth().height(80.dp)) { Text("첫 알림") } },
+                                Notice("b", "알림 b") { Box(Modifier.fillMaxWidth().height(80.dp)) { Text("둘째 알림") } },
+                            ))
+                        }
+                    }
+                }
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText("첫 알림").assertExists()
+            first = false
+            compose.waitForIdle()
+            compose.onNodeWithText("둘째 알림").assertExists()
+            compose.onNodeWithText("둘째 알림").assertIsDisplayed()
+        }
     }
 }
