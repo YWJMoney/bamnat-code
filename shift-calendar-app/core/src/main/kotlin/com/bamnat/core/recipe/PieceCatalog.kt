@@ -85,9 +85,11 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Items(
                 "items", 12, min = 1,
                 fields = listOf(
-                    Field.Text("name", 20, min = 1),
+                    // 2.0.0 [RVD-28] SD-08: a name and a 근무 글자 by the 근무 종류 한 규칙표 (ShiftRules), as the servers read them.
+                    Field.Text("name", com.bamnat.core.model.ShiftRules.NAME_LETTERS, min = 1),
                     Field.Pick("role", ShiftRole.KEYS),
-                    Field.Text("label", 2, min = 1, check = { if (RecipeText.graphemes(it) > 2) "label" else null }),
+                    Field.Text("label", com.bamnat.core.model.ShiftRules.LABEL_LETTERS, min = 1,
+                        check = { if (RecipeText.graphemes(it) > com.bamnat.core.model.ShiftRules.LABEL_LETTERS) "label" else null }),
                     Field.Color("color"),
                     Field.Emoji("emoji"),
                 ),
@@ -216,7 +218,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
 
     /** [RCX-11] 1.35 묶음: other recipes by their codes, put in one after another (each piece still chosen on its own). */
     BUNDLE(
-        "bundle", "레시피 묶음", WorkStyle.entries.toSet(),
+        "bundle", "작품 묶음", WorkStyle.entries.toSet(),
         listOf(
             Field.Items(
                 "items", 8, min = 2,

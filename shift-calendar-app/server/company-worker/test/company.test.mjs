@@ -403,6 +403,19 @@ test("everything one install sent can be deleted", async () => {
   assert.equal((await call("GET", `/api/reports/${a.data.id}`)).status, 404);
 });
 
+test("2.0.0 U10b-04: deleting everything says which adopted rules stay for the people using them", async () => {
+  const { call } = server();
+  const first = await call("POST", "/api/reports", report(1, { company: "(주)예시정밀", verified: true }), from(1));
+  assert.equal((await call("POST", "/api/reports", report(2, { company: "예시 정밀" }), from(2))).data.status, "adopted");
+  await call("POST", "/api/reports", report(1, { company: "다른회사" }), from(1));
+  const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
+  assert.equal(gone.data.reports, 1);
+  assert.equal(gone.data.adoptedKept, 1);
+  assert.equal(gone.data.ratesKept, undefined);
+  // The rule stays as everyone's.
+  assert.equal((await call("GET", `/api/reports/${first.data.id}`)).data.status, "adopted");
+});
+
 test("contacts and amounts in what is typed are refused with the field", async () => {
   const { call } = server();
   const cases = [

@@ -236,6 +236,14 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         say("${p.title} ${p.side.label} 알림을 넘겼어요") { repo.addAlert(p) }
     }
 
+    /**
+     * 2.0.0 [RVK-24] (총괄 #472 리뷰, 조건 9·14) 넘기기 from the sheet a found line opens: letting one go no longer takes the swipe
+     * to the left, which a finger that cannot slide or TalkBack's plain tap could not do.
+     */
+    fun dropAlertAt(at: Long) = viewModelScope.launch {
+        repo.alertsNow().firstOrNull { it.at == at }?.let { dropAlert(it) }
+    }
+
     // ---- 1.27 AK 순번 450 (INV-42~45): 캡처로 채우기 — 같으면 건너뛰고, 다르면 묻고, 새 것만 확인, 믿으면 묻지 않기 ----
     // ---- 1.29 AR (INVA-01~02): 읽기부터 넣기까지 화면이 아니라 여기서, 바로 넣기가 처음부터 켜짐 ----
 

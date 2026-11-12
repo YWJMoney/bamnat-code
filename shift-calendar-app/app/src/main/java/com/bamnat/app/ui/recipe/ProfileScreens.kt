@@ -678,7 +678,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             Count(p.tabRecipes.size, "탭별 작품")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
             Count(p.followingCount, "팔로잉", if (mine) ({ onPeople("following") }) else null)
-            Count(p.users, "넣은 분")
+            Count(p.users, "넣어 본 분")
         }
         if (!p.mine) {
             if (vm.canFollow) {
@@ -731,7 +731,7 @@ internal fun WorkTile(item: RecipeItem, pinned: Boolean, modifier: Modifier = Mo
             val viewer = LocalViewerStyle.current
             Text(buildString {
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { append("🧩 ").append(marketTabLabel(it, viewer)).append(" · ") }
-                append("♥ ${item.likes} · 넣은 분 ${item.users}")
+                append("♥ ${item.likes} · 넣어 본 분 ${item.users}")
             }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -743,7 +743,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
     val lines = buildList<Pair<String, (() -> Unit)?>> {
         if (b.newFollowers > 0) add("👤 새 팔로워 ${b.newFollowers}명" + (b.followerFaces.firstOrNull()?.nick?.let { " ($it 님 등)" } ?: "") to onPeople)
         b.milestones.filter { it.key in unseen }.forEach { m ->
-            add((if (m.kind == "users") "🎉 ‘${m.title}’ 넣은 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
+            add((if (m.kind == "users") "🎉 ‘${m.title}’ 넣어 본 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
         }
         b.questions.forEach { (code, title, body) -> add("❓ ‘$title’에 질문: $body" to { onOpen(code) }) }
         b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’${com.bamnat.app.ui.Fmt.obj("‘$parent’")} 고친 ‘$title’" to { onOpen(code) }) }
@@ -1056,7 +1056,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     }
     Scaffold(
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
-        topBar = { TopAppBar(title = { Text(parts[part].second) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        topBar = { TopAppBar(title = { Text(parts[part].second, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = part) {
@@ -1271,7 +1271,8 @@ fun SetScreen(vm: SetViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, on
                 Text("지금 내 화면에 테마와 탭을 모두 얹으면 이렇게 보여요. 아직 바뀐 건 없어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.worn?.let { r ->
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ScaledPhone(r, vm.style, tab, { tab = it }, 0.62f) }
+                    // 2.0.0 [RVM-21] MKT-32 Card fonts from our public files, not the whole fonts from Google Fonts.
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { MarketFontsOf(r) { ScaledPhone(r, vm.style, tab, { tab = it }, 0.62f) } }
                 } ?: Text("모습을 그리는 중이에요", style = MaterialTheme.typography.bodySmall)
                 Text("차례로 넣기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("테마를 먼저 입고, 탭은 그 위에 얹어요. 하나씩 열어 입어 보고 넣으면 여기 ✓가 붙어요. 넣은 것은 7일 안에 되돌릴 수 있어요",
@@ -1316,13 +1317,13 @@ class StatsViewModel(private val c: AppContainer) : ViewModel() {
 fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, onPro: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     Scaffold(topBar = {
-        TopAppBar(title = { Text("작품 통계") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
+        TopAppBar(title = { Text("작품 통계", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = s.stats
             if (st == null) { Text(s.error ?: "불러오는 중이에요"); if (s.error != null) TextButton(onClick = vm::load) { Text("다시 해 보기") }; return@Column }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣은 분 모두"); Count(st.likes, "좋아요 모두")
+                Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣어 본 분 모두"); Count(st.likes, "좋아요 모두")
             }
             Text("누가 썼는지는 서버도 몰라요. 작품과 날마다의 수만 세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (st.items.isEmpty()) Text("장터에 공개로 올린 작품이 생기면 여기 보여요")
@@ -1330,7 +1331,7 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
                 Card(Modifier.fillMaxWidth().clickable(onClickLabel = "작품 보기") { onOpen(i.code) }) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(i.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("넣은 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
+                        Text("넣어 본 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
                             style = MaterialTheme.typography.bodySmall)
                         if (vm.pro) Bars(i.days) else if (i === st.items.first()) TextButton(onClick = onPro) { Text("프로 꾸미기로 28일 날별 그래프 보기") }
                     }

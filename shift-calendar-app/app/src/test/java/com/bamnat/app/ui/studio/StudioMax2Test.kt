@@ -129,4 +129,18 @@ class StudioMax2Test {
         com.bamnat.app.data.LookUndo.clear(ctx)
         assertEquals(null, com.bamnat.app.data.LookUndo.read(ctx, now = 2_000L))
     }
+
+    @Test fun theCalendarBandShowsOnceAfterALookGoesOn() {
+        // [RVM-17] PC-57: the band over the calendar stayed and pushed the month down a line; it shows once, 되돌리기 stays in the studio.
+        val ctx = ApplicationProvider.getApplicationContext<BamnatApp>()
+        com.bamnat.app.data.LookUndo.keep(ctx, mapOf("calTheme" to "sat=FF1565C0"), at = 1_000L)
+        assertEquals(false, com.bamnat.app.data.LookUndo.seen(ctx))
+        com.bamnat.app.data.LookUndo.markSeen(ctx)
+        assertEquals(true, com.bamnat.app.data.LookUndo.seen(ctx))
+        assertEquals("되돌리기 is still there", mapOf("calTheme" to "sat=FF1565C0"), com.bamnat.app.data.LookUndo.read(ctx, now = 2_000L)?.first)
+        // The next look put on shows the band again.
+        com.bamnat.app.data.LookUndo.keep(ctx, mapOf("calTheme" to ""), at = 3_000L)
+        assertEquals(false, com.bamnat.app.data.LookUndo.seen(ctx))
+        com.bamnat.app.data.LookUndo.clear(ctx)
+    }
 }

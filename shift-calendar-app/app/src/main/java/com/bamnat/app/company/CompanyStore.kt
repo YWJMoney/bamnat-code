@@ -159,10 +159,26 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
             return
         }
         _autoShare.value = on
+        if (on != true) _autoPay.value = false
         prefs.edit().apply {
             if (on == null) remove("auto_share") else putBoolean("auto_share", on)
-            if (on != true) putBoolean("auto_dirty", false)
+            if (on != true) putBoolean("auto_dirty", false).remove("auto_pay")
         }.apply()
+    }
+
+    /**
+     * 2.0.0 [RVN-11] COMP-44 Whether 저절로 나누기 takes the pay way (계산 방식) too: only after a yes that named it (the ask's
+     * '다음부터 묻지 않고 저절로 나누기', 설정's switch). A 근무주기 yes ([LeadShare]: "근무 이름·시간·순서만 나눠요") is for the cycle; a
+     * change of the pay way is then asked as without 저절로 나누기. The phone's one choice, as [autoShare]; a phone that said yes before
+     * 2.0.0 is taken at the narrower word (the cycle) until it says yes to the pay way.
+     */
+    private val _autoPay = MutableStateFlow(phone == null && prefs.getBoolean("auto_pay", false))
+    val autoPay: StateFlow<Boolean> = phone?.autoPay ?: _autoPay.asStateFlow()
+
+    fun setAutoPay(on: Boolean) {
+        if (phone != null) return phone.setAutoPay(on)
+        _autoPay.value = on
+        prefs.edit().putBoolean("auto_pay", on).apply()
     }
 
     /**
@@ -180,6 +196,18 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
     var autoSentAt: Long
         get() = prefs.getLong("auto_sent_at", 0)
         set(v) = prefs.edit().putLong("auto_sent_at", v).apply()
+
+    /**
+     * 2.0.0 [RVN-10] COMP-46 Reports a 되돌리기 could not take back for want of a connection: taken back once online
+     * ([AutoShare.takeBackWaiting], [OutboxJob]), so the 광장 does not keep what the user took back.
+     */
+    val takeBackLater: Set<String>
+        get() = prefs.getString("take_back_later", null)?.split(',')?.filter { it.isNotBlank() }?.toSet().orEmpty()
+
+    fun takeBackLater(id: String, waiting: Boolean) {
+        val now = if (waiting) takeBackLater + id else takeBackLater - id
+        prefs.edit().apply { if (now.isEmpty()) remove("take_back_later") else putString("take_back_later", now.joinToString(",")) }.apply()
+    }
 
     private val _member = MutableStateFlow(readMember())
     /** [PLAZA-07] The company this calendar joined, as the server last said: (id, name). [CALI-02] Each calendar its own. */
@@ -217,6 +245,11 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         setMember(null)
         // [PLAZA-34] And what it had of this phone: the next save is the first again.
         autoBase = null
+        // 2.0.0 [RVN-10] COMP-43 모두 지우기 means nothing goes up by itself afterwards: 저절로 나누기 is back to 묻기 (the phone's one
+        // choice, [setAutoShare] null), and a change waiting for its day or a take-back waiting for a connection has nothing left to do.
+        if (autoShare.value == true) setAutoShare(null)
+        autoDirty = false
+        prefs.edit().remove("take_back_later").apply()
     }
 
     fun setApplied(a: AppliedSetup?) {
