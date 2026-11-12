@@ -264,10 +264,30 @@ data class ProfileInbox(
     val followersLatest: String? = null,
     /** The server's time of this answer, kept as the next since (the phone's clock may be off). */
     val at: Instant? = null,
+    /**
+     * 2.0.0 [RVM-36] 검토 HQ-52: what people did with my works since (server rcReactions), for the 알림함: 좋아요 by work, each 글
+     * (후기·의견·이렇게 바꿔 봐요·질문), 넣어 본 분 by work with the whole number, and what the review decided. 안좋아요 and reports are
+     * never in it.
+     */
+    val likes: List<Reaction> = emptyList(),
+    val talk: List<Reaction> = emptyList(),
+    val uses: List<Reaction> = emptyList(),
+    val decided: List<Reaction> = emptyList(),
 ) {
     data class Milestone(val code: String, val title: String, val kind: String, val n: Int) {
         val key: String get() = "$code|$kind|$n"
     }
+
+    /**
+     * [RVM-36] One line of [likes], [talk], [uses] or [decided]: [kind] is "like", "use", "decided" or the 글's kind; [post] and [body]
+     * for a 글, [total] for 넣어 본 분, [state] ("visible", "returned", "hidden"), [why] ("flags", "admin"), [note] and [again] (shown
+     * again after a hide) for a decision.
+     */
+    data class Reaction(
+        val kind: String, val code: String, val title: String, val count: Int = 1, val at: Instant? = null,
+        val post: String? = null, val body: String? = null, val total: Int? = null,
+        val state: String? = null, val why: String? = null, val note: String? = null, val again: Boolean = false,
+    )
 }
 
 /** [PRF-07] 모음: 2~6 of a maker's own recipes (테마 하나 + 기능별 탭들) put on together. */
@@ -603,7 +623,20 @@ class RecipeClient(
             o.optJSONArray("remixes").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("parentTitle")) },
             o.optJSONArray("milestones").objects().map { ProfileInbox.Milestone(it.optString("code"), it.optString("title"), it.optString("kind"), it.optInt("n")) },
             o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") },
-            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() })
+            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            likes = reactions(o, "likes"), talk = reactions(o, "talk"), uses = reactions(o, "uses"), decided = reactions(o, "decided"))
+    }
+
+    /** [RVM-36] HQ-52 One list of the inbox's reactions; a line without a work is left out. */
+    private fun reactions(o: JSONObject, name: String): List<ProfileInbox.Reaction> = o.optJSONArray(name).objects().mapNotNull { x ->
+        val code = x.optString("target").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+        ProfileInbox.Reaction(
+            kind = x.optString("kind"), code = code, title = x.optString("title"), count = x.optInt("count", 1).coerceAtLeast(1),
+            at = x.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            post = x.opt("post")?.takeIf { it != JSONObject.NULL }?.toString(), body = x.optStringOrNull("body"),
+            total = if (x.has("total") && !x.isNull("total")) x.optInt("total") else null,
+            state = x.optStringOrNull("state"), why = x.optStringOrNull("why"), note = x.optStringOrNull("note"), again = x.optBoolean("again"),
+        )
     }
 
     override suspend fun block(device: String, id: String, on: Boolean) = serverCall {
