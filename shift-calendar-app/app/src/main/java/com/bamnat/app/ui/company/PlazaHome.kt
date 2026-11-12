@@ -448,12 +448,29 @@ fun PlazaHomeScreen(
     LaunchedEffect(state.refreshing) { if (!state.refreshing) pulling = false }
     // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
     val homeTitle = listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" ")
+    // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
+    val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
+    val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
+    // 1.39 [PLZC-60] the head's door and menu; 2.0.0 [RVN-20] (총괄 사진 검토) in the top bar when there is one.
+    val picks = vm.picks.collectAsStateWithLifecycle().value
+    val mine = vm.mine.collectAsStateWithLifecycle().value
+    var picksOpen by remember { mutableStateOf(false) }
+    var tagOpen by remember { mutableStateOf(false) }
+    if (people && picksOpen) PlazaPicksDialog(picks, mine?.form) { picksOpen = false }
+    if (people && tagOpen) PlazaTagScopeDialog(vm.container, plan.room, onDismiss = { tagOpen = false; vm.refreshMine() })
+    val head = plazaHeadModel(plan, picks = picks.size, onPicks = { picksOpen = true },
+        onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
+        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
+        onFind = onFind,
+        onTag = { tagOpen = true }.takeIf { plan.room?.startsWith("style-") == true && mine != null })
+    val mainInBar = onBack != null && people && plazaMainFitsBar(homeTitle, head.main?.first)
     Scaffold(
         topBar = {
             // 사용자 2026-11-03 (마을 스크롤, 겹친 상단 막대): in 마을 (no 뒤로) the title is the page's first line, under 마을's tabs.
             if (onBack != null) TopAppBar(
                 title = { Text(homeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                actions = { if (people) PlazaBarActions(head, withMain = mainInBar) },
             )
         },
     ) { padding ->
@@ -467,28 +484,13 @@ fun PlazaHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
-                val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
-                val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
                 // [SPD-13] What the phone kept is on screen while it is read again: a thin line, not a spinner.
                 // 1.39 [PLZC-60] with 사람 먼저 the name is on the head line ([PlazaHead]).
                 if (onBack == null && !people) Text(homeTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp).semantics { heading() })
                 // 1.39 [PLZC-60] (사용자 2026-11-08): with 사람 먼저 the head is one line, the plaza's own door beside its name and the rest in its menu.
-                if (people) {
-                    val picks = vm.picks.collectAsStateWithLifecycle().value
-                    val mine = vm.mine.collectAsStateWithLifecycle().value
-                    var picksOpen by remember { mutableStateOf(false) }
-                    var tagOpen by remember { mutableStateOf(false) }
-                    if (picksOpen) PlazaPicksDialog(picks, mine?.form) { picksOpen = false }
-                    if (tagOpen) PlazaTagScopeDialog(vm.container, plan.room, onDismiss = { tagOpen = false; vm.refreshMine() })
-                    PlazaHead(title = homeTitle.takeIf { onBack == null }, plan = plan, today = state.talk?.pulse?.today,
-                        picks = picks.size, onPicks = { picksOpen = true },
-                        onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
-                        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
-                        onFind = onFind,
-                        onTag = { tagOpen = true }.takeIf { plan.room?.startsWith("style-") == true && mine != null })
-                }
+                if (people) PlazaHead(title = homeTitle.takeIf { onBack == null }, today = state.talk?.pulse?.today, model = head,
+                    menuInBar = onBack != null, mainInBar = mainInBar)
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
                 header?.invoke()
                 vm.note?.let { n ->

@@ -669,16 +669,11 @@ private fun FeedMenuButton(p: TalkPost, menu: FeedMenu) {
     }
 }
 
-/**
- * 1.39 [PLZC-60] (사용자 2026-11-08 "화면을 보면 위에 공간이 … 불필요하게 공간을 차지"): the plaza's whole head as one line: its name
- * (in 마을, where there is no top bar), 오늘 글 n, the one door that is the plaza's own business (회사 정보 · 시세 · 선배 답), and a menu with
- * the rest (회사 규칙 광장, 우리 회사 찾기, 내 태그·알림, 지킬 것). Before, these were six rows above the first post.
- */
-@Composable
-internal fun PlazaHead(
-    title: String?,
+/** 2.0.0 [RVN-20] What the plaza's head shows: its own door ([main]), the rest in [menu], and the plaza's rule ([note]). */
+internal data class PlazaHeadModel(val main: Pair<String, () -> Unit>?, val menu: List<Pair<String, () -> Unit>>, val note: String)
+
+internal fun plazaHeadModel(
     plan: StylePlaza.Plan,
-    today: Int?,
     picks: Int,
     onPicks: () -> Unit,
     onCompany: () -> Unit,
@@ -687,7 +682,7 @@ internal fun PlazaHead(
     onAll: (() -> Unit)?,
     onFind: (() -> Unit)?,
     onTag: (() -> Unit)?,
-) {
+): PlazaHeadModel {
     val company = plan.top == StylePlaza.Top.COMPANY_ROOM
     // The one door shown: a company's 정보, else 시세 (알바·현장 광장's own business), else 선배 답 when there are some.
     val main: Pair<String, () -> Unit>? = when {
@@ -696,15 +691,21 @@ internal fun PlazaHead(
         picks > 0 -> "📚 선배 답 $picks" to onPicks
         else -> null
     }
-    val menu = plazaMenu(plan, picks, onPicks, onCompany, onShare, onRates, onAll, onFind, onTag)
-    var menuOpen by remember { mutableStateOf(false) }
-    var rulesOpen by remember { mutableStateOf(false) }
-    if (rulesOpen) AlertDialog(
-        onDismissRequest = { rulesOpen = false },
-        title = { Text("이 광장에서 지킬 것") },
-        text = { Text(plan.note) },
-        confirmButton = { TextButton(onClick = { rulesOpen = false }) { Text("닫기") } },
-    )
+    return PlazaHeadModel(main, plazaMenu(plan, picks, onPicks, onCompany, onShare, onRates, onAll, onFind, onTag), plan.note)
+}
+
+/**
+ * 1.39 [PLZC-60] (사용자 2026-11-08 "화면을 보면 위에 공간이 … 불필요하게 공간을 차지"): the plaza's whole head as one line: its name
+ * (in 마을, where there is no top bar), 오늘 글 n, the one door that is the plaza's own business (회사 정보 · 시세 · 선배 답), and a menu with
+ * the rest (회사 규칙 광장, 우리 회사 찾기, 내 태그·알림, 지킬 것). Before, these were six rows above the first post.
+ * 2.0.0 [RVN-20] 총괄 사진 검토 (rvn_69·71~75): on a screen with a top bar the menu ([menuInBar]) and, when it fits, the door ([mainInBar])
+ * are in the bar ([PlazaBarActions]); this line then shows only what is left (오늘 글 n, the door that did not fit), and nothing when nothing
+ * is (before, a line under the bar held ⋮ alone, even at 100% on a wide screen).
+ */
+@Composable
+internal fun PlazaHead(title: String?, today: Int?, model: PlazaHeadModel, menuInBar: Boolean = false, mainInBar: Boolean = false) {
+    val main = model.main.takeUnless { mainInBar }
+    if (title == null && today == null && main == null && menuInBar) return
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             title?.let {
@@ -717,18 +718,63 @@ internal fun PlazaHead(
             }
         }
         main?.let { (label, go) -> TextButton(onClick = go) { Text(label, maxLines = 1) } }
-        androidx.compose.foundation.layout.Box {
-            androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
-                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert,
-                    "광장 메뉴: 회사 규칙 광장, 내 근무 태그 등")
+        if (!menuInBar) PlazaMenuButton(model)
+    }
+}
+
+/** 2.0.0 [RVN-20] The plaza's door (when [withMain]) and ⋮ as a top bar's actions. */
+@Composable
+internal fun PlazaBarActions(model: PlazaHeadModel, withMain: Boolean) {
+    if (withMain) model.main?.let { (label, go) -> TextButton(onClick = go) { Text(label, maxLines = 1) } }
+    PlazaMenuButton(model)
+}
+
+/**
+ * 2.0.0 [RVN-20] Whether the plaza's door fits in the top bar beside [title]: measured with the bar's own letters at this font scale,
+ * so 200% or a folded phone keeps the title whole (HQ-89) and the door goes to the line under the bar.
+ */
+@Composable
+internal fun plazaMainFitsBar(title: String, main: String?): Boolean {
+    if (main == null) return true
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val titleStyle = MaterialTheme.typography.titleLarge
+    val mainStyle = MaterialTheme.typography.labelLarge
+    val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    return remember(title, main, width, density.fontScale) {
+        with(density) {
+            val t = measurer.measure(title, titleStyle, maxLines = 1).size.width.toDp().value
+            val m = measurer.measure(main, mainStyle, maxLines = 1).size.width.toDp().value
+            // 뒤로 48 + its gap 8 + the door's own 24 of padding + ⋮ 48 + the bar's ends 8.
+            t + m + BAR_TAKEN_DP <= width
+        }
+    }
+}
+
+private const val BAR_TAKEN_DP = 136f
+
+/** The plaza's ⋮ with its menu and 지킬 것. */
+@Composable
+private fun PlazaMenuButton(model: PlazaHeadModel) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var rulesOpen by remember { mutableStateOf(false) }
+    if (rulesOpen) AlertDialog(
+        onDismissRequest = { rulesOpen = false },
+        title = { Text("이 광장에서 지킬 것") },
+        text = { Text(model.note) },
+        confirmButton = { TextButton(onClick = { rulesOpen = false }) { Text("닫기") } },
+    )
+    androidx.compose.foundation.layout.Box {
+        androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert,
+                "광장 메뉴: 회사 규칙 광장, 내 근무 태그 등")
+        }
+        com.bamnat.app.ui.components.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            model.menu.forEach { (label, go) ->
+                androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { menuOpen = false; go() })
             }
-            com.bamnat.app.ui.components.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                menu.forEach { (label, go) ->
-                    androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { menuOpen = false; go() })
-                }
-                if (plan.note.isNotBlank()) androidx.compose.material3.DropdownMenuItem(text = { Text("ℹ️ 이 광장에서 지킬 것") },
-                    onClick = { menuOpen = false; rulesOpen = true })
-            }
+            if (model.note.isNotBlank()) androidx.compose.material3.DropdownMenuItem(text = { Text("ℹ️ 이 광장에서 지킬 것") },
+                onClick = { menuOpen = false; rulesOpen = true })
         }
     }
 }

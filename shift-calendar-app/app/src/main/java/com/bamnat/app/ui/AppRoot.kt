@@ -2087,7 +2087,7 @@ private fun AppNavHost(
                         val pay = company.pay.profile.value != null
                         // 2.0.0 [RVN-17] 검토 I10ab-02 The order alone, on a calendar held by another company: said as what it was.
                         val done = applied.heldBy?.let { h ->
-                            "‘$name’ 근무 순서를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
+                            "‘$name’ 근무주기를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
                         } ?: ("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                         // 2.0.0 [RVN-08] COMP-11 Put over the calendar's own order: 되돌리기 on the app's snackbar, whichever screen is next.
                         applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say(done, it) }

@@ -8,8 +8,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -100,7 +104,7 @@ fun SharedPayLockSheet(
             }
             if (vm.server) OutlinedButton(onClick = { fix = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("의견 보내기") }
             OutlinedButton(onClick = { leave = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 만들기") }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
+            // 2.0.0 [RVN-20] 총괄 사진 검토 (PC-142와 같은 규칙, 조건 3): the sheet's ✕ is its one 닫기; no second one at the bottom.
         }
     }
 }
@@ -172,7 +176,8 @@ fun FixRequestSheet(
                 enabled = !busy && picked.isNotEmpty() && (!open || body.trim().length >= 2),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text(if (open) "보내기" else "달라요 보내기") }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(if (sent == null) "닫기" else "확인") }
+            // 2.0.0 [RVN-20] 총괄 사진 검토: the ✕ above closes; 확인 only once it was sent (the way out of the answer).
+            if (sent != null) TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("확인") }
         }
     }
 }
@@ -275,7 +280,11 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
                 return@Column
             }
             if (r == null) OutlinedButton(onClick = { scanning = true; readNote = null }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("📷 명세서 사진으로 채우기")
+                // 2.0.0 [RVN-20] 총괄 사진 검토 (rvn_79·80): the common camera icon, not an emoji (조건 5).
+                androidx.compose.material3.Icon(Icons.Outlined.PhotoCamera, contentDescription = null,
+                    modifier = Modifier.size(18.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                Text("명세서 사진으로 채우기")
             }
             readNote?.let { com.bamnat.app.ui.components.ToneLine(it, tone = com.bamnat.app.ui.theme.Tone.Plain) }
             com.bamnat.app.ui.pay.MoneyField("지급 총액 (세전)", total, onChange = { total = it; result = null },
@@ -301,7 +310,8 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
                     }
                 }
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(if (said == null) "닫기" else "확인") }
+            // 2.0.0 [RVN-20] 총괄 사진 검토 (rvn_79·80, PC-142와 같은 규칙): the ✕ above closes; 확인 only once the answer went.
+            if (said != null) TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("확인") }
         }
     }
 }

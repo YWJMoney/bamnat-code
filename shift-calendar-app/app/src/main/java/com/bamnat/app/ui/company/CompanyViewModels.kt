@@ -292,7 +292,7 @@ class CompanyDetailViewModel(
 
     /**
      * 2.0.0 [RVN-17] 검토 PC-155 This calendar is held by another company, looked up as the page opens (nothing joined), so the line
-     * above says '…까지 A로 정해져 있어요 · 근무 순서만 넣을 수 있어요' instead of what joining would hold. Null when free or unknown.
+     * above says '…까지 A로 정해져 있어요 · 근무주기만 넣을 수 있어요' instead of what joining would hold. Null when free or unknown.
      */
     private val _heldNow = MutableStateFlow<MemberWait?>(null)
     val heldNow: StateFlow<MemberWait?> = _heldNow.asStateFlow()
