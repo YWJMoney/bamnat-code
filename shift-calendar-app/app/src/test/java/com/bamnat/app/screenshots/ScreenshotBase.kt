@@ -111,6 +111,10 @@ abstract class ScreenshotBase {
         // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
         // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
         com.bamnat.app.ui.calendar.SetupFill.close()
+        // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
+        com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
+        // [RVL-18] Nor a month put in by an earlier shot (an urgent band now).
+        com.bamnat.app.ui.RecentFill.reset()
         // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.
         com.bamnat.app.ui.components.AppSnack.resetForTest()
         com.bamnat.app.ui.components.AskTurn.resetForTest()
@@ -565,6 +569,40 @@ abstract class ScreenshotBase {
                     .firstOrNull { it.config.getOrNull(SemanticsActions.OnClick)?.label == label }?.boundsInWindow?.center
             }
             touch(at ?: error("화면에서 ‘$label’ 동작을 찾지 못했어요"))
+        }
+
+        /**
+         * 2.0.0 [RVP-43] 검토 HQ-49: Opens the calendar's notice whose row says [label] whole, the way a person does now that only what
+         * has to be seen stands over the month: the bell beside 공유 ("알림 N개"), then the notice's row in the 알림함, which opens it
+         * in place. One already open (its band was tapped, which opens the sheet on it) stays open.
+         */
+        fun openNotice(label: String) {
+            // The sheet's own 전체 지움 says it is open already.
+            if (!shows("전체 지움", exact = true)) tapText("알림 ", prefix = true, scrolls = 0)
+            val row = reach(label, exact = true, prefix = false, scrolls = 6, across = 0.5f)
+            val folded = row.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.endsWith("눌러서 펼치기") }
+            if (folded) touch(row.boundsInWindow.center)
+        }
+
+        /**
+         * 2.0.0 [RVP-45] 검토 U13-01: 이전 달·다음 달 (or 주) by its arrow where the one-row head has room for it, else the way TalkBack
+         * offers it on the month once the arrows have folded away (a person swipes the month there).
+         */
+        fun stepMonth(label: String) {
+            if (shows(label, exact = true)) {
+                tapText(label, exact = true, scrolls = 0)
+                return
+            }
+            var done = false
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val act = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).firstNotNullOfOrNull { n ->
+                    n.config.getOrNull(SemanticsActions.CustomActions)?.firstOrNull { it.label == label }
+                }
+                done = act?.action?.invoke() == true
+            }
+            check(done) { "‘$label’ 동작이 없어요" }
+            settle()
         }
 
         /** Scrolls until [text] shows near the top of the screen, without tapping it. */
