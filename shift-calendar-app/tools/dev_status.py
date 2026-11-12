@@ -37,7 +37,7 @@ GRADLE = ROOT / "gradle.properties"
 MERGED = {"1.39.1": "2.0.0", "1.40.0": "2.0.0"}
 
 KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "good", "tierAsk", "tierWhy", "publicTitle",
-        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason", "miss"}
+        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason", "miss", "reopen"}
 STATUS = {"todo", "doing", "check", "done", "rejected"}
 SIZES = {"fix", "polish", "feature"}
 ROUTES = {"server", "remote", "flag", "app", "hotfix"}
@@ -127,6 +127,9 @@ def check_item(n, x):
         say("tierAsk는 free·pro·pass·trial·later 중 하나예요")
     if "styles" in x and not (isinstance(x["styles"], list) and all(one_of(v, STYLES) for v in x["styles"])):
         say("styles는 SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST 중에서 고른 목록이에요(빈 목록 = 모두)")
+    # 2.0.0 [HQ-78] 서버는 동기화로 상태를 뒤로 돌리지 않아요(done → doing). 정말 다시 연 줄만 reopen: true.
+    if "reopen" in x and (x["reopen"] is not True or x.get("status") not in ("todo", "doing", "check")):
+        say("reopen은 true만, 다시 연 줄(todo·doing·check)에만 적어요")
     if "known" in x and not isinstance(x["known"], bool):
         say("known은 true나 false예요")
     if "pr" in x and not (isinstance(x["pr"], int) and x["pr"] > 0):
@@ -164,6 +167,28 @@ def check_item(n, x):
                 if pat.search(v):
                     say(f"{k}에 {what}가 있어요. 문의 원문·개인정보는 서버에만 둬요")
     return out
+
+
+# 2.0.0 [HQ-78] 통합 브랜치에 올릴 때도 서버로 보내요(.github/workflows/dev-status.yml의 push.branches). 맨 위 CLAUDE.md 1-000항의 통합
+# 브랜치 이름이 바뀌었는데 workflow를 잊으면 판 하나 동안 서버 개발사항이 멈춰요(2.0.0: 574줄 가운데 536줄).
+WORKFLOW = ROOT.parent / ".github" / "workflows" / "dev-status.yml"
+ROOT_RULES = ROOT.parent / "CLAUDE.md"
+INTEGRATION = re.compile(r"통합 브랜치\s*`(claude/[A-Za-z0-9._/-]+)`")
+
+
+def workflow_branch_problems(rules=None, workflow=None) -> list[str]:
+    """The integration branch named first in the top CLAUDE.md that dev-status.yml does not push from (nothing when either is missing)."""
+    rules, workflow = Path(rules or ROOT_RULES), Path(workflow or WORKFLOW)
+    if not rules.exists() or not workflow.exists():
+        return []
+    m = INTEGRATION.search(rules.read_text(encoding="utf-8"))
+    if not m:
+        return []
+    branches = re.search(r"^\s*branches:\s*\[(.*?)\]", workflow.read_text(encoding="utf-8"), re.M)
+    named = {b.strip().strip("'\"") for b in branches.group(1).split(",")} if branches else set()
+    if m.group(1) in named:
+        return []
+    return [f"{workflow.name}의 push.branches에 지금 통합 브랜치 {m.group(1)}가 없어요(맨 위 CLAUDE.md 1-000항). 통합에 올린 개발 상태가 서버로 가지 않아요"]
 
 
 def check_all(items):
@@ -434,6 +459,7 @@ def main(argv=None):
         if BUILT_FILE.read_text(encoding="utf-8") != built_text(items):
             errors.append("server/company-worker/src/dev-built.js가 개발 상태 파일과 달라요: python3 tools/dev_status.py build")
         errors += missing_tests(items)
+        errors += workflow_branch_problems()
         miss_errors, miss_warns = miss_rules(items, pcs)
         errors += miss_errors
         for e in errors:

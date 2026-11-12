@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import worker from "../src/index.js";
 import { server, device, signIn, from, ORIGIN } from "./helpers.mjs";
-import { impact, laterWords, nextTrain, releaseName } from "../src/loop.js";
+import { impact, laterWords, LOOP, nextTrain, releaseName, trainFor } from "../src/loop.js";
 import { keyAllows } from "../src/desk.js";
 import { waitingNote } from "../src/inquiries.js";
 
@@ -75,6 +75,12 @@ test("[LOOP] 판 이름·다음 정기 출발일·영향도 점수·출시 전 �
   // 출시 전 답에는 늘 '업데이트에 들어가요'가 들어가요: 판이 나가면 이 답을 받은 문의에 다시 알려요(desk.js shipTargets).
   assert.match(laterWords("1.39.1", "app", "2026-12-04"), /1\.39\.1 버전으로 12월 4일 정기 업데이트에 들어가요/);
   assert.match(laterWords("1.39.2", "hotfix", null), /곧 나올 1\.39\.2 긴급 업데이트에 들어가요/);
+  // 2.0.0 [HQ-78] 끝나는 즉시 나가는 판(정기 열차 밖)은 날짜 없이.
+  assert.equal(trainFor({ ...train, outside: ["2.0.0"] }, "2.0.0", Date.parse("2026-11-21T01:00:00Z")), null);
+  assert.equal(trainFor({ ...train, outside: ["2.0.0"] }, "2.0.1", Date.parse("2026-11-21T01:00:00Z")), "2026-12-04");
+  assert.deepEqual(LOOP.outsideTrain, ["2.0.0"]);
+  assert.match(laterWords("2.0.0", "app", null), /곧 나올 2\.0\.0 업데이트에 들어가요/);
+  assert.doesNotMatch(laterWords("2.0.0", "app", null), /정기|월 \d+일/);
   // 동기화 열쇠는 /dev/sync 하나만, 운영 열쇠는 그 길을 못 써요.
   assert.equal(keyAllows("/dev/sync", "POST", "sync"), true);
   assert.equal(keyAllows("/desk", "GET", "sync"), false);
@@ -277,6 +283,47 @@ test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 �
   // 동기화를 끄면 409.
   await call("POST", "/api/admin/loop/switches", { sync: false }, owner);
   assert.equal((await call("POST", "/api/admin/dev/sync", { items: [] }, key)).data.error, "sync_off");
+});
+
+test("[HQ-78] 동기화: 2.0.0(열차 밖)은 날짜 없이 답하고, 상태·고친 판은 뒤로 가지 않으며, 한 번에 200줄·DB 부르는 수를 지켜요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, env } = server();
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/desk/ship", { version: "1.39.0" }, owner);
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, owner)).data;
+  const key = { authorization: `Bearer ${sync.key}`, "x-admin": "1" };
+  const send = (version, items) => call("POST", "/api/admin/dev/sync", { sha: "abc1234def", version, items }, key).then((r) => r.data);
+  // ① 판 번호와 함께 온 done: 2.0.0은 정기 열차 밖이라 '11월 23일 정기'가 아니라 '곧 나올 2.0.0'.
+  const q1 = await ask(call, 1, "주간 근무 알람이 30분 늦게 울려요");
+  const d1 = await item(call, owner, "주간 알람 늦음", [q1]);
+  assert.equal((await send("2.0.0", [{ id: d1, track: "LOOP-92", status: "done", size: "fix", route: "app" }])).told, 1);
+  t.mock.timers.tick(11 * 60e3);
+  await fiveMinutes(env);
+  const said = (await thread(call, q1, 1)).messages.at(-1).text;
+  assert.match(said, /곧 나올 2\.0\.0 업데이트에 들어가요/);
+  assert.doesNotMatch(said, /정기/);
+  // 열차 밖의 판은 최고 관리자가 바꿔요(보내지 않으면 그대로).
+  assert.deepEqual((await call("POST", "/api/admin/loop/train", { start: "2026-11-23", days: 7 }, owner)).data.outside, ["2.0.0"]);
+  assert.deepEqual((await call("POST", "/api/admin/loop/train", { start: "2026-11-23", days: 7, outside: ["2.0.0", "2.1.0"] }, owner)).data.outside, ["2.0.0", "2.1.0"]);
+  assert.equal((await call("POST", "/api/admin/loop/train", { start: "2026-11-23", days: 7, outside: ["two"] }, owner)).data.error, "outside");
+  // ② 뒤처진 main의 파일: done이 doing으로, 2.0.0이 1.39.0으로 돌아가지 않아요. 정말 다시 연 줄(reopen)만 돌아가요.
+  const back = await send("1.39.0", [{ id: d1, track: "LOOP-92", status: "doing", size: "fix", route: "app" }]);
+  assert.deepEqual([back.kept, back.results[0].kept], [1, "done"]);
+  await send("1.39.0", [{ id: d1, track: "LOOP-92", status: "done", size: "fix", route: "app" }]);
+  let dev = (await call("GET", `/api/admin/dev/${d1}`, undefined, owner)).data;
+  assert.deepEqual([dev.item?.status ?? dev.status, dev.item?.releasedIn ?? dev.releasedIn], ["done", "2.0.0"]);
+  await send("", [{ id: d1, track: "LOOP-92", status: "doing", size: "fix", route: "app", reopen: true }]);
+  dev = (await call("GET", `/api/admin/dev/${d1}`, undefined, owner)).data;
+  assert.equal(dev.item?.status ?? dev.status, "doing");
+  // ③ 한 번에 200줄까지, 50줄(2.0.0 동기화 한 덩어리)에 DB를 부르는 수는 새 줄마다 12번 안.
+  assert.equal((await send("", Array.from({ length: 201 }, (_, i) => ({ track: `SYNC-${i + 1}`, status: "todo" })))).error, "items");
+  const prepare = env.DB.prepare.bind(env.DB);
+  let calls = 0;
+  env.DB.prepare = (...a) => { calls++; return prepare(...a); };
+  const many = await send("", Array.from({ length: 50 }, (_, i) => ({ track: `SYNC-${i + 1}`, title: `동기화 줄 ${i + 1}`, status: "doing", size: "fix", route: "server" })));
+  env.DB.prepare = prepare;
+  assert.deepEqual([many.made, many.errors], [50, 0]);
+  assert.ok(calls > 50 && calls <= 50 * 12, `50줄에 DB ${calls}번`);
 });
 
 test("[LOOP-06][LOOP-15][LOOP-16] 고친 판으로 연 폰에만 바로 안내하고 해결됐나요를 물어요; 아직이에요면 다시 열려요", async (t) => {

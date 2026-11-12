@@ -47,6 +47,11 @@ export const LOOP = {
   testers: 12,
   /** 정기 앱 업데이트 주기(사용자 2026-11-07: 2주 → 2026-11-08: 1주). */
   trainDays: 7,
+  /**
+   * 2.0.0 [HQ-78] 정기 열차 밖의 판: 정한 날이 아니라 끝나는 즉시 나가요(사용자 2026-11-12 "작업이 온전히 마무리 되는 즉시 출시").
+   * 이 판으로 고친 문의에는 '○월 ○일 정기 업데이트'가 아니라 '곧 나올 2.0.0 업데이트'라고 답해요. 최고 관리자가 자동 순환 › 정기 출시에서 바꿔요.
+   */
+  outsideTrain: ["2.0.0"],
   /** 알려진 문제판: 공개 제목이 있고 묶인 문의·나도 겪어요가 이만큼이면 보여요(한 사람만의 일은 안 보이게). */
   knownMin: 2,
   knownMax: 12,
@@ -173,7 +178,12 @@ const saveSetting = (env, key, value) => run(env, "INSERT OR REPLACE INTO settin
 export const SWITCH_DEFAULT = { autoShip: true, sync: true, phone: true, halt: true, instant: [], urgentMin: 0, flexibleMin: 0, testers: LOOP.testers };
 export const loopSwitches = (env) => readSetting(env, "loop_switches", SWITCH_DEFAULT);
 /** [LOOP-07] 정기 출시 열차: 첫 출발일과 주기. */
-export const loopTrain = (env) => readSetting(env, "loop_train", { start: "2026-11-23", days: LOOP.trainDays });
+export const loopTrain = async (env) => ({ outside: LOOP.outsideTrain, ...(await readSetting(env, "loop_train", { start: "2026-11-23", days: LOOP.trainDays })) });
+
+/** 2.0.0 [HQ-78] 판 [v]이 탈 정기 출발일, 열차 밖의 판(train.outside)이면 null(끝나는 즉시 나가요). */
+export function trainFor(train, v, now) {
+  return (Array.isArray(train?.outside) ? train.outside : LOOP.outsideTrain).includes(v) ? null : nextTrain(train, now);
+}
 
 /** 다음 정기 출발일(KST 'YYYY-MM-DD'): [start]부터 [days]마다, 오늘 이후 가장 가까운 날. */
 export function nextTrain(train, now) {
@@ -601,6 +611,11 @@ export async function devQueue(env, limit = 60) {
 // ---- [LOOP-05] 저장소 → 서버 동기화 ----
 
 const SYNC_STATUS = { doing: "doing", check: "doing", done: "done", rejected: "rejected", todo: "todo" };
+/**
+ * 2.0.0 [HQ-78] 상태의 앞뒤: 저장소 동기화는 개발사항을 뒤로 돌리지 않아요(main의 dev-status가 통합보다 뒤처진 채 작은 PR이 합쳐지면
+ * done이 doing으로 돌아갔어요). 정말 다시 여는 줄은 reopen: true를 함께 적어요.
+ */
+const SYNC_RANK = { todo: 0, doing: 1, done: 2, rejected: 2 };
 const ID = /^d[A-Za-z0-9]{15}$/;
 const TRACK = /^[A-Z][A-Z0-9]{0,9}-\d{1,4}$/;
 
@@ -624,9 +639,9 @@ export async function syncDev(request, env, now, answer) {
     }
   }
   const summary = { made: results.filter((r) => r.made).length, changed: results.filter((r) => r.changed).length, told: results.reduce((n, r) => n + (r.told ?? 0), 0),
-    errors: results.filter((r) => r.error).length, held: results.filter((r) => r.held).length };
+    errors: results.filter((r) => r.error).length, held: results.filter((r) => r.held).length, kept: results.filter((r) => r.kept).length };
   await run(env, "INSERT INTO loop_syncs (at, sha, version, pr, n, result) VALUES (?, ?, ?, ?, ?, ?)", now, sha, ver ?? "", pr, items.length, JSON.stringify(summary));
-  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}${summary.held ? ` · 글 검사로 뺀 줄 ${summary.held}` : ""}`);
+  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}${summary.held ? ` · 글 검사로 뺀 줄 ${summary.held}` : ""}${summary.kept ? ` · 뒤로 가지 않은 줄 ${summary.kept}` : ""}`);
   const live = await liveTick(env, now, answer);
   return json({ ...summary, live: live.live, results });
 }
@@ -683,11 +698,18 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   }
   // 상태·고친 판·출시 답·공지는 기존 길(devUpdate)로: 기록·보상·충돌 막기가 그대로예요.
   const upd = {};
-  const status = typeof x.status === "string" ? SYNC_STATUS[x.status] : undefined;
+  let status = typeof x.status === "string" ? SYNC_STATUS[x.status] : undefined;
+  let kept = null;
+  if (status && status !== row.status && (SYNC_RANK[status] ?? 0) < (SYNC_RANK[row.status] ?? 0) && x.reopen !== true) {
+    kept = row.status;
+    status = undefined;
+  }
   if (status && status !== row.status) upd.status = status;
-  if (status === "rejected") upd.reason = x.reason || "저장소에서 반려";
+  if (status === "rejected" && row.status !== "rejected") upd.reason = x.reason || "저장소에서 반려";
   const route = row.route;
-  if (status === "done" && ["app", "hotfix", ""].includes(route) && ver && ver !== row.released_in) upd.releasedIn = ver;
+  // [HQ-78] 고친 판은 앞으로만: 이미 적힌 판보다 낮은 판(뒤처진 main의 판 번호)으로 바꾸지 않아요.
+  const later = ver && (!row.released_in || !version(row.released_in) || compareVersions(version(ver), version(row.released_in)) > 0);
+  if (SYNC_STATUS[x.status] === "done" && ["app", "hotfix", ""].includes(route) && later) upd.releasedIn = ver;
   // 2.0.0 [RVQ-28] 검토 SVC-10: 글 검사에 걸린 공지 한 줄·출시 답은 그 칸만 빼고(상태·판은 그대로 반영) 결과에 적어요.
   const held = [];
   for (const k of ["news", "shipReply"]) {
@@ -710,17 +732,18 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
       told = await tellLater(env, row, route, now, answer);
     }
   }
-  return { id: row.id, track: row.track, made, changed, told, ...(held.length ? { held } : {}) };
+  return { id: row.id, track: row.track, made, changed, told, ...(held.length ? { held } : {}), ...(kept ? { kept } : {}) };
 }
 
 /** 출시 전 답(DESK.later를 담아 판이 나갈 때 다시 알림): 기다리는 문의에만, 다음 정기 출발일과 함께. */
 export function laterWords(v, route, train) {
-  const when = route === "hotfix" ? `곧 나올 ${v} 긴급` : train ? `${v} 버전으로 ${dayWords(train)} 정기` : `${v}`;
+  // 2.0.0 [HQ-78] 열차 밖의 판(train 없음)은 날짜 없이 '곧 나올'.
+  const when = route === "hotfix" ? `곧 나올 ${v} 긴급` : train ? `${v} 버전으로 ${dayWords(train)} 정기` : `곧 나올 ${v}`;
   return `불편을 드려 죄송해요. 말씀해 주신 내용은 원인을 찾아 고쳐 두었고, ${when} ${DESK.later}. 업데이트가 나오는 대로 이 문의에서 바로 알려 드릴게요. 조금만 기다려 주세요.`;
 }
 
 async function tellLater(env, row, route, now, answer) {
-  const text = laterWords(row.released_in, route, nextTrain(await loopTrain(env), now));
+  const text = laterWords(row.released_in, route, trainFor(await loopTrain(env), row.released_in, now));
   const waiting = await all(env, `SELECT i.id FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? AND i.status != 'closed'
     AND (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) = 'user'`, row.id);
   let told = 0;
@@ -1164,7 +1187,7 @@ export async function loopCheck(env, now, { play = false } = {}) {
     line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${iso(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
       r.errors ? "GitHub › Actions › dev-status 로그와 dev-status.jsonl 줄을 봐요" : "");
   }
-  line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다`);
+  line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다${train.outside?.length ? ` · 열차 밖(끝나는 즉시) ${train.outside.join("·")}` : ""}`);
   line("update", "인앱 업데이트 기준", sw.urgentMin || sw.flexibleMin ? "ok" : "warn",
     sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 정기 기준 versionCode를 넣어요");
   line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "VAPID 비밀값이 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정");
@@ -1293,9 +1316,13 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
     const body = await readJson(request, 1024);
     const start = typeof body.start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.start) && Number.isFinite(Date.parse(body.start)) ? body.start : refuse("start", "start");
     const days = Number.isInteger(body.days) && body.days >= 7 && body.days <= 60 ? body.days : refuse("days", "days");
-    await saveSetting(env, "loop_train", { start, days });
-    await audit(env, now, "loop_train", start, `${days}일마다`);
-    return json({ start, days, next: nextTrain({ start, days }, now) });
+    // 2.0.0 [HQ-78] 열차 밖의 판 목록: 보내지 않으면 그대로.
+    const was = await loopTrain(env);
+    const outside = body.outside === undefined ? was.outside
+      : Array.isArray(body.outside) && body.outside.length <= 10 && body.outside.every((v) => typeof v === "string" && version(v)) ? [...new Set(body.outside)] : refuse("outside", "outside");
+    await saveSetting(env, "loop_train", { start, days, outside });
+    await audit(env, now, "loop_train", start, `${days}일마다${outside.length ? ` · 열차 밖 ${outside.join("·")}` : ""}`);
+    return json({ start, days, outside, next: nextTrain({ start, days }, now) });
   }
   if (path === "/loop/rewards" && method === "POST") {
     if (!env.actor?.owner || env.actor?.key) return json({ error: "no_permission", area: "owner" }, 403);
