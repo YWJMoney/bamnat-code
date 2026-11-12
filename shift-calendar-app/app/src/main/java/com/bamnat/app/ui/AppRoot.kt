@@ -1095,7 +1095,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val trialOn = liveTrial != null
     LaunchedEffect(trialOn) {
         val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: run { com.bamnat.app.ui.recipe.LiveTryOn.back = null; return@LaunchedEffect }
-        val entry = nav.currentBackStackEntry
+        // [RVM-21] A trial already on when the screen is first made (the activity made again while trying, or 입혀 보기 started before it
+        // opened) waits for the tabs to be there: going to a tab before then stopped the app ('setGraph() before getGraph()').
+        val entry: androidx.navigation.NavBackStackEntry? = nav.currentBackStackEntryFlow.first()
         val destId = entry?.destination?.id
         val real = entry?.let(::filledRoute)
         // PC 4차 c0ca3d9f (장터 3, 상): the tab the page was opened in (마을 for a 장터 page). A tab moved to while trying keeps that tab's
@@ -1122,7 +1124,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(trialOn, tourAt) {
         val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: return@LaunchedEffect
         // The screen on show now (the trial's first tab was just opened above): not moved twice, which put the page's tab away.
-        val now = nav.currentBackStackEntry?.destination?.route
+        // [RVM-21] It waits for the tabs to be there, as the one above.
+        val now = nav.currentBackStackEntryFlow.first().destination.route
         TopLevel.entries.firstOrNull { it.route == t.tour.getOrNull(t.at) }?.let { dest -> if (dest.route != now) navigateTop(dest) }
     }
     // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
