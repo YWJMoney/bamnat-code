@@ -3415,13 +3415,28 @@ function adminApp(L, BUILD, M) {
         <p class="hint">${esc(note)}</p>`;
   }
 
+  /**
+   * 2.0.0 [RVQ-14] 검토 U21-02: 서버 상태 맨 위. 한 줄 '지금 판 · 배포 번호 · 스키마 올림 N초 · 되돌릴 판'과 깊은 점검 셋(DB 읽기·쓰기·정기 작업)을
+   * 초록·빨강 점으로. 배포가 정말 끝났는지, 표가 올라갔는지, 무엇으로 되돌릴지를 여기서 바로 봐요.
+   */
+  function deployPart(d) {
+    if (!d) return "";
+    const secs = d.schemaUp ? `${(d.schemaUp.ms / 1000).toFixed(1)}초` : "";
+    const line = [`지금 판 ${d.version}`, d.id ? `배포 ${d.id}` : "배포 번호 없음", d.schemaUp ? `스키마 올림 ${secs}${d.schemaUp.at ? `(${ago(new Date(d.schemaUp.at).toISOString())})` : ""}` : "",
+      d.prev ? `되돌릴 판 ${d.prev}` : ""].filter(Boolean).join(" · ");
+    const dot = (ok, name, why) => `<li class="${ok ? "ok" : "bad"}"><span aria-hidden="true">${ok ? "✓" : "!"}</span>${esc(ok ? name : `${name}: ${why}`)}</li>`;
+    const c = d.checks ?? {};
+    return `<section class="card deploy-top" data-deploy><p class="deploy-line"><b>${esc(line)}</b></p>
+      <ul class="checks checks-row">${dot(c.read, "DB 읽기", "읽지 못했어요")}${dot(c.write, "DB 쓰기", "쓰지 못했어요")}${dot(c.jobs, "정기 작업", (c.jobsBad ?? []).join(" · ") || "멈췄거나 실패")}</ul></section>`;
+  }
+
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
     // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
     const watch = Boolean(S.me?.owner && S.data.watch);
     // 1.39 PC 6차 H1: 무엇이 돌고 있는지(회사·규칙 수, 서버 판, 관리자 앱 빌드)는 맨 위 한 줄로. 전에는 맨 아래에 있었어요.
     const sum = `<p class="meta server-sum">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p>`;
-    return `${sum}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server) + budgetPart(S.server.budget)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
+    return `${sum}${watch ? "" : deployPart(S.server?.deploy)}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server) + budgetPart(S.server.budget)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
   }
 
   /**
@@ -4528,6 +4543,7 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="fp-effective">시행일</label><input id="fp-effective" name="effective" type="date" required value="${esc(p?.effective ?? "")}"></div>
       <div class="fieldset"><label for="fp-held">동의하지 않은 휴대폰에도 시행하는 날(선택)</label><input id="fp-held" name="heldUntil" type="date" value="${esc(p?.heldUntil ?? "")}"></div>
       <label class="check-row"><input type="checkbox" name="unfavourable"${p?.unfavourable ? " checked" : ""}>이용자에게 불리한 변경(30일 전에 알려요)</label>
+      <label class="check-row" data-policy-confirm><input type="checkbox" name="confirm">알림 기간 안으로(또는 오늘보다 앞으로) 옮기는 걸 알아요</label>
       <div class="fieldset"><label for="fp-why">이유(필수)</label><input id="fp-why" name="why" maxlength="300" required></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
   }
@@ -4749,7 +4765,7 @@ function adminApp(L, BUILD, M) {
     "flag-policy": async (form) => {
       const data = new FormData(form);
       const body = { version: data.get("version"), posted: data.get("posted"), effective: data.get("effective"), heldUntil: data.get("heldUntil") || null,
-        unfavourable: data.get("unfavourable") === "on", why: String(data.get("why") ?? "").trim() };
+        unfavourable: data.get("unfavourable") === "on", why: String(data.get("why") ?? "").trim(), confirm: data.get("confirm") === "on" };
       const d = await act(() => api("/policy", "POST", body), "처리방침 일정을 고쳤어요");
       if (!d) return;
       dialog.close();

@@ -267,8 +267,14 @@ export function opsViews(A) {
         ${g.status !== "fixed" ? `<button class="btn small primary" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="fixed">고쳤어요</button>` : `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="new">다시 열기</button>`}</div></details></li>`;
     }).join("")}</ul>` : empty(d.loose ? "묶인 오류가 없어요" : "오류가 없어요", "서버가 500을 내면 주소·이유로 묶여 여기 쌓여요.");
     // 1.39 [ADM3-43] 판 건강의 '서버 오류'와 이 화면이 다르게 보이지 않게: 날마다 센 오류 가운데 묶음에 없는 것.
-    const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요. 오류 묶음을 만들기 전(1.38 전 서버)이거나, 배포 직후 묶음 표가 준비되기 전에 난 것이라 주소·이유를 몰라요. 앞으로 나는 오류는 여기에 묶여요.</p>` : "";
-    return `${tabs}${loose}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${list}</section>`;
+    // 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶이지 않은 것을 세 갈래로, 그리고 세 숫자가 무엇을 세는지 한 줄씩.
+    const sp = d.split ?? { before: d.loose, failed: 0, jobs: 0 };
+    const parts = [sp.before ? `묶기 전 ${sp.before}번(1.38 전 서버이거나 배포 직후 묶음 표가 준비되기 전)` : "",
+      sp.failed ? `묶기 실패 ${sp.failed}번(오류를 적다가 또 실패)` : ""].filter(Boolean);
+    const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요: ${parts.join(" · ")}. 주소·이유를 몰라요.</p>` : "";
+    const jobs = sp.jobs ? `<p class="note warn" data-job-errors>정기 작업 실패 ${sp.jobs}번은 요청 오류가 아니라 여기 없어요. 관리 › 서버 상태의 정기 작업에서 단계마다 봐요.</p>` : "";
+    const what = `<p class="hint" data-error-kinds>세는 것: 날마다 서버 오류 = 요청 하나가 500으로 끝난 수 · 묶음 = 그 가운데 주소·이유로 묶인 것 · 응답 속도의 오류 = 모든 5xx(쉬는 기능 503, Play·공유 서버 502·504 포함)</p>`;
+    return `${tabs}${loose}${jobs}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${what}${list}</section>`;
   }
 
   // ---- [ADM3-04][ADM3-05][ADM3-19] 서버 상태 판(관리 › 서버 상태 위) ----

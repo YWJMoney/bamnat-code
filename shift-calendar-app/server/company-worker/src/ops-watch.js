@@ -158,6 +158,16 @@ const sigOf = (route, line) => {
   return h.toString(36);
 };
 
+/**
+ * 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶기 실패(errfail)와 정기 작업 실패(joberr)를 날마다 세요(30일). 오류 묶음 화면이 '묶이지 않은 오류'를
+ * 묶기 전·묶기 실패·정기 작업 세 갈래로 나눠 보여요. 세기도 실패하면 조용히 넘어가요(요청·작업은 그대로).
+ */
+export async function countFailure(env, kind, now = Date.now()) {
+  if (!env?.DB) return;
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2) ON CONFLICT (key) DO UPDATE SET count = count + 1`)
+    .bind(`${kind}|${watchDay(now)}`, now + 30 * DAY).run().catch(() => {});
+}
+
 /** 500 하나를 묶음에 더해요. [app]은 앱이 보낸 판(있으면). */
 export async function recordError(env, path, e, now = Date.now(), app = "") {
   if (!env?.DB) return;
@@ -188,6 +198,7 @@ export async function runJob(env, step, fn, now = Date.now()) {
     return v;
   } catch (e) {
     console.error(`job ${step}: ${e?.stack ?? e}`);
+    await countFailure(env, "joberr", now);
     await run(env, `INSERT INTO job_runs (step, fail_at, error, ms, runs, fails, last_at, ver) VALUES (?1, ?2, ?3, ?4, 1, 1, ?2, ?5)
       ON CONFLICT (step) DO UPDATE SET fail_at = ?2, error = ?3, ms = ?4, runs = runs + 1, fails = fails + 1, last_at = ?2, ver = ?5`,
     step, now, errorLine(e), Date.now() - t0, SERVER_VERSION).catch(() => {});
@@ -306,8 +317,12 @@ export async function errorState(env, now = Date.now(), { status = "open" } = {}
   const counted = new Map((await all(env, "SELECT key, count FROM counters WHERE key >= ? AND key LIKE 'errors|%'", `errors|${from}`).catch(() => []))
     .map((r) => [String(r.key).slice(7), r.count]));
   const loose = list.reduce((n, day, i) => n + Math.max(0, (counted.get(day) ?? 0) - daily[i]), 0);
+  // 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶이지 않은 것을 묶기 실패와 그 밖(묶기 전·표 준비 전)으로, 정기 작업 실패는 따로.
+  const sum = async (kind) => (await all(env, "SELECT COALESCE(SUM(count), 0) AS n FROM counters WHERE key >= ? AND key LIKE ?", `${kind}|${from}`, `${kind}|%`)
+    .catch(() => [{ n: 0 }]))[0]?.n ?? 0;
+  const [failed, jobs] = [Math.min(loose, Number(await sum("errfail"))), Number(await sum("joberr"))];
   return {
-    days: list, daily, loose,
+    days: list, daily, loose, split: { before: loose - failed, failed, jobs },
     groups: groups.map((g) => ({ sig: g.sig, route: g.route, message: g.message, sample: g.sample, app: g.app, firstAt: g.first_at, lastAt: g.last_at,
       total: g.total, status: g.status, note: g.note, fresh: now - g.first_at < DAY, trend: list.map((day) => per.get(g.sig)?.get(day) ?? 0) })),
     counts: Object.fromEntries((await all(env, "SELECT status, COUNT(*) AS n FROM error_groups GROUP BY status")).map((r) => [r.status, r.n])),

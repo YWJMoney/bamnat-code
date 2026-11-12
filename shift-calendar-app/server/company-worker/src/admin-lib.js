@@ -22,6 +22,12 @@ export function adminLib() {
     second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
     // 2.0.0 [RVQ-06][RVQ-07] 패스키 전 비밀번호 다시 확인, 로그인 목록
     reauth: "비밀번호가 맞지 않아요. 한 시간에 5번까지 다시 넣을 수 있어요",
+    // 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 급변은 사람이 넘겨요.
+    human_check: "사용 통계에서 갑자기 나온 신호라 사람이 확인한 뒤에 개발사항으로 넘겨요",
+    // 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 시행일을 앞당길 때.
+    policy_confirm: "시행일이 오늘보다 앞이거나 게시일에서 알림 기간(7일, 불리하면 30일)이 안 돼요. 정말 이대로면 '알림 기간 안으로 옮기는 걸 알아요'를 켜고 다시 저장해요",
+    // 2.0.0 [RVQ-13] 검토 SRV-23: workers.dev 주소의 관리자 길.
+    use_domain: "관리자 앱은 밤낮 도메인 주소에서 열어요. 예전 주소로는 열리지 않아요",
     current: "지금 이 기기의 로그인은 '로그아웃'으로 끝내요",
     // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
     counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
@@ -1019,6 +1025,14 @@ export function adminLib() {
     return false;
   }
 
+  /** 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발의 카탈로그 처리방침 조건 가운데 [given]에 없는 것. */
+  const isLegalCondition = (c) => c?.type === "policy" || (c?.type === "date" && Boolean(c.policy));
+  function legalKept(flag, given) {
+    if (flag?.risk !== "LEGAL") return [];
+    const have = new Set((given ?? []).map((c) => JSON.stringify(c)));
+    return (flag.conditions ?? []).filter((c) => isLegalCondition(c) && !have.has(JSON.stringify(c)));
+  }
+
   /** 1.28 통합 [FLAG-36] An app versionCode range in words ("39~45", "39 이상", "45 이하", "모든 판"). */
   const appRange = (lo, hi) => (lo != null && hi != null ? `${lo}~${hi}` : lo != null ? `${lo} 이상` : hi != null ? `${hi} 이하` : "모든 판");
 
@@ -1033,7 +1047,9 @@ export function adminLib() {
   function evalFlag(flag, override, ctx) {
     const now = ctx.now ?? Date.now();
     const c2 = { ...ctx, now };
-    const conds = Array.isArray(override?.conditions) ? override.conditions : flag.conditions ?? [];
+    // 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발은 카탈로그의 처리방침 조건(policy·처리방침 날짜)을 덮어쓴 조건과 늘 함께 봐요. 조건 고치기로 그 줄을
+    // 빼도 처리방침 시행 전에는 서버의 문(통계 항목 받기 등)이 열리지 않아요.
+    const conds = Array.isArray(override?.conditions) ? [...override.conditions, ...legalKept(flag, override.conditions)] : flag.conditions ?? [];
     const conditions = conds.map((c) => ({ c, label: conditionLabel(c, ctx.policy), met: conditionMet(c, c2) }));
     const dates = [];
     const walk = (c) => {
@@ -1454,7 +1470,7 @@ export function adminLib() {
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion, undoPlace,
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
-    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
+    evalFlag, legalKept, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
     // AT 1.29 [ADMCP-01][ADMCP-02][ADMCP-03]
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,

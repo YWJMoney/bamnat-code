@@ -497,6 +497,9 @@ export async function setFlagConditions(request, env, actor, key, now) {
     if (unknown.length) return json({ error: "conditions", field: "conditions", detail: `모르는 확인 이름이에요: ${unknown[0]}` }, 400);
     conditions = checked.list;
   }
+  // 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발에서 카탈로그의 처리방침 조건을 빼면 다시 붙여 저장해요(휴대폰도 같은 조건을 받아요).
+  const kept = conditions ? FL.legalKept(def, conditions) : [];
+  if (kept.length) conditions = [...conditions, ...kept];
   const why = plainText(body.why, FLAG_LIMITS.why, "why", true);
   // 1.39 [LOOP-10] 조건(날짜·판·비율)으로 켜지게 두는 것도 요금을 정한 뒤에만.
   if (conditions) {
@@ -509,7 +512,7 @@ export async function setFlagConditions(request, env, actor, key, now) {
     ON CONFLICT (key) DO UPDATE SET conditions = excluded.conditions, by_name = excluded.by_name, by_id = excluded.by_id, at = excluded.at`,
   key, why, conditions ? JSON.stringify(conditions) : null, actorName(env), actor.id, now);
   const after = readOverride(await one(env, "SELECT * FROM flag_overrides WHERE key = ?", key));
-  await flagHistory(env, now, key, "flag_conditions", before, after, why);
+  await flagHistory(env, now, key, "flag_conditions", before, after, kept.length ? `${why} (법적 기능이라 처리방침 조건 ${kept.length}개는 그대로 붙였어요)` : why);
   await flagTick(env, now);
   return flagDetail(env, actor, key, now);
 }
@@ -559,6 +562,13 @@ export async function setPolicy(request, env, actor, now) {
     over = {};
   }
   const before = mergePolicy(raw).find((p) => p.version === body.version) ?? null;
+  // 2.0.0 [RVQ-15] 검토 SRV-17: 날짜를 바꾸면서 시행일을 오늘보다 앞으로, 또는 게시일에서 알림 기간(7일, 불리하면 30일, 처리방침 9항) 안으로
+  // 두면 한 번 더 확인해요(confirm). 날짜를 그대로 두고 다른 칸만 고치면 묻지 않아요.
+  const moved = !before || before.effective !== effective || before.posted !== posted || Boolean(before.unfavourable) !== Boolean(body.unfavourable);
+  const gap = Math.round((Date.parse(`${effective}T00:00:00Z`) - Date.parse(`${posted}T00:00:00Z`)) / DAY);
+  const need = body.unfavourable ? 30 : 7;
+  const early = !moved ? null : effective < kstDay(now) && effective !== before?.effective ? "past" : gap < need ? "notice" : null;
+  if (early && body.confirm !== true) return json({ error: "policy_confirm", field: "effective", why: early, days: gap, need }, 409);
   over[body.version] = { posted, effective, heldUntil, unfavourable: Boolean(body.unfavourable) };
   await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)", JSON.stringify(over));
   await flagHistory(env, now, `policy.${body.version}`, "policy_edit", before, over[body.version], why);

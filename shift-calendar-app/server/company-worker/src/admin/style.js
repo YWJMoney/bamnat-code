@@ -360,6 +360,8 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks .off span{background:var(--soft);color:var(--muted)}
 .checks .bad span{background:var(--bad-bg);color:var(--bad)}
 .checks .bad{color:var(--bad);font-weight:700}
+.checks-row{grid-auto-flow:column;justify-content:start;gap:1rem;flex-wrap:wrap}.deploy-line{margin:0 0 .5rem;overflow-wrap:anywhere}
+@media (max-width:480px){.checks-row{grid-auto-flow:row}}
 .card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
 .kv dt{color:var(--muted)}

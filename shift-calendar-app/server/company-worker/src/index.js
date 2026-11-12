@@ -112,7 +112,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { canaryStats, flushWatch, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
+import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -253,7 +253,8 @@ export default {
       console.error(e && e.stack ? e.stack : String(e));
       // [ADMUX-16] 지표 › 오류 counts these; a count that cannot be written changes nothing.
       if (env.DB) await countError(env).catch(() => {});
-      if (env.DB) await recordError(env, new URL(request.url).pathname, e).catch(() => {});
+      // 2.0.0 [RVQ-13] 검토 SRV-18: 묶기가 실패하면 따로 세요(전에는 조용히 넘어가 '묶이지 않은 오류'의 까닭을 몰랐어요).
+      if (env.DB) await recordError(env, new URL(request.url).pathname, e).catch(() => countFailure(env, "errfail"));
       return json({ error: "server" }, 500);
     } finally {
       if (env.DB) {
@@ -437,6 +438,11 @@ async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+  // 2.0.0 [RVQ-13] 검토 SRV-23: workers.dev 주소는 옛 앱이 새 주소에 못 닿을 때 다시 보내는 길(SRV-30)이라 열어 두되, 관리자 길은 거절해요
+  // (Cloudflare의 속도 규칙·WAF가 도메인에만 걸려 있어 비켜 가지 못하게). 도메인이 고장 난 날은 ADMIN_ON_WORKERS_DEV=1로 잠시 열어요.
+  if (url.hostname.endsWith(".workers.dev") && (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/api/admin")) && env.ADMIN_ON_WORKERS_DEV !== "1") {
+    return json({ error: "use_domain", to: `https://api.bamnat.app${path}` }, 404);
+  }
   // [SRV-08] Any write through this Worker may change 모두의 문의, so its kept rows are read afresh.
   if (method !== "GET") publicRows.delete(env.DB ?? env);
   // AS 1.29 [SRCH-01] and may add a name whose 초성 and reading are not there yet.
@@ -1107,7 +1113,13 @@ function ready(env) {
     // 1.39 [STAT2-05] 서버 판도 같이 읽어, 바뀌었으면 '서버 배포'로 활동 기록·바꾼 일·사고 타임라인에 남겨요(실서버 둘러보기 A8·C1).
     done = env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('schema', 'server_version')").all()
       .then((r) => Object.fromEntries((r.results ?? []).map((x) => [x.key, x.value]))).catch(() => ({})).then(async (got) => {
-      await schemaUp(env, got.schema ?? null);
+      // 2.0.0 [RVQ-14] 검토 SRV-16·I21a-01·U21-02: 표를 올리는 데 걸린 시간을 남겨 서버 상태 맨 위 줄에 보여요(배포 도구가 올린 직후 판 고정
+      // deep health로 먼저 불러, 사람이 첫 요청에서 기다리지 않게).
+      const t0 = Date.now();
+      if (await schemaUp(env, got.schema ?? null)) {
+        await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_up', ?)")
+          .bind(JSON.stringify({ ms: Date.now() - t0, at: Date.now(), name: deployName(env), from: got.schema ?? null })).run().catch(() => {});
+      }
       await noteDeploy(env, got);
     // AM 1.28 [FLAG-23] the 1.27 switches become flag overrides, once per database.
     }).then(() => migrateFlags(env)).catch((e) => {
@@ -1137,13 +1149,15 @@ async function noteDeploy(env, got) {
   } else {
     const r = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'server_version' AND value = ?").bind(name, was).run();
     if (!r?.meta?.changes) return;
+    // 2.0.0 [RVQ-14] 검토 U21-02: 바로 앞 판 이름(되돌릴 판). 카나리 동안 두 판이 번갈아 적어도 100%가 된 뒤의 마지막 바뀜이 남아요.
+    await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('server_prev', ?)").bind(was).run().catch(() => {});
   }
   await audit(env, Date.now(), "server_deployed", name, was ? `${was} → ${name}` : name).catch(() => {});
 }
 
-/** Tables as this code has them; [made] is the schema mark the database had. */
+/** Tables as this code has them; [made] is the schema mark the database had. 2.0.0 [RVQ-14] true when it had to go up. */
 async function schemaUp(env, made) {
-  if (made === SCHEMA_VERSION) return;
+  if (made === SCHEMA_VERSION) return false;
   // 1.37 hotfix: an ALTER TABLE in SCHEMA (recipe-fonts' info·glyphs·fallback) fails as "duplicate column" on a database that
   // already has it, and that failed the whole batch, so every request was a 500 after any later schema change. ALTERs run
   // with the columns below, where a column already there is skipped.
@@ -1166,6 +1180,7 @@ async function schemaUp(env, made) {
     console.error(`company_fts: ${e?.message ?? e}`);
   }
   await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
+  return true;
 }
 
 export const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
@@ -3386,8 +3401,13 @@ async function edgeCached(request, ctx, seconds, make) {
     // Read afresh.
   }
   const res = await make();
-  if (res.status === 200) {
-    const copy = res.clone();
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (마): [seconds]를 실제로 써요. 가장자리에 둘 시간은 s-maxage로 붙여(휴대폰은 보지 않는 값) 답의 max-age와
+  // 따로 정해요. 나눠 갖지 않는 답(private·no-store)은 두지 않아요.
+  const cc = res.headers.get("cache-control") ?? "";
+  if (res.status === 200 && !/no-store|private/i.test(cc)) {
+    const headers = new Headers(res.headers);
+    if (seconds > 0 && !/s-maxage/i.test(cc)) headers.set("cache-control", cc ? `${cc}, s-maxage=${seconds}` : `public, s-maxage=${seconds}`);
+    const copy = new Response(res.clone().body, { status: res.status, statusText: res.statusText, headers });
     const put = cache.put(key, copy).catch(() => {});
     if (ctx?.waitUntil) ctx.waitUntil(put);
     else await put;
@@ -3747,8 +3767,17 @@ async function companyFor(env, name, now, r = {}) {
   }
   const id = randomId(12);
   const kind = r.topic ? "topic" : r.job === "nurse" ? "hospital" : "company";
-  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region, said) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
-    id, name, norm, now, kind, r.job ?? "", r.region ?? "", spoken(name) || "-");
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (다): 같은 이름을 동시에 처음 보내도 회사가 둘 생기지 않게, 없을 때만 넣는 한 문장으로(D1은 문장 하나씩 차례로
+  // 써요). 이미 있는 회사에 유일 색인을 걸면 실서버에 겹친 이름이 있을 때 스키마 올림이 실패해서 색인 대신 이렇게 했어요.
+  const put = await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region, said)
+    SELECT ?1, ?2, ?3, 0, NULL, ?4, ?5, ?6, ?7, ?8 WHERE NOT EXISTS (SELECT 1 FROM companies WHERE norm = ?3)
+      AND NOT EXISTS (SELECT 1 FROM aliases WHERE norm = ?3)`,
+  id, name, norm, now, kind, r.job ?? "", r.region ?? "", spoken(name) || "-");
+  if (!Number(put?.meta?.changes ?? 1)) {
+    const first = (await one(env, "SELECT id FROM companies WHERE norm = ? ORDER BY merged_into IS NOT NULL, created_at LIMIT 1", norm))
+      ?? (await one(env, "SELECT company_id AS id FROM aliases WHERE norm = ?", norm));
+    if (first) return follow(env, first.id);
+  }
   return one(env, "SELECT * FROM companies WHERE id = ?", id);
 }
 
@@ -5068,7 +5097,17 @@ async function takePostBack(request, env, id) {
   const p = await one(env, "SELECT device FROM posts WHERE id = ?", id);
   if (!p) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== p.device) return json({ error: "forbidden" }, 403);
-  await batch(env, [stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (가): 그 글에 달린 답글(과 그 신고·투표), 맞아요·달라요, 투표, 아직 정해지지 않은 제안 제보도 함께(주인 없는 줄이 남지 않게).
+  // 채택된 제보는 이미 회사 규칙이라 그대로예요.
+  const kids = "SELECT id FROM posts WHERE parent = ?1";
+  await batch(env, [
+    stmt(env, `DELETE FROM post_flags WHERE post_id = ?1 OR post_id IN (${kids})`, id),
+    stmt(env, `DELETE FROM post_votes WHERE post_id = ?1 OR post_id IN (${kids})`, id),
+    stmt(env, `DELETE FROM poll_votes WHERE post_id = ?1 OR post_id IN (${kids})`, id),
+    stmt(env, "DELETE FROM reports WHERE post_id = ? AND status = 'pending'", id),
+    stmt(env, "DELETE FROM posts WHERE parent = ?", id),
+    stmt(env, "DELETE FROM posts WHERE id = ?", id),
+  ]);
   return new Response(null, { status: 204 });
 }
 
@@ -5158,6 +5197,43 @@ async function deepHealth(env) {
 export function playIntegrity(env) {
   const account = playReady(env);
   return account ? { pkg: env.PLAY_PACKAGE || "com.bamnat.app", token: (scope) => playToken(env, account, Date.now(), scope) } : null;
+}
+
+/**
+ * 2.0.0 [RVQ-14] 검토 U21-02·I21a-01: 서버 상태 맨 위 한 줄 '지금 판 · 배포 번호 · 스키마 올림 N초 · 되돌릴 판'과 깊은 점검(DB 읽기·쓰기·정기 작업).
+ * 쓰기 점검은 counters의 한 줄(health|write, 하루)을 올려 봐요.
+ */
+export async function deployState(env, now = Date.now()) {
+  const info = deployInfo(env);
+  const out = { ...info, schemaUp: null, prev: null, checks: { read: false, write: false, jobs: false } };
+  try {
+    const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('schema_up', 'server_prev')");
+    const got = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    out.checks.read = true;
+    try {
+      const up = JSON.parse(got.schema_up ?? "null");
+      if (up) out.schemaUp = { ms: Number(up.ms) || 0, at: Number(up.at) || null, name: String(up.name ?? "").slice(0, 40) };
+    } catch {
+      out.schemaUp = null;
+    }
+    out.prev = got.server_prev ? String(got.server_prev).slice(0, 40) : null;
+  } catch {
+    out.checks.read = false;
+  }
+  try {
+    await run(env, "INSERT INTO counters (key, count, expires) VALUES ('health|write', 1, ?1) ON CONFLICT (key) DO UPDATE SET count = count + 1, expires = ?1", now + DAY);
+    out.checks.write = true;
+  } catch {
+    out.checks.write = false;
+  }
+  try {
+    const jobs = (await all(env, "SELECT step, ok_at, fail_at, error FROM job_runs")).map((r) => jobRow(r, now, env));
+    out.checks.jobs = !jobs.some((j) => j.state === "fail" || j.state === "stale");
+    out.checks.jobsBad = jobs.filter((j) => j.state === "fail" || j.state === "stale").map((j) => j.name);
+  } catch {
+    out.checks.jobs = false;
+  }
+  return out;
 }
 
 function serverState(env) {
@@ -5363,10 +5439,10 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/server" && method === "GET") {
     // 1.39 [ADM3-43] 회사·쓰는 규칙 수와 서버 판도 여기서(서버 상태 화면은 오늘을 읽지 않아 '–'로 보였어요, 실서버 점검 11-08).
     // 2.0.0 [RVQ-12] 검토 SVC-07: 요금제와 오늘 쓰기·정기 작업 질의 수도.
-    const [integrity, counts, budget] = await Promise.all([integrityState(recipeDeps, env, now, playIntegrity(env) !== null),
+    const [integrity, counts, budget, deploy] = await Promise.all([integrityState(recipeDeps, env, now, playIntegrity(env) !== null),
       batch(env, [stmt(env, "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"), stmt(env, "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0")]),
-      budgetState(env, now)]);
-    return json({ ...serverState(env), integrity, budget, companies: counts[0].results?.[0]?.n ?? 0, rules: counts[1].results?.[0]?.n ?? 0, version: SERVER_VERSION });
+      budgetState(env, now), deployState(env, now)]);
+    return json({ ...serverState(env), integrity, budget, deploy, companies: counts[0].results?.[0]?.n ?? 0, rules: counts[1].results?.[0]?.n ?? 0, version: SERVER_VERSION });
   }
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
   if (path === "/admins" && method === "GET") return json(await adminList(env));
@@ -7032,7 +7108,11 @@ async function createCompany(request, env, now) {
   const taken = await named(env, norm);
   if (taken) return json({ error: "exists", company: taken }, 409);
   const id = randomId(12);
-  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, said) VALUES (?, ?, ?, 0, NULL, ?, ?)", id, name, norm, now, spoken(name) || "-");
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (다): 없을 때만 넣는 한 문장(위 companyFor와 같은 까닭).
+  const put = await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, said) SELECT ?1, ?2, ?3, 0, NULL, ?4, ?5
+    WHERE NOT EXISTS (SELECT 1 FROM companies WHERE norm = ?3 AND merged_into IS NULL) AND NOT EXISTS (SELECT 1 FROM aliases WHERE norm = ?3)`,
+  id, name, norm, now, spoken(name) || "-");
+  if (!Number(put?.meta?.changes ?? 1)) return json({ error: "exists", company: await named(env, norm) }, 409);
   await audit(env, now, "company_create", id, name);
   return json({ id, name }, 201);
 }
@@ -8683,8 +8763,7 @@ export function json(data, status = 200, headers = {}) {
 export async function readJson(request, maxBytes) {
   if (!(request.headers.get("content-type") || "").startsWith("application/json")) throw new Refuse("content_type", "body");
   if (Number(request.headers.get("content-length") || 0) > maxBytes) throw new Refuse("too_large", "body", 413);
-  const text = await request.text();
-  if (new TextEncoder().encode(text).length > maxBytes) throw new Refuse("too_large", "body", 413);
+  const text = await bodyText(request, maxBytes);
   let body;
   try {
     body = JSON.parse(text);
@@ -8693,6 +8772,34 @@ export async function readJson(request, maxBytes) {
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Refuse("bad_json", "body");
   return body;
+}
+
+/**
+ * 2.0.0 [RVQ-13] 검토 SRV-22 (라): 본문을 흐름으로 읽으며 [maxBytes]를 넘는 순간 끊어요. 길이 머리말 없이(chunked) 큰 본문을 보내도 다 읽은 뒤에
+ * 크기를 보던 전과 달리 한도만큼만 메모리에 들어요.
+ */
+export async function bodyText(request, maxBytes) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const parts = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Refuse("too_large", "body", 413);
+    }
+    parts.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) {
+    all.set(p, at);
+    at += p.byteLength;
+  }
+  return new TextDecoder().decode(all);
 }
 
 export const iso = (ms) => new Date(ms).toISOString();
