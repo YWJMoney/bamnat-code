@@ -578,6 +578,12 @@ private fun NoticesPage(
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
         if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }) {
             com.bamnat.app.ui.sleep.SleepAutoSwitch(settings.sleepAuto) { on -> vm.update { it.copy(sleepAuto = on) } }
+            // 2.0.0 [RVI-96] (검토 I03c-01) The same morning question for a night the charger saw, with no permission.
+            SwitchRow(com.bamnat.app.sleep.SleepNoTap.ROW, "잘 시간 무렵 충전기에 꽂아 두면, 알람을 끈 아침에 ‘이 잠 맞나요?’ 한 번 물어요 · 휴대폰 밖으로 나가지 않아요",
+                settings.sleepNoTap, warning = warning(settings.sleepNoTap, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(sleepNoTap = on) }
+                context.appContainer.let { c -> c.appScope.launch { runCatching { c.rescheduleAlarms() } } }
+            }
         }
         // 1.38 [SLEEP-12] 자는 동안 방해 금지.
         val dndOk = remember(refresh) { com.bamnat.app.sleep.SleepDnd.permitted(context) }

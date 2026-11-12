@@ -476,6 +476,11 @@
             android:name=".sleep.SleepRecordOfferJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 2.0.0 [RVI-96] 충전하면 잠 잡기: the charger near bedtime, the stillness after, the morning's question. -->
+        <service
+            android:name=".sleep.SleepNoTapJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- [R200-03] 구독 끝 무렵 하루 한 번 결제 다시 읽기. -->
         <service
             android:name=".tier.ProRecheckJob"

@@ -56,6 +56,9 @@ object WatchStore {
     /** Asks the tile and the complication to draw again, and wakes them at the next midnight (the complication also has its timeline). */
     fun changed(context: Context) {
         runCatching { TileService.getUpdater(context).requestUpdate(ShiftTileService::class.java) }
+        // 2.0.0 [RVI-94][RVI-95] 잠 and 오늘 할 일 read the same copy.
+        runCatching { TileService.getUpdater(context).requestUpdate(SleepTileService::class.java) }
+        runCatching { TileService.getUpdater(context).requestUpdate(TaskTileService::class.java) }
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, TodayComplicationService::class.java)).requestUpdateAll()
         }

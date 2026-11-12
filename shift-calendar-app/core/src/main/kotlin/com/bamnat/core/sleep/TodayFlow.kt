@@ -36,7 +36,13 @@ object TodayFlow {
         NEXT,
     }
 
-    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP }
+    enum class Action {
+        ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP,
+        /** 2.0.0 [RVI-93] (검토 I03b-04, G5-M2) 쪽잠 20분 in a night's 휴게: a wake that only vibrates, on the phone and the watch. */
+        SHIFT_NAP,
+        /** 2.0.0 [RVI-93] The 쪽잠 is on: 일어났어요 ends it before its vibration. */
+        SHIFT_NAP_END,
+    }
 
     enum class Part { WORK, SLEEP, NAP }
 
@@ -110,6 +116,10 @@ object TodayFlow {
     const val MIN_LOGGED_MINUTES = 20L
     /** How far to look for the next work from a day off. */
     const val LOOKAHEAD_DAYS = 14L
+    /** 2.0.0 [RVI-93] A 쪽잠 in a night's 휴게, and how far into the night it is first offered and how near its end it stops. */
+    const val SHIFT_NAP_MINUTES = 20
+    const val SHIFT_NAP_AFTER_START_MINUTES = 2 * 60L
+    const val SHIFT_NAP_BEFORE_END_MINUTES = 60L
 
     private data class Pick(
         val state: State,
@@ -143,6 +153,8 @@ object TodayFlow {
          */
         since: LocalDate? = null,
         talk: WorkTalk = WorkTalk.SHIFT,
+        /** 2.0.0 [RVI-93] When the 쪽잠 now on vibrates; null with none. */
+        shiftNapUntil: LocalDateTime? = null,
     ): Card {
         val today = now.toLocalDate()
         val end = now.plusHours(SPAN_HOURS)
@@ -215,14 +227,23 @@ object TodayFlow {
                 return@run Pick(State.SLEEPING, "${t.hm(open.start)}부터 자는 중", detail, Action.AWAKE, line = "${t.hm(open.start)}부터 자는 중")
             }
             ongoing?.let { w ->
+                // 2.0.0 [RVI-93] A 쪽잠 is on: when it vibrates, and 일어났어요 to end it first.
+                shiftNapUntil?.takeIf { it.isAfter(now) }?.let { u ->
+                    return@run Pick(State.ON_SHIFT, "쪽잠 중 · ${t.hm(u)}에 진동", "진동만 울려요 · 옆 사람은 깨지 않아요",
+                        Action.SHIFT_NAP_END, line = "쪽잠 ${t.hm(u)}까지")
+                }
+                // 2.0.0 [RVI-93] (G5-M2) Deep in a night of work, outside a shop: 쪽잠 20분 for the 휴게.
+                val napHere = w.overnight && talk == WorkTalk.SHIFT &&
+                    !now.isBefore(w.from.plusMinutes(SHIFT_NAP_AFTER_START_MINUTES)) && now.isBefore(w.to.minusMinutes(SHIFT_NAP_BEFORE_END_MINUTES))
+                val nap = if (napHere) Action.SHIFT_NAP else null
                 val s = plan.sleepAfter(w)
                 if (s != null) {
                     val cut = s.from.minusHours(SleepPlan.CAFFEINE_GAP_HOURS)
                     return@run if (now.isBefore(cut)) {
-                        Pick(State.ON_SHIFT, "${t.hm(cut)}까지만 커피", "${t.hm(s.from)}에 잠들 수 있게요", line = "커피는 ${t.hm(cut)}까지")
+                        Pick(State.ON_SHIFT, "${t.hm(cut)}까지만 커피", "${t.hm(s.from)}에 잠들 수 있게요", nap, line = "커피는 ${t.hm(cut)}까지")
                     } else {
                         Pick(State.ON_SHIFT, "${talk.ifEnd} ${t.span(s.from, s.to)} 잘 시간",
-                            if (s.short) shortText(s) else "잠들기 ${SleepPlan.CAFFEINE_GAP_HOURS}시간 안이라 커피는 쉬어 가요", line = sleepLine(s), saysShort = s.short)
+                            if (s.short) shortText(s) else "잠들기 ${SleepPlan.CAFFEINE_GAP_HOURS}시간 안이라 커피는 쉬어 가요", nap, line = sleepLine(s), saysShort = s.short)
                     }
                 }
                 val after = next?.takeIf { !it.from.isBefore(w.to) }
@@ -232,7 +253,7 @@ object TodayFlow {
                     after != null -> "${talk.next} ${workLine(after)}"
                     else -> null
                 }
-                return@run Pick(State.ON_SHIFT, "${talk.on} · ${t.hm(w.to)}까지", detail, line = bed?.let(::sleepLine), saysShort = bed?.short == true)
+                return@run Pick(State.ON_SHIFT, "${talk.on} · ${t.hm(w.to)}까지", detail, nap, line = bed?.let(::sleepLine), saysShort = bed?.short == true)
             }
             work.lastOrNull { !it.to.isAfter(now) && it.overnight }?.let { w ->
                 val s = plan.sleepAfter(w) ?: return@let
@@ -327,6 +348,9 @@ object TodayFlow {
 
         val changesAt = buildList {
             work.forEach { add(it.from); add(it.to) }
+            // 2.0.0 [RVI-93] 쪽잠 20분 comes and goes in a night of work, and the card ends with the 쪽잠.
+            work.filter { it.overnight }.forEach { add(it.from.plusMinutes(SHIFT_NAP_AFTER_START_MINUTES)); add(it.to.minusMinutes(SHIFT_NAP_BEFORE_END_MINUTES)) }
+            shiftNapUntil?.let { add(it) }
             plan.sleeps.forEach { add(it.from.minusMinutes(PROMPT_MINUTES)); add(it.from); add(it.to); add(it.from.minusHours(SleepPlan.CAFFEINE_GAP_HOURS)) }
             plan.naps.forEach { add(it.from.minusMinutes(PROMPT_MINUTES)); add(it.to) }
             plan.alarms.forEach { add(it.triggerAt) }

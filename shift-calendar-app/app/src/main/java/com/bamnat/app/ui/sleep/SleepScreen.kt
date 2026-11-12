@@ -162,7 +162,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
     ) { manual, measured, checks, (autoOn, autoFlag), _ ->
         val log = SleepMerge.merge(manual, measured)
         val now = Today.dateTime()
-        val offers = if (autoOn && autoFlag) SleepAutoWatch.candidates(container.appContext, manual + measured, now) else emptyList()
+        // 2.0.0 [RVI-96] And a night the charger saw (충전하면 잠 잡기), with no activity permission.
+        val offers = if (autoFlag && (autoOn || com.bamnat.app.sleep.SleepNoTap.on(container.appContext))) SleepAutoWatch.candidates(container.appContext, manual + measured, now) else emptyList()
         val sleep = com.bamnat.core.sleep.SleepMorning.latest(log, now)
         Morning(offers, sleep, sleep?.let { com.bamnat.core.sleep.SleepMorning.checkFor(it, checks) }, autoFlag, autoOn)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

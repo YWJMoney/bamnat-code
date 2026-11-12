@@ -100,6 +100,7 @@ class AlarmScheduler(
             AlarmGuard.scheduleBack(context, null, null)
             AlarmRehearsal.schedule(context, false, null) // 2.0.0 [RVI-91]
             com.bamnat.app.sleep.SleepRecordOffer.plan(context, null) // 2.0.0 [RVI-89]
+            com.bamnat.app.sleep.SleepNoTap.plan(context, null) // 2.0.0 [RVI-96]
             prefs.edit().remove(K_PENDING).apply()
             alarmManager.cancel(operation)
             if (_upcoming.value != null) telemetry.event(DiagEvents.ALARM_CLEARED, if (enabled) "none_ahead" else "switched_off")
@@ -117,6 +118,7 @@ class AlarmScheduler(
         AlarmRehearsal.schedule(context, guard(), triggerAt)
         // 2.0.0 [RVI-89] (검토 I03b-02) 충전하면 소리 재기 묻기, around the time to sleep for this alarm.
         runCatching { com.bamnat.app.sleep.SleepRecordOffer.plan(context, plan.triggerAt) }
+        runCatching { com.bamnat.app.sleep.SleepNoTap.plan(context, plan.triggerAt) }
         // [ALRM-29] The first alarm after a break (no alarm in any calendar for two days) is said the evening before.
         val back = guard() && calendars.all { (_, s) -> com.bamnat.core.alarm.AlarmPlanner.afterBreak(s.resolver, plan.triggerAt) }
         AlarmGuard.scheduleBack(context, if (back) triggerAt else null, backText(plan))

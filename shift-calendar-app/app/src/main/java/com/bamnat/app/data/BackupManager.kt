@@ -574,7 +574,7 @@ class BackupManager(
                 .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
-                .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice).put("recordOffer", s.recordOffer)
+                .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice).put("recordOffer", s.recordOffer).put("sleepNoTap", s.sleepNoTap)
                 .put("todayShiftNotice", s.todayShiftNotice).put("afterAlarmCard", s.afterAlarmCard) // [ALRM-16] 1.31
                 .put("watchAlarm", s.watchAlarm).put("watchCalendar", s.watchCalendar) // [WEAR-04][WEAR-06] 1.31
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
@@ -1165,6 +1165,7 @@ class BackupManager(
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
                     bedtimeNotice = o.optBoolean("bedtimeNotice", s.bedtimeNotice),
                     recordOffer = o.optBoolean("recordOffer", s.recordOffer),
+                    sleepNoTap = o.optBoolean("sleepNoTap", s.sleepNoTap),
                     todayShiftNotice = o.optBoolean("todayShiftNotice", s.todayShiftNotice),
                     afterAlarmCard = o.optBoolean("afterAlarmCard", s.afterAlarmCard),
                     watchAlarm = o.optString("watchAlarm", s.watchAlarm).takeIf { it in AppSettings.WATCH_ALARMS } ?: s.watchAlarm,

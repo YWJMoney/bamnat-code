@@ -508,7 +508,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [SLP-14] 오늘의 흐름 at [now]. */
-    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
+    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime, shiftNapUntil: Long? = null): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
             settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
@@ -516,7 +516,27 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()),
             since = container.recordsTrash.styleChangedOn(activeCalendar.value.id),
             // 1.39 G6 발굴 [FLOW-32]: 가게 '영업 중·마감까지', 현장 '일하는 중' (the card shows for them once added to the calendar).
-            talk = TodayFlow.WorkTalk.of(settings.workStyle))
+            talk = TodayFlow.WorkTalk.of(settings.workStyle),
+            // 2.0.0 [RVI-93] 쪽잠 20분 on: when it vibrates.
+            shiftNapUntil = shiftNapUntil?.let(com.bamnat.app.alarm.AlarmScheduler::millisToLocal))
+
+    /**
+     * 2.0.0 [RVI-93] (검토 I03b-04, G5-M2) 쪽잠 20분: a wake that only vibrates, said back with a way to take it back. Not written in
+     * the sleep log: a 휴게's few minutes are no night's sleep, and the averages stay the user's own sleeps.
+     */
+    fun shiftNap() {
+        val ctx = container.appContext
+        val at = com.bamnat.app.alarm.ShiftNap.start(ctx)
+        _messages.tryEmit(UndoMessage("쪽잠 ${TodayFlow.SHIFT_NAP_MINUTES}분 · ${Fmt.time(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(at).toLocalTime())}에 진동으로 깨워요") {
+            com.bamnat.app.alarm.ShiftNap.cancel(ctx)
+        })
+    }
+
+    /** 2.0.0 [RVI-93] 일어났어요 before the 쪽잠's vibration. */
+    fun endShiftNap() {
+        com.bamnat.app.alarm.ShiftNap.cancel(container.appContext)
+        _messages.tryEmit(UndoMessage("쪽잠을 끝냈어요"))
+    }
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {

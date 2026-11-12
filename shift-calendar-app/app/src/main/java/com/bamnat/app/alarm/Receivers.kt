@@ -21,7 +21,7 @@ class AlarmReceiver : BroadcastReceiver() {
             // [REL-10] Rebooted and not unlocked yet: ring from the intent and line up the next one
             // from the device-protected copy; the full re-plan runs once the phone is unlocked.
             when (intent.action) {
-                ACTION_TEST_ALARM -> ring?.let { startRinging(context, it) }
+                ACTION_TEST_ALARM, ACTION_SHIFT_NAP -> ring?.let { startRinging(context, it) }
                 ACTION_SHIFT_ALARM -> if (ring != null && Today.millis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
                     startRinging(context, ring)
                 }
@@ -74,6 +74,14 @@ class AlarmReceiver : BroadcastReceiver() {
                     startRinging(context, ring)
                 }
             }
+            ACTION_SHIFT_NAP -> {
+                // 2.0.0 [RVI-93] 쪽잠 20분: vibrates like a shift alarm, then leaves the schedule alone.
+                ShiftNap.clear(context)
+                if (ring != null && Today.millis() - ring.triggerAtMillis < STALE_AFTER_MILLIS) {
+                    container.telemetry.event("shift_nap_fired", "late_s=${(Today.millis() - ring.triggerAtMillis) / 1000}")
+                    startRinging(context, ring)
+                }
+            }
             ACTION_SNOOZE_ALARM -> {
                 container.alarmScheduler.clearSnoozeState()
                 container.telemetry.event(DiagEvents.SNOOZE_FIRED)
@@ -109,6 +117,7 @@ class AlarmReceiver : BroadcastReceiver() {
         const val ACTION_SHIFT_ALARM = "com.bamnat.app.action.SHIFT_ALARM"
         const val ACTION_SNOOZE_ALARM = "com.bamnat.app.action.SNOOZE_ALARM"
         const val ACTION_TEST_ALARM = "com.bamnat.app.action.TEST_ALARM"
+        const val ACTION_SHIFT_NAP = "com.bamnat.app.action.SHIFT_NAP"
         private const val STALE_AFTER_MILLIS = 2 * 60 * 60 * 1000L
     }
 }
@@ -217,6 +226,7 @@ class AlarmActionReceiver : BroadcastReceiver() {
             AlarmSoon.ACTION_SOON -> AlarmSoon.onSoon(context, intent)
             AlarmGuard.ACTION_GUARD -> AlarmGuard.onGuard(context, intent)
             AlarmRehearsal.ACTION -> AlarmRehearsal.onRehearsal(context, intent) // 2.0.0 [RVI-91]
+            ShiftNap.ACTION_CANCEL -> ShiftNap.cancel(context) // 2.0.0 [RVI-93] 일어났어요 before the 쪽잠's vibration
             AlarmGuard.ACTION_BACK -> AlarmGuard.onBack(context, intent) // [ALRM-27]
             AlarmSoon.ACTION_SKIP -> AlarmSoon.skip(context, AlarmSoon.at(intent))
             AlarmSoon.ACTION_KEEP -> Notifications.cancel(context, AlarmSoon.NOTICE_ID)

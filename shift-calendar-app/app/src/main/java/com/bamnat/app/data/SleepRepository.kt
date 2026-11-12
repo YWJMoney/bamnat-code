@@ -34,8 +34,9 @@ class SleepRepository(
      * changes nothing) [SLP-14]; one open for more than 16 hours, a missed "깼어요", is closed where
      * it stands: too long to count, but kept rather than deleted.
      */
-    suspend fun fellAsleep(): Asleep {
-        val now = clock()
+    suspend fun fellAsleep(atMillis: Long? = null): Asleep {
+        // 2.0.0 [RVI-94] [atMillis]: pressed on the wrist a little before the message came (never ahead, at most an hour back).
+        val now = (atMillis ?: clock()).coerceIn(clock() - PRESS_BACK_MILLIS, clock())
         dao.open()?.let { open ->
             if (now - open.startMillis <= STALE_MILLIS) return Asleep(open.toModel(), started = false)
             dao.finish(open.id, now)
@@ -196,6 +197,8 @@ class SleepRepository(
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         private const val STALE_MILLIS = SleepDebt.MAX_SLEEP_MINUTES * 60 * 1000L
+        /** 2.0.0 [RVI-94] A press from the wrist is believed this far back. */
+        private const val PRESS_BACK_MILLIS = 60 * 60 * 1000L
         /** 2.0.0 [RVI-15] How long a night's sounds stay (the sleep screen's longest look back). */
         const val EVENT_KEEP_DAYS = 120L
     }

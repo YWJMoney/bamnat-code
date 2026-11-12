@@ -237,6 +237,7 @@ internal object SettingsIndex {
         screen(N.title, "수면 기록 보기", SettingsGo.SLEEP, "수면 기록", "잠든 시간", "잠들었어요", "깼어요"),
         // 1.38 [SLEEP-19] 수면 도약의 새 스위치와 화면.
         row(N, com.bamnat.app.ui.sleep.SLEEP_AUTO_ROW, "자동 수면", "수면 감지", "잠 자동", "자동 기록", "활동 인식").takeIf { sleepAuto },
+        row(N, com.bamnat.app.sleep.SleepNoTap.ROW, "충전", "누르지 않는 수면", "잠 자동", "자동 기록").takeIf { sleepAuto },
         row(N, HEALTH_WRITE_ROW, "헬스 커넥트", "삼성 헬스", "수면 내보내기", "다른 건강 앱"),
         row(N, SLEEP_DND_ROW, "방해 금지", "무음", "중요한 알림만", "잘 때 알림 끄기"),
         screen(N.title, "잠드는 소리", SettingsGo.SLEEP, "백색 소음", "빗소리", "파도", "수면 소리", "자장가", "소음"),

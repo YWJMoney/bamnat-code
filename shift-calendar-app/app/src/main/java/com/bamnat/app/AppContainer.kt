@@ -1134,7 +1134,11 @@ class AppContainer(context: Context) {
                     .flowOn(Dispatchers.Default)
                 combine(looks, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
                     .drop(1).debounce(800)
-                    .collect { com.bamnat.app.widget.TaskWidget.redraw(appContext) }
+                    .collect {
+                        com.bamnat.app.widget.TaskWidget.redraw(appContext)
+                        // 2.0.0 [RVI-95] (TASK-35) The watch's 오늘 할 일 tile follows the same list.
+                        runCatching { com.bamnat.app.watch.WatchSync.push(appContext) }
+                    }
             }
             // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
             keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }

@@ -110,45 +110,14 @@ class ShiftTileService : TileService() {
             col.addContent(space(4f))
             col.addContent(text(WatchText.syncedAt(p), 10f, GREY, lines = 1))
         }
-        val open = ModifiersBuilders.Clickable.Builder()
-            .setId("open")
-            .setOnClick(ActionBuilders.LaunchAction.Builder()
-                .setAndroidActivity(ActionBuilders.AndroidActivity.Builder().setPackageName(packageName).setClassName(MainActivity::class.java.name).build())
-                .build())
-            .build()
-        return LayoutElementBuilders.Box.Builder()
-            .setWidth(androidx.wear.protolayout.DimensionBuilders.expand())
-            .setHeight(androidx.wear.protolayout.DimensionBuilders.expand())
-            .setModifiers(ModifiersBuilders.Modifiers.Builder().setClickable(open).build())
-            .addContent(col.build())
-            .build()
+        return TileUi.frame(packageName, col.build())
     }
 
-    private fun text(s: String, size: Float, color: Int, bold: Boolean = false, lines: Int = 2) =
-        LayoutElementBuilders.Text.Builder()
-            .setText(s)
-            .setMaxLines(lines)
-            .setFontStyle(LayoutElementBuilders.FontStyle.Builder()
-                .setSize(sp(size))
-                .setColor(argb(color))
-                .setWeight(if (bold) LayoutElementBuilders.FONT_WEIGHT_BOLD else LayoutElementBuilders.FONT_WEIGHT_NORMAL)
-                .build())
-            .build()
+    private fun text(s: String, size: Float, color: Int, bold: Boolean = false, lines: Int = 2) = TileUi.text(s, size, color, bold, lines)
 
-    private fun space(h: Float) = LayoutElementBuilders.Spacer.Builder().setHeight(dp(h)).build()
+    private fun space(h: Float) = TileUi.space(h)
 
-    /** A pill the size of a finger that asks the tile again with [id] as the tapped clickable. */
-    private fun button(label: String, id: String) = LayoutElementBuilders.Box.Builder()
-        .setHeight(dp(40f))
-        .setWidth(androidx.wear.protolayout.DimensionBuilders.wrap())
-        .setModifiers(ModifiersBuilders.Modifiers.Builder()
-            .setClickable(ModifiersBuilders.Clickable.Builder().setId(id).setOnClick(ActionBuilders.LoadAction.Builder().build()).build())
-            .setBackground(ModifiersBuilders.Background.Builder().setColor(argb(BUTTON))
-                .setCorner(ModifiersBuilders.Corner.Builder().setRadius(dp(20f)).build()).build())
-            .setPadding(ModifiersBuilders.Padding.Builder().setStart(dp(14f)).setEnd(dp(14f)).build())
-            .build())
-        .addContent(text(label, 13f, WHITE, lines = 1))
-        .build()
+    private fun button(label: String, id: String) = TileUi.button(label, id)
 
     companion object {
         private const val RESOURCES = "1"
