@@ -228,6 +228,38 @@ def failing_tests(output: str, limit: int = 8) -> list[str]:
     return tests[:limit]
 
 
+TEST_PLACE = (re.compile(r"""^\s*location:\s*'([^']+?):(\d+):\d+'"""), re.compile(r"([A-Za-z0-9_.-]+\.test\.mjs):(\d+):\d+"))
+
+
+def failing_places(output: str, limit: int = 20) -> list[dict]:
+    """2.0.0 [U60-02] (검토 2026-11-12) 실패한 시험마다 이름과 줄: [{name: '파일.test.mjs › 이름', at: '파일.test.mjs:줄'}].
+    tap은 'not ok' 뒤 location(시험을 적은 줄), spec은 '✖' 뒤 첫 .test.mjs 줄. 이름은 날짜 시험 결과(tools/date_watch.py)와 같은 모양이라
+    '어제 main에서는 통과/실패'를 견줄 수 있어요."""
+    lines = output.splitlines()
+    out: list[dict] = []
+    for i, line in enumerate(lines):
+        name = None
+        for pat in TEST_FAIL:
+            m = pat.match(line)
+            if m:
+                name = m.group(1).strip()
+                break
+        if not name or re.match(r"^(failing tests:?|tests? \d+|\d+ failing)$", name, re.I) or name.endswith(".mjs"):
+            continue
+        at = ""
+        for nxt in lines[i + 1:i + 25]:
+            if TEST_FAIL[0].match(nxt) or TEST_FAIL[1].match(nxt):
+                break
+            m = TEST_PLACE[0].match(nxt) or TEST_PLACE[1].search(nxt)
+            if m:
+                at = f"{Path(m.group(1)).name}:{m.group(2)}"
+                break
+        key = f"{at.split(':')[0]} › {name}" if at else name
+        if all(x["name"] != key for x in out):
+            out.append({"name": key, "at": at})
+    return out[:limit]
+
+
 # 2.0.0 [RVQ-03] 검토 I21c-02: 카나리(새 판 일부에만). 판마다 센 요청은 회사 서버 /api/admin/health?canary= 가 줘요.
 CANARY = {"percent": 10, "minutes": 10, "every": 60, "min_requests": 30, "min_errors": 3, "rate_gap": 0.02, "slow_ms": 300}
 
@@ -591,7 +623,15 @@ def build(workers: list[str], out: Path, prev: Path | None, skips=()) -> None:
         dest.mkdir(parents=True, exist_ok=True)
         if (wd / "package-lock.json").exists():
             run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], wd, stage="시험", clean_env=True)
-        run(test_command(wd, skips), wd, stage="시험", clean_env=True)
+        p = run(test_command(wd, skips), wd, stage="시험", clean_env=True, check=False)
+        if p.returncode != 0:
+            # [U60-02] 실패한 시험 이름·줄을 남겨 두면, 배포 workflow의 explain 일이 어제 main의 날짜 시험 결과와 견줘 요약에 적어요.
+            text = p.stdout + p.stderr
+            places = failing_places(text)
+            (out / "fail").mkdir(parents=True, exist_ok=True)
+            (out / "fail" / f"{w}-fail.json").write_text(json.dumps({"worker": w, "failed": places}, ensure_ascii=False), encoding="utf-8")
+            raise Stop(f"`{' '.join(test_command(wd, skips)[:2])} …` 실패 (코드 {p.returncode})\n```\n{text[-1500:]}\n```", stage="시험",
+                       tests=[f"{x['name']} ({x['at']})" if x["at"] else x["name"] for x in places][:8] or failing_tests(text))
         run(["npm", "run", "bundle"], wd, stage="번들", clean_env=True)
         bundle = wd / "dist/worker.js"
         if not bundle.exists():

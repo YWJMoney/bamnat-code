@@ -8,13 +8,20 @@ With --json it also writes the numbers for the CI trend ([QA-06]).
 2.0.0 [RVR-12] (검토 U60-03): the table starts with '건너뜀 N개' and the names of the skipped tests (an assumeTrue that
 turned false, an @Ignore), so a test that quietly stopped running shows on the first line.
 
-Usage: python3 tools/slow_tests.py <results dir> [<results dir> …] [--top 20] [--json out.json]
+2.0.0 [U60-01] (검토 2026-11-12) With --base <json> (the same job's --json from the base branch's last run, .github/workflows/android.yml),
+the table starts with the failures sorted: '이 PR에서 처음 깨짐' (passed on the base), '기준에서도 깨짐' (failing there too: a date or
+something outside the code, not this change) and '기준 결과 없음'. The --json now keeps the failed tests with their file:line.
+
+Usage: python3 tools/slow_tests.py <results dir> [<results dir> …] [--top 20] [--json out.json] [--base base.json]
 """
 import glob
 import json
 import os
 import sys
 import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import date_watch  # noqa: E402
 
 
 def read(dirs):
@@ -52,6 +59,23 @@ def skipped_lines(skipped, top):
     return out + [""]
 
 
+def failed_lines(failed, base, has_base):
+    """[U60-01] The failures first, each said against the base branch's last run."""
+    if not failed:
+        return []
+    said = dict(date_watch.against(base if has_base else None, [f["name"] for f in failed]))
+    at = {f["name"]: f["at"] for f in failed}
+    groups = [("이 PR에서 처음 깨짐", "기준에서는 통과"), ("기준에서도 깨짐(날짜·바깥 탓일 수 있어요, 이 바뀜 때문이 아니에요)", "기준에서도 깨짐"),
+              ("새 시험이거나 기준 결과 없음", None)]
+    out = [f"**실패 {len(failed)}개**" + ("" if has_base else " (기준 브랜치 결과를 못 받아 견주지 않았어요)")]
+    for title, key in groups:
+        names = [n for n, how in said.items() if (how == key if key else how not in ("기준에서는 통과", "기준에서도 깨짐"))]
+        if names:
+            out.append(f"- {title} {len(names)}개: " + ", ".join(f"`{n}`" + (f" ({at[n]})" if at[n] else "") for n in names[:15])
+                       + (f" … {len(names) - 15}개 더" if len(names) > 15 else ""))
+    return out + [""]
+
+
 def table(classes, cases, top, skipped=()):
     total = sum(c[0] for c in classes.values())
     count = sum(c[1] for c in classes.values())
@@ -66,14 +90,16 @@ def table(classes, cases, top, skipped=()):
 
 
 def main(argv):
-    top, out_json, dirs = 20, None, []
+    top, out_json, base_json, dirs = 20, None, None, []
     i = 0
     while i < len(argv):
-        if argv[i] in ("--top", "--json"):
+        if argv[i] in ("--top", "--json", "--base"):
             if argv[i] == "--top":
                 top = int(argv[i + 1])
-            else:
+            elif argv[i] == "--json":
                 out_json = argv[i + 1]
+            else:
+                base_json = argv[i + 1]
             i += 2
         else:
             dirs.append(argv[i])
@@ -82,6 +108,11 @@ def main(argv):
         print(__doc__)
         return 2
     classes, cases, skipped = read(dirs)
+    failed = date_watch.read(dirs)["failed"]
+    base = date_watch.load(base_json) if base_json else None
+    lines = failed_lines(failed, base, base is not None)
+    if lines:
+        print("\n".join(lines))
     print(table(classes, cases, top, skipped))
     if out_json:
         with open(out_json, "w", encoding="utf-8") as f:
@@ -89,6 +120,8 @@ def main(argv):
                 "tests": sum(c[1] for c in classes.values()),
                 "seconds": round(sum(c[0] for c in classes.values()), 1),
                 "skipped": [f"{c}.{n}" for c, n, _ in sorted(skipped)],
+                "failed": failed,
+                "sha": os.environ.get("GITHUB_SHA", ""),
                 "classes": {k.rsplit(".", 1)[-1]: round(v[0], 1) for k, v in classes.items()},
                 "slowest": [{"test": n, "class": c, "s": round(t, 1)} for t, c, n in sorted(cases, reverse=True)[:top]],
             }, f, ensure_ascii=False, indent=1)
