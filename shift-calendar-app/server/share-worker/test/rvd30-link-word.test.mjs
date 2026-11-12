@@ -3,13 +3,14 @@
 // and the calendar feed all say the same word. A link without a name is "받은 …". `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import worker, { readsForget, linkWord, renderSchedule, renderIcs } from "../src/index.js";
+import worker, { readsForget, linkWord, renderSchedule, renderIcs, spreadCard } from "../src/index.js";
 
 function kv() {
   const map = new Map();
   return { map, async get(k, t) { const v = map.get(k); return v === undefined ? null : t === "json" ? JSON.parse(v) : v; },
     async put(k, v) { map.set(k, v); }, async delete(k) { map.delete(k); }, async list() { return { keys: [], list_complete: true }; } };
 }
+const ANDROID = "Mozilla/5.0 (Linux; Android 14; SM-F946N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
 const call = (env, path, init = {}, ua = IPHONE) => worker.fetch(new Request(`https://s.bamnat.app${path}`,
   { ...init, headers: { "cf-connecting-ip": "203.0.113.88", "user-agent": ua, ...(init.headers ?? {}) } }), env, { waitUntil() {} });
@@ -74,6 +75,13 @@ test("[RVD-30] the preview, the calendar feed and the ended page keep the word",
   assert.match(page, /<meta property="og:title" content="영업일이 왔어요">/);
   assert.match(page, /영업일이 바뀔 때 캘린더도/);
   assert.match(page, /바뀌어요\. 알람은 아니에요/, "a shop has no 출근");
+  // The app card under it: a shop's 영업일, not a 가족 근무 (the store link stays the family one).
+  const android = await (await call(env, `/s/${id}`, {}, ANDROID)).text();
+  assert.match(android, /<p class="t">가게 영업일을 내 달력 옆에서 바로<\/p>/);
+  assert.match(android, /밤낮에 이 영업일을 받아 두면/);
+  assert.match(android, /utm_medium%3Dfamily/);
+  assert.ok(!android.includes("가족 근무"));
+  assert.ok(!android.includes("<!--spread"), "the slot is filled");
   const ics = await (await call(env, `/s/${id}.ics`)).text();
   assert.match(ics, /X-WR-CALNAME:가나다식당의 영업일/);
   assert.match(renderIcs({ ...field, title: "" }, "x", null), /X-WR-CALNAME:밤낮 일정/);
@@ -87,4 +95,12 @@ test("[RVD-30] the preview, the calendar feed and the ended page keep the word",
   const text = await gone.text();
   assert.match(text, /이 영업일 링크는 만료되었거나/);
   assert.match(text, /최신 영업일이 필요하면 보낸 분께/);
+  assert.match(await (await call(env, `/s/${id}`, {}, ANDROID)).text(), /가게 영업일을 내 달력 옆에서 바로/);
+});
+
+test("[RVD-30] the family card says 일정 for a freelancer and stays 가족 근무 for a 근무표", () => {
+  assert.match(spreadCard("family", ANDROID, null, false, "일정"), /보낸 분의 일정을 내 달력 옆에서 바로.*밤낮에 이 일정을 받아 두면/s);
+  assert.match(spreadCard("family", ANDROID, null), /가족 근무를 내 달력 옆에서 바로.*이 근무표를 받아 두면/s);
+  // Only the family card takes a word.
+  assert.doesNotMatch(spreadCard("team", ANDROID, null, false, "영업일"), /영업일/);
 });

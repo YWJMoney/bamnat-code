@@ -480,7 +480,7 @@ async function view(request, env, id) {
     // [RVD-30] HQ-64 An expired link still kept is named as its page was (이 영업일 링크는 …).
     const word = record?.schedule && !record.schedule.team ? linkWord(record.schedule) : "근무표";
     return html(page("링크가 없어요", `<p class="empty">이 ${word} 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
-      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : `최신 ${WORD_FORMS[word].subj} 필요하면 보낸 분께 새 링크를 부탁해 주세요.`, record?.schedule ? scheduleKind(record.schedule) : "schedule")}`), 404);
+      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : `최신 ${WORD_FORMS[word].subj} 필요하면 보낸 분께 새 링크를 부탁해 주세요.`, record?.schedule ? scheduleKind(record.schedule) : "schedule", word)}`), 404);
   }
   const phone = platformOf(request.headers.get("user-agent") || "");
   if (request.method === "GET") {
@@ -2503,15 +2503,19 @@ function storeHref(kind, ua) {
     `S.browser_fallback_url=${encodeURIComponent(store)};end`;
 }
 
-const SPREAD_MARK = /<!--spread:([a-z]+)(:gone)?-->/;
+const SPREAD_MARK = /<!--spread:([a-z]+)(:gone)?(?::(영업일|일정))?-->/;
 const SPREAD_COOKIE = "bn_spread=off";
 const SPREAD_HIDE = "/spread/hide";
 /** The pages a card may go back to once closed: only this server's own receive pages, never another address. */
 const SPREAD_BACK = /^\/(s\/[A-Za-z0-9]{16,32}|[cavwkb]\/[A-Za-z0-9]{22})$/;
 
-/** Where a page leaves room for its card (filled or emptied by [spread]). */
-function spreadSlot(kind, gone = false) {
-  return SPREAD_KINDS[kind] ? `<!--spread:${kind}${gone ? ":gone" : ""}-->` : "";
+/**
+ * Where a page leaves room for its card (filled or emptied by [spread]). 2.0.0 [RVD-30] A family card also keeps the page's word
+ * (영업일·일정, linkWord), so a shop's page does not end on '가족 근무 … 이 근무표'. The store link stays the family one.
+ */
+function spreadSlot(kind, gone = false, word = null) {
+  const said = kind === "family" && (word === "영업일" || word === "일정") ? `:${word}` : "";
+  return SPREAD_KINDS[kind] ? `<!--spread:${kind}${gone ? ":gone" : ""}${said}-->` : "";
 }
 
 /**
@@ -2519,8 +2523,8 @@ function spreadSlot(kind, gone = false) {
  * same card (without "다시 누르면 앱에서 열려요", since this link will not open again). A link taken down for its content (410)
  * keeps only its own words.
  */
-function goneNext(next, kind) {
-  return (next ? `<p class="muted">${esc(next)}</p>` : "") + spreadSlot(kind, true);
+function goneNext(next, kind, word = null) {
+  return (next ? `<p class="muted">${esc(next)}</p>` : "") + spreadSlot(kind, true, word);
 }
 
 /**
@@ -2563,9 +2567,13 @@ function appleUa(ua) {
 }
 
 /** [SPREAD-01..04] The card for [kind] as this phone should see it. */
-export function spreadCard(kind, ua, back, gone = false) {
-  const k = SPREAD_KINDS[kind];
-  if (!k) return "";
+export function spreadCard(kind, ua, back, gone = false, word = null) {
+  const base = SPREAD_KINDS[kind];
+  if (!base) return "";
+  // [RVD-30] HQ-64 A shop's 영업일 or a freelancer's 일정 is not a 가족 근무.
+  const k = kind === "family" && (word === "영업일" || word === "일정")
+    ? { ...base, title: `${word === "영업일" ? "가게 영업일" : "보낸 분의 일정"}을 내 달력 옆에서 바로`, line: base.line.replace("이 근무표를", `이 ${word}을`) }
+    : base;
   const android = /Android/i.test(ua);
   const apple = !android && appleUa(ua);
   // [SPREAD-04] Back to the link after the install: a schedule link opens in the app; the others stay pages.
@@ -2594,7 +2602,7 @@ async function spread(request, res) {
   const m = body.match(SPREAD_MARK);
   if (!m) return new Response(body, res);
   const closed = (request.headers.get("cookie") ?? "").split(/;\s*/).includes(SPREAD_COOKIE);
-  const card = closed ? "" : spreadCard(m[1], request.headers.get("user-agent") ?? "", spreadBack(new URL(request.url).pathname), !!m[2]);
+  const card = closed ? "" : spreadCard(m[1], request.headers.get("user-agent") ?? "", spreadBack(new URL(request.url).pathname), !!m[2], m[3] ?? null);
   return new Response(body.replace(SPREAD_MARK, card), res);
 }
 
@@ -2775,7 +2783,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind, false, word) + (reportId ? reportForm(reportId) : ""),
   word, kind === "family" ? WORD_FORMS[word].og : kind);
 }
 
@@ -2933,7 +2941,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .leave{font-size:11px;color:var(--muted);text-align:center;word-break:keep-all;overflow-wrap:anywhere}.extra{font-size:10px;line-height:1.2;color:var(--fg);background:var(--line);border-radius:6px;padding:0 4px;text-align:center}
 .job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
-.pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
+.pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li b{white-space:nowrap}.pay li:first-child{border-top:none}
 .dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
