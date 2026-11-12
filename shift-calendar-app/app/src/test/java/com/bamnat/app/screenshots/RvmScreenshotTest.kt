@@ -60,7 +60,7 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun work(title: String) = works.first { it.title == title }
 
     /** The 1.39 장터 as the server lists and shows it, nothing found for words no work has. */
-    private inner class Market : RecipeApi {
+    private inner class Market(private val makers: List<com.bamnat.app.recipe.MakerFaceItem> = emptyList()) : RecipeApi {
         private val codes = works.indices.associateBy { "MKT" + (10000 + it) }
         fun code(title: String) = codes.entries.first { works[it.value].title == title }.key
         private fun item(i: Int): RecipeItem = works[i].let { r ->
@@ -86,6 +86,7 @@ class RvmScreenshotTest : ScreenshotBase() {
         override suspend fun talk(device: String?, code: String) = RecipeTalk(emptyList(), null)
         override suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?) = "p1"
         override suspend fun talkVote(device: String, post: String, value: Int?, reason: String?, opinion: String?) = Votes(0, 0, value)
+        override suspend fun monthMakers(style: WorkStyle?) = makers
     }
 
     private fun style(s: WorkStyle) = c.settingsRepository.update { it.copy(workStyle = s) }
@@ -177,12 +178,21 @@ class RvmScreenshotTest : ScreenshotBase() {
             check(tall.max() - tall.min() < 1f) { "구간 칩의 높이가 서로 달라요: $tall" }
             check(appears("작품 찾기", exact = true)) { "200%에서 찾기 칸 안내가 짧지 않아요" }
         }
-        shoot("rvm_57_market_village_folded_dark_200", DARK, 2f) { village()(this); worksStartHigh("마을 › 장터 어두운 200%") }
+        // In 마을 at 200% 마을's own head (name row + tabs, 124dp, the same over 광장·테마·공방) is above; the part under it is 장터's.
+        shoot("rvm_57_market_village_folded_dark_200", DARK, 2f) { village()(this); worksStartHigh("마을 › 장터 어두운 200%", share = 1 / 3f) }
+        // With 이달의 제작자 (or people followed) the row of faces comes under the first row of works, still on the first screen.
+        shoot("rvm_59_market_village_makers_folded", FOLDED) {
+            village(makers = listOf(MakerFace("m1", "새벽 장인", 0xFF5B8DEF), MakerFace("m2", "야간 화가", 0xFFE0866E), MakerFace("m3", "달빛 공방", 0xFF6BBF8A)))(this)
+            worksStartHigh("마을 › 장터, 이달의 제작자가 있을 때")
+            check(appears("이달의 제작자", exact = true)) { "이달의 제작자 줄이 첫 화면에 없어요" }
+            val faces = nodes().first { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "이달의 제작자" } }
+            check(faces.boundsInWindow.top > cards().minOf { it.boundsInWindow.top }) { "이달의 제작자 줄이 첫 작품보다 위에 있어요" }
+        }
     }
 
     /**
      * [RVM-31] HQ-42: picking 탭별 작품 slides the row so its 탭 are in sight (모든 탭 · 근무·급여 …), the 구간 picked first; picking 도구 brings
-     * its own chips (전체 · ✦ 프로 기능 · 무료 · 종류).
+     * its own chips (전체 · ✦ 프로 기능 · 무료 · 종류). The 정렬 chip opens its menu of six; the open row (▾) lays the six out.
      */
     @Test fun aHalfPickedBringsItsChips() {
         shoot("rvm_52_market_tabs_folded", FOLDED) {
@@ -198,12 +208,22 @@ class RvmScreenshotTest : ScreenshotBase() {
             // 도구's own chips start in sight (전체 · ✦ 프로 기능 first, [MKC-04]); its 종류 follow them.
             check(appears("전체", exact = true) && appears("✦ 프로 기능", exact = true)) { "도구를 골라도 도구 칩이 화면 밖이에요" }
         }
+        // 정렬 is one chip with a menu in the closed row; opened with ▾ the six orders lie in the row, so another order is two taps either way.
+        shoot("rvm_58_market_open_row_phone", PHONE) {
+            market()(this)
+            check(!appears("좋은 순", exact = true)) { "닫힌 줄에 정렬 여섯 칩이 보여요" }
+            tapText("칩 모두 펼쳐 보기", exact = true)
+            settle()
+            check(appears("좋은 순", exact = true) && appears("요즘 뜨는", exact = true)) { "펼친 줄에 정렬 여섯 칩이 없어요" }
+        }
     }
 
     /** 2.0.0 [RVM-32] 총괄 HQ-43 (조건 1·12 넓은 화면): an unfolded phone shows four cards a row (two before), a folded one still two. */
     @Test fun anUnfoldedPhoneShowsFourARow() {
-        shoot("rvm_54_market_grid_unfolded", UNFOLDED) { market()(this); check(firstRow() == 4) { "편 폭 첫 줄 카드 ${firstRow()}장" } }
-        shoot("rvm_55_market_grid_unfolded_dark_200", UNFOLDED_DARK, 2f) { market()(this); check(firstRow() == 4) { "편 폭 200% 첫 줄 카드 ${firstRow()}장" } }
+        shoot("rvm_54_market_grid_unfolded", UNFOLDED) { market()(this); check(firstRow() == 4) { "편 폭 첫 줄 카드 ${firstRow()}장" }; worksStartHigh("장터 편 폭") }
+        shoot("rvm_55_market_grid_unfolded_dark_200", UNFOLDED_DARK, 2f) {
+            market()(this); check(firstRow() == 4) { "편 폭 200% 첫 줄 카드 ${firstRow()}장" }; worksStartHigh("장터 편 폭 200%")
+        }
         shoot("rvm_56_market_grid_folded", FOLDED) { market()(this); check(firstRow() == 2) { "접은 폭 첫 줄 카드 ${firstRow()}장" } }
         org.junit.Assert.assertEquals(listOf(2, 3, 4, 6), listOf(com.bamnat.app.ui.recipe.marketCols(337, false), com.bamnat.app.ui.recipe.marketCols(337, true),
             com.bamnat.app.ui.recipe.marketCols(675, false), com.bamnat.app.ui.recipe.marketCols(675, true)))
@@ -213,17 +233,21 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun Screen.cards() = nodes().filter { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick)?.label in cardWords && n.boundsInWindow.height > 1f }
     private fun Screen.firstRow(): Int { val top = cards().minOf { it.boundsInWindow.top }; return cards().count { kotlin.math.abs(it.boundsInWindow.top - top) < 2f } }
 
-    /** 조건 1: the first card begins within the top quarter of the window. */
-    private fun Screen.worksStartHigh(name: String) {
+    /** 조건 1: the first card begins within the top quarter of the window ([share]). */
+    private fun Screen.worksStartHigh(name: String, share: Float = 0.25f) {
         val all = nodes()
         val height = all.maxOf { it.boundsInWindow.bottom }
         val top = cards().minOf { it.boundsInWindow.top }
-        check(top <= height * 0.25f) { "$name: 첫 작품이 화면 위 25% 안에서 시작해야 해요 (${top.toInt()} / ${height.toInt()} = ${(top / height * 100).toInt()}%)" }
+        println("[RVM-31] $name: ${top.toInt()} / ${height.toInt()} = ${"%.1f".format(top / height * 100)}%")
+        check(top <= height * share) { "$name: 첫 작품이 화면 위 ${(share * 100).toInt()}% 안에서 시작해야 해요 (${top.toInt()} / ${height.toInt()} = ${(top / height * 100).toInt()}%)" }
     }
 
+    @Suppress("FunctionName")
+    private fun MakerFace(id: String, nick: String, color: Long) = com.bamnat.app.recipe.MakerFaceItem(id, nick, null, color)
+
     /** 마을 › 장터, as the bottom bar's 마을 opens it on 장터: 마을's name and tabs above the list. */
-    private fun village(): Screen.() -> Unit = {
-        Market().also { c.recipeApi = it }
+    private fun village(makers: List<com.bamnat.app.recipe.MakerFaceItem> = emptyList()): Screen.() -> Unit = {
+        Market(makers).also { c.recipeApi = it }
         style(WorkStyle.SHIFT)
         app.getSharedPreferences("village_ui", 0).edit().putString("section", "SHARE").commit()
         val model = RecipeListViewModel(c)

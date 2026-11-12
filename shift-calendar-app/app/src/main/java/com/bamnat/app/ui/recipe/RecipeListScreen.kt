@@ -289,7 +289,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
     val reselectAt = remember { reselect }
     androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > reselectAt) { vm.load(); listState.animateScrollToItem(0) } }
     // The 구간 and 정렬 chips stay at the top once the cards above them are gone, so another 구간 is one tap from anywhere in the list.
-    val stickyAt = if (hubHeader != null) 2 else 1
+    // 2.0.0 [RVM-31]: only the search box is above them (the 팔로잉 줄 is under the first row of works).
+    val stickyAt = 1
     val pinned by remember(stickyAt) { derivedStateOf { listState.firstVisibleItemIndex >= stickyAt } }
     // A 구간 or 정렬 changed while scrolled down starts its list right under the chips (not somewhere in the middle).
     // PC 확인 a6cab3c8 (장터를 내린 채 다른 탭에 갔다 오면 맨 위로 돌아가요): only a real change of 구간·정렬 moves the list; coming back
@@ -368,7 +369,6 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                     }
                 }
             }
-            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
             // 7차 통합 347b7c37 PC 제안 (칩 줄 판이 화면보다 좁아 좌우로 사진이 보여요): the pinned row's ground runs past the list's 16dp side
             // padding to the screen's edges; its chips stay in the 640dp column.
             stickyHeader(key = "chips") { Column(Modifier.fillMaxWidth().layout { m, c ->
@@ -422,7 +422,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                 Text("불러온 테마 가운데 ‘${moodNow.label}’ 테마가 아직 없어요" + (if (state.next != null) ". 아래 ‘더 보기’로 더 불러와요" else ""),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
             }
-            items(shown.chunked(cols), key = { row -> row.first().code + "|" + cols }) { row ->
+            val rows = shown.chunked(cols)
+            val cardRow: @Composable (List<RecipeItem>) -> Unit = { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (small) MARKET_GAP_SMALL.dp else MARKET_GAP.dp)) {
                     row.forEach { item ->
                         ThemeTile(item, vm.style, Modifier.weight(1f), small = small, onPicture = { flipAt = shown.indexOf(item).coerceAtLeast(0) }) { onOpen(item.code) }
@@ -430,6 +431,11 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                     repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
+            rows.firstOrNull()?.let { row -> item(key = row.first().code + "|" + cols) { cardRow(row) } }
+            // 2.0.0 [RVM-31] HQ-42 (조건 1): in 마을 the 팔로잉 줄 (or 이달의 제작자) comes under the first row of works, still on the first
+            // screen; above them it put the first work at about 36% of a folded phone. It scrolls away with the list as before.
+            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
+            items(rows.drop(1), key = { row -> row.first().code + "|" + cols }) { row -> cardRow(row) }
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
             else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
         }
@@ -468,14 +474,15 @@ private fun ChipRows(
     spot: RowSpot? = null,
     /** What stays at the start of the line, outside the part that slides (the 구간 picked). */
     lead: (@Composable () -> Unit)? = null,
-    content: @Composable () -> Unit,
+    /** The chips; told whether the row is open (▾), when a chip with a menu can lay its choices out instead. */
+    content: @Composable (open: Boolean) -> Unit,
 ) {
     var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (open || !fold) {
         androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)) {
             lead?.invoke()
-            content()
+            content(true)
             if (fold) IconButton(onClick = { open = false }) { Icon(Icons.Filled.KeyboardArrowUp, "칩 한 줄로 접기") }
         }
         return
@@ -489,7 +496,7 @@ private fun ChipRows(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         lead?.let { it(); Spacer(Modifier.width(6.dp)) }
         Row(Modifier.weight(1f).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically) { content() }
+            verticalAlignment = Alignment.CenterVertically) { content(false) }
         if (scroll.maxValue in 1 until Int.MAX_VALUE) IconButton(onClick = { open = true }) { Icon(Icons.Filled.KeyboardArrowDown, "칩 모두 펼쳐 보기") }
     }
 }
@@ -526,7 +533,8 @@ private fun MarketHalves(kind: String?, vm: RecipeListViewModel, which: Halves) 
  * 2.0.0 [RVM-31] 총괄 HQ-42: 장터's one row of chips, at the top all the way down the list. In order: what a search found elsewhere (only
  * while there is a word to find), the three 구간 (the one picked first, fixed at the start), what this 구간 has
  * (테마: 넘겨 보기 · 분위기, 탭별 작품: 탭, 도구: 종류 with ✦ 프로 · 무료), 정렬 as one chip with its menu, then 꾸미기·기능 / 쓰는 화면 /
- * ✦ 프로 · 무료, 다른 유형도 and 작게 보기. Every chip is one tap as before but 정렬 (two: open, pick).
+ * ✦ 프로 · 무료, 다른 유형도 and 작게 보기. Every chip is one tap as before but 정렬 (two: open its menu and pick, or ▾ and pick
+ * one of the six laid out in the open row).
  */
 @Composable
 private fun MarketChips(
@@ -543,7 +551,7 @@ private fun MarketChips(
     // The 구간 picked leads the row and stays in sight (지금 자리); picking 탭별 작품 or 도구 slides the rest of the row to that 구간's own
     // chips (탭 · 종류), the end of the 구간 before them showing that there is more to the left. 테마 keeps the other two in sight.
     ChipRows(fold = true, focus = if (finding || !(featured || tools)) null else if (featured) "tab" else "tool", spot = spot,
-        lead = { MarketHalves(state.kind, vm, Halves.PICKED) }) {
+        lead = { MarketHalves(state.kind, vm, Halves.PICKED) }) { open ->
         // 1.39 [MKD-03] '값 칸'·'위젯'·'프로'처럼 장치·종류 이름으로 찾으면 그 칩으로 가는 칩을 맨 앞에. PC D14·D10: 다른 칸에 있는 것도 맨 앞에.
         hint?.let { (k, name) -> androidx.compose.material3.AssistChip(onClick = { vm.query(""); vm.kind(k) }, label = { Text("$name 보기") }) }
         elsewhere.forEach { (h, n) ->
@@ -590,7 +598,9 @@ private fun MarketChips(
             }
         }
         divider()
-        SortChip(state.tab) { vm.tab(it) }
+        // Opened with ▾ the six orders lie in the open row, so another order is two taps from the closed row (▾, pick) as from the menu.
+        if (open) RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
+        else SortChip(state.tab) { vm.tab(it) }
         divider()
         when {
             // 1.39 [MKC-01] 탭별 작품: 꾸미기(모양)·기능(틀·묶음·보기 방식). Both kinds in one work show under either. [MKC-04] ✦ 프로 기능 먼저.
