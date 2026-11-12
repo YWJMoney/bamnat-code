@@ -1114,7 +1114,8 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 }
 /* 편 화면(폴드 안쪽 가로 ~840–1023px): 문의 목록과 열린 문의를 나란히(두 칸), 오른쪽 칸 아래로 사람 패널. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
 @media (min-width:720px) and (max-width:1023.98px){
-  .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  /* 2.0.0 [RVQ-28] 글자 200%에서는 두 칸이 너무 좁아 카드 안 줄이 한 자씩 섰어요(자동 순환 › 연결 점검): 칸이 22rem보다 좁으면 한 칸으로. */
+  .flow-cols{grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));align-items:start}
   .tiles.core{--cols:4}
 }
 @media (min-width:840px) and (max-width:1023.98px){

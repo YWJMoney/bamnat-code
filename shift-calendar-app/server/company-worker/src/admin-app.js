@@ -671,7 +671,8 @@ function adminApp(L, BUILD, M) {
     const form = S.submitting?.isConnected ? S.submitting : dialog.open ? dialog.querySelector("form") : null;
     const field = e.data?.field;
     const box = field && form ? form.querySelector(`[name="${CSS.escape(field)}"]`) : null;
-    if (box) fieldError(box, text, false);
+    // 2.0.0 [RVQ-29] 좁은 폭·큰 글자에서는 창이 길어 그 칸과 이유가 아래로 가려졌어요: 그 칸이 보이게 굴려요(초점은 그대로).
+    if (box) { fieldError(box, text, false); box.scrollIntoView?.({ block: "nearest" }); }
     if (!e.quiet) toast(text);
   }
 
