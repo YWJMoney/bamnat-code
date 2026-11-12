@@ -245,6 +245,8 @@ fun DayLedgerSection(
  */
 @Composable
 fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
+    // 2.0.0 [RVK-21]·HQ-23 (총괄 #457 리뷰): at large text a long shop name and its date line were cut to '…'; there they wrap to two lines.
+    val lines = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f) 2 else 1
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -253,7 +255,7 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
         else CategoryAvatar(e.category, size = 36.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = lines, overflow = TextOverflow.Ellipsis)
             val source = when (e.source) {
                 MoneySource.NOTIFICATION -> "알림에서"
                 MoneySource.PASTE -> "문자에서"
@@ -271,7 +273,7 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
                     e.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = lines, overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(8.dp))
