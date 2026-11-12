@@ -161,7 +161,7 @@ class DailyWidgetsTest {
      */
     @Test fun aLockScreenWidgetShowsNoMemo() {
         val today = LocalDate.of(2026, 11, 12)
-        val data = WidgetData(today, java.time.DayOfWeek.MONDAY, com.bamnat.core.schedule.ScheduleResolver(emptyList(), null, emptyList()),
+        val data = WidgetData(today, java.time.DayOfWeek.MONDAY, com.bamnat.core.schedule.ScheduleResolver(emptyList(), emptyList(), emptyList()),
             hasPattern = false, nextAlarm = null, memos = mapOf(today to "병원 예약 3시"), memoDays = setOf(today))
         assertEquals("병원 예약 3시", data.forPlace(lockScreen = false).memos[today])
         assertTrue(data.forPlace(lockScreen = true).memos.isEmpty())
