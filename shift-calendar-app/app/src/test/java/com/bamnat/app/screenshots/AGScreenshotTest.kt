@@ -211,7 +211,7 @@ class AGScreenshotTest : ScreenshotBase() {
         assertTrue(gone(NUDGE, exact = true))
         assertTrue("invite.friend" in com.bamnat.app.inbox.Inbox.get(app).muted.value)
         // The next day, the calendar opened again: still not there.
-        Today.fix(Today.instant().plus(Duration.ofDays(1)))
+        Today.fix(SHOT_TIME.plusDays(1))
         tab(1, wide = false); tab(0, wide = false)
         settle()
         assertTrue(gone(NUDGE, exact = true))
