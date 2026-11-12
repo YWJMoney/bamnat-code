@@ -1,6 +1,7 @@
 package com.bamnat.app.data
 
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.Dispatchers
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.toEntity
@@ -69,12 +70,21 @@ class MemoRepository(
 
     /** [NOTE-01][MEMO-01] Dates with a memo that shows on calendar [calendar]; [NOTE-05] each day a repeating one comes back on. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = memosFor(calendar).flatMapLatest { list ->
-        shiftLookup(list, calendar).map { shifts ->
-            val (from, to) = repeatWindow()
-            MemoRepeat.expand(list, from, to, shifts).mapNotNullTo(HashSet()) { it.date }
-        }
-    }.flowOn(kotlinx.coroutines.Dispatchers.Default) // [SPD-25] 1.31 I4: four years of repeats, never on the main thread
+    fun datesWithMemos(calendar: String): Flow<Set<LocalDate>> = datesWithMemos(calendar, kotlinx.coroutines.flow.flowOf(repeatWindow()))
+
+    /**
+     * 2.0.0 [RVI-53] (검토 MEMO-19) The same, between the days [window] gives (the calendar: around the month on screen), and worked
+     * out again only when a memo's day, repeat or skips change: a save of its words (every 400ms as one types) leaves the dots alone.
+     */
+    fun datesWithMemos(calendar: String, window: Flow<Pair<LocalDate, LocalDate>>): Flow<Set<LocalDate>> =
+        memosFor(calendar).distinctUntilChanged { a, b -> a.map(::dotKey) == b.map(::dotKey) }.flatMapLatest { list ->
+            combine(shiftLookup(list, calendar), window.distinctUntilChanged()) { shifts, (from, to) ->
+                MemoRepeat.expand(list, from, to, shifts).mapNotNullTo(HashSet()) { it.date }
+            }
+        }.flowOn(kotlinx.coroutines.Dispatchers.Default) // [SPD-25] 1.31 I4: repeats laid out never on the main thread
+
+    /** What puts a memo's dots on the calendar. */
+    private fun dotKey(m: Memo) = listOf(m.id, m.date, m.repeat, m.skips, m.reminder?.at, m.deletedAtMillis)
 
     /**
      * [EASE-22] For the 근무마다 memos among [list] seen on calendar [calendar]: the schedule of the calendar each goes by
@@ -117,6 +127,9 @@ class MemoRepository(
     val lastDeleted: StateFlow<DeletedMemos?> = _lastDeleted.asStateFlow()
 
     suspend fun get(id: Long): Memo? = dao.get(id)?.toModel()
+
+    /** 2.0.0 [RVI-53] (검토 MEMO-19) Memo [id] as it changes, read alone; null once it is gone. */
+    fun observe(id: Long): Flow<Memo?> = dao.observe(id).map { it?.toModel() }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     /** Inserts or updates; returns the memo as stored (with id and timestamps). */
     suspend fun save(memo: Memo): Memo {

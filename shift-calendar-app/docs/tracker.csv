@@ -2477,3 +2477,57 @@ RVG-11,"검토 WORK-21: 내 정보 › 회사 '회사 찾기'가 밤낮 소식(�
 RVG-12,"검토 BOSS-69: 설정 찾기 결과 제목이 유형 말로 안 바뀌고 가게 '영업시간·정기휴무'가 색인에 없음, '급여 대장' 바로 가기가 장부 탭(PC 재현) → '근무 주기'·'근무 종류와 시간' 제목을 유형 말로, 유형 말 열쇠말 더함, 급여 대장은 직원 인건비 카드의 대장으로",2.0.0,진행 중,,"ui/settings/SettingsSearch.kt inWords, core guide/FeatureRegistry.kt boss.payroll, ui/work/ShopTools.kt FocusedTool payroll"
 RVG-13,"검토 TYPE-12: 위젯 이름(오늘 근무·주간 근무·월간 근무표·다음 근무까지)과 '다음 근무' 위젯 글이 유형과 무관, 오늘 모든 조가 조 없는 유형에 빈 안내 → 이름을 '오늘·이번 주·한 달 달력·다음 일정까지'로, 위젯 글은 유형 말",2.0.0,진행 중,,"res/values/strings.xml, widget/DailyWidgets.kt countdownWord, ui/settings/HelpFaq.kt"
 RVG-14,"검토 UIX-08: 어두운 모드로 바뀌면 열린 돈 적기 창이 닫힘(PC 일부 재현) → configChanges에 uiMode·fontScale을 더해 창이 그대로",2.0.0,진행 중,,"AndroidManifest.xml MainActivity configChanges"
+RVI-01,"검토 ALM-05: 알림 번호가 겹쳐 서로 지움(7314·7316·7209·나갈 돈 알림 넓은 범위) → 번호를 하나씩, 나갈 돈은 태그로 구별",2.0.0,진행 중,,"alarm/Notifications.kt SLEEP_AUTO_ID·SLEEP_REC_ID, tax/YearEndWeekly.kt, money/JobReminderScheduler.kt"
+RVI-02,"검토 ALM-07·U03-14: 알람 서비스를 못 띄울 때의 예비 알림이 소리 한 번, 단추 없음 → 답할 때까지 울림(INSISTENT), 끄기·다시 울림 단추",2.0.0,진행 중,,"alarm/Notifications.kt postFallbackAlarm, alarm/Receivers.kt"
+RVI-03,검토 ALM-17: '일어났나요?' 다시 울림·깨우는 구간 일찍 울림이 서비스 시작 실패를 안 잡음 → 실패하면 예비 알림,2.0.0,진행 중,,"alarm/AlarmService.kt ringOrFallback, sleep/SmartWake.kt, alarm/WakeCheck.kt"
+RVI-04,검토 ALM-16: 바깥에 열린 SystemEventReceiver가 신호를 확인하지 않음 → 아는 시스템 신호만 받음,2.0.0,진행 중,,alarm/Receivers.kt SystemEventReceiver
+RVI-05,검토 ALM-20·I03a-03: 위젯을 새로 그릴 때마다 같은 데이터를 종류 수+1번 읽음 → 함께 그리는 위젯이 한 번 읽은 것을 나눠 씀,2.0.0,진행 중,,"widget/WidgetData.kt shared reading, widget/WidgetRefresher.kt"
+RVI-06,검토 ALM-13: 반투명·꾸민 위젯이 어두운 모드 전환을 못 따라감 → 밝은·어두운 색을 함께 두고 모드가 바뀌면 다시 그림,2.0.0,진행 중,,"BamnatApp.kt onConfigurationChanged, widget/WidgetLookTheme.kt"
+RVI-07,검토 ALM-19·U03-07: 위젯 작은 단추(+1건·오늘 1공·지금 퇴근)가 40dp·위젯 글자 크기를 안 따름 → 같은 알약 단추,2.0.0,진행 중,,"widget/DailyWidgets.kt WidgetPillButton, FieldWidgetActions.kt, LeaveNowAction.kt"
+RVI-08,검토 ALM-09·T03-06·I03a-04: 워치의 '오늘' 값(알람 끄기·출근 단추·이번 주 시간·잘 시간)이 자정 뒤 옛 값 → 받은 날짜와 견줘 워치가 오늘을 판단,2.0.0,진행 중,,"core work/WatchDays.kt, wear MainActivity·ShiftTileService·WeekHoursComplicationService, widget/WidgetRefresher.kt"
+RVI-09,"검토 ALM-15·T03-01·T03-09: 워치 '이번 주 n시간/52시간'·'다음 근무'·'오늘 근무' 이름이 가게·현장·투자에도 → 유형 말(영업·일정), 52시간 줄 숨김",2.0.0,진행 중,,"app watch/WatchSync.kt, core WatchDays.kt, wear ComplicationDays·NextShiftComplicationService·WatchText·strings.xml"
+RVI-10,검토 U03-10: 워치 돈 적기 금액 맞추기 번거로움 → 자주·최근 금액 칩,2.0.0,진행 중,,"wear MainActivity.kt, core WatchDays.kt, app WatchSync.kt"
+RVI-11,"검토 ALM-10·ALM-23·U03-09·U03-11: 워치 한 번 눌러 오늘 알람이 꺼지고 결과·되돌리기 없음, 휴대폰에 못 보내도 말 없음 → 두 번 눌러 끄기, '껐어요 · 되돌리기', 못 보내면 알림, 울림 화면 다시 울림 크게·끄기 길게",2.0.0,진행 중,,"wear ShiftTileService TileAlarmOff, Ring.kt, MainActivity.kt, WatchAlarmNotice.kt; app WatchSync.kt"
+RVI-12,검토 ALM-22: 워치 진동이 알람 용도로 표시되지 않음 → USAGE_ALARM,2.0.0,진행 중,,wear Ring.kt
+RVI-13,검토 ALM-11·T03-04: 자정 뒤 시작하는 야간(00:00~08:00)은 퇴근 뒤 잠 계획·퇴근길·브리핑이 없음 → 그 밤도 야간으로,2.0.0,진행 중,,core sleep/SleepSchedule.kt; SleepScheduleTest
+RVI-14,"검토 ALM-12·ALM-26: 헬스 커넥트 안내 말이 사실과 다름('아무것도 쓰지 않고'), 기록 판이 잠 끝 시각 → 읽기·쓰기 각각 켰을 때만이라고, 판은 쓴 시각",2.0.0,진행 중,,"sleep/HealthRationaleActivity.kt, sleep/HealthSleep.kt"
+RVI-15,"검토 ALM-24: 소리 사건 기록이 끝없이 쌓이고 한 줄씩 저장·전체 다시 셈 → 한 번에 저장, 보관 날 지나면 지움, 오는 대로 셈",2.0.0,진행 중,,"data/SleepRepository.kt, sleep/SleepRecordService.kt, db SleepTables.kt"
+RVI-16,"검토 ALM-14: 소리 측정이 마이크 오류에 쉬지 않고 돌고 못 열어도 말 없음 → 쉬었다 다시, 계속 실패하면 멈추고 한 번 알림",2.0.0,진행 중,,"sleep/SleepRecordService.kt, alarm/Notifications.kt"
+RVI-17,"검토 ALM-08·T03-05·PC-15: 낮잠 단추가 그날 근무의 다음날 알람을 지움, 낮잠 알람 이름이 '야간 근무 알람' → 낮잠은 따로 울리고 이름은 '낮잠'",2.0.0,진행 중,,core sleep/NapAlarm.kt·DayEntry.kt·AlarmCodec.kt; alarm/AlarmScheduler·AlarmService·RingRequest·RingingScreen·NapWake; NapAlarmTest
+RVI-18,검토 T03-08: 가게·현장·투자는 오늘 위젯·워치에 잘 시간 줄이 없음 → 다음 알람과 목표로 한 줄,2.0.0,진행 중,,"core sleep/RestLine.kt, widget/WidgetData·Widgets.kt, watch/WatchSync.kt"
+RVI-19,"검토 MEMO-03·04·30: 반복 메모를 미뤄 자정 넘어 끝내면 다음 날 몫이 끝남, 다른 곳에서 끝내도 알림·미루기가 남음 → 미루기마다 그날을 같이 두고, 끝내면 알림·미루기를 지움",2.0.0,진행 중,,"core memo/MemoSchedule.kt; memo/MemoNoticeQueue·MemoScheduleAlarm.kt, AppContainer.kt; MemoReviewFixTest"
+RVI-20,검토 MEMO-10·T07a-01: '야간마다 01:00'이 근무 시작 21시간 전에 울림 → 근무 시작 뒤 그 시각,2.0.0,진행 중,,core memo/MemoRepeat.kt·MemoSchedule.kt; MemoReviewFixTest
+RVI-21,검토 MEMO-15: 평일 반복을 주말에 시작하면 그 주말에도 보이고 울림 → 다음 평일부터,2.0.0,진행 중,,"core memo/MemoRepeat.kt·MemoSchedule.kt; MemoReviewFixTest, QuickTaskTest"
+RVI-22,검토 MEMO-02: 알람이 늦거나 폰이 꺼져 있던 사이 일정이 알림 없이 사라짐 → 그 사이 것을 모아 알림,2.0.0,진행 중,,"core memo/MemoSchedule.kt between; memo/MemoScheduleAlarm.kt, alarm/Receivers.kt; MemoReviewFixTest"
+RVI-23,"검토 MEMO-14·T07a-02: '1~6시'를 늘 오후로 읽고 오전·오후 칩이 없음 → 기상·출근 같은 말은 오전, 맨 시각은 칩",2.0.0,진행 중,,core memo/MemoSchedule.kt findTime MORNING; MemoReviewFixTest
+RVI-24,검토 MEMO-20: 날짜 말을 낱말 안에서도 읽어 제목이 깨짐 → 낱말 경계에서만,2.0.0,진행 중,,core memo/MemoSchedule.kt RELATIVE; MemoReviewFixTest
+RVI-25,검토 MEMO-07: '내일 3시'를 메모를 열 때마다 오늘 기준으로 다시 읽음 → 만든 날 기준,2.0.0,진행 중,,core memo/MemoSchedule.kt; MemoReviewFixTest
+RVI-26,"검토 MEMO-13·I07aa-06: 쓸어 지운 알림이 되살아나고 알림을 눌러도 그 메모가 안 열림 → 지운 알림 기억, 누르면 그 메모",2.0.0,진행 중,,"memo/MemoNoticeQueue.kt, memo/MemoScheduleAlarm.kt, AndroidManifest.xml"
+RVI-27,검토 ALM-21: 메모 알림 단추 번호가 메모 번호 % 1024라 드물게 다른 메모를 끝냄 → 메모 번호를 그대로,2.0.0,진행 중,,"memo/MemoScheduleAlarm.kt, memo/MemoLaterActivity.kt"
+RVI-28,검토 MEMO-05·T07a-03: 근무표·보는 달력을 바꿔도 근무마다·쉬는 날마다 알람을 다시 안 잡음 → 근무가 바뀌면 다시 잡음,2.0.0,진행 중,,AppContainer.kt keep(schedule)
+RVI-29,검토 MEMO-06: 번호 목록 자동 정리가 날짜처럼 쓴 줄을 조용히 바꿈 → 날짜·시각 꼴은 번호로 안 봄,2.0.0,진행 중,,core memo/ListContinuation.kt; MemoReviewFixTest
+RVI-30,"검토 MEMO-08·09: 메모 날짜를 옮겨도 일정 날짜는 그대로, 18dp X 한 번에 날짜와 반복이 함께 지워짐 → 일정도 함께 옮김, 지우기 전에 무엇이 지워지는지 한 번 물음",2.0.0,진행 중,,"ui/memo/MemoViewModels.kt, MemoEditorScreen.kt, MemoScheduleParts.kt"
+RVI-31,검토 MEMO-17: 일정 창에 스크롤이 없어 작은 화면·큰 글자에서 잘림 → 스크롤,2.0.0,진행 중,,ui/memo/MemoScheduleParts.kt
+RVI-32,"검토 MEMO-12: 펼친 폴드에서 편집기가 통째로 저장해 목록에서 바꾼 것을 되돌림, 밖에서 휴지통에 넣어도 편집기가 다시 살림 → 바뀐 칸만 저장, 칸마다 합침, 휴지통이면 닫음",2.0.0,진행 중,,core memo/MemoOutside.kt; ui/memo/MemoViewModels.kt·MemoEditorScreen.kt; MemoOutsideTest
+RVI-33,"검토 MEMO-18: 메모 → 가계부 넣기 저장이 창과 함께 취소될 수 있음 → 앱 범위에서 저장, 실패를 말함",2.0.0,진행 중,,ui/memo/MemoToLedger.kt
+RVI-34,검토 T07a-08: 가게가 아닌 유형에서 '카드·현금' 칸이 들어온 돈으로 골라짐 → 가게만 들어온 돈,2.0.0,진행 중,,ui/memo/MemoToLedger.kt incomeLabel
+RVI-35,"검토 MEMO-16·I07aa-04: 체크리스트 기본기(엔터로 새 줄, 빈 줄 지우기로 위와 합치기, 끌어 순서, 여러 줄 붙여넣기)",2.0.0,진행 중,,"core memo/ChecklistEdit.kt; ui/memo/MemoEditorScreen.kt ChecklistEditor, MemoViewModels.kt; ChecklistEditTest"
+RVI-36,"검토 ALM-01·PC-26(믿음): 통화 중 알람이 소리 없이 기다리다 끊은 뒤 울림, 어떤 통화로 얼마나 기다리는지 모름 → 통화 끝나면 바로, 메신저 통화는 3분, 전화는 30분 한도, 알림 줄과 기록",2.0.0,진행 중,,"alarm/CallHold.kt, alarm/AlarmService.kt; CallHoldTest"
+RVI-37,"검토 ALM-02·PC-07: 홈 위젯이 자정 뒤 약 4분 어제, 근무를 바꾸면 늦게 바뀜 → 정확한 자정 알람, 근무 바뀌면 알람 계획보다 위젯 먼저, 걸린 시간 기록",2.0.0,진행 중,,"widget/WidgetRefresher.kt, AppContainer.kt"
+RVI-38,검토 PC-16: 설정 첫 화면 '알람 준비 완료'와 설정 › 알람 '고칠 것 1가지'가 함께 뜸 → 같은 점검 하나,2.0.0,진행 중,,"ui/settings/SettingsScreen.kt alarmReadyProblems, ui/diag alarmChecks"
+RVI-39,검토 MEMO-24: 틀의 반복 값을 검사하지 않고 숫자로 바꿈 → 아는 반복만,2.0.0,진행 중,,core memo/MemoTemplate.kt
+RVI-40,"검토 ALM-25·T03-07: '7일 중 N일 적음', 투자·가게의 '근무별 평균', 낮잠 '○시에 깨워요' 문구 → 유형 말·바른 말",2.0.0,진행 중,,"ui/sleep/SleepScreen.kt, core sleep/SleepHead.kt·NapAlarm.kt, ui/calendar/CalendarViewModel.kt; NapAlarmTest"
+RVI-41,검토 PC-10: 칸 창 빠른 메모에 시각을 넣으면 하루 이야기엔 보이는데 알림이 안 걸림 → 그 시각 알림을 바로 걸고 되돌리기,2.0.0,진행 중,,ui/calendar/CalendarViewModel.kt addQuickMemo
+RVI-42,검토 MEMO-21·T07a-06: '야간 뒤' 기준이 두 곳에서 다름(03~05시 퇴근이면 아침 9시를 잡고 스스로 경고) → 같은 잠 계산 하나,2.0.0,진행 중,,"core memo/ShiftClash.kt sleptUntil, ShiftMemoTime.kt offTime; ShiftClashSnoozeTest"
+RVI-43,"검토 MEMO-22: 한 줄 창 바깥을 누르면 적던 글이 사라지고 저장 전에 '적었어요' → 적은 글이 있으면 안 닫힘, 저장 뒤에 말함, 긴 제목은 잘라 본문으로",2.0.0,진행 중,,memo/QuickTaskActivity.kt; QuickTaskTest
+RVI-44,"검토 MEMO-23: 있던 메모를 다 지우고 닫으면 휴지통 없이 사라짐 → 휴지통으로, 되돌리기",2.0.0,진행 중,,ui/memo/MemoViewModels.kt hadWords
+RVI-45,"검토 MEMO-25: 카메라로 찍는 동안 앱이 내려가면 사진을 잃음 → 찍을 곳을 저장해 두고 돌아오면 넣음, '사진 넣는 중…'",2.0.0,진행 중,,ui/memo/MemoPhotoBlocks.kt
+RVI-46,검토 MEMO-26: 새 메모를 쓰다 프로세스가 죽으면 빈 편집기 → 저장된 메모 번호를 기억,2.0.0,진행 중,,ui/AppRoot.kt SAVED_MEMO_ID
+RVI-47,"검토 MEMO-27: 편집기 본문 길이 한도 없음 → 10만 자, 넘으면 한 줄로 알림",2.0.0,진행 중,,ui/memo/MemoViewModels.kt MAX_BODY
+RVI-48,"검토 MEMO-29: 작은 터치 영역(카드 ⋮ 32dp, 색 동그라미, 40dp X)과 빠진 설명 → 48dp, 색 이름 읽기",2.0.0,진행 중,,"ui/memo/MemoListScreen.kt, MemoEditorScreen.kt ColorRow, memo/QuickTaskActivity.kt"
+RVI-49,검토 MEMO-11·I07aa-05: 메모 탭이 반복 메모를 펼치지 않아 다음이 언제인지 모름 → 카드·편집기에 '다음 11/14(금) 08:00',2.0.0,진행 중,,"ui/memo/MemoScheduleParts.kt scheduleLine, MemoListScreen.kt, MemoEditorScreen.kt, MemoViewModels.kt dayOf"
+RVI-50,검토 ALM-18·U03-13: 알람 화면을 돌리거나 접으면 미션 진행이 처음으로 → 진행·문제를 저장,2.0.0,진행 중,,"alarm/AlarmActivity.kt, alarm/MissionScreen.kt MathProblemSaver"
+RVI-51,"검토 ALM-26: 작은 것 묶음(알람이 백색 소음 위에 울림, 방해 금지 '우선순위만'에 알람 없음, 시간대 바꾸면 건너뛰기가 틀림, 꺼진 사이 놓친 알람 말 없음, 소리 잠시 뺏기면 소음이 계속) → 각각 고침",2.0.0,진행 중,,"alarm/AlarmService.kt, AlarmSoon.kt, Notifications.kt, Receivers.kt, sleep/NoiseService.kt, ui/diag/DiagnosticsScreen.kt"
+RVI-52,"검토 MEMO-28: 같은 것을 여러 이름으로('알람 맞추기'·'일정으로 넣기'·'일정 빼기', '복사하기'·'복제'가 같은 그림) → '알림 넣기'·'알림 시각'·'알림 빼기', 울리는 것만 '알람', '복제'는 '하나 더 만들기'",2.0.0,진행 중,,"ui/memo/MemoScheduleParts.kt, MemoEditorScreen.kt, MemoListScreen.kt; AKScreenshotTest·MemoStatsScreenshotTest"
+RVI-53,"검토 MEMO-19: 글자를 칠 때마다 메모 전체를 여러 곳에서 다시 읽고 계산 → 편집기는 그 메모 한 줄만, 일정 제안은 읽는 것이 바뀔 때만·메인 밖·최신만, 근무 이름 정규식은 한 번, 할 일 위젯은 보이는 것이 바뀔 때만, 달력 점은 보이는 달 둘레만·날짜·반복이 바뀔 때만",2.0.0,진행 중,,"db Daos.kt MemoDao.observe, data/MemoRepository.kt observe·datesWithMemos(window), ui/memo/MemoViewModels.kt, core memo/ShiftMemoTime.kt·TaskList.looks, AppContainer.kt taskwidget, ui/calendar/CalendarViewModel.kt memoDates; ReviewIGapTest"
+RVI-54,"검토 ALM-27: 시험 빈틈(알림 번호 겹침, 위젯 연달아 두 번 바꿈, 자정 뒤 시작 야간 잠 계획, 워치 다음 날 값, 통화 붙잡기 상한 뒤) → 시험 더함",2.0.0,진행 중,,"core ReviewIGapTest; app alarm/NotificationIdsTest, widget/WidgetTwoChangesTest, alarm/CallHoldTest, NapAlarmTest"

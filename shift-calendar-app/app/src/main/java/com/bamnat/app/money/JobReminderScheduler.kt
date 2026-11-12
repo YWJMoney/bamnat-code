@@ -32,7 +32,10 @@ import com.bamnat.core.time.Today
  */
 object JobReminderScheduler {
     private const val REQUEST = 3101
-    private const val NOTIFICATION_BASE = 7100
+    /** 2.0.0 [RVI-01] One number each, the alert told apart by its tag: a hash added to 7100 reached
+     * 8379 and could take the number of 자는 중, 오늘 근무 or a memo notice. */
+    internal const val JOB_ID = 7100
+    internal const val MONEY_ID = 7101
     const val EXTRA_AT = "at"
 
     private fun isJob(a: MoneyAlerts.Alert) = a.key.startsWith("job-")
@@ -87,7 +90,7 @@ object JobReminderScheduler {
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.MONEY, 3102))
             .setAutoCancel(true)
             .build()
-        Notifications.post(context, NOTIFICATION_BASE + (alert.key.hashCode() and 0x3ff), notification)
+        Notifications.post(context, JOB_ID, notification, tag = "job:${alert.key}")
     }
 
     /** One notice per kind ("오늘 나갈 돈 2건"), the lines under it. */
@@ -101,7 +104,7 @@ object JobReminderScheduler {
                 .setContentIntent(Notifications.open(context, NoticeLinks.Target.MONEY, 3103))
                 .setAutoCancel(true)
             if (list.size > 1) builder.setStyle(NotificationCompat.InboxStyle().also { s -> list.forEach { s.addLine(it.text) } })
-            Notifications.post(context, NOTIFICATION_BASE + 0x400 + (title.hashCode() and 0xff), builder.build())
+            Notifications.post(context, MONEY_ID, builder.build(), tag = "money:$title")
         }
     }
 }

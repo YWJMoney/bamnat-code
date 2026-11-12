@@ -118,7 +118,8 @@ class SleepRepository(
     fun events(from: LocalDateTime, to: LocalDateTime): Flow<List<com.bamnat.app.data.db.SleepEventEntity>> =
         dao.observeEvents(millis(from), millis(to))
 
-    suspend fun addEvents(events: List<com.bamnat.app.data.db.SleepEventEntity>) = events.forEach { dao.insertEvent(it) }
+    /** 2.0.0 [RVI-15] (검토 ALM-24) In one write: a restless night was thousands of single inserts. */
+    suspend fun addEvents(events: List<com.bamnat.app.data.db.SleepEventEntity>) { if (events.isNotEmpty()) dao.insertEvents(events) }
 
     /** 보관: a clip the user kept stays past the 7 days. */
     suspend fun keepClip(id: Long, keep: Boolean) = dao.keepEvent(id, keep)
@@ -137,6 +138,9 @@ class SleepRepository(
      */
     suspend fun sweepClips(dir: java.io.File, days: Long): Int {
         var gone = dropOldClips(days) { name -> java.io.File(dir, name).delete() }
+        // 2.0.0 [RVI-15] (검토 ALM-24) The sounds themselves (times and kinds) go after [EVENT_KEEP_DAYS], as far back as the sleep
+        // screen reads them (the 120 days of 전후 비교), so the database and its backup stop growing night after night.
+        runCatching { dao.pruneEvents(clock() - EVENT_KEEP_DAYS * DAY_MILLIS) }
         val files = dir.listFiles()?.filter { it.isFile } ?: return gone
         if (files.isEmpty()) return gone
         val known = dao.allEvents().mapNotNull { it.file }.toSet()
@@ -168,8 +172,10 @@ class SleepRepository(
     private fun millis(t: LocalDateTime): Long = t.atZone(zone()).toInstant().toEpochMilli()
     private fun local(millis: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), zone())
 
-    private companion object {
-        const val DAY_MILLIS = 24 * 60 * 60 * 1000L
-        const val STALE_MILLIS = SleepDebt.MAX_SLEEP_MINUTES * 60 * 1000L
+    companion object {
+        private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+        private const val STALE_MILLIS = SleepDebt.MAX_SLEEP_MINUTES * 60 * 1000L
+        /** 2.0.0 [RVI-15] How long a night's sounds stay (the sleep screen's longest look back). */
+        const val EVENT_KEEP_DAYS = 120L
     }
 }

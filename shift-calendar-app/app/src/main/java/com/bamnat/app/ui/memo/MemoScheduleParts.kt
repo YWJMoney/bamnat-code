@@ -6,6 +6,8 @@ import android.os.Build
 import android.provider.Settings
 import com.bamnat.core.memo.MemoRepeat.Kind
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -68,6 +70,17 @@ internal fun scheduleText(at: LocalDateTime): String {
     return "${Fmt.dayTitle(at.toLocalDate())} $time"
 }
 
+/**
+ * 2.0.0 [RVI-49] (검토 MEMO-11) A schedule as its chip and card say it: once "11월 13일 (금) 오전 9:00"; repeating "매일 오전 9:00 · 다음
+ * 11/13" (it said the first day, 11/1, as if it were past). [next]: its next time, where it can be worked out.
+ */
+internal fun scheduleLine(memo: com.bamnat.core.memo.Memo, r: MemoReminder, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null }): String {
+    val again = com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName).takeIf { memo.date != null && it.isNotEmpty() }
+        ?: return scheduleText(r.at)
+    val time = scheduleText(r.at).substringAfter(") ")
+    return "$again $time" + (next?.let { " · 다음 ${it.monthValue}/${it.dayOfMonth}" } ?: "")
+}
+
 /** [SCHED-01] How a schedule is brought up, in a few words: "알람·알림", "알람", "알림". */
 internal fun scheduleWays(r: MemoReminder): String = when {
     r.ring && r.notify -> "울리는 알람·알림 메시지"
@@ -77,17 +90,13 @@ internal fun scheduleWays(r: MemoReminder): String = when {
 
 /** [SCHED-01] The schedule in the editor's chip row: tap to change, ✕ to make it a plain memo again. */
 @Composable
-internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: () -> Unit) {
+internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, @Suppress("UNUSED_PARAMETER") onClear: () -> Unit = {}, line: String? = null) {
+    // 2.0.0 [RVI-30] (검토 MEMO-09·28·29) One name for it, '알림' ('알람' only when it rings); no 18dp X, '알림 빼기' is in the window.
     AssistChip(
         onClick = onOpen,
-        label = { Text(reminder?.let { "${scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알람 맞추기") },
+        label = { Text(reminder?.let { "${line ?: scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알림 넣기") },
         leadingIcon = {
             Icon(if (reminder?.ring == true) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(18.dp))
-        },
-        trailingIcon = if (reminder != null) {
-            { Icon(Icons.Filled.Close, "일정 빼기", Modifier.size(18.dp).clickable(role = Role.Button) { onClear() }) }
-        } else {
-            null
         },
     )
 }
@@ -106,7 +115,7 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Filled.EventAvailable, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Text(
-                    if (changing) "일정 시각을 ‘${found.phrase}’로 바꿀까요?" else "‘${found.phrase}’, 일정으로 넣을까요?",
+                    if (changing) "알림 시각을 ‘${found.phrase}’로 바꿀까요?" else "‘${found.phrase}’, 알림으로 넣을까요?",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
@@ -120,7 +129,7 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
             clash?.let { ClashLine(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요") }
-                FilledTonalButton(onClick = onAccept) { Text(if (changing) "바꾸기" else "일정으로 넣기") }
+                FilledTonalButton(onClick = onAccept) { Text(if (changing) "바꾸기" else "알림 넣기") }
             }
         }
     }
@@ -139,6 +148,8 @@ internal fun ScheduleDialog(
     onDismiss: () -> Unit,
     onSave: (MemoReminder) -> Unit,
     now: () -> LocalDateTime = Today::dateTime,
+    /** 2.0.0 [RVI-30] '알림 빼기' for a memo that has one; null leaves it out. */
+    onClear: (() -> Unit)? = null,
     /** [MEMO-05] 1.27 AK: '근무에 맞춰' — the next of each shift ahead (출근 1시간 전) and the next day off. */
     shiftTimes: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion> = emptyList(),
     /** 1.39 [CAL2-20] What a time runs into on the calendar (근무, 야간 뒤 잘 시간), read again as the time changes. */
@@ -174,9 +185,10 @@ internal fun ScheduleDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.EventAvailable, null) },
-        title = { Text(if (current == null) "일정으로 넣기" else "일정 바꾸기") },
+        title = { Text(if (current == null) "알림 시각" else "알림 시각 바꾸기") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // 2.0.0 [RVI-31] (검토 MEMO-17) Scrolls: on a folded phone or at 200% text the ways and the 허용하기 button were cut off.
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date)) }
                     OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") ")) }
@@ -225,7 +237,12 @@ internal fun ScheduleDialog(
                 onSave(MemoReminder(at, ring, notify))
             }, enabled = ahead && (ring || notify)) { Text(if ((notify || ring) && !notificationsOk) "알림 켜고 저장" else "저장") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = {
+            Row {
+                if (current != null && onClear != null) TextButton(onClick = onClear) { Text("알림 빼기") }
+                TextButton(onClick = onDismiss) { Text("취소") }
+            }
+        },
     )
 
     if (pickDate) {

@@ -267,6 +267,8 @@ class AlarmService : Service() {
         ringStartedAt = Today.millis()
         _ringing.value = ring
         if (!ring.recheck && !BootAlarms.isLocked(this)) WakeCheck.cancel(this)
+        // 2.0.0 [RVI-51] (검토 ALM-26) The alarm ends the night: 잠드는 소리 stops (it went on under the alarm and after it).
+        if (com.bamnat.app.sleep.NoiseService.playing.value != null) runCatching { com.bamnat.app.sleep.NoiseService.stop(this) }
         // [ALRM-22] A call already on: nothing sounds or opens over it; the ring starts when the call ends.
         inCallNow = callActive()
         _inCall.value = inCallNow
@@ -299,6 +301,7 @@ class AlarmService : Service() {
         listenForPowerButton()
         if (!inCallNow) handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
         handler.postDelayed(callWatch, CALL_CHECK_MILLIS)
+        listenForCallEnd()
     }
 
     /** Stops a ring nobody answered after 자동으로 끄기. */
@@ -316,41 +319,59 @@ class AlarmService : Service() {
      */
     private val callWatch = object : Runnable {
         override fun run() {
-            val ring = _ringing.value ?: return
-            val now = callActive()
-            if (now != inCallNow) {
-                inCallNow = now
-                _inCall.value = now
-                if (now) holdForCall(ring) else resumeAfterCall(ring)
-            }
+            if (_ringing.value == null) return
+            checkCall()
             handler.postDelayed(this, CALL_CHECK_MILLIS)
         }
     }
 
-    /** [EASE-21] When the hold for a call began, 0 when not holding; how long it has held decides whether it still may. */
-    private var holdSince = 0L
+    /** Holds for a call that began, or rings again when it ended or its hold ran out. */
+    private fun checkCall() {
+        val ring = _ringing.value ?: return
+        val now = callActive()
+        if (now != inCallNow) {
+            inCallNow = now
+            _inCall.value = now
+            if (now) holdForCall(ring) else resumeAfterCall(ring)
+        }
+    }
 
     /**
-     * 1.39.1 [R391-02] (검토 ALM-01) The call mode whose hold already ran out, null when none has. Once the 3·30분 cap
-     * is used, the same mode does not hold the alarm again: before, the next check 1.5초 later saw 'a new call' and held
-     * another 3분, so a phone left in 메신저 통화 mode rang 1.5초 every 3분. A new mode (a real call after it) or the
-     * phone back to normal starts afresh.
+     * [EASE-21] 1.39.1 [R391-02] 2.0.0 [RVI-36] (검토 PC-26·ALM-01) The wait for a call: how long it has held, and a mode whose
+     * hold ran out does not hold again ([CallHold]).
      */
-    private var holdSpentMode: Int? = null
+    private val callHold = CallHold()
+
+    /** 2.0.0 [RVI-36] Android 12+: the call's end is heard at once, not at the next 1.5초 check. */
+    private var modeListener: Any? = null
+
+    private fun listenForCallEnd() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S || modeListener != null) return
+        val audio = getSystemService(AudioManager::class.java) ?: return
+        val listener = AudioManager.OnModeChangedListener { handler.post { checkCall() } }
+        runCatching { audio.addOnModeChangedListener(mainExecutor, listener) }.onSuccess { modeListener = listener }
+    }
+
+    private fun stopListeningForCallEnd() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) return
+        val listener = modeListener as? AudioManager.OnModeChangedListener ?: return
+        runCatching { getSystemService(AudioManager::class.java)?.removeOnModeChangedListener(listener) }
+        modeListener = null
+    }
 
     private fun callActive(): Boolean {
         val mode = runCatching { getSystemService(AudioManager::class.java)?.mode }.getOrNull() ?: return false
-        if (holdSpentMode != null && holdSpentMode != mode) holdSpentMode = null
-        if (holdSpentMode == mode) return false
-        val now = Today.millis()
-        val held = if (holdSince == 0L) 0L else now - holdSince
-        val holds = holdsForCall(mode, held)
-        holdSince = if (holds) (if (holdSince == 0L) now else holdSince) else 0L
-        if (!holds && held > 0 && mode != AudioManager.MODE_NORMAL) {
-            holdSpentMode = mode
-            if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_call_hold_end", "mode=$mode held=${held / 1000}s")
+        val step = callHold.check(mode, Today.millis())
+        when (step.outcome) {
+            CallHold.Outcome.CAPPED -> {
+                android.util.Log.i(CallHold.TAG, "call hold ran out: mode=$mode held=${step.heldMillis / 1000}s, ringing")
+                if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_call_hold_end", "mode=$mode held=${step.heldMillis / 1000}s")
+            }
+            CallHold.Outcome.ENDED -> android.util.Log.i(CallHold.TAG, "call ended: held=${step.heldMillis / 1000}s, ringing")
+            CallHold.Outcome.HOLD -> if (step.heldMillis == 0L) android.util.Log.i(CallHold.TAG, "call: holding the alarm, mode=$mode")
+            CallHold.Outcome.FREE -> Unit
         }
-        return holds
+        return step.holds
     }
 
     private fun holdForCall(ring: RingRequest) {
@@ -479,7 +500,7 @@ class AlarmService : Service() {
         else builder.setFullScreenIntent(fullScreen, true)
         return builder
             .setContentTitle(ring.title)
-            .setContentText(if (inCallNow) "통화 중이라 잠시 멈췄어요 · 통화가 끝나면 다시 울려요" else describe(ring))
+            .setContentText(if (inCallNow) CallHold.line(callHold.holding) else describe(ring))
             .setContentIntent(fullScreen)
             // [ALRM-22] A ringing alarm stands out at the top of whatever is on screen.
             .setColorized(true)
@@ -634,8 +655,8 @@ class AlarmService : Service() {
         _since.value = null
         _stage.value = 0
         inCallNow = false
-        holdSince = 0L
-        holdSpentMode = null
+        callHold.reset()
+        stopListeningForCallEnd()
         _inCall.value = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)
@@ -648,6 +669,7 @@ class AlarmService : Service() {
         runCatching { com.bamnat.app.data.DiscoverStore.get(this).alarmEnded() }
         onScreen = null
         stopOutputs()
+        stopListeningForCallEnd()
         _ringing.value = null
         _since.value = null
         _stage.value = 0
@@ -834,6 +856,9 @@ class AlarmService : Service() {
                 ring.label == AlarmScheduler.TEST_NAME -> if (ring.isSnooze) "시험 알람 · 다시 울림" else "소리와 화면이 잘 나오는지 보는 알람이에요"
                 ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
                 ring.label != null -> "$start 일정"
+                // 2.0.0 [RVI-17] (검토 ALM-08 PC 재확인) Not '20:00 근무 시작 · 이 날 알람'.
+                ring.nap && ring.isSnooze -> "낮잠 · 다시 울림"
+                ring.nap -> "낮잠에서 깰 시간이에요"
                 ring.isSnooze && work -> "$start $noun 시작 · 다시 울림"
                 ring.isSnooze -> "다시 울림"
                 ring.custom && work -> "$start $noun 시작 · 이 날 알람"
@@ -859,6 +884,19 @@ class AlarmService : Service() {
         fun start(context: Context, ring: RingRequest) {
             val intent = ring.putInto(Intent(context, AlarmService::class.java).setAction(ACTION_START))
             ContextCompat.startForegroundService(context, intent)
+        }
+
+        /**
+         * 2.0.0 [RVI-03] Rings [ring], or, when Android refuses to start the ringing service from here
+         * (in the background without an exact alarm), the loud fallback notice rings instead. 일어났나요?
+         * and the smart-wake early ring called [start] bare and were lost on that refusal.
+         */
+        fun startOrFallback(context: Context, ring: RingRequest): Boolean = try {
+            start(context, ring)
+            true
+        } catch (e: RuntimeException) {
+            Notifications.postFallbackAlarm(context, ring)
+            false
         }
 
         fun dismiss(context: Context, how: String? = null) {

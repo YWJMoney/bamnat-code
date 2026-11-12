@@ -576,7 +576,8 @@ class ScheduleRepository(
     suspend fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) =
         updateDay(date) { entry ->
             entry.copy(
-                customAlarms = alarms?.distinctBy { it.time }?.sortedBy { it.time }?.take(MAX_ALARMS),
+                // 2.0.0 [RVI-17] By when each rings: 전날 23:00 and 23:00, or 다음날 14:00 and 14:00, are two alarms.
+                customAlarms = alarms?.distinctBy { it.at(date) }?.sortedBy { it.at(date) }?.take(MAX_ALARMS),
                 // Choosing alarms for a day means the user wants that day to ring.
                 alarmSkipped = if (alarms != null) false else entry.alarmSkipped,
             )

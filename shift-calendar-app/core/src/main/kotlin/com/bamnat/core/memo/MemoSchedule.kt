@@ -23,29 +23,51 @@ data class MemoReminder(val at: LocalDateTime, val ring: Boolean, val notify: Bo
  */
 object MemoTime {
     data class Found(val at: LocalDateTime, val phrase: String) {
-        /** Stored when the user answers, so the same time is not asked about again. */
-        val key: String get() = at.toString()
+        /**
+         * Stored when the user answers, so the same time is not asked about again. 2.0.0 [RVI-25] (검토 MEMO-07) The words read, not
+         * the time they make today: '메모로 둘게요' on '3시' was asked again every day.
+         */
+        val key: String get() = "w:$phrase"
+
+        /** Whether [asked] (the stored answer) answers this one: by its words, or by its time as answers were kept before 2.0.0. */
+        fun answeredBy(asked: String?): Boolean = asked == key || asked == at.toString()
     }
 
     private const val MARKS = "오전|오후|아침|낮|저녁|밤|새벽"
     private val HOUR = Regex("($MARKS)?\\s*(\\d{1,2})\\s*시(?!간)(?:\\s*(\\d{1,2})\\s*분|\\s*(반))?")
     private val CLOCK = Regex("(?:($MARKS)\\s*)?(?<![\\d:])(\\d{1,2})\\s*:\\s*([0-5]\\d)(?![\\d:])")
-    private val RELATIVE = Regex("(오늘|내일|모레|글피)")
+    /**
+     * 2.0.0 [RVI-24] (검토 MEMO-20) Not inside a word: '내일배움카드', '오늘의집', '사내일정' are no dates. After it only a space, a sign,
+     * a 오전·오후 word or a particle that ends there ('내일은', '오늘까지', '오늘의 할 일').
+     */
+    private val RELATIVE = Regex("(?<![가-힣])(오늘|내일|모레|글피)(?=$|[^가-힣]|(?:은|는|에|에는|까지|부터|도|의|중|이나)(?:$|[^가-힣])|$MARKS)")
+    private val RELATIVE_WORDS = setOf("오늘", "내일", "모레", "글피")
+    /** 2.0.0 [RVI-24] "3일 뒤", "10일 후": days from today (it was this month's 3일). */
+    private val DAYS_LATER = Regex("(?<![\\d월/])(\\d{1,3})\\s*일\\s*(뒤|후)")
     private val MONTH_DAY = Regex("(?<!\\d)(\\d{1,2})\\s*월\\s*(\\d{1,2})\\s*일")
-    private val SLASH = Regex("(?<![\\d/])(\\d{1,2})\\s*/\\s*(\\d{1,2})(?![\\d/])")
+    /** 2.0.0 [RVI-24] "1/2씩" is a share, not 1월 2일. */
+    private val SLASH = Regex("(?<![\\d/])(\\d{1,2})\\s*/\\s*(\\d{1,2})(?![\\d/])(?!\\s*씩)")
     private val WEEKDAY = Regex("(다다음\\s*주|다음\\s*주|담주|이번\\s*주)?\\s*([월화수목금토일])요일")
-    private val DAY_ONLY = Regex("(?<![\\d월/])(\\d{1,2})\\s*일(?!\\s*(?:간|동안|째))")
+    private val DAY_ONLY = Regex("(?<![\\d월/])(\\d{1,2})\\s*일(?!\\s*(?:간|동안|째|뒤|후|전|만에))")
 
-    fun find(memo: Memo, now: LocalDateTime): Found? = find(
+    /**
+     * 2.0.0 [RVI-25] (검토 MEMO-07) '내일·모레·N일 뒤' are read from the memo's own day, or the day it was written, not from today:
+     * "내일 3시 치과" written on 11/11 is 11/12 when opened on 11/12 too.
+     */
+    fun find(memo: Memo, now: LocalDateTime, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Found? = find(
         (sequenceOf(memo.title, memo.text) + memo.checklist.asSequence().map { it.text }).joinToString("\n"),
         now,
         memo.date,
+        from = memo.date ?: memo.createdAtMillis.takeIf { it > 0 }?.let { java.time.Instant.ofEpochMilli(it).atZone(zone).toLocalDate() },
     )
 
-    /** The first clock time in [text] on its date: a date written next to it, else [memoDate], else the next such time. */
-    fun find(text: String, now: LocalDateTime, memoDate: LocalDate? = null): Found? {
+    /**
+     * The first clock time in [text] on its date: a date written next to it, else [memoDate], else the next such time.
+     * [from]: the day relative words count from (today when null).
+     */
+    fun find(text: String, now: LocalDateTime, memoDate: LocalDate? = null, from: LocalDate? = null): Found? {
         val time = findTime(text) ?: return null
-        val written = findDate(text, now.toLocalDate())
+        val written = findDate(text, from ?: now.toLocalDate())
         val at = when {
             written != null -> written.first.atTime(time.time).plusDays(time.nextDay)
             memoDate != null -> memoDate.atTime(time.time).plusDays(time.nextDay)
@@ -101,28 +123,48 @@ object MemoTime {
         val written = findDate(first, today)
         val time = findTime(first)
         val again = REPEAT_WORDS.find(first)?.value
-        val unmarked = time != null && Regex(MARKS).find(time.phrase) == null && time.time.hour in 1..11 && time.nextDay == 0L
+        // 2.0.0 [RVI-23] (검토 MEMO-14) '6시 기상' was 18:00 with no 오전·오후 chip: every 1~11시 without a mark is a guess to flip.
+        val unmarked = time?.bareHour != null && time.nextDay == 0L
+        val morning = MORNING.containsMatchIn(first)
         val at = time?.let { t ->
-            // PC 7차: [half] picked in the window says which 8시 it is.
-            val clock = if (unmarked && half == Half.PM) t.time.plusHours(12) else t.time
+            val am = t.bareHour?.let { LocalTime.of(it % 12, t.time.minute) }
+            // PC 7차: [half] picked in the window says which 8시 it is; '기상·출근' says the morning.
+            val clock = when {
+                am == null -> t.time
+                half == Half.PM -> am.plusHours(12)
+                half == Half.AM || morning -> am
+                else -> t.time
+            }
             val base = (written?.first ?: today).atTime(clock).plusDays(t.nextDay)
             when {
                 written != null || base.isAfter(now) -> base
                 // "8시 약 먹기" typed at 19시 with no 오전·저녁: tonight's 8시, not tomorrow morning's. Not for a repeat (PC 7차: '평일마다
                 // 8시 출근 도장' at 13:10 read 20:00): a 8시 every day is the morning one unless 오후 is picked.
-                unmarked && half == null && again == null && base.plusHours(12).isAfter(now) -> base.plusHours(12)
+                unmarked && half == null && !morning && again == null && clock.hour < 12 && base.plusHours(12).isAfter(now) -> base.plusHours(12)
                 else -> base.plusDays(1)
             }
         }
         var title = first
-        listOfNotNull(again, written?.second, time?.phrase).forEach { title = title.replaceFirst(it, " ") }
+        listOfNotNull(again, written?.second, time?.phrase).forEach { phrase ->
+            // 2.0.0 [RVI-24] '사내일정 내일 3시': the 내일 read, not the one inside 사내일정.
+            title = if (phrase in RELATIVE_WORDS) RELATIVE.replaceFirst(title, " ") else title.replaceFirst(phrase, " ")
+        }
         title = title.replace(Regex("\\s+"), " ").trim().trim(',', '.', '·', '-').trim()
         if (title.isEmpty()) title = first
         val read = listOfNotNull(again, written?.second, time?.phrase).joinToString(" ")
-        return Line(title, rest, written?.first ?: at?.toLocalDate(), at, read, again?.let(::repeatOf) ?: MemoRepeat.Kind.NONE, unmarked)
+        val kind = again?.let(::repeatOf) ?: MemoRepeat.Kind.NONE
+        // 2.0.0 [RVI-21] (검토 MEMO-15) '평일마다 8시' typed on a Saturday starts on Monday, not Sunday 08:00.
+        val skip = if (kind == MemoRepeat.Kind.WEEKDAYS) { d: LocalDate -> generateSequence(d) { it.plusDays(1) }.first(MemoRepeat::isWeekday) } else { d: LocalDate -> d }
+        val day = (written?.first ?: at?.toLocalDate())?.let(skip)
+        val moved = at?.let { a -> day?.let { a.plusDays(java.time.temporal.ChronoUnit.DAYS.between(a.toLocalDate(), it)) } ?: a }
+        return Line(title, rest, day, moved, read, kind, unmarked)
     }
 
-    private class Time(val time: LocalTime, val nextDay: Long, val phrase: String)
+    /** [bareHour]: the hour as written when it had no 오전·오후 and is 1~11 (2.0.0 [RVI-23]), else null. */
+    private class Time(val time: LocalTime, val nextDay: Long, val phrase: String, val bareHour: Int? = null)
+
+    /** 2.0.0 [RVI-23] (검토 MEMO-14) Words that put a bare 1~11시 in the morning. */
+    private val MORNING = Regex("기상|일어나|출근|아침|조식|등교|새벽")
 
     private fun findTime(text: String): Time? {
         val clock = CLOCK.find(text)
@@ -139,7 +181,7 @@ object MemoTime {
         if (minute > 59) return null
         // A written 24-hour clock ("14:30") is taken as written; "3시" with no mark is most often the afternoon.
         val (hour24, nextDay) = hourOf(mark, h, guessAfternoon = first === hour) ?: return null
-        return Time(LocalTime.of(hour24, minute), nextDay, first.value.trim())
+        return Time(LocalTime.of(hour24, minute), nextDay, first.value.trim(), bareHour = h.takeIf { mark == null && it in 1..11 })
     }
 
     /** The hour on a 24-hour clock, and 1 when it falls after midnight ("밤 12시"). */
@@ -163,6 +205,10 @@ object MemoTime {
         RELATIVE.find(text)?.let { m ->
             val days = when (m.value) { "오늘" -> 0L; "내일" -> 1L; "모레" -> 2L; else -> 3L }
             return today.plusDays(days) to m.value
+        }
+        DAYS_LATER.find(text)?.let { m ->
+            val n = m.groupValues[1].toLong()
+            if (n in 1..366) return today.plusDays(n) to m.value.trim()
         }
         (MONTH_DAY.find(text) ?: SLASH.find(text))?.let { m ->
             val date = dateOf(today.year, m.groupValues[1].toInt(), m.groupValues[2].toInt()) ?: return@let
@@ -206,16 +252,26 @@ object MemoSchedules {
     /** How far ahead a repeating schedule is looked for: a year and a lunar month. */
     const val LOOK_DAYS = 400
 
-    /** The earliest schedule strictly after [after], or null. */
+    /**
+     * 2.0.0 [RVI-19] (검토 MEMO-03·04) A memo due at a minute and the day it is due for: a repeating memo's 미루기 past midnight is still
+     * its first day's, and a '야간마다 01:00' is its night's ([RVI-20]). 끝내기 finishes that day.
+     */
+    data class Due(val memo: Memo, val day: LocalDate)
+
+    /**
+     * The earliest schedule strictly after [after], or null. [extraDays]: the day each 미루기 in [extra] was for, so one put off
+     * from a day finished since (in the app, on the widget) rings no more (2.0.0 [RVI-19], 검토 MEMO-04).
+     */
     fun next(
         memos: List<Memo>, after: LocalDateTime,
         shiftsOf: (Memo) -> MemoRepeat.ShiftOf? = { null }, extra: Map<Long, LocalDateTime> = emptyMap(),
+        extraDays: Map<Long, LocalDate> = emptyMap(),
     ): LocalDateTime? {
         // 1.39.1 [R391-06] (검토 MEMO-01) A finished one-off memo rings no more, nor does its 미룬 time.
         val live = memos.filter { !it.inTrash && !finished(it) }
         val own = live.mapNotNull { nextOf(it, after, shiftsOf(it)) }
-        val ids = live.mapTo(HashSet()) { it.id }
-        val put = extra.filter { (id, at) -> id in ids && at.isAfter(after) }.values
+        val byId = live.associateBy { it.id }
+        val put = extra.filter { (id, at) -> byId[id]?.let { m -> !putOffDone(m, extraDays[id]) } == true && at.isAfter(after) }.values
         return (own + put).minOrNull()
     }
 
@@ -224,10 +280,11 @@ object MemoSchedules {
         val r = memo.reminder ?: return null
         if (!repeats(memo)) return r.at.takeIf { it.isAfter(after) && !finished(memo) }
         val time = r.at.toLocalTime().withSecond(0).withNano(0)
-        var day = maxOf(after.toLocalDate(), r.at.toLocalDate())
+        // A day early: a night's 01:00 rings on the calendar day after its night (2.0.0 [RVI-20]).
+        var day = maxOf(after.toLocalDate().minusDays(1), r.at.toLocalDate())
         repeat(LOOK_DAYS) {
             if (MemoRepeat.occursOn(memo, day, shifts) && !memo.isDoneOn(day)) {
-                val at = day.atTime(time)
+                val at = ringsAt(memo, day, time, shifts)
                 if (at.isAfter(after)) return at
             }
             day = day.plusDays(1)
@@ -235,13 +292,57 @@ object MemoSchedules {
         return null
     }
 
+    /**
+     * 2.0.0 [RVI-20] (검토 MEMO-10) When a repeating [memo] at [time] rings for its [day]: on that day, except a 근무마다 time inside a
+     * night's hours after midnight (22:00~07:00, 01:00), which is that night's, the calendar day after.
+     */
+    fun ringsAt(memo: Memo, day: LocalDate, time: LocalTime, shifts: MemoRepeat.ShiftOf?): LocalDateTime {
+        if (MemoRepeat.kindOf(memo.repeat) == MemoRepeat.Kind.SHIFT) {
+            val (start, end) = shifts?.hours(day) ?: return day.atTime(time)
+            if (!end.isAfter(start) && time.isBefore(start) && !time.isAfter(end)) return day.plusDays(1).atTime(time)
+        }
+        return day.atTime(time)
+    }
+
     /** The memos whose schedule is at [at], to the minute. */
     fun dueAt(
         memos: List<Memo>, at: LocalDateTime,
         shiftsOf: (Memo) -> MemoRepeat.ShiftOf? = { null }, extra: Map<Long, LocalDateTime> = emptyMap(),
-    ): List<Memo> {
+        extraDays: Map<Long, LocalDate> = emptyMap(),
+    ): List<Memo> = dueOn(memos, at, shiftsOf, extra, extraDays).map { it.memo }
+
+    /** 2.0.0 [RVI-19] [dueAt] with the day each is due for. */
+    fun dueOn(
+        memos: List<Memo>, at: LocalDateTime,
+        shiftsOf: (Memo) -> MemoRepeat.ShiftOf? = { null }, extra: Map<Long, LocalDateTime> = emptyMap(),
+        extraDays: Map<Long, LocalDate> = emptyMap(),
+    ): List<Due> {
         val minute = at.withSecond(0).withNano(0)
-        return memos.filter { !it.inTrash && !finished(it) && (isAt(it, minute, shiftsOf(it)) || extra[it.id]?.withSecond(0)?.withNano(0) == minute) }
+        return memos.filter { !it.inTrash && !finished(it) }.mapNotNull { m ->
+            dayAt(m, minute, shiftsOf(m))?.let { Due(m, it) }
+                ?: extra[m.id]?.takeIf { it.withSecond(0).withNano(0) == minute && !putOffDone(m, extraDays[m.id]) }
+                    ?.let { Due(m, extraDays[m.id] ?: m.reminder?.at?.toLocalDate()?.takeUnless { repeats(m) } ?: minute.toLocalDate()) }
+        }
+    }
+
+    /**
+     * 2.0.0 [RVI-22] (검토 MEMO-02) Every schedule after [from] up to [to] (a late alarm, the phone off, the clock moved on), each
+     * with its time, earliest first; at most [max].
+     */
+    fun between(
+        memos: List<Memo>, from: LocalDateTime, to: LocalDateTime,
+        shiftsOf: (Memo) -> MemoRepeat.ShiftOf? = { null }, extra: Map<Long, LocalDateTime> = emptyMap(),
+        extraDays: Map<Long, LocalDate> = emptyMap(), max: Int = 50,
+    ): List<Pair<LocalDateTime, Due>> {
+        val out = ArrayList<Pair<LocalDateTime, Due>>()
+        var t = from
+        while (out.size < max) {
+            val at = next(memos, t, shiftsOf, extra, extraDays) ?: break
+            if (at.isAfter(to)) break
+            dueOn(memos, at, shiftsOf, extra, extraDays).forEach { out += at to it }
+            t = at
+        }
+        return out.take(max)
     }
 
     private fun repeats(memo: Memo) = memo.date != null && MemoRepeat.kindOf(memo.repeat) != MemoRepeat.Kind.NONE
@@ -249,12 +350,19 @@ object MemoSchedules {
     /** 1.39.1 [R391-06] A one-off memo marked 끝냄 (a repeating one is finished day by day, see [Memo.isDoneOn]). */
     private fun finished(memo: Memo) = !repeats(memo) && memo.doneAtMillis != null
 
-    private fun isAt(memo: Memo, minute: LocalDateTime, shifts: MemoRepeat.ShiftOf?): Boolean {
-        val r = memo.reminder ?: return false
+    /** 2.0.0 [RVI-19] A repeating memo's 미루기 for [day], finished since: it rings no more. */
+    private fun putOffDone(memo: Memo, day: LocalDate?): Boolean = repeats(memo) && day != null && memo.isDoneOn(day)
+
+    /** The day [memo] is due for at [minute] by its own schedule, or null. */
+    private fun dayAt(memo: Memo, minute: LocalDateTime, shifts: MemoRepeat.ShiftOf?): LocalDate? {
+        val r = memo.reminder ?: return null
         val own = r.at.withSecond(0).withNano(0)
-        if (!repeats(memo)) return own == minute
-        val day = minute.toLocalDate()
-        return own.toLocalTime() == minute.toLocalTime() && !day.isBefore(own.toLocalDate()) &&
-            MemoRepeat.occursOn(memo, day, shifts) && !memo.isDoneOn(day)
+        if (!repeats(memo)) return own.toLocalDate().takeIf { own == minute }
+        if (own.toLocalTime() != minute.toLocalTime()) return null
+        // Its day, or (2.0.0 [RVI-20]) the night before for a 근무마다 time after midnight.
+        return listOf(minute.toLocalDate(), minute.toLocalDate().minusDays(1)).firstOrNull { day ->
+            !day.isBefore(own.toLocalDate()) && MemoRepeat.occursOn(memo, day, shifts) && !memo.isDoneOn(day) &&
+                ringsAt(memo, day, own.toLocalTime(), shifts) == minute
+        }
     }
 }

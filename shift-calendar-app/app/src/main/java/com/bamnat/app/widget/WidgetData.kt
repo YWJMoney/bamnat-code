@@ -1,5 +1,6 @@
 package com.bamnat.app.widget
 
+import kotlinx.coroutines.sync.withLock
 import android.content.Context
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.rules
@@ -34,6 +35,8 @@ class WidgetData(
     val nextAlarm: PlannedAlarm?,
     /** [SLP-14] 오늘의 흐름, while the user keeps it on: its short line goes on the today widget. */
     val flow: TodayFlow.Card? = null,
+    /** 2.0.0 [RVI-18] (검토 T03-08) 가게·현장·투자's sleep line in its place: no 근무표 to plan by, the next alarm and the target. */
+    val restLine: com.bamnat.core.sleep.RestLine.Line? = null,
     /** [CAL-11] What the user's calendar is about, so each widget speaks of shifts, jobs or sales. */
     val focus: CalendarFocus = CalendarFocus.SHIFTS,
     val style: WorkStyle? = null,
@@ -97,7 +100,32 @@ class WidgetData(
     }
 
     companion object {
-        suspend fun load(context: Context): WidgetData {
+        /**
+         * 2.0.0 [RVI-05] (검토 ALM-20) One reading for every widget redrawn together: a change redrew five widgets, each read the
+         * whole calendar, the 조 and the pay period again, and the refresher read it once more (6 readings → 1). [invalidate] at the
+         * start of each [WidgetRefresher.refresh] makes the next reading a new one, so a change is never drawn from an older reading.
+         */
+        private val sharedLock = kotlinx.coroutines.sync.Mutex()
+        /** The reading of this refresh, for whose container, and until when (System.nanoTime) it is shared. */
+        @Volatile private var shared: Triple<Any, Long, WidgetData>? = null
+        @Volatile private var cycleUntil = 0L
+        private const val SHARED_NANOS = 2_000_000_000L
+
+        /** A refresh starts: the widgets it redraws share the next reading for 2 seconds; outside a refresh every load reads anew. */
+        fun invalidate() {
+            shared = null
+            cycleUntil = System.nanoTime() + SHARED_NANOS
+        }
+
+        suspend fun load(context: Context): WidgetData = sharedLock.withLock {
+            val owner = context.appContainer
+            val now = System.nanoTime()
+            if (now - cycleUntil >= 0) return@withLock read(context)
+            shared?.takeIf { (who, _, _) -> who === owner }?.third?.let { return@withLock it }
+            read(context).also { shared = Triple(owner, now, it) }
+        }
+
+        private suspend fun read(context: Context): WidgetData {
             val container = context.appContainer
             val snapshot = container.scheduleRepository.snapshot.first()
             val settings = container.settingsRepository.current
@@ -111,6 +139,11 @@ class WidgetData(
                         snapshot.shiftTypes).adjust(settings.rules),
                     since = container.recordsTrash.styleChangedOn(PersonalCalendar.MAIN))
             }
+            val nextAlarm = if (settings.alarmsEnabled) AlarmPlanner.nextAlarm(snapshot.resolver, now) else null
+            val restLine = if (!settings.sleepTips || settings.workStyle?.usesPayEngine != false) null else runCatching {
+                com.bamnat.core.sleep.RestLine.of(now, SleepMerge.merge(container.sleepRepository.recent(days = 2).first(), container.healthSleep.sleeps.value),
+                    nextAlarm?.triggerAt, settings.alarmsEnabled, settings.sleepTargetMinutes)
+            }.getOrNull()
             // [CAL-11] Field and shop work fill the widgets from the money book, read on the phone only.
             val book = if (focus == CalendarFocus.SHIFTS || focus == CalendarFocus.INVEST) null else container.calendars.money(PersonalCalendar.MAIN).book.first()
             val today = now.toLocalDate()
@@ -157,7 +190,8 @@ class WidgetData(
                 weekStart = settings.weekStart,
                 resolver = snapshot.resolver,
                 hasPattern = !snapshot.isEmpty,
-                nextAlarm = if (settings.alarmsEnabled) AlarmPlanner.nextAlarm(snapshot.resolver, now) else null,
+                nextAlarm = nextAlarm,
+                restLine = restLine,
                 flow = flow,
                 focus = focus,
                 style = settings.workStyle,

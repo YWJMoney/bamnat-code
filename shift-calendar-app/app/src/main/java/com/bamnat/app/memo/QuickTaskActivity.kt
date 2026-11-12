@@ -72,12 +72,15 @@ class QuickTaskActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val shared = if (intent?.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty().take(MAX_CHARS) else ""
+        val sharedAll = if (intent?.action == Intent.ACTION_SEND) intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty() else ""
+        val shared = sharedAll.take(MAX_CHARS)
         setContent {
             BamnatTheme {
-                QuickTask(shared, onClose = { finish() }, onSave = { memo, more ->
+                QuickTask(shared, cut = sharedAll.length > MAX_CHARS, onClose = { finish() }, onSave = { memo, more, done ->
                     lifecycleScope.launch {
                         val saved = runCatching { appContainer.memoRepository.save(memo) }.isSuccess
+                        // 2.0.0 [RVI-43] (검토 MEMO-22) '적었어요' only once it is saved.
+                        done(saved)
                         if (saved) runCatching { TaskWidget.redraw(applicationContext) }
                         // 하나 더 keeps the window open and says it in the window; a failed save is always said.
                         if (!more || !saved) {
@@ -111,16 +114,28 @@ internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDat
     // 1.39 [TASK-44] A repeating one ('매일 오전 9시') keeps its time even when today's is gone: it rings on its next day.
     val repeat = date?.let { com.bamnat.core.memo.MemoRepeat.code(line.repeat, it) }.orEmpty()
     val at = line.at?.let { a -> date?.atTime(a.toLocalTime()) }?.takeIf { ring && (it.isAfter(now) || repeat.isNotEmpty()) }
+    // 2.0.0 [RVI-43] (검토 MEMO-22) A long shared line with no line break: its first words are the title, the rest the body.
+    val (title, more) = quickTitle(line.title)
     return Memo(
         date = date,
-        title = line.title,
-        body = line.rest,
+        title = title,
+        body = listOfNotNull(more, line.rest.ifBlank { null }).joinToString("\n"),
         repeat = repeat,
         reminder = at?.let { MemoReminder(it, ring = false, notify = true) },
         // A line with no day stays at hand as a pinned note, as on the widget's 고정 list.
         pinned = date == null,
     )
 }
+
+/** 2.0.0 [RVI-43] [title] cut to [QUICK_TITLE] characters at a space where it can be, and what is left (null when nothing is). */
+internal fun quickTitle(title: String): Pair<String, String?> {
+    if (title.length <= QUICK_TITLE) return title to null
+    val space = title.lastIndexOf(' ', QUICK_TITLE).takeIf { it >= QUICK_TITLE / 2 } ?: QUICK_TITLE
+    return title.substring(0, space).trim() to title.substring(space).trim().ifEmpty { null }
+}
+
+/** A title longer than this reads as a whole message, not a thing to do. */
+internal const val QUICK_TITLE = 40
 
 /** PC 7차: the 오전·오후 the window shows for an unmarked time, so 적기 saves the one shown even if the clock moves on meanwhile. */
 private fun MemoTime.Line.half(): MemoTime.Half? = at?.takeIf { unmarked }?.let { if (it.hour >= 12) MemoTime.Half.PM else MemoTime.Half.AM }
@@ -160,8 +175,9 @@ internal fun quickSay(line: MemoTime.Line, day: QuickDay, ring: Boolean, now: Lo
     return "제목: ${line.title} · $where"
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boolean) -> Unit) {
+internal fun QuickTask(shared: String, cut: Boolean = false, onClose: () -> Unit, onSave: (Memo, Boolean, (Boolean) -> Unit) -> Unit) {
     var text by rememberSaveable { mutableStateOf(shared) }
     // 1.39 [TASK-39] 적고 하나 더 (두 앱 실사용 2차: 할 일 앱의 넣기 창은 열린 채 남아 이어 적어요): what was just written, said in the window.
     var written by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
@@ -175,10 +191,11 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val dayFmt = remember { DateTimeFormatter.ofPattern("M/d (E)", Locale.KOREAN) }
-    // The dim around the card closes it, as a sheet does.
+    // The dim around the card closes it, as a sheet does. 2.0.0 [RVI-43] (검토 MEMO-22) Not while something is written: a brush past
+    // the card lost the line; 닫기 is right there.
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { if (text.isBlank()) onClose() })
             .semantics { contentDescription = "닫기" },
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -200,6 +217,11 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
                     placeholder = { Text("예: 내일 저녁 6시 치과") },
                     maxLines = 4,
                 )
+                // 2.0.0 [RVI-43] What was cut is said, not dropped silently.
+                if (cut || text.length >= QuickTaskActivity.MAX_CHARS) {
+                    Text("너무 길어 앞 ${"%,d".format(QuickTaskActivity.MAX_CHARS)}자만 넣었어요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 // Where it goes, said back with the chips as they stand (PC c0ca3d9f: the line kept the read day after '오늘' was picked,
                 // and a time already gone today was dropped without a word).
                 if (text.isNotBlank()) {
@@ -209,7 +231,8 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
                         color = if (quickPast(line, day, now)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 2.0.0 [RVI-48] (검토 MEMO-29) The chips wrap to a second line instead of sliding past the edge (큰 글자, 접은 폭).
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // PC 7차: 오전·오후 first, where the guess is (the line above says which was read).
                     line.at?.takeIf { line.unmarked }?.let { at ->
                         val pm = at.hour >= 12
@@ -230,14 +253,15 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo, Boole
                     TextButton(onClick = onClose) { Text("닫기") }
                     TextButton(onClick = {
                         quickMemo(text, day, ring, Today.dateTime(), half ?: line.half())?.let { memo ->
-                            onSave(memo, true)
-                            written = written + memo.title
+                            val was = text
                             text = ""; day = QuickDay.READ; ring = true
                             runCatching { focus.requestFocus() }
+                            // 2.0.0 [RVI-43] Said once saved; a line that could not be saved comes back to the box.
+                            onSave(memo, true) { ok -> if (ok) written = written + memo.title else if (text.isEmpty()) text = was }
                         }
                     }, enabled = text.isNotBlank()) { Text("적고 하나 더") }
                     Spacer(Modifier.height(1.dp).padding(horizontal = 4.dp))
-                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime(), half ?: line.half())?.let { onSave(it, false) } }, enabled = text.isNotBlank()) { Text("적기") }
+                    Button(onClick = { quickMemo(text, day, ring, Today.dateTime(), half ?: line.half())?.let { onSave(it, false) {} } }, enabled = text.isNotBlank()) { Text("적기") }
                 }
             }
         }

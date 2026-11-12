@@ -57,7 +57,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.AddToPhotos
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -781,8 +781,9 @@ internal fun MemoCard(
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     if (!selecting) {
-                        IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.MoreVert, "메모 메뉴", Modifier.size(18.dp))
+                        // 2.0.0 [RVI-48] (검토 MEMO-29) The card's ⋮ is 48dp to the finger (it was 32dp).
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Filled.MoreVert, "메모 메뉴", Modifier.size(20.dp))
                         }
                     } else {
                         Spacer(Modifier.width(10.dp))
@@ -810,9 +811,10 @@ internal fun MemoCard(
                 leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
                 onClick = { menu = false; actions.onTogglePin(memo) },
             )
+            // 2.0.0 [RVI-52] (검토 MEMO-28) The same words as the editor's menu.
             DropdownMenuItem(
-                text = { Text("복제") },
-                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
+                text = { Text("하나 더 만들기") },
+                leadingIcon = { Icon(Icons.Outlined.AddToPhotos, null) },
                 onClick = { menu = false; actions.onDuplicate(memo) },
             )
             // [TAB-03] PC 확인 bad7d860: '가계부에 넣기' from a card's menu too.
@@ -935,7 +937,8 @@ private fun Footer(memo: Memo, showDate: Boolean) {
             ) {
                 Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp))
                 Spacer(Modifier.width(3.dp))
-                Text(scheduleText(reminder.at), style = MaterialTheme.typography.labelSmall)
+                // 2.0.0 [RVI-49] (검토 MEMO-11) "매일 오전 9:00", not the first day as if it were past.
+                Text(scheduleLine(memo, reminder), style = MaterialTheme.typography.labelSmall)
             }
         }
         for (tag in tags.take(3)) {

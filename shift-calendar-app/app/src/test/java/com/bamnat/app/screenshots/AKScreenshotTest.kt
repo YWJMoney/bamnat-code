@@ -195,7 +195,7 @@ class AKScreenshotTest : ScreenshotBase() {
     @Test fun memoScheduleShiftChips() = shoot("1170_ak_memo_shift_chips", FOLDED, memos {
         tapText("일반 메모", prefix = true, scrolls = 0)
         tapText("다음 야간 때 열쇠 챙기기")
-        tapText("일정으로 넣기", exact = true)
+        tapText("알림 넣기", exact = true)
         assertTrue(appears("근무에 맞춰", exact = true))
         tapText("저장", exact = true)
         back() // the editor saves as it closes

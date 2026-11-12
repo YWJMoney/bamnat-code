@@ -101,7 +101,7 @@ internal fun FieldWidgetButtons(data: WidgetData) {
         rules.platformMode -> data.platformDay?.let { p ->
             Spacer(GlanceModifier.height(6.dp))
             Row(GlanceModifier.fillMaxWidth()) {
-                Text("오늘 ${p.today}건 · 이번 주 ${p.week}건", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                Text("오늘 ${p.today}건 · 이번 주 ${p.week}건", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
                     maxLines = 1, modifier = GlanceModifier.defaultWeight())
                 if (!fieldButtonsOff()) {
                     Spacer(GlanceModifier.width(6.dp))
@@ -115,7 +115,7 @@ internal fun FieldWidgetButtons(data: WidgetData) {
             Spacer(GlanceModifier.height(6.dp))
             when {
                 done != null -> Text("오늘 ${DayRate.label(done.units ?: 0.0)} 적었어요",
-                    style = TextStyle(color = GlanceTheme.colors.primary, fontSize = 12.sp, fontWeight = FontWeight.Medium), maxLines = 1)
+                    style = TextStyle(color = GlanceTheme.colors.primary, fontSize = wsp(12), fontWeight = FontWeight.Medium), maxLines = 1)
                 rules.rateOn(data.today) > 0 -> WidgetButton("오늘 ${DayRate.label(rules.chips.first())}", actionRunCallback<DayRateTodayAction>())
                 else -> WidgetButton("오늘 공수 적기", openDay(context, data.today))
             }
@@ -130,7 +130,7 @@ internal fun OvertimeWidgetLine(data: WidgetData) {
     Column(GlanceModifier.fillMaxWidth()) {
         Spacer(GlanceModifier.height(6.dp))
         Text("${data.today.monthValue}월 시간외 ${HoursFormat.korean(o.minutes)} / ${o.capHours}시간",
-            style = TextStyle(color = if (o.over) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp,
+            style = TextStyle(color = if (o.over) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12),
                 fontWeight = FontWeight.Medium), maxLines = 1)
         Spacer(GlanceModifier.height(3.dp))
         LinearProgressIndicator(progress = o.progress, modifier = GlanceModifier.fillMaxWidth().height(4.dp),
@@ -138,15 +138,6 @@ internal fun OvertimeWidgetLine(data: WidgetData) {
     }
 }
 
+/** 2.0.0 [RVI-07] (검토 ALM-19) +1건·오늘 1공 are the widget's own 40dp button, its word as big as 위젯 글자 크기 says. */
 @Composable
-private fun WidgetButton(label: String, action: Action) {
-    Text(
-        label,
-        style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = 13.sp, fontWeight = FontWeight.Medium),
-        modifier = GlanceModifier
-            .background(GlanceTheme.colors.primaryContainer)
-            .cornerRadius(12.dp)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .clickable(action),
-    )
-}
+private fun WidgetButton(label: String, action: Action) = WidgetPillButton(label, action)

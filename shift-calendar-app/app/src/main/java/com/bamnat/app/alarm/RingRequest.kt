@@ -29,9 +29,11 @@ data class RingRequest(
     val shiftColor: Long = 0,
     /** [R200-01] The added calendar the shift is in (its own missions); null for the main calendar. */
     val calendarId: String? = null,
+    /** 2.0.0 [RVI-17] The wake of a 낮잠 ([com.bamnat.app.sleep.NapWake]), put in with the day's own alarms. */
+    val nap: Boolean = false,
 ) {
     /** "주간 근무 알람", "알람" for a hand-set alarm on a day without work, or a memo schedule's words. */
-    val title: String get() = if (recheck) "일어났나요?" else label ?: if (shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.alarm(shiftName)
+    val title: String get() = if (recheck) "일어났나요?" else label ?: if (nap) "낮잠 알람" else if (shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.alarm(shiftName)
 
     fun putInto(intent: Intent): Intent = intent
         .putExtra(X_NAME, shiftName)
@@ -47,6 +49,7 @@ data class RingRequest(
         .putExtra(X_RECHECK, recheck)
         .putExtra(X_COLOR, shiftColor)
         .putExtra(X_CAL, calendarId)
+        .putExtra(X_NAP, nap)
 
     fun encode(): String = JSONObject()
         .put(X_NAME, shiftName)
@@ -62,6 +65,7 @@ data class RingRequest(
         .put(X_RECHECK, recheck)
         .put(X_COLOR, shiftColor)
         .put(X_CAL, calendarId ?: JSONObject.NULL)
+        .put(X_NAP, nap)
         .toString()
 
     companion object {
@@ -78,8 +82,9 @@ data class RingRequest(
         private const val X_RECHECK = "ring_recheck"
         private const val X_COLOR = "ring_color"
         private const val X_CAL = "ring_calendar"
+        private const val X_NAP = "ring_nap"
 
-        fun from(plan: PlannedAlarm, triggerAtMillis: Long) = RingRequest(
+        fun from(plan: PlannedAlarm, triggerAtMillis: Long, nap: Boolean = false) = RingRequest(
             shiftName = plan.shiftName,
             shiftDate = plan.shiftDate,
             shiftStart = plan.shiftStart,
@@ -90,6 +95,7 @@ data class RingRequest(
             shiftTypeId = plan.shiftTypeId,
             shiftColor = plan.colorArgb,
             calendarId = plan.calendarId,
+            nap = nap,
         )
 
         fun fromIntent(intent: Intent?): RingRequest? {
@@ -108,6 +114,7 @@ data class RingRequest(
                 recheck = intent.getBooleanExtra(X_RECHECK, false),
                 shiftColor = intent.getLongExtra(X_COLOR, 0L),
                 calendarId = intent.getStringExtra(X_CAL),
+                nap = intent.getBooleanExtra(X_NAP, false),
             )
         }
 
@@ -129,6 +136,7 @@ data class RingRequest(
                     recheck = o.optBoolean(X_RECHECK, false),
                     shiftColor = o.optLong(X_COLOR, 0L),
                     calendarId = if (o.isNull(X_CAL)) null else o.optString(X_CAL).ifEmpty { null },
+                    nap = o.optBoolean(X_NAP, false),
                 )
             }.getOrNull()
         }

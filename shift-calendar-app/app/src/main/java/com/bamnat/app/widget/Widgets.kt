@@ -181,12 +181,14 @@ internal fun TodayContent(data: WidgetData) {
             Spacer(GlanceModifier.height(4.dp))
             HourlyClockButton(out, yesterday = out && clockOutDay(todayDay, data.today, now) { data.day(data.today.minusDays(1)) }?.date != data.today)
         }
-        val line = data.flow?.line
+        val line = data.flow?.line ?: data.restLine?.text
         if (line != null) {
             Spacer(GlanceModifier.height(4.dp))
-            val warn = data.flow.state == TodayFlow.State.ALARM_OFF || data.flow.state == TodayFlow.State.FORGOT_WAKE
+            val warn = data.flow?.state == TodayFlow.State.ALARM_OFF || data.flow?.state == TodayFlow.State.FORGOT_WAKE
+            // 2.0.0 [RVI-18] (검토 T03-08) 가게·현장·투자: the sleep line by the next alarm, where 오늘의 흐름 has none.
+            val mark = data.flow?.let(::flowMark) ?: if (data.restLine?.sleeping == true) "🌙" else "🛏"
             Text(
-                "${flowMark(data.flow)} $line",
+                "$mark $line",
                 style = TextStyle(color = if (warn) GlanceTheme.colors.error else GlanceTheme.colors.primary, fontSize = wsp(13), fontWeight = FontWeight.Medium),
                 maxLines = 1,
             )

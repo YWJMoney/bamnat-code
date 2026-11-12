@@ -46,15 +46,18 @@ object MemoScheduleAlarm {
         shiftsOf: (Memo) -> com.bamnat.core.memo.MemoRepeat.ShiftOf? = { null },
     ) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
+        // 2.0.0 [RVI-22] From the first schedule on, what is missed (the phone off, an alarm late) can be told.
+        if (lastTold(context) == null) markTold(context, Today.dateTime())
         val extra = MemoSnoozeStore.all(context)
-        val next = MemoSchedules.next(memos, after, shiftsOf, extra)
+        val days = MemoSnoozeStore.days(context)
+        val next = MemoSchedules.next(memos, after, shiftsOf, extra, days)
         if (next == null) {
             am.cancel(pending(context, 0L))
             return
         }
         val at = next.atZone(Today.zone()).toInstant().toEpochMilli()
         val op = pending(context, at)
-        val rings = MemoSchedules.dueAt(memos, next, shiftsOf, extra).any { it.reminder?.ring == true }
+        val rings = MemoSchedules.dueAt(memos, next, shiftsOf, extra, days).any { it.reminder?.ring == true }
         when {
             rings -> AlarmScheduler.setAlarm(context, am, at, op)
             Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms() -> am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, op)
@@ -101,15 +104,23 @@ object MemoScheduleAlarm {
      * 1.39 [TASK-04][TASK-20][TASK-39] [rest] is when to tell on the memo's calendar's next day off (its morning, the afternoon after a
      * 야간; null: none ahead), offered first in 다른 때….
      */
-    fun post(context: Context, memo: Memo, at: LocalDateTime, rest: LocalDateTime? = null) = postAll(context, listOf(Triple(memo, at, rest)))
+    fun post(context: Context, memo: Memo, at: LocalDateTime, rest: LocalDateTime? = null) = postAll(context, listOf(Told(memo, at, rest)))
+
+    /**
+     * One memo to tell: due at [at], for [day] (2.0.0 [RVI-19], the day 끝내기 finishes), [rest] for its 미루기. [missed]: its time went by
+     * while the phone was off or the alarm came late (2.0.0 [RVI-22], 검토 MEMO-02), so it is told, not rung.
+     */
+    data class Told(val memo: Memo, val at: LocalDateTime, val rest: LocalDateTime?, val day: java.time.LocalDate = at.toLocalDate(), val missed: Boolean = false)
 
     /** Memos due together are told with one sound: the queue takes them all, then the newest is shown. */
-    internal fun postAll(context: Context, due: List<Triple<Memo, LocalDateTime, LocalDateTime?>>) {
+    internal fun postAll(context: Context, due: List<Told>) {
         if (due.isEmpty()) return
         MemoNoticeQueue.prune(context)
-        due.forEach { (memo, at, rest) ->
+        due.forEach { t ->
+            val memo = t.memo
             val body = memo.preview.takeIf { it.isNotBlank() && memo.title.isNotBlank() }
-            MemoNoticeQueue.put(context, MemoNoticeQueue.Entry(memo.id, at, rest, label(memo), listOfNotNull("${at.format(time)} 일정", body).joinToString(" · ")))
+            val head = if (t.missed) "놓친 일정 · ${missedWhen(t.at)}" else "${t.at.format(time)} 일정"
+            MemoNoticeQueue.put(context, MemoNoticeQueue.Entry(memo.id, t.at, t.rest, label(memo), listOfNotNull(head, body).joinToString(" · "), day = t.day))
         }
         clearOldNotices(context)
         // Cancelled first, so the new schedule sounds even when an older one is up in the same notice.
@@ -123,6 +134,46 @@ object MemoScheduleAlarm {
         MemoNoticeQueue.prune(context)
         show(context, quiet = true)
     }
+
+    /**
+     * 2.0.0 [RVI-19] (검토 MEMO-04) The saved memos changed: one finished anywhere (the app, the 할 일 위젯, the calendar) on the day
+     * its notice or 미루기 is for, put in the trash, deleted or no longer a schedule, is taken off the notice and its 미루기 let go,
+     * as the notice's own 끝내기 does. [memos]: every memo with a schedule.
+     */
+    fun settle(context: Context, memos: List<Memo>) {
+        val byId = memos.associateBy { it.id }
+        fun over(id: Long, day: java.time.LocalDate?): Boolean {
+            val m = byId[id] ?: return true
+            return m.inTrash || m.reminder == null || m.isDoneOn(day ?: m.date)
+        }
+        val gone = MemoNoticeQueue.all(context).filter { over(it.memo, it.day ?: it.at.toLocalDate()) }
+        gone.forEach { MemoNoticeQueue.remove(context, it.memo) }
+        if (gone.isNotEmpty()) show(context, quiet = true)
+        val days = MemoSnoozeStore.days(context)
+        MemoSnoozeStore.all(context).keys.filter { over(it, days[it]) }.forEach { MemoSnoozeStore.remove(context, it) }
+    }
+
+    /** "오후 2:05", or "어제 오후 11:50" and "11/9 오전 9:00" for an older one. */
+    private fun missedWhen(at: LocalDateTime): String = when (at.toLocalDate()) {
+        Today.date() -> at.format(time)
+        Today.date().minusDays(1) -> "어제 ${at.format(time)}"
+        else -> "${at.monthValue}/${at.dayOfMonth} ${at.format(time)}"
+    }
+
+    private const val PREFS = "memo_schedule"
+    private const val K_TOLD = "told_until"
+
+    /** 2.0.0 [RVI-22] Up to when schedules have been told (minutes, local); null before the first. */
+    internal fun lastTold(context: Context): LocalDateTime? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getLong(K_TOLD, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let { LocalDateTime.ofEpochSecond(it * 60, 0, java.time.ZoneOffset.UTC) }
+
+    internal fun markTold(context: Context, at: LocalDateTime) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(K_TOLD, at.toEpochSecond(java.time.ZoneOffset.UTC) / 60).apply()
+    }
+
+    /** 2.0.0 [RVI-22] How far back missed schedules are told after the phone was off, and how many at most. */
+    private const val MISSED_DAYS = 3L
+    private const val MISSED_MAX = 20
 
     private fun show(context: Context, quiet: Boolean) {
         val waiting = MemoNoticeQueue.all(context)
@@ -147,7 +198,10 @@ object MemoScheduleAlarm {
                     setNumber(waiting.size)
                 }
             }
-            .setContentIntent(Notifications.open(context, NoticeLinks.Target.MEMOS, REQUEST + 1))
+            // 2.0.0 [RVI-26] (검토 MEMO-13) Opens that memo, not the memo tab; swiped away, what it showed does not come back.
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.MEMO_OPEN, REQUEST + 1,
+                payload = "${top.memo}|${top.day ?: top.at.toLocalDate()}"))
+            .setDeleteIntent(MemoNoticeClearedReceiver.intent(context))
             .setAutoCancel(true)
             .setGroup(GROUP)
             .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
@@ -157,10 +211,11 @@ object MemoScheduleAlarm {
             .setWhen(top.at.atZone(Today.zone()).toInstant().toEpochMilli())
             // 1.39 [TASK-39] 끝내기 · 10분 뒤 · 다른 때… (두 앱 실사용 2차): 끝내기 finishes the memo on that day for real (the 할 일 앱's
             // Complete left the task open in its list), and 다른 때… opens a small window with the day off's morning first.
-            .addAction(0, "끝내기", MemoDoneReceiver.intent(context, top.memo, top.at.toLocalDate()))
+            // 2.0.0 [RVI-19] (검토 MEMO-03) The day it is for: a 미루기 past midnight finishes its first day, not the next.
+            .addAction(0, "끝내기", MemoDoneReceiver.intent(context, top.memo, top.day ?: top.at.toLocalDate()))
             .addAction(0, com.bamnat.core.memo.MemoSnooze.label(com.bamnat.core.memo.MemoSnooze.Way.MIN10, top.rest),
-                MemoSnoozeReceiver.intent(context, top.memo, com.bamnat.core.memo.MemoSnooze.Way.MIN10, top.rest, 0))
-            .addAction(0, "다른 때…", MemoLaterActivity.intent(context, top.memo, top.rest))
+                MemoSnoozeReceiver.intent(context, top.memo, com.bamnat.core.memo.MemoSnooze.Way.MIN10, top.rest, 0, top.day ?: top.at.toLocalDate()))
+            .addAction(0, "다른 때…", MemoLaterActivity.intent(context, top.memo, top.rest, top.day ?: top.at.toLocalDate()))
             .build()
         val summary = NotificationCompat.Builder(context, Notifications.MEMO_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -193,24 +248,37 @@ object MemoScheduleAlarm {
             .forEach { nm.cancel(it.tag, it.id) }
     }
 
+    /**
+     * The memo alarm for [atMillis] came (0: none, after a reboot or a new clock). Due ones are told and rung; 2.0.0 [RVI-22] (검토
+     * MEMO-02) so is, quietly in the same notice, every schedule since the last told one that went by unsaid (the phone off, the alarm
+     * late, more than one in the minutes it was late), within [MISSED_DAYS]. One more than 2 hours late is told as missed, not rung.
+     */
     internal fun handle(
         context: Context, memos: List<Memo>, atMillis: Long, now: Long = Today.millis(), restOf: (Memo) -> LocalDateTime? = { null },
         shiftsOf: (Memo) -> com.bamnat.core.memo.MemoRepeat.ShiftOf? = { null },
     ) {
-        if (atMillis == 0L || now - atMillis > STALE_AFTER_MILLIS) return
-        val at = AlarmScheduler.millisToLocal(atMillis)
-        val due = MemoSchedules.dueAt(memos, at, shiftsOf, MemoSnoozeStore.all(context))
-        postAll(context, due.filter { it.reminder?.notify == true }.map { Triple(it, at, restOf(it)) })
-        val ringing = due.filter { it.reminder?.ring == true }
+        val nowLocal = AlarmScheduler.millisToLocal(now)
+        val extra = MemoSnoozeStore.all(context)
+        val days = MemoSnoozeStore.days(context)
+        val at = if (atMillis == 0L) null else AlarmScheduler.millisToLocal(atMillis).withSecond(0).withNano(0)
+        val stale = atMillis != 0L && now - atMillis > STALE_AFTER_MILLIS
+        val due = if (at == null || stale) emptyList() else MemoSchedules.dueOn(memos, at, shiftsOf, extra, days)
+        val since = lastTold(context)?.let { maxOf(it, nowLocal.minusDays(MISSED_DAYS)) }
+        val missed = if (since == null) emptyList() else MemoSchedules.between(memos, since, nowLocal, shiftsOf, extra, days, MISSED_MAX)
+            .filter { (t, d) -> t != at && due.none { it.memo.id == d.memo.id } }
+        markTold(context, maxOf(nowLocal, at ?: nowLocal))
+        postAll(context, missed.map { (t, d) -> Told(d.memo, t, restOf(d.memo), d.day, missed = true) } +
+            due.filter { it.memo.reminder?.notify == true }.map { Told(it.memo, at!!, restOf(it.memo), it.day) })
+        val ringing = due.filter { it.memo.reminder?.ring == true }.map { it.memo }
         if (ringing.isEmpty()) return
         // [ALRM-09] 오늘 남은 알람 모두 끄기: the schedule still shows, quietly, instead of ringing.
         if (com.bamnat.app.alarm.AlarmsOff.isOff(context, now)) {
-            postAll(context, ringing.filter { it.reminder?.notify != true }.map { Triple(it, at, restOf(it)) })
+            postAll(context, due.filter { it.memo.reminder?.ring == true && it.memo.reminder?.notify != true }.map { Told(it.memo, at!!, restOf(it.memo), it.day) })
             return
         }
         val ring = RingRequest(
             shiftName = "",
-            shiftDate = at.toLocalDate(),
+            shiftDate = at!!.toLocalDate(),
             shiftStart = at.toLocalTime(),
             offsetMinutes = 0,
             soundUri = null,
@@ -218,12 +286,8 @@ object MemoScheduleAlarm {
             custom = true,
             label = ringing.joinToString(" · ") { label(it) }.take(60),
         )
-        try {
-            AlarmService.start(context, ring)
-        } catch (e: RuntimeException) {
-            // Not allowed to start the ringing screen from here: the loud notice rings instead.
-            Notifications.postFallbackAlarm(context, ring)
-        }
+        // Not allowed to start the ringing screen from here: the loud notice rings instead.
+        AlarmService.startOrFallback(context, ring)
     }
 }
 
@@ -234,27 +298,62 @@ class MemoScheduleReceiver : BroadcastReceiver() {
         val pending = goAsync()
         container.appScope.launch {
             try {
-                // Read again now, so a memo changed or deleted since the alarm was set is not announced.
-                val memos = container.memoRepository.memos.first()
-                // 1.39 [TASK-44] A 근무마다·쉬는 날마다 schedule is due on its days only, as the calendar says now.
-                val shifts = MemoScheduleAlarm.shiftsFor(context, memos.filter { it.reminder != null })
-                val extra = MemoSnoozeStore.all(context)
-                // 1.39 [TASK-20] Each due memo's next day off, on the calendar it goes by, for its notice's 미루기.
-                val due = if (atMillis == 0L) emptyList() else MemoSchedules.dueAt(memos, AlarmScheduler.millisToLocal(atMillis), shifts, extra)
-                val rests = due.associate { it.id to MemoSnoozeReceiver.nextRest(container, it) }
-                MemoScheduleAlarm.handle(context, memos, atMillis, restOf = { rests[it.id] }, shiftsOf = shifts)
-                // A repeating memo's 미루기 that has now rung is let go.
-                if (atMillis != 0L) MemoSnoozeStore.dropUpTo(context, AlarmScheduler.millisToLocal(atMillis))
-                // 1.39 [TASK-39] The schedule's time has come: the 할 일 위젯 shows it late (red) from now, not at the next redraw (PC 6차).
-                if (due.isNotEmpty()) runCatching { com.bamnat.app.widget.TaskWidget.redraw(context) }
-                val after = if (atMillis != 0L) AlarmScheduler.millisToLocal(atMillis) else Today.dateTime()
-                MemoScheduleAlarm.reschedule(context, memos, maxOf(after, Today.dateTime().minusSeconds(1)), shifts)
+                run(context, atMillis)
             } finally {
                 pending.finish()
             }
         }
     }
+
+    companion object {
+        /**
+         * The memo alarm for [atMillis] (0 after a reboot or a new clock, 2.0.0 [RVI-22]: what went by meanwhile is told as missed),
+         * then the next one set.
+         */
+        suspend fun run(context: Context, atMillis: Long) {
+            val container = context.appContainer
+            // Read again now, so a memo changed or deleted since the alarm was set is not announced.
+            val memos = container.memoRepository.memos.first()
+            // 1.39 [TASK-44] A 근무마다·쉬는 날마다 schedule is due on its days only, as the calendar says now.
+            val shifts = MemoScheduleAlarm.shiftsFor(context, memos.filter { it.reminder != null })
+            val extra = MemoSnoozeStore.all(context)
+            val days = MemoSnoozeStore.days(context)
+            // 1.39 [TASK-20] Each due memo's next day off, on the calendar it goes by, for its notice's 미루기.
+            val due = if (atMillis == 0L) emptyList() else MemoSchedules.dueAt(memos, AlarmScheduler.millisToLocal(atMillis), shifts, extra, days)
+            val rests = HashMap<Long, LocalDateTime?>()
+            due.forEach { rests[it.id] = MemoSnoozeReceiver.nextRest(container, it) }
+            MemoScheduleAlarm.handle(context, memos, atMillis, restOf = { m -> if (m.id in rests) rests[m.id] else null }, shiftsOf = shifts)
+            // A repeating memo's 미루기 that has now rung (or went by) is let go.
+            MemoSnoozeStore.dropUpTo(context, if (atMillis != 0L) maxOf(AlarmScheduler.millisToLocal(atMillis), Today.dateTime()) else Today.dateTime())
+            // 1.39 [TASK-39] The schedule's time has come: the 할 일 위젯 shows it late (red) from now, not at the next redraw (PC 6차).
+            runCatching { com.bamnat.app.widget.TaskWidget.redraw(context) }
+            val after = if (atMillis != 0L) AlarmScheduler.millisToLocal(atMillis) else Today.dateTime()
+            MemoScheduleAlarm.reschedule(context, memos, maxOf(after, Today.dateTime().minusSeconds(1)), shifts)
+        }
+    }
 }
+
+/** 2.0.0 [RVI-26] (검토 MEMO-13) The shared memo notice swiped away: what it showed is seen and does not come back with the next one. */
+class MemoNoticeClearedReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        MemoNoticeQueue.clear(context)
+    }
+
+    companion object {
+        private const val REQUEST = 3203
+
+        fun intent(context: Context): PendingIntent = PendingIntent.getBroadcast(
+            context, REQUEST, Intent(context, MemoNoticeClearedReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+}
+
+/**
+ * 2.0.0 [RVI-27] (검토 ALM-21) A notice button's own address (memo id and what it does), so two memos whose ids are 1024 apart no
+ * longer share one PendingIntent (the request code kept the low 10 bits only) and one button finish the other memo.
+ */
+internal fun memoButtonData(kind: String, memo: Long, slot: Int = 0): android.net.Uri = android.net.Uri.parse("bamnat-memo://$kind/$memo/$slot")
 
 /**
  * 1.39 [TASK-04][TASK-20] A 미루기 pressed on a memo's schedule notice: the schedule moves to 10분 뒤, 1시간 뒤 or the next day
@@ -266,10 +365,11 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
         val id = intent.getLongExtra(EXTRA_MEMO, -1L)
         val way = com.bamnat.core.memo.MemoSnooze.Way.of(intent.getStringExtra(EXTRA_WAY)) ?: return
         val rest = restAt(intent)
+        val day = dayOf(intent)
         val pending = goAsync()
         container.appScope.launch {
             try {
-                put(context, id, way, rest)
+                put(context, id, way, rest, day)
             } finally {
                 pending.finish()
             }
@@ -280,7 +380,14 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
         private const val EXTRA_MEMO = "memo"
         private const val EXTRA_WAY = "way"
         private const val EXTRA_REST = "restAt"
+        private const val EXTRA_DAY = "day"
         private const val REQUEST_BASE = 0x40000
+
+        /** 2.0.0 [RVI-19] The day the schedule put off was for. */
+        internal fun putDay(intent: Intent, day: java.time.LocalDate?): Intent = intent.apply { day?.let { putExtra(EXTRA_DAY, it.toEpochDay()) } }
+
+        internal fun dayOf(intent: Intent): java.time.LocalDate? =
+            intent.getLongExtra(EXTRA_DAY, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let(java.time.LocalDate::ofEpochDay)
 
         /** 1.39 [TASK-39] The day off's time, as minutes (a notice posted before this kept the day only, under "rest", and is let be). */
         internal fun putRest(intent: Intent, rest: LocalDateTime?): Intent =
@@ -289,17 +396,20 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
         internal fun restAt(intent: Intent): LocalDateTime? = intent.getLongExtra(EXTRA_REST, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }
             ?.let { LocalDateTime.ofEpochSecond(it * 60, 0, java.time.ZoneOffset.UTC) }
 
-        fun intent(context: Context, memo: Long, way: com.bamnat.core.memo.MemoSnooze.Way, rest: LocalDateTime?, slot: Int): PendingIntent =
+        fun intent(context: Context, memo: Long, way: com.bamnat.core.memo.MemoSnooze.Way, rest: LocalDateTime?, slot: Int, day: java.time.LocalDate? = null): PendingIntent =
             PendingIntent.getBroadcast(
                 context, REQUEST_BASE + (memo.toInt() and 0x3ff) * 4 + slot,
-                Intent(context, MemoSnoozeReceiver::class.java)
+                Intent(context, MemoSnoozeReceiver::class.java).setData(memoButtonData("snooze", memo, slot))
                     .putExtra(EXTRA_MEMO, memo).putExtra(EXTRA_WAY, way.key)
-                    .let { putRest(it, rest) },
+                    .let { putRest(it, rest) }.let { putDay(it, day) },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
 
-        /** Memo [id]'s schedule moved [way] from now, its notice taken down; the new time, or null when it is gone. */
-        suspend fun put(context: Context, id: Long, way: com.bamnat.core.memo.MemoSnooze.Way, rest: LocalDateTime?): LocalDateTime? {
+        /**
+         * Memo [id]'s schedule moved [way] from now, its notice taken down; the new time, or null when it is gone. 2.0.0 [RVI-19]
+         * [day]: the day it was for, kept with a repeating memo's 미루기 so 끝내기 after midnight finishes that day.
+         */
+        suspend fun put(context: Context, id: Long, way: com.bamnat.core.memo.MemoSnooze.Way, rest: LocalDateTime?, day: java.time.LocalDate? = null): LocalDateTime? {
             MemoScheduleAlarm.dismiss(context, id)
             val repo = context.appContainer.memoRepository
             val memo = repo.get(id) ?: return null
@@ -307,7 +417,7 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
             val at = com.bamnat.core.memo.MemoSnooze.at(way, Today.dateTime(), r.at, rest)
             // 1.39 [TASK-44] A repeating memo keeps its time of day for the days after: this 미루기 is once only, kept on the side.
             if (memo.date != null && com.bamnat.core.memo.MemoRepeat.kindOf(memo.repeat) != com.bamnat.core.memo.MemoRepeat.Kind.NONE) {
-                MemoSnoozeStore.put(context, id, at)
+                MemoSnoozeStore.put(context, id, at, day ?: MemoSnoozeStore.days(context)[id] ?: Today.date())
                 MemoScheduleAlarm.rescheduleNow(context)
             } else {
                 repo.save(memo.copy(reminder = r.copy(at = at)))
@@ -358,7 +468,7 @@ class MemoDoneReceiver : BroadcastReceiver() {
 
         fun intent(context: Context, memo: Long, day: java.time.LocalDate): PendingIntent = PendingIntent.getBroadcast(
             context, REQUEST_BASE + (memo.toInt() and 0x3ff),
-            Intent(context, MemoDoneReceiver::class.java).putExtra(EXTRA_MEMO, memo).putExtra(EXTRA_DAY, day.toEpochDay()),
+            Intent(context, MemoDoneReceiver::class.java).setData(memoButtonData("done", memo)).putExtra(EXTRA_MEMO, memo).putExtra(EXTRA_DAY, day.toEpochDay()),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -392,16 +502,27 @@ internal object MemoSnoozeStore {
         }.toMap()
     }.getOrDefault(emptyMap())
 
-    fun put(context: Context, id: Long, at: LocalDateTime) {
-        prefs(context).edit().putLong(id.toString(), at.toEpochSecond(java.time.ZoneOffset.UTC) / 60).apply()
+    /** 2.0.0 [RVI-19] (검토 MEMO-03) The day each 미루기 was for (kept beside it as "d<id>"; none for one put off before 2.0.0). */
+    fun days(context: Context): Map<Long, java.time.LocalDate> = runCatching {
+        prefs(context).all.mapNotNull { (k, v) ->
+            val id = k.removePrefix(DAY).takeIf { k.startsWith(DAY) }?.toLongOrNull() ?: return@mapNotNull null
+            id to java.time.LocalDate.ofEpochDay((v as? Long) ?: return@mapNotNull null)
+        }.toMap()
+    }.getOrDefault(emptyMap())
+
+    fun put(context: Context, id: Long, at: LocalDateTime, day: java.time.LocalDate? = null) {
+        prefs(context).edit().putLong(id.toString(), at.toEpochSecond(java.time.ZoneOffset.UTC) / 60)
+            .apply { if (day != null) putLong(DAY + id, day.toEpochDay()) else remove(DAY + id) }.apply()
     }
 
     fun remove(context: Context, id: Long) {
-        prefs(context).edit().remove(id.toString()).apply()
+        prefs(context).edit().remove(id.toString()).remove(DAY + id).apply()
     }
 
     fun dropUpTo(context: Context, at: LocalDateTime) {
         val gone = all(context).filterValues { !it.isAfter(at) }.keys
-        if (gone.isNotEmpty()) prefs(context).edit().apply { gone.forEach { remove(it.toString()) } }.apply()
+        if (gone.isNotEmpty()) prefs(context).edit().apply { gone.forEach { remove(it.toString()); remove(DAY + it) } }.apply()
     }
+
+    private const val DAY = "d"
 }

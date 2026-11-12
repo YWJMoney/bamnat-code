@@ -533,7 +533,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             val findings = if (unlocks.isEmpty()) r.findings else r.findings.filter { it.key != "more-logs" }
             if (findings.isNotEmpty()) Findings(findings)
             extras?.let { CausesCard(it.causes) }
-            Groups(r, target)
+            Groups(r, target, settings.workStyle)
             s.compare?.let { PlanCompare(it) }
             extras?.let { e -> ChallengeCard(e.challenge, vm::startChallenge, vm::stopChallenge) }
             // 1.38 [SLEEP-22] 바꾼 것 전후 비교.
@@ -718,9 +718,10 @@ private fun Findings(findings: List<SleepInsights.Finding>) {
  * meaning colour) with the target dashed across, the numbers under each, and the count and usual bedtime below.
  */
 @Composable
-private fun Groups(r: SleepInsights.Report, target: Int) {
+private fun Groups(r: SleepInsights.Report, target: Int, style: com.bamnat.core.work.WorkStyle? = null) {
     if (r.groups.isEmpty()) return
-    SectionCard(title = "근무별 평균") {
+    // 2.0.0 [RVI-40] (검토 ALM-25·T03-07) A shop or an investor has no 근무: '날 종류별 평균'.
+    SectionCard(title = groupsTitle(style)) {
         val bars = r.groups.map { g ->
             com.bamnat.app.ui.components.ChartBar(g.context.label, g.averageMinutes.toDouble(), tone = when {
                 target - g.averageMinutes >= SleepInsights.SHORT_MINUTES -> com.bamnat.app.ui.theme.Tone.Caution
@@ -748,6 +749,12 @@ private fun Groups(r: SleepInsights.Report, target: Int) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** 2.0.0 [RVI-40] "근무별 평균" where there is 근무, "날 종류별 평균" for 가게·투자·현장. */
+internal fun groupsTitle(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.work.WorkStyle.INVEST, com.bamnat.core.work.WorkStyle.FIELD -> "날 종류별 평균"
+    else -> "근무별 평균"
 }
 
 /** The last 14 days by the day the user woke up, with the target as a dashed line. */
