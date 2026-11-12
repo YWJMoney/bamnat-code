@@ -66,6 +66,16 @@ class ReviewOSettingsTest {
         assertFalse(BackupPlace.exists(context, android.net.Uri.parse("content://com.example.gone/1")))
     }
 
+    /** 2.0.0 [RVO-18] 검토 PRO-14·U11b-09: an open without an ad counts too, so the day's limit says two opens, not two ads watched. */
+    @Test fun theDaysLimitSaysOpensNotAdsWatched() {
+        assertTrue(com.bamnat.app.ads.CAPPED_WORDS, com.bamnat.app.ads.CAPPED_WORDS.contains("두 번 열었어요") && !com.bamnat.app.ads.CAPPED_WORDS.contains("봤"))
+        assertEquals("광고가 늦어요. 조금만요", com.bamnat.app.ads.AD_LATE_WORDS)
+        // PRO-02: the first quiet days start no ads SDK, so the button opens at once instead of waiting for it.
+        val installed = java.time.Instant.parse("2026-11-10T00:00:00Z")
+        assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(true, false, installed, installed.plus(java.time.Duration.ofDays(1)), 3))
+        assertTrue(com.bamnat.core.tier.AdRules.sdkMayStart(true, false, installed, installed.plus(java.time.Duration.ofDays(4)), 3))
+    }
+
     @Test fun withoutThePhonesLockTheSwitchDoesNotAsk() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         var ok = 0
