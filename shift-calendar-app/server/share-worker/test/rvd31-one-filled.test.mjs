@@ -59,4 +59,11 @@ test("[RVD-31] the card is never filled, on any page, and the buttons are 44px",
   for (const rule of [/\.app a\{[^}]*min-height:44px/, /\.feed \.get\{[^}]*min-height:44px/, /\.spread \.get\{[^}]*min-height:44px/]) assert.match(page, rule);
   // A line keeps the filled one's size (a 1px border in place of 1px of padding) and reads on both themes (muted, not the faint line).
   assert.match(page, /\.get\.line\{background:none;color:var\(--fg\);border:1px solid var\(--muted\);padding:9px 15px\}/);
+
+  // 조건 12 (총괄 사진 검토): at 200% a narrow page breaks between words, never inside one ('더했어 / 요'), the money's name goes above
+  // its amount instead of standing letter by letter, and the card's words use its full width (only the title keeps room for ×).
+  assert.match(page, /body\{[^}]*word-break:keep-all;overflow-wrap:break-word\}/);
+  assert.match(page, /\.pay li\{display:flex;flex-wrap:wrap;/);
+  assert.match(page, /\.spread\{[^}]*padding:14px\}/);
+  assert.match(page, /\.spread \.t\{font-weight:700;padding-right:34px\}/);
 });
