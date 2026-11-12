@@ -98,6 +98,13 @@ data class ClassifyOptions(
      * whole shift by the day it started on (some companies' rule).
      */
     val holidayByClock: Boolean = true,
+    /**
+     * 2.0.0 [RVJ-01] 검토 PAYC-01: hours worked on a paid holiday (and on a day off paid as one) count toward the week's 40
+     * hours, so work later that week past 40 is 연장. 근로기준법 제2조 제1항 제7호 (2018-03-20 신설): "1주"란 휴일을 포함한 7일.
+     * The holiday minutes themselves keep only the holiday premium (제56조 제2항, no 연장 on top). false is the old practice
+     * some companies keep (휴일근로는 주 40시간에 넣지 않음), a company rule.
+     */
+    val holidayInWeek: Boolean = true,
 )
 
 /**
@@ -212,6 +219,11 @@ class MinuteClassifier(
                 (if (isHoliday(split.date)) split.onFirst else 0) + (if (isHoliday(split.date.plusDays(1))) split.onNext else 0)
             } else if (isHoliday(day.date)) p.paid else 0
             var left = p.paid - onHoliday
+            // 2.0.0 [RVJ-02] 검토 PAYC-02: one stretch of work fills the day's 8 hours whatever part of it falls on a holiday.
+            // A shift that starts on a 빨간날 (19:00 → 07:00) uses the slot with its holiday hours first, so its weekday hours
+            // past 8 are 연장 as on any other day; one that runs into a holiday uses it with its weekday hours first.
+            val holidayFirst = onHoliday > 0 && left > 0 && options.holidayByClock && split.date != null && isHoliday(split.date)
+            if (holidayFirst) slot -= minOf(onHoliday, slot.coerceAtLeast(0))
             val hWithin = minOf(onHoliday, (holiday8h - holidayUsed).coerceAtLeast(0))
             holidayUsed += onHoliday
             var rWithin = 0
@@ -229,8 +241,9 @@ class MinuteClassifier(
                 isShift && options.scheduleIsRegular -> { regular = left; overtime = 0 }
                 // Work beyond the plan, or on a day off the company counts as 연장, is all overtime.
                 !isShift && (options.scheduleIsRegular || restDay && options.restDayWork == RestDayWork.OVERTIME) -> { regular = 0; overtime = left }
-                else -> { regular = minOf(left, slot); overtime = left - regular; slot -= regular }
+                else -> { regular = minOf(left, slot.coerceAtLeast(0)); overtime = left - regular; slot -= regular }
             }
+            if (onHoliday > 0 && !holidayFirst && slot != Int.MAX_VALUE) slot -= minOf(onHoliday, slot.coerceAtLeast(0))
             val m = WorkMinutes(regular, overtime, hWithin, onHoliday - hWithin, rWithin, rOver, split.night)
             if (isShift) shift = m else extras += ExtraMinutes(p.index, p.kindId, m, estimated = p.from == null)
         }
@@ -278,16 +291,22 @@ class MinuteClassifier(
         val out = list.toMutableList()
         list.indices.groupBy { list[it].date.with(TemporalAdjusters.previousOrSame(options.weekStart)) }.values.forEach { week ->
             var used = 0
+            // [RVJ-01] Holiday work is work in the week (제2조 제1항 제7호): it fills the 40 hours without becoming 연장 itself.
+            fun holidayOf(m: WorkMinutes) = if (options.holidayInWeek) m.holidayWithin8h + m.holidayOver8h + m.restWithin8h + m.restOver8h else 0
             for (i in week) {
                 val d = out[i]
                 val over = (used + d.shift.regular - limit).coerceIn(0, d.shift.regular)
-                used += d.shift.regular - over
+                used += d.shift.regular - over + holidayOf(d.shift)
                 if (over > 0) out[i] = d.copy(shift = d.shift.copy(regular = d.shift.regular - over, overtime = d.shift.overtime + over))
             }
             for (i in week) {
                 val d = out[i]
-                if (d.extras.none { it.minutes.regular > 0 }) continue
+                if (d.extras.none { it.minutes.regular > 0 }) {
+                    used += d.extras.sumOf { holidayOf(it.minutes) }
+                    continue
+                }
                 out[i] = d.copy(extras = d.extras.map { e ->
+                    used += holidayOf(e.minutes)
                     val keep = minOf(e.minutes.regular, (limit - used).coerceAtLeast(0))
                     used += keep
                     val move = e.minutes.regular - keep

@@ -239,6 +239,14 @@ class SetupViewModel(
 
     // ---- 1. how the user works ----
 
+    /**
+     * [RVG-16] 검토 TYPE-21: a setup filled from a 근무표 link asks on its summary how the user works (교대 · 일근 · 알바); the days stay
+     * the link's. Only these three: the link is a roster of shifts.
+     */
+    fun workAs(style: WorkStyle) = update { d ->
+        if (d.linkTitle.isBlank() || style !in LINK_WORK) d else d.copy(workAs = style.takeIf { it != d.style })
+    }
+
     fun pickStyle(style: WorkStyle, roster: Boolean = false) {
         val d = current
         when (style) {
@@ -899,7 +907,12 @@ class SetupViewModel(
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
                     // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
-                    if (calendarId == null && !again) c.setupTaps.finish(d.style)
+                    if (calendarId == null && !again) c.setupTaps.finish(d.savedStyle)
+                    // [RVG-18] 검토 PC-22 (도약 14): started from a link of next month's 근무표, the calendar opens on that month.
+                    if (d.linkTitle.isNotBlank()) d.openingMonth(today).takeIf { it != java.time.YearMonth.from(today) }?.let(c.shownMonth::show)
+                    // [RVG-16] Started from a link as 일근·알바: that kind of work's notices, not the 교대 ones turned on with the link.
+                    if (calendarId == null && d.workAs != null && d.workAs != d.style)
+                        c.settingsRepository.update { com.bamnat.app.data.RecommendedSettings.apply(it, com.bamnat.core.consent.RecommendedPlan.forStyle(d.workAs).start) }
                     // 1.39 사용자 2026-11-08: 잠 in the place picked on the summary ([sleepSlot]).
                     if (offersSleepBar && sleepSlot.value >= 0) runCatching { putSleepOnBar(sleepSlot.value) }
                         .onFailure { android.util.Log.w("Setup", "sleep on the bar", it) }
@@ -927,7 +940,7 @@ class SetupViewModel(
                             firstGiven = s.id.isNullOrEmpty()), shareCycle.value)
                     }
                     c.telemetry.event("setup_done", buildString {
-                        append(d.style?.name)
+                        append(d.savedStyle?.name)
                         d.source?.let { append('_').append(it.kind.name) }
                     })
                 }
@@ -977,6 +990,8 @@ class SetupViewModel(
 
     companion object {
         const val MAX_STEPS = 62
+        /** [RVG-16] How a member started from a 근무표 link may work: the link is a roster of shifts. */
+        val LINK_WORK = listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)
         /** Colors for shifts the user adds, after the bundle's. */
         private val NEW_COLORS = listOf(0xFF00A88F, 0xFFE0A100, 0xFFD6457A, 0xFF27AE60, 0xFF8E44AD, 0xFF2D9CDB)
     }

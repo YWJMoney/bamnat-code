@@ -24,7 +24,9 @@ object InsuranceRules {
         val why = ArrayList<String>()
         val weekly = s.weekly.values.sumOf { it.paidMinutes(place.legalBreaks) }
         val day = month.atEndOfMonth()
-        if (s.form == WageForm.HOUR && weekly in 1 until WEEK_MINUTES) {
+        // 2.0.0 [RVJ-16] 검토 BOSS-74: an 일급·시급 under 15 hours a week by the usual week is out of 국민연금·건강보험, whatever the form
+        // (it was 시급 only); a 월급 is a whole month's pay and stays in.
+        if (s.form != WageForm.MONTH && weekly in 1 until WEEK_MINUTES) {
             val threeMonths = s.hiredOn?.let { !it.plusMonths(3).isAfter(month.atDay(1)) } == true
             if (want.pension || want.health) why += "주 15시간(월 60시간) 미만이라 국민연금·건강보험 가입 대상이 아니에요"
             ins = ins.copy(pension = false, health = false)
@@ -38,6 +40,14 @@ object InsuranceRules {
             if (ins.employment && hiredAge != null && hiredAge >= 65) { why += "65세 이후 새로 일한 분은 고용보험(실업급여)을 떼지 않아요"; ins = ins.copy(employment = false) }
         }
         if (s.birth == null && want.pension) why += "생년월일을 넣으면 나이에 따른 국민연금·고용보험도 맞춰요"
+        // [RVJ-16] 사업소득 3.3%는 근로자가 아니라 4대보험이 없어요; ticked boxes are not counted.
+        if (want.tax == StaffTax.BIZ && ins.any) { why += "3.3%로 주는 분은 4대보험이 없어요. 실제로 근로자라면 소득세 떼는 법을 바꿔 주세요"; ins = ins.copy(pension = false, health = false, employment = false) }
+        // [RVJ-16] 일용근로자: 고용보험은 첫날부터(근로내용확인신고). 국민연금·건강보험은 한 달 넘게 일하며 월 8일 이상이면 대상이라
+        // (국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조: 확인 필요) the 사장님 ticks those as the month goes.
+        if (want.tax == StaffTax.DAILY && (want.pension || want.health)) why += "일용직은 한 달 넘게 월 8일 이상 일하면 국민연금·건강보험 대상이에요(확인 필요)"
+        // [RVJ-16] 검토 BOSS-74: 외국인 직원은 국민연금·고용보험이 나라·체류자격에 따라 달라요 (확인 필요: 국민연금법 제126조, 고용보험법 제10조의2).
+        if (want.foreign && (ins.pension || ins.employment || want.tax == StaffTax.WAGE))
+            why += "외국인 직원은 나라에 따라 국민연금이, 체류자격에 따라 고용보험이 달라요. 4대사회보험 정보연계센터에서 확인해 주세요"
         return Result(ins, why)
     }
 

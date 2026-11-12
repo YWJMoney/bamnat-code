@@ -58,7 +58,7 @@ object TakeHome {
         val careRatio = known?.let { WonCut.Ratio.of(it.longTermCareRate!!, it.healthRate!!) } ?: WonCut.Ratio.of(CARE_OF_HEALTH)
         val base = RateTable.pensionBases.filter { !it.from.isAfter(date) }.maxByOrNull { it.from }
         return Shares(
-            (r.pensionRate ?: PENSION_RATE * 2) / 2, (r.healthRate ?: HEALTH_RATE * 2) / 2, care,
+            (RateTable.pensionRateOn(date) ?: PENSION_RATE * 2) / 2, (r.healthRate ?: HEALTH_RATE * 2) / 2, care,
             base?.min ?: PENSION_BASE_MIN, base?.max ?: PENSION_BASE_MAX, r.unemploymentRate / 2, careRatio,
         )
     }
@@ -91,9 +91,13 @@ object TakeHome {
                 val pension = if (taxable == 0L || InsuranceLine.PENSION in off) 0L
                     else WonCut.cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
                 // 1.39 [PAYX-59] G4 건강보험 보수월액 하한 28만 원 (국민건강보험법 시행령 제32조): a smaller pay pays on 28만 원.
-                val healthBase = if (taxable in 1 until HEALTH_BASE_MIN) HEALTH_BASE_MIN else taxable
-                val uncapped = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
+                // 2.0.0 [RVJ-04] 검토 PAYC-14: a year whose 고시 하한 (보험료 금액) is in the rates uses that amount instead.
+                val floorShare = healthFloor(on ?: TABLE_DAY)
+                val healthBase = if (floorShare == null && taxable in 1 until HEALTH_BASE_MIN) HEALTH_BASE_MIN else taxable
+                val raw = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
+                val uncapped = if (floorShare != null && raw in 1 until floorShare) floorShare else raw
                 if (uncapped > 0 && healthBase != taxable) notes += "건강보험은 보수 하한 ${won(HEALTH_BASE_MIN)}으로 계산했어요(국민건강보험법 시행령 제32조)"
+                if (floorShare != null && uncapped != raw) notes += "건강보험은 월 하한 ${won(floorShare)}을 떼요(월별 건강보험료액의 상한과 하한 고시)"
                 // 1.39 [PAYX-61] 발굴 G3-B7: 보수월액보험료 상한 (근로자 몫은 그 절반).
                 val cap = healthCap(on ?: TABLE_DAY)
                 val health = if (cap != null && uncapped > cap) cap.also { notes += "건강보험은 월 상한 ${won(cap)}까지만 떼요(보건복지부고시 제2025-222호)" } else uncapped
@@ -123,7 +127,20 @@ object TakeHome {
      * 상한과 하한에 관한 고시'(2025-12-24, 2026년 1월분부터): 직장가입자 보수월액보험료 상한 9,183,480원, 근로자·사업주가 반씩이라 4,591,740원
      * (국민건강보험공단 고시 원문 대조 2026-11-07). Before 2026 it is not checked here, so none; the next year's 고시 goes in when it is out.
      */
-    fun healthCap(on: java.time.LocalDate): Long? = if (on.year >= 2026) 9_183_480L / 2 else null
+    fun healthCap(on: java.time.LocalDate): Long? = RateTable.latest(on) { it.healthCapShare }?.first
+        ?: if (on.year >= 2026) HEALTH_CAP_2026 else null
+
+    /**
+     * 2.0.0 [RVJ-04] The built-in 2026 cap ([healthCap]); kept out of the built-in rates row so the bundled `rates.json` stays as signed.
+     * A newer year's 고시 comes as `healthCapShare` in the signed rates file.
+     */
+    const val HEALTH_CAP_2026 = 9_183_480L / 2
+
+    /** 2.0.0 [RVJ-04] 검토 PAYC-14: one side's 고시 하한 보험료 when the rates carry it; null keeps the 28만 원 보수 basis. */
+    fun healthFloor(on: java.time.LocalDate): Long? = RateTable.latest(on) { it.healthMinShare }?.first
+
+    /** 2.0.0 [RVJ-04] 식대 등 비과세 월 한도 for [month]: the rates' value, else [NON_TAXABLE_LIMIT]. */
+    fun freeLimit(month: java.time.YearMonth): Long = RateTable.latest(month.atDay(1)) { it.mealFreeLimit }?.first ?: NON_TAXABLE_LIMIT
 
     /**
      * 1.39 [PAYX-56][PAYX-58][PAYX-59] [estimate] with everything the pay setup knows: its tax way, 가족·자녀, the month's 비과세
@@ -212,7 +229,7 @@ object TakeHome {
                 .mapNotNull { r -> r.monthlyAmount(month)?.let { a -> r.name to (if (r.capPerMonth > 0) minOf(a, r.capPerMonth) else a) } }
         return paid.filter { it.second > 0 }.groupBy { (name, _) -> freeKind(name) ?: "기타:$name" }.map { (kind, list) ->
             val sum = list.sumOf { it.second }
-            FreePart(kind.removePrefix("기타:"), sum, sum.coerceAtMost(NON_TAXABLE_LIMIT), list.map { it.first })
+            FreePart(kind.removePrefix("기타:"), sum, sum.coerceAtMost(freeLimit(month)), list.map { it.first })
         }
     }
 

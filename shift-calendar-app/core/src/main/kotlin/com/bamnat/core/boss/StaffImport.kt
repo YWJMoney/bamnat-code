@@ -16,7 +16,8 @@ object StaffImport {
 
     private fun norm(s: String) = s.replace(" ", "").lowercase()
 
-    fun lines(rows: List<StaffRow>, existing: List<StaffMember>, on: LocalDate, id: () -> String = { java.util.UUID.randomUUID().toString() }): List<Line> {
+    fun lines(rows: List<StaffRow>, existing: List<StaffMember>, on: LocalDate, id: () -> String = { java.util.UUID.randomUUID().toString() },
+              legalBreaks: Boolean = true): List<Line> {
         val have = existing.map { norm(it.name) }.toMutableSet()
         val minimum = RateTable.on(on).minimumHourlyWage
         return rows.map { r ->
@@ -26,10 +27,13 @@ object StaffImport {
                 if (r.form == null || "form" in r.doubtful) add("시급·월급·일급")
                 if (r.weekly.isEmpty() || "weekly" in r.doubtful) add(if (r.weekly.isEmpty()) "근무 요일·시간이 없어요" else "근무 요일·시간")
             }
-            val m = StaffMember(
+            val bare = StaffMember(
                 id(), r.name.trim(), form, r.base ?: minimum, hiredOn = r.hiredOn, job = r.job.orEmpty(),
                 weekly = r.weekly.mapValues { (_, t) -> StaffShift(t.first, t.second) },
             )
+            // 2.0.0 [RVJ-16] 검토 BOSS-60: a person brought in by a list gets the 4대보험 the law puts them in, as one added by hand
+            // ([InsuranceRules.defaultFor]); the 대장 says why any is left out.
+            val m = bare.copy(insurance = InsuranceRules.defaultFor(bare, legalBreaks, on))
             Line(m, check, already = !have.add(norm(r.name)))
         }
     }

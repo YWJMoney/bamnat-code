@@ -17,13 +17,20 @@ import java.time.temporal.TemporalAdjusters
  */
 object WorkProof {
     data class Day(val date: LocalDate, val shift: String, val start: LocalTime?, val end: LocalTime?, val breakMinutes: Int,
-                   val minutes: Int, val extraMinutes: Int, val recorded: Boolean)
+                   val minutes: Int, val extraMinutes: Int, val recorded: Boolean,
+                   /** 2.0.0 [RVJ-07] Some extra work that day has hours but no clock times (an old record). */
+                   val extraUntimed: Boolean = false)
 
+    /**
+     * 2.0.0 [RVJ-07] 검토 PAYC-06: 더 일함 is what the pay counts ([ResolvedExtra.minutes]: the span less its break, and none of
+     * the hours inside the day's own shift, e.g. 교육 09~13 on an 09~18 일근), and a piece with hours but no times still counts.
+     */
     fun days(from: LocalDate, to: LocalDate, resolve: (LocalDate) -> ResolvedDay): List<Day> =
         generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map { d ->
             val r = resolve(d)
-            val extra = r.extras.sumOf { e -> if (e.from != null && e.to != null) java.time.Duration.between(e.from, e.to).toMinutes().toInt() else 0 }
-            Day(d, r.shiftType?.name ?: "", r.start, r.end, r.breakMinutes, r.scheduledMinutes, extra, r.hasCustomTimes)
+            val extra = r.extras.sumOf { e -> e.minutes.coerceAtLeast(0) }
+            Day(d, r.shiftType?.name ?: "", r.start, r.end, r.breakMinutes, r.scheduledMinutes, extra, r.hasCustomTimes,
+                extraUntimed = r.extras.any { it.entry.start == null && it.minutes > 0 })
         }.filter { it.minutes > 0 || it.extraMinutes > 0 }.toList()
 
     data class Week(val monday: LocalDate, val minutes: Int) {
@@ -46,7 +53,8 @@ object WorkProof {
         blocks += ReportDoc.Heading("날짜별 기록")
         blocks += ReportDoc.Table(listOf("날짜", "근무", "시작", "끝", "휴게", "일한 시간", "더 일함", "기록"),
             days.map { listOf(d(it.date), it.shift, t(it.start), t(it.end), "${it.breakMinutes}분", hm(it.minutes),
-                if (it.extraMinutes > 0) hm(it.extraMinutes) else "", if (it.recorded) "실제 기록" else "근무표") },
+                if (it.extraMinutes > 0) hm(it.extraMinutes) + (if (it.extraUntimed) " (시각 없음)" else "") else "",
+                if (it.recorded) "실제 기록" else "근무표") },
             listOf(1.4f, 1.2f, 1f, 1f, 0.8f, 1.3f, 1.2f, 1f), right = setOf(5, 6),
             total = listOf("합계", "", "", "", "", hm(days.sumOf { it.minutes }), hm(days.sumOf { it.extraMinutes }), ""))
         blocks += ReportDoc.Heading("주별 합계")
