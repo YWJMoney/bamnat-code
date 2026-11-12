@@ -486,7 +486,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: 
         // [RVD-16] 디자인 품질 조건 4(총괄 11-12): 첫 줄은 이 한 줄. 받는 때 목록은 갈래 P의 설명 ⓘ 부품이 오면 그 안으로 옮겨요(부품 대기).
         // [RVO-13] HQ-58 (총괄 11-12): the 1년 12개월 only while the server counts it (처리방침 3.13 30일 줄, RVD-21), not before 12-12.
         val rules = com.bamnat.app.ui.settings.rememberInviteTerms()
-        Text(passesHead(rules, java.time.LocalDate.now(zone)), style = MaterialTheme.typography.bodyMedium)
+        Text(passesHead(rules, Today.date()), style = MaterialTheme.typography.bodyMedium)
         Text("받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
