@@ -64,7 +64,8 @@ jobs:
           python-version: "3.12"
       - run: python3 tools/check_tracker.py
       - run: python3 tools/test_check_checklist.py && python3 tools/test_app_size.py && python3 tools/test_market_works.py
-      - run: python3 tools/test_dev_status.py
+      # [RVR-26] 개발 기록에 적힌 '잡을 시험'이 정말 있는지도: 시험 이름을 바꾸거나 지운 PR에서 바로 알아요.
+      - run: python3 tools/test_dev_status.py && python3 tools/dev_status.py check
       # [I60b-01][U60-01] 날짜 시험 요약·PR 요약의 '처음 깨짐/기준에서도 깨짐' 도구
       - run: python3 tools/test_date_watch.py && python3 tools/test_slow_tests.py
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
