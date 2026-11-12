@@ -95,4 +95,24 @@ object TypeWords {
         for (a in allowed(style).sortedByDescending { it.length }) rest = rest.replace(a, " ")
         return words.filter { it in rest }.distinct()
     }
+
+    /**
+     * 2.0.0 [RVS-10] 검토 STU-27·T09a-06: the kinds of 근무 a rule's 근무 칩 and a part's '어떤 때' offer to [style] (keys of
+     * `LogicRule.ROLE_WORDS`). 교대·알바 have every one; 일근 works days (and the odd other); 현장·가게·투자 only a working day
+     * and a day off, said in their own words by [roleWord]. A work made elsewhere that already uses another still shows it.
+     */
+    fun roles(style: WorkStyle?): List<String> = when (style) {
+        null, WorkStyle.SHIFT, WorkStyle.HOURLY -> listOf("day", "eve", "night", "long", "off", "other")
+        WorkStyle.DAY -> listOf("day", "off", "other")
+        WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> listOf("day", "off")
+    }
+
+    /** [role]'s name for [style] where a shift word would be wrong (출근하는 날, 영업일, 휴무 …); null where the shift word is right. */
+    fun roleWord(style: WorkStyle?, role: String): String? = when (style) {
+        null, WorkStyle.SHIFT, WorkStyle.HOURLY -> null
+        WorkStyle.DAY -> mapOf("day" to "출근하는 날", "off" to "쉬는 날", "other" to "그 밖 근무")[role]
+        WorkStyle.FIELD -> mapOf("day" to "일하는 날", "off" to "빈 날")[role]
+        WorkStyle.BUSINESS -> mapOf("day" to "영업일", "off" to "휴무")[role]
+        WorkStyle.INVEST -> mapOf("day" to "매매하는 날", "off" to "매매 없는 날")[role]
+    }
 }
