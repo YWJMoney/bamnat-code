@@ -894,6 +894,12 @@ class RecipePieces(private val c: AppContainer) {
 
     // ---- restore (7일 되돌리기) ----
 
+    /**
+     * 2.0.0 [RVM-45] 검토 RCP-02: how many places the last [restore]s left as the user made them since (counted while
+     * [RecipeRepository.undo] runs, so 되돌리기 can say "직접 바꾼 N곳은 그대로 뒀어요" rather than a plain 되돌렸어요).
+     */
+    @Volatile var kept: Int = 0
+
     /** Puts back what [apply] replaced; a value the user changed since is left as they made it. */
     suspend fun restore(kind: PieceKind, before: JSONObject, cal: String) {
         when (kind) {
@@ -910,7 +916,10 @@ class RecipePieces(private val c: AppContainer) {
                 }
             }
             PieceKind.CAL_THEME -> c.settingsRepository.update { s ->
-                if (s.calTheme == before.optString("after")) s.copy(calTheme = before.optString("before")) else s
+                // 2.0.0 [RVM-45] RCP-02: colour by colour (a 일요일 colour put on later by another work stays).
+                val back = SettingBack.of("calTheme", s.calTheme, before.optString("before"), before.optString("after"))
+                kept += back.kept
+                if (back.text != s.calTheme) s.copy(calTheme = back.text) else s
             }
             PieceKind.ALARMS -> {
                 val repo = c.scopeOf(cal).schedule
@@ -1012,6 +1021,7 @@ class RecipePieces(private val c: AppContainer) {
                     val after = before.optJSONArray("patternsAfter")
                     val now = JSONArray(schedule.snapshot.first().patterns.map { p -> patternJson(p) })
                     if (after == null || UndoMerge.same(now, after)) schedule.restorePatterns(a.objects().mapNotNull(::patternFrom))
+                    else if (!UndoMerge.same(a, after)) kept++
                 }
                 val mine = schedule.snapshot.first().shiftTypes.associateBy { it.id }
                 val typesAfter = before.optJSONArray("typesAfter")?.objects()?.associateBy { it.getLong("id") }
@@ -1019,7 +1029,9 @@ class RecipePieces(private val c: AppContainer) {
                     val t = mine[o.getLong("id")] ?: return@forEach
                     val a = typesAfter?.get(t.id)
                     val cur = typeTimes(t)
-                    fun untouched(key: String) = a == null || UndoMerge.same(cur.opt(key), a.opt(key))
+                    fun untouched(key: String) = (a == null || UndoMerge.same(cur.opt(key), a.opt(key))).also { same ->
+                        if (!same && !UndoMerge.same(o.opt(key), a?.opt(key))) kept++
+                    }
                     var n = t
                     if (untouched("start")) n = n.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse))
                     if (untouched("end")) n = n.copy(end = o.optStringOrNull("end")?.let(LocalTime::parse))
@@ -1034,7 +1046,7 @@ class RecipePieces(private val c: AppContainer) {
                         runCatching {
                             val t = mine[id] ?: return@runCatching
                             val changed = typesAfter?.get(id)?.let { !UndoMerge.same(typeTimes(t), it) } ?: false
-                            if (typesAfter != null && (changed || schedule.shiftTypeUse(id).let { u -> u.days > 0 || u.inPattern || u.covers > 0 })) return@runCatching
+                            if (typesAfter != null && (changed || schedule.shiftTypeUse(id).let { u -> u.days > 0 || u.inPattern || u.covers > 0 })) { kept++; return@runCatching }
                             schedule.deleteShiftTypeUndoable(id)
                         }
                     }
@@ -1044,7 +1056,11 @@ class RecipePieces(private val c: AppContainer) {
                         val a = before.optJSONObject("profileAfter")
                         val now = c.payStore.profile.value
                         if (a == null && !before.has("typesAfter")) c.payStore.save(PayCodec.decode(p))
-                        else if (a != null && now != null) PayCodec.decode(UndoMerge.back(PayCodec.encode(now), p, a)).takeIf { it != now }?.let { c.payStore.save(it) }
+                        else if (a != null && now != null) {
+                            val back = UndoMerge.back(PayCodec.encode(now), p, a)
+                            if (!UndoMerge.same(back, p)) kept++
+                            PayCodec.decode(back).takeIf { it != now }?.let { c.payStore.save(it) }
+                        }
                     }
                 }
             }
@@ -1075,12 +1091,20 @@ class RecipePieces(private val c: AppContainer) {
                     com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                 }
                 val sets = before.optJSONObject("settings") ?: return
+                // 2.0.0 [RVM-45] 검토 RCP-02 (조건 10): a setting went back only when its whole text was still as the work left it, so one
+                // button of my own (or the widget's 투명도 alone) kept every rule and look the work put on, while 되돌리기 said 되돌렸어요.
+                // Now part by part: the rules and buttons the work added (and nothing I made or changed), each 'key=value' of a look.
+                var keptHere = 0
                 c.settingsRepository.update { cur ->
+                    keptHere = 0
                     sets.keys().asSequence().fold(cur) { acc, k ->
                         val pair = sets.getJSONArray(k)
-                        if (settingOf(acc, k) == pair.getString(1)) withSetting(acc, k, pair.getString(0)) else acc
+                        val back = SettingBack.of(k, settingOf(acc, k), pair.getString(0), pair.getString(1))
+                        keptHere += back.kept
+                        if (back.text != settingOf(acc, k)) withSetting(acc, k, back.text) else acc
                     }
                 }
+                kept += keptHere
             }
         }
     }

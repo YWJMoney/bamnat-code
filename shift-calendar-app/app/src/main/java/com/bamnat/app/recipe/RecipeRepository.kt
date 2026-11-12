@@ -374,27 +374,63 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     fun canUndo(e: AppliedRecipeEntity, now: Long = Today.millis()): Boolean =
         e.undoneAt == null && e.replacedAt == null && now - e.appliedAt < UNDO_DAYS * DAY_MILLIS
 
+    /** 2.0.0 [RVM-45] 검토 RCP-02: what the last [undo] / [undoAll] left as the user made it, and the pieces it could not take back. */
+    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList())
+
+    @Volatile var lastUndo = UndoReport()
+        private set
+
+    /** What 되돌리기 says after [undo] (or [undoAll]) gave [ok]: what is truly so, never a plain 되돌렸어요 over what stayed. */
+    fun undoSay(ok: Boolean): String = lastUndo.let { r ->
+        when {
+            r.failed.isNotEmpty() -> "되돌리지 못한 것이 있어요(" + r.failed.joinToString("·") { it.label } + "). 한 번 더 눌러 주세요"
+            !ok -> "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요"
+            r.kept > 0 -> "되돌렸어요. 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
+            else -> "되돌렸어요. 그 사이 적은 기록은 그대로예요"
+        }
+    }
+
     /** 되돌리기: every piece put back, last first; what the user changed since stays. */
-    suspend fun undo(id: Long): Boolean {
-        val e = dao.appliedById(id) ?: return false
-        if (!canUndo(e)) return false
-        val before = runCatching { JSONObject(e.before) }.getOrNull() ?: return false
+    suspend fun undo(id: Long): Boolean = undoOne(id).also { lastUndo = it.second }.first
+
+    private suspend fun undoOne(id: Long): Pair<Boolean, UndoReport> {
+        val e = dao.appliedById(id) ?: return false to UndoReport()
+        if (!canUndo(e)) return false to UndoReport()
+        val before = runCatching { JSONObject(e.before) }.getOrNull() ?: return false to UndoReport()
+        // 2.0.0 [RVM-45] 검토 RCP-02: a piece that failed was swallowed and the whole record stamped 되돌림, so it could not be tried
+        // again. Now the record keeps the pieces still on (and stays undoable); the rest are taken back.
+        val failed = ArrayList<String>()
+        pieces.kept = 0
         for (key in e.pieces.split(',').reversed()) {
             val kind = PieceKind.of(key) ?: continue
             val snap = before.optJSONObject(key) ?: continue
-            runCatching { pieces.restore(kind, snap, e.calendarId) }
+            runCatching { pieces.restore(kind, snap, e.calendarId) }.onFailure { failed += key }
+        }
+        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of))
+        if (failed.isNotEmpty()) {
+            dao.upsertApplied(e.copy(pieces = e.pieces.split(',').filter { it in failed }.joinToString(",")))
+            return true to report
         }
         dao.upsertApplied(e.copy(undoneAt = Today.millis()))
         // [J135-16] A theme's looks taken back here (내 레시피 or the recipe's own page): 입는 중 goes back to what was worn before.
         if (e.code.isNotEmpty()) runCatching { c.wardrobe.forget(e.code) }
-        return true
+        return true to report
     }
 
     /**
      * 되돌리기 on a recipe's own page: every put-on of [code] that can still be taken back, newest first, so none of it is left
      * (PC 확인 8773e3ae: the same recipe put on twice, with other pieces or on another calendar, kept the older one's card). How many.
      */
-    suspend fun undoAll(code: String): Int = undoable(code).count { undo(it.id) }
+    suspend fun undoAll(code: String): Int {
+        var all = UndoReport()
+        val n = undoable(code).count { e ->
+            val (ok, r) = undoOne(e.id)
+            all = UndoReport(all.kept + r.kept, all.failed + r.failed)
+            ok
+        }
+        lastUndo = all
+        return n
+    }
 
     /** Every put-on of [code] that can still be taken back, newest first (what 되돌리기 on its page takes back). */
     suspend fun undoable(code: String): List<AppliedRecipeEntity> {
