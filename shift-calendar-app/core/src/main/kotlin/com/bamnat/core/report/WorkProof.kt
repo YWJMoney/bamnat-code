@@ -99,7 +99,8 @@ object StaffReport {
                 "주휴수당" to if (s.holidayPay) "줌" else "안 줌")),
             ReportDoc.Table(listOf("날짜", "시간", "인정 시간"), rows, listOf(1.4f, 2f, 1f), right = setOf(2)),
             ReportDoc.Facts(listOf("급여" to won(line.base), "주휴수당" to won(line.holidayPay), "합계" to won(line.pay)) +
-                listOfNotNull(if (line.insurance > 0) "4대보험 (사장님 몫)" to won(line.insurance) else null)),
+                // [RVJ-54] Under 15 hours a week the share is 고용보험 alone ([LaborCost.shortWeek]).
+                listOfNotNull(if (line.insurance > 0) (if (LaborCost.shortWeek(s, roster.legalBreaks)) "고용보험 (사장님 몫)" else "4대보험 (사장님 몫)") to won(line.insurance) else null)),
             ReportDoc.Paragraph("근무표대로 셌어요. 야간·휴일 가산과 근로자 몫 4대보험·세금은 빠져 있어요. 참고용 · 만든 날 $made · 밤낮", small = true),
         )
         return ReportDoc("${shop.ifBlank { "가게" }} · ${s.name.ifBlank { "직원" }} ${month.year}년 ${month.monthValue}월 근무·급여", blocks, footer = "밤낮 · 직원 근무")

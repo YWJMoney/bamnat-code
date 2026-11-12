@@ -1,5 +1,6 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.collectAsState
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.Tier
@@ -62,6 +63,43 @@ class RvjShortWeekScreenshotTest : ScreenshotBase() {
         staff(StaffTax.DAILY).invoke(this)
         assertTrue(scrolledTo("일용직은 한 주 15시간이 안 돼도 고용보험은 첫날부터 들어요"))
         assertTrue(!shows("가입 대상이 아니에요"))
+    }
+
+    /**
+     * [RVJ-54] 가게 › 직원 근무표: 4대보험을 켠 주말 알바(한 주 8시간)는 사장님 몫이 고용보험만이고, 그 직원 칸의 '4대보험 가입' 아래
+     * 한 줄과 인건비 줄이 그렇게 말해요. 한 주 15시간 넘는 직원은 그대로 4대보험.
+     */
+    private fun shopShort(toSwitch: Boolean = true): Screen.() -> Unit = {
+        val roster = StaffRoster(listOf(
+            com.bamnat.core.work.Staff("a", "주말알바", 10_320, insured = true, shifts = listOf(DayOfWeek.SATURDAY, DayOfWeek.SUNDAY).associateWith { four }),
+            com.bamnat.core.work.Staff("b", "이준호", 10_320, insured = true, shifts = DayOfWeek.entries.drop(2).associateWith { StaffShift(LocalTime.of(13, 0), LocalTime.of(21, 30)) }),
+        ))
+        com.bamnat.app.data.WorkToolsStore.get(app).update(com.bamnat.app.data.PersonalCalendar.MAIN) { it.copy(roster = roster) }
+        settle()
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                com.bamnat.app.ui.work.ShopToolCards(com.bamnat.app.data.PersonalCalendar.MAIN, com.bamnat.core.money.MoneyBook(), java.time.YearMonth.from(Today.date()))
+            }
+        }
+        settle()
+        tapText("근무표", exact = true, scrolls = 0)
+        settle()
+        if (toSwitch) reveal("4대보험 가입", exact = true)
+    }
+
+    @Test fun shopShortWeek() = shoot("rvj_141_shop_short_week_folded", FOLDED, shopShort())
+    @Test fun shopShortWeekDarkBig() = shoot("rvj_143_shop_short_week_folded_dark_200", DARK, 2f, shopShort())
+
+    @Test fun shopCostLineNamesTheEmploymentShare() = shoot("rvj_144_shop_short_week_cost_folded", FOLDED) {
+        shopShort(toSwitch = false).invoke(this)
+        assertTrue(scrolledTo("+ 고용보험"))
+        assertTrue("15시간 넘는 직원은 4대보험", shows("+ 4대보험"))
+    }
+
+    @Test fun shopShortWeekCountsTheEmploymentShareOnly() = shoot("rvj_142_shop_short_week_said_folded", FOLDED) {
+        shopShort().invoke(this)
+        assertTrue(scrolledTo("한 주 15시간 미만이라 고용보험 몫만 더해요"))
+        assertTrue("15시간 넘는 직원은 그대로", scrolledTo("사장님이 내는 몫을 인건비에 더해요"))
     }
 
     private fun amount(): Screen.() -> Unit = payScreen(Tier.PRO, withProfile = true) { vm ->

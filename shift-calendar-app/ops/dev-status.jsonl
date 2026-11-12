@@ -539,3 +539,4 @@
 {"track": "RVJ-51", "title": "금액 없는 수당을 넣은 뒤 글", "status": "check", "size": "polish", "route": "app", "check": "(PC) 급여 › 내 급여 값 › 수당 추가 › 금액 없이 매달 › 추가 뒤 글"}
 {"track": "RVJ-52", "title": "말일 마감에 월급날 10일은 다음 달 10일로", "status": "check", "size": "polish", "route": "app", "check": "(PC) 회사 규칙 › 정산 기간과 월급날 › 10일 / 25일"}
 {"track": "RVJ-53", "title": "새로 만든 팀 근무표가 다음 달로 열리던 것", "status": "check", "size": "fix", "route": "app", "check": "(PC) 새 폰, 팀 만들기 › 열기 › 이번 달 / 다음 달을 칠한 뒤 다시 열기"}
+{"track": "RVJ-54", "title": "가게 인건비: 한 주 15시간이 안 되는 직원은 사장님 몫 고용보험만", "status": "check", "size": "fix", "route": "app", "check": "(PC) 가게 › 직원 근무표 › 토·일 4시간 직원 4대보험 켜기 › 그 칸 한 줄과 인건비 줄 '고용보험'"}

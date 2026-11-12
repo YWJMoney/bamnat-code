@@ -750,7 +750,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, wageDay: LocalDat
         else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) ToneLine("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.")
         // 2.0.0 [RVJ-45] 검토 PC-108: a short week leaves the chips off by law with nothing said; it says why, as the line above does for
         // 15시간 이상. 고용보험법 시행령 제3조(2023.6.27): 제1항 월 60시간·주 15시간 미만은 적용 제외, 제2항 3개월 이상 계속 근로와
-        // 일용근로자는 적용. 국민연금법 시행령 제2조 제4호(월 60시간 미만 단시간근로자 제외); 국민건강보험법 시행령 제9조는 원문 확인 필요
+        // 일용근로자는 적용. 국민연금법 시행령 제2조 제4호(월 60시간 미만 단시간근로자 제외), 국민건강보험법 시행령 제9조 제1호(같은 선, 원문 확인 2026-11-12)
         // ([InsuranceRules.of]가 같은 선으로 셈해요).
         val shortWeek = s.form != WageForm.MONTH && s.weekly.values.sumOf { it.paidMinutes(breaks) } in 1 until com.bamnat.core.boss.InsuranceRules.WEEK_MINUTES
         if (shortWeek && !s.insurance.any) when (s.insurance.tax) {

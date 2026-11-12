@@ -369,7 +369,9 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
             SectionCard(title = "${month.monthValue}월 인건비") {
                 cost.lines.forEach { l ->
                     ValueLine("${l.staff.name.ifBlank { "이름 없음" }} · ${l.workMinutes / 60}시간", Fmt.won(l.total))
-                    Hint("급여 ${Fmt.won(l.base)} + 주휴 ${Fmt.won(l.holidayPay)}" + if (l.insurance > 0) " + 4대보험 ${Fmt.won(l.insurance)}" else "")
+                    // [RVJ-54] A short week adds the 고용보험 share alone; the line names it.
+                    val ins = if (LaborCost.shortWeek(l.staff, roster.legalBreaks)) "고용보험" else "4대보험"
+                    Hint("급여 ${Fmt.won(l.base)} + 주휴 ${Fmt.won(l.holidayPay)}" + if (l.insurance > 0) " + $ins ${Fmt.won(l.insurance)}" else "")
                 }
                 ValueLine("합계", Fmt.won(cost.total), strong = true)
                 // G 1.32 [WTYP-03] 직원별 근무·급여 PDF (프로), to hand to each staff member.
@@ -391,7 +393,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
         SwitchLine("휴게시간 빼고 세기", roster.legalBreaks, { roster = roster.copy(legalBreaks = it) }, "4시간이면 30분, 8시간이면 1시간을 빼요(근로기준법 제54조)")
         roster.staff.forEachIndexed { i, s ->
             key(s.id) {
-                StaffEditor(s, minimum, wageDay.year, onChange = { n -> roster = roster.copy(staff = roster.staff.toMutableList().also { it[i] = n }) },
+                StaffEditor(s, minimum, wageDay.year, roster.legalBreaks, onChange = { n -> roster = roster.copy(staff = roster.staff.toMutableList().also { it[i] = n }) },
                     onRemove = { roster = roster.copy(staff = roster.staff.filterIndexed { k, _ -> k != i }) })
             }
         }
@@ -412,7 +414,7 @@ private fun short(t: LocalTime): String = if (t.minute == 0) "${t.hour}" else "$
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, onChange: (Staff) -> Unit, onRemove: () -> Unit) {
+private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, breaks: Boolean, onChange: (Staff) -> Unit, onRemove: () -> Unit) {
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     SectionCard(title = s.name.ifBlank { "새 직원" }, trailing = { IconButton(onClick = onRemove) { Icon(Icons.Outlined.Delete, "직원 빼기") } }) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -420,7 +422,10 @@ private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, onChange: (Staff)
             AmountField("시급", amountDigits(s.hourlyWage), { onChange(s.copy(hourlyWage = it.toAmount())) })
             if (s.hourlyWage in 1 until minimum) Text("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
             SwitchLine("주휴수당 주기", s.holidayPay, { onChange(s.copy(holidayPay = it)) }, "한 주 15시간이 안 되면 저절로 빠져요")
-            SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) }, "사장님이 내는 몫을 인건비에 더해요")
+            // 2.0.0 [RVJ-54]: under 15 hours a week only the 고용보험 share is counted ([LaborCost.shortWeek]); the line says so.
+            SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) },
+                if (LaborCost.shortWeek(s, breaks)) "한 주 15시간 미만이라 고용보험 몫만 더해요"
+                else "사장님이 내는 몫을 인건비에 더해요")
             Text("일하는 요일", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 DayOfWeek.entries.forEach { d ->
