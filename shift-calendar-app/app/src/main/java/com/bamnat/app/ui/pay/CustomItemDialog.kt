@@ -1130,19 +1130,32 @@ internal fun MakeItemCard(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** [PAYS-07] An item just made, said back in a sentence with the way to take it back. */
+/**
+ * [PAYS-07] An item just made, said back in a sentence with the way to take it back. 2.0.0 [RVJ-56] 검토 PC-137: [lands] is the month
+ * it first counts in when the month on screen is closed ("12월 급여부터 들어가요."); it had said '합계에 바로 들어갔어요' above the band
+ * '11월은 마감돼 그대로예요 · 12월 급여부터 +200,000원'.
+ */
 @Composable
-internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
+internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?, lands: YearMonth? = null) {
+    // [RVJ-56] With big letters the sentence had a third of the width beside '되돌리기' (a word a line); the button goes under it.
+    val big = com.bamnat.app.ui.components.bigLetters()
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            // 2.0.0 [RVJ-51] 검토 PC-119: an item put in with no amount yet adds nothing; it said '합계에 바로 들어갔어요'.
-            val noAmount = made is MadeItem.Item && made.item.percentOfBase == null && made.item.amount.entries.all { it.value == 0L }
-            Text("‘${made.name}’ 항목을 만들었어요. " + if (noAmount) "금액을 넣으면 합계에 들어가요." else "합계에 바로 들어갔어요.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-            if (onUndo != null) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+        Column(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                // 2.0.0 [RVJ-51] 검토 PC-119: an item put in with no amount yet adds nothing; it said '합계에 바로 들어갔어요'.
+                val noAmount = made is MadeItem.Item && made.item.percentOfBase == null && made.item.amount.entries.all { it.value == 0L }
+                val where = lands?.let { "${it.monthValue}월 급여부터 들어가요." }
+                Text("‘${made.name}’ 항목을 만들었어요. " + when {
+                    noAmount -> "금액을 넣으면 " + (where ?: "합계에 들어가요.")
+                    else -> where ?: "합계에 바로 들어갔어요."
+                },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).padding(end = if (big) 10.dp else 0.dp))
+                if (onUndo != null && !big) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+            }
+            if (onUndo != null && big) TextButton(onClick = onUndo, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("되돌리기") }
         }
     }
 }
