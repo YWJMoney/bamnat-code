@@ -26,6 +26,7 @@ import com.bamnat.app.pay.PayStore
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.time.Today
+import java.time.YearMonth
 
 /**
  * [PAYIN-05] 1.37 B5: what a save just did, under the screen: "회사 규칙 2개를 넣었어요 · 11월 2,980,000원 → 3,046,000원" with
@@ -48,11 +49,42 @@ internal fun ChangeNoteBar(note: PayViewModel.ChangeNote, onUndo: () -> Unit, on
     }
 }
 
-/** "11월 급여 2,980,000원 → 3,046,000원 (+66,000원)", or that the month stayed as it was. */
+/**
+ * 2.0.0 [RVJ-32] 검토 PC-80: the month a change shows in when [month] is on screen: [month], or when it is closed the first open month
+ * after it (a closed month keeps its result whatever changes later). Three years on at most, then [month].
+ */
+internal fun landsIn(month: YearMonth, closed: Set<YearMonth>): YearMonth =
+    generateSequence(month) { it.plusMonths(1) }.take(37).firstOrNull { it !in closed } ?: month
+
+/**
+ * 2.0.0 [RVJ-36] 검토 PAYU-17·PC-87: a month's pay title. A month still to be paid is '예상'; a past month is not, and a closed one says
+ * so where no 마감 chip stands beside it ([chip] false): "10월 급여 (세전 · 마감)". It had been 'N월 예상 급여 (세전)' for every month.
+ */
+internal fun payMonthTitle(month: YearMonth, today: YearMonth, closed: Boolean, chip: Boolean = false): String = when {
+    closed -> "${month.monthValue}월 급여 (세전${if (chip) "" else " · 마감"})"
+    month < today -> "${month.monthValue}월 급여 (세전)"
+    else -> "${month.monthValue}월 예상 급여 (세전)"
+}
+
+/**
+ * "11월 급여 2,980,000원 → 3,046,000원 (+66,000원)", or that the month stayed as it was. 2.0.0 [RVJ-32] PC-80: with a closed month on
+ * screen, "10월은 마감돼 그대로예요 · 11월 급여부터 +200,000원" (it had said 10월 changed while 10월 stayed as closed).
+ */
 internal fun changeLine(note: PayViewModel.ChangeNote): String {
-    val m = "${note.month.monthValue}월 급여"
     val b = note.before
     val a = note.after
+    note.shut?.let { shut ->
+        val kept = "${shut.monthValue}월은 마감돼 그대로예요 · "
+        val m = "${note.month.monthValue}월 급여"
+        return kept + when {
+            b == null && a == null -> "$m 계산은 아직 없어요"
+            b == null -> "$m ${won(a!!)}으로 계산해요"
+            a == null -> "$m 계산을 비웠어요 (전에는 ${won(b)})"
+            a == b -> "${m}도 그대로예요"
+            else -> "${m}부터 ${if (a > b) "+" else "−"}${won(kotlin.math.abs(a - b))}"
+        }
+    }
+    val m = "${note.month.monthValue}월 급여"
     return when {
         b == null && a == null -> "$m 계산은 아직 없어요"
         b == null -> "$m ${won(a!!)}으로 계산해요"
