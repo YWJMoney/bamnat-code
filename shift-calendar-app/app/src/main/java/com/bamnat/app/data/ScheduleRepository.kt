@@ -525,6 +525,38 @@ class ScheduleRepository(
     suspend fun updateDays(dates: List<LocalDate>, transform: (DayEntry) -> DayEntry): Map<LocalDate, DayEntry?> =
         db.withTransaction { dates.associateWith { updateDay(it, transform) } }
 
+    /**
+     * 2.0.0 [RVL-18] (검토 SCAN-13·I07ba-04, 조건 10) What one fill did (한 달 근무 넣기, 근태·캘린더 가져오기): each day as it was and
+     * as the fill left it, so taking it back leaves alone a day the user changed again since.
+     */
+    class Fill(val before: Map<LocalDate, DayEntry?>, val after: Map<LocalDate, DayEntry?>) {
+        val size: Int get() = before.size
+    }
+
+    /** [updateDays], keeping how each day was left ([Fill]). */
+    suspend fun fillDays(dates: List<LocalDate>, transform: (DayEntry) -> DayEntry): Fill = db.withTransaction {
+        val before = LinkedHashMap<LocalDate, DayEntry?>()
+        val after = LinkedHashMap<LocalDate, DayEntry?>()
+        for (d in dates) {
+            before[d] = updateDay(d, transform)
+            after[d] = readDay(d.toEpochDay())
+        }
+        Fill(before, after)
+    }
+
+    /** 2.0.0 [RVL-18] The days as they are now, for a [Fill] made of single writes (캘린더 가져오기). */
+    suspend fun daysNow(dates: Collection<LocalDate>): Map<LocalDate, DayEntry?> =
+        db.withTransaction { dates.associateWith { readDay(it.toEpochDay()) } }
+
+    /** 2.0.0 [RVL-18] Puts back the days [fill] changed that are still as it left them; returns the days changed since, and kept. */
+    suspend fun undoFill(fill: Fill): Set<LocalDate> = db.withTransaction {
+        val kept = LinkedHashSet<LocalDate>()
+        for ((d, was) in fill.before) {
+            if (readDay(d.toEpochDay()) == fill.after[d]) writeDay(was?.copy(date = d) ?: DayEntry(d)) else kept += d
+        }
+        kept
+    }
+
     /** A piece of extra work within what one day can hold. */
     private fun clean(e: ExtraEntry): ExtraEntry {
         val timed = e.hasTimes

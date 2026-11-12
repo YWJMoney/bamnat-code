@@ -117,6 +117,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -184,6 +185,8 @@ class DutyRosterViewModel(
         val step: Pair<Int, Int>? = null,
         /** [READ-30] 1.38 PC: a 4주 듀티's days in the month before or after go in too, unless the user says no. */
         val withOutside: Boolean = true,
+        /** 2.0.0 [RVL-20] (검토 SCAN-22) What was typed or read before the app closed, brought back: said once, with 처음부터. */
+        val resumed: Boolean = false,
     ) {
         val row: RosterRow? get() = if (chosen) rows?.getOrNull(picked) else null
         private val days: Int get() = month.lengthOfMonth()
@@ -244,8 +247,40 @@ class DutyRosterViewModel(
         // After the middle of a month the roster on the wall is usually next month's.
         if (shown == YearMonth.from(today) && today.dayOfMonth >= 15) shown.plusMonths(1) else shown
     }
-    private val _ui = MutableStateFlow(Ui(start))
+    // 2.0.0 [RVL-20] (검토 SCAN-22·U07b-15, 조건 10) A month typed or read and not put on yet survives the app closed in the background.
+    private val drafts = com.bamnat.app.data.RosterDraftStore(java.io.File(container.appContext.noBackupFilesDir, "roster_drafts"))
+    private val _ui = MutableStateFlow(drafts.read(calendarId)?.let { d ->
+        Ui(d.month, rows = d.rows, picked = d.picked, edits = d.edits, answers = d.answers, cursor = d.cursor, from = d.from,
+            named = d.named, chosen = d.chosen, withOutside = d.withOutside, resumed = true)
+    } ?: Ui(start))
     val ui: StateFlow<Ui> = _ui.asStateFlow()
+
+    init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            _ui.debounce(DRAFT_QUIET_MS).collect { u -> keepDraft(u) }
+        }
+    }
+
+    private fun keepDraft(u: Ui) {
+        if (!u.unsaved) drafts.clear(calendarId)
+        else drafts.write(calendarId, com.bamnat.app.data.RosterDraftStore.Draft(u.month, u.rows, u.picked, u.edits, u.answers, u.cursor,
+            u.from, u.named, u.chosen, u.withOutside, java.time.Instant.now()))
+    }
+
+    /** 2.0.0 [RVL-20] 처음부터: the month brought back is thrown away. */
+    fun startOver() {
+        drafts.clear(calendarId)
+        _ui.value = Ui(start)
+    }
+
+    /** 2.0.0 [RVL-20] '버리고 나가기': nothing of it comes back. */
+    fun discard() {
+        _ui.update { it.copy(edits = emptyMap(), rows = null, resumed = false) }
+        drafts.clear(calendarId)
+    }
+
+    fun heardResumed() = _ui.update { it.copy(resumed = false) }
     val types: StateFlow<List<ShiftType>> = schedule.shiftTypes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     /** The calendar as it is, under the cells about to go on it. */
     val snapshot: StateFlow<ScheduleSnapshot?> = schedule.snapshot.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -357,13 +392,17 @@ class DutyRosterViewModel(
         _ui.update { it.copy(reading = true, error = null, applied = null, step = null) }
         viewModelScope.launch {
             // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
-            val r = try { how(codes()) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+            // 2.0.0 [RVL-26] (검토 SCAN-21) Read off the main thread: a big file or text never freezes the screen.
+            val r = try { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { how(codes()) } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
                 RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.why(e).text)
             }
             // [READ-05] The table's own order, top to bottom, to choose from.
             val rows = r.rows.sortedBy { it.line }
             // [READ-06] The line picked on last month's roster, found again by its name or 조.
-            val mine = container.dutyCodes.mine(calendarId)?.let { m -> rows.indexOfFirst { it.label == m } }?.takeIf { it >= 0 }
+            // 2.0.0 [RVL-22] (검토 SCAN-07) Two people of that name ("김민지", "김민지 (2)"): asked, never the first taken.
+            val mine = container.dutyCodes.mine(calendarId)?.takeIf { m -> !DutyRoster.twins(rows, m) }
+                ?.let { m -> rows.indexOfFirst { it.label == m } }?.takeIf { it >= 0 }
             _ui.update {
                 it.copy(
                     reading = false, step = null, same = if (rows.isEmpty()) it.same else null,
@@ -477,12 +516,14 @@ class DutyRosterViewModel(
             val all = cells.mapKeys { u.month.atDay(it.key) } + outside
             // [READ-30] 1.38 PC (x03): 연차 on the roster is a working day taken off, even where the user's own order has a rest day.
             val restLeave = restLeave(u, all, snapshot.value ?: repo.snapshot.first(), types.value.ifEmpty { repo.shiftTypes.first() })
-            val before = repo.updateDays(all.keys.sorted()) { e ->
+            // 2.0.0 [RVL-18] (검토 SCAN-13) Each day as it was and as this left it, so 되돌리기 leaves alone a day changed since.
+            val fill = repo.fillDays(all.keys.sorted()) { e ->
                 val c = all.getValue(e.date)
                 restLeave[e.date]?.let { id -> DutyRoster.leaveOnRest(e, c as DutyCell.Leave, id) } ?: DutyRoster.apply(e, c)
             }
-            // [ROST-03] "D*", "N-O", "11D": what the roster said besides the code, as that day's memo.
-            val memos = notes.mapNotNull { (d, n) -> container.memoRepository.addQuick(u.month.atDay(d), "듀티표 표시: $n", setOf(calendarId)) }
+            // [ROST-03] "D*", "N-O", "11D": what the roster said besides the code, as that day's memo; 2.0.0 [RVL-19] (검토 SCAN-12) once,
+            // also when the same roster is put in again.
+            val memos = notes.mapNotNull { (d, n) -> container.memoRepository.addQuickOnce(u.month.atDay(d), "듀티표 표시: $n", setOf(calendarId)) }
             // [ROST-11] 밤낮이 한 일: what came in, never the roster itself.
             container.journal.note(JournalKind.ROSTER, rosterDetail(u.month.monthValue, all.size, u.from))
             // A roster whose common codes were matched to the user's kinds says something about those kinds.
@@ -496,15 +537,22 @@ class DutyRosterViewModel(
             val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요" +
                 (if (outside.isNotEmpty()) " · ${RosterReader.span(outside.keys)}도" else "") +
                 if (u.from == RosterFrom.PHOTO && u.row != null) " · 사진에서 고친 칸 ${u.fixed}개" else ""
-            val undo: suspend () -> Unit = {
-                before.forEach { (d, e) -> repo.restoreDay(d, e) }
-                if (memos.isNotEmpty()) container.memoRepository.delete(memos, offerUndo = false)
+            val undo: suspend () -> Int = {
+                val kept = repo.undoFill(fill).size
+                // A memo the user wrote on since stays too.
+                val untouched = memos.filter { m -> container.memoRepository.get(m.id)?.updatedAtMillis == m.updatedAtMillis }
+                if (untouched.isNotEmpty()) container.memoRepository.delete(untouched, offerUndo = false)
                 _ui.update { it.copy(applied = null) }
+                kept
             }
-            // [READ-11] Also from the calendar's 도구 once this screen is closed.
-            com.bamnat.app.ui.RecentFill.record(text, calendarId, container.appScope, undo)
+            // [READ-11] Also from the calendar's 도구 once this screen is closed; 2.0.0 [RVL-18] and over the calendar for 10분.
+            com.bamnat.app.ui.RecentFill.recordKeeping(text, calendarId, container.appScope, undo)
             val recent = com.bamnat.app.ui.RecentFill.entry.value
-            _messages.emit(UndoMessage(text) { com.bamnat.app.ui.RecentFill.clear(recent); undo() })
+            _messages.emit(UndoMessage(text) {
+                com.bamnat.app.ui.RecentFill.clear(recent)
+                val kept = undo()
+                if (kept > 0) _messages.emit(UndoMessage(com.bamnat.app.ui.RecentFill.undone(kept)))
+            })
         }
     }
 
@@ -522,6 +570,8 @@ class DutyRosterViewModel(
             .adjust(container.settingsRepository.current.rules)
 
     companion object {
+        /** 2.0.0 [RVL-20] The draft is written once typing has paused this long. */
+        const val DRAFT_QUIET_MS = 400L
         private const val MAX_UNDO = 60
         /** A roster's common code matched to the user's kind is likely, not sure. */
         const val ROSTER_CONFIDENCE = 0.6
@@ -555,8 +605,9 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     val snap by vm.snapshot.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
-    var pasting by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<Int?>(null) }
+    // 2.0.0 [RVL-20] (검토 U07b-15) The paste window and the day being fixed stay open when the phone turns or the fold opens.
+    var pasting by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf<Int?>(null) }
     var newKindFor by remember { mutableStateOf<String?>(null) }
     var others by rememberSaveable { mutableStateOf(false) }
     var tapping by remember { mutableStateOf(false) }
@@ -585,7 +636,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
         message = "${ui.month.monthValue}월에 넣은 ${ui.writable.size}일이 아직 달력에 들어가지 않았어요. 나가면 사라져요.",
         confirmLabel = "버리고 나가기",
         onDismiss = { leaving = false },
-        onConfirm = { leaving = false; onBack() },
+        onConfirm = { leaving = false; vm.discard(); onBack() },
         destructive = true,
     )
 
@@ -613,6 +664,14 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1)
                 IconButton(onClick = { vm.month(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             }
+            // 2.0.0 [RVL-20] (검토 SCAN-22) The month typed or read before the app closed, said once.
+            if (ui.resumed) com.bamnat.app.ui.components.NudgeCard(
+                "적던 근무표를 이어서 보여 드려요",
+                detail = "앱이 닫혀도 넣기 전까지 남아 있어요",
+                action = "처음부터",
+                onAction = vm::startOver,
+                onClose = vm::heardResumed,
+            )
             // The other ways in, one row: a photo or a file reads the roster onto this month.
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -804,11 +863,22 @@ private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, onAnswer: (Du
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // 1.39 G2 (같은 구조): '휴일'는 → '휴일'은. Letters and codes (D, N, OFF) keep 는.
             val nun = if (ask.raw.trim().lastOrNull()?.let { it in '가'..'힣' } == true) com.bamnat.core.text.Josa.eunneun(ask.raw) else "는"
-            Text(if (ask.leave) "‘${ask.raw}’$nun 어떤 휴가인가요?" else "‘${ask.raw}’$nun 어떤 근무인가요?", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer)
-            Text(if (ask.leave) "회사마다 달라요. 한 번 고르면 다음 근무표부터는 묻지 않아요." else "한 번 고르면 다음 근무표부터는 바로 들어가요.",
+            // 2.0.0 [RVL-21] (검토 SCAN-06·T07b-04) AM·V·반·생: a leave on one roster, a shift on another. Asked, the leave it
+            // most often is first; a kind of work is right there too.
+            val guess = remember(ask.raw) { com.bamnat.core.imports.DutyCodes.guessOf(ask.raw) }
+            Text(when {
+                ask.leave -> "‘${ask.raw}’$nun 어떤 휴가인가요?"
+                guess != null -> "‘${ask.raw}’$nun ${guess.first}인가요, 근무인가요?"
+                else -> "‘${ask.raw}’$nun 어떤 근무인가요?"
+            }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text(if (ask.leave || guess != null) "회사마다 달라요. 한 번 고르면 다음 근무표부터는 묻지 않아요." else "한 번 고르면 다음 근무표부터는 바로 들어가요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (guess != null && !ask.leave) {
+                    val cell = guess.second
+                    FilterChip(selected = false, onClick = { onAnswer(cell) }, label = { Text(guess.first) },
+                        leadingIcon = { if (cell is DutyCell.Leave) LeaveMark(cell.leave, size = 18.dp) })
+                }
                 if (ask.leave) {
                     LeaveKind.entries.forEach { k ->
                         FilterChip(selected = false, onClick = { onAnswer(DutyCell.Leave(k)) }, label = { Text(k.label) },
@@ -966,9 +1036,10 @@ private fun NewKindDialog(raw: String, onDismiss: () -> Unit, onSave: (String, T
 
 @Composable
 private fun PasteDialog(onDismiss: () -> Unit, onRead: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
+    var text by rememberSaveable { mutableStateOf("") }
     AlertDialog(
-        onDismissRequest = onDismiss,
+        // 2.0.0 [RVL-20] (조건 10) A tap beside the window does not throw away what was pasted; 취소 still does.
+        onDismissRequest = { if (text.isBlank()) onDismiss() },
         title = { Text("글자로 붙여 넣기") },
         text = {
             Column {

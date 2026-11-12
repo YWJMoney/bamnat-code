@@ -196,7 +196,9 @@ fun PayslipFillDialog(
             // [PHOTO-30] 1.30 AW: the 기준 시간·통상시급 go on the 통상시급 card, the rest are 칸.
             val findings = photos.rules + com.bamnat.core.pay.SlipHourly.findings(taught, photos.rules)
             val from = if (scan != null || scanSecond != null) CellFrom.PHOTO else CellFrom.TEXT
-            sheet.reset(com.bamnat.core.pay.RuleSheet.read(findings, photos.unread, from, rules.shiftTypes.associate { it.id to it.name }))
+            // 2.0.0 [RVL-17] (검토 SCAN-30) A pay read that changes the pay by much starts off, with the line that says so.
+            sheet.reset(com.bamnat.core.pay.RuleSheet.read(findings, photos.unread, from, rules.shiftTypes.associate { it.id to it.name },
+                current = com.bamnat.core.pay.RuleSheet.payNow(rules.profile, com.bamnat.core.time.Today.date())))
         }
     }
     // [PHOTO-01] A photo with no words found, or one that failed to read, opens the lines to fill by hand, never a dead end.
@@ -388,6 +390,8 @@ internal fun RuleSentenceBox(
     kinds: List<ExtraKind>,
     shiftTypes: List<ShiftType>,
     fiveOrMore: Boolean,
+    /** 2.0.0 [RVL-17] (검토 SCAN-30) The pay as set now: a sentence read as a much different pay starts off and says so. */
+    current: RuleChange.Base? = null,
     onApply: (List<RuleChange>) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
@@ -425,7 +429,7 @@ internal fun RuleSentenceBox(
                 onClick = {
                     sheet.reset(com.bamnat.core.pay.RuleSheet.read(
                         RuleText.read(all, kinds, shiftTypes, fiveOrMore), RuleText.unread(all, kinds, shiftTypes, fiveOrMore),
-                        if (fromPhoto) CellFrom.PHOTO else CellFrom.TEXT, host.shiftNames))
+                        if (fromPhoto) CellFrom.PHOTO else CellFrom.TEXT, host.shiftNames, current = current))
                     read = true
                 },
                 enabled = all.isNotBlank(),

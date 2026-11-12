@@ -1282,6 +1282,9 @@ fun CalendarScreen(
             // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
             // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
             if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
+            // 2.0.0 [RVL-18] (검토 U07b-11) A month just put in (한 달 근무 넣기, 근태·캘린더 가져오기): 되돌리기 over the calendar for 10분,
+            // open, as the user comes back from that screen. Draws nothing (and is not counted) otherwise.
+            if (paint == null && viewingReceived == null) add(Notice("recentFill", "방금 넣은 것") { RecentFillNotice(activeCalendar.id) })
             // 1.39 [TEAM-22] D9: a 리더's change of the team's roster, put into the user's days (근무 알람 follows) or asked; first after
             // the fonts, so it is open and never folded, with 되돌리기 in reach.
             receivedList.filter { it.note != null }.forEach { cal ->

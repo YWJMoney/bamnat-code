@@ -629,7 +629,11 @@ class SetupViewModel(
             // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): a reading that takes too long ends with why and what to do.
             // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
             val r = try {
-                kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) { how(rosterCodes()) }
+                // 2.0.0 [RVL-26] (검토 SCAN-21) Read off the main thread: a long text or a tapped photo never freezes the setup.
+                kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) {
+                    val codes = rosterCodes()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { how(codes) }
+                }
                     ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

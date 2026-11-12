@@ -462,7 +462,8 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall)
                 MonthStepper(from, { from = it })
-                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true) { changes ->
+                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true,
+                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date())) { changes ->
                     vm.applyRuleChanges(changes, from)
                     onDismiss()
                 }
