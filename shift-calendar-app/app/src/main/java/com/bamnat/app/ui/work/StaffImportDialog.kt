@@ -47,6 +47,11 @@ internal fun StaffImportDialog(
     val chosen = lines.indices.filter { on[it] }
     val fits = chosen.take(room.coerceAtLeast(0))
     val missing = fits.filter { lines[it].noAmount && typed[it] <= 0 }
+    // [RVJ-40] What every line has to look at (a list with no 요일 칸 said '근무 요일·시간이 없어요' five times) is said once at the top;
+    // a missing sum stays on its own line, by its field.
+    val common = remember(lines) {
+        if (lines.size < 2) emptySet() else lines.map { l -> l.check.filterNot { it.endsWith("적어 주세요") }.toSet() }.reduce { a, b -> a intersect b }
+    }
     // [RVJ-40] A list with fields to type in is a sheet, not a dialog in the middle (공통 부품 5절); back or X asks once a sum is typed.
     FormSheet(onDismissRequest = onDismiss, unsaved = typed.any { it > 0 },
         title = { Text("직원 명단 가져오기") }, text = {
@@ -54,6 +59,7 @@ internal fun StaffImportDialog(
                 Text("${lines.size}명을 읽었어요. 연락처·주민번호·계좌 칸은 읽지 않아요." + if (fromPhoto) " 사진에서 읽은 것이라 ‘확인’ 줄은 꼭 봐 주세요." else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (unread.isNotEmpty()) ToneLine("읽지 않은 칸: ${unread.joinToString(", ")} · 더한 뒤 직원 정보에서 넣어요", tone = Tone.Plain)
+                if (common.isNotEmpty()) ToneLine("확인: 모두 ${common.joinToString(", ")}")
                 lines.forEachIndexed { i, l ->
                     val m = l.member
                     Row(verticalAlignment = Alignment.Top) {
@@ -68,7 +74,7 @@ internal fun StaffImportDialog(
                             Text(form + (if (l.noAmount) "" else " ${Fmt.won(m.base)}") + week + (m.job.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") + tax +
                                 (if (m.insurance.foreign) " · 외국인" else ""), style = MaterialTheme.typography.bodySmall)
                             if (l.noAmount && on[i]) MoneyField("$form 금액", typed[i].takeIf { it > 0 }, { v -> typed = typed.copyOf().also { a -> a[i] = v ?: 0L } })
-                            val look = l.check.filterNot { l.noAmount && typed[i] > 0 && it.endsWith("적어 주세요") }
+                            val look = l.check.filterNot { it in common || (l.noAmount && typed[i] > 0 && it.endsWith("적어 주세요")) }
                             if (look.isNotEmpty()) ToneLine("확인: " + look.joinToString(", "))
                             if (on[i] && i !in fits) ToneLine("직원 요금제가 있어야 더할 수 있어요")
                         }

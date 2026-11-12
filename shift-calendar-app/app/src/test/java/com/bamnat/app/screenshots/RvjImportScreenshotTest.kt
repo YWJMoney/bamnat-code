@@ -64,6 +64,8 @@ class RvjImportScreenshotTest : ScreenshotBase() {
     @Test fun importSaysWhatItCouldNotRead() = shoot("rvj_101_import_missing_folded", FOLDED) {
         importing().invoke(this)
         assertTrue(appears("읽지 않은 칸: 비고"))
+        // [RVJ-40] The 요일 칸 every line lacks is said once at the top, not on each of the five lines.
+        assertTrue(appears("확인: 모두 근무 요일·시간이 없어요"))
         assertTrue(scrolledTo("일급 150,000원"))
         assertTrue(scrolledTo("월급 2,500,000원"))
         assertTrue(scrolledTo("일급 칸 ‘협의’ 못 읽음"))
