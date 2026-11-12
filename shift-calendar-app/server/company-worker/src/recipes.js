@@ -2071,13 +2071,17 @@ async function mine(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   const rows = await d.all(env, "SELECT * FROM recipes WHERE owner = ? AND state != 'deleted' ORDER BY updated_at DESC LIMIT 100", dev);
+  // 2.0.0 [RVQ-26] 검토 SVC-23: 서버에 남은 지난 판 수(앱의 '지난 판 지우기'는 있을 때만).
+  const past = new Map((await d.all(env, `SELECT v.code, COUNT(*) AS n FROM recipe_versions v JOIN recipes r ON r.code = v.code
+    WHERE r.owner = ? AND r.state != 'deleted' AND v.version < r.version GROUP BY v.code`, dev)).map((x) => [x.code, x.n]));
   const trust = await recipeTrust(d, env, dev, now);
   const lim = await writeLeft(d, env, dev, "recipe", now);
   return d.json({ trust: trust.level, leftToday: lim.limit ? lim.limit.left : null, ...lim, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
     items: await Promise.all(rows.map(async (r) => {
       // 1.36 [GRW-08] PC 6ec395bf: 목록 카드에도 '사진 확인 중'·'사진이 신고로 잠시 가려졌어요'.
       const p = await waitingPhotos(env, r.body, r.cover);
-      return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash, photos: p.held ? "held" : p.pending ? "pending" : null };
+      return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash, photos: p.held ? "held" : p.pending ? "pending" : null,
+        past: past.get(r.code) ?? 0 };
     })) });
 }
 

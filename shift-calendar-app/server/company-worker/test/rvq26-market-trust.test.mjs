@@ -153,10 +153,13 @@ test("[RVQ-26] SVC-23 지난 판은 만든 분만 열고, 다른 분은 ?v=로 �
   const own = await open(call, code, 1, "?v=1");
   assert.equal(own.data.version, 1);
   assert.match(own.data.body, /예전 설명/);
-  // 만든 분의 '지난 판 지우기'.
+  // 만든 분의 '지난 판 지우기'(내 작품 목록이 남은 지난 판 수를 알려 줘요).
+  const pastOf = async () => (await call("GET", "/api/recipes/mine", undefined, { "x-device": device(1) })).data.items.find((i) => i.code === code).past;
+  assert.equal(await pastOf(), 1);
   assert.equal((await call("DELETE", `/api/recipes/${code}/versions`, undefined, { "x-device": device(2) })).status, 403);
   const drop = await call("DELETE", `/api/recipes/${code}/versions`, undefined, { "x-device": device(1) });
   assert.equal(drop.data.dropped, 1);
+  assert.equal(await pastOf(), 0);
   assert.equal((await open(call, code, 1, "?v=1")).data.version, 2);
   // 운영자는 판 하나 또는 지난 판 모두를 지우고, 처리 기록에 남아요.
   await again(call, 1, code, { title: "고친 작품", summary: "세 번째" });
