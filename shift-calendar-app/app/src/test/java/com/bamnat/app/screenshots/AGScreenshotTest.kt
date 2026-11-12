@@ -206,10 +206,12 @@ class AGScreenshotTest : ScreenshotBase() {
         tapText("알림 ", prefix = true, scrolls = 0)
         assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월"))
         assertTrue(gone("상한 없음"))
-        tapText("더 보기: $NUDGE", exact = true, scrolls = 0)
-        tapText("이런 알림 다시 보지 않기", exact = true, scrolls = 0)
+        // ⋮ › '이런 알림 다시 보지 않기' is Compose's DropdownMenu, a popup [find] does not read: the button is checked, and the kind
+        // turned off the way the menu does it (NoticeStack NoticeRow onMute).
+        assertTrue(appears("더 보기: $NUDGE", exact = true))
+        com.bamnat.app.inbox.Inbox.get(app).mute("invite.friend", NUDGE)
+        settle()
         assertTrue(gone(NUDGE, exact = true))
-        assertTrue("invite.friend" in com.bamnat.app.inbox.Inbox.get(app).muted.value)
         // The next day, the calendar opened again: still not there.
         Today.fix(SHOT_TIME.plusDays(1))
         tab(1, wide = false); tab(0, wide = false)

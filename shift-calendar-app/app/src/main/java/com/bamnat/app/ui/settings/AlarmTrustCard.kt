@@ -46,6 +46,12 @@ import kotlinx.coroutines.launch
 
 /** [EASE-17] The row title settings search points at. */
 const val SKIP_ONCE_ROW = "이번만 끄기"
+
+/**
+ * 2.0.0 [RVO-10] The card's own name, which 설정 찾기 lands on ('이번만 끄기' finds it): since [RVI-65] each alarm is a row with a switch,
+ * so '이번만 끄기' is not a button's name any more, and with no alarm ahead it is not drawn at all.
+ */
+const val NEXT_ALARM_ROW = "다음 알람"
 /** [ALRM-27] */
 const val GUARD_ROW = "알람 지킴이"
 
@@ -70,7 +76,7 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
     val verdict = com.bamnat.app.ui.diag.alarmVerdict(checks)
     val bad = verdict.must + verdict.better
     val today = Today.date()
-    SectionCard(title = "다음 알람", modifier = Modifier.focusMark(SKIP_ONCE_ROW)) {
+    SectionCard(title = NEXT_ALARM_ROW, modifier = Modifier.focusMark(NEXT_ALARM_ROW)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(nextLine(settings.alarmsEnabled, upcoming, today, settings.workStyle), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             // [ALRM-26] 1.38: the next few, each with its own 이번만 끄기 / 다시 켜기 (not only the very next one).

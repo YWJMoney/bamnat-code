@@ -434,7 +434,7 @@ internal object SettingsIndex {
         // 1.25 묶음 AB
         // [EASE-17][EASE-21] 1.38: the card on top of 설정 › 알람.
         row(A, GUARD_ROW, "알람 미리 점검", "알람 안 울릴까", "알람 경고", "알람 지키기", "소리 0"), // [ALRM-27]
-        row(A, SKIP_ONCE_ROW, "이번만", "한 번만 끄기", "다음 알람", "다음 알람 건너뛰기", "알람 쉬기", "알람 준비", "알람 안 울림", "알람 믿음"),
+        row(A, NEXT_ALARM_ROW, SKIP_ONCE_ROW, "이번만", "한 번만 끄기", "다음 알람 건너뛰기", "알람 쉬기", "알람 준비", "알람 안 울림", "알람 믿음"),
         row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
