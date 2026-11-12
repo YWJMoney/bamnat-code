@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.monthSwipe
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
@@ -1302,7 +1303,9 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
     val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
-            .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(pad = null, padX = null, padY = null), shape)).clip(shape).clickable(role = Role.Button, enabled = unlocked, onClick = onClick)
+            .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(pad = null, padX = null, padY = null), shape))
+            // 2.0.0 [RVS-02] the row's shape cuts the drawing, not where a finger lands (스튜디오 조사 SN-02: 급여 줄도 같은 구조).
+            .drawClip(shape).clickable(role = Role.Button, enabled = unlocked, onClick = onClick)
             .padding(horizontal = (part.padH ?: 0).dp, vertical = part.padV?.dp ?: when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
