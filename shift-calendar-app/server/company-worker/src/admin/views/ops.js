@@ -279,7 +279,7 @@ export function opsViews(A) {
     const parts = [sp.before ? `묶기 전 ${sp.before}번(1.38 전 서버이거나 배포 직후 묶음 표가 준비되기 전)` : "",
       sp.failed ? `묶기 실패 ${sp.failed}번(오류를 적다가 또 실패)` : ""].filter(Boolean);
     const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요: ${parts.join(" · ")}. 주소·이유를 몰라요.</p>` : "";
-    const jobs = sp.jobs ? `<p class="note warn" data-job-errors>정기 작업 실패 ${sp.jobs}번은 요청 오류가 아니라 여기 없어요. 관리 › 서버 상태의 정기 작업에서 단계마다 봐요.</p>` : "";
+    const jobs = sp.jobs ? `<p class="note" data-job-errors>정기 작업 실패 ${sp.jobs}번은 요청 오류가 아니라 여기 없어요. 관리 › 서버 상태의 정기 작업에서 단계마다 봐요.</p>` : "";
     const what = `<p class="hint" data-error-kinds>세는 것: 날마다 서버 오류 = 요청 하나가 500으로 끝난 수 · 묶음 = 그 가운데 주소·이유로 묶인 것 · 응답 속도의 오류 = 모든 5xx(쉬는 기능 503, Play·공유 서버 502·504 포함)</p>`;
     return `${tabs}${loose}${jobs}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${what}${list}</section>`;
   }
@@ -401,7 +401,7 @@ export function opsViews(A) {
     const on = passkeyOk();
     return `<section class="card"><div class="card-head"><h2>패스키(지문·얼굴)</h2>${d?.items.length ? `<span class="pill ok">${d.items.length}개</span>` : ""}</div>
       <p class="hint">비밀번호 대신 이 휴대폰의 지문이나 얼굴로 들어와요. 기기에 남는 열쇠와 지문 두 가지라 두 번째 확인 코드를 묻지 않아요. 만들거나 지우면 알림이 와요.</p>
-      ${d?.items.length ? `<ul class="rows">${d.items.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.name)}</b><small>${esc(dayOf(k.createdAt))} 만듦${k.lastAt ? ` · 마지막 ${esc(agoMs(k.lastAt))}${k.lastDevice ? ` · ${esc(k.lastDevice)}` : ""}` : " · 아직 안 씀"}</small></span>
+      ${d?.items.length ? `<ul class="rows side-wrap">${d.items.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.name)}</b><small>${esc(dayOf(k.createdAt))} 만듦${k.lastAt ? ` · 마지막 ${esc(agoMs(k.lastAt))}${k.lastDevice ? ` · ${esc(k.lastDevice)}` : ""}` : " · 아직 안 씀"}</small></span>
         <button class="btn small danger" type="button" data-act="passkey-delete" data-id="${esc(k.id)}">지우기</button></div></li>`).join("")}</ul>` : ""}
       ${on ? `<div class="actions start"><button class="btn primary small" type="button" data-act="passkey-add"${d && d.items.length >= d.max ? " disabled" : ""}>이 기기 패스키 만들기</button></div>`
         : '<p class="meta">이 브라우저는 패스키를 쓸 수 없어요. 휴대폰의 Chrome·삼성 인터넷에서 관리자 앱을 열어 주세요.</p>'}</section>`;

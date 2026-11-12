@@ -171,7 +171,8 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .card h3{font-size:.98rem}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
 .grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
-@media (min-width:600px){.grid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.grid.two>.card{margin:0}}
+/* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
+@media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
 @media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem}
 .head>:first-child{flex:1;min-width:0}
@@ -360,7 +361,8 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks .off span{background:var(--soft);color:var(--muted)}
 .checks .bad span{background:var(--bad-bg);color:var(--bad)}
 .checks .bad{color:var(--bad);font-weight:700}
-.checks-row{grid-auto-flow:column;justify-content:start;gap:1rem;flex-wrap:wrap}.deploy-line{margin:0 0 .5rem;overflow-wrap:anywhere}
+.checks-row{grid-auto-flow:column;justify-content:start;gap:1rem;flex-wrap:wrap;margin:0 0 .9rem}
+.server-sum{overflow-wrap:anywhere}
 @media (max-width:480px){.checks-row{grid-auto-flow:row}}
 .card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
@@ -539,7 +541,7 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .saved{font-size:.75rem;color:var(--muted)}
 .prefs .field select{flex:1}
 .check-row{display:flex;align-items:center;gap:.5rem;margin:.4rem 0;font-weight:600;font-size:.92rem}
-.check-row input{width:1.2rem;height:1.2rem;accent-color:var(--accent)}
+.check-row input{flex:none;width:1.2rem;height:1.2rem;accent-color:var(--accent)}
 .who.link{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:2px}
 .btn.disabled{opacity:.45;pointer-events:none}
 .pane-main{min-width:0}
@@ -1061,6 +1063,8 @@ a.chip{text-decoration:none;color:inherit;padding:.4rem .8rem}
 .rollout-pick{margin:.25rem 0 .75rem}
 .rollout-pick .chips{margin:.35rem 0 0}
 .rows.wrap .row-main b,.person .rows .row-main b,.held-row .row-main b{white-space:normal;overflow:visible;text-overflow:clip}
+/* 2.0.0 [RVQ-07] 좁은 폭·큰 글자에서 줄 끝 단추(끊기·지우기)가 글 칸을 눌러 글자가 한 자씩 꺾였어요: 글 칸이 12rem보다 좁아지면 단추를 아래 줄로. */
+.rows.side-wrap .row{flex-wrap:wrap}.rows.side-wrap .row-main{flex:1 1 12rem}
 details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
 
 @media (max-width:719.98px){.flow-cols{grid-template-columns:minmax(0,1fr)}}

@@ -564,11 +564,9 @@ export async function setPolicy(request, env, actor, now) {
   const before = mergePolicy(raw).find((p) => p.version === body.version) ?? null;
   // 2.0.0 [RVQ-15] 검토 SRV-17: 날짜를 바꾸면서 시행일을 오늘보다 앞으로, 또는 게시일에서 알림 기간(7일, 불리하면 30일, 처리방침 9항) 안으로
   // 두면 한 번 더 확인해요(confirm). 날짜를 그대로 두고 다른 칸만 고치면 묻지 않아요.
-  const moved = !before || before.effective !== effective || before.posted !== posted || Boolean(before.unfavourable) !== Boolean(body.unfavourable);
-  const gap = Math.round((Date.parse(`${effective}T00:00:00Z`) - Date.parse(`${posted}T00:00:00Z`)) / DAY);
-  const need = body.unfavourable ? 30 : 7;
-  const early = !moved ? null : effective < kstDay(now) && effective !== before?.effective ? "past" : gap < need ? "notice" : null;
-  if (early && body.confirm !== true) return json({ error: "policy_confirm", field: "effective", why: early, days: gap, need }, 409);
+  // 규칙은 관리자 화면과 같이 admin-lib.js policyEarly 하나예요.
+  const early = FL.policyEarly(before, { posted, effective, unfavourable: Boolean(body.unfavourable) }, kstDay(now));
+  if (early && body.confirm !== true) return json({ error: "policy_confirm", field: "effective", ...early }, 409);
   over[body.version] = { posted, effective, heldUntil, unfavourable: Boolean(body.unfavourable) };
   await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)", JSON.stringify(over));
   await flagHistory(env, now, `policy.${body.version}`, "policy_edit", before, over[body.version], why);

@@ -3418,18 +3418,22 @@ function adminApp(L, BUILD, M) {
   }
 
   /**
-   * 2.0.0 [RVQ-14] 검토 U21-02: 서버 상태 맨 위. 한 줄 '지금 판 · 배포 번호 · 스키마 올림 N초 · 되돌릴 판'과 깊은 점검 셋(DB 읽기·쓰기·정기 작업)을
-   * 초록·빨강 점으로. 배포가 정말 끝났는지, 표가 올라갔는지, 무엇으로 되돌릴지를 여기서 바로 봐요.
+   * 2.0.0 [RVQ-14] 검토 U21-02: 서버 상태 맨 위 한 줄의 앞머리 '지금 판 · 배포 번호 · 스키마 올림 N초 · 되돌릴 판'. 배포가 정말 끝났는지,
+   * 표가 올라갔는지, 무엇으로 되돌릴지를 여기서 바로 봐요(1.39 H1 요약 줄에 붙여 한 줄로, 따로 카드를 만들지 않아요).
    */
-  function deployPart(d) {
-    if (!d) return "";
+  function deployHead(d) {
+    if (!d) return [];
     const secs = d.schemaUp ? `${(d.schemaUp.ms / 1000).toFixed(1)}초` : "";
-    const line = [`지금 판 ${d.version}`, d.id ? `배포 ${d.id}` : "배포 번호 없음", d.schemaUp ? `스키마 올림 ${secs}${d.schemaUp.at ? `(${ago(new Date(d.schemaUp.at).toISOString())})` : ""}` : "",
-      d.prev ? `되돌릴 판 ${d.prev}` : ""].filter(Boolean).join(" · ");
+    return [`지금 판 ${d.version}`, d.id ? `배포 ${String(d.id).slice(0, 8)}` : "배포 번호 없음",
+      d.schemaUp ? `스키마 올림 ${secs}${d.schemaUp.at ? `(${ago(new Date(d.schemaUp.at).toISOString())})` : ""}` : "", d.prev ? `되돌릴 판 ${d.prev}` : ""].filter(Boolean);
+  }
+
+  /** 2.0.0 [RVQ-14] 깊은 점검 셋(DB 읽기·쓰기·정기 작업)을 맨 위 한 줄 아래 점 셋으로. 문제가 있으면 그 칸만 붉게, 까닭과 함께. */
+  function deployChecks(d) {
+    if (!d?.checks) return "";
+    const c = d.checks;
     const dot = (ok, name, why) => `<li class="${ok ? "ok" : "bad"}"><span aria-hidden="true">${ok ? "✓" : "!"}</span>${esc(ok ? name : `${name}: ${why}`)}</li>`;
-    const c = d.checks ?? {};
-    return `<section class="card deploy-top" data-deploy><p class="deploy-line"><b>${esc(line)}</b></p>
-      <ul class="checks checks-row">${dot(c.read, "DB 읽기", "읽지 못했어요")}${dot(c.write, "DB 쓰기", "쓰지 못했어요")}${dot(c.jobs, "정기 작업", (c.jobsBad ?? []).join(" · ") || "멈췄거나 실패")}</ul></section>`;
+    return `<ul class="checks checks-row" data-deploy aria-label="깊은 점검">${dot(c.read, "DB 읽기", "읽지 못했어요")}${dot(c.write, "DB 쓰기", "쓰지 못했어요")}${dot(c.jobs, "정기 작업", (c.jobsBad ?? []).join(" · ") || "멈췄거나 실패")}</ul>`;
   }
 
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
@@ -3437,8 +3441,14 @@ function adminApp(L, BUILD, M) {
     // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
     const watch = Boolean(S.me?.owner && S.data.watch);
     // 1.39 PC 6차 H1: 무엇이 돌고 있는지(회사·규칙 수, 서버 판, 관리자 앱 빌드)는 맨 위 한 줄로. 전에는 맨 아래에 있었어요.
-    const sum = `<p class="meta server-sum">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p>`;
-    return `${sum}${watch ? "" : deployPart(S.server?.deploy)}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server) + budgetPart(S.server.budget)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
+    // 2.0.0 [RVQ-14] 그 줄 앞에 지금 판·배포 번호·스키마 올림·되돌릴 판, 아래에 깊은 점검 셋. 서버 감시판이 있는 주인 화면에서도요.
+    const d = S.server?.deploy;
+    const head = d ? deployHead(d) : S.server?.version ? [`서버 ${S.server.version}`] : [];
+    const rest = [`회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"}`, `쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}`, `관리자 앱 빌드 ${BUILD}`];
+    // 지금 판만 굵게: 배포가 끝났는지 한눈에.
+    const sum = `<p class="meta server-sum">${head.length ? `<b>${esc(head[0])}</b> · ` : ""}${[...head.slice(1), ...rest].map(esc).join(" · ")}</p>${deployChecks(d)}`;
+    // 2.0.0 [RVQ-12] 요금제 줄은 감시판이 있어도 보여요(감시판의 '서버 상태와 설정'은 설정만 말해요).
+    return `${sum}${V.watchBoard()}<section class="card"><h2>${watch ? "요금제와 무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + budgetPart(S.server.budget) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
   }
 
   /**
@@ -3570,7 +3580,7 @@ function adminApp(L, BUILD, M) {
     const d = S.data.sessions;
     if (!d) return skeleton(1);
     const via = { password: "비밀번호", passkey: "패스키" };
-    return `<ul class="rows">${d.items.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.device)}</b>${x.current ? ' <span class="pill ok">이 기기</span>' : ""}
+    return `<ul class="rows side-wrap">${d.items.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.device)}</b>${x.current ? ' <span class="pill ok">이 기기</span>' : ""}
       <small>${[via[x.via], `${esc(day(x.createdAt))} 들어옴`, x.lastAt ? `마지막 ${esc(ago(x.lastAt))}` : ""].filter(Boolean).join(" · ")}</small></span>
       ${x.current ? "" : `<button class="btn small" type="button" data-act="session-end" data-id="${esc(x.id)}" aria-label="${esc(x.device)} 로그인 끊기">끊기</button>`}</div></li>`).join("")}</ul>`;
   }
@@ -4549,9 +4559,26 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="fp-effective">시행일</label><input id="fp-effective" name="effective" type="date" required value="${esc(p?.effective ?? "")}"></div>
       <div class="fieldset"><label for="fp-held">동의하지 않은 휴대폰에도 시행하는 날(선택)</label><input id="fp-held" name="heldUntil" type="date" value="${esc(p?.heldUntil ?? "")}"></div>
       <label class="check-row"><input type="checkbox" name="unfavourable"${p?.unfavourable ? " checked" : ""}>이용자에게 불리한 변경(30일 전에 알려요)</label>
-      <label class="check-row" data-policy-confirm><input type="checkbox" name="confirm">알림 기간 안으로(또는 오늘보다 앞으로) 옮기는 걸 알아요</label>
+      <div data-policy-confirm hidden><p class="note warn" role="status" data-policy-why></p>
+        <label class="check-row"><input type="checkbox" name="confirm">알고 이대로 저장해요</label></div>
       <div class="fieldset"><label for="fp-why">이유(필수)</label><input id="fp-why" name="why" maxlength="300" required></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
+  }
+
+  /**
+   * 2.0.0 [RVQ-15] 검토 SRV-17: 날짜를 오늘보다 앞이나 알림 기간 안으로 옮길 때만 까닭 한 줄과 확인 칸을 보여요(서버와 같은 규칙,
+   * admin-lib policyEarly). 그렇지 않으면 칸이 없어 창이 짧아요. [force]면 서버가 409로 물었을 때 규칙과 상관없이 보여요.
+   */
+  function policyConfirmRow(form, force = false) {
+    const row = form.querySelector("[data-policy-confirm]");
+    if (!row) return;
+    const v = (name) => form.elements[name]?.value ?? "";
+    const before = (S.data.flags?.policy ?? []).find((x) => x.version === v("version")) ?? null;
+    const early = L.policyEarly(before, { posted: v("posted"), effective: v("effective"), unfavourable: form.elements.unfavourable?.checked }, L.flagDay(Date.now()));
+    row.hidden = !early && !force;
+    const why = row.querySelector("[data-policy-why]");
+    if (why) why.textContent = early ? L.policyEarlyText(early) : "서버가 한 번 더 확인해 달래요.";
+    if (row.hidden) form.elements.confirm.checked = false;
   }
 
   // ---- 근무 유형 [ADMUX-26] ----
@@ -4772,8 +4799,9 @@ function adminApp(L, BUILD, M) {
       const data = new FormData(form);
       const body = { version: data.get("version"), posted: data.get("posted"), effective: data.get("effective"), heldUntil: data.get("heldUntil") || null,
         unfavourable: data.get("unfavourable") === "on", why: String(data.get("why") ?? "").trim(), confirm: data.get("confirm") === "on" };
-      const d = await act(() => api("/policy", "POST", body), "처리방침 일정을 고쳤어요");
-      if (!d) return;
+      let code = null;
+      const d = await act(() => api("/policy", "POST", body).catch((e) => { code = e.message; throw e; }), "처리방침 일정을 고쳤어요");
+      if (!d) return code === "policy_confirm" ? policyConfirmRow(form, true) : undefined;
       dialog.close();
       S.data.flags = d;
       render({ keepScroll: true });
@@ -6760,6 +6788,8 @@ function adminApp(L, BUILD, M) {
       if (box) box.innerHTML = noticePreview(v("title"), v("body"), nf.querySelector('input[name="level"]:checked')?.value);
     }
     if (t.dataset?.keep && t.closest("dialog")) writeDraft(t.dataset.keep, t.value);
+    const pf = t.closest?.('form[data-form="flag-policy"]');
+    if (pf) policyConfirmRow(pf);
     if (KEEP.includes(t.id) && t.closest("#main")) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
