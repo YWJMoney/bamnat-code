@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.NoticeLinks
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.InquiryKind
 import com.bamnat.app.data.PersonalCalendar
 
@@ -34,10 +36,36 @@ data class HelpTopic(
     val withCheck: Boolean = false,
 )
 
+/**
+ * 2.0.0 [RVO-13] 통합 2차 PC-116: '친구를 초대하면 무엇을 받나요?' in the server's rules, the same numbers as the 친구 초대 card
+ * ([com.bamnat.core.tier.InviteRules.promise]); the year's cap only while the server counts it (처리방침 3.13, from 12-12). Before the
+ * rules were ever read, no numbers that could differ from the card: where to see them.
+ */
+internal fun inviteAnswer(t: com.bamnat.core.tier.InviteTerms?): String {
+    val rule = if (t == null) "친구 몇 명이 며칠 쓰면 몇 개월인지는 그 카드에 지금 규칙 그대로 나와요. 프로는 운영팀이 확인한 뒤 들어와요. "
+    else "친구 ${t.need}명이 각자 ${t.days}일 이상 쓸 때마다 프로 ${t.months}개월이고 운영팀이 확인한 뒤 들어와요" +
+        (if (t.capMonths > 0) "(보상은 1년에 모두 합쳐 ${t.capMonths}개월까지). " else ". ")
+    return "설정 › 프로의 친구 초대 카드에서 링크를 보내요. " + rule +
+        "링크 없이 깐 친구는 7일 안에 프로 맨 아래 ‘코드를 받으셨나요?’에 넣어요. 같은 휴대폰은 한 번. " +
+        "끄는 법: 친구는 ‘알리지 않고 저장’, 달력 카드는 ‘그만 보기’."
+}
+
+/** 2.0.0 [RVO-13] PC-116: the 친구 초대 rules the server last said, for [HelpFaq.topics]; null before any were read or without 친구 초대. */
+@androidx.compose.runtime.Composable
+internal fun rememberInviteTerms(): com.bamnat.core.tier.InviteTerms? {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    if (!c.inviteApi.enabled) return null
+    return c.invites.store.state.collectAsStateWithLifecycle().value.readRules
+}
+
 /** [UX-05] The answers 도움말 shows before a question is written, and the search over them. */
 internal object HelpFaq {
-    /** [share]: this build makes and takes links, so the answer about receiving one is offered. */
-    fun topics(share: Boolean = true): List<HelpTopic> = listOfNotNull(
+    /**
+     * [share]: this build makes and takes links, so the answer about receiving one is offered. 2.0.0 [RVO-13] PC-116: [invite] is the
+     * 친구 초대 rules the server last said ([com.bamnat.app.tier.InviteState.readRules]), so the answer says the card's numbers; null
+     * before they were ever read, and then no numbers ([inviteAnswer]).
+     */
+    fun topics(share: Boolean = true, invite: com.bamnat.core.tier.InviteTerms? = null): List<HelpTopic> = listOfNotNull(
         HelpTopic(
             "alarm", "알람", "알람이 안 울리거나 늦게 울려요",
             "‘알람 점검’을 열면 다음 알람 시각, 꺼진 권한, 배터리 최적화를 하나씩 확인하고 그 자리에서 고칠 수 있어요. " +
@@ -631,11 +659,8 @@ internal object HelpFaq {
             "invite", "프로", "친구를 초대하면 무엇을 받나요?",
             // AG 1.27 [INVITE-09][INVITE-10]: each five friends, not one friend's days; recognised by the link itself.
             // 2.0.0 [RVD-14][RVD-15] 사용자 결정 2026-11-12: 운영팀이 확인한 뒤 들어오고, 보상은 1년에 모두 합쳐 12개월까지.
-            // 2.0.0 [RVO-06] 링크 없이 깐 친구가 코드를 넣는 곳은 프로 맨 아래 한 칸(답은 220자 안).
-            "설정 › 프로 › ‘친구 초대’로 링크를 보내요. 친구 5명이 각자 7일 이상 쓸 때마다 프로 1개월이고 " +
-                "운영팀이 확인한 뒤 들어와요(보상은 1년에 모두 합쳐 12개월까지). " +
-                "링크 없이 깐 친구는 7일 안에 프로 맨 아래 ‘코드를 받으셨나요?’에 넣어요. 같은 휴대폰은 한 번. " +
-                "끄는 법: 친구는 ‘알리지 않고 저장’, 달력 카드는 ‘그만 보기’.",
+            // 2.0.0 [RVO-06] 링크 없이 깐 친구가 코드를 넣는 곳은 프로 맨 아래 한 칸(답은 220자 안). [RVO-13] PC-116 숫자는 서버 규칙.
+            inviteAnswer(invite),
             listOf("초대", "친구 초대", "추천", "초대 코드", "초대 링크", "프로 한 달", "공짜", "보상"),
             listOf("설정 › 프로"),
             "친구 초대 열기" to HelpAction.Go(SettingsGo.PRO),

@@ -996,7 +996,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val answers = remember(query, share, hiddenKinds, screenStyle) { HelpFaq.search(query, HelpFaq.topics(share).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
+    val inviteTerms = rememberInviteTerms()
+    val answers = remember(query, share, hiddenKinds, screenStyle, inviteTerms) { HelpFaq.search(query, HelpFaq.topics(share, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
