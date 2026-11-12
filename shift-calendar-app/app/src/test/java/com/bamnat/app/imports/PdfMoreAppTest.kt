@@ -121,7 +121,7 @@ class PdfMoreAppTest {
         val oldPdf = File(context.cacheDir, "roster123.pdf").apply { writeText("x") }
         val fresh = File(scan, "roster.jpg").apply { writeText("x") }
         val other = File(context.cacheDir, "company_search.json").apply { writeText("{}") }
-        val now = System.currentTimeMillis()
+        val now = System.currentTimeMillis()  // real clock: file stamps, which the sweep reads from the disk
         old.setLastModified(now - 2 * ScanCache.KEEP_MS)
         oldPdf.setLastModified(now - 2 * ScanCache.KEEP_MS)
         other.setLastModified(now - 2 * ScanCache.KEEP_MS)
