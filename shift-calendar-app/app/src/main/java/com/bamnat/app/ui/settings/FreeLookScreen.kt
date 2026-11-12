@@ -356,7 +356,7 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
         }
         // [RVP-68] (REST-10 4) Not chosen reads as 처음대로 with what the cell has now (칸마다 선 3dp, else 8dp), not a made-up 10dp.
         val cornerNow = if (view.grid == "line") 3 else 8
-        LabeledSlider("모서리", (l.corner ?: cornerNow).toFloat(), 0f..16f, "dp", unset = if (l.corner == null) "처음대로 · 지금 ${cornerNow}dp" else null,
+        LabeledSlider("모서리", (l.corner ?: cornerNow).toFloat(), 0f..16f, "dp", unset = if (l.corner == null) "처음대로" else null,
             onReset = l.corner?.let { { set(l.copy(corner = null)) } }) { set(l.copy(corner = it.toInt())) }
     }
     Group("날짜", fold = "cell.$i.date", changed = l.datePlace != null || l.dateSize != null || l.dateBold != null || l.dateShape != null || l.dateFill != null || l.dateColor != null || l.dateFont != null,
@@ -380,7 +380,7 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
         if (l.mark == "none") Text("숨겨도 화면 읽기는 그날 근무를 말해 줘요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Group("안쪽 여백", fold = "cell.$i.pad", changed = l.pad != null, onReset = { set(l.copy(pad = null)) }) {
-        LabeledSlider("여백", (l.pad ?: 3).toFloat(), 0f..8f, "dp", unset = if (l.pad == null) "처음대로 · 지금 3dp" else null,
+        LabeledSlider("여백", (l.pad ?: 3).toFloat(), 0f..8f, "dp", unset = if (l.pad == null) "처음대로" else null,
             onReset = l.pad?.let { { set(l.copy(pad = null)) } }) { set(l.copy(pad = it.toInt())) }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -697,7 +697,7 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
         }
         // 2.0.0 [RVP-67] (검토 REST-08) Not chosen here reads what this screen has now: 앱 전체's 흐리게 when it is set there, not 30%.
         if (l.photo != null || shown.photo != null) LabeledSlider("사진 위 흐리게", (l.dim ?: shown.dim ?: 30).toFloat(), 20f..80f, "%",
-            unset = if (l.dim == null) (if (target != FreeTarget.ALL && shown.dim != null) "앱 전체 따라 · 지금 ${shown.dim}%" else "처음대로 · 지금 ${shown.dim ?: 30}%") else null,
+            unset = if (l.dim == null) (if (target != FreeTarget.ALL && shown.dim != null) "앱 전체 따라" else "처음대로") else null,
             onReset = l.dim?.let { { onChange(l.copy(dim = null)) } }) { onChange(l.copy(dim = it.toInt())) }
         // [MAT-03] 1.36 사진 조정·블렌드.
         if (l.photo != null || shown.photo != null) PhotoAdjustEditor(l.adjust ?: shown.adjust ?: com.bamnat.core.recipe.PhotoAdjust()) {
@@ -822,7 +822,10 @@ internal fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> 
 @Composable
 internal fun LabeledSlider(
     label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
-    /** [BLU-06] Set when nothing is chosen yet: shown in place of the number ("처음대로 · 지금 8dp"); −/+ start from [value]. */
+    /**
+     * [BLU-06] Set when nothing is chosen yet, said after the number ("진하기 100% · 처음대로"); −/+ start from [value]. A note that says
+     * what is there in its own words ("처음대로 · 지금 동그라미") stands in place of the number.
+     */
     unset: String? = null,
     /** How far one press of −/+ goes (보이는 정도 5%씩, PC 3차). Held, it keeps going and is kept once when the finger lifts. */
     step: Int = 1,
@@ -839,7 +842,8 @@ internal fun LabeledSlider(
         Row(verticalAlignment = Alignment.CenterVertically) {
             // [RVP-62] (검토 U14-06) The range in small letters after the value ("0~16"), so the end is no surprise.
             Text(androidx.compose.ui.text.buildAnnotatedString {
-                append(if (showUnset) "$label · $unset" else "$label ${v.toInt()}$unit")
+                // 총괄 #464 사진 검토: '진하기 · 처음대로'는 지금 몇인지 몰라요 → the number stays, the note after it.
+                append(if (showUnset && "지금" in unset!!) "$label · $unset" else if (showUnset) "$label ${v.toInt()}$unit · $unset" else "$label ${v.toInt()}$unit")
                 withStyle(androidx.compose.ui.text.SpanStyle(fontSize = MaterialTheme.typography.labelSmall.fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant)) {
                     append("  ${range.start.toInt()}~${range.endInclusive.toInt()}")
                 }
