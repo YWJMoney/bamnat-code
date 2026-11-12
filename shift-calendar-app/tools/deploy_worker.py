@@ -10,8 +10,8 @@
   2. 서버 시험 전부(npm test) → 번들(npm run bundle, 대시보드에 붙여 넣던 dist/worker.js와 같은 파일).
   3. wrangler.toml의 자리표시자(DB·KV 번호)를 앞 판의 바인딩에서 채운 배포용 설정을 만들어요(저장소에 번호를 적지 않아요).
   4. 판 이름(src/version.js)이 지금 도는 판보다 낮으면 멈춰요(--allow-older로만 넘어가요). 지금 판은 그 Worker 자신의 것으로 봐요:
-     공유는 /api/health, 회사는 앞 판을 올릴 때 이 도구가 적은 메시지 맨 앞 판 이름(2.0.0 [RVD-19]). 회사 판 이름을
-     알 수 없으면(대시보드에서 올린 판 등) 낮은지 모르니 멈춰요.
+     공유는 /api/health, 회사는 /api/admin/health의 판(2.0.0 [PC-32]), 없으면 앞 판을 올릴 때 이 도구가 적은 메시지 맨 앞
+     판 이름(2.0.0 [RVD-19]). 회사 판 이름을 알 수 없으면(대시보드에서 올린 옛 판 등) 낮은지 모르니 멈춰요.
   5. `wrangler versions upload`: 새 판을 올리기만 해요(아직 손님 안 받음).
   6. 새 판의 바인딩 이름이 앞 판을 모두 담는지 대조해요. 대시보드에서만 넣은 일반 변수가 빠졌으면 앞 판 값으로 한 번 더 올리고,
      그래도 빠지면 멈춰요(올린 판은 쓰이지 않고 남을 뿐이에요). check 모드는 여기까지.
@@ -207,16 +207,28 @@ def get(url: str) -> tuple[int, str]:
         return 0, type(e).__name__
 
 
-def healthy(worker: str, base: str, want_version: str) -> tuple[bool, str]:
+def company_ok(code: int, h: dict, deep: bool, want_version: str | None = None) -> bool:
+    """1.40 [RVD-08] 검토 SRV-03: 새 판은 deep=1로 DB까지(표 판 맞음·/api/config 읽기) 봐요. 되돌린 옛 판은 deep을 몰라 예전 기준으로.
+
+    2.0.0 [PC-32]: health가 판 이름(version)을 알려 주면 바라는 판과 같아야 해요. 판 이름이 없는 옛 판(2.0.0 앞)은 건너뛰어요.
+    """
+    ok = code == 200 and h.get("database") is True and h.get("password") is True and h.get("salt") is True
+    if want_version and h.get("version") and h.get("version") != want_version:
+        return False
+    return ok and (not deep or (h.get("schema") is True and h.get("config") is True))
+
+
+def healthy(worker: str, base: str, want_version: str, deep: bool = True) -> tuple[bool, str]:
     if worker == "company":
-        code, body = get(f"{base}/api/admin/health")
+        code, body = get(f"{base}/api/admin/health?deep=1" if deep else f"{base}/api/admin/health")
         try:
             h = json.loads(body)
         except ValueError:
             h = {}
-        ok = code == 200 and h.get("database") is True and h.get("password") is True and h.get("salt") is True
+        ok = company_ok(code, h, deep, want_version)
         code2, _ = get(f"{base}/admin/")
-        return ok and code2 == 200, f"health {code} db/password/salt {'모두 맞음' if ok else '빠짐'}, /admin/ {code2}"
+        return ok and code2 == 200, (f"health {code} 판 {h.get('version', '-')} db/password/salt{'/표 판/config' if deep else ''} "
+                                     f"{'모두 맞음' if ok else '빠짐'}, /admin/ {code2}")
     code, body = get(f"{base}/api/health")
     try:
         h = json.loads(body)
@@ -254,17 +266,16 @@ def message_version(view) -> str | None:
 def live_version(worker: str, base: str, view=None) -> str | None:
     """지금 도는 판 이름은 그 Worker 자신의 것으로 봐요(2.0.0 [RVD-19]).
 
-    공유는 /api/health의 판(없으면 앞 판 메시지), 회사는 health에 판이 없어 앞 판 메시지로만 봐요. 1.39까지는 회사도 공유 서버
-    판과 비교해서, 회사만 먼저 2.0.0이 나간 뒤 main(1.39.0)을 올리면 '지금 1.39.0'으로 통과해 2.0.0 서버 고침이 조용히 빠졌어요.
+    공유는 /api/health, 회사는 /api/admin/health의 판(2.0.0 [PC-32]부터), 없으면 앞 판을 올릴 때 적은 메시지 맨 앞 판이에요. 1.39까지는
+    회사도 공유 서버 판과 비교해서, 회사만 먼저 2.0.0이 나간 뒤 main(1.39.0)을 올리면 '지금 1.39.0'으로 통과해 2.0.0 서버 고침이 조용히 빠졌어요.
     """
-    if worker == "share":
-        code, body = get(f"{base}/api/health")
-        try:
-            v = json.loads(body).get("version") if code == 200 else None
-        except (ValueError, AttributeError):
-            v = None
-        if v:
-            return v
+    code, body = get(f"{base}/api/health" if worker == "share" else f"{base}/api/admin/health")
+    try:
+        v = json.loads(body).get("version") if code == 200 else None
+    except (ValueError, AttributeError):
+        v = None
+    if isinstance(v, str) and SEMVER_HEAD.match(v):
+        return SEMVER_HEAD.match(v).group(1)
     return message_version(view) if view is not None else None
 
 
@@ -382,7 +393,7 @@ def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> 
     if problems:
         run(WRANGLER + ["versions", "deploy", f"{old_id}@100%", "--yes", "--message", f"자동 되돌리기 {sha[:8]}"] + name, wd, check=False)
         time.sleep(10)
-        ok, note = healthy(worker, base, live or new_ver)
+        ok, note = healthy(worker, base, live or new_ver, deep=False)
         say(f"- **실패 → 앞 판 `{old_id[:8]}`으로 되돌림** (되돌린 뒤 {note}). 문제: " + " / ".join(problems))
         raise SystemExit(1)
     say(f"- **배포 끝**: {w['name']} {new_ver} `{new_id[:8]}`, health 5번 모두 맞음. 되돌릴 판 `{old_id[:8]}`")
