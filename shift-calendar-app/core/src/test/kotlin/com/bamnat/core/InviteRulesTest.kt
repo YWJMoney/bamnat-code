@@ -64,6 +64,9 @@ class InviteRulesTest {
         assertTrue(!InviteTerms.DEFAULT.words().contains("넘게 쓸 때마다"))
         assertEquals("친구 5명이 7일 쓰면 프로 1개월", InviteTerms.DEFAULT.short())
         assertEquals("다음 프로까지 2명", InviteRules.toNext(3, 5))
+        // 2.0.0 [RVO-25] PC-151: the cards' one line.
+        assertEquals("친구 1명이 더 7일 쓰면 프로 1개월", InviteRules.next(0, 0, InviteTerms(need = 1, days = 7, months = 1, capMonths = 0)))
+        assertEquals("친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중", InviteRules.next(3, 2, InviteTerms.DEFAULT))
         assertEquals("다음 프로까지 5명", InviteRules.toNext(0, 5))
     }
 

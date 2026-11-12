@@ -126,6 +126,16 @@ object InviteRules {
     fun progress(progress: Int, need: Int, waiting: Int): String =
         "$progress/${need}명" + if (waiting > 0) " · ${waiting}명은 사용 기간 채우는 중" else ""
 
+    /**
+     * 2.0.0 [RVO-25] 통합 4차 PC-151 ('0/1명 … 1명'이 헷갈려요): how far the next months are, in one line that reads as a sentence,
+     * "친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중". Replaces [progress] and [toNext] on the cards.
+     */
+    fun next(progress: Int, waiting: Int, t: InviteTerms): String = listOfNotNull(
+        "친구 ${(t.need - progress).coerceAtLeast(1)}명이 더 ${t.days}일 쓰면 프로 ${t.months}개월",
+        "${progress}명 셌어요".takeIf { progress > 0 },
+        "${waiting}명은 ${t.days}일 채우는 중".takeIf { waiting > 0 },
+    ).joinToString(" · ")
+
     /** AG 1.27 [INVITE-09] The friends still to go for the next months: "다음 프로까지 2명". */
     fun toNext(progress: Int, need: Int): String = "다음 프로까지 ${(need - progress).coerceAtLeast(1)}명"
 

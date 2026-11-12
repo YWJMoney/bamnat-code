@@ -55,6 +55,11 @@ class ProOneSheetTest {
         // 검토 PRO-13: "월 4,990원로 구독" → "월 4,990원으로 구독".
         assertEquals("으로", com.bamnat.app.ui.Fmt.ro("월 4,990원"))
         assertEquals("으로", com.bamnat.app.ui.Fmt.ro("39,000원"))
+        // 통합 4차 PC O31 (에뮬레이터에는 가격이 오지 않아요): the button with the price Play gives.
+        assertEquals("월 4,990원으로 구독", subscribeWords("월 4,990원", trial = false))
+        assertEquals("연 39,000원으로 구독", subscribeWords("연 39,000원", trial = false))
+        assertEquals("월 US\$3.99로 구독", subscribeWords("월 US\$3.99", trial = false))
+        assertEquals("1개월 무료로 시작 (연 요금제)", subscribeWords("연 39,000원", trial = true))
     }
 
     @Test fun theLastTrialNoticeCountsTheDays() {

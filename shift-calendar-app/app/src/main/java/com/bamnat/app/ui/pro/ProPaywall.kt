@@ -199,7 +199,7 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 color = MaterialTheme.colorScheme.primary)
             val buy = { if (overlap != null && !previewNoPay(gate)) asking = plan else go(plan) }
             // 2.0.0 [RVO-07] (검토 PRO-13 "월 4,990원로 구독") 조사를 낱말에 맞게.
-            val words = if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}${com.bamnat.app.ui.Fmt.ro(plan.priceWords)} 구독"
+            val words = subscribeWords(plan.priceWords, trial)
             // 2.0.0 [RVO-01] (PC-54 미리 보기로 처음 본 요금제 창: 채운 단추가 둘) 채운 단추는 맨 위 추천 하나, 나머지는 테두리 단추(조건 2).
             if (i == 0) Button(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
             else OutlinedButton(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
@@ -299,3 +299,10 @@ fun ProWelcomeCard(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * 2.0.0 [RVO-07] (검토 PRO-13 "월 4,990원로 구독") A plan's button, the particle fitting Play's own price words; [RVO-25] 통합 4차 PC
+ * O31 (에뮬레이터에는 Play 가격이 오지 않아 못 봄): kept by a test with the prices Play gives.
+ */
+internal fun subscribeWords(priceWords: String, trial: Boolean): String =
+    if (trial) "1개월 무료로 시작 (연 요금제)" else "$priceWords${com.bamnat.app.ui.Fmt.ro(priceWords)} 구독"

@@ -348,8 +348,9 @@ class AGScreenshotTest : ScreenshotBase() {
         tab(SETTINGS_TAB, wide = false)
         tapText("프로", exact = true)
         tapText("친구 초대", exact = true, scrolls = 30)
-        reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)
-        assertTrue(appears("다음 프로까지 2명", exact = true))
+        // 2.0.0 [RVO-25] PC-151: one line that reads.
+        reveal("친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중", exact = true)
+        assertTrue(gone("다음 프로까지"))
         assertTrue(appears("5명 더 채울 때마다 또 1개월"))
         assertTrue(appears("같은 친구·같은 휴대폰은 한 번만"))
         assertTrue(gone("넘게 쓸 때마다"))

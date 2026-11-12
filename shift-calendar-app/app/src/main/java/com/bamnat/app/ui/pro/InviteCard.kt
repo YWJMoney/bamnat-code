@@ -126,9 +126,9 @@ internal fun InviteProgressLines(c: AppContainer) {
     val state by c.invites.store.state.collectAsStateWithLifecycle()
     val view = state.view ?: return
     if (view.code == null) return
-    Text(InviteRules.progress(view.progress, view.terms.need, view.waiting), style = MaterialTheme.typography.titleMedium)
-    if (!view.capReached) Text(InviteRules.toNext(view.progress, view.terms.need), style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.primary)
+    // 2.0.0 [RVO-25] PC-151: one line that reads ('친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요'), not '3/5명' over '다음 프로까지 2명'.
+    // At the year's cap the card says so instead ([InviteRules.capped]).
+    if (!view.capReached) Text(InviteRules.next(view.progress, view.waiting, view.terms), style = MaterialTheme.typography.titleMedium)
 }
 
 /** 2.0.0 [RVO-13] (HQ-48) The name of the way to 프로 without paying, the same on 프로, the locked feature's sheet and the paywall. */
