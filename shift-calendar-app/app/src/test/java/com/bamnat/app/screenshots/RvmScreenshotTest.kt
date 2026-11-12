@@ -322,8 +322,9 @@ class RvmScreenshotTest : ScreenshotBase() {
     }
 
     /**
-     * MKT-32 (총괄 11-12): before 처리방침 3.13's 7-day effective day the phone asks our public files nothing — the app's own wiring, with
-     * no 3.13 date from the server, keeps `market.cardfonts` off — and the cards draw in the phone's fonts; Google is not asked either.
+     * MKT-32 (총괄 11-12): before 처리방침 3.13's 7-day line (PolicyConsent.REVISION_EFFECTIVE, by the server's clock) the phone asks our
+     * public files nothing — the app's own wiring, with no server time known here, keeps `market.cardfonts` off — and the cards draw in
+     * the phone's fonts; Google is not asked either. (The day itself is FlagEvalTest.cardFontsWaitForTheSevenDayLineOf313.)
      */
     @Test fun beforeThe313DayTheMarketAsksNothing() = counting(PAGES, after313 = false) { asked ->
         org.junit.Assert.assertFalse(c.flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS))

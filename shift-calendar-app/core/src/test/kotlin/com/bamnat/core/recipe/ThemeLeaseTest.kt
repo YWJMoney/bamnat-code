@@ -106,5 +106,8 @@ class ThemeLeaseTest {
         val (kept, out) = ThemeLease.capped(l.history + theme.copy(title = "끝", code = "END"), keep = "END")
         assertTrue("입는 것은 남아요", kept.any { it.code == "END" })
         assertEquals(1, out.size)
+        // Read back from the phone with the same limit: 30 others and mine after them all stay (it used to keep the first 30 lines only).
+        val back = ThemeLease.decode(ThemeLease.encode(l))
+        assertEquals(l.history.map { it.key }, back.history.map { it.key })
     }
 }

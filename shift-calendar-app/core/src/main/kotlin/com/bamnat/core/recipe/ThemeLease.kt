@@ -182,7 +182,8 @@ data class ThemeLease(
                     "L" -> if (p.size == 3) p[2].toIntOrNull()?.let { log[p[1]] = it }
                 }
             }
-            return ThemeLease(worn, history.take(HISTORY), free, log, asked)
+            // [RVM-26] Read back with the same limit as written: mine and the one worn stay, others past [HISTORY] go.
+            return ThemeLease(worn, capped(history, worn?.key).first, free, log, asked)
         }
 
         /** The written theme on one line: backslash, tab and line breaks as \\, \t and \n. */
