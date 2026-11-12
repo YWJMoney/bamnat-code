@@ -70,8 +70,8 @@ class ReceivedCalendarsTest {
         assertEquals(ReceivedCalendar.COLORS[1], b.color)
         assertEquals("민지의 근무표", a.fullName)
         assertEquals("민", a.initial)
-        assertEquals("이름 없는 근무표", b.fullName)
-        assertEquals("?", b.initial)
+        assertEquals("받은 근무표", b.fullName) // [RVG-32] 검토 PC-93
+        assertEquals("받", b.initial) // [RVG-32] 검토 PC-93
 
         // A new start of the app reads the same list, on the user's own calendar.
         val again = store()
