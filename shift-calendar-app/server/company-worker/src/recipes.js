@@ -1795,7 +1795,8 @@ async function recipeList(d, env, url) {
     let lettered = 0;
     for (const w of words) {
       const st = STYLE_WORDS[w] ?? STYLE_WORDS[w.toLowerCase()];
-      const skel = nameSkeleton(w);
+      // A look-alike fold turns '!' into 'l' and '0' into 'o' for names; a word is a word only with a real letter or digit in it.
+      const skel = /[\p{L}\p{Nd}]/u.test(w) ? nameSkeleton(w) : "";
       const emoji = coverEmojiOf(w);
       if (skel) {
         lettered++;
