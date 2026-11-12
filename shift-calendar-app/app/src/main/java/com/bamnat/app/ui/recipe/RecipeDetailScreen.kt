@@ -775,13 +775,25 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     if (talk == null) { Text("불러오는 중이에요", style = MaterialTheme.typography.bodySmall); return }
     if (talk.posts.isEmpty()) Text("아직 이야기가 없어요. 써 본 후기나 궁금한 점을 남겨 주세요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    val tops = talk.posts.filter { it.parent == null && !it.hidden }
+    var deleting by remember { mutableStateOf<RecipePost?>(null) }
+    var flagging by remember { mutableStateOf<RecipePost?>(null) }
+    // [RVF-03] A reply whose post its writer took back stays, at the top.
+    val tops = talkTops(talk.posts)
     tops.forEach { p ->
-        PostRow(p, onReply = { replyTo = p }, onLike = { vm.votePost(p.id, if (p.myVote == 1) null else 1) }, onDislike = { disliking = p })
+        PostRow(p, onReply = { replyTo = p }, onLike = { vm.votePost(p.id, if (p.myVote == 1) null else 1) }, onDislike = { disliking = p },
+            onDelete = { deleting = p }, onFlag = { flagging = p })
         talk.posts.filter { it.parent == p.id && !it.hidden }.forEach { c ->
-            Row { Spacer(Modifier.width(20.dp)); PostRow(c, onReply = null, onLike = { vm.votePost(c.id, if (c.myVote == 1) null else 1) }, onDislike = { disliking = c }) }
+            Row { Spacer(Modifier.width(20.dp)); PostRow(c, onReply = null, onLike = { vm.votePost(c.id, if (c.myVote == 1) null else 1) }, onDislike = { disliking = c },
+                onDelete = { deleting = c }, onFlag = { flagging = c }) }
         }
     }
+    deleting?.let { p ->
+        AlertDialog(onDismissRequest = { deleting = null }, title = { Text("이 글을 지울까요?") },
+            text = { Text("지우면 서버에서도 사라지고 되돌릴 수 없어요" + if (talk.posts.any { it.parent == p.id }) ". 달린 답글은 남아요" else "") },
+            confirmButton = { TextButton(onClick = { vm.deletePost(p.id); deleting = null }) { Text("지우기") } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("그대로 두기") } })
+    }
+    flagging?.let { p -> ChoiceDialog("이 글 신고하기", TALK_FLAG_REASONS, onPick = { vm.flagPost(p.id, it); flagging = null }, onDismiss = { flagging = null }) }
     replyTo?.let { Text("‘${it.body.take(20)}’에 답글", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
     if (replyTo == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         RecipeLinks.TALK_KINDS.forEach { (k, label) -> FilterChip(kind == k, { kind = k }, label = { Text(label) }) }
@@ -806,8 +818,15 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     disliking?.let { p -> DislikeDialog(onSend = { r, o -> vm.votePost(p.id, -1, r, o); disliking = null }, onDismiss = { disliking = null }) }
 }
 
+/** [RVF-03] 광장 글 신고와 같은 이유(server FLAGS). */
+internal val TALK_FLAG_REASONS = linkedMapOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보")
+
+/** [RVF-03] The posts that start a line: no parent, or a parent its writer took back. */
+internal fun talkTops(posts: List<RecipePost>): List<RecipePost> =
+    posts.filter { p -> !p.hidden && (p.parent == null || posts.none { it.id == p.parent && !it.hidden }) }
+
 @Composable
-private fun PostRow(p: RecipePost, onReply: (() -> Unit)?, onLike: () -> Unit, onDislike: () -> Unit) {
+private fun PostRow(p: RecipePost, onReply: (() -> Unit)?, onLike: () -> Unit, onDislike: () -> Unit, onDelete: () -> Unit, onFlag: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(listOfNotNull(
             if (p.mine) "나" else p.nick ?: "참여자 ${p.who}", "만든 분".takeIf { p.maker }, RecipeLinks.TALK_KINDS[p.kind],
@@ -818,6 +837,9 @@ private fun PostRow(p: RecipePost, onReply: (() -> Unit)?, onLike: () -> Unit, o
             TextButton(onClick = onLike, enabled = !p.mine) { Text("좋아요 ${p.likes}", fontSize = 12.sp) }
             TextButton(onClick = onDislike, enabled = !p.mine && p.myVote != -1) { Text("안좋아요 ${p.dislikes}", fontSize = 12.sp) }
             onReply?.let { TextButton(onClick = it) { Text("답글", fontSize = 12.sp) } }
+            // [RVF-03] 내 글은 지우기, 남의 글은 신고.
+            if (p.mine) TextButton(onClick = onDelete) { Text("지우기", fontSize = 12.sp) }
+            else TextButton(onClick = onFlag) { Text("신고", fontSize = 12.sp) }
         }
         if (p.mine && p.reasons.isNotEmpty()) p.reasons.take(5).forEach { (k, t) ->
             Text("• [${RecipeLinks.DISLIKE_REASONS[k] ?: k}] $t", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

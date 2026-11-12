@@ -539,6 +539,27 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         }
     }
 
+    /**
+     * [RVF-03] 개발 전 검토 MKT-08: 내 이야기 글 지우기. 광장 글과 같은 서버 길(`DELETE /api/posts/:id`)이 이야기 글에도 맞아요
+     * (처리방침 1-4 '쓴 분이 지울 때까지').
+     */
+    fun deletePost(post: String) {
+        viewModelScope.launch {
+            runCatching { c.companyApi.deletePost(device, post) }
+                .onSuccess { _state.value = _state.value.copy(message = "글을 지웠어요"); loadTalk() }
+                .onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
+        }
+    }
+
+    /** [RVF-03] 남의 이야기 글 신고: 광장 글과 같은 이유·같은 길(`POST /api/posts/:id/flag`), 쌓이면 가려지고 운영 장부로 가요. */
+    fun flagPost(post: String, reason: String) {
+        viewModelScope.launch {
+            runCatching { c.companyApi.flag(device, post, reason) }
+                .onSuccess { _state.value = _state.value.copy(message = "신고했어요. 운영자가 살펴봐요") }
+                .onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
+        }
+    }
+
     fun votePost(post: String, value: Int?, reason: String? = null, opinion: String? = null) {
         viewModelScope.launch {
             runCatching { c.recipeApi.talkVote(device, post, value, reason, opinion) }
