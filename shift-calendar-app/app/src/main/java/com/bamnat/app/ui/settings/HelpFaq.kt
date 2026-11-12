@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.NoticeLinks
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.InquiryKind
 import com.bamnat.app.data.PersonalCalendar
 
@@ -34,10 +36,36 @@ data class HelpTopic(
     val withCheck: Boolean = false,
 )
 
+/**
+ * 2.0.0 [RVO-13] 통합 2차 PC-116: '친구를 초대하면 무엇을 받나요?' in the server's rules, the same numbers as the 친구 초대 card
+ * ([com.bamnat.core.tier.InviteRules.promise]); the year's cap only while the server counts it (처리방침 3.13, from 12-12). Before the
+ * rules were ever read, no numbers that could differ from the card: where to see them.
+ */
+internal fun inviteAnswer(t: com.bamnat.core.tier.InviteTerms?): String {
+    val rule = if (t == null) "친구 몇 명이 며칠 쓰면 몇 개월인지는 그 카드에 지금 규칙 그대로 나와요. 프로는 운영팀이 확인한 뒤 들어와요. "
+    else "친구 ${t.need}명이 각자 ${t.days}일 이상 쓸 때마다 프로 ${t.months}개월이고 운영팀이 확인한 뒤 들어와요" +
+        (if (t.capMonths > 0) "(보상은 1년에 모두 합쳐 ${t.capMonths}개월까지). " else ". ")
+    return "설정 › 프로의 친구 초대 카드에서 링크를 보내요. " + rule +
+        "링크 없이 깐 친구는 7일 안에 프로 맨 아래 ‘코드를 받으셨나요?’에 넣어요. 같은 휴대폰은 한 번. " +
+        "끄는 법: 친구는 ‘알리지 않고 저장’, 달력 카드는 ‘그만 보기’."
+}
+
+/** 2.0.0 [RVO-13] PC-116: the 친구 초대 rules the server last said, for [HelpFaq.topics]; null before any were read or without 친구 초대. */
+@androidx.compose.runtime.Composable
+internal fun rememberInviteTerms(): com.bamnat.core.tier.InviteTerms? {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    if (!c.inviteApi.enabled) return null
+    return c.invites.store.state.collectAsStateWithLifecycle().value.readRules
+}
+
 /** [UX-05] The answers 도움말 shows before a question is written, and the search over them. */
 internal object HelpFaq {
-    /** [share]: this build makes and takes links, so the answer about receiving one is offered. */
-    fun topics(share: Boolean = true): List<HelpTopic> = listOfNotNull(
+    /**
+     * [share]: this build makes and takes links, so the answer about receiving one is offered. 2.0.0 [RVO-13] PC-116: [invite] is the
+     * 친구 초대 rules the server last said ([com.bamnat.app.tier.InviteState.readRules]), so the answer says the card's numbers; null
+     * before they were ever read, and then no numbers ([inviteAnswer]).
+     */
+    fun topics(share: Boolean = true, invite: com.bamnat.core.tier.InviteTerms? = null): List<HelpTopic> = listOfNotNull(
         HelpTopic(
             "alarm", "알람", "알람이 안 울리거나 늦게 울려요",
             "‘알람 점검’을 열면 다음 알람 시각, 꺼진 권한, 배터리 최적화를 하나씩 확인하고 그 자리에서 고칠 수 있어요. " +
@@ -428,8 +456,8 @@ internal object HelpFaq {
         HelpTopic(
             "roster", "한 달 근무", "한 달 근무표를 한 번에 넣고 싶어요",
             "설정 › 내 근무 › ‘한 달 근무 넣기’에서 근무표를 보며 키를 누르면 하루씩 들어가요. D D E E N N O O를 넣고 ‘이 순서 반복’을 누르면 " +
-                "달 끝까지 채워요. 듀티표 사진·엑셀·PDF나 카톡 ‘공유’도 같은 달력에 채워지니 노란 칸만 보면 돼요. 반차는 0.5일, 병가처럼 회사마다 다른 휴가는 한 번만 물어요.",
-            listOf("듀티표", "한 달 근무", "근무표 넣기", "키패드", "직접 입력", "이 순서 반복", "반차", "병가", "공유", "붙여 넣기", "사진으로"),
+                "달 끝까지 채워요. 근무표 사진·엑셀·PDF나 카톡 ‘공유’도 같은 달력에 채워지니 노란 칸만 보면 돼요. 반차는 0.5일, 병가처럼 회사마다 다른 휴가는 한 번만 물어요.",
+            listOf("듀티표", "한 달 근무", "근무표 넣기", "키패드", "직접 입력", "이 순서 반복", "반차", "병가", "공유", "붙여 넣기", "사진으로", "사진 고르기", "스캐너"),
             listOf("한 달 근무 넣기", "달력"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
         ),
@@ -470,10 +498,12 @@ internal object HelpFaq {
         ),
         // ---- 1.25 묶음 U: [READ-04][READ-05][READ-08][READ-11] ----
         HelpTopic(
-            "rosterPhoto", "한 달 근무", "듀티표 사진을 못 읽거나 다른 줄을 읽어요",
-            "줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 ‘사진 위에서 누르기’로 날짜 줄과 내 줄을 한 번씩 눌러 주세요. " +
-                "‘무엇을 읽었는지 보기’로 앱이 본 줄을 볼 수 있고, 넣은 뒤엔 달력 › 도구 ‘방금 넣은 것 되돌리기’(10분 안)로 되돌려요.",
-            listOf("사진", "못 읽어", "인식", "인식 안", "다른 줄", "어느 줄", "조", "기울", "누르기", "되돌리기", "전체 넣기", "이번 달 전부 넣기"),
+            "rosterPhoto", "한 달 근무", "근무표 사진을 못 읽거나 다른 줄을 읽어요",
+            "줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 ‘사진에서 내 줄 알려 주기’로 날짜 줄과 내 줄을 한 번씩 눌러 주세요. " +
+                "‘무엇을 읽었는지 보기’로 앱이 본 줄을 볼 수 있고, 넣은 뒤엔 달력 › 도구 ‘방금 넣은 것 되돌리기’(10분 안)로 되돌려요. " +
+                "처음 한 번은 글자 읽기 준비물을 받으니 와이파이에서 해 주세요.",
+            listOf("사진", "듀티표", "못 읽어", "인식", "인식 안", "다른 줄", "어느 줄", "조", "기울", "누르기", "되돌리기", "전체 넣기", "이번 달 전부 넣기",
+                "준비물", "멈추기", "와이파이"),
             listOf("한 달 근무 넣기", "달력"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
         ),
@@ -566,7 +596,7 @@ internal object HelpFaq {
         HelpTopic(
             "proBadge", "프로", "어떤 기능이 프로인가요?",
             "프로 기능 옆에는 ‘프로’ 표시가 붙어 있어요. 설정 › 프로 › ‘프로 기능 모아보기’에서 모두 보고 누르면 그 기능으로 바로 가요. " +
-                "정식 출시 전에는 모두 무료이고, 출시 뒤에 쓸 수 없는 기능은 자물쇠가 함께 보여요. 설정 목록은 일(파랑)·알림(주황)·화면(보라)·데이터와 개인정보(초록) 색으로 묶여 있어요.",
+                "프로가 아닐 때 쓸 수 없는 기능에는 자물쇠가 함께 보여요. 설정 목록은 일(파랑)·알림(주황)·화면(보라)·데이터와 개인정보(초록) 색으로 묶여 있어요.",
             listOf("프로", "유료", "프로 표시", "모아보기", "잠김", "자물쇠", "색", "설정 색"),
             listOf("설정 › 프로"),
             "프로 기능 모아보기 열기" to HelpAction.Go(SettingsGo.PRO),
@@ -631,10 +661,8 @@ internal object HelpFaq {
             "invite", "프로", "친구를 초대하면 무엇을 받나요?",
             // AG 1.27 [INVITE-09][INVITE-10]: each five friends, not one friend's days; recognised by the link itself.
             // 2.0.0 [RVD-14][RVD-15] 사용자 결정 2026-11-12: 운영팀이 확인한 뒤 들어오고, 보상은 1년에 모두 합쳐 12개월까지.
-            "설정 › 프로 › ‘친구 초대’로 링크를 보내요. 친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더면 또 1개월이고 " +
-                "운영팀이 확인한 뒤 들어와요(보상은 1년에 모두 합쳐 12개월까지). " +
-                "링크로 깐 친구는 앱이 알아보고, 링크 없이 깔았으면 7일 안에 ‘초대 코드 넣기’. 같은 휴대폰은 한 번. " +
-                "끄는 법: 친구는 ‘알리지 않고 저장’, 달력 카드는 ‘그만 보기’.",
+            // 2.0.0 [RVO-06] 링크 없이 깐 친구가 코드를 넣는 곳은 프로 맨 아래 한 칸(답은 220자 안). [RVO-13] PC-116 숫자는 서버 규칙.
+            inviteAnswer(invite),
             listOf("초대", "친구 초대", "추천", "초대 코드", "초대 링크", "프로 한 달", "공짜", "보상"),
             listOf("설정 › 프로"),
             "친구 초대 열기" to HelpAction.Go(SettingsGo.PRO),
@@ -663,7 +691,7 @@ internal object HelpFaq {
             "investCaptureTrust", "투자", "캡처를 넣으면 저절로 들어가나요? / 넣기 전에 묻게 하려면",
             "네. 체결 내역 캡처에서 시각·수량·단가가 다 읽히고 금액과 맞는 체결은 바로 넣어요(되돌리기). " +
                 "이미 적은 건 시각과 수량으로 건너뛰고, 알림과 같으면 그 알림을 확정해요. 다르거나 흐린 것만 물어요. " +
-                "묻게 하려면 투자 탭 ⋮ › ‘캡처로 채우기: 넣기 전에 묻기’.",
+                "묻게 하려면 투자 탭 ⋮ › 체결 알림·캡처 설정 › ‘캡처로 채울 때 넣기 전에 묻기’.",
             listOf("묻지 않기", "바로 넣기", "자동 넣기", "자동 인식", "매번 확인", "캡처", "이미 있음", "고침", "중복", "두 번 들어감", "다시 묻기", "넣기 전에 묻기", "안 들어가요"),
             listOf("투자"),
             "투자 탭 열기" to HelpAction.Tab(NoticeLinks.Target.INVEST),
@@ -709,9 +737,10 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "proSheet", "프로", "프로 기능을 누르면 나오는 세 가지는 무엇인가요?",
-            "프로가 아닐 때 프로 기능을 누르면 프로(무료 체험), ‘광고 보고 7일 열기’, ‘친구 초대로 프로 이용권 받기’를 함께 보여요. " +
-                "급여·돈 통계·인쇄·알람 미션은 묶음마다 처음 쓰는 날부터 7일 무료이고, 그 뒤에는 광고 한 편으로 7일씩 열려요(하루 두 편까지). " +
-                "광고가 안 와도 그냥 열리고, 기간이 끝나도 만든 결과는 그대로예요. 정식 출시 전에는 모두 무료라 나오지 않아요.",
+            // 2.0.0 [RVO-13] HQ-46: 220자 안에(SettingsSearchTest), 3.1 동의 전 휴대폰만 빼고.
+            "프로가 아닐 때 프로 기능을 누르면 프로(무료 체험), ‘광고 보고 7일 열기’, ‘친구를 초대하면 무료로 써요’를 함께 보여요. " +
+                "급여·돈 통계·인쇄·알람 미션은 묶음마다 처음 7일 무료, 그 뒤에는 광고 한 편으로 7일씩 열려요(하루 두 편까지). " +
+                "광고가 안 와도 열리고 만든 결과는 남아요. 3.1 동의 전이라 모두 무료인 휴대폰에는 나오지 않아요.",
             listOf("광고 보기", "7일 열기", "묶음", "프로 이용권", "잠김", "자물쇠", "친구 초대"),
             listOf("설정 › 프로"),
             "프로 보기" to HelpAction.Go(SettingsGo.PRO),
@@ -754,7 +783,7 @@ internal object HelpFaq {
         HelpTopic(
             "photoCheck", "사진 인식", "사진을 잘못 읽었어요. 어떻게 고치나요?",
             "사진을 읽으면 읽은 칸·줄을 사진과 나란히 보여 주고 ‘사진과 내용이 같은가요?’를 물어요. ‘다른 곳이 있어요’를 누르고 다른 칸만 눌러 고쳐요. " +
-                "노란 칸은 읽은 결과가 갈린 곳이에요. 같은 글자를 두 번 같게 고치면 다음부터 그렇게 읽어요. 비스듬한 사진은 ‘스캐너로 반듯하게 찍기’를 써 보세요.",
+                "노란 칸은 읽은 결과가 갈린 곳이에요. 같은 글자를 두 번 같게 고치면 다음부터 그렇게 읽어요. 비스듬한 사진은 ‘스캐너로 찍기’를 써 보세요.",
             listOf("잘못 읽", "인식", "틀려", "다른 곳", "사진과 같", "노란 칸", "스캐너", "그림자", "비스듬", "고치기"),
             listOf("한 달 근무 넣기", "급여", "명세서"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),

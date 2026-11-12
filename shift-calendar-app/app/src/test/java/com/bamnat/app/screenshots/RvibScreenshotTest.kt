@@ -195,13 +195,42 @@ class RvibScreenshotTest : ScreenshotBase() {
 
     // [RVIB-17] (PC-129, PC-36) 달력 위 띠는 지금 달력에서 다시 센 값: 첫 설정 때 센 '야간 99번 · 쉬는 날 99일'이 남지 않아요.
     @Test fun fillBandRecounts() {
+        var recounted = 0
         try {
             eight("fill_band") { _ ->
                 com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(com.bamnat.app.data.PersonalCalendar.MAIN,
                     com.bamnat.core.setup.FillMoment.Line("이번 달 남은 야간 99번", "쉬는 날 99일", null, "쉬는 날 99일")))
                 settle()
-                org.junit.Assert.assertTrue(appears("채워진 달력 안내 닫기"))
+                org.junit.Assert.assertNotNull(com.bamnat.app.ui.calendar.SetupFill.now.value)
                 org.junit.Assert.assertFalse(shows("99번") || shows("99일"))
+                // The band over the month (갈래 P #492) holds one notice: an alarm that cannot show on the lock screen comes before this
+                // one, which then waits in the 알림함. Where it is the band, it says the month as it is now.
+                if (shows("이 안내 닫기") && shows("이번 달 남은 야간")) recounted++
+            }
+        } finally {
+            com.bamnat.app.ui.calendar.SetupFill.close()
+        }
+        org.junit.Assert.assertTrue(recounted > 0)
+    }
+
+    // [RVIB-17] (PC-129 둘째 길, 통합 3차 T5) 잘못 고른 근무표를 되돌려 근무가 다 빠지면 띠의 '야간 7번 · 첫 알람 오늘 18:00'도 사라져요.
+    @Test fun fillBandGoesWithTheWork() {
+        try {
+            shoot("rvib_fill_band_gone_l100f", FOLDED) {
+                com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(com.bamnat.app.data.PersonalCalendar.MAIN,
+                    com.bamnat.core.setup.FillMoment.Line("이번 달 남은 야간 7번", "첫 알람 오늘 18:00", null, "")))
+                settle()
+                org.junit.Assert.assertTrue(appears("이 안내 닫기"))
+                org.junit.Assert.assertNotNull(com.bamnat.app.ui.calendar.SetupFill.now.value)
+                val today = com.bamnat.core.time.Today.date()
+                runBlocking {
+                    c.scheduleRepository.clearPattern()
+                    c.scheduleRepository.updateDays((0L..70L).map { today.plusDays(it) }) { com.bamnat.core.model.DayEntry(it.date) }
+                }
+                settle()
+                org.junit.Assert.assertTrue(waitUntil { com.bamnat.app.ui.calendar.SetupFill.now.value == null })
+                settle()
+                org.junit.Assert.assertFalse(shows("야간 7번"))
             }
         } finally {
             com.bamnat.app.ui.calendar.SetupFill.close()

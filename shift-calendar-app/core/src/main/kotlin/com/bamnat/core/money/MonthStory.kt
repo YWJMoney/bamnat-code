@@ -63,7 +63,7 @@ data class MonthStory(
         }
 
         private fun won(v: Long, signed: Boolean = false): String {
-            val s = "%,d원".format(kotlin.math.abs(v))
+            val s = "%,d원".format(java.util.Locale.ROOT, kotlin.math.abs(v))
             return when { !signed -> if (v < 0) "-$s" else s; v > 0 -> "+$s"; v < 0 -> "-$s"; else -> s }
         }
 

@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -237,14 +238,15 @@ private fun RecordRow(o: PayObservation, onDelete: (PayObservation) -> Unit, onN
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit, onDismiss: () -> Unit) {
-    var kind by remember { mutableStateOf(IncomeKind.SALARY) }
-    var month by remember { mutableStateOf(start) }
-    var gross by remember { mutableStateOf("") }
-    var net by remember { mutableStateOf("") }
-    var hours by remember { mutableStateOf("") }
-    var rate by remember { mutableStateOf("") }
-    var days by remember { mutableStateOf("") }
-    var source by remember { mutableStateOf(PayObservation.Source.TYPED) }
+    // 2.0.0 [RVK-42] (검토 U06a-23) What is typed stays through a rebuilt screen, and back or a swipe asks before it goes.
+    var kind by rememberSaveable { mutableStateOf(IncomeKind.SALARY) }
+    var month by rememberSaveable { mutableStateOf(start) }
+    var gross by rememberSaveable { mutableStateOf("") }
+    var net by rememberSaveable { mutableStateOf("") }
+    var hours by rememberSaveable { mutableStateOf("") }
+    var rate by rememberSaveable { mutableStateOf("") }
+    var days by rememberSaveable { mutableStateOf("") }
+    var source by rememberSaveable { mutableStateOf(PayObservation.Source.TYPED) }
     var read by remember { mutableStateOf<String?>(null) }
     val texts = remember { mutableStateListOf<String>() }
     val g: Long? = when (kind) {
@@ -261,6 +263,7 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
     val n = net.toLongOrNull() ?: lawNet
     FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = listOf(gross, net, hours, rate, days).any { it.isNotBlank() } || texts.isNotEmpty(),
         title = { Text("지난 월급 적기") },
         confirmButton = {
             TextButton(enabled = n != null && n > 0, onClick = {
@@ -330,10 +333,11 @@ internal fun BusinessTaxSheet(
     onDismiss: () -> Unit,
 ) {
     var p by remember { mutableStateOf(start) }
-    var simple by remember { mutableStateOf(start.simpleRate?.toString().orEmpty()) }
-    var standard by remember { mutableStateOf(start.standardRate?.toString().orEmpty()) }
-    var lastIncome by remember { mutableStateOf(start.lastYearIncome?.toString().orEmpty()) }
-    var lastTax by remember { mutableStateOf(start.lastYearTax?.toString().orEmpty()) }
+    // 2.0.0 [RVK-42] (검토 U06a-23) The typed numbers stay through a rebuilt screen, and closing asks before they go.
+    var simple by rememberSaveable { mutableStateOf(start.simpleRate?.toString().orEmpty()) }
+    var standard by rememberSaveable { mutableStateOf(start.standardRate?.toString().orEmpty()) }
+    var lastIncome by rememberSaveable { mutableStateOf(start.lastYearIncome?.toString().orEmpty()) }
+    var lastTax by rememberSaveable { mutableStateOf(start.lastYearTax?.toString().orEmpty()) }
     val draft = p.copy(
         simpleRate = simple.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }, standardRate = standard.toDoubleOrNull()?.takeIf { it in 0.0..100.0 },
         lastYearIncome = lastIncome.toLongOrNull(), lastYearTax = lastTax.toLongOrNull(),
@@ -341,6 +345,7 @@ internal fun BusinessTaxSheet(
     val y = remember(draft) { yearOf(draft) }
     FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = draft != start,
         title = { Text("사업자 세금 예상") },
         confirmButton = { TextButton(onClick = { onSave(draft) }) { Text("저장") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },

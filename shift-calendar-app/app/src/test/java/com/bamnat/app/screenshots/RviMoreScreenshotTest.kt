@@ -84,6 +84,8 @@ class RviMoreScreenshotTest : ScreenshotBase() {
             settle()
             assertTrue(appears("늦어도 오전 7:30에 멈춰요") || appears("늦어도 07:30에 멈춰요"))
             assertTrue(appears("측정 끝", exact = true))
+            // 2.0.0 [RVIB-15] (PC-123) The night screen asks for dark system bars while it is up.
+            assertTrue(com.bamnat.app.ui.components.DarkSystemBars.held > 0)
         }
     } finally {
         // After the shots: the recording has to be on screen when each is taken.

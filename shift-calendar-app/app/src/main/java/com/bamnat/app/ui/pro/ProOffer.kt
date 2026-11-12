@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * AG 1.27 [MON-12][INVITE-11] What a tap on a locked 프로 feature opens (사용자 리뷰 2026-10-25: "프로가 아닌사람들이 프로기능을
  * 클릭항때 광보보기와 친구초대로 프로 사용권 얻기 보기를 보여줘서 초대를 권유해야해"): one sheet with the three ways, 프로 itself
- * (체험), '광고 보고 <묶음> 7일 열기' (839, the rewarded ad's own rules, RewardedAds.kt) and '친구 초대로 프로 이용권 받기'. Before
+ * (체험), '광고 보고 <묶음> 7일 열기' (839, the rewarded ad's own rules, RewardedAds.kt) and '친구를 초대하면 무료로 써요'. Before
  * the 정식 출시 switch nothing is locked, so it never opens; the alarm check's 등급 미리 보기 shows it.
  */
 object ProOffer {
@@ -113,10 +113,13 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
         }
         if (c.inviteApi.enabled) {
             HorizontalDivider()
-            Text("친구 초대로 프로 이용권 받기", style = MaterialTheme.typography.titleMedium)
-            Text("${state.rules.words()}. 링크로 깐 친구는 앱이 저절로 알아봐요.", style = MaterialTheme.typography.bodySmall,
+            // 2.0.0 [RVO-13] (HQ-48) 프로 화면 맨 위 초대 카드와 같은 이름과 한 줄 약속.
+            Text(INVITE_FREE_TITLE, style = MaterialTheme.typography.titleMedium)
+            Text("${com.bamnat.core.tier.InviteRules.promise(state.rules)}. 링크로 깐 친구는 앱이 저절로 알아봐요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            InviteProgressLines(c)
+            state.view?.let { v -> com.bamnat.core.tier.InviteRules.status(v.given, v.pending, v.waiting) }?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             InviteShareAction(c, onMessage = { said = it }, makeLabel = "친구 초대 링크 만들기", tonal = true)
         }

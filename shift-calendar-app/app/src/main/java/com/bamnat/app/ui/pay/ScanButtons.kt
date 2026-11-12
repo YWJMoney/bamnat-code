@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.pay
 
-import com.bamnat.app.appContainer
 import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,7 +18,6 @@ import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import com.bamnat.app.ui.components.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -60,15 +58,6 @@ import kotlinx.coroutines.launch
  * gallery that came out slanted or small is offered once more through the scanner, which can open the gallery itself.
  * Taken out of PayslipImport.kt (1.30, so the result screen and these buttons are changed apart).
  */
-/** [J133-07] The cause in words, and its code with the exception's class in the event log (no message, nothing read). */
-private fun ocrFailed(context: android.content.Context, e: Throwable): String {
-    val why = com.bamnat.app.pay.OcrModel.why(e)
-    // 1.36 PC 사진 인식: the whole cause chain and its codes, so an OTHER can be told apart (no words of the photo).
-    val detail = com.bamnat.app.pay.OcrModel.detail(e)
-    runCatching { context.appContainer.telemetry.event("ocr_fail", "${why.code} $detail".take(120)) }
-    return why.text + " (오류: $detail)"
-}
-
 @Composable
 internal fun ScanButtons(
     onText: (String) -> Unit = {}, modifier: Modifier = Modifier,
@@ -99,11 +88,14 @@ internal fun ScanButtons(
     // [PAYIN-04] The reading model coming down: percent, or -1 while its size is not known; null when not waiting for it.
     var preparing by remember { mutableStateOf<Int?>(null) }
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // 2.0.0 [RVL-32] (검토 U07b-01) The one fix the failure's cause asks for (와이파이·저장 공간·Play 서비스).
+    var fix by remember { mutableStateOf<com.bamnat.app.pay.OcrModel.Fix?>(null) }
     DisposableEffect(Unit) { onDispose { if (last?.second == true || current?.second == true) PayslipScanner.clear(context) } }
 
     fun read(uri: Uri, taken: Boolean, scanned: Boolean, turn: Int = 0, pdf: Boolean = false) {
         reading = true
         error = null
+        fix = null
         advice = null
         straighten = false
         step = null
@@ -132,13 +124,12 @@ internal fun ScanButtons(
             } catch (e: com.bamnat.core.imports.Sheets.SheetException) {
                 // [READ-34] A PDF too big, locked or broken: said as it is.
                 error = e.message
-            } catch (e: com.bamnat.app.pay.OcrModel.NotReady) {
-                error = e.message
-                context.appContainer.telemetry.event("ocr_fail", "not_ready")
             } catch (e: Exception) {
-                ocrFailed(context, e).let { error = it }
+                // [J133-07] The cause in words and its code in the event log; 2.0.0 [RVL-32] (검토 SCAN-05) the model's own why, and its fix.
+                error = com.bamnat.app.pay.OcrModel.said(context, e)
+                fix = com.bamnat.app.pay.OcrModel.fix(e)
             } catch (e: OutOfMemoryError) {
-                ocrFailed(context, e).let { error = it }
+                error = com.bamnat.app.pay.OcrModel.said(context, e)
             } finally {
                 // [PAYIN-01] A photo taken here stays while it can still be read again or shown; it goes with the screen.
                 if (taken && last?.first != uri && current?.first != uri) PayslipScanner.clear(context)
@@ -146,6 +137,14 @@ internal fun ScanButtons(
                 preparing = null
             }
         }
+    }
+
+    /** 2.0.0 [RVL-32] (검토 SCAN-03·U07b-01) 멈추기: the reading stops at once, and the buttons are there again. */
+    fun stop() {
+        job?.cancel()
+        reading = false
+        preparing = null
+        step = null
     }
 
     /** [PAYIN-01] Typing by hand from the photo that could not be read (or while the model comes down): the photo goes along. */
@@ -198,19 +197,18 @@ internal fun ScanButtons(
         if (onScan != null) TextButton(onClick = { pickPdf.launch(arrayOf("application/pdf")) }, enabled = !reading, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(pdfLabel)
         }
-        if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text(
-                preparing?.let { p -> "  글자 인식 준비물을 받는 중" + (if (p >= 0) " ${p}%" else "") + " · 다 받으면 바로 읽어요" }
-                    ?: step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
-                style = MaterialTheme.typography.bodySmall)
-        }
-        // [PAYIN-04] Waiting for the model need not hold the user: the photo goes to the lines to fill while it comes.
-        if (reading && preparing != null && onEmpty != null) OutlinedButton(onClick = ::byHand, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text("기다리지 않고 사진 보며 직접 넣기")
+        // 2.0.0 [RVL-32] (검토 SCAN-04·U07b-01·I07ba-01) The same reading line as 한 달 근무 넣기: what is going on, how far, and a
+        // way out. [PAYIN-04] Waiting for the model need not hold the user: the photo goes to the lines to fill while it comes.
+        if (reading) {
+            val handy = preparing != null && onEmpty != null
+            com.bamnat.app.ui.imports.ReadingLine(step, preparing, action = if (handy) "사진 보며 직접 넣기" else "멈추기",
+                onAction = { if (handy) byHand() else stop() })
         }
         error?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            fix?.takeIf { f -> f != com.bamnat.app.pay.OcrModel.Fix.AGAIN }?.let { f ->
+                TextButton(onClick = { com.bamnat.app.ui.imports.openFix(context, f) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(f.label) }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 if (onEmpty != null) Button(onClick = ::byHand, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Text(if (current != null) "사진 보며 직접 넣기" else "직접 넣기", maxLines = 1)
