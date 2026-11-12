@@ -52,7 +52,8 @@ fun proStateWords(feature: AppFeature, gate: Gate, settings: AppSettings): Strin
         "calendar.phone" -> settings.phoneCalendars.isNotEmpty()
         else -> null
     }
-    val free = if (!gate.live) "정식 출시 전이라 지금 무료" else "쓸 수 있어요"
+    // 2.0.0 [RVO-12] (HQ-46) 정식 출시(11-12) 뒤라 '출시 전'이라 하지 않아요.
+    val free = if (gate.live) "쓸 수 있어요" else if (gate.access.reason == com.bamnat.core.tier.ProReason.HELD) "3.1 동의 전이라 지금 무료" else "지금 무료"
     return when (on) {
         true -> "$free · 켜 둠"
         false -> "$free · 꺼 둠"

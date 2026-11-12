@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pro
 
+import com.bamnat.app.tier.launchAt
+import com.bamnat.app.tier.thanks
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -197,6 +199,13 @@ fun ProScreen(onBack: () -> Unit) {
                 StatusCard(gate, pro, zone, style)
                 ConsentWaiting(c, pro, onMessage = say("top"))
                 Said("top")
+                // 2.0.0 [RVO-13] 검토 HQ-48 (사용자 2026-11-12 20:28 KST "프로를 구독 안한사람은 프로를 눌렀을때 친구 초대를 먼져"): 프로를 사지
+                // 않은 휴대폰(무료·하루 이용권·감사 기간·보상 이용권)은 '지금' 바로 아래가 친구 초대. 구독·1년 이용권은 아래 그대로.
+                val inviteFirst = inviteFirst(gate)
+                if (inviteFirst) {
+                    InviteCard(c, onMessage = say("invite"), short = true)
+                    Said("invite")
+                }
                 if (gate.live && subscribed) {
                     SubscribedCard(c, plans, onMessage = say("plans"))
                     Said("plans")
@@ -220,10 +229,9 @@ fun ProScreen(onBack: () -> Unit) {
                 }
                 if (!gate.live) {
                     SectionCard(title = "결제") {
-                        Text(
-                            "지금은 정식 출시 전이라 모든 기능이 무료예요. 출시하는 날 앱에서 알려 드리고, 테스트에 참여한 분께는 프로 ${config.thanksMonths.coerceAtLeast(1)}개월을 드려요.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        // 2.0.0 [RVO-12] (HQ-46) 정식 출시(11-12) 뒤라 '출시 전'이라 하지 않아요: 3.1 보류 중인 휴대폰에는 그 끝나는 날과 감사 프로를.
+                        val thanks = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchAt(), config.thanks(), zone)
+                        Text(closedBillingWords(gate.access, thanks, zone), style = MaterialTheme.typography.bodyMedium)
                         // 1.36 PC 통합 확인 f629c6f1 (프로 화면에 '사업자 정보'가 없어요): before 정식 출시 the 결제 card has no plans, and
                         // the 사업자 정보 lived only under them; it is shown here too.
                         var seller by remember { mutableStateOf(false) }
@@ -233,8 +241,10 @@ fun ProScreen(onBack: () -> Unit) {
                 }
 
                 // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 (2.0.0 [RVO-06] 받은 코드는 맨 아래 한 칸으로).
-                InviteCard(c, onMessage = say("invite"))
-                Said("invite")
+                if (!inviteFirst) {
+                    InviteCard(c, onMessage = say("invite"))
+                    Said("invite")
+                }
 
                 if (c.tierApi.enabled) {
                     PassesCard(c, pro, onMessage = say("passes"), zone = zone)
@@ -272,6 +282,29 @@ internal fun ConsentWaiting(c: AppContainer, pro: ProState, onMessage: (String) 
     }
 }
 
+/**
+ * 2.0.0 [RVO-13] (HQ-48) Whether 친구 초대 comes right under '지금': 결제 is open and this phone did not buy 프로 (no 프로, a day by an ad,
+ * the 감사 months, reward passes). A subscription, the 1년 이용권, a 팀·직원 요금제, an admin's or a shared 프로 keep it lower down.
+ */
+internal fun inviteFirst(gate: com.bamnat.app.tier.Gate): Boolean =
+    gate.live && (!gate.access.pro || gate.access.reason in INVITE_FIRST)
+
+private val INVITE_FIRST = setOf(ProReason.DAY_PASS, ProReason.THANKS, ProReason.PASS, ProReason.NONE)
+
+/**
+ * 2.0.0 [RVO-12] (HQ-46) The 결제 card while 결제 is not open on this phone. 처리방침 3.1's hold (9항): the day 무료·프로 part, and the 감사
+ * 프로 a phone from before the 출시 still has after it ([thanks]). Otherwise (개발용 빌드·로컬 시험 서버, 관리자가 결제를 잠시 끈 때) plainly that
+ * every feature is open; never '정식 출시 전' (출시는 11-12).
+ */
+internal fun closedBillingWords(access: com.bamnat.core.tier.Access, thanks: java.time.Instant?, zone: ZoneId): String {
+    val ends = access.until
+    if (access.reason != ProReason.HELD || ends == null) return "지금은 모든 기능이 무료로 열려 있어요. 결제가 열리면 앱에서 알려 드려요."
+    val from = ends.atZone(zone).toLocalDate()
+    val after = thanks?.takeIf { it.isAfter(ends) }?.let { lastDay(it, zone) }
+        ?.let { " 정식 출시 전부터 써 주셔서, 그 뒤에도 ${dateWords(it)}까지는 감사 프로로 그대로 써요." }.orEmpty()
+    return "${access.say(zone)}. ${from.monthValue}월 ${from.dayOfMonth}일부터 무료·프로가 나뉘어요.$after"
+}
+
 /** [SRV-07] What the waiting answer means for the user, in their words. */
 fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
     (if (q.answer == "keep") "'계속 쓸게요' 답을 아직 밤낮 서버에 기록하지 못했어요."
@@ -284,17 +317,19 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
         // 1.39 [FAM-03] 1.38 최종 PC 제안 5: a family phone is said as one at the top, before the launch too ('모든 기능이 무료' alone
         // left it to the 관리자 연결 card at the very bottom), and after it not as an admin's phone. An admin's phone the same way.
         val admin = pro.passes?.admin?.takeIf { it.approved }
-        Text(if (admin?.family == true && gate.access.reason == ProReason.ADMIN) FAMILY_ON else gate.access.reason.words,
+        Text(if (admin?.family == true && gate.access.reason == ProReason.ADMIN) FAMILY_ON else gate.access.say(zone),
             style = MaterialTheme.typography.titleMedium)
         if (admin != null && gate.access.reason != ProReason.ADMIN) {
-            Text(if (admin.family) "가족 프로 이용권이 연결돼 있어요. 정식 출시 뒤에도 끝나는 날 없이 프로예요."
-                else "관리자 휴대폰으로 연결돼 있어요. 정식 출시 뒤에도 프로를 무료로 써요.",
+            // 2.0.0 [RVO-12] 결제가 열리지 않은 동안(3.1 보류 등)에만 보여요: '정식 출시 뒤에도'는 출시 뒤라 걷어냈어요.
+            Text(if (admin.family) "가족 프로 이용권이 연결돼 있어요. 결제가 열려도 끝나는 날 없이 프로예요."
+                else "관리자 휴대폰으로 연결돼 있어요. 결제가 열려도 프로를 무료로 써요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
         if (pro.passes?.familyPaused == true) {
             Text(FAMILY_PAUSED, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
-        gate.access.until?.let { until ->
+        // 2.0.0 [RVO-12] 3.1 보류의 끝나는 날은 윗줄에 있어요.
+        gate.access.until?.takeIf { gate.access.reason != ProReason.HELD }?.let { until ->
             val day = lastDay(until, zone)
             val words = when (gate.access.reason) {
                 ProReason.TRIAL -> "체험은 ${dateWords(day)}에 끝나요"

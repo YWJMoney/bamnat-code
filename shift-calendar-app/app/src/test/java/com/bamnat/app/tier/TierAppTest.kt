@@ -160,7 +160,7 @@ class TierAppTest {
         val g = gate(LaunchConfig(billingLive = false))
         assertFalse(g.live)
         Feature.entries.forEach { assertTrue(it.name, g.allows(it)) }
-        assertEquals(ProReason.NOT_LAUNCHED, g.access.reason)
+        assertEquals(ProReason.ALL_OPEN, g.access.reason)
     }
 
     @Test fun afterTheLaunchFreeLocksProAndTheServerCanOpenOne() {

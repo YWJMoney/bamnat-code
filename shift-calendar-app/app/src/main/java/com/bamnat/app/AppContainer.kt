@@ -645,6 +645,9 @@ class AppContainer(context: Context) {
             owner = admin?.owner == true,
             // S 1.32 [SECX-01] Only what the developer app set for this approved phone (nothing is switched on the phone).
             previews = admin?.previews?.toSet().orEmpty(),
+            // 2.0.0 [RVO-12] (HQ-46) A release build knows the 정식 출시 happened (debug builds and tests: every feature open).
+            knownDay = com.bamnat.core.flags.Released.DAY.takeIf { com.bamnat.app.tier.ReleaseBuild.on },
+            knownChecks = if (com.bamnat.app.tier.ReleaseBuild.on) com.bamnat.core.flags.Released.CHECKS else emptyMap(),
         )
     }
     private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }

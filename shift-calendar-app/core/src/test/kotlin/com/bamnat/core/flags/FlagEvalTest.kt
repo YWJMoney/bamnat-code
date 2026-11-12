@@ -125,6 +125,70 @@ class FlagEvalTest {
         assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p, confirmed).on)
     }
 
+    // ---- 2.0.0 [RVO-12] 검토 HQ-46: a release build knows the 정식 출시 happened ----
+
+    private fun released(p: PhoneFacts) = p.copy(knownDay = Released.DAY, knownChecks = Released.CHECKS)
+
+    @Test fun aReleaseBuildWithNoServerAnswerHasBillingOnButADebugBuildKeepsEverythingOpen() {
+        // A phone installed after 3.1 was posted that never reached the server (first start offline, AL-D6: the phone's date).
+        val p = phone(kst(2026, 11, 13), installed = LocalDate.of(2026, 11, 13), agreed = emptySet())
+        val debug = FlagEval.state(FlagCatalog.BILLING_FLAG, p)
+        assertFalse("debug builds and tests: every feature open, as before", debug.on)
+        assertNull(debug.heldUntil)
+        val release = FlagEval.state(FlagCatalog.BILLING_FLAG, released(p))
+        assertTrue(release.reason, release.on)
+        assertTrue(release.checks.joinToString { "${it.label} ${it.detail}" }, release.checks.any { it.detail?.contains("출시한 앱이 알아요") == true })
+        assertTrue("ads too (the consent form may still ask)", FlagEval.state(FlagCatalog.ADS_FLAG, released(p)).on)
+    }
+
+    @Test fun whatTheServerSaysStillWinsOnAReleaseBuild() {
+        val p = released(phone(kst(2026, 11, 13), installed = LocalDate.of(2026, 11, 13)))
+        assertFalse("its force off", FlagEval.state(FlagCatalog.BILLING_FLAG, p, FlagOverride(force = Force.OFF)).on)
+        assertFalse("its own checks: one not confirmed stays unconfirmed",
+            FlagEval.state(FlagCatalog.BILLING_FLAG, p, FlagOverride(confirmed = mapOf("play.production" to null))).on)
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p, confirmed).on)
+    }
+
+    @Test fun aReleaseBuildNeverReadsADayBeforeTheLaunchForALegalRow() {
+        // The phone's clock set back to October, never online: 3.1's day has come all the same.
+        val p = released(phone(kst(2026, 10, 1), installed = LocalDate.of(2026, 9, 1), agreed = setOf("3.1")))
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p).on)
+        // No server clock at all (a server with flags but no time): dates up to 11-12 are past, a later one is not known.
+        val noClock = p.copy(serverNow = null)
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, noClock, confirmed).on)
+        val later = Flag("test.later", "뒤", "w", "o", Basis(), listOf(Condition.Date(from = LocalDate.of(2026, 12, 12))), default = false, risk = Risk.LEGAL)
+        assertEquals(Check.Status.UNKNOWN, FlagEval.state(later, noClock).checks.single().status)
+    }
+
+    @Test fun theThreePointOneHoldStaysOnAReleaseBuildAndSaysUntilWhen() {
+        // 9항: installed before 10-27, no yes: free until 11-24 (its last free day is 11-23).
+        val tester = released(phone(kst(2026, 11, 13), installed = LocalDate.of(2026, 10, 21), agreed = emptySet()))
+        val held = FlagEval.state(FlagCatalog.BILLING_FLAG, tester)
+        assertFalse(held.on)
+        assertEquals(LocalDate.of(2026, 11, 24), held.heldUntil)
+        assertEquals(LocalDate.of(2026, 11, 24), FlagEval.state(FlagCatalog.BILLING_FLAG, tester, confirmed).heldUntil)
+        assertTrue("on the held-until day", FlagEval.state(FlagCatalog.BILLING_FLAG, tester.copy(now = kst(2026, 11, 24, 0, 1), serverNow = kst(2026, 11, 24, 0, 1))).on)
+        assertTrue("a yes ends it", FlagEval.state(FlagCatalog.BILLING_FLAG, tester.copy(agreed = setOf("3.1"))).on)
+        // No server clock: the hold might still apply, so it stays (never charged early); one surely over is over.
+        val noClock = tester.copy(serverNow = null)
+        assertFalse(FlagEval.state(FlagCatalog.BILLING_FLAG, noClock, confirmed).on)
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, noClock.copy(installed = LocalDate.of(2026, 11, 2)), confirmed).on)
+        // A force off says nothing of the hold.
+        assertNull(FlagEval.state(FlagCatalog.BILLING_FLAG, tester, FlagOverride(force = Force.OFF)).heldUntil)
+    }
+
+    @Test fun holdOverWithoutTheDay() {
+        val cal = PolicyCalendar.SEED
+        val nov12 = LocalDate.of(2026, 11, 12)
+        assertEquals(false, cal.over("3.1", LocalDate.of(2026, 10, 1), emptySet(), nov12))
+        assertEquals(true, cal.over("3.1", LocalDate.of(2026, 10, 1), setOf("3.1"), nov12))
+        assertEquals(true, cal.over("3.1", LocalDate.of(2026, 10, 27), emptySet(), nov12))
+        assertEquals(true, cal.over("3.1", null, emptySet(), LocalDate.of(2026, 11, 24)))
+        assertEquals(false, cal.over("3.1", null, emptySet(), nov12))
+        assertNull(cal.over("9.9", null, emptySet(), nov12))
+        assertEquals(LocalDate.of(2026, 11, 12), Released.DAY)
+    }
+
     @Test fun aTesterWithoutTheYesIsHeldUntilTheOldDayEvenWhenForcedOn() {
         val tester = LocalDate.of(2026, 10, 21)
         val p = phone(kst(2026, 11, 12), agreed = emptySet(), installed = tester)

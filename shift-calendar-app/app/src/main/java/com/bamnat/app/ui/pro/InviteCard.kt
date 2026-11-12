@@ -2,6 +2,12 @@ package com.bamnat.app.ui.pro
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -119,25 +125,37 @@ internal fun InviteProgressLines(c: AppContainer) {
         color = MaterialTheme.colorScheme.primary)
 }
 
+/** 2.0.0 [RVO-13] (HQ-48) The name of the way to 프로 without paying, the same on 프로, the locked feature's sheet and the paywall. */
+const val INVITE_FREE_TITLE = "친구를 초대하면 무료로 써요"
+
 /**
  * [INVITE-02][INVITE-05][INVITE-03] 설정 › 프로 › 친구 초대: the inviter's counts and link (made after the line above),
  * shared with the phone's share sheet. 2.0.0 [RVO-06] (검토 U11b-03) a code received goes in at the bottom of 프로 ([CodeInbox]);
  * this card keeps only what the friend's phone was told.
+ *
+ * 2.0.0 [RVO-13] 검토 HQ-48 (사용자 2026-11-12 20:28 KST): [short] for a phone that did not buy 프로, right under '지금': the one-line
+ * promise ([InviteRules.promise]), what came of it so far in one line ([InviteRules.status]) and one button; how a friend counts,
+ * what goes to the server and the code behind '자세히' (조건 1·4). A buyer's card stays as it was, lower down.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
+internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boolean = false) {
     if (!c.inviteApi.enabled) return
     val state by c.invites.store.state.collectAsStateWithLifecycle()
     val view = state.view
     val terms = state.rules
     LaunchedEffect(view?.code) { runCatching { c.invites.refresh() } }
-    SectionCard(title = "친구 초대") {
+    var more by rememberSaveable { mutableStateOf(false) }
+    SectionCard(title = if (short) INVITE_FREE_TITLE else "친구 초대") {
+        if (short) {
+            Text(InviteRules.promise(terms), style = MaterialTheme.typography.titleMedium)
+            view?.let { v -> InviteRules.status(v.given, v.pending, v.waiting) }?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        }
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
-        Text("내 링크로 깐 친구는 앱이 저절로 알아봐요. 친구가 첫 설정 마지막에 알린 날부터 ${terms.days}일이 지나 앱을 다시 열면 친구 한 명으로 세요. " +
-            "${terms.words()}. 같은 친구·같은 휴대폰은 한 번만, 내 휴대폰은 세지 않아요. 정식 출시 전에 받은 달은 출시 날부터 세요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (view?.code != null) {
+        if (!short || more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (view?.code != null && (!short || more)) {
             InviteProgressLines(c)
             Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
             // 2.0.0 [RVD-14] 확인 뒤 들어와요.
@@ -148,10 +166,36 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
             Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
         }
         // 2.0.0 [RVO-06] 조건 2: 이 화면의 채운 단추는 '프로 시작하기' 하나라, 초대 링크는 옅은 채움 단추.
-        InviteShareAction(c, onMessage, tonal = true)
+        InviteShareAction(c, onMessage, tonal = true) {
+            if (short) TextButton(onClick = { more = !more }) { Text(if (more) "접기" else "자세히") }
+        }
         state.answer?.takeIf { state.reportedCode != null }?.let {
             Text(inviteAnswerWords(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVO-13] (HQ-48) The way to 프로 without paying, as one row where a sheet already has its buttons (the three-page paywall):
+ * the title, the promise, and a tap to 프로 where the invite card is right under '지금'.
+ */
+@Composable
+internal fun InviteFreeRow(c: AppContainer, onClick: () -> Unit) {
+    if (!c.inviteApi.enabled) return
+    val state by c.invites.store.state.collectAsStateWithLifecycle()
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = "프로 화면에서 초대하기", onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f)) {
+            Text(INVITE_FREE_TITLE, style = MaterialTheme.typography.titleSmall)
+            Text(InviteRules.promise(state.rules), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
     }
 }
 

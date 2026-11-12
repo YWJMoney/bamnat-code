@@ -65,4 +65,16 @@ class InviteRulesTest {
         assertEquals("다음 프로까지 2명", InviteRules.toNext(3, 5))
         assertEquals("다음 프로까지 5명", InviteRules.toNext(0, 5))
     }
+
+    /** 2.0.0 [RVO-13] 검토 HQ-48: the one-line promise on top of 프로, its long form behind '자세히', and what came of it in one line. */
+    @Test fun thePromiseIsOneLineInTheServersRules() {
+        assertEquals("친구 5명이 7일 쓰면 프로 1개월", InviteRules.promise(InviteTerms.DEFAULT))
+        assertEquals("친구 5명이 7일 쓰면 프로 1개월 · 1년에 12개월까지", InviteRules.promise(InviteTerms(5, 7, 1, 12)))
+        val long = InviteRules.details(InviteTerms(5, 7, 1, 12))
+        assertTrue(long, long.contains("운영팀이 확인한 뒤"))
+        assertFalse("출시 뒤라 '정식 출시 전' 말은 없어요", long.contains("정식 출시"))
+        assertNull(InviteRules.status(0, 0, 0))
+        assertEquals("받은 프로 2개월 · 확인 기다리는 1개월 · 기다리는 친구 3명", InviteRules.status(2, 1, 3))
+        assertEquals("기다리는 친구 1명", InviteRules.status(0, 0, 1))
+    }
 }

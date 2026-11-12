@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -121,6 +122,9 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
                     TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
                 }
             }
+            // 2.0.0 [RVO-13] 검토 HQ-48: 돈을 내지 않고 여는 길도 장마다 한 줄로(프로 화면의 초대 카드로 가요).
+            HorizontalDivider()
+            InviteFreeRow(c) { onClose(); goPro() }
         }
         // 2.0.0 [RVO-07] (검토 U11b-04 '가격은 세 번째 장에 가야 보여요') 앞 장에서도 가격 한 줄이 늘 보여요.
         if (page != 2) priceLine(plans)?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }

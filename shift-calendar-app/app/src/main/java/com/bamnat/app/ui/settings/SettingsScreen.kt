@@ -1168,10 +1168,12 @@ internal fun boardRow(style: com.bamnat.core.work.WorkStyle?): Pair<String, Stri
     else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론"
 }
 
-/** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
+/** [MON-04] The 프로 row's words: while 결제 is not open, with 프로, and without it. */
 internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
-    !gate.live -> "지금은 모든 기능 무료 · 출시 소식은 앱에서 알려 드려요" // [J133-43] 순번 723
-    gate.access.pro -> gate.access.reason.words
+    // 2.0.0 [RVO-12] (HQ-46) 3.1 보류 중인 휴대폰은 그 끝나는 날을, 나머지(개발용 빌드·결제를 잠시 끈 때)는 '출시' 말 없이. [J133-43] 순번 723
+    !gate.live && gate.access.reason == com.bamnat.core.tier.ProReason.HELD -> gate.access.say(com.bamnat.core.time.Today.zone())
+    !gate.live -> "지금은 모든 기능 무료 · 결제가 열리면 앱에서 알려 드려요"
+    gate.access.pro -> gate.access.say(com.bamnat.core.time.Today.zone())
     else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
 }
 
