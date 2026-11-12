@@ -56,6 +56,7 @@
 // from one network within the hour. The app's install id is kept only as a hash, so a sender counts
 // once and can take a report back.
 
+import { reactionItems } from "./reactions.js";
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
 import { cutFrom, oldPayCut, oldPayRoute } from "./old-pay.js";
@@ -2661,7 +2662,8 @@ async function careAdmin(request, env, url, path, method, now) {
     return json({ ...(await carePerson(recipeDeps, env, t.device, now)), ...(t.ref ? { ref: t.ref } : {}) });
   }
   if ((path === "/care/warn" || path === "/care/hold") && method === "POST") {
-    if (!(await careOn(recipeDeps, env, now))) return json({ error: "off" }, 409);
+    // 2.0.0 [RVN-15] 검토 SVC-101: 관리자 화면의 '꺼 둔 기능이에요'(off)와 나눠, 마을 돌봄이 아직 꺼진 것을 그대로 말해요.
+    if (!(await careOn(recipeDeps, env, now))) return json({ error: "care_off" }, 409);
     const body = await readJson(request, 2048);
     const t = await careTarget(recipeDeps, env, body);
     if (!t.device) return json(t.ambiguous ? { error: "ambiguous", n: t.ambiguous } : { error: "not_found" }, 404);
@@ -8115,7 +8117,8 @@ const newsSince = (url, now) => {
 
 /**
  * [SRV-10] N3 밤낮 소식 in one ask a day: the plaza news, new answers to this phone's questions and the
- * notices that began since, so the app shows one notification for all of it. The same one install id as
+ * notices that began since, so the app shows one notification for all of it. 2.0.0 [RVN-14] HQ-51: and the reactions to what this
+ * phone put out (reactions.js), for the 알림함 and its bell in the same ask. The same one install id as
  * the plaza news; links about to end are known on the phone and never asked here.
  */
 async function digest(request, env, url) {
@@ -8124,14 +8127,18 @@ async function digest(request, env, url) {
   // 2.0.0 [RVQ-16] 하루 한 번 묻는 이 길이 '아직 쓰는 중'(알림 토큰·같은 근무 알림의 정리 기한).
   await stillHere(env, dev, now).catch(() => {});
   const since = newsSince(url, now);
-  const [plaza, answers, ops] = await Promise.all([
-    paused(env, "PLAZA_NEWS").then((off) => (off ? null : newsItems(env, dev, since, now))),
+  const off = await paused(env, "PLAZA_NEWS");
+  const [plaza, reactions, answers, ops] = await Promise.all([
+    off ? null : newsItems(env, dev, since, now),
+    // 2.0.0 [RVN-14] HQ-51 알림함: what others did to what this phone put out, a line per thing.
+    off ? null : reactionItems(env, dev, since, now),
     all(env, `SELECT m.inquiry_id AS id, COUNT(*) AS n, MAX(m.at) AS at FROM inquiry_messages m JOIN inquiries i ON i.id = m.inquiry_id
       WHERE i.device = ? AND m.sender = 'admin' AND m.at > ? AND m.at <= ? GROUP BY m.inquiry_id ORDER BY at DESC LIMIT 10`, dev, since, now),
     opsState(env),
   ]);
   return json({
     plaza: plaza ?? [],
+    reactions: reactions ?? [],
     ...(plaza ? {} : { plazaPaused: true }),
     answers: answers.map((a) => ({ inquiry: a.id, count: a.n, at: iso(a.at) })),
     notices: ops.notices.filter((n) => n.from > since && n.from <= now && now < n.until).map(noticeView),
@@ -8670,6 +8677,8 @@ const recipeDeps = {
   authorToken,
   // 1.36 [GRW-03] 요청 판 '완성' → 그 요청이 온 스튜디오 요구 묶음도 풀림.
   needSolved,
+  // 2.0.0 [RVN-15] 검토 SVC-99: 스튜디오 재료 올리기·공개·무료 나누기도 활동 기록에.
+  audit,
   // 1.36 [GRW-08] 사진이 든 작품의 신고 → 사진 신고.
   flagRecipeImages,
 };

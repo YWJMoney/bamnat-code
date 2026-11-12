@@ -456,6 +456,8 @@ function adminApp(L, BUILD, M) {
   let toastTimer = 0;
   let searchTimer = 0;
   let pendingConfirm = null;
+  /** 2.0.0 [RVN-15] 확인 창의 두 번째 고르기(테두리 단추, 채운 단추는 그대로 하나). */
+  let pendingAlt = null;
   // 2.0.0 [RVA-02] askText(앱의 입력 창)가 '저장'을 받으면 부를 것.
   let pendingAsk = null;
   // [RVA-07] 창을 닫으며 history.back()으로 칸을 거둔 뒤 오는 popstate 한 번은 넘겨요.
@@ -2111,7 +2113,7 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_reply_held") return `${by}가 답을 썼어요(${e.detail || "10분 보류"} 뒤 보내요)`;
     if (e.action === "inquiry_reply_sent") return `보류한 ${by} 답이 보내졌어요`;
     if (e.action === "inquiry_reply_cancel") return `${by} 답을 보내기 전에 취소했어요`;
-    return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
+    return `${by} · ${L.actionName(e.action)}`;
   }
 
   function inquiryView() {
@@ -3099,7 +3101,7 @@ function adminApp(L, BUILD, M) {
         : `<span class="who">${esc(e.actor || "앱 사용자·시스템")}</span>`;
       // 1.38 [ADM3-07] 되돌릴 수 있는 일은 그 화면으로 한 번에.
       const undo = L.undoPlace(e.action, e.target);
-      out.push(`<li><span class="when">${esc(clock(e.at))}</span><span><b>${esc(ACTION_NAMES[e.action] ?? e.action)}</b>${about}
+      out.push(`<li><span class="when">${esc(clock(e.at))}</span><span><b>${esc(L.actionName(e.action))}</b>${about}
         ${e.detail ? `<span class="meta">${esc(e.detail)}</span>` : ""}${undo ? ` <a class="undo-link" href="${esc(undo.to)}">${esc(undo.label)}</a>` : ""}</span>${who}</li>`);
     }
     out.push("</ul></section>");
@@ -4203,12 +4205,14 @@ function adminApp(L, BUILD, M) {
     return `참여한 분 ${n(k.members ?? c?.members)}명, 쓰는 사람 ${n(k.uses)}명, ${talk}도 제보·규칙과 함께 옮겨져요. 되돌릴 수 없고, 예전 이름으로도 찾아져요.`;
   }
 
-  function confirmBox(title, text, label, then, tone = "danger", rows = []) {
+  function confirmBox(title, text, label, then, tone = "danger", rows = [], alt = null) {
     pendingConfirm = then;
+    // 2.0.0 [RVN-15] 검토 U22c-03: [alt] { label, then }은 같은 창의 두 번째 고르기(예: 아님 / 거짓이었어요). 카드에 단추를 늘리지 않으려고요.
+    pendingAlt = alt?.then ?? null;
     const shown = rows.filter(([, v]) => v !== undefined && v !== null && v !== "");
     openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}
       ${shown.length ? `<dl class="lines confirm-rows">${shown.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : ""}
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn ${tone}" type="submit">${esc(label)}</button></div></form>`);
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button>${alt ? `<button class="btn" type="button" data-act="confirm-alt">${esc(alt.label)}</button>` : ""}<button class="btn ${tone}" type="submit">${esc(label)}</button></div></form>`);
   }
 
   /**
@@ -4547,7 +4551,7 @@ function adminApp(L, BUILD, M) {
    */
   const CSV_KINDS = {
     audit: () => [S.data.audit?.entries, S.data.audit?.more, "audit", [["시각", (e) => new Date(e.at).toLocaleString("ko-KR")], ["누가", (e) => e.actor || "앱 사용자·시스템"],
-      ["한 일", (e) => ACTION_NAMES[e.action] ?? e.action], ["대상", (e) => e.label || e.target || ""], ["내용", (e) => e.detail ?? ""]]],
+      ["한 일", (e) => L.actionName(e.action)], ["대상", (e) => e.label || e.target || ""], ["내용", (e) => e.detail ?? ""]]],
     inquiries: () => [S.data.inquiries?.inquiries, S.data.inquiries?.next, "inquiries", [["받은 때", (q) => new Date(q.createdAt).toLocaleString("ko-KR")],
       ["종류", (q) => KIND_NAMES[q.kind] ?? q.kind], ["주제", (q) => q.topicName ?? ""], ["상태", (q) => STATUS_NAMES[q.status ?? S.inquiryStatus] ?? ""],
       ["맡은 사람", (q) => q.assignee?.name ?? ""], ["앱 버전", (q) => q.appVersion ?? ""], ["나도 그래요", (q) => q.count ?? 1], ["개발사항", (q) => (q.dev ? "있음" : "")],
@@ -4981,7 +4985,7 @@ function adminApp(L, BUILD, M) {
 
     const sim = flagSimCard(r);
     const hist = `<section class="card"><h2>기록</h2>${r.history.length ? `<ul class="feed">${r.history.map((h) => `<li><span class="when">${esc(moment(h.at))}</span>
-      <span><b>${esc(ACTION_NAMES[h.action] ?? h.action)}</b> <span class="meta">${esc(flagSummary(h.before))} → ${esc(flagSummary(h.after))}</span>${h.why ? `<span class="meta">${esc(h.why)}</span>` : ""}</span>
+      <span><b>${esc(L.actionName(h.action))}</b> <span class="meta">${esc(flagSummary(h.before))} → ${esc(flagSummary(h.after))}</span>${h.why ? `<span class="meta">${esc(h.why)}</span>` : ""}</span>
       <span class="who">${esc(h.actor)}</span></li>`).join("")}</ul>` : '<p class="meta">아직 바꾼 적이 없어요.</p>'}</section>`;
     return `${top}<div class="grid two">${list}${about}${phones}${billing}${sim}</div>${hist}`;
   }
@@ -5497,6 +5501,17 @@ function adminApp(L, BUILD, M) {
       return load();
     },
     close: () => { if (!secretGuard()) dialog.close(); },
+    "confirm-alt": async () => {
+      const then = pendingAlt;
+      pendingAlt = null;
+      pendingConfirm = null;
+      dialog.close();
+      try {
+        await then?.();
+      } catch (e) {
+        fail(e);
+      }
+    },
     // [RVA-02] showCopy의 [복사].
     "copy-once": async () => {
       const box = document.getElementById("copy-once");
@@ -6822,6 +6837,7 @@ function adminApp(L, BUILD, M) {
     confirm: async () => {
       const then = pendingConfirm;
       pendingConfirm = null;
+      pendingAlt = null;
       dialog.close();
       try {
         await then?.();
