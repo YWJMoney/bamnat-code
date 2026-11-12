@@ -107,7 +107,8 @@ class S2ScreenshotTest : ScreenshotBase() {
                 }
             }
             settle()
-            tapText("움직임·크기·자리", prefix = true)
+            // runCatching: on the branch before there was no such 묶음, and its 앞 사진 is still taken.
+            runCatching { tapText("움직임·크기·자리", prefix = true) }
             settle()
             when {
                 !scrolledTo("움직임", exact = true) -> "'움직임' 묶음이 없어요"
