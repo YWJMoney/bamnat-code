@@ -40,6 +40,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.appendInlineContent
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Box
@@ -50,6 +53,7 @@ import com.bamnat.app.ui.parts.fillColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -184,13 +188,19 @@ fun NightScreen(
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
         )
         // 2.0.0 [RVI-59] (검토 U03-15) Measuring, the night screen says when it stops by itself and can stop it, as the sleep screen does.
+        // 2.0.0 [RVI-82] (디자인 품질 12) At 200% on the folded width the line took the whole row and '측정 끝' was squeezed to nothing:
+        // the button goes under the line when they do not fit side by side.
         recording?.let { r ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("소리 재는 중" + (r.endsAt?.let { end ->
-                    " · 늦어도 ${Fmt.time(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(end), Today.zone()).toLocalTime())}에 멈춰요"
-                } ?: ""), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.TextButton(onClick = { com.bamnat.app.sleep.SleepRecordService.stop(context) }) { Text("측정 끝") }
-            }
+            com.bamnat.app.ui.components.SideOrBelow(
+                minStart = 160.dp,
+                belowAlign = Alignment.CenterHorizontally,
+                start = {
+                    Text("소리 재는 중" + (r.endsAt?.let { end ->
+                        " · 늦어도 ${Fmt.time(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(end), Today.zone()).toLocalTime())}에 멈춰요"
+                    } ?: ""), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                },
+                end = { androidx.compose.material3.TextButton(onClick = { com.bamnat.app.sleep.SleepRecordService.stop(context) }) { Text("측정 끝", maxLines = 1) } },
+            )
         }
     }
     // 1.39 [FLOW-21] 스튜디오에서 꾸민 밤 화면: 바탕(사진·채우기), 날짜·시계·내일 줄 글자, 카드, 단추. A blueprint without night lines
@@ -322,11 +332,20 @@ private fun NightLineRow(l: NightLine.Line, onAlarms: () -> Unit, onTurnOn: () -
     // 1.39 [FLOW-21] 밤 화면 꾸미기's line letters; an alarm that is off keeps the caution colour whatever the look says (믿음).
     val lineStyle = nightStyle("night.line")
     val tint = if (l.alarmOn) lineStyle.ink?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.onSurface else com.bamnat.app.ui.theme.Tone.Caution.color()
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-        Icon(if (l.alarmOn) Icons.Outlined.Alarm else Icons.Outlined.AlarmOff, null, tint = tint, modifier = Modifier.size(20.dp))
-        Text(" ${l.text}", style = com.bamnat.app.ui.parts.PartMods.text(lineStyle.copy(ink = null), MaterialTheme.typography.titleMedium),
-            textAlign = TextAlign.Center, color = tint)
+    // 2.0.0 [RVI-82] (디자인 품질 12) At 200% on the folded width the icon stood alone at the left and the line broke in the middle
+    // of '알람 06:30 켜짐' (a line starting '· 알람'): the icon now goes in the words, and the line breaks only between its parts.
+    val parts = l.text.split(" · ").map { it.replace(' ', '\u00A0') }
+    val words = androidx.compose.ui.text.buildAnnotatedString {
+        appendInlineContent("icon", "\u00A0")
+        append("\u00A0")
+        append(parts.joinToString(" · "))
     }
+    Text(words, style = com.bamnat.app.ui.parts.PartMods.text(lineStyle.copy(ink = null), MaterialTheme.typography.titleMedium),
+        textAlign = TextAlign.Center, color = tint,
+        inlineContent = mapOf("icon" to androidx.compose.foundation.text.InlineTextContent(
+            androidx.compose.ui.text.Placeholder(1.1.em, 1.1.em, androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter),
+        ) { Icon(if (l.alarmOn) Icons.Outlined.Alarm else Icons.Outlined.AlarmOff, null, tint = tint, modifier = Modifier.fillMaxSize()) }),
+        modifier = Modifier.padding(top = 4.dp).clearAndSetSemantics { contentDescription = l.text })
     if (!l.alarmOn) Row(horizontalArrangement = Arrangement.Center) {
         if (switchOff) Button(onClick = onTurnOn, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람 켜기") }
         TextButton(onClick = onAlarms, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람 확인하기") }

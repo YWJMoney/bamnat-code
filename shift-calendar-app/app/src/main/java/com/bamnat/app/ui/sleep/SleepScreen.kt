@@ -436,14 +436,31 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: 
     val state by vm.state.collectAsStateWithLifecycle()
     // 1.38 [DSG-07] Warm and dark at night and while asleep, so opening the screen in bed does not glare.
     val sleeping = state?.log?.any { it.end == null && !it.imported } == true
+    // 2.0.0 [RVI-87] Kept above the night look, which draws the page anew when it turns on or off: '깼어요' in the morning ends
+    // the sleep that kept it on, and the '…잤어요' line with its 되돌리기 went with the old page at once, as did the part
+    // (오늘·패턴·기록) and how far down it was.
+    val snackbar = remember { SnackbarHostState() }
+    val part = rememberSaveable { mutableStateOf(0) }
+    // The three folded parts and the two wide columns, each where it was scrolled to (디자인 품질 11).
+    val scrolls = List(5) { rememberScrollState() }
+    LaunchedEffect(vm) {
+        vm.refreshHealth()
+        vm.messages.collect { m ->
+            // 2.0.0 [RVI-71] A line with 되돌리기 stays as long as the calendar's (10초, [J133-63]); '깼어요' by a sleepy hand went in 4.
+            val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel },
+                duration = if (m.undo != null) SnackbarDuration.Long else SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) vm.runUndo(m)
+        }
+    }
     com.bamnat.app.ui.theme.NightSurface(com.bamnat.app.ui.theme.rememberNightMode(settings.nightLook, sleeping)) {
-        SleepScreenBody(vm, wide, onBack, onNight)
+        SleepScreenBody(vm, wide, onBack, onNight, snackbar, part, scrolls)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: () -> Unit) {
+private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: () -> Unit, snackbar: SnackbarHostState,
+    partState: androidx.compose.runtime.MutableState<Int>, scrolls: List<androidx.compose.foundation.ScrollState>) {
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
@@ -457,14 +474,6 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(vm) {
-        vm.refreshHealth()
-        vm.messages.collect { m ->
-            val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) vm.runUndo(m)
-        }
-    }
     val target = settings.sleepTargetMinutes
 
     // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19: it sat on the cards).
@@ -573,15 +582,13 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
         }
         if (wide) {
             Row(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(scrolls[3]).padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) { summary(); Spacer(Modifier.height(80.dp)) }
-                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(scrolls[4]).padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) { history(); Spacer(Modifier.height(80.dp)) }
             }
         } else {
-            var part by rememberSaveable { mutableStateOf(0) }
-            // Each part keeps where it was scrolled to (디자인 품질 11).
-            val scrolls = listOf(rememberScrollState(), rememberScrollState(), rememberScrollState())
+            var part by partState
             Column(Modifier.fillMaxSize().padding(padding)) {
                 androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
                     SLEEP_PARTS.forEachIndexed { i, label ->

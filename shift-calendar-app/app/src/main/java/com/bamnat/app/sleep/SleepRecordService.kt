@@ -405,6 +405,10 @@ class SleepRecordService : Service(), SensorEventListener {
         private val _recording = MutableStateFlow<Recording?>(null)
         val recording: StateFlow<Recording?> = _recording.asStateFlow()
 
+        /** 2.0.0 [RVI-59] For the screen shots of a measuring night: the screens' state without the microphone. */
+        @androidx.annotation.VisibleForTesting
+        internal fun showRecording(r: Recording?) { _recording.value = r }
+
         /** Between the microphone stopping and the night written down; a night cut off is not said meanwhile. */
         @Volatile private var saving = false
         private val _saved = MutableStateFlow(0L)

@@ -157,8 +157,9 @@ private fun rememberMinute(): LocalDateTime {
     return now
 }
 
+/** Internal for the watch screen shots (WatchScreenshotTest). */
 @Composable
-private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
+internal fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = rememberMinute()
