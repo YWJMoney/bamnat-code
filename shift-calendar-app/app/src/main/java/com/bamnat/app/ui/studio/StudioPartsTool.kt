@@ -239,7 +239,7 @@ internal fun PartsTool(
     }
     @Composable
     fun Group(title: String, content: @Composable () -> Unit) {
-        if (only == null || only == title) com.bamnat.app.ui.settings.Group(title, content)
+        if (only == null || only == title) com.bamnat.app.ui.settings.Group(title, content = content)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.padding(top = 4.dp)) {

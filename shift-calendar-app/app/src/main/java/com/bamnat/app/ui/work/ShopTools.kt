@@ -378,7 +378,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                         TextButton(onClick = {
                             if (gatePdf.locked(com.bamnat.app.tier.Feature.ROSTER_PDF) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return@TextButton }
                             scope.launch {
-                                runCatching { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.StaffReport.doc(s, month, roster, "", com.bamnat.core.time.Today.date()),
+                                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.StaffReport.doc(s, month, roster, "", com.bamnat.core.time.Today.date()),
                                     "bamnat-직원-${s.name.ifBlank { "직원" }}-$month.pdf") }
                             }
                         }) { Text("${s.name.ifBlank { "이름 없음" }} PDF") }

@@ -90,14 +90,14 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
                         TextButton(onClick = {
                             scope.launch {
                                 val l = ledgerOf(worked).let { f -> f.copy(lines = f.lines.filter { it.staff.hiredOn != null }) }
-                                runCatching { com.bamnat.app.report.ReportShare.csv(context, BossFilings.withheldCsv(place, worked, BossFilings.withheld(place, l)),
+                                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, BossFilings.withheldCsv(place, worked, BossFilings.withheld(place, l)),
                                     "원천세-${place.name}-$worked.csv", "${place.name} ${Fmt.month(worked)}분 원천세 표") }
                             }
                         }) { Text("원천세 표(CSV)") }
                     }
                     if (d.kind == BossFilings.Kind.INSURE_IN || d.kind == BossFilings.Kind.INSURE_OUT) TextButton(onClick = {
                         scope.launch {
-                            runCatching { com.bamnat.app.report.ReportShare.csv(context, BossFilings.insuranceCsv(place, staff, ledgerOf, today),
+                            com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, BossFilings.insuranceCsv(place, staff, ledgerOf, today),
                                 "4대보험-신고-${place.name}.csv", "${place.name} 4대보험 취득·상실 표") }
                         }
                     }) { Text("4대보험 신고 표(CSV)") }

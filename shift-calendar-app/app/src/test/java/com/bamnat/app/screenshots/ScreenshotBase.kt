@@ -111,6 +111,10 @@ abstract class ScreenshotBase {
         // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
         // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
         com.bamnat.app.ui.calendar.SetupFill.close()
+        // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.
+        com.bamnat.app.ui.components.AppSnack.resetForTest()
+        com.bamnat.app.ui.components.AskTurn.resetForTest()
+        com.bamnat.app.ui.components.Busy.resetForTest()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -422,7 +426,9 @@ abstract class ScreenshotBase {
             // work but is enabled only once '내 달력 미리 보기' (off the main thread) has landed. A tap in that gap did nothing, no
             // window opened, and the next step failed (NtcScreenshotTest 161, #444·#446 CI). A person waits for the button to
             // light up, so the tap does too; one that stays off is still tapped, as before.
-            val end = System.nanoTime() + REACH_WAIT_NANOS
+            // 2.0.0 [RVP-75] The whole suite on two forks still saw 161 fail once with 5 s (the preview waits behind the other fork's
+            // shots); a button that lights up late gets [ENABLE_WAIT_NANOS], and only a disabled one waits at all.
+            val end = System.nanoTime() + ENABLE_WAIT_NANOS
             while (node.config.contains(SemanticsProperties.Disabled) && System.nanoTime() < end) {
                 settle()
                 node = find(text, exact, prefix) ?: node
@@ -518,6 +524,9 @@ abstract class ScreenshotBase {
             }
             settle()
         }
+
+        /** 2.0.0 [RVP-62] Holds a finger on what shows [text] for [frames] frames of 16ms (a held −/＋), then lifts it. */
+        fun holdText(text: String, frames: Int, exact: Boolean = true) = touch(reach(text, exact, false, 0, 0.5f).boundsInWindow.center, hold = frames)
 
         /** Holds a finger on what shows [text], for its quick menu. */
         fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
@@ -649,9 +658,12 @@ abstract class ScreenshotBase {
             tapText(title, exact = true, across = if (wide) 0.2f else 0.5f)
         }
 
-        /** Replaces the activity's content, for screens that are slow to reach by touch. */
+        /**
+         * Replaces the activity's content, for screens that are slow to reach by touch. [QA-12] On the theme's background with
+         * onBackground for words, as the app's Scaffold gives them ([ShotGround]); a test that sets its own theme uses [ShotTheme].
+         */
         fun content(body: @androidx.compose.runtime.Composable () -> Unit) {
-            scenario.onActivity { activity -> activity.setContent { BamnatTheme { body() } } }
+            scenario.onActivity { activity -> activity.setContent { BamnatTheme { ShotGround(body) } } }
         }
 
         /** Taps a point given in dp from the top-left, or from the right edge when [fromRight]. */
@@ -1038,6 +1050,8 @@ abstract class ScreenshotBase {
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L
+        /** How long [Screen.tapText] waits for a disabled button to light up before it taps it anyway. */
+        const val ENABLE_WAIT_NANOS = 15_000_000_000L
         /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
         const val TAB_TRIES = 3
         /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5); [NAV2-01] 1.39 five places, 설정 by the 나 button. */

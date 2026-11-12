@@ -54,17 +54,17 @@ fun WhatsNewDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // 1.38 [EASE-32] Said first: the user asked, and this version is the answer.
                 if (thanks.isNotEmpty()) {
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow) {
                         Column(Modifier.fillMaxWidth().padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 2.dp)) {
-                            Text("보내 주신 의견으로 고쳤어요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("보내 주신 의견으로 고쳤어요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                             thanks.take(3).forEach { t ->
-                                Text("• ‘$t’", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                Text("• ‘$t’", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.padding(top = 2.dp, end = 8.dp))
                             }
                             if (thanks.size > 3) Text("그리고 ${thanks.size - 3}개 더", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("알려 주셔서 고마워요. 이번 판에 들어 있어요.", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(top = 4.dp))
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                             TextButton(onClick = onOpenAsks, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 문의 보기") }
                         }
                     }
