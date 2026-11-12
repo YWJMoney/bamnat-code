@@ -1,4 +1,5 @@
-import { all, audit, iso, json, one, randomId, readJson, refuse, run, sha256 } from "./index.js";
+import { all, audit, batch, iso, json, one, randomId, readJson, refuse, run, sha256, stmt, APP_CODES } from "./index.js";
+import { releaseWaiting } from "./recipes.js";
 import { NOTICE, noticeRows } from "./usage.js";
 import { compareVersions, handoff, sortInbox, version } from "./inbox.js";
 import { slaKey, slaTargets } from "./inquiries.js";
@@ -160,7 +161,31 @@ async function ship(request, env, now, answer) {
   const body = await readJson(request, 2048);
   const v = String(body.version ?? "").trim();
   if (!/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(v)) refuse("version", "version");
-  return json(await shipNow(env, v, { dry: body.dry === true, notify: body.notify === true, notice: body.notice !== false }, now, answer));
+  const code = Number.isInteger(body.code) && body.code > 0 && body.code < 1_000_000 ? body.code : null;
+  return json(await shipNow(env, v, { dry: body.dry === true, notify: body.notify === true, notice: body.notice !== false, code }, now, answer));
+}
+
+// 1.40 [MKS-05] (사용자 2026-11-12 "출시를 인지하고 내리고 올리게끔") 나간 판을 저장하면 그 판 앱부터 읽는 출시 대기 작품(minApp ≤ 판 번호,
+// 예약 시각 없는 것)을 함께 공개해요. 판 정리로 내린 옛 작품은 belowApp으로 이미 앱 판마다 갈리니 따로 할 일이 없어요.
+const MARKET_FOR_SHIP = "state = 'waiting' AND release_at IS NULL AND min_app IS NOT NULL AND min_app <= ?";
+
+/** [v]의 폰 versionCode: 관리자가 준 값, 아니면 Play 트랙에서 읽은 그 판 번호(워치 100000+는 빼고), 아니면 옛 판 표. 모르면 null. */
+export async function shipCode(env, v, given = null) {
+  if (Number.isInteger(given) && given > 0) return given;
+  const row = await one(env, "SELECT value FROM settings WHERE key = 'play_track'").catch(() => null);
+  try {
+    const t = row ? JSON.parse(row.value) : null;
+    const codes = t?.done === v ? (t.doneCodes ?? []).map(Number).filter((c) => Number.isInteger(c) && c > 0 && c < 100_000) : [];
+    if (codes.length) return Math.min(...codes);
+  } catch {
+    // 읽지 못하면 아래 표로.
+  }
+  return APP_CODES[v] ?? null;
+}
+
+async function marketWaiting(env, code) {
+  if (!code) return 0;
+  return (await one(env, `SELECT COUNT(*) AS n FROM recipes WHERE ${MARKET_FOR_SHIP}`, code).catch(() => null))?.n ?? 0;
 }
 
 /**
@@ -168,10 +193,13 @@ async function ship(request, env, now, answer) {
  * 1.40 [RVD-11] 검토 SVC-01: 판을 저장한 뒤 문의 답 하나가 실패하거나 일이 중간에 끊기면 남은 안내·공지·기록이 영영 안 갔어요. 이제 판을
  * '보내는 중'(pending)으로 먼저 적고, 답은 하나씩 따로 시도해 실패해도 다음으로 가고, 공지·기록을 남긴 뒤에야 '끝'으로 적어요. 끝나지 않은
  * 판은 5분마다 [resume]으로 남은 문의(아직 안 알린 것)부터 이어 보내요(같은 답은 inboxAnswer가 다시 보내지 않아요).
+ * 1.40 [MKS-05] 그 판 앱부터 읽는 출시 대기 장터 작품도 함께 공개해요. 판 번호(code)는 '보내는 중' 기록에 같이 적어, 이어 보낼 때 같은
+ * 번호로 남은 작품만 공개해요(이미 공개한 것은 더는 waiting이 아니라 두 번 공개되지 않아요). 공개가 실패하면 문의 답처럼 5분 뒤 다시 해요.
  */
-export async function shipNow(env, v, { dry = false, notify = false, notice: post = true, by, resume = null } = {}, now, answer) {
+export async function shipNow(env, v, { dry = false, notify = false, notice: post = true, by, resume = null, code: given = null } = {}, now, answer) {
   const was = resume ? (resume.was ? { v: resume.was } : null) : await shippedVersion(env);
-  const [targets, fresh] = await Promise.all([shipTargets(env, v), newlyOut(env, v, was?.v)]);
+  const code = await shipCode(env, v, resume?.code ?? given);
+  const [targets, fresh, market] = await Promise.all([shipTargets(env, v), newlyOut(env, v, was?.v), marketWaiting(env, code)]);
   const notice = newsNotice(v, fresh, now);
   // 1.37 [ADM2-10] 판을 저장하기 전에 볼 것: 개발사항마다 미리 써 둔 출시 답·공지 한 줄이 있는지, 문의에 갈 답, 올라갈 공지.
   const items = fresh.map((d) => ({ id: d.id, title: d.title, releasedIn: d.released_in, asks: d.asks, shipReply: Boolean(d.ship_reply), news: d.news || null }));
@@ -179,11 +207,12 @@ export async function shipNow(env, v, { dry = false, notify = false, notice: pos
     const byItem = new Map();
     for (const t of targets) byItem.set(t.item, { item: t.item, title: t.title, n: (byItem.get(t.item)?.n ?? 0) + 1, text: t.text });
     return { version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20),
-      replies: [...byItem.values()].slice(0, 20), fresh: items.slice(0, 40), notice: notice ? { title: notice.title, body: notice.body, days: DESK.newsDays } : null };
+      replies: [...byItem.values()].slice(0, 20), fresh: items.slice(0, 40), notice: notice ? { title: notice.title, body: notice.body, days: DESK.newsDays } : null,
+      code, market };
   }
   const name = resume?.by ?? by ?? env.actor?.name ?? "";
   const mark = (extra) => run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: resume?.at ?? now, by: name, ...extra }));
-  const going = { pending: true, was: was?.v ?? null, notify, post, noticeId: resume?.noticeId ?? null, tries: (resume?.tries ?? 0) + 1 };
+  const going = { pending: true, was: was?.v ?? null, notify, post, noticeId: resume?.noticeId ?? null, tries: (resume?.tries ?? 0) + 1, code };
   await mark(going);
   let answered = 0;
   let failed = 0;
@@ -199,10 +228,21 @@ export async function shipNow(env, v, { dry = false, notify = false, notice: pos
   // 공지는 따로 끄지 않는 한 올려요(notice: false면 안 올림). 이어 보낼 때는 이미 올린 공지를 다시 올리지 않아요.
   if (notice && post && !going.noticeId) going.noticeId = await postNotice(env, notice).catch(() => null);
   const noticeId = going.noticeId;
+  // [MKS-05] 그 판부터 읽는 출시 대기 작품 공개. 실패하면 '보내는 중'으로 남겨 5분 뒤 다시 해요.
+  let released = 0;
+  let marketFailed = false;
+  if (market) {
+    try {
+      released = await releaseWaiting({ all, batch, stmt }, env, now, MARKET_FOR_SHIP, [code], `나간 판 ${v}`);
+    } catch (e) {
+      marketFailed = true;
+      console.error(`ship ${v} market: ${e?.message ?? e}`);
+    }
+  }
   await audit(env, now, "shipped_version", v, [name && `${name}`, resume && "이어 보냄", answered && `문의 ${answered}건에 업데이트 안내`, noticeId && !resume?.noticeId && "업데이트 소식 공지",
-    failed && `${failed}건 실패(5분 뒤 다시)`].filter(Boolean).join(" · "));
-  await mark(failed ? going : {});
-  return { version: v, was: was?.v ?? null, answered, failed, notice: noticeId ? { id: noticeId, title: notice?.title ?? "" } : null };
+    released && `장터 작품 ${released}개 공개(앱 ${code}부터)`, failed && `${failed}건 실패(5분 뒤 다시)`, marketFailed && "장터 작품 공개 실패(5분 뒤 다시)"].filter(Boolean).join(" · "));
+  await mark(failed || marketFailed ? going : {});
+  return { version: v, was: was?.v ?? null, answered, failed, notice: noticeId ? { id: noticeId, title: notice?.title ?? "" } : null, code, market: released };
 }
 
 /** 1.40 [RVD-11] 끝나지 않은 나간 판 저장을 이어요(5분마다, 한 판에 12번까지 = 1시간쯤). 이어 보낸 게 없으면 null. */
