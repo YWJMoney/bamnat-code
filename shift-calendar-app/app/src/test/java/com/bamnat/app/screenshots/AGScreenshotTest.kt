@@ -193,6 +193,31 @@ class AGScreenshotTest : ScreenshotBase() {
         assertEquals(Today.date(), c.grow.current.inviteClosedOn)
     })
 
+    /**
+     * 총괄 11-13 (사용자 11-12 20:38 KST "거부를 하면 여러 번 반복해서 알림으로 보여 주지 마"): the invite row is a 권유 of the 알림함 that
+     * '다시 보지 않기' turns off for good (back only from 기능 켜고 끄기), and its one line is the server's promise ([RVO-24] PC-133).
+     */
+    @Test fun theInviteRowSaidNoToStaysAway() = shoot("1084c_ag_invite_muted", FOLDED, style(WorkStyle.SHIFT) {
+        c.invites.installedAt = { Today.instant().minus(Duration.ofDays(4)) }
+        api.viewAnswer = view(progress = 3, waiting = 1, friends = 3)
+        runBlocking { c.invites.makeLink() }
+        tab(1, wide = false); tab(0, wide = false)
+        settle()
+        tapText("알림 ", prefix = true, scrolls = 0)
+        assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월"))
+        assertTrue(gone("상한 없음"))
+        tapText("더 보기: $NUDGE", exact = true, scrolls = 0)
+        tapText("이런 알림 다시 보지 않기", exact = true, scrolls = 0)
+        assertTrue(gone(NUDGE, exact = true))
+        assertTrue("invite.friend" in com.bamnat.app.inbox.Inbox.get(app).muted.value)
+        // The next day, the calendar opened again: still not there.
+        Today.fix(Today.instant().plus(Duration.ofDays(1)))
+        tab(1, wide = false); tab(0, wide = false)
+        settle()
+        assertTrue(gone(NUDGE, exact = true))
+        com.bamnat.app.inbox.Inbox.get(app).unmute("invite.friend")
+    })
+
     @Test fun settingsStartsWithGrowingTogether() = shoot("1085_ag_settings_top", FOLDED, style(WorkStyle.SHIFT) {
         tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)

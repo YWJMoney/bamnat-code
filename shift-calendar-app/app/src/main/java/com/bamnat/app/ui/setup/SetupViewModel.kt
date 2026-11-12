@@ -678,10 +678,21 @@ class SetupViewModel(
     var rosterRank = 0
         private set
 
-    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes }
+    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes; if (yes == null) _rosterLooked.value = emptySet() }
+
+    /** 2.0.0 [RVL-36] (검토 U07b-04) The yellow days looked at on the photo (said right, or fixed): no longer yellow on the card. */
+    private val _rosterLooked = MutableStateFlow<Set<Int>>(emptySet())
+    val rosterLooked: StateFlow<Set<Int>> = _rosterLooked.asStateFlow()
+
+    /** 2.0.0 [RVL-36] A yellow day right as read; the last one is the photo looked at. */
+    fun rosterRight(day: Int, yellow: Set<Int>) {
+        _rosterLooked.value = _rosterLooked.value + day
+        if ((yellow - _rosterLooked.value).isEmpty()) _rosterSame.value = true
+    }
 
     /** [READ-17] One day of the roster's month fixed from the photo card: painted, given leave, or left off (휴무). */
     fun fixRosterDay(date: LocalDate, cell: com.bamnat.core.imports.DutyCell?) {
+        _rosterLooked.value = _rosterLooked.value + date.dayOfMonth
         when (cell) {
             is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + (date to cell.shiftTypeId), leaves = it.leaves - date) }
             com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + (date to null), leaves = it.leaves - date) }
@@ -696,6 +707,7 @@ class SetupViewModel(
         _rosterStep.value = 0 to 0
         _rosterPreparing.value = null
         _rosterSame.value = null
+        _rosterLooked.value = emptySet()
         rosterRank = 0
         rosterJob = viewModelScope.launch {
             val started = System.nanoTime()
@@ -890,6 +902,7 @@ class SetupViewModel(
         update { it.copy(painted = it.painted + days + leaveDays, leaves = it.leaves - days.keys + leaves) }
         _paintMonth.value = month
         if (r.rows.size > 1) rosterRank = i
+        _rosterLooked.value = emptySet()
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
         // [READ-36] The sheet's own letters (주·야·비·휴) the setup's kinds do not use: offered as the kinds, once.

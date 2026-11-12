@@ -46,6 +46,8 @@ class RosterFollowTest {
         val p = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver(DayEntry(d2, ShiftOverride.Shift(5)))::resolve)
         assertTrue(p.apply.isEmpty())
         assertEquals(listOf(d2), p.kept)
+        // 2.0.0 [RVH-57] What the link would have put in, for '자동으로 정리한 것'.
+        assertEquals(mapOf(d2 to ShiftOverride.Shift(3)), p.keptTo)
     }
 
     @Test fun onlyDaysTheLinkChangedAreLookedAt() {
@@ -86,6 +88,7 @@ class RosterFollowTest {
         val p = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver(DayEntry(d9, ShiftOverride.Off))::resolve)
         assertTrue(p.apply.isEmpty())
         assertEquals(listOf(d9), p.kept)
+        assertEquals(mapOf(d9 to ShiftOverride.Shift(3)), p.keptTo)
         // Not written by hand: it goes in.
         val q = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver()::resolve)
         assertEquals(mapOf(d9 to ShiftOverride.Shift(3)), q.apply)

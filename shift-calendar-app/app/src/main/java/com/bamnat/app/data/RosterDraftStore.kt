@@ -30,6 +30,8 @@ class RosterDraftStore(private val dir: File) {
         val chosen: Boolean,
         val withOutside: Boolean,
         val at: Instant,
+        /** 2.0.0 [RVL-38] '그 날은 그대로 두기'. */
+        val keepMine: Boolean = false,
     )
 
     fun read(calendarId: String, now: Instant = com.bamnat.core.time.Today.instant()): Draft? = runCatching {
@@ -71,6 +73,7 @@ class RosterDraftStore(private val dir: File) {
             .putOpt("named", d.named?.toString())
             .put("chosen", d.chosen)
             .put("withOutside", d.withOutside)
+            .put("keepMine", d.keepMine)
             .put("at", d.at.toString())
 
         fun decode(o: JSONObject): Draft = Draft(
@@ -87,6 +90,7 @@ class RosterDraftStore(private val dir: File) {
             chosen = o.optBoolean("chosen", true),
             withOutside = o.optBoolean("withOutside", true),
             at = Instant.parse(o.getString("at")),
+            keepMine = o.optBoolean("keepMine", false),
         )
 
         /** One cell as a short word: S:<kind id>, O, L:<leave kind>:<quarters>:<from start>, U:<leave word>:<what was read>. */

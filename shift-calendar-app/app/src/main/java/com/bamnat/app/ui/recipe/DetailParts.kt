@@ -149,7 +149,9 @@ internal fun WorkHero(item: RecipeItem, r: Recipe, style: WorkStyle?, onTap: () 
             val w = min(maxWidth * 0.66f, 280.dp)
             val h = w * (MarketShots.PHONE_H / MarketShots.PHONE_W)
             if (faces.size <= 1) WorkFace(r, faces.firstOrNull() ?: MarketShots.faceOf(item, r), w, shown, onClick = onTap)
-            else HorizontalPager(pager, Modifier.fillMaxWidth().heightIn(min = h), key = { it }) { p ->
+            else HorizontalPager(pager, Modifier.fillMaxWidth().heightIn(min = h), key = { it },
+                // [RVM-35] HQ-66: quick swipes turn as many screens as swiped (the calendar's fling).
+                flingBehavior = com.bamnat.app.ui.calendar.queuedTurns(pager)) { p ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { WorkFace(r, faces[p], w, shown, onClick = onTap) }
             }
         }
@@ -348,7 +350,7 @@ internal fun PutBrief(lines: List<PutLine>, onLetters: (Boolean) -> Unit = {}, o
                 Text(
                     l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
                     color = when (l.kind) {
-                        PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
+                        PutLine.Kind.REST -> MaterialTheme.colorScheme.onSurfaceVariant
                         PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
                         else -> MaterialTheme.colorScheme.onSurface
                     },

@@ -172,8 +172,9 @@ private fun WorkPage(
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
             // 2.0.0 [RVO-19] 검토 T11a-12: an 알바 reads '연장·휴일 근무', and that the 1.5배 is for a place where five or more work
-            // (근로기준법 제56조, 시행령 제7조 별표 1); the row keeps its name for 설정 찾기.
-            val kinds = settings.extraKinds.visible().joinToString(" · ") { it.name }
+            // (근로기준법 제56조, 시행령 제7조 별표 1); the row keeps its name for 설정 찾기. [RVH-50] HQ-18: the kinds in the calendar's own
+            // words (an 알바's 추가 근무 · 쉬는 날 출근 · 대타).
+            val kinds = settings.extraKinds.forStyle(work.workStyle).visible().joinToString(" · ") { it.name }
             Column(Modifier.focusMark("연장·휴무일 근무 지정")) {
                 if (work.workStyle == WorkStyle.HOURLY) NavRow("연장·휴일 근무", "$kinds · 가산 임금은 5명 이상 일하는 곳만", onOpenExtraKinds)
                 else NavRow("연장·휴무일 근무 지정", "$kinds · 시간·가산 임금", onOpenExtraKinds)

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
@@ -44,7 +43,7 @@ import java.time.LocalDate
  * writes the day's job (or changes the one there) with 일당 × 공수 for the last 업체; a second tap on
  * the chosen one takes it off. Before the first 일당 is known, 직접 opens to ask for it.
  */
-internal fun LazyListScope.dayRateChips(
+internal fun ChipScope.dayRateChips(
     date: LocalDate,
     book: MoneyBook,
     rules: FieldRules,

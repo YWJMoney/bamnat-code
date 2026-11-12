@@ -144,6 +144,10 @@ class MoneyRepository(
 
     suspend fun delete(entry: MoneyEntry) = dao.deleteEntry(entry.id)
 
+    /** 2.0.0 [RVH-51] PC-72 Lines written by hand from [fromMillis] until [untilMillis] (not read from a payment text), with when. */
+    suspend fun writtenBetween(fromMillis: Long, untilMillis: Long): List<Pair<MoneyEntry, Long>> =
+        dao.allEntries().filter { it.createdAt in fromMillis until untilMillis && it.source == MoneySource.MANUAL.name }.map { it.toModel() to it.createdAt }
+
     /** [LEDG-07] Several lines changed at once (고르기), saved as they are. */
     suspend fun saveAll(list: List<MoneyEntry>) {
         if (list.isNotEmpty()) dao.restoreEntries(list.map { it.toEntity(clock()) })

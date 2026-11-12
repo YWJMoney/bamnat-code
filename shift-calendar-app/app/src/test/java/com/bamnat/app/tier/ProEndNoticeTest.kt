@@ -162,4 +162,19 @@ class ProEndNoticeTest {
         assertNull(shadowOf(nm).getNotification(Notifications.PRO_STOP_ID))
         assertTrue(com.bamnat.app.inbox.Inbox.get(context).rows.value.none { it.kind == ProEndNotice.PRO_KIND })
     }
+
+    /** 총괄 11-13: '전체 지움' takes the row away, and the same end is not told again (once per end), on the phone or in the 알림함. */
+    @Test fun aClearedRowDoesNotComeBack() {
+        val c = context.appContainer
+        c.settingsRepository.update { it.copy(phoneCalendars = listOf("main")) }
+        val evening = kst("2026-12-10T20:00")
+        ProEndNotice.fire(context, mission = false, c = c, gate = thanks, now = evening, zone = zone)
+        val box = com.bamnat.app.inbox.Inbox.get(context)
+        assertEquals(1, box.rows.value.count { it.kind == ProEndNotice.PRO_KIND })
+        box.clearAll()
+        nm.cancel(Notifications.PRO_STOP_ID)
+        ProEndNotice.fire(context, mission = false, c = c, gate = thanks, now = evening.plusSeconds(3600), zone = zone)
+        assertTrue(box.rows.value.none { it.kind == ProEndNotice.PRO_KIND })
+        assertNull(shadowOf(nm).getNotification(Notifications.PRO_STOP_ID))
+    }
 }

@@ -31,8 +31,10 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Downloading
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,6 +60,7 @@ import androidx.core.content.FileProvider
 import com.bamnat.app.imports.DocScanner
 import com.bamnat.app.imports.rememberScanner
 import com.bamnat.app.pay.OcrModel
+import com.bamnat.app.ui.components.firstSentence
 import com.bamnat.app.ui.components.AppSheet
 import com.bamnat.app.ui.components.NudgeCard
 import com.bamnat.app.ui.theme.Tone
@@ -257,14 +260,26 @@ internal fun ReadFailed(
     onByHand: () -> Unit,
     retakeLabel: String = "다시 찍기",
 ) {
+    // 2.0.0 [RVL-33] (총괄 #484 사진 '글자 못 찾음' 200%: 카드 글이 네 줄이라 달력이 두 주만 보였어요) The card says why in its first
+    // sentence; how to fix it waits behind ⓘ at the end of the ways and opens right under the card (조건 1·4).
+    val head = firstSentence(text)
+    val rest = text.removePrefix(head).trim()
+    var why by rememberSaveable(text) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        NudgeCard(text, tone = Tone.Caution, action = fix?.label, onAction = onFix, onClose = onClose)
+        NudgeCard(head, tone = Tone.Caution, action = fix?.label, onAction = onFix, onClose = onClose)
+        // Opened, the whole of it under the card, never cut (the card's own second line stops at two).
+        if (why && rest.isNotEmpty()) Text(rest, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp).semantics { liveRegion = LiveRegionMode.Polite })
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (onTapPhoto != null) OutlinedButton(onClick = onTapPhoto, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(TAP_PHOTO)
             }
             TextButton(onClick = onRetake, modifier = Modifier.heightIn(min = 48.dp)) { Text(retakeLabel) }
             TextButton(onClick = onByHand, modifier = Modifier.heightIn(min = 48.dp)) { Text("직접 칠하기") }
+            if (rest.isNotEmpty()) IconButton(onClick = { why = !why }) {
+                Icon(Icons.Outlined.Info, contentDescription = if (why) "고칠 방법 접기" else "고칠 방법 보기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }

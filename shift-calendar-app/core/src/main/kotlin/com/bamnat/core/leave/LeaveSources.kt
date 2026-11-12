@@ -76,11 +76,13 @@ object LeaveSources {
     fun uses(entries: List<DayEntry>, resolve: (LocalDate) -> ResolvedDay, profile: PayProfile?): List<LeaveUse> =
         entries.filter { it.leave != null }.mapNotNull { e ->
             val leave = resolve(e.date).leave ?: return@mapNotNull null
+            // [RVH-45] An hour's leave is its minutes over the company's 1일 기준 (설계 3-2절, 고정값 LeavePolicy.dayMinutes).
+            val days = leave.days(profile?.rules?.leave?.dayMinutes ?: com.bamnat.core.model.Leave.DAY_MINUTES)
             when {
-                leave.kind == LeaveKind.COMP -> LeaveUse(e.date, leave.days, LeavePool.COMP)
+                leave.kind == LeaveKind.COMP -> LeaveUse(e.date, days, LeavePool.COMP)
                 !leave.kind.annual -> null
                 profile?.rules?.holidayLeaveFree == true && KoreanHolidays.isHoliday(e.date) -> null
-                else -> LeaveUse(e.date, leave.days)
+                else -> LeaveUse(e.date, days)
             }
         }.sortedBy { it.date }
 

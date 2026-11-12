@@ -185,13 +185,22 @@ class WorkHoursCalculator(
         return w.totalMinutes - afterMidnight(resolver.resolve(w.end)) + afterMidnight(resolver.resolve(w.start.minusDays(1)))
     }
 
-    /** The rostered minutes of [day] that fall after midnight, 0 when the shift ends the same day. */
+    /**
+     * The rostered minutes of [day] that fall after midnight, 0 when the shift ends the same day. [RVH-44] On a day of two parts only the
+     * parts' minutes count, never the gap between them (설계 2-3절): 20:00~23:00 and 01:00~05:00 has 4 of its 7 hours after midnight.
+     */
     private fun afterMidnight(day: com.bamnat.core.schedule.ResolvedDay): Int {
         val s = day.start ?: return 0
         val e = day.end ?: return 0
         if (day.scheduledMinutes <= 0 || e.isAfter(s)) return 0
-        val span = com.bamnat.core.model.WorkTime.spanMinutes(s, e)
-        val after = e.toSecondOfDay() / 60
+        val midnight = day.date.plusDays(1).atStartOfDay()
+        val parts = day.segments
+        val span = parts.sumOf { java.time.Duration.between(it.start, it.endInclusive).toMinutes() }.toInt()
+        if (span <= 0) return 0
+        val after = parts.sumOf { p ->
+            val from = maxOf(p.start, midnight)
+            if (p.endInclusive.isAfter(from)) java.time.Duration.between(from, p.endInclusive).toMinutes() else 0L
+        }.toInt()
         return Math.round(day.scheduledMinutes.toDouble() * after / span).toInt()
     }
 
