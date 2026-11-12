@@ -43,6 +43,9 @@ object RosterScanner {
     @VisibleForTesting
     var fake: (suspend (Uri) -> List<RosterWord>)? = null
 
+    /** 1.39.1 [R391-13] For tests: what a picture in memory (a scanned PDF's page) reads as, or the failure it throws. */
+    var fakePicture: (suspend (Bitmap) -> List<RosterWord>)? = null
+
     /**
      * [READ-13] Several readings of one photo the tests give (as the made-over pictures would read), put together as the
      * phone does. Wins over [fake].
@@ -77,6 +80,7 @@ object RosterScanner {
     /** [READ-32] 1.38: a picture already in memory (a scanned PDF's page, [AnyFile.render]) read as a photo is. */
     suspend fun scanPicture(context: Context, photo: Bitmap, codes: DutyCodes, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
         progress(1, 0)
+        fakePicture?.let { f -> val words = f(photo); return@withContext Scan(words, DutyRoster.analyse(words, codes), null, 1f) }
         // 1.38 PC 11차 (흐린 근무표: 혼자 37초, 다른 폰과 함께 47초 → 45초 제한에 걸려 아무것도 못 보여 줌): the extra ways stop once
         // [READ_BUDGET_NS] is spent and the cells read so far are shown, so a slow phone gets fewer ways instead of nothing.
         val deadline = System.nanoTime() + READ_BUDGET_NS

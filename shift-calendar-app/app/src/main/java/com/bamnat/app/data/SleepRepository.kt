@@ -67,6 +67,20 @@ class SleepRepository(
 
     suspend fun delete(id: Long) = dao.delete(id)
 
+    /**
+     * 1.39.1 [R391-04] (검토 ALM-03) The user deletes a sleep: the sounds heard during it and their clips go with it (kept
+     * clips too, the night is gone). An undo brings the sleep back, not the sounds. [deleteFile] removes a clip by name.
+     */
+    suspend fun deleteWithSounds(id: Long, deleteFile: (String) -> Unit) {
+        val log = dao.log(id)
+        if (log != null) {
+            val to = (log.endMillis ?: clock()) + 1
+            dao.eventsBetween(log.startMillis, to).forEach { e -> e.file?.let { runCatching { deleteFile(it) } } }
+            dao.deleteEvents(log.startMillis, to)
+        }
+        dao.delete(id)
+    }
+
     /** [SLP-16] A sleep the user forgot to tap, written in afterwards; returns its id. */
     suspend fun add(start: LocalDateTime, end: LocalDateTime): Long =
         dao.insert(SleepLogEntity(startMillis = millis(start), endMillis = millis(end)))
@@ -114,6 +128,21 @@ class SleepRepository(
         val old = dao.oldClips(clock() - days * DAY_MILLIS)
         old.forEach { e -> e.file?.let(delete); dao.dropClip(e.id) }
         return old.size
+    }
+
+    /**
+     * 1.39.1 [R391-04] (검토 ALM-03) '짧은 소리는 7일 뒤 지워요' whether or not another night is measured: run when the app starts
+     * as well as after a night. Clips past [days] go as [dropOldClips] does, and a file in [dir] no sound points to (a night
+     * cut before it was saved, a deleted sleep) goes once it is a day old, past the longest night (14시간) still being heard.
+     */
+    suspend fun sweepClips(dir: java.io.File, days: Long): Int {
+        var gone = dropOldClips(days) { name -> java.io.File(dir, name).delete() }
+        val files = dir.listFiles()?.filter { it.isFile } ?: return gone
+        if (files.isEmpty()) return gone
+        val known = dao.allEvents().mapNotNull { it.file }.toSet()
+        val before = clock() - DAY_MILLIS
+        files.filter { it.name !in known && it.lastModified() < before }.forEach { if (it.delete()) gone++ }
+        return gone
     }
 
     private fun SleepCheckEntity.toModel() = SleepCheck(id, local(startMillis), local(endMillis), SleepMood.of(mood), SleepTag.decode(tags), note)

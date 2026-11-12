@@ -292,22 +292,30 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** [SET-05] Moves every shift's alarms [minutes] earlier (later when negative); the alarms are set again from the saved shifts. */
     fun moveAllAlarms(minutes: Int) {
         viewModelScope.launch {
-            val types = container.scheduleRepository.shiftTypes.first()
-            com.bamnat.core.model.AlarmShift.moveAll(types, minutes).forEach { container.scheduleRepository.saveShiftType(it) }
+            val repo = shownRepository()
+            val types = repo.shiftTypes.first()
+            com.bamnat.core.model.AlarmShift.moveAll(types, minutes).forEach { repo.saveShiftType(it) }
         }
     }
 
     /** [J133-21] One shift's earliest alarm at [minutes] before it starts, from the 알람 page's chips. */
     fun setFirstAlarm(typeId: Long, minutes: Int) {
         viewModelScope.launch {
-            val t = container.scheduleRepository.shiftTypes.first().firstOrNull { it.id == typeId } ?: return@launch
+            val repo = shownRepository()
+            val t = repo.shiftTypes.first().firstOrNull { it.id == typeId } ?: return@launch
             val on = t.alarms.filter { it.enabled }
             val first = on.maxByOrNull { it.offsetMinutes }
             val alarms = if (first == null) t.alarms + com.bamnat.core.model.AlarmSpec(minutes)
                 else t.alarms.map { if (it === first) it.copy(offsetMinutes = minutes) else it }.distinctBy { it.offsetMinutes to it.enabled }
-            container.scheduleRepository.saveShiftType(t.copy(alarms = alarms))
+            repo.saveShiftType(t.copy(alarms = alarms))
         }
     }
+
+    /**
+     * 1.39.1 [R391-05] (검토 SET-01) The 알람 page lists the shifts of the calendar picked ([snapshot]); its chips change that
+     * calendar's shifts, not 내 달력's shift with the same number (each calendar has its own database, so ids repeat).
+     */
+    private fun shownRepository() = container.calendars.repository(container.calendars.active.value)
 
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }

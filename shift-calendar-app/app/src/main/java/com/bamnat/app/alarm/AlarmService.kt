@@ -325,14 +325,25 @@ class AlarmService : Service() {
     /** [EASE-21] When the hold for a call began, 0 when not holding; how long it has held decides whether it still may. */
     private var holdSince = 0L
 
+    /**
+     * 1.39.1 [R391-02] (검토 ALM-01) The call mode whose hold already ran out, null when none has. Once the 3·30분 cap
+     * is used, the same mode does not hold the alarm again: before, the next check 1.5초 later saw 'a new call' and held
+     * another 3분, so a phone left in 메신저 통화 mode rang 1.5초 every 3분. A new mode (a real call after it) or the
+     * phone back to normal starts afresh.
+     */
+    private var holdSpentMode: Int? = null
+
     private fun callActive(): Boolean {
         val mode = runCatching { getSystemService(AudioManager::class.java)?.mode }.getOrNull() ?: return false
+        if (holdSpentMode != null && holdSpentMode != mode) holdSpentMode = null
+        if (holdSpentMode == mode) return false
         val now = Today.millis()
         val held = if (holdSince == 0L) 0L else now - holdSince
         val holds = holdsForCall(mode, held)
         holdSince = if (holds) (if (holdSince == 0L) now else holdSince) else 0L
-        if (!holds && held > 0 && mode != AudioManager.MODE_NORMAL && !BootAlarms.isLocked(this)) {
-            appContainer.telemetry.event("alarm_call_hold_end", "mode=$mode held=${held / 1000}s")
+        if (!holds && held > 0 && mode != AudioManager.MODE_NORMAL) {
+            holdSpentMode = mode
+            if (!BootAlarms.isLocked(this)) appContainer.telemetry.event("alarm_call_hold_end", "mode=$mode held=${held / 1000}s")
         }
         return holds
     }
@@ -615,6 +626,7 @@ class AlarmService : Service() {
         _stage.value = 0
         inCallNow = false
         holdSince = 0L
+        holdSpentMode = null
         _inCall.value = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)

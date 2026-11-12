@@ -47,10 +47,21 @@ class TierTest {
         for (s in listOf(PlaySub.State.ON_HOLD, PlaySub.State.PAUSED, PlaySub.State.EXPIRED, PlaySub.State.PENDING)) {
             assertFalse(s.name, ProAccess.resolve(live { copy(subscription = sub(s)) }, now, zone).pro)
         }
-        // Paid up to a moment that has passed.
-        assertFalse(ProAccess.resolve(live { copy(subscription = sub(expiry = now)) }, now, zone).pro)
+        // Paid up to a moment that has passed, and not renewing.
+        assertFalse(ProAccess.resolve(live { copy(subscription = sub(expiry = now, autoRenew = false)) }, now, zone).pro)
         // The phone's Play said so without an expiry (no server check): 프로 while Play lists it.
         assertTrue(ProAccess.resolve(live { copy(subscription = sub(expiry = null)) }, now, zone).pro)
+    }
+
+    /** 1.39.1 [R391-11] 검토 PRO-08: renewed by Play at night, the app not opened since, the 5시 alarm still has 프로. */
+    @Test fun aRenewingSubscriptionKeepsProUntilThePhoneReadsTheRenewal() {
+        val end = now.minus(Duration.ofMinutes(1))
+        assertTrue(ProAccess.resolve(live { copy(subscription = sub(expiry = end)) }, now, zone).pro)
+        assertTrue(ProAccess.resolve(live { copy(subscription = sub(expiry = end, trial = true)) }, now, zone).pro)
+        assertFalse("past 3일 the phone has not seen it renew", ProAccess.resolve(live { copy(subscription = sub(expiry = now.minus(PlaySub.RENEW_LEEWAY))) }, now, zone).pro)
+        // Turned off in Play: it ends on time.
+        assertFalse(ProAccess.resolve(live { copy(subscription = sub(expiry = end, autoRenew = false)) }, now, zone).pro)
+        assertFalse(ProAccess.resolve(live { copy(subscription = sub(PlaySub.State.CANCELED, expiry = end, autoRenew = false)) }, now, zone).pro)
     }
 
     /** [MON-09] An approved admin phone is 프로 while it reached the server within 7 days. */

@@ -33,10 +33,14 @@ fun trialConsentText(end: java.time.LocalDate, price: String): String =
     "1개월 무료 체험이 ${end.monthValue}월 ${end.dayOfMonth}일에 끝나고, 그날부터 ${price}씩 자동으로 결제돼요. 계속 쓸까요?\n\n" +
         "해지하려면 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 ${end.monthValue}월 ${end.dayOfMonth}일까지는 프로를 써요."
 
-/** The price of the trial's plan as Play shows it, or plain words when Play has not said yet. */
-fun trialPrice(sub: SubRecord, plans: List<Plan>): String =
-    (plans.firstOrNull { it.basePlan == sub.basePlan } ?: plans.firstOrNull { !it.yearly })?.priceWords
-        ?: if (sub.basePlan == ProductIds.YEARLY) "연 요금" else "월 요금"
+/**
+ * The price of the trial's plan as Play shows it; null until Play has said, and the question waits for it.
+ * 1.39.1 [R391-12] (검토 PRO-03) A trial bought before the app learned its plan (the app closed during the purchase, a new phone)
+ * has no [SubRecord.basePlan]: it was asked with the 월 요금, while the trial is the 연 요금제's only (Billing). The answer is kept as
+ * the consent with these words (전자상거래법 제13조 6항), so it is asked with the 연 요금 then, and never without an amount.
+ */
+fun trialPrice(sub: SubRecord, plans: List<Plan>): String? =
+    (plans.firstOrNull { it.basePlan == sub.basePlan } ?: plans.firstOrNull { it.yearly })?.priceWords
 
 /**
  * [MON-06] 전자상거래법 제13조 6항: from 7 days before a trial turns paid, the app asks on its own,
@@ -59,11 +63,11 @@ fun TrialConsentPrompt(c: AppContainer) {
     val day = end.atZone(zone).toLocalDate()
     val work by c.billing.work.collectAsStateWithLifecycle()
     val kind = com.bamnat.core.tier.WorkPlanKind.ofProduct(sub.product)
-    val price = if (kind == null) trialPrice(sub, plans) else {
+    val price = (if (kind == null) trialPrice(sub, plans) else {
         val cap = c.remoteConfig.current.workPlans.capOf(kind, sub.basePlan)
         work.firstOrNull { it.kind == kind && it.cap == cap && it.way == com.bamnat.app.billing.WorkOffer.Way.YEARLY }?.let { "연 ${it.price}" }
-            ?: c.remoteConfig.current.workPlans.bands(kind).firstOrNull { it.cap == cap }?.let { "연 %,d원".format(it.yearly) } ?: "연 요금"
-    }
+            ?: c.remoteConfig.current.workPlans.bands(kind).firstOrNull { it.cap == cap }?.let { "연 %,d원".format(it.yearly) }
+    }) ?: return
     val text = trialConsentText(day, price)
     val answer: (String) -> Unit = { a ->
         val now = Today.instant()

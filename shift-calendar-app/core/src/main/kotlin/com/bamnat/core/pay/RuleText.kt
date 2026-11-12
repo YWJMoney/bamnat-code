@@ -956,7 +956,7 @@ object RuleText {
                 // [RULE-ED-01] By its id, else an allowance of the same name (its id kept, as [RuleChange.Allowance] does).
                 val i = p.items.indexOfFirst { it.id == change.item.id }.takeIf { it >= 0 }
                     ?: p.items.indexOfFirst { it.cadence != Cadence.BONUS && it.name.replace(" ", "") == change.item.name.replace(" ", "") }.takeIf { it >= 0 }
-                val item = i?.let { change.item.copy(id = p.items[it].id) } ?: change.item
+                val item = i?.let { kept(p.items[it], change.item, from) } ?: change.item
                 val key = Unknowns.item(item.id)
                 p.copy(
                     items = if (i == null) p.items + item else p.items.toMutableList().also { it[i] = item },
@@ -970,6 +970,30 @@ object RuleText {
             is RuleChange.Custom -> p.copy(customRules = (p.customRules.filterNot { it.id == change.rule.id || it.source.isNotEmpty() && it.source == change.rule.source && it.name == change.rule.name } +
                 change.rule).takeLast(CustomRule.MAX))
         }
+    }
+
+    /**
+     * 1.39.1 [R391-07] (검토 PAYU-47) A 칸 of '우리 회사 항목' or '조건까지 자세히 고치기' changes an allowance already saved: it comes
+     * as one value from the month seen, which replaced the whole timeline, so every month before it paid 0원. The new value
+     * runs from [from] on and the months before keep theirs (as [RuleChange.Allowance] does), with the yearly raise; the
+     * conditions neither place can set (근무별 지정, 가산 대신, 회사 공통 금액) stay as they were.
+     */
+    private fun kept(old: PayItem, new: PayItem, from: YearMonth): PayItem {
+        val since = new.amount.entries.singleOrNull()
+        val amount = when {
+            new.amount.entries.size > 1 -> new.amount
+            since == null -> new.amount
+            old.amount.entries.isEmpty() -> new.amount
+            old.amount.on(since.from).value == since.value -> old.amount
+            else -> BulkEditPlanner.apply(old.amount, since.value, EditScope.FromMonth(from))
+        }
+        return new.copy(
+            id = old.id,
+            amount = if (amount.raise == null && old.amount.raise != null) amount.copy(raise = old.amount.raise) else amount,
+            shiftTypeIds = new.shiftTypeIds.ifEmpty { old.shiftTypeIds },
+            covers = new.covers ?: old.covers,
+            fixedAmount = new.fixedAmount ?: old.fixedAmount,
+        )
     }
 
     /** 식대·교통비 and the like: welfare paid to everyone, usually left out of 통상임금 by companies. */

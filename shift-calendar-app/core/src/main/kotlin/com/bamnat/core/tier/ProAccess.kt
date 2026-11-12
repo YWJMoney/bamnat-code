@@ -21,8 +21,17 @@ data class PlaySub(
     enum class State { ACTIVE, GRACE, CANCELED, ON_HOLD, PAUSED, EXPIRED, PENDING }
 
     fun entitled(now: Instant): Boolean = when (state) {
-        State.ACTIVE, State.GRACE, State.CANCELED -> expiry == null || now < expiry
+        // 1.39.1 [R391-11] (검토 PRO-08) A subscription set to renew is renewed by Play at [expiry], but the phone learns the new
+        // end only when the app reads its purchases again: a 5시 alarm waking the app the night after a renewal found 프로 gone
+        // and rang without its 끄기 미션. Until [RENEW_LEEWAY] past it, it still counts; one that will not renew ends on time.
+        State.ACTIVE -> expiry == null || now < (if (autoRenew) expiry.plus(RENEW_LEEWAY) else expiry)
+        State.GRACE, State.CANCELED -> expiry == null || now < expiry
         else -> false
+    }
+
+    companion object {
+        /** 1.39.1 [R391-11] As long as Play's own grace period for a failed renewal (3일). */
+        val RENEW_LEEWAY: Duration = Duration.ofDays(3)
     }
 }
 

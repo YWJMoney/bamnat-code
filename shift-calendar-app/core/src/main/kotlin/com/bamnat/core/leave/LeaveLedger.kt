@@ -116,14 +116,17 @@ object LeaveLedger {
         compLots: List<LeaveLot> = emptyList(),
         until: LocalDate = today.plusYears(1),
     ): LeaveSummary {
-        val grantYears = entries.filter { it.kind == EntryKind.GRANT && it.yearStart != null }.map { it.yearStart }.toSet()
+        // 1.39.1 [R391-08] (검토 WORK-01) '앱이 같은 해에 센 연차 대신': a grant replaces the app's lot of the same year, not only one
+        // starting on the very same day. The grant's date is 1월 1일 by default while the app's lot starts on 입사 기념일
+        // (3월 2일), so both counted and 남은 연차 showed twice the days.
+        val grantYears = entries.filter { it.kind == EntryKind.GRANT && it.yearStart != null }.mapNotNull { it.yearStart?.year }.toSet()
         val stored = entries.filter { it.kind != EntryKind.PAYOUT }.map { e ->
             LeaveLot(
                 kind = when (e.kind) { EntryKind.GRANT -> LotKind.GRANT; EntryKind.CARRY -> LotKind.CARRY; else -> LotKind.ADJUST },
                 days = e.days, on = e.date, expires = e.expires, yearStart = e.yearStart, note = e.note, id = e.id,
             ).let { if (e.pool == LeavePool.COMP && it.kind == LotKind.ADJUST) it.copy(kind = LotKind.COMP) else it }
         }
-        val lots = (auto.filter { it.yearStart == null || it.kind == LotKind.MONTHLY || it.yearStart !in grantYears } + stored + compLots)
+        val lots = (auto.filter { it.yearStart == null || it.kind == LotKind.MONTHLY || it.yearStart.year !in grantYears } + stored + compLots)
             .filter { !it.on.isAfter(until) }
         // Events in date order: what arises first, then uses and 정산, then what lapses at the day's end.
         data class Event(val date: LocalDate, val order: Int, val lot: LeaveLot? = null, val use: LeaveUse? = null, val payout: LedgerEntry? = null)

@@ -357,11 +357,14 @@ class TierAppTest {
         val sub = trialSub(Instant.parse("2027-03-01T03:00:00Z"))
         val price = trialPrice(sub, listOf(yearly, monthly))
         assertEquals("월 4,990원", price)
-        assertEquals("월 요금", trialPrice(sub, emptyList()))
+        // 1.39.1 [R391-12] 검토 PRO-03: Play not read yet, there is no price to ask with, and it is not asked.
+        assertEquals(null, trialPrice(sub, emptyList()))
+        // A trial whose plan the phone never learned is the 연 요금제's (the only one with a trial), not the 월 요금.
+        assertEquals("연 39,000원", trialPrice(sub.copy(basePlan = null), listOf(monthly, yearly)))
         assertEquals(
             "1개월 무료 체험이 4월 1일에 끝나고, 그날부터 월 4,990원씩 자동으로 결제돼요. 계속 쓸까요?\n\n" +
                 "해지하려면 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 4월 1일까지는 프로를 써요.",
-            trialConsentText(LocalDate.of(2027, 4, 1), price),
+            trialConsentText(LocalDate.of(2027, 4, 1), price!!),
         )
     }
 

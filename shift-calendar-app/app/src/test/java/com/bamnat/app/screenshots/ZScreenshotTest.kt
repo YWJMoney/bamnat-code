@@ -1,6 +1,7 @@
 package com.bamnat.app.screenshots
 
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.test.core.app.ActivityScenario
@@ -259,6 +260,48 @@ class ZScreenshotTest : ScreenshotBase() {
         tapText("저장", exact = true)
         val day = runBlocking { c.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
         assertTrue("90분 전 is on 주간: ${day.alarms}", day.alarms.any { it.offsetMinutes == 90 })
+    }
+
+    /** Runs TalkBack's one-step action [label] on the wheel that has it, as a finger turning it one row. */
+    private fun Screen.wheelStep(label: String) {
+        val node = nodes(merged = false).firstOrNull { n ->
+            n.config.getOrNull(SemanticsActions.CustomActions).orEmpty().any { it.label == label }
+        } ?: error("‘$label’ 바퀴가 없어요")
+        node.config[SemanticsActions.CustomActions].first { it.label == label }.action()
+        settle()
+    }
+
+    // 1.39.1 [R391-01] 검토 UIX-49: on '시작 기준', the minute wheel kept the minutes of its first frame, so turning the hour
+    // wheel and then the minute wheel saved what the minute wheel alone said (10분 전 → 1시간 10분 → 1시간 9분 saved as 9분).
+    @Test fun bothBeforeWheelsTurnedSaveWhatTheWheelsShow() = shoot("916b_z_alarm_two_wheels", FOLDED) {
+        dayShiftAlarm()
+        tapText("시작 기준", exact = true)
+        assertTrue(appears(Fmt.startOffset(10)))
+        wheelStep("1시간 늘리기")
+        assertTrue(appears(Fmt.startOffset(70)))
+        wheelStep("1분 줄이기")
+        assertTrue(appears(Fmt.startOffset(69)))
+        tapText("추가", exact = true)
+        tapText("저장", exact = true)
+        val day = runBlocking { c.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
+        assertTrue("1시간 9분 전 is on 주간: ${day.alarms}", day.alarms.any { it.offsetMinutes == 69 })
+    }
+
+    // 1.39.1 [R391-10] 검토 UIX-41: 앱 잠금's cover was drawn in the activity, under a 창 left open, which stayed readable on top.
+    @Test fun theLockCoverIsOverAWindowLeftOpen() = shoot("916c_z_lock_over_window", FOLDED) {
+        dayShiftAlarm()
+        assertTrue(appears("시작 기준", exact = true))
+        try {
+            com.bamnat.app.AppLock.lockNow()
+            settle()
+            assertTrue("the cover is the top window", appears("밤낮이 잠겨 있어요"))
+            assertFalse("the alarm window is under it", nodes().any { n ->
+                n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == "시작 기준" }
+            })
+        } finally {
+            com.bamnat.app.AppLock.onConfirmed(true)
+            settle()
+        }
     }
 
     // ---- 401 [SHFT-09] 근무 종류 삭제 ----

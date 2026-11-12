@@ -131,6 +131,16 @@ interface SleepDao {
     @Query("UPDATE sleep_events SET file = NULL WHERE id = :id")
     suspend fun dropClip(id: Long)
 
+    /** 1.39.1 [R391-04] The sounds heard during a sleep the user deletes. */
+    @Query("SELECT * FROM sleep_events WHERE startMillis >= :fromMillis AND startMillis < :toMillis")
+    suspend fun eventsBetween(fromMillis: Long, toMillis: Long): List<SleepEventEntity>
+
+    @Query("DELETE FROM sleep_events WHERE startMillis >= :fromMillis AND startMillis < :toMillis")
+    suspend fun deleteEvents(fromMillis: Long, toMillis: Long)
+
+    @Query("SELECT * FROM sleep_logs WHERE id = :id")
+    suspend fun log(id: Long): SleepLogEntity?
+
     @Query("DELETE FROM sleep_events")
     suspend fun clearEvents()
 }

@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.updateAll
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -40,11 +39,12 @@ object WidgetRefresher {
         // [OBS-01] 기록 지점 6: one line a day, counted.
         runCatching { app.appContainer.journal.note(com.bamnat.core.journal.JournalKind.WIDGETS) }
         runCatching {
-            TodayWidget().updateAll(app)
-            WeekWidget().updateAll(app)
-            MonthWidget().updateAll(app)
-            TeamsWidget().updateAll(app)
-            CountdownWidget().updateAll(app)
+            // 1.39.1 [R391-03] Stamped, so a widget whose session is still running reads the data again.
+            stampAndUpdate(app, TodayWidget())
+            stampAndUpdate(app, WeekWidget())
+            stampAndUpdate(app, MonthWidget())
+            stampAndUpdate(app, TeamsWidget())
+            stampAndUpdate(app, CountdownWidget())
             MoneyWidget.redraw(app)
             // 1.39 [TASK-07] 날이 바뀌면 오늘 할 일도 바뀌어요.
             TaskWidget.redraw(app)
@@ -55,6 +55,16 @@ object WidgetRefresher {
         val tick = if (counting && data?.countdown != null) Today.dateTime().plusMinutes(COUNTDOWN_MINUTES) else null
         // [WIDG-01] I 리뷰 I20: also when a shift starts or ends, so "출근" turns into "퇴근" on time.
         scheduleNext(app, listOfNotNull(data?.flow?.changesAt, data?.nextChange, tick).minOrNull())
+    }
+
+    /** 1.39.1 [R391-03] Each placed [widget] gets a new [WIDGET_DATA_STAMP] and is redrawn. */
+    internal suspend fun stampAndUpdate(context: Context, widget: androidx.glance.appwidget.GlanceAppWidget) {
+        val ids = GlanceAppWidgetManager(context).getGlanceIds(widget.javaClass)
+        val now = Today.millis()
+        ids.forEach { id ->
+            runCatching { androidx.glance.appwidget.state.updateAppWidgetState(context, id) { it[WIDGET_DATA_STAMP] = now } }
+            widget.update(context, id)
+        }
     }
 
     private const val COUNTDOWN_MINUTES = 15L
