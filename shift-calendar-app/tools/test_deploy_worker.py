@@ -57,6 +57,26 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertLess(d.version_tuple("1.39.0"), d.version_tuple("1.39.1"))
         self.assertEqual(d.version_tuple("1.39.0"), d.version_tuple("1.39.0"))
 
+    def test_company_compares_with_its_own_live_version(self):
+        # 2.0.0 [RVD-19] 회사는 앞 판 메시지의 판과 비교해요(공유 서버 판이 아니라).
+        view = {"id": "v", "annotations": {"workers/message": "2.0.0 166802eb 검토 갈래 D", "workers/tag": "166802eb0000"},
+                "resources": {"bindings": OLD}}
+        self.assertEqual(d.message_version(view), "2.0.0")
+        self.assertEqual(d.live_version("company", "http://127.0.0.1:9", view), "2.0.0")
+        # main(1.39.0)을 2.0.0 위에 올리려 하면 멈춰요.
+        self.assertIn("낮아요", d.version_gate("company", "1.39.0", "2.0.0", False))
+        self.assertIsNone(d.version_gate("company", "1.39.0", "2.0.0", True))
+        self.assertIsNone(d.version_gate("company", "2.0.0", "2.0.0", False))
+        self.assertIsNone(d.version_gate("company", "2.0.1", "2.0.0", False))
+        # 판 이름을 모르면 회사는 멈추고, 공유는 그대로 올려요(공유는 health가 판을 알려 줘요).
+        self.assertIsNone(d.message_version({"annotations": {"workers/message": "자동 되돌리기 1234abcd"}}))
+        self.assertIsNone(d.message_version({"annotations": {"workers/triggered_by": "upload"}}))
+        self.assertIsNone(d.message_version({"annotations": {"workers/message": "1.39 고침"}}))
+        self.assertIn("알 수 없어요", d.version_gate("company", "2.0.0", None, False))
+        self.assertIsNone(d.version_gate("company", "2.0.0", None, True))
+        self.assertIsNone(d.version_gate("share", "2.0.0", None, False))
+        self.assertEqual(d.message_version({"metadata": {"message": "1.39.1 49c7ddb8 x"}}), "1.39.1")
+
     def test_upload_version_id(self):
         nd = '{"type":"wrangler-session"}\n{"type":"version-upload","version_id":"0f0f0f0f-1111-2222-3333-444444444444"}\n'
         self.assertEqual(d.upload_version_id(nd, ""), "0f0f0f0f-1111-2222-3333-444444444444")

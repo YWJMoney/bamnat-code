@@ -9,7 +9,9 @@
   1. 지금 100%로 도는 판(앞 판)과 그 판의 바인딩(DB·KV·변수·비밀값 이름)을 읽어요. 두 판이 나눠 돌고 있으면 멈춰요.
   2. 서버 시험 전부(npm test) → 번들(npm run bundle, 대시보드에 붙여 넣던 dist/worker.js와 같은 파일).
   3. wrangler.toml의 자리표시자(DB·KV 번호)를 앞 판의 바인딩에서 채운 배포용 설정을 만들어요(저장소에 번호를 적지 않아요).
-  4. 판 이름(src/version.js)이 지금 도는 판보다 낮으면 멈춰요(--allow-older로만 넘어가요).
+  4. 판 이름(src/version.js)이 지금 도는 판보다 낮으면 멈춰요(--allow-older로만 넘어가요). 지금 판은 그 Worker 자신의 것으로 봐요:
+     공유는 /api/health, 회사는 앞 판을 올릴 때 이 도구가 적은 메시지 맨 앞 판 이름(2.0.0 [RVD-19]). 회사 판 이름을
+     알 수 없으면(대시보드에서 올린 판 등) 낮은지 모르니 멈춰요.
   5. `wrangler versions upload`: 새 판을 올리기만 해요(아직 손님 안 받음).
   6. 새 판의 바인딩 이름이 앞 판을 모두 담는지 대조해요. 대시보드에서만 넣은 일반 변수가 빠졌으면 앞 판 값으로 한 번 더 올리고,
      그래도 빠지면 멈춰요(올린 판은 쓰이지 않고 남을 뿐이에요). check 모드는 여기까지.
@@ -224,14 +226,60 @@ def healthy(worker: str, base: str, want_version: str) -> tuple[bool, str]:
     return ok, f"health {code} 판 {h.get('version', '-')}"
 
 
-def live_version(worker: str, base: str) -> str | None:
-    """지금 도는 판 이름: 공유는 /api/health, 회사는 같은 날 함께 나가는 공유 서버 판으로 봐요."""
-    share = os.environ.get("BAMNAT_SHARE") or WORKERS["share"]["health_base"]
-    code, body = get(f"{share}/api/health")
-    try:
-        return json.loads(body).get("version") if code == 200 else None
-    except ValueError:
+SEMVER_HEAD = re.compile(r"^\s*v?(\d+\.\d+\.\d+)(?=\s|$)")
+
+
+def message_version(view) -> str | None:
+    """2.0.0 [RVD-19] `wrangler versions view --json`에서 올릴 때 적은 메시지(`workers/message`)의 맨 앞 판 이름.
+
+    이 도구는 메시지를 '판 커밋 까닭'으로 올려요. 대시보드에서 올린 판처럼 메시지가 없거나 판 이름으로 시작하지 않으면 None.
+    """
+    def messages(x):
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if k in ("workers/message", "message") and isinstance(v, str):
+                    yield v
+                else:
+                    yield from messages(v)
+        elif isinstance(x, list):
+            for v in x:
+                yield from messages(v)
+    for msg in messages(view):
+        m = SEMVER_HEAD.match(msg)
+        if m:
+            return m.group(1)
+    return None
+
+
+def live_version(worker: str, base: str, view=None) -> str | None:
+    """지금 도는 판 이름은 그 Worker 자신의 것으로 봐요(2.0.0 [RVD-19]).
+
+    공유는 /api/health의 판(없으면 앞 판 메시지), 회사는 health에 판이 없어 앞 판 메시지로만 봐요. 1.39까지는 회사도 공유 서버
+    판과 비교해서, 회사만 먼저 2.0.0이 나간 뒤 main(1.39.0)을 올리면 '지금 1.39.0'으로 통과해 2.0.0 서버 고침이 조용히 빠졌어요.
+    """
+    if worker == "share":
+        code, body = get(f"{base}/api/health")
+        try:
+            v = json.loads(body).get("version") if code == 200 else None
+        except (ValueError, AttributeError):
+            v = None
+        if v:
+            return v
+    return message_version(view) if view is not None else None
+
+
+def version_gate(worker: str, new_ver: str, live: str | None, allow_older: bool) -> str | None:
+    """2.0.0 [RVD-19] 판 이름 확인: 멈출 까닭(없으면 None). 같은 판은 다시 올려도 돼요."""
+    if allow_older:
         return None
+    if live is None:
+        if worker == "company":
+            return (f"회사 서버의 지금 판 이름을 알 수 없어요(앞 판 메시지가 판 이름으로 시작하지 않음). "
+                    f"올릴 판 {new_ver}이 낮지 않은지 확인한 뒤 --allow-older로만")
+        return None
+    if version_tuple(new_ver) < version_tuple(live):
+        return f"올릴 판 {new_ver}이 지금 도는 {live}보다 낮아요(--allow-older로만)"
+    return None
 
 
 def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> None:
@@ -252,7 +300,8 @@ def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> 
     if len(now) != 1 or now[0][1] < 100:
         raise Stop(f"지금 판이 나뉘어 돌고 있어요({now}). 사람이 먼저 한 판으로 맞춰야 해요")
     old_id = now[0][0]
-    old = find_bindings(wrangler_json(["versions", "view", old_id] + name, wd))
+    old_view = wrangler_json(["versions", "view", old_id] + name, wd)
+    old = find_bindings(old_view)
     if not old:
         raise Stop("앞 판의 바인딩을 읽지 못했어요(대조할 수 없어 멈춰요)")
     say(f"- 앞 판 `{old_id[:8]}` 바인딩 {len(old)}개: {', '.join(sorted(binding_names(old)))}")
@@ -274,10 +323,11 @@ def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> 
 
     # 4. 판 이름
     new_ver = source_version(wd)
-    live = live_version(worker, base)
-    if live and version_tuple(new_ver) < version_tuple(live) and not allow_older:
-        raise Stop(f"올릴 판 {new_ver}이 지금 도는 {live}보다 낮아요(--allow-older로만)")
-    say(f"- 판 이름 {new_ver} (지금 {live or '알 수 없음'})")
+    live = live_version(worker, base, old_view)
+    why = version_gate(worker, new_ver, live, allow_older)
+    if why:
+        raise Stop(why)
+    say(f"- 판 이름 {new_ver} (지금 {live or '알 수 없음'}{', --allow-older' if allow_older else ''})")
 
     # 5·6. 올리기와 바인딩 대조
     def upload(extra_vars: dict[str, str]) -> tuple[str, list[dict]]:
