@@ -1056,6 +1056,81 @@ for p in PRESETS:
 pl = ''.join(f'<li><a href="p/{s}/">{html.escape(p["name"])}</a> · {html.escape(p["description"])}</li>' for s, p in pat_links)
 patch('shift/index.html', '<h2 id="order-list">교대 순서별 설명</h2>', f'<h2 id="order-list">교대 순서별 설명</h2><ul class="links">{pl}</ul>', 'href="p/')
 
+# ---------- 2.0.0 [RVR-33] (검토 I50b-05, 대기열 마케팅 S-새2) 업종별 교대 근무 ----------
+# 앱 회사 찾기와 같은 공개 자료(remote/v1/cycles.json, 공고·기사·노무 사이트에서 원문을 연 줄)를 업종으로 묶어 흔한 방식만 세요.
+# 커뮤니티 글만으로 적은 줄은 세지 않아요. 회사 이름은 아직 쪽에 싣지 않아요(사용자 결정 전, 앱 회사 찾기로 안내).
+CYCLES = remote('cycles')
+FORM_NAME = {f['key']: f['name'] for f in CYCLES['forms']}
+FORM_PAGE = {'4조2교대': '4j2k', '4조3교대': '4j3k', '3조2교대': '3j2k', '5조3교대': '5j3k', '격일제': 'alt-day', '3교대': '3k-week'}
+WORK_GROUPS = [
+    ('power', '발전·에너지', ['발전', '에너지', '원자력', '전력', '발전 설비', '가스'], '발전소·전력·가스 설비 운전'),
+    ('chem', '정유·화학', ['정유', '화학', '화학·환경', '산업가스', '정유·화학', '화학 협력', '배터리 소재', '2차전지·포장재', '소재'], '정유 공장·석유화학·산업가스 생산'),
+    ('chip', '반도체·전자', ['반도체', '반도체 소재·화학', '전자부품', '반도체 후공정', '반도체 웨이퍼', '반도체 소재', '반도체 장비', '반도체 부품', '디스플레이', '디스플레이 협력', 'PCB 가공', '전자'], '반도체·디스플레이·전자부품 생산'),
+    ('steel', '철강·금속', ['철강', '철강 협력', '비철금속', '철강 물류', '다이캐스팅·소재', '시멘트'], '제철소·금속 가공·시멘트'),
+    ('factory', '자동차·제조', ['제조', '자동차부품', '자동차', '자동차 알루미늄 휠', '자동차 휠', '진공펌프 제조', '제지', '제지·위생용품', '섬유', '목재·소재', '포장'], '자동차·부품·제지·섬유 생산'),
+    ('food', '식품·제약', ['식품', '식품·환경', '식품(SPC)', '주류', '담배', '담배 물류·생산보조', '제약', '바이오', '의료용품'], '식품·음료·제약 생산'),
+    ('hospital', '병원·요양', ['병원', '요양병원', '요양'], '간호사·요양보호사'),
+    ('safety', '소방·경찰·공공', ['소방', '경찰', '해양경찰', '교정', '기상', '관제', '지자체', '세관', '공항 검역'], '소방관·경찰·교정·관제'),
+    ('transit', '철도·교통·물류', ['철도', '도시철도', '철도·지하철', '버스', '택시', '공항', '물류'], '철도·지하철·버스·택시·물류'),
+    ('guard', '보안·경비·호텔', ['보안', '경비', '공항 보안', '시설관리', '호텔', '공공 용역'], '보안·경비·시설관리·호텔'),
+]
+WORK_TIPS = {
+    'hospital': '간호사처럼 달마다 근무표가 바뀌면 교대 달력의 직접 적기에 한 달 순서를 적고 \'반복하지 않아요\'를 켜요. <a href="../../../form/">듀티표 양식</a>으로 인쇄도 돼요.',
+    'safety': '소방 3조 2교대 21일, 경찰 지구대 4조 2교대(주·야·비·휴)처럼 순서가 정해져 있으면 <a href="../../">교대 달력</a>에서 바로 골라요.',
+    'factory': '주간연속 2교대·주야 교대처럼 한 주 단위로 바뀌는 곳은 교대 달력의 직접 적기에 일주일씩 적어요.',
+}
+assert len({x for g in WORK_GROUPS for x in g[2]}) == sum(len(g[2]) for g in WORK_GROUPS), '업종이 두 묶음에 들어가요'
+work_links = []
+for slug, gname, kinds, who in WORK_GROUPS:
+    rows = [c for c in CYCLES['cycles'] if c['industry'] in kinds and set(c['trustKinds']) != {'COMMUNITY'}]
+    if len(rows) < 3: continue
+    count = {}
+    for c in rows: count[c['formKey']] = count.get(c['formKey'], 0) + 1
+    forms = sorted(count.items(), key=lambda kv: (-kv[1], kv[0]))
+    def form_line(k, n):
+        name = FORM_NAME.get(k, k)
+        hours = sorted({h for c in rows if c['formKey'] == k for h in [c['time']] if re.fullmatch(r'\d+시간', h or '')}, key=lambda h: int(h[:-2]))
+        link = f'<a href="../../p/{FORM_PAGE[k]}/">{html.escape(name)}</a>' if k in FORM_PAGE else html.escape(name)
+        return f'<tr><th scope="row">{link}</th><td>{n}곳' + (f' · {"·".join(hours)}' if hours else '') + '</td></tr>'
+    # 같은 수로 가장 많은 방식이 여럿이면 함께 말해요.
+    top = '·'.join(FORM_NAME.get(k, k) for k, n in forms if n == forms[0][1])
+    tip = f'<p class="note">{WORK_TIPS[slug]}</p>' if slug in WORK_TIPS else ''
+    body = f'''<div class="card">
+  <h2 class="in-card">공개 자료 {len(rows)}곳의 근무 방식</h2>
+  <table class="lines info">{''.join(form_line(k, n) for k, n in forms)}</table>
+  <p class="note">채용 공고·기사·노무 사이트에서 원문을 열어 확인한 곳만 셌어요. 같은 회사도 사업장·부서마다 다를 수 있어요.</p>
+  {tip}
+  <p class="btns"><a class="btn" href="../../">내 순서로 석 달 달력 보기</a></p>
+</div>
+<div class="card">
+  <h2 class="in-card">교대 수당은 이렇게 셈해요</h2>
+  <ul class="ticks">
+    <li><b>야간</b><span>밤 10시부터 아침 6시까지 일한 시간은 통상시급의 50%를 더 받아요(근로기준법 제56조 제3항).</span></li>
+    <li><b>연장</b><span>하루 8시간, 한 주 40시간을 넘긴 시간은 50%를 더 받아요(제56조 제1항). 12시간 맞교대는 쉬는 시간을 빼고 8시간을 넘긴 만큼이 연장이에요.</span></li>
+    <li><b>휴일</b><span>휴일에 일하면 8시간까지 50%, 넘으면 100%를 더 받아요(제56조 제2항). 상시 5명 미만 사업장은 가산이 없어요.</span></li>
+  </ul>
+  <p class="btns"><a class="chip" href="../../../calc/allowance/">야간·연장·휴일수당 계산기</a><a class="chip" href="../../../calc/week/">한 주 연장·52시간</a><a class="chip" href="../../../calc/ordinary/">통상임금·명세서</a></p>
+</div>
+<h2>다른 업종</h2>
+<ul class="links">WORK_OTHERS</ul>'''
+    title = f'{gname} 교대 근무 형태 (몇 조 몇 교대, 근무 시간) | 밤낮'
+    write(f'shift/work/{slug}/', page(
+        f'shift/work/{slug}/', title,
+        f'{gname} 교대 근무는 {josa(top, "가/이")} 가장 많아요. 공개 자료 {len(rows)}곳의 방식과 야간·연장 수당 셈법.'[:80],
+        f'{gname} 교대 근무', f'{who}처럼 교대로 일하는 곳의 근무 방식을 모았어요. 순서를 누르면 내 첫날로 석 달 달력을 바로 봐요.',
+        body, '',
+        [(f'{gname} 교대 근무는 보통 몇 조 몇 교대인가요?', f'공개 자료 {len(rows)}곳 가운데 ' + ', '.join(f'{FORM_NAME.get(k, k)} {n}곳' for k, n in forms[:4]) + '이에요. 같은 회사·기관도 사업장·부서마다 다를 수 있어요.'),
+         ('우리 회사 근무 순서를 바로 맞추려면?', '밤낮 앱의 회사 찾기에서 회사 이름으로 고르면 근무 순서와 시간이 맞춰져요. 없는 회사는 앱에서 알려 주시면 확인해서 더해요.')],
+        f'work_{slug}', f'{gname} 교대, 알람까지 한 번에', '밤낮 앱에서 우리 회사 순서를 고르면 몇 년치 근무가 채워지고, 주간·야간마다 다른 알람과 수당을 담은 예상 월급이 보여요.', 3))
+    work_links.append((slug, gname, len(rows), top))
+# 다른 업종 목록은 모두 만든 뒤에 채워요.
+for slug, gname, n, top in work_links:
+    others = ''.join(f'<li><a href="../{s}/">{html.escape(g)} 교대 근무</a> · {m}곳, {html.escape(josa(t, "가/이"))} 가장 많아요</li>' for s, g, m, t in work_links if s != slug)
+    patch(f'shift/work/{slug}/index.html', 'WORK_OTHERS', others, '교대 근무</a> ·')
+wl = ''.join(f'<li><a href="work/{s}/">{html.escape(g)} 교대 근무</a> · 공개 자료 {n}곳, {html.escape(josa(t, "가/이"))} 가장 많아요</li>' for s, g, n, t in work_links)
+patch('shift/index.html', '<h2 id="order-list">교대 순서별 설명</h2>', f'<h2 id="work-list">업종별 교대 근무</h2><ul class="links">{wl}</ul>\n<h2 id="order-list">교대 순서별 설명</h2>', 'href="work/')
+print('work pages', len(work_links))
+
 # ---------- 계산기 모음 ----------
 hub_body = '<ul class="links">' + ''.join(f'<li><a href="{u}"><strong>{t}</strong></a><br><span class="muted">{d}</span></li>' for u, t, d in [
     ('juhyu/', '주휴수당 계산기', '시급과 1주 근무 시간으로 주휴수당과 월 환산'),
