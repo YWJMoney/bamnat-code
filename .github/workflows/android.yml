@@ -284,8 +284,10 @@ jobs:
           node-version: 22
       # The classes that start server/company-worker/test/local-server.mjs, and ShareLinkTest (it writes the payloads the share
       # server checks next). tools/server_app_tests.py finds them in the test sources, so a new one joins by itself.
+      # --rerun: the server files are not inputs of the Gradle task, so a server-only change got the app's test results FROM-CACHE
+      # (nothing ran against the changed server and the payload files the share server checks were never written).
       - if: steps.changed.outputs.server == '1'
-        run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest $(python3 tools/server_app_tests.py --gradle) --continue
+        run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest --rerun $(python3 tools/server_app_tests.py --gradle) --continue
       - if: steps.changed.outputs.server == '1'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker
