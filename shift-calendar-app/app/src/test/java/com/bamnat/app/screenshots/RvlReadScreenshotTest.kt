@@ -88,6 +88,20 @@ class RvlReadScreenshotTest : ScreenshotBase() {
     @Test fun waysNoScannerFoldLight() = shoot("rvl34_ways_no_scanner_fold_light_100", FOLDED, ways(false))
     @Test fun waysNoScannerFoldDarkHuge() = shoot("rvl34_ways_no_scanner_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, ways(false))
 
+    // ---- RVL-34 (HQ-61 ④): the keypad's tools go to a second line when the width runs out, the rarer three wait in '더 보기' ----
+    // (The menu is a popup window the shots do not draw; its button is checked here, what it does in EaseScreenshotTest.)
+    private fun keypad(): Screen.() -> Unit = roster(true) { vm ->
+        vm.tap(3)
+        settle()
+        reveal("» 건너뛰기")
+        assertTrue(appears("되돌리기"))
+        assertTrue(appears(com.bamnat.app.ui.imports.KEYPAD_MORE, exact = true))
+    }
+
+    @Test fun keypadFoldLight() = shoot("rvl34_keypad_fold_light_100", FOLDED, keypad())
+    @Test fun keypadFoldDarkHuge() = shoot("rvl34_keypad_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, keypad())
+    @Test fun keypadOpenLight() = shoot("rvl34_keypad_open_light_100", UNFOLDED, keypad())
+
     private fun others(scanner: Boolean): Screen.() -> Unit = roster(scanner) {
         tapText(OTHERS, exact = true)
         assertTrue(appears("근무표 넣는 다른 방법"))
