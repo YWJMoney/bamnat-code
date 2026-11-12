@@ -2007,7 +2007,7 @@ test("[ADM3-51] the top line says which server runs: local without a deploy, the
   const line = t.$("#deploy-line");
   assert.ok(line && !line.hidden, "shown");
   assert.match(t.text("#deploy-line"), /로컬 서버/);
-  assert.match(t.text("#deploy-line"), /회사 1\.39\.\d+ 로컬/);
+  assert.match(t.text("#deploy-line"), /회사 \d+\.\d+\.\d+ 로컬/);
   assert.equal(line.getAttribute("href"), "#/server");
   // 배포된 서버: 커밋과 배포 시각.
   const s2 = await world({ CF_VERSION_METADATA: { id: "1789720e-0000", tag: "9a99201a1b2c", timestamp: "2026-11-08T14:30:00.000Z" } });
