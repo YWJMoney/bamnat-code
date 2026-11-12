@@ -122,9 +122,13 @@ object TradeWages {
  * i.e. 2.7% of what is over 15만 원, and 지방소득세 a tenth of that. Tax under 1,000원 for one payment is
  * not taken (소액부징수); paid day by day that is judged per day, paid together (월 1~2회 정산) on the sum,
  * so the same days can owe tax when paid at once. Apart from 3.3% 사업소득.
- * 2.0.0 [RVJ-11] 검토 PAYC-10: the only 일용 tax function (돈 › 세금 카드 and the 사장님 명세서 use it too). 끝자리: 소득세는 원 단위,
- * 지방소득세는 그 10%의 원 단위로 둬요. 10원 미만 끝수를 사람마다 버리는지(국고금 관리법 제47조의 끝수 계산이 납부 단위인지)는 원문
- * 확인 필요예요 (확인 전 그대로).
+ * 2.0.0 [RVJ-11] 검토 PAYC-10: the only 일용 tax function (돈 › 세금 카드 and the 사장님 명세서 use it too).
+ * 2.0.0 [RVJ-37] 끝자리 (갈래 R이 웹 계산기와 맞추다 찾은 것): what one payment holds back drops its 10원 미만 끝수, 소득세 and
+ * 지방소득세 each. 국고금 관리법 제47조 제1항 "국고금의 수입 또는 지출에서 10원 미만의 끝수가 있을 때에는 그 끝수는 계산하지
+ * 아니하고, 전액이 10원 미만일 때에도 그 전액을 계산하지 아니한다" (제3항 지방자치단체 준용; 위키문헌 법률 제14039호 판), and
+ * 국세청 '일용근로자 원천징수' 안내(nts.go.kr cntntsId=7863)의 예시가 그렇게 셈해요: 일당 20만 원 5일 한 번에 → 소득세 6,750원,
+ * 지방소득세 670원(675원의 끝수 5원을 버림). 소액부징수(1,000원 미만)는 지급할 때 그 지급분 합계로 봐요(같은 안내). The 1,000원
+ * line is a multiple of 10, so the order of the two does not change the answer.
  */
 object DailyWorkerTax {
     const val DEDUCTION = 150_000L
@@ -137,17 +141,21 @@ object DailyWorkerTax {
         val total: Long get() = income + local
     }
 
-    /** The tax on days [dailies] paid at once. */
-    fun paidTogether(dailies: List<Long>): Tax {
-        val income = dailies.sumOf(::incomeTaxOfDay).takeIf { it >= SMALL } ?: 0
-        return Tax(income, income / 10)
+    /** [RVJ-37] 10원 미만 끝수를 버린 값 (국고금 관리법 제47조 제1항). */
+    fun tens(won: Long): Long = won / 10 * 10
+
+    /** [RVJ-37] One payment's tax from the 소득세 of the days it pays: 10원 미만을 버리고, 1,000원 미만이면 떼지 않아요. */
+    private fun payment(income: Long): Tax {
+        val held = tens(income).takeIf { it >= SMALL } ?: 0
+        return Tax(held, tens(held / 10))
     }
 
-    /** The tax on days [dailies] each paid on the day. */
-    fun paidDaily(dailies: List<Long>): Tax {
-        val income = dailies.map(::incomeTaxOfDay).filter { it >= SMALL }.sum()
-        return Tax(income, income / 10)
-    }
+    /** The tax on days [dailies] paid at once. */
+    fun paidTogether(dailies: List<Long>): Tax = payment(dailies.sumOf(::incomeTaxOfDay))
+
+    /** The tax on days [dailies] each paid on the day: each day is a payment of its own. */
+    fun paidDaily(dailies: List<Long>): Tax = dailies.map { payment(incomeTaxOfDay(it)) }
+        .fold(Tax(0, 0)) { a, b -> Tax(a.income + b.income, a.local + b.local) }
 
     /** The 일당 under which a day paid by itself owes nothing (about 187,000원). */
     val TAX_FREE_UP_TO: Long get() = DEDUCTION + (SMALL * 1000 + 26) / 27 - 1
