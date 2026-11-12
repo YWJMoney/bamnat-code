@@ -120,7 +120,7 @@ object YearRecapImage {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@withContext null
         val resolver = context.contentResolver
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "bamnat-${recap.year}-결산-${System.currentTimeMillis() / 1000}.png")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "bamnat-${recap.year}-결산-${System.currentTimeMillis() / 1000}.png") // real clock: a unique file name
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/밤낮")
             put(MediaStore.Images.Media.IS_PENDING, 1)
