@@ -85,8 +85,17 @@ data class TaxEstimate(
     val hasIsa: Boolean,
     /** Gains in 연금저축·IRP, taxed only when drawn. */
     val deferredGain: Long,
+    /** 국내 주식 and 국내주식형 ETF (and ETFs not told yet): no tax but 거래세, for 대주주 aside. */
     val domesticGain: Long,
+    /** 2.0.0 [RVK-31] (MONEY-66) 그 밖의 국내 ETF: each sale's gain, losses not set against it, is 배당소득 at [InvestTaxes.DIVIDEND_RATE]. */
+    val otherEtfGain: Long = 0,
+    val otherEtfTax: Long = 0,
+    /** [RVK-31] '기타' market: the tax depends on what it is, so it is said apart, not as 국내 주식. */
+    val otherMarketGain: Long = 0,
+    /** [RVK-31] 국내 ETFs sold this year (outside ISA·연금) whose kind was not told, one sale each, counted as 국내주식형 until told. */
+    val untoldEtfs: List<Realization> = emptyList(),
 ) {
+    val unknownEtfs: Int get() = untoldEtfs.size
     val financialNear: Boolean get() = financialIncome >= InvestTaxes.FINANCIAL_INCOME_LIMIT * 8 / 10
     val financialOver: Boolean get() = financialIncome > InvestTaxes.FINANCIAL_INCOME_LIMIT
 }
@@ -238,6 +247,48 @@ object InvestTaxes {
     /** [INV-39] Said under 국내 주식 sells. */
     const val DOMESTIC_NOTE = "국내 상장주식은 대주주(종목당 50억 원 이상 등)가 아니면 양도소득세가 없어요. 거래세는 위에 넣었어요."
 
+    /**
+     * 2.0.0 [RVK-31] (검토 MONEY-66) 국내 ETF: only 국내주식형 ETF gains are untaxed (소득세법 시행령 제26조의2, 확인 필요); an ETF of a
+     * foreign index, bonds or commodities has the smaller of its gain and the rise of its 과세표준기준가격 taxed as 배당소득 at 15.4%,
+     * taken by the broker. The app has only the gain, so the tax it says is the most it can be.
+     */
+    const val EQUITY_ETF_NOTE = "국내주식형 ETF는 판 이익에 세금이 없어요. 거래세도 없어요."
+    val OTHER_ETF_NOTE: String get() = "해외지수·채권·원자재 ETF는 판 이익에 배당소득세 ${percent(DIVIDEND_RATE)}를 증권사가 떼고, 금융소득에 더해져요."
+    val ETF_ASK_NOTE: String get() = "국내주식형 ETF는 판 이익에 세금이 없고, 해외지수·채권·원자재 ETF는 이익에 ${percent(DIVIDEND_RATE)}를 떼요. 위에서 종류를 골라 주세요."
+    const val OTHER_MARKET_NOTE = "기타 상품은 종류마다 세금이 달라 셈하지 않아요. 증권사 자료로 확인해 주세요."
+
+    private fun percent(rate: Double): String = String.format(java.util.Locale.ROOT, "%.1f%%", rate * 100).replace(".0%", "%")
+    private fun won(v: Long): String = String.format(java.util.Locale.ROOT, "%,d원", v)
+
+    /**
+     * 2.0.0 [RVK-31] (검토 U06b-11 '매도 창: 시장별로 맞는 한 줄') What a sale owes, said for its market and account in one line:
+     * ISA·연금 first (the account decides), then 국내 주식, 국내 ETF by its kind ([InvestSettings.etfTaxed], [gainWon] the sale's gain
+     * against 평균단가), 코인, 기타. Null for 해외 주식, whose line is [sellPreview] of the year's 양도소득세.
+     */
+    fun sellLine(book: InvestBook, trade: Trade, gainWon: Long, etfTaxed: Boolean? = book.settings.etfTaxed[trade.key]): String? {
+        if (trade.side != Side.SELL) return null
+        when (book.account(trade.accountId)?.type) {
+            AccountType.ISA -> return "ISA 계좌라 이익은 계좌를 닫을 때 손실과 합쳐 셈해요. 순이익 ${short(book.settings.isaLimit)}까지 세금이 없어요."
+            AccountType.PENSION, AccountType.IRP -> return "연금 계좌라 이익에 바로 세금이 붙지 않고, 연금으로 받을 때 내요."
+            else -> Unit
+        }
+        return when (trade.market) {
+            Market.KR_STOCK -> DOMESTIC_NOTE
+            Market.KR_ETF -> when (etfTaxed) {
+                null -> ETF_ASK_NOTE
+                false -> EQUITY_ETF_NOTE
+                true -> if (gainWon > 0) "어림 배당소득세 ${won((gainWon * DIVIDEND_RATE).roundToLong())} (이익 ${won(gainWon)} × ${percent(DIVIDEND_RATE)}, " +
+                    "증권사가 떼요. 과표기준가로 셈해 더 적을 수 있어요)" else OTHER_ETF_NOTE
+            }
+            Market.CRYPTO -> if (trade.date.year >= CRYPTO_FROM_YEAR) "코인 이익은 1년에 ${short(CRYPTO_DEDUCTION)}을 넘는 만큼 ${percent(CAPITAL_GAINS_RATE)}예요. 다음 해 5월에 신고해요."
+                else "코인 이익은 ${CRYPTO_FROM_YEAR}년부터 1년에 ${short(CRYPTO_DEDUCTION)}을 넘는 만큼 ${percent(CAPITAL_GAINS_RATE)} 세금이 붙을 예정이에요. 지금은 없어요."
+            Market.OTHER -> OTHER_MARKET_NOTE
+            Market.US_STOCK -> null
+        }
+    }
+
+    private fun short(v: Long): String = if (v % 10_000 == 0L) "${v / 10_000}만 원" else won(v)
+
     fun estimate(book: InvestBook, result: PortfolioResult, year: Int): TaxEstimate {
         val inYear = { d: LocalDate -> d.year == year }
         val deferred = book.accounts.filter { it.type.taxDeferred }.map { it.id }.toSet()
@@ -257,6 +308,10 @@ object InvestTaxes {
             book.cash.filter { it.accountId in isa && it.kind.isIncome }.sumOf { it.amount } -
             book.cash.filter { it.accountId in isa && it.kind == CashKind.FEE }.sumOf { it.amount }
         val limit = book.settings.isaLimit
+        // 2.0.0 [RVK-31] (MONEY-66) This year's taxable sales; a taxed ETF's sale is 배당소득 on its own gain (a loss is not set against it).
+        val sold = result.realizations.filter { inYear(it.date) && taxable(it) }
+        val kinds = book.settings.etfTaxed
+        val etfGain = sold.filter { it.market == Market.KR_ETF && kinds[it.key] == true }.sumOf { it.pnlWon.coerceAtLeast(0.0) }.roundToLong()
         return TaxEstimate(
             year = year,
             foreignGain = foreignGain,
@@ -269,15 +324,18 @@ object InvestTaxes {
             dividendsGross = dividends.sumOf { it.amount },
             dividendTax = dividends.sumOf { it.tax } + interest.sumOf { it.tax },
             interestGross = interest.sumOf { it.amount },
-            financialIncome = dividends.sumOf { it.amount } + interest.sumOf { it.amount },
+            financialIncome = dividends.sumOf { it.amount } + interest.sumOf { it.amount } + etfGain,
             tradeTax = book.trades.filter { inYear(it.date) }.sumOf { it.tax * it.fxRate }.roundToLong(),
             isaGain = isaGain,
             isaLimit = limit,
             isaTaxOver = ((isaGain - limit).coerceAtLeast(0) * ISA_OVER_RATE).roundToLong(),
             hasIsa = isa.isNotEmpty(),
             deferredGain = result.realizations.filter { it.accountId in deferred && inYear(it.date) }.sumOf { it.pnlWon }.roundToLong(),
-            domesticGain = result.realizations.filter { !it.market.foreign && it.market != Market.CRYPTO && inYear(it.date) && taxable(it) }
-                .sumOf { it.pnlWon }.roundToLong(),
+            domesticGain = sold.filter { it.market == Market.KR_STOCK || (it.market == Market.KR_ETF && kinds[it.key] != true) }.sumOf { it.pnlWon }.roundToLong(),
+            otherEtfGain = etfGain,
+            otherEtfTax = (etfGain * DIVIDEND_RATE).roundToLong(),
+            otherMarketGain = sold.filter { it.market == Market.OTHER }.sumOf { it.pnlWon }.roundToLong(),
+            untoldEtfs = sold.filter { it.market == Market.KR_ETF && it.key !in kinds }.distinctBy { it.key },
         )
     }
 }

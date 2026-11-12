@@ -173,7 +173,7 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
                 InvestTab.OVERVIEW -> OverviewTab(vm, state, open)
                 InvestTab.HOLDINGS -> HoldingsTab(state, open)
                 InvestTab.RECORDS -> RecordsTab(state, open, recordsMonth) { recordsMonth = it }
-                InvestTab.STATS -> InvestStatsTab(state, wide, vm.calendarId, statsMonth, { statsMonth = it }, statsYearly, { statsYearly = it })
+                InvestTab.STATS -> InvestStatsTab(state, wide, vm.calendarId, statsMonth, { statsMonth = it }, statsYearly, { statsYearly = it }, onEtfKind = vm::setEtfKind)
                 InvestTab.JOURNAL -> JournalTab(state, open)
                 InvestTab.ALARMS -> AlarmsTab(vm, state, open)
             }

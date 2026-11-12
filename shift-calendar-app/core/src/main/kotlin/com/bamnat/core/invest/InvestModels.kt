@@ -336,6 +336,12 @@ data class InvestSettings(
      */
     val buyFeeRate: Double = DEFAULT_FEE_RATE,
     val sellFeeRate: Double = DEFAULT_FEE_RATE,
+    /**
+     * 2.0.0 [RVK-31] (검토 MONEY-66) Each 국내 ETF's kind by its holding key, asked once in the trade sheet: true for one whose gain
+     * is taxed as 배당소득 (해외지수·채권·원자재·레버리지 등, 15.4% at the broker, counted in 금융소득), false for 국내주식형 (no tax on
+     * the gain). Absent while not told.
+     */
+    val etfTaxed: Map<String, Boolean> = emptyMap(),
 ) {
     /** [INV-38] The calendar's 기본 수수료 for [side]. */
     fun feeRate(side: Side): Double = if (side == Side.BUY) buyFeeRate else sellFeeRate

@@ -104,6 +104,15 @@ class InvestAppTest {
         assertNull(fresh.goalAmount)
         assertFalse(fresh.hideAmounts)
         assertEquals(4, fresh.principles.size)
+        assertTrue(fresh.etfTaxed.isEmpty())
+    }
+
+    @Test fun eachEtfKeepsItsKind() = runBlocking {
+        // 2.0.0 [RVK-31] (검토 MONEY-66) An ETF's kind, picked once, is there the next time; a broken line is left out, not misread.
+        repo.saveSettings { it.copy(etfTaxed = mapOf("360750" to true, "069500" to false)) }
+        assertEquals(mapOf("360750" to true, "069500" to false), repo.now().settings.etfTaxed)
+        val odd = InvestRepository.SettingsCodec.decode(mapOf(InvestRepository.SettingsCodec.ETF_KINDS to "360750\t1\n\t1\n069500\t2\nabc"))
+        assertEquals(mapOf("360750" to true), odd.etfTaxed)
     }
 
     @Test fun anEmptyJournalIsRemoved() = runBlocking {

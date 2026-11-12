@@ -264,6 +264,8 @@ internal fun TradeSheet(
     var rules by rememberSaveable { mutableStateOf(start?.followedRules) }
     var memo by rememberSaveable { mutableStateOf(start?.memo ?: "") }
     var deleting by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-31] (검토 MONEY-66) A 국내 ETF's kind, picked here once and kept for that holding.
+    var etfPicked by rememberSaveable { mutableStateOf<Boolean?>(null) }
 
     val q = qty.toDecimal() ?: 0.0
     val p = price.toDecimal() ?: 0.0
@@ -280,6 +282,7 @@ internal fun TradeSheet(
     val holding = state.fullResult.holdings.firstOrNull { it.accountId == accountId && it.key == key }
     val canSave = key.isNotEmpty() && q > 0 && p > 0
     val hide = state.hide
+    val etfTaxed = etfPicked ?: book.settings.etfTaxed[key]
 
     fun save() {
         val day = runCatching { LocalDate.parse(date) }.getOrDefault(state.today)
@@ -289,6 +292,7 @@ internal fun TradeSheet(
             reason = start?.reason ?: "", emotions = emotions.toSet(), tags = tags.toList(), followedRules = rules, memo = memo.trim(),
             alarmId = start?.alarmId ?: d.alarmId, createdAt = start?.createdAt ?: 0,
         ), start)
+        etfPicked?.takeIf { market == Market.KR_ETF && book.settings.etfTaxed[key] != it }?.let { vm.setEtfKind(key, it) }
         if (start == null) d.alertAt?.let { vm.alertSaved(it) }
         onDismiss()
     }
@@ -297,7 +301,7 @@ internal fun TradeSheet(
         title = if (start == null) "매매 기록" else "매매 고치기",
         onDismiss = onDismiss,
         unsaved = changedSinceOpen(side, accountId, name, symbol, market, qty, price, date, minute, fx, feeText, taxText, rules, memo,
-            tags.toList(), emotions.toList()),
+            tags.toList(), emotions.toList(), etfPicked),
         onSave = ::save,
         saveLabel = if (start == null) "${side.label} 저장" else "고친 내용 저장",
         canSave = canSave,
@@ -343,6 +347,12 @@ internal fun TradeSheet(
         }
         NameCodeFields(name, { name = it }, symbol, { symbol = it }, examples = true)
         ChoiceChips(Market.entries, { it == market }, { it.label }, { market = it })
+        // 2.0.0 [RVK-31] (검토 MONEY-66·T06b-12) Only 국내주식형 ETF gains are untaxed; asked once for each ETF and kept, so the sale's
+        // line and the year's 세금 미리 보기 are right. Not picked: the sale says both.
+        if (market == Market.KR_ETF) {
+            FieldLabel("ETF 종류")
+            ChoiceChips(listOf(false, true), { it == etfTaxed }, { if (it) "해외지수·채권·원자재 등" else "국내주식형" }, { etfPicked = it })
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DecimalField("수량", qty, { qty = it }, Modifier.weight(1f), suffix = if (market == Market.CRYPTO) "개" else "주")
             DecimalField(if (market.foreign) "단가 (달러)" else "단가", price, { price = it }, Modifier.weight(1.3f), suffix = if (market.foreign) "$" else "원")
@@ -391,10 +401,12 @@ internal fun TradeSheet(
             val total = if (side == Side.BUY) grossWon + costsWon else grossWon - costsWon
             val lines = buildList {
                 add((if (side == Side.BUY) "내는 돈 " else "받는 돈 ") + InvestFmt.won(total.roundToLong(), hide))
+                var gain = 0L
                 if (side == Side.SELL && holding != null && holding.quantity > EPS) {
                     val sold = minOf(q, holding.quantity)
                     val cost = holding.costWon * sold / holding.quantity
                     val pnl = (total * sold / q - cost).roundToLong()
+                    gain = pnl
                     add("예상 실현손익 ${InvestFmt.signed(pnl, hide)} (${InvestFmt.percent(if (cost > 0) pnl / cost else null)})")
                 }
                 // [INV-39] A sell of 해외 주식: what it adds to this year's 양도소득세; 국내 주식: why there is none.
@@ -405,7 +417,10 @@ internal fun TradeSheet(
                     if (preview != null) add(
                         if (preview.extraTax > 0) "예상 양도소득세 +${InvestFmt.won(preview.extraTax, hide)} (22%, 올해 해외 주식 이익 ${InvestFmt.signed(preview.yearGain, hide)}, 250만 원 공제 뒤)"
                         else "양도소득세 없음: 올해 해외 주식 이익이 250만 원 공제 안이에요 (남은 공제 ${InvestFmt.won(preview.deductionLeft, hide)})"
-                    ) else if (market == Market.KR_STOCK || market == Market.KR_ETF) add(com.bamnat.core.invest.InvestTaxes.DOMESTIC_NOTE)
+                    // 2.0.0 [RVK-31] (검토 U06b-11) Every other market and ISA·연금 say their own line; with amounts hidden, no amount.
+                    ) else com.bamnat.core.invest.InvestTaxes.sellLine(book, Trade(accountId = accountId, date = day, symbol = symbol.trim(),
+                        name = name.trim(), market = market, side = side, quantity = q, price = p), gainWon = if (hide) 0L else gain,
+                        etfTaxed = etfTaxed)?.let { add(it) }
                 }
                 if (side == Side.BUY) {
                     val cash = state.fullResult.accounts.firstOrNull { it.accountId == accountId }?.cash ?: 0L
