@@ -175,7 +175,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 /* [ADMUX-05] One step per level: screen title 1.2, card 1.06, item .98, text .94. */
 .card>h2,.card-head h2{font-size:1.06rem;font-weight:800}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .6rem}
-/* 2.0.0 [HQ-88] 검토 조건 12: 제목 + 알약 여럿인 머리는 840·글자 200%에서 제목이 한 글자 폭 기둥으로 서고 알약이 잘렸어요. 제목은 16rem(글자가
+/* 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 제목 + 알약 여럿인 머리는 840·글자 200%에서 제목이 한 글자 폭 기둥으로 서고 알약이 잘렸어요. 제목은 16rem(글자가
    크면 함께 커져요)을 지키고, 그만큼이 없으면 알약이 아래 줄로 감겨요. 알약도 줄 폭을 넘지 않게 감겨요. */
 .card-head{flex-wrap:wrap;row-gap:.35rem}
 .card-head:has(>:is(h2,h3)){justify-content:flex-start}
@@ -188,7 +188,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 /* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
 @media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
-/* 2.0.0 [HQ-88] 검토 조건 12: 두 칸(본문 · 옆 칸)은 칸이 줄 수 있는 폭(본문 18rem, 옆 16rem, 글자가 크면 함께 커져요)이 안 되면 위아래로 놓여요.
+/* 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 두 칸(본문 · 옆 칸)은 칸이 줄 수 있는 폭(본문 18rem, 옆 16rem, 글자가 크면 함께 커져요)이 안 되면 위아래로 놓여요.
    격자(1.6fr · 1fr)일 때 글자 200%의 840·1440에서 본문 칸이 29px로 줄어 한 자씩 섰어요(개발사항 한 건). */
 @media (min-width:1024px){.cols{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start}.cols>*{min-width:0;flex:1 1 16rem}.cols>:first-child{flex:1.6 1 18rem}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
@@ -669,7 +669,7 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .more-tiles>summary{cursor:pointer;font-weight:800;font-size:.9rem;color:var(--muted);padding:.4rem .25rem;list-style:none}
 .more-tiles .tiles{margin:.5rem 0}
 .home-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 1rem;align-items:start}
-/* [HQ-88] 오늘의 옆 칸(최근 기록)도 16rem이 안 되면 아래로(글자 200%의 1440에서 기록 글이 한 줄 88px로 섰어요). */
+/* [RVQ-47] 검토 HQ-88: 오늘의 옆 칸(최근 기록)도 16rem이 안 되면 아래로(글자 200%의 1440에서 기록 글이 한 줄 88px로 섰어요). */
 @media (min-width:1024px){.home-grid{display:flex;flex-wrap:wrap}.home-grid>*{min-width:0;flex:1 1 16rem}.home-grid>.home-main{flex:1.75 1 20rem}}
 .home-main,.home-side{min-width:0}
 /* 주의 필요 */
@@ -985,7 +985,7 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .how-steps p{margin:.15rem 0 0;font-size:.86rem;color:var(--muted)}
 .step-no{flex:none;display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:.85rem}
 .flow-cols{display:grid;gap:.75rem}
-/* [HQ-88] 넓은 화면도 칸이 22rem보다 좁으면 한 칸으로(글자 200%의 1440에서 자동 순환 카드 안 줄이 62px로 섰어요), 두 칸까지만. */
+/* [RVQ-47] 검토 HQ-88: 넓은 화면도 칸이 22rem보다 좁으면 한 칸으로(글자 200%의 1440에서 자동 순환 카드 안 줄이 62px로 섰어요), 두 칸까지만. */
 @media (min-width:1024px){.flow-cols{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr));align-items:start}}
 .week-chart{margin:0}
 .week-chart svg{display:block;width:100%;height:auto}
