@@ -486,6 +486,10 @@ abstract class ScreenshotBase {
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
+        /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
+        fun enabled(text: String): Boolean =
+            find(text, exact = true, prefix = false)?.let { !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) } == true
+
         /** 2.0.0 [RVI-61] Whether an open menu (a popup window, see [shownPopups]) says [text], waiting as [appears] does. */
         fun inPopup(text: String, ms: Long = SOON_MS): Boolean = until(ms) {
             var hit = false

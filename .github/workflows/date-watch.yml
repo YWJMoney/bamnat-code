@@ -3,33 +3,159 @@ name: 날짜 시험 (날마다)
 # 날마다 main에서 서버 시험을 오늘과 7·30·90·365일 뒤로 시계를 옮겨 돌려요(tools/fake-date.mjs). PR 때만 돌던 CI는
 # main이 '어제 초록, 오늘 빨강'이 돼도 몰랐어요. 실패하면 Actions가 저장소 주인에게 메일로 알려요.
 # 한 번에 서버 두 곳 × 5날짜, 6분쯤(비공개 저장소 한 달 2,000분 중 180분쯤).
+#
+# 2.0.0 [I60b-01] (검토 2026-11-12) core·앱 시험도 시간 여행해요(-Pbamnat.todayShift, core Today의 시스템 시계를 옮김):
+#   날마다 core +30일(5분쯤, 한 달 150분쯤), 월요일마다 core +365일과 앱 (unit) +30일(30분쯤, 한 달 120분쯤).
+#   요약 맨 위에 '12월 12일(+30일)에 깨질 시험 N개'와 이름·줄(tools/date_watch.py), 같은 내용을 JSON 결과 묶음(date-watch-*)으로 남겨요.
+# 2.0.0 [U60-01] 오늘(+0일) 서버 결과는 어제 결과와 견줘 '어제는 통과, 오늘 처음 깨짐'과 그사이 main이 바뀌었는지(바뀌지 않았으면
+#   날짜·바깥 탓)를 같이 적어요. 배포 요약(U60-02)도 이 묶음으로 '어제 main에서는 통과/실패'를 말해요.
 on:
   schedule:
     - cron: "17 21 * * *" # 06:17 KST
+    - cron: "47 21 * * 0" # 월 06:47 KST: 무거운 것(core +365, 앱 +30)
   workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
 concurrency:
-  group: date-watch
+  group: date-watch-${{ github.event.schedule || 'hand' }}
   cancel-in-progress: true
+env:
+  GRADLE_FLAGS: --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain
 jobs:
   servers:
+    if: github.event.schedule != '47 21 * * 0'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         days: [0, 7, 30, 90, 365]
+    env:
+      DAYS: ${{ matrix.days }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: mkdir -p "$RUNNER_TEMP/dw/json"
       - name: share-worker (+${{ matrix.days }}일)
         working-directory: shift-calendar-app/server/share-worker
         env:
           BAMNAT_FAKE_DAYS: ${{ matrix.days }}
-        run: node --import ../company-worker/tools/fake-date.mjs --test --disable-warning=ExperimentalWarning test/*.test.mjs
+        run: >-
+          node --import ../company-worker/tools/fake-date.mjs --test --disable-warning=ExperimentalWarning
+          --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/dw/share.xml"
+          test/*.test.mjs
       - name: company-worker (+${{ matrix.days }}일)
+        if: always()
         working-directory: shift-calendar-app/server/company-worker
         env:
           BAMNAT_FAKE_DAYS: ${{ matrix.days }}
-        run: node --import ./tools/fake-date.mjs --test --disable-warning=ExperimentalWarning "test/*.test.mjs"
+        run: >-
+          node --import ./tools/fake-date.mjs --test --disable-warning=ExperimentalWarning
+          --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination="$RUNNER_TEMP/dw/company.xml"
+          "test/*.test.mjs"
+      - name: 깨질 시험 요약
+        if: always()
+        run: |
+          for w in share company; do
+            python3 shift-calendar-app/tools/date_watch.py report --label "$([ $w = share ] && echo 공유 서버 || echo 회사 서버)" --days "$DAYS" \
+              "$RUNNER_TEMP/dw/$w.xml" --out "$RUNNER_TEMP/dw/json/$w+$DAYS.json" >> "$GITHUB_STEP_SUMMARY"
+          done
+      # [U60-01] 오늘 결과를 어제(지난 완료 실행) 결과와: 어제는 통과, 오늘 처음 깨짐.
+      - name: 어제와 견주기
+        if: always() && matrix.days == 0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          got=""
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow date-watch.yml --branch "$GITHUB_REF_NAME" --status completed --limit 6 --json databaseId --jq '.[].databaseId'); do
+            if gh run download "$id" -R "$GITHUB_REPOSITORY" -n date-watch-servers-0 -D "$RUNNER_TEMP/prev" 2>/dev/null; then got=$id; break; fi
+          done
+          for w in share company; do
+            echo "#### $w: 어제와" >> "$GITHUB_STEP_SUMMARY"
+            if [ -n "$got" ]; then
+              python3 shift-calendar-app/tools/date_watch.py compare "$RUNNER_TEMP/prev/$w+0.json" "$RUNNER_TEMP/dw/json/$w+0.json" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "어제 결과가 없어 견주지 못했어요(첫날이거나 지난 결과가 지워짐)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: date-watch-servers-${{ matrix.days }}
+          path: ${{ runner.temp }}/dw/json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # [I60b-01] core: 날마다 +30일, 월요일 +365일(손으로 돌리면 둘 다).
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        days: ${{ fromJSON(github.event.schedule == '47 21 * * 0' && '[365]' || (github.event_name == 'workflow_dispatch' && '[30, 365]' || '[30]')) }}
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - name: core 시험 (+${{ matrix.days }}일)
+        run: sh ./gradlew $GRADLE_FLAGS -p core test -Pbamnat.todayShift=P${{ matrix.days }}D --continue
+      - name: 깨질 시험 요약
+        if: always()
+        run: python3 tools/date_watch.py report --label core --days ${{ matrix.days }} core/build/test-results --out build/date-watch/core+${{ matrix.days }}.json >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: date-watch-core-${{ matrix.days }}
+          path: shift-calendar-app/build/date-watch
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # [I60b-01] 앱 (unit) +30일: 월요일마다(손으로 돌려도).
+  app:
+    if: github.event.schedule == '47 21 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
+          restore-keys: robolectric-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 앱 시험 (unit, +30일)
+        run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=unit -Pbamnat.todayShift=P30D --continue
+      - name: 깨질 시험 요약
+        if: always()
+        run: python3 tools/date_watch.py report --label "앱 (unit)" --days 30 app/build/test-results/testDebugUnitTest --out build/date-watch/app+30.json >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: date-watch-app-30
+          path: shift-calendar-app/build/date-watch
+          retention-days: 14
+          if-no-files-found: ignore

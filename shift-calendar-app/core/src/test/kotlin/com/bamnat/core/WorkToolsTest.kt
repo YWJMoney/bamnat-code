@@ -40,7 +40,11 @@ class WorkToolsTest {
 
     @Test
     fun offerCountsHolidayPayAndAMonthOfWeeks() {
-        val a = OfferCompare.of(JobOffer(hourlyWage = 10_320, hoursPerWeek = 20.0, daysPerWeek = 5))
+        // 2.0.0 [I60b-01] 시간 여행 시험(+365일)이 찾은 새해 폭탄: 10,320원은 2026년 최저임금이라 2027-01-01부터(10,700원) 최저임금 밑이에요.
+        // 그 해 최저임금을 직접 주고, 해가 바뀌면 밑으로 잡히는 것도 따로 봐요.
+        val offer = JobOffer(hourlyWage = 10_320, hoursPerWeek = 20.0, daysPerWeek = 5)
+        val a = OfferCompare.of(offer, minimumWage = 10_320)
+        assertTrue("2027년 최저임금 10,700원 밑", OfferCompare.of(offer, minimumWage = 10_700).belowMinimum)
         assertEquals(206_400, a.weeklyBase)
         // 20시간 ÷ 40 × 8 = 4시간.
         assertEquals(41_280, a.weeklyHolidayPay)

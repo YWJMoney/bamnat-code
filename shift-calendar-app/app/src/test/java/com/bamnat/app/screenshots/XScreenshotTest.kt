@@ -311,7 +311,8 @@ class XScreenshotTest : ScreenshotBase() {
         }.invoke(this)
         settle()
         reveal(ShareAsk.Moment.PAY.title, exact = true)
-        tapText("다음에", exact = true)
+        // 2.0.0 [RVJ-34] 검토 PC-85: under the values it is the one 안내 카드 shape, closed with its X ('다음에 볼게요').
+        tapText("다음에 볼게요", exact = true)
         assertTrue(gone(ShareAsk.Moment.PAY.title, exact = true))
     }
 }
