@@ -58,6 +58,7 @@
 
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
+import { cutFrom, oldPayCut, oldPayRoute } from "./old-pay.js";
 import { glance } from "./glance.js";
 import { OBS_BADGE_SQL, observeRoute, observeTick } from "./observe.js";
 import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
@@ -1165,10 +1166,16 @@ export async function flushMeter(env, now, force = false) {
     ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
 }
 
-const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months'";
+const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months', 'old_pay_cut', 'shipped_version'";
 
 async function settings(env) {
   return readSettings(await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`));
+}
+
+/** 1.40 [PAYP-19] [settings] and 옛 앱 급여 끊기 in the same read, so a company page takes no more reads. */
+async function settingsAndCut(env) {
+  const rows = await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`);
+  return { ...readSettings(rows), oldPay: cutFrom(rows.find((r) => r.key === "old_pay_cut")?.value, rows.find((r) => r.key === "shipped_version")?.value) };
 }
 
 function readSettings(rows) {
@@ -2093,11 +2100,11 @@ const readWith = (url) => new Set(String(url?.searchParams.get("with") ?? "").sp
 async function companyData(env, id, request, parts = new Set(), known = null) {
   const now = Date.now();
   // AS 1.29 [SRCH-05] The page's reads go together, not one setup after another (the same answer, in the same order).
-  const [c, who, { adoptPoints }, aliasRows, rules, groups, downRows, stable] = await Promise.all([
+  const [c, who, { adoptPoints, oldPay }, aliasRows, rules, groups, downRows, stable] = await Promise.all([
     one(env, "SELECT * FROM companies WHERE id = ?", id),
     // [PLAZA-08] Pay only for a phone that joined this company; anyone else (an app before 1.26 too) gets the shifts.
     known ?? viewer(request, env, id),
-    settings(env),
+    settingsAndCut(env),
     all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
     all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", id),
     all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending' AND ${pgShown()}
@@ -2115,13 +2122,15 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   // 1.39 [PAYP-01] (사용자 2026-11-07 "급여 계산식은 보여지지 않게"): pay lines go to no one, members too; the pay part itself
   // only to an app before 1.39 that joined (it puts a way in from the page), never to a 1.39 app, which takes it (/take) when
   // it puts the way in and shows it nowhere.
-  const payBody = who.member && !payPrivate(request);
+  // 1.40 [PAYP-19] 결정 1: and from 1.40's release day, to no older app either (oldPayCut; read only for an older app's member).
+  const withheld = payPrivate(request) || oldPay.on;
+  const payBody = who.member && !withheld;
   const view = (text) => (payBody ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
   const words = (setup) => shiftLines(describe(setup));
   const waitingGroups = groups.filter((g) => !rules.some((r) => r.grp === g.grp));
   const pair = (grp) => ({ company: c.id, grp });
   const extra = who.member && (parts.has("room") || parts.has("talk")) ? Promise.all([
-    parts.has("room") ? roomData(env, c, who, now, payPrivate(request)) : null,
+    parts.has("room") ? roomData(env, c, who, now, withheld) : null,
     parts.has("talk") ? talkData(request, env, c.id, ROOM, { c, who }) : null,
   ]) : null;
   // Its failure is the answer's, below; not a second one if the page's own reads fail first.
@@ -2229,6 +2238,9 @@ const shared = (text, name) => ({ ...JSON.parse(text), company: name });
 
 /** Whether the asking app is 1.39 or later, which never shows a shared pay way and takes it with /take. */
 export const payPrivate = (request) => request?.headers?.get?.("x-pay-private") === "1";
+
+/** 1.40 [PAYP-19] 결정 1: no pay part for this app: a 1.39 app (it takes the way with /take), or any app once 1.40 is out. */
+export const payWithheld = async (request, env) => payPrivate(request) || (await oldPayCut(env)).on;
 
 /** A version the developer turned down (a key the answer never carries: JSON.stringify leaves symbols out). */
 const DOWN = Symbol("down");
@@ -2475,7 +2487,7 @@ async function room(request, env, companyId) {
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   if (!who.dev) refuse("device", "device");
   if (!who.member) return who.limited ? tooMany("reads", DAY - (Date.now() % DAY)) : json({ error: "member" }, 403);
-  const r = await roomData(env, c, who, Date.now(), payPrivate(request));
+  const r = await roomData(env, c, who, Date.now(), await payWithheld(request, env));
   return json(r.body, r.status);
 }
 
@@ -4219,7 +4231,7 @@ async function talkData(request, env, companyId, grp, known = null) {
     });
   }
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
-  if (member && !room) await withProposalTexts(all, env, c, posts, { withoutPay: payPrivate(request) }); // BC 1.30 [PROP-01]
+  if (member && !room) await withProposalTexts(all, env, c, posts, { withoutPay: await payWithheld(request, env) }); // BC 1.30 [PROP-01]
   // [J133-91] 1.33 빌드 7 확인 ("고쳐 다시 올리기를 열면 전에 바꾼 값이 비어 있어요"): the writer's own proposals come with their
   // setup to anyone, so it opens as it was sent; without the pay part when this version has a pay way they may not see (결정 D79).
   else if (!room) {
@@ -4559,7 +4571,8 @@ export async function history(env, companyId, url, request) {
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   // 1.39 [PAYP-01] Pay lines to no one; a version's pay part only to an older app's member, which can put it back on a phone.
   const words = (setup) => shiftLines(describe(setup));
-  const payBody = who.member && !payPrivate(request);
+  // 1.40 [PAYP-19] 결정 1: not to an older app either once 1.40 is out.
+  const payBody = who.member && !(await payWithheld(request, env));
   const deptOf = `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
     UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`;
   const [dept, rules] = await Promise.all([one(env, deptOf, c.id, grp), all(env, `SELECT r.*,
@@ -4987,7 +5000,7 @@ function areaFor(path) {
   if (path.startsWith("/growth/")) return "community";
   // AM 1.28 [FLAG-27] the switches are flags now: 기능 관리 (forcing off checks flagOff as well).
   if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
-  if (path.startsWith("/notices") || path === "/ops") return "ops";
+  if (path.startsWith("/notices") || path === "/ops" || path === "/old-pay") return "ops";
   // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과 reads flag numbers beside the other numbers.
   if (path === "/metrics" || path === "/remote" || path === "/effects" || path === "/glance") return "metrics";
   if (path.startsWith("/shares")) return "shares";
@@ -5259,6 +5272,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/notices\/(n[A-Za-z0-9]{9})\/remove$/);
   if (m && method === "POST") return removeNotice(env, m[1], now);
   if (path === "/switches" && method === "POST") return setSwitch(request, env, now);
+  // 1.40 [PAYP-19] 옛 앱 급여 끊기: 저절로(1.40 나간 날)·지금·끊지 않기.
+  if (path === "/old-pay" && (method === "GET" || method === "POST")) return oldPayRoute(request, env, method, now);
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
   // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.

@@ -3,6 +3,7 @@ import { OWNER, Refuse, all, allow, answer, audit, batch, deviceHash, deviceId, 
 import { DAY, HOUR } from "./units.js";
 import { integrityGate } from "./integrity.js";
 import { kstDay, noticeRows, noticeView } from "./usage.js";
+import { oldPayCut, oldPayNotice } from "./old-pay.js";
 // ---- 정식 출시, 프로 이용권, 관리자 휴대폰, 구매 확인 [MON-02][MON-03][MON-06][MON-08][MON-09][MON-10] ----
 
 export const MONEY = {
@@ -81,7 +82,10 @@ export async function launchState(env) {
  */
 export async function config(env) {
   const now = Date.now();
-  const [s, notices] = await Promise.all([launchState(env), noticeRows(env)]);
+  const [s, notices, cut] = await Promise.all([launchState(env), noticeRows(env), oldPayCut(env)]);
+  // 1.40 [PAYP-19] From 1.40's release day an app up to 1.38 hears where its company pay way went (the app picks it by maxApp).
+  const oldPay = oldPayNotice(cut, now);
+  if (oldPay) notices.push(oldPay);
   // The first answer that finds billing on records the launch, if the hourly job has not yet.
   const launchedAt = s.launchedAt ?? (s.billingLive ? await recordLaunch(env, s.store, now) : null);
   return {

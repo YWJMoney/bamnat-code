@@ -476,6 +476,32 @@ internal fun PendingDone(
         value = if (had == null) null else runCatching { payTrial(c, way.text, way.setup, month, calendar) }.getOrNull()
     }
     TrialBeforeAfter(trial)
+    // [PAYP-18] 1.40: the payslip picks the company's version that fits it best and brings its own 기본급, in place of typing it.
+    var picking by rememberSaveable { mutableStateOf(false) }
+    if (wayPickFits(shared, had?.wageType, c.companyApi.enabled)) WayPickCard(onOpen = { picking = true; c.telemetry.event("pay_pick", "open") })
+    if (picking) WayPickSheet(c, company, way, onDismiss = { picking = false }, onUse = { o, slip ->
+        picking = false
+        busy = true
+        error = null
+        scope.launch(kotlinx.coroutines.NonCancellable) {
+            // Another version than the one waiting: it waits in its place, so closing after leaves no '넣지 않았어요' line for the first.
+            if (o.way.setup != way.setup) company.pendingWays.offer(o.way)
+            val use = if (o.way.setup == way.setup) way else o.way
+            val from = if (company.pay.profile.value == null) com.bamnat.core.pay.PaySince.start(month, null) else month
+            // The allowances the payslip named; commit() puts in only those the way brings with no amount yet.
+            val typed = o.profile.items.filter { it.amount.entries.isNotEmpty() }
+                .associate { it.name to it.amount.on(slip.month).value }.filterValues { it > 0 }
+            val ok = runCatching { company.commit(c, use, slip.base ?: 0, null, from, typed) }.getOrDefault(false)
+            busy = false
+            if (!ok) {
+                error = "급여 방식을 넣지 못했어요"
+                return@launch
+            }
+            c.telemetry.event("pay_pick", if (o.way.setup == way.setup) "use_same" else "use_other")
+            company.pay.profile.value?.let { onSaved?.invoke(it) }
+            onDone()
+        }
+    })
     val wage = had?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY
     BaseFields(wage, base, { base = it }, hours, { hours = it }, had, month,
         companyHours = way.hours.takeIf { !shared }, companyName = way.title, keepBase = BaseAsk.keepChip(had, month), hideHours = shared)
