@@ -210,7 +210,10 @@ class PlazaHomeViewModel(
             val next = if (talk.first == null && _state.value.talk != null) _state.value.copy(refreshing = false, stale = true)
                 else stateOf(talk.first, talk.second, r)
             if (!atOnce && talk.first != null) com.bamnat.app.company.NetTimings.end(com.bamnat.app.company.NetTimings.Wait.PLAZA, started)
-            if (_plan.value == p) _state.value = next
+            if (_plan.value == p) {
+                talk.first?.let { fresh -> _older.value = keepBetween(_state.value.talk?.posts.orEmpty(), fresh.posts, _older.value) }
+                _state.value = next
+            }
         }
     }
 
@@ -258,7 +261,25 @@ class PlazaHomeViewModel(
         }
     }
 
-    private companion object {
+    internal companion object {
+        /**
+         * 2.0.0 [RVN-12] COMP-03 After 지난 글 더 보기, a new first page that moved on (new posts on top) no longer holds the old
+         * first page's oldest posts, and [older] starts below them: they went from the screen. Those posts (older than the new
+         * page's oldest, with their answers) go down into [older]; one gone from the server for another reason (newer than that) is
+         * not kept. Nothing changes until older pages were read.
+         */
+        fun keepBetween(before: List<com.bamnat.app.company.TalkPost>, fresh: List<com.bamnat.app.company.TalkPost>,
+            older: List<com.bamnat.app.company.TalkPost>): List<com.bamnat.app.company.TalkPost> {
+            if (older.isEmpty()) return older
+            val ids = fresh.mapTo(HashSet()) { it.id }
+            val newOldest = fresh.filter { it.parent == null && !it.id.startsWith("local-") }.minOfOrNull { it.at } ?: return older
+            val tops = before.filter { it.parent == null && it.id !in ids && !it.id.startsWith("local-") && it.at.isBefore(newOldest) }
+            if (tops.isEmpty()) return older
+            val topIds = tops.mapTo(HashSet()) { it.id }
+            val answers = before.filter { it.parent in topIds && it.id !in ids }
+            return (tops + answers + older).distinctBy { it.id }
+        }
+
         const val STALE_MS = 15_000L
     }
 

@@ -4,6 +4,9 @@ import com.bamnat.app.ui.parts.partSpot
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
+import com.bamnat.app.ui.parts.cellPartInside
+import com.bamnat.app.ui.parts.cellPartOutside
+import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.parts.partStyle
 import com.bamnat.app.ui.parts.partLine
 import com.bamnat.app.ui.parts.shape
@@ -708,16 +711,17 @@ private fun DayCell(
 
     Box(
         modifier
-            .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, paint = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
+            // 2.0.0 [RVS-03] 칸 부품의 바깥(바깥 간격·그림자)·안(채우기·선·투명도·움직임)은 스튜디오 예시 칸과 같은 함수로
+            // (스튜디오 조사 SN-01: 움직임이 바깥 간격·그림자가 있을 때만 그려져 장터 394개 작품의 '오늘 칸 빛'이 안 보였어요).
+            .cellPartOutside(cellPart, partShape)
             .cellEdge(view, cellLook, partShape, scheme.outlineVariant)
-            .clip(partShape)
+            // 2.0.0 [RVS-02] cut as drawn only, so a round cell's corners still open its day (스튜디오 조사 SN-02).
+            .drawClip(partShape)
             // [MAT-01] 1.36 칸 채우기 under the day's wash; a shader moves only in today's cell (a month of moving cells is too much).
             .fillWith(cellLook?.fill, alpha = cellFillAlpha(cellLook), animate = isToday)
             .background(tint ?: Color.Transparent)
-            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour.
-            .then(run { cellPart.paint?.let { Modifier.fillWith(it, alpha = (cellPart.fillA ?: 100) / 100f, animate = isToday) } ?: cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
-            .then(run { Modifier.partLine(cellPart, partShape) })
-            .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
+            // [MAT-01] 부품 채우기 (그라데이션·무늬·질감·유리·셰이더) over the plain colour, its line, 투명도 and 2.0.0 [RVS-03] 움직임.
+            .cellPartInside(cellPart, partShape, isToday, isSelected)
             .decor(com.bamnat.core.recipe.Decor.CELL, decorDay, date = day.date)
             .then(
                 when {
@@ -1343,6 +1347,10 @@ internal fun CustomCellBody(
                     fontWeight = dp.weight?.let { FontWeight(it) } ?: if (isToday) FontWeight.ExtraBold else if (l?.dateBold == false) FontWeight.Normal else if (l?.dateBold == true) FontWeight.Bold else FontWeight.SemiBold,
                     fontSize = size, lineHeight = size, maxLines = 1,
                     color = when {
+                        // 2.0.0 [PC-62] 야간 회복 스테이션 (오늘 숫자가 분홍색으로 하늘색 동그라미 위에): a date colour of the blueprint (요일·조건부)
+                        // that does not read on the date's own round (오늘) gives way to the letters that do (3:1 at least).
+                        dp.ink != null && chip.alpha >= 0.5f && com.bamnat.core.layout.Contrast.ratio(dp.ink!!, chip.copy(alpha = 1f).toArgb().toLong() and 0xFFFFFFFFL) < 3.0 ->
+                            com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
                         dp.ink != null -> Color(dp.ink!!.toInt())
                         // [BLU-05] A fill the blueprint gives the date brings letters that read on it (PC 1차: 노랑 위 흰 글자).
                         dp.fillColor != null && chip.alpha >= 0.5f -> com.bamnat.app.ui.components.contentColorOn(chip.copy(alpha = 1f))
@@ -1499,7 +1507,9 @@ internal fun cellFillAlpha(look: com.bamnat.core.recipe.CellLook?): Float = if (
 
 /** [MAT-01] What a cell's fill reads as (for the date's ink), when it is strong enough to matter. */
 internal fun cellFillGround(look: com.bamnat.core.recipe.CellLook?): Color? = look?.fill?.average?.let { Color(it.toInt()) }
-    ?.copy(alpha = cellFillAlpha(look))?.takeIf { it.alpha >= 0.5f }
+    // 2.0.0 [PC-33] 야간 회복 스테이션 (야간 칸의 '11h'가 어두워 안 읽혀요): a fill of see-through colours (10~40 of 255) is that see-through
+    // on the cell too, so its own alpha counts; it used to be taken as solid and the lines read in black on what is a dark cell.
+    ?.let { it.copy(alpha = it.alpha * cellFillAlpha(look)) }?.takeIf { it.alpha >= 0.5f }
 
 /** [FREE-01] A cell's corners by its look, else 달력 모양's. */
 internal fun cellShape(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): androidx.compose.ui.graphics.Shape =

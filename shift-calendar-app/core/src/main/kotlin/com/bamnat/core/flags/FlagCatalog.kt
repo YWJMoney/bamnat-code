@@ -48,6 +48,10 @@ object FlagCatalog {
     const val RECIPE_BROWSE = "recipe.browse"
     /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
     const val RECIPE_PUBLISH = "recipe.publish"
+    /** 2.0.0 [RVM-21] MKT-32: the 장터 cards' small fonts come from our public files (GitHub Pages), once 처리방침 3.13 names it. */
+    const val CARD_FONTS = "market.cardfonts"
+    /** 2.0.0 [RVM-21] The 처리방침 판 whose 7-day line names where the card fonts come from (총괄 11-12: 게시일 + 7일). */
+    const val CARD_FONT_POLICY = "3.13"
     /** 1.34 [RCP-37] 좋아요·안좋아요 (with a reason) on recipes and their talk, once 3.8 names it. */
     const val RECIPE_VOTE = "recipe.vote"
     /** 1.34 [RCP-37] Writing in a recipe's talk, and (1.35) 요청 판·구독, once 3.8 names it. */
@@ -308,6 +312,20 @@ object FlagCatalog {
         conditions = emptyList(), default = true, since = "1.34.0", group = FlagGroup.SERVER,
     )
 
+    /**
+     * 2.0.0 [RVM-21] MKT-32 (사용자 카드 11-12 '우리 쪽에서 글꼴 내주기'): the 장터 cards' small fonts (letters of the cards only) come
+     * from our public files, checked by sha256. Asking our GitHub Pages is a new place the phone reaches, named in 처리방침 3.13's 7-day
+     * line, so it waits for that version's effective day; until then the cards draw in the phone's fonts as before 2.0.0 (총괄 11-12).
+     */
+    val CARD_FONTS_FLAG = Flag(
+        CARD_FONTS, "장터 카드 글꼴 받기",
+        what = "장터 목록·작품 상세·예시로 보기에서 작품 카드의 글꼴을 밤낮 공개 자료(GitHub Pages)에서 받아요. 카드 글자만 담은 작은 글꼴이고, 앱에 적힌 sha256과 같을 때만 써요. 한 번 받으면 휴대폰에 남아요.",
+        whyOff = "처리방침 3.13의 시행일(게시일 + 7일)부터 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.13 날짜를 넣으면 그날부터예요. 그 전에는 카드를 휴대폰 글꼴로 그리고 공개 자료에 묻지 않아요.",
+        basis = Basis(policy = "3.13", requirement = "RVM-21", note = "2.0.0 장터 카드 글꼴(MKT-32)"),
+        conditions = listOf(Condition.Date(policy = CARD_FONT_POLICY), Condition.Policy(CARD_FONT_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
     private fun recipeLegal(key: String, name: String, what: String, req: String) = Flag(
         key, name, what = what,
         whyOff = "정식 출시일(처리방침 3.9가 3.8(1-4항)을 앞당긴 날)부터 저절로 켜져요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 레시피를 보고 적용하는 것만 돼요.",
@@ -552,7 +570,7 @@ object FlagCatalog {
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG) +
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, CARD_FONTS_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

@@ -209,6 +209,29 @@ object FxPro {
     /** "값 칸·단추 위젯·빠른 설정·바로가기" for the 장터 card and the 프로 문 line. */
     fun say(parts: Collection<Part>): String = parts.joinToString(" · ") { it.label }
 
+    /**
+     * [RVM-12] PC-59 (작품 카드·상세의 프로 줄이 만든 사람 말투): what a work's ✦ parts do, in the words of the one who uses it, the
+     * parts that do one thing for them told once (값 칸·값 더하기·값 기록 are all '숫자 세기').
+     */
+    enum class Plain(val label: String, val parts: Set<Part>) {
+        HOME("홈 화면 단추", setOf(Part.OUTSIDE)),
+        NOTICE("알림 단추", setOf(Part.NOTIFY_BUTTONS)),
+        AUTO("자동 기록", setOf(Part.CHAIN, Part.VALUE_RULE, Part.TIME, Part.REACH)),
+        COUNT("숫자 세기", setOf(Part.VALUES, Part.VALUE_ACT, Part.VALUE_READ, Part.HISTORY)),
+        LOOK("새 화면 모양", setOf(Part.LOOK)),
+        LINK("근무·수면 연동", setOf(Part.LINK)),
+        ;
+        companion object {
+            fun of(parts: Collection<Part>): List<Plain> = entries.filter { p -> parts.any { it in p.parts } }
+        }
+    }
+
+    /** [RVM-12] "홈 화면 단추 · 알림 단추 · 자동 기록": at most [max] in the user's words, ' 등' when there are more. */
+    fun plain(parts: Collection<Part>, max: Int = 3): String {
+        val all = Plain.of(parts)
+        return all.take(max).joinToString(" · ") { it.label } + if (all.size > max) " 등" else ""
+    }
+
     /** How many buttons and rules of [l] rest (or lose their 알림 단추) without 프로 (for "프로가 끝나 2개가 쉬고 있어요"). */
     fun resting(l: Logic): Int = l.buttons.count { parts(l, it).isNotEmpty() } + l.rules.count { parts(l, it).isNotEmpty() }
 
