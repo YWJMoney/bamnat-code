@@ -373,6 +373,35 @@ async function seedMaterials(here, admin) {
 }
 if (args.includes("--market")) await seedMarket();
 
+/**
+ * 2.0.0 [HQ-47] The real server recorded the 정식 출시 at 2026-11-12 00:17 KST and 무료·프로 have been apart since. This local one stays
+ * as before 출시, every feature open (사용자 2026-11-12 20:32 KST: 시험은 모든 기능을 기반으로 동작해야 하므로 유지, 실 배포 버전만 정상적으로).
+ * --launched is only for looking at what the released app shows a phone without 프로: the same 출시 moment and both Play checks
+ * confirmed as the developer does in 기능 관리, so a phone installed after it has no 프로 and one installed before has its 감사 1개월.
+ * Needs ADMIN_PASSWORD. Not for the everyday PC 확인, and the app's round-trip tests start the server without it.
+ */
+const REAL_LAUNCH = Date.parse("2026-11-11T15:17:42.082Z");
+async function launch() {
+  const login = await worker.fetch(new Request(`http://localhost:${port}/api/admin/login`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.31" },
+    body: JSON.stringify({ password: env.ADMIN_PASSWORD }),
+  }), env);
+  if (!login.ok) return console.log("--launched: ADMIN_PASSWORD가 있어야 출시 상태로 맞춰요.");
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  // Before the checks: the first moment billing is on is written down once (recordLaunch), and the real one is the one to keep.
+  await env.DB.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('launched_at', ?)").bind(String(REAL_LAUNCH)).run();
+  for (const name of ["play.production", "play.subscription"]) {
+    const r = await worker.fetch(new Request(`http://localhost:${port}/api/admin/checks/${name}`, {
+      method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie },
+      body: JSON.stringify({ done: true, note: "로컬 시험 서버: 실서버와 같게" }),
+    }), env);
+    if (!r.ok) return console.log(`--launched: ${name} 확인이 안 됐어요(${r.status}).`);
+  }
+  const config = await worker.fetch(new Request(`http://localhost:${port}/api/config`), env).then((r) => r.json());
+  console.log(`--launched: 결제 ${config.billingLive ? "켜짐(무료·프로가 나뉘어요)" : "아직 꺼짐(기능 관리 › 결제의 조건을 봐 주세요)"}, 정식 출시 ${config.launchedAt ?? "기록 없음"}`);
+}
+if (args.includes("--launched")) await launch();
+
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.
 const testClock = args.includes("--test-clock");
