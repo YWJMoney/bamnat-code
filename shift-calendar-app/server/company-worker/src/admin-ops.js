@@ -1,6 +1,7 @@
 import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, stmt } from "./index.js";
 import { DEV, actorName, devEvent } from "./inquiries.js";
-import { ROW_WHERE, WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
+import { signalsOfDev } from "./observe.js";
+import { ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
 import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
@@ -35,6 +36,8 @@ export function opsArea(path) {
   if (path.startsWith("/watch/") || path === "/money" || path.startsWith("/money/") || path === "/data-requests" || path.startsWith("/data-requests/")
     || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/") || path === "/security") return "owner";
   if (path === "/person") return "inquiries";
+  // 2.0.0 [RVA-52] 관리자 앱 화면 오류 알리기: 로그인한 누구나(화면 이름·빌드·오류 첫 줄뿐).
+  if (path === "/screen-error") return null;
   if (path === "/release" || path.startsWith("/release/")) return "ops";
   if (path === "/health/versions" || path === "/changes") return "metrics";
   if (path === "/reviews" || path.startsWith("/reviews/")) return "inquiries";
@@ -227,6 +230,12 @@ export async function story(env, id) {
     ev.push({ at: h.at, kind: h.action, text: `${what} · ${h.actor}` });
   }
   if (ship) ev.push({ at: ship.at, kind: "ship", text: `${ship.target} 판이 나감` });
+  // 2.0.0 [RVA-54] 검토 I23c-03: 이 개발사항을 만든 개선 신호의 걸음(뜬 날·숫자가 돌아온 날·그대로라 다시 대기열에 온 날)도 한 줄에.
+  for (const s of await signalsOfDev(env, id).catch(() => [])) {
+    if (s.first) ev.push({ at: s.first, kind: "signal", text: `개선 신호가 뜸 · ${String(s.title).slice(0, 60)}` });
+    if (s.cleared) ev.push({ at: s.cleared, kind: "back", text: `숫자가 돌아옴 · ${s.value ?? "—"}${s.unit ?? ""} → ${s.after ?? "—"}${s.unit ?? ""}` });
+    if (s.stuck && s.prevDev === id) ev.push({ at: s.stuck, kind: "stuck", text: "닿고 2주가 지나도 숫자가 그대로라 신호가 다시 대기열에" });
+  }
   ev.sort((a, b) => a.at - b.at);
   return { id: item.id, title: item.title, status: item.status, releasedIn: item.released_in, events: ev,
     days: ev.length ? Math.round(((ev.at(-1).at - ev[0].at) / DAY) * 10) / 10 : 0 };
@@ -256,6 +265,16 @@ export async function morningExtra(env, now = Date.now()) {
 export async function opsRoute(request, env, url, path, method, now, vitals) {
   const actor = env.actor;
   if (path === "/watch/health" && method === "GET") return json(await healthBoard(env, now));
+  // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱이 화면 오류·빈 화면을 알려요. 한 관리자가 한 시간에 30번까지(그 뒤는 조용히 버려요).
+  if (path === "/screen-error" && method === "POST") {
+    const body = await readJson(request, 2048);
+    const hour = Math.floor(now / HOUR);
+    const n = await one(env, `INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2) ON CONFLICT (key) DO UPDATE SET count = count + 1 RETURNING count`,
+      `screenerr|${actor?.id ?? "?"}|${hour}`, (hour + 2) * HOUR).catch(() => null);
+    if ((n?.count ?? 1) > SCREEN_ERROR.perHour) return json({ ok: false, limited: true }, 202);
+    await recordScreenError(env, { screen: body?.screen, where: body?.where, kind: body?.kind, message: body?.message }, now, body?.build);
+    return json({ ok: true }, 202);
+  }
   if (path === "/watch/speed" && method === "GET") return json(await speedState(env, now, Math.min(168, Number(url.searchParams.get("hours")) || 24)));
   if (path === "/watch/errors" && method === "GET") return json(await errorState(env, now, { status: url.searchParams.get("status") ?? "open" }));
   let m = path.match(/^\/watch\/errors\/([a-z0-9]{1,13})$/);

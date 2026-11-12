@@ -984,6 +984,24 @@ details.card.loop-fold[open]>summary{margin-bottom:.6rem}
 /* 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 넘긴 줄은 빨간 띠·칩 대신 '기한 넘김 N' 머리 하나, 줄의 칸은 굵은 보통 글자('넘음'·'넘김'은 글로) */
 .pill.late{background:transparent;border-color:transparent;color:var(--fg);font-weight:800;padding-inline:0}
 .seg .n.warm{color:var(--warn)}
+.mh{display:grid;gap:.75rem}
+.mh-head p{margin:0}
+.mh-form{display:grid;gap:.5rem;margin-top:.5rem}
+.mh-form .hint{margin:0}
+.mh-sum{display:flex;flex-wrap:wrap;align-items:baseline;gap:.25rem .75rem;font-size:1.05rem}
+.mh-rows>li.lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;padding:.5rem .85rem;background:var(--soft)}
+.mh-rows>li.lg-group small{font-size:min(.8rem,16px);color:var(--muted)}
+.sig-steps{display:flex;flex-wrap:wrap;gap:.25rem .5rem;margin:.5rem 0 0;padding:0;list-style:none;font-size:.82rem}
+.sig-steps li{display:inline-flex;align-items:baseline;gap:.25rem;color:var(--muted)}
+.sig-steps li+li::before{content:"›";color:var(--muted);margin-inline-end:.25rem}
+.sig-steps li.done{color:var(--fg)}
+.sig-steps li.done>span{font-weight:600}
+.sig-steps li.todo>span{opacity:.75}
+.sig-steps li.ok>span{color:var(--ok)}
+.sig-steps li.warn>span{color:var(--warn)}
+.sig-steps small{color:var(--muted)}
+.sig-flow{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}
+.sig-flow>li>a{color:var(--fg);text-decoration:none}
 .due-late{color:var(--fg);font-weight:800}
 .rows.ledger>li.lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;padding:.5rem .85rem;background:var(--soft)}
 .rows.ledger>li.lg-group small{font-size:min(.8rem,16px);color:var(--muted)}

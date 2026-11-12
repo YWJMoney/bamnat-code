@@ -1,4 +1,4 @@
-import { audit, batch, can, json, one, playVitals, randomId, readJson, refuse, run, stmt } from "./index.js";
+import { all, audit, batch, can, json, one, playVitals, randomId, readJson, refuse, run, stmt } from "./index.js";
 import { DEV, actorName, devEvent, plainText } from "./inquiries.js";
 import { playReady, playToken } from "./money.js";
 import { serverEval, flagStore } from "./flags.js";
@@ -7,6 +7,7 @@ import { retention } from "./glance.js";
 import { MISS_PLACES } from "./growth.js";
 import { shipCode, shippedVersion } from "./desk.js";
 import { DAY, HOUR } from "./units.js";
+import { EFFECT, reachedAt } from "./loop.js";
 
 // ---- 1.39 [OBS2-01~08] 관측: 앱 전체 사용자의 유입·활성·이탈·품질과, 거기서 찾은 개선 신호 ----
 //
@@ -31,6 +32,9 @@ import { DAY, HOUR } from "./units.js";
 
 export const OBS = {
   days: 28,
+  /** 2.0.0 [RVA-52][RVA-53] 화면 오류·분류 고칠 것 신호는 많은 것부터 이만큼. */
+  screenSignals: 5,
+  askMissSignals: 5,
   /** 1.39 [OBS2-08] 유형별 흐름·기능과 머묾은 61일(30일째 머묾과 30일 창이 끝난 날까지). */
   longDays: 61,
   /** [OBS2-09] Play 권한은 저장한 뒤 퍼지는 데 하루까지 걸려요: 처음 막힌 뒤 이만큼은 '기다리는 것'으로. */
@@ -521,6 +525,22 @@ export function obsRules(b) {
       title: `'${m.word}'를 찾았는데 없었어요 ${m.n}번(${m.placeName ?? m.place})`, why: "사용자가 직접 찾다가 못 찾은 말이에요. 기능이 없거나, 있는데 이름이 달라요.",
       dev: `'${m.word}' 찾기 길 만들기(없으면 기능, 있으면 이름·검색어)`, to: "#/growth" });
   }
+  // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱 화면 오류는 한 번이어도 신호예요(그 화면이 누구에게나 깨져 있을 수 있어요).
+  for (const x of b.screen ?? []) {
+    push({ kind: "screen-error", subject: x.sig, value: x.n, base: 0, better: "down", unit: "번", on: x.n >= 1, sample: x.n,
+      caveat: "관리자 앱이 스스로 알린 것만 세요(화면 이름·빌드·오류 첫 줄).",
+      title: `관리자 앱 '${x.screen}' 화면 오류 ${x.n}번(7일): ${x.message}`,
+      why: "화면이 오류로 멈추거나 비어 보였어요. 서버 오류가 아니라 전에는 아무 데도 안 잡혔어요.",
+      dev: `관리자 앱 ${x.screen} 화면 오류 고치기: ${x.message}`.slice(0, 100), to: "#/errors" });
+  }
+  // 2.0.0 [RVA-53] 검토 I24c-03: 거짓 맞음이 많은 말은 '분류 고칠 것'. 고치는 곳은 src/ask-check.js의 식과 test/ask-corpus.json 예문.
+  for (const m of b.askMiss ?? []) {
+    push({ kind: "ask-miss", subject: `${m.kind}:${m.word}`, value: m.n, base: 3, better: "down", unit: "번", on: m.n >= 3 * t("ask-miss"), sample: m.n,
+      caveat: "관리자가 '판정이 틀렸어요'·'아니에요'로 뺀 것만 세요. 같은 문의를 여러 번 빼도 세요.",
+      title: `분류 고칠 것: ${m.word ? `‘${m.word}’` : "말 없이"} ${m.kindName}로 잘못 잡힌 것 ${m.n}번(30일)`,
+      why: "낱말 식은 쓸수록 틀린 곳이 드러나요. 그 말이 든 예문을 장부(test/ask-corpus.json)에 넣고 식(src/ask-check.js)을 고쳐요.",
+      dev: `분류 고칠 것: ${m.word ? `‘${m.word}’` : m.kindName} 낱말 식과 예문 다듬기`, to: "#/inquiries" });
+  }
   // 2.0.0 [RVQ-15] 검토 SRV-20: 사용 통계(누구나 보낼 수 있음)와 서버가 센 요청에서 나온 신호는 꾸밀 수 있는 숫자라, Play 숫자(꾸밀 수 없음)와
   // 맞춰 봐요. Play의 하루 사용자가 같은 주에 그대로(±15%)면 '맞춰 보면 Play는 그대로'를 붙이고 사람이 확인해야 개발사항이 돼요.
   const pw = a?.play?.length ? obsWindow(a.play.map((d) => d.n), 7, 7) : null;
@@ -791,8 +811,13 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     stmt(env, `SELECT COUNT(*) AS n, AVG(stars) AS stars, SUM(CASE WHEN at >= ? THEN 1 ELSE 0 END) AS week FROM store_reviews`, now - 7 * DAY),
     stmt(env, `SELECT id, title FROM dev_items WHERE deleted_at IS NULL AND status IN ('doing', 'done') AND COALESCE(events, '') = '' ORDER BY updated_at DESC LIMIT 5`),
     stmt(env, `SELECT COUNT(*) AS n FROM dev_items WHERE deleted_at IS NULL AND status IN ('doing', 'done') AND COALESCE(events, '') = ''`),
-  ]).catch(() => null))?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}]];
-  const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount] = q;
+    // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱이 알린 화면 오류(7일, 고친 것 빼고).
+    stmt(env, `SELECT g.sig, g.route, g.message, SUM(d.count) AS n FROM error_groups g JOIN error_days d ON d.sig = g.sig
+      WHERE g.route LIKE 'screen/%' AND g.status IN ('new', 'again', 'seen') AND d.day >= ? GROUP BY g.sig ORDER BY n DESC LIMIT ${OBS.screenSignals}`, kstDay(now - 7 * DAY)),
+    // 2.0.0 [RVA-53] 검토 I24c-03: 관리자가 '판정이 틀렸어요'·'아니에요'로 뺀 문장의 걸린 말(30일).
+    stmt(env, "SELECT detail FROM audit WHERE action = 'ask_miss' AND at >= ? ORDER BY id DESC LIMIT 500", now - 30 * DAY),
+  ]).catch(() => null))?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}], [], []];
+  const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount, screenRows = [], missAsk = []] = q;
   const cfg = new Map(configRows.map((r) => [r.day, r.n ?? 0]));
   const sample = new Map(usageRows.map((r) => [r.day, r.phones ?? 0]));
   const sampleSeries = days.map((d) => sample.get(d) ?? 0);
@@ -839,12 +864,37 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     kinds,
     keep,
     disc: obsDisc(eventRows.filter((r) => r.day >= from14)),
+    screen: screenRows.map((r) => ({ sig: r.sig, screen: String(r.route).slice("screen/".length), message: r.message, n: r.n ?? 0 })),
+    askMiss: obsAskMiss(missAsk),
     tune: await obsTune(env),
   };
   board.found = obsRules(board);
-  board.signals = stored;
+  // 2.0.0 [RVA-54] 개발사항으로 이어진 신호는 한 줄 걸음(뜸 → 개발사항 → 닿음 → 돌아옴)과 함께.
+  const devInfo = await obsDevInfo(env, stored.map((s) => s.devId ?? s.prevDev));
+  board.signals = stored.map((s) => (s.devId || s.prevDev ? { ...s, steps: signalSteps(s, devInfo.get(s.devId ?? s.prevDev), now) } : s));
   board.gaps = obsGaps(board);
   return board;
+}
+
+/**
+ * 2.0.0 [RVA-53] 검토 I24c-03 '분류 식을 장부가 스스로 다듬기': ask_miss 기록(`owner:<까닭> '<말>'` 또는 `billing '<말>'`)을 걸린 말마다 세요.
+ * 많이 틀린 말부터. 말이 비었으면(옛 기록) 까닭 이름만으로 묶어요.
+ */
+const ASK_MISS_NAMES = { money: "환불·결제", law: "법·안전", privacy: "개인정보", angry: "크게 화남", terms: "약관", company: "회사 방식", security: "보안", human: "사람이냐",
+  billing: "결제·환불 기록" };
+export function obsAskMiss(rows) {
+  const by = new Map();
+  for (const r of rows ?? []) {
+    const m = /^(?:owner:([a-z]+)|(billing)|owner)(?:\s+'([^']*)')?/.exec(String(r.detail ?? ""));
+    if (!m) continue;
+    const kind = m[1] ?? m[2] ?? "owner";
+    const word = (m[3] ?? "").trim();
+    const k = `${kind}|${word}`;
+    const x = by.get(k) ?? { kind, kindName: ASK_MISS_NAMES[kind] ?? "최고 관리자 확인", word, n: 0 };
+    x.n++;
+    by.set(k, x);
+  }
+  return [...by.values()].sort((a, b) => b.n - a.n).slice(0, OBS.askMissSignals);
 }
 
 /** 2.0.0 [RVN-15] 검토 SVC-86: usage_events의 진입(life_new)·다음 날(life_d1) 줄로 처음 연 다음 날 다시 연 비율(glance retention과 같은 셈). */
@@ -870,11 +920,98 @@ export function obsDisc(rows) {
   return { shown, tried: sum("disc_try"), later: sum("disc_later"), off: sum("disc_off"), tryRate: pct(sum("disc_try")), offRate: pct(sum("disc_off")) };
 }
 
+/**
+ * 2.0.0 [RVA-54] 검토 I23c-03 '숫자 → 개발 → 효과 한 줄': 개발사항이 된 신호마다 신호가 뜬 날 · 개발사항이 된 날 · 고친 판이 닿은 날 ·
+ * 숫자가 돌아온 날(또는 2주가 지나도 그대로라 다시 대기열에 온 날)을 이어요. 개발사항 번호들의 상태·판·닿은 날을 한 번에 읽어요.
+ */
+const DEV_INFO_COLS = "id, title, status, released_in, route, live_at, created_at, effect";
+const SHIPS_SQL = "SELECT target AS v, MIN(at) AS at FROM audit WHERE action = 'shipped_version' GROUP BY target";
+function devInfoFrom(rows, ships) {
+  const order = (ships ?? []).filter((s) => s.v).sort((a, b) => a.at - b.at);
+  return new Map((rows ?? []).map((d) => [d.id, { ...d, reached: d.status === "done" ? reachedAt(d, order) : null }]));
+}
+async function obsDevInfo(env, ids) {
+  const want = [...new Set(ids.filter(Boolean))].slice(0, 90);
+  if (!want.length) return new Map();
+  const [rows, ships] = await Promise.all([
+    all(env, `SELECT ${DEV_INFO_COLS} FROM dev_items WHERE id IN (${want.map(() => "?").join(",")})`, ...want).catch(() => []),
+    all(env, SHIPS_SQL).catch(() => []),
+  ]);
+  return devInfoFrom(rows, ships);
+}
+
+export function signalSteps(s, d, now = Date.now()) {
+  const devId = s.devId ?? s.prevDev ?? null;
+  const steps = [{ key: "seen", name: "신호가 뜸", at: s.first ?? s.at ?? null }];
+  steps.push({ key: "dev", name: devId ? `개발사항 ${devId}` : "개발사항이 됨", at: d?.created_at ?? null });
+  steps.push({ key: "ship", name: d?.released_in ? `${d.released_in} 닿음` : "고친 것이 닿음", at: d?.reached ?? null });
+  if (s.cleared) steps.push({ key: "back", name: "숫자가 돌아옴", at: s.cleared, tone: "ok" });
+  else if (s.stuck) steps.push({ key: "stuck", name: "2주가 지나도 그대로 · 다시 대기열", at: s.stuck, tone: "warn" });
+  else {
+    const due = d?.reached ? d.reached + EFFECT.days * DAY : null;
+    steps.push({ key: "wait", name: due ? `숫자 돌아오길 기다림(${Math.max(0, Math.ceil((due - now) / DAY))}일 남음)` : "숫자 돌아오길 기다림", at: null });
+  }
+  return steps;
+}
+
+/**
+ * [RVA-54] 오늘 화면의 '숫자 → 개발 → 효과': 오늘의 한 batch에 같이 읽는 세 줄(신호 목록, 신호가 가리키는 개발사항, 나간 판)이라
+ * 오늘을 여는 데 DB 왕복이 늘지 않아요.
+ */
+export const SIGNAL_FLOW_SQL = {
+  flowSignals: ["SELECT value FROM settings WHERE key = 'obs_signals'"],
+  // 망가진 신호 글이어도 batch가 넘어지지 않게 json_valid가 아니면 빈 목록.
+  flowDev: [`SELECT ${DEV_INFO_COLS} FROM dev_items WHERE id IN (SELECT COALESCE(json_extract(j.value, '$.devId'), json_extract(j.value, '$.prevDev'))
+    FROM json_each((SELECT value FROM settings WHERE key = 'obs_signals' AND json_valid(value)), '$.list') j) LIMIT 200`],
+  flowShips: [SHIPS_SQL],
+};
+
+/** 개발사항으로 이어진 신호(열린 것, 다시 대기열에 온 것, 2주 안에 좋아진 것) 다섯까지, 걸음과 함께. */
+export function signalFlowFrom(got, now = Date.now()) {
+  let stored = [];
+  try {
+    stored = got.flowSignals?.[0] ? JSON.parse(got.flowSignals[0].value).list ?? [] : [];
+  } catch {
+    stored = [];
+  }
+  const list = stored.filter((s) => (s.devId || s.prevDev) && s.state !== "dismiss" && (!s.cleared || now - s.cleared < 14 * DAY))
+    .sort((a, b) => Number(Boolean(b.stuck && !b.devId)) - Number(Boolean(a.stuck && !a.devId)) || (b.last ?? 0) - (a.last ?? 0)).slice(0, 5);
+  const info = devInfoFrom(got.flowDev, got.flowShips);
+  return list.map((s) => ({ key: s.key, title: s.title, to: s.to ?? "#/glance", devId: s.devId ?? null, prevDev: s.prevDev ?? null, stuck: Boolean(s.stuck && !s.devId),
+    cleared: s.cleared ?? null, steps: signalSteps(s, info.get(s.devId ?? s.prevDev), now) }));
+}
+
+/** [RVA-54] 개발사항 이야기에 들어가는 그 개발사항의 신호들. */
+export async function signalsOfDev(env, id) {
+  return (await obsStored(env)).filter((s) => s.devId === id || s.prevDev === id);
+}
+
+/**
+ * [RVA-54] 고친 것이 닿고 2주가 지나도 숫자가 돌아오지 않은 신호는 저절로 다시 대기열에(새로 · 고쳤는데 그대로). 앞 개발사항은 prevDev로 남고
+ * 새 개발사항으로 다시 넘길 수 있어요. 바뀐 수.
+ */
+export async function obsStuck(env, list, now) {
+  const open = list.filter((s) => s.state === "dev" && s.devId && !s.cleared);
+  if (!open.length) return 0;
+  const info = await obsDevInfo(env, open.map((s) => s.devId));
+  let n = 0;
+  for (const s of open) {
+    const d = info.get(s.devId);
+    if (!d?.reached || d.reached + EFFECT.days * DAY > now) continue;
+    Object.assign(s, { prevDev: s.devId, devId: null, state: "new", stuck: now, at: now });
+    await audit(env, now, "obs_signal", s.title.slice(0, 80), `고쳤는데 2주가 지나도 그대로 · 다시 대기열(${s.prevDev})`).catch(() => {});
+    n++;
+  }
+  return n;
+}
+
 /** 매시 작업 [OBS2-04]: 관측 판을 다시 읽어 신호를 합쳐 둬요. 새로 생긴 신호 수. */
 export async function observeTick(env, now = Date.now()) {
   const b = await observe(env, now);
   const before = new Set(b.signals.map((s) => s.key));
   const list = obsMerge(b.signals, b.found, now);
+  // 2.0.0 [RVA-54] 닿고 2주가 지나도 그대로인 신호는 다시 대기열에.
+  await obsStuck(env, list, now);
   await obsSave(env, list);
   return list.filter((s) => !before.has(s.key)).length;
 }

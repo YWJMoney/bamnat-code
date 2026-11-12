@@ -224,6 +224,21 @@ export function rowTroubleRows(rows) {
   });
 }
 
+/**
+ * 2.0.0 [RVA-52] 검토 I24c-02 '화면 자체가 시험': 관리자 앱이 화면 오류(그리다 난 오류·잡히지 않은 오류)와 빈 화면(본문 글자 0)을 스스로 알려요.
+ * 오류 묶음의 주소 칸 `screen/<화면>`. 남기는 것은 화면 이름(경로 이름)·어디(줄 그리기 등)·관리자 앱 빌드·오류 첫 줄뿐이에요(errorLine이 따옴표 안·긴 숫자를 지워요).
+ * 화면의 글·사람 정보는 보내지도 남기지도 않아요. ADMX-02 같은 빈 화면은 서버 오류가 아니라 전에는 아무 데도 안 잡혔어요.
+ */
+export const SCREEN_ERROR = { perHour: 30, where: /^[a-z][a-z0-9-]{0,29}$/ };
+
+export async function recordScreenError(env, { screen, where = "", kind = "error", message = "" }, now = Date.now(), build = "") {
+  if (!env?.DB) return;
+  const name = SCREEN_ERROR.where.test(screen ?? "") ? screen : "unknown";
+  const at = SCREEN_ERROR.where.test(where ?? "") ? where : "";
+  const line = kind === "blank" ? "빈 화면(본문 글자 0)" : String(message || "오류");
+  await addError(env, `screen/${name}`, { message: `${at ? `[${at}] ` : ""}${line}`, stack: "" }, now, String(build ?? "").slice(0, 20));
+}
+
 async function addError(env, route, e, now, app = "") {
   const line = errorLine(e);
   const sig = sigOf(route, line);

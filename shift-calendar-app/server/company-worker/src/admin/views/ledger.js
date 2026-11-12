@@ -129,7 +129,7 @@ export function ledgerViews(A) {
         <p class="meta">오류 원문: <code class="mono">${esc(r.unreadable)}</code></p>`);
     }
     if (r.text) parts.push(`<blockquote class="lg-text">${esc(r.text)}</blockquote>`);
-    const meta = [r.kindName, r.topicName, r.path ? `화면 [${r.path}]` : "", r.app ? `앱 ${r.app}` : "", r.model, `${moment(r.at)}에 들어옴`, r.handedIn ? `넘김 묶음 ${r.handedIn}` : "",
+    const meta = [r.kindName, r.stars ? `별 ${r.stars}개` : "", r.topicName, r.path ? `화면 [${r.path}]` : "", r.app ? `앱 ${r.app}` : "", r.model, `${moment(r.at)}에 들어옴`, r.handedIn ? `넘김 묶음 ${r.handedIn}` : "",
       r.skipped ? `정리함에서 뺌 ${moment(r.skipped.at)}${r.skipped.back ? " · 7일이 지나 다시 왔어요" : " · 7일 뒤 아직 답이 없으면 다시 와요"}` : ""].filter(Boolean);
     parts.push(`<p class="meta">${meta.map(esc).join(" · ")}</p>`);
     if (r.summary) parts.push(`<p class="meta">요약: ${esc(r.summary)}${r.summaryBy ? ` (${esc(r.summaryBy)})` : ""} · 원문 첫 문장: ${esc(r.title)}</p>`);
@@ -142,7 +142,11 @@ export function ledgerViews(A) {
       parts.push(`<p class="lg-block"><b>묶음</b> <a href="${href("dev", r.bundle.id)}">${esc(r.bundle.title)}</a> · ${esc(r.bundle.statusName)}${r.bundle.releasedIn ? ` ${esc(r.bundle.releasedIn)}${r.bundle.out ? " (나감)" : " (출시 전)"}` : ""} · 묶인 문의 ${r.bundle.asks}건${r.bundle.told ? " · 나왔다고 알림" : ""}</p>`);
     }
     if (r.answer?.key === "owner") parts.push(`<p class="note warn">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
-    if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
+    // 2.0.0 [RVA-50] 스토어 리뷰: 초안은 여기서 보이고, Play로 보내기는 최고 관리자가 스토어 리뷰 화면에서 해요.
+    if (r.answer?.key === "draft") {
+      parts.push(`<p class="lg-block"><b>답 초안</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
+        <p class="meta">${S.me?.owner ? "스토어 리뷰 화면에서 고쳐 Play로 보내요." : "Play로 보내기는 최고 관리자가 해요."}</p>`);
+    } else if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
     // 정리함의 처리 [DESK-03]: 서버가 미리 쓴 답을 고쳐 보내거나, 개발사항에 묶거나, 새 개발사항으로 넘기거나, 빼 두기.
     if (r.sort && editAsk && !r.closed) {
       const k = r.sort.pile;
@@ -330,7 +334,9 @@ export function ledgerViews(A) {
 
   async function sortApply(actions, done) {
     const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (x) => [x.replied && `답 ${x.replied}건`, x.linked && `묶음 ${x.linked}건`,
-      x.created?.length && `개발사항 ${x.created.length}개`, x.reopened && `다시 접수 ${x.reopened}개`, x.skipped && `빼 둠 ${x.skipped}건`].filter(Boolean).join(" · ") || done);
+      x.created?.length && `개발사항 ${x.created.length}개`, x.reopened && `다시 접수 ${x.reopened}개`, x.skipped && `빼 둠 ${x.skipped}건`,
+      // [RVA-51] 보내는 문에 걸린 답은 같은 말로.
+      x.held && `‘사람이 보내야 해요’로 멈춘 답 ${x.held}건(문의에서 읽고 보내요)`].filter(Boolean).join(" · ") || done);
     if (r) { S.data.handoff = null; load(); }
   }
 

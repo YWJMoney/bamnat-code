@@ -3328,3 +3328,68 @@ test("[RVA-49] 운영 장부(노트북 1280~): 줄을 누르면 오른쪽 칸에
   assert.ok((load.match(/renderSoon\(\)/g)?.length ?? 0) >= 5);
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-50] 운영 장부: 스토어 리뷰 줄은 별 수와 답 초안을 보여 주고, 스토어 리뷰 화면에서 문의와 함께 보기로 이어져요", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  await DB.prepare(`INSERT INTO store_reviews (id, stars, text, app, lang, at, reply, reply_at, replied_by, draft, draft_by, status, fetched_at)
+    VALUES ('gp:ui-review-0001', 2, '위젯이 안 바뀌어요', '2.0.0', 'ko', ?1, '', NULL, '', '불편을 드려 죄송해요. 밤낮 운영팀', 'Claude', 'seen', ?1)`).bind(Date.now() - 3600e3).run();
+  const u = await asOwner(env, t);
+  await u.go("#/desk?view=open&group=ask");
+  await u.settle(30);
+  const line = u.$('#main li.lg-line[data-key="store_review:gp:ui-review-0001"]');
+  assert.ok(line, "the review is a ledger line");
+  assert.match(line.textContent, /별 2개 · 위젯이 안 바뀌어요/);
+  await u.click(line.querySelector(".lg-row"));
+  await u.settle(10);
+  assert.match(u.text("#main"), /답 초안/);
+  assert.match(u.text("#main"), /스토어 리뷰 화면에서 고쳐 Play로 보내요/);
+  await u.go("#/reviews");
+  await u.settle(30);
+  assert.ok(u.$('#main a[href="#/desk?view=open&group=ask"]'), "운영 장부에서 문의와 함께 보기");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-52] 화면 자체가 시험: 관리자 앱이 알린 화면 오류는 오류 묶음에 '화면 오류 · 관리자 앱 <화면>'으로, 그리다 넘어진 화면은 '다시 그리기' 카드", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u = await asOwner(env, t);
+  const count = async () => (await DB.prepare("SELECT COUNT(*) AS n FROM error_groups WHERE route LIKE 'screen/%'").first()).n;
+  const before = await count();
+  await u.api("POST", "/api/admin/screen-error", { screen: "glance", where: "paint", kind: "error", message: "TypeError: x is undefined" });
+  assert.equal(await count(), before + 1);
+  const js = await adminFile("/admin/app.js").text();
+  assert.match(js, /이 화면을 그리다 오류가 났어요/);
+  assert.match(js, /"screen-again": \(\) => load\(\)/);
+  await u.go("#/errors");
+  await u.settle(30);
+  assert.match(u.text("#main"), /화면 오류 · 관리자 앱 glance/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-56] 장터 › 장터 건강: 깨진 작품은 빨간 머리 하나 아래 줄로, 달라진 작품은 접힌 목록, 운영 장부 줄에서 #/recipes?tab=health로 바로 와요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/recipes?tab=health");
+  await u.settle(30);
+  assert.match(u.text("#main .empty"), /아직 장터 건강 결과가 없어요/);
+  assert.ok(u.$('#main form[data-form="market-health"] input[type="file"]'), "결과 올리기");
+  await u.api("POST", "/api/admin/recipes/health", { format: "bamnat-market-health", v: 1, build: "7f3a91c4", at: new Date().toISOString(), works: 516, listed: 498, opened: 497,
+    broken: [{ key: "market-139#7", title: "책장 넘기기 달력", kind: "old", why: "unknown motion", app: 52 }], changed: [{ key: "market-139#2", title: "봄 테마", d: 9.1 }], unchanged: [] });
+  await u.go("#/desk?view=open&group=report");
+  await u.settle(30);
+  assert.match(u.text('#main li.lg-line[data-key="market_broken:market-139.7"]'), /책장 넘기기 달력 · 옛 앱에서 안 열림/);
+  await u.go("#/recipes?tab=health");
+  await u.settle(30);
+  assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "health");
+  assert.match(u.text("#main .mh-head"), /작품 516개를 넣어 봤어요/);
+  assert.equal(u.$$("#main .mh .pill.bad").length, 1, "빨강은 머리 하나");
+  assert.match(u.text("#main .mh-rows"), /깨진 작품 1.*책장 넘기기 달력.*옛 앱에서 안 열림.*market-139#7 · 옛 앱 52/);
+  assert.match(u.text('#main details[data-key="mh-달라진 작품"] summary'), /달라진 작품 1/);
+  // 다른 보기를 고르면 주소도 따라가요.
+  await u.click('#main [data-act="recipe-tab"][data-key="visible"]');
+  await u.settle(20);
+  assert.match(u.window.location.hash, /tab=visible/);
+  assert.deepEqual(u.errors, []);
+});

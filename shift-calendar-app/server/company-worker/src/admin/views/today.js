@@ -217,11 +217,17 @@ export function todayViews(A) {
     const numbers = core.length || rest.length || stats.length ? fold("home:tiles", "숫자", esc(coreLine.join(" · ")), `${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
         ${rest.length ? `<div class="tiles">${rest.join("")}</div>` : ""}
         ${stats.length ? `<p class="stats">${stats.map(([k, v]) => `<span>${esc(k)}<b>${v ?? 0}</b></span>`).join("")}</p>` : ""}${people}`) : "";
+    // 2.0.0 [RVA-54] 검토 I23c-03: 개선 신호가 개발사항이 되고, 닿고, 숫자가 돌아왔는지 한 줄씩(안 돌아오면 저절로 다시 대기열).
+    const loops = t.selfLoop ?? [];
+    const stuckN = loops.filter((x) => x.stuck).length;
+    const selfLoop = loops.length ? fold("home:loop", "숫자 → 개발 → 효과", [stuckN ? `<span class="late">고쳤는데 그대로 ${stuckN}</span>` : "", `${loops.length}개`].filter(Boolean).join(" · "),
+      `<ul class="sig-flow">${loops.map((x) => `<li><a href="${esc(x.stuck || !x.devId ? x.to : href("dev", x.devId))}"><b>${esc(x.title)}</b></a>${A.stepsLine(x.steps)}</li>`).join("")}</ul>
+        <p class="actions start"><a class="btn small ghost" href="${href("glance")}">개선 신호 모두 보기</a></p>`, loops.length) : "";
     const recent = can("audit") ? fold("home:recent", "최근 활동", feed?.length ? `${esc(ago(feed[0].at))} · ${esc(L.actionName(feed[0].action))}` : "",
       `${feed === null ? '<div class="card skeleton short"></div>' : feed.length ? `<ul class="feed">${feed.map(feedItem).join("")}</ul>` : '<p class="hint">아직 활동이 없어요.</p>'}
         <p class="actions start"><a class="btn small ghost" href="${href("audit")}">활동 기록 모두 보기</a></p>`) : "";
     return `${top}${stuckCard(t.stuck)}${heroCard(t, o, hi, hero)}${nightCard(t.night)}
-      <div class="home-more">${todoFold}${numbers}${recent}</div>
+      <div class="home-more">${todoFold}${numbers}${selfLoop}${recent}</div>
       <div class="home-foot"><a href="#/desk">${icon(P.check)}<span>운영 장부</span>${icon(P.chevron)}</a>${views.length ? `<nav class="home-views" aria-label="저장한 보기">${views.map((v) => `<a href="${esc(v.hash)}"><span>${esc(v.name)}</span>${icon(P.chevron)}</a>`).join("")}</nav>` : ""}</div>
       <p class="hello-who">${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p>`;
   }

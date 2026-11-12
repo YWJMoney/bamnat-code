@@ -146,7 +146,9 @@ export function opsViews(A) {
           ${owner && d.ready ? `<button class="btn small primary" type="submit" name="send" value="1">Play로 보내기</button>` : ""}
           ${r.status === "new" ? `<button class="btn small ghost" type="button" data-act="review-seen" data-id="${esc(r.id)}">봤어요</button>` : ""}</div></form>` : ""}
       </div></li>`).join("")}</ul>` : empty("리뷰가 없어요", d.ready ? "새 리뷰가 오면 매시 가져와요." : "");
-    return `${tabs}${off}${top}<div class="toolbar end">${fetchBtn}</div>${list}`;
+    // 2.0.0 [RVA-50] 검토 U23-14·I23b-03: 리뷰도 운영 장부의 한 줄이라 문의와 한 대기열에서 처리해요(기한·담당·기록이 같은 표).
+    const desk = can("inquiries") ? `<a class="btn small ghost" href="${esc(L.routeHash("desk", null, { view: "open", group: "ask" }))}">운영 장부에서 문의와 함께 보기</a>` : "";
+    return `${tabs}${off}${top}<div class="toolbar end">${desk}${fetchBtn}</div>${list}`;
   }
 
   // ---- [ADM3-16] 데이터 요청·백업 ----
@@ -306,6 +308,14 @@ export function opsViews(A) {
 
   const ERR_STATE = { new: ["새로", "bad"], again: ["다시 남", "bad"], seen: ["보는 중", "warn"], fixed: ["고침", "ok"] };
 
+  /** 2.0.0 [RVA-52] 묶음의 주소 칸을 사람 말로: 관리자 앱 화면 오류(screen/), 읽지 못한 줄(row/), 그 밖은 서버 주소. */
+  function errorPlace(route) {
+    const [top, a = "", b = ""] = String(route).split("/");
+    if (top === "screen") return `화면 오류 · 관리자 앱 ${a}`;
+    if (top === "row") return `읽지 못한 줄 · ${a} ${b}`;
+    return route;
+  }
+
   function errorsView() {
     const d = S.data.errors;
     const c = d?.counts ?? {};
@@ -316,7 +326,7 @@ export function opsViews(A) {
     const list = d.groups.length ? `<ul class="rows">${d.groups.map((g) => {
       const [name, tone] = ERR_STATE[g.status] ?? [g.status, ""];
       return `<li><details class="err-group" data-key="err-${esc(g.sig)}"${S.opened.get(`err-${g.sig}`) ? " open" : ""}><summary class="row"><span class="row-main"><b>${esc(g.message)}</b>
-        <small>${esc(g.route)} · ${g.total}번 · 처음 ${esc(dayOf(g.firstAt))} · 마지막 ${esc(agoMs(g.lastAt))}${g.app ? ` · ${esc(g.app)}` : ""}</small></span>
+        <small>${esc(errorPlace(g.route))} · ${g.total}번 · 처음 ${esc(dayOf(g.firstAt))} · 마지막 ${esc(agoMs(g.lastAt))}${g.app ? ` · ${esc(g.app)}` : ""}</small></span>
         <span class="row-side">${L.spark ? L.spark(g.trend.slice(-7), { name: "7일" }) : ""}<span class="pill ${tone}">${esc(name)}</span></span></summary>
         <pre class="mono err-sample">${esc(g.sample || "")}</pre>${g.note ? `<p class="meta">메모: ${esc(g.note)}</p>` : ""}
         <div class="actions start">${g.status !== "seen" ? `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="seen">보는 중</button>` : ""}
@@ -416,7 +426,9 @@ export function opsViews(A) {
   // ---- [ADM3-34] 개발사항 이야기 ----
 
   const STORY_ICON = { ask: "문의", link: "묶음", told: "답", made: "만듦", status: "상태", ship: "출시", note: "기록",
-    sync: "저장소", live: "닿음", phone_told: "답", fixed_yes: "해결", fixed_no: "다시", me_too: "나도", tier: "요금", release: "판" };
+    sync: "저장소", live: "닿음", phone_told: "답", fixed_yes: "해결", fixed_no: "다시", me_too: "나도", tier: "요금", release: "판",
+    // 2.0.0 [RVA-54] 개선 신호의 걸음.
+    signal: "신호", back: "돌아옴", stuck: "그대로", effect: "효과" };
 
   function storyCard() {
     const d = S.data.story;

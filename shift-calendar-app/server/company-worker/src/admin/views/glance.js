@@ -240,9 +240,9 @@ export function glanceViews(A) {
         : `${devOk ? `<button class="btn small${s === first ? " primary" : ""}" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
            ${s.state === "watch" ? "" : `<button class="btn small" data-act="obs-signal" data-key="${esc(s.key)}" data-do="watch">지켜보기</button>`}
            <button class="btn small ghost" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dismiss">아님</button>`;
-      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
+      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}${s.stuck && !s.devId ? `<span class="pill warn">고쳤는데 그대로</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
         <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${esc(String(s.now ?? s.value ?? "—"))}${esc(s.unit ?? "")}</b> · 기준 ${esc(String(s.base ?? "—"))}${esc(s.unit ?? "")}${s.sample === null || s.sample === undefined ? "" : ` · 표본 ${esc(String(s.sample))}`}${s.state === "dev" ? ` · 고치면 사흘 뒤 '좋아짐'으로 옮겨요` : ""}</p>
-        ${signalLine(s, o)}${s.caveat ? `<p class="meta">틀릴 수 있는 까닭: ${esc(s.caveat)}</p>` : ""}
+        ${signalLine(s, o)}${A.stepsLine(s.steps)}${s.caveat ? `<p class="meta">틀릴 수 있는 까닭: ${esc(s.caveat)}</p>` : ""}
         ${s.human && s.state !== "dev" ? `<p class="meta" data-human-check>사람 확인 필요 · ${esc(s.src === "server" ? "서버가 센 요청" : "사용 통계")}에서 나온 숫자라 꾸밀 수 있어요${s.play === null || s.play === undefined ? " · Play 숫자가 아직 없어요" : ` · 같은 주 Play 하루 사용자 ${s.play > 0 ? "+" : ""}${esc(String(s.play))}%`}</p>` : ""}
         <div class="actions start">${btns}</div></li>`;
     };

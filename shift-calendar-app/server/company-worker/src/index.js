@@ -61,7 +61,8 @@ import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
 import { cutFrom, oldPayCut, oldPayRoute } from "./old-pay.js";
 import { glance } from "./glance.js";
-import { OBS_BADGE_SQL, observeRoute, observeTick } from "./observe.js";
+import { OBS_BADGE_SQL, observeRoute, observeTick, SIGNAL_FLOW_SQL, signalFlowFrom } from "./observe.js";
+import { marketHealthRoute } from "./market-health.js";
 import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
 import { similarCompanies, skipSimilar } from "./company-similar.js";
 import { adminLib } from "./admin-lib.js";
@@ -5366,6 +5367,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
     if (g) return g;
   }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
+    // 2.0.0 [RVA-56] 검토 SX-04: 장터 건강(작품 전체 사진 대조·옛 앱 열기 결과).
+    const health = await marketHealthRoute(request, env, path, request.method, now);
+    if (health) return health;
     const more = await communityAdmin(recipeDeps, request, env, path, url, now);
     if (more) return more;
     const font = await fontAdmin(recipeDeps, request, env, path, url, now);
@@ -6529,6 +6533,8 @@ async function today(env, actor, now) {
   Object.assign(q, nightQueries(actor, now));
   // 2.0.0 [RVA-37] 검토 I24c-01: 읽지 못해 빼 둔 줄(장부·정리함·오늘)도 같은 batch로.
   if (actor.owner || can(actor, "inquiries") || can(actor, "dev")) q.stuck = rowTroubleQuery(now);
+  // 2.0.0 [RVA-54] 숫자 → 개발 → 효과(숫자를 보는 사람에게)도 같은 batch로.
+  if (can(actor, "metrics")) Object.assign(q, SIGNAL_FLOW_SQL);
   // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
   Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
     metrics: can(actor, "metrics") }, start));
@@ -6571,6 +6577,15 @@ async function today(env, actor, now) {
   // 그 사람이 볼 수 있는 줄만: 문의는 문의 권한, 개발사항은 개발 권한, 묶기 같은 화면 오류는 최고 관리자.
   if (got.stuck) {
     out.stuck = rowTroubleRows(got.stuck).filter((r) => actor.owner || (r.type === "inquiry" ? can(actor, "inquiries") : r.type === "dev" ? can(actor, "dev") : false));
+  }
+  // 2.0.0 [RVA-54] 검토 I23c-03: 숫자 → 개발 → 효과 한 줄(숫자를 보는 사람에게).
+  if (got.flowSignals) {
+    try {
+      out.selfLoop = signalFlowFrom(got, now);
+    } catch (e) {
+      out.selfLoop = [];
+      await recordRowErrors(env, "today", [{ key: "today:selfLoop", e }], now).catch(() => {});
+    }
   }
   return out;
 }

@@ -583,7 +583,11 @@ export async function adminInquiries(request, env, url, path, now) {
     return json({ ok: true });
   }
   if (m[2] === "/reply") {
-    await replyTo(env, row, body, now);
+    // 2.0.0 [RVA-51] 문에 걸려 멈췄으면 화면이 '보냈어요' 대신 까닭을 알려요.
+    if ((await replyTo(env, row, body, now)) === "held") {
+      const view = await adminInquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id));
+      return json({ ...view, gated: view.held?.findLast?.((h) => h.person)?.why ?? { name: "사람이 먼저 볼 답" } });
+    }
   } else if (m[2] === "/assign") {
     // [ADMIN-12] 내가 맡기, or let it go (to: null); one tap, so two admins do not answer the same question.
     if (body.to !== "me" && body.to !== null) refuse("to", "to");
@@ -648,6 +652,9 @@ export async function replyTo(env, row, body, now, audited = true) {
   const text = body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim();
   // 1.38 [DESK-09] Claude 열쇠의 답은 바로 가지 않고 10분 '보류 중'이에요(운영 장부 설계 5-4). 사람이 그 사이 취소·고쳐요.
   if (env.actor?.key) return holdReply(env, row, text, body, now);
+  // 2.0.0 [RVA-51] 검토 I24b-03: 사람이 쓴 답도 같은 문을 지나요(걸리면 '사람이 보내야 해요' 보류 답과 까닭, '지금 보내기'로 가요).
+  const why = await sendGate(env, row.id, text);
+  if (why) return holdForPerson(env, row.id, text, why, now, { close: body.close === true, template: Number.isInteger(body.template) ? body.template : null });
   const status = body.close === true ? "closed" : "answered";
   const again = await one(env, `SELECT id FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ? AND by = ? AND at > ?
     ORDER BY id DESC LIMIT 1`, row.id, text, actorName(env), now - 60 * 1000);
@@ -668,6 +675,36 @@ export async function replyTo(env, row, body, now, audited = true) {
 }
 
 /**
+ * 2.0.0 [RVA-51] 검토 I24b-03(ADMX-06·07): 보내는 문 하나. 사람이 쓴 답·여러 문의에 같은 답·개발사항 답·정리함·결과 붙여 넣기·Claude 열쇠·자동 정리가
+ * 모두 이 검사를 지나요(전에는 길마다 검사가 달랐어요: 열쇠와 자동만 보고 사람이 쓴 답·개발사항 답은 안 봤어요).
+ * 걸리는 것: 답 글의 AI·자동 답 표현이나 보안 정보(누가 쓰든), 그리고 사람이 먼저 볼 문의(환불·법·개인정보·크게 화남·약관·회사 방식·보안·사람이냐).
+ * 최고 관리자가 직접 쓴 답은 그 확인이 된 것이라 문의 쪽은 지나가요. 걸리면 { key?, name, word?, reply? }(heldWhy와 같은 모양), 아니면 null.
+ */
+export async function sendGate(env, id, text, { typed = true } = {}) {
+  const risk = replyRiskOf(text);
+  if (risk) return { name: risk, reply: true };
+  const a = env.actor;
+  // [typed]: 최고 관리자가 그 답을 직접 쓰거나 읽고 고친 길(문의 화면·정리함). 붙여 넣은 Claude 결과는 아니에요.
+  if (typed && a && typeof a === "object" && a.owner && !a.key && !a.auto) return null;
+  const ask = await needsPersonWhy(env, id);
+  return ask ? { key: ask.key, name: ask.name, ...(ask.word ? { word: ask.word } : {}) } : null;
+}
+
+/**
+ * 2.0.0 [RVA-51] 문에 걸린 답은 어느 길에서 왔든 같은 모양으로 멈춰요: 문의 화면의 '사람이 보내야 해요' 보류 답과 까닭(heldWhy),
+ * 오늘의 '사람이 보낼 답' 알림. 문의 권한이 있는 관리자가 읽고 '지금 보내기'·고치기·보내지 않기를 눌러요. 같은 답이 이미 멈춰 있으면 다시 넣지 않아요.
+ * "held"를 돌려줘요(보낸 것과 따로 세요).
+ */
+export async function holdForPerson(env, id, text, why, now, { close = false, template = null, pile = "", by = actorName(env) } = {}) {
+  if (await one(env, "SELECT id FROM held_replies WHERE inquiry_id = ? AND text = ?", id, text)) return "held";
+  if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", id))) return false;
+  await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, text,
+    by, (typeof env.actor === "object" && env.actor?.id) || null, close ? 1 : 0, template, now, HELD_FOR_PERSON, pile);
+  await audit(env, now, "inquiry_reply_held", id, `사람이 보내기(${why.name})`);
+  return "held";
+}
+
+/**
  * 1.38 [DESK-09] A key's answer waits [DESK.hold] in held_replies: not in the thread, so the app sees nothing and no
  * notice goes. A day holds at most [DESK.claudeAnswersDay] (KST day); past it the key is told to stop and report.
  */
@@ -684,7 +721,8 @@ export async function holdReply(env, row, text, body, now) {
   // 1.39 [LOOP-37] 사람이 봐야 할 문의(최고 관리자 확인과 같은 기준)에 Claude가 적은 답은 시간이 지나도 저절로 가지 않아요:
   // 문의 권한이 있는 관리자가 '지금 보내기'(또는 고치기·보내지 않기)를 눌러야 가요.
   // 1.39 [LOOP-38] 답 글에 AI·자동 답 표현이나 보안 정보가 있어도 사람이 보고 보내요.
-  const person = (await needsPerson(env, row.id)) || replyRisk(text);
+  // 2.0.0 [RVA-51] 같은 문(sendGate): 걸리는 기준이 사람이 쓴 답·자동 답과 하나예요.
+  const person = (await sendGate(env, row.id, text))?.name ?? null;
   const instant = !person && await instantOk(env, pile, kind, text);
   await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
     actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, instant ? now : person ? HELD_FOR_PERSON : now + DESK.hold, pile);
@@ -801,6 +839,7 @@ export async function inquiryBulk(request, env, now) {
   }
   const rows = await all(env, `SELECT * FROM inquiries WHERE id IN (${ids.map(() => "?").join(", ")})`, ...ids);
   let done = 0;
+  let held = 0;
   let skipped = ids.length - rows.length;
   const a = env.actor;
   for (const row of rows) {
@@ -814,8 +853,14 @@ export async function inquiryBulk(request, env, now) {
     } else if (body.action === "close" || body.action === "open") {
       await run(env, "UPDATE inquiries SET status = ? WHERE id = ?", body.action === "close" ? "closed" : "open", row.id);
     } else if (body.action === "reply") {
-      if (!(await replyTo(env, row, { text: body.text, close: body.close === true, template: body.template }, now, false))) {
+      const r = await replyTo(env, row, { text: body.text, close: body.close === true, template: body.template }, now, false);
+      if (!r) {
         skipped++;
+        continue;
+      }
+      // [RVA-51] 문에 걸려 멈춘 것은 따로 세요.
+      if (r === "held") {
+        held++;
         continue;
       }
     } else {
@@ -825,8 +870,8 @@ export async function inquiryBulk(request, env, now) {
     done++;
   }
   if (item) await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, item.id);
-  await audit(env, now, "inquiry_bulk", item ? item.title : "", `${body.action} ${done}${skipped ? ` (${skipped} 건너뜀)` : ""}`);
-  return json({ done, skipped });
+  await audit(env, now, "inquiry_bulk", item ? item.title : "", `${body.action} ${done}${skipped ? ` (${skipped} 건너뜀)` : ""}${held ? ` (사람이 보내기 ${held})` : ""}`);
+  return json({ done, skipped, ...(held ? { held } : {}) });
 }
 
 /**
@@ -1462,17 +1507,28 @@ export async function devReply(env, row, body, now) {
     return json({ answered: 0, held, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
   }
   const status = body.close === true ? "closed" : "answered";
+  // 2.0.0 [RVA-51] 개발사항 답도 같은 문: 걸린 문의에는 가지 않고 '사람이 보내야 해요'로 멈춰요(나머지는 바로 가요).
+  const gated = [];
+  for (const id of pick) {
+    const why = await sendGate(env, id, text);
+    if (why && (await holdForPerson(env, id, text, why, now, { close: body.close === true }))) gated.push(id);
+  }
+  if (gated.length === pick.length) {
+    await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id);
+    return json({ answered: 0, held: gated.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
+  }
+  const sendTo = pick.filter((id) => !gated.includes(id));
   await batch(env, [
-    ...pick.flatMap((id) => [
+    ...sendTo.flatMap((id) => [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, text, actorName(env), now),
       stmt(env, "UPDATE inquiries SET status = ?, updated_at = ? WHERE id = ?", status, now, id),
     ]),
     stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id),
-    devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
+    devEvent(env, row.id, now, "reply", { count: sendTo.length, text: cut(text), close: status === "closed" }),
   ]);
-  await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
-  await fcmTell(env, pick, now);
-  return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
+  await audit(env, now, "dev_reply", row.title, `${sendTo.length} ${status} ${row.id}${gated.length ? ` (사람이 보내기 ${gated.length})` : ""}`);
+  await fcmTell(env, sendTo, now);
+  return json({ answered: sendTo.length, ...(gated.length ? { held: gated.length } : {}), item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
 }
 
 /** The list: one status, open (접수 and 개발중), all, deleted ones, mine, or words in the title or body. */

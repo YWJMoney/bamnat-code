@@ -495,6 +495,8 @@ function adminApp(L, BUILD, M) {
     errors: { show: "errorsShow" },
     health: { days: "healthDays" },
     money: { days: "moneyDays" },
+    // 2.0.0 [RVA-56] 장터 보기(#/recipes?tab=health · tab=waiting): 운영 장부·출시 줄에서 바로 그 보기로.
+    recipes: { tab: "recipeTab" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -512,6 +514,8 @@ function adminApp(L, BUILD, M) {
       if (!Object.hasOwn(p, k)) continue;
       S[field] = field === "metricDays" ? ([7, 28, 90].includes(Number(p[k])) ? Number(p[k]) : 28) : p[k];
     }
+    // [RVA-56] 모르는 장터 보기나 작품 코드 없는 '하나만 보기'는 신고됨으로.
+    if (route.name === "recipes" && Object.hasOwn(p, "tab") && (!RECIPE_TABS.some(([k]) => k === S.recipeTab) || S.recipeTab === "one")) S.recipeTab = "flagged";
   }
   /** Writes the filters into the address without a new history step or a reload. */
   function syncUrl() {
@@ -963,7 +967,7 @@ function adminApp(L, BUILD, M) {
         const t = S.recipeTab ?? "flagged";
         // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
         const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
-          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}` }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : recipeListPath(t));
+          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}`, health: "/recipes/health" }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : recipeListPath(t));
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         // 1.36 [MKS-01] 출시 대기 묶음.
@@ -1098,6 +1102,51 @@ function adminApp(L, BUILD, M) {
   function renderSoon() {
     if (soonId) return;
     soonId = frame(() => { soonId = 0; if (S.phase === "app") render({ keepScroll: true }); });
+  }
+
+  /**
+   * 2.0.0 [RVA-52] 검토 I24c-02 '화면 자체가 시험': 화면을 그리다 난 오류, 잡히지 않은 오류, 빈 화면(본문 글자 0)을 서버 오류 묶음(`screen/<화면>`)에 알려요.
+   * 보내는 것은 화면 이름·어디(줄 그리기 등)·빌드·오류 첫 줄뿐이에요(화면의 글·사람 정보는 보내지 않아요). 같은 것은 한 번 열린 동안 한 번만.
+   */
+  /**
+   * 2.0.0 [RVA-54] 검토 I23c-03: 숫자 → 개발 → 효과 걸음을 한 줄로(뜸 › 개발사항 › 닿음 › 돌아옴). 지난 걸음은 날짜, 아직인 걸음은 흐리게.
+   * 색만으로 뜻을 전하지 않게 걸음마다 말이 있어요(조건 14).
+   */
+  function stepsLine(steps, label = "숫자에서 효과까지") {
+    if (!steps?.length) return "";
+    return `<ol class="sig-steps" aria-label="${esc(label)}">${steps.map((x) => `<li class="${x.at ? "done" : "todo"}${x.tone ? ` ${x.tone}` : ""}"><span>${esc(x.name)}</span>${x.at ? `<small>${esc(day(x.at))}</small>` : ""}</li>`).join("")}</ol>`;
+  }
+
+  const told = new Set();
+  function screenError(e, where = "", kind = "error") {
+    try {
+      if (S.phase !== "app") return;
+      const message = kind === "blank" ? "" : String(e?.message ?? e ?? "오류").split("\n")[0].slice(0, 200);
+      const screen = S.route?.name || "unknown";
+      const k = `${screen}|${where}|${kind}|${message}`;
+      if (told.has(k) || told.size > 40) return;
+      told.add(k);
+      fetch("/api/admin/screen-error", { method: "POST", credentials: "same-origin", keepalive: true, headers: { "content-type": "application/json", "x-admin": "1" },
+        body: JSON.stringify({ screen, where, kind, message, build: BUILD }) }).catch(() => {});
+    } catch {
+      // 알리기가 실패해도 화면은 그대로예요.
+    }
+  }
+  window.addEventListener("error", (e) => screenError(e.error ?? e.message, "page"));
+  window.addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    // 인터넷·시간 넘김·되돌린 요청처럼 화면이 이미 말로 알리는 것은 빼요.
+    if (r?.quiet || ["offline", "unreachable", "timeout", "aborted", "cache"].includes(r?.message) || r?.data) return;
+    screenError(r, "promise");
+  });
+  /** [RVA-52] 그린 뒤 본문이 비었으면(글자 0, 뼈대 줄도 없음) 빈 화면으로 알려요. */
+  let blankCheck = 0;
+  function watchBlank() {
+    clearTimeout(blankCheck);
+    blankCheck = setTimeout(() => {
+      const main = document.getElementById("main");
+      if (S.phase === "app" && main && !main.textContent.trim() && !main.querySelector(".skeleton, img, svg, canvas, input, textarea, select, button")) screenError(null, "view", "blank");
+    }, 1500);
   }
 
   function render({ keepScroll = false } = {}) {
@@ -1255,10 +1304,21 @@ function adminApp(L, BUILD, M) {
     const here = routeKey();
     if (main.dataset.route !== here) typed.clear();
     main.dataset.route = here;
+    // 2.0.0 [RVA-52] 화면을 그리다 오류가 나도 빈 화면 대신 한 줄과 '다시 그리기', 그 오류는 서버에 알려요.
+    let html;
+    try {
+      html = view();
+    } catch (e) {
+      console.error(e);
+      screenError(e, "view");
+      html = `<section class="card empty-state"><h2>이 화면을 그리다 오류가 났어요</h2><p class="hint">오류는 개발로 넘어갔어요. 다른 화면은 그대로 쓸 수 있어요.</p>
+        <div class="actions"><button class="btn primary" type="button" data-act="screen-again">다시 그리기</button></div></section>`;
+    }
+    watchBlank();
     // AN 1.28 [ADMUX-31] '지금 기다리는 것' above a hub's first tab.
     // 2.0.0 [RVA-24] 검토 HQ-03: 허브 첫 화면 위의 '지금 기다리는 것' 줄은 뺐어요. 같은 숫자를 허브 탭(폰은 '모두' 창, 컴퓨터는 왼쪽 메뉴)이 보여 주고,
     // 목록 첫 줄이 화면 위 25% 안에서 시작해요. 오늘의 할 일 카드 안 줄은 그대로예요.
-    main.innerHTML = view();
+    main.innerHTML = html;
     rememberOpened();
     // 1.36 [VIL-21] On a phone the 보기 row scrolls sideways: the chosen one is kept in sight (마을 운영 sits last).
     for (const row of main.querySelectorAll(".segmented")) {
@@ -3397,7 +3457,7 @@ function adminApp(L, BUILD, M) {
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["health", "장터 건강"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -3458,7 +3518,7 @@ function adminApp(L, BUILD, M) {
     // 2.0.0 [RVA-24] 검토 U24-06·T24-08·HQ-03(조건 1·2): 보기 15개가 칩 다섯 줄로 첫 화면을 채웠어요. 한 줄 옆으로 밀리는 구간(지금 보기는 가운데,
     // 끝 흐림)과 찾기 칸 하나로, 구간 칩은 '거르기' 뒤로. 줄 단추는 주된 것 하나 + ⋯, 709개를 한 번에 그리지 않고 40개씩.
     const sec = S.recipeSection ?? "all";
-    const listTab = !["picks", "images", "tools", "requests", "makers", "month", "fonts", "one"].includes(tab);
+    const listTab = !["picks", "images", "tools", "requests", "makers", "month", "fonts", "health", "one"].includes(tab);
     const ready = d && (d.tab ?? tab) === tab && !(tab === "one" && d.code !== S.recipeCode);
     const paged = ready && d.total !== undefined;
     const secCounts = ready && listTab && (paged ? Object.keys(d.sections ?? {}).length > 1 : d.items?.some((r) => r.section))
@@ -3479,6 +3539,8 @@ function adminApp(L, BUILD, M) {
     if (tab === "makers") return chips + recipeMakersView(d, edit);
     if (tab === "month") return chips + recipeMonthView(d, edit);
     if (tab === "fonts") return chips + recipeFontsView(d, edit);
+    // 2.0.0 [RVA-56] 검토 SX-04: 빌드마다 작품 전체를 넣어 찍고 옛 앱으로 열어 본 결과.
+    if (tab === "health") return chips + recipeHealthView(d, edit);
     const help = {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
@@ -3552,6 +3614,39 @@ function adminApp(L, BUILD, M) {
     const [lead, ...restHelp] = String(help ?? "").split(/(?<=요\.) /);
     const tip = restHelp.length ? `<details class="tip" data-key="recipe-how-${tab}"><summary>${esc(lead)}</summary><p class="hint">${esc(restHelp.join(" "))}</p></details>` : lead ? `<p class="list-note">${esc(lead)}</p>` : "";
     return `${chips}${back}${photo}${tab === "one" ? "" : release}${rows}<div class="list-foot">${tip}${tab === "one" ? "" : month}</div>${upload}${tab === "one" ? "" : log}`;
+  }
+
+  /**
+   * 2.0.0 [RVA-56] 검토 SX-04 장터 건강: 빌드가 바뀔 때마다 CI가 작품 전체를 넣어 찍고 옛 앱 core로 열어 본 결과 한 장.
+   * 깨진 작품(넘어짐·옛 앱에서 안 열림·서버가 거절·되돌린 뒤 달력이 다름)이 먼저, 빨강은 그 머리 하나(조건 6). 달라진 작품은 실패가 아니라
+   * 사람이 한 번 보는 목록이라 접어 둬요. 결과가 없거나 14일이 넘으면 그 말이 먼저예요.
+   */
+  function recipeHealthView(d, edit) {
+    const last = d?.last;
+    const kinds = d?.kinds ?? {};
+    const form = edit ? `<details class="card" data-key="market-health-upload"${last ? "" : " open"}><summary><b>결과 올리기</b> <span class="meta">CI market-shots의 market-health.json</span></summary>
+      <form data-form="market-health" class="mh-form"><p class="hint">GitHub Actions › 실행 › market-shots 묶음에 든 market-health.json을 골라요. 작품 이름·제목·까닭 한 줄·빌드뿐이고 사람 정보는 없어요.</p>
+      ${filePick("file", ".json,application/json", { required: true })}
+      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form></details>` : "";
+    if (!last) return empty("아직 장터 건강 결과가 없어요", "빌드가 바뀌면 CI가 장터 작품 전체를 넣어 찍고 옛 앱으로 열어 봐요. 그 결과를 올리면 여기와 운영 장부에 보여요.") + form;
+    const n = last.broken?.length ?? 0;
+    const when = `${esc(ago(last.at))}${last.by ? ` · ${esc(last.by)}` : ""}`;
+    // 깨진 수는 아래 빨간 머리 하나가 말해요(조건 6). 위 카드는 무엇을 얼마나 봤는지.
+    const head = `<div class="card mh-head"><p class="mh-sum"><b>작품 ${last.works}개를 넣어 봤어요</b>${n ? "" : ` <span class="pill ok">깨진 작품 없음</span>`}</p>
+      <p class="meta">옛 앱 목록 ${last.listed}개 중 ${last.opened}개 열림 · 달라짐 ${last.changed?.length ?? 0}개</p>
+      <p class="meta">빌드 <code>${esc(String(last.build).slice(0, 12))}</code> · ${when}${d.stale ? ` · <span class="pill warn">14일 넘게 새 결과 없음</span>` : ""}</p></div>`;
+    const broken = n ? `<ul class="rows mh-rows"><li class="lg-group"><span class="pill bad">깨진 작품 ${n}</span><small>다음 출시 전에 고쳐요 · 운영 장부에도 같은 줄이 있어요</small></li>${last.broken.map((b) =>
+      `<li><div class="row"><span class="row-main"><b>${esc(b.title || b.key)}</b> <span class="pill">${esc(kinds[b.kind] ?? b.kind)}</span>
+        <small>${esc(b.key)}${b.app ? ` · 옛 앱 ${b.app}` : ""}</small>${b.why ? `<small>${esc(b.why)}</small>` : ""}</span></div></li>`).join("")}</ul>` : "";
+    const list = (rows, title, note, line) => (rows?.length ? `<details class="card" data-key="mh-${title}"><summary><b>${esc(title)} ${rows.length}</b> <span class="meta">${esc(note)}</span></summary>
+      <ul class="rows">${rows.map(line).join("")}</ul></details>` : "");
+    const changed = list(last.changed, "달라진 작품", "실패는 아니에요 · 일부러 바꾼 화면인지 한 번 봐요", (c) =>
+      `<li><div class="row"><span class="row-main"><b>${esc(c.title || c.key)}</b> <small>${esc(c.key)} · 차이 ${c.d}</small></span></div></li>`);
+    const same = list(last.unchanged, "효과가 사라졌을 수 있는 작품", "넣기 전과 사진이 같아요 · 작품이 아무것도 안 바꾸는지 봐요", (c) =>
+      `<li><div class="row"><span class="row-main"><b>${esc(c.title || c.key)}</b> <small>${esc(c.key)}</small></span></div></li>`);
+    const runs = (d.runs ?? []).length > 1 ? `<details class="card" data-key="mh-runs"><summary><b>지난 결과 ${d.runs.length}</b></summary><ul class="rows">${d.runs.map((r) =>
+      `<li><div class="row"><span class="row-main"><b><code>${esc(String(r.build).slice(0, 12))}</code></b> <small>${esc(ago(r.at))} · 작품 ${r.works} · 깨짐 ${r.broken} · 달라짐 ${r.changed}</small></span></div></li>`).join("")}</ul></details>` : "";
+    return `<div class="mh">${head}${broken}${changed}${same}${runs}${form}</div>`;
   }
 
   /** 1.36 [MKS-01] 출시 대기로 넣기: hold, 이 판부터 (versionCode), 묶음 이름, 같은 이름은 새 판으로. */
@@ -4615,10 +4710,17 @@ function adminApp(L, BUILD, M) {
   }
 
   /** [ADMIN-16] The step for the picked questions; skipped ones (someone else's) are counted. */
+  /**
+   * 2.0.0 [RVA-51] 검토 I24b-03: 보내는 문에 걸려 멈춘 답은 어느 길에서든 같은 말로 알려요(문의 화면의 '사람이 보내야 해요' + 까닭 + 지금 보내기).
+   */
+  function gateWords(n, why) {
+    return `${n > 1 ? `${n}건은 ` : ""}보내지 않고 멈췄어요${why?.name ? `(${why.name}${why.word ? ` ‘${why.word}’` : ""})` : ""}. 문의에서 읽고 '지금 보내기'로 보내요`;
+  }
+
   async function inquiryBulk(action, extra = {}) {
     const ids = [...S.inquiryPick];
     const r = await act(() => api("/inquiries/bulk", "POST", { action, ids, ...extra }),
-      (x) => `${x.done}개를 처리했어요${x.skipped ? `. ${x.skipped}개는 건너뛰었어요(다른 관리자가 맡았거나 이미 같은 답)` : ""}`);
+      (x) => [`${x.done}개를 처리했어요`, x.skipped ? `${x.skipped}개는 건너뛰었어요(다른 관리자가 맡았거나 이미 같은 답)` : "", x.held ? gateWords(x.held) : ""].filter(Boolean).join(". "));
     if (r) {
       S.inquiryPick = null;
       S.data.inquiries = null;
@@ -5523,6 +5625,8 @@ function adminApp(L, BUILD, M) {
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
+    // 2.0.0 [RVA-52] 그리다 오류가 난 화면을 다시 받아 그려요.
+    "screen-again": () => load(),
     // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
     // 1.39 [LOOP-37] 보류 중인 Claude 답을 사람이 읽고 지금 보내요(사람이 봐야 할 문의는 이 단추로만 가요).
@@ -5587,7 +5691,7 @@ function adminApp(L, BUILD, M) {
       const risky = document.getElementById("sort-risky")?.checked === true;
       const again = Boolean(res.batch?.appliedAt);
       const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify, risky, again }), (r) => [r.batch?.id && `묶음 ${r.batch.id}`, r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.prepared && `출시 안내 ${r.prepared}개`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
-        r.skipped && `빼 둠 ${r.skipped}건`, r.held && `보내지 않은 답 ${r.held}줄(관리자 확인)`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
+        r.skipped && `빼 둠 ${r.skipped}건`, r.held && `‘사람이 보내야 해요’로 멈춘 답 ${r.held}건(문의에서 읽고 보내요)`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
     ...FLAG_ACTIONS,
@@ -6635,7 +6739,7 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCP-39]
-    "recipe-tab": ({ key }) => { S.recipeTab = key; S.recipeSection = "all"; S.recipeLimit = 40; S.data.recipes = null; load(); },
+    "recipe-tab": ({ key }) => { S.recipeTab = key; S.recipeSection = "all"; S.recipeLimit = 40; S.data.recipes = null; syncUrl(); load(); },
     // [RVA-48] 구간·더 보기는 서버에서 50개씩.
     "recipe-section": ({ key }) => { S.recipeSection = key; S.recipeLimit = 40; if (S.data.recipes?.total !== undefined) load({ quiet: true }); else render({ keepScroll: true }); },
     // 2.0.0 [RVA-24] 검토 T24-08: 40개씩 더 그려요(709개를 한 번에 그리면 26만 px).
@@ -7097,6 +7201,17 @@ function adminApp(L, BUILD, M) {
           S.data.recipes = null; load();
         }, go === "show" ? "primary" : "danger");
     },
+    // 2.0.0 [RVA-56] 장터 건강 결과(market-health.json) 올리기.
+    "market-health": async (form) => {
+      const file = form.querySelector('input[name="file"]')?.files?.[0];
+      if (!file) { toast("market-health.json을 골라 주세요"); return; }
+      let body;
+      try { body = JSON.parse(await file.text()); } catch { toast("파일(JSON)을 읽지 못했어요"); return; }
+      if (body?.format !== "bamnat-market-health") { toast("장터 건강 파일이 아니에요(market-health.json을 골라 주세요)"); return; }
+      const r = await api("/recipes/health", "POST", body);
+      toast(r.broken ? `올렸어요 · 깨진 작품 ${r.broken}개가 운영 장부에 올라갔어요` : "올렸어요 · 깨진 작품이 없어요");
+      form.reset(); S.data.recipes = null; load();
+    },
     "recipe-upload": async (form) => {
       const f = new FormData(form);
       let parsed;
@@ -7236,7 +7351,8 @@ function adminApp(L, BUILD, M) {
         for (const o of alike) await api(`/inquiries/${o}/reply`, "POST", { text, ...(close ? { close: true } : {}) }).then(() => sent.push(o), () => {});
         if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
         return { first, sent: sent.length, missed: alike.length - sent.length };
-      }, (r) => `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`)
+      }, (r) => (r.first?.gated ? gateWords(1, r.first.gated)
+        : `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`))
         .then((r) => r?.first).finally(() => { S.sending--; });
       if (!q) return;
       // [RVA-06] 보낸 글은 화면이 그사이 새로 그려졌어도 초안·답 칸에서 지워요(다시 열어도 보낸 글이 초안으로 뜨지 않게).
@@ -7269,7 +7385,8 @@ function adminApp(L, BUILD, M) {
         let missed = 0; // the lead is answered already, so one that fails does not undo it (pressing again would answer the lead twice)
         for (const id of others) await api(`/inquiries/${id}/reply`, "POST", body).catch(() => missed++);
         return { first, missed };
-      }, (r) => `${others.length ? `${others.length + 1 - r.missed}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보냈어요, 그 문의에서 다시 답해 주세요)` : ""}`);
+      }, (r) => (r.first?.gated ? gateWords(1, r.first.gated)
+        : `${others.length ? `${others.length + 1 - r.missed}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보냈어요, 그 문의에서 다시 답해 주세요)` : ""}`));
       if (q) load({ quiet: true });
     },
     "inquiry-note": async (form) => {
@@ -7376,7 +7493,7 @@ function adminApp(L, BUILD, M) {
       const ids = [...form.querySelectorAll('input[name="ids"]:checked')].map((x) => x.value);
       if (!ids.length) return toast(ERRORS.ids);
       const r = await act(() => api(`/dev/${S.route.id}/reply`, "POST", { text: form.elements.text.value, ids, close: form.elements.close.checked }),
-        (x) => `문의 ${x.answered}건에 답했어요. 보낸 분들 앱에 보여요`);
+        (x) => [x.answered ? `문의 ${x.answered}건에 답했어요. 보낸 분들 앱에 보여요` : "", x.held ? gateWords(x.held) : ""].filter(Boolean).join(". "));
       if (r) {
         dialog.close();
         S.data.dev = r.item;
@@ -7718,7 +7835,7 @@ function adminApp(L, BUILD, M) {
   const A = {
     S, L, esc, times, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, danger, askText, showCopy, fieldError, mergeWords, syncUrl, refilter, go, reloginThen, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
-    listHead, csvButton, serverVersion,
+    listHead, csvButton, serverVersion, screenError, stepsLine,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
   // [RVD-04] A name two groups give would hide the first one's (ADMX-02: V.changes became loop's switch table); say so at once.
