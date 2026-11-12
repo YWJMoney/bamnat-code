@@ -2,6 +2,7 @@ package com.bamnat.app
 
 import kotlinx.coroutines.sync.withLock
 import android.content.Context
+import com.bamnat.app.invest.invest
 import com.bamnat.app.alarm.AlarmScheduler
 import com.bamnat.app.company.warmCompaniesNow
 import com.bamnat.app.data.BackupManager
@@ -79,7 +80,8 @@ class AppContainer(context: Context) {
                 list.firstOrNull { it.id == id }?.takeIf { !it.isMain }?.style ?: s.workStyle
             }, confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
                 marks = com.bamnat.app.data.RecurringMarks(java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "recurring_marks.json")),
-                tune = ::captureTune, dayLabel = { dayLabels(calendars.repository(id)) })
+                tune = ::captureTune, dayLabel = { dayLabels(calendars.repository(id)) },
+                calendarId = id, tidy = { autoTidy }, seen = { captureSeen })
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
@@ -128,10 +130,28 @@ class AppContainer(context: Context) {
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats the user turned down. */
     val autoRecordPrefs by lazy { com.bamnat.app.data.AutoRecordPrefs(appContext) }
     private val captureStore by lazy { com.bamnat.app.data.CaptureStore(java.io.File(appContext.noBackupFilesDir, "captures.json")) }
+    /**
+     * 2.0.0 [RVK-13] 뿌리 7: what the app left out or joined on its own (a payment taken for a copy, two lines made one move, a fill
+     * told twice), kept 30 days on this phone to put back. Each area registers its way back here.
+     */
+    val autoTidy by lazy {
+        com.bamnat.app.data.AutoTidy(java.io.File(appContext.noBackupFilesDir, "auto_tidy.json")).also { t ->
+            t.register(MoneyRepository.KIND_LEFT_OUT) { calendars.money(it.calendarId).putBackLeftOut(it.payload) }
+            t.register(MoneyRepository.KIND_JOINED) { calendars.money(it.calendarId).putBackJoined(it.payload) }
+            t.register(com.bamnat.app.invest.TradeCapture.KIND_FILL) { item ->
+                val p = com.bamnat.core.invest.TradeAlerts.decode(org.json.JSONObject(item.payload).optString("fill")).firstOrNull()
+                p != null && invest(item.calendarId).addAlertAnyway(p)
+            }
+        }
+    }
+    /** 2.0.0 [RVK-14] Messages read already and which app's text each line came from (hashes only). */
+    val captureSeen by lazy { com.bamnat.app.data.CaptureSeen(java.io.File(appContext.noBackupFilesDir, "capture_seen.json")) }
+    /** 2.0.0 [RVK-16] (검토 MONEY-13·U06a-17): when 결제 알림 읽기 last read and how many lines it wrote this month. */
+    val captureHealth by lazy { com.bamnat.app.data.CaptureHealth(appContext) }
     val moneyRepository = MoneyRepository(database, captureStore, style = settingsRepository.settings.map { it.workStyle },
         confirmFirst = autoRecordPrefs.state.map { it.holdFrom },
         marks = com.bamnat.app.data.RecurringMarks(java.io.File(appContext.filesDir, "recurring_marks.json")),
-        tune = ::captureTune, dayLabel = { dayLabels(scheduleRepository) })
+        tune = ::captureTune, dayLabel = { dayLabels(scheduleRepository) }, tidy = { autoTidy }, seen = { captureSeen })
 
     /** 1.32 [LEDX-15][LEDX-18] 결제 알림 › 더 정확하게 적기, as the capture reads it. */
     private fun captureTune(): com.bamnat.app.data.CaptureTune = autoRecordPrefs.current.let { com.bamnat.app.data.CaptureTune(it.myNames, it.abroadFee, it.rates) }
@@ -158,10 +178,15 @@ class AppContainer(context: Context) {
      * and checked against every calendar's lines, so one payment is written once. If picking the
      * calendar fails, it goes to the main one rather than being lost.
      */
-    suspend fun capture(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
-        captureInto(text, pkg, app, postedAt, fromMessenger).also {
+    suspend fun capture(
+        text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean,
+        /** 2.0.0 [RVK-14] What tells this message from another of the same app: the same [origin] and text again is a repost. */
+        origin: String = "$pkg|$postedAt",
+    ): MoneyRepository.Outcome =
+        captureInto(text, pkg, app, postedAt, fromMessenger, origin).also {
             // [OBS-01] 기록 지점 9: how many, never what or how much.
             if (it == MoneyRepository.Outcome.SAVED) {
+                captureHealth.wrote()
                 journal.note(com.bamnat.core.journal.JournalKind.MONEY_CAPTURED)
                 // [TAX-01] A pay deposit just written becomes 월급 관측 (and 급여, so it is not added on top of the estimate).
                 runCatching { com.bamnat.app.tax.SalaryWatch.check(this, captureCalendar(text, pkg, postedAt), notify = true) }
@@ -169,8 +194,10 @@ class AppContainer(context: Context) {
             }
         }
 
-    private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean): MoneyRepository.Outcome =
+    private suspend fun captureInto(text: String, pkg: String, app: String, postedAt: Long, fromMessenger: Boolean, origin: String): MoneyRepository.Outcome =
         captureLock.withLock {
+            // 2.0.0 [RVK-14]: the very same message again (a chat stack posts its earlier messages with each new one) is read once.
+            if (!captureSeen.firstTime(origin, text)) return@withLock MoneyRepository.Outcome.DUPLICATE
             // [INV-30] A broker's 체결 notification goes to the investor calendar, not the ledger.
             runCatching { com.bamnat.app.invest.TradeCapture.take(this, text, pkg, app, postedAt, fromMessenger) }
                 .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
@@ -883,6 +910,20 @@ class AppContainer(context: Context) {
             runCatching { com.bamnat.app.ui.memo.MemoPhotoFiles.sweep(appContext, memoRepository.photoNames()) }
             // [UNDO-01] What was cleared or removed more than 7 days ago goes for good.
             runCatching { recordsTrash.purge() }
+            runCatching { autoTidy.purge() }
+            // 2.0.0 [RVK-11] (MONEY-05): receipt photos no line names any more, nor a line kept in 최근 지운 기록, go two days after.
+            // Only when every calendar's lines could be read, so a photo is never taken from a line that was not looked at.
+            runCatching {
+                val added = calendars.calendars.value.filter { !it.isMain }
+                if (added.all { it.ready }) {
+                    val used = buildSet {
+                        addAll(com.bamnat.app.ui.money.ReceiptFiles.usedBy(database.openHelper.readableDatabase))
+                        added.forEach { addAll(com.bamnat.app.ui.money.ReceiptFiles.usedBy(calendars.database(it.id).openHelper.readableDatabase)) }
+                        addAll(recordsTrash.keptReceipts())
+                    }
+                    com.bamnat.app.ui.money.ReceiptFiles.sweep(appContext, used)
+                }
+            }
             moneyRepository.purgeCaptures()
             // [MCAL-02] A calendar whose setup was left before saving is not kept.
             if (calendarSetupDrafts.draft.value == null) calendars.dropUnfinished(before = startedAt)

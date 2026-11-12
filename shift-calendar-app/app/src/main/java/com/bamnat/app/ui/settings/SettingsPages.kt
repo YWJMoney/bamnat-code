@@ -1004,8 +1004,9 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         val cleared by vm.recentlyCleared.collectAsStateWithLifecycle()
         var showCleared by remember { mutableStateOf(false) }
         HorizontalDivider()
-        NavRow("최근 지운 기록", if (cleared.isEmpty()) "근무 형태를 바꾸거나 기록·달력을 지우면 7일 동안 여기서 되돌릴 수 있어요"
-            else "${cleared.size}개 · 7일 안에 되돌릴 수 있어요") { showCleared = true }
+        // 2.0.0 [RVK-10]: 가계부 lines removed stay here 30 days.
+        NavRow("최근 지운 기록", if (cleared.isEmpty()) "지운 기록·달력은 7일, 가계부 기록은 30일 동안 여기서 되돌릴 수 있어요"
+            else "${cleared.size}개 · 남은 날 안에 되돌릴 수 있어요") { showCleared = true }
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
