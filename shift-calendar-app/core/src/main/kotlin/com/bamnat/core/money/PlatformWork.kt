@@ -113,7 +113,8 @@ object PlatformWork {
     }
 
     /** [fees] G 1.32 [WTYP-23]: the 수수료·보험료 the platform took, when the user set them. */
-    data class Row(val platform: String, val count: Int, val amount: Long, val minutes: Int, val costs: Long, val fees: Long = 0)
+    /** [withheld] 2.0.0 [RVK-40] (검토 MONEY-49): the 3.3% taken off before the money comes. */
+    data class Row(val platform: String, val count: Int, val amount: Long, val minutes: Int, val costs: Long, val fees: Long = 0, val withheld: Long = 0)
 
     data class Month(val month: YearMonth, val rows: List<Row>, val ledgerCosts: Long) {
         val count: Int get() = rows.sumOf { it.count }
@@ -121,20 +122,28 @@ object PlatformWork {
         val minutes: Int get() = rows.sumOf { it.minutes }
         val costs: Long get() = rows.sumOf { it.costs } + ledgerCosts
         val fees: Long get() = rows.sumOf { it.fees }
-        val net: Long get() = amount - costs - fees
-        /** 시간당 순수익; null without 운행 시간. */
+        val withheld: Long get() = rows.sumOf { it.withheld }
+        /** What is left before the 3.3% (it comes back in part or in full in May). */
+        val netBeforeTax: Long get() = amount - costs - fees
+        /** 2.0.0 [RVK-40] (검토 MONEY-49) What is left in hand: the 3.3% is not money that came. */
+        val net: Long get() = netBeforeTax - withheld
+        /** 시간당 순수익 (in hand); null without 운행 시간. */
         val perHour: Long? get() = if (minutes <= 0) null else (net * 60.0 / minutes).roundToLong()
         val perCount: Long? get() = if (count <= 0) null else amount / count
     }
 
-    /** Categories of the ledger counted as a rider's or driver's costs (유류비·정비·보험). */
-    val COST_CATEGORIES = setOf("자동차", "교통")
+    /**
+     * Categories of the ledger counted as a rider's or driver's costs: the 자동 기록's 자동차·교통 and, 2.0.0 [RVK-40] (검토 MONEY-49·
+     * T06b-04), the ones the field calendar offers first ([FIELD_EXPENSE]) for the car and the platform, so a 주유 written by hand as
+     * 유류비 counts like one read from a card message.
+     */
+    val COST_CATEGORIES = setOf("자동차", "교통", "유류비", "차량유지", "톨비·주차", "톨비", "주차", "플랫폼수수료", "소모품")
 
-    /** The month by platform, with the ledger's 자동차·교통 spending as costs besides each day's own, and [rules]' 수수료·보험료. */
+    /** The month by platform, with the ledger's car and platform spending as costs besides each day's own, and [rules]' 수수료·보험료. */
     fun month(month: YearMonth, jobs: List<Job>, entries: List<MoneyEntry> = emptyList(), rules: FieldRules = FieldRules()): Month {
         val list = jobs.filter { YearMonth.from(it.date) == month && isPlatform(it) && !it.cancelled }
         val rows = list.groupBy { it.client }.map { (p, l) ->
-            Row(p, l.sumOf(::count), l.sumOf { it.amount }, l.sumOf(::minutes), l.sumOf { it.costs }, l.sumOf { cutOf(it, rules) })
+            Row(p, l.sumOf(::count), l.sumOf { it.amount }, l.sumOf(::minutes), l.sumOf { it.costs }, l.sumOf { cutOf(it, rules) }, l.sumOf { it.withheld })
         }
             .sortedByDescending { it.amount }
         val ledger = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month && it.category in COST_CATEGORIES }.sumOf { it.amount }
