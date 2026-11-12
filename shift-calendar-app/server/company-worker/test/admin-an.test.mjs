@@ -134,10 +134,7 @@ test("[ADMUX-38] the four new indexes are made and used", async () => {
 
 // ---- 1.28 통합: AN의 /badges와 AM의 기능 관리 ----
 
-test("[ADMUX-40][FLAG-28] /badges carries 기능 관리's number and 오늘's legal-flag card like /overview, only with the flags area", async (t) => {
-  // A fixed clock before 처리방침 3.11·3.12 take effect: on the real clock past them, the legal flags they open turn on within the
-  // same 24 hours and join the card (2026-11-12 CI), which is not what this test is about.
-  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-01T03:00:00Z") });
+test("[ADMUX-40][FLAG-28] /badges carries 기능 관리's number and 오늘's legal-flag card like /overview, only with the flags area", async () => {
   const { call } = server();
   const owner = await signIn(call);
   const support = await member(call, owner, { ...SUPPORT, ops: "edit", flags: "none" });
