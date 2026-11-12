@@ -3,8 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, report, from, signIn } from "./helpers.mjs";
 
-test("[RVA-28] 활동 기록: 거절 이유·관리자 권한은 말로, 채택한 규칙 번호는 빼고 회사 이름(누르면 검토)으로", async () => {
-  const { call } = server();
+test("[RVA-28] 활동 기록: 거절 이유·관리자 권한은 말로, 채택한 규칙 번호는 빼고 회사 이름(누르면 검토)으로", async (t) => {
+  const { call } = server({ t });
   const h = await signIn(call);
   const a = await call("POST", "/api/reports", report(1, { company: "말로정밀" }), from(1));
   const b = await call("POST", "/api/reports", report(2, { company: "말로화학" }), from(2));
