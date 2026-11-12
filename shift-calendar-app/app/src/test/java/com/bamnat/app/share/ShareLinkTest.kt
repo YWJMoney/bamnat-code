@@ -166,6 +166,49 @@ class ShareLinkTest {
         assertTrue(LeaveKind.entries.flatMap { k -> (1..4).map { q -> Leave(k, q).label } }.all { it.length <= ShareLinkPayload.LEAVE_CHARS })
     }
 
+    /**
+     * 2.0.0 [RVH-44][RVH-45] 결정 19번 (설계 4-4절, 총괄 1-2): an hour's leave tells a receiver before 2.0.0 '반차' with its hours from half
+     * a day up and nothing below (that app reads a leave without '반' as a whole day off), its minutes apart; a kind of two parts keeps
+     * "time" as the first start to the last end and says its gap apart.
+     */
+    @Test fun anHoursLeaveAndTwoPartsReadRightOnAnOldReceiver() {
+        val shop = ShiftType(4, "영업", "영", 0xFF43A047, LocalTime.of(11, 0), LocalTime.of(22, 0),
+            gapStart = LocalTime.of(15, 0), gapMinutes = 120)
+        val snap = ScheduleSnapshot(
+            listOf(shop, off),
+            WorkPattern.Rotation(start, listOf(4L, 4L, 4L, 3L)),
+            listOf(
+                DayEntry(start, leave = Leave.hours(LeaveKind.ANNUAL, 120, fromStart = true)),
+                DayEntry(start.plusDays(1), leave = Leave.hours(LeaveKind.UNPAID, 300, at = LocalTime.of(13, 0))),
+                DayEntry(start.plusDays(2), leave = Leave(LeaveKind.ANNUAL, 2)),
+            ),
+        )
+        val p = ShareLinkPayload.build(snap, start, "민지", 30, ShareOptions(leaveKinds = true))
+        val days = p.getJSONArray("days")
+        val two = days.getJSONObject(0)
+        assertFalse("2시간: 옛 앱이 하루 연차로 읽지 않게 비워요", two.has("leave"))
+        assertEquals(120, two.getInt("leaveMinutes"))
+        assertTrue(two.getBoolean("leaveStart"))
+        val five = days.getJSONObject(1)
+        assertEquals("무급 반차 5시간", five.getString("leave"))
+        assertEquals(780, five.getInt("leaveAt"))
+        assertEquals("반차", days.getJSONObject(2).getString("leave"))
+        assertFalse(days.getJSONObject(2).has("leaveMinutes"))
+        // Without 휴가 종류 the kind stays on the phone.
+        val plain = ShareLinkPayload.build(snap, start, "민지", 30).getJSONArray("days").getJSONObject(1)
+        assertEquals("반차 5시간", plain.getString("leave"))
+        val types = p.getJSONArray("types")
+        val t = (0 until types.length()).map { types.getJSONObject(it) }.first { it.getString("name") == "영업" }
+        assertEquals("11:00-22:00", t.getString("time"))
+        assertEquals("15:00-17:00", t.getString("gap"))
+        assertFalse((0 until types.length()).map { types.getJSONObject(it) }.first { it.getString("name") == "휴무" }.has("gap"))
+        // What an app before 2.0.0 does with "leave" (ReceivedDay.fullLeave): never a whole day for an hour's leave.
+        for (i in 0..1) {
+            val text = days.getJSONObject(i).optString("leave").ifEmpty { null }
+            assertFalse("$i: $text", text != null && !text.contains("반") && !text.startsWith("0.75"))
+        }
+    }
+
     /** [SHR-01] What the sharer ticks goes along; what they leave unticked stays on the phone. */
     @Test fun tickedPartsGoAlong() {
         val memoDay = start.plusDays(1)

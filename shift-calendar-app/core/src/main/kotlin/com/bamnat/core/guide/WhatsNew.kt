@@ -1,13 +1,34 @@
 package com.bamnat.core.guide
 
+import com.bamnat.core.work.WorkStyle
+
 /**
  * [GUIDE-08] What an update brought, shown once after the update: each line names what changed in a
  * sentence and, when it is a feature of [FeatureRegistry], opens it. A fresh install sees none of it,
  * since its first days are the checklist's.
  */
 object WhatsNew {
-    data class Line(val text: String, val featureId: String? = null)
+    /**
+     * [styles]: [RVH-40] 검토 WORK-14 the kinds of work the line is for; null takes its feature's ([AppFeature.styles]), and a line with
+     * neither is for everyone. [own]: [RVH-41] a kind's own text where swapping words ([said]) cannot say it.
+     */
+    data class Line(
+        val text: String,
+        val featureId: String? = null,
+        val styles: Set<WorkStyle>? = null,
+        val own: Map<WorkStyle, String> = emptyMap(),
+    ) {
+        fun fits(style: WorkStyle?): Boolean = styles?.let { it.isEmpty() || (style ?: WorkStyle.SHIFT) in it }
+            ?: featureId?.let { FeatureRegistry.get(it)?.fits(style) } ?: true
+
+        /** 2.0.0 [RVH-41] The line as [style] reads it, in its own words (`ReviewH2Test` holds every kind to 0 words of another). */
+        fun said(style: WorkStyle?): String = com.bamnat.core.work.TypeWords.say(style, own[style ?: WorkStyle.SHIFT] ?: text)
+    }
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
+
+    private val PAID = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)
+    /** Kinds that keep a team's roster: a leader's changes reach them. */
+    private val TEAMS = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)
 
     val releases: List<Release> = listOf(
         // 1.39.0 (docs/plans/1.39-개발계획.md). 줄은 통합 브랜치에서만 더해요(총괄). 판 마무리 때 다시 고르고 다듬어요.
@@ -15,19 +36,29 @@ object WhatsNew {
             // [NAV2-01][NAV2-02][NAV2-03]
             Line("아래 탭 다섯 칸을 원하는 기능으로 채워요. 한 칸에 여러 기능을 묶으면 누를 때 목록이 떠요. 설정은 위쪽 ‘나’ 단추에 있어요", "nav.tabOrder"),
             // [TEAM-22] D9
-            Line("팀 리더가 근무표를 고치면 6시간 안에 내 달력과 근무 알람에 들어가요. 받은 근무표에서 바로 넣기·물어보기·넣지 않기를 골라요", "share.receive"),
+            Line("팀 리더가 근무표를 고치면 6시간 안에 내 달력과 근무 알람에 들어가요. 받은 근무표에서 바로 넣기·물어보기·넣지 않기를 골라요", "share.receive", TEAMS),
             // [CELL-01][CELL-02]
             Line("날짜 칸에 그날 일감·메모가 한 줄씩 보여요. 테마를 입어도 내가 적은 것은 그대로예요", "calendar.view"),
             // [PAYX-60]
-            Line("급여 기간을 21일~20일처럼 정하면 근무 시간과 일수도 그 월급의 기간으로 세요", "stats.range"),
+            Line("급여 기간을 21일~20일처럼 정하면 근무 시간과 일수도 그 월급의 기간으로 세요", "stats.range", PAID),
             // [PAYX-56][PAYX-57][PAYX-58]
-            Line("명세서 공제 칸의 사택관리비 같은 돈은 세금 뗀 뒤 빼고, 소급분은 그달에만 넣어요", "pay.calc"),
+            Line("명세서 공제 칸의 사택관리비 같은 돈은 세금 뗀 뒤 빼고, 소급분은 그달에만 넣어요", "pay.calc", setOf(WorkStyle.SHIFT, WorkStyle.DAY)),
             // [FLOW-09]~[FLOW-16]
             Line("밤 화면: ‘잠들었어요’를 누르면 어두운 화면에 큰 시계와 다음 근무·알람이 뜨고, ‘깼어요’ 뒤엔 수면 기록이 열려요. 오늘의 흐름을 펼쳐도 ‘수면 기록’이 있어요", "sleep.log"),
             // [MKP-01]~[MKP-05][TRY-05]
             Line("장터 테마가 빨리 열리고, 입기 전에 내 앱 실제 화면에 입혀 볼 수 있어요", "look.themes"),
             // [PRIV-06]
-            Line("설정 › 개인정보의 ‘모두 지우기’가 내가 만든 공유 링크까지 한 번에 지워요"),
+            // [RVH-40] 검토 WORK-14 The row's real place and name (SettingsPages FORGET_ALL_ROW; WhatsNewLinesTest keeps them the same).
+            Line("설정 › 개인정보·앱 정보의 ‘이 휴대폰이 보낸 정보 모두 지우기’가 내가 만든 공유 링크까지 한 번에 지워요"),
+            // [RVH-40] 검토 WORK-14 1.39.0 brought these too; they were missing from the list.
+            // [TASK-07][TASK-02]
+            Line("홈 화면 할 일 위젯에서 오늘 할 일을 보고 동그라미를 눌러 끝내요. 끝낸 할 일은 줄이 그어지고 아래로 내려가요", "widget.tasks"),
+            // [TASK-38]
+            Line("앱을 열지 않고 ‘내일 저녁 6시 치과’처럼 한 줄로 할 일을 적어요", "memo.quickLine"),
+            // [FLOW-28]
+            Line("오늘의 흐름에 하루 24시간을 원으로 보여 주는 하루 다이얼이 생겼어요", "view.dayDial"),
+            // [FLOW-30]
+            Line("새벽에 적은 돈·메모·잠을 어제에 붙이는 ‘하루 시작 시각’을 정해요(설정 › 화면과 글자)", "day.start"),
         )),
         // 1.38.0 (docs/plans/1.38-개발계획.md). 갈래마다 줄을 고치면 부딪히니 통합 브랜치에서만 더해요(갈래 0).
         Release(52, "1.38.0", listOf(
@@ -44,11 +75,14 @@ object WhatsNew {
             Line("오늘의 흐름이 ‘출근까지 2시간 10분’처럼 남은 시간부터 말하고, 근무 중·잘 시간·쉬는 날마다 색이 바뀌어요", "today.flow"),
             Line("달력 칸 친구 칸이가 빈 화면에서 시작할 곳을 알려 줘요. 설정 › 화면과 글자에서 끌 수 있어요", "view.kani"),
             // [FLOW-08]
-            Line("날짜를 열면 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 야간 근무는 어제부터 한 줄로 보여요", "day.story"),
+            Line("날짜를 열면 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 야간 근무는 어제부터 한 줄로 보여요", "day.story", own = mapOf(
+                WorkStyle.BUSINESS to "날짜를 열면 영업·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 자정을 넘겨 닫는 날은 어제 문 연 때부터 한 줄로 보여요",
+                WorkStyle.INVEST to "날짜를 열면 잠·돈·메모가 시간 순서로 한 줄에 이어져요",
+            )),
             // [EASE-34] (#244)
-            Line("교대가 없는 근무에서는 주간·야간 같은 교대 종류가 처음부터 접혀 있어요. 필요하면 근무 종류와 시간에서 다시 써요"),
+            Line("평일·시급 근무에서는 주간·야간 같은 근무 종류가 처음부터 접혀 있어요. 필요하면 근무 종류와 시간에서 다시 써요", styles = setOf(WorkStyle.DAY, WorkStyle.HOURLY)),
             // [PAYX-49] (#245)
-            Line("교육처럼 시수가 다른 근무는 종류마다 시수를 따로 정해요"),
+            Line("교육처럼 시수가 다른 근무는 종류마다 시수를 따로 정해요", styles = PAID),
             // [SLEEP-03][SLEEP-04][SLEEP-10][SLEEP-12][SLEEP-20] 수면 갈래
             Line("잠드는 소리: 빗소리·파도·소음을 섞어 틀고 정한 시간에 서서히 꺼져요", "sleep.noise"),
             Line("아침 한 장: 깬 뒤 기분을 한 번 누르면, 내 기록에서 피곤한 까닭을 찾아 줘요", "sleep.morning"),
@@ -361,4 +395,39 @@ object WhatsNew {
 
     fun since(seenCode: Int, currentCode: Int): List<Release> =
         if (seenCode <= 0) emptyList() else releases.filter { it.versionCode in (seenCode + 1)..currentCode }.sortedByDescending { it.versionCode }
+
+    /**
+     * [RVH-40] 검토 WORK-14 검토 TYPE-06 What [releases] brought to one kind of work: [mine] its own lines, at most [MINE] (newest first, each
+     * release keeping its name), [moreMine] the rest of its own, and [others] the lines for other kinds, folded under '다른 일 소식'.
+     */
+    data class ForStyle(val mine: List<Release>, val moreMine: List<Line>, val others: List<Line>) {
+        val isEmpty: Boolean get() = mine.isEmpty() && moreMine.isEmpty() && others.isEmpty()
+    }
+
+    fun forStyle(releases: List<Release>, style: WorkStyle?): ForStyle {
+        var left = MINE
+        val mine = mutableListOf<Release>()
+        val more = mutableListOf<Line>()
+        for (r in releases) {
+            val own = r.lines.filter { it.fits(style) }
+            val shown = own.take(left)
+            left -= shown.size
+            if (shown.isNotEmpty()) mine += r.copy(lines = shown)
+            more += own.drop(shown.size)
+        }
+        return ForStyle(mine, more, releases.flatMap { r -> r.lines.filterNot { it.fits(style) } })
+    }
+
+    /** [RVH-40] 검토 U30-07 '가게 하시는 분께 새로 생긴 것'. */
+    fun title(style: WorkStyle?): String = when (style ?: WorkStyle.SHIFT) {
+        WorkStyle.SHIFT -> "교대 근무"
+        WorkStyle.DAY -> "평일 근무"
+        WorkStyle.HOURLY -> "알바"
+        WorkStyle.FIELD -> "현장 일"
+        WorkStyle.BUSINESS -> "가게"
+        WorkStyle.INVEST -> "투자"
+    } + " 하시는 분께 새로 생긴 것"
+
+    /** At most this many lines of one's own kind show at first (U02-08: 3~5). */
+    const val MINE = 5
 }

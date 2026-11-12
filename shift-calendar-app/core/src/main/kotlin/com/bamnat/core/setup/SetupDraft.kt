@@ -231,6 +231,44 @@ data class SetupDraft(
         t.copy(alarmEnabled = minutes != null, alarms = listOf(AlarmSpec(minutes ?: DEFAULT_ALARM_MINUTES)))
     }
 
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기 over the shifts the calendar has ([kept]): a shift of the same name keeps what the user
+     * made of it (its alarms, on or off, color, sound, icon, own extra pay and paid break); the draft gives its times. The
+     * alarm chosen on the summary is for the shifts that are new. Before 2.0.0 every one came back with one alarm, quietly.
+     * 검토 WORK-19 With [from], new hours count from that day only, as the setup again says ("오늘부터, 지난 날은 그대로").
+     */
+    fun typesToSave(kept: List<ShiftType>, from: LocalDate? = null): List<ShiftType> {
+        val byName = kept.associateBy { it.name.trim() }
+        return typesToSave().map { t ->
+            val mine = byName[t.name.trim()] ?: return@map t
+            val merged = t.copy(
+                colorArgb = mine.colorArgb, alarms = mine.alarms, alarmEnabled = mine.alarmEnabled, alarmSoundUri = mine.alarmSoundUri,
+                icon = mine.icon ?: t.icon, premiumPercent = if (t.premiumPercent == 0) mine.premiumPercent else t.premiumPercent,
+                breakPaid = t.breakPaid ?: mine.breakPaid,
+            )
+            if (from != null && !mine.isOff && !merged.isOff) mine.withTimesFrom(merged, from) else merged.copy(timeHistory = mine.timeHistory)
+        }
+    }
+
+    /** 검토 WORK-04 The work shifts of this draft that [kept] has by name, whose alarms stay as they are. */
+    fun keptWork(kept: List<ShiftType>): List<ShiftType> {
+        val names = kept.map { it.name.trim() }.toSet()
+        return workTypes.filter { it.name.trim() in names }
+    }
+
+    /**
+     * 검토 WORK-04 The shifts whose times this setup changes, said on the summary before saving ("주간 07:00~16:00 → 08:00~17:00"):
+     * the one of [kept] and the draft's, by name, when the start, end or break differ.
+     */
+    fun timeChanges(kept: List<ShiftType>): List<Pair<ShiftType, ShiftType>> {
+        val byName = kept.associateBy { it.name.trim() }
+        return types.mapNotNull { t ->
+            val mine = byName[t.name.trim()] ?: return@mapNotNull null
+            val same = mine.isOff == t.isOff && mine.start == t.start && mine.end == t.end && mine.breakMinutes == t.breakMinutes
+            if (same) null else mine to t
+        }
+    }
+
     /** Starts the draft's shifts from a bundle (or the weekday, part-time or custom set). */
     fun withShifts(bundle: String?, shifts: List<BundleShift>): SetupDraft {
         val types = shifts.mapIndexed { i, s -> s.type.copy(id = -(i + 1L), sortOrder = i) }

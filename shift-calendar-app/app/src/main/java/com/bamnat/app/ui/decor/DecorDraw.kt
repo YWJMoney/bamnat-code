@@ -57,9 +57,11 @@ val LocalDecor = staticCompositionLocalOf { Decor() }
  * TalkBack reads nothing of it. With nothing on [anchor] the modifier does nothing.
  */
 @Composable
-fun Modifier.decor(anchor: String, day: DecorDay? = null, layer: Decor = LocalDecor.current, date: java.time.LocalDate? = null): Modifier {
+fun Modifier.decor(anchor: String, day: DecorDay? = null, layer: Decor = LocalDecor.current, date: java.time.LocalDate? = null,
+                   /** 2.0.0 [RVH-42] False where the part shows its 꾸밈 단추 as buttons of its own (달력 머리): they are not drawn here. */
+                   taps: Boolean = true): Modifier {
     if (!layer.has(anchor)) return this
-    val items = remember(layer, anchor, day) { layer.on(anchor).filter { day == null || it.standsOn(day) } }
+    val items = remember(layer, anchor, day, taps) { layer.on(anchor).filter { (day == null || it.standsOn(day)) && (taps || it.tap == null) } }
     if (items.isEmpty()) return this
     val measurer = rememberTextMeasurer(cacheSize = 8)
     val accent = MaterialTheme.colorScheme.primary

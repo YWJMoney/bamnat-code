@@ -178,6 +178,37 @@ class CommuteRecorderTest {
         assertFalse(CommuteRecorder.checkScheduled(context))
     }
 
+    /**
+     * 2.0.0 [RVH-35] 검토 WORK-16·U02-09 다음 출근 때 정하기: half an hour into the shift where the phone is becomes the workplace, that is
+     * this shift's arrival (no late arrival written at that minute), and the user is told. With no fix it keeps waiting.
+     */
+    @Test fun thePlaceIsTakenAtTheNextShiftAndSaid() = runBlocking {
+        val prefs = CommutePrefs.get(context)
+        prefs.setEnabled(true)
+        prefs.setPlaceNext(true)
+        assertTrue(prefs.current.placeNext)
+        assertFalse(prefs.current.hasPlace)
+        val now = d1.atTime(9, 30)
+        val here = android.location.Location("test").apply { latitude = 37.51; longitude = 127.02 }
+        CommuteRecorder.takePlace(context, now, here)
+        val s = prefs.current
+        assertTrue(s.hasPlace)
+        assertFalse(s.placeNext)
+        assertEquals(37.51, s.lat!!, 0.0001)
+        assertEquals(now, s.arrivedAt)
+        // The phone is inside: the geofence's first ENTER finds the shift open and writes nothing.
+        assertEquals(EnterPlan(false, Enter.OPEN), CommuteRecorder.onEnter(s, now.plusMinutes(2), dayEnd))
+        val nm = context.getSystemService(android.app.NotificationManager::class.java)
+        assertTrue(shadowOf(nm).allNotifications.any { it.extras.getCharSequence(androidx.core.app.NotificationCompat.EXTRA_TITLE) == "회사 위치를 정했어요" })
+        // Taken once: a later alarm leaves the place alone.
+        CommuteRecorder.takePlace(context, now.plusDays(1), android.location.Location("test").apply { latitude = 35.0; longitude = 129.0 })
+        assertEquals(37.51, prefs.current.lat!!, 0.0001)
+        // Turning off forgets the wait too.
+        prefs.setPlaceNext(true)
+        CommuteRecorder.turnOff(context)
+        assertFalse(prefs.current.placeNext)
+    }
+
     /** [DAYW-07] Location seen off: the system dropped the geofence, so the next check with location on puts it back. */
     @Test fun locationSeenOffMarksTheGeofenceGone() {
         val prefs = CommutePrefs.get(context)

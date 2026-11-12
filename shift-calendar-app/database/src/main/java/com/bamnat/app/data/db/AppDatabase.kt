@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
         SleepCheckEntity::class, SleepEventEntity::class,
     ],
-    version = 33,
+    version = 35,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -74,7 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
-                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
+                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
             )
 
         /**
@@ -486,6 +486,36 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneAt` INTEGER DEFAULT NULL")
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneDays` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * Version 34 (2.0.0, 총괄이 준 판 하나에 갈래들이 줄을 보태요; 2.0.0의 DB 변경은 모두 이 하나). [RVH-33] 검토 WORK-19 갈래 H: a kind of
+         * day's times before a change made '오늘부터만' ([com.bamnat.core.model.ShiftType.timeHistory]). Every kind of day of version 33 has
+         * none: its times are every day's, as they were. [RVH-44] 하루 두 구간: a kind of day's gap between its parts and a day's own;
+         * [RVH-45] 시간 단위 연차: a day's leave in minutes and where in the day. Only columns added, every row of 33 keeps its meaning
+         * (one part, leave in quarters).
+         */
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `timeHistory` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapStartMinute` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapMinutes` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapAlarm` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `customGapStartMinute` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `customGapMinutes` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `leaveMinutes` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `leaveAt` INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * Version 35 (2.0.0 [RVIB-04] 검토 I07ac-01, 총괄이 준 번호): a memo's schedule may be told by the work ('출근 1시간 전',
+         * '퇴근 30분 뒤'), kept as [com.bamnat.core.memo.WorkAnchor.code]. Only a column added: every memo of 34 keeps its clock time.
+         */
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `remindWork` TEXT DEFAULT NULL")
             }
         }
 

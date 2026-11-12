@@ -9,6 +9,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.share.ShareLinkPayload
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ScheduleResolver
+import com.bamnat.core.work.words
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -134,6 +135,7 @@ object TodayShiftNotice {
     fun lines(resolver: ScheduleResolver, today: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): Pair<String, String> =
         "오늘 ${describe(resolver.resolve(today), style)}" to "내일 ${describe(resolver.resolve(today.plusDays(1)), style)}"
 
+    /** 2.0.0 [RVH-41] 검토 T30-100: a day off is a shop's 휴무, a field worker's 빈 날 ([style]'s own word). */
     internal fun describe(day: ResolvedDay, style: com.bamnat.core.work.WorkStyle? = null): String {
         // The lock screen is seen by anyone nearby: the kind of leave shows only as a link shows it.
         val leave = day.leave?.let { ShareLinkPayload.leaveLabel(it, kinds = false) }
@@ -161,7 +163,7 @@ object TodayShiftNotice {
             work != null -> if (extra != null) "$work · $extra" else work
             extra != null -> extra
             name != null -> name
-            else -> "쉬는 날"
+            else -> style.words().offDay
         }
     }
 
