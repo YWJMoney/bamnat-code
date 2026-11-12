@@ -1287,6 +1287,9 @@ fun CalendarScreen(
         }
         if (fillMine != null) androidx.compose.runtime.DisposableEffect(fillMine) { onDispose { SetupFill.close() } }
         val shiftLook = rememberShiftLookNote()
+        // 2.0.0 [RVG-27] 검토 SN-13: this calendar's link went out without a part the server would not take (an emoji 근무 그림);
+        // said once over the month, so the sender knows without opening the share sheet (before, it said nothing and never went).
+        val shareLeftOut = com.bamnat.app.share.ShareLinkKey.all(activeCalendar.id).map { k -> k to c31.shareLinksOf(k).dropped.collectAsStateWithLifecycle().value }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             fillMine?.let { m ->
                 add(Notice("setupFill", "채워진 달력", line = m.line.head,
@@ -1338,6 +1341,15 @@ fun CalendarScreen(
                 add(Notice("phoneMoved", "옮겨 온 것 확인", line = "새 휴대폰으로 옮겨 왔어요", urgent = true) { com.bamnat.app.ui.settings.PhoneMovedNotice() })
                 add(Notice("appLockResting", "앱 잠금 쉼", line = "휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
                     urgent = true) { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
+            }
+            shareLeftOut.forEach { (k, words) ->
+                // [RVP-43] HQ-49: something to know, not to do now, so a row of the 알림함's 안내 (총괄 11-12).
+                if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "링크에 빼고 보낸 것", line = words,
+                    tone = com.bamnat.app.ui.theme.Tone.Caution, button = false, onClose = { c31.shareLinksOf(k).setDropped(null) }) {
+                    com.bamnat.app.ui.components.NudgeCard(words, tone = com.bamnat.app.ui.theme.Tone.Caution,
+                        onClose = { c31.shareLinksOf(k).setDropped(null) }, closeLabel = "링크 안내 닫기",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                })
             }
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
