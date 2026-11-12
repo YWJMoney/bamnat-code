@@ -85,6 +85,12 @@ object LedgerChecks {
         return names.map { it.replace(Regex("\\s+"), "") }.filter { it.length >= 2 }.any { n -> sameName(sender, n) }
     }
 
+    /** 2.0.0 [RVK-12] True when [name] (a sender or a receiver a text names) is one of the user's own [names]. */
+    fun isMine(name: String, names: Collection<String>): Boolean {
+        val n = name.replace(Regex("\\s+"), "").removeSuffix("님")
+        return n.isNotEmpty() && names.map { it.replace(Regex("\\s+"), "") }.filter { it.length >= 2 }.any { sameName(n, it) || sameName(it, n) }
+    }
+
     /** "홍길동" against "홍길동", "홍*동", "홍길*" or "(홍길동)". */
     private fun sameName(sender: String, name: String): Boolean {
         val s = sender.trim('(', ')', '[', ']')

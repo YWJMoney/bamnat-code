@@ -380,6 +380,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     var firstStyleKey by rememberSaveable { mutableStateOf<String?>(null) }
     // [SETUP-17] The first screen's file chooser was opened (it opens once).
     var fileAsked by rememberSaveable { mutableStateOf(false) }
+    // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go. [RVG-19] Kept out here: the
+    // summary's '가족·동료 근무표였어요' comes back to the first screen with it.
+    var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
@@ -410,8 +413,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
-                    // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go.
-                    var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }
                     // [RVG-15] The card's X: neither answer now; the link waits and the calendar offers it after the setup.
                     var linkClosed by rememberSaveable { mutableStateOf(false) }
@@ -491,7 +492,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE && !fileAsked,
                 onFileOpened = { fileAsked = true },
                 onBrowseBack = { firstStyleKey = null }.takeIf { firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE },
-                onFirstStyleUsed = { firstStyleKey = "" })
+                onFirstStyleUsed = { firstStyleKey = "" },
+                // [RVG-19] 검토 HQ-09: '내 근무표예요' by mistake: the link is beside as theirs, the first screen says so and asks again.
+                onNotMine = { title -> theirsKept = title; firstStyleKey = null })
             return
         }
         false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {

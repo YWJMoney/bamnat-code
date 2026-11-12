@@ -61,11 +61,18 @@ export function opsViews(A) {
     const d = S.data.incident;
     if (!d) return skeleton(3);
     const o = d.open;
-    const sig = d.signals.length ? `<ul class="alert-list">${d.signals.map((s) => `<li class="bad"><span><b>${esc(s.text)}</b></span></li>`).join("")}</ul>`
-      : `<p class="calm">${icon(P.check)}<span>지금 기준을 넘은 신호는 없어요.</span></p>`;
+    // 2.0.0 [RVN-01] 신호마다 확실·의심, 표본, 평소 값, 다시 묻지 않기(U22c-01, I22ca-01). 글에 이미 있는 값은 둘째 줄에 되풀이하지 않고,
+    // 점 색은 확실만 빨강·의심은 주황·잠잠하거나 다시 묻지 않는 신호는 회색(디자인 조건 6).
+    const SAMPLE = { errors: (n) => `요청 ${n}번`, rate: (n) => `요청 ${n}번` };
+    const sigLine = (s) => `<li class="${s.off || s.muted ? "quiet" : s.sure ? "bad" : ""}"><span><b>${esc(s.text)}</b><small>${esc([s.sure ? "확실 · 밤에도 바로 알려요" : "의심 · 아침에 알려요",
+      s.n && SAMPLE[s.key] ? SAMPLE[s.key](s.n) : "", s.was && !s.text.includes(s.was) ? s.was : "", s.off ? "지금은 잠잠해요" : "", s.muted ? "다시 묻지 않기로 한 신호" : ""].filter(Boolean).join(" · "))}</small></span></li>`;
+    const MUTE_NAMES = { errors: "서버 오류", rate: "서버 오류 비율", bugs: "문제 신고", jobs: "정기 작업 실패", stale: "5분 작업 멈춤", crash: "비정상 종료", anr: "ANR" };
+    const muteLine = (d.mutes ?? []).length ? `<p class="hint">다시 묻지 않는 신호: ${esc(d.mutes.map((m) => `${MUTE_NAMES[m.key] ?? m.key}(${m.until ? `${when(m.until)}까지` : "한 번 꺼질 때까지"})`).join(", "))}</p>` : "";
+    const sig = (d.signals.length ? `<ul class="alert-list">${d.signals.map(sigLine).join("")}</ul>`
+      : `<p class="calm">${icon(P.check)}<span>지금 기준을 넘은 신호는 없어요.</span></p>`) + muteLine;
     const top = o ? `<section class="card incident-open"><div class="card-head"><h2>사고 진행 중</h2><span class="pill bad">${esc(agoMs(o.openedAt))}부터</span></div>
         <p class="hint">${o.auto ? "서버가 신호를 보고 열었어요." : `${esc(o.by)}님이 직접 열었어요.${o.note ? ` ${esc(o.note)}` : ""}`} 사람이 무엇을 했는지 적어야 닫혀요.</p>
-        ${o.signals.length ? `<h3>열 때 본 신호</h3><ul class="mini">${o.signals.map((s) => `<li>${esc(s.text)}</li>`).join("")}</ul>` : ""}
+        ${o.signals.length ? `<h3>이 사고의 신호</h3><ul class="mini">${o.signals.map((s) => `<li>${esc(s.text)}${s.off ? " · 지금은 잠잠해요" : ""}</li>`).join("")}</ul>` : ""}
         <div class="actions start"><button class="btn primary" type="button" data-act="incident-close" data-id="${esc(o.id)}">고쳤어요 · 닫기</button></div></section>`
       : `<section class="card">${head("사고 없음", "급증·실패가 보이면 서버가 열고 바로 알려요")}
         <div class="actions start"><button class="btn" type="button" data-act="incident-open">직접 열기</button></div></section>`;
@@ -75,7 +82,7 @@ export function opsViews(A) {
       ? `<ul class="rows">${d.marks.slice().reverse().map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.text)}</b><small>${esc(when(m.at))}</small></span></div></li>`).join("")}</ul>`
       : '<p class="hint">바꾼 것이 없어요. 바깥(Play·Cloudflare) 문제일 수 있어요.</p>'}</section>`;
     const notice = `<section class="card">${head("공지 초안")}<textarea id="incident-notice" rows="3" aria-label="공지 초안">${esc(d.notice)}</textarea>
-      <div class="actions start"><button class="btn small" type="button" data-act="copy-text" data-target="incident-notice">복사</button><a class="btn small primary" href="${href("notices")}">앱 공지로 가기</a></div></section>`;
+      <div class="actions start"><button class="btn small" type="button" data-act="copy-text" data-target="incident-notice">복사</button><a class="btn small" href="${href("notices")}">앱 공지로 가기</a></div></section>`;
     const bugs = `<section class="card">${head("그동안 들어온 문제 신고", `${d.bugs.length}건`)}${d.bugs.length
       ? `<ul class="rows">${d.bugs.map((b) => `<li><a class="row" href="${L.routeHash("inquiries", b.id, {})}"><span class="row-main"><b>${esc(b.first || "(글 없음)")}</b><small>${esc(when(b.at))}${b.app ? ` · ${esc(b.app)}` : ""}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
         <p class="hint">같은 문제면 운영 장부에서 여러 줄을 골라 개발사항 하나로 묶어요.</p><div class="actions start"><a class="btn small" href="${L.routeHash("desk", null, { view: "open", group: "bug" })}">장부에서 묶기</a></div>`
@@ -474,11 +481,14 @@ export function opsViews(A) {
       if (await act(() => api(`/me/passkeys/${id}/delete`, "POST", {}), "지웠어요")) reload("passkeys");
     }),
     "incident-open": () => openDialog(`<form data-form="incident-open"><h2>사고를 직접 열까요?</h2><p>신호가 기준을 넘지 않았지만 문제가 커 보일 때 열어요. 다른 관리자에게도 맨 위 빨간 띠가 보여요.</p>
-      <div class="fieldset"><label for="io-note">무엇이 보이는지</label><textarea id="io-note" name="note" maxlength="300" required></textarea></div>
+      <div class="fieldset"><label for="io-note">무엇이 보이는지</label><textarea id="io-note" name="note" maxlength="300" required data-keep="incident-open-note"></textarea></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">열기</button></div></form>`),
     "incident-close": ({ id }) => openDialog(`<form data-form="incident-close" data-id="${esc(id)}"><h2>무엇을 했나요?</h2><p>한 줄이면 돼요. 다음에 같은 일이 생기면 이 기록을 먼저 봐요.</p>
-      <div class="fieldset"><label for="ic-note">한 일</label><textarea id="ic-note" name="note" maxlength="1000" required placeholder="예: 1.38.0 결제 화면 기능을 강제로 끄고 1.38.1로 고쳤어요"></textarea></div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">닫기</button></div></form>`),
+      <div class="fieldset"><label for="ic-note">한 일</label><textarea id="ic-note" name="note" maxlength="1000" required data-keep="incident-note-${esc(id)}" placeholder="예: 1.38.0 결제 화면 기능을 강제로 끄고 1.38.1로 고쳤어요"></textarea></div>
+      <div class="fieldset"><label for="ic-days">지금 있는 신호를 다시 묻지 않기</label><select id="ic-days" name="days">
+        <option value="0" selected>신호가 꺼질 때까지</option><option value="1">하루</option><option value="3">3일</option><option value="7">7일</option><option value="14">14일</option></select>
+        <small class="hint">닫을 때보다 1.3배 나빠지면 언제든 다시 열려요. Play 비정상 종료·ANR은 28일 평균이라 몇 주 남을 수 있어요.</small></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">사고 닫기</button></div></form>`),
     "copy-text": async ({ target }) => {
       const el = document.getElementById(target);
       try {
@@ -545,7 +555,8 @@ export function opsViews(A) {
     },
     "incident-close": async (form) => {
       dialog.close();
-      if (await act(() => api(`/incident/${form.dataset.id}/close`, "POST", { note: new FormData(form).get("note") }), "사고를 닫았어요")) {
+      const f = new FormData(form);
+      if (await act(() => api(`/incident/${form.dataset.id}/close`, "POST", { note: f.get("note"), days: Number(f.get("days") ?? 0) }), "사고를 닫았어요")) {
         if (S.overview) S.overview.incidentOpen = 0;
         reload("incident");
       }
