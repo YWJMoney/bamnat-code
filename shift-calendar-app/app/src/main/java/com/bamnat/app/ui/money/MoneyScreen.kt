@@ -349,6 +349,11 @@ class MoneyViewModel(
             // 2.0.0 [RVK-41] (검토 MONEY-53) Counted as the budget screen counts it: by 급여일 주기 when it is on, with 예산 넘김.
             val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, Today.date(), budgetCycle(entry.date), budgetRolling()) }.orEmpty()
             if (crossed.isNotEmpty()) _undo.tryEmit(UndoMessage(overText(crossed), undo = null))
+            // 2.0.0 [RVK-49] (PC-172) A new line outside the month on show says where it went, with the way there.
+            val landed = YearMonth.from(settled.date)
+            if (old == null && landed != shownMonth.value) {
+                _undo.tryEmit(UndoMessage("${com.bamnat.app.ui.Fmt.monthDay(settled.date)}에 적었어요", actionLabel = "그 달 보기") { showMonth(landed) })
+            }
         }
     }
 
@@ -1091,11 +1096,14 @@ fun MoneyScreen(
 
     // 1.39 [FLOW-30] 근무 기준 하루: a coffee bought at 02:10 in last night's shift is put on that night's day, as is the small hours of
     // a day with no work before 하루 시작 시각 (기본 04:00). The date row on the sheet still changes it.
-    val addDate = if (YearMonth.from(today) == month) {
+    // 2.0.0 [RVK-49] (PC-172) Always today, whatever month the tab shows: a staff phone whose calendar opened on next month's roster
+    // saved a coffee as '12월 31일' (the shown month's last day) without a word. The date row on the sheet still picks another day
+    // (a missed line of a month gone by), and a line that lands outside the shown month says where it went ([MoneyViewModel.saveEntry]).
+    val addDate = run {
         val at = com.bamnat.core.time.Today.dateTime()
         snapshot?.let { s -> com.bamnat.core.design.DayBoundary.dayOf(at, s.resolver::resolve, com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) }
             ?.takeIf { at.toLocalDate() == today } ?: today
-    } else month.atEndOfMonth()
+    }
     adding?.let { k ->
         // A new round for 저장하고 하나 더, so the sheet starts empty again, on the day and account of the line just saved.
         key(addRound) {
