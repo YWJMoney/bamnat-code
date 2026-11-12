@@ -24,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -276,9 +278,12 @@ private fun WishOffDialog(month: java.time.YearMonth, w: com.bamnat.core.work.Wi
                     else com.bamnat.core.work.WishOff.copyText(month, picked), style = MaterialTheme.typography.bodyMedium)
                 Text("신청 마감", style = MaterialTheme.typography.titleSmall)
                 androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    TextButton(enabled = (w.deadlineDay ?: 1) > 1, onClick = { onDeadline(((w.deadlineDay ?: 21) - 1).coerceAtLeast(1)) }) { Text("−") }
+                    // 2.0.0 [RVH-13] 검토 CAL-18: named by what they do for the screen reader.
+                    TextButton(enabled = (w.deadlineDay ?: 1) > 1, onClick = { onDeadline(((w.deadlineDay ?: 21) - 1).coerceAtLeast(1)) },
+                        modifier = Modifier.semantics { contentDescription = "마감 하루 앞으로" }) { Text("−") }
                     Text(w.deadlineDay?.let { "매달 ${it}일" } ?: "정하지 않음", style = MaterialTheme.typography.bodyLarge)
-                    TextButton(enabled = (w.deadlineDay ?: 0) < 31, onClick = { onDeadline(((w.deadlineDay ?: 19) + 1).coerceAtMost(31)) }) { Text("+") }
+                    TextButton(enabled = (w.deadlineDay ?: 0) < 31, onClick = { onDeadline(((w.deadlineDay ?: 19) + 1).coerceAtMost(31)) },
+                        modifier = Modifier.semantics { contentDescription = "마감 하루 뒤로" }) { Text("+") }
                     if (w.deadlineDay != null) TextButton(onClick = { onDeadline(null) }) { Text("없음") }
                 }
                 Text(if (w.deadlineDay != null) "마감 이틀 전과 당일 오전 9시에 다음 달 고른 날 수를 알려 드려요. 그 달에 날이 없으면 그 달 마지막 날이 마감이에요."

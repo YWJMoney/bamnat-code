@@ -17,6 +17,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.NumberStyle
@@ -45,9 +47,12 @@ internal fun ShiftPremiumSection(type: ShiftType, onChange: (Int) -> Unit, onBre
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            OutlinedButton(onClick = { onChange((p - 5).coerceAtLeast(0)) }, enabled = p > 0) { Text("−") }
+            // 2.0.0 [RVH-13] 검토 CAL-18 (같은 모양): named by what they do for the screen reader.
+            OutlinedButton(onClick = { onChange((p - 5).coerceAtLeast(0)) }, enabled = p > 0,
+                modifier = Modifier.semantics { contentDescription = "수당 5% 줄이기" }) { Text("−") }
             Text("$p%", style = MaterialTheme.typography.titleMedium.merge(NumberStyle), modifier = Modifier.padding(horizontal = 8.dp))
-            OutlinedButton(onClick = { onChange((p + 5).coerceAtMost(PREMIUM_MAX)) }, enabled = p < PREMIUM_MAX) { Text("+") }
+            OutlinedButton(onClick = { onChange((p + 5).coerceAtMost(PREMIUM_MAX)) }, enabled = p < PREMIUM_MAX,
+                modifier = Modifier.semantics { contentDescription = "수당 5% 늘리기" }) { Text("+") }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (c in PremiumChoices) FilterChip(selected = p == c, onClick = { onChange(c) }, label = { Text(if (c == 0) "없음" else "$c%") })

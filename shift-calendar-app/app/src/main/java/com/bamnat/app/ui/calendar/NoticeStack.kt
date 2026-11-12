@@ -27,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -59,31 +58,45 @@ internal fun NoticeStack(
     val present = notices.filter { (state.heights[it.key] ?: 0) > 0 }
     val shownKeys = if (state.expanded) present.map { it.key }.toSet() else present.take(open).map { it.key }.toSet()
     val folded = present.filter { it.key !in shownKeys }
-    Column(modifier.fillMaxWidth()) {
-        notices.forEach { n ->
-            val shown = n.key in shownKeys || (state.heights[n.key] ?: 0) == 0 && present.size < open
-            androidx.compose.runtime.key(n.key) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .layout { measurable, constraints ->
-                            val p = measurable.measure(constraints)
-                            if (state.heights[n.key] != p.height) state.heights[n.key] = p.height
-                            if (shown) layout(p.width, p.height) { p.place(0, 0) } else layout(p.width, 0) {}
-                        }
-                        .then(if (shown) Modifier else Modifier.clearAndSetSemantics { }),
-                ) {
-                    CompositionLocalProvider(LocalNoticeFolded provides !shown) { n.content() }
+    // 2.0.0 [RVH-21] 검토 CAL-26: which notices are placed is decided in one layout pass over all of them, in order: the first
+    // [open] that drew something now. Decided from the heights of the frame before, the first frame (no heights yet) placed every
+    // notice at its full height and folded them the next, so the month dropped and came back up on a day with several. Counted in
+    // each notice's own layout instead, a notice measured again alone (one that went quiet) left the others as they were placed.
+    androidx.compose.ui.layout.Layout(
+        modifier = modifier.fillMaxWidth(),
+        content = {
+            notices.forEach { n ->
+                val shown = n.key in shownKeys || (state.heights[n.key] ?: 0) == 0 && present.size < open
+                androidx.compose.runtime.key(n.key) {
+                    Box(Modifier.fillMaxWidth().then(if (shown) Modifier else Modifier.clearAndSetSemantics { })) {
+                        CompositionLocalProvider(LocalNoticeFolded provides !shown) { n.content() }
+                    }
                 }
             }
+            if (folded.isNotEmpty() || state.expanded && present.size > open) {
+                FoldLine(
+                    count = folded.size,
+                    first = folded.firstNotNullOfOrNull { it.label },
+                    expanded = state.expanded,
+                    onToggle = { state.expanded = !state.expanded },
+                )
+            }
+        },
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity)
+        val parts = measurables.map { it.measure(loose) }
+        var count = 0
+        val placed = parts.mapIndexed { i, p ->
+            if (i >= notices.size) return@mapIndexed true
+            val key = notices[i].key
+            if (state.heights[key] != p.height) state.heights[key] = p.height
+            (p.height > 0 && (state.expanded || count < open)).also { if (it) count++ }
         }
-        if (folded.isNotEmpty() || state.expanded && present.size > open) {
-            FoldLine(
-                count = folded.size,
-                first = folded.firstNotNullOfOrNull { it.label },
-                expanded = state.expanded,
-                onToggle = { state.expanded = !state.expanded },
-            )
+        val height = parts.indices.filter { placed[it] }.sumOf { parts[it].height }
+        val width = constraints.maxWidth.takeIf { it != androidx.compose.ui.unit.Constraints.Infinity } ?: parts.maxOfOrNull { it.width } ?: 0
+        layout(width, height.coerceIn(constraints.minHeight, constraints.maxHeight)) {
+            var y = 0
+            parts.forEachIndexed { i, p -> if (placed[i]) { p.place(0, y); y += p.height } }
         }
     }
 }

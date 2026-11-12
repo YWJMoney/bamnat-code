@@ -734,8 +734,10 @@ class AppContainer(context: Context) {
         com.bamnat.app.imports.CalendarImporter(appContext, com.bamnat.app.imports.DeviceCalendars(appContext), scheduleRepository,
             memoRepository, database.importedEventDao())
     }
-    /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. */
-    val shownMonth = com.bamnat.app.ui.ShownMonth()
+    /** 2.0.0 [RVH-15] 검토 CAL-20: the day and month left on the calendar, for opening there again after the phone closed 밤낮. */
+    val calendarPlace by lazy { com.bamnat.app.data.CalendarPlaceStore(appContext) }
+    /** [NAV-01] The month the calendar, 돈 and 근무·급여 show together. [RVH-15] Where it was left, within 6 hours. */
+    val shownMonth = com.bamnat.app.ui.ShownMonth(runCatching { calendarPlace.month() }.getOrNull() ?: com.bamnat.core.time.Today.month())
     /** [NOTE-02] The memo tab's notebook, kept while the app runs so coming back finds the same list. */
     val memoNotebook = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.memo.MemoNotebook.CALENDAR)
 

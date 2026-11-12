@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.bamnat.core.work.WorkStyle
 
 /** [DAY-02][DAY-04] The day view's groups, by the key kept in the user's order. */
 internal object DayGroupKey {
@@ -67,9 +68,10 @@ internal object DayGroupKey {
         return mine + all.filter { it !in mine }
     }
 
-    fun label(key: String): String = when (key) {
-        WORK -> "근무"
-        EXTRA -> "추가 근무"
+    /** [RVH-17] 검토 CAL-22: in the calendar's words, as the day view names its groups (영업, 일정, 매매; 현장's 일정 더하기). */
+    fun label(key: String, style: WorkStyle? = null): String = when (key) {
+        WORK -> workTitle(style)
+        EXTRA -> if (style == WorkStyle.FIELD) "일정 더하기" else "추가 근무"
         LEAVE -> "휴가"
         ALARM -> "알람"
         MEMO -> "메모"
@@ -77,6 +79,16 @@ internal object DayGroupKey {
         BODY -> "몸"
         else -> "기록"
     }
+
+    /** The day view's first group: 근무, 영업 (가게), 일정 (현장), 매매 (투자). */
+    fun workTitle(style: WorkStyle?): String = if (style == WorkStyle.INVEST) "매매" else com.bamnat.app.ui.shifts.dayKindNoun(style)
+
+    /**
+     * 2.0.0 [RVH-17] 검토 CAL-22: the groups a day of [style] has. A 가게·투자 calendar's owner has no 추가 근무 or 휴가 of their own
+     * (the day view shows them only for one already written), so the order dialog leaves them out.
+     */
+    fun has(key: String, style: WorkStyle?): Boolean =
+        !((style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) && (key == EXTRA || key == LEAVE))
 
     fun icon(key: String): ImageVector = when (key) {
         WORK -> Icons.Outlined.Work
@@ -108,12 +120,16 @@ fun DayGroupOrderDialog(
     moneyFirst: Boolean,
     onChange: (List<String>) -> Unit,
     onDismiss: () -> Unit,
+    /** [RVH-17] The calendar's kind: only its groups, in its words. */
+    style: WorkStyle? = null,
 ) {
-    val order = DayGroupKey.order(custom, moneyFirst)
+    val all = DayGroupKey.order(custom, moneyFirst)
+    val order = all.filter { DayGroupKey.has(it, style) }
     val haptics = LocalHapticFeedback.current
     val move: (Int, Int) -> Unit = { i, by ->
         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-        onChange(order.moved(i, by))
+        // The groups this calendar does not have keep their place after the rest.
+        onChange(order.moved(i, by) + all.filterNot { DayGroupKey.has(it, style) })
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -131,7 +147,7 @@ fun DayGroupOrderDialog(
                     OrderRow(
                         index = i,
                         count = order.size,
-                        label = DayGroupKey.label(key),
+                        label = DayGroupKey.label(key, style),
                         icon = DayGroupKey.icon(key),
                         onUp = { move(i, -1) },
                         onDown = { move(i, 1) },

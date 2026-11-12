@@ -113,9 +113,8 @@ object QuickText {
     private fun clock(t: String): LocalTime? {
         COLON.find(t)?.let { m -> return runCatching { LocalTime.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull() }
         val m = OCLOCK.find(t) ?: return null
-        var h = m.groupValues[2].toInt()
-        if (m.groupValues[1] == "오후" && h < 12) h += 12
-        if (m.groupValues[1] == "새벽" && h == 12) h = 0
+        // 2.0.0 [RVH-06] 검토 CAL-09: 저녁·밤 are the evening too ("저녁 7시" 19:00, "밤 10시" 22:00, "밤 12시" 0시), read as the memo does.
+        val h = com.bamnat.core.time.KoreanHour.of(m.groupValues[1].ifEmpty { null }, m.groupValues[2].toInt())?.first ?: return null
         return runCatching { LocalTime.of(h, m.groupValues[3].toIntOrNull() ?: 0) }.getOrNull()
     }
 

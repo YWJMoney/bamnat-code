@@ -162,7 +162,8 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
         },
         confirmButton = {
             TextButton(enabled = u != null, onClick = {
-                val base = if (fromHere) rules.withRateFrom(date, rate.toAmount()) else rules.copy(dayRate = rules.dayRate.takeIf { rules.rateFrom.isNotEmpty() } ?: rate.toAmount())
+                // [RVH-23] 검토 CAL-28: without the tick, this day only.
+                val base = rules.afterDayRate(date, rate.toAmount(), fromHere)
                 val r = base.copy(lastClient = client.trim())
                 val job = DayRate.job(date, u!!, rate.toAmount(), r.lastClient, existing).let { if (existing != null) it.copy(client = client.trim()) else it }
                 if (fromHere) onReprice(DayRate.repriceFrom(date, rate.toAmount(), jobs).filter { it.id != existing?.id })

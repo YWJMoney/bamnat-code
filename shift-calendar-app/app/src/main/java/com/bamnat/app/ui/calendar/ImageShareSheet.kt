@@ -71,7 +71,11 @@ fun ImageShareSheet(
     startName: String = "",
     /** 1.40 [SPREAD-37] In 12-20~1-10, the year whose 결산 picture can be made instead, and how to open it. */
     yearRecap: Pair<Int, () -> Unit>? = null,
+    /** 2.0.0 [RVH-20] 검토 CAL-25: the calendar's kind, for the picture's title and its 이름표 in its words. */
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
+    val word = com.bamnat.core.work.scheduleWord(style)
+    val noun = DayGroupKey.workTitle(style)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var memoOn by rememberSaveable { mutableStateOf(false) }
@@ -86,7 +90,7 @@ fun ImageShareSheet(
     val notes = androidx.compose.runtime.remember(memos, month) { MonthImage.notes(memos, month) }
     val hasMemo = notes.values.any { it.memo != null }
     val hasSticker = notes.values.any { it.sticker != null }
-    val look = MonthImage.Look(memos = memoOn && hasMemo, stickers = stickers, holidays = holidays, legend = legend, name = name, mark = mark)
+    val look = MonthImage.Look(memos = memoOn && hasMemo, stickers = stickers, holidays = holidays, legend = legend, name = name, mark = mark, word = word)
     // The picture as it will go, drawn off the main thread each time a choice changes.
     val preview by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, look, snapshot, month, notes) {
         value = withContext(Dispatchers.Default) {
@@ -124,12 +128,12 @@ fun ImageShareSheet(
             Pick("메모 그림", if (hasSticker) "메모 앞의 그림(🎂·✈️ 같은 이모지)만 날짜 옆에 붙여요. 글은 안 가요"
                 else "메모를 🎂·✈️ 같은 그림으로 시작하면 날짜 옆에 붙어요", stickers) { stickers = it }
             Pick("공휴일 이름", "날짜 아래 작게 써요", holidays) { holidays = it }
-            Pick("근무 이름표", "사진 아래 근무 색과 시간", legend) { legend = it }
+            Pick("$noun 이름표", "사진 아래 $noun 색과 시간", legend) { legend = it }
             Pick("밤낮 표시", if (mark) "오른쪽 아래에 작게 ‘${MonthImage.MARK}’. 받은 분이 앱을 찾을 수 있어요"
                 else "표시 없이 보내요. 설정 › 데이터에서도 바꿀 수 있어요", mark) { on -> mark = on; settingsRepo.update { it.copy(exportMark = on) } }
             OutlinedTextField(value = name, onValueChange = { if (it.length <= 12) name = it }, singleLine = true,
                 label = { Text("제목에 넣을 이름 (선택)") }, placeholder = { Text("예: 민지") },
-                supportingText = { Text("‘${name.trim().ifEmpty { "민지" }}의 ${month.monthValue}월 근무표’로 보여요") },
+                supportingText = { Text("‘${name.trim().ifEmpty { "민지" }}의 ${month.monthValue}월 $word’로 보여요") },
                 modifier = Modifier.fillMaxWidth())
             // PC 5차(6db1056b): the share window did not come. Closing the sheet at the tap took this sheet's scope with it
             // and cancelled the drawing before the window could open; the sheet now closes once the window is asked for.

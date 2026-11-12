@@ -369,9 +369,15 @@ fun CalendarSwitcherSheet(
             if (onCombined != null && rows.count { it is CalendarRow.Mine } >= 2) {
                 AddRow("모든 달력 합쳐 보기", onCombined, MineShape, detail = "달력마다 색 막대로 한 달력에 보고, 겹치는 시간을 알려 줘요")
             }
-            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(), detail = "알바·부업 근무를 따로 적고 따로 공유해요")
+            // 2.0.0 [RVH-20] 검토 T01-11: a shop, a field worker or an investor has no 동료 근무표; said in their words.
+            val employee = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle?.usesPayEngine != false
+            AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(),
+                detail = if (employee) "알바·부업 근무를 따로 적고 따로 공유해요" else "다른 일·부업·가족 일정을 따로 적고 따로 공유해요")
             // [UX-03] Said the way people think of it: a coworker's schedule, and what it is for.
-            onAddReceived?.let { AddRow("동료 근무표 받기", it, CircleShape, detail = "받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요") }
+            onAddReceived?.let {
+                AddRow(if (employee) "동료 근무표 받기" else "다른 사람 달력 받기", it, CircleShape,
+                    detail = "받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요")
+            }
             Text(
                 "새 달력은 근무와 순서를 따로 갖고, 링크도 따로 공유해요. " +
                     (if (onAddReceived != null) "받은 달력은 읽기 전용이고 보낸 분이 링크를 끊으면 여기서도 지워져요." else ""),
@@ -739,8 +745,9 @@ private fun CalendarEditDialog(
                 if (!cal.isMain) {
                     ColorRow(cal.color, onColor)
                     ListItem(
-                        headlineContent = { Text("근무 알람 울리기") },
-                        supportingContent = { Text("이 달력 근무의 알람도 내 달력 알람처럼 울려요") },
+                        // [RVH-20] In the calendar's words: 영업·일정·투자 알람.
+                        headlineContent = { Text("${com.bamnat.app.ui.shifts.alarmNoun(cal.style)} 알람 울리기") },
+                        supportingContent = { Text("이 달력 ${com.bamnat.app.ui.shifts.alarmNoun(cal.style)}의 알람도 내 달력 알람처럼 울려요") },
                         trailingContent = { Switch(checked = cal.alarms, onCheckedChange = onAlarms) },
                         modifier = Modifier.clickable(role = Role.Switch) { onAlarms(!cal.alarms) },
                     )
@@ -760,7 +767,8 @@ private fun CalendarEditDialog(
                 OutlinedButton(onClick = { save(); onShare() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.Share, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (open != null) "링크 고치기·다시 보내기" else "이 달력 근무표 공유")
+                    Text(if (open != null) "링크 고치기·다시 보내기"
+                        else if (cal.style == com.bamnat.core.work.WorkStyle.INVEST) "이 달력 공유" else "이 달력 ${com.bamnat.core.work.scheduleWord(cal.style)} 공유")
                 }
             }
         },

@@ -53,7 +53,7 @@
 {"track": "RVD-11", "title": "나간 판 저장이 끊겨도 남은 출시 안내·공지를 이어 보냄", "status": "check", "size": "fix", "route": "server", "test": "[RVD-11] one answer failing does not stop the others", "check": "서버 배포 뒤 관리자 앱에서 확인"}
 {"track": "RVD-13", "title": "작품 보상은 지급 대기에 두고 관리자가 확인한 뒤 지급", "status": "check", "size": "fix", "route": "server", "test": "[RVD-13] a work that reaches 모두의 도구 by its numbers waits for an admin: nothing is paid by itself", "check": "서버 배포 뒤 관리자 앱 › 보상 › 지급 대기에서 작품 줄과 숫자, 앱 프로 화면의 '운영팀이 확인한 뒤 들어와요' 줄"}
 {"track": "RVD-14", "title": "친구 초대 보상도 지급 대기, 관리자가 판단할 근거와 함께", "status": "check", "size": "fix", "route": "server", "test": "[RVD-14] SVC-06: a group of friends gives an owed month with what the admin needs to judge it; the friend's phone hears it is checked", "check": "서버 배포 뒤 지급 대기의 친구 초대 줄(Play 확인 폰·직접 입력·몰림)"}
-{"track": "RVD-15", "title": "보상 프로는 한 사람 1년에 모두 합쳐 12개월까지", "status": "check", "size": "fix", "route": "server", "test": "[RVD-15] one person gets at most 12 months of rewards in 365 days, all kinds together, and moving the passes does not reset it", "check": "서버 배포 뒤 지급 대기의 '상한' 표시와 남은 개월만 지급"}
+{"track": "RVD-15", "title": "보상 프로는 한 사람 1년에 모두 합쳐 12개월까지", "status": "check", "size": "fix", "route": "server", "test": "[RVD-15] one person gets at most 12 months of rewards in 365 days, all kinds together, and moving the passes does not reset it", "check": "서버 배포 뒤 지급 대기의 '상한' 표시와 남은 개월만 지급, 상한에 닿은 분 폰에는 '확인한 뒤 들어와요' 없이 '모두 받았어요'만(PC 확인 D-442 나 절)"}
 {"track": "RVD-16", "title": "드릴 보상 화면: 종류별로 보고 여러 개 골라 지급·취소", "status": "check", "size": "polish", "route": "server", "test": "[RVD-16] many owed rewards: pick several and pay or cancel them at once; ones past the cap are skipped and said", "check": "서버 배포 뒤 관리자 앱 보상 › 지급 대기, 데스크톱·휴대폰 폭"}
 {"track": "RVD-17", "title": "글쓰기 제한 뒤 다시 세는 기간 60일(운영 규칙대로)", "status": "check", "size": "fix", "route": "server", "test": "[RVD-17] LEGAL-07: within 60 days after a restriction ends one more steps up; after 60 days it is 3 again; 180 quiet days still step down", "check": "서버 배포 뒤 관리자 앱 마을 › 쓰기 제한 규칙 글"}
 {"track": "RVD-18", "title": "신고는 확인한 것만 세기(3.12부터)와 마을 쉬기(12-09부터) 나눔", "status": "check", "size": "fix", "route": "server", "flag": "community.confirmed", "test": "[RVD-18] LEGAL-02: from 3.12's day (11-09) to 12-09, report-hidden posts wait for the operator; counting stays 1.36's and there is no 마을 쉬기 yet", "check": "서버 배포 뒤 관리자 앱 마을 돌봄 안내 줄, 기능 관리의 community.confirmed 켜짐·community.care 12-09 대기"}
@@ -220,4 +220,31 @@
 {"track": "RVG-16", "title": "링크로 시작한 사람에게 '어떻게 일하세요?' 한 줄", "status": "check", "size": "fix", "route": "app", "check": "팀원 링크로 시작 → 요약 '어떻게 일하세요?'에서 알바·시급 → 저장 뒤 아래 탭·급여 설정 첫 질문이 시급, 날짜는 받은 근무표 그대로"}
 {"track": "RVG-17", "title": "링크로 시작할 때 두 번째 읽기 없이 처음 읽은 근무표를 그대로", "status": "check", "size": "fix", "route": "app", "check": "느린 망에서 링크로 첫 화면: 단추가 '근무표를 불러오는 중…' 동안 막혀 있다가 열림. '내 근무표예요' 바로 뒤 비행기 모드여도 받은 달력에 들어가고 리더가 고친 날이 다음에 따라옴"}
 {"track": "RVG-18", "title": "다음 달 근무표 링크로 시작하면 그 달로 열기", "status": "check", "size": "fix", "route": "app", "check": "리더가 다음 달 표를 확정해 보낸 팀원 링크로 새 폰 시작 → 요약 달력이 그 달로 열림 → 시작 뒤 달력도 그 달로 열림(이번 달에 근무가 있으면 이번 달)"}
+{"track": "RVH-01", "title": "받은 근무표 따라가기: 답하지 않은 물음이 다음 변경 때도 남음", "status": "check", "size": "fix", "route": "app", "check": "받은 근무표 링크에서 한 날 바꿈 → 물음에 답하지 않고 다시 한 날 바꿈: 앞 물음도 남아 있음"}
+{"track": "RVH-02", "title": "받은 근무표 따라가기: 새로 생긴 날이 내가 넣은 근무를 덮지 않음", "status": "check", "size": "fix", "route": "app", "check": "내 달력에 직접 넣은 날에 링크가 새 근무를 넣으면 덮지 않고 물음으로 뜸"}
+{"track": "RVH-03", "title": "그 주만 보기가 주 시작 요일 설정을 따름", "status": "check", "size": "fix", "route": "app", "check": "설정 › 주 시작 월요일 → 그 주만 보기: 월~일, 'n월 n째 주'가 달 보기 줄과 같음"}
+{"track": "RVH-04", "title": "주기 없는 달력의 칠하기 막대에 '근무 주기대로'가 안 보임", "status": "check", "size": "fix", "route": "app", "check": "알바·현장·가게(주기 없음) 칠하기 막대·되돌림 알림 말"}
+{"track": "RVH-05", "title": "'패턴'과 '근무 주기'를 한 말로", "status": "check", "size": "polish", "route": "app", "check": "달력 요약·바꾼 날 표시: 근무 주기(일근은 평소), 패턴 말 없음"}
+{"track": "RVH-06", "title": "한 줄 입력: 저녁·밤 시각을 오후로", "status": "check", "size": "fix", "route": "app", "check": "한 줄 입력 '저녁 7시 회식', '밤 10시' → 19:00·22:00"}
+{"track": "RVH-07", "title": "알바 대근 묻기 창은 '대타'", "status": "check", "size": "polish", "route": "app", "check": "알바 달력 쉬는 날에 근무 넣기 → 묻기 창 3곳 '대타'"}
+{"track": "RVH-08", "title": "같은 근무를 다시 골라도 되돌리기 알림이 늦지 않음", "status": "check", "size": "fix", "route": "app", "check": "같은 근무 다시 고르기 → 되돌리기 알림 바로(또는 없음)"}
+{"track": "RVH-09", "title": "범례: 그 유형 줄만, 공휴일 줄은 표시만 설명", "status": "check", "size": "polish", "route": "app", "check": "교대·일근·알바 범례: 주휴 줄은 알바만, '쉬는 날이에요' 없음"}
+{"track": "RVH-10", "title": "타임라인·주 판의 주말 색과 시각 표기를 달력과 같게", "status": "check", "size": "polish", "route": "app", "check": "타임라인·주 판: 일·공휴일 빨강, 토 파랑, 시각 표기 설정 따름"}
+{"track": "RVH-11", "title": "큰 글자에서 타임라인·받은 달력 칸이 잘리지 않음", "status": "check", "size": "fix", "route": "app", "check": "글자 200%: 타임라인 날짜·시각 줄, 받은 달력 메모, 카드값 표시"}
+{"track": "RVH-12", "title": "조 설정을 고치다 돌려도 그대로", "status": "check", "size": "fix", "route": "app", "check": "조 설정 고치는 중 화면 돌리기·폴드 접기 → 고친 것 남음"}
+{"track": "RVH-13", "title": "'−'·'+' 단추에 읽어 주는 이름", "status": "check", "size": "polish", "route": "app", "check": "TalkBack: 근무 하루 화면·수당 칸의 −/+ 이름"}
+{"track": "RVH-14", "title": "새 공휴일 파일이 오면 열린 달력도 바로 바뀜", "status": "check", "size": "fix", "route": "app", "check": "앱을 연 채로 공휴일 파일 받기 → 달력 빨간 날이 바로 바뀜"}
+{"track": "RVH-15", "title": "고른 날·보던 달을 6시간 안에 다시 열면 그 자리로", "status": "check", "size": "fix", "route": "app", "check": "3월로 넘겨 15일 고름 → 앱 강제 종료 → 다시 열기: 3월 15일"}
+{"track": "RVH-16", "title": "달력 모양 미리 보기를 그 유형의 한 주로", "status": "check", "size": "polish", "route": "app", "check": "가게·투자·알바·현장 카드 배치 › 달력 모양 미리 보기 예시"}
+{"track": "RVH-17", "title": "하루 화면 순서 창: 그 유형 묶음만", "status": "check", "size": "polish", "route": "app", "check": "가게: 돈·메모·영업·알람·몸·기록, 투자: 매매"}
+{"track": "RVH-18", "title": "투자 달력 고치기: 원금과 수익률 → 투자 한눈에", "status": "check", "size": "fix", "route": "app", "check": "투자 달력 고치기 › 원금과 수익률 누르기 → 투자 › 한눈에"}
+{"track": "RVH-19", "title": "1년 달력·합쳐 보기가 그 유형 말로", "status": "check", "size": "polish", "route": "app", "check": "가게·현장·투자 1년 달력: 영업·일 n일, 교대만 야간·휴식 칩"}
+{"track": "RVH-20", "title": "공유·만료 알림·달력 바꾸기의 '근무표'를 그 유형 말로", "status": "check", "size": "polish", "route": "app", "check": "가게·현장 공유 그림 제목, 만료 알림, 달력 바꾸기 창 말"}
+{"track": "RVH-21", "title": "알림 더미가 첫 프레임에 펼쳐졌다 접히지 않음", "status": "check", "size": "fix", "route": "app", "check": "알림 3장 이상인 달력 열기: 처음부터 접힌 모양"}
+{"track": "RVH-22", "title": "둘러보기 중 쓰기는 모두 '내 달력으로 시작' 묻기", "status": "check", "size": "fix", "route": "app", "check": "예시 달력에서 주기 멈추기·한 줄 입력·대근 답·시간 바꾸기 → 묻기 창"}
+{"track": "RVH-23", "title": "현장 공수: '이 날부터'를 안 누르면 기본 일당 그대로", "status": "check", "size": "fix", "route": "app", "check": "현장 공수 창에서 하루만 다른 일당 → 다음 날 기본 일당 그대로"}
+{"track": "RVH-24", "title": "유형 낱말 검사 시험(뿌리 고침 5번)", "status": "check", "size": "polish", "route": "app", "check": "시험만(TypeWordsTest, TypeWordsScreenTest): 새는 말 목록이 줄어드는 쪽으로만"}
+{"track": "RVH-25", "title": "기능 찾기 '어디'를 그 유형 탭 이름으로, 광장 바로 가기 바로잡기", "status": "check", "size": "fix", "route": "app", "check": "알바 기능 찾기 '어디: 출근·시급 › …', 광장 기능 바로 가기 → 마을 › 광장"}
+{"track": "RVH-26", "title": "시작 단계 말을 가게·현장 말로", "status": "check", "size": "polish", "route": "app", "check": "가게·현장 새로 깔기 → 시작 카드 '영업일 넣기'·'일정 넣기'"}
+{"track": "RVH-27", "title": "알바 달력 요약의 '근무·급여 열기'를 '출근·시급 열기'로", "status": "check", "size": "polish", "route": "app", "check": "알바 달력 달 요약·이번 주 시간 줄: TalkBack '출근·시급 열기'"}
 {"track": "PC-28", "title": "달 넘김 효과나 움직임 끄기를 써도 달력에서 누른 날짜가 그대로 열림", "status": "check", "size": "fix", "route": "app", "test": "MonthTurnTapTest", "check": "달 넘김 스르륵·책장 넘기기·움직이지 않기 작품, 움직임 끄기, 휴대폰 애니메이션 삭제에서 11월 12일을 누르고 길게 눌러 근무 넣기 → 11월 12일에 열리고 저장, 달 넘김 모양은 그대로"}

@@ -251,15 +251,13 @@ class APScreenshotTest : ScreenshotBase() {
         val s1 = page.setups.first { it.id == "s1" }
         var done = false
         vm.apply(page, s1, null, withPay = false, done = { done = true }, failed = { error(it) })
-        waitFor(200)
-        assertTrue(done)
+        assertTrue(waitUntil { done }) // [QA-11] the apply ends off the main thread
         assertNull(c.payWays.way.value)
         assertTrue(c.payStore.profile.value?.rules == bare().rules)
         // With the pay: [PAYG-03] 1.30 BA the cycle is in, the pay waits for its 기본급 in one sheet.
         done = false
         vm.apply(page, s1, null, withPay = true, done = { done = true }, failed = { error(it) })
-        waitFor(200)
-        assertTrue(done)
+        assertTrue(waitUntil { done }) // [QA-11] the apply ends off the main thread
         assertNull(c.payWays.way.value)
         assertTrue(c.payStore.profile.value?.rules == bare().rules)
         val profile = c.payStore.profile.value

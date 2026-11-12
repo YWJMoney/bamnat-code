@@ -184,22 +184,9 @@ object MemoTime {
         return Time(LocalTime.of(hour24, minute), nextDay, first.value.trim(), bareHour = h.takeIf { mark == null && it in 1..11 })
     }
 
-    /** The hour on a 24-hour clock, and 1 when it falls after midnight ("밤 12시"). */
-    private fun hourOf(mark: String?, h: Int, guessAfternoon: Boolean): Pair<Int, Long>? {
-        if (h > 24) return null
-        if (h == 24) return 0 to 1L
-        return when (mark) {
-            "오후", "저녁" -> (if (h in 1..11) h + 12 else h) to 0L
-            "밤" -> when (h) {
-                12 -> 0 to 1L
-                in 6..11 -> h + 12 to 0L
-                else -> h to 0L
-            }
-            "낮" -> (if (h in 1..6) h + 12 else h) to 0L
-            "오전", "아침", "새벽" -> if (h > 12) null else (if (h == 12) 0 else h) to 0L
-            else -> (if (guessAfternoon && h in 1..6) h + 12 else h) to 0L
-        }
-    }
+    /** The hour on a 24-hour clock, and 1 when it falls after midnight ("밤 12시"): one reading with the calendar's ([RVH-06]). */
+    private fun hourOf(mark: String?, h: Int, guessAfternoon: Boolean): Pair<Int, Long>? =
+        com.bamnat.core.time.KoreanHour.of(mark, h, guessAfternoon)
 
     private fun findDate(text: String, today: LocalDate): Pair<LocalDate, String>? {
         RELATIVE.find(text)?.let { m ->

@@ -304,12 +304,12 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun calReceivedJobs() = shoot("311_folded_received_jobs", FOLDED) {
         jobsLinkOn()
         settle()
-        tapText("준호의 근무표 보기", exact = true)
+        tapText("준호의 일정 보기", exact = true)
     }
     @Test fun calReceivedJobsDay() = shoot("312_unfolded_received_jobs", UNFOLDED) {
         jobsLinkOn()
         settle()
-        tapText("준호의 근무표 보기", exact = true)
+        tapText("준호의 일정 보기", exact = true)
         tapText(Fmt.dayTitle(today), prefix = true, scrolls = 0)
     }
 
