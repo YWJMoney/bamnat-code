@@ -347,6 +347,19 @@ class MoneyRepository(
         owedDao.deletePayment(p.id)
     }
 
+    /**
+     * 2.0.0 [RVK-42] (검토 MONEY-10) [delete], keeping what it takes: the returned step puts the payment and its income line back as
+     * they were (되돌리기).
+     */
+    suspend fun takeBack(p: ReceivablePayment): suspend () -> Unit {
+        val line = p.entryId?.let { dao.entry(it)?.toModel() }
+        delete(p)
+        return {
+            line?.let { dao.restoreEntry(it.toEntity(clock())) }
+            owedDao.restorePayment(p.toEntity())
+        }
+    }
+
     suspend fun clearSales(date: LocalDate) = dao.deleteSales(date.toEpochDay())
 
     suspend fun save(cost: FixedCost): FixedCost {

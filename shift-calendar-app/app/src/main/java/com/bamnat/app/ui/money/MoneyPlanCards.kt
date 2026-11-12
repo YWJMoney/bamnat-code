@@ -508,7 +508,8 @@ fun PasteDialog(
     /** 1.38 [LEDH-29] 첫날 채우기: the steps for copying many texts at once from the messages app. */
     firstFill: Boolean = false,
 ) {
-    var text by rememberSaveable { mutableStateOf(initialText) }
+    var text by rememberSaveable { mutableStateOf(initialText.take(PASTE_MAX)) }
+    var cut by rememberSaveable { mutableStateOf(initialText.length > PASTE_MAX) }
     val rows = remember(text, existing, rules) {
         // Rows earlier in the same paste count too: the card text and the pay push for one payment.
         val seen = existing.toMutableList()
@@ -545,12 +546,14 @@ fun PasteDialog(
                     style = MaterialTheme.typography.bodyMedium)
                 Text("카드·은행 문자를 길게 눌러 복사한 뒤 붙여 넣어요. 여러 건도 한 번에 돼요. 문자 원문은 저장하지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = text, onValueChange = { text = it.take(20_000) }, label = { Text("문자 내용") },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), maxLines = 8)
+                // 2.0.0 [RVK-42] (검토 U06a-18) More than fits is said, not cut without a word: '앞 20,000자만 읽었어요'.
+                OutlinedTextField(value = text, onValueChange = { cut = it.length > PASTE_MAX; text = it.take(PASTE_MAX) }, label = { Text("문자 내용") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), maxLines = 8,
+                    supportingText = if (cut) { { Text("앞 ${com.bamnat.core.text.Numbers.grouped(PASTE_MAX.toLong())}자만 읽었어요. 나머지는 한 번 더 붙여 넣어 주세요.") } } else null)
                 // [INPUT-04] A payment message just copied: one tap, read only when tapped (계획/1.24-Q-개발계획.md Q-D1).
                 if (text.isBlank()) com.bamnat.app.ui.components.ClipboardHint("결제 문자",
                     fits = { t -> PaymentParser.splitMessages(t).any { PaymentParser.parse(it, Today.dateTime(), rules) is PaymentParser.Result.Ok } },
-                    onPaste = { text = it.take(20_000) })
+                    onPaste = { cut = it.length > PASTE_MAX; text = it.take(PASTE_MAX) })
                 rows.forEachIndexed { i, r ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = r.entry != null && i !in skipped, enabled = r.entry != null,
@@ -864,3 +867,6 @@ fun PlacesSection(places: List<MoneyStats.Place>, selected: String?, onSelect: (
         }
     }
 }
+
+/** 2.0.0 [RVK-42] (검토 U06a-18) How much pasted text is read at once (a month of a card's texts fits many times). */
+private const val PASTE_MAX = 20_000

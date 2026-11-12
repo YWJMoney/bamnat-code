@@ -73,10 +73,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -210,8 +208,9 @@ class OwedViewModel(
 
     fun deletePayment(p: ReceivablePayment) {
         container.appScope.launch {
-            money.delete(p)
-            _messages.emit(UndoMessage("받은 기록을 지웠어요"))
+            // 2.0.0 [RVK-42] (검토 MONEY-10·U06a-19) Like every other step here, with 되돌리기: the payment and its income line come back.
+            val back = money.takeBack(p)
+            _messages.emit(UndoMessage("받은 기록을 지웠어요" + if (p.entryId != null) " (수입에서도 뺌)" else "") { back() })
         }
     }
 
@@ -288,12 +287,9 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     androidx.activity.compose.BackHandler(enabled = searching) { searching = false; query = "" }
     var person by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
-    LaunchedEffect(vm) {
-        vm.messages.collect { m ->
-            val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) vm.runUndo(m)
-        }
-    }
+    // 2.0.0 [RVK-42] (검토 MONEY-14·U06a-19) A 되돌리기 shows at once and for 8 s (it was 4 s, behind the line before: 밀어서 '다 받음'을
+    // 잘못했을 때 되돌리기가 이미 지나갔어요).
+    LaunchedEffect(vm) { vm.messages.collect { m -> com.bamnat.app.ui.components.AppSnack.post(m, vm::runUndo) } }
     val owed = remember(book, today) { book.owed(today) }
     val summary = remember(book, today) { Receivables.summary(book.receivables, book.jobs, today) }
     val counts = remember(owed, today) { Receivables.counts(owed, today) }

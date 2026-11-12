@@ -36,9 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -85,7 +83,6 @@ import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.BudgetLine
 import com.bamnat.core.money.Budgets
 import com.bamnat.core.money.CaptureFilter
-import com.bamnat.core.money.CategoryEdit
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.FixedCost
 import com.bamnat.core.money.Job
@@ -585,17 +582,22 @@ class MoneyViewModel(
     }
 
     /** [LEDG-14] Renames first (taking their lines along), then the order and hidden ones. */
-    fun saveCategories(kind: MoneyKind, edits: List<CategoryEdit>, renames: List<Pair<String, String>>) {
+    fun saveCategories(changes: List<CategoryChange>) {
+        if (changes.isEmpty()) return
         container.appScope.launch {
             // 2.0.0 [RVK-09] (MONEY-02): every rename at once, so a chain or a swap keeps categories apart, and 되돌리기 puts the
-            // names, the order and what was hidden back as they were.
-            val before = book.value?.categories.orEmpty().filter { it.kind == kind }
-            val done = money.renameCategories(kind, renames)
-            money.saveCategories(kind, edits)
-            _undo.tryEmit(UndoMessage("${kind.label} 분류를 저장했어요") {
-                money.renameCategories(kind, done.map { (from, to) -> to to from })
-                money.saveCategories(kind, before)
-            })
+            // names, the order and what was hidden back as they were. [RVK-42] (MONEY-15) Every kind changed, with one 되돌리기.
+            val all = book.value?.categories.orEmpty()
+            val undo = changes.map { c ->
+                val before = all.filter { it.kind == c.kind }
+                val done = money.renameCategories(c.kind, c.renames)
+                money.saveCategories(c.kind, c.edits)
+                suspend {
+                    money.renameCategories(c.kind, done.map { (from, to) -> to to from })
+                    money.saveCategories(c.kind, before)
+                }
+            }
+            _undo.tryEmit(UndoMessage("${changes.joinToString("·") { it.kind.label }} 분류를 저장했어요") { undo.reversed().forEach { it() } })
         }
     }
 
@@ -633,6 +635,7 @@ fun MoneyScreen(
     // [NAV-01] The same month as the calendar and 근무·급여.
     val month by vm.shownMonth.collectAsStateWithLifecycle()
     val page by vm.page.collectAsStateWithLifecycle()
+    val pages = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     // [TIER-07] 돈 통계 opened from 프로 기능 모아보기 or the help search: the 분석 page.
     com.bamnat.app.ui.guide.FocusedTool("report", "money.stats") { vm.showPage(MoneyViewModel.Page.REPORT) }
     val view by vm.view.collectAsStateWithLifecycle()
@@ -749,16 +752,9 @@ fun MoneyScreen(
         if (side != TaxSide.BUSINESS) null
         else com.bamnat.core.tax.BusinessTax.year(month.year, today, taxSettings.business, book.jobs, book.sales, book.entries)
     }
-    LaunchedEffect(snackbar) {
-        val host = snackbar ?: return@LaunchedEffect
-        vm.undo.collect { msg ->
-            val action = msg.actionLabel.takeIf { msg.undo != null }
-            if (host.showSnackbar(msg.message, actionLabel = action, duration = if (action != null) SnackbarDuration.Long else SnackbarDuration.Short)
-                == SnackbarResult.ActionPerformed) {
-                vm.runUndo(msg)
-            }
-        }
-    }
+    // 2.0.0 [RVK-42] (검토 MONEY-14·U06a-14) Each line straight into the app's one queue: the newest 되돌리기 shows at once, not after the
+    // 8 s of the one before (지우고 바로 또 지우면 화면의 되돌리기가 앞 줄 것이었어요).
+    LaunchedEffect(vm) { vm.undo.collect { msg -> com.bamnat.app.ui.components.AppSnack.post(msg, vm::runUndo) } }
     val owed = remember(book, today) { book.owed(today) }
     // [COMN-04] With 확인하고 적기 on, the unconfirmed lines are in book.pending, out of every total.
     val unseen = remember(book) { book.pending + book.entries.filter { !it.reviewed } }
@@ -851,7 +847,7 @@ fun MoneyScreen(
         // 1.37 [LEDH-32] 복귀 반김 first (a week or more without a line), then 지난달 돈 이야기.
         MoneyPart.STORY to {
             Column(verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) {
-                WelcomeBackCard(book, today, onAdd = { adding = MoneyKind.EXPENSE })
+                WelcomeBackCard(book, today, onAdd = { adding = MoneyKind.EXPENSE }, calendarId = vm.calendarId)
                 // 1.38 [LEDH-29] 첫날 채우기.
                 FirstFillCard(book, vm.calendarId, onFill = { firstFilling = true; pasting = true })
                 // 1.38 [LEDH-31] 혼자 하는 챌린지 (⋮ › 도전 시작하기).
@@ -860,7 +856,7 @@ fun MoneyScreen(
                 ChallengeCard(run, book, envelopeBook.second, today, nightOf.takeIf { style == com.bamnat.core.work.WorkStyle.SHIFT }, pickingChallenge,
                     onStart = { k -> vm.updateSettings { it.copy(moneyChallenge = com.bamnat.core.money.Challenges.encode(com.bamnat.core.money.Challenges.Run(k, today))) }; pickingChallenge = false },
                     onStop = { vm.updateSettings { it.copy(moneyChallenge = "") } }, onClosePicker = { pickingChallenge = false })
-                MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate)
+                MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate, calendarId = vm.calendarId)
             }
         },
         MoneyPart.ENVELOPES to {
@@ -1030,7 +1026,9 @@ fun MoneyScreen(
                     )
                 }
             }
-            when (page) {
+            // 2.0.0 [RVK-42] (검토 MONEY-21·U06a-12) Each page keeps its own place: 내역을 20일까지 내려 보다가 통계를 보고 돌아와도 그 자리
+            // (the pages were drawn in turn by `when`, so the one left threw its scroll away).
+            pages.SaveableStateProvider(page.name) { when (page) {
                 MoneyViewModel.Page.SUMMARY -> if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
@@ -1055,12 +1053,12 @@ fun MoneyScreen(
                         onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
                         snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
                 }
-            }
+            } }
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
         // 돈 적기 stays on 요약 and 내역.
         // 1.37 PC 4차: 되돌리기 줄이 '돈 적기'를 덮어, 줄이 사라질 때 누른 손이 돈 적기를 열었어요. 줄이 있는 동안과 사라진 뒤 잠깐은 숨겨요.
-        val barUp = snackbar?.currentSnackbarData != null
+        val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
         var fabBack by remember { mutableStateOf(true) }
         LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
         AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
@@ -1140,7 +1138,7 @@ fun MoneyScreen(
         com.bamnat.app.ui.settings.RecordsTrashDialog(removed, onRestore = vm::restoreLines, onDismiss = { seeingRemoved = false }, linesOnly = true)
     }
     if (editingCategories) {
-        CategoryEditor(book, onSave = { k, edits, renames -> vm.saveCategories(k, edits, renames); editingCategories = false },
+        CategoryEditor(book, onSave = { changes -> vm.saveCategories(changes); editingCategories = false },
             onDismiss = { editingCategories = false }, startKind = editing?.kind ?: adding ?: MoneyKind.EXPENSE)
     }
     }
