@@ -1133,12 +1133,17 @@ private fun Keypad(
             // 2.0.0 [RVL-34] #476 사진 검토(HQ-61 ④, 조건 2·12): the tools went sideways out of sight at the folded width ('건너뛰' at
             // 100%, '지우' at 200%). The day's two (되돌리기, » 건너뛰기) stay with the arrows, wrapping under each other with big letters;
             // the month's once-a-month ones (이 순서 반복, 지난달과 같게) and ✕ 지우기 are in '더 보기'.
+            // On a small phone (320dp) or with big letters the row went to two lines and the month above it was left a sliver
+            // (UScreenshotTest 811): there 되돌리기 is its arrow alone (read aloud as 되돌리기), so the day's tools stay one line.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val tight = maxWidth < TOOLS_ONE_LINE * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
             FlowRow(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
                 itemVerticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.step(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "앞 날") }
                 IconButton(onClick = { vm.step(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 날") }
                 // A wrong key is taken back first, so 되돌리기 comes before the rest.
-                TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
+                if (tight) IconButton(onClick = vm::undo, enabled = ui.history.isNotEmpty()) { Icon(Icons.AutoMirrored.Filled.Undo, "되돌리기") }
+                else TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Text(" 되돌리기", maxLines = 1)
                 }
                 // [EASE-13] The same keys as the keypad sheet (and the team roster's, P3-02): » leaves the day, ✕ (in 더 보기) takes it away.
@@ -1167,6 +1172,7 @@ private fun Keypad(
                         )
                     }
                 }
+            }
             }
             val copied = ui.copied
             if (copied != null && snap != null) CopyWays(copied) { vm.sameAsLastMonth(snap, it) }
@@ -1219,6 +1225,9 @@ internal fun copiedLine(c: DutyRosterViewModel.Ui.Copied): String = when (c.way)
     MonthFill.CopyWay.WEEKDAYS -> "지난달을 요일에 맞춰 넣었어요"
     MonthFill.CopyWay.DATES -> "지난달을 날짜 그대로 넣었어요"
 }
+
+/** The width the day's tools (‹ › 되돌리기 » 건너뛰기 …) need on one line at 100%; narrower, 되돌리기 is its arrow alone. */
+private val TOOLS_ONE_LINE = 344.dp
 
 /** The keypad's '더 보기' (✕ 지우기, 이 순서 반복, 지난달과 같게), read aloud and found by the tests. */
 internal const val KEYPAD_MORE = "더 보기: 지우기·이 순서 반복·지난달과 같게"

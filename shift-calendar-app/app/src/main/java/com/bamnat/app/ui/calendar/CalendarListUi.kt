@@ -236,16 +236,25 @@ fun CalendarIdentityBar(
             // [J133-79] 빌드 5 (달력이 4개면 다시 한 글자 동그라미): two named faces at most, the rest behind +N.
             val named = shown >= 2
             val count = if (named) 2 else shown
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val density = LocalDensity.current
             faces.take(count).forEach { row ->
                 val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
-                if (named) Surface(
+                // 2.0.0 [RVG-34] 검토 PC-132: a member's link from the 팀 리더 is where they go most, and its face alone ('3') did not
+                // say what it is. It says 팀 근무표; with large text too while the words take at most 30% of the bar (as [RVG-22]'s
+                // '내 달력으로'), past that the face alone, read out in full.
+                val team = (row as? CalendarRow.Got)?.cal?.fromLeader == true
+                val label = if (team) "팀 근무표" else row.title.take(4)
+                val labelStyle = MaterialTheme.typography.labelMedium
+                val labelFits = team && with(density) { measurer.measure(label, labelStyle).size.width.toDp() } + 42.dp <= barWidth * 0.3f
+                if (named || labelFits) Surface(
                     onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "$name 보기" },
                 ) {
                     Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         row.Avatar(size = 24.dp)
                         Spacer(Modifier.width(4.dp))
-                        Text(row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                        Text(label, style = labelStyle, maxLines = 1, softWrap = false)
                     }
                 } else Box(
                     Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) } /* [RVP-10] 48dp */
@@ -363,7 +372,8 @@ fun CalendarSwitcherSheet(
                     is CalendarRow.Got -> SwitchRow(
                         avatar = { row.cal.Avatar(size = 40.dp) },
                         title = row.cal.fullName,
-                        subtitle = row.cal.summary(),
+                        // [RVG-34] 검토 PC-132: the member's 팀 리더 link says so in the list the calendar's name ▾ opens.
+                        subtitle = listOfNotNull("팀 근무표".takeIf { row.cal.fromLeader }, row.cal.summary()).joinToString(" · "),
                         detail = row.cal.schedule?.showsText()?.let { "함께 받은 것: $it" },
                         selected = currentKey == row.key,
                         dim = row.cal.gone,
@@ -699,7 +709,7 @@ private fun OrderedRow(row: CalendarRow, index: Int, count: Int, onUp: () -> Uni
     val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
     val subtitle = when (row) {
         is CalendarRow.Mine -> row.subtitle() + if (!row.cal.isMain && !row.cal.alarms) " · 알람 끔" else ""
-        is CalendarRow.Got -> "받은 달력 · ${row.cal.summary()}"
+        is CalendarRow.Got -> "${if (row.cal.fromLeader) "팀 근무표" else "받은 달력"} · ${row.cal.summary()}" // [RVG-34]
     }
     Row(
         Modifier

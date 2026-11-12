@@ -74,18 +74,24 @@ fun NudgeCard(
         // 총괄 #445 검토 (조건 12): with big letters or on a narrow screen the button and the X left the words a sliver, and a line
         // like '잠금 화면에 알람 화면이 안 떠요' ended in '…'. The words are never cut now; there, the button goes under them.
         // 2.0.0 [RVL-33] (갈래 L 3차 화면 사진) A long button beside a long line on a card inside a padded page ('저장 공간 보기' in the
-        // first setup at the folded width) left the words a column of a few letters: the button goes under them there too.
+        // first setup at the folded width) left the words a column of a few letters: the button goes under them when the words
+        // beside it would take more than two lines. A short line in two (the calendar's 56dp band) keeps its button beside it.
         val measurer = rememberTextMeasurer()
         val actionStyle = MaterialTheme.typography.labelLarge
+        val textStyle = MaterialTheme.typography.bodyMedium
         BoxWithConstraints {
             val density = LocalDensity.current
             val actionWidth = if (action == null) 0.dp else with(density) {
                 remember(action, actionStyle, density) { measurer.measure(action, actionStyle, maxLines = 1).size.width }.toDp()
             } + 24.dp
             val wordsWidth = maxWidth - 12.dp - LEAD_WIDTH - actionWidth - (if (onClose != null) 48.dp else 8.dp)
+            val wordsPx = with(density) { wordsWidth.roundToPx() }
+            val squeezed = action != null && (wordsPx <= 0 || remember(text, textStyle, wordsPx, density) {
+                measurer.measure(text, textStyle, constraints = androidx.compose.ui.unit.Constraints(maxWidth = wordsPx)).lineCount
+            } > 2)
             // 갈래 J (조건 12): a card with no button was held to two lines with big letters too; 'big' is worked out apart from the button.
             val big = density.fontScale >= STACK_FONT_SCALE || maxWidth < STACK_WIDTH
-            val stacked = action != null && (big || wordsWidth < STACK_WORDS)
+            val stacked = action != null && (big || squeezed)
             val lead: @Composable () -> Unit = {
                 if (kani != null && LocalShowKani.current) Kani(kani, night = isDarkSurface(), size = 36.dp)
                 else Icon(mark, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
@@ -132,8 +138,6 @@ val NudgeHeight = 56.dp
 /** From these on, a [NudgeCard]'s button goes under its words (글자 130% and up, or narrower than a folded phone's cover screen). */
 private const val STACK_FONT_SCALE = 1.3f
 private val STACK_WIDTH = 320.dp
-/** [RVL-33] Narrower than this beside its button, the words go a few letters a line; the button goes under them. */
-private val STACK_WORDS = 144.dp
 /** The icon (or 칸이) and the space after it. */
 private val LEAD_WIDTH = 32.dp
 
