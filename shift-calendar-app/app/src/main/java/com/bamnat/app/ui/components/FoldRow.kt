@@ -135,7 +135,7 @@ fun FoldOverlay(host: FoldHost) {
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f))
         .pointerInput(o) { detectTapGestures { fold() } })
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 6.dp, tonalElevation = 2.dp,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
+        shape = MaterialTheme.shapes.medium.copy(topStart = androidx.compose.foundation.shape.ZeroCornerSize, topEnd = androidx.compose.foundation.shape.ZeroCornerSize),
         modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(pos.x.toInt(), pos.y.toInt()) }
             .width(with(density) { row.size.width.toDp() })) {
         androidx.compose.runtime.CompositionLocalProvider(LocalFoldHold provides { held = true }) {

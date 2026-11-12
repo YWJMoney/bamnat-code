@@ -92,3 +92,31 @@
 {"track": "RVG-12", "title": "가게 설정 찾기가 가게 말로", "status": "check", "size": "fix", "route": "app", "check": "가게 설정 찾기 '영업시간'·'정기휴무' → '영업일·정기휴무'·'영업시간', '급여 대장' → 매출·영업 › 급여 대장이 열림"}
 {"track": "RVG-13", "title": "위젯 이름·글이 유형에 맞게", "status": "check", "size": "fix", "route": "app", "check": "위젯 고르기 이름 확인, 가게 '다음 영업', 투자 '7일 안에 일정이 없어요', 조 없는 달력의 오늘 모든 조 '교대 근무표에서 써요'"}
 {"track": "RVG-14", "title": "어두운 모드·글자 크기가 바뀌어도 열린 입력 창 그대로", "status": "check", "size": "fix", "route": "app", "check": "가계부 돈 적기 창에 금액 적는 중 빠른 설정에서 어두운 모드 켜기 → 창과 적던 금액 그대로, 상태줄 색만 바뀜"}
+{"track": "RVP-01", "title": "안내·주의 카드 한 모양(안내 띠)", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR. 디자인 시험 쪽에서 안내 띠 56dp 한 줄, 아이콘 색으로만 뜻, 글자 단추 하나와 X"}
+{"track": "RVP-02", "title": "고르지 않은 탭은 회색", "status": "check", "size": "polish", "route": "app", "check": "마을·메모·급여·투자 위 탭 줄: 고른 탭만 파랑, 나머지 회색"}
+{"track": "RVP-03", "title": "인터넷 없음 한 줄과 세 문구", "status": "check", "size": "polish", "route": "app", "check": "부품만: 비행기 모드에서 화면별 문구 확인은 다음 PR"}
+{"track": "RVP-04", "title": "불러오는 동안 뼈대 줄", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR"}
+{"track": "RVP-05", "title": "모서리를 공통 값으로(설정 › 모서리 따라 바뀜)", "status": "check", "size": "polish", "route": "app", "check": "설정 › 화면 › 모서리 '둥글게·각지게'를 바꾸면 카드·칩·시트 모서리가 함께 바뀜(달력·가계부·급여·장터)"}
+{"track": "RVP-06", "title": "떠 있는 단추가 글을 가리지 않게", "status": "check", "size": "polish", "route": "app", "check": "수면·가계부·메모·달력: 내리면 아이콘만, 올리면 글자, 글자 200%면 처음부터 아이콘만. 맨 아래 카드가 단추에 가리지 않음"}
+{"track": "RVP-07", "title": "도구 화면이 진짜 화면처럼", "status": "check", "size": "polish", "route": "app", "check": "급여 대장·견적서 등 도구 화면: 상태줄이 회색으로 어둡지 않고 옆에서 들어옴, 편 폴드에서 본문 640dp"}
+{"track": "RVP-08", "title": "설명 글은 한 줄과 ⓘ", "status": "check", "size": "polish", "route": "app", "check": "설정 스위치 설명: 처음엔 다, 두 번째엔 한 줄 + ⓘ. 설정 › 화면 › 설명 처음처럼 보기로 되돌림"}
+{"track": "RVP-09", "title": "눌리는 줄을 '단추'로 읽어 줌", "status": "check", "size": "polish", "route": "app", "check": "TalkBack으로 가계부·설정 줄을 누르면 '단추'라고 읽음"}
+{"track": "RVP-10", "title": "작은 누르는 곳을 48dp로", "status": "check", "size": "polish", "route": "app", "check": "메모 편집 날짜·일정 칩의 X, 색 칸, ⋮ 단추를 손가락으로 쉽게 누름"}
+{"track": "RVP-11", "title": "8~9sp 글자 없앰", "status": "check", "size": "polish", "route": "app", "check": "팀 표·알바 칸·받은 달력·연도 달력·워치 달력의 작은 글자가 10sp 이상"}
+{"track": "RVP-12", "title": "뜻이 정해진 색은 테마 색으로", "status": "check", "size": "polish", "route": "app", "check": "팀 표의 토·일 색이 달력과 같음, 어두운 모드에서 명세서 의심 칸이 읽힘"}
+{"track": "RVP-13", "title": "빨강은 위험에만", "status": "check", "size": "polish", "route": "app", "check": "날짜 창·급여 대장: 설명은 회색, 주의는 주황, 빨강은 지급일 지남처럼 위험만"}
+{"track": "RVP-14", "title": "밤 색에 빠진 색 채움", "status": "check", "size": "polish", "route": "app", "check": "밤 색 화면(야간 근무 때 어둡게)에서 보라·분홍 기본색이 보이지 않음"}
+{"track": "RVP-16", "title": "같은 말로 부르기(지우기·고치기·단추·메뉴)", "status": "check", "size": "polish", "route": "app", "check": "메모·가계부·근무 종류·패턴 화면에 '삭제·수정·편집·버튼'이 안 보임"}
+{"track": "RVP-19", "title": "채움 무늬와 글꼴을 다시 만들지 않게", "status": "check", "size": "polish", "route": "app", "check": "채움 무늬 단추·글꼴을 바꾼 달력에서 스크롤이 끊기지 않음"}
+{"track": "RVP-21", "title": "오전/오후로 보기를 바꿔도 첫 탭으로 안 튕김", "status": "check", "size": "polish", "route": "app", "check": "설정에서 오전/오후로 보기를 켜고 끄면 그 자리에서 시간 글만 바뀜"}
+{"track": "RVP-27", "title": "12시간 바퀴와 숫자로 바로 치기", "status": "check", "size": "polish", "route": "app", "check": "오전/오후로 보기 켜면 시간 창에 오전/오후 바퀴, '숫자로 치기'에 0630을 치면 오전 6:30"}
+{"track": "RVP-28", "title": "숫자 표기를 한국식으로, 억 단위 버림", "status": "check", "size": "polish", "route": "app", "check": "폰 언어가 다른 나라 말이어도 숫자·시각이 한국식, 1억 5천9백만 원은 '1.5억'"}
+{"track": "RVP-30", "title": "시간 창이 작은 화면에서 잘리지 않게", "status": "check", "size": "polish", "route": "app", "check": "가로 화면·글자 200%에서 시간 창을 내려 아래 단추까지 보임"}
+{"track": "RVP-31", "title": "소리 고르기 다듬기", "status": "check", "size": "polish", "route": "app", "check": "소리 고르기: 줄 48dp, 미리 듣기가 나가면 멈춤, 소리 이름이 늦게 떠도 화면이 안 멈춤"}
+{"track": "RVP-32", "title": "화면 읽기 다듬기(스위치 이름·칸이·바퀴)", "status": "check", "size": "polish", "route": "app", "check": "TalkBack: 쪽 고치기 스위치가 '○○ 보이기', 칸이 그림은 건너뜀, 시간 바퀴는 한 번에 읽음"}
+{"track": "RVP-33", "title": "처리방침 쪽: 어두운 화면·뒤로·오류", "status": "check", "size": "polish", "route": "app", "check": "어두운 모드에서 처리방침 쪽이 어둡게, 쪽 안 링크에서 뒤로 가면 앞 쪽으로, 서버 오류면 안내"}
+{"track": "RVP-34", "title": "메모를 빠르게 두 번 눌러도 한 겹", "status": "check", "size": "polish", "route": "app", "check": "메모 목록에서 메모를 빠르게 두 번 누르면 편집 화면이 하나만 열림"}
+{"track": "RVP-54", "title": "위젯 할 일 줄 순서 하나로", "status": "check", "size": "polish", "route": "app", "check": "할 일 위젯: 날짜 → 고정 → 시각 → 개수 → 늦음 순서"}
+{"track": "RVP-59", "title": "새 캐릭터 말랑 칸이 10표정", "status": "check", "size": "polish", "route": "app", "check": "빈 화면·안내에 말랑 칸이가 보이고, 설정 › 칸이 보이기를 끄면 사라짐"}
+{"track": "RVP-83", "title": "디자인 규칙을 세는 시험", "status": "check", "size": "polish", "route": "app", "check": "화면에 닿지 않음(시험)"}
+{"track": "RVP-84", "title": "공통 부품과 값 문서", "status": "check", "size": "polish", "route": "app", "check": "화면에 닿지 않음(문서)"}

@@ -866,7 +866,7 @@ internal fun ChipText(text: String, style: androidx.compose.ui.text.TextStyle = 
         // The line as tall as the letters: labelLarge's 20sp line, doubled, alone overran the chip.
         style = style.copy(color = androidx.compose.material3.LocalContentColor.current, lineHeight = 1.2.em).merge(FooterTrim),
         maxLines = 1, softWrap = false,
-        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize.takeIf { it.isSp } ?: 14.sp),
+        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize.takeIf { it.isSp } ?: 14.sp),
     )
 }
 

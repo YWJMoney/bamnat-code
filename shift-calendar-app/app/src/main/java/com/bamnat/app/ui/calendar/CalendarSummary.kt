@@ -275,7 +275,7 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
         // [CAL-52] Each note on its own line, shrinking a little before it would be cut.
         f.notes.forEach {
             BasicText(it, style = MaterialTheme.typography.labelSmall.merge(TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)),
-                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
+                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
         }
     }
 }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -264,7 +265,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
         (photoColours + StudioColors.SEEDS.filter { it !in photoColours }).forEachIndexed { i, c ->
             if (i == photoColours.size && photoColours.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
             val on = c == seed
-            Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c.toInt()))
+            Box(Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(Color(c.toInt()))
                 .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
                 .clickable(role = Role.Button) { put(s = c, m = 0) }
                 .semantics { contentDescription = (if (i < photoColours.size) "사진 색 ${i + 1}" else "색 ${i - photoColours.size + 1}"); selected = on })

@@ -334,11 +334,11 @@ private fun SlideToAnswer(snoozeMinutes: Int, dismissLabel: String, onSnooze: ()
             f < 0f -> lerp(Color.White.copy(alpha = 0.12f), Calm.copy(alpha = 0.45f), -f)
             else -> Color.White.copy(alpha = 0.12f)
         }
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(40.dp)).background(track))
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(50)).background(track))
         // Each end is a target too: a tap does what the slide would.
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Row(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topStart = 40.dp, bottomStart = 40.dp))
+                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50))
                     .clickable(onClickLabel = "${snoozeMinutes}분 뒤 다시 울림") { if (!done) { done = true; onSnooze() } }
                     .padding(start = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -349,7 +349,7 @@ private fun SlideToAnswer(snoozeMinutes: Int, dismissLabel: String, onSnooze: ()
             }
             Spacer(Modifier.size(thumb))
             Row(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topEnd = 40.dp, bottomEnd = 40.dp))
+                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topEndPercent = 50, bottomEndPercent = 50))
                     .clickable(onClickLabel = dismissLabel) { if (!done) { done = true; onDismiss() } }
                     .padding(end = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,

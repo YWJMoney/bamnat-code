@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -136,7 +137,7 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
                     // PC 확인 W33 1.36 (동그라미가 '#2F80ED'처럼 읽힘): said as colour names.
                     val names = remember { com.bamnat.app.ui.settings.colorNames(ShiftPalette) }
                     ShiftPalette.forEachIndexed { i, c ->
-                        Box(Modifier.size(36.dp).clip(CircleShape).background(c.asColor()).clickable(onClickLabel = "이 색 고르기") { set(c) }
+                        Box(Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(c.asColor()).clickable(onClickLabel = "이 색 고르기") { set(c) }
                             .semantics { contentDescription = names[i] })
                     }
                 }

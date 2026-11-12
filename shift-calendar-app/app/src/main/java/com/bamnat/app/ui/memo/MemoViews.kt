@@ -826,7 +826,7 @@ internal fun MemoGalleryView(memos: List<Memo>, view: MemoView, actions: CardAct
             val lead = title.codePointAt(0).let { String(Character.toChars(it)) }
             val emoji = lead.firstOrNull()?.let { Character.getType(it) == Character.SURROGATE.toInt() || Character.getType(it) == Character.OTHER_SYMBOL.toInt() } == true
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.large,
                 color = memoBackground(memo.colorIndex),
                 border = if (memo.id in selection) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp).combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),

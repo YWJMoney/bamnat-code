@@ -494,7 +494,7 @@ internal fun plazaMenu(plan: StylePlaza.Plan, picks: Int, onPicks: () -> Unit, o
  */
 @Composable
 internal fun PlazaComposer(prompt: String, topic: String?, onWrite: () -> Unit) {
-    androidx.compose.material3.Surface(onClick = onWrite, shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+    androidx.compose.material3.Surface(onClick = onWrite, shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) {
             contentDescription = "글 쓰기. $prompt" + (topic?.let { ". 이번 주 주제 $it" } ?: "")

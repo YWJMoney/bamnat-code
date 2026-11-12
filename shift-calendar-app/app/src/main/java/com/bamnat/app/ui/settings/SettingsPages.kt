@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.Icons
 import android.content.Intent
 import android.net.Uri
@@ -1496,7 +1497,7 @@ private fun AccentRow(accent: Long, onPick: (Long) -> Unit) {
         }
         if (accent != 0L) TextButton(onClick = { onPick(0L) }) { Text("처음대로") }
         androidx.compose.foundation.layout.Box(
-            Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+            Modifier.minimumInteractiveComponentSize().size(36.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
                 .clickable(onClickLabel = "강조색 고르기") { picking = true },
         )
     }

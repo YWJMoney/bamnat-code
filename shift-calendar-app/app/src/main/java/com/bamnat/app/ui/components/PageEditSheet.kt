@@ -168,7 +168,7 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
         Column(
             Modifier
                 .width(160.dp)
-                .border(2.dp, scheme.outline, RoundedCornerShape(18.dp))
+                .border(2.dp, scheme.outline, MaterialTheme.shapes.large)
                 .padding(8.dp)
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp),

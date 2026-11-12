@@ -176,7 +176,7 @@ fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = M
         text, modifier,
         style = style.merge(NumberStyle).copy(color = color, fontWeight = fontWeight ?: style.fontWeight),
         maxLines = 1,
-        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize),
+        autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize),
     )
 }
 

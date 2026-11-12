@@ -160,7 +160,7 @@ fun Figure(label: String, value: String, modifier: Modifier = Modifier, strong: 
             value,
             style = style.copy(color = MaterialTheme.colorScheme.onSurface, fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal),
             maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize),
+            autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize),
         )
     }
 }

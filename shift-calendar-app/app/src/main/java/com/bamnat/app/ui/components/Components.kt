@@ -314,7 +314,7 @@ fun StatTile(
                     style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                     // [VIS-05] Three lines at a big font: a half-width tile on a 320dp phone cut a caption's last line.
                     maxLines = if (big) 3 else 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 9.sp, maxFontSize = 11.sp),
+                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 10.sp, maxFontSize = 11.sp),
                 )
             }
         }

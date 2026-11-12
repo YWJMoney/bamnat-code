@@ -14,6 +14,7 @@ import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -732,8 +733,8 @@ private fun PayResult(
             year.forEach { (m, total) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${m.year % 100}.${m.monthValue}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.labelWidth(44.dp))
-                    Box(Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                        Box(Modifier.fillMaxWidth(total.toFloat() / max).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.primary))
+                    Box(Modifier.weight(1f).height(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        Box(Modifier.fillMaxWidth(total.toFloat() / max).height(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
                     }
                     Text(if (unlocked) won(total) else "●●●만원", style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.widthIn(min = 92.dp).padding(start = 8.dp))
@@ -1241,7 +1242,7 @@ private fun TimeBar(step: Int) {
     val ot = kindColor(LineKind.OVERTIME)
     val parts = listOf(8f to night, 1f to (if (step >= 0) ot else base))
     Column {
-        Row(Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(9.dp))) {
+        Row(Modifier.fillMaxWidth().height(18.dp).clip(CircleShape)) {
             parts.forEach { (w, c) -> Box(Modifier.weight(w).fillMaxSize().background(c)) }
         }
         Row(Modifier.fillMaxWidth()) {

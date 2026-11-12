@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.Email
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -721,7 +722,7 @@ private fun KindEditor(
                             for (c in ExtraPalette) {
                                 val selected = c == kind.colorArgb
                                 Box(
-                                    Modifier.size(36.dp).clip(CircleShape).background(c.asColor())
+                                    Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(c.asColor())
                                         .selectable(selected = selected, role = Role.RadioButton) { setKind(kind.copy(colorArgb = c)) },
                                     contentAlignment = Alignment.Center,
                                 ) {

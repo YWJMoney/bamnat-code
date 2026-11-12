@@ -1558,7 +1558,7 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                                     color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
                                         else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
                                 Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
-                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), MaterialTheme.shapes.large))) {
                                     androidx.compose.material3.Icon(
                                         androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
                                         contentDescription = null, tint = circle.color,

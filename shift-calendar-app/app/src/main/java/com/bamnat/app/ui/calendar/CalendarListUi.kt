@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapVert
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -473,7 +474,7 @@ internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
         PersonalCalendar.COLORS.forEachIndexed { i, c ->
             val on = c == selected
             Box(
-                Modifier.size(40.dp).clip(MineShape).background(c.asColor())
+                Modifier.minimumInteractiveComponentSize().size(40.dp).clip(MineShape).background(c.asColor())
                     .clickable(role = Role.RadioButton) { onPick(c) }
                     .semantics { this.selected = on; contentDescription = names[i] },
                 contentAlignment = Alignment.Center,

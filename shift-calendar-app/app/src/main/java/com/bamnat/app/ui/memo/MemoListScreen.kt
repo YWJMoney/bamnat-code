@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.bamnat.app.appContainer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -473,7 +474,7 @@ private fun SelectionBar(
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (i in MemoPaletteLight.indices) {
                             Box(
-                                Modifier
+                                Modifier.minimumInteractiveComponentSize()
                                     .size(30.dp)
                                     .clip(CircleShape)
                                     .background(memoBackground(i))
@@ -786,7 +787,7 @@ internal fun MemoCard(
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     if (!selecting) {
-                        IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) {
+                        IconButton(onClick = { menu = true }, modifier = Modifier.size(44.dp)) { // [RVP-10] 누르는 곳 44dp 이상
                             Icon(Icons.Filled.MoreVert, "메모 메뉴", Modifier.size(18.dp))
                         }
                     } else {

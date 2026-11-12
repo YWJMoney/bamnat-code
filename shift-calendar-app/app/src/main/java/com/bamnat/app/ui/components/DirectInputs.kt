@@ -84,7 +84,7 @@ fun DayOfMonthPicker(day: Int, onPick: (Int) -> Unit, modifier: Modifier = Modif
                                 label,
                                 style = style.copy(color = androidx.compose.material3.LocalContentColor.current, textAlign = TextAlign.Center),
                                 maxLines = 1,
-                                autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize),
+                                autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize),
                             )
                         }
                     }

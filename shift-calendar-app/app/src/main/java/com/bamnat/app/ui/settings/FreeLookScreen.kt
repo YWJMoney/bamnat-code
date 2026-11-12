@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -213,7 +214,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                     com.bamnat.app.ui.calendar.CustomCellBody(
                         parts = parts,
                         view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null } ?: com.bamnat.app.ui.calendar.cellFillGround(look), date = date, isToday = isToday,
-                        numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
+                        numberColor = number, dateSize = 13.sp, footerSize = 10.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
                         alarmOff = false, marks = emptyList(), barColor = color.takeIf { !s.off },
                         dayMark = { size ->
                             Box(Modifier.size(size).background(if (s.off) Color.Transparent else color, RoundedCornerShape(4.dp))
@@ -820,7 +821,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             val c = row[i]
             val on = value == c
             Box(
-                Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
+                Modifier.minimumInteractiveComponentSize().size(30.dp).clip(CircleShape).background(Color(c.toInt()))
                     .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
                     .clickable(role = Role.Button) { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
             )
@@ -837,7 +838,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
         if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(
-                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
+                Modifier.minimumInteractiveComponentSize().size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
@@ -851,7 +852,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
+                Modifier.minimumInteractiveComponentSize().size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
