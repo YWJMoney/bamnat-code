@@ -1652,7 +1652,7 @@ function adminApp(L, BUILD, M) {
       <div class="head"><h3>${esc(x.name)}</h3>${x.text ? '<span class="pill ok">보이는 중</span>' : '<span class="pill">없음</span>'}</div>
       <label class="field"><span>이번 주 이야기 주제 (광장 글쓰기)</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
-      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
+      ${edit ? `<div class="actions"><button class="btn" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
     </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit) + `<hr class="split">` + picksView(edit) + `<hr class="split">` + plazaEffectView();
   }
@@ -1723,7 +1723,7 @@ function adminApp(L, BUILD, M) {
         ${!current && x.picks.length ? `<span class="pill ok">고름 ${x.picks.length}/3 · 앱에 보여요</span>` : ""}</div>
       ${current ? `<label class="field"><span>이달의 공모 주제 (공방 작품)</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
         placeholder="예: 야간 근무용 어두운 테마"${edit ? "" : " readonly"}></label>
-        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">공모 주제 저장</button></div>` : ""}`
+        ${edit ? `<div class="actions"><button class="btn" data-act="contest-save" data-id="${esc(x.style)}">공모 주제 저장</button></div>` : ""}`
         : `<p>${esc(x.theme)}</p>`}
       ${x.entries.length ? `<ul class="plain">${x.entries.slice(0, 10).map((e) => `<li><label><input type="checkbox" data-pick="${esc(x.month)}|${esc(x.style)}" value="${esc(e.code)}"
         ${x.picks.includes(e.code) ? "checked" : ""}${edit && !current ? "" : " disabled"}> ${esc(e.title)} <span class="meta">좋아요 ${e.likes} · 쓰는 분 ${e.users} · ${esc(e.code)}</span></label></li>`).join("")}</ul>` : '<p class="meta">아직 넣은 작품이 없어요</p>'}
@@ -2893,7 +2893,7 @@ function adminApp(L, BUILD, M) {
       ${waiting.length ? `<h2 class="section">승인을 기다려요<span class="count">${waiting.length}</span></h2><ul class="rows">${waiting.map((a) => `<li class="item">
         <div class="row-main"><b>${esc(a.name)}</b><small>${esc(a.email)} · ${esc(ago(a.createdAt))} 가입</small><div class="perm-sum">${permPills(a.perms, d.areas)}</div></div>
         <div class="actions"><button class="btn danger" data-act="admin-remove" data-id="${a.id}" data-name="${esc(a.name)}">거절</button>
-          <button class="btn primary" data-act="admin-approve" data-id="${a.id}">승인</button></div></li>`).join("")}</ul>` : ""}
+          <button class="btn" data-act="admin-approve" data-id="${a.id}">승인</button></div></li>`).join("")}</ul>` : ""}
       <h2 class="section">관리자<span class="count">${members.length + 1}</span></h2>
       <ul class="rows">
         <li class="item"><div class="row-main"><b>최고 관리자</b><small>ADMIN_PASSWORD로 로그인 · 모든 권한과 관리자 관리</small></div><span class="pill gold">최고</span></li>
@@ -2927,7 +2927,7 @@ function adminApp(L, BUILD, M) {
       ${p.devices.length ? `<ul class="rows">${p.devices.map((d) => `<li class="item">
         <div class="row-main"><b>${esc(d.adminName)}의 휴대폰</b><small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
         ${pill(d)}
-        <div class="actions">${d.status === "approved" ? "" : `<button class="btn small primary" data-act="phone" data-id="${d.id}" data-key="approve">승인</button>`}
+        <div class="actions">${d.status === "approved" ? "" : `<button class="btn small" data-act="phone" data-id="${d.id}" data-key="approve">승인</button>`}
           <button class="btn small danger" data-act="phone" data-id="${d.id}" data-key="remove">끊기</button></div></li>`).join("")}</ul>`
         : '<p class="hint">연결된 휴대폰이 없어요.</p>'}`;
   }
@@ -2963,7 +2963,7 @@ function adminApp(L, BUILD, M) {
       <p class="hint">가족 휴대폰에 프로를 끝나는 날 없이 무료로 줘요. 닉네임을 적고 코드를 만들어 보내면, 가족이 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 1시간 안에 넣어요. 승인 없이 바로 열려요. 정지하면 다시 켤 때까지 무료가 되고, 끊으면 새 코드가 있어야 해요. 닉네임은 이 화면에만 보이고 그 휴대폰에는 '가족'으로만 보여요. 몇 대든 줄 수 있어요.</p>
       <form class="inline-form" data-form="family-code"><div class="fieldset"><label for="family-name">닉네임(관리자 앱에서만 보여요)</label>
         <input id="family-name" name="name" maxlength="20" required placeholder="예: 엄마" autocomplete="off"></div>
-        <div class="actions start"><button class="btn primary" type="submit">가족 코드 만들기</button></div></form>
+        <div class="actions start"><button class="btn" type="submit">가족 코드 만들기</button></div></form>
       ${codes.length ? `<h3 class="section">아직 안 넣은 코드</h3><ul class="rows">${codes.map((c) => `<li class="item"><div class="row-main"><b>${esc(c.name)} · ${esc(c.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</b>
         <small>${esc(clock(c.expiresAt))}까지</small></div><div class="actions"><button class="btn small" data-act="family-code-delete" data-id="${esc(c.code)}">취소</button></div></li>`).join("")}</ul>` : ""}
       ${phones.length ? `<h3 class="section">가족 휴대폰</h3><ul class="rows">${phones.map((d) => `<li class="item"><div class="row-main"><b>${esc(d.name)}</b>
@@ -3158,7 +3158,7 @@ function adminApp(L, BUILD, M) {
     return `<section class="card"><div class="card-head"><h2>옛 앱 급여 끊기</h2>${state}</div>
       <p class="hint">앱 ${esc(String(o.maxApp))}번(1.38) 이하에 회사 판 급여 계산식을 주지 않아요. 끊긴 동안 그 앱에는 업데이트 공지가 30일 떠요. 이미 넣은 급여는 폰에 그대로 남아요.
         지금 저장된 나간 판: ${esc(o.shipped ?? "없음")}${o.at ? ` · 끊은 때 ${esc(kstDate(new Date(o.at).toISOString()))}` : ""}</p>
-      <div class="actions start">${modes.map(([m, label]) => `<button class="btn small${o.mode === m ? " primary" : ""}" ${edit && o.mode !== m ? `data-act="old-pay-mode" data-mode="${m}"` : "disabled"}>${esc(label)}</button>`).join(" ")}</div></section>`;
+      <div class="segmented" role="group" aria-label="옛 앱 급여 끊기">${modes.map(([m, label]) => `<button type="button" class="seg" aria-pressed="${o.mode === m}"${edit && o.mode !== m ? ` data-act="old-pay-mode" data-mode="${m}"` : o.mode === m ? "" : " disabled"}>${esc(label)}</button>`).join("")}</div></section>`;
   }
 
   /**
@@ -4005,7 +4005,7 @@ function adminApp(L, BUILD, M) {
       ${secondCard()}
       <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
         <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
-        <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
+        <div class="actions start"><button class="btn" data-act="link-code">연결 코드 만들기</button></div></section>
       ${m.owner ? familyCard() : ""}
       ${previewCard()}
       <section class="card"><div class="card-head"><h2>로그인</h2>${S.data.sessions?.items?.length ? `<span class="pill">${S.data.sessions.items.length}곳</span>` : ""}</div>
@@ -4061,7 +4061,7 @@ function adminApp(L, BUILD, M) {
     }
     return `<section class="card"><h2>두 번째 확인</h2>
       <p class="hint">비밀번호가 새어도 다른 사람이 들어오지 못하게, 로그인할 때 휴대폰 인증 앱의 6자리 코드를 한 번 더 물어요. 휴대폰을 잃으면 ${S.me?.owner ? "Cloudflare에 ADMIN_2FA_RESET=1을 넣으면 코드 없이 들어와요." : "최고 관리자에게 계정을 다시 만들어 달라고 해요."}</p>
-      <div class="actions start"><button class="btn primary" data-act="second-start">켜기</button></div></section>`;
+      <div class="actions start"><button class="btn" data-act="second-start">켜기</button></div></section>`;
   }
 
   /** [ADMUX-03] A password box with a 보기 button beside it. */

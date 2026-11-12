@@ -249,7 +249,7 @@ export function plazaViews(A) {
       ${L.draftEmpty(pairs)}<ul class="rows similar-rows">${pairs.map((p) => `<li><div class="pair"><a href="${href("companies", p.from.id)}">${side(p.from)}</a><span class="arrow" aria-hidden="true">→</span>
           <a href="${href("companies", p.into.id)}">${side(p.into)}</a></div><small class="why">${esc(p.why)}</small>
         ${L.draftNote(p.draft)}
-        <div class="actions start"><button class="btn small primary" data-act="similar-merge" data-from="${p.from.id}" data-into="${p.into.id}" data-a="${esc(p.from.name)}" data-b="${esc(p.into.name)}">이쪽으로 합치기</button>
+        <div class="actions start"><button class="btn small" data-act="similar-merge" data-from="${p.from.id}" data-into="${p.into.id}" data-a="${esc(p.from.name)}" data-b="${esc(p.into.name)}">이쪽으로 합치기</button>
           <button class="btn small ghost" data-act="similar-skip" data-a="${p.from.id}" data-b="${p.into.id}">다른 회사예요</button></div></li>`).join("")}</ul></section>`;
   }
 

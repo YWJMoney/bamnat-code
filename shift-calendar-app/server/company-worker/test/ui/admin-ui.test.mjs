@@ -2929,3 +2929,23 @@ test("[RVA-33] 오늘 '지금 기다리는 것': 숫자는 보통 색, 기한을
   assert.equal(u.text(`${ask} .late`), "넘김 3");
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-34] 채운 단추는 화면에 하나(조건 2): 줄·카드·고르기 줄에는 채운 단추가 없어요", async (t) => {
+  offline(t);
+  const { env } = await world({ plaza: true });
+  const u = await signedIn(env);
+  const filled = () => u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open]), dialog, [hidden]"));
+  // 앞: 오늘 11(할 일 줄마다 '보기'), 마을 12(주제 저장마다), 내 계정 4, 흐름·회사·공지·관리자 2.
+  for (const hash of ["#/home", "#/flow", "#/community?show=village", "#/companies", "#/notices", "#/admins", "#/account", "#/inquiries", "#/recipes"]) {
+    await u.go(hash);
+    await u.settle(20);
+    const got = filled().map((b) => b.textContent.trim());
+    assert.ok(got.length <= 1, `${hash}: ${got.length} filled (${got.join(" | ")})`);
+  }
+  // 옛 앱 급여 끊기의 지금 고른 것은 채운 단추가 아니라 고르기 줄의 눌린 칸이에요.
+  await u.go("#/notices");
+  await u.settle(20);
+  const pay = u.$('#main .segmented[aria-label="옛 앱 급여 끊기"]');
+  if (pay) assert.equal(pay.querySelectorAll('[aria-pressed="true"]').length, 1);
+  assert.deepEqual(u.errors, []);
+});

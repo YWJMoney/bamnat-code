@@ -10,8 +10,9 @@ export function flowViews(A) {
   const num = (v, unit = "") => (v === null || v === undefined ? "—" : `${v}${unit}`);
 
   function stageCard(s, i, next) {
-    const go = s.act.route ? `<a class="btn small${s.key === next ? " primary" : ""}" href="${href(s.act.route)}">${esc(s.act.label)}</a>`
-      : `<button class="btn small${s.key === next ? " primary" : ""}" type="button" data-act="${s.act.act}">${esc(s.act.label)}</button>`;
+    // 2.0.0 [RVA-34] 조건 2: 다음 단계의 채운 단추는 위 '지금 할 일' 막대에 하나만(같은 단추가 두 번 채워졌어요).
+    const go = s.act.route ? `<a class="btn small" href="${href(s.act.route)}">${esc(s.act.label)}</a>`
+      : `<button class="btn small" type="button" data-act="${s.act.act}">${esc(s.act.label)}</button>`;
     return `<li class="pipe-step${s.stuck ? " stuck" : ""}${s.n ? "" : " zero"}${s.key === next ? " next" : ""}" data-stage="${s.key}">
       <div class="pipe-top"><span class="pipe-no">${i + 1}</span><b>${esc(s.name)}</b>${s.stuck ? '<span class="pill bad">막힘</span>' : ""}</div>
       <div class="pipe-n"><span class="v">${s.n}</span><span class="u">건</span></div>
