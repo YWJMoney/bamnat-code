@@ -2133,14 +2133,21 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   assert.equal(t.document.querySelectorAll("#main .btn.primary:not([disabled])").length, 0);
   assert.ok(t.$("#main details.tip:not([open]) > summary"), "the how-to is one line that opens");
   assert.equal(main().split("명이 각자").length - 1, 1, "the invite rule is said once");
-  // 조건 1: 드릴 보상 목록이 종류 칩 바로 밑(한 줄 설명·Claude 추천 한 줄 다음)에 와요.
-  const order = [...t.$("#main").children].map((e) => e.matches(".chips") ? "chips" : e.matches("ul.rows") ? "rows" : e.matches("section.card") ? "card" : "");
-  assert.ok(order.indexOf("chips") < order.indexOf("rows") && order.indexOf("rows") < order.indexOf("card"), order.join(","));
+  // 조건 1(총괄 11-12 2차): 구간·찾기·종류·고르기·CSV는 목록 머리 한 줄, 그 바로 밑이 드릴 보상 목록. 한 줄 설명·Claude 줄은 목록 아래.
+  const order = [...t.$("#main").children].map((e) => e.matches(".list-head") ? "head" : e.matches("ul.rows") ? "rows" : e.matches(".list-foot") ? "foot" : e.matches("section.card") ? "card" : "?");
+  assert.deepEqual(order.slice(0, 4), ["head", "rows", "foot", "card"], order.join(","));
+  assert.ok(t.$("#main .list-head > .segmented") && t.$("#main .list-head #search") && t.$("#main .list-head #reward-kind"), "one head line");
+  assert.equal(t.$('#main .list-head [data-act="csv"]').getAttribute("aria-label"), "CSV로 받기");
+  assert.equal(t.$('#main .list-head [data-act="reward-pick"]').getAttribute("aria-label"), "여러 개 고르기");
+  assert.ok(t.$("#main .list-foot .claude-draft-empty") && t.$("#main .list-foot details.tip"));
   // Play Integrity is off here (INTEGRITY_MODE), so '0명 확인' is not a warning, just said off.
   assert.match(main(), /친구 0명 · Play 확인 꺼짐/);
   assert.ok(!t.$('[data-act="reward"][data-status="paid"][data-id="iOVERaaaaaaaaaaaaaaaaa"]'), "no 지급하기 past the cap");
-  await t.click('[data-act="reward-kind"][data-key="invite"]');
+  const kind = t.$("#reward-kind");
+  kind.value = "invite";
+  kind.dispatchEvent(new t.window.Event("change", { bubbles: true }));
   await t.settle(30);
+  assert.ok(t.$("#main .list-more.busy"), "the head says a filter is on");
   assert.equal(t.document.querySelectorAll("#main ul.rows > li").length, 2);
   await t.click('[data-act="reward-pick"]');
   await t.click('[data-act="reward-pick-cap"]');

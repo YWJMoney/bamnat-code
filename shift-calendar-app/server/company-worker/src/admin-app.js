@@ -198,6 +198,8 @@ function adminApp(L, BUILD, M) {
   let reloginWaiters = [];
 
   const P = {
+    // 2.0.0 [RVD-16] 목록 머리의 '찾기·종류·더 보기' (좁은 폭).
+    tune: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
     home: '<path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z"/>',
     review: '<path d="M4 13h4l2 3h4l2-3h4"/><path d="M5.5 5h13L20 13v6H4v-6z"/>',
     inquiries: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
@@ -2469,18 +2471,20 @@ function adminApp(L, BUILD, M) {
     const owedTab = S.rewardTab === "owed";
     const segs = [["owed", "드릴 보상"], ["paid", "지급함"], ["void", "취소"]].map(([key, label]) => seg("reward-tab", key, S.rewardTab, label, counts[key])).join("");
     // 2.0.0 [RVD-16] 드릴 보상이 많아져요(친구 초대·만든 작품도 여기서 확인): 종류로 좁히고, 여럿 골라 한 번에.
-    const kinds = owedTab && r?.kinds && Object.keys(r.kinds).length > 1 ? `<div class="chips" role="group" aria-label="보상 종류">${[["", "모든 종류"], ...Object.keys(REWARD_KIND_NAMES).filter((k) => r.kinds[k]).map((k) => [k, REWARD_KIND_NAMES[k]])]
-      .map(([key, label]) => `<button type="button" class="chip pick" data-act="reward-kind" data-key="${key}" aria-pressed="${S.rewardKind === key}">${label}${key ? ` ${r.kinds[key]}` : ""}</button>`).join("")}</div>` : "";
+    // 조건 1(총괄 11-12 2차): 종류는 칩 줄 대신 고르기 칸 하나로, 목록 머리 한 줄에 들어가요.
+    const kinds = owedTab && r?.kinds && Object.keys(r.kinds).length > 1 ? `<label class="sr" for="reward-kind">보상 종류</label><select id="reward-kind" data-change="reward-kind">${[["", "모든 종류"], ...Object.keys(REWARD_KIND_NAMES).filter((k) => r.kinds[k]).map((k) => [k, `${REWARD_KIND_NAMES[k]} ${r.kinds[k]}`])]
+      .map(([key, label]) => `<option value="${key}"${S.rewardKind === key ? " selected" : ""}>${label}</option>`).join("")}</select>` : "";
     const ready = r && r.status === S.rewardTab;
     const picking = owedTab && edit && Boolean(S.rewardPick) && ready;
     const picked = picking ? S.rewardPick.size : 0;
     const overCap = ready ? r.rewards.filter((w) => w.capped && !w.year?.left).map((w) => w.id) : [];
-    const pickTool = owedTab && edit && ready && r.rewards.length > 1 ? `<button class="btn" data-act="reward-pick" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>` : "";
+    const pickTool = owedTab && edit && ready && r.rewards.length > 1 ? (picking ? '<button class="btn" data-act="reward-pick" aria-pressed="true">선택 마침</button>'
+      : `<button class="btn icon-wide" data-act="reward-pick" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.check)}<span class="lbl">여러 개 고르기</span></button>`) : "";
     const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 보상"><b>${picked}개 골랐어요</b>
         <button class="btn small ghost" data-act="reward-pick-all">${picked === r.rewards.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
         ${overCap.length ? `<button class="btn small ghost" data-act="reward-pick-cap">상한 넘은 것 ${overCap.length}개 고르기</button>` : ""}
-        <button class="btn small danger" data-act="reward-bulk" data-key="void"${picked ? "" : " disabled"}>취소</button>
-        <button class="btn small primary" data-act="reward-bulk" data-key="paid"${picked ? "" : " disabled"}>지급하기</button></div>` : "";
+        <span class="bulk-acts"><button class="btn small danger" data-act="reward-bulk" data-key="void"${picked ? "" : " disabled"}>보상 취소</button>
+        <button class="btn small primary" data-act="reward-bulk" data-key="paid"${picked ? "" : " disabled"}>지급하기</button></span></div>` : "";
     // [RVD-16] 조건 2: 줄마다의 단추는 가벼운 모양(지급하기는 테두리, 취소는 글자). 채운 단추는 여러 개 고르기의 아래 막대에만.
     const payButton = (w) => {
       const months = w.draft?.pick === "paid" && w.draft.months ? w.draft.months : w.months;
@@ -2494,23 +2498,38 @@ function adminApp(L, BUILD, M) {
           ${rewardJudge(w)}
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}
           ${L.draftNote(w.draft, w.draft?.months ? `${w.draft.months}개월` : "")}</div>
-        ${edit && !picking ? `<div class="actions">${w.status === "owed" ? `<button class="btn small ghost" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
+        ${edit && !picking ? `<div class="actions">${w.status === "owed" ? `<button class="btn small ghost" data-act="reward" data-id="${w.id}" data-status="void">보상 취소</button>
           ${payButton(w)}`
           : `<button class="btn small ghost" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}`;
       return picking ? `<li><label class="row${S.rewardPick.has(w.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick-reward="${w.id}"${S.rewardPick.has(w.id) ? " checked" : ""} aria-label="이 보상 고르기">${inner}</label></li>`
         : `<li class="item">${inner}</li>`;
     };
+    // 2.0.0 [RVD-16] 조건 1(총괄 11-12 2차): 목록 첫 줄이 화면 위 25% 안. 고르기 막대는 목록 뒤(아래에 붙음), 한 줄 설명과 Claude 줄은 목록 아래.
     const body = !ready ? skeleton() : !r.rewards.length ? empty(owedTab ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
-      : `${owedTab && edit ? L.draftEmpty(r.rewards) : ""}${bar}<ul class="rows">${r.rewards.map(row).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
+      : `<ul class="rows">${r.rewards.map(row).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}${bar}`;
+    const foot = `<div class="list-foot">${ready && owedTab && edit ? L.draftEmpty(r.rewards) : ""}
+      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · 한 분에 1년 12개월까지</summary>
+        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. 상한을 넘는 만큼은 지급하지 않아요.</p></details></div>`;
     // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
-    // 2.0.0 [RVD-16] 조건 1·4(총괄 11-12): 친구 초대 숫자도 목록 아래 그 카드로 옮겨, 드릴 보상이 종류 칩 바로 밑에 와요. 규칙 문장은 한 곳에만.
+    // 2.0.0 [RVD-16] 조건 1·4(총괄 11-12): 친구 초대 숫자도 목록 아래 그 카드로 옮겨요. 규칙 문장은 한 곳에만.
     const rules = inviteCard(can("rewards") ? r?.invites : null, can("settings"), can("settings", "edit"));
     if (!can("rewards")) return rules;
-    return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
-      <div class="toolbar"><input id="search" type="search" placeholder="회사나 부서로 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${pickTool}${csvButton("rewards", ready ? r.rewards : null)}</div>
-      ${kinds}
-      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · 한 분에 1년 12개월까지</summary>
-        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. 상한을 넘는 만큼은 지급하지 않아요.</p></details>${body}${rules}`;
+    return `${listHead(`<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>`,
+      `<input id="search" type="search" placeholder="회사·부서 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${kinds}${pickTool}${csvButton("rewards", ready ? r.rewards : null, true)}`,
+      { open: picking, busy: Boolean(S.rewardQuery || S.rewardKind) })}${body}${foot}${rules}`;
+  }
+
+  /**
+   * 2.0.0 [RVD-16] 목록 머리 한 줄(조건 1, 총괄 11-12 2차, 관리자 목록 화면의 본보기 HQ-03): 구간 고르기 옆에 찾기·거르기·고르기·CSV.
+   * 좁은 폭(600px 아래)은 구간 고르기와 '찾기·종류·더 보기' 단추 하나만 한 줄에 두고, 누르면 그 아래에 펼쳐요. [busy]는 찾는 말이나
+   * 거르기가 걸려 있다는 점(단추에 점, 읽어 주는 이름에도).
+   */
+  function listHead(segmented, tools, { open = false, busy = false } = {}) {
+    const on = open || Boolean(S.toolsOpen);
+    const name = `찾기·종류·더 보기${busy ? "(거르는 중)" : ""}`;
+    return `<div class="list-head${on ? " open" : ""}">${segmented}
+      <button class="icon-btn list-more${busy ? " busy" : ""}" data-act="tools-toggle" aria-expanded="${on}" aria-label="${name}" title="${name}">${icon(P.tune)}</button>
+      <div class="toolbar list-tools">${tools}</div></div>`;
   }
 
   // AE 1.26 시작
@@ -3932,7 +3951,10 @@ function adminApp(L, BUILD, M) {
       ["생긴 날", (w) => day(w.createdAt)], ["지급한 날", (w) => (w.paidAt ? day(w.paidAt) : "")]]],
   };
 
-  const csvButton = (kind, rows) => `<button class="btn small" data-act="csv" data-kind="${kind}"${rows?.length ? "" : " disabled"}>${icon(P.install)}CSV로 받기</button>`;
+  // 2.0.0 [RVD-16] [compact]: 목록 머리 한 줄에서는 넓은 폭에 아이콘만(읽어 주는 이름·마우스를 올리면 이름), 좁은 폭에 글자까지.
+  const csvButton = (kind, rows, compact = false) => compact
+    ? `<button class="btn icon-wide" data-act="csv" data-kind="${kind}" aria-label="CSV로 받기" title="CSV로 받기"${rows?.length ? "" : " disabled"}>${icon(P.install)}<span class="lbl">CSV로 받기</span></button>`
+    : `<button class="btn small" data-act="csv" data-kind="${kind}"${rows?.length ? "" : " disabled"}>${icon(P.install)}CSV로 받기</button>`;
 
   function downloadCsv(kind = "audit") {
     const [rows, more, name, cols] = CSV_KINDS[kind]?.() ?? [];
@@ -5205,11 +5227,6 @@ function adminApp(L, BUILD, M) {
     },
     reward: ({ id, status, months }) => (status === "paid" ? openPaid(id, months) : setReward(id, status)),
     // 2.0.0 [RVD-16] 드릴 보상: 종류로 좁히기와 여럿 고르기.
-    "reward-kind": ({ key }) => {
-      S.rewardKind = key;
-      S.rewardPick = null;
-      refilter("rewards");
-    },
     "reward-pick": () => {
       S.rewardPick = S.rewardPick ? null : new Set();
       render({ keepScroll: true });
@@ -6488,6 +6505,12 @@ function adminApp(L, BUILD, M) {
     "inquiry-sort": (t) => {
       S.inquirySort = t.value;
       refilter("inquiries");
+    },
+    // 2.0.0 [RVD-16] 드릴 보상 종류(목록 머리의 고르기 칸).
+    "reward-kind": (t) => {
+      S.rewardKind = t.value;
+      S.rewardPick = null;
+      refilter("rewards");
     },
     "audit-actor": (t) => {
       S.audit.actor = t.value;

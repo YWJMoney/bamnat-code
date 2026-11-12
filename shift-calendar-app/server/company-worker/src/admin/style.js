@@ -1320,4 +1320,20 @@ details.tip>.hint{margin:.25rem 0 .5rem}
 @media (pointer:coarse){details.tip>summary{min-height:2.75rem;display:flex;align-items:center;gap:.25rem}}
 .row-main>.pill{align-self:flex-start}
 .row-main .row-tags{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.3rem}
+/* 2.0.0 [RVD-16] 목록 머리 한 줄(조건 1, 관리자 목록 화면의 본보기 HQ-03): 구간 고르기 + 찾기·거르기·고르기·CSV. 좁은 폭은 단추 하나 뒤로.
+   구간 고르기는 바깥 여백 없이 한 줄 높이(2.75rem)에, 큰 글자에서는 구간이 줄을 바꿔요(조건 12). */
+.list-head{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 .5rem}
+.list-head>.segmented{margin:0;padding:0;flex:0 1 auto;flex-wrap:wrap;overflow:visible}
+.list-head>.segmented .seg{flex:1 1 auto}
+.list-head .list-more{display:none;position:relative}
+.list-head .list-more.busy::after{content:"";position:absolute;top:.5rem;right:.5rem;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent)}
+.list-head .list-tools{flex:1 1 22rem;margin:0;flex-wrap:nowrap;min-width:0}
+.list-head .list-tools input[type=search]{flex:1 1 8rem}
+@media (min-width:600px){.list-head .btn.icon-wide{width:2.75rem;padding:0}.list-head .btn.icon-wide .lbl{display:none}}
+@media (max-width:599.98px){.list-head>.segmented{flex:1 1 0;min-width:0}.list-head .list-more{display:inline-grid}
+.list-head .list-tools{display:none;flex-basis:100%;flex-wrap:wrap}.list-head.open .list-tools{display:flex}.list-head .list-tools select{flex:1 1 8rem}}
+.list-foot{margin:.25rem 0 .75rem}.list-foot .claude-draft-empty{margin:0 0 .25rem}
+/* 2.0.0 [RVD-16] 고르기 막대의 할 일 두 단추는 함께, 좁은 폭에서 줄이 바뀌면 오른쪽에. */
+.bulkbar .bulk-acts{display:flex;gap:.5rem;flex-wrap:nowrap}
+@media (max-width:599.98px){.bulkbar .bulk-acts{margin-left:auto}}
 `;
