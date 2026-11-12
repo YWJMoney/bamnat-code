@@ -154,8 +154,13 @@ data class ShopRules(
     }
 }
 
-/** [RVH-36] 검토 TYPE-23 A weekday of a shop: 영업, 단축영업, 격주 휴무 or 휴무 every week. */
-enum class ShopDay(val label: String) { OPEN("영업"), SHORT("단축"), EVERY_OTHER("격주 휴무"), CLOSED("휴무") }
+/**
+ * [RVH-36] 검토 TYPE-23 A weekday of a shop: 영업, 단축영업, 격주 휴무 or 휴무 every week. [short] is its word in a weekday's row of four
+ * (2.0.0 [RVH-48], 총괄 #451 사진 검토: one row at 100% on a folded phone), where TalkBack still says [label].
+ */
+enum class ShopDay(val label: String, val short: String = label) {
+    OPEN("영업"), SHORT("단축"), EVERY_OTHER("격주 휴무", "격주"), CLOSED("휴무");
+}
 
 object ShopDays {
     /** A day the shop is closed by its rules (the weekly ones included). */

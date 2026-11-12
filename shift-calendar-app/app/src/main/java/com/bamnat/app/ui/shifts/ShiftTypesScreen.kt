@@ -126,7 +126,7 @@ import java.time.LocalTime
 @Composable
 fun ShiftTypesScreen(
     vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L,
-    /** [PAYX-51] To '교육' and its 시수 in 연장 휴무일 근무 지정, from the editor of a day named 교육·연수·LMS. */
+    /** [PAYX-51] To '교육' and its 시수 in 연장·휴무일 근무 지정, from the editor of a day named 교육·연수·LMS. */
     onOpenSchooling: (() -> Unit)? = null,
 ) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
@@ -577,7 +577,7 @@ private fun OffsetPickerDialog(
     )
 }
 
-/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장 휴무일 근무 지정. */
+/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장·휴무일 근무 지정. */
 private val SCHOOLING = Regex("교육|연수|LMS", RegexOption.IGNORE_CASE)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -812,7 +812,7 @@ fun ShiftTypeEditorDialog(
                         // whose 시수 is set with its pay; a kind of day only names the day. Said where the user looks for it.
                         if (SCHOOLING.containsMatchIn(draft.name)) {
                             Text(
-                                "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장 휴무일 근무 지정에서 '교육'을 더해 " +
+                                "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장·휴무일 근무 지정에서 '교육'을 더해 " +
                                     "급여와 가산 › 시수를 정해요. 근무 종류에는 시수 칸이 없어요.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -74,9 +74,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -568,13 +565,8 @@ private fun Controls(
     person: String?, onClearPerson: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            Show.entries.forEachIndexed { i, s ->
-                SegmentedButton(selected = show == s, onClick = { onShow(s) }, shape = SegmentedButtonDefaults.itemShape(i, Show.entries.size)) {
-                    Text("${s.label} ${if (s == Show.OWED) owedCount else doneCount}")
-                }
-            }
-        }
+        com.bamnat.app.ui.components.ChoiceRow(Show.entries.map { s -> "${s.label} ${if (s == Show.OWED) owedCount else doneCount}" }, selected = show.ordinal,
+            onSelect = { onShow(Show.entries[it]) })
         AnimatedVisibility(searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             OutlinedTextField(
                 value = query, onValueChange = { onQuery(it.take(30)) }, singleLine = true,

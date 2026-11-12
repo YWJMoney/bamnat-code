@@ -1,5 +1,7 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.core.consent.ConsentItem
 import com.bamnat.core.formula.ButtonPlace
@@ -109,4 +111,30 @@ class ReviewH3ShotsTest : ScreenshotBase() {
         settle()
         reveal("잔업", exact = true)
     }
+
+    /**
+     * [RVH-48] 총괄 #451 사진 검토: a weekday's four choices (영업·단축·격주·휴무) are one row at 100% on a folded phone and on a 360dp
+     * one, not '휴무' alone on a second line; at 200% two rows of two.
+     */
+    @Test fun shopWeekdaysOnOneRow() {
+        for ((name, q, scale, oneRow) in listOf(
+            Quad("369_100", FOLDED, 1f, true), Quad("360_100", "w360dp-h800dp-port-420dpi", 1f, true),
+            Quad("369_200", FOLDED, 2f, false),
+        )) {
+            shoot("rvh_20_shop_weekdays_$name", q, scale, style(WorkStyle.BUSINESS) {
+                com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.SHOP_DAYS))
+                settle()
+                reveal("월요일 휴무", exact = true)
+                fun top(said: String): Float = nodes().first { n ->
+                    n.config.getOrNull(SemanticsProperties.ContentDescription)?.contains(said) == true
+                }.boundsInWindow.top
+                val open = top("월요일 영업")
+                assertTrue("$name: 영업과 단축은 한 줄", open == top("월요일 단축"))
+                if (oneRow) assertTrue("$name: 네 칸이 한 줄(휴무가 떨어지지 않음)", open == top("월요일 휴무"))
+                else assertTrue("$name: 큰 글자는 두 개씩 두 줄", open < top("월요일 격주 휴무") && top("월요일 격주 휴무") == top("월요일 휴무"))
+            })
+        }
+    }
+
+    private data class Quad(val name: String, val q: String, val scale: Float, val oneRow: Boolean)
 }

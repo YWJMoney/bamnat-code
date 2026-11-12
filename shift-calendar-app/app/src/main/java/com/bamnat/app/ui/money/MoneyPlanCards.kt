@@ -625,29 +625,23 @@ fun FixedCostDialog(
                 Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    val kinds = listOf(MoneyKind.EXPENSE to "나갈 돈", MoneyKind.INCOME to "들어올 돈", MoneyKind.TRANSFER to "카드값·이체")
-                    kinds.forEachIndexed { i, (k, label) ->
-                        SegmentedButton(selected = kind == k, onClick = {
-                            kind = k
-                            val list = ledger.categoriesOf(k)
-                            if (category !in list) category = when (k) {
-                                MoneyKind.TRANSFER -> UpcomingPayments.CARD_BILL
-                                MoneyKind.INCOME -> MoneyCategories.SALARY
-                                MoneyKind.EXPENSE -> "주거"
-                            }.takeIf { it in list } ?: list.first()
-                        }, shape = SegmentedButtonDefaults.itemShape(i, kinds.size)) { Text(label, maxLines = 1) }
-                    }
-                }
+                val kinds = listOf(MoneyKind.EXPENSE to "나갈 돈", MoneyKind.INCOME to "들어올 돈", MoneyKind.TRANSFER to "카드값·이체")
+                // [RVH-46] Words never cut at a large font.
+                com.bamnat.app.ui.components.ChoiceRow(kinds.map { it.second }, selected = kinds.indexOfFirst { it.first == kind }, onSelect = { i ->
+                    val k = kinds[i].first
+                    kind = k
+                    val list = ledger.categoriesOf(k)
+                    if (category !in list) category = when (k) {
+                        MoneyKind.TRANSFER -> UpcomingPayments.CARD_BILL
+                        MoneyKind.INCOME -> MoneyCategories.SALARY
+                        MoneyKind.EXPENSE -> "주거"
+                    }.takeIf { it in list } ?: list.first()
+                })
                 OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true,
                     label = { Text(when (kind) { MoneyKind.INCOME -> "이름 (예: 월급, 용돈)"; MoneyKind.TRANSFER -> "이름 (예: 신한카드, 적금)"; else -> "이름 (예: 월세, 보험)" }) },
                     modifier = Modifier.fillMaxWidth())
                 AmountField("금액", digits, { digits = it })
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    Repeat.entries.forEachIndexed { i, r ->
-                        SegmentedButton(selected = repeat == r, onClick = { repeat = r }, shape = SegmentedButtonDefaults.itemShape(i, Repeat.entries.size)) { Text(r.label) }
-                    }
-                }
+                com.bamnat.app.ui.components.ChoiceRow(Repeat.entries.map { it.label }, selected = repeat.ordinal, onSelect = { repeat = Repeat.entries[it] })
                 when (repeat) {
                     // One row of seven, so the week reads as a week on the narrowest screen.
                     Repeat.WEEK -> SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

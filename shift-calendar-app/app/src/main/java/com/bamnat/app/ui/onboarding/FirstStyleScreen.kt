@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -215,10 +216,14 @@ private fun KaniHello(text: String) {
 private fun TextSizeButton(step: Int, onStep: (Int) -> Unit) {
     var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val now = com.bamnat.app.ui.theme.TextSize.LABELS.getOrNull(step) ?: ""
-    androidx.compose.material3.IconButton(onClick = { open = true },
-        modifier = Modifier.semantics { contentDescription = "글자 크기, 지금 $now" }) {
-        Text("가", style = MaterialTheme.typography.titleLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-            modifier = Modifier.clearAndSetSemantics {})
+    // [RVH-43] 총괄 #451 사진 검토: a bare '가' read as a letter, not a button. Outlined, a small and a large 가 side by side, as a font
+    // size control looks; 48dp to press (the outline itself 40dp, Material's).
+    androidx.compose.material3.OutlinedIconButton(onClick = { open = true },
+        modifier = Modifier.minimumInteractiveComponentSize().semantics { contentDescription = "글자 크기, 지금 $now" }) {
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.clearAndSetSemantics {}) {
+            Text("가", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text("가", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+        }
     }
     if (open) com.bamnat.app.ui.components.AppSheet(onDismissRequest = { open = false }) {
         Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

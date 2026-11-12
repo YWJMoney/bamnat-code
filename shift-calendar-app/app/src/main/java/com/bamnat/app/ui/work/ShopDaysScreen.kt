@@ -291,15 +291,15 @@ fun ShopDaysScreen(vm: ShopDaysViewModel, onBack: () -> Unit, onSaved: (String) 
                             val now = rules.dayOf(d)
                             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(NthWeekday.DAY_NAMES[d.ordinal].take(1), style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(32.dp))
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                                    com.bamnat.core.work.ShopDay.entries.forEach { kind ->
-                                        FilterChip(
-                                            selected = now == kind,
-                                            onClick = { vm.edit { it.withDay(d, kind, today) } },
-                                            label = { Text(kind.label) },
-                                        )
-                                    }
-                                }
+                                // 2.0.0 [RVH-48] 총괄 #451 사진 검토: four chips wrapped '휴무' to a second line at 100% on a folded phone (seven
+                                // weekdays, fourteen lines). One row of four at the usual size, even 360dp wide; two rows of two only at a large font.
+                                val kinds = com.bamnat.core.work.ShopDay.entries
+                                com.bamnat.app.ui.components.ChoiceRow(
+                                    kinds.map { it.short }, selected = kinds.indexOf(now), check = false,
+                                    descriptions = kinds.map { "${NthWeekday.DAY_NAMES[d.ordinal]} ${it.label}" },
+                                    onSelect = { i -> vm.edit { it.withDay(d, kinds[i], today) } },
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
                         }
                         if (rules.shortWeekdays.isNotEmpty()) {

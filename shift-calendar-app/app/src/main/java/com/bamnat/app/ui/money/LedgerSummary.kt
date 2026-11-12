@@ -39,9 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -796,11 +793,8 @@ fun CategoryEditor(
             SheetTitle("분류 고치기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    MoneyKind.entries.forEachIndexed { i, k ->
-                        SegmentedButton(selected = kind == k, onClick = { kind = k }, shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size)) { Text(k.label) }
-                    }
-                }
+                com.bamnat.app.ui.components.ChoiceRow(MoneyKind.entries.map { it.label }, selected = kind.ordinal, onSelect = { kind = MoneyKind.entries[it] },
+                    modifier = Modifier.padding(bottom = 8.dp))
                 rows.forEachIndexed { i, r ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics(mergeDescendants = true) {

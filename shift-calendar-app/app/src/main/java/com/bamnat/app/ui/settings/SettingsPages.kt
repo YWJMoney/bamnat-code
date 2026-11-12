@@ -161,14 +161,14 @@ private fun WorkPage(
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+            NavRow("연장·휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
         }
         HorizontalDivider()
         // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
         // [J133-71] 1.33: 회사 찾기 is said only for work that has a company.
         NavRow(SETUP_AGAIN_ROW, when {
             work.workStyle?.usesCompany != false -> "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요"
-            work.workStyle?.usesPayEngine == true -> "근무 시간·요일·알람·급여까지 첫 설정 질문을 다시 받아요"
+            work.workStyle?.usesPayEngine == true -> "근무 시간과 요일, 알람, 급여까지 첫 설정 질문을 다시 받아요"
             else -> "일하는 방식부터 첫 설정 질문을 다시 받아요"
         }) {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)

@@ -41,9 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -225,18 +222,12 @@ fun PatternScreen(
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = kind == PatternKind.ROTATION,
-                    onClick = { kind = PatternKind.ROTATION },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("순서대로 돌아요", maxLines = 1) }
-                SegmentedButton(
-                    selected = kind == PatternKind.WEEKLY,
-                    onClick = { kind = PatternKind.WEEKLY },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("요일마다 같아요", maxLines = 1) }
-            }
+            // [RVH-46] Two lines or one under the other at a large font, never cut to '순서대로'.
+            com.bamnat.app.ui.components.ChoiceRow(
+                listOf("순서대로 돌아요", "요일마다 같아요"),
+                selected = if (kind == PatternKind.WEEKLY) 1 else 0,
+                onSelect = { kind = if (it == 1) PatternKind.WEEKLY else PatternKind.ROTATION },
+            )
             Text(
                 // [SETUP-09] What each choice means, with an example, instead of 교대 순환·요일 고정.
                 if (kind == PatternKind.ROTATION) when (vm.style) {

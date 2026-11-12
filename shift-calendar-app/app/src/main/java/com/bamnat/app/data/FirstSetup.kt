@@ -73,7 +73,7 @@ class FirstSetup(
         settings.update {
             it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT,
                 longPress = firstHold(it, style),
-                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장 휴무일 근무 지정.
+                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장·휴무일 근무 지정.
                 extraKinds = if (style == WorkStyle.DAY) it.extraKinds.forDayWork() else it.extraKinds)
         }
         drafts.clear()

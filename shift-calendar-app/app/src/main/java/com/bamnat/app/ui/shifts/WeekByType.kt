@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -48,7 +49,14 @@ fun WeekByType(types: List<ShiftType>, weekly: List<Long?>, onSet: (Int, Long?) 
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${weekly.count { it == t.id }}일", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // [RVH-31] 총괄 #451 사진 검토: in a card on a folded phone the row is about 305dp, a seventh 43dp, under the 44dp at the least.
+            // The row reaches 8dp into the card's padding each side, so each day is 45dp or more wide (and 48dp tall).
+            Row(Modifier.fillMaxWidth().layout { m, c ->
+                val extra = 8.dp.roundToPx()
+                val w = if (c.hasBoundedWidth) c.maxWidth + 2 * extra else c.maxWidth
+                val p = m.measure(c.copy(minWidth = w, maxWidth = w))
+                layout(if (c.hasBoundedWidth) c.maxWidth else p.width, p.height) { p.place(-extra, 0) }
+            }, horizontalArrangement = Arrangement.SpaceBetween) {
                 DayOfWeek.entries.forEach { day ->
                     val i = day.ordinal
                     val on = weekly.getOrNull(i) == t.id

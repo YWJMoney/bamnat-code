@@ -2456,7 +2456,7 @@ private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.
 /** 1.39: a tab name's letters grow with the phone's text size up to this much, so five names fit the bar on one line. */
 private const val TAB_SCALE_MAX = 1.5f
 
-/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
+/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장·휴무일 근무 지정's ready '교육'). */
 internal const val SCHOOLING_KIND = "교육"
 
 
