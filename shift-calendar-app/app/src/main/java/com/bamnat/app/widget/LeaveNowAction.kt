@@ -58,14 +58,4 @@ class LeaveNowAction : ActionCallback {
 
 /** [DAYW-03] The widget's 지금 퇴근 button. */
 @Composable
-internal fun LeaveNowWidgetButton() {
-    Text(
-        "지금 퇴근",
-        style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = 13.sp, fontWeight = FontWeight.Medium),
-        modifier = GlanceModifier
-            .background(GlanceTheme.colors.primaryContainer)
-            .cornerRadius(12.dp)
-            .padding(horizontal = 10.dp, vertical = 4.dp)
-            .clickable(actionRunCallback<LeaveNowAction>()),
-    )
-}
+internal fun LeaveNowWidgetButton() = WidgetPillButton("지금 퇴근", actionRunCallback<LeaveNowAction>()) // 2.0.0 [RVI-07]

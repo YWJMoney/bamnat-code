@@ -2458,7 +2458,14 @@ private fun AppNavHost(
             val date = args?.getString("date")?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             val checklist = args?.getBoolean("checklist") ?: false
             val notebook = args?.getBoolean("notebook") ?: false
-            val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, id, date, checklist, notebook) }
+            // 2.0.0 [RVI-46] (검토 MEMO-26) A new memo's id, once saved, is kept with the screen: after the app was let go in the
+            // background, the same memo opens again instead of an empty one (its words were saved and in the list).
+            val opened = if (id == 0L) entry.savedStateHandle.get<Long>(SAVED_MEMO_ID) ?: 0L else id
+            val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, opened, date, checklist, notebook) }
+            if (id == 0L) {
+                val savedId = vm.memo.collectAsStateWithLifecycle().value.id
+                LaunchedEffect(savedId) { if (savedId != 0L) entry.savedStateHandle[SAVED_MEMO_ID] = savedId }
+            }
             MemoEditorScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO) })
         }
     }
@@ -2929,3 +2936,6 @@ private suspend fun sharedPlaces(c: AppContainer): List<com.bamnat.app.imports.S
  */
 @android.annotation.SuppressLint("RestrictedApi")
 private fun wholeStack(nav: androidx.navigation.NavController): List<androidx.navigation.NavBackStackEntry> = nav.currentBackStack.value
+
+/** 2.0.0 [RVI-46] The id a new memo got on its first save, kept with its editor's place in the back stack. */
+private const val SAVED_MEMO_ID = "saved_memo_id"

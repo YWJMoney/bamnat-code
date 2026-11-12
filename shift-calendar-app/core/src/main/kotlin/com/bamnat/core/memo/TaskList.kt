@@ -50,6 +50,16 @@ object TaskList {
         return late + open + pinned + done
     }
 
+    /**
+     * 2.0.0 [RVI-53] (검토 MEMO-19) What the 할 일 위젯 shows of [memos] on [today], and what the memos that follow the 근무표 hold
+     * (read with the schedule only when drawn): the same value means the widget looks the same, so a save of a memo's words
+     * does not draw it again.
+     */
+    fun looks(memos: List<Memo>, today: LocalDate): List<Any?> =
+        of(memos, today).map { listOf(it.memo.id, it.kind, it.day, it.done, it.time, it.text, it.count) } +
+            memos.filter { MemoRepeat.followsSchedule(it.repeat) && !it.inTrash }
+                .map { listOf(it.id, it.title.ifBlank { it.preview.take(TEXT_CHARS) }, it.repeat, it.skips, it.doneDays, it.reminder?.at) }
+
     /** The day a memo that does not repeat is due: its 일정's day when it has one, else its date. */
     private fun dueDay(m: Memo): LocalDate? = m.reminder?.at?.toLocalDate() ?: m.date
 
