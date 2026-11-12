@@ -112,7 +112,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { flushWatch, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
+import { canaryStats, flushWatch, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -488,7 +488,15 @@ async function routeOnce(request, env, url, ctx) {
   if (path.startsWith("/admin/")) return adminFile(path, request);
   // AE 1.26: the invite link needs no database.
   if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
-  if (path === "/api/admin/health" && method === "GET") return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
+  if (path === "/api/admin/health" && method === "GET") {
+    // 2.0.0 [RVQ-03] 배포 도구의 카나리 비교: 새 판·앞 판 번호를 아는 쪽만 그 두 판의 숫자를 받아요.
+    if (url.searchParams.has("canary")) {
+      const [fresh, base] = [url.searchParams.get("canary"), url.searchParams.get("base")];
+      const got = await canaryStats(env, [fresh, base], Number(url.searchParams.get("minutes")) || 10).catch(() => ({}));
+      return json({ ...health(env), canary: { new: got[fresh] ?? {}, base: got[base] ?? {} } });
+    }
+    return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
+  }
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
@@ -4941,7 +4949,14 @@ async function deepHealth(env) {
   if (!env.DB) return json(out, 503);
   try {
     await ready(env);
-    out.schema = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value === SCHEMA_VERSION;
+    let mark = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value ?? null;
+    // 2.0.0 [RVQ-02] 카나리처럼 앞 판과 함께 돌 때, 앞 판의 새 isolate가 표 표시를 자기 판으로 바꿔 둘 수 있어요(앞 판은 없는 표·칸만 만들어
+    // 표는 그대로예요). 이 판의 표를 다시 맞춘 뒤 봐요. 그러지 않으면 멀쩡한 새 판이 배포 확인에서 '표 판 틀림'으로 되돌려져요.
+    if (mark !== SCHEMA_VERSION) {
+      await schemaUp(env, mark);
+      mark = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value ?? null;
+    }
+    out.schema = mark === SCHEMA_VERSION;
     await Promise.all([config(env), updatePolicy(env)]);
     out.config = true;
   } catch (e) {
