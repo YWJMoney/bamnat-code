@@ -3760,8 +3760,9 @@ async function payEach(env, owed, { rewardCapMonths, rewardCapDays }, now) {
     const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ? AND rule_id != 'invite'",
       w.device, now - rewardCapDays * DAY);
     if (got.m + w.months > rewardCapMonths) continue;
-    // 2.0.0 [RVD-15] and the person's 1년 12달 of all rewards together.
-    if ((await rewardYear(env, w.device, now)).left < w.months) continue;
+    // 2.0.0 [RVD-15] and the person's 1년 12달 of all rewards together ([RVD-21] from 처리방침 3.13's 30-day date; null before).
+    const year = await rewardYear(env, w.device, now);
+    if (year.left != null && year.left < w.months) continue;
     let deferred = null;
     try {
       deferred = await deferFor(env, w.device, w.months, now);
@@ -6914,7 +6915,7 @@ async function rewards(env, status, params = new URLSearchParams()) {
         invite: w.rule_id === "invite",
         dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
         version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
-        ...(year ? { year, capped: year.used + w.months > year.cap } : {}),
+        ...(year ? { year, capped: year.cap != null && year.used + w.months > year.cap } : {}),
         ...(extra.get(w.id) ?? {}),
         ...(drafts.get(rewardDraftKey(w.id)) ? { draft: drafts.get(rewardDraftKey(w.id)) } : {}),
       };
@@ -6967,8 +6968,9 @@ async function setReward(request, env, id, now) {
  */
 async function applyReward(env, r, status, months, memo, now) {
   if (status === "paid" && r.status !== "paid") {
+    // [RVD-21] Only once the 1년 12달 is in force (처리방침 3.13's 30-day date); before it, 약관 1.3·처리방침 3.12 set no cap.
     const year = await rewardYear(env, r.device, now);
-    if (months > year.left) return { error: "cap", field: "months", left: year.left, used: year.used, cap: year.cap };
+    if (year.left != null && months > year.left) return { error: "cap", field: "months", left: year.left, used: year.used, cap: year.cap };
   }
   let deferred = null;
   if (status === "paid" && r.status !== "paid") {

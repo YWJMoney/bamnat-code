@@ -1444,7 +1444,20 @@ export function adminLib() {
       .map(cell).join(",");
   }
 
+  /**
+   * 2.0.0 [RVD-21] 이분의 1년 보상 in words: "이분의 1년 보상 3/12개월", or before the 1년 12개월 is in force (처리방침 3.13 게시 + 30일)
+   * "이분의 1년 보상 3개월 · 12개월 상한은 12월 12일부터".
+   */
+  function rewardYearWords(y) {
+    return y.cap != null ? `이분의 1년 보상 ${y.used}/${y.cap}개월` : `이분의 1년 보상 ${y.used}개월 · 12개월 상한은 ${capFromWords(y.from)}`;
+  }
+  /** 2.0.0 [RVD-21] From when the 1년 12개월 counts: "12월 12일부터", or "처리방침 3.13 시행일부터" while 3.13 is not in the calendar. */
+  function capFromWords(from) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(from ?? "") ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일부터` : "처리방침 3.13 시행일부터";
+  }
+
   return {
+    rewardYearWords, capFromWords,
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, draftEmpty, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,

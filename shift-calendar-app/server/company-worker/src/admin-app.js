@@ -2445,7 +2445,7 @@ function adminApp(L, BUILD, M) {
       if (f.bursts) tags.push(`같은 코드 몰림 ${f.bursts}번(30일)`);
     }
     if (w.year) {
-      facts.push(`이분의 1년 보상 ${w.year.used}/${w.year.cap}개월`);
+      facts.push(L.rewardYearWords(w.year));
       if (w.capped) tags.push(w.year.left ? `상한 · ${w.year.left}개월 남음` : "상한");
     }
     const line = facts.length ? `<small class="judge">${esc(facts.join(" · "))}</small>` : "";
@@ -2553,7 +2553,10 @@ function adminApp(L, BUILD, M) {
   function inviteRuleWords(r) {
     return `친구 ${r.friends}명이 각자 ${r.days}일 이상 쓰면 프로 ${r.months}개월, ${r.friends}명 더 채울 때마다 또 ${r.months}개월 · ` +
       // 2.0.0 [RVD-15] 초대만의 상한이 없어도 모든 보상을 합쳐 1년 12개월까지예요.
-      `${r.capMonths && r.capMonths < 12 ? `1년에 ${r.capMonths}개월까지` : "1년에 12개월까지(모든 보상 합쳐)"}. 같은 친구·같은 휴대폰은 한 번, 자기 초대는 안 세요. 지급은 보상 목록에서 확인한 뒤예요.`;
+      // [RVD-21] 1년 12개월(모든 보상 합쳐)은 처리방침 3.13 게시 + 30일부터예요. 그 전에는 초대만의 상한(없으면 '상한 없음')만.
+      `${r.capMonths && r.capMonths < 12 ? `1년에 ${r.capMonths}개월까지` : r.yearCap ? "1년에 12개월까지(모든 보상 합쳐)"
+        : `${r.capMonths ? `1년에 ${r.capMonths}개월까지` : "상한 없음"} · 모든 보상 합쳐 1년 12개월은 ${L.capFromWords(r.yearCapFrom)}`}. ` +
+      "같은 친구·같은 휴대폰은 한 번, 자기 초대는 안 세요. 지급은 보상 목록에서 확인한 뒤예요.";
   }
 
   /** AG 1.27 [INVITE-10] 몰림: friends of one code from one network within an hour, let in but worth a look. */
@@ -3706,12 +3709,12 @@ function adminApp(L, BUILD, M) {
     // [MON-08] 회사 방식 채택 3개월, 제안 1개월, 큰 개선 6개월~1년 (수익화 확정 4장 7).
     // 2.0.0 [RVD-15] 이분의 1년 12개월에서 남은 만큼까지만 고를 수 있어요; 친구 초대·만든 작품은 정해진 개월이 맨 앞에.
     const w = (S.data.rewards?.rewards ?? []).find((x) => x.id === id);
-    const left = w?.year ? w.year.left : 12;
+    const left = w?.year?.left ?? 12;
     const own = w && ["invite", "maker"].includes(w.kind) ? [[Number(months), w.kind === "invite" ? "친구 초대 규칙" : "만든 작품 보상"]] : [];
     const choices = [...own, ...[[1, "제안 채택"], [3, "회사 방식 채택"], [6, "큰 개선"], [12, "아주 큰 개선"]].filter(([n]) => !own.some(([m]) => m === n))]
       .filter(([n]) => n <= left);
     if (!choices.length) return toast("이분은 1년에 받을 수 있는 보상 12개월을 다 받았어요");
-    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.${w?.year ? ` 이분의 1년 보상은 ${w.year.used}/${w.year.cap}개월이에요.` : ""}</p>
+    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.${w?.year ? ` ${L.rewardYearWords(w.year)}이에요.` : ""}</p>
       <p class="label">기간</p><div class="chips" role="radiogroup" aria-label="기간">${choices.map(([n, why]) => `<label class="chip pick"><input type="radio" name="months" value="${n}"${Number(months) === n ? " checked" : ""}> ${n}개월 · ${why}</label>`).join("")}</div>
       <label for="memo">메모 (선택)</label><input id="memo" name="memo" maxlength="200" placeholder="예: 근태 방식 제보 채택">
       <p class="help">보낸 분의 이름이나 연락처는 적지 마세요.</p>
