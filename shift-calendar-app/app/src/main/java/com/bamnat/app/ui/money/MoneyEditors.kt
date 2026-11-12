@@ -92,6 +92,8 @@ fun AmountField(
     /** [SHOP-03] 0 is an answer here (센 현금 0원), not an empty field. */
     allowZero: Boolean = false,
     enabled: Boolean = true,
+    /** 2.0.0 [RVH-69] 검토 PC-135: what the keyboard's 완료 does (a 창's 저장); null closes the keyboard as before. */
+    onDone: (() -> Unit)? = null,
 ) {
     // 1.38 PC 8차: a String value lost the cursor (맨 앞으로) whenever the screen put other digits in (지우면 기본값이 돌아올 때),
     // and typing went in front of them (12000 → 1,200,010,320). The field keeps its own cursor; digits from outside put it at the end.
@@ -111,6 +113,8 @@ fun AmountField(
         singleLine = true,
         visualTransformation = ThousandsTransformation,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction),
+        keyboardActions = onDone?.let { done -> androidx.compose.foundation.text.KeyboardActions(onDone = { done() }) }
+            ?: androidx.compose.foundation.text.KeyboardActions.Default,
         modifier = modifier.fillMaxWidth(),
     )
 }

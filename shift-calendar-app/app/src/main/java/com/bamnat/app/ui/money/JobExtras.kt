@@ -45,7 +45,11 @@ import androidx.compose.ui.semantics.Role
  * types, so the same 업체 is written the same way every time and its jobs add up together.
  */
 @Composable
-fun ClientField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, label: String = "고객·업체") {
+fun ClientField(
+    value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, label: String = "고객·업체",
+    /** 2.0.0 [RVH-69] 검토 PC-135: the last field of a 창 takes the keyboard's 완료 as its 저장. */
+    onDone: (() -> Unit)? = null,
+) {
     val book = rememberLedger(null)
     val all = remember(book.jobs) { DayRate.clients(book.jobs, limit = 30) }
     var focused by remember { mutableStateOf(false) }
@@ -55,6 +59,10 @@ fun ClientField(value: String, onChange: (String) -> Unit, modifier: Modifier = 
     }
     Box(modifier) {
         OutlinedTextField(value = value, onValueChange = onChange, singleLine = true, label = { Text(label) },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default),
+            keyboardActions = onDone?.let { done -> androidx.compose.foundation.text.KeyboardActions(onDone = { focused = false; done() }) }
+                ?: androidx.compose.foundation.text.KeyboardActions.Default,
             modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused })
         DropdownMenu(
             expanded = focused && shown.isNotEmpty(),

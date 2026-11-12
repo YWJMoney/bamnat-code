@@ -152,6 +152,7 @@ private fun PutDialog(s: EnvelopeStatus, onDone: (Long) -> Unit, onDismiss: () -
     var digits by rememberSaveable { mutableStateOf("") }
     var out by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
+        fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
         onDismissRequest = onDismiss,
         title = { Text("${s.envelope.name} 봉투") },
         text = {

@@ -269,6 +269,7 @@ private fun TargetCard(rules: ShopMoney, book: MoneyBook, month: YearMonth, toda
     if (editing) {
         var digits by rememberSaveable { mutableStateOf(amountDigits(rules.monthlyTarget)) }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { editing = false },
             title = { Text("한 달 목표 매출") },
             text = { AmountField("목표 매출", digits, { digits = it }) },

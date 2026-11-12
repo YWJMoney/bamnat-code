@@ -525,6 +525,18 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /** 2.0.0 [RVH-69] Presses the keyboard's action key (완료·다음) in the field labelled [label]. */
+        fun imeAction(label: String) {
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val field = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+                    .firstOrNull { n -> n.config.contains(SemanticsActions.OnImeAction) && n.words().any { it == label } }
+                    ?: error("‘$label’ 입력칸을 찾지 못했어요")
+                field.config[SemanticsActions.OnImeAction].action?.invoke()
+            }
+            settle()
+        }
+
         /** 2.0.0 [RVP-62] Holds a finger on what shows [text] for [frames] frames of 16ms (a held −/＋), then lifts it. */
         fun holdText(text: String, frames: Int, exact: Boolean = true) = touch(reach(text, exact, false, 0, 0.5f).boundsInWindow.center, hold = frames)
 
