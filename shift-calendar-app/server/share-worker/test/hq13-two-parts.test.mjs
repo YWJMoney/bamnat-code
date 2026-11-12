@@ -77,6 +77,10 @@ test("[RVD-20] HQ-13 the page and a calendar app show a shift in two parts and a
   assert.match(html, /야간<\/span><span class="muted"><span class="nm">20:00~00:00<\/span> · <span class="nm">01:00~05:00<\/span><\/span>/);
   assert.match(html, /<span class="leave">휴가 2시간<\/span>/);
   assert.match(html, /<span class="leave">반차 5시간<\/span>/);
+  // Large letters on a folded phone: the month becomes a list of days (each with its weekday) before a cell is too narrow for '휴가 2시간'.
+  assert.match(html, /<section class="cal">/);
+  assert.match(html, /<span class="num">1<span class="dow"> 화<\/span><\/span>/);
+  assert.match(html, /@container \(max-width:20em\)\{\.cal \.grid\{grid-template-columns:1fr/);
   // The hours as the app's link words say them, off the half hours in hours and minutes.
   const short = (m) => renderSchedule(validate(twoParts((b) => ({ ...b, days: [{ date: "2026-12-01", type: 4, leaveMinutes: m }] }))).schedule,
     new Date(Date.now() + 86400000).toISOString()).match(/<span class="leave">([^<]*)<\/span>/)[1];

@@ -1203,7 +1203,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
       : cap > 0 ? `<span class="leave${taken >= cap ? " full" : ""}">${taken >= cap ? "마감 " : ""}${taken}/${cap}</span>` : taken ? `<span class="leave">${taken}명</span>` : "";
     const chip = my ? `<span class="chip" style="background:${ASK_KINDS[my.k]?.[1] ? "#d14343" : "#3b5bdb"}">${esc(label(my))}</span>` : "";
     const cls = `cell${d === day ? " picked" : ""}${d === today ? " today" : ""}`;
-    cells.push(`<a class="${cls}" href="/a/${key}?d=${d}#pick"><span class="num ${dow === 0 || rules.holidays.includes(d) ? "sun" : dow === 6 ? "sat" : ""}">${n}</span>${chip}${room}</a>`);
+    cells.push(`<a class="${cls}" href="/a/${key}?d=${d}#pick"><span class="num ${dow === 0 || rules.holidays.includes(d) ? "sun" : dow === 6 ? "sat" : ""}">${n}<span class="dow"> ${WEEKDAYS[dow]}</span></span>${chip}${room}</a>`);
   }
   const heads = ["일", "월", "화", "수", "목", "금", "토"].map((w, i) => `<div class="wd ${i === 0 ? "sun" : i === 6 ? "sat" : ""}">${w}</div>`).join("");
   const capLine = [rules.weekdayCap ? `평일 하루 ${rules.weekdayCap}명` : "", rules.weekendCap ? `주말·공휴일 하루 ${rules.weekendCap}명` : ""].filter(Boolean).join(", ");
@@ -1234,7 +1234,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   const note = open ? `<form method="post" action="/a/${key}/note" class="note"><input name="note" maxlength="${LIMITS.askNote}" value="${esc(mine.note ?? "")}" placeholder="예: NN 뒤 off 원해요"><button>남기기</button></form>
 <p class="muted small">건강·가족 사정 같은 이유는 적지 말아 주세요. 필요하면 리더에게 직접 말해 주세요.</p>` : mine.note ? `<p>${esc(mine.note)}</p>` : "";
   const body = `<h1>${esc(record.team)} ${mo}월 근무 신청</h1><p class="muted">${esc(me)}님 · ${open ? "신청 받는 중" : "마감"}</p>
-<p class="rule">${esc(rule)}</p>${saidHtml}<div class="grid">${heads}${cells.join("")}</div>${panel}
+<p class="rule">${esc(rule)}</p>${saidHtml}<div class="cal"><div class="grid">${heads}${cells.join("")}</div></div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
 <p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
   return html(page(`${record.team} ${mo}월 근무 신청`, body + teamFoot("a", key), "밤낮", "request"), status);
@@ -2583,7 +2583,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
       const s = entry?.second != null ? types.get(entry.second) : null;
       const dow = (first.getUTCDay() + d - 1) % 7;
       cells.push(
-        `<div class="cell${date === today ? " today" : ""}"><span class="num${dow === 0 ? " sun" : dow === 6 ? " sat" : ""}">${d}</span>` +
+        `<div class="cell${date === today ? " today" : ""}"><span class="num${dow === 0 ? " sun" : dow === 6 ? " sat" : ""}">${d}<span class="dow"> ${WEEKDAYS[dow]}</span></span>` +
           (t ? `<span class="chip" style="background:${t.color}">${esc(t.short)}</span>` : "") +
           (s ? `<span class="chip" style="background:${s.color}">${esc(s.short)}</span>` : "") +
           (entry?.leave ? `<span class="leave">${esc(entry.leave)}</span>`
@@ -2594,7 +2594,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
           `</div>`,
       );
     }
-    return `<section><h2>${y}년 ${m}월</h2><div class="grid">${WEEKDAYS.map((w, i) => `<div class="wd${i === 0 ? " sun" : i === 6 ? " sat" : ""}">${w}</div>`).join("")}${cells.join("")}</div></section>`;
+    return `<section class="cal"><h2>${y}년 ${m}월</h2><div class="grid">${WEEKDAYS.map((w, i) => `<div class="wd${i === 0 ? " sun" : i === 6 ? " sat" : ""}">${w}</div>`).join("")}${cells.join("")}</div></section>`;
   });
   const used = new Set(schedule.days.flatMap((d) => [d.type, d.second]).filter((x) => x != null));
   const legend = schedule.types.filter((t) => used.has(t.id)).map((t) =>
@@ -2641,7 +2641,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
   "근무표", kind);
 }
 
@@ -2783,6 +2783,8 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
+.dow{display:none}.cal{container-type:inline-size}
+@container (max-width:20em){.cal .grid{grid-template-columns:1fr;gap:6px}.cal .wd,.cal .blank{display:none}.cal .cell{flex-direction:row;flex-wrap:wrap;align-items:center;min-height:44px;gap:4px 10px;padding:8px 12px}.cal .num{min-width:3.6em;font-size:1em}.cal .dow{display:inline}.cal .leave,.cal .extra,.cal .memo{text-align:left}}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
@@ -2793,7 +2795,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .wide{overflow-x:auto;margin:0 -16px;padding:0 16px}.ward{border-collapse:collapse;font-size:12px}.ward th,.ward td{border:1px solid var(--line);padding:2px;text-align:center;min-width:26px}.ward .who{position:sticky;left:0;background:var(--bg);text-align:left;white-space:nowrap;padding:2px 6px;z-index:1}.ward .chip{min-width:20px;padding:0 3px;font-size:11px}
 .sign label{display:block;margin:12px 0}.sign input[name=name]{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:17px}.sign input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-right:6px}.sign button{width:100%;min-height:56px;border-radius:16px;border:none;background:#2f7d5b;color:#fff;font-size:18px;font-weight:800}
 .bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
-.note{display:flex;gap:8px}.note input{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
+.note{display:flex;flex-wrap:wrap;gap:8px}.note input{flex:1 1 10em;min-width:0;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
 .spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 48px 14px 14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
