@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -193,7 +193,7 @@ private fun ButtonTryout(logic: Logic, mine: List<LogicButton>, date: LocalDate,
                     }
                     if (showAfter) gotHere.forEach { b ->
                         val t = LogicTryout.press(b, date, facts)
-                        androidx.compose.material3.FilledTonalButton(onClick = {
+                        com.bamnat.app.ui.components.FilledTonalButton(onClick = {
                             pressed = b.id
                             if (counts) LogicTryout.press(logic, b, tried, date, facts, java.time.LocalDateTime.of(date, Today.dateTime().toLocalTime()))
                                 .let { tried = it.after; said = it.said }

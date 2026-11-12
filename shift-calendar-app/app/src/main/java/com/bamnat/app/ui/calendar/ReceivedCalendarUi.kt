@@ -57,7 +57,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -524,6 +524,20 @@ private fun ResolvedDay.isRestForMe(): Boolean = (isOff || leave?.isFullDay == t
  * button's own 12dp sides and the row's 4dp ends. */
 private val HEAD_BUTTONS = 48.dp * 2 + 12.dp + 24.dp + 8.dp
 
+/**
+ * 2.0.0 [RVP-45] 검토 HQ-62 (조건 1): what the received month's one-row head needs. The calendar screen draws it with the same head as
+ * the user's own calendar (whose calendar, ‹ 11월 ▾ ›, 오늘, 도구 in one row that folds by [HeadRoom]); before, the received month had
+ * the calendar chip's row and a month row of its own, two rows above the days.
+ */
+class ReceivedHead(
+    val month: YearMonth,
+    val atToday: Boolean,
+    val onPrev: () -> Unit,
+    val onNext: () -> Unit,
+    val onToday: () -> Unit,
+    val onPickMonth: () -> Unit,
+)
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReceivedCalendarView(
@@ -540,6 +554,8 @@ fun ReceivedCalendarView(
     rules: com.bamnat.core.schedule.RestRules = com.bamnat.core.schedule.RestRules(),
     /** [RVG-20] Says what was done on this calendar, with 되돌리기 (the calendar screen's line at the bottom). */
     onSay: ((com.bamnat.app.ui.UndoMessage) -> Unit)? = null,
+    /** 2.0.0 [RVP-45] HQ-62: the one-row head ([ReceivedHead]) in place of [identityBar] and the month's own row. */
+    head: (@Composable (ReceivedHead) -> Unit)? = null,
 ) {
     val refresh by vm.refresh.collectAsState()
     // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
@@ -585,31 +601,20 @@ fun ReceivedCalendarView(
     val loading = refresh == ReceivedViewModel.Refresh.Loading(cal.id)
     val offline = refresh == ReceivedViewModel.Refresh.Offline(cal.id)
 
+    var pickingMonth by remember(cal.id) { mutableStateOf(false) }
+    if (pickingMonth) MonthPickerDialog(
+        initial = month, onDismiss = { pickingMonth = false }, onPick = { m -> pickingMonth = false; goTo(m) }, selected = selected,
+        onPickDate = { d -> pickingMonth = false; selected = d; goTo(YearMonth.from(d)) },
+    )
     val calendarPart: @Composable () -> Unit = {
-        identityBar()
-        // [RVG-22] 검토 HQ-20 (조건 12): on a narrow column at large text (편 폭 200%) the month took the room and '오늘' stood one letter
-        // a line. Where the month and '오늘' do not both fit, '오늘' is the calendar's 오늘 icon (read out as 오늘) and the month drops
-        // this year's number, as the month view's header does; the month itself shrinks last and never wraps.
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val monthStyle = MaterialTheme.typography.titleMedium
-            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
-            val todayStyle = MaterialTheme.typography.labelLarge
-            val roomy = with(androidx.compose.ui.platform.LocalDensity.current) {
-                (measurer.measure(Fmt.month(month), monthStyle).size.width + measurer.measure("오늘", todayStyle).size.width).toDp()
-            } + HEAD_BUTTONS <= maxWidth
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    com.bamnat.app.ui.FitText(
-                        if (roomy) androidx.compose.ui.text.AnnotatedString(Fmt.month(month)) else monthTitle(month, short = true),
-                        monthStyle, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp),
-                    )
-                    IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
-                }
-                if (roomy) TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘", maxLines = 1, softWrap = false) }
-                else IconButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Icon(Icons.Filled.Today, "오늘") }
-            }
-        }
+        if (head != null) head(ReceivedHead(
+            month = month,
+            atToday = selected == today && month == YearMonth.from(today),
+            onPrev = { goTo(month.minusMonths(1)) },
+            onNext = { goTo(month.plusMonths(1)) },
+            onToday = { selected = today; goTo(YearMonth.from(today)) },
+            onPickMonth = { pickingMonth = true },
+        )) else ReceivedMonthRow(month, identityBar, goTo = goTo, onToday = { selected = today; goTo(YearMonth.from(today)) })
         // [RVG-22] 검토 HQ-20: at large text on a narrow column the chip took the row and '방금 받음 ↻' was cut to '방금'; now when both
         // do not fit, the freshness goes whole to the line under the chip (the chip is never squeezed either).
         FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
@@ -697,6 +702,35 @@ fun ReceivedCalendarView(
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             calendarPart()
             detailPart(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        }
+    }
+}
+
+/** The received month's head before 2.0.0 [RVP-45] HQ-62, kept for a screen that gives no [ReceivedHead]: the chip's row, then the month's. */
+@Composable
+private fun ReceivedMonthRow(month: YearMonth, identityBar: @Composable () -> Unit, goTo: (YearMonth) -> Unit, onToday: () -> Unit) {
+    identityBar()
+    // [RVG-22] 검토 HQ-20 (조건 12): on a narrow column at large text (편 폭 200%) the month took the room and '오늘' stood one letter
+    // a line. Where the month and '오늘' do not both fit, '오늘' is the calendar's 오늘 icon (read out as 오늘) and the month drops
+    // this year's number, as the month view's header does; the month itself shrinks last and never wraps.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val monthStyle = MaterialTheme.typography.titleMedium
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val todayStyle = MaterialTheme.typography.labelLarge
+        val roomy = with(androidx.compose.ui.platform.LocalDensity.current) {
+            (measurer.measure(Fmt.month(month), monthStyle).size.width + measurer.measure("오늘", todayStyle).size.width).toDp()
+        } + HEAD_BUTTONS <= maxWidth
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                com.bamnat.app.ui.FitText(
+                    if (roomy) androidx.compose.ui.text.AnnotatedString(Fmt.month(month)) else monthTitle(month, short = true),
+                    monthStyle, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp),
+                )
+                IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+            }
+            if (roomy) TextButton(onClick = onToday) { Text("오늘", maxLines = 1, softWrap = false) }
+            else IconButton(onClick = onToday) { Icon(Icons.Filled.Today, "오늘") }
         }
     }
 }

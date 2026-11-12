@@ -43,12 +43,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -338,7 +338,7 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: Stri
     }
     msg?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     // [TOWN-02] PC 확인 41e73582 (내 활동에 내 글이 없어요): the posts I wrote in the plazas and their answers, one tap away.
-    androidx.compose.material3.OutlinedButton(onClick = { holder.close(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.VILLAGE_POSTS) },
+    com.bamnat.app.ui.components.OutlinedButton(onClick = { holder.close(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.VILLAGE_POSTS) },
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("광장에 쓴 내 글과 답 보기") }
     HorizontalDivider()
     PlazaPhoneSettings()

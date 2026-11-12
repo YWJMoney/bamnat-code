@@ -2044,6 +2044,24 @@ fun CalendarScreen(
                 identityBar = identityBar,
                 rules = settings.rules,
                 onSay = vm::say,
+                // 2.0.0 [RVP-45] 검토 HQ-62: the same one-row head as the user's own calendar (whose calendar at its start, the month,
+                // 오늘 and 도구, folding by HeadRoom); the tools that change the user's own calendar wait there, greyed with why.
+                head = { h ->
+                    CalendarHeader(
+                        month = h.month, onPrev = h.onPrev, onNext = h.onNext, onToday = h.onToday, onPickMonth = h.onPickMonth,
+                        atToday = h.atToday, onShare = shareCalendar, onOpenPattern = onOpenPattern, onAddCalendar = onAddCalendar,
+                        onReceive = if (received.enabled) ({ adding = "" }) else null,
+                        calendarName = activeCalendar.name, calendarId = activeCalendar.id, onOpenTeams = openTeams,
+                        style = settings.workStyle,
+                        toolFit = ToolFit(teams = settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT, receive = received.enabled,
+                            viewingReceived = true, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = true,
+                            leader = context.appContainer.flags.byKey.collectAsStateWithLifecycle().value[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true),
+                        onPushToday = { realigning = today },
+                        chip = HeadChip(rows = calendarRows, current = currentRow, onOpenSwitcher = { switching = true }, onPick = pickCalendar,
+                            home = calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null),
+                            homeWords = homeWordsOf(activeCalendar)),
+                    )
+                },
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
@@ -2383,12 +2401,14 @@ internal fun CalendarHeader(
     val workTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, baseTitle) }
     val otherRows = chip?.rows?.filter { it.key != chip.current.key }.orEmpty()
     val others = otherRows.size
+    // 2.0.0 [RVP-45] HQ-62 While someone else's calendar is on screen, the way back to the user's own stays longest (HeadRoom.home).
+    val homeRow = chip?.home
     // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
-    val teamRow = otherRows.firstOrNull { (it as? CalendarRow.Got)?.cal?.fromLeader == true }
+    val teamRow = otherRows.firstOrNull { it !== homeRow && (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
         maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null && !HeadBell.atMe, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
-        team = teamRow != null,
+        team = teamRow != null, homeChars = if (homeRow != null) chip?.homeWords?.length ?: 0 else 0,
     ).let { if (chip == null) it.copy(name = false) else it }
     val titleSp = workTitle.fontSize.takeIf { it.isSp }?.value ?: baseTitle.fontSize.value
     // 검토 HQ-22 (큰 달 제목 26~30의 작품을 입으면 접은 폭에서 달 제목이 '2026'으로 아주 작게 줄어요, 조건 12): the month is never shrunk
@@ -2414,11 +2434,12 @@ internal fun CalendarHeader(
         // [RVP-45] Whose calendar: its face (and its name where there is room), the list of calendars a tap away.
         chip?.let { c ->
             CalendarChip(c.current, name = room.name, onOpen = c.onOpenSwitcher)
+            homeRow?.let { h -> if (room.home != 0) HomeChip(h, c.homeWords, inWords = room.home == HeadRoom.WORDS) { c.onPick(h) } }
             teamRow?.let { t ->
                 if (room.team == HeadRoom.WORDS) CalendarFace(t, c.onPick)
                 else if (room.team == HeadRoom.ICON) CalendarFaceOnly(t, c.onPick)
             }
-            if (room.faces > 0) CalendarFaces(otherRows.filter { it !== teamRow || room.team == 0 }, room.faces, c.onPick)
+            if (room.faces > 0) CalendarFaces(otherRows.filter { (it !== teamRow || room.team == 0) && (it !== homeRow || room.home == 0) }, room.faces, c.onPick)
             if (room.together && c.onTogether != null) TogetherChip(c.onTogether, shop = c.togetherShop, field = c.togetherField, words = true)
         }
         if (room.arrows && navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }
@@ -2483,11 +2504,11 @@ internal fun CalendarHeader(
         // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
         // [A11Y-03] Where the word does not fit, a round icon button takes its place, and TalkBack still reads its name.
         if (!room.toolsWords) {
-            androidx.compose.material3.FilledTonalIconButton(onClick = { menu = true }) {
+            com.bamnat.app.ui.components.FilledTonalIconButton(onClick = { menu = true }) {
                 Icon(Icons.Outlined.Apps, "도구", Modifier.size(20.dp))
             }
         } else {
-            androidx.compose.material3.FilledTonalButton(
+            com.bamnat.app.ui.components.FilledTonalButton(
                 onClick = { menu = true },
                 contentPadding = PaddingValues(horizontal = 12.dp),
                 modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
@@ -2942,7 +2963,7 @@ private fun PaintBar(
             // [ROST-07] The whole month from a keypad, on its own line above the stamps and filled, so it is seen first
             // (리뷰 개선 가) without pushing the kinds of work along the row.
             onTypeMonth?.let { open ->
-                androidx.compose.material3.FilledTonalButton(
+                com.bamnat.app.ui.components.FilledTonalButton(
                     onClick = open,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
                     modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = if (large) 56.dp else 40.dp),
@@ -3402,7 +3423,7 @@ internal fun SwipeMonthBadge(pager: androidx.compose.foundation.pager.PagerState
     ) {
         // [J133-25] 1.33 (실사용 테스트 "달 넘김 상자가 격자 가운데 1초 가려요"): a slim pill over the first row, not a box over the days.
         androidx.compose.material3.Surface(
-            shape = androidx.compose.foundation.shape.CircleShape,
+            shape = com.bamnat.app.ui.theme.LocalPill.current,
             color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f),
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },

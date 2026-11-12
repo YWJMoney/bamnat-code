@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import com.bamnat.app.ui.theme.pill
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,9 +35,9 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapVert
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.minimumInteractiveComponentSize
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.filled.Share
@@ -54,7 +55,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -213,7 +214,7 @@ fun CalendarIdentityBar(
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             Surface(
                 onClick = onOpenSwitcher,
-                shape = CircleShape,
+                shape = MaterialTheme.pill,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.semantics { contentDescription = "달력 바꾸기, 지금 $currentName" },
             ) {
@@ -258,24 +259,24 @@ fun CalendarIdentityBar(
             }
             if (faces.isEmpty() && onTogether != null && !small) TogetherChip(onTogether, togetherShop, togetherField, words = room >= 2)
             onShare?.let {
-                if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }
+                if (small) com.bamnat.app.ui.components.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }
                 else ShareAction(it, Modifier.padding(start = 4.dp), shareName)
             }
         } else {
             val goHome = { onPick(rows.firstOrNull { it.key == CalendarKey.Mine(home.id) } ?: CalendarRow.Mine(home, null)) }
-            val homeWords = if (home.isMain) "내 달력으로" else "${home.name}${Fmt.ro(home.name)}"
+            val homeWords = homeWordsOf(home)
             // [RVG-22] 검토 HQ-20 (조건 12): at large text the words were cut to '내 달력…'. They show whole while they take at most
             // 40% of the bar (the name beside keeps the rest); past that the chip is its face only, read out in the same words.
             val labelStyle = MaterialTheme.typography.labelLarge
             val measurer = androidx.compose.ui.text.rememberTextMeasurer()
             val wordsFit = with(LocalDensity.current) { measurer.measure(homeWords, labelStyle).size.width.toDp() } <= barWidth * 0.4f
-            if (wordsFit) Surface(onClick = goHome, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+            if (wordsFit) Surface(onClick = goHome, shape = MaterialTheme.pill, color = MaterialTheme.colorScheme.primaryContainer) {
                 Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     home.Avatar(size = 26.dp)
                     Spacer(Modifier.width(6.dp))
                     Text(homeWords, style = labelStyle, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
                 }
-            } else Surface(onClick = goHome, shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer,
+            } else Surface(onClick = goHome, shape = MaterialTheme.pill, color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.size(48.dp).semantics { contentDescription = homeWords }) {
                 Box(Modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) { home.Avatar(size = 30.dp) }
             }
@@ -300,7 +301,32 @@ internal data class HeadChip(
     val onTogether: (() -> Unit)? = null,
     val togetherShop: Boolean = false,
     val togetherField: Boolean = false,
+    /** 2.0.0 [RVP-45] HQ-62: while someone else's calendar is on screen, the user's own to go back to ([HomeChip]), in [homeWords]. */
+    val home: CalendarRow? = null,
+    val homeWords: String = "",
 )
+
+/**
+ * 2.0.0 [RVP-45] 검토 HQ-62: the way back to the user's own calendar from someone else's ('내 달력으로'), in [words] or as its face read
+ * by them; the head row decides which ([HeadRoom.home]).
+ */
+@Composable
+internal fun HomeChip(home: CalendarRow, words: String, inWords: Boolean, onGo: () -> Unit) {
+    if (inWords) Surface(onClick = onGo, shape = MaterialTheme.pill, color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp)) {
+        Row(Modifier.padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            home.Avatar(size = 26.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(words, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer, maxLines = 1, softWrap = false)
+        }
+    } else Surface(onClick = onGo, shape = MaterialTheme.pill, color = MaterialTheme.colorScheme.primaryContainer,
+        modifier = Modifier.padding(start = 4.dp).size(48.dp).semantics { contentDescription = words }) {
+        Box(Modifier.clearAndSetSemantics { }, contentAlignment = Alignment.Center) { home.Avatar(size = 30.dp) }
+    }
+}
+
+/** What [HomeChip] says: 내 달력으로, or the calendar's name with 으로·로. */
+internal fun homeWordsOf(home: PersonalCalendar): String = if (home.isMain) "내 달력으로" else "${home.name}${Fmt.ro(home.name)}"
 
 /**
  * 2.0.0 [RVP-45] 검토 HQ-29 (작품을 입은 접은 폭·글자 200%에서 '내 달력' 칩이 '내 달…'): the calendar chip says the calendar's name only
@@ -311,7 +337,7 @@ internal fun CalendarChip(current: CalendarRow, name: Boolean, onOpen: () -> Uni
     val currentName = (current as? CalendarRow.Got)?.cal?.fullName ?: current.title
     Surface(
         onClick = onOpen,
-        shape = CircleShape,
+        shape = MaterialTheme.pill,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.semantics { contentDescription = "달력 바꾸기, 지금 $currentName" },
     ) {
@@ -353,7 +379,7 @@ internal fun CalendarFace(row: CalendarRow, onPick: (CalendarRow) -> Unit) {
     val name = (row as? CalendarRow.Got)?.cal?.fullName ?: row.title
     val team = (row as? CalendarRow.Got)?.cal?.fromLeader == true
     Surface(
-        onClick = { onPick(row) }, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = { onPick(row) }, shape = MaterialTheme.pill, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "$name 보기" },
     ) {
         Row(Modifier.padding(start = 4.dp, end = 10.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -368,7 +394,7 @@ internal fun CalendarFace(row: CalendarRow, onPick: (CalendarRow) -> Unit) {
 @Composable
 internal fun TogetherChip(onTogether: () -> Unit, shop: Boolean, field: Boolean, words: Boolean) {
     Surface(
-        onClick = onTogether, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        onClick = onTogether, shape = MaterialTheme.pill, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = togetherSaid(shop, field) },
     ) {
         Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {

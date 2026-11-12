@@ -188,8 +188,8 @@ private fun LinkCard(title: String, line: String?, more: String, mood: com.bamna
 @Composable
 private fun LinkOwnerButton(text: String, lead: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val m = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-    if (lead) androidx.compose.material3.Button(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
-    else androidx.compose.material3.OutlinedButton(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
+    if (lead) com.bamnat.app.ui.components.Button(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
+    else com.bamnat.app.ui.components.OutlinedButton(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
 }
 
 /** 2.0.0 [RVH-43] 검토 PC-56: 칸이's hello over the first question, what the answer does in one line. */
@@ -218,7 +218,7 @@ private fun TextSizeButton(step: Int, onStep: (Int) -> Unit) {
     val now = com.bamnat.app.ui.theme.TextSize.LABELS.getOrNull(step) ?: ""
     // [RVH-43] 총괄 #451 사진 검토: a bare '가' read as a letter, not a button. Outlined, a small and a large 가 side by side, as a font
     // size control looks; 48dp to press (the outline itself 40dp, Material's).
-    androidx.compose.material3.OutlinedIconButton(onClick = { open = true },
+    com.bamnat.app.ui.components.OutlinedIconButton(onClick = { open = true },
         modifier = Modifier.minimumInteractiveComponentSize().semantics { contentDescription = "글자 크기, 지금 $now" }) {
         Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.clearAndSetSemantics {}) {
             Text("가", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)

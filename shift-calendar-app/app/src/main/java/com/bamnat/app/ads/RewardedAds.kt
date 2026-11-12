@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -70,7 +70,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
     if (gate.canTry(feature)) {
         val context = LocalContext.current
         Column(modifier, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
-            androidx.compose.material3.Button(onClick = {
+            com.bamnat.app.ui.components.Button(onClick = {
                 if (com.bamnat.app.ui.pro.tryFeature(feature)) {
                     val end = Today.instant().plus(java.time.Duration.ofDays(FeatureLease.FIRST_DAYS))
                     // Short: it sat over the card it had just opened (PC).

@@ -30,7 +30,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.ui.platform.LocalContext
 import com.bamnat.app.ads.LeaseAdOption
 import com.bamnat.app.appContainer

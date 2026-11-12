@@ -268,6 +268,20 @@ fun shapesFor(corners: String?): Shapes = when (corners) {
     else -> AppShapes
 }
 
+/**
+ * 2.0.0 [RVP-05] 검토 PC-128 (조건 5): the app's pill: 단추 (ui/components/Buttons.kt), 달력 머리의 '내 달력'·'공유'·'도구', 칩 줄 끝의
+ * '+5'. Round while 모서리 is 보통 or 둥글게; the chips' corner when it is 각지게, so one screen has one roundness (before, the cards and chips
+ * went square and these stayed round beside them). Faces and dots stay round: they are marks, not buttons.
+ */
+val LocalPill = staticCompositionLocalOf<androidx.compose.ui.graphics.Shape> { androidx.compose.foundation.shape.CircleShape }
+
+val MaterialTheme.pill: androidx.compose.ui.graphics.Shape
+    @Composable @androidx.compose.runtime.ReadOnlyComposable get() = LocalPill.current
+
+/** 각지게 takes the chips' corner for the pill; the other settings keep it round ([LocalPill]). */
+fun pillFor(corners: String?, shapes: Shapes): androidx.compose.ui.graphics.Shape =
+    if (corners == "square") shapes.small else androidx.compose.foundation.shape.CircleShape
+
 /** Tabular figures keep hour totals from jumping around as they change. */
 val NumberStyle = TextStyle(fontFeatureSettings = "tnum")
 
@@ -345,13 +359,14 @@ fun BamnatTheme(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
+            val shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts)
             MaterialTheme(
                 colorScheme = if (night) colors else com.bamnat.app.ui.parts.PartTheme.colors(colors, parts),
                 typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
-                shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
+                shapes = shapes,
             ) {
                 CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts,
-                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, content = content)
+                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, LocalPill provides pillFor(corners, shapes), content = content)
             }
         }
     }

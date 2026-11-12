@@ -42,8 +42,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.FilledTonalIconButton
+import com.bamnat.app.ui.components.OutlinedButton
+import com.bamnat.app.ui.components.FilledTonalIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -297,7 +297,7 @@ internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit
         IconButton(onClick = onLegend) { Icon(Icons.Outlined.Info, "달력 표시 안내", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (boardLabel != null) {
             // [TAB-04] PC 확인 bad7d860 사용성 제안: an icon alone did not say it opens 판 고르기, so the button reads "월 ▾".
-            androidx.compose.material3.FilledTonalButton(
+            com.bamnat.app.ui.components.FilledTonalButton(
                 onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 10.dp, end = 6.dp),
                 modifier = Modifier.heightIn(min = 40.dp).semantics { contentDescription = "달력 판 고르기, 지금 $boardLabel" },

@@ -2616,6 +2616,7 @@ RVP-81,검토 I14c-02: 근무에 따라 바뀌는 화면,2.0.0,진행 중,,
 RVP-82,검토 I14c-03: 말로 기능 찾기,2.0.0,진행 중,,
 RVP-83,"검토 UIX-24·I13c-01·I13c-03: 디자인 규칙을 세는 시험(달력 시작 높이·채운 단추·모서리·여백·8~9sp·44dp·토스트·색, DesignRulesTest·CalendarStartScreenshotTest)",2.0.0,진행 중,,
 RVP-84,"뿌리 고침 1(지시서 5장): 공통 부품과 값 문서 docs/design/공통-부품.md(달력 위 한 줄·안내 카드·단추 위계·창과 시트·상태·말 표·칸이 놓는 곳·뿌리 고침 2~4 쓰는 법)",2.0.0,진행 중,,
+RVP-85,"검토 HQ-53: 위 막대 제목이 큰 글자·접은 폭에서 잘림 → 앱의 위 막대 하나(ui/components/TopBar.kt), 큰 글자에서 제목 한 단계 낮추고 막대가 제목만큼 늘어남",2.0.0,진행 중,,
 RVH-01,검토 CAL-05·T01-13: 받은 근무표 따라가기에서 답하지 않은 '넣을까요?'가 다음 변경 때 사라짐 → 답하지 않은 물음은 다음 변경 때도 남김,2.0.0,진행 중,,"share/RosterFollower.kt, core/schedule/RosterFollow.kt; RosterFollowTest, RosterFollowerTest"
 RVH-02,검토 CAL-06: 링크에 새로 생긴 날이 내가 직접 넣은 근무를 덮어씀 → 내가 넣은 날은 물음으로,2.0.0,진행 중,,core/schedule/RosterFollow.kt; RosterFollowTest
 RVH-03,"검토 CAL-04: '그 주만 보기'가 주 시작 요일 설정을 따르지 않음 → 달 보기와 같은 첫 요일, 'n월 n째 주'",2.0.0,진행 중,,ui/calendar/CalendarScreen.kt weekFirstDay·weekOfMonthLabel; ReviewHCalendarTest

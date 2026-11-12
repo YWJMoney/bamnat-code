@@ -130,7 +130,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
         // it in. Right after '내 근무표가 아니에요' took its days out, the biggest thing on screen was the way to put them back.
         val seenOnly = cal == null || !cal.mine && !cal.adopted
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (seenOnly) androidx.compose.material3.OutlinedButton(onClick = putIn, enabled = changes.isNotEmpty(),
+            if (seenOnly) com.bamnat.app.ui.components.OutlinedButton(onClick = putIn, enabled = changes.isNotEmpty(),
                 modifier = androidx.compose.ui.Modifier.heightIn(min = 48.dp)) { Text(words) }
             else Button(onClick = putIn, enabled = changes.isNotEmpty()) { Text(words) }
         }

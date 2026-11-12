@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -218,11 +218,11 @@ fun ProWelcomeCard(modifier: Modifier = Modifier) {
             Text("프로를 시작했어요. 오늘부터 광고가 없어요", style = MaterialTheme.typography.titleMedium)
             Text("두 가지만 켜 두면 더 든든해요.", style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.material3.FilledTonalButton(onClick = {
+                com.bamnat.app.ui.components.FilledTonalButton(onClick = {
                     c.proMoments.welcome(false)
                     com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, "매일 자동 백업")
                 }) { Text("매일 자동 백업 켜기") }
-                androidx.compose.material3.FilledTonalButton(onClick = {
+                com.bamnat.app.ui.components.FilledTonalButton(onClick = {
                     c.proMoments.welcome(false)
                     com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, "휴대폰 캘린더에 근무 쓰기")
                 }) { Text("캘린더에 근무 쓰기") }

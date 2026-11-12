@@ -45,7 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import com.bamnat.app.ui.company.SoftCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -56,7 +56,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -381,7 +381,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                                 val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
                                 if (unit != null) {
                                     var keptLine by remember(r) { mutableStateOf<String?>(null) }
-                                    androidx.compose.material3.OutlinedButton(onClick = {
+                                    com.bamnat.app.ui.components.OutlinedButton(onClick = {
                                         keptLine = if (vm.keep(setOf(unit))) "✓ 보관함에 담았어요. 스튜디오 › 보관함에서 꺼내 얹어요"
                                             else "보관함이 꽉 찼어요. 스튜디오 › 보관함에서 하나를 빼고 다시 담아 주세요"
                                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 부품 보관함에 담기") }
@@ -618,7 +618,7 @@ private fun PutDialog(
                 onQuit = { onAdNote("광고를 끝까지 봐야 넣을 수 있어요") },
                 onOffline = { onAdNote("인터넷에 연결되면 다시 해 주세요") },
                 onNoAd = onNoAd,
-            ) else androidx.compose.material3.Button(onClick = onPut, modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
+            ) else com.bamnat.app.ui.components.Button(onClick = onPut, modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
         },
         dismissButton = { TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") } },
     )
@@ -1053,7 +1053,7 @@ internal fun TryFunctionsButton(kinds: List<PieceKind>, enabled: Boolean, start:
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    androidx.compose.material3.FilledTonalButton(onClick = {
+    com.bamnat.app.ui.components.FilledTonalButton(onClick = {
         if (busy) return@FilledTonalButton
         busy = true
         note = null

@@ -103,7 +103,7 @@ internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
                 Text("‘${label(pending)}’${com.bamnat.app.ui.Fmt.ro(label(pending))} 앱 전체 바꾸기")
             }
         } else if (back != null) {
-            androidx.compose.material3.OutlinedButton(onClick = { before = null; onPick(back) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            com.bamnat.app.ui.components.OutlinedButton(onClick = { before = null; onPick(back) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text("되돌리기 · 전 크기 ‘${label(back)}’${com.bamnat.app.ui.Fmt.ro(label(back))}")
             }
         } else Text("칩을 누르면 아래 미리 보기만 바뀌어요. 마음에 들면 나오는 단추로 앱 전체에 적용해요",
