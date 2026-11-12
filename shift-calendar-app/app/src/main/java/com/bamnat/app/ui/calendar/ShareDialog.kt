@@ -252,7 +252,7 @@ fun ShareDialog(
                         Text("링크로 보내기")
                     }
                 }
-                Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·급여 빼고). " +
+                Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·${shareLeftOut(style)} 빼고). " +
                     (if (keeps) "프로를 쓰는 동안 열려 있어요." else "${ShareLinkPayload.ttlLabel(ttl)} 열려요.") + "\n" + shareServerNotice(style),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (quickPaused) Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE),
@@ -749,6 +749,12 @@ internal const val SHARE_SERVER_NOTICE =
 /** 2.0.0 [RVH-20] 검토 화면 사진(가게 공유): [SHARE_SERVER_NOTICE] in the calendar's word for its days (영업일, 일정). */
 internal fun shareServerNotice(style: com.bamnat.core.work.WorkStyle?): String =
     SHARE_SERVER_NOTICE.replace("근무표", com.bamnat.core.work.scheduleWord(style))
+
+/** 2.0.0 [RVH-20] 총괄 사진 검토(가게 공유 '메모·급여 빼고'): what a link leaves out, in the calendar's own money word. */
+internal fun shareLeftOut(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.INVEST -> "투자 기록"
+    else -> com.bamnat.core.work.MoneyShare.of(style).label
+}
 
 private fun expiryText(s: ShareLinkState): String =
     s.expiresAt.atZone(Today.zone()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))

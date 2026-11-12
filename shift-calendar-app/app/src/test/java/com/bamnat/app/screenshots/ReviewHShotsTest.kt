@@ -1,14 +1,20 @@
 package com.bamnat.app.screenshots
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.ui.guide.FeatureLinks
+import com.bamnat.app.ui.work.ShopKeeper
 import com.bamnat.core.guide.FeatureRoute
 import com.bamnat.core.guide.Place
+import com.bamnat.core.work.ShopRules
 import com.bamnat.core.work.WorkStyle
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.time.DayOfWeek
 
 /**
  * 2.0.0 검토 갈래 H 1묶음의 앞·뒤 화면 사진(디자인 품질 조건 확인): 가게의 하루 화면 순서·달력 모양 예시·1년 달력·공유, 알바의 기능 켜고 끄기
@@ -42,9 +48,22 @@ class ReviewHShotsTest : ScreenshotBase() {
         reveal("칸 높이")
     }
 
-    @Test fun shopYear() = all("3_shop_year", WorkStyle.BUSINESS) { open(FeatureRoute(Place.YEAR)) }
+    // 총괄 사진 검토(11-12): the sample days are a shift worker's (주·야·휴 chips on a shop's year); a shop's own days instead.
+    @Test fun shopYear() = all("3_shop_year", WorkStyle.BUSINESS) { shopDays(); open(FeatureRoute(Place.YEAR)) }
 
-    @Test fun shopShare() = all("4_shop_share", WorkStyle.BUSINESS) { open(FeatureRoute(Place.SHARE)) }
+    @Test fun shopShare() = all("4_shop_share", WorkStyle.BUSINESS) { shopDays(); open(FeatureRoute(Place.SHARE)) }
+
+    /** A shop's days as its first setup leaves them (영업, 매주 월요일 휴무), with none of the sample shifts. */
+    private fun Screen.shopDays() {
+        runBlocking {
+            val c = app.container
+            val repo = c.scheduleRepository
+            repo.clearPattern()
+            repo.snapshot.first().entries.forEach { repo.resetDay(it.date) }
+            ShopKeeper.apply(c, PersonalCalendar.MAIN, ShopRules(closedWeekdays = setOf(DayOfWeek.MONDAY)))
+        }
+        settle()
+    }
 
     @Test fun partTimeFeatureWay() = all("5_parttime_features", WorkStyle.HOURLY) {
         open(FeatureRoute(Place.FEATURES))
