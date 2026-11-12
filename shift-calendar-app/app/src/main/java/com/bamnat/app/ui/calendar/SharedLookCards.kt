@@ -83,7 +83,7 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
             }
             done?.let { (id, n) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (undone) "넣은 것을 되돌렸어요" else "고른 ${n}가지를 넣었어요. 7일 안에는 여기나 마을 › 장터 › 내 레시피에서 되돌려요",
+                    Text(if (undone) "넣은 것을 되돌렸어요" else "고른 ${n}가지를 넣었어요. 7일 안에는 여기나 마을 › 장터 › 내 작품에서 되돌려요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                     if (!undone) TextButton(onClick = {
                         scope.launch { if (c.recipes.undo(id)) undone = true }

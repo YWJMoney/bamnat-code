@@ -1,0 +1,26 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E12 안 보이는 탭",
+ "summary": "아래 탭 막대 투명도 0",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "id": "app.tabs",
+     "alpha": 0
+    }
+   ]
+  }
+ ]
+}

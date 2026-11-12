@@ -204,8 +204,12 @@ class PlazaAFAppTest {
                 assertTrue(c.autoShare.waiting)
                 assertTrue(OutboxJob.waiting(c) >= 1)
                 // 되돌리기 takes it off the queue.
-                c.autoShare.undo()
+                assertEquals(AutoShare.Undone.DROPPED, c.autoShare.undo())
                 assertFalse(c.autoShare.waiting)
+                // 2.0.0 [RVN-10] COMP-46 …and the change taken back is the base: the same values saved again are not queued again.
+                c.autoShare.check()
+                assertFalse(c.autoShare.waiting)
+                assertNull(c.autoShare.shared.value)
                 // 설정's switch off asks again each time; 다시 묻지 않기 stops it.
                 c.autoShare.set(null)
                 assertTrue(c.autoShare.saved())

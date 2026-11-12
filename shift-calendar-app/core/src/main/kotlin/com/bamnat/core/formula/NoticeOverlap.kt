@@ -115,6 +115,17 @@ object NoticeOverlap {
     fun withoutShift(arg: String): String = arg.split(SEP).filter { seg -> seg.isNotBlank() && names(seg).none { it in SHIFT } }.joinToString(" · ")
 
     /**
+     * [RVM-03] PC-37: an 알림 that says how long I slept ("{지난시간(\"잠\")}시간 잤어요", "…밖에 못 잤어요"), which the app's own
+     * '몇 시간 잤어요' notice says too when the morning alarm ends a sleep: the two come as one.
+     */
+    fun saysSlept(arg: String): Boolean = "잤" in arg
+
+    private val SENTENCE = Regex("(?<=[.!?])\\s+|\\s*·\\s*|\n")
+
+    /** Worked-out words without their sentences that say how long I slept: "36분 잤어요. 오늘 주간이에요" → "오늘 주간이에요". */
+    fun withoutSlept(text: String): String = text.split(SENTENCE).map { it.trim() }.filter { it.isNotBlank() && "잤" !in it }.joinToString(" ")
+
+    /**
      * Words once worked out, tidied: a "~" left between two empty times (a day off: "오늘 휴무 ~ · 이달 쓴 돈") goes, with the gaps and
      * the " · " it leaves alone.
      */
