@@ -92,4 +92,21 @@ class ReviewH3ShotsTest : ScreenshotBase() {
         setupToToday(); tapText("회사 근무표와 같아요")
         assertTrue(appears("이대로 저장할까요?"))
     }
+
+    /** [RVH-37] The share sheet's note once it has been read: one line that keeps who sees a link, and ⓘ for the rest. */
+    @Test fun shareNote() = all("18_shop_share_note", WorkStyle.BUSINESS) {
+        app.getSharedPreferences("explain_seen", 0).edit().putInt("share.link.note", 1).commit()
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.SHARE))
+        settle()
+        assertTrue(appears("받은 누구나 봐요"))
+    }
+
+    /** [RVH-34] The commute screen's rules once read: one line and ⓘ. */
+    @Test fun commuteRules() = all("19_commute_rules", WorkStyle.DAY) {
+        app.getSharedPreferences("explain_seen", 0).edit().putInt("commute.rules", 1).commit()
+        com.bamnat.app.data.CommutePrefs.get(app).apply { setPlaceNext(true); setEnabled(true) }
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.COMMUTE))
+        settle()
+        reveal("잔업", exact = true)
+    }
 }

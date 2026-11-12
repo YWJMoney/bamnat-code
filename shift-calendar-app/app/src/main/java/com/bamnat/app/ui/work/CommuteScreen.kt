@@ -276,9 +276,13 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
                     com.bamnat.core.work.Commute.OvertimeWay.WRITE -> "끝나고 ${s.overtimeSlack}분보다 늦게 나오면 잔업으로 적어요. 예상 급여에도 들어가요."
                     com.bamnat.core.work.Commute.OvertimeWay.NONE -> "회사가 승인한 잔업만 세는 분께 맞아요. 잔업은 달력에서 직접 적어요."
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("늦게 도착하면 출근 시각을, 일찍 나오면 퇴근 시각을, 늦게 나오면 잔업을, 쉬는 날 다녀오면 특근을 적어요. " +
-                    "점심때 잠깐 나갔다 ${CommuteRecorder.LEAVE_WAIT_MINUTES}분 안에 돌아오면 퇴근으로 보지 않아요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [RVH-34] 디자인 품질 조건 4 (200%에서 열 줄이 넘는 설명): one line with ⓘ once it has been read (공통 부품 Explain).
+                com.bamnat.app.ui.components.Explain(
+                    key = "commute.rules",
+                    text = "늦게 도착하면 출근 시각을, 일찍 나오면 퇴근 시각을, 늦게 나오면 잔업을, 쉬는 날 다녀오면 특근을 적어요. " +
+                        "점심때 잠깐 나갔다 ${CommuteRecorder.LEAVE_WAIT_MINUTES}분 안에 돌아오면 퇴근으로 보지 않아요.",
+                    summary = "늦거나 일찍 오가면 그 시각을 적어요",
+                )
             }
             SectionCard(title = "최근 기록") {
                 val arrived = s.arrivedAt
