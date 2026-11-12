@@ -356,7 +356,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
         vm.activity.show()
         settle()
-        reveal("가린 사람")
+        reveal("안 보는 사람")
     }
     @Test fun phonePlazaWritePaused() = shoot("415_phone_plaza_write_paused", PHONE) {
         opsOn(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)

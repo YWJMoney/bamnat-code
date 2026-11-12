@@ -242,7 +242,7 @@ private object Routes {
     const val COMPANY_SENT = "company_sent?calendar={calendar}"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board?calendar={calendar}"
-    const val PLAZA_RATES = "plaza_rates"
+    const val PLAZA_RATES = "plaza_rates?calendar={calendar}"
     /** [RCP-21..38] 1.34 나눔 판: the list of one calendar's kind of work, one recipe, 만들기 and 설정 › 나눔 판. */
     const val RECIPES = "recipes?calendar={calendar}&kind={kind}&code={code}"
     /** [HUB-02] [kind] opens on one kind (RecipeClient.KINDS, "" for all); [code] opens with 코드로 받기 asked. */
@@ -323,6 +323,8 @@ private object Routes {
     fun companyBoard(calendar: String = "") = "company_board?calendar=$calendar"
     fun stylePlaza(calendar: String = "") = "style_plaza?calendar=$calendar"
     fun companyReport(calendar: String = "") = "company_report?calendar=$calendar"
+    /** 2.0.0 [RVN-18] COMP-21 광장 시세 of a calendar ('' = the calendar on screen). */
+    fun plazaRates(calendar: String = "") = "plaza_rates?calendar=$calendar"
     fun companySent(calendar: String = "") = "company_sent?calendar=$calendar"
 }
 
@@ -1943,7 +1945,7 @@ private fun AppNavHost(
                 },
                 // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
                 underTotal = {
-                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
+                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } }
                     // [COMM-12] One line into the plaza from the pay; hidden without the company server.
                     if (calendar != PersonalCalendar.EXAMPLE) com.bamnat.app.ui.company.PlazaEntryLine(container, onOpen = { nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true } })
                 },
@@ -2126,7 +2128,7 @@ private fun AppNavHost(
                 com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = { nav.popFrom(Routes.STYLE_PLAZA) },
                     onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
                     onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
-                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                    onRates = { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } },
                     onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
                     // PC 확인 41e73582: the talk comes first; 장터's cards follow it.
                     footer = {
@@ -2147,7 +2149,7 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_BOARD_ALL) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
                 onShare = { nav.navigate(Routes.companyReport()) { launchSingleTop = true } },
-                onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                onRates = { nav.navigate(Routes.plazaRates()) { launchSingleTop = true } },
             )
         }
         composable(Routes.RECIPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
@@ -2264,9 +2266,14 @@ private fun AppNavHost(
                     nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(code)))
                 })
         }
-        composable(Routes.PLAZA_RATES) {
-            val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
-            com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
+        composable(Routes.PLAZA_RATES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
+            // 2.0.0 [RVN-18] COMP-21 The calendar whose 광장 or pay opened it (before, always the calendar on screen: a second
+            // calendar's plaza compared and changed the first one's pay).
+            val calendar = remember(entry) { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val vm = appViewModel(key = "plaza-rates-$calendar") { com.bamnat.app.ui.company.RatesViewModel(it, calendar) }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
+                com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
+            }
         }
         composable(Routes.COMPANY_REPORT, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             // [CALI-02] 1.30 BB: the calendar's own setup, under its own company, kept as sent by it.
@@ -2745,7 +2752,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = onBack,
             onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
             onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
-            onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+            onRates = { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } },
             onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
             onFind = if (ownTalk && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
             header = chips, footer = if (headUnder && hubHead != null) ({ hubHead() }) else null)
@@ -2756,7 +2763,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
             onBack = onBack,
             onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
             onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-            onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+            onRates = { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } },
             onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
             header = {
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {

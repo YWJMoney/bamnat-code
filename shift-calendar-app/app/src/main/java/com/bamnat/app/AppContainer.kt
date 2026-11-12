@@ -342,6 +342,8 @@ class AppContainer(context: Context) {
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() })
     /** [PLAZA-32] 1.27 AI: the one line the company's 정보 광장 shows first after 이 설정 쓰기 (in memory, once). */
     var pendingPlazaNote: String? = null
+    /** 2.0.0 [RVN-18] 검토 U10a-16: 내 활동 › 보낸 규칙 opened a company page at one rule set (company id, setup id; in memory, once). */
+    var pendingCompanySetup: Pair<String, String>? = null
     /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
     var pendingMatch: Boolean = false
     /** 1.36 PC 급여 검토 W3: the 길잡이 invitation after a first pay setup, shown once the result was seen (or on the next visit). */

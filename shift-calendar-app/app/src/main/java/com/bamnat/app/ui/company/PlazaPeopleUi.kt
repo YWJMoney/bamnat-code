@@ -2,7 +2,6 @@ package com.bamnat.app.ui.company
 
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -157,7 +156,8 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                         }
                         TextButton(onClick = { industryOpen = !industryOpen }) { Text(if (industryOpen) "접기" else "고르기") }
                     }
-                    if (industryOpen) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 2.0.0 [RVN-18] 검토 U10a-04: chip rows fold to one line with 펼치기 (사용자 11-04 규칙).
+                    if (industryOpen) com.bamnat.app.ui.components.FoldRow("plaza.industry", what = "업종") {
                         com.bamnat.app.ui.components.FilterChip(selected = s.industry == null, onClick = { s = s.copy(industry = null) }, label = { Text("보이지 않음") })
                         PlazaTags.industries().forEach { g ->
                             com.bamnat.app.ui.components.FilterChip(selected = s.industry == g.key, onClick = { s = s.copy(industry = g.key) }, label = { Text(g.name) })
@@ -233,6 +233,25 @@ internal fun inLens(p: TalkPost, lens: String, mine: PlazaTag?, answers: List<Ta
     Lens.QUESTION, Lens.TIP, Lens.SHOW -> p.kind == lens
     else -> true
 }
+
+/**
+ * 2.0.0 [RVN-18] COMP-18 The question lifted on top of 전체 ([PLZC-05] 하루 넘게 답을 기다리는 질문): someone else's, still without an
+ * answer, asked 1 to [LIFT_DAYS] days ago, and not lifted on this phone before ([seen]: so the next open brings another one). One
+ * the user can answer comes first (the same 근무형태 or 업종 as [mine]), then the one waiting longest. Before, it was always the
+ * oldest unanswered question read, weeks old after 지난 글 더 보기, and the same one every time until someone answered.
+ */
+internal fun liftedQuestion(tops: List<TalkPost>, answersOf: Map<String?, List<TalkPost>>, mine: PlazaTag?, seen: Set<String>,
+    now: java.time.Instant): TalkPost? {
+    val dayAgo = now.minusSeconds(24 * 3600)
+    val oldest = now.minusSeconds(LIFT_DAYS * 24 * 3600)
+    fun canAnswer(q: TalkPost) = (mine?.form != null && q.tag?.form == mine.form) || (mine?.industry != null && q.tag?.industry == mine.industry)
+    return tops.filter { q ->
+        !q.mine && q.id !in seen && !q.id.startsWith("local-") && q.at.isBefore(dayAgo) && !q.at.isBefore(oldest) &&
+            inLens(q, Lens.WAITING, mine, answersOf[q.id].orEmpty())
+    }.sortedWith(compareByDescending<TalkPost> { canAnswer(it) }.thenBy { it.at }).firstOrNull()
+}
+
+internal const val LIFT_DAYS = 7L
 
 /** [PLZC-20] 근무 카드 under a post: a small box with this month's numbers from the writer's calendar. */
 @Composable
@@ -316,6 +335,7 @@ internal fun PlazaFeed(
     older: List<TalkPost>,
     olderMore: Boolean,
     loadingOlder: Boolean,
+    olderFailed: String? = null,
 ) {
     val styleRoom = plan.room?.startsWith("style-") == true
     var lens by rememberSaveable(plan.room) { mutableStateOf(Lens.ALL) }
@@ -369,7 +389,8 @@ internal fun PlazaFeed(
             add(Lens.WAITING to "답 기다리는 질문" + (pulse?.waiting?.takeIf { it > 0 }?.let { " $it" } ?: ""))
             add(Lens.QUESTION to "질문"); add(Lens.TIP to "팁"); add(Lens.SHOW to "자랑")
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 2.0.0 [RVN-18] 검토 U10a-04: the lenses on one line, all of them with 펼치기.
+        com.bamnat.app.ui.components.FoldRow("plaza.lens", what = "보기 칩") {
             lenses.forEach { (k, label) -> com.bamnat.app.ui.components.FilterChip(selected = lens == k, onClick = { lens = k }, label = { Text(label) }) }
         }
         when {
@@ -380,10 +401,12 @@ internal fun PlazaFeed(
                 val tops = all.filter { it.parent == null }.sortedByDescending { it.at }
                 val answersOf = all.filter { it.parent != null }.groupBy { it.parent }
                 // [PLZC-05] A question without an answer for a day comes up once more, on top of 전체.
-                val dayAgo = com.bamnat.core.time.Today.instant().minusSeconds(24 * 3600)
-                val lifted = if (lens != Lens.ALL) null else tops.lastOrNull { q ->
-                    !q.mine && q.at.isBefore(dayAgo) && inLens(q, Lens.WAITING, mine, answersOf[q.id].orEmpty())
+                // 2.0.0 [RVN-18] COMP-18 …1 to 7 days old, one not lifted on this phone before, one I can answer first.
+                val seenLifted = vm.liftSeen.collectAsStateWithLifecycle().value
+                val lifted = if (lens != Lens.ALL) null else remember(tops, answersOf, mine, seenLifted) {
+                    liftedQuestion(tops, answersOf, mine, seenLifted, com.bamnat.core.time.Today.instant())
                 }
+                androidx.compose.runtime.LaunchedEffect(lifted?.id) { lifted?.let { vm.markLifted(it.id) } }
                 val shown = tops.filter { it.id != lifted?.id && inLens(it, lens, mine, answersOf[it.id].orEmpty()) }
                 lifted?.let { q ->
                     Text("🙋 하루 넘게 답을 기다리는 질문이에요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -414,8 +437,12 @@ internal fun PlazaFeed(
                             onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) }, onReply = { vm.openTalk(p.id, reply = true) })
                     } }
                 }
-                if (talk.more && (older.isEmpty() || olderMore)) OutlinedButton(onClick = vm::more, enabled = !loadingOlder,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loadingOlder) "불러오는 중…" else "지난 글 더 보기") }
+                // 2.0.0 [RVN-18] COMP-16 디자인 품질 7: a page that did not come says why with 다시 시도, as the rule plaza's end does.
+                if (talk.more && (older.isEmpty() || olderMore)) {
+                    if (olderFailed != null && !loadingOlder) com.bamnat.app.ui.components.OfflineLine(text = olderFailed, onRetry = vm::more)
+                    else OutlinedButton(onClick = vm::more, enabled = !loadingOlder,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loadingOlder) "불러오는 중…" else "지난 글 더 보기") }
+                }
             }
         }
     }

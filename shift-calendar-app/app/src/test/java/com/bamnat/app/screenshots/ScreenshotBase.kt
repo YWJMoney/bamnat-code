@@ -1791,6 +1791,10 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
     override suspend fun forgetMine(device: String) = mine.size
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
+    /** 2.0.0 [RVN-18] COMP-22-1 What a second tap on ✓ 맞아요 took back. */
+    val unvoted = mutableListOf<String>()
+    override suspend fun unvote(device: String, company: String, setup: String) =
+        com.bamnat.app.company.VoteResult(3, 2, 1, 3, true).also { unvoted += setup }
 
     // [COMM-06][COMM-07] 회사 규칙 광장 and the talk on a rule set.
     private fun item(id: String, company: String, dept: String, adopted: Boolean, points: Int, persons: Int, bad: Int, trust: Int, agree: Int,

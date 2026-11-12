@@ -110,7 +110,7 @@ fun OtherVersionCard(
                 Text("다른 판", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 when {
                     s.doubted -> StatusChip("달라요가 많아요", Tone.WAIT)
-                    s.adopted -> StatusChip("채택됨${s.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                    s.adopted -> StatusChip("채택됨${s.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD)
                     else -> StatusChip(if (s.senders <= 1) "제보 1 · 확인 중" else "확인 중", Tone.WAIT)
                 }
             }
@@ -119,11 +119,14 @@ fun OtherVersionCard(
                 Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
             }
             TrustLine(s.trust, s.agree, s.persons, s.bad, s.adopted)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                onCompare?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("대표 판과 비교") } }
-                if (s.adopted) Button(onClick = onUse, modifier = Modifier.weight(1f)) { Text(if (using != null) "다시 넣기" else "이 설정 쓰기") }
-                else FilledTonalButton(onClick = onUse, modifier = Modifier.weight(1f)) { Text("확인 중이지만 써 보기") }
+            // 2.0.0 [RVN-18] COMP-22-6 one under the other with big letters.
+            val use: @Composable (Modifier) -> Unit = { m ->
+                if (s.adopted) Button(onClick = onUse, modifier = m) { Text(if (using != null) "다시 넣기" else "이 설정 쓰기") }
+                else FilledTonalButton(onClick = onUse, modifier = m) { Text("확인 중이지만 써 보기") }
             }
+            val compare = onCompare?.let { go -> @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("대표 판과 비교") } } }
+            if (compare != null) com.bamnat.app.ui.components.PairRow(first = compare, second = use)
+            else com.bamnat.app.ui.components.PairRow(first = use, second = null)
             onTalk?.let { TextButton(onClick = it, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(if (s.posts > 0) "토론 ${s.posts}개 보기" else "토론 열기") } }
         }
     }

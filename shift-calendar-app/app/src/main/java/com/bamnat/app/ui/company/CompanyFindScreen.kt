@@ -73,6 +73,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -380,6 +381,10 @@ fun CompanyDetailScreen(
     // [PLAZA-02][PLAZA-05] Two rule sets of one department side by side: the 대표 판 and another, or a past version.
     var comparing by remember { mutableStateOf<Compare?>(null) }
     var keepOld by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVN-18] 검토 U10a-16: opened from 내 활동 › 보낸 규칙, the page goes to that rule set once (out of its fold).
+    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val focus = remember { app.pendingCompanySetup.also { app.pendingCompanySetup = null } }
+    val focusAsk = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
 
     // [PAYF-03] 1.29 AP: whether the pay way goes in with the cycle, asked once before the order (null: not asked, or no pay way).
     var withPay by remember { mutableStateOf(true) }
@@ -520,8 +525,16 @@ fun CompanyDetailScreen(
                             { comparing = Compare("대표 판과 비교", l.text, u.text, "대표 판", "내가 쓰는 판", l) }
                         })
                     }
+                    val focused = focus?.takeIf { it.first == p.id }?.second?.takeIf { id -> p.setups.any { it.id == id } }
+                    LaunchedEffect(focused) {
+                        if (focused == null) return@LaunchedEffect
+                        sections.firstOrNull { sec -> sec.others.any { it.id == focused } }?.let { opened = (opened + DeptGroups.key(it.dept)).distinct() }
+                        kotlinx.coroutines.delay(FOCUS_SETTLE_MS)
+                        focusAsk.bringIntoView()
+                    }
+                    fun Modifier.focusOn(id: String) = if (id == focused) bringIntoViewRequester(focusAsk) else this
                     @Composable
-                    fun card(su: SharedSetup, lead: SharedSetup) {
+                    fun card(su: SharedSetup, lead: SharedSetup) = Box(Modifier.focusOn(su.id)) {
                         val using = applied?.takeIf { it.companyId == p.id && it.setup == su.id }
                         SetupCard(su, diffs[su.id], using, onUse = { start(p, su) },
                             // [PLAZA-09] A member reads the others' pay as 고친 점 cards above, the own one in full.
@@ -529,6 +542,7 @@ fun CompanyDetailScreen(
                             // [COMM-06][COMM-07] Anyone who knows the company can vote and talk it over, using it or not.
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
+                            onTakeBack = { vm.takeBack(p, su) },
                             onTalk = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}") },
                             onPropose = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}", kind = "proposal") },
                             // [PLZ-10][PLZ-04] My own month with these rules, and how the rule got here.
@@ -551,9 +565,11 @@ fun CompanyDetailScreen(
                             val open = key in opened
                             OthersFold(folded.size, open) { opened = if (open) opened - key else opened + key }
                             if (open) folded.forEach { o ->
-                                OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) },
-                                    onCompare = { comparing = Compare("대표 판과 비교", sec.lead.text, o.text, "대표 판", "이 판", o) },
-                                    onTalk = { vm.talk.show(p.id, o.id, "${p.name} · ${o.dept.ifEmpty { "회사 전체" }}") })
+                                Box(Modifier.focusOn(o.id)) {
+                                    OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) },
+                                        onCompare = { comparing = Compare("대표 판과 비교", sec.lead.text, o.text, "대표 판", "이 판", o) },
+                                        onTalk = { vm.talk.show(p.id, o.id, "${p.name} · ${o.dept.ifEmpty { "회사 전체" }}") })
+                                }
                             }
                         }
                     }
@@ -603,7 +619,7 @@ fun CompanyDetailScreen(
             val su = page?.setups?.firstOrNull { it.id == now.setup }
             if (v.body != null && now.body != null && su != null) {
                 vm.closeHistory()
-                comparing = Compare("v${v.version}과 지금 비교", now.body, v.body, "지금 v${now.version}", "v${v.version}",
+                comparing = Compare("${v.version}판과 지금 비교", now.body, v.body, "지금 ${now.version}판", "${v.version}판",
                     su.copy(id = v.setup, text = v.body, version = v.version, adopted = false), back = true)
             }
         })
@@ -679,7 +695,7 @@ private fun SetupChanges(changes: com.bamnat.app.data.CompanyShare.Preview?, rep
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ApplyConfirmSheet(company: String, changes: com.bamnat.app.data.CompanyShare.Preview?, busy: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = busySheetState(busy)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("‘$company’ 설정을 넣을까요?", style = MaterialTheme.typography.titleLarge)
@@ -708,6 +724,8 @@ private fun SetupCard(
     onDiff: (() -> Unit)? = null,
     onCompare: (() -> Unit)? = null,
     showPay: Boolean = true,
+    /** 2.0.0 [RVN-18] COMP-22-1 맞아요 ✓ pressed again takes it back. */
+    onTakeBack: (() -> Unit)? = null,
 ) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
@@ -717,7 +735,7 @@ private fun SetupCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(s.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 // [PLAZA-05] 결정 D74: the department's 대표 판 is the one most phones use; earlier versions stay in 바뀐 기록.
-                if (s.adopted) StatusChip("대표 판${s.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                if (s.adopted) StatusChip("대표 판${s.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD)
                 // [PLAZA-10] 결정 D79: the first provider's version shows at once, as 제보 1 · 확인 중.
                 else StatusChip(if (s.senders <= 1) "제보 1 · 확인 중" else "확인 중", Tone.WAIT)
                 // [PLAZA-09] 안정: settled, no more nudges.
@@ -767,21 +785,17 @@ private fun SetupCard(
             if (onVote != null) {
                 Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion, onPropose = onDiff ?: onPropose)
+                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion, onPropose = onDiff ?: onPropose, onTakeBack = onTakeBack)
             }
-            if (onTry != null || onHistory != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    onTry?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("내 월급으로 시험") } }
-                    onHistory?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("바뀐 기록") } }
-                }
-            }
-            if (onDiff != null || onCompare != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    // [PLAZA-02] U2: what is different here, said on this rule set's own values, not in a blank box.
-                    onDiff?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("우리는 달라요 · 다른 점 말하기") } }
-                    onCompare?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("대표 판과 비교") } }
-                }
-            }
+            // 2.0.0 [RVN-18] COMP-22-6 two buttons go one under the other with big letters (PairRow).
+            val buttons = listOfNotNull<@Composable (Modifier) -> Unit>(
+                onTry?.let { go -> @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("내 월급으로 시험") } } },
+                onHistory?.let { go -> @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("바뀐 기록") } } },
+                // [PLAZA-02] U2: what is different here, said on this rule set's own values, not in a blank box.
+                onDiff?.let { go -> @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("우리는 달라요 · 다른 점 말하기") } } },
+                onCompare?.let { go -> @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("대표 판과 비교") } } },
+            )
+            buttons.chunked(2).forEach { pair -> com.bamnat.app.ui.components.PairRow(first = pair[0], second = pair.getOrNull(1)) }
             if (onTalk != null) {
                 TextButton(onClick = onTalk, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                     Text(if (s.posts > 0) "토론 ${s.posts}개 보기 · 고치자고 제안하기" else "토론 열기 · 고치자고 제안하기")
@@ -805,7 +819,7 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
                 val b = r.base
                 when {
                     b == null -> Unit
-                    b.adopted -> StatusChip("대표 판${b.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                    b.adopted -> StatusChip("대표 판${b.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD)
                     r.first -> StatusChip("제보 1 · 확인 중", Tone.WAIT)
                     else -> StatusChip("확인 중", Tone.WAIT)
                 }
@@ -853,7 +867,8 @@ internal fun PhaseSheet(
 ) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
     val today = remember { Today.date() }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 2.0.0 [RVN-18] 검토 COMP-22-3: while it is putting the order in, the sheet stays up (dragged down it hid but kept the screen).
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = busySheetState(busy)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("오늘은 어떤 근무예요?", style = MaterialTheme.typography.titleLarge)
@@ -1015,12 +1030,18 @@ internal fun TrialBeforeAfter(trial: Trial?) {
 @Composable
 internal fun TeamsTodayLine() {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
-    val snap by c.scheduleRepository.snapshot.collectAsStateWithLifecycle(initialValue = null)
+    // 2.0.0 [RVN-18] COMP-21 The calendar this company is on (before, always 내 달력's 조, also on a second calendar's company).
+    val calendar = LocalCompanyCalendar.current
+    val schedule = remember(calendar) { c.scopeOf(calendar).schedule }
+    val snap by schedule.snapshot.collectAsStateWithLifecycle(initialValue = null)
     val rosters by c.teams.rosters.collectAsStateWithLifecycle()
     val today = com.bamnat.core.time.Today.date()
-    val line = remember(snap, rosters, today) {
-        snap?.let { com.bamnat.app.ui.calendar.teamsTodayLine(it, rosters[com.bamnat.app.data.PersonalCalendar.MAIN], today) }
+    val line = remember(snap, rosters, today, calendar) {
+        snap?.let { com.bamnat.app.ui.calendar.teamsTodayLine(it, rosters[calendar], today) }
     } ?: return
     Text("오늘 $line", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.semantics { contentDescription = "우리 회사 오늘 근무: $line" })
 }
+
+/** 2.0.0 [RVN-18] U10a-16 How long the page has to lay out an opened fold before it is scrolled to the rule set. */
+private const val FOCUS_SETTLE_MS = 120L

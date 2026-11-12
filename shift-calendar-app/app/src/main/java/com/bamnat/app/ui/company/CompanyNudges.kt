@@ -219,7 +219,7 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
             Text("같은 회사 분들이 알려 준 설정이에요. 첫 명세서와 맞춰 보고 알려 주시면 더 정확해져요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(onClick = onRight) { Text("맞았어요 👍") }
+                FilledTonalButton(onClick = onRight) { Text("맞아요 👍") }
                 OutlinedButton(onClick = onWrong) { Text("달라요") }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onLater) { Text("나중에") }
@@ -486,10 +486,10 @@ fun ColumnScope.CompanySettingsRows(
                 Text("지금 쓰는 회사 설정", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(a.company + " · " + a.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    if (a.adopted) StatusChip("대표 판${a.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
+                    if (a.adopted) StatusChip("대표 판${a.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
                 }
                 when (a.vote) {
-                    true -> Text("‘맞았어요’라고 알려 주셨어요. 고마워요!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    true -> Text("‘맞아요’라고 알려 주셨어요. 고마워요!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     false -> Text("‘달라요’라고 알려 주셨어요. 고친 설정을 나눠 주시면 바로잡혀요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     null -> Unit
@@ -515,7 +515,7 @@ fun ColumnScope.CompanySettingsRows(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun busySheetState(busy: Boolean): SheetState {
+internal fun busySheetState(busy: Boolean): SheetState {
     val sending by rememberUpdatedState(busy)
     return rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden || !sending })
 }
