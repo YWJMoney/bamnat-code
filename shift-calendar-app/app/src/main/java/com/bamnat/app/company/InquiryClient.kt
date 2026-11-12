@@ -68,6 +68,13 @@ data class Inquiry(
     /** 1.39 [LOOP-16] 해결됐나요: 1 해결됐어요, -1 아직이에요, 0 아직 답하지 않음. [askFixed]면 두 단추를 보여요(고친 판 안내를 받은 뒤). */
     val fixed: Int = 0,
     val askFixed: Boolean = false,
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22-08: '2.0.0에서 고쳤어요. 앱을 2.0.0 이상으로 업데이트한 뒤 한 번 봐 주세요.' when the fixed version was
+     * told (or is out), so the asker knows which version to look for; null otherwise.
+     */
+    val fixedLine: String? = null,
+    /** 2.0.0 [RVQ-50] 검토 U22b-01: written to again after the answer, so it waits for the developer again. */
+    val reopened: Boolean = false,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -174,6 +181,12 @@ interface InquiryApi {
 
     suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text)
 
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22b-01·T22b-05: more to say with photos (all of one question's photos together at most
+     * [InquiryPhotos.TOTAL]); a server before 2.0.0 takes the words only.
+     */
+    suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = more(device, id, text, requestId)
+
     /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
     suspend fun pushPhone(device: String, token: String?): Boolean = false
 
@@ -228,6 +241,9 @@ class InquiryClient(
         if (info.photos.isNotEmpty()) {
             body.put("photos", org.json.JSONArray(info.photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
         }
+        // 2.0.0 [RVQ-50] 검토 I22bb-02: the same request number in the body too, so a retry whose first answer was too long to keep
+        // (or went to another Worker) is still one question.
+        body.put("key", requestId)
         inquiry(onceRequest(baseUrl, "/api/inquiries", body, requestId = requestId))
     }
 
@@ -267,8 +283,14 @@ class InquiryClient(
 
     override suspend fun more(device: String, id: String, text: String): Inquiry = more(device, id, text, newRequestId())
 
-    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = serverCall {
-        inquiry(onceRequest(baseUrl, "/api/inquiries/$id/messages", JSONObject().put("text", text.trim()), device, requestId))
+    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text, requestId, emptyList())
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = serverCall {
+        val body = JSONObject().put("text", text.trim()).put("key", requestId)
+        if (photos.isNotEmpty()) {
+            body.put("photos", org.json.JSONArray(photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
+        }
+        inquiry(onceRequest(baseUrl, "/api/inquiries/$id/messages", body, device, requestId))
     }
 
     /** One already gone counts as deleted. */
@@ -370,6 +392,8 @@ class InquiryClient(
         studioGoal = o.optJSONObject("studio")?.optInt("goal") ?: 0,
         fixed = o.optInt("fixed"),
         askFixed = o.optBoolean("askFixed"),
+        fixedLine = o.optStringOrNull("fixedLine"),
+        reopened = o.optBoolean("reopened"),
     )
 
     companion object {

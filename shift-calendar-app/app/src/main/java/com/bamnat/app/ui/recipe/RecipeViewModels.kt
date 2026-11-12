@@ -206,6 +206,27 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 }
 
 /** [RCP-23..27][RCP-31..35] One recipe: its pieces, 미리 보기 on my calendar, 골라 적용, votes, talk and 신고. */
+/** 2.0.0 [RVQ-42] 검토 U22b-05: what a work made for a newer app says (the server's 426 update, or a piece this app does not know). */
+internal const val NEEDS_UPDATE = "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
+
+/** 2.0.0 [RVQ-42] 검토 U22b-05·I22bb-06: the 판 a versionCode is, as people say it ('1.39'); null for one this app does not know. */
+internal fun appVersionName(code: Int?): String? = when (code) {
+    null -> null
+    in 1..49 -> null
+    50 -> "1.36"
+    51 -> "1.37"
+    52 -> "1.38"
+    53 -> "1.39"
+    54 -> "2.0"
+    else -> null
+}
+
+/**
+ * [RVQ-42] 검토 I22bb-06: told to its maker, so nobody wonders why some people do not find it — a work that needs [minApp] is left out
+ * of an older app's 장터. Null when every app reads it, or the 판 is newer than this app knows (the server keeps it from them anyway).
+ */
+internal fun seenFromLine(minApp: Int?): String? = appVersionName(minApp)?.let { "밤낮 ${it}부터 보여요 · 그보다 옛 앱의 장터에는 보이지 않아요" }
+
 class RecipeDetailViewModel(private val c: AppContainer, val code: String, val calendar: String = PersonalCalendar.MAIN) : ViewModel() {
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     private val device get() = c.companyStore.device
@@ -224,6 +245,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
 
     data class State(
         val doc: RecipeDoc? = null, val recipe: Recipe? = null, val error: String? = null,
+        /** [RVQ-42] U22b-05: with [NEEDS_UPDATE], the 판 the server said it needs (null when it did not). */
+        val needsApp: Int? = null,
         val pieces: List<Piece> = emptyList(), val answers: Map<String, Any?> = emptyMap(),
         val votes: Votes? = null, val talk: RecipeTalk? = null, val message: String? = null,
         val applying: Boolean = false, val appliedId: Long? = null,
@@ -321,8 +344,13 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     val a = org.json.JSONObject(b).optJSONArray("pieces")
                     a != null && (0 until a.length()).any { a.optJSONObject(it)?.optString("kind") !in keys }
                 }.getOrDefault(false) } == true
-                _state.value = _state.value.copy(error = if (newer) "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
+                _state.value = _state.value.copy(error = if (newer) NEEDS_UPDATE
                     else "작품이 오는 길에 바뀌었어요. 받지 않았어요")
+            } catch (e: com.bamnat.app.company.CompanyException) {
+                // 2.0.0 [RVQ-42] 검토 U22b-05·I22ba-01: the server does not send a work this app cannot read (426 update); only an update helps.
+                val text = if (e.code == "update") NEEDS_UPDATE else RecipeClient.problem(e)
+                _state.value = if (_state.value.doc != null && e.code != "update") _state.value.copy(message = text)
+                    else _state.value.copy(doc = null, recipe = null, error = text, needsApp = e.minApp)
             } catch (e: Exception) {
                 // 1.39 [MKP-03] Shown from the card already: it stays, and the problem is said once below.
                 _state.value = if (_state.value.doc != null) _state.value.copy(message = RecipeClient.problem(e)) else _state.value.copy(error = RecipeClient.problem(e))
@@ -565,6 +593,24 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             runCatching { c.recipeApi.talk(device, code) }.onSuccess { _state.value = _state.value.copy(talk = it) }
         }
     }
+
+    /** 2.0.0 [RVQ-43] 검토 U22-05: the talk before the oldest one here, put under it (a busy work's talk is more than 300). */
+    fun loadOlderTalk() {
+        val now = _state.value.talk ?: return
+        if (!now.more || olderTalk) return
+        val oldest = now.posts.minOfOrNull { it.at } ?: return
+        olderTalk = true
+        viewModelScope.launch {
+            runCatching { c.recipeApi.talkBefore(device, code, oldest) }.onSuccess { older ->
+                val cur = _state.value.talk ?: return@onSuccess
+                val have = cur.posts.map { it.id }.toSet()
+                _state.value = _state.value.copy(talk = cur.copy(posts = (older.posts.filter { it.id !in have } + cur.posts).sortedBy { it.at },
+                    more = older.more && older.posts.any { it.id !in have }))
+            }.onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
+            olderTalk = false
+        }
+    }
+    private var olderTalk = false
 
     /** How many days this phone has had the recipe on, for 쓰는 중 N일 next to a post. */
     private suspend fun usingDays(): Int? {

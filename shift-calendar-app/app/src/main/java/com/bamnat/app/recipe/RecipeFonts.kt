@@ -83,8 +83,9 @@ object RecipeFonts {
         var waiting = 0
         val lines = ids.mapNotNull { id ->
             mine[id]?.let { return@mapNotNull "‘${it.name}’ 글꼴 · 이 휴대폰에 있어요" }
-            val name = runCatching { c.recipeApi.fontName(id) }.getOrNull()
-            if (name != null) "‘$name’ 글꼴 · 넣을 때 함께 받아요" else { waiting++; null }
+            // 2.0.0 [RVQ-46] 검토 U22b-10: '만든 곳 · 써도 되는 범위' before 넣기, so whoever takes it knows it may.
+            val about = runCatching { c.recipeApi.fontAbout(id) }.getOrNull()
+            if (about != null) listOfNotNull("‘${about.name}’ 글꼴 · 넣을 때 함께 받아요", about.credit()).joinToString(" · ") else { waiting++; null }
         }
         return lines + listOfNotNull(waiting.takeIf { it > 0 }?.let { "운영자가 확인 중인 글꼴 ${it}개 · 확인 뒤(보통 하루 안) 앱을 열 때 들어와요. 그 전에는 비슷한 앱 글꼴로 보여요" })
     }
@@ -158,6 +159,10 @@ object RecipeFonts {
             }
             if (!safe) continue
             val r = withContext(Dispatchers.IO) { UserFonts.addBytes(c.appContext, bytes, name, open = true, received = true) }
+            // [RVQ-46] U22b-10: its credit stays beside it in 내 글꼴.
+            if (r is UserFonts.Result.Added) runCatching { c.recipeApi.fontAbout(id) }.getOrNull()?.credit()?.let { line ->
+                withContext(Dispatchers.IO) { UserFonts.setCredit(c.appContext, id, line) }
+            }
             if (r is UserFonts.Result.Added) {
                 got = true
                 prefs(c).edit().remove(id).apply()
