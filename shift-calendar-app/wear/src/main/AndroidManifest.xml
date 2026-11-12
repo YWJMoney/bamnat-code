@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 1.39.1 [WEAR-07]: the watch shows no ads and reads no advertising ID; the line only matches the Play 광고 ID 선언 of the
+         phone + watch release (1.39.0 had to be sent '권한 없이 출시' because the watch bundle lacked it). -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <application
         android:allowBackup="false"

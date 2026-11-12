@@ -540,9 +540,21 @@ fun RecipeListScreen(
                     // PC 제안 1.36: a code typed has its own 작품 열기 above; no 없어요 under it.
                     if (com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 }) != null) return@Column
                     if (state.query.isNotBlank()) {
-                        Text("‘${state.query.trim()}’에 맞는 작품이 ${if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"} 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else "",
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = { vm.kind(if (state.kind == RecipeClient.SCOPE_THEME) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME) }) {
+                        // 1.39.1 [P391-01] 9차 PC: searching from the half left open last time said '이 구간에 없어요' first. Look in all three and say where
+                        // it is ('테마에 1개'), with a way there, before saying none.
+                        val here = if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"
+                        val found = state.elsewhere.filterKeys { it != vm.halfNow() }
+                        Text(when {
+                            state.looking -> "‘${state.query.trim()}’ — 다른 구간도 찾는 중이에요…"
+                            found.isNotEmpty() -> "‘${state.query.trim()}’에 맞는 작품이 $here 없고, " +
+                                found.entries.joinToString(", ") { (h, n) -> "${RecipeListViewModel.halfName(h)}에 $n" } + " 있어요"
+                            else -> "‘${state.query.trim()}’에 맞는 작품이 $here 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else ""
+                        }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!state.looking && found.isNotEmpty()) {
+                            found.keys.forEach { h -> FilledTonalButton(onClick = { vm.jump(h) }) { Text("${RecipeListViewModel.halfName(h)}에서 보기") } }
+                            return@Column
+                        }
+                        if (!state.looking) TextButton(onClick = { vm.kind(if (state.kind == RecipeClient.SCOPE_THEME) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME) }) {
                             Text(if (state.kind == RecipeClient.SCOPE_THEME) "탭별 작품에서 찾기" else "테마에서 찾기")
                         }
                         return@Column

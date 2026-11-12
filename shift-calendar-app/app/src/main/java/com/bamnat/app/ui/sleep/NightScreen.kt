@@ -120,8 +120,15 @@ class NightViewModel(private val container: AppContainer) : ViewModel() {
 
     fun wokeUp(done: () -> Unit) {
         container.appScope.launch {
-            container.sleepRepository.wokeUp()
-            kotlinx.coroutines.withContext(Dispatchers.Main) { done() }
+            val slept = container.sleepRepository.wokeUp()
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                // 1.39.1 [P391-02] 9차 PC(사무직, 1분 잠): '깼어요' opened the sleep log with nothing new to see. Under an hour there is no 아침 한 장,
+                // so say what happened to it.
+                val m = slept?.end?.let { java.time.Duration.between(slept.start, it).toMinutes() }
+                if (m != null && m < com.bamnat.core.sleep.SleepMorning.MIN_MINUTES) android.widget.Toast.makeText(container.appContext,
+                    "${m.coerceAtLeast(1)}분 잠은 짧아서 아침 한 장 없이 기록에만 남겨요", android.widget.Toast.LENGTH_LONG).show()
+                done()
+            }
         }
     }
 }

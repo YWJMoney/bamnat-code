@@ -483,9 +483,20 @@ class AppContainer(context: Context) {
         val calendar = remoteConfig.current.calendar
         val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
         val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
-        // 1.37: 3.11 (테마·근무 설정 in a link) too; one yes to it counts for 3.9 and 3.1.
-        return listOf(com.bamnat.core.ops.PolicyConsent.ASK_VERSION, com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
+        // 1.37: 3.11 too; 1.39.1 [POLC-01]: 3.12 too. One yes to the newest counts for every older one.
+        return com.bamnat.core.ops.PolicyConsent.ASKED_VERSIONS
             .any { calendar.holds(it, installed, remoteConfig.agreed.value, today) == true }
+    }
+    /** [POLC-01] Whether [version] still waits on this phone (the card says so for 3.11 under the 3.12 lines). */
+    fun policyWaits(version: String): Boolean {
+        val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
+        val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
+        return remoteConfig.current.calendar.holds(version, installed, remoteConfig.agreed.value, today) == true
+    }
+    /** [POLC-01] The day this phone's features start without a yes (the latest held-until among the versions still waiting). */
+    fun policyHeldUntil(): java.time.LocalDate? {
+        val calendar = remoteConfig.current.calendar
+        return com.bamnat.core.ops.PolicyConsent.ASKED_VERSIONS.filter { policyWaits(it) }.mapNotNull { calendar.of(it)?.holdEnds }.maxOrNull()
     }
     /**
      * [REMOTE-02] Signed 요율·간이세액표·노임단가·프리셋 files from GitHub Pages; the last good ones are laid over the

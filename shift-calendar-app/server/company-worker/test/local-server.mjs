@@ -332,6 +332,12 @@ async function seedMarket() {
   }
   const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
   console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);
+  // 1.39.1 [P391-04] 9차 PC 1-12: '열자마자 오늘 정리'(겹치는 알림 확인용)는 1.39 장터 정리로 내려가 장터에서 찾을 수 없어요. 내린 작품도 코드로는
+  // 열리니, PC 확인이 장터 찾기 칸에 넣을 코드를 알려 줘요.
+  for (const title of ["열자마자 오늘 정리", "아침 오늘 요약"]) {
+    const row = await env.DB.prepare("SELECT code FROM recipes WHERE title = ? ORDER BY created_at LIMIT 1").bind(title).first().catch(() => null);
+    if (row?.code) console.log(`--market: PC 확인용 '${title}' 코드 ${row.code} (장터 찾기 칸에 넣으면 열려요)`);
+  }
   await seedMaterials(here, admin);
 }
 

@@ -75,6 +75,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         val elsewhere: Map<String, String> = emptyMap(),
         /** PC 확인 38d63451: while this half is empty, how many the other half (테마 ↔ 기능별 탭) has for the same kind of work. */
         val other: Int = 0,
+        /** 1.39.1 9차 PC(장터가 지난번 구간에 머문 채 찾으면 '이 구간에 없어요'가 먼저): the other halves are still being looked in. */
+        val looking: Boolean = false,
         /** 1.38 (장터 그림 LOW): when the list shown was read, so an offline list says how old it is. */
         val loadedAt: Long = 0L)
     private val _state = MutableStateFlow(State())
@@ -176,6 +178,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         }
         val wantOther = !any && otherKind != null && s.query.isBlank()
         if (s.query.isBlank() && !wantOther) return
+        if (s.query.isNotBlank()) _state.value = _state.value.copy(looking = true)
         counting = viewModelScope.launch {
             val other = if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) || (s.tab != Tab.NEW && noneHere) }.map { h ->
                 async {
@@ -188,7 +191,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
             val otherCount = if (!wantOther) 0 else runCatching {
                 c.recipeApi.list(styleNow, "hot", "", 0, otherKind).items.count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
             }.getOrDefault(0)
-            _state.value = _state.value.copy(elsewhere = other, other = otherCount)
+            _state.value = _state.value.copy(elsewhere = other, other = otherCount, looking = false)
         }
     }
 

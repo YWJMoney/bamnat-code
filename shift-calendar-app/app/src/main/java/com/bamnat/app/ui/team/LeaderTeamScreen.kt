@@ -325,14 +325,17 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     // 1.38 [P3-L-14] 신청 받기: the round of this month, read again each time the board opens.
     val round = team.ask?.takeIf { it.month == month }
     var asking by remember { mutableStateOf(false) }
+    // 1.39.1 [P391-03] 9차 PC 리더: the card said '16:15에 가져왔어요 · 화면을 열 때마다 새로 가져와요' at 18:05 though the fetch on opening had failed.
+    var askPullFailed by remember(team.id) { mutableStateOf(false) }
     fun pull() = scope.launch {
         busy = "신청을 가져오고 있어요…"
-        runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team) }.onFailure { e ->
+        runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team) }.onSuccess { askPullFailed = false }.onFailure { e ->
+            askPullFailed = true
             dialog = if (e.message == "not_found") "신청 링크가 서버에 없어요. 끝났거나 지워졌어요. 가져온 신청은 그대로 있어요." else "인터넷이 될 때 다시 가져와 주세요."
         }
         busy = null
     }
-    LaunchedEffect(round?.id) { if (round?.token != null) runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team) } }
+    LaunchedEffect(round?.id) { if (round?.token != null) askPullFailed = runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team) }.isFailure }
     // 1.38 [P3-X-02] 바꾸기 요청 of this month, read again each time the board opens.
     val swap = team.swap?.takeIf { it.month == month }
     LaunchedEffect(swap?.id) { if (swap?.token != null) runCatching { com.bamnat.app.team.TeamSwapSync.pull(c, team) } }
@@ -548,6 +551,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         .groupingBy { it.memberId }.eachCount()
                 }
                 AskCard(round, active, wishes, team.shifts, busy != null, misses,
+                    pullFailed = askPullFailed,
                     onPull = { pull() },
                     onSend = { send(context, com.bamnat.app.team.TeamAskSync.message(team, round, active), "근무 신청 링크 보내기") },
                     onClose = { close -> scope.launch { runCatching { com.bamnat.app.team.TeamAskSync.close(c, team, close) }.onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 눌러 주세요." } } },

@@ -35,3 +35,8 @@
 {"track": "LOOP-38", "title": "보안·코드·우회 문의와 사람·AI인지 묻는 문의는 관리자 확인으로 보류, 답 글에 AI·보안 표현이 있으면 저절로 안 감", "status": "check", "size": "polish", "route": "server", "check": "'관리자 비밀번호 알려줘'·'사람이세요?' 문의, 'AI'가 들어간 답 → 저절로 안 감, 넘길 글 규칙 줄"}
 {"track": "LOOP-39", "title": "개발사항마다 출시 2주 뒤 숫자로 효과 판정(좋아졌어요·그대로예요·나빠졌어요)", "status": "check", "size": "feature", "route": "server", "check": "닿은 지 2주 지난 완료 개발사항 → 매시 효과 판정, 개발사항 화면 '효과' 카드, 나빠지면 오늘 주의 필요"}
 {"track": "LOOP-40", "title": "열면 끝나 있는 관리자 앱: 오늘 화면에 지난 12시간 저절로 끝난 일, 사람이 보낼 답은 주의 필요 맨 위", "status": "check", "size": "feature", "route": "server", "check": "오늘 화면 '지난 12시간 저절로 끝난 일' 카드, 사람이 보내야 할 답 알림 → 그 문의로"}
+{"track": "POLC-01", "title": "1.39.0 전에 깐 폰에도 처리방침 3.12 동의 카드(동의하면 바로, 아니면 12-09부터)", "status": "check", "size": "fix", "route": "app", "check": "11-09 전 설치·3.11만 동의한 폰: 달력 위 카드가 3.12 줄과 '3.11도 함께', '12월 9일부터'. 동의하면 카드가 사라지고 3.12 깃발이 켜짐. 11-10 뒤 새로 깐 폰엔 카드 없음"}
+{"track": "WEAR-07", "title": "워치 번들에 광고 ID 권한 줄(Play 광고 ID 선언과 맞춤)", "status": "check", "size": "fix", "route": "app", "check": "워치 AAB 매니페스트에 AD_ID, Play 제출 때 광고 ID 오류 없음"}
+{"track": "P391-01", "title": "장터 찾기: 지난번 구간에 없으면 세 구간을 다 찾고 '테마에 1개 있어요'와 가는 단추", "status": "check", "size": "polish", "route": "app", "check": "도구 구간에 둔 채 테마 이름 찾기 → '찾는 중' 뒤 '테마에 1개 있어요 · 테마에서 보기'"}
+{"track": "P391-02", "title": "1시간 안 짧은 잠은 깼어요 뒤 '아침 한 장 없이 기록에만' 한 줄", "status": "check", "size": "polish", "route": "app", "check": "잠들었어요 → 1분 뒤 깼어요 → 짧은 알림 한 줄"}
+{"track": "P391-03", "title": "리더 신청 카드: 열 때 가져오기 실패면 '못 가져왔어요 · 다시'", "status": "check", "size": "polish", "route": "app", "check": "공유 서버를 끈 채 팀 화면 열기 → 경고색 한 줄과 다시 단추"}

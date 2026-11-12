@@ -464,7 +464,7 @@ class LegalPagesTest {
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.11" })
         assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Policy && it.version == "3.11" })
         assertFalse(flag.default)
-        assertEquals("3.11", com.bamnat.core.ops.PolicyConsent.ASK_VERSION)
+        assertEquals("3.12", com.bamnat.core.ops.PolicyConsent.ASK_VERSION)
         assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.11"), "3.9"))
         assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.11"), "3.1"))
     }
