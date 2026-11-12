@@ -5,6 +5,8 @@ import com.bamnat.core.imports.CalendarImport.As
 import com.bamnat.core.imports.CalendarImport.Skip
 import com.bamnat.core.imports.DeviceCalendar
 import com.bamnat.core.imports.DeviceEvent
+import com.bamnat.core.model.Leave
+import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.ShiftType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -53,11 +55,13 @@ class CalendarImportTest {
 
     @Test
     fun oneShiftADayAndTripsStayMemos() {
-        val p = CalendarImport.propose(listOf(allDay("주간", 3), ev("야간", at(3, 19), at(4, 7)), allDay("휴무", 10, days = 3)), types)
+        val p = CalendarImport.propose(listOf(allDay("주간", 3), ev("야간", at(3, 19), at(4, 7)), allDay("제주 여행", 10, days = 3)), types)
         assertEquals(listOf(As.SHIFT, As.MEMO, As.MEMO), p.map { it.kind })
         assertEquals("같은 날 근무가 이미 있어요", p[1].reason)
         assertEquals(LocalDate.of(2026, 11, 12), p[2].event.lastDate)
-        assertEquals("휴무\n~11/12", CalendarImport.memoText(p[2].event))
+        // 2.0.0 [RVL-30] A trip over several days is one memo, and says why.
+        assertEquals("여러 날 일정이라 메모로", p[2].reason)
+        assertEquals("제주 여행\n~11/12", CalendarImport.memoText(p[2].event))
     }
 
     @Test
@@ -84,5 +88,29 @@ class CalendarImportTest {
         assertFalse(DeviceCalendar(5, "근무", "a@gmail.com", "com.google").generated)
         assertNull(CalendarImport.propose(listOf(allDay("회식", 3)), types).single().shiftTypeId)
         assertEquals("야간", CalendarImport.normalize(" 야간 근무 "))
+    }
+
+    /** 2.0.0 [RVL-30] (검토 SCAN-26·T07b-08·U07b-13) 연차·반차·여름휴가 go in as leave, a leave or days off over several days day by day. */
+    @Test
+    fun leaveGoesInAsLeaveDayByDay() {
+        val p = CalendarImport.propose(listOf(allDay("연차", 2), allDay("오전 반차", 3), allDay("병가", 4), allDay("여름휴가", 16, days = 3),
+            allDay("휴무", 20, days = 2), allDay("휴가신청 마감", 24)), types)
+        assertEquals(listOf(As.LEAVE, As.LEAVE, As.LEAVE, As.LEAVE, As.LEAVE, As.LEAVE, As.OFF, As.OFF, As.MEMO), p.map { it.kind })
+        assertEquals(Leave(LeaveKind.ANNUAL), p[0].leave)
+        assertEquals(Leave(LeaveKind.ANNUAL, 2, fromStart = true), p[1].leave)
+        assertEquals(Leave(LeaveKind.PAID), p[2].leave)
+        assertEquals(listOf(16, 17, 18), p.subList(3, 6).map { it.date.dayOfMonth })
+        assertEquals(listOf(20, 21), p.subList(6, 8).map { it.date.dayOfMonth })
+        assertEquals(13L, p[6].shiftTypeId)
+        // Each day is remembered on its own, so it is never brought in twice, and the first day keeps the event's own key.
+        assertEquals(3, p.subList(3, 6).map { it.key }.toSet().size)
+        assertEquals(p[3].event.key, p[3].key)
+        val again = CalendarImport.propose(listOf(p[3].event), types, imported = setOf(p[3].key, p[4].key))
+        assertEquals(listOf(Skip.IMPORTED, Skip.IMPORTED, null), again.map { it.skip })
+        // A leave already on a day with work stays a memo there, as before.
+        val clash = CalendarImport.propose(listOf(allDay("주간", 5), allDay("연차", 5)), types)
+        assertEquals(listOf(As.SHIFT, As.MEMO), clash.map { it.kind })
+        // Too long to be days off: one memo.
+        assertEquals(listOf(As.MEMO), CalendarImport.propose(listOf(allDay("휴가", 1).copy(end = LocalDateTime.of(2027, 1, 30, 0, 0))), types).map { it.kind })
     }
 }
