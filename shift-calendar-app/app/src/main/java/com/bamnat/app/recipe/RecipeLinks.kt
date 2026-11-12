@@ -54,6 +54,12 @@ object RecipeLinks {
     /** 고쳐 만들기: the written recipe and its code, handed to 만들기 once (in memory). */
     var remake: Pair<String, String>? = null
 
+    /** 2.0.0 [RVM-36] HQ-52: the work whose page opens at its 이야기 (an 알림함 row said a 글 came), taken once by the page. */
+    @Volatile var talkFocus: String? = null
+
+    /** Whether the page of [code] opens at its 이야기; asked once. */
+    fun takeTalkFocus(code: String): Boolean = (talkFocus == code).also { if (it) talkFocus = null }
+
     /** PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory). */
     @Volatile var tryNext: String? = null
 

@@ -210,7 +210,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     private val device get() = c.companyStore.device
     val canVote: Boolean get() = c.flags.on(FlagCatalog.RECIPE_VOTE)
-    val canTalk: Boolean get() = c.flags.on(FlagCatalog.RECIPE_TALK)
+    val canTalk: Boolean get() = talkOpen?.invoke() ?: c.flags.on(FlagCatalog.RECIPE_TALK)
 
     data class Piece(val kind: PieceKind, val on: Boolean, val fits: Boolean,
         val mode: RecipePieces.Mode = if (kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE,
@@ -613,6 +613,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
 
     /** The written recipe, for 고쳐 만들기. */
     fun body(): String? = _state.value.recipe?.let(RecipeCodec::write)
+
+    companion object {
+        /** For tests ([RVM-36]): 이야기 open as after the legal day (the `recipe.talk` row waits for 3.9 and its agreement). */
+        @Volatile internal var talkOpen: (() -> Boolean)? = null
+    }
 }
 
 /** [RCP-38] 설정 › 나눔 판: the switch, recipes put on (with 되돌리기), my recipes on the plaza and those being made. */

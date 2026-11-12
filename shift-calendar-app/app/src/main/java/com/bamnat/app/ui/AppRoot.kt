@@ -679,9 +679,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
             }
             NoticeLinks.Target.RECIPE -> {
-                // Only a work's code (letters and numbers), whatever the intent carried.
-                val code = NoticeLinks.payload.value?.takeIf { Regex("[A-Za-z0-9]{4,16}").matches(it) }
-                if (code != null) nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                // Only a work's code (letters and numbers), whatever the intent carried. [RVM-36] HQ-52: a row that says a 글 came
+                // opens the work at its 이야기.
+                com.bamnat.app.recipe.MakerReactions.opened(NoticeLinks.payload.value)?.let { (code, talk) ->
+                    com.bamnat.app.recipe.RecipeLinks.talkFocus = if (talk) code else null
+                    nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                }
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -883,6 +886,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val villageNew by com.bamnat.app.company.VillageReplies.count.collectAsStateWithLifecycle()
     // [TOWN-07] PC 확인 699bbbc8 (켠 뒤 22초까지 점이 없어요): the count last worked out is read as the tabs first show, off the main thread.
     LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.company.VillageReplies.restore(container.appContext) } } }
+    // 2.0.0 [RVM-36] 검토 HQ-52: what people did with my works since, into the 알림함 (사람들 반응), whenever the app comes to the
+    // front (asked at most every 10 minutes).
+    val reactionScope = rememberCoroutineScope()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) {
+        reactionScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { container.recipes.reactions() } }
+    }
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
