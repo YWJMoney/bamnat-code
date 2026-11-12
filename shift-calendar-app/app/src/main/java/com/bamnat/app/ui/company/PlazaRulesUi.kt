@@ -179,7 +179,9 @@ const val FLAGGED = "신고했어요 · 결과는 밤낮 소식으로 알려 드
 @Composable
 fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFlag: (TalkPost, String) -> Unit) {
     val p = post ?: return
-    var reason by remember(p.id) { mutableStateOf("abuse") }
+    // 2.0.0 [RVN-13] HQ-39 Nothing picked first: each reason is handled its own way (개인 정보 is hidden at once), so 신고하기 waits
+    // until one is chosen rather than sending the first one unread.
+    var reason by remember(p.id) { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("이 글을 신고할까요?") },
@@ -198,7 +200,9 @@ fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFl
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
         },
-        confirmButton = { TextButton(onClick = { onDismiss(); onFlag(p, reason) }) { Text("신고하기") } },
+        confirmButton = {
+            TextButton(onClick = { reason?.let { onDismiss(); onFlag(p, it) } }, enabled = reason != null) { Text("신고하기") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
