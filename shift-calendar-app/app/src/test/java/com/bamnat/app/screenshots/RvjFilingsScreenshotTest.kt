@@ -48,7 +48,7 @@ class RvjFilingsScreenshotTest : ScreenshotBase() {
         if (all) {
             tapText("모두 보기", exact = false)
             settle()
-            reveal("모두 보기", exact = false)
+            reveal("접기", exact = true)
         }
     }
 
@@ -62,7 +62,7 @@ class RvjFilingsScreenshotTest : ScreenshotBase() {
         card().invoke(this)
         assertTrue(appears("급여 주는 날을 안 골라 일한 달의 다음 달 1일에 준 것으로 셌어요"))
         assertTrue(scrolledTo("입사일 없는 삼점삼님 빼고예요"))
-        assertTrue(scrolledTo("지급분 · 9월 일한 몫"))
+        assertTrue(scrolledTo("9월 지급분 · 8월 일한 몫"))
         assertTrue("아래 한 줄은 줄마다 말하니 없어요", !shows("님은 지난달 신고에서 뺐어요"))
         tapText("입사일 없는 삼점삼님 빼고예요", exact = false)
         settle()

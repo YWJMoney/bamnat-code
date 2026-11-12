@@ -109,8 +109,10 @@ class RvjImportScreenshotTest : ScreenshotBase() {
 
     @Test fun ledgerSaysItIsUnasked() = shoot("rvj_108_monthly_ot_ledger_folded", FOLDED) {
         ledger(true).invoke(this)
-        reveal("박매니저", exact = false)
-        assertTrue(scrolledTo("40시간을 넘는 주 8시간을 월급 말고 더 주나요?"))
+        reveal("40시간 넘는 몫 정하기", exact = true)
+        tapText("40시간 넘는 몫 정하기", exact = true)
+        settle()
+        assertTrue(appears("40시간을 넘는 주 8시간을 월급 말고 더 주나요?"))
     }
 
     // ---- [RVJ-41] PC-103 · [RVJ-42] 계약서 ----

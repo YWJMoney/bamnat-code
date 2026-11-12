@@ -32,7 +32,7 @@ import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.components.ToneLine
-import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.core.boss.BossFilings
 import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.boss.StaffMember
@@ -85,7 +85,8 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
     val due = remember(got, staff, place, today) { BossFilings.upcoming(place, staff, today, ledgerOf) }
     val open = due.filter { it.key !in done }
     if (due.isEmpty()) return
-    val warn = LocalCalendarColors.current.warning
+    // [RVJ-39] A date close or past is a 주의 (주황), not a 위험: two or three lines in red read as one alarm (조건 6).
+    val warn = MaterialTheme.bamnat.caution
     // The rows opened from 모두 보기's short list.
     var opened by rememberSaveable { mutableStateOf(emptyList<String>()) }
     SectionCard(title = "다가올 신고·지급" + if (open.isNotEmpty()) " ${open.size}" else " ✓") {

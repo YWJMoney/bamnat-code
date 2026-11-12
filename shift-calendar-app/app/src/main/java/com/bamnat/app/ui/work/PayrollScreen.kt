@@ -332,7 +332,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         // 2.0.0 [RVJ-40] 검토 PC-102: the columns read, before the file is picked, and a file that has them all.
         if (!isClosed) ToneLine("읽는 칸: ${com.bamnat.core.imports.StaffSheets.READS} · 예시 파일 받기", tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = {
             scope.launch {
-                runCatching { com.bamnat.app.report.ReportShare.csv(context, "\uFEFF" + com.bamnat.core.imports.StaffSheets.EXAMPLE_CSV, "직원-명단-예시.csv", "직원 명단 예시") }
+                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, "\uFEFF" + com.bamnat.core.imports.StaffSheets.EXAMPLE_CSV, "직원-명단-예시.csv", "직원 명단 예시") }
             }
         })
         reading?.let { Hint(it) }

@@ -538,8 +538,8 @@ object PayrollLedger {
         }
         if (noWork) add(LedgerWarning("empty", "근무가 없어요", "이번 달 일한 날이 없어요. 평소 근무 요일·시간을 넣거나 근무를 고쳐 주세요."))
         // [RVJ-42] 검토 PC-104: asked once, in the 직원 정보; until then the hours past 40 are paid on top and the line says so.
-        if (s.overtimeInPay == null) MonthlyOvertime.of(place, s)?.let { sp -> add(LedgerWarning("monthly-ot", "확인 필요",
-            MonthlyOvertime.ask(sp) + " 지금은 더 줘서 한 달 약 ${"%,d".format(sp.onTop)}원을 더했어요")) }
+        if (s.overtimeInPay == null) MonthlyOvertime.of(place, s)?.let { sp -> add(LedgerWarning("monthly-ot", "40시간 넘는 몫 정하기",
+            MonthlyOvertime.ask(sp) + " 지금은 더 줘서 한 달 약 ${"%,d".format(sp.onTop)}원을 더했어요. 직원 정보에서 골라요.")) }
         l.pay?.warnings.orEmpty().take(2).forEachIndexed { i, w -> add(LedgerWarning("engine-$i", "확인 필요", w)) }
     }
 
