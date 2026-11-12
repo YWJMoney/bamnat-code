@@ -908,6 +908,8 @@ function adminApp(L, BUILD, M) {
       if (name === "account" && S.me?.owner) jobs.push(api("/family").then(keep((d) => { S.data.family = d; })).catch(() => {}));
       // 1.39 [ADM3-42] 로그인 잠금(최고 관리자만).
       if (name === "account" && S.me?.owner) jobs.push(api("/login-locks").then(keep((d) => { S.data.loginLocks = d; })).catch(() => {}));
+      // 2.0.0 [RVQ-07] 검토 U21-04: 살아 있는 로그인 목록.
+      if (name === "account") jobs.push(api("/me/sessions").then(keep((d) => { S.data.sessions = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -3508,7 +3510,9 @@ function adminApp(L, BUILD, M) {
         <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
       ${m.owner ? familyCard() : ""}
       ${previewCard()}
-      <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
+      <section class="card"><div class="card-head"><h2>로그인</h2>${S.data.sessions?.items?.length ? `<span class="pill">${S.data.sessions.items.length}곳</span>` : ""}</div>
+        <p class="hint">쓰는 동안 저절로 이어지고 7일 동안 안 쓰면 끝나요(길어도 30일). ${m.owner ? "Cloudflare에서 ADMIN_PASSWORD를 바꾸면" : "비밀번호를 바꾸면"} 그 전의 로그인은 모두 끊겨요.</p>
+        ${sessionRows()}
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
         ${m.owner ? lockLine() : ""}</section>
@@ -3521,6 +3525,16 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>단축키</h2><p class="hint">키보드가 있으면 <span class="kbd">1</span>~<span class="kbd">6</span>으로 허브를, <span class="kbd">[</span> <span class="kbd">]</span>로 허브 안 탭을 옮기고, <span class="kbd">?</span>로 단축키를, <span class="kbd">Ctrl</span>+<span class="kbd">K</span>로 찾기·이동을 열어요.</p>
         <div class="actions start"><button class="btn" data-act="shortcuts">단축키 보기</button></div></section>
       </div>`;
+  }
+
+  /** 2.0.0 [RVQ-07] 검토 U21-04: 로그인 목록. 이 기기는 맨 위(끊기는 로그아웃으로), 다른 곳은 하나씩 끊어요. 기기는 브라우저·운영체제 두 낱말만. */
+  function sessionRows() {
+    const d = S.data.sessions;
+    if (!d) return skeleton(1);
+    const via = { password: "비밀번호", passkey: "패스키" };
+    return `<ul class="rows">${d.items.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.device)}</b>${x.current ? ' <span class="pill ok">이 기기</span>' : ""}
+      <small>${[via[x.via], `${esc(day(x.createdAt))} 들어옴`, x.lastAt ? `마지막 ${esc(ago(x.lastAt))}` : ""].filter(Boolean).join(" · ")}</small></span>
+      ${x.current ? "" : `<button class="btn small" type="button" data-act="session-end" data-id="${esc(x.id)}" aria-label="${esc(x.device)} 로그인 끊기">끊기</button>`}</div></li>`).join("")}</ul>`;
   }
 
   /**
@@ -5806,6 +5820,14 @@ function adminApp(L, BUILD, M) {
       S.data.loginLocks = { locked: 0, tries: 0, wide: false, until: null };
       render({ keepScroll: true });
     }, "primary"),
+    // 2.0.0 [RVQ-07] 검토 U21-04: 로그인 하나 끊기(활동 기록에 남아요).
+    "session-end": ({ id }) => confirmBox("이 로그인을 끊을까요?", "그 기기는 다시 로그인해야 해요. 내가 아닌 로그인이면 비밀번호도 바꿔요.", "끊기", async () => {
+      const d = await act(() => api(`/me/sessions/${id}/end`, "POST"), "끊었어요");
+      if (d) {
+        S.data.sessions = d;
+        render();
+      }
+    }),
     "logout-all": () => confirmBox("모든 기기에서 로그아웃할까요?", "이 기기를 포함해 이 계정으로 로그인한 모든 기기가 다시 로그인해야 해요.", "로그아웃", async () => {
       await api("/me/logout-all", "POST");
       signedOut(true);

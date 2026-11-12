@@ -144,6 +144,10 @@ export const LIMITS = {
   // a week at a time, for at most 30 days from the password.
   loginDelayMs: 150,
   sessionMaxMs: 30 * 24 * 60 * 60 * 1000,
+  // 2.0.0 [RVQ-06] 검토 SRV-06: 패스키를 더하려면 10분 안에 로그인했거나 비밀번호를 한 번 더(틀린 것은 시간에 5번까지).
+  reauthMs: 10 * 60 * 1000,
+  // 2.0.0 [RVQ-07] 검토 U21-04: 로그인 목록의 '마지막 사용'은 10분에 한 번만 적어요(요청마다 쓰지 않게).
+  sessionTouchMs: 10 * 60 * 1000,
   // [ADMIN-04] An invite link works for a week; a mailed code for 15 minutes and five tries.
   inviteMs: 7 * 24 * 60 * 60 * 1000,
   codeMs: 15 * 60 * 1000,
@@ -976,6 +980,14 @@ const COLUMNS = [
   "ALTER TABLE posts ADD COLUMN attach TEXT",
   // 1.39 [PLZC-10] 근무 태그.
   ...PEOPLE_COLUMNS,
+  // 2.0.0 [RVQ-07] 검토 SRV-07·U21-04: 로그인마다 최고 관리자 비밀번호 지문(비밀값으로 서명한 것, 바뀌면 끊김), 마지막 사용, 기기 이름(브라우저·
+  // 운영체제 두 낱말만, 전체 UA는 남기지 않음), 들어온 길(비밀번호·패스키).
+  "ALTER TABLE admin_sessions ADD COLUMN pw TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE admin_sessions ADD COLUMN last_at INTEGER",
+  "ALTER TABLE admin_sessions ADD COLUMN ua TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE admin_sessions ADD COLUMN via TEXT NOT NULL DEFAULT ''",
+  // 2.0.0 [RVQ-06] 검토 U21-03: 패스키마다 마지막으로 쓴 기기 이름.
+  "ALTER TABLE admin_passkeys ADD COLUMN last_ua TEXT NOT NULL DEFAULT ''",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -1303,7 +1315,7 @@ async function limitCheck(env, key, limit, windowMs, now) {
       expires = CASE WHEN expires <= ?3 THEN ?2 ELSE expires END
     RETURNING count, expires`, key, now + windowMs, now);
   meterAdd(env, null, 1);
-  return { ok: row.count <= limit, expires: Number(row.expires ?? now + windowMs) };
+  return { ok: row.count <= limit, expires: Number(row.expires ?? now + windowMs), count: Number(row.count) };
 }
 
 /**
@@ -5121,10 +5133,18 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // [MON-09] A code for this admin's own phone.
   if (path === "/me/link-code" && method === "POST") return linkCode(env, actor, now);
   if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
+  // 2.0.0 [RVQ-07] 검토 U21-04: 살아 있는 로그인 목록과 하나씩 끊기.
+  if (path === "/me/sessions" && method === "GET") return json(await sessionList(env, actor, session.token, now));
+  const sm = path.match(/^\/me\/sessions\/([0-9a-f]{12})\/end$/);
+  if (sm && method === "POST") {
+    if (actor.key) return json({ error: "no_permission" }, 403);
+    return sessionEnd(env, actor, sm[1], session.token, now);
+  }
   // R131 1.31 [ADMX-16] 두 번째 확인: see whether it is on, start it (a new secret), confirm it with a code, turn it off with one.
   if (path === "/me/passkeys" || path.startsWith("/me/passkeys/")) {
     if (env.actor?.key) return json({ error: "no_permission" }, 403);
-    const r = await passkeyMine(request, env, url, path, method, actor, now);
+    const r = await passkeyMine(request, env, url, path, method, actor, now, { recentlyIn: now - (session.made ?? 0) < LIMITS.reauthMs,
+      reauth: (password) => reauthCheck(env, actor, password, now), label: deviceLabel(request) });
     if (r) return r;
   }
   // 1.39 [ADM3-42] 로그인 잠금 보기·풀기: 최고 관리자만, 운영 열쇠(Claude)로는 못 해요(사용자 11-07 '슈퍼관리자만').
@@ -5368,16 +5388,23 @@ async function login(request, env, now) {
   else if (body.email !== undefined) return json({ error: "email" }, 400);
   const password = env.ADMIN_PASSWORD;
   if (!email && (typeof password !== "string" || password.length < 10)) return json({ error: "not_set" }, 503);
-  let worst = null;
-  for (const key of keys) {
-    const row = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
-    if (row && (!worst || row.count > worst.count)) worst = row;
-  }
+  // 2.0.0 [RVQ-05] 검토 SRV-08 (나): 횟수를 먼저 올리고(한 문장, 원자적) 그 값으로 판정해요. 읽은 뒤 틀리면 올리던 1.39까지는 한꺼번에
+  // 보낸 요청이 모두 '아직 4번'을 읽어 5번 제한을 넘었어요. 맞으면 아래에서 지워요.
+  const tried = await Promise.all(keys.map((key) => limitCheck(env, key, LIMITS.loginFailures, LIMITS.lockMs, now)));
+  const worstCount = Math.max(...tried.map((r) => r.count));
+  const before = worstCount - 1;
   const everyone = await one(env, "SELECT count FROM counters WHERE key = 'login|all' AND expires > ?", now);
+  const wide = (everyone?.count ?? 0) >= 10 * LIMITS.loginFailures;
   // [ADMIN-15] Under a wide guessing run (50 wrong in the hour) only a network or account that was wrong
   // this hour is shut out: the owner on a clean network still gets in, so the run cannot lock everyone.
-  if ((worst?.count ?? 0) >= LIMITS.loginFailures || ((everyone?.count ?? 0) >= 10 * LIMITS.loginFailures && (worst?.count ?? 0) > 0)) {
-    return json({ error: "locked", until: iso(worst?.expires ?? now + LIMITS.lockMs) }, 429);
+  if (worstCount > LIMITS.loginFailures || (wide && before > 0)) {
+    const until = Math.max(...tried.map((r) => r.expires));
+    return json({ error: "locked", until: iso(until || now + LIMITS.lockMs) }, 429);
+  }
+  // 2.0.0 [RVQ-05] 검토 SRV-08 (가): 넓게 맞혀 보는 중(이번 시간 전체 실패 10번 넘음)이면 최고 관리자 로그인은 맞든 틀리든 점점 늦게 답해요
+  // (새 네트워크마다 한 번씩 맞혀 보는 것을 느리게). 계정 잠금은 여전히 없어요(1인 운영자가 잠기지 않게).
+  if (!email && (everyone?.count ?? 0) >= 2 * LIMITS.loginFailures) {
+    await new Promise((done) => setTimeout(done, Math.min(20, Math.floor((everyone.count) / LIMITS.loginFailures)) * LIMITS.loginDelayMs));
   }
   let account = null;
   let right = false;
@@ -5389,12 +5416,10 @@ async function login(request, env, now) {
     right = typeof body.password === "string" && (await sameSecret(body.password, password));
   }
   if (!right) {
-    let count = 0;
-    for (const key of keys) {
-      await allow(env, key, Infinity, LIMITS.lockMs, now);
-      const row = await one(env, "SELECT count FROM counters WHERE key = ?", key);
-      if (row.count >= LIMITS.loginFailures) await run(env, "UPDATE counters SET expires = ? WHERE key = ?", now + LIMITS.lockMs, key);
-      count = Math.max(count, row.count);
+    // 횟수는 위에서 이미 올렸어요. 다섯째 틀림부터는 잠금 1시간을 그때부터 다시 세요.
+    const count = worstCount;
+    if (count >= LIMITS.loginFailures) {
+      for (const key of keys) await run(env, "UPDATE counters SET expires = ? WHERE key = ? AND count >= ?", now + LIMITS.lockMs, key, LIMITS.loginFailures);
     }
     await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
     // [ADMIN-15] The email tried is kept only as a short hash, and only for 30 days: enough to see that one
@@ -5415,18 +5440,22 @@ async function login(request, env, now) {
     if (body.code === undefined || body.code === "") return json({ error: "code_needed" }, 401);
     const step = await totpCheck(second.secret, String(body.code), now, second.used_step);
     if (step === null) {
-      for (const key of keys) await allow(env, key, Infinity, LIMITS.lockMs, now);
+      // 비밀번호는 맞았고 코드가 틀림: 위에서 올린 횟수가 그대로 남고, 2.0.0 [RVQ-05] 검토 SRV-08 (다)부터 전체 실패에도 들어가요.
+      await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
       await audit(env, now, "login_failed", "code");
       return json({ error: "code_wrong" }, 401);
     }
     await run(env, "UPDATE admin_totp SET used_step = ? WHERE admin = ?", step, who);
   }
+  // 2.0.0 [RVQ-08] 검토 SRV-19: 옛 횟수(2만 번)로 만든 해시는 맞게 들어온 이때 지금 횟수로 다시 만들어요(비밀번호를 바꾸는 것이 아니라 끊지 않아요).
+  const rehash = account && passwordRounds(account.pw) < pbkdf2Rounds ? await hashPassword(body.password).catch(() => null) : null;
   await batch(env, [
     ...keys.map((key) => stmt(env, "DELETE FROM counters WHERE key = ?", key)),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
-    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)",
-      await sha256(`session|${token}`), who, now + LIMITS.sessionMs, now),
+    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at, pw, last_at, ua, via) VALUES (?, ?, ?, ?, ?, ?, ?, 'password')",
+      await sha256(`session|${token}`), who, now + LIMITS.sessionMs, now, account ? "" : await ownerPasswordMark(env), now, deviceLabel(request)),
     ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
+    ...(rehash ? [stmt(env, "UPDATE admins SET pw = ? WHERE id = ? AND pw = ?", rehash, account.id, account.pw)] : []),
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
@@ -5458,17 +5487,19 @@ async function loginUnlock(env, now) {
 
 /**
  * 1.38 [ADM3-01] 패스키로 들어오기: 비밀번호와 같은 잠금(같은 곳에서 여러 번 틀리면 1시간)을 쓰고, 맞으면 같은 세션을 열어요.
- * 패스키는 기기와 지문(또는 얼굴) 두 가지라 두 번째 확인 코드는 묻지 않아요. 멈춘 관리자의 패스키는 들어오지 못해요.
+ * 패스키는 기기와 지문(또는 얼굴) 두 가지라 두 번째 확인 코드는 묻지 않아요. 2.0.0 [RVQ-06] 검토 SRV-05: 그래서 서버가 '지문·PIN으로
+ * 확인함(UV)' 깃발을 꼭 봐요(passkey.js). 멈춘 관리자의 패스키는 들어오지 못해요.
  */
 async function passkeyLogin(request, env, url, now) {
   const net = await network(request, env, now);
   const key = `login|${net.login}`;
-  const row = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
-  if ((row?.count ?? 0) >= LIMITS.loginFailures) return json({ error: "locked", until: iso(row.expires) }, 429);
-  const got = await passkeyCheck(request, env, url, now);
+  // 2.0.0 [RVQ-05] 비밀번호와 같이 먼저 올리고 판정해요(맞으면 아래에서 지워요).
+  const tried = await limitCheck(env, key, LIMITS.loginFailures, LIMITS.lockMs, now);
+  if (!tried.ok) return json({ error: "locked", until: iso(tried.expires) }, 429);
+  const got = await passkeyCheck(request, env, url, now, deviceLabel(request));
   const account = got && got.admin !== OWNER.id ? await one(env, "SELECT * FROM admins WHERE id = ?", got.admin) : null;
   if (!got || (got.admin !== OWNER.id && !account)) {
-    await allow(env, key, Infinity, LIMITS.lockMs, now);
+    await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
     await audit(env, now, "login_failed", "passkey");
     return json({ error: "wrong" }, 401);
   }
@@ -5477,7 +5508,8 @@ async function passkeyLogin(request, env, url, now) {
   await batch(env, [
     stmt(env, "DELETE FROM counters WHERE key = ?", key),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
-    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)", await sha256(`session|${token}`), got.admin, now + LIMITS.sessionMs, now),
+    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at, pw, last_at, ua, via) VALUES (?, ?, ?, ?, ?, ?, ?, 'passkey')",
+      await sha256(`session|${token}`), got.admin, now + LIMITS.sessionMs, now, got.admin === OWNER.id ? await ownerPasswordMark(env) : "", now, deviceLabel(request)),
     ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "", `패스키 ${got.name}`);
@@ -5522,11 +5554,24 @@ async function signedIn(request, env, now) {
   if (!token || !/^[A-Za-z0-9]{40}$/.test(token)) return null;
   const hash = await sha256(`session|${token}`);
   // The account is read with the session on every call, so a pause or a change of permissions applies at once.
-  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, s.created_at AS session_made, a.* FROM admin_sessions s
-    LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
+  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, s.created_at AS session_made, s.pw AS session_pw,
+    s.last_at AS session_last, a.* FROM admin_sessions s LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
   if (!row || row.session_expires <= now) return null;
   const actor = row.session_admin === OWNER.id ? OWNER : row.id ? actorOf(row) : null;
   if (!actor) return null;
+  // 2.0.0 [RVQ-07] 검토 SRV-07: 최고 관리자 비밀번호(Cloudflare ADMIN_PASSWORD)를 바꾸면 그 전의 로그인은 모두 끊겨요. 이 판 전에 연
+  // 로그인(표시 없음)은 처음 쓸 때 지금 표시를 받아요. 관리자 계정은 비밀번호를 바꿀 때 다른 로그인을 지워요(changePassword).
+  if (actor.owner) {
+    const mark = await ownerPasswordMark(env);
+    if (row.session_pw && row.session_pw !== mark) {
+      await run(env, "DELETE FROM admin_sessions WHERE token = ?", hash);
+      return null;
+    }
+    if (!row.session_pw) await run(env, "UPDATE admin_sessions SET pw = ? WHERE token = ? AND pw = ''", mark, hash);
+  }
+  if (!row.session_last || now - row.session_last > LIMITS.sessionTouchMs) {
+    await run(env, "UPDATE admin_sessions SET last_at = ? WHERE token = ?", now, hash).catch(() => {});
+  }
   // [ADMIN-15] Used with less than half the week left, it runs on for another week, never past 30 days.
   let renewed = null;
   const end = Math.min(now + LIMITS.sessionMs, row.session_made + LIMITS.sessionMaxMs);
@@ -5534,7 +5579,52 @@ async function signedIn(request, env, now) {
     await run(env, "UPDATE admin_sessions SET expires = ? WHERE token = ?", end, hash);
     renewed = cookie(token, Math.floor((end - now) / 1000));
   }
-  return { token: hash, actor, renewed };
+  return { token: hash, actor, renewed, made: row.session_made };
+}
+
+/**
+ * 2.0.0 [RVQ-07] 최고 관리자 비밀번호의 표시: 비밀번호를 RATE_SALT(서버 비밀값)로 서명한 것의 앞 16자. DB만 새어서는 비밀번호를 맞혀 볼 수
+ * 없어요(소금이 DB 밖에 있어요). 같은 isolate에서는 한 번만 셈해요.
+ */
+const ownerMarks = new Map();
+async function ownerPasswordMark(env) {
+  const pw = String(env.ADMIN_PASSWORD ?? "");
+  const key = `${pw.length}|${env.RATE_SALT ?? ""}`;
+  const known = ownerMarks.get(key);
+  if (known && known.pw === pw) return known.mark;
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(`owner-pw|${env.RATE_SALT ?? ""}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mark = [...new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(pw)))].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+  ownerMarks.set(key, { pw, mark });
+  return mark;
+}
+
+/** 2.0.0 [RVQ-07] 로그인 목록에 보이는 기기 이름: 브라우저와 운영체제 두 낱말만(전체 User-Agent·주소는 남기지 않아요). */
+export function deviceLabel(request) {
+  const ua = String(request.headers.get("user-agent") ?? "");
+  const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad|iOS/i.test(ua) ? "iPhone·iPad" : /Windows/i.test(ua) ? "Windows"
+    : /Mac OS X|Macintosh/i.test(ua) ? "Mac" : /CrOS/i.test(ua) ? "Chromebook" : /Linux/i.test(ua) ? "Linux" : "";
+  const browser = /SamsungBrowser/i.test(ua) ? "삼성 인터넷" : /Edg\//i.test(ua) ? "Edge" : /Firefox\//i.test(ua) ? "Firefox"
+    : /Chrome\//i.test(ua) ? "Chrome" : /Safari\//i.test(ua) ? "Safari" : ua ? "다른 브라우저" : "";
+  return [browser, os].filter(Boolean).join(" · ").slice(0, 40);
+}
+
+/** 2.0.0 [RVQ-07] 검토 U21-04: 내 로그인 목록(지금 이 로그인 먼저). 번호는 저장된 해시의 앞 12자라 쿠키를 알 수 없어요. */
+async function sessionList(env, actor, current, now) {
+  const rows = await all(env, "SELECT token, created_at, last_at, expires, ua, via FROM admin_sessions WHERE admin = ? AND expires > ? ORDER BY COALESCE(last_at, created_at) DESC LIMIT 50", actor.id, now);
+  const items = rows.map((r) => ({ id: r.token.slice(0, 12), current: r.token === current, createdAt: iso(r.created_at), lastAt: r.last_at ? iso(r.last_at) : null,
+    until: iso(r.expires), device: r.ua || "알 수 없는 기기", via: r.via || "" }));
+  items.sort((a, b) => Number(b.current) - Number(a.current));
+  return { items };
+}
+
+async function sessionEnd(env, actor, id, current, now) {
+  if (!/^[0-9a-f]{12}$/.test(id)) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT token, ua FROM admin_sessions WHERE admin = ? AND substr(token, 1, 12) = ?", actor.id, id);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (row.token === current) return json({ error: "current" }, 409);
+  await run(env, "DELETE FROM admin_sessions WHERE token = ?", row.token);
+  await audit(env, now, "session_end", actor.id, row.ua || "");
+  return json(await sessionList(env, actor, current, now));
 }
 
 const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
@@ -5569,6 +5659,8 @@ const PUSH_KINDS = {
   incident: { label: "사고(서버 오류·문제 신고 급증, 정기 작업 실패)", area: "owner" },
   requests: { label: "데이터 요청(개인정보·환불·법) 기한", area: "owner" },
   reviews: { label: "새 스토어 리뷰(별 1~2개는 바로)", area: "owner" },
+  // 2.0.0 [RVQ-06] 검토 SRV-06·U21-03: 패스키가 생기거나 지워짐. 고른 종류와 상관없이 그 관리자와 최고 관리자에게 가요(끌 수 없음).
+  security: { label: "보안(내 계정에 패스키가 생기거나 지워짐)", area: "owner", always: true },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
@@ -5674,7 +5766,7 @@ async function pushView(env, actor) {
   const rows = await all(env, "SELECT id, kinds, quiet_from, quiet_to, created_at, sent_at FROM push_subscriptions WHERE admin = ? ORDER BY created_at", actor.id);
   return {
     ready: Boolean(keys), publicKey: keys?.publicKey ?? null,
-    kinds: Object.entries(PUSH_KINDS).filter(([k]) => mayGet(actor, k)).map(([key, k]) => ({ key, label: k.label })),
+    kinds: Object.entries(PUSH_KINDS).filter(([key, k]) => !k.always && mayGet(actor, key)).map(([key, k]) => ({ key, label: k.label })),
     subscriptions: rows.map((r) => ({ id: r.id, kinds: r.kinds.split(",").filter(Boolean), quiet: r.quiet_from === null ? null : { from: r.quiet_from, to: r.quiet_to },
       createdAt: iso(r.created_at), sentAt: r.sent_at ? iso(r.sent_at) : null })),
   };
@@ -5760,17 +5852,22 @@ async function deliver(env, keys, rows, message, now) {
  * 1.28 통합 [FLAG-37] 결정 D101: [ignoreQuiet] sends inside quiet time too — only a legal flag's day-before and turned-on
  * news (D99's safety net is pointless if it arrives after the payments started); every other kind keeps quiet time.
  */
-export async function notifyAdmins(env, kind, message, now = Date.now(), { ignoreQuiet = false } = {}) {
+export async function notifyAdmins(env, kind, message, now = Date.now(), { ignoreQuiet = false, only = null } = {}) {
   try {
     const keys = pushReady(env);
     if (!keys || !env.DB || !Object.hasOwn(PUSH_KINDS, kind)) return { sent: 0, gone: 0 };
+    if (typeof message === "string") message = { title: PUSH_KINDS[kind].label.split("(")[0], body: message, url: "/admin/#/account" };
     // An urgent question is a question too: it goes once to those who asked for either.
     const also = kind === "urgent" ? "inquiry" : kind;
-    const rows = await all(env, `SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
+    // 2.0.0 [RVQ-06] 끌 수 없는 종류(보안)는 고른 종류와 상관없이 모든 구독을 봐요.
+    const rows = PUSH_KINDS[kind].always ? await all(env, "SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin")
+      : await all(env, `SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
       WHERE (',' || s.kinds || ',') LIKE ? OR (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`, `%,${also},%`);
     const to = rows.filter((r) => {
       const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { owner: false, perms: readPerms(r.perms) } : null;
-      return actor && mayGet(actor, kind) && (ignoreQuiet || !quietNow(r.quiet_from, r.quiet_to, now));
+      // [only] 그 관리자 자신(그리고 최고 관리자)에게만.
+      const mine = only !== null && r.admin === only;
+      return actor && (mine || mayGet(actor, kind)) && (ignoreQuiet || !quietNow(r.quiet_from, r.quiet_to, now));
     });
     if (!to.length) return { sent: 0, gone: 0 };
     return await deliver(env, keys, to, { tag: kind, ...message }, now);
@@ -5829,7 +5926,27 @@ function newPassword(v, email) {
 }
 
 // PBKDF2 at a cost a Worker's CPU limit allows; the count is stored with each hash so it can rise later.
-const PBKDF2_ROUNDS = 20000;
+// 2.0.0 [RVQ-08] 검토 SRV-19: 2만 번 → 10만 번. 옛 해시는 맞게 들어올 때 다시 만들어요. Workers는 상한을 넘는 횟수를 NotSupportedError로
+// 거절해요(workerd src/workerd/api/crypto/impl.c++ checkPbkdfLimits, 2026-11-12 확인). 상한 값 자체는 운영 환경 설정이라 공개 문서에 없어
+// '10만 번'은 확인 필요예요: 거절되면 예전 2만 번으로 만들고(로그인이 막히지 않게) 로그에 한 줄 남겨요.
+const PBKDF2_ROUNDS = 100000;
+const PBKDF2_FALLBACK = 20000;
+export const passwordRounds = (stored) => Number(String(stored ?? "").split("$")[1]) || 0;
+
+/**
+ * 2.0.0 [RVQ-06] 검토 SRV-06: 패스키를 더하기 전에 비밀번호를 한 번 더. 최고 관리자는 ADMIN_PASSWORD, 관리자는 자기 비밀번호. 틀린 것은
+ * 관리자마다 시간에 5번까지 받고, 로그인 실패처럼 활동 기록에 남아요.
+ */
+async function reauthCheck(env, actor, password, now) {
+  if (typeof password !== "string" || !password) return false;
+  if (!(await allow(env, `reauth|${actor.id}`, LIMITS.loginFailures, LIMITS.lockMs, now))) return false;
+  let right = false;
+  if (actor.owner) right = typeof env.ADMIN_PASSWORD === "string" && (await sameSecret(password, env.ADMIN_PASSWORD));
+  else right = await checkPassword(password, (await one(env, "SELECT pw FROM admins WHERE id = ?", actor.id))?.pw ?? DUMMY_HASH);
+  if (right) await run(env, "DELETE FROM counters WHERE key = ?", `reauth|${actor.id}`);
+  else await audit(env, now, "login_failed", "reauth");
+  return right;
+}
 const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
 
 async function pbkdf2(password, saltBytes, rounds) {
@@ -5838,9 +5955,17 @@ async function pbkdf2(password, saltBytes, rounds) {
   return new Uint8Array(bits);
 }
 
+let pbkdf2Rounds = PBKDF2_ROUNDS;
 async function hashPassword(password) {
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
-  return `pbkdf2$${PBKDF2_ROUNDS}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, PBKDF2_ROUNDS))}`;
+  try {
+    return `pbkdf2$${pbkdf2Rounds}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, pbkdf2Rounds))}`;
+  } catch (e) {
+    if (pbkdf2Rounds === PBKDF2_FALLBACK || e?.name !== "NotSupportedError") throw e;
+    console.error(`pbkdf2 ${pbkdf2Rounds} refused, using ${PBKDF2_FALLBACK}: ${e?.message ?? e}`);
+    pbkdf2Rounds = PBKDF2_FALLBACK;
+    return `pbkdf2$${pbkdf2Rounds}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, pbkdf2Rounds))}`;
+  }
 }
 
 const DUMMY_HASH = `pbkdf2$${PBKDF2_ROUNDS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`;
@@ -5848,7 +5973,14 @@ const DUMMY_HASH = `pbkdf2$${PBKDF2_ROUNDS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAA
 async function checkPassword(password, stored) {
   const [kind, rounds, saltText, hashText] = String(stored).split("$");
   if (kind !== "pbkdf2") return false;
-  const got = await pbkdf2(password, Uint8Array.from(atob(saltText), (c) => c.charCodeAt(0)), Number(rounds));
+  // 2.0.0 [RVQ-08] 없는 계정의 가짜 해시가 거절된 횟수(위 PBKDF2_FALLBACK)로 되어 있으면 지금 쓰는 횟수로 맞춰 걸린 시간이 같게.
+  const n = stored === DUMMY_HASH ? pbkdf2Rounds : Number(rounds);
+  let got;
+  try {
+    got = await pbkdf2(password, Uint8Array.from(atob(saltText), (c) => c.charCodeAt(0)), n);
+  } catch {
+    return false;
+  }
   const want = Uint8Array.from(atob(hashText), (c) => c.charCodeAt(0));
   let diff = got.length ^ want.length;
   for (let i = 0; i < Math.min(got.length, want.length); i++) diff |= got[i] ^ want[i];
@@ -6043,6 +6175,9 @@ async function removeAdmin(env, id, now) {
     stmt(env, "DELETE FROM link_codes WHERE admin = ?", id),
     // [ADMIN-19] Their browsers stop getting web push.
     stmt(env, "DELETE FROM push_subscriptions WHERE admin = ?", id),
+    // 2.0.0 [RVQ-09] 검토 SRV-22 (나): 패스키·두 번째 확인 줄도 함께(로그인은 이미 안 되지만 남겨 둘 까닭이 없어요).
+    stmt(env, "DELETE FROM admin_passkeys WHERE admin = ?", id),
+    stmt(env, "DELETE FROM admin_totp WHERE admin = ?", id),
   ]);
   await audit(env, now, "admin_remove", a.email);
   return json(await adminList(env));
@@ -6065,7 +6200,7 @@ async function changePassword(request, env, actor, token, now) {
 
 /** [ADMIN-17] The activity log's 종류 filter: which actions each one holds (a trailing * is a prefix). */
 const AUDIT_KINDS = {
-  login: ["login", "login_failed", "logout_all", "password"],
+  login: ["login", "login_failed", "logout_all", "password", "session_end", "passkey_*", "second_*"],
   admins: ["invite*", "join", "admin_*", "device_*"],
   review: ["adopt", "reject", "reject_undo", "answer"],
   companies: ["company_*", "alias_*", "merge", "rule_*"],

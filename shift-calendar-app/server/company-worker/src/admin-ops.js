@@ -79,6 +79,8 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_owed: ["SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed' AND created_at < ?", now - REWARD_DAYS * DAY],
   ops_idle_admins: ["SELECT COUNT(*) AS n FROM admins WHERE status = 'active' AND COALESCE(last_login, approved_at, created_at) < ?", now - IDLE_ADMIN_DAYS * DAY],
   ops_passkey: ["SELECT COUNT(*) AS n FROM admin_passkeys WHERE admin = 'owner'"],
+  // 2.0.0 [RVQ-05] 검토 SRV-08·U21-05: 최고 관리자의 두 번째 확인(켬)이 있는지.
+  ops_second: ["SELECT COUNT(*) AS n FROM admin_totp WHERE admin = 'owner' AND on_at IS NOT NULL"],
 });
 
 /**
@@ -119,8 +121,20 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
     meta: owed.since ? `가장 오래된 것 ${Math.floor((now - owed.since) / DAY)}일째` : "", to: "#/rewards" });
   if (got.ops_idle_admins?.[0]?.n) out.push({ key: `idle-admins:${got.ops_idle_admins[0].n}`, kind: "nudge", tone: "warn",
     title: `${IDLE_ADMIN_DAYS}일 넘게 안 쓴 관리자 ${got.ops_idle_admins[0].n}명`, meta: "안 쓰는 계정은 멈춰 두면 안전해요(관리 › 관리자)", to: "#/admins" });
-  if (got.ops_passkey && !got.ops_passkey[0]?.n) out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
-    meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
+  // 2.0.0 [RVQ-05] 검토 SRV-08·U21-05: 최고 관리자는 두 번째 확인이나 패스키 중 하나는 꼭. 둘 다 없으면 비밀번호 하나에 기대니 붉게(맨 위 쪽).
+  const second = Boolean(got.ops_second?.[0]?.n);
+  const passkey = Boolean(got.ops_passkey?.[0]?.n);
+  if (got.ops_second && !second && got.ops_passkey && !passkey) {
+    out.unshift({ key: "owner:single", kind: "incident", tone: "bad", title: "최고 관리자가 비밀번호 하나로만 들어와요",
+      meta: "두 번째 확인이나 패스키 중 하나를 켜요(내 계정). 비밀번호가 새면 바로 들어올 수 있어요", to: "#/account" });
+  } else if (got.ops_passkey && !passkey) {
+    out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
+      meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
+  }
+  if (second && env?.ADMIN_2FA_RESET === "1") {
+    out.unshift({ key: "owner:2fa-reset", kind: "incident", tone: "bad", title: "최고 관리자 두 번째 확인이 꺼진 채예요",
+      meta: "Cloudflare의 ADMIN_2FA_RESET이 1이에요. 휴대폰을 찾았으면 지워요", to: "#/account" });
+  }
   return out;
 }
 

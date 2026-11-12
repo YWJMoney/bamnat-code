@@ -20,6 +20,9 @@ export function adminLib() {
     second_on: "두 번째 확인이 이미 켜져 있어요",
     second_off: "두 번째 확인이 이미 꺼져 있어요",
     second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
+    // 2.0.0 [RVQ-06][RVQ-07] 패스키 전 비밀번호 다시 확인, 로그인 목록
+    reauth: "비밀번호가 맞지 않아요. 한 시간에 5번까지 다시 넣을 수 있어요",
+    current: "지금 이 기기의 로그인은 '로그아웃'으로 끝내요",
     // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
     counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
     screen: "사진이 달라요 화면 종류를 알 수 없어요",
@@ -1295,6 +1298,7 @@ export function adminLib() {
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
+    passkey_add: "패스키 만듦", passkey_remove: "패스키 지움", session_end: "로그인 하나 끊음", // 2.0.0 [RVQ-06][RVQ-07]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
