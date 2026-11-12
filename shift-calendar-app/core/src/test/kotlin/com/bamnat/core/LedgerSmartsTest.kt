@@ -68,10 +68,11 @@ class LedgerSmartsTest {
     }
 
     @Test fun installmentsSayTheirTurnAndWhatIsLeft() {
+        // 2.0.0 [RVK-37] (검토 MONEY-48) By the bill, as 청구 기준 보기: without a card, the month after the payment is 1회차.
         val tv = e(MoneyKind.EXPENSE, 1_200_000, "전자랜드", date = LocalDate.of(2026, 8, 3)).copy(installments = 6)
-        assertEquals(3, LedgerSmarts.installmentOf(tv, YearMonth.of(2026, 10)))
-        assertEquals("6개월 할부 · 3/6회 · 남은 3회 600,000원", LedgerSmarts.installmentText(tv, day))
-        assertEquals(800_000L, LedgerSmarts.installmentsLeft(listOf(tv), day))
+        assertEquals(2, LedgerSmarts.installmentOf(tv, YearMonth.of(2026, 10)))
+        assertEquals("6개월 할부 · 2/6회 · 남은 4회 800,000원", LedgerSmarts.installmentText(tv, day))
+        assertEquals(1_000_000L, LedgerSmarts.installmentsLeft(listOf(tv), day))
     }
 
     @Test fun theLearnerPlacesAPlaceByItsLines() {

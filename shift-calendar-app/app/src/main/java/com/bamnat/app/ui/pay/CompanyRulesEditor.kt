@@ -353,7 +353,20 @@ fun CompanyRulesEditor(
                     Toggle("마감한 다음 달에 지급", "예: 말일 마감, 다음 달 10일 지급", period.payNextMonth) {
                         draft = draft.copy(period = period.copy(payNextMonth = it))
                     }
-                    period.payDate(month)?.let { Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요.") }
+                    // 2.0.0 [RVK-38] (검토 MONEY-79) A pay day on a weekend or 공휴일: when it comes, for 미래 잔액 and the money cards.
+                    Label("쉬는 날이면")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.pay.PayDayOff.entries.forEach { h ->
+                            FilterChip(selected = period.payDayOff == h, onClick = { draft = draft.copy(period = period.copy(payDayOff = h)) },
+                                label = { Text(h.label) })
+                        }
+                    }
+                    // One sentence (J 5차와 맞춤, 조건 4): the day it comes, and why when a 쉬는 날 moved it.
+                    period.payDate(month)?.let { d ->
+                        val w = period.payDateWorkday(month) ?: d
+                        Hint("${month.monthValue}월 급여는 ${w.monthValue}월 ${w.dayOfMonth}일에 들어와요" +
+                            if (w != d) "(${d.dayOfMonth}일이 쉬는 날이라 ${if (w.isBefore(d)) "앞당겨요" else "미뤄요"})." else ".")
+                    }
                 }
                 // 1.32 [CALX-06] 주급: the weekday it arrives; the week runs from the 주휴 week's first day.
                 Label("주급이면 받는 요일")

@@ -163,7 +163,9 @@ private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBo
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        Text("쓴 돈 ${Fmt.won(m.costs)} (유류비·정비·보험 포함)" + (if (m.fees > 0) " · 수수료 ${Fmt.won(m.fees)}" else "") + " · 남은 돈 ${Fmt.won(m.net)}",
+        // 2.0.0 [RVK-40] (검토 MONEY-49·T06b-04) 남은 돈 is what came: the 3.3% is off it, and what it was before is beside it.
+        Text("쓴 돈 ${Fmt.won(m.costs)} (유류비·정비·보험 포함)" + (if (m.fees > 0) " · 수수료 ${Fmt.won(m.fees)}" else "") + " · 남은 돈 ${Fmt.won(m.net)}" +
+            (if (m.withheld > 0) " (3.3% 떼기 전 ${Fmt.won(m.netBeforeTax)})" else ""),
             style = MaterialTheme.typography.bodyMedium)
         m.perHour?.let { Text("시간당 순수익 ${Fmt.won(it)} · 한 건 ${m.perCount?.let(Fmt::won) ?: "-"}", style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary) }

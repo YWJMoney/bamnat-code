@@ -96,11 +96,13 @@ object UpcomingPayments {
     private fun cardBills(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate): List<Upcoming> =
         accounts.filter { it.hasBill && !it.hidden }.flatMap { card ->
             val months = generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }.toList()
-            // fc374a23 PC 확인: what was paid to the card already comes off the bill (paid early or in parts too).
-            val owed = CardCycle.left(card, (1L..3L).map { YearMonth.from(from).minusMonths(it) } + months, entries, accounts, from)
+            // fc374a23 PC 확인: what was paid to the card already comes off the bill (paid early or in parts too). 2.0.0 [RVK-37] (검토
+            // MONEY-44) A part paid early leaves the rest due: no more one transfer of any amount near the day hiding the whole bill.
+            // A payment already written for a day still ahead counts too.
+            val owed = CardCycle.left(card, (1L..3L).map { YearMonth.from(from).minusMonths(it) } + months, entries, accounts, to)
             months.mapNotNull { m ->
                 val day = CardCycle.payDate(card, m)
-                if (day.isBefore(from) || day.isAfter(to) || CardCycle.paid(card, m, entries)) return@mapNotNull null
+                if (day.isBefore(from) || day.isAfter(to)) return@mapNotNull null
                 val amount = owed[m] ?: CardCycle.bill(card, m, entries, accounts).amount
                 if (amount <= 0) null else Upcoming(cardCost(card, amount), day, ChronoUnit.DAYS.between(from, day).toInt(), card.id)
             }
@@ -163,7 +165,9 @@ object Recurring {
      */
     fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, through: Map<Long, LocalDate> = emptyMap()): List<MoneyEntry> =
         costs.filter { it.auto && it.amount > 0 }.flatMap { c ->
-            val after = through[c.id]?.plusDays(1)
+            // 2.0.0 [RVK-41] (검토 MONEY-59) A mark past today (the phone's clock was set ahead and back) does not say today was done:
+            // today's line is written when it is not there yet, and the days after on their days instead of never.
+            val after = through[c.id]?.let { if (it.isAfter(today)) today else it.plusDays(1) }
             val from = listOfNotNull(c.start ?: after ?: today, after, today.minusDays(CATCH_UP_DAYS)).max()
             c.occurrences(from, today).filter { !UpcomingPayments.recorded(c, it, entries) }.map { UpcomingPayments.entry(c, it) }
         }.sortedWith(compareBy({ it.date }, { it.fixedId }))
@@ -189,6 +193,8 @@ object MoneyAlerts {
         accounts: List<MoneyAccount> = emptyList(),
         /** [SHOP-04] The kinds of work the user's calendars have, for the tax deadlines that go with them. */
         styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+        /** 2.0.0 [RVK-40] (검토 MONEY-50) The shops' 일반·간이과세. */
+        vat: Set<TaxDeadlines.Vat> = emptySet(),
     ): List<Alert> = buildList {
         for (j in jobs) {
             // [FLD-03] A cancelled job neither starts nor owes.
@@ -199,7 +205,8 @@ object MoneyAlerts {
                 val text = listOfNotNull(start.toString(), j.place.takeIf { it.isNotBlank() }, j.client.takeIf { it.isNotBlank() }).joinToString(" · ")
                 add(Alert(j.date.atTime(start).minusMinutes(before.toLong()), "job-${j.id}", j.title.ifBlank { "일감" }, "${JobReminders.label(before)} · $text"))
             }
-            if (j.unpaid > 0) {
+            // 2.0.0 [RVK-40] (검토 MONEY-51·T06b-05) A 가계약 is not money owed yet, as in 받을 돈 and 미래 잔액.
+            if (j.unpaid > 0 && j.status != JobStatus.TENTATIVE) {
                 // [FLD-09] The day after the promised day and a week after it; without one, after the last day.
                 val from = j.due ?: j.lastDate
                 for ((n, after) in listOf(1L, 7L).withIndex()) {
@@ -211,9 +218,11 @@ object MoneyAlerts {
         val until = YearMonth.from(today).plusMonths(1).atEndOfMonth()
         // A 카드값 line the card's own bill stands in for is not reminded twice ([UpcomingPayments.within]).
         for (c in costs.filter { it.remind && !UpcomingPayments.replacedByCard(it, accounts) }) for (due in c.occurrences(today, until)) {
-            // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written.
+            // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written. 2.0.0 [RVK-41] (검토
+            // MONEY-59) Only when it was written: the alert is worked out again when it rings, after the catching up.
             if (c.auto) {
-                add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}"))
+                add(if (UpcomingPayments.recorded(c, due, entries)) Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}")
+                    else Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 아직 안 적혔어요", "${c.name} ${won(c.amount)} · 눌러서 적어 주세요"))
                 continue
             }
             if (UpcomingPayments.recorded(c, due, entries)) continue
@@ -241,7 +250,7 @@ object MoneyAlerts {
             add(Alert(at.first.atTime(NUDGE_AT), "owed-${r.id}-$n", at.second, "${r.name}$who · ${won(r.left)}"))
         }
         // [SHOP-04] 부가세 and 종합소득세 deadlines for shop and field work.
-        for (t in TaxDeadlines.alerts(today, styles)) add(Alert(t.at, t.key, t.title, t.text))
+        for (t in TaxDeadlines.alerts(today, styles, vat)) add(Alert(t.at, t.key, t.title, t.text))
     }
 
     /** The alerts at the earliest time strictly after [now]; empty when none is ahead. */
@@ -250,8 +259,9 @@ object MoneyAlerts {
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
         styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+        vat: Set<TaxDeadlines.Vat> = emptySet(),
     ): List<Alert> {
-        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts, styles).filter { it.at.isAfter(now) }
+        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts, styles, vat).filter { it.at.isAfter(now) }
         val first = ahead.minOfOrNull { it.at } ?: return emptyList()
         return ahead.filter { it.at == first }.sortedBy { it.key }
     }
@@ -262,8 +272,9 @@ object MoneyAlerts {
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
         styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+        vat: Set<TaxDeadlines.Vat> = emptySet(),
     ): List<Alert> =
-        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles).filter { it.at == at }.sortedBy { it.key }
+        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles, vat).filter { it.at == at }.sortedBy { it.key }
 
     private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 }

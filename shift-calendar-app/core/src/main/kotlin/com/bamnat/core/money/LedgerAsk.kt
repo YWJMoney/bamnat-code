@@ -60,9 +60,17 @@ object LedgerAsk {
                 }
             }
             Question.NO_SPEND -> {
-                val spentDays = now.map { it.date }.toSet()
-                val days = today.dayOfMonth
-                "이번 달 ${days}일 중 ${days - spentDays.size}일은 적은 지출이 없어요."
+                // 2.0.0 [RVK-41] (검토 MONEY-56) From the first line the book has, as 통계's 무지출 날 ([Reports.month]): the days before
+                // the app was used are not days nothing was spent.
+                val first = entries.minOfOrNull { it.date }
+                val from = maxOf(month.atDay(1), first ?: today)
+                val spentDays = now.map { it.date }.filter { !it.isBefore(from) }.toSet()
+                val days = (java.time.temporal.ChronoUnit.DAYS.between(from, today) + 1).toInt().coerceAtLeast(0)
+                when {
+                    first == null || first.isAfter(today) -> "아직 적은 기록이 없어요."
+                    from == month.atDay(1) -> "이번 달 ${days}일 중 ${days - spentDays.size}일은 적은 지출이 없어요."
+                    else -> "처음 적은 ${from.monthValue}월 ${from.dayOfMonth}일부터 ${days}일 중 ${days - spentDays.size}일은 적은 지출이 없어요."
+                }
             }
         }
     }

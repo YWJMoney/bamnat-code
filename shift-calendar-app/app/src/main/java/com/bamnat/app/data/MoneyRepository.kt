@@ -121,6 +121,12 @@ class MoneyRepository(
         if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.EXPENSE && before.category != entry.category) {
             dao.upsertRule(CategoryRuleEntity(entry.merchant, entry.category))
         }
+        // 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 the app read as spending, told back to be the user's own money moving: that receiver
+        // stays a move from now on (a transfer category in the rule keeps [PaymentParser.withdrawSpending] from calling it spending).
+        if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.TRANSFER && before.kind == MoneyKind.EXPENSE &&
+            com.bamnat.core.money.LedgerSmarts.fromWithdraw(before)) {
+            dao.upsertRule(CategoryRuleEntity(entry.merchant, entry.category))
+        }
         return entry.also { dao.restoreEntry(it.toEntity(clock())) }
     }
 
@@ -269,7 +275,8 @@ class MoneyRepository(
         val since = today.minusDays(Recurring.CATCH_UP_DAYS + 366)
         val lines = dao.entriesFrom(since.toEpochDay()).map { it.toModel() }
         val written = Recurring.due(costs, lines, today, marks.all()).map { save(it) }
-        marks.put(costs.filter { c -> marks.all()[c.id]?.isBefore(today) != false }.associate { it.id to today })
+        // 2.0.0 [RVK-41] (검토 MONEY-59) A mark past today (the clock went ahead and back) comes back to today too.
+        marks.put(costs.filter { c -> marks.all()[c.id]?.let { it != today } != false }.associate { it.id to today })
         written
     }
 
@@ -389,7 +396,9 @@ class MoneyRepository(
         // [LEDG-20] Ads, bills to come and limit notices carry amounts too; they are not kept either.
         if (PaymentParser.notice(text) != null) return Outcome.IGNORED
         val arrived = LocalDateTime.ofInstant(Instant.ofEpochMilli(postedAt), Today.zone())
-        val result = PaymentParser.parse(text, arrived, rules())
+        // 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 to a name of the user's 반복 지출 is that spending.
+        val spending = allFixed().filter { it.kind == MoneyKind.EXPENSE && it.name.isNotBlank() }.associate { it.name to it.category }
+        val result = PaymentParser.parse(text, arrived, rules(), spending)
         val parsed = (result as? PaymentParser.Result.Ok)?.parsed
             // Without a time in the text, the time it arrived keeps two same-amount payments apart.
             ?.let { if (it.time == null) it.copy(time = arrived.toLocalTime().withSecond(0).withNano(0)) else it }

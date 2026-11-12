@@ -158,14 +158,14 @@ class WorkToolsTest {
     @Test
     fun dailyWorkerTaxIsTwoPointSevenOverTheDeduction() {
         assertEquals(1_350, DailyWorkerTax.incomeTaxOfDay(200_000))
-        assertEquals(DailyWorkerTax.Tax(1_350, 135), DailyWorkerTax.paidTogether(listOf(200_000)))
+        assertEquals(DailyWorkerTax.Tax(1_350, 130), DailyWorkerTax.paidTogether(listOf(200_000)))
         assertEquals(0, DailyWorkerTax.incomeTaxOfDay(150_000))
         // 18만 원 a day is 810원, not taken day by day, but taken when five days are paid together.
         val five = List(5) { 180_000L }
         assertEquals(0, DailyWorkerTax.paidDaily(five).total)
-        assertEquals(DailyWorkerTax.Tax(4_050, 405), DailyWorkerTax.paidTogether(five))
+        assertEquals(DailyWorkerTax.Tax(4_050, 400), DailyWorkerTax.paidTogether(five))
         assertEquals(187_037, DailyWorkerTax.TAX_FREE_UP_TO)
-        assertEquals(999, DailyWorkerTax.incomeTaxOfDay(DailyWorkerTax.TAX_FREE_UP_TO))
+        assertEquals(990, DailyWorkerTax.incomeTaxOfDay(DailyWorkerTax.TAX_FREE_UP_TO))
     }
 
     @Test

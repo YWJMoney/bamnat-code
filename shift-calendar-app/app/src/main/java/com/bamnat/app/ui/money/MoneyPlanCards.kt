@@ -116,6 +116,13 @@ fun NewRecordsCard(
     onPick: (MoneyEntry, String) -> Unit = { _, _ -> },
     /** 2.0.0 [RVK-13] The calendar whose '자동으로 정리한 것' shows under the new lines. */
     calendarId: String? = null,
+    /**
+     * 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 to someone the app could not tell ([com.bamnat.core.money.LedgerSmarts.spentOrMoved]):
+     * '쓴 돈 / 내 계좌로 옮김' under it, once for each receiver.
+     */
+    spentOrMoved: (MoneyEntry) -> Boolean = { false },
+    onSpent: (MoneyEntry) -> Unit = {},
+    onMoved: (MoneyEntry) -> Unit = {},
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
     var clearing by remember { mutableStateOf(false) }
@@ -133,6 +140,7 @@ fun NewRecordsCard(
             unseen.take(10).forEach { e ->
                 androidx.compose.runtime.key(e.id) {
                     PendingRow(e, onOpen = { onOpen(e) }, onConfirm = { onConfirm(listOf(e)) }, onDelete = { onDelete(listOf(e)) })
+                    if (spentOrMoved(e)) SpentOrMovedRow(onSpent = { onSpent(e) }, onMoved = { onMoved(e) })
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -158,6 +166,7 @@ fun NewRecordsCard(
         }
         if (!waiting) unseen.take(10).forEach { e ->
             EntryRow(e, showDate = true) { onOpen(e) }
+            if (spentOrMoved(e)) SpentOrMovedRow(onSpent = { onSpent(e) }, onMoved = { onMoved(e) })
             // E 1.32 [LEDX-05] Not sure where it goes: the two likeliest, one tap each.
             if (e.category == "기타") {
                 val g = remember(e) { guesses(e) }
@@ -189,6 +198,22 @@ fun NewRecordsCard(
         }
         // 2.0.0 [RVK-13] 뿌리 7: what was taken for a copy or joined, a tap away from what was written.
         AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_MONEY, calendarId)
+    }
+}
+
+/**
+ * 2.0.0 [RVK-39] (검토 MONEY-42) Under a bank 출금 to someone else: was it spending (월세·송금·계좌 결제) or the user's own money moving?
+ * The same quiet chips as '혹시' (no filled button, 조건 2), wrapping at 200% (조건 12).
+ */
+@Composable
+private fun SpentOrMovedRow(onSpent: () -> Unit, onMoved: () -> Unit) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
+    ) {
+        Text("이 돈은", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.AssistChip(onClick = onSpent, label = { Text("쓴 돈") })
+        androidx.compose.material3.AssistChip(onClick = onMoved, label = { Text("내 계좌로 옮김") })
     }
 }
 

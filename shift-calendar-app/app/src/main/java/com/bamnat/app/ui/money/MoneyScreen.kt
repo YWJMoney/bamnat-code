@@ -214,7 +214,8 @@ class MoneyViewModel(
             val pays = months.associateWith { m -> runCatching { payCalculator.calculate(profile, m, snapshot.resolver::resolve, checks = false) }.getOrNull() }
             val days = pays.mapNotNull { (m, p) ->
                 val gross = (closedTotal(m) ?: p?.total)?.takeIf { it > 0 } ?: return@mapNotNull null
-                val date = profile.period.payDate(m)
+                // 2.0.0 [RVK-38] (검토 MONEY-79) The day it really comes when the pay day is a weekend or 공휴일.
+                val date = profile.period.payDateWorkday(m)
                 com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), PayIncome.net(profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
             }
             // The latest month whose work is done: its take-home over the minutes it counted, and over the days worked.
@@ -346,9 +347,23 @@ class MoneyViewModel(
                 })
             }
             // [LEDG-06] Said once, when this line is the one that pushes a budget over.
-            val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, Today.date()) }.orEmpty()
+            // 2.0.0 [RVK-41] (검토 MONEY-53) Counted as the budget screen counts it: by 급여일 주기 when it is on, with 예산 넘김.
+            val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, Today.date(), budgetCycle(entry.date), budgetRolling()) }.orEmpty()
             if (crossed.isNotEmpty()) _undo.tryEmit(UndoMessage(overText(crossed), undo = null))
         }
+    }
+
+    /** 2.0.0 [RVK-41] The 급여일 주기 holding [date], when the budget is seen by pay cycle (as [MoneyScreen]'s `payCycle`). */
+    private fun budgetCycle(date: java.time.LocalDate): com.bamnat.core.money.PayCycle.Range? {
+        val s = settings.value
+        if (!s.moneyByPayCycle || s.workStyle?.usesPayEngine == false) return null
+        val p = payProfile.value?.period?.takeIf { it.payDay != null } ?: return null
+        return com.bamnat.core.money.PayCycle.forMonth(date, YearMonth.from(date)) { p.payDate(it) }
+    }
+
+    /** 2.0.0 [RVK-41] The categories set to carry over ([MoneyScreen]'s `rolling`). */
+    private fun budgetRolling(): Set<String> = settings.value.let { s ->
+        if (s.workStyle == com.bamnat.core.work.WorkStyle.INVEST) emptySet() else s.budgetRollover.split('\t').filter { it.isNotBlank() }.toSet()
     }
 
     private fun overText(crossed: List<BudgetLine>): String {
@@ -432,6 +447,21 @@ class MoneyViewModel(
 
     /** [COMN-04] Lines in 확인 대기함 confirmed, so they count. */
     fun confirm(list: List<MoneyEntry>) { container.appScope.launch { money.confirm(list) } }
+
+    /**
+     * 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 the user says was their own money moving: seen (confirmed in 확인 대기함), and that
+     * receiver stays a move from now on (a rule, shown and changeable in 분류 규칙). 되돌리기 takes both back.
+     */
+    fun keepAsMove(e: MoneyEntry) {
+        container.appScope.launch {
+            money.setRule(e.merchant, com.bamnat.core.money.LedgerSmarts.MOVE_CATEGORY)
+            money.save(e.copy(reviewed = true))
+            _undo.tryEmit(UndoMessage("‘${e.merchant}’(으)로 간 돈은 다음부터 내 계좌로 옮긴 돈으로 적어요") {
+                money.deleteRule(e.merchant)
+                money.save(e)
+            })
+        }
+    }
 
     /** [LEDG-22][LEDG-24] How 결제 알림으로 적기 was tuned, and repeats turned down. */
     val autoRecord: StateFlow<AutoRecordPrefs.State> = container.autoRecordPrefs.state
@@ -807,7 +837,12 @@ fun MoneyScreen(
                 onFinish = { finishing = it }, onDrop = vm::dropCapture,
                 waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete,
                 guesses = { e -> learner.guess(e).filter { it.category != "기타" } }, onPick = { e, c -> vm.recategorize(listOf(e), c) },
-                calendarId = vm.calendarId)
+                calendarId = vm.calendarId,
+                // 2.0.0 [RVK-39] (검토 MONEY-42) '쓴 돈' opens the line as 지출 to pick its kind (the pick is learned for that receiver);
+                // '내 계좌로 옮김' keeps it a move and remembers the receiver.
+                spentOrMoved = { e -> com.bamnat.core.money.LedgerSmarts.spentOrMoved(e, autoRecord.myNames, rules) },
+                onSpent = { e -> editing = com.bamnat.core.money.LedgerSmarts.asSpending(e, com.bamnat.core.money.MoneyCategories.OTHER).copy(reviewed = true) },
+                onMoved = vm::keepAsMove)
         },
         MoneyPart.AHEAD to {
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,

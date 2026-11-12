@@ -582,7 +582,9 @@ fun EntryDialog(
         ) { DatePicker(state, showModeToggle = false) }
     }
     if (pickingRefund && initial != null) {
-        val all = book?.entries.orEmpty()
+        // 2.0.0 [RVK-41] (검토 MONEY-11) The calendar's own book (달력 › 날짜 창 › 돈 passes none), not an empty list that always said
+        // "이만큼 쓴 결제가 없어요".
+        val all = entries
         RefundPickDialog(initial, all,
             onPick = { t -> pickingRefund = false; onSave(com.bamnat.core.money.LedgerChecks.linkRefund(initial, t, all)) },
             onKeep = { pickingRefund = false; onSave(initial.copy(note = initial.note.split(" · ").filter { it != "환불 받은 돈" && it != "원래 결제를 골라 주세요" }.joinToString(" · "), reviewed = true)) },

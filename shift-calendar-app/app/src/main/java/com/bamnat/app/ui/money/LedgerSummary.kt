@@ -557,6 +557,9 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                     (start?.let { s -> val d = now.net - s.net; " · ${s.date.monthValue}월 말보다 " + (if (d >= 0) "+" else "−") + Fmt.won(kotlin.math.abs(d)) } ?: ""),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 2.0.0 [RVK-37] (검토 MONEY-46) Bills gone past their day with no 카드값 written: counted as paid on the day, said in one line.
+            if (now.unrecorded > 0) Text("카드값을 적지 않은 달 ${now.unrecorded}개는 결제일에 나간 것으로 셈했어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (known.size >= 3) {
                 val line = MaterialTheme.colorScheme.primary
                 val values = known.map { it.net }
