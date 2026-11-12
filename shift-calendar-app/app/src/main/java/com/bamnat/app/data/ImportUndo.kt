@@ -36,12 +36,8 @@ class ImportUndo(
     suspend fun save() {
         val json = backups.exportFull()
         withContext(Dispatchers.IO) {
-            val part = File(file.parentFile, file.name + ".part")
-            part.writeText(json)
-            if (!part.renameTo(file)) {
-                file.writeText(json)
-                part.delete()
-            }
+            // 2.0.0 [RVL-77] (검토 I12b-03) Every link's key is in it: sealed by the phone's key, written whole.
+            com.bamnat.app.backup.Vault.writeFile(file, json)
             file.setLastModified(clock())
         }
         _savedAt.value = clock()
@@ -49,7 +45,7 @@ class ImportUndo(
 
     /** Puts the copy back. The copy is gone afterwards, so a second tap cannot undo twice. */
     suspend fun undo() {
-        val json = withContext(Dispatchers.IO) { file.takeIf { it.exists() }?.readText() } ?: throw BackupException("되돌릴 데이터가 없어요")
+        val json = withContext(Dispatchers.IO) { com.bamnat.app.backup.Vault.readFile(file) } ?: throw BackupException("되돌릴 데이터가 없어요")
         // [UNDO-03][HRLY-10] Calendars the import removed come back with their photos; their trash entries go.
         val ids = runCatching { org.json.JSONObject(json).optJSONArray("calendars") }.getOrNull()
             ?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it)?.optString("id")?.takeIf(String::isNotEmpty) } }.orEmpty()

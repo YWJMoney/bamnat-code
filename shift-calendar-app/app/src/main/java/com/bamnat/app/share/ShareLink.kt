@@ -1,5 +1,7 @@
 package com.bamnat.app.share
 
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import android.content.Context
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.ScheduleSnapshot
@@ -595,7 +597,7 @@ class ShareLinkStore(
         val state = ShareLinkState(
             id = id,
             url = prefs.getString("url", null) ?: return null,
-            deleteToken = prefs.getString("token", null) ?: return null,
+            deleteToken = prefs.secret("token") ?: return null, // 2.0.0 [RVL-77] sealed by the phone's key
             expiresAt = runCatching { Instant.parse(prefs.getString("expires", "")) }.getOrNull() ?: return null,
             title = prefs.getString("title", "") ?: "",
             ttlDays = prefs.getInt("ttl", 30),
@@ -607,7 +609,7 @@ class ShareLinkStore(
     /** [SHR-12] Saves the link as the server now has it; [sent] is the [ShareLinkPayload.fingerprint] of what was sent. */
     fun save(s: ShareLinkState, sent: String? = null) {
         if (retired) return
-        prefs.edit().putString("id", s.id).putString("url", s.url).putString("token", s.deleteToken)
+        prefs.edit().putString("id", s.id).putString("url", s.url).putSecret("token", s.deleteToken)
             .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
             .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
             .apply { if (sent != null) putString("sent", sent) }

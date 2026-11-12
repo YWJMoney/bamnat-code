@@ -83,6 +83,21 @@ class PhoneMove(
         return moved
     }
 
+    /**
+     * 2.0.0 [RVL-77] (검토 I12b-03) This phone's key went (the key store forgot it), so the keys sealed by it cannot be opened: the 프로
+     * recovery code and the keys of the user's links come back from the copy kept for Android's backup, which still holds them as they
+     * were at the last [keep]. Called at the start before [keep] writes that copy again. Returns how many links came back, or null
+     * when there was no copy (a phone below Android 9 keeps none).
+     */
+    @Synchronized
+    fun keysBack(): Int? {
+        val k = read(keys) ?: return null
+        val back = JSONObject()
+        k.optJSONObject("pro")?.let { back.put("pro", it) }
+        k.optJSONArray("shareLinks")?.let { back.put("shareLinks", it) }
+        return runCatching { take(back) }.getOrDefault(0)
+    }
+
     /** Writes what Android's backup should take now: at each start, after [arrive], and when the app goes to the background. */
     @Synchronized
     fun keep() {

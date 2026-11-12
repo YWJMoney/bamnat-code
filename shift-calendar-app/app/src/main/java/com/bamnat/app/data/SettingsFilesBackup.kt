@@ -23,17 +23,25 @@ class SettingsFilesBackup(
     private val onRestored: () -> Unit = {},
 ) {
 
-    /** One preferences file: all of its keys, or only [keys]. */
-    internal class Part(val name: String, val keys: Set<String>? = null)
+    /**
+     * One preferences file: all of its keys, or only [keys]. 2.0.0 [RVL-77] (검토 I12b-03) [sealedOnly]: a key to something (the 우리 조
+     * code lets anyone in the group see its schedules) goes only into a file saved with a password, and the phone-to-phone copy.
+     */
+    internal class Part(val name: String, val keys: Set<String>? = null, val sealedOnly: Boolean = false)
 
-    fun export(): JSONObject {
+    /** [sealed]: the file is saved with a password ([Part.sealedOnly] parts go in too). [onlySealed]: those parts alone. */
+    fun export(sealed: Boolean = true, onlySealed: Boolean = false): JSONObject {
         val prefs = JSONObject()
         for (part in PARTS) {
+            if (part.sealedOnly && !sealed) continue
+            if (onlySealed && !part.sealedOnly) continue
             val p = context.getSharedPreferences(part.name, Context.MODE_PRIVATE)
             val o = JSONObject()
             for ((k, v) in p.all) {
                 if (part.keys != null && k !in part.keys) continue
-                encode(v)?.let { o.put(k, it) }
+                // [RVL-77] A value sealed by this phone's key goes as it reads (another phone could not open it).
+                val value = if (v is String) com.bamnat.app.backup.Vault.open(v) ?: continue else v
+                encode(value)?.let { o.put(k, it) }
             }
             // [J133B-05] 1.33 빌드 9 확인 ("복원했는데 회사 적용이 그대로예요"): an empty part is written too, so a restore knows the
             // backup had none of it (no company applied) and takes away what came after, instead of keeping it.
@@ -60,8 +68,12 @@ class SettingsFilesBackup(
             }
             if (o.length() > 0) companies.put(id, o)
         }
+        if (onlySealed) return JSONObject().put("prefs", prefs)
         return JSONObject().put("prefs", prefs).put("recurringMarks", marks).apply { if (companies.length() > 0) put("calendarCompany", companies) }
     }
+
+    /** 2.0.0 [RVL-77] Whether a file saved without a password would leave something of a [Part.sealedOnly] part out. */
+    fun plainLeavesOut(): Boolean = PARTS.any { part -> part.sealedOnly && context.getSharedPreferences(part.name, Context.MODE_PRIVATE).all.isNotEmpty() }
 
     /** Puts back what [export] wrote; a part the file does not have keeps what this phone has. */
     fun restore(o: JSONObject?) {
@@ -160,7 +172,7 @@ class SettingsFilesBackup(
             Part("plaza_rate_hint", keys = setOf("own")),
             Part("calendar_view"),
             Part("auto_record"),
-            Part("share_group"),
+            Part("share_group", sealedOnly = true),
             Part("calendar_import", keys = setOf("auto")),
             // [READ-19] 1.27 AJ: 사진 읽기에서 고친 명세서 줄 이름·듀티표 글자.
             Part("read_fixes"),
@@ -220,6 +232,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVL-77] (검토 I12b-03) 열쇠 금고가 이 휴대폰의 열쇠로 잘 열리는지 보는 작은 값: 다른 휴대폰의 열쇠로는 열리지 않아요.
+            "key_vault" to "열쇠 금고 확인 값, 이 휴대폰의 열쇠로만 열려요",
             // 2.0.0 [RVI-17] 낮잠 깨우기: 이 휴대폰에 맞춘 알람 하나의 날·시각이라, 새 휴대폰에서 다시 울리지 않게 옮기지 않아요.
             "nap_wake" to "낮잠 깨우기 알람의 날과 시각, 이 휴대폰에 맞춘 알람의 것",
             // 2.0.0 [RVI-22] 꺼져 있던 사이 지나간 메모 알림을 어디까지 알렸는지: 이 휴대폰이 꺼져 있던 때의 일이라 옮기지 않아요.

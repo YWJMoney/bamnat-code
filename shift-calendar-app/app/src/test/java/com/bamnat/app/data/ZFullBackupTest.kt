@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -97,6 +98,8 @@ class ZFullBackupTest {
         val marks = RecurringMarks(marksFile)
         marks.put(mapOf(5L to LocalDate.of(2026, 10, 25)))
         val file = c.backupManager.export()
+        // 2.0.0 [RVL-77] (검토 I12b-03) The 우리 조 code lets anyone in the group see it: only a file with a password holds it.
+        val sealed = c.backupManager.exportSealed()
         assertTrue(JSONObject(file).has("settingsFiles"))
 
         // A new phone: nothing set, nothing in the files, its own install id and calendar choice.
@@ -123,10 +126,12 @@ class ZFullBackupTest {
         assertEquals(setOf("2026-10"), prefs("calendar_view").getStringSet("redWorked", null))
         assertEquals(123L, prefs("auto_record").getLong("since", 0))
         assertEquals(0.5f, prefs("auto_record").getFloat("weight", 0f))
-        assertEquals("A조", prefs("share_group").getString("group", null))
+        assertNull("암호 없는 파일에는 우리 조 코드가 없어요", prefs("share_group").getString("group", null))
         assertEquals("B조", prefs("duty_codes").getString("mine:main", null))
         assertEquals(true, prefs("calendar_import").getBoolean("auto", false))
         // What is this phone's own stays this phone's own.
+        c.backupManager.restore(sealed)
+        assertEquals("A조", prefs("share_group").getString("group", null))
         assertEquals("new-phone", prefs("company").getString("device", null))
         assertEquals("1", prefs("calendar_import").getString("chosen", null))
         // The repeating money lines know how far they were written, read again without restarting the app.

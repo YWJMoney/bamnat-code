@@ -950,6 +950,12 @@ class AppContainer(context: Context) {
             // 2.0.0 [RVL-05][RVL-06] (검토 DATA-02·U12-03) A phone the data came to by Android's own backup (구글 계정, 휴대폰 옮기기) takes the
             // settings kept apart in, once, and plans its alarms (Android plans none until the app opens); then the carry is kept fresh.
             // On every other start this is one look at a file; writing the carry waits off the way to the first month.
+            // 2.0.0 [RVL-77] (검토 I12b-03) The keys are sealed by this phone's key; if it went, they come back from the copy Android's backup
+            // carries, before that copy is written again below.
+            runCatching {
+                if (!com.bamnat.app.backup.Vault.check(appContext.getSharedPreferences("key_vault", android.content.Context.MODE_PRIVATE)))
+                    phoneMove.keysBack()
+            }
             runCatching {
                 phoneMove.arrive()?.let {
                     journal.note(com.bamnat.core.journal.JournalKind.PHONE_MOVED)

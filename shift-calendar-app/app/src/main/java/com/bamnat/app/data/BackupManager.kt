@@ -44,14 +44,16 @@ class BackupException(message: String) : Exception(message)
  * the keys that change the links the user made, the 프로 recovery code. The save dialog says it before (and the message after) saving,
  * in the user's own words, so a 사장님 does not move to a new phone without the 대장.
  */
-data class PlainLeavesOut(val workplaces: Int, val staff: Int, val links: Int, val proCode: Boolean) {
-    val isEmpty: Boolean get() = workplaces == 0 && links == 0 && !proCode
+data class PlainLeavesOut(val workplaces: Int, val staff: Int, val links: Int, val proCode: Boolean, val groupCode: Boolean = false) {
+    val isEmpty: Boolean get() = workplaces == 0 && links == 0 && !proCode && !groupCode
 
     /** "직원 3명과 급여 대장, 공유 링크 2개를 고치는 열쇠, 프로 복구 코드". */
     val words: String get() = listOfNotNull(
         (if (staff > 0) "직원 ${staff}명과 급여 대장" else "사업장과 급여 대장").takeIf { workplaces > 0 },
         "공유 링크 ${links}개를 고치는 열쇠".takeIf { links > 0 },
         "프로 복구 코드".takeIf { proCode },
+        // 2.0.0 [RVL-77] (검토 I12b-03)
+        "우리 조 코드".takeIf { groupCode },
     ).joinToString(", ")
 
     /** The save dialog's line: "직원 3명과 급여 대장은 암호를 걸어야 들어가요". */
@@ -346,7 +348,8 @@ class BackupManager(
     suspend fun plainLeavesOut(): PlainLeavesOut {
         val d = db.payrollDao()
         val places = d.workplaces().size
-        return PlainLeavesOut(places, if (places > 0) d.staff().size else 0, shareLinks?.count() ?: 0, pro()?.hasCode == true)
+        return PlainLeavesOut(places, if (places > 0) d.staff().size else 0, shareLinks?.count() ?: 0, pro()?.hasCode == true,
+            groupCode = settingsFiles()?.plainLeavesOut() == true)
     }
 
     /**
@@ -358,7 +361,7 @@ class BackupManager(
         guide?.let { put("featuresOff", it.exportOff()); put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> put("teams", JSONObject(t.export() as Map<*, *>)) }
         dutyCodes()?.let { d -> put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
-        settingsFiles()?.let { put("settingsFiles", it.export()) }
+        settingsFiles()?.let { put("settingsFiles", it.export(sealed = false)) }
         pro()?.let { put("pro", it.toBackup(withCode = false)) }
     }
 
@@ -369,6 +372,9 @@ class BackupManager(
     fun carryKeys(): JSONObject = JSONObject().apply {
         pro()?.takeIf { it.hasCode }?.let { put("pro", it.toBackup(withCode = true)) }
         shareLinks?.let { put("shareLinks", it.export(withKeys = true)) }
+        // 2.0.0 [RVL-77] The 우리 조 code, kept out of the plain carry.
+        settingsFiles()?.export(onlySealed = true)?.takeIf { (it.optJSONObject("prefs")?.optJSONObject("share_group")?.length() ?: 0) > 0 }
+            ?.let { put("sealedFiles", it) }
     }
 
     /**
@@ -382,6 +388,7 @@ class BackupManager(
         o.optJSONObject("dutyCodes")?.let { d -> dutyCodes()?.import(d.keys().asSequence().associateWith { d.optString(it) }) }
         o.optJSONObject("settingsFiles")?.let { settingsFiles()?.restore(it) }
         o.optJSONObject("pro")?.let { p -> pro()?.fromBackup(p) }
+        o.optJSONObject("sealedFiles")?.let { settingsFiles()?.restore(it) }
         return o.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) } ?: 0
     }
 
@@ -678,7 +685,7 @@ class BackupManager(
         pro()?.let { root.put("pro", it.toBackup(withCode = sealed)) }
         shareLinks?.let { root.put("shareLinks", it.export(withKeys = sealed)) }
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
-        settingsFiles()?.let { root.put("settingsFiles", it.export()) }
+        settingsFiles()?.let { root.put("settingsFiles", it.export(sealed)) }
         val s = settings.current
         if (s.setupLater) setupDrafts()?.draft?.value?.takeIf { !it.committing }?.let { root.put("setupDraft", SetupDraftCodec.encode(it.copy(later = true))) }
         root.put(
@@ -1140,10 +1147,9 @@ class BackupManager(
     private suspend fun keepGuard(json: String): java.io.File? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val dir = guard ?: return@withContext null
         dir.mkdirs()
-        val part = java.io.File(dir, "$GUARD.part")
-        part.writeText(json)
+        // 2.0.0 [RVL-77] (검토 I12b-03) Every link's key is in it: sealed by the phone's key, written whole (a part file renamed).
         val file = java.io.File(dir, GUARD)
-        if (!part.renameTo(file)) { file.writeText(json); part.delete() }
+        com.bamnat.app.backup.Vault.writeFile(file, json)
         file
     }
 
@@ -1165,7 +1171,7 @@ class BackupManager(
         if (!file.isFile) { java.io.File(dir, "$GUARD.part").delete(); return false }
         if (!file.renameTo(tried)) return false
         return try {
-            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { tried.readText() }
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.bamnat.app.backup.Vault.readFile(tried) ?: throw java.io.IOException("sealed by a key this phone no longer has") }
             restore(parse(json), null, java.util.concurrent.atomic.AtomicBoolean())
             true
         } catch (e: kotlinx.coroutines.CancellationException) {

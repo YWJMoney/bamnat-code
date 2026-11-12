@@ -94,7 +94,8 @@ class AutoBackupTest {
         assertTrue(c.backupManager.isSealed(text))
         val json = c.backupManager.unseal(text, password.toCharArray())
         fun body(s: String) = org.json.JSONObject(s).apply { remove("exportedAt") }.toString()
-        assertEquals(body(c.backupManager.export()), body(json))
+        // 2.0.0 [RVL-77] The automatic backup is sealed: it holds what a sealed file holds (the 우리 조 part too).
+        assertEquals(body(c.backupManager.exportSealed()), body(json))
         assertEquals(AutoBackup.FILE_NAME, auto.state.value.name)
         assertEquals(now, auto.state.value.lastOk)
 
