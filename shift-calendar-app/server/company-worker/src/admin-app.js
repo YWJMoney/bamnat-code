@@ -891,8 +891,8 @@ function adminApp(L, BUILD, M) {
       // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
       // 1.38 [DESK-02][DESK-03] 운영 장부: 보기·종류·판·찾기로 거른 줄, 그리고 정리함에 있던 넘길 글(넘기기 칸).
       if (name === "desk") {
-        const p = new URLSearchParams({ view: S.deskView || "today", ...(S.deskGroup ? { group: S.deskGroup } : {}), ...(S.deskV ? { v: S.deskV } : {}), ...(S.deskQuery ? { q: S.deskQuery } : {}) });
-        jobs.push(api(`/ledger?${p}`).then(keep((d) => { S.data.ledger = d; S.data.sort = { auto: d.auto ?? { fixed: false, known: false } }; })));
+        // 2.0.0 [RVA-48] 검토 ADMX-08(도약 42): 50줄씩(ledger.js ledgerPath).
+        jobs.push(api(V.ledgerPath()).then(keep((d) => { S.data.ledger = d; S.data.sort = { auto: d.auto ?? { fixed: false, known: false } }; })));
         if (can("inquiries")) jobs.push(api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
       }
       // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
@@ -915,7 +915,7 @@ function adminApp(L, BUILD, M) {
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
       if (name === "companies" && !id) jobs.push(api(companiesPath()).then(keep((d) => { S.data.list = d; })));
       // 1.39 [ADM3-45] 이름이 비슷한 회사 짝(합칠까요?): 목록을 기다리게 하지 않아요.
-      if (name === "companies" && !id && can("companies", "edit")) api("/companies/similar").then(keep((d) => { S.data.similar = d; if (S.route.name === "companies" && !S.route.id) render({ keepScroll: true }); })).catch(() => {});
+      if (name === "companies" && !id && can("companies", "edit")) api("/companies/similar").then(keep((d) => { S.data.similar = d; if (S.route.name === "companies" && !S.route.id) renderSoon(); })).catch(() => {});
       if (name === "companies" && id) jobs.push(api(`/companies/${encodeURIComponent(id)}`).then(keep((d) => { S.data.company = d; })));
       if (name === "community") {
         // An id is one talk: company.setup, opened from the review screen.
@@ -953,7 +953,7 @@ function adminApp(L, BUILD, M) {
         const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
         jobs.push(api(`/metrics?${name === "gates" ? "days=28" : range}`).then(keep((d) => { S.data[name === "gates" ? "gates" : "metrics"] = d; })));
         // [ADMUX-15] The remote files are read from the site by the server; a slow site does not hold the screen.
-        api("/remote").then(keep((d) => { S.data.remote = d; if (S.route.name === "metrics" || S.route.name === "gates") render({ keepScroll: true }); })).catch(() => {});
+        api("/remote").then(keep((d) => { S.data.remote = d; if (S.route.name === "metrics" || S.route.name === "gates") renderSoon(); })).catch(() => {});
       }
       if (name === "versions") jobs.push(api(`/versions?show=${encodeURIComponent(S.versionShow)}`).then(keep((d) => { S.data.versions = d; })));
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
@@ -963,7 +963,7 @@ function adminApp(L, BUILD, M) {
         const t = S.recipeTab ?? "flagged";
         // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
         const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
-          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}` }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : `/recipes?tab=${t}`);
+          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}` }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : recipeListPath(t));
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         // 1.36 [MKS-01] 출시 대기 묶음.
@@ -988,7 +988,7 @@ function adminApp(L, BUILD, M) {
       if (name === "server") jobs.push(api("/server").then(keep((d) => { S.server = d; })));
       // AM 1.28 [ADMUX-21][ADMUX-22][ADMUX-25][ADMUX-26] 출시 › 기능 관리 (list, timeline, one flag) and 근무 유형.
       if (name === "flags" && !id) jobs.push(api("/flags").then(keep((d) => { S.data.flags = d; })));
-      if (name === "flags" && !id && S.flagView === "timeline" && can("ops")) api("/ops").then(keep((d) => { S.data.flagOps = d; if (S.route.name === "flags") render({ keepScroll: true }); })).catch(() => {});
+      if (name === "flags" && !id && S.flagView === "timeline" && can("ops")) api("/ops").then(keep((d) => { S.data.flagOps = d; if (S.route.name === "flags") renderSoon(); })).catch(() => {});
       if (name === "flags" && id) jobs.push(api(`/flags/${encodeURIComponent(id)}`).then(keep((d) => { S.data.flag = d; })));
       if (name === "types") jobs.push(api("/types").then(keep((d) => { S.data.types = d; })));
       // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과: each flag's share of phones and problems before and after it turned on.
@@ -1009,16 +1009,16 @@ function adminApp(L, BUILD, M) {
       } else if (name === "inquiries" && id && can("inquiries") && (person?.for !== id || person.stale || (person.d === null && !person.loading))) {
         S.data.person = person?.for === id && person.d ? { ...person, stale: false } : { for: id, loading: true };
         api(personPath).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
-          .then(() => { if (S.route.name === "inquiries" && S.route.id === id) render({ keepScroll: true }); });
+          .then(() => { if (S.route.name === "inquiries" && S.route.id === id) renderSoon(); });
       }
       // 1.38 [ADM3-10] 장부 맨 위 단계 막대(흐름 한 줄).
       if (name === "desk" && can("inquiries")) {
-        api("/flow").then(keep((d) => { S.data.flowStrip = d; if (S.route.name === "desk") render({ keepScroll: true }); })).catch(() => {});
+        api("/flow").then(keep((d) => { S.data.flowStrip = d; if (S.route.name === "desk") renderSoon(); })).catch(() => {});
       }
       // PC 1.39 G10 2차: 다시 열면 옛 이야기가 먼저 보였어요. 들어올 때마다 새로 읽어요(그동안은 옛 것을 숨김).
       if (name === "dev" && id && can("dev")) {
         if (!quiet && S.data.story?.id === id) S.data.story = null;
-        api(`/story/${encodeURIComponent(id)}`).then(keep((d) => { S.data.story = d; if (S.route.name === "dev" && S.route.id === id) render({ keepScroll: true }); })).catch(() => {});
+        api(`/story/${encodeURIComponent(id)}`).then(keep((d) => { S.data.story = d; if (S.route.name === "dev" && S.route.id === id) renderSoon(); })).catch(() => {});
       }
       const results = await Promise.allSettled(jobs);
       const failed = results.find((r) => r.status === "rejected" && !r.reason?.quiet);
@@ -1090,7 +1090,18 @@ function adminApp(L, BUILD, M) {
   /** [ADMUX-01] What the frame was drawn for; while it holds, a repaint only redraws the screen inside. */
   let shellKey = "";
 
+  // 2.0.0 [RVA-47] 검토 ADM-24: 화면을 연 뒤 늦게 오는 답(비슷한 회사·원격 파일·흐름 띠·이야기·문의 옆 정보)마다 화면 전체를 다시 그리던 것을
+  // 한 틀(프레임)에 한 번으로 모아요. 그사이 다른 그리기가 먼저 돌면 그것이 대신해요(같은 S.data를 그려요).
+  let soonId = 0;
+  const frame = (f) => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(f) : setTimeout(f, 16));
+  const unframe = (id) => (typeof cancelAnimationFrame === "function" ? cancelAnimationFrame(id) : clearTimeout(id));
+  function renderSoon() {
+    if (soonId) return;
+    soonId = frame(() => { soonId = 0; if (S.phase === "app") render({ keepScroll: true }); });
+  }
+
   function render({ keepScroll = false } = {}) {
+    if (soonId) { unframe(soonId); soonId = 0; }
     if (S.phase === "boot") return;
     if (S.phase !== "app") {
       shellKey = "";
@@ -3429,6 +3440,16 @@ function adminApp(L, BUILD, M) {
   const RECIPE_SECTIONS = { theme: "테마", tab: "탭별 작품", part: "도구 · 부품", logic: "도구 · 규칙·단추" };
   const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
 
+  /**
+   * 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 장터 목록은 50개씩 이어 받아요. 찾기·구간은 서버가 걸러요(받은 것 안에서만 찾던 것).
+   */
+  const RECIPE_PAGE = 50;
+  function recipeListPath(t, offset = 0) {
+    const q = (S.recipeQuery ?? "").trim();
+    const sec = S.recipeSection ?? "all";
+    return `/recipes?tab=${encodeURIComponent(t)}&limit=${RECIPE_PAGE}${offset ? `&offset=${offset}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}${sec !== "all" ? `&section=${encodeURIComponent(sec)}` : ""}`;
+  }
+
   function recipesView() {
     const d = S.data.recipes;
     const m = S.data.recipeMonth;
@@ -3439,7 +3460,9 @@ function adminApp(L, BUILD, M) {
     const sec = S.recipeSection ?? "all";
     const listTab = !["picks", "images", "tools", "requests", "makers", "month", "fonts", "one"].includes(tab);
     const ready = d && (d.tab ?? tab) === tab && !(tab === "one" && d.code !== S.recipeCode);
-    const secCounts = ready && listTab && d.items?.some((r) => r.section) ? [["all", "모든 구간", d.items.length], ...Object.entries(RECIPE_SECTIONS).map(([k, label]) => [k, label, d.items.filter((r) => r.section === k).length])] : null;
+    const paged = ready && d.total !== undefined;
+    const secCounts = ready && listTab && (paged ? Object.keys(d.sections ?? {}).length > 1 : d.items?.some((r) => r.section))
+      ? [["all", "모든 구간", paged ? d.sections.all : d.items.length], ...Object.entries(RECIPE_SECTIONS).map(([k, label]) => [k, label, paged ? d.sections[k] ?? 0 : d.items.filter((r) => r.section === k).length])] : null;
     const secChips = secCounts ? `<div class="chips" role="group" aria-label="구간">${secCounts.map(([k, label, n]) =>
       `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${n}</button>`).join("")}</div>` : "";
     const chips = listHead(`<div class="segmented" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
@@ -3471,10 +3494,11 @@ function adminApp(L, BUILD, M) {
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
     const q = (S.recipeQuery ?? "").trim().toLowerCase();
-    const found = (sec === "all" ? d.items : d.items.filter((r) => r.section === sec))
+    const found = paged ? d.items : (sec === "all" ? d.items : d.items.filter((r) => r.section === sec))
       .filter((r) => !q || [r.title, r.code, r.nick, r.summary, r.batch].some((x) => String(x ?? "").toLowerCase().includes(q)));
     const limit = S.recipeLimit ?? 40;
-    const shown = found.slice(0, limit);
+    const shown = paged ? d.items : found.slice(0, limit);
+    const foundN = paged ? d.total : found.length;
     // ⋯ 안의 단추: 주된 것(상태마다 하나) 말고 나머지.
     const rowMore = (r) => {
       const items = [
@@ -3500,7 +3524,7 @@ function adminApp(L, BUILD, M) {
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side row-acts">${mainAct(r)}${rowMore(r)}</span>` : ""}</div></li>`).join("")}</ul>
-      ${found.length > shown.length ? `<div class="more"><button class="btn" data-act="recipe-more">더 보기 <span class="meta">${shown.length}/${found.length}</span></button></div>` : ""}`
+      ${foundN > shown.length ? `<div class="more"><button class="btn" data-act="recipe-more">더 보기 <span class="meta">${shown.length}/${foundN}</span></button></div>` : ""}`
       : q ? empty("찾는 레시피가 없어요", "이름·코드·만든 분 이름으로 찾아요.") : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
     const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
       : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
@@ -6612,9 +6636,19 @@ function adminApp(L, BUILD, M) {
     },
     // [RCP-39]
     "recipe-tab": ({ key }) => { S.recipeTab = key; S.recipeSection = "all"; S.recipeLimit = 40; S.data.recipes = null; load(); },
-    "recipe-section": ({ key }) => { S.recipeSection = key; S.recipeLimit = 40; render({ keepScroll: true }); },
+    // [RVA-48] 구간·더 보기는 서버에서 50개씩.
+    "recipe-section": ({ key }) => { S.recipeSection = key; S.recipeLimit = 40; if (S.data.recipes?.total !== undefined) load({ quiet: true }); else render({ keepScroll: true }); },
     // 2.0.0 [RVA-24] 검토 T24-08: 40개씩 더 그려요(709개를 한 번에 그리면 26만 px).
-    "recipe-more": () => { S.recipeLimit = (S.recipeLimit ?? 40) + 40; render({ keepScroll: true }); },
+    "recipe-more": async () => {
+      const d = S.data.recipes;
+      if (d?.total === undefined) { S.recipeLimit = (S.recipeLimit ?? 40) + 40; return render({ keepScroll: true }); }
+      if (d.next === null || d.next === undefined) return;
+      const n = await act(() => api(recipeListPath(d.tab, d.next)));
+      if (!n || S.data.recipes !== d) return;
+      const have = new Set(d.items.map((r) => r.code));
+      S.data.recipes = { ...d, ...n, tab: d.tab, items: [...d.items, ...n.items.filter((r) => !have.has(r.code))] };
+      render({ keepScroll: true });
+    },
     // PC ce2b7091 사용성 제안: 고친 판에서 원본으로. 지금 목록에 있으면 그 줄로, 없으면 코드를 복사해요.
     "recipe-find": ({ id }) => {
       const row = [...document.querySelectorAll("[data-act='recipe-do']")].find((b) => b.dataset.id === id)?.closest("li");
@@ -7671,9 +7705,10 @@ function adminApp(L, BUILD, M) {
     // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
     flags: () => ["flagQuery", "flags", async () => {}],
     // 1.38 [DESK-02] 운영 장부: 번호·글·개발사항으로.
-    desk: () => ["deskQuery", "ledger", () => load({ quiet: true })],
+    desk: () => ["deskQuery", "ledger", () => { S.deskShown = 0; return load({ quiet: true }); }],
     // 2.0.0 [RVA-24] 마을 장터: 받은 목록 안에서 찾아요.
-    recipes: () => ["recipeQuery", "recipes", async () => { S.recipeLimit = 40; }],
+    // 2.0.0 [RVA-48] 서버가 찾아요(50개씩 받으니 받은 것 안에서만 찾으면 빠져요).
+    recipes: () => ["recipeQuery", "recipes", () => { S.recipeLimit = 40; return load({ quiet: true }); }],
   };
 
   /**
@@ -7703,6 +7738,8 @@ function adminApp(L, BUILD, M) {
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
     if (e.target instanceof HTMLDetailsElement && e.target.dataset.key) S.opened.set(e.target.dataset.key, e.target.open);
+    // 2.0.0 [RVA-48] 검토 ADM-23: 장부 줄은 펼칠 때 상세를 그려요.
+    if (e.target instanceof HTMLDetailsElement && e.target.open && e.target.dataset.key?.startsWith("lg-")) V.ledgerFill?.(e.target);
     // 1.39 PC 7차 1-8: 펼치기 ↔ 접기 말도 바로 바꿔요(다시 그리기를 기다리지 않고).
     const more = e.target instanceof HTMLDetailsElement ? e.target.querySelector(":scope>summary .more") : null;
     if (more && (more.textContent === "펼치기" || more.textContent === "접기")) more.textContent = e.target.open ? "접기" : "펼치기";
@@ -7862,6 +7899,8 @@ function adminApp(L, BUILD, M) {
       el.parentElement.open = !el.parentElement.open;
       return;
     }
+    // 2.0.0 [RVA-49] 노트북 장부의 줄은 줄 자체가 단추(오른쪽 칸에 열기)예요.
+    if (el?.matches?.("[data-act]")) return el.click();
     const link = el?.matches("a,button") ? el : el?.querySelector("a,button");
     link?.click();
   }

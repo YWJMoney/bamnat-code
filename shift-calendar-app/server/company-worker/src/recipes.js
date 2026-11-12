@@ -2211,7 +2211,26 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'" }[tab]
       ?? "state = 'pending'";
     // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개 중 200개만 보이고 구간 수가 틀려요): 출시 대기 lists the whole batch.
-    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" || tab === "retired" ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
+    const all = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" || tab === "retired" ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
+    // 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 관리자 앱은 limit=50으로 50개씩 이어 받아요(출시 대기 1,200개를 본문째 2.19MB 한 번에 받던 것).
+    // 찾기(q)·구간(section)은 서버가 거르고, 구간 칩의 수(sections)는 거르기 전 전체로 세요. limit이 없으면 전처럼 모두(다른 쓰는 곳 그대로).
+    const limit = Math.min(200, Math.max(0, Number(url.searchParams.get("limit")) || 0));
+    const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+    let rows = all;
+    let paged = null;
+    if (limit && tab !== "one") {
+      const q = String(url.searchParams.get("q") ?? "").trim().toLowerCase().slice(0, 60);
+      const sec = url.searchParams.get("section") ?? "all";
+      const withSec = all.map((r) => ({ r, section: sectionOf(r.body).scope }));
+      const sections = { all: all.length };
+      for (const x of withSec) if (x.section) sections[x.section] = (sections[x.section] ?? 0) + 1;
+      const found = withSec.filter((x) => (sec === "all" || x.section === sec) && (!q || (() => {
+        const li = listItem(x.r, now);
+        return [li.title, li.code, li.nick, li.summary, x.r.batch].some((v) => String(v ?? "").toLowerCase().includes(q));
+      })())).map((x) => x.r);
+      rows = found.slice(offset, offset + limit);
+      paged = { total: found.length, next: offset + limit < found.length ? offset + limit : null, offset, sections };
+    }
     // D1 takes at most 100 bound values in one query, so the codes go in groups (a list of 200 failed on the real server).
     const byCodes = async (sql) => {
       const out = [];
@@ -2231,7 +2250,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       const n = (why) => q.find((x) => x.why === why)?.n ?? 0;
       return q.length ? { fresh: n("new"), net: n("net") } : null;
     };
-    return d.json({ tab, ...(tab === "one" ? { code } : {}), items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
+    return d.json({ tab, ...(tab === "one" ? { code } : {}), ...(paged ?? {}), items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
       ...(r.release_at ? { releaseAt: new Date(r.release_at).toISOString() } : {}), ...(r.min_app ? { minApp: r.min_app } : {}), ...(r.batch ? { batch: r.batch } : {}),
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
       quiet: quietOf(r.code), hidden: r.hidden_reason ?? null, ...(r.retired_below ? { retiredBelow: r.retired_below } : {}) })) });

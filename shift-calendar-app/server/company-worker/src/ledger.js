@@ -528,7 +528,11 @@ export async function ledgerRoute(request, env, url, path, now) {
   if (path === "/ledger" && method === "GET") {
     const d = await ledgerQuery(env, actor, now, url.searchParams);
     const page = Math.max(0, Number(url.searchParams.get("page")) || 0);
-    return json({ ...d, items: d.items.slice(page * LEDGER.page, (page + 1) * LEDGER.page), more: d.items.length > (page + 1) * LEDGER.page });
+    // 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 관리자 앱은 limit=50으로 50줄씩 이어 받아요(1.79MB를 한 번에 받던 것). 열쇠·CSV는 그대로 300줄·모두.
+    const size = Math.min(LEDGER.page, Math.max(10, Number(url.searchParams.get("limit")) || LEDGER.page));
+    const more = d.items.length > (page + 1) * size;
+    return json({ ...d, items: d.items.slice(page * size, (page + 1) * size), more, next: more ? page + 1 : null, page, size,
+      lateTotal: d.items.filter((r) => r.late).length });
   }
   if (path === "/ledger.csv" && method === "GET") {
     const d = await ledgerQuery(env, actor, now, url.searchParams);

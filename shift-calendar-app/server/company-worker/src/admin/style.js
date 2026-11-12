@@ -988,6 +988,16 @@ details.card.loop-fold[open]>summary{margin-bottom:.6rem}
 .rows.ledger>li.lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;padding:.5rem .85rem;background:var(--soft)}
 .rows.ledger>li.lg-group small{font-size:min(.8rem,16px);color:var(--muted)}
 .rows.ledger>li.lg-group.rest b{font-size:min(.8rem,16px);font-weight:700;color:var(--muted)}
+/* 2.0.0 [RVA-49] 검토 U23-05: 노트북(1280px~)은 목록 옆 칸에 상세, 줄은 제자리. 표는 칸 너비에 맞춰 덜 중요한 칸부터 접어요(.lg-table 컨테이너) */
+.lg-split.on{display:grid;grid-template-columns:minmax(0,1fr) minmax(20rem,27rem);gap:1rem;align-items:start}
+.lg-side{position:sticky;top:calc(var(--top-h,4.75rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.75rem) - 1.25rem);overflow:auto;background:var(--surface);
+border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+.lg-side-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.6rem .6rem .6rem .95rem;border-bottom:1px solid var(--line)}
+.lg-side-head>span{min-width:0;font-weight:700;overflow-wrap:anywhere}
+.lg-side-head b{font-variant-numeric:tabular-nums;color:var(--muted);margin-right:.35rem}
+.lg-side .lg-detail{border-top:0;padding-top:.6rem}
+.rows.ledger>li.lg-line>.lg-row{cursor:pointer}
+.rows.ledger>li.lg-line.on>.lg-row{background:var(--hover);box-shadow:inset 3px 0 0 var(--accent)}
 .next-bar{display:flex;align-items:center;gap:.7rem;padding:.7rem .75rem .7rem 1rem;margin:0 0 .9rem;border-radius:var(--r);background:var(--accent-soft);
 border:1px solid color-mix(in srgb,var(--accent) 22%,transparent)}
 .next-bar>svg{flex:none;width:1.1rem;height:1.1rem;color:var(--accent)}

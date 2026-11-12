@@ -351,6 +351,14 @@ test("[ADMUX-04] the palette offers what was opened last, and home the saved vie
 // ---- 1.25 묶음 AA: 받은함, 여러 판, 지표 기간, 광장 일괄 (끝에서 끝: 화면의 단추 → 서버가 가진 것) ----
 
 /** Remote files and Play are not reachable from a test; the page must still draw. */
+/** 2.0.0 [RVA-48] 검토 ADM-23: 장부 줄은 펼칠 때 상세를 그려요. 시험도 사람처럼 줄을 펼친 뒤 그 안의 단추를 눌러요. */
+function openLines(t, sel = "#main .rows.ledger > li.lg-line > details:not([open])") {
+  for (const d of t.$$(sel)) {
+    d.open = true;
+    d.dispatchEvent(new t.window.Event("toggle"));
+  }
+}
+
 function offline(t) {
   const real = globalThis.fetch;
   globalThis.fetch = async () => new Response("", { status: 404 });
@@ -1683,7 +1691,8 @@ test("[ADMX-15] back to the tab while typing an answer: the menu numbers come ag
 
 test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a line opens in place with its answer, 넘길 글 is copied, 끝내기 asks why, 기록 undoes", async () => {
   const { call, env } = await world();
-  const t = await signedIn(env);
+  // 2.0.0 [RVA-49] 1280px부터는 줄이 오른쪽 칸에 열려요. 이 시험은 그 자리에서 펼치는 폭(1024)으로 봐요.
+  const t = await signedIn(env, { width: 1024 });
   await t.go("#/sort");
   assert.equal(t.window.location.hash, "#/desk?view=claude&group=ask", "정리함 lives in 운영 장부 now");
   assert.ok(t.$$("#main .rows.ledger > li").length >= 1, "the waiting questions are lines");
@@ -1691,6 +1700,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   assert.ok(t.$("#main .lg-head"), "a head row for the columns");
   assert.ok(t.$("#sort-tools .handoff-card"), "Claude에게 넘기기 is there");
   // A line's answer can be changed before it goes; what goes is what the box says.
+  openLines(t);
   const reply = t.$('#main [data-act="ledger-reply"]');
   const key = reply.dataset.key;
   const id = key.split(":")[1];
@@ -1701,6 +1711,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   const asked = (await call("GET", `/api/admin/inquiries/${id}`, undefined, await signIn(call))).data;
   assert.equal(asked.messages.at(-1).text, "확인했어요. 고마워요.");
   // 넘기기: a 개발사항 made from a line shows up to copy; copying marks it handed.
+  openLines(t);
   await t.click('#main [data-act="ledger-sort"]');
   await t.idle();
   let copied = null;
@@ -1715,7 +1726,8 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   await t.idle();
   assert.match(t.text("#main .rows.ledger"), /Claude에게 넘김/);
   // 끝내기 asks why; with a reason the line goes to 닫힘, and 기록 can undo it.
-  const first = t.$("#main .rows.ledger > li").dataset.key;
+  const first = t.$("#main .rows.ledger > li.lg-line").dataset.key;
+  openLines(t);
   await t.click(`#main li[data-key="${first}"] [data-act="ledger-done"]`);
   assert.match(t.text("dialog"), /끝낸 이유를 꼭/);
   t.$('dialog input[name="reason"][value="duplicate"]').checked = true;
@@ -1725,6 +1737,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   await t.click('[data-act="ledger-view"][data-key="closed"]');
   await t.idle();
   assert.match(t.text(`#main li[data-key="${first}"]`), /끝 · 중복/);
+  openLines(t);
   await t.click(`#main li[data-key="${first}"] [data-act="ledger-log"]`);
   await t.idle();
   assert.match(t.text("dialog"), /마지막 바꿈/);
@@ -1744,8 +1757,9 @@ test("[EASE-31] 운영 장부: a question a saved answer fits has '마을 Q&A로
   const list = (await call("POST", "/api/admin/templates", { label: "백업 옮기기", text: "설정 › 백업에서 파일로 내보낸 뒤 새 폰에서 가져오기를 눌러요", topic: "backup" }, owner)).data;
   const tpl = (list.templates ?? list).find((x) => x.label === "백업 옮기기");
   await call("POST", "/api/inquiries", { v: 1, device: device(21), kind: "question", text: "새 폰으로 옮기려면 백업을 어떻게 가져오기 하나요", info: { app: "1.37.0 (51)" } }, from(21));
-  const t = await signedIn(env);
+  const t = await signedIn(env, { width: 1024 });
   await t.go("#/desk?view=claude&group=ask");
+  openLines(t);
   const up = t.$('#main [data-act="template-edit"]');
   assert.ok(up, "the line of a question a saved answer fits offers 마을 Q&A로 올리기");
   assert.match(up.textContent, /마을 Q&A로 올리기/);
@@ -2716,11 +2730,12 @@ test("[RVR-20] 공모 다시 고르기: 저장 전 확인 창이 새로 생기�
   assert.deepEqual(u.broken, []);
 });
 
-test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 보기, 이름으로 찾기", async (t) => {
+test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 50개씩 이어 받기, 이름으로 찾기", async (t) => {
   offline(t);
   const s = server({ plaza: true });
   const look = { kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] };
-  for (let i = 1; i <= 42; i++) {
+  // 2.0.0 [RVA-48] 도약 42: 40개씩 그리던 것을 서버에서 50개씩 받아요.
+  for (let i = 1; i <= 55; i++) {
     const recipe = { format: "bamnat-recipe", v: 1, title: `세트 ${String(i).padStart(2, "0")}`, summary: "야간이 잘 보여요", styles: ["SHIFT"],
       cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙" }, pieces: [look] };
     const made = await s.call("POST", "/api/recipes", { device: device(100 + i), recipe, scope: "public" }, from(100 + i));
@@ -2738,8 +2753,8 @@ test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 �
       await u.idle();
     }
   }
-  assert.equal(rows().length, 40, "40 at a time");
-  assert.match(u.text('#main [data-act="recipe-more"]'), /40\/42/);
+  assert.equal(rows().length, 50, "50 at a time");
+  assert.match(u.text('#main [data-act="recipe-more"]'), /50\/55/);
   for (const li of rows().slice(0, 3)) {
     assert.ok(li.querySelector("details.row-more>summary[aria-label]"), "⋯ for the rest");
     assert.ok(li.querySelector("details.row-more .menu .btn.danger"), "지우기 sits in the menu");
@@ -2752,7 +2767,8 @@ test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 �
   assert.match(css, /details\.row-more>\.menu\{[^}]*transform:translateX\(var\(--menu-dx,0\)\)/);
   assert.match(await adminFile("/admin/app.js").text(), /setProperty\("--menu-dx"/);
   await u.click('#main [data-act="recipe-more"]');
-  assert.equal(rows().length, 42);
+  await u.settle();
+  assert.equal(rows().length, 55);
   assert.ok(!u.$('#main [data-act="recipe-more"]'), "all shown");
   await u.type("#search", "세트 07");
   await new Promise((r) => setTimeout(r, 300));
@@ -3236,5 +3252,79 @@ test("[RVA-46] 운영 장부·결정함·문의 목록: 기한 넘긴 줄은 '�
   await u.go("#/decide");
   await u.settle(30);
   assert.ok(u.$$("#main .pill.bad").length <= 1, u.$$("#main .pill.bad").map((p) => p.textContent).join(","));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-48] 운영 장부: 50줄씩 이어 받기, 펼친 줄만 상세, 고르기는 그 줄만 다시 그리기, 칸마다 읽어 주는 이름", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  for (let n = 30; n < 92; n++) {
+    await call("POST", "/api/inquiries", { v: 1, device: `test-device-000000${n}`, kind: "question", text: `달력 색은 어디서 바꿔요 ${n}`, info: { app: "2.0.0 (54)" } }, from(n));
+  }
+  // 그 자리에서 펼치는 폭(1024)
+  const u = await signedIn(env, { width: 1024 });
+  await u.go("#/desk?view=open");
+  await u.settle(30);
+  const lines = () => u.$$("#main .rows.ledger > li.lg-line");
+  assert.equal(lines().length, 50, "50 lines first");
+  assert.match(u.text('#main [data-act="ledger-more"]'), /더 보기 50\/\d+/);
+  // ADM-23: 닫힌 줄은 상세를 그리지 않아요. 펼치면 그 자리에서 채워요.
+  assert.equal(u.$$("#main .rows.ledger .lg-detail").filter((x) => x.childElementCount).length, 0, "no detail drawn for closed lines");
+  const d0 = lines()[3].querySelector("details");
+  d0.open = true;
+  d0.dispatchEvent(new u.window.Event("toggle"));
+  assert.ok(d0.querySelector(".lg-detail [data-act=\"ledger-set\"], .lg-detail [data-act=\"ledger-done\"]"), "opened: its detail is there");
+  // ADM-29: 칸마다 읽어 주는 이름.
+  const li = lines()[0];
+  for (const [cell, name] of [["c-st", "단계"], ["c-who", "담당"], ["c-due", "기한"]]) assert.equal(li.querySelector(`.${cell} > .sr`).textContent.trim(), name);
+  // ADM-23: 고르기 하나는 그 줄과 고른 줄 막대만 다시 그려요(다른 줄은 같은 노드 그대로).
+  await u.click('#main [data-act="ledger-pick-mode"]');
+  const keep = lines()[10];
+  await u.click(`#main li.lg-line[data-key="${lines()[2].dataset.key}"] input[data-act="ledger-pick"]`);
+  assert.match(u.text("#main .bulkbar"), /1개 골랐어요/);
+  assert.ok(keep.isConnected, "the other lines were not drawn again");
+  assert.ok(lines()[2].querySelector('input[data-act="ledger-pick"]').checked);
+  await u.click('#main [data-act="ledger-pick-mode"]');
+  // 더 보기: 다음 50줄을 이어 붙여요(겹치는 줄 없이).
+  await u.click('#main [data-act="ledger-more"]');
+  await u.settle(30);
+  const keys = lines().map((x) => x.dataset.key);
+  assert.ok(keys.length > 50);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(!u.$('#main [data-act="ledger-more"]'), "all here");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-49] 운영 장부(노트북 1280~): 줄을 누르면 오른쪽 칸에 상세, 목록은 제자리, 닫기·같은 줄 다시 누르기로 닫혀요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env, { width: 1440 });
+  await u.go("#/desk?view=open");
+  await u.settle(30);
+  assert.ok(!u.$("#lg-side"), "no empty side pane");
+  assert.equal(u.$$("#main .rows.ledger details").length, 0, "lines are buttons, not folds");
+  const row = u.$$("#main .rows.ledger > li.lg-line > .lg-row")[1];
+  const key = row.dataset.key;
+  assert.equal(row.getAttribute("role"), "button");
+  await u.click(row);
+  await u.settle(10);
+  assert.ok(u.$("#main .lg-split.on #lg-side"), "the side pane opened");
+  assert.match(u.text("#lg-side .lg-side-head"), /K-\d{4}/);
+  assert.ok(u.$("#lg-side .lg-detail [data-act]"), "its buttons are there");
+  assert.equal(u.$(`#main li.lg-line[data-key="${key}"] > .lg-row`).getAttribute("aria-expanded"), "true");
+  assert.equal(u.$$("#main .rows.ledger > li.lg-line.on").length, 1);
+  // 다른 줄: 칸만 바뀌어요.
+  const other = u.$$("#main .rows.ledger > li.lg-line > .lg-row")[2];
+  await u.click(other);
+  assert.equal(u.$(`#main li.lg-line[data-key="${key}"] > .lg-row`).getAttribute("aria-expanded"), "false");
+  assert.match(u.text("#lg-side .lg-side-head"), new RegExp(u.$(`#main li.lg-line[data-key="${other.dataset.key}"] .c-no b`).textContent));
+  await u.click('#lg-side [data-act="ledger-close"]');
+  await u.settle(10);
+  assert.ok(!u.$("#lg-side"), "closed");
+  // 늦게 오는 답(흐름 띠 등)은 한 틀에 한 번만 다시 그려요(ADM-24): load 안의 다시 그리기는 마지막 하나뿐.
+  const js = await adminFile("/admin/app.js").text();
+  const load = js.slice(js.indexOf("async function load({ quiet = false } = {}) {"), js.indexOf("function renderSoon()"));
+  assert.equal(load.match(/render\(\{ keepScroll: true \}\)/g)?.length, 1, "only the final render; the late ones use renderSoon");
+  assert.ok((load.match(/renderSoon\(\)/g)?.length ?? 0) >= 5);
   assert.deepEqual(u.errors, []);
 });

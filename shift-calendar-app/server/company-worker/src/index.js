@@ -5226,7 +5226,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/basics" && method === "GET") return json(await basics(env));
   if (path === "/servers" && method === "GET") return json(await serverVersions(env));
   // AX 1.30 [ADMX-08] 찾기·이동: companies, questions, 개발사항 and admins in one ask.
-  if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
+  if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }, 3, now));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") {
