@@ -163,7 +163,8 @@ fun readableOn(c: androidx.compose.ui.graphics.Color, grounds: List<androidx.com
     }
 }
 
-val LocalDecorTap = staticCompositionLocalOf<((String, java.time.LocalDate?) -> Unit)?> { null }
+/** 2.0.0 [RVM-23] STU-18 True when the button took the tap (false: no such button, or it rests: the part's own tap goes on). */
+val LocalDecorTap = staticCompositionLocalOf<((String, java.time.LocalDate?) -> Boolean)?> { null }
 
 /**
  * PC 확인 C9 1.36 (승인 전 배경 가운데 옅은 문구가 알림 줄과 겹치고, 내리면 숨어요): one line at the top of [screen] ("bg.calendar" …) while a

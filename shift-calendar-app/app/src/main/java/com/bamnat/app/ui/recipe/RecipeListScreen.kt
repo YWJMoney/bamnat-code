@@ -25,6 +25,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -262,7 +267,12 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
     val shown = if (moodNow == null) state.items else state.items.filter { moodNow in com.bamnat.app.recipe.MarketMood.of(it.look) }
     var small by remember { mutableStateOf(runCatching { ctx.getSharedPreferences(VIEW_PREFS, 0).getBoolean(VIEW_SMALL, false) }.getOrDefault(false)) }
     val flipScope = androidx.compose.runtime.rememberCoroutineScope()
-    val cols = if (!small) 2 else if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600) 4 else 3
+    // 2.0.0 [RVM-32] 총괄 HQ-43 (조건 1·12, 편 폭에서도 두 칸이라 미리 그림 하나가 화면 높이의 절반을 넘고 한 화면에 두 작품): a card keeps
+    // about the size it has on a folded phone and a row takes as many as the width holds (펼친 폴드 4칸, 작게 보기 6칸); the grid runs the
+    // full width (조건 12: 표는 가득), the words above it stay in the 640dp column.
+    val cols = marketCols(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp - 32, small)
+    // [RVM-31] HQ-42: with big letters (130% and up) the box asks in two words, so the ask is not cut.
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     // Back from trying one on the real app: 넘겨 보기 again at that work, or (입기·넣기 on the band) that work's 입어 보기 to put it in.
     val again by LiveTryOn.reopen.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(again) {
@@ -279,7 +289,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
     val reselectAt = remember { reselect }
     androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > reselectAt) { vm.load(); listState.animateScrollToItem(0) } }
     // The 구간 and 정렬 chips stay at the top once the cards above them are gone, so another 구간 is one tap from anywhere in the list.
-    val stickyAt = if (hubHeader != null) 2 else 1
+    // 2.0.0 [RVM-31]: only the search box is above them (the 팔로잉 줄 is under the first row of works).
+    val stickyAt = 1
     val pinned by remember(stickyAt) { derivedStateOf { listState.firstVisibleItemIndex >= stickyAt } }
     // A 구간 or 정렬 changed while scrolled down starts its list right under the chips (not somewhere in the middle).
     // PC 확인 a6cab3c8 (장터를 내린 채 다른 탭에 갔다 오면 맨 위로 돌아가요): only a real change of 구간·정렬 moves the list; coming back
@@ -322,8 +333,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
         },
         floatingActionButton = {
             // PC 확인 62a86294 스크롤 점검 (처음 화면에서 '스튜디오에서 만들기'가 첫 카드를 가리고, 내리면 '^'·'+'가 쌓여 글자를 가림):
-            // at the top the button is a row of the list (under the 구간 cards, never on a work); the small round + comes only once
-            // that row has scrolled away. Going back up is the 장터 tab pressed again, or the 구간 chips that stay at the top.
+            // at the top the button is part of the list (2.0.0 [RVM-31]: the + beside the search box, never on a work); the small round +
+            // comes only once that row has scrolled away. Going back up is the 장터 tab pressed again, or the 구간 chips that stay at the top.
             val moved by remember { derivedStateOf { listState.firstVisibleItemIndex > stickyAt } }
             if (moved) androidx.compose.material3.SmallFloatingActionButton(onClick = onMake,
                 modifier = Modifier.semantics { contentDescription = "스튜디오에서 만들기" }) { Icon(Icons.Filled.Add, null) }
@@ -333,45 +344,31 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
             Modifier.fillMaxSize().padding(padding),
             state = listState,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            // [RVM-31] HQ-42: 8dp between rows, as between the cards of a row ([MARKET_GAP]).
+            verticalArrangement = Arrangement.spacedBy(MARKET_GAP.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // 1.39 [MKD-60] (사용자 2026-11-08 "바로 검색창이 젤 위에 있으면 더 좋을거 같은데"): the search box is 장터's first row, with
-            // 만들기 beside it; the 구간 under it, then the 팔로잉 줄 (only when someone is in it). 오늘의 하나 moved to 테마, 넘겨 보기 to a chip.
+            // 만들기 beside it, then the 팔로잉 줄 (only when someone is in it). 오늘의 하나 moved to 테마, 넘겨 보기 to a chip.
+            // 2.0.0 [RVM-31] 총괄 HQ-42 (조건 1·12, 작품이 접은 폭 100%에서 화면의 35%, 200%에서 53% 아래에서 시작했어요): above the works
+            // there are two rows only, this box and the one row of chips that stays at the top ([MarketChips]). The three 구간 lead that
+            // row, as they did once the list was pushed up, so the top keeps one shape all the way down and at every letter size (200%:
+            // the 구간 are one-line chips of the same height, not tiles of two to four lines).
             item(key = "top") {
-                Column(Modifier.widthIn(max = 640.dp).padding(top = if (onBack == null) 8.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.widthIn(max = 640.dp).padding(top = if (onBack == null) 4.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.weight(1f),
-                            placeholder = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
-                            shape = MaterialTheme.shapes.extraLarge,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
+                        SearchBox(state.query, vm::query, if (big) "작품 찾기" else "이름·설명·초성으로 찾기",
+                            Modifier.weight(1f), colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(), onSearch = { vm.load() })
                         Spacer(Modifier.width(8.dp))
-                        androidx.compose.material3.FilledTonalIconButton(onClick = onMake, modifier = Modifier.size(52.dp)
+                        androidx.compose.material3.FilledTonalIconButton(onClick = onMake, modifier = Modifier.size(48.dp)
                             .semantics { contentDescription = "스튜디오에서 만들기" }) { Icon(Icons.Filled.Add, null) }
                     }
                     // PC 확인 1.36 (코드로 찾으면 어느 구간에도 안 나옴): a code typed in the box opens that work, whatever its 구간.
                     com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 })?.let { code ->
                         FilledTonalButton(onClick = { onOpen(code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드 $code 작품 열기") }
                     }
-                    // [MKX-01] 1.36 두 구간 (사용자 2026-10-31 "장터가 너무 보기 어렵게 … 테마를 주는건지 기능별로 보여지는건지 구간을 나눠서"):
-                    // 테마 (모든 것을 종합해 만든 한 벌) and 기능별 탭 (탭 하나를 전문으로, 고른 테마 위에 얹어요), two big halves on top.
-                    // [RUL-07] PC D4 (사용성 제안 높): 맨 위를 테마 · 기능별 탭 · 규칙·단추 세 갈래로 (규칙·단추 칩이 탭 줄 끝에 숨어 있었어요).
-                    // 1.39 [MKC-01] 장터 분류 다시 (사용자 2026-11-07 "테마는 말그대로 모든 것을 꾸민 모습이고 각 탭별로 기능이나 디자인 한
-                    // 제작물로 분류를 나눈다. 도구 또한 분류를 나눠서"): 테마 · 탭별 작품 (꾸미기·기능) · 도구 (부품·자동 규칙·단추).
-                    val tools = state.kind.isTool()
-                    val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MarketHalf("테마", "앱 전체를 한 벌로", "🎨", selected = !featured && !tools, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_THEME) }
-                        MarketHalf("탭별 작품", "탭 하나를 위해", "🗂", selected = featured, Modifier.weight(1f)) {
-                            if (!featured) vm.kind(RecipeClient.SCOPE_TAB)
-                        }
-                        MarketHalf("도구", "하나만 더하기", "🧰", selected = tools, Modifier.weight(1f)) { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) }
-                    }
-                    // 1.39 [MKD-60] the long line under the 구간 (what each one is) is gone: each card says it in a few words (and in
-                    // full to TalkBack).
                 }
             }
-            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
             // 7차 통합 347b7c37 PC 제안 (칩 줄 판이 화면보다 좁아 좌우로 사진이 보여요): the pinned row's ground runs past the list's 16dp side
             // padding to the screen's edges; its chips stay in the 640dp column.
             stickyHeader(key = "chips") { Column(Modifier.fillMaxWidth().layout { m, c ->
@@ -379,139 +376,16 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                 val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * side, maxWidth = c.maxWidth + 2 * side))
                 layout(c.maxWidth, p.height) { p.place(-side, 0) }
             }) {
-                val tools = state.kind.isTool()
-                val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
                 androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.solid(), modifier = Modifier.fillMaxWidth()) {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.TopCenter) {
-                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
-                    val tabChips: @Composable () -> Unit = {
-                        val now = RecipeClient.tabOf(state.kind)
-                        val made = RecipeClient.madeOf(state.kind)
-                        val price = RecipeClient.price(state.kind)
-                        FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.tabKind("", made), price)) }, label = { Text("모든 탭") })
-                        // PC 확인 5c21f3bb 장터 구간 세기: a tab that kind of work has no works for (자영업·투자의 근무·급여, 알람 조각을 받는
-                        // 교대·일근·알바 밖의 알람) is not offered; their 장 시작·영업 준비 알림 are in 도구.
-                        RecipeClient.MARKET_TABS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
-                            FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.tabKind(t, made), price)) }, label = { Text(marketTabLabel(t, vm.style)) })
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.TopCenter) {
+                        Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                            MarketChips(state, vm, moodNow, onMood = { m -> mood = if (moodNow == m) null else m.name }, onSwipe = onSwipe,
+                                small = small, onSmall = {
+                                    small = !small
+                                    runCatching { ctx.getSharedPreferences(VIEW_PREFS, 0).edit().putBoolean(VIEW_SMALL, small).apply() }
+                                })
                         }
                     }
-                    // 1.39 [MKC-01] 탭별 작품: 꾸미기(모양)·기능(틀·묶음·보기 방식). Both kinds in one work show under either.
-                    // 1.39 [MKC-04] (사용자 2026-11-07 "앱코드 + 스튜디오 + 장터 세 가지가 맞아떨어져야", 조사 18장 C-7): '✦ 프로 기능'이
-                    // 전체 바로 다음, 맨 앞에 (새 기능 장치를 쓴 작품만).
-                    val madeChips: @Composable () -> Unit = {
-                        val tab = RecipeClient.tabOf(state.kind)
-                        val made = RecipeClient.madeOf(state.kind)
-                        val fx = RecipeClient.fxOnly(state.kind)
-                        val free = RecipeClient.freeOnly(state.kind)
-                        FilterChip(selected = made == null && !fx && !free, onClick = { vm.kind(RecipeClient.tabKind(tab, null)) }, label = { Text("전체") })
-                        FxChip(fx) { vm.kind(RecipeClient.tabKind(tab, null, fx = !fx)) }
-                        FreeChip(free) { vm.kind(RecipeClient.tabKind(tab, null, free = !free)) }
-                        listOf("look" to "🎨 꾸미기", "func" to "⚙️ 기능").forEach { (m, label) ->
-                            FilterChip(selected = made == m, onClick = { vm.kind(RecipeClient.tabKind(tab, m)) }, label = { Text(label) })
-                        }
-                    }
-                    // 1.39 [MKC-01] 도구: 종류 (부품·자동 규칙·단추), then the screen it works on (a row of its own when not pinned,
-                    // so neither hides at the right edge).
-                    val toolChips: @Composable () -> Unit = {
-                        val tool = RecipeClient.toolOf(state.kind)
-                        val on = RecipeClient.toolOn(state.kind)
-                        val fx = RecipeClient.fxOnly(state.kind)
-                        val free = RecipeClient.freeOnly(state.kind)
-                        FilterChip(selected = tool.isEmpty() && !fx && !free, onClick = { vm.kind(RecipeClient.toolKind("", on)) }, label = { Text("전체") })
-                        FxChip(fx) { vm.kind(RecipeClient.toolKind("", on, fx = !fx)) }
-                        FreeChip(free) { vm.kind(RecipeClient.toolKind("", on, free = !free)) }
-                        RecipeClient.TOOL_KINDS.forEach { t ->
-                            FilterChip(selected = tool == t, onClick = { vm.kind(RecipeClient.toolKind(t, on)) }, label = { Text(toolLabel(t)) })
-                        }
-                    }
-                    val screenChips: @Composable () -> Unit = {
-                        val tool = RecipeClient.toolOf(state.kind)
-                        val on = RecipeClient.toolOn(state.kind)
-                        val price = RecipeClient.price(state.kind)
-                        FilterChip(selected = on == null, onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.toolKind(tool, null), price)) }, label = { Text("모든 화면") })
-                        TOOL_SCREENS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
-                            FilterChip(selected = on == t, onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.toolKind(tool, t), price)) }, label = { Text(marketTabLabel(t, vm.style).removeSuffix(" 화면·규칙")) })
-                        }
-                    }
-                    // Pinned: the three 구간 as one small row, since their big cards have scrolled away. PC c6a6e361 제안 (기능별 탭은
-                    // 붙는 줄이 세 줄이라 목록이 좁음): pinned, 기능별 탭's tab chips go on that same row after the 구간, so two rows stay on top.
-                    // PC 4277abca (붙는 순간 한 장에서 구간·탭 줄이 빠짐): no grow-in animation; the 구간 row comes in the same frame the
-                    // tab row below goes, so the header never draws without both.
-                    if (pinned) {
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            FilterChip(selected = !featured && !tools, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
-                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("🗂 탭별 작품") })
-                            FilterChip(selected = tools, onClick = { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) }, label = { Text("🧰 도구") })
-                            if (featured) {
-                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
-                                tabChips()
-                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
-                                madeChips()
-                            }
-                            if (tools) {
-                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
-                                toolChips()
-                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
-                                screenChips()
-                            }
-                        }
-                    }
-                    // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
-                    if (featured && !pinned) {
-                        ChipRows { tabChips() }
-                        ChipRows { madeChips() }
-                    }
-                    if (tools && !pinned) {
-                        ChipRows { toolChips() }
-                        ChipRows { screenChips() }
-                    }
-                    // 1.39 [MKD-45] 테마 분위기: 밝은 · 어두운 · 파스텔 · 선명한 · 차분한 (다시 누르면 풀려요), 테마 구간에서 붙지 않은 머리에만.
-                    if (!featured && !tools && !pinned) ChipRows(fold = true) {
-                        // 1.39 [MKD-60] 넘겨 보기 (was a row of its own above 장터's search).
-                        onSwipe?.let { go -> androidx.compose.material3.AssistChip(onClick = go, label = { Text("🃏 넘겨 보기") }) }
-                        com.bamnat.app.recipe.MarketMood.Mood.entries.forEach { m ->
-                            FilterChip(selected = moodNow == m, onClick = { mood = if (moodNow == m) null else m.name }, label = { Text(m.label) })
-                        }
-                    }
-                    // How sorted and whose, under the half chosen. 1.39 [MKD-02] (CLAUDE.md 7항): 좁은 폰에서 오른쪽 칩이 잘려 있는 줄 모르니 줄을 감싸요.
-                    ChipRows(fold = true) {
-                        // 1.39 [MKD-03] '값 칸'·'위젯'·'프로'처럼 장치·종류 이름으로 찾으면 그 칩으로 가는 칩을 맨 앞에.
-                        RecipeClient.wordKind(state.query, state.kind)?.let { (k, name) ->
-                            androidx.compose.material3.AssistChip(onClick = { vm.query(""); vm.kind(k) }, label = { Text("$name 보기") })
-                        }
-                        // PC D14 (사용성 낮): 다른 칸 칩은 이 줄 맨 앞에 (따로 줄을 두면 칸을 누를 때·첫 글자에 아래가 두 번 내려갔어요).
-                        if (state.query.isNotBlank()) state.elsewhere.forEach { (h, n) ->
-                            val here = h == vm.halfNow()
-                            androidx.compose.material3.AssistChip(onClick = { vm.jump(h) },
-                                label = { Text(if (here) "‘새로’에 $n" else "${RecipeListViewModel.halfName(h)}에 $n") },
-                                modifier = Modifier.semantics { contentDescription = "다른 칸에도 있어요: ${if (here) "새로" else RecipeListViewModel.halfName(h)}에 $n" })
-                        }
-                        if (state.query.isNotBlank() && state.elsewhere.isNotEmpty())
-                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-                        // 1.39 [MKD-60] 한 줄로 밀어 볼 때 고른 정렬이 바로 보이게 정렬 칩이 먼저예요.
-                        RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
-                        // 1.39 [MKC-04] 테마에는 칩 줄이 따로 없어 '✦ 프로 기능'을 이 줄에.
-                        if (!featured && !tools) {
-                            val fx = RecipeClient.fxOnly(state.kind)
-                            val free = RecipeClient.freeOnly(state.kind)
-                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-                            FxChip(fx) { vm.kind(RecipeClient.withFx(RecipeClient.SCOPE_THEME, !fx)) }
-                            FreeChip(free) { vm.kind(RecipeClient.withFree(RecipeClient.SCOPE_THEME, !free)) }
-                        }
-                        if (vm.style != null) {
-                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-                            FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
-                        }
-                        // 1.39 [MKF-03] 작게 보기 (한 화면에 더 많이), 이 폰에 기억해요.
-                        androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
-                        FilterChip(selected = small, onClick = {
-                            small = !small
-                            runCatching { ctx.getSharedPreferences(VIEW_PREFS, 0).edit().putBoolean(VIEW_SMALL, small).apply() }
-                        }, label = { Text("작게 보기") })
-                    }
-                }
-                }
                 }
                 if (pinned) androidx.compose.material3.HorizontalDivider()
             } }
@@ -548,14 +422,20 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                 Text("불러온 테마 가운데 ‘${moodNow.label}’ 테마가 아직 없어요" + (if (state.next != null) ". 아래 ‘더 보기’로 더 불러와요" else ""),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
             }
-            items(shown.chunked(cols), key = { row -> row.first().code + "|" + cols }) { row ->
-                Row(Modifier.widthIn(max = if (small) 900.dp else 640.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (small) 6.dp else 10.dp)) {
+            val rows = shown.chunked(cols)
+            val cardRow: @Composable (List<RecipeItem>) -> Unit = { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (small) MARKET_GAP_SMALL.dp else MARKET_GAP.dp)) {
                     row.forEach { item ->
                         ThemeTile(item, vm.style, Modifier.weight(1f), small = small, onPicture = { flipAt = shown.indexOf(item).coerceAtLeast(0) }) { onOpen(item.code) }
                     }
                     repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
+            rows.firstOrNull()?.let { row -> item(key = row.first().code + "|" + cols) { cardRow(row) } }
+            // 2.0.0 [RVM-31] HQ-42 (조건 1): in 마을 the 팔로잉 줄 (or 이달의 제작자) comes under the first row of works, still on the first
+            // screen; above them it put the first work at about 36% of a folded phone. It scrolls away with the list as before.
+            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
+            items(rows.drop(1), key = { row -> row.first().code + "|" + cols }) { row -> cardRow(row) }
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
             else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
         }
@@ -582,30 +462,223 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
  * 1.39 [MKD-02] 장터 칩 줄: 좌우로 밀어야 보이는 칩이 있는 줄은 펼쳐서 한눈에 볼 수 있어요(CLAUDE.md 7항).
  * 1.39 [MKD-60] (사용자 2026-11-08 "위에 공간을 불필요하게 차지"): 테마 구간의 분위기·정렬 줄을 늘 감싸 두면 칩이 다섯 줄이 되어 첫 화면에
  * 작품이 거의 없었어요. 그 두 줄([fold])은 처음엔 한 줄로 밀어 보고, 넘치면 오른쪽 끝 ▾ 단추로 펼쳐요.
+ * 2.0.0 [RVM-31] HQ-42: one line for all of 장터 now, [lead] fixed at its start; the rest slides to what [spot] marks whenever [focus]
+ * changes (a 구간 picked), so what that 구간 has is in sight, with the end of the chip before it showing that there is more to the left.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun ChipRows(
-    /** One line to start with (분위기·정렬 줄); the 구간's own chips (탭·꾸미기·도구 종류·화면) stay wrapped, all in sight. */
+    /** One line to start with, ▾ for all of it. */
     fold: Boolean = false,
-    content: @Composable () -> Unit,
+    focus: Any? = null,
+    spot: RowSpot? = null,
+    /** What stays at the start of the line, outside the part that slides (the 구간 picked). */
+    lead: (@Composable () -> Unit)? = null,
+    /** The chips; told whether the row is open (▾), when a chip with a menu can lay its choices out instead. */
+    content: @Composable (open: Boolean) -> Unit,
 ) {
     var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (open || !fold) {
         androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            content()
+            lead?.invoke()
+            content(true)
             if (fold) IconButton(onClick = { open = false }) { Icon(Icons.Filled.KeyboardArrowUp, "칩 한 줄로 접기") }
         }
         return
     }
     val scroll = rememberScrollState()
+    val hint = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.roundToPx() }
+    if (spot != null) androidx.compose.runtime.LaunchedEffect(focus, spot.x) {
+        val to = if (focus == null || spot.x < 0) 0 else (spot.x - hint).coerceAtLeast(0)
+        if (scroll.value != to) scroll.animateScrollTo(to.coerceAtMost(scroll.maxValue.takeIf { it < Int.MAX_VALUE } ?: to))
+    }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        lead?.let { it(); Spacer(Modifier.width(6.dp)) }
         Row(Modifier.weight(1f).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically) { content() }
+            verticalAlignment = Alignment.CenterVertically) { content(false) }
         if (scroll.maxValue in 1 until Int.MAX_VALUE) IconButton(onClick = { open = true }) { Icon(Icons.Filled.KeyboardArrowDown, "칩 모두 펼쳐 보기") }
     }
 }
+
+/** [RVM-31] Where the chip a row slides to sits in that row (-1: not laid out yet). */
+private class RowSpot { var x by androidx.compose.runtime.mutableIntStateOf(-1) }
+
+/** [RVM-31] Which of the three 구간 [MarketHalves] draws: the one picked (leading the row) or the other two (in the row). */
+private enum class Halves { PICKED, OTHERS }
+
+/**
+ * 2.0.0 [RVM-31] 총괄 HQ-42: 장터's three 구간 (테마 · 탭별 작품 · 도구) as chips, one tap each as the big cards were; what each one is goes
+ * to TalkBack only (화면 글은 짧게, 조건 4). With big letters the name goes without its picture, so the row keeps room for the next chip,
+ * and a name never breaks (a chip of one line; before, at 200% a squeezed one kept only its picture).
+ */
+@Composable
+private fun MarketHalves(kind: String?, vm: RecipeListViewModel, which: Halves) {
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+    val tools = kind.isTool()
+    val featured = kind?.startsWith(RecipeClient.SCOPE_TAB) == true
+    listOf(
+        Triple("🎨 테마", "테마", !featured && !tools) to { vm.kind(RecipeClient.SCOPE_THEME) },
+        Triple("🗂 탭별 작품", "탭별 작품", featured) to { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) },
+        Triple("🧰 도구", "도구", tools) to { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) },
+    ).forEach { (half, go) ->
+        val (label, name, on) = half
+        if (which == Halves.PICKED && !on || which == Halves.OTHERS && on) return@forEach
+        FilterChip(selected = on, onClick = go, label = { Text(if (big) name else label, maxLines = 1, softWrap = false) },
+            modifier = Modifier.semantics { stateDescription = (if (on) "고름. " else "") + about(name) })
+    }
+}
+
+/**
+ * 2.0.0 [RVM-31] 총괄 HQ-42: 장터's one row of chips, at the top all the way down the list. In order: what a search found elsewhere (only
+ * while there is a word to find), the three 구간 (the one picked first, fixed at the start), what this 구간 has
+ * (테마: 넘겨 보기 · 분위기, 탭별 작품: 탭, 도구: 종류 with ✦ 프로 · 무료), 정렬 as one chip with its menu, then 꾸미기·기능 / 쓰는 화면 /
+ * ✦ 프로 · 무료, 다른 유형도 and 작게 보기. Every chip is one tap as before but 정렬 (two: open its menu and pick, or ▾ and pick
+ * one of the six laid out in the open row).
+ */
+@Composable
+private fun MarketChips(
+    state: RecipeListViewModel.State, vm: RecipeListViewModel, moodNow: com.bamnat.app.recipe.MarketMood.Mood?,
+    onMood: (com.bamnat.app.recipe.MarketMood.Mood) -> Unit, onSwipe: (() -> Unit)?, small: Boolean, onSmall: () -> Unit,
+) {
+    val tools = state.kind.isTool()
+    val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
+    val hint = RecipeClient.wordKind(state.query, state.kind)?.takeIf { state.query.isNotBlank() }
+    val elsewhere = if (state.query.isNotBlank()) state.elsewhere else emptyMap()
+    val finding = hint != null || elsewhere.isNotEmpty()
+    val spot = remember { RowSpot() }
+    val divider: @Composable () -> Unit = { androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp)) }
+    // The 구간 picked leads the row and stays in sight (지금 자리); picking 탭별 작품 or 도구 slides the rest of the row to that 구간's own
+    // chips (탭 · 종류), the end of the 구간 before them showing that there is more to the left. 테마 keeps the other two in sight.
+    ChipRows(fold = true, focus = if (finding || !(featured || tools)) null else if (featured) "tab" else "tool", spot = spot,
+        lead = { MarketHalves(state.kind, vm, Halves.PICKED) }) { open ->
+        // 1.39 [MKD-03] '값 칸'·'위젯'·'프로'처럼 장치·종류 이름으로 찾으면 그 칩으로 가는 칩을 맨 앞에. PC D14·D10: 다른 칸에 있는 것도 맨 앞에.
+        hint?.let { (k, name) -> androidx.compose.material3.AssistChip(onClick = { vm.query(""); vm.kind(k) }, label = { Text("$name 보기") }) }
+        elsewhere.forEach { (h, n) ->
+            val here = h == vm.halfNow()
+            androidx.compose.material3.AssistChip(onClick = { vm.jump(h) },
+                label = { Text(if (here) "‘새로’에 $n" else "${RecipeListViewModel.halfName(h)}에 $n") },
+                modifier = Modifier.semantics { contentDescription = "다른 칸에도 있어요: ${if (here) "새로" else RecipeListViewModel.halfName(h)}에 $n" })
+        }
+        if (finding) divider()
+        MarketHalves(state.kind, vm, Halves.OTHERS)
+        androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp)
+            .onPlaced { spot.x = it.positionInParent().x.toInt() })
+        when {
+            featured -> {
+                val now = RecipeClient.tabOf(state.kind)
+                val made = RecipeClient.madeOf(state.kind)
+                val price = RecipeClient.price(state.kind)
+                FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.tabKind("", made), price)) }, label = { Text("모든 탭") })
+                // PC 확인 5c21f3bb 장터 구간 세기: a tab that kind of work has no works for (자영업·투자의 근무·급여, 알람 조각을 받는
+                // 교대·일근·알바 밖의 알람) is not offered; their 장 시작·영업 준비 알림 are in 도구.
+                RecipeClient.MARKET_TABS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
+                    FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.tabKind(t, made), price)) }, label = { Text(marketTabLabel(t, vm.style)) })
+                }
+            }
+            // 1.39 [MKC-01] 도구: 종류 (부품·자동 규칙·단추). [MKC-04] '✦ 프로 기능'이 전체 바로 다음 (새 기능 장치를 쓴 작품만).
+            tools -> {
+                val tool = RecipeClient.toolOf(state.kind)
+                val on = RecipeClient.toolOn(state.kind)
+                val fx = RecipeClient.fxOnly(state.kind)
+                val free = RecipeClient.freeOnly(state.kind)
+                FilterChip(selected = tool.isEmpty() && !fx && !free, onClick = { vm.kind(RecipeClient.toolKind("", on)) }, label = { Text("전체") })
+                FxChip(fx) { vm.kind(RecipeClient.toolKind("", on, fx = !fx)) }
+                FreeChip(free) { vm.kind(RecipeClient.toolKind("", on, free = !free)) }
+                RecipeClient.TOOL_KINDS.forEach { t ->
+                    FilterChip(selected = tool == t, onClick = { vm.kind(RecipeClient.toolKind(t, on)) }, label = { Text(toolLabel(t)) })
+                }
+            }
+            // 1.39 [MKD-45] 테마 분위기: 밝은 · 어두운 · 파스텔 · 선명한 · 차분한 (다시 누르면 풀려요). [MKD-60] 넘겨 보기도 칩.
+            else -> {
+                onSwipe?.let { go -> androidx.compose.material3.AssistChip(onClick = go, label = { Text("🃏 넘겨 보기") }) }
+                com.bamnat.app.recipe.MarketMood.Mood.entries.forEach { m ->
+                    FilterChip(selected = moodNow == m, onClick = { onMood(m) }, label = { Text(m.label) })
+                }
+            }
+        }
+        divider()
+        // Opened with ▾ the six orders lie in the open row, so another order is two taps from the closed row (▾, pick) as from the menu.
+        if (open) RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
+        else SortChip(state.tab) { vm.tab(it) }
+        divider()
+        when {
+            // 1.39 [MKC-01] 탭별 작품: 꾸미기(모양)·기능(틀·묶음·보기 방식). Both kinds in one work show under either. [MKC-04] ✦ 프로 기능 먼저.
+            featured -> {
+                val tab = RecipeClient.tabOf(state.kind)
+                val made = RecipeClient.madeOf(state.kind)
+                val fx = RecipeClient.fxOnly(state.kind)
+                val free = RecipeClient.freeOnly(state.kind)
+                FilterChip(selected = made == null && !fx && !free, onClick = { vm.kind(RecipeClient.tabKind(tab, null)) }, label = { Text("전체") })
+                FxChip(fx) { vm.kind(RecipeClient.tabKind(tab, null, fx = !fx)) }
+                FreeChip(free) { vm.kind(RecipeClient.tabKind(tab, null, free = !free)) }
+                listOf("look" to "🎨 꾸미기", "func" to "⚙️ 기능").forEach { (m, label) ->
+                    FilterChip(selected = made == m, onClick = { vm.kind(RecipeClient.tabKind(tab, m)) }, label = { Text(label) })
+                }
+            }
+            // The screen a 도구 works on.
+            tools -> {
+                val tool = RecipeClient.toolOf(state.kind)
+                val on = RecipeClient.toolOn(state.kind)
+                val price = RecipeClient.price(state.kind)
+                FilterChip(selected = on == null, onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.toolKind(tool, null), price)) }, label = { Text("모든 화면") })
+                TOOL_SCREENS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
+                    FilterChip(selected = on == t, onClick = { vm.kind(RecipeClient.withPrice(RecipeClient.toolKind(tool, t), price)) }, label = { Text(marketTabLabel(t, vm.style).removeSuffix(" 화면·규칙")) })
+                }
+            }
+            // 1.39 [MKC-04] 테마에는 칩 줄이 따로 없어 '✦ 프로 기능'을 이 줄에.
+            else -> {
+                val fx = RecipeClient.fxOnly(state.kind)
+                val free = RecipeClient.freeOnly(state.kind)
+                FxChip(fx) { vm.kind(RecipeClient.withFx(RecipeClient.SCOPE_THEME, !fx)) }
+                FreeChip(free) { vm.kind(RecipeClient.withFree(RecipeClient.SCOPE_THEME, !free)) }
+            }
+        }
+        if (vm.style != null) {
+            divider()
+            FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
+        }
+        // 1.39 [MKF-03] 작게 보기 (한 화면에 더 많이), 이 폰에 기억해요.
+        divider()
+        FilterChip(selected = small, onClick = onSmall, label = { Text("작게 보기") })
+    }
+}
+
+/**
+ * 2.0.0 [RVM-31] 총괄 HQ-42: 정렬 was six chips on a line of its own; now one chip that shows the order the list is in, its menu the six
+ * (the one shown ticked). Changing the order is two taps (open, pick); everything else in the row stays one.
+ */
+@Composable
+private fun SortChip(now: RecipeListViewModel.Tab, onPick: (RecipeListViewModel.Tab) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        androidx.compose.material3.AssistChip(onClick = { open = true }, label = { Text(now.label, maxLines = 1) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null, Modifier.size(18.dp)) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) },
+            modifier = Modifier.semantics { stateDescription = "정렬, 눌러서 바꿔요" })
+        com.bamnat.app.ui.components.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            RecipeListViewModel.Tab.entries.forEach { t ->
+                androidx.compose.material3.DropdownMenuItem(text = { Text(t.label) }, onClick = { open = false; if (t != now) onPick(t) },
+                    leadingIcon = { if (t == now) Icon(Icons.Filled.Check, "지금 정렬") else Spacer(Modifier.size(24.dp)) })
+            }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVM-32] 총괄 HQ-43: how many cards a row of 장터 takes in [widthDp]: each keeps at least the size it has two to a row on a folded
+ * phone (160dp, 작게 보기 104dp), so a folded phone has 2 (작게 3) and an unfolded one 4 (작게 6). Also the maker's page grid.
+ */
+internal fun marketCols(widthDp: Int, small: Boolean): Int {
+    val min = if (small) MARKET_CARD_SMALL else MARKET_CARD
+    val gap = if (small) MARKET_GAP_SMALL else MARKET_GAP
+    return ((widthDp + gap) / (min + gap)).coerceIn(if (small) 3 else 2, if (small) 8 else 6)
+}
+
+internal const val MARKET_CARD = 160
+internal const val MARKET_CARD_SMALL = 104
+internal const val MARKET_GAP = 8
+internal const val MARKET_GAP_SMALL = 6
 
 private const val VIEW_PREFS = "market_view"
 private const val VIEW_SMALL = "small"
@@ -716,28 +789,6 @@ private fun about(title: String): String = when (title) {
     "도구" -> "입은 테마나 기본 모양은 그대로 두고 부품 하나, 규칙 하나, 단추 하나만 더해요. 눌러서 전후를 직접 해 볼 수 있어요"
     "탭별 작품" -> "탭 하나를 위해 만든 꾸미기(모양)와 기능(틀·묶음)이에요. 지금 입은 테마는 그대로 두고 그 탭만 바꿔요"
     else -> "달력·가계부·메모·급여까지 모든 화면을 한 벌로 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 탭별 작품으로 바꿀 수 있어요"
-}
-
-/** [MKX-01] One of 장터's two halves, big enough to read at a glance. */
-@Composable
-private fun MarketHalf(title: String, sub: String, emoji: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-    androidx.compose.material3.Surface(onClick = onClick, color = bg, shape = MaterialTheme.shapes.large,
-        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        modifier = modifier.heightIn(min = 52.dp).semantics(mergeDescendants = true) { this.selected = selected; stateDescription = about(title) }) {
-        // Three across a phone (테마 · 탭별 작품 · 도구). 1.39 [MKD-60] (사용자 2026-11-08 "공간을 차지하고 디자인도 별로"): the picture on
-        // the name's line, so the three take two short lines, not three (with a big picture) and a long line under them.
-        Column(Modifier.padding(horizontal = 6.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(emoji, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.width(4.dp))
-                Text(title, style = MaterialTheme.typography.titleSmall, color = fg, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, maxLines = 2,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            }
-            Text(sub, style = MaterialTheme.typography.labelSmall, color = fg, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-    }
 }
 
 /**

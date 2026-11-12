@@ -587,6 +587,8 @@ class CompanyException(
     /** 2.0.0 [RVN-17] COMP-12 With "member_wait": whether '잘못 골랐어요' can free the calendar now, and the company holding it. */
     val undo: Boolean = false,
     val held: String? = null,
+    /** 2.0.0 [RVM-30] SN-15: with rate_limited, the day's number when the server says it (장터 사진: 12, or 48 for a trusted phone). */
+    val limit: Int? = null,
 ) : IOException(code) {
     /** [until] as epoch millis, or null. */
     val untilMillis: Long? get() = until?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
@@ -1743,7 +1745,8 @@ private fun exchangeOnce(
             val retry = err?.optInt("retryAfter")?.takeIf { it > 0 } ?: conn.getHeaderField("Retry-After")?.trim()?.toIntOrNull()
             throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"),
                 retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"), undo = err?.optBoolean("undo") == true,
-                held = err?.optJSONObject("held")?.optString("name")?.takeIf { it.isNotBlank() })
+                held = err?.optJSONObject("held")?.optString("name")?.takeIf { it.isNotBlank() },
+                limit = err?.optInt("limit")?.takeIf { it > 0 })
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))

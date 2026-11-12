@@ -315,14 +315,17 @@ object FlagCatalog {
     /**
      * 2.0.0 [RVM-21] MKT-32 (사용자 카드 11-12 '우리 쪽에서 글꼴 내주기'): the 장터 cards' small fonts (letters of the cards only) come
      * from our public files, checked by sha256. Asking our GitHub Pages is a new place the phone reaches, named in 처리방침 3.13's 7-day
-     * line, so it waits for that version's effective day; until then the cards draw in the phone's fonts as before 2.0.0 (총괄 11-12).
+     * line, so it waits for that line's day; until then the cards draw in the phone's fonts as before 2.0.0 (총괄 11-12).
+     * 총괄 11-12 (나): the day is [PolicyConsent.REVISION_EFFECTIVE] (게시일 + 7일, moved with it by `tools/legal_dates.py`), not the
+     * server calendar's 3.13 날짜, which is the 30-day line (12-12). 3.13 has no consent card, so no [Condition.Policy] hold either (its
+     * hold would end on the 30-day day too). Judged by the server's clock like every LEGAL row.
      */
     val CARD_FONTS_FLAG = Flag(
         CARD_FONTS, "장터 카드 글꼴 받기",
         what = "장터 목록·작품 상세·예시로 보기에서 작품 카드의 글꼴을 밤낮 공개 자료(GitHub Pages)에서 받아요. 카드 글자만 담은 작은 글꼴이고, 앱에 적힌 sha256과 같을 때만 써요. 한 번 받으면 휴대폰에 남아요.",
-        whyOff = "처리방침 3.13의 시행일(게시일 + 7일)부터 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.13 날짜를 넣으면 그날부터예요. 그 전에는 카드를 휴대폰 글꼴로 그리고 공개 자료에 묻지 않아요.",
+        whyOff = "처리방침 3.13의 7일 줄 시행일(${PolicyConsent.REVISION_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 카드를 휴대폰 글꼴로 그리고 공개 자료에도 Google에도 묻지 않아요.",
         basis = Basis(policy = "3.13", requirement = "RVM-21", note = "2.0.0 장터 카드 글꼴(MKT-32)"),
-        conditions = listOf(Condition.Date(policy = CARD_FONT_POLICY), Condition.Policy(CARD_FONT_POLICY)),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION_EFFECTIVE)),
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
