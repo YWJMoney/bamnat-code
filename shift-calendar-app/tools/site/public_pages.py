@@ -903,13 +903,17 @@ write('shift/', page(
   <input id="custom" autocomplete="off" autocapitalize="characters" maxlength="62">
   <label for="first">이 순서의 첫날<span class="hint">순서 맨 앞 근무를 하는 날이에요. 예: 주주야야휴휴면 첫 주간 날.</span></label>
   <input id="first" type="date">
-  <label class="check"><input type="checkbox" id="once"> 반복하지 않아요 (한 달 듀티표처럼 적은 만큼만)</label>
+  <label class="check"><input type="checkbox" id="once"> 반복하지 않아요 (한 달 듀티표처럼 적은 만큼만, 달력 날짜를 눌러 칠해요)</label>
   <label class="check" id="keepRow"><input type="checkbox" id="keep" checked> 이 브라우저에 기억해요 (다음에 열면 바로 내 달력)</label>
 </div>
 <div class="card" id="calCard">
   <div class="today-big" id="today" aria-live="polite"></div>
   <div class="soon" id="soon"></div>
   <div class="mine-row" id="mineRow" hidden><span id="mineSum"></span><button type="button" class="chip" id="edit" aria-controls="setup" aria-expanded="true">바꾸기</button></div>
+  <div class="paint" id="paint" hidden>
+    <div class="chips" role="group" aria-label="누를 근무">''' + ''.join(f'<button type="button" class="chip" data-c="{c}" aria-pressed="{"true" if c == "D" else "false"}">{n}</button>' for c, n in (('D', '주간'), ('E', '오후'), ('N', '야간'), ('O', '휴무'))) + '''</div>
+    <p class="note" id="paintNote" aria-live="polite">근무를 고르고 달력의 날짜를 누르면 그날이 바뀌어요. 사이에 빈 날은 휴무로 채워져요.</p>
+  </div>
   <div class="calnav">
     <button type="button" class="chip" id="prev">◀ 앞 석 달</button>
     <button type="button" class="chip" id="now">오늘로</button>
@@ -937,7 +941,7 @@ write('shift/', page(
 <h2 id="order-list">교대 순서별 설명</h2>
 <div class="card" style="margin-top:18px">
   <strong>간호사처럼 매달 근무표가 바뀌나요?</strong><br>
-  <span class="muted">위 '직접 적기'에 한 달 순서를 적고 '반복하지 않아요'를 켜면 그달 듀티를 달력으로 볼 수 있어요. 밤낮 앱에서는 근무표 사진을 찍으면 내 줄을 찾아 달력에 넣어 줘요.</span>
+  <span class="muted">위에서 '반복하지 않아요'를 켜고 주간·오후·야간·휴무를 골라 달력 날짜를 누르면 그달 듀티가 칠해져요. 두 달까지 적을 수 있고, 같은 링크로 동료에게 보내거나 홈 화면에 더해 매일 봐요. 밤낮 앱에서는 근무표 사진을 찍으면 내 줄을 찾아 달력에 넣어 줘요.</span>
 </div>''',
     r'''(function(){
 var B=Bamnat,$=B.$,D=B.d,pats=[],off=0,WD='일월화수목금토';
@@ -955,16 +959,18 @@ function draw(){
   var now=D.today(),t=at(c,start,now);
   $('today').innerHTML='<span class="t">오늘 '+(now.getUTCMonth()+1)+'월 '+now.getUTCDate()+'일 '+WD[now.getUTCDay()]+'</span> '+chip(t);
   $('soon').innerHTML='<span>내일 '+chip(at(c,start,D.plusDays(now,1)),1)+'</span><span>모레 '+chip(at(c,start,D.plusDays(now,2)),1)+'</span>';
-  $('mineSum').textContent=(own?'':'받은 달력 · ')+label(c)+' · '+D.md(start)+'부터'+($('once').checked?' 한 번만':'');
+  var mine=$('once').checked&&!pats.some(function(p){return p.codes===c;});
+  $('mineSum').textContent=(own?'':'받은 달력 · ')+(mine?'직접 적은 근무 '+c.length+'일':label(c))+' · '+D.md(start)+'부터'+($('once').checked&&!mine?' 한 번만':'');
   var out='',base=D.plusMonths(new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)),off*3);
   for(var m=0;m<3;m++){var first=D.plusMonths(base,m),y=first.getUTCFullYear(),mo=first.getUTCMonth(),last=new Date(Date.UTC(y,mo+1,0)).getUTCDate();
     out+='<h3 class="month-title">'+y+'년 '+(mo+1)+'월</h3><div class="cal">';
     '일월화수목금토'.split('').forEach(function(w){out+='<div class="h">'+w+'</div>';});
     for(var i=0;i<first.getUTCDay();i++)out+='<div></div>';
     for(var d=1;d<=last;d++){var day=new Date(Date.UTC(y,mo,d)),s=at(c,start,day);
-      out+='<div class="d'+(+day===+now?' today':'')+'"><span class="n">'+d+'</span>'+(s?'<span class="s '+s+'" title="'+FULL[s]+'">'+NAME[s]+'</span>':'')+'</div>';}
+      var tap=$('once').checked?' tap" role="button" tabindex="0" data-k="'+D.between(start,day)+'" aria-label="'+(mo+1)+'월 '+d+'일 '+(FULL[s]||'근무 없음')+', 누르면 '+FULL[paint]:'';
+      out+='<div class="d'+(+day===+now?' today':'')+tap+'"><span class="n">'+d+'</span>'+(s?'<span class="s '+s+'" title="'+FULL[s]+'">'+NAME[s]+'</span>':'')+'</div>';}
     out+='</div>';}
-  $('cal').innerHTML=out;
+  $('cal').innerHTML=out;$('paint').hidden=!$('once').checked;
   try{history.replaceState(null,'','?p='+c+'&s='+$('first').value+($('once').checked?'&o=1':''));}catch(e){}
   if(own)store(app||$('keep').checked);ask();
   // [I50c-01] 앱 받기 링크에 이 순서·첫날을 실어요(앱 첫 설정이 한 번 물어요).
@@ -1008,6 +1014,20 @@ fetch(B.base+'remote/v1/presets.json').then(function(r){return r.json();}).catch
   var c=$('custom').value.toUpperCase();if(pats.some(function(p){return p.codes===c;})){$('pat').value=c;$('custom').value='';}
   draw();
 });
+// [RVR-37] 순서가 없는 듀티(간호사처럼 달마다 바뀌는 근무표): '반복하지 않아요'를 켜면 달력 날짜를 눌러 근무를 칠해요.
+// 첫날보다 앞을 누르면 첫날이 그날로 옮겨지고, 사이 빈 날은 휴무로 채워요. 앱이 이어받는 길이(62일, 두 달)까지만.
+var paint='D',MAX=62;
+$('paint').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;paint=b.dataset.c;
+  [].forEach.call($('paint').querySelectorAll('.chip'),function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});draw();});
+function put(k){var c=$('custom').value.toUpperCase().replace(/[^DENOXB]/g,''),start=D.parse($('first').value);if(!start)return;
+  if(k<0){if(c.length-k>MAX)return full();c=new Array(-k+1).join('O')+c;start=D.plusDays(start,k);k=0;$('first').value=D.iso(start);}
+  if(k>=MAX)return full();
+  while(c.length<=k)c+='O';
+  c=c.slice(0,k)+paint+c.slice(k+1);$('custom').value=c;own=true;var x=D.plusDays(start,k);$('paintNote').textContent=(x.getUTCMonth()+1)+'월 '+x.getUTCDate()+'일을 '+{D:'주간으로',E:'오후로',N:'야간으로',O:'휴무로'}[paint]+' 바꿨어요.';draw();
+  var el=$('cal').querySelector('[data-k="'+k+'"]');if(el)el.focus({preventScroll:true});}
+function full(){$('paintNote').textContent='한 번에 두 달('+MAX+'일)까지 적을 수 있어요. 다음 달은 첫날을 옮겨 새로 적어요.';}
+$('cal').addEventListener('click',function(e){var t=e.target.closest('.d.tap');if(t)put(+t.dataset.k);});
+$('cal').addEventListener('keydown',function(e){var t=e.target.closest('.d.tap');if(t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();put(+t.dataset.k);}});
 B.shareButton($('share'),'우리 조 근무 달력');
 $('pat').addEventListener('change',function(){own=true;$('custom').value='';draw();});
 ['custom','first','once'].forEach(function(i){var mine=function(){own=true;draw();};$(i).addEventListener('input',mine);$(i).addEventListener('change',mine);});
@@ -1184,7 +1204,7 @@ WORK_GROUPS = [
     ('guard', '보안·경비·호텔', ['보안', '경비', '공항 보안', '시설관리', '호텔', '공공 용역'], '보안·경비·시설관리·호텔'),
 ]
 WORK_TIPS = {
-    'hospital': '간호사처럼 달마다 근무표가 바뀌면 교대 달력의 직접 적기에 한 달 순서를 적고 \'반복하지 않아요\'를 켜요. <a href="../../../form/">듀티표 양식</a>으로 인쇄도 돼요.',
+    'hospital': '간호사처럼 달마다 근무표가 바뀌면 교대 달력에서 \'반복하지 않아요\'를 켜고 주간·오후·야간·휴무를 골라 날짜를 눌러 칠해요. <a href="../../../form/">듀티표 양식</a>으로 인쇄도 돼요.',
     'safety': '소방 3조 2교대 21일, 경찰 지구대 4조 2교대(주·야·비·휴)처럼 순서가 정해져 있으면 <a href="../../">교대 달력</a>에서 바로 골라요.',
     'factory': '주간연속 2교대·주야 교대처럼 한 주 단위로 바뀌는 곳은 교대 달력의 직접 적기에 일주일씩 적어요.',
 }

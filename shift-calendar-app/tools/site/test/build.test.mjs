@@ -34,6 +34,10 @@ test('목록 밖 파일·내부 주소·지난해 숫자가 섞이면 실패해�
     assert.match(sw, /r\.method !== 'GET' \|\| u\.origin !== location\.origin/);
     const shift = fs.readFileSync(path.join(root, 'shift/index.html'), 'utf8');
     assert.match(shift, /<link rel="apple-touch-icon" href="\.\.\/assets\/icon-180\.png">/);
+    // [RVR-37] 순서 없는 듀티: '반복하지 않아요'면 날짜를 눌러 칠하고, 앱이 이어받는 62일까지만.
+    assert.match(shift, /id="paint"[^>]*hidden/);
+    assert.match(shift, /data-c="N"/);
+    assert.match(shift, /MAX=62/);
     assert.ok(fs.statSync(path.join(root, 'assets/icon-180.png')).size > 1000);
     // 2.0.0 [RVR-35] 가게 세금 날: 토·일·공휴일이면 다음 날(국세기본법 제5조). 국세청이 알린 2026년 날과 같아요
     // (2기 부가세 1.25(일) → 1.26(월), 종합소득세 5.31(일) → 6.1(월), 1기 부가세 7.25(토) → 7.27(월)).
