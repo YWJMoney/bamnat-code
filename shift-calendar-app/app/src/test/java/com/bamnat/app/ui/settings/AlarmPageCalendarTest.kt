@@ -50,6 +50,10 @@ class AlarmPageCalendarTest {
         settle()
         val shown = runBlocking { other.shiftTypes.first() }.first { it.id == theirs }
         assertEquals(listOf(105), shown.alarms.map { it.offsetMinutes })
+        // 2.0.0 검토 PC-14 (9차: 두 번째 달력을 보는 채 '첫 알람' 칩이 눌러도 아무것도 안 바뀜): the page reads the same calendar it saves to,
+        // so the chip it drew shows the new first alarm.
+        val page = runBlocking { c.calendars.activeSnapshot.first() }.shiftTypes.first { it.id == theirs }
+        assertEquals(listOf(105), page.alarms.map { it.offsetMinutes })
         // 내 달력 is left alone, whatever its shift with that number.
         val main = runBlocking { c.scheduleRepository.shiftTypes.first() }
         assertEquals(listOf(60), main.first { it.id == mine }.alarms.map { it.offsetMinutes })

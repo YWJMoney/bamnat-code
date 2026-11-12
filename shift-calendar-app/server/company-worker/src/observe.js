@@ -405,7 +405,7 @@ export function obsRules(b) {
   if (a?.config?.length) {
     const w = obsWindow(a.config.map((d) => d.n), 3, 10);
     if (w.n >= 10) {
-      push({ kind: "config-drop", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "번/일",
+      push({ kind: "config-drop", src: "server", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "번/일",
         on: w.before >= 30 && w.now <= w.before * 0.6, tone: "bad",
         title: `앱이 서버에 오는 횟수가 하루 ${obsRound1(w.now)}번으로 줄었어요(그 전 ${obsRound1(w.before)}번)`,
         why: "늦지 않는 숫자라 오늘 일어난 일을 먼저 보여요. 앱이 서버에 닿지 못하는지(오류·주소)도 봐요.",
@@ -425,7 +425,7 @@ export function obsRules(b) {
   }
   const s = b.sample;
   if (s?.keep?.d1?.base >= 30) {
-    push({ kind: "keep-d1", value: s.keep.d1.rate, base: 30, better: "up", unit: "%", on: s.keep.d1.rate < 30,
+    push({ kind: "keep-d1", src: "stats", value: s.keep.d1.rate, base: 30, better: "up", unit: "%", on: s.keep.d1.rate < 30,
       title: `처음 연 다음 날 다시 연 휴대폰이 ${s.keep.d1.rate}%예요`, why: "첫 설정 뒤 첫날 경험(달력이 찼는지, 알람이 맞는지)을 봐요. 사용 통계 표본이에요.",
       dev: "첫날 머묾 올리기(첫 설정 끝·첫 알람 점검)", to: "#/glance" });
   }
@@ -434,7 +434,7 @@ export function obsRules(b) {
   if (k?.all?.d7?.rate !== null && k?.all?.d7?.rate !== undefined && k.all.d7.base >= OBS.kindMin) {
     for (const r of k.rows) {
       if ((r.d7?.base ?? 0) < OBS.kindMin || r.d7.rate === null) continue;
-      push({ kind: "kind-keep-low", subject: r.style, value: r.d7.rate, base: k.all.d7.rate, better: "up", unit: "%", on: r.d7.rate < k.all.d7.rate * 0.7, tone: "bad",
+      push({ kind: "kind-keep-low", src: "stats", subject: r.style, value: r.d7.rate, base: k.all.d7.rate, better: "up", unit: "%", on: r.d7.rate < k.all.d7.rate * 0.7, tone: "bad",
         title: `${r.name} 유형의 7일째 머묾이 ${r.d7.rate}%로 전체 ${k.all.d7.rate}%보다 낮아요`,
         why: "그 유형의 첫 설정·첫 주에 맞지 않는 말·기능이 있는지 봐요(유형별 둘러보기). 사용 통계 표본이에요.",
         dev: `${r.name} 유형 첫 주 이탈 줄이기(첫 설정·홈·알람 둘러보기)`, to: "#/glance" });
@@ -443,24 +443,33 @@ export function obsRules(b) {
   // 1.40 [DISC-06] 안 써 본 기능 카드(깃발 stats.disc, 처리방침 3.13): 그만 보기가 많으면 빈도·문구, 열어 봄이 적으면 후보 고르기.
   const dc = b.disc;
   if (dc && dc.shown >= OBS.discMin) {
-    push({ kind: "disc-off-high", value: dc.offRate, base: OBS.discOffMax, better: "down", unit: "%", on: dc.offRate > OBS.discOffMax, tone: "bad",
+    push({ kind: "disc-off-high", src: "stats", value: dc.offRate, base: OBS.discOffMax, better: "down", unit: "%", on: dc.offRate > OBS.discOffMax, tone: "bad",
       title: `'안 써 본 기능' 카드의 그만 보기가 ${dc.offRate}%예요(14일, 본 휴대폰 ${dc.shown})`,
       why: "7일에 한 장(사용자 결정 2026-11-11)이 잦거나 문구가 거슬리는 거예요. 10일에 한 장으로 늦출지 사용자에게 물어요.",
       dev: "안 써 본 기능 카드의 빈도·문구 다시 보기(그만 보기 줄이기)", to: "#/metrics" });
-    push({ kind: "disc-try-low", value: dc.tryRate, base: OBS.discTryMin, better: "up", unit: "%", on: dc.tryRate < OBS.discTryMin,
+    push({ kind: "disc-try-low", src: "stats", value: dc.tryRate, base: OBS.discTryMin, better: "up", unit: "%", on: dc.tryRate < OBS.discTryMin,
       title: `'안 써 본 기능' 카드를 열어 본 비율이 ${dc.tryRate}%예요(14일)`,
       why: "알려 주는 기능이 그 사람에게 맞지 않는 거예요. 유형별 후보와 고르는 순서를 봐요.",
       dev: "안 써 본 기능 카드의 후보 고르기 다시 보기", to: "#/metrics" });
   }
   for (const f of (s?.features ?? []).slice(0, OBS.featureSignals)) {
-    push({ kind: "feature-fall", subject: f.event, value: f.now, base: f.before, better: "up", unit: "대", on: true,
+    push({ kind: "feature-fall", src: "stats", subject: f.event, value: f.now, base: f.before, better: "up", unit: "대", on: true,
       title: `'${f.name}' 쓰는 휴대폰이 반 넘게 줄었어요(7일 ${f.now}, 그 전 ${f.before})`,
       why: "최근 판에서 그 기능 가는 길·모양이 바뀌었는지 봐요. 사용 통계 표본이에요.", dev: `'${f.name}' 쓰임이 줄어든 이유 찾기`, to: "#/metrics" });
   }
   for (const m of (b.voice?.misses ?? []).slice(0, OBS.missSignals)) {
-    push({ kind: "search-miss", subject: `${m.place}:${m.word}`, value: m.n, base: 3, better: "down", unit: "번", on: m.n >= 3,
+    push({ kind: "search-miss", src: "stats", subject: `${m.place}:${m.word}`, value: m.n, base: 3, better: "down", unit: "번", on: m.n >= 3,
       title: `'${m.word}'를 찾았는데 없었어요 ${m.n}번(${m.placeName ?? m.place})`, why: "사용자가 직접 찾다가 못 찾은 말이에요. 기능이 없거나, 있는데 이름이 달라요.",
       dev: `'${m.word}' 찾기 길 만들기(없으면 기능, 있으면 이름·검색어)`, to: "#/growth" });
+  }
+  // 2.0.0 [RVQ-15] 검토 SRV-20: 사용 통계(누구나 보낼 수 있음)와 서버가 센 요청에서 나온 신호는 꾸밀 수 있는 숫자라, Play 숫자(꾸밀 수 없음)와
+  // 맞춰 봐요. Play의 하루 사용자가 같은 주에 그대로(±15%)면 '맞춰 보면 Play는 그대로'를 붙이고 사람이 확인해야 개발사항이 돼요.
+  const pw = a?.play?.length ? obsWindow(a.play.map((d) => d.n), 7, 7) : null;
+  const playMove = pw && pw.n >= 14 && pw.before > 0 ? pw.now / pw.before : null;
+  for (const x of out) {
+    if (!x.src) continue;
+    x.play = playMove === null ? null : obsRound1((playMove - 1) * 100);
+    x.doubt = playMove === null || Math.abs(playMove - 1) <= 0.15;
   }
   return out;
 }
@@ -469,6 +478,15 @@ export function obsRules(b) {
  * [OBS2-04] 저장된 신호에 이번에 찾은 것을 합쳐요. 같은 종류·대상이 열려 있으면 고치고, 없으면 새로. 사흘 넘게 안 보인 신호는
  * '좋아짐'(cleared)과 그때 값(after). 끝난 것(좋아짐·아님)은 30일 뒤에 지우고, 많으면 오래된 끝난 것부터.
  */
+/**
+ * 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 신호가 사람 확인을 기다리는지. 처음 보인 지 하루 안(하루 사이 급변)이거나 Play 숫자가 그대로면
+ * human: true. 그동안 운영 열쇠(자동 처리)로는 개발사항이 되지 않고, 사람이 '개발사항으로'를 누르면 돼요.
+ */
+function humanCheck(f, first, now) {
+  if (!f.src) return {};
+  return { src: f.src, play: f.play ?? null, doubt: Boolean(f.doubt), human: Boolean(f.doubt) || now - first < DAY };
+}
+
 export function obsMerge(stored, found, now) {
   const list = (stored ?? []).map((s) => ({ ...s }));
   const open = (s) => s.state !== "dismiss" && !s.cleared;
@@ -480,7 +498,8 @@ export function obsMerge(stored, found, now) {
     }
     if (s) {
       if (s.state === "dismiss") continue;
-      Object.assign(s, { tone: f.tone, title: f.title, why: f.why, value: f.value, base: f.base, unit: f.unit, better: f.better, last: now, now: f.value });
+      Object.assign(s, { tone: f.tone, title: f.title, why: f.why, value: f.value, base: f.base, unit: f.unit, better: f.better, last: now, now: f.value,
+        ...humanCheck(f, s.first ?? now, now) });
       continue;
     }
     // 좋아졌다가 다시 나타나면 그 기록을 이어요(다시 나타남).
@@ -491,7 +510,8 @@ export function obsMerge(stored, found, now) {
       continue;
     }
     list.push({ key: `${f.kind}${f.subject ? `:${f.subject}` : ""}:${kstDay(now)}`, kind: f.kind, subject: f.subject, tone: f.tone, title: f.title, why: f.why,
-      dev: f.dev, to: f.to, unit: f.unit, better: f.better, value: f.value, base: f.base, now: f.value, first: now, last: now, at: now, state: "new" });
+      dev: f.dev, to: f.to, unit: f.unit, better: f.better, value: f.value, base: f.base, now: f.value, first: now, last: now, at: now, state: "new",
+      ...humanCheck(f, now, now) });
   }
   for (const s of list) {
     if (open(s) && now - s.last >= OBS.clearMs) {
@@ -782,6 +802,8 @@ export async function observeRoute(request, env, path, method, now) {
   const note = body.note === undefined ? "" : plainText(body.note, 300, "note");
   if (act === "dev") {
     if (!can(actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
+    // 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 급변·Play와 다른 신호는 사람만 개발사항으로 넘겨요(운영 열쇠는 '지켜보기'까지).
+    if (s.human && actor.key) return json({ error: "human_check", field: "act" }, 409);
     if (s.devId) return json({ error: "already", dev: s.devId }, 409);
     const title = plainText(body.title ?? s.dev ?? s.title, DEV.title, "title", true);
     const text = plainText(`관측 신호 ${s.key}\n${s.title}\n${s.why}\n지금 ${s.now ?? s.value}${s.unit} · 기준 ${s.base}${s.unit}${note ? `\n${note}` : ""}`, DEV.body, "body");
