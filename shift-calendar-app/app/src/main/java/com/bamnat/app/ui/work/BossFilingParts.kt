@@ -111,33 +111,37 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
                 d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }) }
                 return@forEach
             }
+            // [RVJ-38] Only the date and the title share their line with 했어요; what follows takes the card's width (at 200% on the
+            // folded width the 주의 line under the amount was squeezed to a third of it, seven lines).
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f)) {
                     Text("${Fmt.monthDay(d.date)} · " + when { ticked -> "했어요"; n < 0 -> "${-n}일 지났어요"; n == 0L -> "오늘"; else -> "${n}일 남음" },
                         style = MaterialTheme.typography.labelMedium, color = if (!ticked && n <= 3) warn else MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(d.title + amount, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                    // [RVJ-38] Right by the amount: who it leaves out, what it comes to with them, and a press to put the 입사일 in.
-                    d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }) }
-                    Hint(d.detail + if (d.where.isNotEmpty()) " · ${d.where}" else "")
-                    if (d.kind == BossFilings.Kind.WITHHOLD) d.worked?.let { worked ->
-                        // [RVJ-38] The month the line is about (a same-month pay day is one month before the 10일, not two), and the same people
-                        // as the line ([BossFilings.filed]).
-                        TextButton(onClick = {
-                            scope.launch {
-                                val l = BossFilings.filed(ledgerOf(worked), worked, today)
-                                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, BossFilings.withheldCsv(place, worked, BossFilings.withheld(place, l)),
-                                    "원천세-${place.name}-$worked.csv", "${place.name} ${Fmt.month(worked)}분 원천세 표") }
-                            }
-                        }) { Text("원천세 표(CSV)") }
-                    }
-                    if (d.kind == BossFilings.Kind.INSURE_IN || d.kind == BossFilings.Kind.INSURE_OUT) TextButton(onClick = {
-                        scope.launch {
-                            com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, BossFilings.insuranceCsv(place, staff, ledgerOf, today),
-                                "4대보험-신고-${place.name}.csv", "${place.name} 4대보험 취득·상실 표") }
-                        }
-                    }) { Text("4대보험 신고 표(CSV)") }
                 }
                 FilterChip(selected = ticked, onClick = { Filed.set(context, d.key, !ticked); done = Filed.all(context) }, label = { Text(if (ticked) "했어요 ✓" else "했어요") })
+            }
+            Column(Modifier.fillMaxWidth()) {
+                // [RVJ-38] Right by the amount: who it leaves out, what it comes to with them, and a press to put the 입사일 in.
+                d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }) }
+                Hint(d.detail + if (d.where.isNotEmpty()) " · ${d.where}" else "")
+                if (d.kind == BossFilings.Kind.WITHHOLD) d.worked?.let { worked ->
+                    // [RVJ-38] The month the line is about (a same-month pay day is one month before the 10일, not two), and the same people
+                    // as the line ([BossFilings.filed]).
+                    TextButton(onClick = {
+                        scope.launch {
+                            val l = BossFilings.filed(ledgerOf(worked), worked, today)
+                            com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, BossFilings.withheldCsv(place, worked, BossFilings.withheld(place, l)),
+                                "원천세-${place.name}-$worked.csv", "${place.name} ${Fmt.month(worked)}분 원천세 표") }
+                        }
+                    }) { Text("원천세 표(CSV)") }
+                }
+                if (d.kind == BossFilings.Kind.INSURE_IN || d.kind == BossFilings.Kind.INSURE_OUT) TextButton(onClick = {
+                    scope.launch {
+                        com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, BossFilings.insuranceCsv(place, staff, ledgerOf, today),
+                            "4대보험-신고-${place.name}.csv", "${place.name} 4대보험 취득·상실 표") }
+                    }
+                }) { Text("4대보험 신고 표(CSV)") }
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -44,6 +44,9 @@ class RvjFilingsScreenshotTest : ScreenshotBase() {
         seedShop()
         content { com.bamnat.app.ui.work.PayrollScreen(StaffRoster(emptyList()), null) {} }
         repeat(2) { settle() }
+        // The card reads its months off the main thread; on the class's first, cold test that can take longer than two settles.
+        var found = false
+        repeat(4) { if (!found) { found = scrolledTo("다가올 신고·지급"); if (!found) settle() } }
         reveal("다가올 신고·지급", exact = false)
         if (all) {
             tapText("모두 보기", exact = false)
