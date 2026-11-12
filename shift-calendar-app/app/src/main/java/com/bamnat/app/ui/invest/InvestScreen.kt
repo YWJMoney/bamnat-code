@@ -128,6 +128,8 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
             "invest.dividend" -> sheet = InvestSheet.CashEdit(CashKind.DIVIDEND)
             "invest.trade" -> sheet = InvestSheet.TradeEdit(TradeDraft(side = Side.BUY))
             "invest.quotes" -> { tab = InvestTab.HOLDINGS; sheet = InvestSheet.Quotes }
+            "invest.quantity" -> { tab = InvestTab.HOLDINGS; sheet = InvestSheet.QuantityEdit() }
+            "invest.holdings" -> tab = InvestTab.HOLDINGS
             "invest.goal" -> { tab = InvestTab.OVERVIEW; sheet = InvestSheet.Goal }
             "invest.journal" -> { tab = InvestTab.JOURNAL; sheet = InvestSheet.Journal(state.today) }
             "invest.event" -> { tab = InvestTab.OVERVIEW; sheet = InvestSheet.EventEdit(state.today) }
@@ -307,8 +309,18 @@ private fun SummaryCard(vm: InvestViewModel, state: InvestState, open: (InvestSh
             StatTile("원금", InvestFmt.short(s.principal, hide), Modifier.weight(1f), caption = "입금 − 출금",
                 onClick = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) })
             StatTile("현금", InvestFmt.short(s.cash, hide), Modifier.weight(1f), warning = s.cashShort)
+            // 2.0.0 [RVK-25] (검토 MONEY-69·I06ba-02) How old the oldest price is, by the number (before, '현재가 기준' however old);
+            // after a week the caption says so in the caution colour (not red, 조건 6), and the tile opens 현재가 적기.
+            val oldest = state.result.held.mapNotNull { it.quote?.date }.minOrNull()
+            val stale = oldest != null && java.time.temporal.ChronoUnit.DAYS.between(oldest, state.today) >= InvestFmt.STALE_DAYS
             StatTile("평가손익", InvestFmt.signedShort(s.unrealized, hide), Modifier.weight(1f),
-                caption = if (s.missingQuotes.isEmpty()) "현재가 기준" else "일부 매입가")
+                caption = when {
+                    s.missingQuotes.isNotEmpty() -> "일부 매입가"
+                    oldest == null -> "현재가 기준"
+                    else -> "${InvestFmt.ago(oldest, state.today)} 가격"
+                },
+                captionTone = if (stale) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain,
+                onClick = if (state.result.held.isNotEmpty()) ({ open(InvestSheet.Quotes) }) else null)
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -430,7 +442,11 @@ private fun HistoryCard(state: InvestState) {
         Canvas(Modifier.fillMaxWidth().height(120.dp).semantics {
             contentDescription = "${Fmt.shortDate(snaps.first().date)}부터 ${Fmt.shortDate(snaps.last().date)}까지 총자산 ${InvestFmt.short(snaps.first().value, state.hide)}에서 ${InvestFmt.short(snaps.last().value, state.hide)}"
         }) {
-            fun pt(i: Int, v: Long) = Offset(size.width * i / (snaps.size - 1), size.height * (1f - (v - min).toFloat() / (max - min)))
+            // 2.0.0 [RVK-25] (검토 I06ba-02) Across by date: a month without a value is a long stretch, not one step like a day.
+            val first = snaps.first().date
+            val span = java.time.temporal.ChronoUnit.DAYS.between(first, snaps.last().date).coerceAtLeast(1).toFloat()
+            fun pt(i: Int, v: Long) = Offset(size.width * java.time.temporal.ChronoUnit.DAYS.between(first, snaps[i].date) / span,
+                size.height * (1f - (v - min).toFloat() / (max - min)))
             for (i in 1 until snaps.size) {
                 drawLine(line, pt(i - 1, snaps[i - 1].principal), pt(i, snaps[i].principal), strokeWidth = 2f)
                 drawLine(profit, pt(i - 1, snaps[i - 1].value), pt(i, snaps[i].value), strokeWidth = 4f)

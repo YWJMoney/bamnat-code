@@ -185,6 +185,38 @@ class InvestAppTest {
         assertEquals(before.settings, after.settings)
     }
 
+    /**
+     * 2.0.0 [RVK-27] (검토 MONEY-64) A split and shares moved in or out come back from the backup, under their own key: an app from
+     * before 2.0.0 read a side it did not know as 매수, so in "trades" a 1:5 split would have come back as five shares bought for 0원.
+     */
+    @Test fun quantityChangesComeBackAndAnOlderAppSkipsThem() = runBlocking {
+        ScheduleRepository(db).ensureDefaults()
+        val acc = repo.ensureAccount()
+        fun t(side: Side, q: Double, p: Double, days: Long) =
+            Trade(accountId = acc, date = day.plusDays(days), symbol = "005930", name = "삼성전자", side = side, quantity = q, price = p)
+        repo.saveTrade(t(Side.BUY, 10.0, 70_000.0, 0))
+        repo.saveTrade(t(Side.SPLIT, 5.0, 0.0, 1))
+        repo.saveTrade(t(Side.IN, 2.0, 0.0, 2))
+        repo.saveTrade(t(Side.OUT, 12.0, 0.0, 3))
+        val before = repo.now()
+        val backups = BackupManager(db, SettingsRepository(context))
+        val json = backups.export()
+        val invest = org.json.JSONObject(json).getJSONObject("invest")
+        assertEquals(listOf("BUY"), (0 until invest.getJSONArray("trades").length()).map { invest.getJSONArray("trades").getJSONObject(it).getString("side") })
+        assertEquals(listOf("SPLIT", "IN", "OUT"),
+            (0 until invest.getJSONArray("quantityChanges").length()).map { invest.getJSONArray("quantityChanges").getJSONObject(it).getString("side") })
+
+        db.investDao().clearTrades()
+        backups.restore(json)
+        assertEquals(before.trades.map { it.copy(createdAt = 0) }, repo.now().trades.map { it.copy(createdAt = 0) })
+        assertEquals(40.0, Portfolio.build(repo.now()).holdings.single().quantity, 1e-9)
+
+        // What an older app restores: "trades" only, so 10주 at 70,000원 and nothing bought for 0원.
+        val older = org.json.JSONObject(json).apply { getJSONObject("invest").remove("quantityChanges") }
+        backups.restore(older.toString())
+        assertEquals(listOf(Side.BUY), repo.now().trades.map { it.side })
+    }
+
     @Test fun anOlderBackupWithoutInvestorRecordsLeavesThePhonesOwn() = runBlocking {
         ScheduleRepository(db).ensureDefaults()
         val backups = BackupManager(db, SettingsRepository(context))

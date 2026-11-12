@@ -41,6 +41,7 @@ import java.time.DayOfWeek
 import java.time.YearMonth
 import kotlin.math.abs
 import kotlin.math.roundToLong
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * [INV-06][INV-12][INV-13][INV-18] The numbers of a month or a year: what it made, 승률, 손익비, the
@@ -248,9 +249,9 @@ private fun TaxCard(state: InvestState, year: Int) {
     SectionCard(title = "${year}년 세금 미리 보기") {
         lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }
         if (t.financialOver) Text("금융소득이 2,000만 원을 넘었어요. 다른 소득과 합쳐 종합과세될 수 있어요.", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning)
+            color = MaterialTheme.bamnat.caution)
         else if (t.financialNear) Text("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning)
+            color = MaterialTheme.bamnat.caution)
         // [INV-35] Why this gain and the 보유 tab's can differ.
         if (t.foreignGain != 0L) Text(InvestTaxes.AVERAGE_VS_FIFO, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -29,7 +32,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.CompositionLocalProvider
 import com.bamnat.app.ui.components.LongTextField
 import com.bamnat.app.ui.components.edgeScrollViewport
@@ -54,7 +56,6 @@ import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.invest.AccountType
 import com.bamnat.core.invest.AlarmKind
 import com.bamnat.core.invest.CashFlow
@@ -77,6 +78,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /** [INV-01] Which of the investor's sheets is open. */
 sealed interface InvestSheet {
@@ -89,6 +91,10 @@ sealed interface InvestSheet {
     data object Goal : InvestSheet
     data object Principles : InvestSheet
     data class Journal(val date: LocalDate) : InvestSheet
+    /** 2.0.0 [RVK-27] 수량 바뀜 (분할·병합, 입고, 출고): the draft's side says which. */
+    data class QuantityEdit(val draft: TradeDraft? = null, val editing: Trade? = null) : InvestSheet
+    /** 2.0.0 [RVK-28] 종목 한 장: one holding's records in order; [accountId] null for every account. */
+    data class Story(val key: String, val accountId: Long? = null) : InvestSheet
 }
 
 /** Opens [sheet] over whichever screen asked: the 투자 tab, the calendar or the day. */
@@ -98,11 +104,16 @@ fun InvestSheetHost(vm: InvestViewModel, sheet: InvestSheet, onSheet: (InvestShe
     val close = { onSheet(null) }
     // A new sheet (a trade copied from the one open) starts from its own values.
     androidx.compose.runtime.key(sheet) { when (sheet) {
-        is InvestSheet.TradeEdit -> TradeSheet(vm, state, sheet.draft, sheet.editing, onDismiss = close,
-            onCopy = { t -> onSheet(InvestSheet.TradeEdit(TradeDraft(t.symbol, t.name, t.market, t.side, t.quantity, t.price, t.accountId, date = state.today), null)) })
+        // [RVK-27] A 수량 바뀜 opened from a list (기록, 달력, 종목 한 장) opens its own sheet.
+        is InvestSheet.TradeEdit -> if (sheet.editing?.side?.trade == false) QuantityChangeSheet(vm, state, null, sheet.editing, onDismiss = close)
+        else TradeSheet(vm, state, sheet.draft, sheet.editing, onDismiss = close,
+            onCopy = { t -> onSheet(InvestSheet.TradeEdit(TradeDraft(t.symbol, t.name, t.market, t.side, t.quantity, t.price, t.accountId, date = state.today), null)) },
+            onQuantity = { d -> onSheet(InvestSheet.QuantityEdit(d)) })
+        is InvestSheet.QuantityEdit -> QuantityChangeSheet(vm, state, sheet.draft, sheet.editing, onDismiss = close)
+        is InvestSheet.Story -> HoldingStorySheet(state, sheet.key, sheet.accountId, onDismiss = close, open = onSheet)
         is InvestSheet.CashEdit -> CashSheet(vm, state, sheet.kind, sheet.date, sheet.editing, onDismiss = close)
         is InvestSheet.AccountEdit -> AccountSheet(vm, sheet.editing, onDismiss = close)
-        InvestSheet.Quotes -> QuoteSheet(vm, state, onDismiss = close)
+        InvestSheet.Quotes -> QuoteSheet(vm, state, onDismiss = close, open = onSheet)
         is InvestSheet.AlarmEdit -> AlarmSheet(vm, state, sheet.kind, sheet.editing, onDismiss = close)
         is InvestSheet.EventEdit -> EventSheet(vm, sheet.date ?: state.today, sheet.editing, onDismiss = close)
         InvestSheet.Goal -> GoalSheet(vm, state, onDismiss = close)
@@ -121,9 +132,14 @@ internal fun InvestSheetFrame(
     saveLabel: String = "저장",
     canSave: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {},
+    /**
+     * 2.0.0 [RVK-27] (검토 MONEY-64, 조건 10) Something typed that a swipe, 뒤로 or a tap outside would throw away: the sheet asks
+     * first, as the ledger's sheets do ([com.bamnat.app.ui.components.GuardedSheet]); the X and 저장 close at once.
+     */
+    unsaved: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = unsaved, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })
@@ -151,6 +167,17 @@ internal fun InvestSheetFrame(
     }
 }
 
+/**
+ * 2.0.0 [RVK-27] (조건 10) Whether what a sheet holds now differs from what it opened with, for [InvestSheetFrame]'s `unsaved`. The
+ * first look is kept across a turn of the phone, so a form filled before the turn still asks.
+ */
+@Composable
+internal fun changedSinceOpen(vararg now: Any?): Boolean {
+    val look = now.joinToString("\u0001") { it.toString() }
+    val first = rememberSaveable { look }
+    return look != first
+}
+
 @Composable
 internal fun FieldLabel(text: String) {
     Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -170,7 +197,7 @@ internal fun AccountPicker(accounts: List<InvestAccount>, selected: Long, onPick
 }
 
 @Composable
-private fun DateRow(date: LocalDate, minuteText: String?, onDate: (LocalDate) -> Unit, onMinute: ((String) -> Unit)?) {
+internal fun DateRow(date: LocalDate, minuteText: String?, onDate: (LocalDate) -> Unit, onMinute: ((String) -> Unit)?) {
     var picking by remember { mutableStateOf(false) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { picking = true }) {
@@ -202,6 +229,8 @@ internal fun TradeSheet(
     editing: Trade?,
     onDismiss: () -> Unit,
     onCopy: (Trade) -> Unit,
+    /** 2.0.0 [RVK-27] The holding's quantity changed without a trade: 분할·병합, 입고, 출고. */
+    onQuantity: (TradeDraft) -> Unit = {},
 ) {
     val book = state.full
     val accounts = book.activeAccounts
@@ -267,6 +296,8 @@ internal fun TradeSheet(
     InvestSheetFrame(
         title = if (start == null) "매매 기록" else "매매 고치기",
         onDismiss = onDismiss,
+        unsaved = changedSinceOpen(side, accountId, name, symbol, market, qty, price, date, minute, fx, feeText, taxText, rules, memo,
+            tags.toList(), emotions.toList()),
         onSave = ::save,
         saveLabel = if (start == null) "${side.label} 저장" else "고친 내용 저장",
         canSave = canSave,
@@ -280,7 +311,16 @@ internal fun TradeSheet(
             if (start == null) d.alertAt?.let { at -> TextButton(onClick = { vm.dropAlertAt(at); onDismiss() }) { Text("넘기기") } }
         },
     ) {
-        com.bamnat.app.ui.components.ChoiceRow(Side.entries.map { it.label }, selected = side.ordinal, onSelect = { side = Side.entries[it] })
+        com.bamnat.app.ui.components.ChoiceRow(Side.TRADES.map { it.label }, selected = Side.TRADES.indexOf(side).coerceAtLeast(0), onSelect = { side = Side.TRADES[it] })
+        // 2.0.0 [RVK-27] (검토 T06b-14) A split or shares moved in change what is held without a buy: written on their own sheet.
+        // (조건 1) Short enough to sit beside its button on a folded phone, so the sheet's own fields stay near the top.
+        if (start == null) com.bamnat.app.ui.money.WordsWithActions({
+            Text("분할·무상증자·옮긴 주식은", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }) {
+            TextButton(onClick = {
+                onQuantity(TradeDraft(symbol.trim(), name.trim(), market, Side.SPLIT, accountId = accountId, date = runCatching { LocalDate.parse(date) }.getOrNull()))
+            }) { Text("수량 바뀜 적기") }
+        }
         AccountPicker(accounts, accountId) { id ->
             accountId = id
             if (key.isEmpty()) book.account(id)?.type?.market?.let { market = it }
@@ -301,12 +341,7 @@ internal fun TradeSheet(
                 if (price.isEmpty()) book.quote(h.key)?.let { price = InvestFmt.input(it.price) }
             })
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it.take(40) }, label = { Text("종목명") }, placeholder = { Text("삼성전자") }, singleLine = true,
-                modifier = Modifier.weight(1.4f))
-            OutlinedTextField(symbol, { symbol = it.take(20) }, label = { Text("코드 (선택)") }, placeholder = { Text("005930") }, singleLine = true,
-                modifier = Modifier.weight(1f))
-        }
+        NameCodeFields(name, { name = it }, symbol, { symbol = it }, examples = true)
         ChoiceChips(Market.entries, { it == market }, { it.label }, { market = it })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             DecimalField("수량", qty, { qty = it }, Modifier.weight(1f), suffix = if (market == Market.CRYPTO) "개" else "주")
@@ -315,7 +350,7 @@ internal fun TradeSheet(
         if (side == Side.SELL && held > EPS) {
             // 1.36 U12 (매도 단가가 빈칸): what it was bought at, as the line to sell from.
             holding?.takeIf { it.held && it.averagePrice > 0 }?.let { h ->
-                Text("평균 ${InvestFmt.price(h.averagePrice, market)}에 샀어요" + (book.quote(h.key)?.let { " · 현재가 ${InvestFmt.price(it.price, market)}" } ?: ""),
+                Text("평균 ${InvestFmt.average(h.averagePrice, market)}에 샀어요" + (book.quote(h.key)?.let { " · 현재가 ${InvestFmt.price(it.price, market)}" } ?: ""),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -327,7 +362,7 @@ internal fun TradeSheet(
         }
         if (side == Side.SELL && key.isNotEmpty() && q > held + EPS) {
             Text("갖고 있는 수량보다 많아요. 넘는 만큼은 손익 없이 계산해요. 산 기록을 먼저 적어 주세요.",
-                style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution)
         }
         if (market.foreign) DecimalField("환율 (1달러)", fx, { fx = it }, Modifier.fillMaxWidth(), suffix = "원",
             supporting = "실제 체결 환율을 적으면 원화 손익이 더 정확해요")
@@ -439,6 +474,7 @@ internal fun CashSheet(vm: InvestViewModel, state: InvestState, kind0: CashKind,
     InvestSheetFrame(
         title = if (editing == null) "${kind.label} 적기" else "${kind.label} 고치기",
         onDismiss = onDismiss, onSave = ::save, canSave = a > 0,
+        unsaved = changedSinceOpen(kind, accountId, amount, taxText, symbol, memo, date),
         actions = {
             if (editing != null) IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
         },
@@ -523,6 +559,7 @@ internal fun AccountSheet(vm: InvestViewModel, editing: InvestAccount?, onDismis
     InvestSheetFrame(
         title = if (editing == null) "계좌 추가" else "계좌 고치기",
         onDismiss = onDismiss,
+        unsaved = changedSinceOpen(type, name, broker, fee, usFee),
         onSave = {
             val fees = (editing?.marketFees.orEmpty() - Market.US_STOCK) +
                 (usFee.toDecimal()?.takeIf { usApart && it in 0.0..5.0 }?.let { mapOf(Market.US_STOCK to it) } ?: emptyMap())
@@ -564,40 +601,105 @@ internal fun AccountSheet(vm: InvestViewModel, editing: InvestAccount?, onDismis
 
 /**
  * [INV-04][INV-19] 현재가 for every holding at once, typed from the broker's app, and the dollar's rate.
- * Nothing is fetched: the prices are the user's own, dated today.
+ * Nothing is fetched: the prices are the user's own.
+ * 2.0.0 [RVK-25] (검토 MONEY-69·I06ba-02) Only a price typed anew is dated today; one left as it was keeps its day (before, saving
+ * dated every price today), unless the user says it was looked at today. Each line says how old its price is.
+ * 2.0.0 [RVK-26] (검토 U06b-01·I06bb-01) 잔고 캡처: one screenshot of the broker's 잔고 fills the prices, and a quantity the book does
+ * not have is asked as a split, a missing trade or a holding not written yet; going there keeps the prices (saved first).
  */
 @Composable
-internal fun QuoteSheet(vm: InvestViewModel, state: InvestState, onDismiss: () -> Unit) {
+internal fun QuoteSheet(
+    vm: InvestViewModel, state: InvestState, onDismiss: () -> Unit, open: (InvestSheet) -> Unit = {},
+    /** Text of a 잔고 capture read elsewhere (a test). */
+    initialShot: String? = null,
+) {
     val held = state.fullResult.held
-    val typed = remember { mutableStateMapOf<String, String>().apply { held.forEach { put(it.key, InvestFmt.input(it.quote?.price)) } } }
+    val today = state.today
+    val first = remember { held.associate { it.key to InvestFmt.input(it.quote?.price) } }
+    // (조건 10) What was typed or read from a capture stays when the phone turns.
+    val typed = rememberSaveable(saver = androidx.compose.runtime.saveable.listSaver(
+        save = { m -> m.flatMap { (k, v) -> listOf(k, v) } },
+        restore = { l -> mutableStateMapOf<String, String>().apply { l.chunked(2).forEach { (k, v) -> put(k, v) } } },
+    )) { mutableStateMapOf<String, String>().apply { putAll(first) } }
     val foreign = held.any { it.market.foreign }
     var usd by rememberSaveable { mutableStateOf(InvestFmt.input(state.settings.usdKrw)) }
+    var lookedToday by rememberSaveable { mutableStateOf(false) }
+    var capturing by remember { mutableStateOf(false) }
+    var shot by remember { mutableStateOf<List<com.bamnat.core.invest.HoldingShots.Found>?>(null) }
+    fun changed(key: String) = typed[key].orEmpty() != first[key].orEmpty()
+    // Prices left as they were from an earlier day.
+    val old = held.filter { h -> h.quote?.date?.isBefore(today) == true && !changed(h.key) }
+
+    fun take(text: String) {
+        val found = com.bamnat.core.invest.HoldingShots.match(com.bamnat.core.invest.HoldingSheetReader.read(text), state.result.held)
+        found.forEach { f -> f.holding?.let { h -> if (f.price > 0) typed[h.key] = InvestFmt.input(f.price) } }
+        shot = found
+    }
+    androidx.compose.runtime.LaunchedEffect(initialShot) { initialShot?.let(::take) }
+
+    fun save() {
+        val quotes = quotesToSave(held, typed, first, today, lookedToday)
+        // [INV-04] Blank or 0 takes the price away, as a price of nothing is no price.
+        val removed = held.filter { h -> h.quote != null && (typed[h.key]?.toDecimal() ?: 0.0) <= 0 }.map { it.key }
+        vm.saveQuotes(quotes, removed, if (foreign) usd.toDecimal() else null)
+    }
+
     InvestSheetFrame(
         title = "현재가 적기",
         onDismiss = onDismiss,
-        onSave = {
-            val quotes = held.mapNotNull { h -> typed[h.key]?.toDecimal()?.takeIf { it > 0 }?.let { Quote(h.key, it, state.today, h.title, h.market) } }
-            // [INV-04] Blank or 0 takes the price away, as a price of nothing is no price.
-            val removed = held.filter { h -> h.quote != null && (typed[h.key]?.toDecimal() ?: 0.0) <= 0 }.map { it.key }
-            vm.saveQuotes(quotes, removed, if (foreign) usd.toDecimal() else null)
-            onDismiss()
-        },
+        unsaved = typed.any { (k, v) -> v != first[k].orEmpty() } || lookedToday,
+        onSave = { save(); onDismiss() },
         canSave = held.isNotEmpty(),
     ) {
-        Text("증권사 앱에서 본 가격을 적어 주세요. 평가손익·수익률·총자산이 바로 다시 계산돼요. 가격을 받아 오지는 않아요.",
+        Text("증권사 앱에서 본 가격을 적어 주세요. 가격을 받아 오지는 않아요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (held.isEmpty()) Text("갖고 있는 종목이 아직 없어요. 매수를 먼저 적어 주세요.", style = MaterialTheme.typography.bodyMedium)
+        else OutlinedButton(onClick = { capturing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Icon(Icons.Outlined.PhotoCamera, null)
+            Spacer(Modifier.width(6.dp))
+            Text("잔고 화면 캡처로 한 번에 채우기")
+        }
+        // A capture read: what it filled and what the book does not have; a fix goes to its sheet with the prices kept.
+        shot?.let { found -> ShotFindings(found) { sheet -> save(); open(sheet) } }
         if (foreign) DecimalField("환율 (1달러)", usd, { usd = it }, Modifier.fillMaxWidth(), suffix = "원", supporting = "모든 해외 종목의 원화 평가에 써요")
         held.forEach { h ->
-            val avg = h.averagePrice
+            val read = shot?.firstOrNull { it.holding?.key == h.key }
+            val age = h.quote?.date?.let { java.time.temporal.ChronoUnit.DAYS.between(it, today) }
             DecimalField(
                 label = h.title, text = typed[h.key].orEmpty(), onChange = { typed[h.key] = it }, modifier = Modifier.fillMaxWidth(),
                 suffix = if (h.market.foreign) "$" else "원",
-                supporting = "평균단가 ${InvestFmt.price(avg, h.market)} · ${InvestFmt.quantity(h.quantity)}${if (h.market == Market.CRYPTO) "개" else "주"}" +
-                    (h.quote?.let { " · ${it.date.monthValue}/${it.date.dayOfMonth} 적음" } ?: ""),
+                supporting = "평균 ${InvestFmt.average(h.averagePrice, h.market)} · ${InvestFmt.quantity(h.quantity)}${h.market.unit}" + when {
+                    read != null && read.unsure && changed(h.key) -> " · 캡처에서 읽음, 맞는지 봐 주세요"
+                    read != null && changed(h.key) -> " · 캡처에서 읽음"
+                    changed(h.key) -> ""
+                    h.quote != null -> " · ${InvestFmt.ago(h.quote!!.date, today)} 가격"
+                    else -> ""
+                },
+                warn = (read?.unsure == true && changed(h.key)) || (!changed(h.key) && (age ?: 0) >= InvestFmt.STALE_DAYS),
             )
         }
+        if (old.isNotEmpty()) Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .toggleable(value = lookedToday, role = androidx.compose.ui.semantics.Role.Checkbox) { lookedToday = it },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Checkbox(checked = lookedToday, onCheckedChange = null)
+            Spacer(Modifier.width(8.dp))
+            Text("그대로 둔 ${old.size}개도 오늘 본 가격이에요", style = MaterialTheme.typography.bodyMedium)
+        }
     }
+    if (capturing) HoldingShotPicker(onDismiss = { capturing = false }, onText = { take(it); capturing = false })
+}
+
+/**
+ * 2.0.0 [RVK-25] (검토 MONEY-69) The prices a 현재가 save writes, dated [today]: each typed anew (or first typed), and the ones left
+ * as they were only when the user says they looked at them today. Before, every price was saved again as today's.
+ */
+internal fun quotesToSave(
+    held: List<com.bamnat.core.invest.Holding>, typed: Map<String, String>, first: Map<String, String>, today: LocalDate, lookedToday: Boolean,
+): List<Quote> = held.mapNotNull { h ->
+    val p = typed[h.key]?.toDecimal()?.takeIf { it > 0 } ?: return@mapNotNull null
+    if (h.quote != null && typed[h.key].orEmpty() == first[h.key].orEmpty() && !lookedToday) null else Quote(h.key, p, today, h.title, h.market)
 }
 
 /**
