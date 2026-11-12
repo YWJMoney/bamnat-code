@@ -42,7 +42,8 @@ class FeatureGuideTest {
     /** [GUIDE-05] A switch that was there before has its own branch; no feature copies one. */
     @Test
     fun everySwitchHasAHome() {
-        val linked = FeatureRegistry.all.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
+        // Every feature, also one behind a flag that is off here ([FeatureRegistry.everything]): its switch row is there all the same.
+        val linked = FeatureRegistry.everything.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
         assertEquals(linked, FeatureSwitches.LINKED)
         // Each kind of work has something to turn off, and the guide itself can always be turned off.
         for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)) {

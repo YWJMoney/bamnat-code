@@ -64,11 +64,11 @@ object Busy {
 
 /** 뿌리 고침 3: the one way the app asks before typed words are thrown away (sheets, windows, whole screens say the same). */
 @Composable
-fun DiscardAsk(onKeep: () -> Unit, onDiscard: () -> Unit) {
+fun DiscardAsk(onKeep: () -> Unit, onDiscard: () -> Unit, what: String = "저장하지 않고 닫으면 지금 적은 것이 사라져요.") {
     AlertDialog(
         onDismissRequest = onKeep,
         title = { Text("적은 내용을 버릴까요?") },
-        text = { Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
+        text = { Text(what) },
         confirmButton = { TextButton(onClick = onDiscard) { Text("버리기") } },
         dismissButton = { TextButton(onClick = onKeep) { Text("계속 적기") } },
     )

@@ -419,7 +419,9 @@ abstract class ScreenshotBase {
             // work but is enabled only once '내 달력 미리 보기' (off the main thread) has landed. A tap in that gap did nothing, no
             // window opened, and the next step failed (NtcScreenshotTest 161, #444·#446 CI). A person waits for the button to
             // light up, so the tap does too; one that stays off is still tapped, as before.
-            val end = System.nanoTime() + REACH_WAIT_NANOS
+            // 2.0.0 [RVP-75] The whole suite on two forks still saw 161 fail once with 5 s (the preview waits behind the other fork's
+            // shots); a button that lights up late gets [ENABLE_WAIT_NANOS], and only a disabled one waits at all.
+            val end = System.nanoTime() + ENABLE_WAIT_NANOS
             while (node.config.contains(SemanticsProperties.Disabled) && System.nanoTime() < end) {
                 settle()
                 node = find(text, exact, prefix) ?: node
@@ -1038,6 +1040,8 @@ abstract class ScreenshotBase {
         const val SETTLE_MIN_ROUNDS = 5
         const val SETTLE_MAX_NANOS = 1_000_000_000L
         const val REACH_WAIT_NANOS = 5_000_000_000L
+        /** How long [Screen.tapText] waits for a disabled button to light up before it taps it anyway. */
+        const val ENABLE_WAIT_NANOS = 15_000_000_000L
         /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
         const val TAB_TRIES = 3
         /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5); [NAV2-01] 1.39 five places, 설정 by the 나 button. */

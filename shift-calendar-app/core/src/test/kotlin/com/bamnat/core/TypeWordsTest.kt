@@ -107,17 +107,12 @@ class TypeWordsTest {
         /** 2.0.0 처음 잰 것(검토 T30-102와 영역 30 (4)): 고치면 지워요. 2묶음에서 유형별 글로 줄여요. */
         const val KNOWN = """
         T30-102|guide.tips|급여|INVEST
-        T30-102|share.link|근무표|FIELD,BUSINESS,INVEST
-        T30-102|share.link|근무|INVEST
-        T30-102|share.receive|근무표|FIELD,BUSINESS,INVEST
+        T30-102|share.link|근무표|FIELD,BUSINESS
+        T30-102|share.receive|근무표|FIELD,BUSINESS
         T30-102|share.receive|쉬는 날|BUSINESS
-        T30-102|share.receive|근무|INVEST
-        T30-102|share.look|근무표|FIELD,BUSINESS,INVEST
-        T30-102|share.look|근무|INVEST
-        T30-102|share.feed|근무표|FIELD,BUSINESS,INVEST
-        T30-102|share.feed|근무|INVEST
-        T30-102|share.rosterPdf|근무표|FIELD,BUSINESS,INVEST
-        T30-102|share.rosterPdf|근무|INVEST
+        T30-102|share.look|근무표|FIELD,BUSINESS
+        T30-102|share.feed|근무표|FIELD,BUSINESS
+        T30-102|share.rosterPdf|근무표|FIELD,BUSINESS
         T30-102|sleep.log|근무별|FIELD,BUSINESS,INVEST
         T30-102|sleep.log|근무|INVEST
         T30-102|sleep.smartWake|근무 알람|FIELD,BUSINESS,INVEST
@@ -140,13 +135,11 @@ class TypeWordsTest {
         T30-102|calendar.customize|근무·급여|HOURLY,FIELD,BUSINESS,INVEST
         T30-102|calendar.customize|근무|INVEST
         T30-102|calendar.customize|급여|INVEST
-        T30-102|calendar.year|근무|INVEST
         T30-102|privacy.lock|급여|INVEST
         T30-102|memo.repeat|근무마다|FIELD,BUSINESS,INVEST
         T30-102|memo.repeat|야간|BUSINESS,INVEST
         T30-102|memo.repeat|근무|INVEST
         T30-102|data.backup|근무|INVEST
-        T30-102|calendar.phone|근무|INVEST
         T30-102|app.pro|명세서|INVEST
         T30-102|app.pro|급여|INVEST
         T30-102|plaza.news|근무표|FIELD,BUSINESS,INVEST
@@ -168,11 +161,8 @@ class TypeWordsTest {
         T30-102|profile.summary|연차|FIELD,BUSINESS,INVEST
         T30-102|profile.summary|근무|INVEST
         T30-102|profile.summary|급여|INVEST
-        T30-102|pay.ruleBuilder|대근|HOURLY
         T30-102|pay.holidayWork|교대|DAY,HOURLY
         T30-102|pay.slipRules|대근|HOURLY
-        T30-102|plaza.diff|급여|INVEST
-        T30-102|plaza.diff|회사|INVEST
         T30-102|setup.again|근무·급여|HOURLY,FIELD,BUSINESS,INVEST
         T30-102|setup.again|근무|INVEST
         T30-102|setup.again|급여|INVEST
