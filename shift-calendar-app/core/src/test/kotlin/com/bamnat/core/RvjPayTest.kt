@@ -233,4 +233,44 @@ class RvjPayTest {
         val field = com.bamnat.core.report.FieldDaysProof.doc("", mon, mon, emptyList(), mon).text()
         assertTrue(field, field.contains("이름: "))
     }
+
+    /** [RVJ-55] PC-138: 마감한 11월(2,500,000원)은 미리 보기에서 그 금액 그대로, 바뀌는 달 수와 합계에서는 빠져요. */
+    @Test fun aClosedMonthStaysAtItsClosedTotalInThePreview() {
+        val nov = java.time.YearMonth.of(2026, 11)
+        val t = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_700_000)))
+        val months = (0L until 12L).map { nov.plusMonths(it) }
+        val plan = com.bamnat.core.pay.BulkEditPlanner.plan(
+            t, 2_800_000, com.bamnat.core.pay.EditScope.FromMonth(nov), months,
+            totalFor = { tl, m -> tl.on(m).value },
+            isLocked = { it == nov },
+            kept = { if (it == nov) 2_500_000L else null },
+        )
+        val first = plan.changedMonths.first()
+        assertEquals(nov, first.month)
+        assertTrue(first.locked)
+        assertEquals(2_500_000L, first.kept)
+        assertEquals(11, plan.movingMonths.size)
+        assertEquals(11 * 100_000L, plan.totalDelta)
+        assertNull("열린 달에는 그대로 둘 금액이 없어요", plan.movingMonths.first().kept)
+    }
+
+    /** [RVJ-57] PC-144: 오늘(11/12) 처음 만든 급여 설정은 9·10월 마감을 묻지 않아요. 근무를 적은 달과 명세서로 만든 달은 물어요. */
+    @Test fun aFirstSetupDoesNotAskAboutTheEmptyMonthsBeforeIt() {
+        val today = LocalDate.of(2026, 11, 12)
+        val oct = java.time.YearMonth.of(2026, 10)
+        val sep = java.time.YearMonth.of(2026, 9)
+        val close = com.bamnat.core.pay.CloseAsk
+        assertEquals(listOf(oct, sep), close.quietAtSetup(today, { false }))
+        assertEquals("10월에 근무를 적어 둔 사람은 10월을 물어요", listOf(sep), close.quietAtSetup(today, { it == oct }))
+        assertEquals("10월 명세서로 만든 설정은 10월을 물어요", listOf(sep), close.quietAtSetup(today, { false }, slip = oct))
+    }
+
+    /** [RVJ-58] PC-145: 말일 마감 11월은 11/30까지 '아직 남았어요', 12/1부터 바로 마감. */
+    @Test fun closingBeforeTheMonthIsOverAsksFirst() {
+        val end = LocalDate.of(2026, 11, 30)
+        val close = com.bamnat.core.pay.CloseAsk
+        assertTrue(close.early(end, LocalDate.of(2026, 11, 12)))
+        assertTrue("마지막 날도 아직 근무가 남은 날", close.early(end, end))
+        assertEquals(false, close.early(end, LocalDate.of(2026, 12, 1)))
+    }
 }

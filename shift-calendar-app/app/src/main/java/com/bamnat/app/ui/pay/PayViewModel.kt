@@ -168,6 +168,17 @@ class PayViewModel(
         }
     }
 
+    /** [RVJ-57] PC-144: the months before a first setup with no work written in their pay period are not asked to be closed. */
+    private suspend fun quietBefore(profile: PayProfile) {
+        val snap = snapshot.value ?: scope.schedule.lastSnapshot
+        val written = { m: YearMonth ->
+            val from = profile.period.start(m)
+            val to = profile.period.end(m)
+            snap?.entries.orEmpty().any { !it.date.isBefore(from) && !it.date.isAfter(to) }
+        }
+        com.bamnat.core.pay.CloseAsk.quietAtSetup(Today.date(), written, profile.verified?.month).forEach { payStore.closeAskLater(it) }
+    }
+
     /** [RVJ-18] I05c-01: the day [month]'s 월급 was seen arriving (입금 알림 or a typed 실수령); null when not yet. */
     fun paidOn(records: List<com.bamnat.core.tax.PayObservation>, month: YearMonth): java.time.LocalDate? =
         records.filter { it.payMonth == month }.minOfOrNull { it.date }
@@ -199,6 +210,9 @@ class PayViewModel(
     fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
         val before = payStore.profile.value
         val why = if (before == null) "급여 설정을 만들었어요" else "급여 설정을 다시 했어요"
+        // 2.0.0 [RVJ-57] 검토 PC-144: a first setup does not ask to close the months before it that hold nothing written (put away
+        // before the setup is kept, so the card never shows for a frame).
+        if (before == null) quietBefore(profile)
         payStore.save(profile, why = why)
         noteAfter(why, before)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
@@ -455,6 +469,7 @@ class PayViewModel(
             },
             totalFor = { t, m -> calculate(p.withTimeline(target, t), snapshot, m).total },
             isLocked = { it in closed.value },
+            kept = { closed.value[it]?.total }, // [RVJ-55] PC-138
         )
 
     fun applyEdit(target: ValueTarget, plan: EditPlan) {

@@ -22,7 +22,12 @@ sealed interface EditScope {
     data object AllMonths : EditScope
 }
 
-data class MonthDiff(val month: YearMonth, val before: Long, val after: Long, val locked: Boolean) {
+/**
+ * One month of a planned change. [before]·[after] are the month worked out with the old and new value. 2.0.0 [RVJ-55] 검토 PC-138: a
+ * [locked] (closed) month keeps its saved result, so [kept] is what it stays at ("2,500,000원 · 마감(그대로)"); the preview had shown
+ * the recalculated '2,700,000원 → 2,800,000원' for a month that was closed at 2,500,000원.
+ */
+data class MonthDiff(val month: YearMonth, val before: Long, val after: Long, val locked: Boolean, val kept: Long? = null) {
     val delta: Long get() = after - before
 }
 
@@ -32,7 +37,10 @@ data class EditPlan(
     val after: ValueTimeline,
     val diffs: List<MonthDiff>,
 ) {
+    /** The months the change would touch, closed ones included (they stay as closed: [MonthDiff.kept]). */
     val changedMonths: List<MonthDiff> get() = diffs.filter { it.delta != 0L }
+    /** [RVJ-55] The months that really move: [changedMonths] less the closed ones. */
+    val movingMonths: List<MonthDiff> get() = changedMonths.filterNot { it.locked }
     val totalDelta: Long get() = diffs.filterNot { it.locked }.sumOf { it.delta }
 }
 
@@ -51,10 +59,13 @@ object BulkEditPlanner {
         totalFor: (ValueTimeline, YearMonth) -> Long,
         /** Closed months keep their saved result unless the user asks to recalculate. */
         isLocked: (YearMonth) -> Boolean = { false },
+        /** [RVJ-55] A closed month's saved total, which the change leaves as it is. */
+        kept: (YearMonth) -> Long? = { null },
     ): EditPlan {
         val after = apply(timeline, newValue, scope)
         val diffs = preview.map { m ->
-            MonthDiff(m, totalFor(timeline, m), totalFor(after, m), isLocked(m))
+            val locked = isLocked(m)
+            MonthDiff(m, totalFor(timeline, m), totalFor(after, m), locked, if (locked) kept(m) else null)
         }
         return EditPlan(timeline, after, diffs)
     }

@@ -325,10 +325,13 @@ fun EditValueDialog(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     // [RVJ-08] 검토 PAYU-07: the months before this one that change, said first.
                     val past = p.changedMonths.filter { it.month < month }
-                    if (past.isNotEmpty()) Text("지난 ${past.size}개월도 바뀌어요 · 합계 ${signed(past.filterNot { it.locked }.sumOf { it.delta })}",
+                    // 2.0.0 [RVJ-55] 검토 PC-138: a closed month stays as closed, so the count and the sum are of the months that move.
+                    val pastMoving = past.filterNot { it.locked }
+                    if (pastMoving.isNotEmpty()) Text("지난 ${pastMoving.size}개월도 바뀌어요 · 합계 ${signed(pastMoving.sumOf { it.delta })}",
                         // 주의(주황): 빨강은 위험에만 (디자인 품질 조건 6).
                         style = MaterialTheme.typography.titleSmall, color = com.bamnat.app.ui.theme.Tone.Caution.color())
                     val changed = p.changedMonths.filter { it.month >= month }
+                    val moving = changed.filterNot { it.locked }
                     val same = v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1
                     // 2.0.0 [RVJ-46] 검토 PC-110: with the amount not changed yet nothing moves, and the window said '합계는 그대로예요 ·
                     // … 마감한 달이에요' as if something had been tried. It says what this place will show once the amount is changed.
@@ -338,21 +341,28 @@ fun EditValueDialog(
                     else Text(
                         // PC 3e347ec6: '그대로예요' under a new amount read as if it had not been taken.
                         if (same) "지금 값과 같아요"
-                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요"
-                        else "앞으로 ${changed.size}개월이 바뀌어요 · 합계 ${signed(changed.filterNot { it.locked }.sumOf { it.delta })}",
+                        else if (moving.isEmpty()) "앞으로 12개월 합계는 그대로예요"
+                        else "앞으로 ${moving.size}개월이 바뀌어요 · 합계 ${signed(moving.sumOf { it.delta })}",
                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                     )
                     // 2.0.0 품질 조건 4: 까닭은 작은 줄로 (200%에서 제목 글이 네 줄이던 것).
-                    if (!untouched && !same && changed.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
+                    if (!untouched && !same && moving.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
                         (past + changed).forEach { d ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                                 Text("${d.month.year % 100}.${d.month.monthValue}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.labelWidth(44.dp))
-                                Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                                Text(if (d.locked) "마감" else signed(d.delta), style = MaterialTheme.typography.bodySmall,
-                                    // [RVJ-46] A lower month is not a danger: the '−' says it, in the plain ink (조건 6, 빨강은 위험만).
-                                    color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                // [RVJ-55] PC-138: a closed month shows what it was closed at and stays there ('2,500,000원 · 마감(그대로)'), one
+                                // text across the row (beside a column of its own, 200% split '원' off the amount); at big letters it breaks
+                                // before '· 마감'.
+                                if (d.locked) Text("${won(d.kept ?: d.before)} ·\u00A0마감(그대로)", style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f))
+                                else {
+                                    Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    Text(signed(d.delta), style = MaterialTheme.typography.bodySmall,
+                                        // [RVJ-46] A lower month is not a danger: the '−' says it, in the plain ink (조건 6, 빨강은 위험만).
+                                        color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                }
                             }
                         }
                     }
@@ -375,6 +385,7 @@ private fun signed(v: Long) = (if (v > 0) "+" else if (v < 0) "−" else "") + w
 @Composable
 fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDismiss: () -> Unit) {
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
+    val closedMonths by vm.closed.collectAsState()
     val existing = timeline.raise
     var month by remember { mutableStateOf(existing?.month ?: 1) }
     var byPercent by remember { mutableStateOf(existing?.amount == null) }
@@ -440,7 +451,11 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
                     val start = Today.month()
                     (0..3).forEach { y ->
                         val m = YearMonth.of(start.year + y, r.month).let { if (it < start) start else it }
-                        Fact(Fmt.month(m), won(t.on(m).value))
+                        // 2.0.0 [RVJ-55] 검토 PC-138 (인상 규칙도): a closed month stays as closed; the new value is shown from the first
+                        // open month after it.
+                        val lands = landsIn(m, closedMonths.keys)
+                        if (lands != m) Fact(Fmt.month(m), "마감(그대로)")
+                        Fact(Fmt.month(lands), won(t.on(lands).value))
                     }
                 }
             }

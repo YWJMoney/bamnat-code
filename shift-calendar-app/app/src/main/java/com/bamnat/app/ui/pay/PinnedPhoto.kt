@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
@@ -21,6 +22,11 @@ import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.ZoomOut
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -46,7 +52,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -97,16 +105,20 @@ internal fun PinnedPhotos(photos: List<Bitmap>, labels: List<String> = listOf("�
             androidx.compose.runtime.LaunchedEffect(controls) {
                 if (controls > 0) { kotlinx.coroutines.delay(CONTROLS_MS); controls = 0 }
             }
-            ZoomablePhoto(photo, Modifier.matchParentSize(), onTap = { controls = if (controls > 0) 0 else 1 })
+            // 2.0.0 [RVJ-61] HQ-81: ⊖ ⊕ and the zoom in words sit in one row with these two, wrapping at big letters (they overlapped).
+            ZoomablePhoto(photo, Modifier.matchParentSize(), onTap = { controls = if (controls > 0) 0 else 1 }, buttons = controls > 0,
+                onZoom = { controls++ }) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // '사진 크게·작게' is the zoom now (⊕ ⊖, as the 근무표 photo); this one is how much room the photo takes.
+                    PhotoPill(if (big) "사진 칸 좁게" else "사진 칸 넓게") { big = !big; controls++ }
+                    PhotoPill("접기") { folded = true }
+                }
+            }
             if (controls > 0) {
                 if (photos.size > 1) Row(Modifier.align(Alignment.TopStart).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     photos.indices.forEach { i ->
                         FilterChip(selected = i == index, onClick = { index = i }, label = { Text(labels.getOrElse(i) { "사진 ${i + 1}" }) })
                     }
-                }
-                Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    PhotoPill(if (big) "사진 작게" else "사진 크게") { big = !big; controls++ }
-                    PhotoPill("접기") { folded = true }
                 }
             } else Text("단추 보기", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.inverseOnSurface,
@@ -131,9 +143,19 @@ private fun PhotoPill(text: String, onClick: () -> Unit) {
     }
 }
 
-/** [PAYIN-01] One photo filling [modifier]'s box from the top, as wide as the box; zoomed and moved by hand, never past its edges. */
+/**
+ * [PAYIN-01] One photo filling [modifier]'s box from the top, as wide as the box; zoomed and moved by hand, never past its edges.
+ * 2.0.0 [RVJ-61] 검토 HQ-81 (PC 3차): two fingers and a double tap were the only zoom. Now ⊖ ⊕ in the corner ([buttons]) and the
+ * read-aloud actions (크게·작게·사진을 왼쪽·오른쪽·위·아래로) do it too, as the 근무표 photo (갈래 L RVL-35, `RosterPhoto`) does, for one
+ * hand, TalkBack and Switch Access. [onZoom] is told of a button press (the pinned photo keeps its buttons up a while longer).
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier, onTap: (() -> Unit)? = null) {
+internal fun ZoomablePhoto(
+    photo: Bitmap, modifier: Modifier = Modifier, onTap: (() -> Unit)? = null, buttons: Boolean = true, onZoom: () -> Unit = {},
+    /** [RVJ-61] More buttons for the same corner row (the pinned photo's 사진 칸·접기), at its end. */
+    more: (@Composable () -> Unit)? = null,
+) {
     val image = remember(photo) { photo.asImageBitmap() }
     var box by remember { mutableStateOf(IntSize.Zero) }
     var scale by remember(photo) { mutableFloatStateOf(1f) }
@@ -146,12 +168,28 @@ internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier, onTap: 
         val y = if (h <= box.height) 0f else o.y.coerceIn(box.height - h, 0f)
         return Offset(x, y)
     }
+    fun zoomBy(f: Float, at: Offset = Offset(box.width / 2f, box.height / 2f)) {
+        val next = (scale * f).coerceIn(1f, MAX_ZOOM)
+        offset = clamp(at - (at - offset) * (next / scale), next)
+        scale = next
+    }
+    fun move(dx: Float, dy: Float): Boolean { offset = clamp(offset + Offset(dx, dy), scale); return true }
     Box(
         modifier.clipToBounds().onSizeChanged { box = it }
-            .semantics { contentDescription = "읽은 명세서 사진, 두 손가락으로 키워 봐요" }
+            .semantics {
+                contentDescription = "읽은 명세서 사진, 두 손가락이나 ⊕로 키워 봐요"
+                customActions = listOf(
+                    CustomAccessibilityAction("크게") { zoomBy(STEP); true },
+                    CustomAccessibilityAction("작게") { zoomBy(1 / STEP); true },
+                    CustomAccessibilityAction("사진을 왼쪽으로") { move(box.width / 4f, 0f) },
+                    CustomAccessibilityAction("사진을 오른쪽으로") { move(-box.width / 4f, 0f) },
+                    CustomAccessibilityAction("사진을 위로") { move(0f, box.height / 4f) },
+                    CustomAccessibilityAction("사진을 아래로") { move(0f, -box.height / 4f) },
+                )
+            }
             .pointerInput(photo) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
-                    val next = (scale * zoom).coerceIn(1f, 6f)
+                    val next = (scale * zoom).coerceIn(1f, MAX_ZOOM)
                     val moved = centroid - (centroid - offset) * (next / scale) + pan
                     scale = next
                     offset = clamp(moved, next)
@@ -160,7 +198,7 @@ internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier, onTap: 
             .pointerInput(photo) {
                 detectTapGestures(onTap = { onTap?.invoke() }, onDoubleTap = { at ->
                     if (scale > 1.01f) { scale = 1f; offset = clamp(Offset.Zero, 1f) }
-                    else { val next = 2.5f; offset = clamp(at - (at - offset) * next, next); scale = next }
+                    else zoomBy(DOUBLE_TAP, at)
                 })
             },
     ) {
@@ -175,7 +213,26 @@ internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier, onTap: 
                 transformOrigin = TransformOrigin(0f, 0f)
             },
         )
-        if (scale > 1.01f) Text("${(scale * 100).toInt()}%", style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(width = 44.dp, height = 18.dp))
+        // ⊖ ⊕ and the zoom in words while zoomed (the 근무표 photo's corner, at the start so the pinned photo's own buttons keep the end).
+        // The badge had a fixed 44×18dp box that cut '250%' at big letters (품질 조건 12).
+        if (buttons) FlowRow(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledTonalIconButton(onClick = { zoomBy(1 / STEP); onZoom() }, enabled = scale > 1.01f) { Icon(Icons.Filled.ZoomOut, contentDescription = "사진 작게") }
+                FilledTonalIconButton(onClick = { zoomBy(STEP); onZoom() }, enabled = scale < MAX_ZOOM - 0.01f) { Icon(Icons.Filled.ZoomIn, contentDescription = "사진 크게") }
+                if (scale > 1.01f) Text("${(scale * 100).toInt()}%", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.inverseOnSurface,
+                    modifier = Modifier.padding(start = 4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.7f), MaterialTheme.shapes.small)
+                        .padding(horizontal = 8.dp, vertical = 4.dp))
+            }
+            more?.invoke()
+        }
     }
 }
+
+/** [RVJ-61] The 근무표 photo's zoom steps (RVL-35): up to 6×, ⊕ ⊖ by 1.5×, a double tap to 2.5×. */
+private const val MAX_ZOOM = 6f
+private const val STEP = 1.5f
+private const val DOUBLE_TAP = 2.5f

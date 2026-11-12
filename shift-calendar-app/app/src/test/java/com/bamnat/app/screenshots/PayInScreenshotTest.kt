@@ -99,7 +99,7 @@ class PayInScreenshotTest : ScreenshotBase() {
             }
         }
         settle()
-        reveal("사진 크게", exact = true)
+        reveal("사진 칸 넓게", exact = true)
         tapText("접기", exact = true)
         settle()
         reveal("사진 펴기", exact = true)
