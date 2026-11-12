@@ -157,15 +157,21 @@ internal fun RosterFollowLine(cal: com.bamnat.app.share.ReceivedCalendar, modifi
         androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 4.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(text, style = MaterialTheme.typography.bodySmall)
+            val undo = note.kind == com.bamnat.app.share.FollowNote.DONE && note.undo.isNotEmpty()
+            val ask = note.kind == com.bamnat.app.share.FollowNote.ASK && note.apply.isNotEmpty()
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                 when {
-                    note.kind == com.bamnat.app.share.FollowNote.DONE && note.undo.isNotEmpty() ->
-                        TextButton(onClick = { app.launch { com.bamnat.app.share.RosterFollower.takeBack(c, cal.id) } }) { Text("되돌리기") }
-                    note.kind == com.bamnat.app.share.FollowNote.ASK && note.apply.isNotEmpty() ->
-                        TextButton(onClick = { app.launch { com.bamnat.app.share.RosterFollower.putIn(c, cal.id) } }) { Text("${note.apply.size}일 내 달력에 넣기") }
+                    undo -> TextButton(onClick = { app.launch { com.bamnat.app.share.RosterFollower.takeBack(c, cal.id) } }) { Text("되돌리기") }
+                    ask -> TextButton(onClick = { app.launch { com.bamnat.app.share.RosterFollower.putIn(c, cal.id) } }) { Text("${note.apply.size}일 내 달력에 넣기") }
                 }
                 TextButton(onClick = { com.bamnat.app.share.RosterFollower.close(c, cal.id) }) { Text("닫기") }
             }
+            // 2.0.0 [RVH-57] Only kept days (nothing put in or asked): the way to look at them or put them in, as the second button
+            // beside 닫기 (조건 2). With 되돌리기 or 넣기 here the text names them, and they stay on the link's own '이 근무표가 바뀌면'.
+            if (note.kept.isNotEmpty() && !undo && !ask) com.bamnat.app.ui.money.AutoTidyLine(
+                com.bamnat.app.share.RosterFollower.TIDY_AREA, com.bamnat.app.data.PersonalCalendar.MAIN,
+                match = { com.bamnat.app.share.RosterFollower.keptOf(it, cal.id) },
+            )
         }
     }
 }
@@ -192,6 +198,11 @@ internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar, onSay: ((
             }
         }
         if (cal.mine && onSay != null) NotMineButton(cal, onSay)
+        // 2.0.0 [RVH-57] What a change left as I had made it, after the note over the calendar was closed.
+        com.bamnat.app.ui.money.AutoTidyLine(
+            com.bamnat.app.share.RosterFollower.TIDY_AREA, com.bamnat.app.data.PersonalCalendar.MAIN,
+            match = { com.bamnat.app.share.RosterFollower.keptOf(it, cal.id) },
+        )
     }
 }
 

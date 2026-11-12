@@ -9,6 +9,12 @@ object Josa {
     fun eunneun(w: String): String = if (batchim(w) == false) "는" else "은"
     /** 1.39 PC NAV2 ("‘연차’과 묶을 화면"): 과/와. */
     fun gwawa(w: String): String = if (batchim(w) == false) "와" else "과"
+    /** 2.0.0 [RVL-36] ("주간으로 읽었어요", "연차로"): 으로/로, 로 after no 받침 or ㄹ. */
+    fun euro(w: String): String {
+        val c = w.trim().lastOrNull()?.takeIf { it in '가'..'힣' } ?: return "로"
+        val end = (c - '가') % 28
+        return if (end == 0 || end == 8) "로" else "으로"
+    }
 
     /** How a word ends when read aloud: with a 받침 or not, and whether that 받침 is ㄹ (으로/로). */
     data class Sound(val batchim: Boolean, val rieul: Boolean = false)
