@@ -477,8 +477,10 @@ async function view(request, env, id) {
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
     // 1.39 PC (SPREAD 2차): an expired link still kept says whose it was (a leader's teammate link speaks to a teammate); one
     // the sharer cut is gone, so its card speaks to anyone who keeps a schedule.
-    return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
-      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : "최신 근무표가 필요하면 보낸 분께 새 링크를 부탁해 주세요.", record?.schedule ? scheduleKind(record.schedule) : "schedule")}`), 404);
+    // [RVD-30] HQ-64 An expired link still kept is named as its page was (이 영업일 링크는 …).
+    const word = record?.schedule && !record.schedule.team ? linkWord(record.schedule) : "근무표";
+    return html(page("링크가 없어요", `<p class="empty">이 ${word} 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
+      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : `최신 ${WORD_FORMS[word].subj} 필요하면 보낸 분께 새 링크를 부탁해 주세요.`, record?.schedule ? scheduleKind(record.schedule) : "schedule")}`), 404);
   }
   const phone = platformOf(request.headers.get("user-agent") || "");
   if (request.method === "GET") {
@@ -2528,6 +2530,9 @@ function goneNext(next, kind) {
  */
 export const OG_TEXT = {
   family: { title: "근무표가 왔어요", line: "보낸 분의 근무를 달력으로 볼 수 있어요." },
+  // 2.0.0 [RVD-30] HQ-64 A 근무표 링크 named by what came with it (linkWord), still only the kind of page.
+  familySales: { title: "영업일이 왔어요", line: "보낸 분의 영업일을 달력으로 볼 수 있어요." },
+  familyJobs: { title: "일정이 왔어요", line: "보낸 분의 일정을 달력으로 볼 수 있어요." },
   team: { title: "확정된 근무표가 왔어요", line: "내 근무를 달력으로 확인해 주세요." },
   board: { title: "팀 전체 근무표가 왔어요", line: "이번 달 팀 근무표를 볼 수 있어요." },
   request: { title: "근무 신청 링크가 왔어요", line: "원하는 날을 골라 신청해 주세요." },
@@ -2665,6 +2670,28 @@ export function scheduleKind(schedule) {
 }
 
 /**
+ * 2.0.0 [RVD-30] HQ-64 (총괄 A안, 앱 core linkWord와 같은 규칙): what the link is a schedule of, from what the sharer sent with it and
+ * nothing new. 매출을 함께 보낸 가게는 영업일, 일감·일감 수입을 보낸 사람은 일정, 나머지는 근무표 (가게·투자가 날짜만 보내면 근무표).
+ */
+export function linkWord(schedule) {
+  const shows = Array.isArray(schedule?.shows) ? schedule.shows : [];
+  const pay = shows.includes("pay") ? schedule.payKind ?? "pay" : null;
+  if (pay === "sales") return "영업일";
+  if (shows.includes("jobs") || pay === "jobs") return "일정";
+  return "근무표";
+}
+
+/**
+ * [RVD-30] The word with its endings (받침: 영업일이·일정이, 근무표가). [days] is what the page's days are (the 캘린더 이름, '…가 바뀔 때'),
+ * [with] heads what came along ('일정과 함께 보낸 것: 일정' would say it twice).
+ */
+const WORD_FORMS = {
+  근무표: { is: "근무표예요", subj: "근무표가", days: "근무", daysSubj: "근무가", daysTopic: "근무는", with: "근무와 함께 보낸 것", og: "family" },
+  영업일: { is: "영업일이에요", subj: "영업일이", days: "영업일", daysSubj: "영업일이", daysTopic: "영업일은", with: "영업일과 함께 보낸 것", og: "familySales" },
+  일정: { is: "일정이에요", subj: "일정이", days: "일정", daysSubj: "일정이", daysTopic: "일정은", with: "함께 보낸 것", og: "familyJobs" },
+};
+
+/**
  * Month grids for every month the days touch, weeks starting on Sunday.
  * 1.39 [IOS-02..05] [opts]: `phone` (platformOf), `feed` ("host/s/<id>.ics" when the page is served), `tired` (tiredState or null),
  * `said` (the ?t= answer of the 피곤해요 form).
@@ -2708,7 +2735,9 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
       ? `<span class="muted">${parts(t).map((p) => `<span class="nm">${esc(p.replace("-", "~"))}</span>`).join(" · ")}</span>` : ""}</li>`,
   ).join("");
   const until = new Date(Date.parse(expiresAt) + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  const title = schedule.title ? `${schedule.title}의 근무표` : "근무표";
+  // [RVD-30] HQ-64 The app's words: "민지의 영업일", and without a name "받은 영업일" (what the sharer's help says the other phone shows).
+  const word = linkWord(schedule);
+  const title = schedule.title ? `${schedule.title}의 ${word}` : `받은 ${word}`;
   const payKind = Object.hasOwn(PAY_KINDS, schedule.payKind ?? "") ? schedule.payKind : "pay";
   // 1.38 PC 11차 (18): a kind ticked but with nothing in it (no day has a memo) is not listed as sent.
   const present = { jobs: (d) => d.jobs?.length, leaveKinds: (d) => d.leave, extras: (d) => d.extras?.length, memos: (d) => d.memo };
@@ -2723,12 +2752,12 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const shows = Object.keys(SHOW_NAMES).filter((k) => (schedule.shows ?? []).includes(k))
     .filter((k) => !present[k] || schedule.days.some((d) => present[k](d)))
     .flatMap((k) => (k === "pay" ? [PAY_KINDS[payKind]] : k === "memos" ? memoNames : [SHOW_NAMES[k]]));
-  const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
+  const has = shows.length ? `<p class="muted">${WORD_FORMS[word].with}: ${esc(shows.join(", "))}</p>` : "";
   // [SHR-20] The page never shows the setup itself: only that the app takes it.
   // 1.39 [IOS-03] An iPhone has no 밤낮 app: it is told the extras are for the Android app and the days are all here.
   const extras = [schedule.setup && "회사 근무 설정", schedule.look && "테마", schedule.kit && "근무 설정"].filter(Boolean);
   const setupLine = ios
-    ? (extras.length ? `<p class="muted">${esc(extras.join("·"))}도 함께 왔어요. 이건 Android 밤낮 앱에서만 받을 수 있고, 근무는 이 페이지에서 그대로 볼 수 있어요.</p>` : "")
+    ? (extras.length ? `<p class="muted">${esc(extras.join("·"))}도 함께 왔어요. 이건 Android 밤낮 앱에서만 받을 수 있고, ${WORD_FORMS[word].daysTopic} 이 페이지에서 그대로 볼 수 있어요.</p>` : "")
     : (schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "") +
       // 1.37 [SHR-31][SHR-32] Like the setup, the page names what came and never shows it.
       (schedule.look || schedule.kit
@@ -2746,8 +2775,8 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
-  "근무표", kind);
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
+  word, kind === "family" ? WORD_FORMS[word].og : kind);
 }
 
 /**
@@ -2760,8 +2789,10 @@ export function feedButton(schedule, feed, phone, scheme = "https") {
   const webcal = `webcal://${feed}`;
   const href = phone === "ios" ? webcal : `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
   const label = phone === "ios" ? "아이폰 캘린더에 넣기" : "구글 캘린더에 넣기";
+  const word = linkWord(schedule);
   return `<div class="panel feed"><p class="feed-t"><a class="get" href="${esc(href)}">${label}</a></p>` +
-    `<p class="muted small">한 번 넣어 두면 근무가 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. 출근 알람은 아니에요.` +
+    // [RVD-30] HQ-64 '영업일이 바뀔 때'·'일정이 바뀔 때' for a shop's or a freelancer's link.
+    `<p class="muted small">한 번 넣어 두면 ${WORD_FORMS[word].daysSubj} 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. ${word === "근무표" ? "출근 " : ""}알람은 아니에요.` +
     (phone === "ios" ? ` 카카오톡 안에서 안 열리면 오른쪽 아래 메뉴에서 'Safari로 열기' 뒤 다시 눌러 주세요.` : "") +
     `</p><p class="muted small">다른 캘린더 앱: <span class="addr">${esc(scheme)}://${esc(feed)}</span></p></div>`;
 }
@@ -2801,7 +2832,9 @@ export function renderIcs(schedule, id, updatedAt) {
   const types = new Map(schedule.types.map((t) => [t.id, t]));
   const tz = schedule.tz || "Asia/Seoul";
   const stamp = icsStamp(updatedAt ? new Date(updatedAt) : new Date());
-  const name = schedule.title ? `${schedule.title}의 근무` : "밤낮 근무";
+  // [RVD-30] HQ-64 The subscribed calendar's name says the same word as the page ("민지의 영업일").
+  const days = WORD_FORMS[linkWord(schedule)].days;
+  const name = schedule.title ? `${schedule.title}의 ${days}` : `밤낮 ${days}`;
   const lines = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bamnat//Share//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsText(name)}`, `X-WR-TIMEZONE:${tz}`, "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H",
