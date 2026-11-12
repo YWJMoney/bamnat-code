@@ -274,22 +274,20 @@ object MemoAmounts {
 
     private val INCOME = Regex("수입|입금|받음|받았|벌었|팁|용돈|부수입|들어옴|들어왔")
     private val EXPENSE = Regex("지출|씀|썼|냄|냈|결제|사용|나감|나갔")
-    private val AMOUNT = Regex("(\\d+(?:\\.\\d+)?)\\s*만\\s*(?:(\\d)\\s*천)?\\s*원?|(\\d)\\s*천\\s*원|(\\d{1,3}(?:,\\d{3})+|\\d{3,})\\s*원?")
-
     fun find(memo: String): List<Found> = memo.lines().mapNotNull { raw ->
         val line = raw.trim()
-        val all = AMOUNT.findAll(line).toList()
-        // A unit (원·만·천), a sign or a thousands comma marks money; a bare 2026 is a year, not won.
-        val m = all.firstOrNull { Regex("[원만천]").containsMatchIn(it.value) && !line.startsWith("년", it.range.last + 1) }
-            ?: all.firstOrNull { line.substring(0, it.range.first).trimEnd().let { b -> b.endsWith("+") || b.endsWith("-") || b.endsWith("＋") || b.endsWith("－") } }
-            ?: all.firstOrNull { it.value.contains(',') }
-            ?: all.firstOrNull { it.value.trim().length >= 4 && !line.startsWith("년", it.range.last + 1) }
-            ?: return@mapNotNull null
-        val amount = when {
-            m.groupValues[1].isNotEmpty() -> Math.round(m.groupValues[1].toDouble() * 10_000) + (m.groupValues[2].toLongOrNull() ?: 0) * 1000
-            m.groupValues[3].isNotEmpty() -> m.groupValues[3].toLong() * 1000
-            else -> m.groupValues[4].replace(",", "").toLong()
+        // 2.0.0 [RVK-02] (검토 MONEY-57) 금액 읽기는 한 줄로 적기와 같은 [KoreanAmount]: '15천원'이 5,000원, '2천만원'이 못 읽히던 것.
+        // 천·백만 있는 말("3천 걸음")은 뒤에 원이 붙을 때만 돈으로 봐요(예전과 같아요).
+        val all = KoreanAmount.find(line).filter { f ->
+            (f.units.any { it in "억만원" } || !f.units.any { it in "천백" }) && (f.unit || f.text.trim().length >= 3)
         }
+        // A unit (원·만·천), a sign or a thousands comma marks money; a bare 2026 is a year, not won.
+        val m = all.firstOrNull { it.units.isNotEmpty() && !line.startsWith("년", it.range.last + 1) }
+            ?: all.firstOrNull { line.substring(0, it.range.first).trimEnd().let { b -> b.endsWith("+") || b.endsWith("-") || b.endsWith("＋") || b.endsWith("－") } }
+            ?: all.firstOrNull { it.text.contains(',') }
+            ?: all.firstOrNull { it.text.trim().length >= 4 && !line.startsWith("년", it.range.last + 1) }
+            ?: return@mapNotNull null
+        val amount = m.value
         if (amount <= 0) return@mapNotNull null
         val before = line.substring(0, m.range.first).trimEnd()
         val kind = when {

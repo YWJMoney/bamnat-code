@@ -67,6 +67,19 @@ internal class SettingsFocus(val row: String)
 internal val LocalSettingsFocus = compositionLocalOf<SettingsFocus?> { null }
 
 /**
+ * 2.0.0 [RVH-41] 검토 T30-76~100 (뿌리 고침 5번): the kind of work of the page on screen. Every row ([SwitchRow], [NavRow], [ChoiceRow],
+ * [LimitRow]) shows its words in that kind's ([said]); the row keeps its shared name as its key, so 설정 찾기 still lands on it.
+ */
+internal val LocalSettingsStyle = compositionLocalOf<com.bamnat.core.work.WorkStyle?> { null }
+
+/** [text] in the words of the page's kind of work ([com.bamnat.core.work.TypeWords.say]); 교대 reads it as written. */
+@Composable
+internal fun said(text: String): String {
+    val style = LocalSettingsStyle.current
+    return remember(style, text) { com.bamnat.core.work.TypeWords.say(style, text) }
+}
+
+/**
  * [UX-04] Marks the row named [row]: when settings was opened for it, the group scrolls it into view
  * once the page has slid in, and a soft band stays behind it so the eye lands on it.
  */
@@ -131,16 +144,17 @@ internal fun SwitchRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
+                    Text(said(title), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
                         color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                     if (pro) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp), locked = proLocked)
                 }
                 subtitle?.let {
                     // 2.0.0 [RVP-08] (검토 U13-10 '스위치마다 2~4줄 설명') A long line is said in full the first time, then as its
-                    // first sentence with ⓘ for the rest.
-                    if (com.bamnat.app.ui.components.firstSentence(it) == it.trim()) {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else com.bamnat.app.ui.components.Explain("switch:$title", it, iconOnly = false)
+                    // first sentence with ⓘ for the rest. [RVH-41] In the kind of work's own words ([said]).
+                    val line = said(it)
+                    if (com.bamnat.app.ui.components.firstSentence(line) == line.trim()) {
+                        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else com.bamnat.app.ui.components.Explain("switch:$title", line, iconOnly = false)
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -178,8 +192,8 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text(said(title), style = MaterialTheme.typography.bodyLarge)
+            subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Spacer(Modifier.width(8.dp))
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -191,8 +205,8 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
 @Composable
 internal fun <T> ChoiceRow(title: String, subtitle: String?, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Text(said(title), style = MaterialTheme.typography.bodyLarge)
+        subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             for ((value, label) in options) {
                 FilterChip(selected = value == selected, onClick = { onSelect(value) }, label = { Text(label) })
@@ -223,8 +237,8 @@ internal fun PermissionRow(ok: Boolean, title: String, fixLabel: String, onFix: 
 @Composable
 internal fun LimitRow(title: String, subtitle: String, hours: Int, min: Int = 1, max: Int = 168, onChange: (Int) -> Unit) {
     Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(said(title), style = MaterialTheme.typography.bodyLarge)
+        Text(said(subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         MinutesStepper(
             minutes = hours * 60,
             onChange = { m -> onChange((m / 60).coerceIn(min, max)) },

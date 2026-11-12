@@ -380,6 +380,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     var firstStyleKey by rememberSaveable { mutableStateOf<String?>(null) }
     // [SETUP-17] The first screen's file chooser was opened (it opens once).
     var fileAsked by rememberSaveable { mutableStateOf(false) }
+    // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go. [RVG-19] Kept out here: the
+    // summary's '가족·동료 근무표였어요' comes back to the first screen with it.
+    var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
@@ -410,8 +413,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
-                    // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go.
-                    var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }
                     // [RVG-15] The card's X: neither answer now; the link waits and the calendar offers it after the setup.
                     var linkClosed by rememberSaveable { mutableStateOf(false) }
@@ -491,7 +492,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE && !fileAsked,
                 onFileOpened = { fileAsked = true },
                 onBrowseBack = { firstStyleKey = null }.takeIf { firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE },
-                onFirstStyleUsed = { firstStyleKey = "" })
+                onFirstStyleUsed = { firstStyleKey = "" },
+                // [RVG-19] 검토 HQ-09: '내 근무표예요' by mistake: the link is beside as theirs, the first screen says so and asks again.
+                onNotMine = { title -> theirsKept = title; firstStyleKey = null })
             return
         }
         false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {
@@ -919,8 +922,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
         }
-        com.bamnat.app.ui.guide.WhatsNewDialog(
+        // [RVH-40] 검토 WORK-14 Nothing new for this kind of work and nothing else to say: no window, only marked as seen.
+        val nothingMine = com.bamnat.core.guide.WhatsNew.forStyle(whatsNew.value, settingsNow.workStyle).let { it.mine.isEmpty() && it.moreMine.isEmpty() }
+        if (nothingMine && fixedForMe.isEmpty() && recommendOff == 0) LaunchedEffect(Unit) { closeNew() }
+        else com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
+            style = settingsNow.workStyle,
             recommendOff = recommendOff,
             onRecommend = { closeNew(); SettingsLinks.go(SettingsGo.RECOMMENDED) },
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
@@ -2452,7 +2459,7 @@ private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.
 /** 1.39: a tab name's letters grow with the phone's text size up to this much, so five names fit the bar on one line. */
 private const val TAB_SCALE_MAX = 1.5f
 
-/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
+/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장·휴무일 근무 지정's ready '교육'). */
 internal const val SCHOOLING_KIND = "교육"
 
 
@@ -2600,9 +2607,10 @@ private fun RingingBanner() {
             Icon(Icons.Filled.Alarm, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(current.title, style = MaterialTheme.typography.titleSmall,
+                val ringStyle = com.bamnat.app.alarm.BootAlarms.ringSettings(androidx.compose.ui.platform.LocalContext.current).style
+                Text(current.title(ringStyle), style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)
-                Text(AlarmService.describe(current), style = MaterialTheme.typography.bodySmall,
+                Text(AlarmService.describe(current, ringStyle), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)
             }
             TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 울림") }

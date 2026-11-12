@@ -154,9 +154,9 @@ class PayScreenshotTest : ScreenshotBase() {
     }
     @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED) {
         settingsPage("내 근무")
-        tapText("연장 휴무일 근무 지정", exact = true)
+        tapText("연장·휴무일 근무 지정", exact = true)
     }
-    // ---- [EXTRA-07][EXTRA-08] 연장 휴무일 근무 지정 ----
+    // ---- [EXTRA-07][EXTRA-08] 연장·휴무일 근무 지정 ----
     @Test fun foldedKindPremiums() = shoot("108_folded_kind_premiums", FOLDED) {
         kindsScreen().invoke(this)
         tapText("대근", exact = true)

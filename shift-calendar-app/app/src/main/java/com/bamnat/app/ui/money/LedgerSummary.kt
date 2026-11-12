@@ -39,9 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -578,6 +575,40 @@ private fun DebtLines(book: MoneyBook, today: LocalDate, balances: Map<Long, Lon
 }
 
 /**
+ * 2.0.0 [RVK-18] (검토 U06a-09): what the bank app shows now; the difference becomes one '잔액 맞춤' line today, said before it is
+ * written (a transfer, so no month's 수입·지출 changes).
+ */
+@Composable
+private fun BalanceAdjustDialog(account: MoneyAccount, counted: Long, onDone: (Long) -> Unit, onDismiss: () -> Unit) {
+    var actual by rememberSaveable { mutableStateOf("") }
+    val typed = actual.isNotEmpty()
+    val diff = actual.toAmount() - counted
+    com.bamnat.app.ui.components.FormSheet(
+        onDismissRequest = onDismiss,
+        unsaved = typed,
+        title = { Text("${account.name} 잔액 맞추기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("가계부로 센 잔액은 ${Fmt.won(counted)}이에요. 통장 앱에 보이는 잔액을 적어 주세요.",
+                    style = MaterialTheme.typography.bodyMedium)
+                AmountField("실제 잔액", actual, { actual = it }, allowZero = true, imeAction = ImeAction.Done)
+                if (typed) Text(
+                    when {
+                        diff == 0L -> "이미 맞아요. 적을 것이 없어요"
+                        else -> "차이 ${if (diff > 0) "+" else "−"}${Fmt.won(kotlin.math.abs(diff))}을 오늘 ‘${com.bamnat.core.money.MoneyAccounts.ADJUST_NAME}’ 한 줄로 적어요. 달의 수입·지출은 그대로예요"
+                    },
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            com.bamnat.app.ui.components.Button(onClick = { onDone(actual.toAmount()) }, enabled = typed && diff != 0L) { Text("맞추기") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/**
  * [LEDG-08] Adds or edits an account. A card names its last four digits (payment texts find it by
  * them) and the account it is paid from; a credit card its 결제일 and, if not the usual whole
  * month before, its 마감일. An account that holds money starts from what is in it now.
@@ -591,8 +622,11 @@ fun AccountEditor(
     onSave: (MoneyAccount) -> Unit,
     onRemove: (MoneyAccount) -> Unit,
     onDismiss: () -> Unit,
+    /** 2.0.0 [RVK-18] (검토 U06a-09) '실제 잔액으로 맞추기': the account and what the bank app shows in it. */
+    onAdjust: ((MoneyAccount, Long) -> Unit)? = null,
 ) {
     var kind by rememberSaveable { mutableStateOf(initial?.type ?: type ?: AccountType.CREDIT) }
+    var adjusting by rememberSaveable { mutableStateOf(false) }
     var name by rememberSaveable { mutableStateOf(initial?.name.orEmpty()) }
     var last4 by rememberSaveable { mutableStateOf(initial?.last4.orEmpty()) }
     var payDay by rememberSaveable { mutableIntStateOf(initial?.payDay ?: 14) }
@@ -655,6 +689,16 @@ fun AccountEditor(
                     AmountField(if (initial == null) "지금 들어 있는 돈" else "처음 들어 있던 돈 (적기 시작할 때)", opening, { opening = it })
                     Text("이후 이 계좌로 적은 수입·지출·이체로 잔액을 계산해요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVK-18] (검토 U06a-09): when the count is off, the real balance in once, not the opening worked out backwards.
+                    val counted = remember(book, initial) { initial?.let { com.bamnat.core.money.MoneyAccounts.balances(book.accounts, book.entries)[it.id] } }
+                    if (initial != null && onAdjust != null && counted != null) {
+                        // 총괄 #457 리뷰 (조건 12): at 글자 200% the balance keeps a line of its own and the button goes under it.
+                        WordsWithActions({ Text("지금 잔액 ${Fmt.won(counted)}", style = MaterialTheme.typography.bodyMedium) }) {
+                            TextButton(onClick = { adjusting = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("실제 잔액으로 맞추기") }
+                        }
+                        if (adjusting) BalanceAdjustDialog(initial, counted, onDone = { actual -> adjusting = false; onAdjust(initial, actual) },
+                            onDismiss = { adjusting = false })
+                    }
                 }
                 if (card) {
                     OutlinedTextField(value = last4, onValueChange = { v -> last4 = v.filter(Char::isDigit).take(4) }, singleLine = true,
@@ -761,7 +805,15 @@ private fun DayStepper(label: String, day: Int, onChange: (Int) -> Unit) {
 private fun dayOfMonth(day: Int): String = if (day >= 31) "말일" else "${day}일"
 
 /** One category in the editor: its name now, the name it had, and whether it is hidden. */
-private data class EditRow(val name: String, val was: String?, val hidden: Boolean)
+private data class EditRow(val name: String, val was: String?, val hidden: Boolean) {
+    companion object {
+        /** Kept as three strings a row (name, the name it had or "", 숨김 "1"). */
+        val Rows = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<EditRow>, String>(
+            save = { l -> l.flatMap { listOf(it.name, it.was.orEmpty(), if (it.hidden) "1" else "") } },
+            restore = { v -> mutableStateListOf<EditRow>().apply { v.chunked(3).forEach { (n, w, h) -> add(EditRow(n, w.ifEmpty { null }, h == "1")) } } },
+        )
+    }
+}
 
 /**
  * [LEDG-14] The user's categories for each kind: moved up or down, hidden (kept for old lines,
@@ -777,30 +829,25 @@ fun CategoryEditor(
     startKind: MoneyKind = MoneyKind.EXPENSE,
 ) {
     var kind by rememberSaveable { mutableStateOf(startKind) }
-    val rows = remember(kind) {
+    // 1.37 PC 4차: 예산 창과 같은 구조라 같이, 뒤로 가기 전에 바꾼 것을 버릴지 물어요.
+    val start = remember(kind) {
         val mine = book.categories.filter { it.kind == kind }.sortedBy { it.position }
         val shown = book.categoriesOf(kind).filter { it != MoneyCategories.OTHER }
         val hidden = mine.filter { it.hidden }.map { it.name }
-        mutableStateListOf<EditRow>().apply {
-            shown.forEach { add(EditRow(it, it, false)) }
-            hidden.forEach { add(EditRow(it, it, true)) }
-        }
+        shown.map { EditRow(it, it, false) } + hidden.map { EditRow(it, it, true) }
     }
-    var renaming by remember { mutableStateOf<Int?>(null) }
-    var adding by remember { mutableStateOf("") }
-    // 1.37 PC 4차: 예산 창과 같은 구조라 같이, 뒤로 가기 전에 바꾼 것을 버릴지 물어요.
-    val start = remember(kind) { rows.toList() }
+    // 2.0.0 [RVK-03] (MONEY-01): the names, order and hiding being changed come back after a rebuilt screen.
+    val rows = rememberSaveable(kind, saver = EditRow.Rows) { mutableStateListOf<EditRow>().apply { addAll(start) } }
+    var renaming by rememberSaveable { mutableStateOf<Int?>(null) }
+    var adding by rememberSaveable { mutableStateOf("") }
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = rows.toList() != start || adding.isNotBlank(), closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("분류 고치기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    MoneyKind.entries.forEachIndexed { i, k ->
-                        SegmentedButton(selected = kind == k, onClick = { kind = k }, shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size)) { Text(k.label) }
-                    }
-                }
+                com.bamnat.app.ui.components.ChoiceRow(MoneyKind.entries.map { it.label }, selected = kind.ordinal, onSelect = { kind = MoneyKind.entries[it] },
+                    modifier = Modifier.padding(bottom = 8.dp))
                 rows.forEachIndexed { i, r ->
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 52.dp).semantics(mergeDescendants = true) {
@@ -855,17 +902,35 @@ fun CategoryEditor(
     }
     renaming?.let { i ->
         val r = rows.getOrNull(i) ?: return@let
+        // 2.0.0 [RVK-08] (MONEY-03·T06a-10): 급여·카드값·이자·금융 and the like are read by name in the sums; renamed, 급여 would be
+        // counted twice. They say so instead of opening a field; hiding them still works.
+        if (!MoneyCategories.renamable(r.was ?: r.name)) {
+            AlertDialog(
+                onDismissRequest = { renaming = null },
+                title = { Text("‘${r.name}’ 이름은 그대로 둬요") },
+                text = { Text("계산에 쓰는 분류라 이름을 바꿀 수 없어요. 안 쓰면 숨길 수 있어요.") },
+                confirmButton = { TextButton(onClick = { renaming = null }) { Text("확인") } },
+            )
+            return@let
+        }
         var text by remember(i) { mutableStateOf(r.name) }
         val clean = MoneyCategories.clean(text)
+        val taken = rows.any { it !== r && it.name == clean }
+        val fixed = clean.isNotEmpty() && !MoneyCategories.renamable(clean)
         AlertDialog(
             onDismissRequest = { renaming = null },
             title = { Text("이름 바꾸기") },
             text = {
                 OutlinedTextField(value = text, onValueChange = { text = it.take(MoneyCategories.MAX_NAME) }, singleLine = true,
-                    label = { Text("분류 이름") }, modifier = Modifier.fillMaxWidth())
+                    label = { Text("분류 이름") }, modifier = Modifier.fillMaxWidth(), isError = taken || fixed,
+                    supportingText = when {
+                        taken -> { { Text("이미 있는 이름이에요") } }
+                        fixed -> { { Text("계산에 쓰는 이름이라 쓸 수 없어요") } }
+                        else -> null
+                    })
             },
             confirmButton = {
-                TextButton(enabled = clean.isNotEmpty() && clean != MoneyCategories.OTHER && rows.none { it !== r && it.name == clean }, onClick = {
+                TextButton(enabled = clean.isNotEmpty() && !fixed && !taken, onClick = {
                     rows[i] = r.copy(name = clean)
                     renaming = null
                 }) { Text("바꾸기") }

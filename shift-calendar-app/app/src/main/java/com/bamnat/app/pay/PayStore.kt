@@ -667,12 +667,17 @@ object PayCodec {
 
     private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)
         .put("fiscalMonth", l.fiscalStartMonth).put("low", JSONArray(l.lowAttendanceYears.sorted()))
+        // 2.0.0 [RVH-45] 시간 단위 연차; only when set, so an older file reads as before.
+        .apply { if (l.byHours) put("byHours", true) }
+        .apply { if (l.dayMinutes != com.bamnat.core.model.Leave.DAY_MINUTES) put("dayMin", l.dayMinutes) }
 
     private fun leavePolicyFrom(o: JSONObject): LeavePolicy = LeavePolicy(
         auto = o.optBoolean("auto", true),
         basis = LeaveBasis.entries.firstOrNull { it.name == o.optString("basis") } ?: LeaveBasis.HIRE,
         fiscalStartMonth = o.optInt("fiscalMonth", 1).coerceIn(1, 12),
         lowAttendanceYears = o.optJSONArray("low")?.let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it >= 1 }.toSet() }.orEmpty(),
+        byHours = o.optBoolean("byHours", false),
+        dayMinutes = o.optInt("dayMin", com.bamnat.core.model.Leave.DAY_MINUTES).takeIf { it in 60..24 * 60 } ?: com.bamnat.core.model.Leave.DAY_MINUTES,
     )
 
     private fun premiums(p: List<Premium>): JSONArray = JSONArray(p.map {
