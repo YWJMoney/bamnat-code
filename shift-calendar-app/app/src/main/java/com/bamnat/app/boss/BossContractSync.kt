@@ -68,7 +68,7 @@ object BossContractSync {
 
     /**
      * 2.0.0 [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': the day the signed contract was handed over (근로기준법 제17조 제2항),
-     * kept on the contract and printed on its PDF; [given] false takes a mistaken press back.
+     * kept on the contract and printed on its PDF; [given] false (the switch turned off) takes a mistaken press back.
      */
     suspend fun given(c: AppContainer, s: StaffMember, given: Boolean = true): StaffContract.Sent? =
         c.phaseThree.updateContract(s.id) { cur -> cur?.takeIf { it.signed }?.copy(givenAt = if (given) cur.givenAt ?: Today.millis() else null) ?: cur }

@@ -59,8 +59,8 @@ class RvjScreenshotTest : ScreenshotBase() {
     }
 
     /**
-     * [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': a signed contract takes '직원에게 줬어요', shows the day, and 취소 takes a
-     * mistaken press back (the model and the PDF line had it since the first PR; nothing on the screen set it).
+     * [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': a signed contract has the switch '직원에게 한 부 줬어요'; on, it shows the day,
+     * and off takes a mistaken press back (the model and the PDF line had it since the first PR; nothing on the screen set it).
      */
     private fun contractGiven(undo: Boolean): Screen.() -> Unit = {
         content { com.bamnat.app.ui.work.PayrollScreen(roster, YearMonth.from(Today.date())) {} }
@@ -69,15 +69,14 @@ class RvjScreenshotTest : ScreenshotBase() {
         settle()
         tapText("종이로 받았어요", exact = true)
         settle()
-        tapText("직원에게 줬어요", exact = true)
+        tapText("직원에게 한 부 줬어요", exact = true)
         settle()
-        org.junit.Assert.assertTrue("준 날이 보여야 해요", scrolledTo("에 직원에게 한 부 줬어요"))
-        org.junit.Assert.assertTrue(gone("직원에게 줬어요", exact = true))
+        org.junit.Assert.assertTrue("준 날이 보여야 해요", scrolledTo("에 줬어요 · 계약서 PDF에 남아요"))
         if (undo) {
-            tapText("취소", exact = true)
+            tapText("직원에게 한 부 줬어요", exact = true)
             settle()
-            org.junit.Assert.assertTrue(gone("에 직원에게 한 부 줬어요"))
-            org.junit.Assert.assertTrue(scrolledTo("직원에게 줬어요", exact = true))
+            org.junit.Assert.assertTrue(gone("에 줬어요 · 계약서 PDF에 남아요"))
+            org.junit.Assert.assertTrue(scrolledTo("주고 나서 켜 두면 준 날이 계약서 PDF에 남아요", exact = true))
         }
     }
     @Test fun contractGivenLight() = shoot("rvj_24_contract_given_folded", FOLDED, contractGiven(false))

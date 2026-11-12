@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -20,7 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -85,15 +83,15 @@ internal fun ContractDialog(place: Workplace, staff: StaffMember, onEditStaff: (
                     Text((if (cur.paper) "종이 계약서로 받았어요 · " else "${cur.signedName ?: staff.name}님이 링크에서 서명했어요 · ") + day(cur.signedAt!!),
                         style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Hint("서명한 계약서는 이 휴대폰과 PDF에만 있어요. 직원에게 PDF를 한 부 보내 주세요(근로기준법 제17조). 시급이나 근무 시간이 바뀌면 새로 써요.")
-                    // 2.0.0 [RVJ-17] 검토 BOSS-55: the day it was handed over stays here and on the PDF; 취소 for a mistaken press.
-                    cur.givenAt?.let { at ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("${day(at)}에 직원에게 한 부 줬어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                            TextButton(enabled = !busy, onClick = {
-                                busy = true
-                                scope.launch { BossContractSync.given(app, staff, given = false)?.let { sent = it }; busy = false }
-                            }) { Text("취소") }
-                        }
+                    // 2.0.0 [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': one switch (not a third 글자 단추, 조건 2); the day stays here
+                    // and on the PDF, and turning it off takes a mistaken press back.
+                    com.bamnat.app.ui.settings.SwitchRow(
+                        "직원에게 한 부 줬어요",
+                        cur.givenAt?.let { "${day(it)}에 줬어요 · 계약서 PDF에 남아요" } ?: "주고 나서 켜 두면 준 날이 계약서 PDF에 남아요",
+                        checked = cur.givenAt != null, enabled = !busy,
+                    ) { on ->
+                        busy = true
+                        scope.launch { BossContractSync.given(app, staff, given = on)?.let { sent = it }; busy = false }
                     }
                 } else {
                     Text("${day(cur.sentAt)}에 보냈어요 · " + (cur.seenAt?.let { "${day(it)}에 열어 봤어요" } ?: "아직 안 열어 봤어요"),
@@ -140,10 +138,6 @@ internal fun ContractDialog(place: Workplace, staff: StaffMember, onEditStaff: (
                     }
                     cur!!.signed -> {
                         OutlinedButton(onClick = { pdf(StaffContract.doc(place, staff, cur), true) }) { Text("서명한 계약서 PDF") }
-                        if (cur.givenAt == null) TextButton(enabled = !busy, onClick = {
-                            busy = true
-                            scope.launch { BossContractSync.given(app, staff)?.let { sent = it }; busy = false }
-                        }) { Text("직원에게 줬어요") }
                         TextButton(onClick = { fresh = true }) { Text("새로 쓰기") }
                         cur.past.asReversed().forEach { p ->
                             TextButton(onClick = { pdf(StaffContract.doc(place, staff, p), true) }) { Text("지난 계약서 ${day(p.signedAt ?: p.sentAt)} PDF") }

@@ -68,7 +68,7 @@ class RvjFrozenScreenshotTest : ScreenshotBase() {
     @Test fun weekRates() = shoot("rvj_22_staff_rates_folded", FOLDED, staffWeek(true))
 
     /**
-     * 2.0.0 [RVJ-21] 검토 HQ-07 (조건 12): at 200% on the folded width the 항목별 내역's names broke inside the word ('연장근/로') and the
+     * 2.0.0 [RVJ-21] 검토 HQ-10 (조건 12): at 200% on the folded width the 항목별 내역's names broke inside the word ('연장근/로') and the
      * 추정 chip touched the amount. Each line is now [com.bamnat.app.ui.components.AmountRow]: nothing cut, and a one-word name stays whole.
      */
     @Test fun itemsBigNothingCut() = shoot("rvj_23_items_folded_200", FOLDED, 2f) {
