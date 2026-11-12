@@ -59,7 +59,10 @@ class RvlRosterAgainScreenshotTest : ScreenshotBase() {
         first.apply()
         waitFor("the month written") { runBlocking { c.scheduleRepository.snapshot.first() }.resolver.resolve(dec.atDay(14)).shiftType?.name == "주간" }
     }) { _ ->
-        assertTrue(appears("바뀌는 날은 3일이에요"))
+        // The card names the three days (they were put in from the roster before), with no second line naming them again.
+        assertTrue(appears("넣어 둔 3일이 바뀌어요"))
+        assertTrue(appears("지금 달력과 다른 날"))
+        assertTrue(!shows("바뀌는 날은 3일이에요"))
         assertTrue(appears("바뀐 3일 고치기"))
     }
 

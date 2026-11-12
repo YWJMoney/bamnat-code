@@ -1123,6 +1123,14 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
     // 2.0.0 [RVL-38] (검토 U07b-06) Leave and changed shifts the roster would write over: which days (outlined on the calendar below),
     // and the choice to keep them. It was one small line under the rest.
     val over = remember(ui.writable, ui.outside, snap) { if (snap == null) emptySet() else DutyRosterViewModel.overwritten(ui, snap) }
+    // 2.0.0 [RVL-74] (검토 I07ba-03) The same roster sent again, fixed: the days it changes against the calendar now. When the card below
+    // already names them all (the month was put in from a roster before), it says so instead of a second line naming the same days: at
+    // 200% on a folded phone the two together left no room for the month.
+    val changed = remember(ui, snap) {
+        if (snap == null || ui.row == null || ui.writable.size < DutyRoster.MIN_DAYS) null
+        else DutyRosterViewModel.changes(ui, snap).takeIf { it.size < ui.writable.size }
+    }
+    val named = changed != null && changed.isNotEmpty() && changed.all { it.first in over }
     if (over.isNotEmpty()) {
         val days = over.sorted().let { ds -> if (ds.all { YearMonth.from(it) == ui.month }) ds.joinToString("·") { "${it.dayOfMonth}" } + "일" else RosterReader.span(ds.toSet()) }
         // The app's one notice card (조건 3): caution while they would be written over, a plain note once they are kept.
@@ -1130,7 +1138,7 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
         com.bamnat.app.ui.components.NudgeCard(
             if (ui.keepMine) "넣어 둔 ${over.size}일은 그대로 둬요" else "넣어 둔 ${over.size}일이 바뀌어요",
             tone = if (ui.keepMine) com.bamnat.app.ui.theme.Tone.Plain else com.bamnat.app.ui.theme.Tone.Caution,
-            detail = if (ui.keepMine) "$days 빼고 넣어요" else "$days (연차·바꾼 근무)",
+            detail = if (ui.keepMine) "$days 빼고 넣어요" else if (named) "$days (지금 달력과 다른 날)" else "$days (연차·바꾼 근무)",
             action = if (ui.keepMine) "근무표대로 바꾸기" else "그 날은 그대로 두기",
             onAction = { onKeepMine(!ui.keepMine) },
         )
@@ -1148,15 +1156,12 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
         Spacer(Modifier.height(6.dp))
     }
     val lines = buildList {
-        // 2.0.0 [RVL-74] (검토 I07ba-03) The same roster sent again, fixed: only the days it changes, said first (the rest stay as they are).
-        if (snap != null && ui.row != null && ui.writable.size >= DutyRoster.MIN_DAYS) {
-            val changed = DutyRosterViewModel.changes(ui, snap)
-            if (changed.size < ui.writable.size) add(
-                if (changed.isEmpty()) "지금 달력과 같아요. 넣어도 바뀌는 날이 없어요"
-                else "지금 달력과 견주면 바뀌는 날은 ${changed.size}일이에요: " + changed.take(3).joinToString(", ") { (d, a, b) -> "${d.dayOfMonth}일 $a→$b" } +
-                    (if (changed.size > 3) " 외 ${changed.size - 3}일" else ""),
-            )
-        }
+        // 2.0.0 [RVL-74] (검토 I07ba-03) Only the days it changes, said first (the rest stay as they are), unless the card above named them.
+        if (changed != null && !named) add(
+            if (changed.isEmpty()) "지금 달력과 같아요. 넣어도 바뀌는 날이 없어요"
+            else "지금 달력과 견주면 바뀌는 날은 ${changed.size}일이에요: " + changed.take(3).joinToString(", ") { (d, a, b) -> "${d.dayOfMonth}일 $a→$b" } +
+                (if (changed.size > 3) " 외 ${changed.size - 3}일" else ""),
+        )
         if (ui.named != null && ui.row != null) add("근무표에 적힌 ${ui.named.monthValue}월로 넣어요" + if (ui.outside.isNotEmpty()) " (${ui.named.monthValue}월 ${ui.writable.size}일 + ${ui.outside.size}일)" else "")
         if (ui.beyond.isNotEmpty()) add("${ui.beyond.joinToString(",")}일 칸이 있는데 ${ui.month.monthValue}월은 ${ui.month.lengthOfMonth()}일까지라 그 칸은 빼요")
         if (ui.doubtful.isNotEmpty()) add("노란 칸 ${ui.doubtful.size}개는 확실하지 않아요. 누르고 키로 맞춰 주세요")
