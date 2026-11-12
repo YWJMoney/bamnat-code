@@ -106,6 +106,43 @@ class S2ScreenshotTest : ScreenshotBase() {
         assertTrue(misses.joinToString("\n"), misses.isEmpty())
     }
 
+    /**
+     * RVS-17 (총괄 HQ-84): at 200% folded, opening 자세히 with the part bar's quick tool open folds the bar to its one line, and the
+     * example keeps 30% of the screen between the bar and the panel (it was about 6%; the example's own margin is the slack).
+     */
+    @Test fun theExampleKeepsItsRoomWithDetailsOpenBigText() {
+        val misses = ArrayList<String>()
+        for (dark in listOf(false, true)) {
+            val n = "s2/rvs17_part_details_${lookName(dark, 2f, FOLDED)}"
+            shoot(n, if (dark) night(FOLDED) else FOLDED, 2f) {
+                runBlocking {
+                    c.recipes.apply(bigHead, "HEAD2345", 1, PersonalCalendar.MAIN, bigHead.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap())
+                }
+                settle()
+                tapText("도구")
+                tapText("카드 배치", exact = true)
+                settle()
+                tapText("달력 머리·요일 줄이 첫 줄을", prefix = true)
+                settle()
+                // On the folded line 더 보기 waits under 펼치기, as a person finds it.
+                runCatching { tapText("꾸미기 도구 모두 펼쳐 보기", exact = true, scrolls = 0) }
+                settle()
+                tapText("더 보기 ›", exact = true)
+                settle()
+                val all = nodes(merged = true)
+                val h = all.maxOf { it.boundsInWindow.bottom }
+                if (all.any { textOf(it) == "바탕색" && it.config.getOrNull(SemanticsProperties.Selected) == true }) misses += "$n: 자세히를 열어도 빠른 도구가 열려 있어요"
+                // Where the example starts showing (its bounds are clipped by the canvas under the bar).
+                val bar = all.filter { it.config.getOrNull(SemanticsProperties.ContentDescription)?.any { d -> d == "예시 앱 화면" } == true }
+                    .minOfOrNull { it.boundsInWindow.top }
+                val panel = all.filter { textOf(it)?.endsWith("자세히") == true }.minOfOrNull { it.boundsInWindow.top }
+                if (bar == null || panel == null) misses += "$n: 부품 막대나 자세히 창이 없어요"
+                else if ((panel - bar) / h < 0.28f) misses += "$n: 예시가 화면의 ${((panel - bar) / h * 100).toInt()}%만 보여요 (30% 넘게)"
+            }
+        }
+        assertTrue(misses.joinToString("\n"), misses.isEmpty())
+    }
+
     private fun textOf(node: SemanticsNode): String? =
         node.config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }?.takeIf { it.isNotBlank() }
 

@@ -426,6 +426,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var selWhen by rememberSaveable { mutableStateOf<String?>(null) }
     var quick by remember { mutableStateOf<StudioEdit.Quick?>(null) }
     var panel by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVS-17] HQ-84: with big text (over 130%) the part bar's quick tool and 자세히 are one at a time, so the example keeps its room:
+    // opening 자세히 folds the bar to its one line, and opening a quick tool closes 자세히.
+    val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+    androidx.compose.runtime.LaunchedEffect(panel, bigText) { if (panel && bigText) quick = null }
     var panelMode by rememberSaveable { mutableStateOf(PanelMode.TOOL) }
     // PC 확인 1.37 A18 MED-1: the 판's size is kept across restarts (with the folded rows, a device-only choice).
     val (panelBig, setPanelBig) = com.bamnat.app.ui.components.rememberFold("studio.panel.big")
@@ -693,10 +697,13 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 runCatching { com.bamnat.core.recipe.Blueprint.decode(d.parts).abovePush() }.getOrDefault(0)
                             }
                         }
-                        if (push > com.bamnat.core.recipe.PartFloor.ABOVE_DP) com.bamnat.app.ui.components.ToneLine(
+                        // 2.0.0 [RVS-17] HQ-84: with big text and 자세히 open, this bar keeps to its buttons (the status in one line only when it
+                        // has a button of its own), so the example is not squeezed between the panel and the bar; 자세히 says the same inside.
+                        val roomy = !(bigText && panel)
+                        if (roomy && push > com.bamnat.core.recipe.PartFloor.ABOVE_DP) com.bamnat.app.ui.components.ToneLine(
                             "달력 머리·요일 줄이 첫 줄을 ${push}dp 내려요 · 달력이 먼저 보이게 ${com.bamnat.core.recipe.PartFloor.ABOVE_DP}dp까지만 줄여 그려요",
                             style = MaterialTheme.typography.labelMedium, tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { selectPart("cal.head"); openPanel(PanelMode.PART) })
-                        Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
+                        if (roomy || s.layered.isNotEmpty() || s.keptWear) Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(when {
                                 s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
@@ -706,7 +713,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
                                 else -> "바꾼 곳 ${maxOf(changedCount, 1)}곳 · 입히기 전까지 내 앱은 그대로예요"
                             } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
-                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+                                maxLines = if (roomy) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             // PC 13차 사용성 제안 (얹은 뒤 '…조각 사용'만 있고 빼는 곳이 안 보임): the last one laid on, taken off right here.
                             s.layered.lastOrNull()?.let { k -> TextButton(onClick = { vm.unlayer(k) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("얹은 것 빼기") } }
@@ -756,7 +764,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val cardPick = StudioEdit.card(sel)
                 if (sel != null && cardPick == null) PartBar(sel!!, d.parts, selOn, selWhen,
                     onSel = { selectPart(it) }, onOn = { o, w -> selOn = o; selWhen = w },
-                    quick = quick, onQuick = { quick = it },
+                    quick = quick, onQuick = { quick = it; if (it != null && bigText) panel = false },
                     set = { label, kv -> setPart(label, kv) },
                     onMore = { openPanel(PanelMode.PART) },
                     onCondition = { condFirst = true; condAsk++; openPanel(PanelMode.PART) })
@@ -840,8 +848,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
                 val featurePanel = panel && panelMode == PanelMode.TOOL && tool == Tool.FEATURE
                 val big = if (featurePanel) !featureSmall else panelBig
+                // 2.0.0 [RVS-17] 총괄 HQ-84 (접은 폭 200%에서 부품 막대와 '자세히'가 함께 열리면 예시가 화면의 6%): the example keeps at least
+                // a third of the phone's screen above the panel (over 30% with the bar's edge), which scrolls inside (the feature panel's '크게' is the whole screen on purpose).
+                val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+                val keep = if (featurePanel && big) 96.dp else maxOf(96.dp, screenH * 0.35f)
                 val panelH = (if (featurePanel && big) maxHeight - 96.dp else totalH * (if (big) 0.66f else 0.42f))
-                    .coerceAtMost(maxHeight - 96.dp).coerceAtLeast(160.dp)
+                    .coerceAtMost(maxHeight - keep).coerceAtLeast(160.dp)
                 val coverPx = with(androidx.compose.ui.platform.LocalDensity.current) { if (panel) panelH.toPx() else 0f }
                 androidx.compose.runtime.SideEffect { zoom.cover = coverPx }
                 // [CNV-04] A part picked while the 판 is open (or the 판 opened over one) is brought into the part left in view.
