@@ -5,7 +5,7 @@ import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } fr
 import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
 import { compareVersions, inboxAnswer, titleFrom, version } from "./inbox.js";
 import { askOwner } from "./ledger.js";
-import { DESK, isOut, markTold, shipNow, shippedVersion, shipText } from "./desk.js";
+import { DESK, isOut, markTold, resumeShip, shipNow, shippedVersion, shipText } from "./desk.js";
 import { versionHealth } from "./release-desk.js";
 import { flagStore, serverEval } from "./flags.js";
 import { kstDay } from "./usage.js";
@@ -298,6 +298,8 @@ async function holdShip(env, v, now, why) {
 
 /** 5분마다·매시: 보류가 끝난 출시 안내를 보내요. 스스로 안내 스위치가 꺼져 있으면 보내지 않아요(사람이 '지금 보내기'). */
 export async function shipTick(env, now = Date.now(), answer) {
+  // 1.40 [RVD-11] 관리자 단추든 자동이든, 중간에 끊긴 나간 판 저장은 남은 안내부터 이어요.
+  await resumeShip(env, now, answer ?? autoReply).catch((e) => console.error(`resume ship: ${e?.message ?? e}`));
   if (!(await loopSwitches(env)).autoShip) return [];
   const rows = await all(env, "SELECT * FROM loop_ships WHERE status = 'waiting' AND until <= ?", now).catch(() => []);
   const out = [];

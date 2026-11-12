@@ -16,6 +16,15 @@ OLD = [
 
 
 class DeployWorkerTest(unittest.TestCase):
+    def test_company_health_reads_the_database(self):
+        # 1.40 [RVD-08] 검토 SRV-03: 비밀값이 다 있어도 표 판·config 읽기가 틀리면 새 판은 실패예요.
+        good = {"database": True, "password": True, "salt": True}
+        self.assertTrue(d.company_ok(200, {**good, "schema": True, "config": True}, True))
+        self.assertFalse(d.company_ok(200, good, True))
+        self.assertFalse(d.company_ok(503, {**good, "schema": False, "config": True}, True))
+        # 되돌린 옛 판은 deep을 몰라요.
+        self.assertTrue(d.company_ok(200, good, False))
+
     def test_finds_bindings_in_version_view(self):
         view = {"id": "v", "resources": {"script": {}, "bindings": OLD}}
         self.assertEqual(d.find_bindings(view), OLD)

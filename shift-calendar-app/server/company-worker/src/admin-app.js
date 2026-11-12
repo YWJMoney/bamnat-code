@@ -922,9 +922,15 @@ function adminApp(L, BUILD, M) {
       // 1.39 [STAT2-01] 숫자 › 한눈에(glance.js glanceLoads).
       for (const [path, k] of V.glanceLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
       // [ADM3-11] 문의 하나를 열면 그 휴대폰(사람 옆 패널), [ADM3-34] 개발사항 하나를 열면 이야기: 화면을 기다리게 하지 않아요.
-      if (name === "inquiries" && id && can("inquiries") && S.data.person?.for !== id) {
-        S.data.person = { for: id, loading: true };
-        api(`/person?inquiry=${encodeURIComponent(id)}`).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
+      // 1.40 [RVD-06] 검토 ADM-01: 미리 데우기(warm)는 남은 답만 '묵은 것'으로 채우고, 못 찾아도 아무것도 적지 않아요. 예전엔 그때 적은
+      // '못 불러옴'이 '이미 읽음'으로 여겨져 진짜 읽기를 건너뛰었어요. 묵은 것·못 불러온 것은 다음 읽기에서 다시 읽어요.
+      const person = S.data.person;
+      const personPath = `/person?inquiry=${encodeURIComponent(id)}`;
+      if (name === "inquiries" && id && can("inquiries") && S.warming) {
+        if (person?.for !== id) peek(personPath).then((kept) => { if (kept && S.data.person?.for !== id) S.data.person = { for: id, d: kept, stale: true }; }, () => {});
+      } else if (name === "inquiries" && id && can("inquiries") && (person?.for !== id || person.stale || (person.d === null && !person.loading))) {
+        S.data.person = person?.for === id && person.d ? { ...person, stale: false } : { for: id, loading: true };
+        api(personPath).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
           .then(() => { if (S.route.name === "inquiries" && S.route.id === id) render({ keepScroll: true }); });
       }
       // 1.38 [ADM3-10] 장부 맨 위 단계 막대(흐름 한 줄).

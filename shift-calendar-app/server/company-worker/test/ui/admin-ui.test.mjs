@@ -2081,3 +2081,23 @@ test("[OBS2-08] 유형별 흐름 and 기능과 머묾 show once 처리방침 3.1
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
+
+// 1.40 [RVD-06] 검토 ADM-01·ADMX-04: 목록에서 처음 여는 문의의 '이 휴대폰' 패널이 미리 데우기 때 '못 불러옴'으로 굳어 다시 안 읽혔어요.
+test("[RVD-06] an inquiry opened from the list reads its phone panel once, also when the screen was warmed first", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const id = (await s.call("GET", "/api/admin/inquiries", undefined, await signIn(s.call))).data.inquiries[0].id;
+  let reads = 0;
+  const fetch = t.window.fetch;
+  t.window.fetch = (input, init) => {
+    if (String(typeof input === "string" ? input : input.url).includes("/person?")) reads++;
+    return fetch(input, init);
+  };
+  await t.go("#/inquiries");
+  await t.go(`#/inquiries/${id}`);
+  await t.settle(30);
+  assert.equal(reads, 1);
+  assert.ok(t.$("aside.person h2"), t.text("aside.person"));
+  assert.doesNotMatch(t.text("aside.person"), /불러오지 못했어요/);
+  assert.deepEqual(t.errors, []);
+});

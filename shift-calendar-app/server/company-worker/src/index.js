@@ -485,7 +485,7 @@ async function routeOnce(request, env, url, ctx) {
   if (path.startsWith("/admin/")) return adminFile(path, request);
   // AE 1.26: the invite link needs no database.
   if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
-  if (path === "/api/admin/health" && method === "GET") return json(health(env));
+  if (path === "/api/admin/health" && method === "GET") return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
@@ -981,6 +981,10 @@ const LATE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS inquiries_bad ON inquiries (status) WHERE rating = -1",
   "CREATE INDEX IF NOT EXISTS posts_flagged ON posts (flags, created_at) WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')",
   "CREATE INDEX IF NOT EXISTS audit_action ON audit (action, id)",
+  // 1.40 [RVD-09] 검토 SVC-89: 광장의 답글(parent)·뽑힌 답(answer)을 찾는 질의가 글 표 전체를 훑었어요(글 2만 줄에 1초쯤). 답글·뽑힌 답이
+  // 있는 줄만 담는 부분 색인이라 작아요. parent·answer 칸은 COLUMNS가 더하니 이 줄은 그 뒤(LATE)에 있어요.
+  "CREATE INDEX IF NOT EXISTS posts_parent ON posts (parent, created_at) WHERE parent IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS posts_answer ON posts (answer) WHERE answer IS NOT NULL",
   // AN 1.28 끝
   // AO 1.28 시작 [PERF-17] How long the app took to open on consenting phones, as counts per bucket: per day, app version,
   // kind (cold: a new process, warm: it was running) and step (container wait, screen, first month). No phone, no time.
@@ -4907,6 +4911,25 @@ const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly;
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
   return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
+}
+
+/**
+ * 1.40 [RVD-08] 검토 SRV-03: 배포 뒤 확인(tools/deploy_worker.py)이 DB를 건드려 봐요. 표를 이 코드의 판으로 맞추고(ready), 판 표시를 읽고,
+ * 모든 앱이 매일 부르는 길(/api/config)의 두 읽기를 해요. 스키마가 깨진 판이면 schema·config가 false라 자동 되돌리기가 돌아요.
+ * 무엇이 왜 깨졌는지 글은 내보내지 않아요(공개 길이라 맞음·틀림만).
+ */
+async function deepHealth(env) {
+  const out = { ...health(env), schema: false, config: false };
+  if (!env.DB) return json(out, 503);
+  try {
+    await ready(env);
+    out.schema = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value === SCHEMA_VERSION;
+    await Promise.all([config(env), updatePolicy(env)]);
+    out.config = true;
+  } catch (e) {
+    console.error(`deep health: ${e?.message ?? e}`);
+  }
+  return json(out, out.schema && out.config ? 200 : 503);
 }
 
 /** [ADMIN-15] The setup screen's full state, for the owner: health plus the optional services. */

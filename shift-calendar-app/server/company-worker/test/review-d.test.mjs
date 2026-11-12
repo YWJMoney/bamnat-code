@@ -157,3 +157,68 @@ test("[RVD-10] the same 결과 block twice answers once: its 묶음 was applied,
   const msgs = (await thread(call, q, 1)).messages;
   assert.equal(msgs.filter((m) => m.from === "admin").length, 1, JSON.stringify(msgs));
 });
+
+// ---- [RVD-08] 검토 SRV-03: 배포 뒤 health가 DB를 안 건드림 ----
+
+test("[RVD-08] deep health reads the tables and the app's daily path, and is 503 on a database it cannot use", async () => {
+  const { call, env } = server();
+  const deep = await call("GET", "/api/admin/health?deep=1");
+  assert.equal(deep.status, 200);
+  assert.deepEqual([deep.data.schema, deep.data.config], [true, true]);
+  // A database whose tables broke: the settings table is gone.
+  env.DB.db.exec("DROP TABLE settings");
+  const broken = await server({ plaza: true, DB: env.DB }).call("GET", "/api/admin/health?deep=1");
+  assert.equal(broken.status, 503);
+  assert.equal(broken.data.config === true && broken.data.schema === true, false);
+  // The plain one stays as it was (the setup screen reads it).
+  assert.deepEqual(Object.keys((await call("GET", "/api/admin/health")).data).sort(), ["database", "password", "salt", "why"]);
+});
+
+// ---- [RVD-09] 검토 SVC-89: 광장 답글·뽑힌 답 찾기가 글 표 전체를 훑음 ----
+
+test("[RVD-09] replies and chosen answers are found through an index, not by reading every post", async () => {
+  const { call, DB } = server();
+  await call("GET", "/api/terms");
+  const plan = (sql, ...p) => DB.db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...p).map((r) => r.detail).join(" | ");
+  assert.match(plan("SELECT * FROM posts WHERE parent IN (?, ?) ORDER BY created_at, rowid", "a", "b"), /posts_parent/);
+  // plaza-people.js peoplePulse: questions still waiting for an answer.
+  assert.match(plan(`SELECT COUNT(*) FROM posts q WHERE q.company_id = ?1 AND q.grp = ?2 AND q.status = 'shown' AND q.parent IS NULL
+    AND NOT EXISTS (SELECT 1 FROM posts a WHERE a.parent = q.id AND a.status = 'shown' AND a.device <> q.device)`, "r", "g"), /posts_parent/);
+  // plaza-people.js: answers of each writer that were chosen.
+  const helped = plan(`SELECT a.device, COUNT(*) AS n FROM posts a CROSS JOIN posts q ON q.answer = a.id WHERE a.device IN (?, ?) AND a.status = 'shown'
+    AND q.status = 'shown' AND a.device <> q.device GROUP BY a.device`, "d1", "d2");
+  assert.match(helped, /posts_device.*posts_answer/);
+});
+
+// ---- [RVD-11] 검토 SVC-01: 나간 판 저장이 중간에 끊기면 남은 안내·공지가 영영 안 감 ----
+
+import { shipNow, resumeShip, shippedVersion } from "../src/desk.js";
+import { inboxAnswer } from "../src/inbox.js";
+
+test("[RVD-11] one answer failing does not stop the others, the notice and the record; the version stays 'sending' and the next tick sends the rest once", async () => {
+  const { call, env } = server();
+  const admin = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.39.0" }, admin)).status, 200);
+  const qs = [await ask(call, 1, "잠금 화면 알람 소리가 안 나요"), await ask(call, 2, "위젯 글자가 작아요"), await ask(call, 3, "달력 첫 화면이 느려요")];
+  for (const [i, q] of qs.entries()) {
+    const item = (await call("POST", "/api/admin/dev", { title: `고칠 것 ${i}`, inquiry: q }, admin)).data.id;
+    assert.equal((await call("POST", "/api/admin/inquiries/handoff/result", { text: `${item} 완료 1.40.0 | 공지: 고친 것 ${i}` }, admin)).status, 200);
+  }
+  const real = (e, id, text, at) => inboxAnswer(e, id, text, at, "자동 정리");
+  let calls = 0;
+  const flaky = (e, id, text, at) => (++calls === 1 ? Promise.reject(new Error("D1 잠시 오류")) : real(e, id, text, at));
+  const first = await shipNow(env, "1.40.0", { notify: true, notice: true, by: "자동" }, Date.now(), flaky);
+  assert.deepEqual([first.answered, first.failed, Boolean(first.notice)], [2, 1, true]);
+  assert.equal((await shippedVersion(env)).pending, true);
+  const again = await resumeShip(env, Date.now(), real);
+  assert.deepEqual([again.answered, again.failed], [1, 0]);
+  assert.equal((await shippedVersion(env)).pending, undefined);
+  assert.equal(await resumeShip(env, Date.now(), real), null);
+  for (const [i, q] of qs.entries()) {
+    const said = (await thread(call, q, i + 1)).messages.filter((m) => m.from === "admin" && /1\.40\.0/.test(m.text) && /업데이트/.test(m.text));
+    assert.ok(said.length >= 1, `q${i}`);
+  }
+  // The notice went up once, and the version is out for the app.
+  const notices = JSON.parse(env.DB.db.prepare("SELECT value FROM settings WHERE key = 'notices'").get().value);
+  assert.equal(notices.filter((n) => /1\.40\.0/.test(`${n.title} ${n.body}`)).length, 1);
+});
