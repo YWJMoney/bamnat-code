@@ -2,44 +2,21 @@
 // tools/backup-open.mjs로 빈 DB에 실제로 되살아나는지. [RVQ-17] 검토 U21-07·I21b-02: 데이터 요청 대행(지우기·열람)과 증빙.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gunzipSync, gzipSync } from "node:zlib";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deviceHash } from "../src/index.js";
 import { KEEP, drillTick } from "../src/keep.js";
 import { openDay } from "../tools/backup-open.mjs";
 import { device, server, signIn } from "./helpers.mjs";
+import { localR2 } from "./local-r2.mjs";
 
-/** R2 as the backup uses it: put, get (body stream and text), list with prefix·delimiter, delete. */
-function fakeR2() {
-  const store = new Map();
-  return {
-    store,
-    async put(key, body) {
-      store.set(key, typeof body === "string" ? new TextEncoder().encode(body) : new Uint8Array(body));
-    },
-    async get(key) {
-      const v = store.get(key);
-      if (!v) return null;
-      return { body: new Blob([v]).stream(), text: async () => new TextDecoder().decode(v) };
-    },
-    async list({ prefix = "", delimiter } = {}) {
-      const keys = [...store.keys()].filter((k) => k.startsWith(prefix)).sort();
-      if (!delimiter) return { objects: keys.map((key) => ({ key })), truncated: false };
-      const pre = new Set(keys.map((k) => k.slice(prefix.length)).filter((k) => k.includes(delimiter)).map((k) => prefix + k.slice(0, k.indexOf(delimiter) + 1)));
-      return { objects: [], delimitedPrefixes: [...pre], truncated: false };
-    },
-    async delete(keys) {
-      for (const k of [].concat(keys)) store.delete(k);
-    },
-  };
-}
+const fakeR2 = () => localR2();
 
 const SECRETS = { pw: "pbkdf2$100000$c2FsdA$aGFzaA", token: "fcm-token-of-a-phone-0123456789", invite: "invite-token-abcdef0123456789", sub: "play-purchase-token-xyz" };
 
-async function seeded(extra = {}) {
-  const R2 = fakeR2();
+async function seeded(extra = {}, R2 = fakeR2()) {
   const s = server({ BACKUP: R2, ...extra });
   const owner = await signIn(s.call);
   const now = Date.now();
@@ -147,11 +124,12 @@ test("[RVQ-16] 검토 U21-08: the restore drill reads the last day back, and say
 });
 
 test("[RVQ-16] tools/backup-open.mjs puts a day back into an empty database, with the sealed cells opened", async () => {
-  const { R2, DB, call, owner } = await seeded();
+  // The local server's R2 (--backup <folder>) keeps each key as a file, so the day's folder is what R2 gives when downloaded.
+  const root = mkdtempSync(join(tmpdir(), "bamnat-backup-"));
+  const { DB, call, owner } = await seeded({}, localR2(root));
   await backUp(call, owner);
-  const dir = mkdtempSync(join(tmpdir(), "bamnat-backup-"));
+  const dir = join(root, "d1", readdirSync(join(root, "d1"))[0]);
   try {
-    for (const [k, v] of R2.store) writeFileSync(join(dir, k.slice(14)), v);
     await assert.rejects(openDay(dir, []), /잠근 칸이 열리지 않아요/, "no secret: nothing half done");
     await assert.rejects(openDay(dir, ["wrong-secret"]), /잠근 칸이 열리지 않아요/);
     const { sql, counts } = await openDay(dir, ["test-salt"]);
@@ -170,7 +148,7 @@ test("[RVQ-16] tools/backup-open.mjs puts a day back into an empty database, wit
     rmSync(join(dir, "admins.1.ndjson.gz"));
     await assert.rejects(openDay(dir, ["test-salt"]), /조각이 없어요/);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

@@ -24,7 +24,7 @@ Cloudflare Workers + D1 + KV를 골랐어요. Supabase 무료 계획은 1주 동
   표는 8MB(압축 전)마다 조각(`d1/<날>/<표>.<n>.ndjson.gz`)으로 나눠 쓰고, 매시 작업 한 번에 24MB까지 쓴 뒤 다음 시간에 이어 가요. 끝나면 `manifest.json`(판 2: 표마다 줄 수·조각 수·잠근 칸).
   2.0.0 전의 백업(잠그지 않은 것)은 14일 보관이 지나며 저절로 지워져요.
 - **되살리기 연습**(검토 U21-08): 7일마다 매시 작업이 마지막 날을 모두 다시 읽어 줄마다 열리는지, 줄 수가 목록과 같은지, 잠근 칸이 지금 열쇠로 열리는지(표마다 3칸) 보고 오늘 DB 줄 수와 나란히 적어요(관리 › 백업, D1에는 쓰지 않음). 문제가 있으면 관리자 알림.
-  실제로 되살릴 때: R2에서 그날 폴더를 내려받아 `BAMNAT_BACKUP_SECRET=<그날 잠근 비밀값> node server/company-worker/tools/backup-open.mjs <폴더> > restore.sql`(잠근 칸이 안 열리거나 조각이 없으면 아무것도 쓰지 않고 멈춰요), 로컬 서버에 먼저 넣어 보고 `npx wrangler d1 execute bamnat-company --remote --file=restore.sql`. 해마다 6월에 손으로 한 번(운영 달력 `backup-restore`).
+  실제로 되살릴 때: R2에서 그날 폴더를 내려받아 `BAMNAT_BACKUP_SECRET=<그날 잠근 비밀값> node server/company-worker/tools/backup-open.mjs <폴더> > restore.sql`(잠근 칸이 안 열리거나 조각이 없으면 아무것도 쓰지 않고 멈춰요), 로컬 서버에 먼저 넣어 보고 `npx wrangler d1 execute bamnat-company --remote --file=restore.sql`. 해마다 6월에 손으로 한 번(운영 달력 `backup-restore`). 로컬에서 미리 해 보기: `npm run local -- 8789 --seed --backup local-backup`로 켜고 관리 › 백업 › 지금 이어서 백업 → 되살리기 연습 › 지금 연습하기, 그다음 `BAMNAT_BACKUP_SECRET=local node tools/backup-open.mjs local-backup/d1/<날짜>`(로컬 서버의 R2는 `--backup` 폴더의 파일, 없으면 메모리).
 - **데이터 요청 대행**(검토 U21-07·I21b-02): 관리 › 데이터 요청에서 문의에 묶인 요청(또는 그분이 가진 복구 코드)으로 서버에서 '모두 지우기'나 '가진 것 내보내기(JSON)'를 바로 해요. 지운 표·줄 수와 남은 것(요청 문의·법정 기록·진행 중 제재)과 까닭, 내보낸 표·줄 수가 그 요청의 증빙으로 남아요(`data_requests.proof`). 복구 코드는 설치를 찾는 데만 쓰고 저장하지 않아요. 내보내는 파일에는 비밀 칸·사진 같은 큰 칸을 빼고 설치 해시는 '이 설치'로 적어요.
 
 <!-- RETENTION:start -->
