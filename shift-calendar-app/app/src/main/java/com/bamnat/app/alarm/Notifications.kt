@@ -98,12 +98,14 @@ object Notifications {
     const val BEDTIME_ID = 7311
     const val COMMUTE_ID = 7312
     const val SLEEPING_ID = 7313
-    /** [SLEEP-01] 자동으로 잡은 잠, 맞나요? */
-    const val SLEEP_AUTO_ID = 7314
+    /** [SLEEP-01] 자동으로 잡은 잠, 맞나요? 2.0.0 [RVI-01] 7314 was 잠금 화면 오늘 근무's number too. */
+    const val SLEEP_AUTO_ID = 7317
     /** [SLEEP-04] 잠드는 소리, while it plays. */
     const val NOISE_ID = 7315
-    /** [SLEEP-06] 자는 동안 소리 재는 중. */
-    const val SLEEP_RECORD_ID = 7316
+    /** [SLEEP-06] 자는 동안 소리 재는 중. 2.0.0 [RVI-01] 7316 was 알람 뒤 오늘 카드's number too. */
+    const val SLEEP_RECORD_ID = 7318
+    /** 2.0.0 [RVI-16] 마이크를 쓸 수 없어 소리 측정을 멈췄어요. */
+    const val SLEEP_MIC_ID = 7319
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
@@ -337,14 +339,17 @@ object Notifications {
      * [ALRM-01] I23: after an alarm that came hours late (and so did not ring) or could only show as a plain
      * notice, one line in 알람 상태 says what happened and opens 알람 점검, where the battery settings are.
      */
-    fun postAlarmTrouble(context: Context, lateMinutes: Long?) {
-        val title = if (lateMinutes != null) "알람이 ${formatLate(lateMinutes)} 늦게 와서 울리지 않았어요" else "알람 화면을 띄우지 못해 알림으로만 울렸어요"
+    fun postAlarmTrouble(context: Context, lateMinutes: Long?, offAt: String? = null) {
+        // 2.0.0 [RVI-51] (검토 ALM-26) Off when it was due: the phone could not ring it at all, and says which one, once.
+        val title = if (offAt != null) "휴대폰이 꺼져 있는 동안 $offAt 알람이 지나갔어요"
+            else if (lateMinutes != null) "알람이 ${formatLate(lateMinutes)} 늦게 와서 울리지 않았어요" else "알람 화면을 띄우지 못해 알림으로만 울렸어요"
         val notification = NotificationCompat.Builder(context, STATUS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText("눌러서 알람 점검에서 배터리·절전 설정을 봐 주세요")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                (if (lateMinutes != null) "휴대폰이 꺼져 있었거나 절전 기능이 앱을 멈춰 알람이 제때 오지 못했어요. "
+                (if (offAt != null) "꺼져 있던 휴대폰은 알람을 울릴 수 없어요. 밤새 켜 두거나 충전기에 꽂아 두면 놓치지 않아요. "
+                else if (lateMinutes != null) "휴대폰이 꺼져 있었거나 절전 기능이 앱을 멈춰 알람이 제때 오지 못했어요. "
                 else "다른 앱 위에 화면을 띄우는 권한이나 전체 화면 알림이 막혔을 수 있어요. ") +
                     "알람 점검에서 빨간 줄을 고치면 다음 알람은 제때 울려요."))
             .setContentIntent(open(context, NoticeLinks.Target.ALARM_CHECK, 2105))
@@ -374,8 +379,18 @@ object Notifications {
         post(context, ALARM_LATE_ID, notification)
     }
 
-    /** Plain alarm notification used when the ringing service cannot start. */
+    /** 2.0.0 [RVI-02] The fallback alarm's own number, so 끄기 and 다시 울림 on it find it. */
+    const val FALLBACK_ALARM_ID = ALARM_NOTIFICATION_ID + 1
+
+    /**
+     * Plain alarm notification used when the ringing service cannot start.
+     * 2.0.0 [RVI-02] It keeps sounding until it is answered (FLAG_INSISTENT; before, the channel sound
+     * played once, a single 띵), it puts the phone's screen on like the ringing screen would, and it has
+     * 끄기 and 다시 울림 that work without unlocking.
+     */
     fun postFallbackAlarm(context: Context, ring: RingRequest) {
+        val minutes = runCatching { BootAlarms.ringSettings(context).snoozeMinutes }.getOrDefault(5)
+        val openToday = open(context, NoticeLinks.Target.TODAY, 2101)
         val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -383,10 +398,22 @@ object Notifications {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentTitle(ring.title(BootAlarms.ringSettings(context).style))
             .setContentText(AlarmService.describe(ring, BootAlarms.ringSettings(context).style))
-            .setContentIntent(open(context, NoticeLinks.Target.TODAY, 2101))
+            .setContentIntent(openToday)
+            .setFullScreenIntent(openToday, true)
+            .setOngoing(true)
+            .addAction(NotificationCompat.Action.Builder(0, "끄기", fallbackAction(context, AlarmActionReceiver.ACTION_FALLBACK_OFF, ring, 2107))
+                .setAuthenticationRequired(false).build())
+            .addAction(NotificationCompat.Action.Builder(0, "${minutes}분 뒤 다시 울림", fallbackAction(context, AlarmActionReceiver.ACTION_FALLBACK_SNOOZE, ring, 2108))
+                .setAuthenticationRequired(false).build())
             .build()
-        post(context, ALARM_NOTIFICATION_ID + 1, notification)
+        notification.flags = notification.flags or android.app.Notification.FLAG_INSISTENT
+        post(context, FALLBACK_ALARM_ID, notification)
     }
+
+    private fun fallbackAction(context: Context, action: String, ring: RingRequest, request: Int): PendingIntent = PendingIntent.getBroadcast(
+        context, request, ring.putInto(Intent(context, AlarmActionReceiver::class.java).setAction(action)),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     /**
      * [SLP-15] A snooze waiting to ring again stays in the shade, quietly, with a way to stop it, so a
@@ -444,8 +471,17 @@ object Notifications {
     }
 
     /** [ALRM-07] 방해 금지 set to 완전히 무음 silences alarms too (other 방해 금지 modes let alarms through). */
-    fun dndBlocksAlarms(context: Context): Boolean =
-        context.getSystemService(NotificationManager::class.java)?.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE
+    fun dndBlocksAlarms(context: Context): Boolean {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return false
+        return when (nm.currentInterruptionFilter) {
+            NotificationManager.INTERRUPTION_FILTER_NONE -> true
+            // 2.0.0 [RVI-51] (검토 ALM-26) '중요한 알림만' with 알람 taken off its list keeps alarms quiet too.
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> Build.VERSION.SDK_INT >= 28 && runCatching {
+                nm.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS == 0
+            }.getOrDefault(false)
+            else -> false
+        }
+    }
 
     /** [ALRM-07] Phones whose maker adds its own 잠금 화면에 표시 permission, off for some apps at first (확인 필요 per model). */
     fun makerLockScreenPermission(maker: String = Build.MANUFACTURER): Boolean =

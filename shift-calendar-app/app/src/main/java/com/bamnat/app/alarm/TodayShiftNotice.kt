@@ -104,11 +104,21 @@ object TodayShiftNotice {
             day.isWorkDay -> name ?: "근무"
             else -> null
         }
+        // 2.0.0 [RVI-66] (PC 통합 1차 N8·PC-39) A 대근 put on a day off said '오늘 휴무' here while the calendar, the night screen and
+        // the alarm said 주간 대근: the day's extra work is read with it, on a day off as the day's work, beside the shift otherwise.
+        val extra = (day.extras.firstOrNull { it.covered != null } ?: day.extras.firstOrNull())?.let { e ->
+            val what = com.bamnat.app.ui.calendar.ExtraText.name(e, style)
+            val from = e.from
+            val to = e.to
+            if (from != null && to != null && !com.bamnat.app.ui.calendar.ExtraText.namesHours(e)) "$what ${hm(from.toLocalTime())}~${hm(to.toLocalTime())}"
+            else what
+        }
         return when {
             // A whole day off shows the leave alone; 반차 and the like keep the shift beside it.
-            leave != null && (day.leave?.isFullDay == true || work == null) -> leave
+            leave != null && (day.leave?.isFullDay == true || work == null) -> if (extra != null) "$leave · $extra" else leave
             leave != null -> "$work · $leave"
-            work != null -> work
+            work != null -> if (extra != null) "$work · $extra" else work
+            extra != null -> extra
             name != null -> name
             else -> style.words().offDay
         }
