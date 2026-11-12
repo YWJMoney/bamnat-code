@@ -34,6 +34,13 @@ ship 순서 (한 단계라도 어긋나면 손님을 받기 전에 멈춰요)
 (workflow 입력 skip_tests, ';'로 여러 개). 까닭이 없거나 기한(YYYY-MM-DD)이 지났거나 14일보다 멀면 멈춰요. 넘긴 시험은 build 요약과
 notes.txt(배포 기록)에 남아요. build·ship 흐름(나뉜 판·check·변수 다시 올리기·바인딩 빠짐·판 낮음·카나리·배포·되돌리기)은
 tools/test_deploy_flow.py가 가짜 wrangler로 끝까지 돌려 봐요.
+  쓰는 규칙(총괄 2026-11-12): ① 날짜에 묶여 낡은 시험에만(어제 main에서도 깨지는 시험, 아래 explain이 알려 줘요) ② 그 배포에 대해
+  사용자가 고르기 카드로 허락했을 때만 ③ 넘긴 시험·까닭·기한을 배포 결과 한 줄(사용자에게 알리는 판·배포 번호·되돌릴 판)에 함께.
+  갈래 스레드가 스스로 쓰지 않아요. 넘긴 시험은 기한 안에 고치는 PR을 따로 열어요. 자세히는 docs/ops-deploy.md.
+
+2.0.0 [RVR-25] (검토 U60-02) 시험에서 멈추면 build가 실패한 시험 이름·줄을 fail/<서버>-fail.json으로 넘기고, workflow의 explain 일이
+어제 main의 날짜 시험(+0일, date-watch.yml) 결과와 견줘 '어제 main에서도 깨짐 → 이 브랜치 탓이 아님 / 어제 main에서는 통과 → 이 브랜치의
+바뀜을 먼저'를 요약에 적어요(tools/date_watch.py explain).
 
 열쇠: 환경 변수 CLOUDFLARE_API_TOKEN(GitHub Secret, ship 일에만). 출력하지 않아요. 계정 번호는 CLOUDFLARE_ACCOUNT_ID가 없으면 토큰이
 닿는 계정이 하나일 때 그 계정을 써요.
@@ -226,6 +233,38 @@ def failing_tests(output: str, limit: int = 8) -> list[str]:
     # 묶음(파일)이 먼저 나오고 그 안의 시험이 뒤에 나와요. 파일 이름은 test/…mjs라 시험 이름이 있으면 파일 줄은 빼요.
     tests = [n for n in names if not n.endswith(".mjs")] or names
     return tests[:limit]
+
+
+TEST_PLACE = (re.compile(r"""^\s*location:\s*'([^']+?):(\d+):\d+'"""), re.compile(r"([A-Za-z0-9_.-]+\.test\.mjs):(\d+):\d+"))
+
+
+def failing_places(output: str, limit: int = 20) -> list[dict]:
+    """2.0.0 [U60-02] (검토 2026-11-12) 실패한 시험마다 이름과 줄: [{name: '파일.test.mjs › 이름', at: '파일.test.mjs:줄'}].
+    tap은 'not ok' 뒤 location(시험을 적은 줄), spec은 '✖' 뒤 첫 .test.mjs 줄. 이름은 날짜 시험 결과(tools/date_watch.py)와 같은 모양이라
+    '어제 main에서는 통과/실패'를 견줄 수 있어요."""
+    lines = output.splitlines()
+    out: list[dict] = []
+    for i, line in enumerate(lines):
+        name = None
+        for pat in TEST_FAIL:
+            m = pat.match(line)
+            if m:
+                name = m.group(1).strip()
+                break
+        if not name or re.match(r"^(failing tests:?|tests? \d+|\d+ failing)$", name, re.I) or name.endswith(".mjs"):
+            continue
+        at = ""
+        for nxt in lines[i + 1:i + 25]:
+            if TEST_FAIL[0].match(nxt) or TEST_FAIL[1].match(nxt):
+                break
+            m = TEST_PLACE[0].match(nxt) or TEST_PLACE[1].search(nxt)
+            if m:
+                at = f"{Path(m.group(1)).name}:{m.group(2)}"
+                break
+        key = f"{at.split(':')[0]} › {name}" if at else name
+        if all(x["name"] != key for x in out):
+            out.append({"name": key, "at": at})
+    return out[:limit]
 
 
 # 2.0.0 [RVQ-03] 검토 I21c-02: 카나리(새 판 일부에만). 판마다 센 요청은 회사 서버 /api/admin/health?canary= 가 줘요.
@@ -591,7 +630,15 @@ def build(workers: list[str], out: Path, prev: Path | None, skips=()) -> None:
         dest.mkdir(parents=True, exist_ok=True)
         if (wd / "package-lock.json").exists():
             run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], wd, stage="시험", clean_env=True)
-        run(test_command(wd, skips), wd, stage="시험", clean_env=True)
+        p = run(test_command(wd, skips), wd, stage="시험", clean_env=True, check=False)
+        if p.returncode != 0:
+            # [U60-02] 실패한 시험 이름·줄을 남겨 두면, 배포 workflow의 explain 일이 어제 main의 날짜 시험 결과와 견줘 요약에 적어요.
+            text = p.stdout + p.stderr
+            places = failing_places(text)
+            (out / "fail").mkdir(parents=True, exist_ok=True)
+            (out / "fail" / f"{w}-fail.json").write_text(json.dumps({"worker": w, "failed": places}, ensure_ascii=False), encoding="utf-8")
+            raise Stop(f"`{' '.join(test_command(wd, skips)[:2])} …` 실패 (코드 {p.returncode})\n```\n{text[-1500:]}\n```", stage="시험",
+                       tests=[f"{x['name']} ({x['at']})" if x["at"] else x["name"] for x in places][:8] or failing_tests(text))
         run(["npm", "run", "bundle"], wd, stage="번들", clean_env=True)
         bundle = wd / "dist/worker.js"
         if not bundle.exists():

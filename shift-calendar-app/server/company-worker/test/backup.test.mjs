@@ -16,8 +16,9 @@ const fakeR2 = () => localR2();
 
 const SECRETS = { pw: "pbkdf2$100000$c2FsdA$aGFzaA", token: "fcm-token-of-a-phone-0123456789", invite: "invite-token-abcdef0123456789", sub: "play-purchase-token-xyz" };
 
-async function seeded(extra = {}, R2 = fakeR2()) {
-  const s = server({ BACKUP: R2, ...extra });
+// 2.0.0 [RVR-23] (검토 I60a-01) 시계를 정해요: 시험의 t를 넘기면 TEST_NOW에 멈춘 시계로 시작해요.
+async function seeded({ t, ...extra } = {}, R2 = fakeR2()) {
+  const s = server({ t, BACKUP: R2, ...extra });
   const owner = await signIn(s.call);
   const now = Date.now();
   const add = (sql, ...args) => s.DB.prepare(sql).bind(...args).run();
@@ -40,8 +41,8 @@ async function backUp(call, owner, max = 60) {
 
 const textOf = (R2, key) => gunzipSync(R2.store.get(key)).toString("utf8");
 
-test("[RVQ-16] 검토 SRV-15: the day's backup seals the secret cells, leaves out what goes soon, and writes a v2 list", async () => {
-  const { R2, call, owner } = await seeded();
+test("[RVQ-16] 검토 SRV-15: the day's backup seals the secret cells, leaves out what goes soon, and writes a v2 list", async (t) => {
+  const { R2, call, owner } = await seeded({ t });
   await backUp(call, owner);
   const keys = [...R2.store.keys()];
   const day = keys.find((k) => k.endsWith("manifest.json")).slice(3, 13);
@@ -67,7 +68,7 @@ test("[RVQ-16] 검토 SRV-15: the day's backup seals the secret cells, leaves ou
 });
 
 test("[RVQ-16] a big table goes in parts over several hourly runs, and every row is there once", async (t) => {
-  const { R2, DB, call, owner } = await seeded();
+  const { R2, DB, call, owner } = await seeded({ t });
   const keep = { ...KEEP };
   t.after(() => Object.assign(KEEP, keep));
   Object.assign(KEEP, { partBytes: 4000, runBytes: 12000 });
@@ -85,9 +86,9 @@ test("[RVQ-16] a big table goes in parts over several hourly runs, and every row
   assert.ok(lines.length >= 300, "the 300 rows and the log of the runs before the table was read");
 });
 
-test("[RVQ-16] 검토 U21-08: the restore drill reads the last day back, and says what is wrong", async () => {
+test("[RVQ-16] 검토 U21-08: the restore drill reads the last day back, and says what is wrong", async (t) => {
   const OLD_SALT = "the-salt-before-rotating-0123";
-  const { R2, call, owner, env } = await seeded({ RATE_SALT: OLD_SALT });
+  const { R2, call, owner, env } = await seeded({ t, RATE_SALT: OLD_SALT });
   await backUp(call, owner);
   let r = await call("POST", "/api/admin/backup/drill", {}, owner);
   assert.equal(r.status, 200, r.text);
@@ -123,10 +124,10 @@ test("[RVQ-16] 검토 U21-08: the restore drill reads the last day back, and say
   assert.ok(!view.drill.problems.some((x) => x.table === "admins"), "the right secret opens the sealed cells");
 });
 
-test("[RVQ-16] tools/backup-open.mjs puts a day back into an empty database, with the sealed cells opened", async () => {
+test("[RVQ-16] tools/backup-open.mjs puts a day back into an empty database, with the sealed cells opened", async (ctx) => {
   // The local server's R2 (--backup <folder>) keeps each key as a file, so the day's folder is what R2 gives when downloaded.
   const root = mkdtempSync(join(tmpdir(), "bamnat-backup-"));
-  const { DB, call, owner } = await seeded({}, localR2(root));
+  const { DB, call, owner } = await seeded({ t: ctx }, localR2(root));
   await backUp(call, owner);
   const dir = join(root, "d1", readdirSync(join(root, "d1"))[0]);
   try {
@@ -152,8 +153,8 @@ test("[RVQ-16] tools/backup-open.mjs puts a day back into an empty database, wit
   }
 });
 
-test("[RVQ-17] 검토 U21-07·I21b-02: a request tied to a question forgets that install on the server, keeps the question to answer, and keeps the proof", async () => {
-  const { call, owner, DB } = await seeded();
+test("[RVQ-17] 검토 U21-07·I21b-02: a request tied to a question forgets that install on the server, keeps the question to answer, and keeps the proof", async (t) => {
+  const { call, owner, DB } = await seeded({ t });
   const me = device(21);
   const dev = await deviceHash(me);
   assert.equal((await call("POST", "/api/inquiries", { v: 1, device: me, kind: "other", text: "제 자료를 모두 지워 주세요. 앱은 지웠어요", info: { app: "2.0.0 (54)" } })).status, 201);
@@ -207,8 +208,8 @@ test("[RVQ-17] 검토 U21-07·I21b-02: a request tied to a question forgets that
   assert.equal((await call("POST", `/api/admin/data-requests/${id}/run`, { do: "export" }, owner)).data.error, "closed");
 });
 
-test("[RVQ-18] 검토 I21b-01: 보안 한 장 notes the day a secret changed by a mark only it can make, and is the owner's alone", async () => {
-  const { env, call, DB, owner } = await seeded({ SEAL_KEY: "a-seal-key-of-twenty-chars" });
+test("[RVQ-18] 검토 I21b-01: 보안 한 장 notes the day a secret changed by a mark only it can make, and is the owner's alone", async (t) => {
+  const { env, call, DB, owner } = await seeded({ t, SEAL_KEY: "a-seal-key-of-twenty-chars" });
   await backUp(call, owner);
   const first = (await call("GET", "/api/admin/security", undefined, owner)).data;
   const row = (d, key) => d.rows.find((r) => r.key === key);

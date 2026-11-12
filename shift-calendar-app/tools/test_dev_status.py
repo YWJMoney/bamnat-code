@@ -135,6 +135,56 @@ class DevStatusTest(unittest.TestCase):
         items, errs = ds.read()
         self.assertEqual(errs + ds.check_all(items), [])
         self.assertEqual(ds.BUILT_FILE.read_text(encoding="utf-8"), ds.built_text(items))
+        # [RVR-26] 적힌 시험은 모두 저장소에 있어요.
+        self.assertEqual([], ds.missing_tests(items))
+
+    def test_the_tests_named_must_be_in_the_repository(self):
+        # 2.0.0 [RVR-26] (검토 I60c-02) 클래스·클래스.시험·시험 파일·'[번호] 이름'·test_함수, "PC: …"는 시험 밖이라 그대로.
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root / "app/src/test/a").mkdir(parents=True)
+            (root / "app/src/test/a/AlarmLateTest.kt").write_text("class AlarmLateTest {\n  @Test fun ringsOnTimeAfterDoze() {}\n}\nclass InnerWordsTest\n", encoding="utf-8")
+            (root / "server/company-worker/test").mkdir(parents=True)
+            (root / "server/company-worker/test/loop.test.mjs").write_text('test("[LOOP-21] an answer goes once", () => {});\n', encoding="utf-8")
+            (root / "tools").mkdir()
+            (root / "tools/test_x.py").write_text("def test_reads_the_file(self):\n    pass\n", encoding="utf-8")
+            t = ds.Tests(root)
+            for good in ("AlarmLateTest", "AlarmLateTest.ringsOnTimeAfterDoze", "app InnerWordsTest", "test/loop.test.mjs",
+                         "tools/test_x.py, AlarmLateTest", "[LOOP-21] an answer goes once", "test_reads_the_file", "PC: 잠금 화면에서 7번 울림"):
+                self.assertEqual([], t.problems(good), good)
+            for bad in ("NoSuchTest", "AlarmLateTest.ringsLate", "test/gone.test.mjs", "[LOOP-21] an answer goes twice",
+                        "test_not_there", "그냥 말", "AlarmLateTest, NoSuchTest"):
+                self.assertTrue(t.problems(bad), bad)
+            items = list(enumerate([{**GOOD, "test": "NoSuchTest"}, {**GOOD, "track": "LOOP-18", "test": "AlarmLateTest"}], 1))
+            self.assertEqual(1, len(ds.missing_tests(items, t)))
+
+    def test_a_problem_found_outside_the_tests_says_why_they_missed_it(self):
+        # [RVR-26] PC 확인(PC-… 줄이 이어진 추적 번호)·문의(d 번호 + fix)로 찾은 문제: done에는 test와 miss, check는 경고 한 줄.
+        with tempfile.TemporaryDirectory() as d:
+            csv_path = pathlib.Path(d) / "r.csv"
+            csv_path.write_text("id,kind,area,sev,cat,title,detail,where,branch,track,status,note\r\n"
+                                "PC-28,발견,01,높음,PC,달 넘김,,,,RVH-01,코드 고침(확인 전),\r\nPC-29,발견,01,낮음,PC,x,,,,RVH-02·RVH-03,할 일,\r\n"
+                                "HQ-01,발견,01,낮음,총괄,y,,,,RVH-09,할 일,\r\n", encoding="utf-8")
+            pcs = ds.pc_found(csv_path)
+        self.assertEqual({"RVH-01": ["PC-28"], "RVH-02": ["PC-29"], "RVH-03": ["PC-29"]}, pcs)
+        self.assertEqual(["PC-28"], ds.found_outside({"track": "RVH-01"}, pcs))
+        self.assertEqual(["PC-40"], ds.found_outside({"track": "PC-40"}, pcs))
+        self.assertEqual(["문의"], ds.found_outside({"id": "dAbCdEfGhIjKlMnO", "size": "fix"}, pcs))
+        self.assertEqual([], ds.found_outside({"track": "RVH-09"}, pcs))
+        done = {**GOOD, "track": "RVH-01", "size": "fix"}
+        errs, warns = ds.miss_rules(list(enumerate([done], 1)), pcs)
+        self.assertEqual(1, len(errs))
+        self.assertIn("test(이걸 잡을 시험) · miss(시험이 왜 못 잡았나)", errs[0])
+        ok = {**done, "test": "MonthTurnTapTest", "miss": "움직임 끄기·달 넘김 효과를 켠 채 누르는 시험이 없었어요"}
+        self.assertEqual(([], []), ds.miss_rules(list(enumerate([ok], 1)), pcs))
+        self.assertEqual([], errors(ok))
+        waiting = {**done, "status": "check", "check": "PC"}
+        errs, warns = ds.miss_rules(list(enumerate([waiting, {**GOOD, "track": "RVH-09"}], 1)), pcs)
+        self.assertEqual([], errs)
+        self.assertEqual(1, len(warns))
+        self.assertIn("1개", warns[0])
+        self.assertTrue(any("200자" in e for e in errors({**ok, "miss": "가" * 201})))
+        self.assertTrue(any("서버에만" in e for e in errors({**ok, "miss": "someone@example.com 님 폰에서만"})))
 
 
 if __name__ == "__main__":

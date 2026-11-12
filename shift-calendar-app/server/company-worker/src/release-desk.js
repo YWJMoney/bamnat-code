@@ -138,19 +138,30 @@ export async function releaseRoute(request, env, path, method, now) {
 // ---- 판 건강 비교 [ADM3-15] ----
 
 
+/** 2.0.0 [RVN-15] 검토 SVC-103: 판 건강에서 두 판을 견줄 때 판마다 휴대폰-날이 이만큼은 있어야 해요(30은 며칠 사이 몇 대로 흔들렸어요). */
+export const HEALTH_MIN = 100;
+
 /**
  * 판마다 지난 [days]일: 사용 통계를 보낸 휴대폰-날(활성), 문의·문제 신고(판별), 그 비율. 서버 오류는 판을 모르니 날짜로만, Play 비정상 종료·ANR은
- * 서버에 서비스 계정이 있으면 전체 값으로. 가장 새 판을 그 앞 판과 견줘 나빠지면 worse.
+ * 서버에 서비스 계정이 있으면 전체 값으로. 새 판을 그 앞 판과 견줘 나빠지면 worse.
+ * 2.0.0 [RVN-15] 검토 SVC-103: '새 판'은 가장 높은 판 번호가 아니라 [focus](단계적 출시 중인 판, 자동 순환이 줘요) 또는 서버가 아는 나간 판이에요.
+ * 그보다 높은 판(시험판)은 표에만 있고 견주지 않아요. 두 판은 같은 '나간 뒤 N일'(N은 새 판이 나간 날수, 최대 [days]) 구간끼리 견줘요. 나간 때를
+ * 모르는 판은 지난 [days]일 전체로.
  */
-export async function versionHealth(env, now = Date.now(), days = 14, vitals = null) {
+export async function versionHealth(env, now = Date.now(), days = 14, vitals = null, { focus = null } = {}) {
   const from = now - days * DAY;
-  const [usage, inq, errors, grouped] = (await batch(env, [
+  const far = now - 60 * DAY;
+  const [usage, inq, errors, grouped, usageDays, inqTimes, ships] = (await batch(env, [
     stmt(env, "SELECT app, SUM(phones) AS phones, COUNT(DISTINCT day) AS days FROM usage_days WHERE day >= ? GROUP BY app", kstDay(from)),
     stmt(env, `SELECT json_extract(info, '$.app') AS app, kind, COUNT(*) AS n FROM inquiries WHERE created_at >= ? GROUP BY app, kind`, from),
     stmt(env, "SELECT key, count FROM counters WHERE key LIKE 'errors|%' AND key >= ?", `errors|${kstDay(from)}`),
     // 1.39 [ADM3-43] 같은 날들 가운데 오류 묶음에 담긴 수(1.38부터). 다르면 화면이 '묶음에 N'으로 함께 보여요.
     stmt(env, "SELECT COALESCE(SUM(count), 0) AS n FROM error_days WHERE day >= ?", kstDay(from)),
+    stmt(env, "SELECT app, day, SUM(phones) AS phones FROM usage_days WHERE day >= ? GROUP BY app, day", kstDay(far)),
+    stmt(env, `SELECT json_extract(info, '$.app') AS app, kind, created_at AS at FROM inquiries WHERE created_at >= ? LIMIT 5000`, far),
+    stmt(env, "SELECT target AS v, MIN(at) AS at FROM audit WHERE action = 'shipped_version' GROUP BY target"),
   ])).map((r) => r.results ?? []);
+  const shipped = focus ? null : await shippedVersion(env).catch(() => null);
   const map = new Map();
   const row = (app) => {
     const k = String(app ?? "모름").split(" ")[0] || "모름";
@@ -170,14 +181,34 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
   const list = [...map.values()].map((r) => ({ ...r, bugRate: r.phoneDays ? Math.round((r.bugs / r.phoneDays) * 100000) / 100 : null,
     inquiryRate: r.phoneDays ? Math.round((r.inquiries / r.phoneDays) * 100000) / 100 : null }));
   const known = list.filter((r) => version(r.app)).sort((a, b) => compareVersions(version(b.app), version(a.app)));
-  const [latest, prev] = known;
+  const top = version(focus ?? shipped?.v ?? "");
+  const cmp = top ? known.filter((r) => compareVersions(version(r.app), top) <= 0) : known;
+  const [newest, older] = top && cmp[0] && compareVersions(version(cmp[0].app), top) !== 0 ? [null, null] : cmp;
+  // 같은 '나간 뒤 N일' 구간: 판마다 나간 때(나간 판 저장 기록, 자동 순환의 출시 감지도 같은 기록을 남겨요).
+  const shipAt = new Map(ships.map((x) => [String(x.v), Number(x.at)]));
+  if (shipped && !shipAt.has(shipped.v) && shipped.at) shipAt.set(shipped.v, Number(shipped.at));
+  const n = newest && shipAt.get(newest.app) ? Math.max(1, Math.min(days, Math.floor((now - shipAt.get(newest.app)) / DAY))) : null;
+  const span = (r) => {
+    const at = n ? shipAt.get(r.app) : null;
+    if (!at) return r;
+    const d0 = kstDay(at);
+    const d1 = kstDay(at + n * DAY);
+    const phoneDays = usageDays.filter((u) => String(u.app ?? "").split(" ")[0] === r.app && u.day >= d0 && u.day < d1).reduce((a, u) => a + (u.phones ?? 0), 0);
+    const mine = inqTimes.filter((q) => String(q.app ?? "").split(" ")[0] === r.app && q.at >= at && q.at < at + n * DAY);
+    const bugs = mine.filter((q) => q.kind === "bug" || q.kind === "problem").length;
+    return { ...r, phoneDays, inquiries: mine.length, bugs, bugRate: phoneDays ? Math.round((bugs / phoneDays) * 100000) / 100 : null,
+      inquiryRate: phoneDays ? Math.round((mine.length / phoneDays) * 100000) / 100 : null };
+  };
+  const latest = newest ? span(newest) : null;
+  const prev = older && n && shipAt.get(older.app) ? span(older) : older;
   const worse = [];
-  if (latest && prev && latest.phoneDays >= 30 && prev.phoneDays >= 30) {
-    if ((latest.bugRate ?? 0) > (prev.bugRate ?? 0) * 1.5 && latest.bugs >= 3) worse.push(`문제 신고가 ${prev.app}보다 많아요(휴대폰-날 1000당 ${latest.bugRate} 대 ${prev.bugRate})`);
-    if ((latest.inquiryRate ?? 0) > (prev.inquiryRate ?? 0) * 1.5 && latest.inquiries >= 5) worse.push(`문의가 ${prev.app}보다 많아요`);
+  if (latest && prev && latest.phoneDays >= HEALTH_MIN && prev.phoneDays >= HEALTH_MIN) {
+    const when = n && prev !== older ? ` · 나간 뒤 ${n}일끼리` : "";
+    if ((latest.bugRate ?? 0) > (prev.bugRate ?? 0) * 1.5 && latest.bugs >= 3) worse.push(`문제 신고가 ${prev.app}보다 많아요(휴대폰-날 1000당 ${latest.bugRate} 대 ${prev.bugRate}${when})`);
+    if ((latest.inquiryRate ?? 0) > (prev.inquiryRate ?? 0) * 1.5 && latest.inquiries >= 5) worse.push(`문의가 ${prev.app}보다 많아요${when ? `(${when.slice(3)})` : ""}`);
   }
   const serverErrors = errors.reduce((n, e) => n + (e.count ?? 0), 0);
-  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors,
+  return { days, versions: [...known, ...list.filter((r) => !version(r.app))], latest: latest?.app ?? null, prev: prev?.app ?? null, worse, serverErrors, window: n,
     groupedErrors: grouped[0]?.n ?? 0, vitals };
 }
 

@@ -142,7 +142,7 @@ private fun RuleEditor(
                 val key = if (contains) PaymentParser.CONTAINS + clean else clean
                 val changes = remember(key, category, entries) { com.bamnat.core.money.LedgerSmarts.ruleWouldChange(entries, key, category) }
                 if (changes.isNotEmpty()) {
-                    Text("지난 거래 ${changes.size}건이 ‘$category’(으)로 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    Text("지난 거래 ${changes.size}건이 ‘$category’${com.bamnat.app.ui.Fmt.ro(category)} 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     changes.take(5).forEach { e ->
                         Text("${e.date.monthValue}/${e.date.dayOfMonth} ${e.title} · ${com.bamnat.app.ui.Fmt.won(e.amount)} · ${e.category} → $category",
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -239,8 +239,8 @@ fun OtherPlacesCard(groups: List<OtherPlaces.Group>, categories: List<String>, o
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val choices = categories.filter { it != com.bamnat.core.money.MoneyCategories.OTHER }
     SectionCard(title = "기타로 남은 곳 ${groups.size}곳") {
-        Text("가게를 눌러 분류를 고르면 그곳 기록이 모두 옮겨지고 다음부터 그 분류로 적어요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVK-29] (검토 HQ-44 같은 모양) Said in full once, then one line with ⓘ ([Explain]).
+        com.bamnat.app.ui.components.Explain("money.otherPlaces", "가게를 눌러 분류를 고르면 그곳 기록이 모두 옮겨지고 다음부터 그 분류로 적어요.")
         groups.take(5).forEach { g ->
             // 2.0.0 [RVK-23]·HQ-30 name and amount, the name never cut at large text.
             NameAndAmount({ Text(g.place, style = MaterialTheme.typography.bodyMedium) },
@@ -266,8 +266,8 @@ fun OtherPlacesCard(groups: List<OtherPlaces.Group>, categories: List<String>, o
 fun RepeatSuggestCard(suggestions: List<RepeatFinder.Suggestion>, onAdd: (RepeatFinder.Suggestion) -> Unit, onNo: (RepeatFinder.Suggestion) -> Unit) {
     if (suggestions.isEmpty()) return
     SectionCard(title = "매달 나가는 돈 같아요") {
-        Text("반복으로 등록하면 나가기 사흘 전과 당일에 알려 주고, 곧 나갈 돈에 들어가요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [RVK-29] As above.
+        com.bamnat.app.ui.components.Explain("money.repeatSuggest", "반복으로 등록하면 나가기 사흘 전과 당일에 알려 주고, 곧 나갈 돈에 들어가요.")
         suggestions.forEach { s ->
             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -44,6 +44,12 @@ data class TeamShift(
     val isOff: Boolean,
     val start: java.time.LocalTime? = null,
     val end: java.time.LocalTime? = null,
+    /**
+     * 2.0.0 [RVJ-29] (검토 T05-04·PAYU-03) 휴게(분): time between [start] and [end] that is not work (근로기준법 제54조). null takes
+     * what the law asks for that long a day ([com.bamnat.core.schedule.LegalBreak]: 30분 from 4시간, 1시간 from 8시간 30분 on the
+     * clock), as the 급여 대장 does; a number is the team's own (0: none). Kept in the kinds' JSON, so no DB change.
+     */
+    val breakMinutes: Int? = null,
 )
 
 /** 신규·일반·책임 (설계 1-3 `skill`): for the 책임자 수 check of L2 and the list's badge. */
@@ -310,7 +316,7 @@ object TeamTimes {
     fun missing(team: Team): List<TeamShift> = team.shifts.filter { !it.isOff && (it.start == null || it.end == null) }
 
     /** [shifts] as a new team takes them while the leader's own times are not set: kinds and colours, no times. */
-    fun blank(shifts: List<TeamShift>): List<TeamShift> = shifts.map { if (it.isOff) it else it.copy(start = null, end = null) }
+    fun blank(shifts: List<TeamShift>): List<TeamShift> = shifts.map { if (it.isOff) it else it.copy(start = null, end = null, breakMinutes = null) }
 
     /**
      * 1.39 G6 발굴 [SETUP-19] (PC 5c4ad849 '3교대 칸을 다 정해야 하고 시작이 모두 09:00'): the usual times for each kind of work still without
@@ -352,8 +358,11 @@ object TeamTimes {
      * kinds of work that are the team's too, with the team's times where they differ. The same kind is the same id, else the same name,
      * else the one kind of the same sort by name (주 ↔ 주간, 야 ↔ 야간) when each side has only one. A time still the app's own
      * ([defaults], same name and times) changes without asking; one the leader set by hand is [MineChange.ask]ed.
+     * 2.0.0 [RVJ-29] [only]: the team's kinds whose times were changed just now. The times can be changed any day now, and a save
+     * that moved one kind (or only a 휴게) must not carry the others to the leader's calendar; null is every kind, as in 1.39.
      */
-    fun mine(team: Team, mine: List<com.bamnat.core.model.ShiftType>, defaults: List<com.bamnat.core.model.ShiftType>): List<MineChange> {
+    fun mine(team: Team, mine: List<com.bamnat.core.model.ShiftType>, defaults: List<com.bamnat.core.model.ShiftType>,
+             only: Set<Long>? = null): List<MineChange> {
         val own = mine.filter { !it.isOff }
         val shifts = team.shifts.filter { !it.isOff && it.start != null && it.end != null }
         fun sortOf(t: com.bamnat.core.model.ShiftType) = kind(t.name, t.label)
@@ -366,6 +375,7 @@ object TeamTimes {
                     ?.takeIf { it.id !in used && shifts.count { o -> kind(o.name, o.label) == k } == 1 }
                 ?: return@mapNotNull null
             used += type.id
+            if (only != null && s.id !in only) return@mapNotNull null
             if (type.start == s.start && type.end == s.end) return@mapNotNull null
             val untouched = type.start == null || type.end == null ||
                 defaults.any { d -> d.name == type.name && d.start == type.start && d.end == type.end }
@@ -373,7 +383,57 @@ object TeamTimes {
         }
     }
 
+    /** 2.0.0 [RVJ-29] The kinds of [after] whose start or end is not [before]'s (a new kind too): what [mine]'s `only` takes. */
+    fun moved(before: Team, after: Team): Set<Long> {
+        val was = before.shifts.associateBy { it.id }
+        return after.shifts.filter { s -> was[s.id]?.let { it.start != s.start || it.end != s.end } != false }.map { it.id }.toSet()
+    }
+
     /** [team] with the times picked for each kind ([times] by [TeamShift.id]; a kind not in it is left as it is). */
     fun set(team: Team, times: Map<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>): Team =
         team.copy(shifts = team.shifts.map { s -> times[s.id]?.let { (a, b) -> s.copy(start = a, end = b) } ?: s })
+
+    /**
+     * 2.0.0 [RVJ-29] A kind of the leader's own calendar as the team takes it. A 휴게 the leader set there comes along; 0 there is
+     * "not set" (the calendar has no other way to say it), so the team takes what the law asks for.
+     */
+    fun of(type: com.bamnat.core.model.ShiftType): TeamShift =
+        TeamShift(type.id, type.label, type.name, type.colorArgb, type.isOff, type.start, type.end, type.breakMinutes.takeIf { it > 0 && !type.isOff })
+
+    /** One kind's times and 휴게 as the 근무 시간 sheet holds them while they are changed. */
+    data class Hours(val start: java.time.LocalTime?, val end: java.time.LocalTime?, val breakMinutes: Int?)
+
+    fun hours(s: TeamShift): Hours = Hours(s.start, s.end, s.breakMinutes)
+
+    /** [now] with the calendar's times for the kinds [apart] names; a 휴게 the calendar does not set stays the team's. */
+    fun takeMine(now: Map<Long, Hours>, apart: Map<Long, Hours>): Map<Long, Hours> =
+        now + apart.mapValues { (id, h) -> h.copy(breakMinutes = h.breakMinutes ?: now[id]?.breakMinutes) }
+
+    /** [RVJ-29] [team] with each kind's times and 휴게 as [hours] has them (by [TeamShift.id]; a kind not in it, and a day off, stay). */
+    fun setHours(team: Team, hours: Map<Long, Hours>): Team = team.copy(shifts = team.shifts.map { s ->
+        val h = hours[s.id]
+        if (h == null || s.isOff) s else s.copy(start = h.start, end = h.end, breakMinutes = h.breakMinutes?.coerceIn(0, MAX_BREAK))
+    })
+
+    /** A 휴게 longer than this is a typo, not a break (a 24시간 격일 근무's 휴게·수면 is 8 hours at most in the cases seen). */
+    const val MAX_BREAK = 8 * 60
+
+    /**
+     * 2.0.0 [RVJ-29] (검토 PC-18 '리더가 데이를 09~18로 바꾸고 확정했는데 팀원 링크는 07~15') The team's kinds whose times or 휴게 are
+     * not the leader's own calendar's any more, each with what the calendar has now ([Hours.breakMinutes] null when the calendar
+     * sets none: the team's own 휴게 then stays). The same kind is the same id with the same name or letter (a team typed in or
+     * read from a file numbers its kinds from 1 too, and its 'D' is not the calendar's '주간'); a kind the calendar no longer has,
+     * or one without times there, is not told.
+     */
+    fun apart(team: Team, mine: List<com.bamnat.core.model.ShiftType>): Map<Long, Hours> {
+        val own = mine.filter { !it.isOff && it.start != null && it.end != null }.associateBy { it.id }
+        return team.shifts.filter { !it.isOff }.mapNotNull { s ->
+            val t = own[s.id]?.takeIf { it.name.trim() == s.name.trim() || it.label.trim() == s.label.trim() } ?: return@mapNotNull null
+            val theirs = of(t)
+            // A 휴게 only the team set (the calendar has none) is the team's own, not a difference; the team's 'law's' (null) is the
+            // same as the calendar's when that is what the law asks for this length (09~18: 1시간).
+            val sameBreak = theirs.breakMinutes == null || theirs.breakMinutes == TeamCheck.breakOf(s)
+            if (t.start == s.start && t.end == s.end && sameBreak) null else s.id to Hours(t.start, t.end, theirs.breakMinutes)
+        }.toMap()
+    }
 }
