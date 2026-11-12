@@ -60,7 +60,7 @@
             <div class="notch"></div>
             <div class="sb"><span id="ptime">9:41</span><i></i></div>
             <div class="bar"><span class="who"><b>나</b>내 달력 ▾</span><span class="share">공유</span></div>
-            <div class="month"><span id="pmonth">11월</span><small id="pyear">2026년</small></div>
+            <div class="month"><span id="pmonth">11월</span><small id="pyear"><!--THIS_YEAR--></small></div>
             <div class="wk"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
             <div class="days" id="pdays"></div>
             <div class="todaycard"><span class="ic" id="tic">야</span><div><strong id="ttitle">오늘 야간 19:00–07:00</strong><span id="tsub">출근 알람 17:40</span></div></div>
@@ -157,11 +157,14 @@
         <p class="foot"><a href="calc/juhyu/">자세히 계산하기 →</a></p>
       </div>
       <a class="tile reveal" href="calc/allowance/"><span class="go"><!--ARROW--></span><h3>야간·연장·휴일수당</h3><p>출퇴근 시각만 넣으면 밤 10시~아침 6시를 나눠요</p></a>
+      <a class="tile reveal" href="calc/week/"><span class="go"><!--ARROW--></span><h3>한 주 연장·52시간</h3><p>요일마다 출퇴근을 넣으면 주 40시간 넘은 연장까지</p></a>
       <a class="tile reveal" href="calc/alba/"><span class="go"><!--ARROW--></span><h3>알바 월급</h3><p>주휴 포함, 3.3%·4대보험 뺀 실수령</p></a>
       <a class="tile reveal" href="calc/salary/"><span class="go"><!--ARROW--></span><h3>월급·연봉 실수령액</h3><p>4대보험과 간이세액표 소득세를 뺀 통장 금액</p></a>
       <a class="tile reveal" href="calc/daily/"><span class="go"><!--ARROW--></span><h3>일당 계산기</h3><p>현장·건설 일용직 일당의 세금과 실수령</p></a>
       <a class="tile reveal" href="calc/leave/"><span class="go"><!--ARROW--></span><h3>연차 계산기</h3><p>입사일로 지금 연차와 근속별 개수</p></a>
       <a class="tile reveal" href="calc/severance/"><span class="go"><!--ARROW--></span><h3>퇴직금 계산기</h3><p>평균임금 × 30일 × 재직일수/365</p></a>
+      <a class="tile reveal" href="calc/boss/"><span class="go"><!--ARROW--></span><h3>사장님 인건비</h3><p>주휴수당과 사업주 4대보험까지 직원 한 달 인건비</p></a>
+      <a class="tile reveal" href="calc/shop/"><span class="go"><!--ARROW--></span><h3>가게 하루 매출 목표</h3><p>쉬는 요일로 이번 달 문 여는 날과 하루 목표, 세금 날까지</p></a>
       <!--HOL_TILES-->
       <a class="tile reveal" href="shift/print/"><span class="go"><!--ARROW--></span><h3><!--PRINT_YEAR--> 교대 달력 인쇄</h3><p>A4 한 장에 1년 근무, 공휴일·야간 횟수까지. 조 여러 개를 나란히도</p></a>
       <a class="tile reveal" href="form/"><span class="go"><!--ARROW--></span><h3>근무표 엑셀 양식</h3><p>듀티표·조별 근무표·알바 스케줄표·출역표</p></a>

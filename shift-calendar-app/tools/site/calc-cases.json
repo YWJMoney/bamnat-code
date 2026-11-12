@@ -1,5 +1,5 @@
 {
-  "_": "공개 웹 계산기(calc/calc.js)와 앱(core)이 같은 답을 내는지 함께 보는 사례 [WEB-23]. tools/site/test/calc.test.mjs(웹)와 core WebCalcParityTest(앱)가 같은 기대값으로 맞춰 봐요. 요율·세액표는 저장소 remote/v1의 서명 자료 그대로. 값은 원.",
+  "_": "공개 웹 계산기(calc/calc.js)와 앱(core)이 같은 답을 내는지 함께 보는 사례 [WEB-23]. labor(사장님 인건비, core LaborCost)·week(한 주 연장·야간·휴일 분, core MinuteClassifier)는 2.0.0 [I50b-01·03]. tools/site/test/calc.test.mjs(웹)와 core WebCalcParityTest(앱)가 같은 기대값으로 맞춰 봐요. ordinary(통상임금·명세서 맞춰 보기, 시행령 제6조·근로기준법 제56조)는 2.0.0 [I50b-02], 웹 시험만. 요율·세액표는 저장소 remote/v1의 서명 자료 그대로. 값은 원.",
   "takeHome": [
     { "name": "300만·비과세 20만·1명 (2026-11, 검토 영역 50 대조값)", "day": "2026-11-01", "gross": 3000000, "free": 200000, "family": 1, "kids": 0,
       "expect": { "pension": 133000, "health": 100660, "care": 13220, "employment": 25200, "tax": 56800, "local": 5680, "net": 2665440 } },
@@ -69,5 +69,33 @@
       "expect": [["part", 7.56, "2026-01-01"], ["year", 15, "2027-01-01"]] },
     { "name": "회계연도(1월 1일) 기준, 1월 1일 입사", "hire": "2025-01-01", "until": "2027-01-01", "basis": "fiscal", "fiscalMonth": 1, "only": "fiscal",
       "expect": [["year", 15, "2026-01-01"], ["year", 15, "2027-01-01"]] }
+  ],
+  "labor": [
+    {"name": "평일 9–18 주 5일, 4대보험 (2026-11, 일요일 5번)", "month": "2026-11", "wage": 10320, "days": [[1, "09:00", "18:00"], [2, "09:00", "18:00"], [3, "09:00", "18:00"], [4, "09:00", "18:00"], [5, "09:00", "18:00"]], "breaks": true, "insured": true, "expect": {"minutes": 10080, "base": 1733760, "holiday": 412800, "insurance": 213900, "total": 2360460}},
+    {"name": "같은 근무 2027-01 (국민연금 5%)", "month": "2027-01", "wage": 10320, "days": [[1, "09:00", "18:00"], [2, "09:00", "18:00"], [3, "09:00", "18:00"], [4, "09:00", "18:00"], [5, "09:00", "18:00"]], "breaks": true, "insured": true, "expect": {"minutes": 10080, "base": 1733760, "holiday": 412800, "insurance": 219860, "total": 2366420}},
+    {"name": "주말 10–20 두 날 (2026-12, 일요일 4번)", "month": "2026-12", "wage": 10320, "days": [[6, "10:00", "20:00"], [7, "10:00", "20:00"]], "breaks": true, "insured": true, "expect": {"minutes": 4320, "base": 743040, "holiday": 148608, "insurance": 88830, "total": 980478}},
+    {"name": "4대보험 없음", "month": "2026-11", "wage": 12000, "days": [[1, "18:00", "23:00"], [3, "18:00", "23:00"], [5, "18:00", "23:00"]], "breaks": true, "insured": false, "expect": {"minutes": 3510, "base": 702000, "holiday": 0, "insurance": 0, "total": 702000}},
+    {"name": "휴게 빼지 않음 (9시간)", "month": "2026-11", "wage": 10320, "days": [[1, "09:00", "18:00"], [2, "09:00", "18:00"], [3, "09:00", "18:00"], [4, "09:00", "18:00"], [5, "09:00", "18:00"]], "breaks": false, "insured": true, "expect": {"minutes": 11340, "base": 1950480, "holiday": 412800, "insurance": 235520, "total": 2598800}},
+    {"name": "야간 22–07 자정 넘김 (2026-11)", "month": "2026-11", "wage": 11000, "days": [[1, "22:00", "07:00"], [2, "22:00", "07:00"], [3, "22:00", "07:00"], [4, "22:00", "07:00"]], "breaks": true, "insured": true, "expect": {"minutes": 8160, "base": 1496000, "holiday": 352000, "insurance": 184180, "total": 2032180}},
+    {"name": "1주 15시간 안 됨: 주휴 없음", "month": "2026-11", "wage": 10320, "days": [[6, "11:00", "15:00"], [7, "11:00", "15:00"], [3, "11:00", "15:00"]], "breaks": true, "insured": false, "expect": {"minutes": 2730, "base": 469560, "holiday": 0, "insurance": 0, "total": 469560}},
+    {"name": "시급 높은 직원 (기준소득월액 상한)", "month": "2026-11", "wage": 45000, "days": [[1, "09:00", "18:00"], [2, "09:00", "18:00"], [3, "09:00", "18:00"], [4, "09:00", "18:00"], [5, "09:00", "18:00"]], "breaks": true, "insured": true, "expect": {"minutes": 10080, "base": 7560000, "holiday": 1800000, "insurance": 801360, "total": 10161360}}
+  ],
+  "week": [
+    {"name": "평일 9–18 다섯 날", "days": [["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], null, null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 2400, "overtime": 0, "hWithin": 0, "hOver": 0, "night": 0, "worked": 2400}},
+    {"name": "평일 9–20 다섯 날 (하루 8시간 넘음)", "days": [["09:00", "20:00"], ["09:00", "20:00"], ["09:00", "20:00"], ["09:00", "20:00"], ["09:00", "20:00"], null, null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 2400, "overtime": 600, "hWithin": 0, "hOver": 0, "night": 0, "worked": 3000}},
+    {"name": "월~토 9–18 (주 40시간 넘음)", "days": [["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 2400, "overtime": 480, "hWithin": 0, "hOver": 0, "night": 0, "worked": 2880}},
+    {"name": "토요일 밤 22–07, 일요일 휴일로 넘어감", "days": [null, null, null, null, null, ["22:00", "07:00"], null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 107, "overtime": 0, "hWithin": 373, "hOver": 0, "night": 427, "worked": 480}},
+    {"name": "일요일(휴일) 9–21 근무", "days": [["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], null, ["09:00", "21:00"]], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 2400, "overtime": 0, "hWithin": 480, "hOver": 180, "night": 0, "worked": 3060}},
+    {"name": "수요일이 공휴일: 휴일 근로도 40시간을 채워요", "days": [["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], ["09:00", "18:00"], null], "holidays": [0, 0, 1, 0, 0, 0, 1], "expect": {"regular": 1920, "overtime": 480, "hWithin": 480, "hOver": 0, "night": 0, "worked": 2880}},
+    {"name": "2교대 주주야야 (07–19, 19–07, 휴게 1시간)", "days": [["07:00", "19:00", 60], ["07:00", "19:00", 60], ["19:00", "07:00", 60], ["19:00", "07:00", 60], null, null, null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 1920, "overtime": 720, "hWithin": 0, "hOver": 0, "night": 880, "worked": 2640}},
+    {"name": "휴일 밤 근무가 평일로 넘어감 (일 19–07, 다음 월은 다음 주)", "days": [null, null, null, null, null, null, ["19:00", "07:00", 60]], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 205, "overtime": 180, "hWithin": 275, "hOver": 0, "night": 440, "worked": 660}},
+    {"name": "월~토 9–21 (52시간 넘음)", "days": [["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 2400, "overtime": 1560, "hWithin": 0, "hOver": 0, "night": 0, "worked": 3960}}
+  ],
+  "ordinary": [
+    {"name": "최저시급 기본급만(2026, 209시간)", "in": {"base": 2156880, "allow": 0, "bonusYear": 0, "hours": 209}, "expect": {"month": 2156880, "hourly": 10320, "baseOnly": 10320}, "slips": []},
+    {"name": "고정 수당·정기상여가 있는데 회사는 기본급만 ÷ 209로 연장을 셈함", "in": {"base": 2500000, "allow": 300000, "bonusYear": 6000000, "hours": 209}, "expect": {"month": 3300000, "hourly": 15789, "baseOnly": 11962, "bonus": 500000}, "slips": [{"kind": "ext", "minutes": 1200, "paid": 358860, "expect": {"want": 473670, "ok": false, "diff": -114810, "of": "base", "hours": 209}}]},
+    {"name": "226시간 회사의 야간 가산이 맞음", "in": {"base": 3000000, "allow": 0, "bonusYear": 0, "hours": 226}, "expect": {"month": 3000000, "hourly": 13274, "baseOnly": 13274}, "slips": [{"kind": "night", "minutes": 1800, "paid": 199110, "expect": {"want": 199110, "ok": true, "diff": 0, "of": "ordinary", "hours": 226}}]},
+    {"name": "5명 미만: 연장은 100%, 야간 가산 없음", "in": {"base": 2156880, "allow": 0, "bonusYear": 0, "hours": 209}, "expect": {"month": 2156880, "hourly": 10320, "baseOnly": 10320}, "slips": [{"kind": "ext", "minutes": 600, "paid": 103200, "small": true, "expect": {"want": 103200, "ok": true, "diff": 0, "of": "ordinary", "hours": 209}}, {"kind": "night", "minutes": 600, "paid": 0, "small": true, "expect": {"want": 0, "ok": true, "diff": 0}}]},
+    {"name": "회사가 통상임금 ÷ 243으로 휴일을 셈함(기본급 ÷ 226보다 가까움)", "in": {"base": 2400000, "allow": 200000, "bonusYear": 0, "hours": 209}, "expect": {"month": 2600000, "hourly": 12440, "baseOnly": 11483}, "slips": [{"kind": "hol", "minutes": 480, "paid": 128395, "expect": {"want": 149280, "ok": false, "diff": -20885, "of": "ordinary", "hours": 243}}, {"kind": "hol8", "minutes": 120, "paid": 59720, "expect": {"want": 49760, "ok": false, "diff": 9960}}]}
   ]
 }
