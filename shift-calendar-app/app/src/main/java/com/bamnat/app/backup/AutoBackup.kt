@@ -49,7 +49,7 @@ class AutoBackup(
     private val c: AppContainer,
     private val keys: () -> KeyBox,
     private val clock: () -> Instant = Today::instant,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> ZoneId = Today::zone,
     private val folders: (Uri) -> BackupFolder = { folderOf(c, it) },
 ) {
     private val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
