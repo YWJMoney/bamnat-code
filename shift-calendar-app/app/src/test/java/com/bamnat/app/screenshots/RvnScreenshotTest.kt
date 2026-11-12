@@ -129,6 +129,38 @@ class RvnScreenshotTest : ScreenshotBase() {
         }
     }
 
+    /**
+     * 2.0.0 2차 COMP-05·COMP-15: 회사 규칙 목록을 끝까지 내린 모습. 이름 찾기 칸은 위에 붙어 있고, 끝은 '여기까지예요'(전에는 아무 말 없이 멈췄어요).
+     * Same taps on the commit before, for the 'before'.
+     */
+    private fun boardEnd(): Screen.() -> Unit = {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        settle()
+        repeat(16) {
+            val list = nodes().firstOrNull { n ->
+                val r = n.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+                r != null && r.value() < r.maxValue() && n.config.contains(SemanticsActions.ScrollBy)
+            } ?: return@repeat
+            list.config[SemanticsActions.ScrollBy].action!!.invoke(0f, 1500f)
+            settle()
+        }
+    }
+
+    /** 2.0.0 2차 HQ-51: 설정 › 알림과 잠의 '알림함에 올 반응' 한 줄을 펼친 모습. 그 전 판에는 이 줄이 없어 '밤낮 소식'까지만 보여요. */
+    private fun reactionSwitches(): Screen.() -> Unit = {
+        app.container.settingsRepository.update { it.copy(plazaNews = true) }
+        settingsPage("알림과 잠")
+        reveal("밤낮 소식", exact = true)
+        if (shows("알림함에 올 반응", exact = true) || appears("알림함에 올 반응", exact = true, ms = 500)) {
+            reveal("알림함에 올 반응", exact = true)
+            tapText("알림함에 올 반응", exact = true)
+            settle()
+            // The head stays in sight with the first switches under it (revealing the last line cut the head at the top).
+            reveal("광장의 내 글", exact = true)
+        }
+    }
+
     @Test fun rateApplyLight() = shoot("rvn_01_rate_apply_folded", FOLDED, rateApply())
     @Test fun rateApplyDarkBig() = shoot("rvn_02_rate_apply_folded_dark_200", DARK, 2f, rateApply())
     @Test fun rateApplyWide() = shoot("rvn_03_rate_apply_unfolded", UNFOLDED, rateApply())
@@ -148,6 +180,12 @@ class RvnScreenshotTest : ScreenshotBase() {
     @Test fun roomTalkWideBig() = shoot("rvn_17_room_talk_unfolded_200", UNFOLDED, 2f, roomTalk())
     @Test fun ratesEndLight() = shoot("rvn_25_rates_end_folded", FOLDED, ratesEnd())
     @Test fun ratesEndDarkBig() = shoot("rvn_26_rates_end_folded_dark_200", DARK, 2f, ratesEnd())
+    @Test fun boardEndLight() = shoot("rvn_27_board_end_folded", FOLDED, boardEnd())
+    @Test fun boardEndDarkBig() = shoot("rvn_28_board_end_folded_dark_200", DARK, 2f, boardEnd())
+    @Test fun boardEndWide() = shoot("rvn_29_board_end_unfolded", UNFOLDED, boardEnd())
+    @Test fun reactionSwitchesLight() = shoot("rvn_30_reaction_switches_folded", FOLDED, reactionSwitches())
+    @Test fun reactionSwitchesDarkBig() = shoot("rvn_31_reaction_switches_folded_dark_200", DARK, 2f, reactionSwitches())
+    @Test fun reactionSwitchesWide() = shoot("rvn_32_reaction_switches_unfolded_dark", DARK_WIDE, reactionSwitches())
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"

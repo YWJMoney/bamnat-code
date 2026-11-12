@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -254,6 +255,8 @@ internal fun Wheel(
         flingBehavior = rememberWheelFling(state, cyclic, count),
         modifier = modifier
             .height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS)
+            // 2.0.0 [RVR-18] (검토 TEST-10) The window tests turn each wheel by this name and check the value 완료 hands back.
+            .testTag("wheel:$label")
             .semantics {
                 contentDescription = "${shown(value)}$label"
                 // [VIS-02] TalkBack moves the wheel one step at a time, not only a page.

@@ -290,11 +290,16 @@ class AEScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun helpAnswersIt() {
-        val topic = com.bamnat.app.ui.settings.HelpFaq.search("친구 초대 프로 한 달").first()
+        // 2.0.0 [RVO-13] PC-116: the numbers are the server's rules the card says (here the developer app's defaults), none before any were read.
+        val faq = com.bamnat.app.ui.settings.HelpFaq
+        val topic = faq.search("친구 초대 프로 한 달", faq.topics(invite = com.bamnat.core.tier.InviteTerms.DEFAULT)).first()
         assertEquals("invite", topic.id)
         assertTrue(topic.answer.contains("5명"))
         assertTrue(topic.answer.contains("7일"))
         assertTrue(topic.answer.contains("끄는 법"))
+        val unread = faq.search("친구 초대 프로 한 달").first()
+        assertEquals("invite", unread.id)
+        assertTrue(unread.answer, !unread.answer.contains("5명") && unread.answer.contains("카드에 지금 규칙 그대로"))
         assertNotNull(com.bamnat.core.guide.FeatureRegistry.get("pro.invite"))
     }
 

@@ -5,6 +5,9 @@ Reads the JUnit XML files Gradle writes (build/test-results/**/*.xml) and prints
 total time and the N slowest single tests, so a test that grows slower shows before the job times out.
 With --json it also writes the numbers for the CI trend ([QA-06]).
 
+2.0.0 [RVR-12] (검토 U60-03): the table starts with '건너뜀 N개' and the names of the skipped tests (an assumeTrue that
+turned false, an @Ignore), so a test that quietly stopped running shows on the first line.
+
 Usage: python3 tools/slow_tests.py <results dir> [<results dir> …] [--top 20] [--json out.json]
 """
 import glob
@@ -15,7 +18,7 @@ import xml.etree.ElementTree as ET
 
 
 def read(dirs):
-    classes, cases = {}, []
+    classes, cases, skipped = {}, [], []
     for d in dirs:
         for f in glob.glob(os.path.join(d, "**", "*.xml"), recursive=True):
             try:
@@ -29,14 +32,30 @@ def read(dirs):
                 c[1] += int(suite.get("tests", "0") or 0)
                 c[2] += int(suite.get("failures", "0") or 0) + int(suite.get("errors", "0") or 0)
                 for case in suite.iter("testcase"):
-                    cases.append((float(case.get("time", "0") or 0), name.rsplit(".", 1)[-1], case.get("name", "?")))
-    return classes, cases
+                    cls = (case.get("classname") or name).rsplit(".", 1)[-1]
+                    cases.append((float(case.get("time", "0") or 0), cls, case.get("name", "?")))
+                    s = case.find("skipped")
+                    if s is not None:
+                        skipped.append((cls, case.get("name", "?"), (s.get("message") or "").strip().splitlines()[:1]))
+    return classes, cases, skipped
 
 
-def table(classes, cases, top):
+def skipped_lines(skipped, top):
+    """[RVR-12] '건너뜀 N개' and up to [top] names, each with the first line of its reason."""
+    if not skipped:
+        return ["**건너뜀 0개**\n"]
+    out = [f"**건너뜀 {len(skipped)}개** (assumeTrue가 거짓이거나 @Ignore: 이 시험들은 돌지 않았어요)\n"]
+    for cls, name, why in sorted(skipped)[:top]:
+        out.append(f"- {cls}.{name}" + (f": {why[0][:120]}" if why and why[0] else ""))
+    if len(skipped) > top:
+        out.append(f"- … {len(skipped) - top}개 더")
+    return out + [""]
+
+
+def table(classes, cases, top, skipped=()):
     total = sum(c[0] for c in classes.values())
     count = sum(c[1] for c in classes.values())
-    out = [f"**{count} tests in {len(classes)} classes, {total / 60:.1f} min of test time** (forks run side by side)\n",
+    out = skipped_lines(list(skipped), top) + [f"**{count} tests in {len(classes)} classes, {total / 60:.1f} min of test time** (forks run side by side)\n",
            "| class | tests | min | failed |", "| --- | ---: | ---: | ---: |"]
     for name, (t, n, fail) in sorted(classes.items(), key=lambda kv: -kv[1][0])[:top]:
         out.append(f"| {name.rsplit('.', 1)[-1]} | {n} | {t / 60:.1f} | {fail} |")
@@ -62,13 +81,14 @@ def main(argv):
     if not dirs:
         print(__doc__)
         return 2
-    classes, cases = read(dirs)
-    print(table(classes, cases, top))
+    classes, cases, skipped = read(dirs)
+    print(table(classes, cases, top, skipped))
     if out_json:
         with open(out_json, "w", encoding="utf-8") as f:
             json.dump({
                 "tests": sum(c[1] for c in classes.values()),
                 "seconds": round(sum(c[0] for c in classes.values()), 1),
+                "skipped": [f"{c}.{n}" for c, n, _ in sorted(skipped)],
                 "classes": {k.rsplit(".", 1)[-1]: round(v[0], 1) for k, v in classes.items()},
                 "slowest": [{"test": n, "class": c, "s": round(t, 1)} for t, c, n in sorted(cases, reverse=True)[:top]],
             }, f, ensure_ascii=False, indent=1)

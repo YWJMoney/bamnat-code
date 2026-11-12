@@ -17,6 +17,9 @@ object Sheets {
     /** Largest file read, and largest part unpacked from a workbook (a zip that unpacks to much more is refused). */
     const val MAX_BYTES = 8 * 1024 * 1024
     private const val MAX_PART = 40 * 1024 * 1024
+    /** 2.0.0 [RVL-28] (검토 SCAN-17) All a zip's parts unpacked together, and the sheets read: a zip bomb stops here, said. */
+    const val MAX_UNPACKED = 48 * 1024 * 1024
+    const val MAX_SHEETS = 12
     const val MAX_ROWS = 2000
 
     class SheetException(message: String) : Exception(message)
@@ -39,7 +42,13 @@ object Sheets {
     fun book(bytes: ByteArray): List<Sheet> {
         if (bytes.size > MAX_BYTES) throw SheetException("파일이 너무 커요")
         return when (SheetFormats.kindOf(bytes)) {
-            SheetFormats.Kind.ZIP -> if (SheetFormats.isOds(bytes)) SheetFormats.ods(bytes) else xlsxBook(bytes)
+            // 2.0.0 [RVL-29] (검토 SCAN-16·T07b-10, I07bb-03) A Word or 한글 document's tables, read as sheets.
+            SheetFormats.Kind.ZIP -> when (SheetFormats.zipKind(bytes)) {
+                SheetFormats.ZipKind.ODS -> SheetFormats.ods(bytes)
+                SheetFormats.ZipKind.DOCX -> SheetFormats.docx(bytes)
+                SheetFormats.ZipKind.HWPX -> SheetFormats.hwpx(bytes)
+                else -> xlsxBook(bytes)
+            }
             SheetFormats.Kind.OLE -> SheetFormats.xls(bytes)
             SheetFormats.Kind.HTML -> SheetFormats.html(decode(bytes))
             SheetFormats.Kind.XML2003 -> SheetFormats.xml2003(decode(bytes))
@@ -101,19 +110,24 @@ object Sheets {
     /** [READ-30] Every sheet of a workbook in its tab order, merged cells filled. */
     fun xlsxBook(bytes: ByteArray): List<Sheet> {
         val parts = HashMap<String, String>()
+        var unpacked = 0L
+        var sheets = 0
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
                 val e = zip.nextEntry ?: break
                 val name = e.name
-                if (name == "xl/sharedStrings.xml" || name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "xl/styles.xml" ||
-                    (name.startsWith("xl/worksheets/") && name.endsWith(".xml"))) {
+                val sheet = name.startsWith("xl/worksheets/") && name.endsWith(".xml")
+                // 2.0.0 [RVL-28] (검토 SCAN-17) Past the 12th sheet the rest are left; a roster is in the first ones.
+                if (sheet && ++sheets > MAX_SHEETS) continue
+                if (name == "xl/sharedStrings.xml" || name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "xl/styles.xml" || sheet) {
                     val out = java.io.ByteArrayOutputStream()
                     val buf = ByteArray(16 * 1024)
                     while (true) {
                         val n = zip.read(buf)
                         if (n < 0) break
                         out.write(buf, 0, n)
-                        if (out.size() > MAX_PART) throw SheetException("파일이 너무 커요")
+                        unpacked += n
+                        if (out.size() > MAX_PART || unpacked > MAX_UNPACKED) throw SheetException("파일이 너무 커요")
                     }
                     parts[name] = out.toString("UTF-8")
                 }

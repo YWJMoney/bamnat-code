@@ -89,9 +89,15 @@ object TeamSheet {
         if (grids.size == 1) return grids[0]
         val rows = LinkedHashMap<String, GridRow>()
         for (g in grids) for (r in g.rows) {
-            val key = DutyCodes.norm(r.name)
+            var key = DutyCodes.norm(r.name)
+            // 2.0.0 [RVL-22] (검토 SCAN-07) Another member of the same name (their days meet): a line of their own, "김민지 (2)".
+            var n = 1
+            while (rows[key]?.let { had -> had.cells.keys.count(r.cells::containsKey) > 1 } == true) {
+                n++
+                key = DutyCodes.norm(DutyRoster.twin(r.name, n))
+            }
             val had = rows[key]
-            rows[key] = if (had == null) r else had.copy(role = had.role ?: r.role, cells = had.cells + r.cells.filterKeys { it !in had.cells }, doubtful = had.doubtful + r.doubtful)
+            rows[key] = if (had == null) (if (n == 1) r else r.copy(name = DutyRoster.twin(r.name, n))) else had.copy(role = had.role ?: r.role, cells = had.cells + r.cells.filterKeys { it !in had.cells }, doubtful = had.doubtful + r.doubtful)
         }
         val all = rows.values.toList()
         val days = all.flatMap { it.cells.keys }.distinct().sorted()

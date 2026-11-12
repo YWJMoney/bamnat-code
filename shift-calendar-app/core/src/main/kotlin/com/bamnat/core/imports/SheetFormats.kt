@@ -149,7 +149,7 @@ object SheetFormats {
                 val n = z.read(buf)
                 if (n < 0) break
                 out.write(buf, 0, n)
-                if (out.size() > 40 * 1024 * 1024) throw Sheets.SheetException("파일이 너무 커요")
+                if (out.size() > Sheets.MAX_UNPACKED) throw Sheets.SheetException("파일이 너무 커요")
             }
             out.toString("UTF-8")
         }
@@ -190,10 +190,130 @@ object SheetFormats {
     // ------------------------------------------------------------------ old Excel (BIFF8 in OLE2)
 
     fun xls(bytes: ByteArray): List<Sheets.Sheet> {
-        val stream = Ole2(bytes).stream("Workbook") ?: Ole2(bytes).stream("Book")
-            ?: throw Sheets.SheetException("옛 엑셀 파일을 열지 못했어요. 엑셀에서 .xlsx로 다시 저장해 주세요")
+        val ole = Ole2(bytes)
+        val stream = ole.stream("Workbook") ?: ole.stream("Book") ?: throw Sheets.SheetException(oleWhy(ole))
         return Biff(stream).sheets()
     }
+
+    /**
+     * 2.0.0 [RVL-29] (검토 SCAN-16·T07b-10) What an OLE file without a workbook is, said in what to do: an Excel (or Word) file locked
+     * with a password keeps its body in EncryptedPackage, a 한글 .hwp has FileHeader·BodyText, a Word .doc a WordDocument.
+     */
+    private fun oleWhy(ole: Ole2): String = when {
+        ole.stream("EncryptedPackage") != null || ole.stream("EncryptionInfo") != null -> LOCKED
+        ole.stream("FileHeader") != null || ole.stream("BodyText") != null -> HWP
+        ole.stream("WordDocument") != null -> DOC
+        else -> "이 파일은 열지 못했어요. 엑셀에서 .xlsx로 다시 저장해 주세요"
+    }
+
+    const val LOCKED = "암호가 걸린 파일이에요. 엑셀에서 암호를 풀고 저장한 뒤 다시 골라 주세요"
+    const val HWP = "옛 한글 문서(.hwp)는 읽지 못해요. 한글에서 .hwpx나 PDF로 저장하거나 화면을 캡처해 주세요"
+    const val DOC = "옛 워드 문서(.doc)는 읽지 못해요. 워드에서 .docx나 PDF로 저장하거나 화면을 캡처해 주세요"
+
+    // ------------------------------------------------------------------ Word (.docx) and 한글 (.hwpx) tables
+
+    /** 2.0.0 [RVL-29] What a zip holds, by its parts: a workbook, an OpenDocument, a Word or a 한글 document. */
+    enum class ZipKind { XLSX, ODS, DOCX, HWPX, OTHER }
+
+    fun zipKind(bytes: ByteArray): ZipKind {
+        val names = runCatching {
+            ZipInputStream(ByteArrayInputStream(bytes)).use { z -> generateSequence { z.nextEntry }.take(4_000).map { it.name }.toList() }
+        }.getOrDefault(emptyList())
+        return when {
+            names.any { it.startsWith("xl/") } -> ZipKind.XLSX
+            names.any { it.startsWith("word/") } -> ZipKind.DOCX
+            names.any { it.startsWith("Contents/section") } -> ZipKind.HWPX
+            "content.xml" in names -> ZipKind.ODS
+            else -> ZipKind.OTHER
+        }
+    }
+
+    private fun part(bytes: ByteArray, wanted: (String) -> Boolean): List<Pair<String, String>> = ZipInputStream(ByteArrayInputStream(bytes)).use { z ->
+        val out = mutableListOf<Pair<String, String>>()
+        var unpacked = 0L
+        while (true) {
+            val e = z.nextEntry ?: break
+            if (!wanted(e.name)) continue
+            val buf = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(16 * 1024)
+            while (true) {
+                val n = z.read(chunk)
+                if (n < 0) break
+                buf.write(chunk, 0, n)
+                unpacked += n
+                if (unpacked > Sheets.MAX_UNPACKED) throw Sheets.SheetException("파일이 너무 커요")
+            }
+            out += e.name to buf.toString("UTF-8")
+        }
+        out
+    }
+
+    /**
+     * 2.0.0 [RVL-29] (I07bb-03) The tables of a Word document (word/document.xml): one sheet a table, a cell's text its paragraphs
+     * joined, a cell spread over columns (gridSpan) in each of them, one continued down (vMerge) given the cell above.
+     */
+    fun docx(bytes: ByteArray): List<Sheets.Sheet> {
+        val xml = part(bytes) { it == "word/document.xml" }.firstOrNull()?.second ?: throw Sheets.SheetException("문서에서 표를 찾지 못했어요")
+        val tables = tables(xml, "w:tbl").mapIndexedNotNull { i, t ->
+            val rows = mutableListOf<List<String>>()
+            for (tr in Regex("""<w:tr\b.*?</w:tr>""", RegexOption.DOT_MATCHES_ALL).findAll(t)) {
+                val row = mutableListOf<String>()
+                for (tc in Regex("""<w:tc\b.*?</w:tc>""", RegexOption.DOT_MATCHES_ALL).findAll(tr.value)) {
+                    val span = Regex("""<w:gridSpan\s+w:val="(\d+)"""").find(tc.value)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(1, 40) ?: 1
+                    val continued = Regex("""<w:vMerge\s*/>|<w:vMerge\s+w:val="continue"""").containsMatchIn(tc.value)
+                    val text = if (continued) rows.lastOrNull()?.getOrNull(row.size).orEmpty() else words(tc.value, "w:t", "w:p")
+                    repeat(span) { if (row.size < MAX_COLS) row += text }
+                }
+                if (rows.size < Sheets.MAX_ROWS) rows += row
+            }
+            rows.takeIf { r -> r.size >= 2 }?.let { Sheets.Sheet("표 ${i + 1}", it) }
+        }
+        return tables.ifEmpty { throw Sheets.SheetException("문서에서 표를 찾지 못했어요. 근무표가 표로 된 문서인지 봐 주세요") }
+    }
+
+    /**
+     * 2.0.0 [RVL-29] (I07bb-03) The tables of a 한글 .hwpx (Contents/section*.xml): each cell where its address says (cellAddr), in
+     * every row and column it spans (cellSpan), its text the runs of its paragraphs.
+     */
+    fun hwpx(bytes: ByteArray): List<Sheets.Sheet> {
+        val sections = part(bytes) { it.startsWith("Contents/section") && it.endsWith(".xml") }.sortedBy { it.first }
+        val tables = sections.flatMap { (_, xml) -> tables(xml, "hp:tbl") }.mapIndexedNotNull { i, t ->
+            val grid = java.util.TreeMap<Int, MutableMap<Int, String>>()
+            for (tc in Regex("""<hp:tc\b.*?</hp:tc>""", RegexOption.DOT_MATCHES_ALL).findAll(t)) {
+                val addr = Regex("""<hp:cellAddr\s+colAddr="(\d+)"\s+rowAddr="(\d+)"""").find(tc.value) ?: continue
+                val c0 = addr.groupValues[1].toInt(); val r0 = addr.groupValues[2].toInt()
+                val span = Regex("""<hp:cellSpan\s+colSpan="(\d+)"\s+rowSpan="(\d+)"""").find(tc.value)
+                val cs = span?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(1, 40) ?: 1
+                val rs = span?.groupValues?.get(2)?.toIntOrNull()?.coerceIn(1, 40) ?: 1
+                val text = words(tc.value, "hp:t", "hp:p")
+                for (r in r0 until r0 + rs) for (c in c0 until c0 + cs) if (r < Sheets.MAX_ROWS && c < MAX_COLS) grid.getOrPut(r) { HashMap() }[c] = text
+            }
+            val rows = grid.values.map { m -> List((m.keys.maxOrNull() ?: -1) + 1) { m[it].orEmpty() } }
+            rows.takeIf { r -> r.size >= 2 }?.let { Sheets.Sheet("표 ${i + 1}", it) }
+        }
+        return tables.ifEmpty { throw Sheets.SheetException("문서에서 표를 찾지 못했어요. 근무표가 표로 된 문서인지 봐 주세요") }
+    }
+
+    /** The outermost tables [tag] in [xml], a table inside a cell left in it. */
+    private fun tables(xml: String, tag: String): List<String> {
+        val out = mutableListOf<String>()
+        var depth = 0
+        var start = -1
+        for (m in Regex("""<$tag[\s>/]|</$tag>""").findAll(xml)) {
+            if (m.value.startsWith("</")) {
+                if (depth > 0 && --depth == 0 && start >= 0) { out += xml.substring(start, m.range.last + 1); start = -1 }
+            } else {
+                if (depth++ == 0) start = m.range.first
+            }
+        }
+        return out
+    }
+
+    /** A cell's words: the text of each [run] element, paragraphs ([para]) apart by a space. */
+    private fun words(cell: String, run: String, para: String): String =
+        Regex("""<$para\b.*?</$para>""", RegexOption.DOT_MATCHES_ALL).findAll(cell).map { p ->
+            Regex("""<$run(?:\s[^>]*)?>(.*?)</$run>""", RegexOption.DOT_MATCHES_ALL).findAll(p.value).joinToString("") { entities(it.groupValues[1].replace(Regex("<[^>]+>"), "")) }
+        }.filter { it.isNotBlank() }.joinToString(" ").trim()
 
     /** The streams of an OLE2 compound file ([MS-CFB]): the sector chains of the FAT, the directory and the mini stream. */
     private class Ole2(val b: ByteArray) {
@@ -222,7 +342,10 @@ object SheetFormats {
         private fun chain(start: Int, table: IntArray): List<Int> {
             val out = mutableListOf<Int>()
             var s = start
-            while (s >= 0 && s < table.size && out.size < 200_000) { out += s; s = table[s] }
+            // 2.0.0 [RVL-28] (검토 SCAN-17) A chain longer than the file has sectors loops: stopped there.
+            val most = minOf(200_000, b.size / 64 + 1)
+            val seen = HashSet<Int>()
+            while (s >= 0 && s < table.size && out.size < most && seen.add(s)) { out += s; s = table[s] }
             return out
         }
 

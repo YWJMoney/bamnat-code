@@ -146,7 +146,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     }
     @Test fun phoneStatsYear() = shoot("388_phone_stats_year", PHONE) {
         runBlocking { app.container.payStore.save(PayViewModel(app.container).sampleProfile().copy(rules = companyRules), keepUndo = false) }
-        tab(3, wide = false); reveal("${java.time.Year.now().value}년 근무·급여", exact = true)
+        tab(3, wide = false); reveal("${Today.date().year}년 근무·급여", exact = true) // 2.0.0 [RVR-15] (TEST-07) the fixed clock's year, not the machine's
     }
 
     @Test fun storeTabletYear() {

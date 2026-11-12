@@ -48,11 +48,15 @@ export const DESK_SCHEMA = [
   // 1.37 [ADM2-10] 넘김 묶음: 'Claude에게 넘기기'를 복사한 때(cut)와 그 글에 든 문의·개발사항, 결과를 반영한 때와 요약.
   `CREATE TABLE IF NOT EXISTS handoffs (id TEXT PRIMARY KEY, at INTEGER NOT NULL, cut INTEGER NOT NULL, by TEXT NOT NULL,
     asks TEXT NOT NULL DEFAULT '[]', items TEXT NOT NULL DEFAULT '[]', result_at INTEGER, result TEXT NOT NULL DEFAULT '')`,
-  // 1.37 [ADM2-10] 이때부터 묶인 문의는 '출시되면 알림'을 따로 세요(dev_links.told_at). 처음 한 번만 적혀요.
-  "INSERT OR IGNORE INTO settings (key, value) VALUES ('links_tracked_from', CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
   `CREATE TABLE IF NOT EXISTS admin_keys (id TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL, revoked_at INTEGER, last_at INTEGER, day TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 0)`,
 ];
+
+/**
+ * 1.37 [ADM2-10] 이때부터 묶인 문의는 '출시되면 알림'을 따로 세요(dev_links.told_at). 처음 한 번만 적혀요.
+ * 2.0.0 [RVR-13] (검토 TEST-06) SQLite 'now' 대신 서버 시계 [now]를 묶어요: [sql, ...값]. schemaUp이 표를 만든 뒤 보내요.
+ */
+export const DESK_SEED = (now) => [["INSERT OR IGNORE INTO settings (key, value) VALUES ('links_tracked_from', ?)", now]];
 
 /** 1.37 [ADM2-10] 이미 있는 표에 더하는 칸(ALTER, 이미 있으면 건너뛰어요). */
 export const DESK_COLUMNS = [

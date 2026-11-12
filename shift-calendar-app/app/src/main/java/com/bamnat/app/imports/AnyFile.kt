@@ -18,7 +18,7 @@ import java.io.File
  * list comes in, opened one way for 한 달 근무 넣기, the first setup, and the 리더·사장님 관리 화면 (P3 갈래7).
  *
  * What the file is comes from its first bytes, not its name or type: an "xls" from a 근태 system is often HTML.
- * - a table (.xlsx, .xls, .ods, HTML·XML ".xls", CSV) → its sheets ([Sheets.book]);
+ * - a table (.xlsx, .xls, .ods, HTML·XML ".xls", CSV, and 2.0.0 [RVL-29] the tables of a .docx or 한글 .hwpx) → its sheets ([Sheets.book]);
  * - a PDF with its text in it (saved from Excel·한글·a 듀티 program) → the table on each page, read from the file ([PdfText]);
  * - a scanned PDF → each page rendered (at most [MAX_PAGES]) for the photo reader;
  * - a picture → the photo reader.
@@ -30,6 +30,10 @@ object AnyFile {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel",
         "application/vnd.oasis.opendocument.spreadsheet", "text/csv", "text/comma-separated-values", "text/html", "text/plain",
         "application/pdf", "image/*", "application/octet-stream",
+        // 2.0.0 [RVL-29] (검토 SCAN-16·T07b-10) 한글·워드 문서: .hwpx·.docx tables are read; .hwp·.doc say how to save them.
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword",
+        "application/haansofthwpx", "application/vnd.hancom.hwpx", "application/hwp+zip", "application/haansofthwp", "application/x-hwp",
+        "application/vnd.hancom.hwp",
     )
 
     const val MAX_PAGES = 6

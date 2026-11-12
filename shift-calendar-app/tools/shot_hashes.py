@@ -12,14 +12,29 @@ different colour scheme does not.
 THRESHOLD on average (0~255) or when none of the list was found. Since 1.24 (QA-08) every shot is drawn on a fixed
 day and time (ScreenshotBase, 2026-10-14 10:30 KST), so shots built around today's date or the hour are in the list
 too; random numbers still are not.
+
+2.0.0 [RVR-11] (검토 TEST-12 ②③·U60-04) a comparison is never lost without a word:
+- a key shot whose name no test takes any more (renamed or removed) fails, read from the test sources;
+- a name two tests take (one would draw over the other's file) fails;
+- with --results <JUnit XML folder>, a key shot whose test class ran in this shard but left no picture fails
+  ('비교 못 함'), and the summary lists the key shots of the other shard as not this shard's.
+
+  python3 tools/shot_hashes.py check app/build/screenshots --results app/build/test-results/testDebugUnitTest
+  python3 tools/shot_hashes.py names          # only the source checks (no pictures needed)
 """
+import glob
 import json
 import os
+import re
 import sys
 
-from PIL import Image
+try:
+    from PIL import Image
+except ImportError:  # `names` needs no pictures
+    Image = None
 
 GOLDEN = os.path.join(os.path.dirname(__file__), "..", "app", "src", "test", "golden", "shots.json")
+TESTS = os.path.join(os.path.dirname(__file__), "..", "app", "src", "test", "java")
 SIZE = (32, 48)
 THRESHOLD = 6.0
 
@@ -45,12 +60,63 @@ def fingerprint(path):
     return im.tobytes().hex()
 
 
+def shot_names(root=None):
+    """[RVR-11] Every literal shoot("…") name in the app's tests: name -> [(test class, file)], from the sources. Names a
+    test passes another way (the widgets' Triple("23_widget_today", …)) are kept under ("quoted", name) for the key shots."""
+    out = {}
+    for f in sorted(glob.glob(os.path.join(root or TESTS, "**", "*.kt"), recursive=True)):
+        with open(f, encoding="utf-8") as fh:
+            text = fh.read()
+        cls = os.path.splitext(os.path.basename(f))[0]
+        pkg = re.search(r"^package\s+([\w.]+)", text, re.M)
+        fq = f"{pkg.group(1)}.{cls}" if pkg else cls
+        for m in re.finditer(r'\bshoot\(\s*"([^"$]+)"', text):
+            out.setdefault(m.group(1), []).append((fq, os.path.basename(f)))
+        for m in re.finditer(r'"([A-Za-z0-9_]+)"', text):
+            out.setdefault(("quoted", m.group(1)), []).append((fq, os.path.basename(f)))
+    return out
+
+
+def classes_of(names, name):
+    return {w[0] for w in names.get(name, []) + names.get(("quoted", name), [])}
+
+
+def source_problems(names, golden_names):
+    bad = []
+    for name in sorted(golden_names):
+        if not classes_of(names, name):
+            bad.append(f"no test takes '{name}' any more (renamed or removed?): rename it in SHOTS and run update, or drop it")
+    for name, where in sorted(((k, v) for k, v in names.items() if isinstance(k, str)), key=lambda kv: kv[0]):
+        if len(where) > 1:
+            bad.append(f"'{name}' is taken by {len(where)} tests ({', '.join(sorted({w[1] for w in where}))}): one draws over the other")
+    return bad
+
+
+def ran_classes(results):
+    """Test classes with a JUnit XML in [results] (the ones this shard ran)."""
+    out = set()
+    for f in glob.glob(os.path.join(results, "**", "TEST-*.xml"), recursive=True):
+        out.add(os.path.basename(f)[len("TEST-"):-len(".xml")])
+    return out
+
+
 def distance(a, b):
     x, y = bytes.fromhex(a), bytes.fromhex(b)
     return sum(abs(p - q) for p, q in zip(x, y)) / len(x)
 
 
 def main(argv):
+    results = None
+    if "--results" in argv:
+        i = argv.index("--results")
+        results = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
+    if argv[:1] == ["names"]:
+        bad = source_problems(shot_names(), SHOTS)
+        for b in bad:
+            print(b, file=sys.stderr)
+        print(f"{len(SHOTS)} key shots, all taken by one test each" if not bad else f"{len(bad)} problem(s)")
+        return 1 if bad else 0
     if len(argv) != 2 or argv[0] not in ("check", "update"):
         print(__doc__)
         return 2
@@ -75,23 +141,39 @@ def main(argv):
         missing = [s for s in SHOTS if s not in golden]
         print(f"wrote {len(golden)} fingerprints" + (f"; not found: {missing}" if missing else ""))
         return 0
-    golden = json.load(open(GOLDEN, encoding="utf-8"))
-    seen, bad = 0, []
+    with open(GOLDEN, encoding="utf-8") as fh:
+        golden = json.load(fh)
+    names = shot_names()
+    problems = source_problems(names, golden)
+    ran = ran_classes(results) if results else None
+    seen, bad, lost, other = 0, [], [], []
     print("| shot | difference |\n| --- | ---: |")
     for name, want in sorted(golden.items()):
         if name not in present:
+            classes = classes_of(names, name)
+            if ran is not None and classes & ran:
+                lost.append(name)
+                print(f"| {name} | **비교 못 함** (its test ran here, no picture) |")
+            elif ran is not None:
+                other.append(name)
             continue
         seen += 1
         d = distance(want, fingerprint(present[name]))
         print(f"| {name} | {d:.2f}{' **changed**' if d > THRESHOLD else ''} |")
         if d > THRESHOLD:
             bad.append(name)
+    if other:
+        print(f"\n{len(other)} key shots belong to the other shard.")
     if seen == 0:
         print("none of the key screenshots was found", file=sys.stderr)
         return 1
     for name in bad:
         print(f"changed: {name} (if it was meant, run: python3 tools/shot_hashes.py update app/build/screenshots)", file=sys.stderr)
-    return 1 if bad else 0
+    for name in lost:
+        print(f"not compared: {name} (its test class ran in this shard but drew no picture: did it fail, skip, or change its name?)", file=sys.stderr)
+    for p in problems:
+        print(p, file=sys.stderr)
+    return 1 if bad or lost or problems else 0
 
 
 if __name__ == "__main__":

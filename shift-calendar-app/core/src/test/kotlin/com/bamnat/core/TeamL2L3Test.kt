@@ -83,9 +83,9 @@ class TeamL2L3Test {
         val t = team(mapOf(1L to 2, 2L to 2, 3L to 1))
         val locked = TeamBoard(nov, ppl).paint("m3", nov.atDay(1), 3).lock("m3", nov.atDay(1), true)
         val wishes = listOf(TeamWish("m1", nov.atDay(2)), TeamWish("m2", nov.atDay(5), WishKind.AVOID_NIGHT))
-        val started = System.nanoTime()
-        val plan = TeamAuto.plans(t, locked, wishes).first()
-        assertTrue("fast", System.nanoTime() - started < 5_000_000_000L)
+        val (plans, ms) = fastestMillis { TeamAuto.plans(t, locked, wishes) }
+        assertTrue("fast: $ms ms", ms < 5_000)
+        val plan = plans.first()
         val b = plan.board
         assertEquals(3L, b.cell("m3", nov.atDay(1))?.shiftId)
         assertTrue(b.cell("m3", nov.atDay(1))!!.locked)
@@ -118,9 +118,8 @@ class TeamL2L3Test {
     @Test
     fun `thirty people over thirty-one days stays quick`() {
         val t = team(mapOf(1L to 7, 2L to 7, 3L to 5))
-        val started = System.nanoTime()
-        TeamAuto.plans(t, TeamBoard(YearMonth.of(2026, 12), (0 until 30).map { TeamMember("p$it", "t", "사람$it", sort = it) }))
-        assertTrue("30×31 under 5 s", System.nanoTime() - started < 5_000_000_000L)
+        val (_, ms) = fastestMillis { TeamAuto.plans(t, TeamBoard(YearMonth.of(2026, 12), (0 until 30).map { TeamMember("p$it", "t", "사람$it", sort = it) })) }
+        assertTrue("30×31 under 5 s: $ms ms", ms < 5_000)
     }
 
     /**

@@ -36,7 +36,7 @@
 ## 사용자(서버 배포하는 사람)가 넣을 것
 
 - **꼭**: `VAPID_PUBLIC_KEY`·`VAPID_PRIVATE_KEY`(관리자 휴대폰 알림), `PLAY_SERVICE_ACCOUNT`(결제 확인·판 건강·스토어 리뷰; Play Console › 사용자 및 권한에서 '리뷰 보기·답하기'도).
-- **있으면 좋음**: R2 저장소를 `BACKUP` 이름으로 묶기(하루 백업, 14일), `MAIL_API_KEY`·`MAIL_FROM`, `SHARE_BASE_URL`·`SHARE_ADMIN_TOKEN`, `FCM_SERVICE_ACCOUNT`.
+- **있으면 좋음**: R2 저장소를 `BACKUP` 이름으로 묶기(하루 백업, 14일, 비밀 칸은 잠금), `SEAL_KEY`(2.0.0, 16자 이상: 2단계 키·백업 잠금을 `RATE_SALT`와 따로. 없으면 `RATE_SALT`로 잠가요), `MAIL_API_KEY`·`MAIL_FROM`, `SHARE_BASE_URL`·`SHARE_ADMIN_TOKEN`, `FCM_SERVICE_ACCOUNT`.
 - 배포 뒤: 숫자 › 돈 › 가격표에 Play Console 가격 넣기, 관리 › 내 계정에서 이 휴대폰 패스키 만들기.
 
 ## 시험

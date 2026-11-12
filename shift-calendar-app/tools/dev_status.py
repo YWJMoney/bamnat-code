@@ -18,6 +18,7 @@ news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인
 요금(tier)은 사용자만 관리자 앱에서 정해요. 이 파일에 tier를 적으면 검사가 막아요.
 """
 import argparse
+import csv
 import json
 import re
 import sys
@@ -26,6 +27,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 STATUS_FILE = ROOT / "ops" / "dev-status.jsonl"
 BUILT_FILE = ROOT / "server" / "company-worker" / "src" / "dev-built.js"
+TRACKER = ROOT / "docs" / "tracker.csv"
+GRADLE = ROOT / "gradle.properties"
+# 2.0.0 [RVR-10] (검토 TEST-15·U60-05) 판이 합쳐진 것: 1.39.1은 따로 내지 않고 2.0.0으로(사용자 2026-11-12), 1.40은 2.0.0이 됐어요.
+MERGED = {"1.39.1": "2.0.0", "1.40.0": "2.0.0"}
 
 KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "tierAsk", "tierWhy", "publicTitle",
         "known", "styles", "test", "check", "pr", "news", "shipReply", "reason"}
@@ -50,7 +55,8 @@ PERSONAL = [
 LIMITS = {"title": 120, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300}
 
 
-def read(path=STATUS_FILE):
+def read(path=None):
+    path = path or STATUS_FILE
     items, errors = [], []
     if not path.exists():
         return items, errors
@@ -69,6 +75,11 @@ def read(path=STATUS_FILE):
     return items, errors
 
 
+def one_of(v, allowed):
+    """[RVR-10] A value from a set: a list or a number in the line is a wrong value, not a crash (TypeError)."""
+    return isinstance(v, str) and v in allowed
+
+
 def check_item(n, x):
     out = []
     say = lambda m: out.append(f"{n}줄{(' ' + (x.get('track') or x.get('id') or '')) if isinstance(x, dict) else ''}: {m}")
@@ -83,11 +94,11 @@ def check_item(n, x):
         say("id는 d로 시작하는 16자예요(관리자 앱 개발사항 번호)")
     if "track" in x and not (isinstance(x["track"], str) and TRACK.match(x["track"])):
         say("track은 LOOP-17 같은 추적 번호예요")
-    if x.get("status") not in STATUS:
+    if not one_of(x.get("status"), STATUS):
         say("status는 todo·doing·check·done·rejected 중 하나예요")
-    if "size" in x and x["size"] not in SIZES:
+    if "size" in x and not one_of(x["size"], SIZES):
         say("size는 fix·polish·feature 중 하나예요")
-    if "route" in x and x["route"] not in ROUTES:
+    if "route" in x and not one_of(x["route"], ROUTES):
         say("route는 server·remote·flag·app·hotfix 중 하나예요")
     if x.get("route") == "remote" and not (isinstance(x.get("remote"), str) and REMOTE.match(x["remote"])):
         say("route remote에는 remote(\"kind@번호\")가 있어야 언제 닿았는지 알아요")
@@ -95,9 +106,9 @@ def check_item(n, x):
         say("route flag에는 flag 이름이 있어야 해요")
     if "events" in x and not (isinstance(x["events"], list) and all(isinstance(e, str) and EVENT.match(e) for e in x["events"]) and len(x["events"]) <= 8):
         say("events는 소문자 이름 8개까지의 목록이에요")
-    if "tierAsk" in x and x["tierAsk"] not in TIERS:
+    if "tierAsk" in x and not one_of(x["tierAsk"], TIERS):
         say("tierAsk는 free·pro·pass·trial·later 중 하나예요")
-    if "styles" in x and not (isinstance(x["styles"], list) and all(v in STYLES for v in x["styles"])):
+    if "styles" in x and not (isinstance(x["styles"], list) and all(one_of(v, STYLES) for v in x["styles"])):
         say("styles는 SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST 중에서 고른 목록이에요(빈 목록 = 모두)")
     if "known" in x and not isinstance(x["known"], bool):
         say("known은 true나 false예요")
@@ -146,6 +157,53 @@ def check_all(items):
     return errors
 
 
+def norm(v):
+    """[RVR-10] '1.39' → '1.39.0', '2 (1.39.0)' → '1.39.0', a merged release to the one it went out in; None when there is none."""
+    m = re.search(r"\d+\.\d+(?:\.\d+)?", str(v or ""))
+    if not m:
+        return None
+    s = m.group(0) + (".0" if m.group(0).count(".") == 1 else "")
+    return MERGED.get(s, s)
+
+
+def key(v):
+    return tuple(int(p) for p in v.split("."))
+
+
+def phases(path=None):
+    """[RVR-10] 판 of each tracking number, from docs/tracker.csv's phase (the file itself carries no 판, ops/README)."""
+    try:
+        with (path or TRACKER).open(encoding="utf-8") as f:
+            return {r["id"]: norm(r["phase"]) for r in csv.DictReader(f)}
+    except OSError:
+        return {}
+
+
+def version_of(x, ph):
+    return ph.get(x.get("track")) if isinstance(x.get("track"), str) else None
+
+
+def current_version(path=None):
+    try:
+        m = re.search(r"^bamnat\.versionName=(\S+)", (path or GRADLE).read_text(encoding="utf-8"), re.M)
+        return norm(m.group(1)) if m else None
+    except OSError:
+        return None
+
+
+def stale(items, ph, now):
+    """[RVR-10] (TEST-15) Lines of a release that already went out (판 below the one in gradle.properties) still not done:
+    the release's notes and answers to inquiries are sent only for done lines, so they are said as warnings."""
+    out = []
+    if not now:
+        return out
+    for n, x in items:
+        v = version_of(x, ph)
+        if v and key(v) < key(now) and x.get("status") in ("todo", "doing", "check"):
+            out.append(f"{n}줄 {x.get('track') or x.get('id')}: 나간 판 {v}의 줄이 아직 {x.get('status')}예요 (PC 확인이 끝났으면 done + news·shipReply로)")
+    return out
+
+
 def built_text(items):
     names = []
     for _, x in items:
@@ -188,12 +246,18 @@ def main(argv=None):
     a = p.parse_args(argv)
     items, errors = read()
     errors += check_all(items)
+    ph = phases()
     if a.cmd == "check":
         if BUILT_FILE.read_text(encoding="utf-8") != built_text(items):
             errors.append("server/company-worker/src/dev-built.js가 개발 상태 파일과 달라요: python3 tools/dev_status.py build")
         for e in errors:
             print(e)
-        print(f"개발 상태 {len(items)}줄, 문제 {len(errors)}개")
+        warns = stale(items, ph, current_version())
+        if warns:
+            print(f"경고 {len(warns)}개 (실패는 아니에요):")
+            for w in warns:
+                print("  " + w)
+        print(f"개발 상태 {len(items)}줄, 문제 {len(errors)}개" + (f", 경고 {len(warns)}개" if warns else ""))
         return 1 if errors else 0
     if errors:
         for e in errors:
@@ -204,15 +268,25 @@ def main(argv=None):
         print(f"{BUILT_FILE.relative_to(ROOT)} 만듦")
     elif a.cmd == "payload":
         print(json.dumps(payload(items, a.version, a.sha, a.pr), ensure_ascii=False))
-    elif a.cmd == "notes":
-        for _, x in items:
-            if x.get("status") == "done" and x.get("news") and x.get("route", "app") in ("app", "hotfix"):
-                print(f"- {x['news']}")
-    elif a.cmd == "pc":
-        print(f"# {a.version} PC 확인 목록 (개발 상태 파일에서)\n")
-        for _, x in items:
-            if x.get("check") and x.get("status") in ("check", "done"):
-                print(f"- [ ] {x.get('track') or x.get('id')} {x.get('title', '')}: {x['check']}")
+    elif a.cmd in ("notes", "pc"):
+        # [RVR-10] (U60-05) Only the lines of the 판 asked for; lines whose 판 is not known (a d 번호 without a tracking number)
+        # are counted on stderr, not mixed in.
+        want = norm(a.version)
+        if not want:
+            raise SystemExit(f"판 번호가 이상해요: {a.version}")
+        mine = [(n, x) for n, x in items if version_of(x, ph) == want]
+        unknown = [x.get("id") or x.get("track") for _, x in items if not version_of(x, ph)]
+        if a.cmd == "notes":
+            for _, x in mine:
+                if x.get("status") == "done" and x.get("news") and x.get("route", "app") in ("app", "hotfix"):
+                    print(f"- {x['news']}")
+        else:
+            print(f"# {want} PC 확인 목록 (개발 상태 파일에서)\n")
+            for _, x in mine:
+                if x.get("check") and x.get("status") in ("check", "done"):
+                    print(f"- [ ] {x.get('track') or x.get('id')} {x.get('title', '')}: {x['check']}")
+        if unknown:
+            print(f"판을 모르는 줄 {len(unknown)}개(추적 번호 없음): " + ", ".join(map(str, unknown[:10])), file=sys.stderr)
     return 0
 
 

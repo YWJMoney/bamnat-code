@@ -212,10 +212,13 @@ export const OPS_CALENDAR = [
   [3, "tax-table", "근로소득 간이세액표가 바뀌었으면 remote/v1/taxtable.json 고치기(판 올리고 서명)", "소득세법 시행령 별표 2(2026년 개정은 3월 1일 이후 원천징수분부터)"],
   [3, "privacy-review", "처리방침·데이터 보안 답안을 지금 서버와 대조", "개인정보 보호법 제30조, docs/server-data.md"],
   [3, "incident-drill", "유출 대응 절차서를 한 번 따라 해 보기(연락 순서·공지 문구)", "개인정보 보호법 제34조, docs/incident-response.md"],
+  // 2.0.0 [RVQ-18] 검토 I21b-01·SRV-15: 비밀값 바꾸기 점검과 백업을 손으로 한 번 되살려 보기(매주 자동 연습과 따로).
+  [3, "secret-review", "서버 비밀값을 바꿀지 보기(관리 › 보안 한 장의 바꾼 날). RATE_SALT·SEAL_KEY를 바꾸면 옛 값을 SEAL_KEY_OLD에 두고 다음 백업·되살리기 연습이 맞은 뒤 지우기", "개인정보 보호법 제29조(안전조치의무), docs/incident-response.md"],
   [4, "android-preview", "새 Android 미리보기에서 알람·알림 점검", "Play 대상 API 수준 요건(매년 8월 31일)"],
   [5, "store-listing", "스토어 등록정보·화면 사진이 지금 앱과 맞는지 확인", "Google Play 메타데이터 정책"],
   [6, "pension-prepare", "7월부터 쓰는 국민연금 기준소득월액 상하한 준비", "국민연금법 시행령 제5조"],
   [6, "labor-law-amendment", "2027-06-10 시행 근로기준법 개정(조문 번호 이동, 시간 단위 연차)에 맞춰 앱의 법 조문 글귀와 연차 계산을 확인", "근로기준법 개정(2027-06-10 시행), docs/tracker.csv LEAVE-12"],
+  [6, "backup-restore", "하루 백업 한 날을 내려받아 로컬 서버에 실제로 되살려 보기(tools/backup-open.mjs)", "개인정보 보호법 제29조(안전조치의무), docs/server-data.md 하루 백업"],
   [7, "pension-apply", "국민연금 기준소득월액 상하한을 remote/v1/rates.json에 넣어 7월 급여부터 맞추기(판 올리고 서명)", "국민연금법 시행령 제5조"],
   [8, "minwage-next", "다음 해 최저임금 결정(8월 5일까지)을 앱에 넣을 준비", "최저임금법 제8조 제1항"],
   [8, "target-api", "대상 API 수준 마감(8월 31일) 전에 업데이트 출시", "Google Play 대상 API 수준 요건"],

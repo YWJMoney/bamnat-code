@@ -287,9 +287,11 @@ internal fun ConsentWaiting(c: AppContainer, pro: ProState, onMessage: (String) 
 /**
  * 2.0.0 [RVO-13] (HQ-48) Whether 친구 초대 comes right under '지금': 결제 is open and this phone did not buy 프로 (no 프로, a day by an ad,
  * the 감사 months, reward passes). A subscription, the 1년 이용권, a 팀·직원 요금제, an admin's or a shared 프로 keep it lower down.
+ * 처리방침 3.1을 미뤄 둔 폰(9항, 11-23까지 모두 무료)도 산 프로가 아니라 먼저예요(총괄 11-12 23:37 KST, 사용자 말 '프로를 구독 안 한 사람은').
+ * 결제를 잠시 끈 때·개발용 빌드(ALL_OPEN)는 구독한 폰도 같은 모습이라 아래 그대로예요.
  */
 internal fun inviteFirst(gate: com.bamnat.app.tier.Gate): Boolean =
-    gate.live && (!gate.access.pro || gate.access.reason in INVITE_FIRST)
+    (gate.live && (!gate.access.pro || gate.access.reason in INVITE_FIRST)) || gate.access.reason == ProReason.HELD
 
 private val INVITE_FIRST = setOf(ProReason.DAY_PASS, ProReason.THANKS, ProReason.PASS, ProReason.NONE)
 
@@ -505,7 +507,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: 
         // [RVD-16] 디자인 품질 조건 4(총괄 11-12): 첫 줄은 이 한 줄. 받는 때 목록은 갈래 P의 설명 ⓘ 부품이 오면 그 안으로 옮겨요(부품 대기).
         // [RVO-13] HQ-58 (총괄 11-12): the 1년 12개월 only while the server counts it (처리방침 3.13 30일 줄, RVD-21), not before 12-12.
         val rules = com.bamnat.app.ui.settings.rememberInviteTerms()
-        Text(passesHead(rules, java.time.LocalDate.now(zone)), style = MaterialTheme.typography.bodyMedium)
+        Text(passesHead(rules, Today.date()), style = MaterialTheme.typography.bodyMedium)
         Text("받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->

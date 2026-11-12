@@ -241,9 +241,11 @@ class PayViewModel(
         payStore.leaveShared()
         company.payWays.use(null)
         if (w != null && container.companyApi.enabled) {
-            val device = company.store.device
             val cal = company.serverCal
-            container.appScope.launch { runCatching { container.companyApi.use(device, w.companyId, w.setup, false, cal) } }
+            // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+            container.appScope.launch {
+                com.bamnat.app.company.SmallSends.send(container, company.store, com.bamnat.app.company.SmallSends.use(w.companyId, w.setup, false, cal))
+            }
         }
         container.telemetry.event("pay_way", "leave_shared")
     }

@@ -37,6 +37,7 @@ import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.TradeAlerts
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * [INV-32] 알림으로 찾은 거래: each 체결 notification read on the phone waits here until the user writes
@@ -198,7 +199,7 @@ private fun FoundTradeWords(
             else -> null
         }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
         if (p.checked == false) Text("수량 × 단가가 알림의 체결 금액 ${InvestFmt.price(p.amount, p.market)}과 안 맞아요. 고쳐서 적어 주세요.",
-            style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution)
         // 2.0.0 [RVK-17] (검토 U06b-02·MONEY-63): where it goes, and another account in one tap.
         if (into != null) AccountChip(into, accounts, onAccount)
     }

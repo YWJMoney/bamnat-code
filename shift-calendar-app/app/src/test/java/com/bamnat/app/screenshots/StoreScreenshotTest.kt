@@ -32,9 +32,9 @@ class StoreScreenshotTest : ScreenshotBase() {
     private val c get() = app.container
 
     /** A tool, not a check: only when asked (BAMNAT_STORE_SHOTS=1), so the full suite never mixes its SDK 33 shot in. */
-    @org.junit.Before fun onlyWhenAsked() = org.junit.Assume.assumeTrue(System.getenv("BAMNAT_STORE_SHOTS") == "1")
+    @org.junit.Before fun onlyWhenAsked() = org.junit.Assume.assumeTrue("가게 사진은 BAMNAT_STORE_SHOTS=1일 때만 찍어요", System.getenv("BAMNAT_STORE_SHOTS") == "1")
 
-    @Test fun calendar() = shoot("store_1_calendar", STORE) {}
+    @Test fun calendar() = shoot("store_1a_calendar", STORE) {} // 2.0.0 [RVR-11] not store_1_calendar: CalendarScreenshotTest takes that key shot
 
     /** The same month with 잠금 화면 알람 already allowed, as on a phone set up once. */
     @Config(sdk = [33])

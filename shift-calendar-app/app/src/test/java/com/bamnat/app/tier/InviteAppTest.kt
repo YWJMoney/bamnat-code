@@ -3,6 +3,8 @@ package com.bamnat.app.tier
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.needs
+import com.bamnat.app.nodeWorks
 import com.bamnat.core.tier.InviteRules
 import com.bamnat.core.tier.InviteTerms
 import com.bamnat.core.time.Today
@@ -11,7 +13,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -139,7 +140,7 @@ class InviteAppTest {
         third.sync()
         assertEquals("waiting", third.report(third.offer()!!, "referrer").status)
         moveServerClock(url, days = 7)
-        Today.use(Clock.offset(Clock.systemUTC(), Duration.ofDays(14)))
+        Today.use(Clock.offset(Clock.systemUTC(), Duration.ofDays(14))) // real clock: the local server's test clock runs on from the real one, so the phone moves with it
         third.sync()
         assertEquals("credited", third.store.current.answer?.status)
         counts = inviter.refresh()!!
@@ -205,8 +206,8 @@ class InviteAppTest {
     /** Runs server/company-worker on Node with SQLite and its test clock for [block]. Skipped where Node is missing. */
     private fun withServer(block: suspend (String) -> Unit) = runBlocking {
         val dir = File("../server/company-worker")
-        assumeTrue(dir.resolve("test/local-server.mjs").exists())
-        assumeTrue(runCatching { ProcessBuilder("node", "--version").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false))
+        needs("server/company-worker/test/local-server.mjs", dir.resolve("test/local-server.mjs").exists())
+        needs("node", nodeWorks())
         val port = ServerSocket(0).use { it.localPort }
         val node = ProcessBuilder("node", "test/local-server.mjs", port.toString(), "--test-clock").directory(dir).redirectErrorStream(true)
             // A made-up password for this throwaway local server only, so the test can use the developer app's settings.

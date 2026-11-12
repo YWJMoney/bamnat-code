@@ -30,6 +30,11 @@ ship 순서 (한 단계라도 어긋나면 손님을 받기 전에 멈춰요)
      가고, 앞 판 코드가 새 스키마에서 도는지는 build가 앞 판 커밋의 코드로 직접 돌려 봐요(company-worker/tools/schema-compat.mjs).
  10. 둘(both)을 올리다 뒤의 것이 실패하면 앞에서 올린 것도 앞 판으로 되돌려요(반쪽 상태로 끝나지 않게, RVQ-02).
 
+2.0.0 [RVR-17] (검토 TEST-14·I60a-03) 날짜에 묶여 낡은 시험 하나가 급한 보안 고침을 막지 않게: build에 --skip-test '시험 이름|까닭|기한'
+(workflow 입력 skip_tests, ';'로 여러 개). 까닭이 없거나 기한(YYYY-MM-DD)이 지났거나 14일보다 멀면 멈춰요. 넘긴 시험은 build 요약과
+notes.txt(배포 기록)에 남아요. build·ship 흐름(나뉜 판·check·변수 다시 올리기·바인딩 빠짐·판 낮음·카나리·배포·되돌리기)은
+tools/test_deploy_flow.py가 가짜 wrangler로 끝까지 돌려 봐요.
+
 열쇠: 환경 변수 CLOUDFLARE_API_TOKEN(GitHub Secret, ship 일에만). 출력하지 않아요. 계정 번호는 CLOUDFLARE_ACCOUNT_ID가 없으면 토큰이
 닿는 계정이 하나일 때 그 계정을 써요.
 """
@@ -456,6 +461,42 @@ def version_gate(worker: str, new_ver: str, live: str | None, allow_older: bool)
     return None
 
 
+SKIP_MAX_DAYS = 14
+
+
+def parse_skips(items, today) -> list[tuple[str, str, str]]:
+    """2.0.0 [RVR-17] '시험 이름|까닭|YYYY-MM-DD' → [(이름, 까닭, 기한)]. 모양이 틀리거나 기한이 지났거나 너무 멀면 Stop."""
+    import datetime
+    out = []
+    for item in items or []:
+        for one in str(item).split(";"):
+            if not one.strip():
+                continue
+            parts = [x.strip() for x in one.split("|")]
+            if len(parts) != 3 or not all(parts):
+                raise Stop(f"넘길 시험은 '시험 이름|까닭|기한(YYYY-MM-DD)' 모양이어야 해요: {one.strip()}", stage="시험")
+            name, why, until = parts
+            try:
+                day = datetime.date.fromisoformat(until)
+            except ValueError:
+                raise Stop(f"넘길 시험의 기한이 날짜가 아니에요: {until}", stage="시험") from None
+            if day < today:
+                raise Stop(f"넘길 시험 '{name}'의 기한 {until}이 지났어요: 시험을 고치거나 새 기한과 까닭으로", stage="시험")
+            if (day - today).days > SKIP_MAX_DAYS:
+                raise Stop(f"넘길 시험 '{name}'의 기한 {until}이 {SKIP_MAX_DAYS}일보다 멀어요", stage="시험")
+            out.append((name, why, until))
+    return out
+
+
+def test_command(wd: Path, skips) -> list[str]:
+    """[RVR-17] 서버 시험 명령: 넘길 것이 없으면 npm test, 있으면 같은 시험을 이름으로 건너뛰어요(node --test-skip-pattern)."""
+    if not skips:
+        return ["npm", "test"]
+    pattern = "|".join("^" + re.escape(name) + "$" for name, _, _ in skips)
+    files = sorted(str(p.relative_to(wd)) for p in (wd / "test").glob("*.test.mjs"))
+    return ["node", "--test", "--disable-warning=ExperimentalWarning", f"--test-skip-pattern={pattern}", *files]
+
+
 # ---------- 0. ref 확인 (토큰 없음, GitHub 읽기만) ----------
 
 def gh(path: str):
@@ -540,7 +581,7 @@ def output(key: str, value: str) -> None:
 
 # ---------- 1. build (토큰 없음, 고른 브랜치의 코드) ----------
 
-def build(workers: list[str], out: Path, prev: Path | None) -> None:
+def build(workers: list[str], out: Path, prev: Path | None, skips=()) -> None:
     """시험·번들·판 이름을 [out]/<worker>/에(worker.js, wrangler.toml, version.txt, notes.txt). 토큰·열쇠 없는 환경에서만 불러요."""
     if os.environ.get("CLOUDFLARE_API_TOKEN"):
         raise Stop("build에 Cloudflare 토큰이 보여요. 토큰은 ship 일에만 둬요(RVQ-01)", stage="시험")
@@ -550,12 +591,14 @@ def build(workers: list[str], out: Path, prev: Path | None) -> None:
         dest.mkdir(parents=True, exist_ok=True)
         if (wd / "package-lock.json").exists():
             run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], wd, stage="시험", clean_env=True)
-        run(["npm", "test"], wd, stage="시험", clean_env=True)
+        run(test_command(wd, skips), wd, stage="시험", clean_env=True)
         run(["npm", "run", "bundle"], wd, stage="번들", clean_env=True)
         bundle = wd / "dist/worker.js"
         if not bundle.exists():
             raise Stop("dist/worker.js가 없어요", stage="번들")
         notes = [f"서버 시험 통과, 번들 {bundle.stat().st_size // 1024}KB"]
+        # [RVR-17] 넘긴 시험은 배포 기록에 남아요('name'은 아래 시험 이름이에요).
+        notes += [f"**넘긴 시험**: `{test_name}` — {why} (기한 {until})" for test_name, why, until in skips]
         if w == "company":
             old = prev / WORKERS[w]["dir"] if prev else None
             if old and (old / "src/index.js").exists():
@@ -802,6 +845,7 @@ def main() -> None:
     ap.add_argument("--sha", default=os.environ.get("GITHUB_SHA", "local"))
     ap.add_argument("--reason", default="")
     ap.add_argument("--allow-older", action="store_true")
+    ap.add_argument("--skip-test", action="append", default=[], help="build: '시험 이름|까닭|YYYY-MM-DD' (RVR-17, 기한 14일 안)")
     a = ap.parse_args()
     workers = ["company", "share"] if a.worker == "both" else [a.worker]
     try:
@@ -812,7 +856,9 @@ def main() -> None:
         elif a.phase == "build":
             if not a.out:
                 ap.error("--out")
-            build(workers, a.out, a.prev if a.prev and a.prev.exists() else None)
+            import datetime
+            skips = parse_skips(a.skip_test, datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date())
+            build(workers, a.out, a.prev if a.prev and a.prev.exists() else None, skips)
         elif a.phase == "ship":
             if not a.src:
                 ap.error("--from")

@@ -5,6 +5,7 @@ import { serverEval, flagStore } from "./flags.js";
 import { EVENTS, SETUP_STEPS, kstDay } from "./usage.js";
 import { retention } from "./glance.js";
 import { MISS_PLACES } from "./growth.js";
+import { shipCode, shippedVersion } from "./desk.js";
 import { DAY, HOUR } from "./units.js";
 
 // ---- 1.39 [OBS2-01~08] 관측: 앱 전체 사용자의 유입·활성·이탈·품질과, 거기서 찾은 개선 신호 ----
@@ -40,6 +41,9 @@ export const OBS = {
   keepMin: 20,
   /** 유형별 흐름 신호: 7일째를 알 수 있는 처음 연 휴대폰이 이만큼 있어야 견줘요. */
   kindMin: 30,
+  /** 2.0.0 [RVN-15] 검토 SVC-88: 스토어 전환은 두 구간 모두 방문이 이만큼, 별점은 7일 리뷰가 이만큼 있어야 견줘요. */
+  storeMin: 200,
+  reviewMin: 10,
   /** 1.40 [DISC-06] 안 써 본 기능 카드: 14일에 카드를 본 휴대폰이 이만큼 있어야 비율을 견줘요. */
   discMin: 50,
   /** 그만 보기가 보임의 이 비율(%)을 넘으면 빈도·문구가 틀린 것(설계 3-8, 넘으면 사용자에게 B로 늦출지 물어요). */
@@ -75,6 +79,17 @@ const OBS_FILES = {
 const obsRound1 = (v) => (v === null || v === undefined || !Number.isFinite(v) ? null : Math.round(v * 10) / 10);
 const obsSum = (a) => a.reduce((n, v) => n + (v ?? 0), 0);
 const obsAvg = (a) => (a.length ? obsSum(a) / a.length : 0);
+
+/** 2.0.0 [RVN-15] 검토 SVC-88: [k]/[n] 비율의 95% 윌슨 구간 [아래, 위](0~1). n이 0이면 null. */
+export function obsWilson(k, n) {
+  if (!n) return null;
+  const z = 1.96;
+  const p = Math.min(1, Math.max(0, k / n));
+  const d = 1 + (z * z) / n;
+  const mid = (p + (z * z) / (2 * n)) / d;
+  const half = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+  return [Math.max(0, mid - half), Math.min(1, mid + half)];
+}
 
 /** PLAY_REPORTS_BUCKET: 'pubsite_prod_0123…'(숫자는 개발자 계정 ID, 옛 계정은 pubsite_prod_rev_…), 'gs://pubsite_prod_0123…/stats/installs/' 어느 쪽이든 저장소 이름만. 아니면 null. */
 export function obsBucket(env) {
@@ -240,7 +255,8 @@ export function obsParse(files, keepDays = OBS.keepDays) {
     .sort((a, b) => b.code - a.code);
   // [LOOP-33] 최근 21일, 판마다 하루 새로 깔거나 올린 기기 [날, 판 번호, 대수].
   const from21 = vDay ? new Date(Date.parse(`${vDay}T00:00:00Z`) - 20 * DAY).toISOString().slice(0, 10) : "";
-  const moves = versionRows.filter((r) => r.day >= from21 && r.moved > 0).map((r) => [r.day, r.code, r.moved]);
+  // 2.0.0 [RVN-15] 검토 SVC-85: 워치 판(100000+)이 옮겨 간 것은 휴대폰 판이 나간 것으로 세지 않아요.
+  const moves = versionRows.filter((r) => r.day >= from21 && r.moved > 0 && r.code < WATCH_CODE).map((r) => [r.day, r.code, r.moved]);
   return { days: list, lastDay, sources, versions: vDay ? { day: vDay, rows: vRows, first, moves } : null };
 }
 
@@ -331,20 +347,40 @@ function obsWindow(series, a, b) {
   return { now: obsAvg(s.slice(-a)), before: obsAvg(s.slice(-(a + b), -a)), n: s.length };
 }
 
+/** 워치 판 번호가 시작하는 곳(`wear/build.gradle.kts`: 폰 판 번호 + 100000). */
+export const WATCH_CODE = 100_000;
+
+/** 2.0.0 [RVN-15] 검토 SVC-85: 판 줄 가운데 휴대폰 판(워치 빼고), 나간 판 [shipped]을 알면 그 판까지(시험판 빼고). 번호 큰 것부터. */
+export function obsPhoneRows(rows, shipped = null) {
+  return (rows ?? []).filter((r) => r.code < WATCH_CODE && (!shipped || r.code <= shipped)).sort((a, b) => b.code - a.code);
+}
+
 /**
  * [OBS2-04] 개선 신호 규칙. 규칙마다 { kind, subject, on(지금 문제인지), value(지금 값), unit, better('up'|'down'), base, tone, title, why,
  * dev(개발사항 제목 추천), to }. on이 아니어도 값을 돌려줘서, 개발사항이 된 신호가 사라질 때 '그때 값'을 남겨요.
  */
 export function obsRules(b) {
   const out = [];
-  const push = (x) => out.push({ subject: "", tone: "warn", unit: "", ...x });
+  const push = (x) => out.push({ subject: "", tone: "warn", unit: "", sample: null, caveat: "", ...x });
+  // 2.0.0 [RVN-15] 검토 U22c-03: '거짓이었어요'로 닫은 횟수만큼 그 규칙의 표본 기준을 1.5배씩(세 번까지) 올려요.
+  const t = (kind) => 1 + 0.5 * Math.min(3, Math.max(0, Number(b.tune?.[kind]) || 0));
+  const apart = (a1, n1, a2, n2) => {
+    const x = obsWilson(a1, n1);
+    const y = obsWilson(a2, n2);
+    return Boolean(x && y && x[1] < y[0]);
+  };
   const p = b.play;
   if (p?.days?.length) {
     const un = p.days.map((d) => d.uninstalls);
     const w = obsWindow(un, 3, 14);
+    // 2.0.0 [RVN-15] 검토 SVC-88: 설치 기기(active device installs) 대비 비율로도 두 배가 될 때만. 쓰는 휴대폰이 늘어 삭제도 는 것은 빼요.
+    const rate = p.days.map((d) => (d.base && d.uninstalls !== null && d.uninstalls !== undefined ? d.uninstalls / d.base : null));
+    const wr = obsWindow(rate, 3, 14);
+    const bases = p.days.slice(-3).map((d) => d.base).filter((x) => x);
     if (w.n >= 7) {
       push({ kind: "uninstall-spike", value: obsRound1(w.now), base: obsRound1(w.before), better: "down", unit: "/일",
-        on: w.now >= 3 && w.now >= Math.max(1, w.before) * 2, tone: "bad",
+        on: w.now >= 3 * t("uninstall-spike") && w.now >= Math.max(1, w.before) * 2 && (wr.n < 7 || !wr.before || wr.now >= wr.before * 2), tone: "bad",
+        sample: Math.round(obsAvg(bases)), caveat: "Play 보고서는 이틀쯤 늦고, 시험 기기에서 지우고 다시 깐 것도 세요.",
         title: `앱 삭제가 늘었어요: 최근 3일 하루 ${obsRound1(w.now)}, 그 전 2주 ${obsRound1(w.before)}`,
         why: "Play 보고서의 하루 삭제 수예요. 새 판·알림·광고 직후라면 그 변화부터 봐요.",
         dev: "앱 삭제가 늘어난 이유 찾기(최근 판·알림·광고 점검)", to: "#/glance" });
@@ -354,7 +390,8 @@ export function obsRules(b) {
     const uns = obsSum(last7.map((d) => d.uninstalls));
     if (last7.length >= 7) {
       push({ kind: "net-loss", value: ins - uns, base: 0, better: "up", unit: "대",
-        on: uns >= 5 && uns > ins, title: `최근 7일 설치 ${ins}, 삭제 ${uns}: 쓰는 휴대폰이 줄고 있어요`,
+        on: uns >= 5 * t("net-loss") && uns > ins, sample: ins + uns, caveat: "명절·연휴처럼 설치가 원래 적은 주에는 크게 보여요.",
+        title: `최근 7일 설치 ${ins}, 삭제 ${uns}: 쓰는 휴대폰이 줄고 있어요`,
         why: "삭제가 설치보다 많으면 유입보다 이탈을 먼저 고쳐요.", dev: "설치보다 삭제가 많은 이유 찾기(첫 1분·첫 주 경험)", to: "#/glance" });
     }
     const vis = p.days.map((d) => d.visitors);
@@ -367,26 +404,36 @@ export function obsRules(b) {
       const now = (a7 / v7) * 100;
       const before = (a21 / v21) * 100;
       push({ kind: "store-conv", value: obsRound1(now), base: obsRound1(before), better: "up", unit: "%",
-        on: v7 >= 30 && before > 0 && now < before * 0.7,
+        // 2.0.0 [RVN-15] 검토 SVC-88: 방문 200명 이상씩이고, 두 비율의 95% 구간이 겹치지 않을 때만(방문 30명은 몇 명 차이로 켜졌어요).
+        on: v7 >= OBS.storeMin * t("store-conv") && v21 >= OBS.storeMin && before > 0 && now < before * 0.7 && apart(a7, v7, a21, v21),
+        sample: v7, caveat: "광고·외부 링크로 방문이 몰린 주에는 비율이 내려가 보여요.",
         title: `스토어 방문 → 설치가 ${obsRound1(now)}%로 떨어졌어요(그 전 3주 ${obsRound1(before)}%)`,
         why: "스토어 등록정보(첫 사진·짧은 설명)나 별점이 바뀌었는지 봐요.", dev: "스토어 등록정보 전환 점검(첫 사진·짧은 설명·별점)", to: "#/glance" });
     }
     const rated = p.days.slice(-7).map((d) => d.rating).filter((v) => v);
+    // 2.0.0 [RVN-15] 검토 SVC-88: 리뷰를 읽어 오면 7일 리뷰 10개 이상, 아니면 별점이 있는 날 5일 이상(날 3개는 한두 개가 평균을 흔들었어요).
+    const reviews = b.voice?.reviews;
+    const enough = (reviews?.n ?? 0) > 0 ? (reviews.week ?? 0) >= OBS.reviewMin * t("rating-low") : rated.length >= 5;
     if (rated.length >= 3) {
       const r = obsAvg(rated);
-      push({ kind: "rating-low", value: obsRound1(r), base: 3.5, better: "up", unit: "점", on: r < 3.5,
+      push({ kind: "rating-low", value: obsRound1(r), base: 3.5, better: "up", unit: "점", on: r < 3.5 && enough,
+        sample: (reviews?.n ?? 0) > 0 ? reviews.week ?? 0 : rated.length, caveat: "리뷰가 적으면 한두 개가 평균을 크게 움직여요.",
         title: `최근 7일 별점 평균 ${obsRound1(r)}점`, why: "낮은 별점 리뷰에 답하고, 같은 불만을 개발사항으로 묶어요.",
         dev: "낮은 별점 리뷰의 공통 불만 고치기", to: "#/reviews" });
     }
     const v = p.versions;
-    if (v?.rows?.length) {
-      const total = obsSum(v.rows.map((r) => r.n));
-      const top = v.rows[0];
+    // 2.0.0 [RVN-15] 검토 SVC-85: 워치(같은 패키지, 판 번호 100000+)는 휴대폰 판이 아니라 빼고, '새 판'은 서버가 아는 나간 판의 번호예요.
+    // 그보다 큰 번호(내부 시험판)는 아직 나가지 않은 판이라 새 판으로도, 전체로도 세지 않아요. 나간 판을 모르면 휴대폰 판 가운데 가장 큰 번호.
+    const phone = obsPhoneRows(v?.rows, b.shippedCode);
+    if (phone.length) {
+      const total = obsSum(phone.map((r) => r.n));
+      const top = b.shippedCode ? phone.find((r) => r.code === b.shippedCode) ?? { code: b.shippedCode, n: 0 } : phone[0];
       const since = v.first?.[top.code];
       const share = total ? (top.n / total) * 100 : 0;
       const age = since ? Math.round((Date.parse(`${v.day}T00:00:00Z`) - Date.parse(`${since}T00:00:00Z`)) / DAY) : 0;
       push({ kind: "version-stuck", subject: String(top.code), value: obsRound1(share), base: 50, better: "up", unit: "%",
-        on: total >= 10 && age >= 7 && share < 50,
+        on: total >= 10 * t("version-stuck") && age >= 7 && share < 50, sample: total,
+        caveat: "Play 단계적 출시 중이면 일부러 조금씩 나가는 거예요. 워치와 아직 안 나간 시험판은 빼고 셌어요.",
         title: `새 판(${top.code})으로 넘어온 휴대폰이 ${obsRound1(share)}%예요(나온 지 ${age}일)`,
         why: "인앱 업데이트 권하기(LOOP-13)가 그 판에 걸려 있는지, Play 단계적 출시가 멈췄는지 봐요.",
         dev: `새 판 ${top.code}로 넘어오게 하기(인앱 업데이트 권하기 점검)`, to: "#/health" });
@@ -397,7 +444,8 @@ export function obsRules(b) {
     const w = obsWindow(a.play.map((d) => d.n), 7, 7);
     if (w.n >= 14) {
       push({ kind: "active-drop", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "명",
-        on: w.before >= 10 && w.now <= w.before * 0.7, tone: "bad",
+        on: w.before >= 10 * t("active-drop") && w.now <= w.before * 0.7, tone: "bad", sample: Math.round(w.before),
+        caveat: "Android 진단을 켠 휴대폰만 세고, Play 숫자는 이틀쯤 늦어요.",
         title: `하루 사용자가 ${obsRound1(w.now)}명으로 줄었어요(그 전 주 ${obsRound1(w.before)}명)`,
         why: "Play가 본 하루 사용자(Android 진단을 켠 휴대폰)예요. 판·알림·서버 오류를 같이 봐요.", dev: "하루 사용자 감소 원인 찾기", to: "#/glance" });
     }
@@ -406,7 +454,8 @@ export function obsRules(b) {
     const w = obsWindow(a.config.map((d) => d.n), 3, 10);
     if (w.n >= 10) {
       push({ kind: "config-drop", src: "server", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "번/일",
-        on: w.before >= 30 && w.now <= w.before * 0.6, tone: "bad",
+        on: w.before >= 30 * t("config-drop") && w.now <= w.before * 0.6, tone: "bad", sample: Math.round(w.before),
+        caveat: "앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요.",
         title: `앱이 서버에 오는 횟수가 하루 ${obsRound1(w.now)}번으로 줄었어요(그 전 ${obsRound1(w.before)}번)`,
         why: "늦지 않는 숫자라 오늘 일어난 일을 먼저 보여요. 앱이 서버에 닿지 못하는지(오류·주소)도 봐요.",
         dev: "앱 → 서버 요청 감소 원인 찾기(연결·판·사용자)", to: "#/server" });
@@ -415,17 +464,20 @@ export function obsRules(b) {
   const v = b.quality?.vitals;
   if (v && !v.error) {
     if (v.crash !== null && v.crash !== undefined) {
-      push({ kind: "crash", value: v.crash, base: 0.5, better: "down", unit: "%", on: v.crash >= 0.5, tone: v.crash >= 1.09 ? "bad" : "warn",
+      push({ kind: "crash", value: v.crash, base: 0.5, better: "down", unit: "%", on: v.crash >= 0.5 && (v.users ?? Infinity) >= 100 * (t("crash") - 1),
+        tone: v.crash >= 1.09 ? "bad" : "warn", sample: v.users ?? null, caveat: "28일 평균이라 고친 판이 나와도 천천히 내려가요.",
         title: `비정상 종료 ${v.crash}%(28일, Play)`, why: "판 건강에서 어느 판·기기에서 늘었는지 봐요.", dev: "비정상 종료 줄이기(판 건강의 상위 원인)", to: "#/health" });
     }
     if (v.anr !== null && v.anr !== undefined) {
-      push({ kind: "anr", value: v.anr, base: 0.2, better: "down", unit: "%", on: v.anr >= 0.2, tone: v.anr >= 0.47 ? "bad" : "warn",
+      push({ kind: "anr", value: v.anr, base: 0.2, better: "down", unit: "%", on: v.anr >= 0.2 && (v.users ?? Infinity) >= 100 * (t("anr") - 1),
+        tone: v.anr >= 0.47 ? "bad" : "warn", sample: v.users ?? null, caveat: "28일 평균이라 고친 판이 나와도 천천히 내려가요.",
         title: `ANR ${v.anr}%(28일, Play)`, why: "앱이 멈춰 '응답 없음'이 뜬 비율이에요.", dev: "ANR 줄이기(판 건강의 상위 원인)", to: "#/health" });
     }
   }
   const s = b.sample;
-  if (s?.keep?.d1?.base >= 30) {
+  if (s?.keep?.d1?.base >= 30 * t("keep-d1") && s.keep.d1.rate !== null) {
     push({ kind: "keep-d1", src: "stats", value: s.keep.d1.rate, base: 30, better: "up", unit: "%", on: s.keep.d1.rate < 30,
+      sample: s.keep.d1.base, caveat: "사용 통계를 켠 휴대폰만의 표본이라, 처음 며칠은 몇 대 차이로 크게 움직여요.",
       title: `처음 연 다음 날 다시 연 휴대폰이 ${s.keep.d1.rate}%예요`, why: "첫 설정 뒤 첫날 경험(달력이 찼는지, 알람이 맞는지)을 봐요. 사용 통계 표본이에요.",
       dev: "첫날 머묾 올리기(첫 설정 끝·첫 알람 점검)", to: "#/glance" });
   }
@@ -433,8 +485,9 @@ export function obsRules(b) {
   const k = b.kinds;
   if (k?.all?.d7?.rate !== null && k?.all?.d7?.rate !== undefined && k.all.d7.base >= OBS.kindMin) {
     for (const r of k.rows) {
-      if ((r.d7?.base ?? 0) < OBS.kindMin || r.d7.rate === null) continue;
+      if ((r.d7?.base ?? 0) < OBS.kindMin * t("kind-keep-low") || r.d7.rate === null) continue;
       push({ kind: "kind-keep-low", src: "stats", subject: r.style, value: r.d7.rate, base: k.all.d7.rate, better: "up", unit: "%", on: r.d7.rate < k.all.d7.rate * 0.7, tone: "bad",
+        sample: r.d7.base, caveat: "사용 통계를 켠 휴대폰만의 표본이에요. 유형을 고르지 않은 휴대폰은 빠져요.",
         title: `${r.name} 유형의 7일째 머묾이 ${r.d7.rate}%로 전체 ${k.all.d7.rate}%보다 낮아요`,
         why: "그 유형의 첫 설정·첫 주에 맞지 않는 말·기능이 있는지 봐요(유형별 둘러보기). 사용 통계 표본이에요.",
         dev: `${r.name} 유형 첫 주 이탈 줄이기(첫 설정·홈·알람 둘러보기)`, to: "#/glance" });
@@ -443,22 +496,28 @@ export function obsRules(b) {
   // 1.40 [DISC-06] 안 써 본 기능 카드(깃발 stats.disc, 처리방침 3.13): 그만 보기가 많으면 빈도·문구, 열어 봄이 적으면 후보 고르기.
   const dc = b.disc;
   if (dc && dc.shown >= OBS.discMin) {
-    push({ kind: "disc-off-high", src: "stats", value: dc.offRate, base: OBS.discOffMax, better: "down", unit: "%", on: dc.offRate > OBS.discOffMax, tone: "bad",
+    push({ kind: "disc-off-high", src: "stats", value: dc.offRate, base: OBS.discOffMax, better: "down", unit: "%",
+      on: dc.offRate > OBS.discOffMax && dc.shown >= OBS.discMin * t("disc-off-high"), tone: "bad",
+      sample: dc.shown, caveat: "카드를 본 휴대폰만 세요. 한 휴대폰이 여러 날 보면 날마다 세요.",
       title: `'안 써 본 기능' 카드의 그만 보기가 ${dc.offRate}%예요(14일, 본 휴대폰 ${dc.shown})`,
       why: "7일에 한 장(사용자 결정 2026-11-11)이 잦거나 문구가 거슬리는 거예요. 10일에 한 장으로 늦출지 사용자에게 물어요.",
       dev: "안 써 본 기능 카드의 빈도·문구 다시 보기(그만 보기 줄이기)", to: "#/metrics" });
-    push({ kind: "disc-try-low", src: "stats", value: dc.tryRate, base: OBS.discTryMin, better: "up", unit: "%", on: dc.tryRate < OBS.discTryMin,
+    push({ kind: "disc-try-low", src: "stats", value: dc.tryRate, base: OBS.discTryMin, better: "up", unit: "%",
+      on: dc.tryRate < OBS.discTryMin && dc.shown >= OBS.discMin * t("disc-try-low"), sample: dc.shown,
+      caveat: "카드를 본 휴대폰만 세요. 한 휴대폰이 여러 날 보면 날마다 세요.",
       title: `'안 써 본 기능' 카드를 열어 본 비율이 ${dc.tryRate}%예요(14일)`,
       why: "알려 주는 기능이 그 사람에게 맞지 않는 거예요. 유형별 후보와 고르는 순서를 봐요.",
       dev: "안 써 본 기능 카드의 후보 고르기 다시 보기", to: "#/metrics" });
   }
   for (const f of (s?.features ?? []).slice(0, OBS.featureSignals)) {
-    push({ kind: "feature-fall", src: "stats", subject: f.event, value: f.now, base: f.before, better: "up", unit: "대", on: true,
+    push({ kind: "feature-fall", src: "stats", subject: f.event, value: f.now, base: f.before, better: "up", unit: "대", on: f.before >= 20 * t("feature-fall"),
+      sample: f.before, caveat: "연 휴대폰 대비 비율로 견주고, 4주 전 같은 주와도 견줬어요(달마다 도는 기능). 그래도 표본이 적으면 흔들려요.",
       title: `'${f.name}' 쓰는 휴대폰이 반 넘게 줄었어요(7일 ${f.now}, 그 전 ${f.before})`,
       why: "최근 판에서 그 기능 가는 길·모양이 바뀌었는지 봐요. 사용 통계 표본이에요.", dev: `'${f.name}' 쓰임이 줄어든 이유 찾기`, to: "#/metrics" });
   }
   for (const m of (b.voice?.misses ?? []).slice(0, OBS.missSignals)) {
-    push({ kind: "search-miss", src: "stats", subject: `${m.place}:${m.word}`, value: m.n, base: 3, better: "down", unit: "번", on: m.n >= 3,
+    push({ kind: "search-miss", src: "stats", subject: `${m.place}:${m.word}`, value: m.n, base: 3, better: "down", unit: "번", on: m.n >= 3 * t("search-miss"),
+      sample: m.n, caveat: "같은 사람이 여러 번 찾아도 세요.",
       title: `'${m.word}'를 찾았는데 없었어요 ${m.n}번(${m.placeName ?? m.place})`, why: "사용자가 직접 찾다가 못 찾은 말이에요. 기능이 없거나, 있는데 이름이 달라요.",
       dev: `'${m.word}' 찾기 길 만들기(없으면 기능, 있으면 이름·검색어)`, to: "#/growth" });
   }
@@ -493,25 +552,25 @@ export function obsMerge(stored, found, now) {
   for (const f of found) {
     const s = list.find((x) => x.kind === f.kind && x.subject === f.subject && (open(x) || (x.state === "dismiss" && now - x.at < OBS.signalDoneDays * DAY)));
     if (!f.on) {
-      if (s && open(s)) s.now = f.value;
+      if (s && open(s)) Object.assign(s, { now: f.value, ...(f.sample !== undefined ? { sample: f.sample } : {}) });
       continue;
     }
     if (s) {
       if (s.state === "dismiss") continue;
       Object.assign(s, { tone: f.tone, title: f.title, why: f.why, value: f.value, base: f.base, unit: f.unit, better: f.better, last: now, now: f.value,
-        ...humanCheck(f, s.first ?? now, now) });
+        sample: f.sample ?? null, caveat: f.caveat ?? "", ...humanCheck(f, s.first ?? now, now) });
       continue;
     }
     // 좋아졌다가 다시 나타나면 그 기록을 이어요(다시 나타남).
     const was = list.find((x) => x.kind === f.kind && x.subject === f.subject && x.cleared);
     if (was) {
       Object.assign(was, { cleared: null, after: null, back: (was.back ?? 0) + 1, tone: f.tone, title: f.title, why: f.why, value: f.value, now: f.value,
-        base: f.base, last: now, state: was.state === "dev" ? "dev" : "new" });
+        base: f.base, last: now, sample: f.sample ?? null, caveat: f.caveat ?? "", state: was.state === "dev" ? "dev" : "new" });
       continue;
     }
     list.push({ key: `${f.kind}${f.subject ? `:${f.subject}` : ""}:${kstDay(now)}`, kind: f.kind, subject: f.subject, tone: f.tone, title: f.title, why: f.why,
       dev: f.dev, to: f.to, unit: f.unit, better: f.better, value: f.value, base: f.base, now: f.value, first: now, last: now, at: now, state: "new",
-      ...humanCheck(f, now, now) });
+      sample: f.sample ?? null, caveat: f.caveat ?? "", ...humanCheck(f, now, now) });
   }
   for (const s of list) {
     if (open(s) && now - s.last >= OBS.clearMs) {
@@ -523,6 +582,17 @@ export function obsMerge(stored, found, now) {
   const kept = list.filter((s) => !(done(s) && now - (s.cleared ?? s.at) > OBS.signalDoneDays * DAY));
   kept.sort((x, y) => Number(done(x)) - Number(done(y)) || y.last - x.last);
   return kept.slice(0, OBS.signalsMax);
+}
+
+/** 2.0.0 [RVN-15] 검토 U22c-03: 규칙마다 '거짓이었어요'로 닫은 횟수(settings 'obs_tune', { kind: n }). */
+async function obsTune(env) {
+  const row = await one(env, "SELECT value FROM settings WHERE key = 'obs_tune'").catch(() => null);
+  try {
+    const v = row ? JSON.parse(row.value) : {};
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
 }
 
 /** 신호 목록 읽기(settings 'obs_signals'). */
@@ -648,7 +718,8 @@ export function obsKeep(useRows, keepRows, list, since, names = {}) {
     if (/^life_/.test(r.event)) continue;
     const x = get(r.event);
     if (c7.has(r.day) && r.win === 7) x.back7 += r.phones ?? 0;
-    if (c30.has(r.day)) x.back30 += r.phones ?? 0;
+    // 2.0.0 [RVN-15] 검토 SVC-87: 30일 창 줄만(7일 줄까지 더해 30일 비율이 부풀었어요).
+    if (c30.has(r.day) && r.win === 30) x.back30 += r.phones ?? 0;
   }
   const pct = (a, b) => (b ? obsRound1((Math.min(a, b) / b) * 100) : null);
   const rows = [...by.values()].map((x) => ({ event: x.event, name: names[x.event] ?? x.event, users: x.users7, rate7: pct(x.back7, x.users7),
@@ -661,18 +732,40 @@ export function obsKeep(useRows, keepRows, list, since, names = {}) {
     from: days7[0] ?? null, to: days7.at(-1) ?? null };
 }
 
-/** 사용 통계 표본의 기능 이벤트 중 최근 7일 쓰는 휴대폰이 그 전 7일의 반 아래로 줄어든 것(그 전 20대 이상). */
-export function obsFeatureFalls(rows, from7, names = {}) {
+/**
+ * 사용 통계 표본의 기능 이벤트 중 최근 7일 쓰는 휴대폰이 그 전 7일의 반 아래로 줄어든 것(그 전 20대 이상). [days]는 날 목록(오래된 것부터).
+ * 2.0.0 [RVN-15] 검토 SVC-88: 숫자 그대로가 아니라 그 7일에 앱을 연 휴대폰('open') 대비 비율로 견줘요(표본이 준 주를 '반토막'으로 보지 않게).
+ * 달마다 도는 기능(급여 마감·명세서)은 지난주보다 4주 전 같은 7일과 닮아서, 28일이 차 있으면 4주 전 같은 7일보다도 반 아래일 때만 켜요.
+ */
+export function obsFeatureFalls(rows, days, names = {}) {
+  const n = days.length;
+  const at = new Map(days.map((d, i) => [d, i]));
+  const part = (d) => {
+    const i = at.get(d);
+    if (i === undefined) return null;
+    if (i >= n - 7) return "now";
+    if (i >= n - 14) return "before";
+    if (n >= 28 && i >= n - 28 && i < n - 21) return "month";
+    return null;
+  };
   const by = new Map();
+  const open = { now: 0, before: 0, month: 0 };
   for (const r of rows) {
-    if (/^life_/.test(r.event)) continue;
-    const x = by.get(r.event) ?? { event: r.event, now: 0, before: 0 };
-    if (r.day >= from7) x.now += r.phones ?? 0;
-    else x.before += r.phones ?? 0;
+    const w = part(r.day);
+    if (!w || /^life_/.test(r.event)) continue;
+    if (r.event === "open") {
+      open[w] += r.phones ?? 0;
+      continue;
+    }
+    const x = by.get(r.event) ?? { event: r.event, now: 0, before: 0, month: 0 };
+    x[w] += r.phones ?? 0;
     by.set(r.event, x);
   }
-  return [...by.values()].filter((x) => x.before >= 20 && x.now < x.before * 0.5)
-    .sort((a, b) => b.before - b.now - (a.before - a.now)).map((x) => ({ ...x, name: names[x.event] ?? x.event }));
+  const share = (x, w) => (open[w] ? x[w] / open[w] : x[w]);
+  const fell = (x) => x.before >= 20 && share(x, "now") < share(x, "before") * 0.5
+    && (!(n >= 28 && open.month && x.month) || share(x, "now") < share(x, "month") * 0.5);
+  return [...by.values()].filter(fell).sort((a, b) => b.before - b.now - (a.before - a.now))
+    .map((x) => ({ ...x, name: names[x.event] ?? x.event }));
 }
 
 /**
@@ -683,13 +776,15 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   const days = obsDays(now);
   const from = days[0];
   const to = days.at(-1);
-  const from7 = days.at(-7);
-  const [reports, vitals, store, stored] = await Promise.all([playReports(env, now).catch(() => ({ state: "unreachable" })),
-    playVitals(env, now).catch(() => null), flagStore(env).catch(() => null), obsStored(env)]);
+  const [reports, vitals, store, stored, shipped] = await Promise.all([playReports(env, now).catch(() => ({ state: "unreachable" })),
+    playVitals(env, now).catch(() => null), flagStore(env).catch(() => null), obsStored(env), shippedVersion(env).catch(() => null)]);
+  // 2.0.0 [RVN-15] 검토 SVC-85·SVC-103: '새 판'은 서버가 아는 나간 판(관리자·자동 순환이 저장한 것)의 휴대폰 판 번호예요.
+  const shippedCode = shipped ? await shipCode(env, shipped.v).catch(() => null) : null;
   const q = (await batch(env, [
     stmt(env, "SELECT substr(hour, 1, 10) AS day, SUM(n) AS n, SUM(err) AS err FROM req_stats WHERE route = '/api/config' AND hour >= ? GROUP BY day", `${from}T00`),
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", from, to),
-    stmt(env, "SELECT day, event, SUM(phones) AS phones FROM usage_events WHERE day BETWEEN ? AND ? GROUP BY day, event", days.at(-14), to),
+    // 2.0.0 [RVN-15] 검토 SVC-88: 기능 쓰임을 4주 전 같은 주와도 견주려고 28일을 읽어요(안 써 본 기능 카드는 그 가운데 14일).
+    stmt(env, "SELECT day, event, SUM(phones) AS phones FROM usage_events WHERE day BETWEEN ? AND ? GROUP BY day, event", from, to),
     stmt(env, `SELECT word, place, SUM(n) AS n FROM search_misses WHERE week >= ? GROUP BY word, place HAVING SUM(n) >= 2 ORDER BY n DESC LIMIT 10`,
       kstDay(now - 21 * DAY).slice(0, 10)),
     stmt(env, `SELECT COUNT(*) AS n, SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS week FROM inquiries WHERE created_at >= ?`, now - 7 * DAY, now - 28 * DAY),
@@ -727,23 +822,40 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   const kinds = kindOn && more ? obsKinds(more[0], long) : null;
   const keep = keepOn && more ? obsKeep(more.at(-2), more.at(-1), long, keepSince, names) : null;
   const last7 = sampleSeries.slice(-7);
+  // 2.0.0 [RVN-15] 검토 SVC-86: '첫날 머묾' 규칙이 읽는 sample.keep.d1을 채워요. 유형별 흐름이 켜져 있으면 그 전체 줄, 아니면 진입·머묾 줄
+  // (stats.life)로 처음 연 다음 날 다시 연 비율을 같은 셈(glance retention)으로.
+  const d1 = kinds?.all?.d1?.base ? kinds.all.d1 : lifeOn ? obsFirstDay(eventRows, days) : null;
+  const from14 = days.at(-14);
   const board = {
-    at: now, days, play: { state: reports.state, stale: reports.stale ?? false, lastDay: reports.lastDay ?? null, days: playRows, sources: reports.sources ?? [],
+    at: now, days, shippedCode, play: { state: reports.state, stale: reports.stale ?? false, lastDay: reports.lastDay ?? null, days: playRows, sources: reports.sources ?? [],
       versions: reports.versions ?? null, files: reports.files ?? null, at: reports.at ?? null, deniedSince: reports.deniedSince ?? null },
     active: { play: vSeries, config },
     quality: { vitals: vit },
-    sample: { daily: Math.round(obsAvg(last7)), series: sampleSeries, lifeOn, features: obsFeatureFalls(eventRows, from7, names) },
+    sample: { daily: Math.round(obsAvg(last7)), series: sampleSeries, lifeOn, features: obsFeatureFalls(eventRows, days, names),
+      keep: d1?.base ? { d1 } : null },
     voice: { misses, inquiries: { n: inqRows[0]?.n ?? 0, week: inqRows[0]?.week ?? 0 },
       reviews: { n: revRows[0]?.n ?? 0, stars: revRows[0]?.stars === null || revRows[0]?.stars === undefined ? null : obsRound1(revRows[0].stars), week: revRows[0]?.week ?? 0 } },
     dev: { noEvents: noEvRows.map((d) => ({ id: d.id, title: d.title })), noEventsCount: noEvCount[0]?.n ?? 0 },
     kinds,
     keep,
-    disc: obsDisc(eventRows),
+    disc: obsDisc(eventRows.filter((r) => r.day >= from14)),
+    tune: await obsTune(env),
   };
   board.found = obsRules(board);
   board.signals = stored;
   board.gaps = obsGaps(board);
   return board;
+}
+
+/** 2.0.0 [RVN-15] 검토 SVC-86: usage_events의 진입(life_new)·다음 날(life_d1) 줄로 처음 연 다음 날 다시 연 비율(glance retention과 같은 셈). */
+export function obsFirstDay(rows, days) {
+  const per = {};
+  for (const r of rows) {
+    if (r.event !== "life_new" && r.event !== "life_d1") continue;
+    const m = (per[r.event] ??= new Map());
+    m.set(r.day, (m.get(r.day) ?? 0) + (r.phones ?? 0));
+  }
+  return retention(days, per, 1);
 }
 
 /**
@@ -815,8 +927,17 @@ export async function observeRoute(request, env, path, method, now) {
     ]);
     Object.assign(s, { state: "dev", devId: id, by: actorName(env), at: now });
   } else if (act === "reopen") Object.assign(s, { state: s.devId ? "dev" : "new", cleared: null, after: null, by: actorName(env), at: now });
-  else Object.assign(s, { state: act, by: actorName(env), at: now, ...(note ? { note } : {}) });
+  else Object.assign(s, { state: act, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) });
+  // 2.0.0 [RVN-15] 검토 U22c-03: '거짓이었어요'(아님 + wrong)는 그 규칙의 표본 기준을 올려요(세 번까지, 1.5배씩). 다시 열면 하나 내려요.
+  let tuned = null;
+  if ((act === "dismiss" && body.wrong === true) || (act === "reopen" && s.wrong)) {
+    const tune = await obsTune(env);
+    tune[s.kind] = Math.min(3, Math.max(0, (Number(tune[s.kind]) || 0) + (act === "dismiss" ? 1 : -1)));
+    if (act === "reopen") delete s.wrong;
+    tuned = tune[s.kind];
+    await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_tune', ?)", JSON.stringify(tune));
+  }
   await obsSave(env, list);
-  await audit(env, now, "obs_signal", s.title.slice(0, 80), `${OBS_ACTS[act]}${s.devId && act === "dev" ? ` ${s.devId}` : ""}${note ? ` · ${note}` : ""}`);
-  return json({ signal: s });
+  await audit(env, now, "obs_signal", s.title.slice(0, 80), `${OBS_ACTS[act]}${s.devId && act === "dev" ? ` ${s.devId}` : ""}${tuned !== null ? ` · 기준 ×${1 + 0.5 * tuned}` : ""}${note ? ` · ${note}` : ""}`);
+  return json({ signal: s, ...(tuned !== null ? { tune: { kind: s.kind, step: tuned } } : {}) });
 }

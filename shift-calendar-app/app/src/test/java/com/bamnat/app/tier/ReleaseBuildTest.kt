@@ -90,6 +90,7 @@ class ReleaseBuildTest {
         assertEquals(ProReason.HELD, held.access.reason)
         assertEquals("처리방침 3.1 동의 전이라 11월 23일까지 모든 기능이 무료예요", held.access.say(zone))
         Feature.entries.forEach { assertTrue(it.name, held.allows(it)) }
+        assertTrue("3.1을 미뤄 둔 폰도 구독한 프로가 아니라 친구 초대가 먼저", inviteFirst(held))
         val thanks = com.bamnat.core.tier.ProAccess.thanksUntil(LocalDate.of(2026, 10, 20).atStartOfDay(zone).toInstant(), Released.AT, 1, zone)
         val words = closedBillingWords(held.access, thanks, zone)
         assertTrue(words, words.startsWith("처리방침 3.1 동의 전이라 11월 23일까지 모든 기능이 무료예요. 11월 24일부터 무료·프로가 나뉘어요."))

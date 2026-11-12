@@ -173,18 +173,54 @@ object PostNudge {
     const val EDIT = "고치기"
     const val SEND = "그대로 보내기"
 
-    /** 거친 말·비하(낱말 일부). 띄어쓰기·기호를 빼고 견줘요. 일상 말(예: '시발점')은 빼요. */
+    /** 2.0.0 [RVN-13] U10b-07 What the window says, with the word it saw: why it asks, said once. */
+    fun text(word: String?): String = if (word == null) TEXT
+        else "‘$word’ 같은 말은 읽는 분이 상처받을 수 있어요. 한 번만 살펴 주세요."
+
+    /** 거친 말·비하(낱말 일부). 일상 말(예: '시발점')은 빼요. */
     private val WORDS = listOf(
         "씨발", "시발", "ㅅㅂ", "ㅆㅂ", "씨바", "개새끼", "개새", "ㅅㄲ", "병신", "ㅂㅅ", "븅신", "좆", "존나", "미친놈", "미친년", "미친새",
         "닥쳐", "지랄", "ㅈㄹ", "또라이", "등신", "멍청이", "한심한", "쓰레기같", "죽어라", "느금", "니애미", "니미", "엠창",
         "틀딱", "김치녀", "맘충", "급식충", "외노자", "짱깨", "쪽바리",
     )
-    private val SAFE = listOf("시발점", "시발역", "시발택시")
+    /** Everyday words holding one of [WORDS]: '개새벽'(아주 이른 새벽) is a shift worker's word (COMP-50). */
+    private val SAFE = listOf("시발점", "시발역", "시발택시", "등신대", "등신불", "개새벽")
+    private val MARKS = Regex("[\\p{Punct}·…‘’“”]")
 
-    fun needed(text: String): Boolean {
-        var t = text.lowercase().replace(Regex("[\\s\\p{Punct}·…‘’“”]"), "")
-        SAFE.forEach { t = t.replace(it, "") }
-        return WORDS.any { t.contains(it) }
+    fun needed(text: String): Boolean = found(text) != null
+
+    /** What may follow a word spread over words, in the same word: nothing, a 조사, or a word that goes with it ('개 새끼가', '씨 발놈'). */
+    private val AFTER = setOf("", "가", "이", "은", "는", "을", "를", "아", "야", "도", "들", "랑", "만", "한테", "에게", "놈", "년", "들아", "같은", "같이")
+
+    /**
+     * 2.0.0 [RVN-13] COMP-50 The word that asks, or null. Inside one word (띄어쓰기 사이, 기호는 빼고) it counts as before. Spread over
+     * words ("씨 발") it counts only when it starts where a word starts and what is left of its last word is nothing or a 조사([AFTER]),
+     * so "근무 시 발생"(시|발·생) and "언니 미안"(언·니|미·안) no longer ask, while "씨 발 진짜" and "개 새끼가" still do.
+     */
+    fun found(text: String): String? {
+        val words = text.lowercase().split(Regex("\\s+")).map { it.replace(MARKS, "") }.filter { it.isNotEmpty() }
+        for (w in words) {
+            // A safe word is cut out with a gap, so what is left on each side is not joined into a word of its own.
+            var t = w
+            SAFE.forEach { t = t.replace(it, " ") }
+            WORDS.firstOrNull { t.contains(it) }?.let { return it }
+        }
+        val starts = HashSet<Int>()
+        val ends = ArrayList<Int>()
+        var at = 0
+        words.forEach { starts += at; at += it.length; ends += at }
+        val joined = words.joinToString("")
+        for (bad in WORDS) {
+            var i = joined.indexOf(bad)
+            while (i >= 0) {
+                val end = i + bad.length
+                // The end of the word the match ends in, and what of that word is left after it.
+                val wordEnd = ends.filter { it >= end }.minOrNull() ?: end
+                if (i in starts && joined.substring(end, wordEnd) in AFTER) return bad
+                i = joined.indexOf(bad, i + 1)
+            }
+        }
+        return null
     }
 }
 

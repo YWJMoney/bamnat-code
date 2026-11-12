@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
+import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.core.model.ExtraEntry
@@ -84,15 +85,24 @@ class MigrationAllVersionsTest(private val from: Int) {
 
             // A backup made on the upgraded phone restores to the same data.
             // An upgraded phone with a pattern is a shift worker's (AppRoot settles that at its first start).
-            val settings = SettingsRepository(context).apply { update { it.copy(workStyle = com.bamnat.core.work.WorkStyle.SHIFT) } }
-            val backup = BackupManager(old, settings).export()
-            val restored = Room.databaseBuilder(context, AppDatabase::class.java, "restored-$from.db").allowMainThreadQueries().build()
-            try {
-                val again = BackupManager(restored, settings).run { restore(backup); export() }
-                assertEquals("backup round trip from version $from", strip(backup), strip(again))
-            } finally {
-                restored.close()
+            // 2.0.0 [RVR-18] (검토 T60-02) Every kind of work, not only shift work: the same rows go through a backup and back with
+            // each one, onto a phone that has not chosen yet, so the kind comes back from the file and not from this phone.
+            val settings = SettingsRepository(context)
+            for (style in com.bamnat.core.work.WorkStyle.entries) {
+                settings.update { it.copy(workStyle = style) }
+                val backup = BackupManager(old, settings).export()
+                settings.update { it.copy(workStyle = null) }
+                val restored = Room.databaseBuilder(context, AppDatabase::class.java, "restored-$from.db").allowMainThreadQueries().build()
+                try {
+                    val again = BackupManager(restored, settings).run { restore(backup); export() }
+                    assertEquals("backup round trip from version $from as $style", strip(backup), strip(again))
+                    assertEquals("the kind of work from version $from", style, settings.current.workStyle)
+                } finally {
+                    restored.close()
+                    context.deleteDatabase("restored-$from.db")
+                }
             }
+            settings.update { AppSettings() }
         } finally {
             old.close()
             fresh.close()

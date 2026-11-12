@@ -306,7 +306,7 @@ class TierAppTest {
      */
     @Test fun anInviterAsksForThePassItsFriendsEarned() = runBlocking {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
-        val pass = Passes(null, 1, listOf(PassItem(1, now, "invite")), 0, null, false, Instant.now())
+        val pass = Passes(null, 1, listOf(PassItem(1, now, "invite")), 0, null, false, com.bamnat.core.time.Today.instant())
         val api = FakeTierApi(passesAnswer = pass)
         c.tierApi = api
         c.inviteApi = FakeInviteApi()

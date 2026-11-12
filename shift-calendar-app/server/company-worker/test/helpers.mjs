@@ -34,6 +34,11 @@ export function server({ plaza = false, ...extra } = {}) {
       redirect: "manual",
     }), env);
     const text = res.status === 204 ? "" : await res.text();
+    // 2.0.0 [RVR-13] (검토 TEST-06) 실서버에서만 아픈 큰 응답을 시험에서 먼저 봐요: 256KB를 넘으면 경로와 크기를 적어 두고 알려요.
+    if (text.length > BIG_ANSWER) {
+      big.push({ path, bytes: text.length });
+      console.warn(`큰 응답: ${method} ${path} ${Math.round(text.length / 1024)}KB (휴대폰 데이터와 D1 읽기 한도를 확인)`);
+    }
     let data = null;
     try {
       data = text ? JSON.parse(text) : null;
@@ -42,7 +47,19 @@ export function server({ plaza = false, ...extra } = {}) {
     }
     return { status: res.status, headers: res.headers, data, text };
   };
-  return { env, DB, call };
+  const big = [];
+  return { env, DB, call, big };
+}
+
+/** [RVR-13] 이보다 큰 답(글자 수)은 시험이 알려 줘요. */
+export const BIG_ANSWER = 256 * 1024;
+
+/**
+ * 2.0.0 [RVR-13] (검토 TEST-06) 같은 요청 [n]개를 한꺼번에 보내요. 실서버(D1)는 요청이 겹쳐 돌아요: '읽고 나서 쓰는' 한도·잠금이
+ * 한 번에 들어온 요청으로 넘어가는지(SRV-08 같은 것) 시험이 보게 해요. 답은 보낸 순서대로.
+ */
+export async function together(call, n, method, path, body, headers = {}) {
+  return Promise.all(Array.from({ length: n }, () => call(method, path, body, headers)));
 }
 
 /** An install id as the app makes one: random, never tied to a person. */

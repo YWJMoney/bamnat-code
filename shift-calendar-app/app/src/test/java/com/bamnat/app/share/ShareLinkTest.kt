@@ -370,7 +370,7 @@ class ShareLinkTest {
     /** Runs against `npx wrangler dev` or server/share-worker/test/local-server.mjs when SHARE_TEST_URL points at it; skipped otherwise. */
     @Test fun roundTripAgainstTestServer() = runBlocking {
         val base = System.getenv("SHARE_TEST_URL").orEmpty()
-        assumeTrue(base.isNotBlank())
+        assumeTrue("SHARE_TEST_URL에 공유 서버 주소를 줄 때만 돌아요", base.isNotBlank())
         val client = ShareLinkClient(base)
         val made = client.create(ShareLinkPayload.build(snapshot, start, "민지", 7))
         assertTrue(made.url.startsWith(base.trimEnd('/') + "/s/"))

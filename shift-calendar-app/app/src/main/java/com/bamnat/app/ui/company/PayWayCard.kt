@@ -138,7 +138,14 @@ class PayWayViewModel(
                 load()
                 null
             } catch (e: CompanyException) {
-                companyProblem(e)
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    // 2.0.0 [RVN-16] 검토 U10b-03: no connection: the word waits on the phone and goes once online; the card says so in its line.
+                    val verified = ok && scope.slipProof()?.counts == true
+                    com.bamnat.app.company.SmallSends.later(c, scope.store, com.bamnat.app.company.SmallSends.vote(w.companyId, w.setup, ok, verified, why))
+                    scope.payWays.voted(ok, why)
+                    if (scope.store.applied.value?.setup == w.setup) scope.store.voted(ok)
+                    com.bamnat.app.company.SmallSends.waitsLine(ok)
+                } else companyProblem(e)
             }
             done(error)
         }

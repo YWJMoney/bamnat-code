@@ -292,7 +292,7 @@ test("[ADMUX-07] a notice shows as the phone will show it, and lists go out as C
   await t.type("#nt-body", "새벽 2시에 <잠시> 멈춰요");
   assert.equal(t.text("#nt-preview b"), "점검 안내");
   assert.equal(t.$("#nt-preview span").innerHTML, "새벽 2시에 &lt;잠시&gt; 멈춰요", "escaped");
-  assert.match(t.text('form[data-form="notice"] .help'), /1\.22\.0\(번호 33\)/, "the newest app a question came from");
+  assert.match(t.text('form[data-form="notice"] details.fold-field .help'), /1\.22\.0\(번호 33\)/, "the newest app a question came from");
   t.$("dialog").close();
   await t.settle();
   await t.go("#/inquiries");
@@ -2441,4 +2441,261 @@ test("[RVA-11] 연기 시험: odd words in questions and a company with two vers
   assert.match(t.text("#main"), /2공장/);
   assert.deepEqual(t.errors, []);
   assert.deepEqual(t.broken, []);
+});
+
+test("[RVA-23] 새 공지: 틀에서 시작하면 글·날짜·단추가 차고, 단추와 대상이 서버에 그대로 가요", async () => {
+  const { env, call } = await world();
+  const t = await signedIn(env);
+  await t.go("#/notices");
+  await t.click('[data-act="notice-new"]');
+  const form = t.$('form[data-form="notice"]');
+  assert.match(t.text("#nt-who-sum"), /모두에게/);
+  assert.ok(t.$("#nt-act-more").hidden, "no button yet: no button boxes");
+  assert.match(t.text("#nt-preview .np-acts"), /다시 보지 않기\s*확인/, "the phone's two buttons");
+  // 틀: 알람 점검 부탁 fills the words, the button and who it is for.
+  await t.click('[data-act="notice-template"][data-key="alarm"]');
+  assert.match(t.$("#nt-title").value, /알람이 잘 울리는지/);
+  assert.equal(t.$("#nt-act").value, "ALARM_CHECK");
+  assert.ok(!t.$("#nt-act-more").hidden, "the label box opens with a button");
+  assert.match(t.text("#nt-preview .np-acts .on"), /알람 점검 열기/, "the app's own words when the label is empty");
+  assert.match(t.text("#nt-who-sum"), /알람 쓰는 분/);
+  // Typed words are not thrown away by the next 틀 at once.
+  await t.type("#nt-title", "직접 쓴 제목");
+  await t.click('[data-act="notice-template"][data-key="check"]');
+  assert.equal(t.$("#nt-title").value, "직접 쓴 제목", "asked first");
+  assert.match(t.text(".tpl-ask"), /한 번 더 누르면/);
+  await t.click('[data-act="notice-template"][data-key="check"]');
+  assert.match(t.$("#nt-title").value, /서버 점검/);
+  // A web address: only https, said at the box.
+  t.$("#nt-act").value = "URL";
+  t.$("#nt-act").dispatchEvent(new t.window.Event("input", { bubbles: true }));
+  await t.settle();
+  assert.ok(!t.$("#nt-url-box").hidden, "the address box opens");
+  await t.type("#nt-url", "http://example.com/x");
+  await t.type("#nt-label", "자세히");
+  for (const b of t.$$('input[name="workTypes"]')) b.checked = ["SHIFT", "DAY"].includes(b.value);
+  await t.type("#nt-makers", "Samsung, google");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.equal(t.$("#nt-url").getAttribute("aria-invalid"), "true");
+  assert.match(t.text("#nt-url-error"), /https/);
+  await t.type("#nt-url", "https://example.com/x");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.match(t.text(".sure"), /교대·일근 · samsung·google에 맞는 분/, "the ask says who");
+  form.requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(call);
+  const n = (await call("GET", "/api/admin/notices", undefined, owner)).data.notices[0];
+  assert.deepEqual(n.action, { kind: "URL", url: "https://example.com/x", label: "자세히" });
+  assert.deepEqual(n.audience, { makers: ["samsung", "google"], workTypes: ["SHIFT", "DAY"] });
+  assert.match(t.text("#main"), /교대·일근 · samsung·google · 단추 '자세히'/, "the list says who and which button");
+  // 고치기 opens with them in place.
+  await t.click(`[data-act="notice-edit"][data-id="${n.id}"]`);
+  // (happy-dom keeps the last picked option of an earlier select with the same id; Chromium reads 'URL' here.)
+  assert.ok(t.$('#nt-act option[value="URL"]').hasAttribute("selected"));
+  assert.equal(t.$("#nt-url").value, "https://example.com/x");
+  assert.ok(t.$('input[name="workTypes"][value="SHIFT"]').checked);
+  assert.ok(t.$("details.fold-field").open, "who it is for is open when it is set");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[RVA-19][RVA-21] 허브의 '모두' 창, 파일 고르기 단추, 폰 폭의 판 알약", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/review");
+  await t.click("#hub-all");
+  assert.match(t.text("dialog h2"), /사람과 글의 모든 화면/);
+  assert.ok(t.$('dialog a.chip.pick[data-tab="review"][aria-current="page"]'), "here is marked");
+  await t.click('dialog [data-act="hub-go"][data-tab="community"]');
+  await t.settle(20);
+  assert.ok(!t.$("dialog").open, "the box closed");
+  assert.equal(t.window.location.hash.split("?")[0], "#/community");
+  // 레시피 › 출시 대기의 재료 파일: the app's button, not the browser's.
+  await t.go("#/recipes?tab=waiting");
+  const pick = t.$(".filepick");
+  if (pick) {
+    assert.match(pick.textContent, /파일 고르기/);
+    assert.match(pick.textContent, /아직 고르지 않았어요/);
+    assert.ok(pick.querySelector('input[type="file"]'), "still a file box for the form");
+  }
+  // The server's version is in the title bar too (shown on a phone instead of the thin line).
+  const mini = t.$("#dl-mini");
+  assert.ok(mini && !mini.hidden, "the pill is filled");
+  assert.match(mini.getAttribute("aria-label"), /로컬 서버|지금 도는 서버/);
+  assert.deepEqual(t.errors, []);
+});
+
+test("[RVA-18][RVA-20][RVA-22] 막대 배지는 한 줄, 대비 값, 마우스 올림은 마우스 화면에서만", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.badge\{white-space:nowrap;overflow-wrap:normal/, "two digits never break into two lines");
+  // Every :hover sits under (hover:hover): a tap leaves no hover colour on a phone (the 'dull' filled button in #465's photos).
+  const stack = [];
+  let bare = 0;
+  for (let i = 0, start = 0; i < css.length; i++) {
+    if (css[i] === "{") {
+      const head = css.slice(start, i);
+      if (head.includes(":hover") && !head.trim().startsWith("@") && !stack.some(Boolean)) bare++;
+      stack.push(head.includes("hover:hover"));
+      start = i + 1;
+    } else if (css[i] === "}") {
+      stack.pop();
+      start = i + 1;
+    } else if (css[i] === ";") start = i + 1;
+  }
+  assert.equal(stack.length, 0, "braces balance");
+  assert.equal(bare, 0, "no :hover outside (hover:hover)");
+  assert.match(css, /--on-bad:#2B0D0A/, "dark red badge words");
+  assert.doesNotMatch(css, /font-size:\.(6\d|7[0-4])rem/, "nothing under 12px");
+});
+
+// ---- 2.0.0 [RVQ-16·17·18] 검토 U21-07·U21-08·I21b-01·I21b-02: 백업 되살리기 연습, 데이터 요청 대행, 보안 한 장 ----
+
+/** R2 as the backup uses it (put·get·list·delete), in memory. */
+function memoryR2() {
+  const store = new Map();
+  return {
+    store,
+    async put(key, body) { store.set(key, typeof body === "string" ? new TextEncoder().encode(body) : new Uint8Array(body)); },
+    async get(key) {
+      const v = store.get(key);
+      return v ? { body: new Blob([v]).stream(), text: async () => new TextDecoder().decode(v) } : null;
+    },
+    async list({ prefix = "", delimiter } = {}) {
+      const keys = [...store.keys()].filter((k) => k.startsWith(prefix)).sort();
+      if (!delimiter) return { objects: keys.map((key) => ({ key })), truncated: false };
+      return { objects: [], truncated: false, delimitedPrefixes: [...new Set(keys.map((k) => prefix + k.slice(prefix.length).split(delimiter)[0] + delimiter))] };
+    },
+    async delete(keys) { for (const k of [].concat(keys)) store.delete(k); },
+  };
+}
+
+test("[RVQ-16] 검토 U21-08: 백업 shows what it seals, and 지금 연습하기 reads the last day back with rows beside today's", async (t) => {
+  offline(t);
+  const { env, call } = server({ BACKUP: memoryR2() });
+  const owner = await signIn(call);
+  for (let i = 0; i < 40; i++) {
+    const r = (await call("POST", "/api/admin/backup/run", {}, owner)).data;
+    if (r.skipped === "done" || r.done === r.of) break;
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/backup");
+  const cards = [...u.$$("#main section.card")];
+  assert.match(cards[0].textContent, /비밀 칸은 서버 비밀값 RATE_SALT로 잠가요/);
+  assert.match(u.text('#main [data-key="backup-rules"] summary'), /잠그는 칸 \d+개 표 · 빼는 표 \d+개/);
+  const drill = cards.find((c) => /되살리기 연습/.test(c.querySelector("h2")?.textContent ?? ""));
+  assert.match(drill.textContent, /아직 안 함/);
+  await u.click('#main [data-act="backup-drill"]');
+  await u.idle();
+  const after = [...u.$$("#main section.card")].find((c) => /되살리기 연습/.test(c.querySelector("h2")?.textContent ?? ""));
+  assert.match(after.textContent, /되살릴 수 있음/);
+  assert.match(after.textContent, /마지막 연습 .* · 표 \d+개 · [\d,]+줄/);
+  assert.match(after.textContent, /백업을 다시 읽음 · (잠근 칸 \d+개를 지금 열쇠로 열어 봄|잠근 칸은 아직 없어요)/);
+  // 표가 아니라 줄바꿈 되는 목록(좁은 폭·큰 글자에서 머리글이 세로로 서지 않게).
+  const row = [...after.querySelectorAll(".drill-rows li")].find((li) => li.querySelector("b")?.textContent === "settings");
+  assert.match(row.querySelector("span").textContent, /^백업 \d+ · 오늘 \d+$/, "백업 · 오늘 DB(목록과 다를 때만 목록)");
+  assert.match(u.text("#main"), /R2 백업으로 되살리기: .*tools\/backup-open\.mjs/);
+  assert.ok(!u.text("#main").includes("test-salt"), "the secret's name, never its value");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-17] 검토 U21-07·I21b-02: 데이터 요청 › 대신 하기 exports, then forgets after one more ask, and the proof stays on the request", async (t) => {
+  offline(t);
+  const { env, call, DB } = server();
+  const me = device(31);
+  await call("POST", "/api/inquiries", { v: 1, device: me, kind: "other", text: "앱을 지웠어요. 제 자료를 모두 지워 주세요", info: { app: "2.0.0 (54)" } }, from(31));
+  await call("POST", "/api/inquiries", { v: 1, device: me, kind: "bug", text: "예전 문의예요", info: { app: "2.0.0 (54)" } }, from(31));
+  const ask = DB.db.prepare("SELECT q.id FROM inquiries q JOIN inquiry_messages m ON m.inquiry_id = q.id WHERE m.text LIKE '%모두 지워%'").get().id;
+  const owner = await signIn(call);
+  const made = (await call("POST", "/api/admin/data-requests", { kind: "correct", inquiry: ask, summary: "자료 삭제 요청" }, owner)).data.id;
+  const u = await asOwner(env, t);
+  await u.go("#/requests");
+  await u.click(`#main [data-act="request-run"][data-id="${made}"]`);
+  let form = u.$('dialog form[data-form="request-run"]');
+  assert.match(form.textContent, /이 요청에 묶인 문의를 보낸 설치의 자료로 해요/);
+  assert.ok(!form.querySelector('[name="code"]'), "no code asked: the question shows the install");
+  assert.equal(form.querySelector('[name="do"]:checked').value, "forget", "삭제 요청이면 지우기가 먼저");
+  // 열람 first: a file comes down.
+  let saved = null;
+  u.window.URL.createObjectURL = (blob) => { saved = blob; return "blob:x"; };
+  u.window.URL.revokeObjectURL = () => {};
+  form.querySelector('[name="do"][value="export"]').checked = true;
+  form.requestSubmit();
+  await u.idle();
+  const file = JSON.parse(await saved.text());
+  assert.equal(file.request, made);
+  assert.ok(file.data.inquiries.length >= 2);
+  assert.match(u.text("#main .proof"), /열람 파일 내보냄: \d+개 표 \d+줄/);
+  // 지우기 asks once more, saying what stays.
+  await u.click(`#main [data-act="request-run"][data-id="${made}"]`);
+  form = u.$('dialog form[data-form="request-run"]');
+  form.requestSubmit();
+  await u.settle();
+  const confirm = u.$('dialog form[data-form="confirm"]');
+  assert.match(confirm.textContent, /이 설치의 자료를 모두 지울까요\?/);
+  assert.match(confirm.textContent, /요청 문의 하나\(답을 보내려고\)/);
+  confirm.requestSubmit();
+  await u.idle();
+  const proof = u.text("#main .proof");
+  assert.match(proof, /지움: \d+개 표 \d+줄 · 남음 inquiries 1\(요청 문의\(답을 보내려고\)\)/);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE device = (SELECT device FROM inquiries WHERE id = ?)").get(ask).n, 1);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-18] 검토 I21b-01: 보안 한 장 puts what to fix first, each row with where to fix it, and never a secret's value", async (t) => {
+  offline(t);
+  const { env } = server({ INTEGRITY_MODE: "watch", ADMIN_2FA_RESET: "1" });
+  const u = await asOwner(env, t);
+  await u.go("#/security");
+  const rows = [...u.$$("#main .security-rows li")];
+  assert.ok(rows.length >= 9, `${rows.length} rows`);
+  const tones = rows.map((li) => li.className.replace("sec-", ""));
+  assert.deepEqual(tones, [...tones].sort((a, b) => ["bad", "warn", "ok"].indexOf(a) - ["bad", "warn", "ok"].indexOf(b)), "고치기 → 살펴보기 → 괜찮아요");
+  const byName = (re) => rows.find((li) => re.test(li.querySelector("b").textContent));
+  assert.match(byName(/최고 관리자 2단계/).textContent, /ADMIN_2FA_RESET이 켜져 있어/);
+  assert.match(byName(/최고 관리자 2단계/).querySelector(".pill").textContent, /고치기/);
+  assert.match(byName(/ADMIN_PASSWORD/).textContent, /처음 본 날 \d{4}-\d{2}-\d{2}부터 그대로/);
+  assert.match(byName(/SEAL_KEY/).textContent, /RATE_SALT로 잠가요/);
+  assert.match(byName(/Play 무결성/).textContent, /보기만 해요/);
+  assert.equal(byName(/하루 백업/).querySelector(".fix a").getAttribute("href"), "#/backup");
+  const text = u.text("#main");
+  for (const v of [PASSWORD, "test-salt"]) assert.ok(!text.includes(v), "no secret's value on the page");
+  assert.match(u.text("#main .card-head"), /고칠 것 \d+/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVR-20] 공모 다시 고르기: 저장 전 확인 창이 새로 생기는 보상과 빠지는 작품의 지급된 보상을 말하고, 고르기를 눌러야 저장돼요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { env, call } = await world({ plaza: true });
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/village/contests", { style: "SHIFT", theme: "야간 근무용 어두운 테마" }, owner);
+  const look = { kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] };
+  const make = async (n, title) => (await call("POST", "/api/recipes", { device: device(n), scope: "public",
+    recipe: { format: "bamnat-recipe", v: 1, title, summary: "어두운 달력", styles: ["SHIFT"], pieces: [look] } }, from(n))).data.code;
+  const a = await make(1, "야간 다크");
+  const b = await make(2, "밤 하늘");
+  for (const [n, code] of [[1, a], [2, b]]) await call("POST", "/api/village/contest/enter", { device: device(n), style: "SHIFT", code }, from(n));
+  await call("POST", "/api/admin/village/contests/pick", { month: "2026-11", style: "SHIFT", codes: [a] }, owner);
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed&kind=maker", undefined, owner)).data.rewards) {
+    await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, owner);
+  }
+  t.mock.timers.setTime(Date.parse("2026-12-03T03:00:00Z")); // 12월: 11월 작품을 골라요
+  const u = await signedIn(env);
+  await u.go("#/community?show=village");
+  await u.idle();
+  const box = (code) => u.$(`input[data-pick="2026-11|SHIFT"][value="${code}"]`);
+  box(a).checked = false;
+  box(b).checked = true;
+  await u.click('[data-act="contest-pick"][data-id="2026-11|SHIFT"]');
+  await u.settle(30);
+  assert.match(u.text("dialog h2"), /이달의 테마로 고를까요/);
+  assert.match(u.text("dialog .confirm-rows"), /새로 생기는 보상.*밤 하늘/);
+  assert.match(u.text("dialog .confirm-rows"), /빠지는 작품의 지급된 보상.*야간 다크.*거두지 못해요/);
+  const picks = async () => (await call("GET", "/api/admin/village/contests", undefined, owner)).data.items.find((x) => x.month === "2026-11" && x.style === "SHIFT").picks;
+  assert.deepEqual(await picks(), [a], "nothing saved before 고르기");
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.deepEqual(await picks(), [b]);
+  assert.deepEqual(u.errors, []);
+  assert.deepEqual(u.broken, []);
 });

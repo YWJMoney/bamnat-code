@@ -132,6 +132,13 @@ private fun QuotesCard(calendarId: String, today: LocalDate) {
  * valid and a note; then 보내기 as an image, 저장, or 일감으로 저장 (a 가계약 job for the total).
  */
 @OptIn(ExperimentalLayoutApi::class)
+/**
+ * A new 견적's id: the time it was made, or one past the newest when the phone's clock was turned back (2.0.0 [RVR-19] 검토
+ * TEST-20 ⑥: with the time alone, the same millisecond could come again and the new 견적 wrote over an old one).
+ */
+internal fun newQuoteId(taken: Collection<Long>, now: Long = System.currentTimeMillis()): Long = // real clock: an id, not a time
+    maxOf(now, (taken.maxOrNull() ?: 0L) + 1)
+
 @Composable
 private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit) {
     val context = LocalContext.current
@@ -144,7 +151,7 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
     var deleting by remember { mutableStateOf(false) }
 
     fun persist(next: Quote = q): Quote {
-        val withId = if (next.id == 0L) next.copy(id = System.currentTimeMillis()) else next  // real clock: an id, not a time
+        val withId = if (next.id == 0L) next.copy(id = newQuoteId(store.current(calendarId).quotes.map { it.id })) else next
         // The job made from it is written in the background; its id is kept once it is there.
         val madeJob = store.current(calendarId).quotes.firstOrNull { it.id == withId.id }?.jobId?.takeIf { it > 0 }
         val saved = if (madeJob != null) withId.copy(jobId = madeJob) else withId
