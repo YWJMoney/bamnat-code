@@ -56,7 +56,8 @@ class RvjPolishScreenshotTest : ScreenshotBase() {
     // ---- [RVJ-19] 검토 HQ-12: 급여 › 결과 › 연차 카드의 소멸 예정 줄 ----
     private fun lapse(): Screen.() -> Unit = {
         leaveSeed()
-        content { com.bamnat.app.ui.pay.PayScreen(com.bamnat.app.ui.pay.PayViewModel(app.container), onBack = {}) }
+        val vm = com.bamnat.app.ui.pay.PayViewModel(app.container)
+        content { com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}) }
         settle()
         reveal("소멸 예정", exact = false)
     }
