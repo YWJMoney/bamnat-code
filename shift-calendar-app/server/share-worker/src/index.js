@@ -2579,7 +2579,8 @@ export function spreadCard(kind, ua, back, gone = false, word = null) {
   // [SPREAD-04] Back to the link after the install: a schedule link opens in the app; the others stay pages.
   const after = gone ? "" : kind === "family" || kind === "team" ? "설치한 뒤 이 링크를 다시 누르면 앱에서 열려요." : "앱을 받은 뒤에도 이 링크는 그대로 열려요.";
   const get = android
-    ? `<a class="get" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a>${after ? `<p class="muted small">${after}</p>` : ""}`
+    // 2.0.0 [RVD-31] HQ-68 조건 2: the card is never the page's filled button (the page's own job is: 앱에서 보기, 출근, 서명…).
+    ? `<a class="get line" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a>${after ? `<p class="muted small">${after}</p>` : ""}`
     // [SPREAD-03] No dead end on an iPhone: say what 밤낮 is and that this page keeps working.
     : apple ? ""
     : `<p class="muted small">밤낮은 Android 휴대폰 앱이에요. <a href="${esc(storeLink(kind))}">Play 스토어에서 보기</a></p>`;
@@ -2781,7 +2782,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
-  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
+  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme, !app)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
     `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind, false, word) + (reportId ? reportForm(reportId) : ""),
   word, kind === "family" ? WORD_FORMS[word].og : kind);
@@ -2792,13 +2793,13 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
  * calendar. iPhone: webcal:// opens 캘린더's 구독. Anything else: Google Calendar's add-by-address page (Android, a computer).
  * It follows changes within hours; it is not an alarm, and the page says so.
  */
-export function feedButton(schedule, feed, phone, scheme = "https") {
+export function feedButton(schedule, feed, phone, scheme = "https", primary = true) {
   if (schedule.ics !== true || !feed) return "";
   const webcal = `webcal://${feed}`;
   const href = phone === "ios" ? webcal : `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
   const label = phone === "ios" ? "아이폰 캘린더에 넣기" : "구글 캘린더에 넣기";
   const word = linkWord(schedule);
-  return `<div class="panel feed"><p class="feed-t"><a class="get" href="${esc(href)}">${label}</a></p>` +
+  return `<div class="panel feed"><p class="feed-t"><a class="get${primary ? "" : " line"}" href="${esc(href)}">${label}</a></p>` +
     // [RVD-30] HQ-64 '영업일이 바뀔 때'·'일정이 바뀔 때' for a shop's or a freelancer's link.
     `<p class="muted small">한 번 넣어 두면 ${WORD_FORMS[word].daysSubj} 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. ${word === "근무표" ? "출근 " : ""}알람은 아니에요.` +
     (phone === "ios" ? ` 카카오톡 안에서 안 열리면 오른쪽 아래 메뉴에서 'Safari로 열기' 뒤 다시 눌러 주세요.` : "") +
@@ -2940,7 +2941,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .chip{display:inline-block;min-width:24px;padding:1px 6px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;text-align:center;text-shadow:0 0 2px rgba(0,0,0,.35)}
 .leave{font-size:11px;color:var(--muted);text-align:center;word-break:keep-all;overflow-wrap:anywhere}.extra{font-size:10px;line-height:1.2;color:var(--fg);background:var(--line);border-radius:6px;padding:0 4px;text-align:center}
 .job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
+.app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li b{white-space:nowrap}.pay li:first-child{border-top:none}
 .dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
@@ -2957,8 +2958,8 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
 .spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 48px 14px 14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
-.spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.spread a{color:var(--fg)}
-.feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.addr{user-select:all;word-break:break-all}
+.spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.spread a{color:var(--fg)}
+.feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.get.line{background:none;color:var(--fg);border:1px solid var(--muted);padding:9px 15px}.addr{user-select:all;word-break:break-all}
 </style></head><body><main>${body}</main></body></html>`;
 }
 
