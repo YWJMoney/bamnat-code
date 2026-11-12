@@ -113,6 +113,13 @@ interface ImportedEventDao {
 
     @Query("DELETE FROM imported_events WHERE eventKey IN (:keys)")
     suspend fun delete(keys: List<String>)
+
+    /** 2.0.0 [RVL-53] (검토 DATA-15) For the backup, and emptied when one is put back. */
+    @Query("SELECT * FROM imported_events ORDER BY epochDay, eventKey")
+    suspend fun all(): List<ImportedEventEntity>
+
+    @Query("DELETE FROM imported_events")
+    suspend fun clear()
 }
 
 fun ReceivableEntity.toModel(payments: List<ReceivablePaymentEntity>) = Receivable(

@@ -5,6 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Visibility
@@ -41,7 +44,7 @@ const val MIN_BACKUP_PASSWORD = 4
 
 /** [FEAT-08] Optional password for a backup, typed twice. Null means no password. */
 @Composable
-fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) {
+fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit, action: String = "저장") {
     // [BACK-01] Photos going in: said with their size, and a password is the better choice for them.
     val context = androidx.compose.ui.platform.LocalContext.current
     val c = remember { runCatching { context.appContainer }.getOrNull() }
@@ -87,7 +90,7 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
         // 총괄 검토 #458 (조건 2, 같은 무게의 글자 단추 셋이 줄지어 있었어요): the one filled button is the safer save; 취소 and
         // 암호 없이 stay text buttons.
         confirmButton = {
-            com.bamnat.app.ui.components.Button(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 저장") }
+            com.bamnat.app.ui.components.Button(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 $action") }
         },
         dismissButton = {
             Row {
@@ -103,7 +106,7 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
  * the file may sit in Google Drive. Picking where to save comes next.
  */
 @Composable
-fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray) -> Unit) {
+fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray, Boolean) -> Unit) {
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     val mismatch = second.isNotEmpty() && first != second
@@ -115,15 +118,96 @@ fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray) -> Unit) 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "매일 저장하는 백업 파일에 걸 암호예요. 휴대폰을 바꾸거나 앱을 다시 설치해 그 파일을 불러올 때 넣어요. " +
-                        "암호는 어디에도 저장하지 않아서 잊으면 열 수 없어요.\n다음 화면에서 저장할 곳을 골라요. 구글 드라이브에 두면 휴대폰을 잃어버려도 꺼낼 수 있어요.",
+                        "암호는 어디에도 저장하지 않아서 잊으면 열 수 없어요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 PasswordField(first, { first = it }, "암호 (${MIN_BACKUP_PASSWORD}자 이상)")
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
+                WhereLine()
             }
         },
-        confirmButton = { TextButton(onClick = { onSet(first.toCharArray()) }, enabled = ok) { Text("저장할 곳 고르기") } },
+        // 2.0.0 [RVL-52] (검토 U12-06) The folder (seven days kept) is the filled one; one file stays for Google Drive. The window's
+        // button row wraps these three on a narrow screen with big letters.
+        confirmButton = {
+            TextButton(onClick = { onSet(first.toCharArray(), false) }, enabled = ok) { Text(ONE_FILE) }
+            com.bamnat.app.ui.components.Button(onClick = { onSet(first.toCharArray(), true) }, enabled = ok) { Text(PICK_FOLDER) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+/** 2.0.0 [RVL-52] 위치 바꾸기: a folder (seven days kept) or one file (Google Drive), with the same password. */
+@Composable
+fun AutoBackupWhereDialog(onDismiss: () -> Unit, onPick: (folder: Boolean) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("어디에 저장할까요?") },
+        text = { WhereLine() },
+        confirmButton = {
+            TextButton(onClick = { onPick(false) }) { Text(ONE_FILE) }
+            com.bamnat.app.ui.components.Button(onClick = { onPick(true) }) { Text(PICK_FOLDER) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
+
+@Composable
+private fun WhereLine() {
+    Text(
+        "폴더를 고르면 날짜를 붙인 파일로 최근 7일치를 보관해요. 구글 드라이브에 두려면 ‘$ONE_FILE’를 골라요. 휴대폰을 잃어버려도 꺼낼 수 있어요.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+internal const val PICK_FOLDER = "폴더 고르기"
+internal const val ONE_FILE = "파일 하나로"
+
+/**
+ * 2.0.0 [RVL-50] (검토 U12-04) 백업 불러오기's window, in settings and in the first setup: how old the file is and what gets fewer come
+ * first (what gets fewer with the caution mark, 조건 3·6), then what there is more of, what the file holds, and that the data before
+ * it can be taken back. [now] is null where there is nothing of the user's yet to lose (the first setup).
+ */
+@Composable
+fun RestoreDialog(
+    file: com.bamnat.app.data.BackupSummary,
+    now: com.bamnat.app.data.BackupSummary?,
+    title: String,
+    confirmLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    destructive: Boolean = false,
+) {
+    val today = com.bamnat.core.time.Today.date()
+    val saved = file.exportedAtMillis.takeIf { it > 0 }?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it).toLocalDate() }
+    val diff = now?.let { com.bamnat.app.data.RestoreDiff.of(file, it, saved, today) }
+        ?: com.bamnat.app.data.RestoreDiff.of(file, file, saved, today)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                diff.ageLine?.let { line ->
+                    Text(line + saved?.let { " (${com.bamnat.app.ui.Fmt.dayTitle(it)})" }.orEmpty(), style = MaterialTheme.typography.bodyLarge)
+                }
+                diff.fewerLine?.let { line ->
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.WarningAmber, contentDescription = null,
+                            tint = com.bamnat.app.ui.theme.Tone.Caution.color(), modifier = Modifier.padding(top = 2.dp).size(18.dp))
+                        Text(line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { contentDescription = "주의, $line" })
+                    }
+                }
+                diff.moreLine?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Text(restoreContents(file), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(RESTORE_UNDO, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = if (destructive) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified)
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
