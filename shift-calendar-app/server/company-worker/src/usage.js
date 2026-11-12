@@ -1,5 +1,5 @@
 import { SWITCH_FLAGS, flagDef, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
-import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, stmt, versions } from "./index.js";
+import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, sharedCount, stmt, versions } from "./index.js";
 import { SLA_SQL, plainText, readSla } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
 import { WORK_PRODUCTS, phase3Metrics } from "./phase3-metrics.js";
@@ -97,8 +97,15 @@ export async function opsState(env) {
   return { notices, off: forced.filter((r) => SWITCH_FLAGS[r.key] && !(r.until && r.until <= now)).map((r) => SWITCH_FLAGS[r.key]) };
 }
 
-/** [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. */
-export const paused = (env, name) => switchOff(env, name);
+/**
+ * [SRV-04] Whether the developer switched [name] off. AM 1.28 [FLAG-24]: the flag's force, read alone. 2.0.0 [RVQ-11] 검토 SRV-13: 광장
+ * 글쓰기 시도는 사본들이 함께 세어(10번에 한 번 D1) 5분 작업이 급증을 봐요(index.js plazaSurge). 세기가 실패해도 쓰기는 그대로.
+ */
+export const paused = async (env, name) => {
+  const off = await switchOff(env, name);
+  if (!off && name === "PLAZA_WRITE") await sharedCount(env, "plazaw", HOUR, Date.now(), 10).catch(() => 0);
+  return off;
+};
 
 export const noticeView = (n) => ({ id: n.id, title: n.title, body: n.body, level: n.level, from: iso(n.from), until: iso(n.until),
   minApp: n.minApp ?? null, maxApp: n.maxApp ?? null, audience: n.audience ?? null, action: n.action ?? null });

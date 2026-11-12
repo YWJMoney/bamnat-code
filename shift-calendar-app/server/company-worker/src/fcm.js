@@ -26,12 +26,13 @@ export async function fcmRoute(request, env, path) {
   if (!id) return json({ error: "device", field: "device" }, 400);
   const dev = await deviceHash(id);
   const now = Date.now();
+  // 2.0.0 [RVQ-10] 검토 SRV-12 (라): 지우기도 같은 한도(설치마다 시간에 20번).
+  const hit = await overLimit(env, now, [["device", `pushtok|${dev}`, FCM_LIMITS.perHour, HOUR]]);
+  if (hit) return hit;
   if (request.method === "DELETE") {
     await run(env, "DELETE FROM push_phones WHERE device = ?", dev);
     return json({ ok: true });
   }
-  const hit = await overLimit(env, now, [["device", `pushtok|${dev}`, FCM_LIMITS.perHour, HOUR]]);
-  if (hit) return hit;
   if (typeof body.token !== "string" || !FCM_TOKEN.test(body.token)) return json({ error: "token", field: "token" }, 400);
   await run(env, `INSERT INTO push_phones (device, token, at) VALUES (?, ?, ?)
     ON CONFLICT (device) DO UPDATE SET token = excluded.token, at = excluded.at`, dev, body.token, now);

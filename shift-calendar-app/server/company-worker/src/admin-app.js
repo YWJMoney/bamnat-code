@@ -3394,13 +3394,34 @@ function adminApp(L, BUILD, M) {
         <p class="hint">${esc(next)}</p>`;
   }
 
+  /**
+   * 2.0.0 [RVQ-12] 검토 SVC-07: 서버 상태의 요금제 줄. 어떤 요금제로 도는지, 오늘 D1 쓰기가 하루 몫의 몇 %인지, 정기 작업 한 호출이 질의를
+   * 몇 번 썼는지(상한과 함께). 80%가 넘으면 주의 색, 상한을 넘었으면 붉게.
+   */
+  function budgetPart(b) {
+    if (!b) return "";
+    const pct = (x) => `${Math.min(999, Math.round((x ?? 0) * 100))}%`;
+    const tone = (x) => (x >= 1 ? "bad" : x >= 0.8 ? "todo" : "ok");
+    const mark = (x) => (x >= 0.8 ? "!" : "✓");
+    const num = (n) => Number(n ?? 0).toLocaleString("ko-KR");
+    const rows = [
+      [tone(b.d1.share), mark(b.d1.share), `오늘 D1 쓰기 ${num(b.d1.used)}번, 하루 몫 ${num(b.d1.day)}번의 ${pct(b.d1.share)}`],
+      [tone(b.queries.share), mark(b.queries.share), `정기 작업 한 번에 D1 질의 가장 많이 ${num(b.queries.top)}번(상한 ${num(b.queries.limit)}번)`],
+    ];
+    const note = b.overage ? "유료 요금제는 몫을 넘어도 멈추지 않고 요금이 더 나가요. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요"
+      : "무료 요금제는 몫을 넘으면 그날 쓰기가 멈춰요. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요";
+    return `<h3 class="sub" data-budget>요금제 · ${esc(b.plan)}</h3>
+        <ul class="checks">${rows.map(([t, m, line]) => `<li class="${t}"><span aria-hidden="true">${m}</span>${esc(line)}</li>`).join("")}</ul>
+        <p class="hint">${esc(note)}</p>`;
+  }
+
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
     // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
     const watch = Boolean(S.me?.owner && S.data.watch);
     // 1.39 PC 6차 H1: 무엇이 돌고 있는지(회사·규칙 수, 서버 판, 관리자 앱 빌드)는 맨 위 한 줄로. 전에는 맨 아래에 있었어요.
     const sum = `<p class="meta server-sum">회사 ${S.server?.companies ?? S.data.today?.companies ?? "–"} · 쓰는 규칙 ${S.server?.rules ?? S.data.today?.rules ?? "–"}${S.server?.version ? ` · 서버 ${esc(S.server.version)}` : ""} · 관리자 앱 빌드 ${esc(BUILD)}</p>`;
-    return `${sum}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
+    return `${sum}${V.watchBoard()}<section class="card"><h2>${watch ? "무결성" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server) + budgetPart(S.server.budget)) + integrityPart(S.server.integrity) : skeleton(1)}</section>`;
   }
 
   /**
