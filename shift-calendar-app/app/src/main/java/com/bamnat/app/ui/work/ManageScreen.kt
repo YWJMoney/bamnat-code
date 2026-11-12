@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -103,7 +105,10 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                 titleContentColor = MaterialTheme.colorScheme.onSecondaryContainer),
         )
     }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // 2.0.0 [RVJ-50] 검토 PC-118 (조건 12): on a 펼친 폴드 the words keep to the page's body width, in the middle.
+        androidx.compose.foundation.layout.Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = com.bamnat.app.ui.components.PageWidth.Body).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("내 달력과 따로, 내가 맡은 팀과 가게 일만 모았어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             // 할 일: every team and shop, the urgent ones first.
@@ -113,11 +118,15 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                 if (todos.isEmpty()) Hint(if (liveTeams.isEmpty() && livePlaces.isEmpty()) "팀이나 가게를 만들면 확정·대장 닫기·명세서처럼 챙길 일을 여기서 모아 보여 드려요."
                     else "지금 챙길 일이 없어요.")
                 todos.forEach { t ->
-                    val color = if (t.urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) {
+                    // 2.0.0 [RVJ-50] 검토 PC-118 (조건 3·6): two or three to-dos with a date close stood in red; they are 주의 lines (the
+                    // mark's colour says it), and only a team's 위험 (휴식·연속·주 52시간) is red.
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) {
                         if (t.where == ManageDesk.Where.TEAM) teamOpen = t.id else ledgerOpen = true
-                    }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text((if (t.urgent) "⚠ " else "· ") + t.text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
+                    }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (t.urgent) com.bamnat.app.ui.components.ToneLine(t.text, Modifier.weight(1f),
+                            tone = if (t.danger) com.bamnat.app.ui.theme.Tone.Danger else com.bamnat.app.ui.theme.Tone.Caution,
+                            style = MaterialTheme.typography.bodyMedium)
+                        else Text("· " + t.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         Text("열기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -158,6 +167,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
             ManagePart.TODO -> Unit
             } }
             TextButton(onClick = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MANAGE) }) { Text("카드 순서·색 바꾸기 (스튜디오)") }
+        }
         }
     }
     if (ledgerOpen) {
@@ -266,7 +276,7 @@ fun ManageSample(layout: String, onTap: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onTap).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("팀·가게 관리", style = MaterialTheme.typography.titleMedium)
         SectionCard(title = "할 일 2") {
-            Text("⚠ 7병동 12월 근무표 짜기 · 빈칸 40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            com.bamnat.app.ui.components.ToneLine("7병동 12월 근무표 짜기 · 빈칸 40")
             Text("· 우리 가게 11월: 지급 표시 1명 남았어요", style = MaterialTheme.typography.bodySmall)
         }
         parts.filter { it.shown }.forEach { p ->

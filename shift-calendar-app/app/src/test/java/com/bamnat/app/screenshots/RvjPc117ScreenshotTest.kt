@@ -72,6 +72,7 @@ class RvjPc117ScreenshotTest : ScreenshotBase() {
 
     @Test fun closeAsk() = shoot("rvj_123_close_ask_folded", FOLDED, ask())
     @Test fun closeAskDarkBig() = shoot("rvj_124_close_ask_folded_dark_200", DARK, 2f, ask())
+    @Test fun closeAskWide() = shoot("rvj_139_close_ask_unfolded", UNFOLDED, ask())
 
     @Test fun theCloseAskShowsThatMonthsAmount() = shoot("rvj_125_close_ask_amount_folded", FOLDED) {
         ask().invoke(this)
@@ -109,6 +110,7 @@ class RvjPc117ScreenshotTest : ScreenshotBase() {
 
     @Test fun shopCardLight() = shoot("rvj_128_shop_card_folded", FOLDED, shopCard())
     @Test fun shopCardDarkBig() = shoot("rvj_129_shop_card_folded_dark_200", DARK, 2f, shopCard())
+    @Test fun shopCardWide() = shoot("rvj_140_shop_card_unfolded", UNFOLDED, shopCard())
 
     @Test fun theShopCardSaysWhatIsLeftWithoutRed() = shoot("rvj_130_shop_card_said_folded", FOLDED) {
         shopCard().invoke(this)

@@ -148,7 +148,7 @@ object ReportPdf {
         fun facts(b: ReportDoc.Facts) {
             val half = inner / 2
             b.rows.chunked(2).forEach { pair ->
-                val cells = pair.map { (k, v) -> layout(k, text(8f, color = muted), half - 8f) to layout(v, text(10f), half - 8f) }
+                val cells = pair.map { (k, v) -> layout(keepWords(k), text(8f, color = muted), half - 8f) to layout(keepWords(v), text(10f), half - 8f) }
                 val h = cells.maxOf { (k, v) -> k.height + v.height + 2f }
                 room(h)
                 cells.forEachIndexed { i, (k, v) ->
@@ -164,8 +164,9 @@ object ReportPdf {
             val sum = t.weights.sum()
             val widths = t.weights.map { inner * it / sum }
             val pad = 3f
+            // [RVJ-47] A cell breaks at its spaces too ('2시간 (시각 안 적음)' put '음)' alone on the next line of a narrow column).
             fun rowLayouts(cells: List<String>, p: TextPaint) = cells.mapIndexed { i, c ->
-                layout(c, p, widths[i] - 2 * pad, if (i in t.right) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL)
+                layout(keepWords(c), p, widths[i] - 2 * pad, if (i in t.right) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL)
             }
             fun drawRow(ls: List<StaticLayout>, background: Int?, ruleAbove: Boolean) {
                 val h = ls.maxOf { it.height } + 2 * pad
