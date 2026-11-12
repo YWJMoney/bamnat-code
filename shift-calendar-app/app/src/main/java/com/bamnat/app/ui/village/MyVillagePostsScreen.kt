@@ -72,7 +72,8 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     LaunchedEffect(fixTalk) {
         val f = fixTalk ?: return@LaunchedEffect
         com.bamnat.app.ui.company.TalkSheets.pending.value = null
-        talk.show(f.company, f.setup, f.title)
+        // 2.0.0 [RVN-19] HQ-51 From the 알림함's row: on that post (its thread read when it is not on the first page).
+        talk.show(f.company, f.setup, f.title, focus = f.focus)
     }
     // 1.39 조사 ③(4) 가려진 내 글 '다시 보여 주세요'(마을 돌봄이 켜진 뒤, 처리방침 3.12): 운영자가 다시 읽고 답해요.
     val canAsk = c.flags.on(com.bamnat.core.flags.FlagCatalog.COMMUNITY_CARE)

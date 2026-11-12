@@ -91,8 +91,12 @@ object PlazaPush {
             when (kind) {
                 ANSWER -> {
                     if (!answers(c.appContext)) return
-                    val fresh = VillageReplies.fresh(c.appContext, c.companyApi.myPosts(c.companyStore.device)).values.sum()
+                    val posts = c.companyApi.myPosts(c.companyStore.device)
+                    val byPost = VillageReplies.fresh(c.appContext, posts)
+                    val fresh = byPost.values.sum()
                     VillageReplies.publish(fresh)
+                    // 2.0.0 [RVN-19] HQ-51 the answer is in the 알림함 at once too, with a tap on that post.
+                    runCatching { PlazaInbox.answers(c, posts, byPost) }
                     val line = answerLine(fresh) ?: return
                     PlazaNewsJob.tell(c, "광장 소식", listOf(line), NoticeLinks.Target.VILLAGE_POSTS, replacing = ANSWER_LINE)
                 }

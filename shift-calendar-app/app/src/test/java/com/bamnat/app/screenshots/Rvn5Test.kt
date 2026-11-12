@@ -153,4 +153,52 @@ class Rvn5Test : ScreenshotBase() {
         tapText("2주 토 쉼", exact = true)
         assertTrue(appears("바꾼 곳", exact = false))
     }
+    /**
+     * HQ-51 (총괄 11-13: 광장·회사에서 생기는 알림은 알림함으로): what others did to what I put out is a row of 사람들 반응, one per thing,
+     * that opens the very post (or the rule set's card); a row still there adds what came since, the answers under my room post are
+     * the phone's own count (not the server's on top), and a kind turned off does not come.
+     */
+    @Test fun reactionsAreRowsOfTheInboxThatOpenTheVeryPlace() {
+        val c = companyOn()
+        com.bamnat.app.inbox.Inbox.reset()
+        val inbox = com.bamnat.app.inbox.Inbox.get(c.appContext)
+        val post = "pAbCdEfGhIjKlMnO"
+        com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
+            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 2, 1_000, room = "style-shift", setup = "room", up = 2),
+            com.bamnat.core.plaza.Reaction("report_vote", "c1aaaaaaaaaa/s1", "가나다화학", 1, 1_000, up = 1),
+            // The server's count of answers under my room post is left to the phone's own.
+            com.bamnat.core.plaza.Reaction("answer", post, "교대 광장", 5, 1_000, room = "style-shift", setup = "room"),
+        ), answersCounted = true)
+        val row = inbox.rows.value.single { it.key == "plaza.post:$post" }
+        assertEquals(com.bamnat.app.inbox.InboxSection.PEOPLE, row.section)
+        assertEquals("내 글에 반응이 왔어요", row.title)
+        assertEquals("교대 광장 · 나도요 2", row.line)
+        assertEquals(com.bamnat.app.NoticeLinks.Target.FIX_TALK, row.target)
+        val talk = com.bamnat.app.NoticeLinks.FixTalk.of(row.payload)!!
+        assertEquals(listOf("style-shift", "room", "교대 광장", post), listOf(talk.company, talk.setup, talk.title, talk.focus))
+        val board = inbox.rows.value.single { it.key == "board.report:c1aaaaaaaaaa/s1" }
+        assertEquals(com.bamnat.app.NoticeLinks.Target.COMPANY_SETUP, board.target)
+        assertEquals("c1aaaaaaaaaa/s1", board.payload)
+        // The phone's count of new answers joins the same row.
+        val mine = com.bamnat.app.company.MyPost(post, "style-shift", "교대 광장", "야간 끝나고 뭐 드세요?", "question", null, 3,
+            com.bamnat.core.time.Today.instant(), false)
+        com.bamnat.app.company.PlazaInbox.answers(c, listOf(mine), mapOf(post to 3))
+        assertEquals("교대 광장 · 답 3 · 나도요 2", inbox.rows.value.single { it.key == row.key }.line)
+        // While the row is there what comes next adds to it; once it was opened, it starts again.
+        com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
+            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 1, 2_000, room = "style-shift", setup = "room", up = 1)), answersCounted = true)
+        assertEquals("교대 광장 · 답 3 · 나도요 3", inbox.rows.value.single { it.key == row.key }.line)
+        inbox.remove(row.key)
+        com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
+            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 1, 3_000, room = "style-shift", setup = "room", up = 1)), answersCounted = true)
+        assertEquals("교대 광장 · 나도요 1", inbox.rows.value.single { it.key == row.key }.line)
+        // Turned off ('다시 보지 않기' on its row, or 설정 › 알림): nothing of that kind comes.
+        inbox.remove(board.key)
+        inbox.mute("board.reaction", com.bamnat.core.plaza.Reactions.offLabel(com.bamnat.core.plaza.Reactions.Group.BOARD))
+        com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
+            com.bamnat.core.plaza.Reaction("report_vote", "c1aaaaaaaaaa/s1", "가나다화학", 1, 4_000, down = 1)), answersCounted = true)
+        assertTrue(inbox.rows.value.none { it.key == board.key })
+        // A payload of three parts (1.39's 보완 요청 notice) still opens, on the top of the talk.
+        assertNull(com.bamnat.app.NoticeLinks.FixTalk.of("c1aaaaaaaaaa|0123456789abcdef|%EA%B0%80")!!.focus)
+    }
 }

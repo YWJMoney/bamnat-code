@@ -690,6 +690,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target)
             }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 2.0.0 [RVN-19] HQ-51 알림함 '내가 알린 규칙에 반응이 왔어요': that company's screen, on that rule set's card.
+            NoticeLinks.Target.COMPANY_SETUP -> {
+                val p = NoticeLinks.payload.value?.split('/')?.takeIf { it.size == 2 && Regex("[A-Za-z0-9]{12}").matches(it[0]) && it[1].isNotBlank() }
+                if (p != null) {
+                    com.bamnat.app.ui.company.TalkSheets.closeAll()
+                    container.pendingCompanySetup = p[0] to p[1]
+                    nav.navigate(Routes.company(p[0], setup = false, weekdays = false)) { launchSingleTop = true }
+                }
+                NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.RATES -> { nav.navigate(Routes.plazaRates()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.REQUESTS -> { nav.navigate(Routes.recipeRequests()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
             NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay(companyCalendarOf(container, null))) { launchSingleTop = true }; NoticeLinks.consume(target) }

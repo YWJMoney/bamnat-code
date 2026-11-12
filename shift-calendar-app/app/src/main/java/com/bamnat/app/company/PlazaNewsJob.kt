@@ -76,7 +76,8 @@ class PlazaNewsJob : JobService() {
         fun wanted(c: AppContainer): Boolean {
             val s = c.settingsRepository.current
             return (s.plazaNews && (takesPart(c) || c.inquiryStore.asked || c.received.calendars.value.isNotEmpty() || c.recipes.on.value)) ||
-                s.phoneCalendars.isNotEmpty() || s.alarmsEnabled
+                // 2.0.0 [RVN-19] HQ-51 the 알림함's 사람들 반응, with or without 소식 알림.
+                takesPart(c) || s.phoneCalendars.isNotEmpty() || s.alarmsEnabled
         }
 
         fun schedule(context: Context) {
@@ -100,14 +101,23 @@ class PlazaNewsJob : JobService() {
         suspend fun check(c: AppContainer) {
             c.telemetry.event(DiagEvents.ALIVE)
             calendarPermission(c)
-            if (!c.settingsRepository.current.plazaNews) return
+            // 2.0.0 [RVN-19] HQ-51 The 알림함's 사람들 반응 come with the same daily ask, whether or not 소식 알림 is on (it only says
+            // whether a notice goes up too).
+            val news = c.settingsRepository.current.plazaNews
+            if (!news && !takesPart(c)) return
+            if (!news) {
+                runCatching { digest(c) }.getOrNull()?.let { d -> runCatching { inbox(c, d) } }
+                return
+            }
+            var posts: List<MyPost>? = null
             // 1.36 [VIL-05] 마을 V5 소식 하나로: 밤낮 소식 and 마을 장터 소식 in one notice, held through sleep and work.
             val recipeLines = runCatching { c.recipes.newsLines() }.getOrDefault(emptyList())
             val changes = runCatching { receivedChanges(c) }.getOrDefault(emptyList())
             val digest = runCatching { digest(c) }.getOrNull()
+            digest?.let { d -> posts = runCatching { inbox(c, d) }.getOrNull() }
             // 1.38 PC 9차 LOW (알림은 '새 답 2개', 내 글 화면은 '1개'): the server counts a day's answers, the screen what this phone has
             // not seen; the notice now says the screen's number, and no line when they were all read already.
-            val plaza = sameAnswerCount(c, digest?.plaza.orEmpty())
+            val plaza = sameAnswerCount(c, digest?.plaza.orEmpty(), posts)
             val text = BamnatNews.text(plaza, digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
             if (text == null && recipeLines.isEmpty()) return
             val target = when {
@@ -155,11 +165,24 @@ class PlazaNewsJob : JobService() {
             postHeld(c.appContext)
         }
 
+        /**
+         * 2.0.0 [RVN-19] HQ-51 [d]'s reactions into the 알림함, and the answers under my 광장 posts as this phone counts them (unseen,
+         * as 마을 › 내 글 does), so the bell says the same number as that screen; the server's count of those when they cannot be read.
+         */
+        private suspend fun inbox(c: AppContainer, d: Digest): List<MyPost>? {
+            val posts = if (takesPart(c)) runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() else null
+            if (posts != null) PlazaInbox.answers(c, posts, VillageReplies.fresh(c.appContext, posts))
+            PlazaInbox.fromDigest(c, d.reactions, answersCounted = posts != null)
+            return posts
+        }
+
         /** 1.38: the 새 답 lines as one, counted as 마을 › 내 글 counts them (unseen on this phone); the server's lines if that cannot be read. */
-        private suspend fun sameAnswerCount(c: AppContainer, items: List<com.bamnat.core.plaza.PlazaNewsItem>): List<com.bamnat.core.plaza.PlazaNewsItem> {
+        private suspend fun sameAnswerCount(c: AppContainer, items: List<com.bamnat.core.plaza.PlazaNewsItem>,
+            /** 2.0.0 [RVN-19] my posts as the 알림함 just read them (one ask, not two). */
+            read: List<MyPost>? = null): List<com.bamnat.core.plaza.PlazaNewsItem> {
             val replies = items.filter { it.kind == "replies" }
             if (replies.isEmpty()) return items
-            val fresh = runCatching { VillageReplies.fresh(c.appContext, c.companyApi.myPosts(c.companyStore.device)).values.sum() }.getOrNull()
+            val fresh = runCatching { VillageReplies.fresh(c.appContext, read ?: c.companyApi.myPosts(c.companyStore.device)).values.sum() }.getOrNull()
                 ?: return items
             val rest = items.filter { it.kind != "replies" }
             return if (fresh <= 0) rest else rest + replies.first().copy(count = fresh, company = replies.singleOrNull()?.company)
@@ -254,7 +277,7 @@ class PlazaNewsJob : JobService() {
         /** 2.0.0 [RVN-14] HQ-51 One line of `reactions`; a line it cannot read is left out (COMP-49). */
         internal fun reaction(o: JSONObject) = com.bamnat.core.plaza.Reaction(
             kind = o.getString("kind"), target = o.getString("target"), title = o.optString("title"), count = o.optInt("count"),
-            atMillis = Instant.parse(o.getString("at")).toEpochMilli(), room = o.optStringOrNull("room"),
+            atMillis = Instant.parse(o.getString("at")).toEpochMilli(), room = o.optStringOrNull("room"), setup = o.optStringOrNull("setup"),
             postKind = o.optStringOrNull("postKind"), up = o.optInt("up"), down = o.optInt("down"), theme = o.optStringOrNull("theme"),
         )
 
