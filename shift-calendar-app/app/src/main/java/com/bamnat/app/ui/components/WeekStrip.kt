@@ -62,7 +62,10 @@ fun WeekStrip(
     val room = with(density) { (circle - 6.dp).toPx() }
     val fits = with(density) { (room / 1.2f).toSp() }
     val scaled = if (widest <= room || widest == 0) numberStyle else numberStyle.copy(fontSize = numberStyle.fontSize * (room / widest))
-    val shown = if (scaled.fontSize.isSp && scaled.fontSize.value > fits.value) scaled.copy(fontSize = fits) else scaled
+    val stepped = if (scaled.fontSize.isSp && scaled.fontSize.value > fits.value) scaled.copy(fontSize = fits) else scaled
+    // 2.0.0 [RVI-64] 2묶음 사진(수면 '날마다 잠', 접은 폭 200%): the smaller number kept the letter size's line height (40dp
+    // at 200%) in a 26dp circle, so the picked '14' sat low and was cut. A stepped-down number gets its own line height.
+    val shown = if (stepped === numberStyle) stepped else stepped.copy(lineHeight = stepped.fontSize * 1.2f)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
         days.forEach { d ->
             val picked = d == selected

@@ -42,6 +42,9 @@ internal class HintStore(context: Context) {
         /** 2.0.0 [RVP-43] The empty calendar's first step was the band over the month once: from then on it is a row of the 알림함. */
         const val START_BAND = "start_band"
 
+        /** 2.0.0 [RVG-34] Where the 팀 리더's link is on a phone (the chip's list) was said once in the 알림함. */
+        const val TEAM_LINK_INBOX = "team_link_inbox"
+
         /** [CAL-17] A long press on a date opens 빠른 설정: said once on the first tap, or found already. */
         const val LONG_PRESS = "long_press_hint"
 

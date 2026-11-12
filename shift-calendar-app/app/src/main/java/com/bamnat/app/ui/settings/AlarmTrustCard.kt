@@ -43,6 +43,7 @@ import com.bamnat.app.ui.diag.applyAlarmFix
 import com.bamnat.core.time.Today
 import java.time.LocalDate
 import kotlinx.coroutines.launch
+import com.bamnat.app.ui.theme.color
 
 /** [EASE-17] The row title settings search points at. */
 const val SKIP_ONCE_ROW = "이번만 끄기"
@@ -116,6 +117,17 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                     style = MaterialTheme.typography.titleSmall,
                     color = if (bad.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
                 )
+            }
+            // 2.0.0 [RVI-91] (검토 I03c-02) How the week went, and the silent daytime rehearsals: trust shown, not only promised.
+            val trust by androidx.compose.runtime.produceState<String?>(null, refresh) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { com.bamnat.core.diag.EventBook.trustLine(c.telemetry.log.read(), Today.millis()) }.getOrNull()
+                }
+            }
+            trust?.let { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 28.dp),
+                    color = if ("늦게" in line || "기록 없음" in line || "오지 않았어요" in line) com.bamnat.app.ui.theme.Tone.Caution.color()
+                        else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 2.0.0 [RVI-65] (디자인 품질 2·4, the settings top card [RVI-38] alike) The most serious one with its button; the rest are
             // counted and wait in 알람 점검 below, which lists each with its own fix. Three paragraphs and three buttons read as a page.

@@ -677,6 +677,41 @@ object FeatureRegistry {
             WORKERS, "메모 › 메모 쓰기 › 알림 넣기 › 근무에 맞춰", at(Place.MEMOS), "다음 야간", "출근 전 알림", "쉬는 날 알림", "근무 알림"),
         f("memo.lastShift", "MEMO-06", "지난 같은 근무 메모", "날짜 메모를 쓰면서 같은 근무였던 지난 날의 메모(인수인계)를 바로 봐요",
             WORKERS, "메모 › 날짜 메모 쓰기 › 지난 야간 메모 보기", at(Place.MEMOS), "인수인계", "지난 메모", "이어 보기", "같은 근무"),
+        // 2.0.0 갈래 I 2묶음 (검토 03 알람·알림·수면·워치, 07a 메모·할 일): 새 기능은 모두 무료로 들어가요(요금은 총괄·사용자 논의 뒤).
+        f("memo.lineStar", "RVIB-02", "체크리스트 별표·줄 시각", "체크리스트 줄에 별표를 달면 열린 줄 맨 위로 올라가고, 줄마다 시각과 짧은 메모를 붙여요",
+            ALL, "메모 › 체크리스트 › 줄 누르기", at(Place.MEMOS), "별표", "중요 표시", "줄 시각", "줄 메모", "체크리스트 순서", under = "memo.done"),
+        f("memo.workAnchor", "RVIB-04", "근무에 붙는 알림", "‘출근 1시간 전마다’, ‘퇴근 30분 뒤’, ‘야간 끝나고 일어나면’처럼 근무에 붙여 두면 근무가 바뀌어도 그날 근무에 맞춰 알려요",
+            ALL, "메모 › 알림 넣기 › 근무에 붙여 매번", at(Place.MEMOS), "출근 전 알림", "퇴근 후 알림", "근무 따라 알림", "약 챙기기", "근무마다 알림", under = "memo.shiftRemind"),
+        f("memo.holdAtWork", "RVIB-05", "근무 중 메모 알림 모으기", "울리지 않는 메모 알림이 근무 중에 오면 모아 두었다가 근무가 끝날 때 한 장으로 보여 줘요. 울리는 알람은 제때 울려요",
+            PAID, "설정 › 알림과 잠 › 메모·할 일", at(Place.SETTINGS_NOTICES, "근무 중 메모 알림 모으기"), "근무 중 알림", "퇴근 때 알림", "일하는 중 방해", "알림 모으기"),
+        f("memo.restCard", "RVIB-05", "쉬는 날 아침 지난 할 일", "못 끝낸 할 일을 다음 쉬는 날 아침에 한 장으로 모아 보여 주고, 모두 끝내기·오늘로·지우기를 한 번에 해요",
+            setOf(SHIFT, DAY, HOURLY, FIELD, SHOP), "설정 › 알림과 잠 › 메모·할 일", at(Place.SETTINGS_NOTICES, "쉬는 날 아침 지난 할 일"), "밀린 할 일", "못 끝낸 할 일", "할 일 정리", "쉬는 날 정리"),
+        f("memo.oldTasks", "RVI-80", "오래된 할 일", "일주일 넘게 남은 할 일을 한 줄로 세어 두고, 모두 끝내기·모두 오늘로·모두 휴지통으로를 한 번에 해요",
+            ALL, "메모 › 오늘 › 오래된 할 일", at(Place.MEMOS), "오래된 할 일", "지난 할 일", "할 일 한꺼번에"),
+        f("memo.missedCard", "RVI-99", "놓친 일정 한 장", "휴대폰이 꺼져 있던 동안 지나간 일정이 둘 넘으면 한 장으로 모아 보여 주고, 모두 끝내기·쉬는 날로를 한 번에 해요",
+            ALL, "알림창 › 놓친 일정", at(Place.MEMOS), "놓친 일정", "꺼진 동안", "지나간 알림"),
+        f("memo.moneyRepeat", "RVIB-08", "반복 돈 한 줄", "‘매달 25일 월세 50만 원’처럼 쓰면 그날 돌아오는 메모와 가계부 고정 지출을 한 번에 넣어요",
+            ALL, "메모 › 메모 쓰기 › 아래 한 줄 ‘넣기’", at(Place.MEMOS), "월세", "고정 지출", "반복 지출", "관리비", "적금", "월급날"),
+        f("memo.voice", "RVIB-01", "말로 할 일 적기", "할 일 적기 창의 마이크를 누르고 ‘내일 저녁 6시 치과’처럼 말하면 한 줄로 적고 날짜·시각을 읽어요",
+            ALL, "할 일 위젯 ＋ › 마이크", at(Place.MEMOS), "음성 입력", "말로 적기", "마이크", under = "memo.quickLine"),
+        f("alarm.peek", "RVI-88", "위젯에서 다음 알람 보기", "오늘 위젯의 ⏰를 누르면 다음 알람을 작은 창으로 보여 주고, 그 자리에서 이번만 끄기·다시 켜기를 해요",
+            PAID, "홈 화면 › 오늘 위젯 › ⏰", at(Place.SETTINGS_ALARM, "이번만 끄기"), "위젯 알람", "이번만 끄기", "다음 알람 확인"),
+        f("alarm.weekLog", "RVI-86", "이번 주 알람 기록", "이번 주 알람마다 제때·몇 분 늦게·기록 없음을 요일별로 보여 줘요",
+            PAID, "설정 › 알람 › 알람 점검", at(Place.DIAGNOSTICS), "알람 기록", "알람 늦음", "알람 안 울림", under = "alarm.check"),
+        f("alarm.rehearsal", "RVI-91", "조용한 알람 연습", "하루 한 번 낮에 소리 없이 알람이 제때 오는지 재 보고, 늦게 오는 휴대폰이면 밤 전에 알려 줘요",
+            PAID, "설정 › 알람 › 알람 지킴이", at(Place.SETTINGS_ALARM, "알람 지킴이"), "알람 보증", "알람 늦게 와요", "배터리 최적화", under = "alarm.check"),
+        f("alarm.shiftNap", "RVI-93", "근무 중 쪽잠", "야간 근무 중 오늘의 흐름에서 쪽잠 20분을 켜면 진동으로만 깨워요(워치 진동 알람도). 오늘 알람을 껐어도 울려요",
+            setOf(SHIFT), "달력 › 오늘의 흐름 › 쪽잠", at(Place.CALENDAR), "쪽잠", "휴게 시간", "야간 낮잠", "진동 알람"),
+        f("watch.backupRing", "RVI-90", "워치 예비 알람", "휴대폰 알람이 오지 않으면 워치가 스스로 울리고, 휴대폰 알람이 오지 않았다고 알려 줘요",
+            PAID, "설정 › 알람 › 워치에서도 울리기", at(Place.SETTINGS_ALARM, "워치에서도 울리기"), "워치 알람", "예비 알람", "휴대폰 꺼짐"),
+        f("watch.sleepTile", "RVI-94", "워치 잠 타일", "손목에서 잠들었어요·깼어요를 누르면 휴대폰 수면 기록에 그 시각으로 적혀요",
+            ALL, "워치 › 타일 › 잠", at(Place.SLEEP), "워치 수면", "잠 타일", "손목으로 기록"),
+        f("watch.taskTile", "RVI-95", "워치 할 일 타일", "워치 타일에 오늘 할 일이 휴대폰 할 일 위젯과 같은 순서로 보이고, 눌러 끝내요",
+            ALL, "워치 › 타일 › 오늘 할 일", at(Place.MEMOS), "워치 할 일", "할 일 타일"),
+        f("sleep.noTap", "RVI-96", "충전하면 잠 잡기", "잘 시간 무렵 충전기에 꽂아 두면, 알람을 끈 아침에 ‘이 잠 맞나요?’를 한 번 물어 기록해요. 휴대폰 밖으로 나가지 않아요",
+            ALL, "설정 › 알림과 잠 › 하루 안내 › 충전하면 잠 잡기", at(Place.SETTINGS_NOTICES, "충전하면 잠 잡기"), "충전", "자동 수면 기록", "누르지 않고 기록", under = "sleep.log", flag = "sleep.auto"),
+        f("shift.progress", "RVI-97", "근무 진행 막대", "안드로이드 16에서 근무 중이면 잠금 화면 알림에 얼마나 지났는지와 끝날 때까지 남은 시간을 막대로 보여 줘요",
+            PAID, "설정 › 알림과 잠 › 잠금 화면 오늘 근무", at(Place.SETTINGS_NOTICES, "잠금 화면 오늘 근무"), "근무 진행", "남은 시간", "퇴근까지"),
         // AK 1.27 끝
         // AI 1.27 시작 (계획/1.27-AI-개발계획.md 441~445)
         f("plaza.info", "PLAZA-32", "회사 정보 광장", "회사 설정을 쓰거나 보내면 광장이 ‘우리 회사 정보 광장’으로 바뀌어요. 같은 회사 분들끼리만 참여자 번호로 자유롭게 이야기하고, 근무·급여 정보와 고친 점을 함께 봐요",
@@ -1071,6 +1106,18 @@ object FeatureRegistry {
      * (4)). Only what the feature really does for that kind; a feature that does nothing for a kind leaves it in its `styles` instead.
      */
     private val SAID: Map<String, (WorkStyle) -> Said?> = mapOf(
+        // 2.0.0 [RVIB-04] (디자인 품질 13) The window says it in the kind's words ([com.bamnat.core.memo.WorkAnchor.label]).
+        "memo.workAnchor" to { s ->
+            when (s) {
+                SHOP -> Said(name = "영업 시간에 붙는 알림", what = "‘영업 시작 1시간 전마다’, ‘마감 30분 뒤’처럼 영업 시간에 붙여 두면 영업 시간이 바뀌어도 그날에 맞춰 알려요",
+                    where = "메모 › 알림 넣기 › 영업 시간에 붙여 매번")
+                INVEST -> Said(name = "장 시간에 붙는 알림", what = "‘장 시작 30분 전마다’, ‘장 마감할 때’처럼 장 시간에 붙여 두면 그날 장 시간에 맞춰 알려요",
+                    where = "메모 › 알림 넣기 › 장 시간에 붙여 매번")
+                FIELD -> Said(name = "일정에 붙는 알림", what = "‘출근 1시간 전마다’, ‘일 끝나고 30분 뒤’처럼 일정에 붙여 두면 일정이 바뀌어도 그날에 맞춰 알려요",
+                    where = "메모 › 알림 넣기 › 일정에 붙여 매번")
+                else -> null
+            }
+        },
         "app.pro" to { s -> if (s.ownMoney()) Said(what = "광고 없이 쓰고, 휴대폰 캘린더 쓰기·매일 자동 백업·끄기 미션·돈 통계·달력 여러 개를 열어요. 1개월 무료로 써 볼 수 있어요") else null },
         "calendar.jumpMonth" to { s ->
             if (s.ownMoney()) Said(
