@@ -72,6 +72,11 @@ class RuleSheetHost(
     val month: YearMonth,
     val effect: (suspend (RuleChange) -> CellEffect?)? = null,
     val companyWay: Boolean? = false,
+    /**
+     * 2.0.0 [RVJ-32] 검토 PC-80: the month [effect] works out: [month], or when [month] is closed (its result kept) the first open
+     * month after it, which the sheet names ("10월은 마감돼 그대로예요 · 11월 급여부터").
+     */
+    val landsIn: YearMonth = month,
 ) {
     val shiftNames: Map<Long, String> get() = snapshot.shiftTypes.associate { it.id to it.name }
 

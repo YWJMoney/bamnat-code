@@ -930,11 +930,8 @@ internal fun Color.argbLong(): Long = toArgb().toLong() and 0xFFFFFFFFL
 
 @Suppress("unused") private val keepSpacer: @Composable () -> Unit = { Spacer(Modifier.height(0.dp)) }
 
-/** 을 or 를 after [w], by its last syllable's 받침. */
-internal fun eul(w: String): String {
-    val c = w.lastOrNull { it in '가'..'힣' } ?: return "을(를)"
-    return if ((c - '가') % 28 != 0) "을" else "를"
-}
+/** 을 or 를 after [w], by its last sound's 받침 (2.0.0 [RVJ-33] PC-84: a name with no Hangul read as Korean says it, not '을(를)'). */
+internal fun eul(w: String): String = com.bamnat.app.ui.Fmt.obj(w)
 
 /** An item's name in a sentence: a text box's own words already stand in quotes. */
 private fun quoted(i: DecorItem): String = if (i.kind == DecorKind.TEXT) i.label else "‘${i.label}’"

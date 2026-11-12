@@ -37,6 +37,8 @@ dependencies {
 }
 
 tasks.test {
+    // 2.0.0 [I60b-01] 시간 여행: -Pbamnat.todayShift=P30D면 Today의 시스템 시계가 30일 앞으로(.github/workflows/date-watch.yml).
+    (findProperty("bamnat.todayShift") as String?)?.let { systemProperty("bamnat.todayShift", it) }
     testLogging {
         events("passed", "failed", "skipped")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
