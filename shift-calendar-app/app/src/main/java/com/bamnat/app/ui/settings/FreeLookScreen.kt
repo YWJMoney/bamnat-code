@@ -622,7 +622,12 @@ internal class PaySampleWords(val kind: String, val title: String, val lines: Li
 
 internal fun paySampleOf(style: WorkStyle): PaySampleWords = when (style) {
     WorkStyle.DAY -> PaySampleWords("월급", "11월 예상 급여 (세전)", listOf("기본급" to 2_600_000L, "연장근로수당" to 312_000L, "식대" to 200_000L))
-    WorkStyle.HOURLY -> PaySampleWords("시급", "11월 받을 돈 (예상)", listOf("시급 10,030원 × 96시간" to 962_880L, "주휴수당" to 160_480L, "세금 3.3%" to -37_070L))
+    // 2.0.0 [RVJ-20] 새해 값: this year's 최저시급 (RateTable), not a number written here. 주휴 = a fifth of the week's hours.
+    WorkStyle.HOURLY -> com.bamnat.core.pay.RateTable.minimumWage().let { w ->
+        val worked = w * 96; val weekly = w * 96 / 5
+        PaySampleWords("시급", "11월 받을 돈 (예상)", listOf("시급 ${com.bamnat.app.ui.Fmt.won(w)} × 96시간" to worked, "주휴수당" to weekly,
+            "세금 3.3%" to -((worked + weekly) * 33 / 1000)))
+    }
     WorkStyle.FIELD -> PaySampleWords("일당", "11월 받을 돈", listOf("일당 180,000원 × 14공" to 2_520_000L, "잔업 0.5공 × 2번" to 180_000L, "세금 3.3%" to -89_100L))
     WorkStyle.BUSINESS -> PaySampleWords("매출", "11월 남는 돈 (추정)", listOf("매출" to 8_400_000L, "재료·임대 경비" to -5_100_000L, "카드 수수료" to -84_000L))
     WorkStyle.INVEST -> PaySampleWords("수익", "11월 실현 손익", listOf("실현 수익" to 412_000L, "배당" to 38_000L, "수수료·세금" to -21_400L))
