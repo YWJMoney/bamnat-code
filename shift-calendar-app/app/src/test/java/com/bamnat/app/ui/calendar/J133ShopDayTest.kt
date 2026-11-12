@@ -42,12 +42,20 @@ class J133ShopDayTest {
         ).week(monday).overLimit)
     }
 
-    /** [J133B-01] 빌드 9 확인: an 알바 calendar's 대근 is called 대타; a name the user gave it stays. */
+    /**
+     * [J133B-01] 빌드 9 확인: an 알바 calendar's 대근 is called 대타; a name the user gave it stays. 2.0.0 [RVH-50] HQ-18: its 잔업 is
+     * 추가 근무 (추) and its 특근 쉬는 날 출근 (출).
+     */
     @Test fun aPartTimersCoverIsADaeta() {
         val k = com.bamnat.core.model.ExtraKinds()
         assertEquals("대타", k.forHourly().name(com.bamnat.core.model.ExtraKind.COVER_ID))
-        assertEquals("잔업", k.forHourly().name(com.bamnat.core.model.ExtraKind.OVERTIME_ID))
+        assertEquals("추가 근무", k.forHourly().name(com.bamnat.core.model.ExtraKind.OVERTIME_ID))
+        assertEquals("추", k.forHourly().of(com.bamnat.core.model.ExtraKind.OVERTIME_ID).mark)
+        assertEquals("쉬는 날 출근", k.forHourly().name(com.bamnat.core.model.ExtraKind.SPECIAL_ID))
+        assertEquals("출", k.forHourly().of(com.bamnat.core.model.ExtraKind.SPECIAL_ID).mark)
         val mine = com.bamnat.core.model.ExtraKinds(k.kinds.map { if (it.id == com.bamnat.core.model.ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it })
-        assertTrue(mine.forHourly() === mine)
+        assertEquals("대신 근무", mine.forHourly().name(com.bamnat.core.model.ExtraKind.COVER_ID))
+        val named = com.bamnat.core.model.ExtraKinds(k.kinds.map { it.copy(name = it.name + "!") })
+        assertTrue(named.forHourly() === named)
     }
 }

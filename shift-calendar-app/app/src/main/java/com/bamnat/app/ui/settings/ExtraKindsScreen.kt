@@ -86,6 +86,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.appContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
@@ -455,7 +456,9 @@ fun ExtraKindsScreen(
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
     val edit by vm.editing.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-    val kinds = settings.extraKinds
+    // [RVH-50] HQ-18: the kinds as the calendar names them (an 알바's 추가 근무 · 쉬는 날 출근 · 대타); a kind edited here keeps that name.
+    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val kinds = settings.extraKinds.forStyle(calendars.styleOf(vm.calendarId, settings.workStyle))
     var adding by rememberSaveable { mutableStateOf(false) }
     val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var started by rememberSaveable { mutableStateOf(start == null) }
