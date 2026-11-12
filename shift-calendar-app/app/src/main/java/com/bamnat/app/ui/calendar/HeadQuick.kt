@@ -75,9 +75,14 @@ internal data class HeadQuickRoom(
     val round: Boolean,
     /** [round] on a narrow phone or with large text: 도구 is an icon too. */
     val tight: Boolean,
+    /**
+     * 2.0.0 [RVH-52] 검토 HQ-22: the round button leaves the month room to read at the head's own size. When it does not (a work's
+     * padded head on a folded phone, 글자 200%), the button waits in 도구 with the others: the month is never squeezed for it (조건 12).
+     */
+    val roundFits: Boolean = true,
 ) {
     /** How many are in the row; the rest are in 도구. */
-    val shown: Int get() = if (round) 1 else words
+    val shown: Int get() = if (round) (if (roundFits) 1 else 0) else words
 
     companion object {
         val NONE = HeadQuickRoom(0, round = false, tight = false)
@@ -85,15 +90,24 @@ internal data class HeadQuickRoom(
         /**
          * The room for [count] buttons in a head [widthDp] wide at [fontScale] (capped at 2), beside the month with its arrows (176dp
          * and 110dp a text step), 오늘 (58dp a step), the head's padding (34dp) and 도구 (48dp a step), less [reserved] dp that something
-         * else in the row takes. A button with its words is about 28dp + 72dp a step; at most [HeadQuick.ROW_MAX].
+         * else in the row takes. A button with its words is about 28dp + 72dp a step; at most [HeadQuick.ROW_MAX]. 2.0.0 [RVH-52] HQ-22:
+         * a work's month [titleGrow] times the app's size takes that much more of the row; [reserved] holds the work's head box too
+         * (바깥 간격·안 여백). The round button stands only where the month ([titleMin] dp: this month at the head's own size) still fits
+         * beside the arrows and ▾ (136dp with the row's sides), the round button, 오늘 and 나 (48dp each, [me]) and 도구 (48dp as an icon,
+         * else 64dp + 30dp a text step).
          */
-        fun of(count: Int, widthDp: Float, fontScale: Float, narrow: Boolean, reserved: Float = 0f): HeadQuickRoom {
+        fun of(
+            count: Int, widthDp: Float, fontScale: Float, narrow: Boolean, reserved: Float = 0f, titleGrow: Float = 1f,
+            titleMin: Float = 0f, me: Boolean = true,
+        ): HeadQuickRoom {
             if (count <= 0) return NONE
             val fs = fontScale.coerceAtMost(2f)
-            val free = widthDp - reserved - (176f + 110f * fs + 58f * fs + 34f + 48f * fs)
+            val free = widthDp - reserved - (176f + 110f * fs * titleGrow.coerceIn(1f, 2f) + 58f * fs + 34f + 48f * fs)
             val words = (free / (28f + 72f * fs)).toInt().coerceIn(0, minOf(HeadQuick.ROW_MAX, count))
             val round = words == 0
-            return HeadQuickRoom(words, round, tight = round && (narrow || fs >= 1.3f))
+            val tight = round && (narrow || fs >= 1.3f)
+            val left = widthDp - reserved - (136f + 48f * (if (me) 3 else 2) + (if (tight) 48f else 64f + 30f * fs))
+            return HeadQuickRoom(words, round, tight, roundFits = !round || left >= titleMin)
         }
     }
 }

@@ -161,7 +161,8 @@ private fun WorkPage(
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-            NavRow("연장·휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+            // [RVH-50] HQ-18: in the calendar's own words (an 알바's 추가 근무 · 쉬는 날 출근 · 대타).
+            NavRow("연장·휴무일 근무 지정", settings.extraKinds.forStyle(work.workStyle).visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
         }
         HorizontalDivider()
         // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.

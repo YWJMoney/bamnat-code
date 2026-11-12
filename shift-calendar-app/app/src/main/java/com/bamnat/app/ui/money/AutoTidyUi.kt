@@ -43,10 +43,11 @@ import kotlinx.coroutines.launch
  * shows when nothing was left out or joined in the last 30 days.
  */
 @Composable
-internal fun AutoTidyLine(area: String, calendarId: String?, modifier: Modifier = Modifier) {
+internal fun AutoTidyLine(area: String, calendarId: String?, modifier: Modifier = Modifier, match: (AutoTidy.Item) -> Boolean = { true }) {
     val box = LocalContext.current.appContainer.autoTidy
     val all by box.items.collectAsStateWithLifecycle()
-    val mine = remember(all, area, calendarId) { all.filter { it.area == area && (calendarId == null || it.calendarId == calendarId) } }
+    // 2.0.0 [RVH-57] [match]: one received link's days under that link only.
+    val mine = remember(all, area, calendarId) { all.filter { it.area == area && (calendarId == null || it.calendarId == calendarId) } }.filter(match)
     var open by rememberSaveable { mutableStateOf(false) }
     if (mine.isEmpty()) return
     TextButton(onClick = { open = true }, modifier = modifier.heightIn(min = 48.dp)) {
@@ -54,20 +55,37 @@ internal fun AutoTidyLine(area: String, calendarId: String?, modifier: Modifier 
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
         Text("자동으로 정리한 것 ${mine.size}건 보기")
     }
-    if (open) AutoTidySheet(mine, box, onDismiss = { open = false })
+    if (open) AutoTidySheet(mine, box, tidyWords(area), onDismiss = { open = false })
+}
+
+/**
+ * 2.0.0 [RVH-57] What the list says, in each area's words (조건 13): what it is under the title, the button that lets it be and the
+ * one that puts it back. The money words (one payment written once) mean nothing for a day a received roster changed.
+ */
+private class TidyWords(val intro: String, val keep: String, val back: String, val done: (String) -> String, val failed: String)
+
+private fun tidyWords(area: String) = when (area) {
+    com.bamnat.app.share.RosterFollower.TIDY_AREA -> TidyWords(
+        intro = "근무표대로 하려면 '근무표대로'를 눌러요.",
+        keep = "그대로 둘게요", back = "근무표대로", done = { "‘$it’을 근무표대로 넣었어요" }, failed = "넣지 못했어요. 다시 해 주세요",
+    )
+    else -> TidyWords(
+        intro = "같은 결제로 보고 한 번만 적었거나 하나로 합친 것이에요. 다르면 되살려요.",
+        keep = "맞아요", back = "되살리기", done = { "‘$it’을 되살렸어요" }, failed = "되살리지 못했어요. 다시 해 주세요",
+    )
 }
 
 /** [RVK-13] What the app left out or joined, newest first, each with why and '되살리기' (or '맞아요' to let it go). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, onDismiss: () -> Unit) {
+private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, words: TidyWords, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     val now = Today.millis()
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp)) {
             Text("자동으로 정리한 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text(said ?: "같은 결제로 보고 한 번만 적었거나 하나로 합친 것이에요. 다르면 되살려요.",
+            Text(said ?: words.intro,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (said != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
@@ -86,12 +104,12 @@ private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, onDismiss: 
                             Text("${Fmt.monthDay(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · ${left}일 남음",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }) {
-                            TextButton(onClick = { scope.launch { box.forget(item.id) } }) { Text("맞아요") }
+                            TextButton(onClick = { scope.launch { box.forget(item.id) } }) { Text(words.keep) }
                             TextButton(onClick = {
                                 scope.launch {
-                                    said = if (box.restore(item.id)) "‘${item.title}’을 되살렸어요" else "되살리지 못했어요. 다시 해 주세요"
+                                    said = if (box.restore(item.id)) words.done(item.title) else words.failed
                                 }
-                            }) { Text("되살리기") }
+                            }) { Text(words.back) }
                         }
                     }
                     HorizontalDivider()

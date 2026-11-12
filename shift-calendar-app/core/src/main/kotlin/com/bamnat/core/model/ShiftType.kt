@@ -113,9 +113,9 @@ data class ShiftType(
         return copy(end = s.plusMinutes(m.toLong()))
     }
 
-    /** Paid working minutes of one occurrence of this shift. */
+    /** Paid working minutes of one occurrence of this shift; [RVH-44] the gap between two parts is not work. */
     val workMinutes: Int
-        get() = if (!hasTimes) 0 else WorkTime.workMinutes(start!!, end!!, breakMinutes)
+        get() = if (!hasTimes) 0 else WorkTime.workMinutes(start!!, end!!, breakMinutes + if (hasGap) gapMinutes else 0)
 }
 
 /** 검토 WORK-19 The times a kind of day had up to and including [until]; [RVH-44] its gap between two parts too. */

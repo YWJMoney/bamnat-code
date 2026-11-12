@@ -598,6 +598,40 @@ class ScheduleRepository(
 
     suspend fun resetDay(date: LocalDate) = updateDay(date) { DayEntry(date) }
 
+    /** 2.0.0 [RVH-51] PC-72 The days changed by hand from [fromMillis] until [untilMillis], with when (최근 바꾼 기록). */
+    suspend fun changedDays(fromMillis: Long, untilMillis: Long): List<Pair<LocalDate, Long>> =
+        changeDao.between(fromMillis, untilMillis).map { LocalDate.ofEpochDay(it.epochDay) to it.atMillis }
+
+    /** [RVH-51] PC-72 Two days as they were before [moveDay], for 되돌리기. */
+    data class DayMove(val from: LocalDate, val fromWas: DayEntry?, val to: LocalDate, val toWas: DayEntry?)
+
+    /**
+     * 2.0.0 [RVH-51] PC-72 What [from] holds (근무·시간·잔업·연차·지각·알람) moved to [to], in place of what [to] held, and [from] back to its
+     * 근무 주기: a day the month turn of 1.36.1~1.39.0 put a month on. Both days say so in 최근 바꾼 기록.
+     */
+    suspend fun moveDay(from: LocalDate, to: LocalDate): DayMove = db.withTransaction {
+        val fromWas = readDay(from.toEpochDay())
+        val toWas = readDay(to.toEpochDay())
+        val moved = (fromWas ?: DayEntry(from)).copy(date = to)
+        writeDay(moved)
+        writeDay(DayEntry(from))
+        val now = clock()
+        changeDao.insert(DayChangeEntity(epochDay = to.toEpochDay(), atMillis = now, text = "${md(from)}에서 옮김 (지난 판 확인)"))
+        changeDao.insert(DayChangeEntity(epochDay = from.toEpochDay(), atMillis = now, text = "${md(to)}로 옮김 (지난 판 확인)"))
+        DayMove(from, fromWas, to, toWas)
+    }
+
+    /** [RVH-51] PC-72 [moveDay] undone: both days exactly as they were, and 최근 바꾼 기록 says so. */
+    suspend fun undoMove(m: DayMove) = db.withTransaction {
+        writeDay(m.fromWas?.copy(date = m.from) ?: DayEntry(m.from))
+        writeDay(m.toWas?.copy(date = m.to) ?: DayEntry(m.to))
+        val now = clock()
+        changeDao.insert(DayChangeEntity(epochDay = m.from.toEpochDay(), atMillis = now, text = "옮긴 것 되돌림 (지난 판 확인)"))
+        changeDao.insert(DayChangeEntity(epochDay = m.to.toEpochDay(), atMillis = now, text = "옮긴 것 되돌림 (지난 판 확인)"))
+    }
+
+    private fun md(d: LocalDate) = "${d.monthValue}월 ${d.dayOfMonth}일"
+
     companion object {
         const val MAX_LABEL_LENGTH = 2
         const val MAX_ALARMS = 10

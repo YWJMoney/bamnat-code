@@ -407,7 +407,9 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun calShiftHugeText() = shoot("313_phone_shift_huge_text", PHONE, 2f, withPay())
     /** [CAL-06] Any date, picked on a full calendar from the month list. */
     @Test fun calDateJump() = shoot("315_folded_date_jump", FOLDED) {
-        tapText(Fmt.month(Today.month()), exact = true, scrolls = 0)
+        // 2.0.0 [RVH-52]: this year's month, where its year does not fit at the head's size, drops the year (J133-22) rather than shrink.
+        val title = Fmt.month(Today.month()).takeIf { appears(it, exact = true) } ?: "${Today.month().monthValue}월"
+        tapText(title, exact = true, scrolls = 0)
         tapText("날짜 고르기", exact = true, scrolls = 0)
     }
     /** [CAL-18] The day's chips past the screen's edge: the end fades and "+N ›" says how many more. */

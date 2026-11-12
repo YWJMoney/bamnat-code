@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1762,6 +1763,8 @@ fun CalendarScreen(
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
                     // [TAB-04] N1 연간 판 turns by its own year arrows; a sideways swipe would only creep a month along the same year.
                     userScrollEnabled = !stamping && board != com.bamnat.core.layout.CalendarBoard.YEAR,
+                    // 2.0.0 [RVH-55] 검토 PC-88: quick swipes each turn a month, as quick taps on › do.
+                    flingBehavior = queuedTurns(pagerState),
                 ) { page ->
                     if (board == com.bamnat.core.layout.CalendarBoard.WEEK) {
                         val titles = remember(datedMemos) {
@@ -2258,16 +2261,39 @@ internal fun CalendarHeader(
     // the row. As many with their words as fit beside the month, 오늘, 도구 and 나 (the pattern and new-calendar icons, which are in 도구
     // too, give their place); none fits, one round button with its emoji, and the month drops the year and 오늘 is an icon (a narrow phone
     // or large text: 도구 too). The rest are in 도구. The head stays one line (조건 1).
-    val quickRoom = HeadQuickRoom.of(quick.size, maxWidth.value, LocalDensity.current.fontScale, narrow)
-    val quickRound = quickRoom.round
-    val quickTight = quickRoom.tight
-    val quickShown = quickRoom.shown
-    var menu by remember { mutableStateOf(false) }
     // [BLU-05] 1.36 부품 꾸미기: 달력 머리, 달 이름, 이동 단추, 오늘 단추.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     // [FXR-03] With the shown month's day (today in this month, else its first), so 조건부 꾸미기 works on the head too.
     val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month))
+    // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
+    val titleStyle = when {
+        narrow -> MaterialTheme.typography.titleMedium
+        wideTitle -> MaterialTheme.typography.headlineSmall
+        else -> MaterialTheme.typography.titleLarge
+    }
+    val titlePart = bp.style("cal.head.title", scope = headScope)
+    val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
+    // 2.0.0 [RVH-52] 검토 HQ-22 (큰 달 제목 26~30 작품을 입으면 접은 폭에서 제목이 '2026'으로 아주 작게): the work's bigger month takes
+    // its room before the 바로 단추 do.
+    val titleGrow = if (titleText.fontSize.isSp && titleStyle.fontSize.isSp) (titleText.fontSize.value / titleStyle.fontSize.value).coerceIn(1f, 2f) else 1f
     val headPart = bp.style("cal.head", scope = headScope)
+    // [RVH-52] HQ-22 (진짜 장터 작품으로 다시 찍음: '야간 회복 스테이션'의 머리 상자는 바깥 6·안 12 여백이라 접은 폭에서 제목이 '1'): the
+    // work's head box takes its sides from the row, and the round button stands only where this month still reads at the head's own size.
+    val headSides = 2f * ((headPart.out ?: 0) + (headPart.padH ?: 0))
+    val titleMeasurer = rememberTextMeasurer()
+    val titleBase = if (titleText.fontSize.isSp && titleStyle.fontSize.isSp && titleText.fontSize.value > titleStyle.fontSize.value) titleText.copy(fontSize = titleStyle.fontSize) else titleText
+    val shortTitle = monthTitle(month, short = true)
+    val density = LocalDensity.current
+    val titleMin = remember(shortTitle, titleBase, density) {
+        with(density) { titleMeasurer.measure(shortTitle, titleBase, maxLines = 1, softWrap = false).size.width.toDp().value }
+    }
+    val me = com.bamnat.app.ui.LocalMe.current.let { it.show && !it.inRail }
+    val quickRoom = HeadQuickRoom.of(quick.size, maxWidth.value, density.fontScale, narrow, reserved = headSides, titleGrow = titleGrow,
+        titleMin = titleMin, me = me)
+    val quickRound = quickRoom.round
+    val quickTight = quickRoom.tight
+    val quickShown = quickRoom.shown
+    var menu by remember { mutableStateOf(false) }
     val navPart = bp.style("cal.head.nav", scope = headScope)
     val todayPart = bp.style("cal.head.today", scope = headScope)
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
@@ -2297,26 +2323,18 @@ internal fun CalendarHeader(
                     .padding(start = 6.dp, end = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
-                val titleStyle = when {
-                    narrow -> MaterialTheme.typography.titleMedium
-                    wideTitle -> MaterialTheme.typography.headlineSmall
-                    else -> MaterialTheme.typography.titleLarge
-                }
                 // [J133-22] 1.33 (실사용 테스트 "작은 폰 달력 머리에 '2026년 10월' 글자가 없음"): a small phone shows this year's month
                 // without the year, and the title is never squeezed out by the buttons around it.
-                val titlePart = bp.style("cal.head.title", scope = headScope)
-                val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded || quickRound, yearInk = yearInk), titleText,
+                MonthTitleText(month, short = small || crowded || quickRound, style = titleText, base = titleStyle, yearInk = yearInk,
                     (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).partSpot("cal.head.title").then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (navPart.hide != true) IconButton(onClick = onNext, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달", tint = navTint) }
         }
         // [RVH-42] The work's 바로 단추, before 오늘.
-        if (quickRound) HeadQuickRound(quick.first(), onQuick)
+        if (quickRound) { if (quickShown > 0) HeadQuickRound(quick.first(), onQuick) }
         else quick.take(quickShown).forEach { HeadQuickButton(it, onQuick) }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
@@ -2427,6 +2445,36 @@ internal fun CalendarHeader(
 
 /** [CAL-52] Room for the pattern and new-calendar icons beside the month, 오늘 and 도구. */
 private val HEADER_ICONS_WIDTH = 480.dp
+
+/**
+ * 2.0.0 [RVH-52] 검토 HQ-22 (조건 12 '줄이지 말고 한 단계 낮춰요'): the month as big as [style] has it while it fits; else without this
+ * year's year; else at [base], the app's own size for the head (a work's 26~30 title one step down); only then made to fit.
+ */
+@Composable
+private fun MonthTitleText(
+    month: YearMonth, short: Boolean, style: androidx.compose.ui.text.TextStyle, base: androidx.compose.ui.text.TextStyle,
+    yearInk: androidx.compose.ui.graphics.Color?, modifier: Modifier = Modifier,
+) {
+    val full = monthTitle(month, short = short, yearInk = yearInk)
+    val shorter = monthTitle(month, short = true, yearInk = yearInk)
+    val lower = if (style.fontSize.isSp && base.fontSize.isSp && style.fontSize.value > base.fontSize.value) style.copy(fontSize = base.fontSize) else style
+    BoxWithConstraints(modifier) {
+        val measurer = rememberTextMeasurer()
+        val width = constraints.maxWidth
+        val pick = remember(full, shorter, width, style, lower) {
+            fun fits(t: androidx.compose.ui.text.AnnotatedString, s: androidx.compose.ui.text.TextStyle) =
+                measurer.measure(t, s, maxLines = 1, softWrap = false).size.width <= width
+            when {
+                fits(full, style) -> full to style
+                fits(shorter, style) -> shorter to style
+                fits(shorter, lower) -> shorter to lower
+                else -> null
+            }
+        }
+        if (pick != null) Text(pick.first, style = pick.second, maxLines = 1, softWrap = false)
+        else com.bamnat.app.ui.FitText(shorter, lower)
+    }
+}
 
 /** [CAL-52] 중-4: "2026년 10월" with the year smaller, so the month is what reads first and the line fits a phone. */
 @Composable

@@ -1048,7 +1048,17 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     val first = HelpFaq.firstFor(style)
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
         .map { if (style == com.bamnat.core.work.WorkStyle.HOURLY) it.copy(question = workplaceWords(it.question), answer = workplaceWords(it.answer)) else it }
+        .map { if (style.usesCompany) it else companyFreeWords(it, style) }
 }
+
+/**
+ * 2.0.0 [RVH-53] HQ-27 (조건 13): where the work has no company the first setup asks no 회사 찾기, so its answer says what it does
+ * ask, as 설정 › 내 근무's row does ([J133-71]).
+ */
+private fun companyFreeWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): HelpTopic = t.copy(
+    answer = t.answer.replace("회사 찾기부터 근무·급여까지", if (style.usesPayEngine) "근무 시간과 요일, 알람, 급여까지" else "일하는 방식부터"),
+    keywords = t.keywords - "회사 찾기",
+)
 
 /**
  * [J133-87] 1.33 빌드 6 (알바 도움말에 '회사 계산 방법'·'회사 규칙'): 알바's pay tab is 근무지 규칙, so the answers say what the

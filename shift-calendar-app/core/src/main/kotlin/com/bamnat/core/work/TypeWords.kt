@@ -16,13 +16,15 @@ package com.bamnat.core.work
 object TypeWords {
     private val NIGHT = listOf("연속 야간", "야간 뒤", "야간이면", "한 달 야간", "야간 전")
     private val ROTA = listOf("교대", "전공의", "근무 주기", "조 변경", "모든 조", "주주휴휴")
-    private val EMPLOYEE = listOf("연차", "대근", "주휴", "퇴근", "근무·급여", "근무 알람", "근무마다", "근무별", "회사 사정", "근무표")
+    // 2.0.0 [RVH-53] HQ-27: 회사 찾기 is for work that has a company (an 알바 that joined one keeps it: see the screen test).
+    private val EMPLOYEE = listOf("연차", "대근", "주휴", "퇴근", "근무·급여", "근무 알람", "근무마다", "근무별", "회사 사정", "근무표", "회사 찾기", "회사 이름으로")
 
     /** What must not show for [style]; nothing for 교대 (and a calendar from before kinds of work, which is 교대). */
     fun forbidden(style: WorkStyle?): List<String> = when (style) {
         null, WorkStyle.SHIFT -> emptyList()
         WorkStyle.DAY -> ROTA + NIGHT
-        WorkStyle.HOURLY -> ROTA + NIGHT + listOf("52시간", "대근", "근무·급여")
+        // [RVH-50] HQ-18: 잔업·특근 are a factory's and an office's words; an 알바 says 추가 근무 and 쉬는 날 출근.
+        WorkStyle.HOURLY -> ROTA + NIGHT + listOf("52시간", "대근", "근무·급여", "잔업", "특근")
         WorkStyle.FIELD -> ROTA + NIGHT + EMPLOYEE
         WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "쉬는 날")
         WorkStyle.INVEST -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "근무", "명세서", "급여", "회사")
@@ -68,7 +70,10 @@ object TypeWords {
             WorkStyle.FIELD -> { swap("근무마다", "일정마다"); swap("근무별", "일정별"); swap("퇴근 뒤", "일 끝난 뒤"); swap("퇴근 후", "일 끝난 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "일 끝") }
             WorkStyle.BUSINESS -> { swap("근무마다", "영업일마다"); swap("근무별", "날별"); swap("퇴근 뒤", "마감 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "마감"); swap("쉬는 날", w.offDay) }
             WorkStyle.INVEST -> { swap("근무마다", "날마다"); swap("근무별", "날별"); swap("퇴근 뒤", "장 마감 뒤"); swap("퇴근", "장 마감"); swap("근무", w.workDay) }
-            WorkStyle.HOURLY -> swap("대근", "대타")
+            WorkStyle.HOURLY -> {
+                swap("잔업·특근·대근", "추가 근무·대타"); swap("잔업·특근", "추가 근무"); swap("잔업", "추가 근무"); swap("특근", "쉬는 날 출근")
+                swap("대근", "대타")
+            }
             else -> {}
         }
         keep.forEachIndexed { i, a -> out = out.replace("\u0000$i\u0000", a) }
