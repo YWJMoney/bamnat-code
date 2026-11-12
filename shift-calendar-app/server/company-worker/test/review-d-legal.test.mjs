@@ -29,7 +29,7 @@ async function talk(call) {
 
 /** 처리방침 3.12 시행일(관리자 앱 › 기능 관리 › 일정, 실서버와 같은 11-09). */
 async function policy312(call) {
-  const r = await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-11-09", effective: "2026-11-09", heldUntil: "2026-12-09", why: "시험" }, await signIn(call));
+  const r = await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-11-09", effective: "2026-11-09", heldUntil: "2026-12-09", why: "시험" }, await signIn(call));
   assert.equal(r.status, 200, JSON.stringify(r.data));
 }
 

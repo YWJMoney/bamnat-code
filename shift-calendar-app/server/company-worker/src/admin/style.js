@@ -171,7 +171,8 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .card h3{font-size:.98rem}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
 .grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
-@media (min-width:600px){.grid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.grid.two>.card{margin:0}}
+/* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
+@media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
 @media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem}
 .head>:first-child{flex:1;min-width:0}
@@ -272,7 +273,9 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 a.tile:hover{border-color:var(--accent)}
 .tile .k{font-size:.8rem;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:.4rem}
 .tile .k svg{width:1.05rem;height:1.05rem}
-.tile .v{font-size:1.9rem;font-weight:900;line-height:1.1;letter-spacing:-.02em}
+.tile .v{font-size:1.9rem;font-weight:900;line-height:1.1;letter-spacing:-.02em;overflow-wrap:normal;word-break:keep-all}
+/* 숫자와 단위는 한 낱말로 붙여 두고(낱말 가운데서 끊지 않음, '살아 있음 · 판 다름'처럼 띄어 쓴 글은 띄어쓰기에서 줄을 바꿔요), 칸이 좁으면 한 단계 작게(칸 폭 기준, rem이라 글자가 크면 같이 커져요). */
+.tile{container-type:inline-size}@container (max-width:9.5rem){.tile .v{font-size:1.45rem}}@container (max-width:7rem){.tile .v{font-size:1.15rem}}
 .tile .d{font-size:.78rem;color:var(--muted);margin-top:auto}
 @media (max-width:599.98px){.tile{min-height:0;padding:.7rem .85rem;gap:.15rem}.tile .v{font-size:1.5rem}.tile .d{display:none}}
 /* The phone lists what waits; wider screens show the counts as tiles, with the activity beside. [ADMUX-06] The
@@ -361,6 +364,10 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks .off span{background:var(--soft);color:var(--muted)}
 .checks .bad span{background:var(--bad-bg);color:var(--bad)}
 .checks .bad{color:var(--bad);font-weight:700}
+/* 2.0.0 [RVQ-14] 총괄 사진 검토(840·글자 200%): 넘치는 칸은 통째로 다음 줄로(좁은 칸에 밀려 두세 글자씩 서지 않게). */
+.checks-row{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin:0 0 .9rem}.checks-row li{flex:0 0 auto;max-width:100%}
+.server-sum{overflow-wrap:anywhere}
+@media (max-width:480px){.checks-row{grid-auto-flow:row}}
 .card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
 .kv dt{color:var(--muted)}
@@ -561,7 +568,7 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .saved{font-size:.75rem;color:var(--muted)}
 .prefs .field select{flex:1}
 .check-row{display:flex;align-items:center;gap:.5rem;margin:.4rem 0;font-weight:600;font-size:.92rem}
-.check-row input{width:1.2rem;height:1.2rem;accent-color:var(--accent)}
+.check-row input{flex:none;width:1.2rem;height:1.2rem;accent-color:var(--accent)}
 .who.link{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:2px}
 .btn.disabled{opacity:.45;pointer-events:none}
 .pane-main{min-width:0}
@@ -604,9 +611,10 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .bar,.main{max-width:80rem}
 .hubtabs{max-width:80rem;margin-left:auto;margin-right:auto}
 /* [ADMX-01] The four numbers that need a hand: 2×2 on a phone, a row of four on a wide screen. */
-.tiles.core{grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem}
-@media (min-width:900px){.tiles.core{grid-template-columns:repeat(4,minmax(0,1fr))}.tiles.core.metric-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
-@media (min-width:600px) and (max-width:899.98px){.tiles.core.metric-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+/* 2.0.0 [RVQ-14] 총괄 사진 검토(글자 200%): '50ms'가 '50m/s'로 끊겼어요. 칸 수(--cols)는 넘지 않되 칸마다 9rem은 있게 해서 글자가 크면 칸 수가 줄어요. */
+.tiles.core{--cols:2;grid-template-columns:repeat(auto-fit,minmax(min(100%,max(9rem,calc(100% / var(--cols) - .6rem))),1fr));gap:.6rem}
+@media (min-width:900px){.tiles.core{--cols:4}.tiles.core.metric-kpis{--cols:6}}
+@media (min-width:600px) and (max-width:899.98px){.tiles.core.metric-kpis{--cols:3}}
 .tile.kpi{position:relative;min-height:0;padding:.75rem .85rem .6rem;gap:.15rem}
 .tile.kpi .v{display:flex;align-items:baseline;gap:.4rem;font-size:1.7rem}
 .tile.kpi .d{font-size:.75rem;line-height:1.35;color:var(--muted);display:block}
@@ -1083,6 +1091,8 @@ a.chip{text-decoration:none;color:inherit;padding:.4rem .8rem}
 .rollout-pick{margin:.25rem 0 .75rem}
 .rollout-pick .chips{margin:.35rem 0 0}
 .rows.wrap .row-main b,.person .rows .row-main b,.held-row .row-main b{white-space:normal;overflow:visible;text-overflow:clip}
+/* 2.0.0 [RVQ-07] 좁은 폭·큰 글자에서 줄 끝 단추(끊기·지우기)가 글 칸을 눌러 글자가 한 자씩 꺾였어요: 글 칸이 12rem보다 좁아지면 단추를 아래 줄로. */
+.rows.side-wrap .row{flex-wrap:wrap}.rows.side-wrap .row-main{flex:1 1 12rem}.rows.side-wrap .row-main b{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere}
 details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
 
 @media (max-width:719.98px){.flow-cols{grid-template-columns:minmax(0,1fr)}}
@@ -1104,7 +1114,7 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 /* 편 화면(폴드 안쪽 가로 ~840–1023px): 문의 목록과 열린 문의를 나란히(두 칸), 오른쪽 칸 아래로 사람 패널. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
 @media (min-width:720px) and (max-width:1023.98px){
   .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
-  .tiles.core{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .tiles.core{--cols:4}
 }
 @media (min-width:840px) and (max-width:1023.98px){
   .split{display:grid;grid-template-columns:minmax(13rem,15rem) minmax(0,1fr);gap:.85rem;align-items:start}

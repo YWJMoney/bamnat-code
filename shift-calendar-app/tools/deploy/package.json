@@ -1,0 +1,8 @@
+{
+  "name": "bamnat-deploy-tools",
+  "private": true,
+  "description": "2.0.0 [RVQ-01] 검토 SRV-02: 배포 workflow(ship)가 쓰는 wrangler를 판·무결성 값까지 묶어요. npm ci --ignore-scripts로 받아요.",
+  "devDependencies": {
+    "wrangler": "4.150.0"
+  }
+}

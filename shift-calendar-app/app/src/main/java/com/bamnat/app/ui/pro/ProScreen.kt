@@ -223,6 +223,8 @@ fun ProScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+                // 2.0.0 [RVO-01] (PC-54) 개발용 빌드에서는 등급 미리 보기를 맨 위에: 프로가 아닐 때 모습을 여기서 바로 골라 봐요.
+                if (tierPreviewShown()) TierPreviewCard(c, gate, showNow = false)
                 StatusCard(gate, pro, zone, settings.workStyle)
                 // 1.36 [PSH-01] 프로 나눔 1인, right under 지금 (PC: 맨 아래에 있어 못 찾았어요).
                 if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = say("top"))
@@ -262,11 +264,11 @@ fun ProScreen(onBack: () -> Unit) {
                     Text(TRUST_LINE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                 }
 
-                if (!gate.live || gate.preview) {
+                // [RVO-01] (PC-54) 미리 보기는 출시 뒤와 같은 요금제 창을 보여요(가격은 Play가 없으면 예시, 단추는 결제하지 않아요).
+                if (!gate.live) {
                     SectionCard(title = "결제") {
                         Text(
-                            if (gate.preview) "미리 보기라 결제는 되지 않아요."
-                            else "지금은 정식 출시 전이라 모든 기능이 무료예요. 출시하는 날 앱에서 알려 드리고, 테스트에 참여한 분께는 프로 ${config.thanksMonths.coerceAtLeast(1)}개월을 드려요.",
+                            "지금은 정식 출시 전이라 모든 기능이 무료예요. 출시하는 날 앱에서 알려 드리고, 테스트에 참여한 분께는 프로 ${config.thanksMonths.coerceAtLeast(1)}개월을 드려요.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         // 1.36 PC 통합 확인 f629c6f1 (프로 화면에 '사업자 정보'가 없어요): before 정식 출시 the 결제 card has no plans, and
@@ -276,7 +278,7 @@ fun ProScreen(onBack: () -> Unit) {
                         if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
                     }
                 } else {
-                    PlansCard(c, gate, pro, plans, billingState, onMessage = say("plans"))
+                    PlansCard(c, gate, pro, shownPlans(gate, plans), billingState, onMessage = say("plans"))
                     Said("plans")
                 }
 

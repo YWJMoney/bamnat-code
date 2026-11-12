@@ -307,6 +307,14 @@ class SetupViewModel(
         return d.linkTitle
     }
 
+    /**
+     * 2.0.0 [RVG-28] 검토 PC-94: the link this setup started from did not say its breaks (an app or share server before 2.0.0), so the
+     * 근무 came in with none and is an hour longer than the sender's. The summary says so while no break is set here.
+     */
+    fun linkRestUnknown(d: SetupDraft = current): Boolean =
+        d.linkTitle.isNotBlank() && d.workTypes.all { it.breakMinutes == 0 } &&
+            c.received.mine()?.schedule?.types?.any { it.restUnknown } == true
+
     fun pickStyle(style: WorkStyle, roster: Boolean = false) {
         val d = current
         when (style) {
