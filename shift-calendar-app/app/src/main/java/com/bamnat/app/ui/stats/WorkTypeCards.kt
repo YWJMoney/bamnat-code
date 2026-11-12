@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -170,7 +171,10 @@ private fun ShiftFirstCard(snapshot: ScheduleSnapshot, month: YearMonth, payTota
         // [VIS-05] With large text the two tiles stand one under the other: half a 320dp phone cut the caption.
         if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { night(Modifier.fillMaxWidth()); pay(Modifier.fillMaxWidth()) }
-        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { night(Modifier.weight(1f)); pay(Modifier.weight(1f)) }
+        // 2.0.0 [RVP-11] A caption on two lines no longer leaves the pair at two heights.
+        } else Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            night(Modifier.weight(1f).fillMaxHeight()); pay(Modifier.weight(1f).fillMaxHeight())
+        }
     }
 }
 

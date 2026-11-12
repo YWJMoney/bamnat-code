@@ -101,7 +101,8 @@ class MATScreenshotTest : ScreenshotBase() {
                 }
             }
         }
-        assertTrue(appears("그림 틀", exact = false))
+        // 2.0.0 갈래 P: the editors grew a little (no 9sp words, 48dp chips), so 그림 틀 is under the fold of a phone now.
+        assertTrue(scrolledTo("그림 틀"))
     }
 
     /** [MAT-07] 움직임: 달 넘김, 오늘 강조, 입히기 전환, 빠르기, and 끄기. */

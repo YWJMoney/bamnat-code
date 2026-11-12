@@ -718,7 +718,8 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "색") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+                        FlowRow {
                             for (c in ExtraPalette) {
                                 val selected = c == kind.colorArgb
                                 Box(
