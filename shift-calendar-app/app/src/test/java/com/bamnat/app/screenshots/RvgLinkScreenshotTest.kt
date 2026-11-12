@@ -133,11 +133,28 @@ class RvgLinkScreenshotTest : ScreenshotBase() {
         mineByMistake().invoke(this)
         // Unfolded, the card is in the right-hand column.
         reveal("내 근무표가 아니에요", exact = true, across = if (wide) 0.75f else 0.5f)
+        // [RVG-21] 검토 HQ-19: 민지's is a 가족 link, so its card says 보낸 분, never 리더.
+        assertTrue(appears("보낸 분이 근무표를 고치면", exact = false))
+        assertTrue(gone("리더가", exact = false))
     }
     @Test fun notMineFoldLight() = shoot("rvg20_received_fold_light_100", FOLDED, notMineCard())
     @Test fun notMineFoldDarkHuge() = shoot("rvg20_received_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, notMineCard())
     @Test fun notMineOpenLight() = shoot("rvg20_received_open_light_100", UNFOLDED, notMineCard(wide = true))
     @Test fun notMineOpenDarkHuge() = shoot("rvg20_received_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, notMineCard(wide = true))
+
+    /**
+     * [RVG-22] 검토 HQ-20 (조건 12): the received month's head at the largest text. '오늘' is the 오늘 icon where the month and its word
+     * do not both fit (it stood one letter a line), '내 달력으로' its face only (it was cut to '내 달력…'), and the dates whole.
+     */
+    private fun receivedHead(big: Boolean): Screen.() -> Unit = {
+        mineByMistake().invoke(this)
+        assertTrue(appears("오늘", exact = true))
+        assertTrue(appears("내 달력으로", exact = true))
+        if (!big) assertTrue("there is room: the words, not the icon", appears("2026년 10월", exact = false))
+    }
+    @Test fun receivedHeadFoldLight() = shoot("rvg22_received_head_fold_light_100", FOLDED, receivedHead(big = false))
+    @Test fun receivedHeadFoldDarkHuge() = shoot("rvg22_received_head_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, receivedHead(big = true))
+    @Test fun receivedHeadOpenDarkHuge() = shoot("rvg22_received_head_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, receivedHead(big = true))
 
     /** How many days come out is said first, and how many changed by hand stay. */
     private fun notMineAsk(wide: Boolean = false): Screen.() -> Unit = {

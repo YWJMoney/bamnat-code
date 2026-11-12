@@ -164,6 +164,11 @@ data class ReceivedCalendar(
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
+    /**
+     * [RVG-21] 검토 HQ-19 (조건 13): a 리더's team link (`team`: one member's days, made for them). Any other link is the sender's own,
+     * so what its cards say names 보낸 분, never 리더. When the link is gone, the copy the user's days were matched to says it.
+     */
+    val fromLeader: Boolean get() = (raw ?: basis)?.optBoolean("team") == true
     /** Like an account name: what the sharer typed, e.g. 민지. */
     val name: String get() = title.trim().ifEmpty { "이름 없음" }
     /** 민지의 근무표, as the shared page says. [RVH-20] 검토 TYPE-16: a shop's link is 민지의 영업일, a field worker's 민지의 일정. */

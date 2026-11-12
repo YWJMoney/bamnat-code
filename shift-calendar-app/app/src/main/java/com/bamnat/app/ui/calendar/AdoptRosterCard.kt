@@ -3,6 +3,7 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -35,9 +36,14 @@ import java.time.YearMonth
 
 /**
  * 1.38 출시 점검 D9 (사용자 2026-11-07, 추천안): what is put in was a copy taken once. 1.39 [TEAM-22]: the leader's later change now
- * comes by itself (or is asked, as '이 근무표가 바뀌면' says), so the note says that instead.
+ * comes by itself (or is asked, as '이 근무표가 바뀌면' says), so the note says that instead. [RVG-21] 검토 HQ-19: 리더 only for a
+ * 리더's team link ([com.bamnat.app.share.ReceivedCalendar.fromLeader]); a 가족·동료's link is changed by 보낸 분.
  */
-internal const val ONCE_NOTE = "넣은 뒤 리더가 근무표를 고치면 6시간 안에 받아서, 아래 '이 근무표가 바뀌면'에 고른 대로 내 달력과 알람에 넣거나 여쭤봐요. 내가 직접 바꾼 날은 그대로 둬요."
+internal fun onceNote(leader: Boolean) =
+    "넣은 뒤 ${changer(leader)} 근무표를 고치면 6시간 안에 받아서, 아래 '이 근무표가 바뀌면'에 고른 대로 내 달력과 알람에 넣거나 여쭤봐요. 내가 직접 바꾼 날은 그대로 둬요."
+
+/** [RVG-21] Who changes the link later, as a sentence's subject. */
+internal fun changer(leader: Boolean) = if (leader) "리더가" else "보낸 분이"
 
 /**
  * 1.38 [P3-X-03] 받은 근무표를 내 달력으로: the month's days of the link written into the user's own calendar (so the 근무 알람 rings
@@ -84,7 +90,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     SectionCard(title = "내 달력에 넣기") {
         if (undo != null && (changes.isEmpty() || all.isEmpty())) {
             Text("${undo!!.size}일 넣었어요. 근무 알람도 이 근무대로 울려요.", style = MaterialTheme.typography.bodyMedium)
-            Text(ONCE_NOTE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { val u = undo!!; undo = null; app.launch { u.forEach { (d, e) -> c.scheduleRepository.restoreDay(d, e) } } }) { Text("되돌리기") }
             return@SectionCard
         }
@@ -105,18 +111,26 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
         }
         if (missing.isNotEmpty()) Text("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
             style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
-        Text(ONCE_NOTE, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val putIn = {
+            val todo = changes
+            app.launch {
+                val before = todo.mapValues { (d, o) -> c.scheduleRepository.updateDay(d) { it.copy(override = o) } }
+                undo = before
+                // 1.39 [TEAM-22] Put in once: when the 리더 changes this link later, the change is offered (or as set below).
+                c.received.markAdopted(id)
+                com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
+            }
+            Unit
+        }
+        val words = "${changes.size}일 내 달력에 넣기"
+        // [RVG-23] 검토 HQ-21 (조건 2·10): a link only seen beside mine (neither the user's own nor put in) does not lead with putting
+        // it in. Right after '내 근무표가 아니에요' took its days out, the biggest thing on screen was the way to put them back.
+        val seenOnly = cal == null || !cal.mine && !cal.adopted
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = {
-                val todo = changes
-                app.launch {
-                    val before = todo.mapValues { (d, o) -> c.scheduleRepository.updateDay(d) { it.copy(override = o) } }
-                    undo = before
-                    // 1.39 [TEAM-22] Put in once: when the 리더 changes this link later, the change is offered (or as set below).
-                    c.received.markAdopted(id)
-                    com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
-                }
-            }, enabled = changes.isNotEmpty()) { Text("${changes.size}일 내 달력에 넣기") }
+            if (seenOnly) androidx.compose.material3.OutlinedButton(onClick = putIn, enabled = changes.isNotEmpty(),
+                modifier = androidx.compose.ui.Modifier.heightIn(min = 48.dp)) { Text(words) }
+            else Button(onClick = putIn, enabled = changes.isNotEmpty()) { Text(words) }
         }
     }
 }
@@ -158,7 +172,9 @@ internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar, onSay: ((
     val c = LocalContext.current.appContainer
     val mode = com.bamnat.app.share.RosterFollower.mode(cal)
     SectionCard(title = "이 근무표가 바뀌면") {
-        Text("리더가 근무표를 고쳐 다시 보내면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요.",
+        // [RVG-21] 검토 HQ-19: a 리더 sends the team's 근무표 again; anyone else's link changes as they change their own.
+        Text(if (cal.fromLeader) "리더가 근무표를 고쳐 다시 보내면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요."
+            else "보낸 분이 근무표를 고치면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.bamnat.app.share.RosterFollower.Mode.entries.forEach { m ->

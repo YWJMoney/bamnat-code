@@ -1,6 +1,16 @@
 package com.bamnat.app.ui.setup
 
 import androidx.activity.compose.setContent
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -155,11 +165,58 @@ class LinkOwnerTest {
         var said: String? = null
         window({ SetupHost(vm, onNotMine = { said = it }) }) {
             compose.onNodeWithText("근무 이름과 시간, 날짜를 그대로 넣었어요.").assertDoesNotExist()
+            // 디자인 품질 조건 9·14 (총괄 #456): a 48dp button, read out by its own words.
+            compose.onNodeWithText("가족·동료 근무표였어요").pressable("가족·동료 근무표였어요")
             compose.onNodeWithText("가족·동료 근무표였어요").assertIsEnabled().performClick()
             compose.waitForIdle()
             assertEquals("민지", said)
             assertNull(c.setupDrafts.draft.value)
         }
+    }
+
+    /** 디자인 품질 조건 9·14: at least 48dp tall to press, a button, and read out as its words (nothing else said for it). */
+    private fun androidx.compose.ui.test.SemanticsNodeInteraction.pressable(words: String) {
+        assertHeightIsAtLeast(48.dp)
+        assertHasClickAction()
+        this.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+        val node = fetchSemanticsNode()
+        assertEquals(listOf(words), node.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text })
+        assertNull("no other name over the words", node.config.getOrNull(SemanticsProperties.ContentDescription))
+    }
+
+    private fun received(raw: JSONObject, mine: Boolean) = com.bamnat.app.share.ReceivedCalendar(
+        id = "fam12345", title = "민지", color = 0xFF2196F3, addedAt = Instant.parse("2026-11-12T00:00:00Z"), fetchedAt = null,
+        updatedAt = null, expiresAt = null, raw = raw, mine = mine,
+    )
+
+    /** [RVG-20] '내 근무표가 아니에요': only on a link that is the user's own, 48dp, read out as its words. */
+    @Test fun notMineIsOnTheUsersOwnLinkOnly() {
+        window({ com.bamnat.app.ui.calendar.FollowModeRow(received(raw("family"), mine = true), onSay = {}) }) {
+            compose.onNodeWithText("내 근무표가 아니에요").pressable("내 근무표가 아니에요")
+        }
+        window({ com.bamnat.app.ui.calendar.FollowModeRow(received(raw("family"), mine = false), onSay = {}) }) {
+            compose.onNodeWithText("내 근무표가 아니에요").assertDoesNotExist()
+        }
+    }
+
+    /**
+     * [RVG-21] 검토 HQ-19 (조건 13) 낱말 검사: a 가족·동료's link never says 리더 (the sender changes it), a 리더's team link does
+     * (the 리더 sends it again).
+     */
+    @Test fun onlyATeamLinkSaysLeader() {
+        window({ com.bamnat.app.ui.calendar.FollowModeRow(received(raw("family"), mine = true), onSay = {}) }) {
+            compose.onNodeWithText("보낸 분이 근무표를 고치면 6시간 안에 받아요", substring = true).assertExists()
+            compose.onAllNodesWithText("리더", substring = true).assertCountEquals(0)
+        }
+        window({ com.bamnat.app.ui.calendar.FollowModeRow(received(raw(team = true), mine = true), onSay = {}) }) {
+            compose.onNodeWithText("리더가 근무표를 고쳐 다시 보내면", substring = true).assertExists()
+        }
+        assertTrue(received(raw(team = true), mine = true).fromLeader)
+        assertFalse(received(raw("family"), mine = true).fromLeader)
+        assertFalse("a link from before 1.33 is the sender's own", received(raw(), mine = true).fromLeader)
+        assertTrue(com.bamnat.app.ui.calendar.onceNote(leader = false).startsWith("넣은 뒤 보낸 분이 근무표를 고치면"))
+        assertFalse("리더" in com.bamnat.app.ui.calendar.onceNote(leader = false))
+        assertTrue(com.bamnat.app.ui.calendar.onceNote(leader = true).startsWith("넣은 뒤 리더가 근무표를 고치면"))
     }
 
     /** [RVG-17] 디자인 품질 조건 7: no signal, a slow server, a link gone, each in its own words. */

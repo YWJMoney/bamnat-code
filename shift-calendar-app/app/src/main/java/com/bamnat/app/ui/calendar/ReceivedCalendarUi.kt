@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.LinkOff
@@ -519,6 +520,11 @@ private fun ResolvedDay.isRestForMe(): Boolean = (isOff || leave?.isFullDay == t
  * [SHR-02][SHR-04] Someone's shared calendar in place of the user's own: read only, with the days
  * both are off marked, the day picked compared with the user's own, and what else they sent.
  */
+/** [RVG-22] What the received month's head needs besides the month and '오늘': ‹ and › (48dp each), the month's 6dp sides, the text
+ * button's own 12dp sides and the row's 4dp ends. */
+private val HEAD_BUTTONS = 48.dp * 2 + 12.dp + 24.dp + 8.dp
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReceivedCalendarView(
     vm: ReceivedViewModel,
@@ -581,14 +587,32 @@ fun ReceivedCalendarView(
 
     val calendarPart: @Composable () -> Unit = {
         identityBar()
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-            Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 6.dp))
-            IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘") }
+        // [RVG-22] 검토 HQ-20 (조건 12): on a narrow column at large text (편 폭 200%) the month took the room and '오늘' stood one letter
+        // a line. Where the month and '오늘' do not both fit, '오늘' is the calendar's 오늘 icon (read out as 오늘) and the month drops
+        // this year's number, as the month view's header does; the month itself shrinks last and never wraps.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val monthStyle = MaterialTheme.typography.titleMedium
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val todayStyle = MaterialTheme.typography.labelLarge
+            val roomy = with(androidx.compose.ui.platform.LocalDensity.current) {
+                (measurer.measure(Fmt.month(month), monthStyle).size.width + measurer.measure("오늘", todayStyle).size.width).toDp()
+            } + HEAD_BUTTONS <= maxWidth
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    com.bamnat.app.ui.FitText(
+                        if (roomy) androidx.compose.ui.text.AnnotatedString(Fmt.month(month)) else monthTitle(month, short = true),
+                        monthStyle, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp),
+                    )
+                    IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+                }
+                if (roomy) TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘", maxLines = 1, softWrap = false) }
+                else IconButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Icon(Icons.Filled.Today, "오늘") }
+            }
         }
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        // [RVG-22] 검토 HQ-20: at large text on a narrow column the chip took the row and '방금 받음 ↻' was cut to '방금'; now when both
+        // do not fit, the freshness goes whole to the line under the chip (the chip is never squeezed either).
+        FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             // [CAL-12] Only for a month the link covers: outside it there is nothing to compare.
             if (canCompare && schedule.covers(month)) {
                 FilterChip(
@@ -600,7 +624,7 @@ fun ReceivedCalendarView(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Freshness(cal, loading, offline, onRefresh = { vm.refresh(cal.id) })
+            Row(verticalAlignment = Alignment.CenterVertically) { Freshness(cal, loading, offline, onRefresh = { vm.refresh(cal.id) }) }
         }
         WeekdayHeader(weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
@@ -857,6 +881,7 @@ private fun ReceivedDayCell(
             val dateSp = with(density) { minOf(13.sp.toDp(), 14.dp).toSp() }
             // 2.0.0 [RVP-11][RVH-11] 10sp at least (검토 UIX-11), and capped so that at 200% it stays inside the cell (CAL-16).
             val memoSp = with(density) { minOf(10.sp.toDp(), 11.dp).toSp() }
+            val markSp = with(density) { minOf(10.sp.toDp(), 10.dp).toSp() }
             Box(Modifier.fillMaxWidth().height(20.dp)) {
                 Box(
                     Modifier.align(Alignment.Center).size(20.dp).clip(CircleShape).background(if (isToday) scheme.primary else Color.Transparent),
@@ -868,6 +893,9 @@ private fun ReceivedDayCell(
                         fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
                         color = if (isToday) scheme.onPrimary else numberColor,
                         fontSize = dateSp,
+                        // [RVG-22] 검토 HQ-20: the style's own line (20sp, 40 at 200%) in a 20dp circle cut the number in half; the line
+                        // is the number's size, as the month view's cells have it.
+                        lineHeight = dateSp,
                         maxLines = 1,
                     )
                 }
@@ -877,7 +905,12 @@ private fun ReceivedDayCell(
                 day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
                     Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
-                    ) { Text(e.name.take(1), fontSize = 10.sp /* [RVP-11] T13-07 */, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
+                    ) {
+                        // [RVG-22] 검토 HQ-20: at 200% its letter grew over today's date (the '14' under a green box); capped as the
+                        // month view's cell marks are (WorkCells), so the date stays seen.
+                        Text(e.name.take(1), fontSize = markSp /* [RVP-11] T13-07 */, lineHeight = markSp, fontWeight = FontWeight.Bold,
+                            color = scheme.onSecondaryContainer)
+                    }
                 }
             }
             if (inRange) DayBadge(schedule, day, size = 22.dp, shifts = shifts)
