@@ -74,6 +74,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -893,8 +894,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     LocalMoneyLook provides moneyLook,
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
                                     // [BLU-06] the draft's parts in 자세히 too.
-                                    com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
-                                        remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
+                                    // 2.0.0 [RVS-06] SD-02: with the floors the phone keeps, as the example above.
+                                    com.bamnat.app.ui.parts.LocalBlueprint provides MaterialTheme.colorScheme.background.let { ground ->
+                                        val dark = ground.luminance() < 0.5f
+                                        val screen = ground.toArgb().toLong() and 0xFFFFFFFFL
+                                        remember(d.parts, dark, screen) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark).floored(screen) } },
                                     com.bamnat.app.ui.decor.LocalDecor provides decor,
                                     com.bamnat.app.ui.parts.LocalBlueprintRaw provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
                                     // [RUL-02] the phone's own days, so 조건부 꾸미기 shows on the weeks below.

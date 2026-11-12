@@ -1,5 +1,7 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.ThemeMode
@@ -148,5 +150,29 @@ class S3ScreenshotTest : ScreenshotBase() {
             settle()
             if (!appears("넣기 전 설정으로 되돌릴까요?", exact = true)) "되돌리기 전에 묻지 않아요" else null
         }
+    }
+
+    /**
+     * RVS-06 (검토 SD-02): the studio's and 장터's example draws a work with the floors the phone keeps, so a 달 이름 the colour of its
+     * 달력 머리 (RCP-18 '글자색=바탕색') reads there as it does when worn, instead of vanishing only in the example.
+     */
+    @Test fun theExampleKeepsTheFloorsAsWorn() = shoot("s3/rvs06_example_floor_light_100_folded", FOLDED) {
+        val head = 0xFFFFE0B2L
+        val work = Recipe("머리와 같은 글자색", styles = WorkStyle.entries.toSet(), pieces = listOf(Piece(PieceKind.PARTS, mapOf("parts" to listOf(
+            mapOf("id" to "cal.head", "fill" to head),
+            mapOf("id" to "cal.head.title", "ink" to head),
+        )))))
+        content { com.bamnat.app.ui.recipe.MockPhone(work, WorkStyle.SHIFT, "calendar", onTab = {}) }
+        settle()
+        val title = nodes(merged = false).firstOrNull { n ->
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.any { it.text.endsWith("월") } == true
+        }
+        val layouts = ArrayList<androidx.compose.ui.text.TextLayoutResult>()
+        title?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
+        val ink = layouts.firstOrNull()?.layoutInput?.style?.color
+        assertTrue("예시에 달 이름이 없어요", ink != null)
+        val argb = ink!!.toArgb().toLong() and 0xFFFFFFFFL
+        val ratio = com.bamnat.core.layout.Contrast.ratio(argb, head)
+        assertTrue("예시의 달 이름이 머리 색 위에서 읽혀요 (대비 $ratio)", ratio >= com.bamnat.core.recipe.PartFloor.SMALL)
     }
 }

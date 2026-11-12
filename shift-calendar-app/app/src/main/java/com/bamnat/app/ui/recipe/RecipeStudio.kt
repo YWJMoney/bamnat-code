@@ -64,6 +64,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
@@ -225,7 +226,14 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
             runCatching { com.bamnat.core.recipe.Blueprint(MarketFonts.lines(com.bamnat.core.recipe.Blueprint.clean(l), cardFonts.orEmpty())) }.getOrNull() }
             ?: com.bamnat.core.recipe.Blueprint.EMPTY
     }
-    val blueprint = rawParts.let { b -> val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f; remember(b, dark) { b.forDark(dark) } }
+    // 2.0.0 [RVS-06] 검토 SD-02: the example draws the parts with the floors the phone keeps (글자 대비·크기, 누르는 부품, 움직임 예산), so
+    // what the studio and 장터 show is what is worn ([com.bamnat.core.recipe.Blueprint.floored], as the app theme does).
+    val blueprint = rawParts.let { b ->
+        val ground = MaterialTheme.colorScheme.background
+        val dark = ground.luminance() < 0.5f
+        val screen = ground.toArgb().toLong() and 0xFFFFFFFFL
+        remember(b, dark, screen) { b.forDark(dark).floored(screen) }
+    }
     MaterialTheme(colorScheme = com.bamnat.app.ui.parts.PartTheme.colors(MaterialTheme.colorScheme, blueprint),
         typography = com.bamnat.app.ui.parts.PartTheme.typography(MaterialTheme.typography, blueprint),
         shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), blueprint)) {
