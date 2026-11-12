@@ -66,7 +66,8 @@ private class FillRow(val read: FillSheetReader.Fill) {
     val asks: Boolean get() = !confirmed || disagrees || !usable
 
     companion object {
-        fun plain(v: Double): String = if (v == Math.floor(v)) v.toLong().toString() else v.toString()
+        // 2.0.0 [RVK-33] (검토 MONEY-78) Never '5.2E-4': the field would then lose the E and the minus when fixed.
+        fun plain(v: Double): String = com.bamnat.core.text.Numbers.plain(v)
     }
 }
 
@@ -221,7 +222,7 @@ private fun RowTitle(f: FillSheetReader.Fill, ask: Boolean, lead: (@Composable (
         Text(f.side.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge, color = sideColor(f.side))
         Text(f.title.ifBlank { "종목 이름 못 읽음" }, style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f).then(if (ask && FillSheetReader.Field.NAME in f.unsure) Modifier.background(warning().copy(alpha = 0.2f)) else Modifier))
-        listOfNotNull(f.date?.let { "${it.monthValue}/${it.dayOfMonth}" }, f.time?.let { "%02d:%02d".format(it.hour, it.minute) }).takeIf { it.isNotEmpty() }
+        listOfNotNull(f.date?.let { "${it.monthValue}/${it.dayOfMonth}" }, f.time?.let { "%02d:%02d".format(java.util.Locale.ROOT, it.hour, it.minute) }).takeIf { it.isNotEmpty() }
             ?.let { Text(it.joinToString(" "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
@@ -252,7 +253,7 @@ private fun NewRowView(item: FillReconcile.Item, r: FillRow, zone: java.time.Zon
         AskFields(r)
         item.alert?.let { a ->
             val t = java.time.Instant.ofEpochMilli(a.at).atZone(zone)
-            Text("기다리던 ‘${a.title} ${InvestFmt.quantity(a.quantity)}${a.market.unit}’ 알림(${"%02d:%02d".format(t.hour, t.minute)})이에요 · 넣으면 대기함에서 빠져요" +
+            Text("기다리던 ‘${a.title} ${InvestFmt.quantity(a.quantity)}${a.market.unit}’ 알림(${"%02d:%02d".format(java.util.Locale.ROOT, t.hour, t.minute)})이에요 · 넣으면 대기함에서 빠져요" +
                 if (item.fills.size > 1) " · ${item.fills.size}줄 평균" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
@@ -302,7 +303,7 @@ private fun DiffLine(who: String, q: Double, p: Double, minute: Int?, market: co
         append(" × ")
         part(if (p > 0) InvestFmt.price(p, market) else "단가 없음", FillReconcile.Part.PRICE)
         append(" · ")
-        part(minute?.let { "%02d:%02d".format(it / 60, it % 60) } ?: "시각 없음", FillReconcile.Part.TIME)
+        part(minute?.let { "%02d:%02d".format(java.util.Locale.ROOT, it / 60, it % 60) } ?: "시각 없음", FillReconcile.Part.TIME)
     }
     Text(text, style = MaterialTheme.typography.bodyMedium)
 }

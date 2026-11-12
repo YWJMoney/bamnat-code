@@ -41,6 +41,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -90,7 +91,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.tier.Feature
@@ -826,19 +831,8 @@ private fun PayResult(
         }
 
         SectionCard(title = "내 급여 값") {
-            // [PLAZA-04] Pay set up by hand a moment ago: offered to coworkers once, with the plaza's spacing after "다음에".
-            val moment by vm.shareMoment.collectAsStateWithLifecycle()
-            moment?.let { m -> com.bamnat.app.ui.company.ShareWayCard(m, onShare = onShareWay, modifier = Modifier.padding(vertical = 8.dp), onClosed = vm::shareShown) }
-            // [PAYS-07][PAYS-09] What was just made, and then the invitation to share the company's way.
-            justMade?.let { made ->
-                MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null)
-                com.bamnat.app.ui.company.ShareWayCard(
-                    com.bamnat.app.ui.company.ShareMoment.MADE, onShare = onShareWay,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    ways = waysText(profile, shiftNames, made),
-                    notInFile = made is MadeItem.Rule || profile.customRules.isNotEmpty(),
-                )
-            }
+            // [PAYS-07] What was just made, with 되돌리기, where the values start.
+            justMade?.let { made -> MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null) }
             ValueRow(
                 title = profile.wageType.baseName() + if (profile.wageType == WageType.DAILY) " (하루 ${PayCalculator.hours(profile.dailyHours)})" else "",
                 value = profile.base.on(month),
@@ -913,12 +907,28 @@ private fun PayResult(
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
                 OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT) || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_RULE_IMPORT)) importing = true else openPro(com.bamnat.app.tier.Feature.PAY_RULE_IMPORT) }) {
-                    Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
+                    // 2.0.0 [RVJ-34] 글자 200% (#새 사진 rvj_91): the words wrap so the 프로 badge stays whole ('프' was all that showed).
+                    Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기", Modifier.weight(1f, fill = false))
                     Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAY_RULE_IMPORT)) // [TIER-06]
                 }
                 if (undo != null) {
                     TextButton(onClick = vm::undo) { Icon(Icons.Filled.Undo, null); Text(" 방금 바꾼 것 되돌리기") }
                 }
+            }
+            // [PLAZA-04][PAYS-09] Pay set up, put right or an item made a moment ago: the invitation to share the company's way, once,
+            // with the plaza's spacing after "다음에". 2.0.0 [RVJ-34] 검토 PC-85 (조건 2·3): under the values in the one 안내 카드
+            // shape (one line, one button, X); it had come in over them with four buttons and pushed the value just changed down.
+            val moment by vm.shareMoment.collectAsStateWithLifecycle()
+            val made = justMade
+            if (made != null) com.bamnat.app.ui.company.ShareWayCard(
+                com.bamnat.app.ui.company.ShareMoment.MADE, onShare = onShareWay,
+                modifier = Modifier.padding(top = 8.dp),
+                ways = waysText(profile, shiftNames, made),
+                notInFile = made is MadeItem.Rule || profile.customRules.isNotEmpty(),
+                compact = true,
+            ) else moment?.let { m ->
+                com.bamnat.app.ui.company.ShareWayCard(m, onShare = onShareWay, modifier = Modifier.padding(top = 8.dp), onClosed = vm::shareShown,
+                    compact = true)
             }
         }
 
@@ -1101,7 +1111,8 @@ private fun TotalCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("${result.month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
+                // 2.0.0 [RVJ-36] PAYU-17: '예상' only for a month still to be paid; a closed one has the 마감 chip beside it.
+                Text(payMonthTitle(result.month, com.bamnat.core.time.Today.month(), closed, chip = true), style = MaterialTheme.typography.labelLarge,
                     color = onFill)
                 // [PAYX-15] Which days it covers and when it arrives.
                 val from = result.periodStart
@@ -1592,13 +1603,38 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean, keptDays: Boolean? = 
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "${days.size - 6}일 더 보기") }
         }
         if (unlocked) {
-            Text("날짜별 합 ${won(split.days)}" + when {
+            val sum = "날짜별 합 ${won(split.days)}" + when {
                 split.month > 0L -> " + 달로 주는 몫(${split.kinds.joinToString("·")}) ${won(split.month)}"
                 split.month < 0L -> " − 달로 빼는 몫(${split.kinds.joinToString("·")}) ${won(-split.month)}"
                 else -> ""
-            } +
-                " = 합계 ${won(split.total)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            } + " = 합계 ${won(split.total)}"
+            // 2.0.0 [RVJ-35] 검토 PC-86: a share made of more than one thing ('기본급·원 단위 끝전 2,799,993원') opens into its pieces
+            // with ⓘ, so 2,800,000원 less 7원 of rounding is never read as a wrong 기본급.
+            val pieces = remember(split) { com.bamnat.core.pay.DaySplit.piecesText(split, ::won) }
+            var why by rememberSaveable(result.month) { mutableStateOf(false) }
+            if (pieces == null) Text(sum, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp))
+            else {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp).heightIn(min = 48.dp)
+                    .semantics(mergeDescendants = true) { stateDescription = if (why) "풀이 펼침" else "풀이 접힘" }
+                    .clickable(role = Role.Button, onClickLabel = if (why) "풀이 접기" else "달로 주는 몫 풀어 보기") { why = !why },
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(sum, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    Icon(Icons.Outlined.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { 18.sp.toDp() }))
+                }
+                if (why) Column(Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // One line a piece, as the 항목별 내역 shows its lines (읽어 주기: '기본급 3,000,000원 + 월 수당 … − 원 단위 끝전 13원').
+                    Column(Modifier.clearAndSetSemantics { contentDescription = "달로 주는 몫 ${won(split.month)} = $pieces" }) {
+                        split.pieces.forEachIndexed { i, (name, v) ->
+                            com.bamnat.app.ui.components.AmountRow(name, (if (v < 0) "− " else if (i > 0) "+ " else "") + won(kotlin.math.abs(v)),
+                                nameStyle = MaterialTheme.typography.bodySmall, amountStyle = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if ("원 단위 끝전" in split.kinds) Text("원 단위 끝전은 날마다 원 단위로 맞춘 금액과 달 합계 사이의 몇 원이에요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             if (keptDays == false) Text("2.0.0 전에 마감한 달이라 날짜별 내역은 지금 설정으로 다시 셌어요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

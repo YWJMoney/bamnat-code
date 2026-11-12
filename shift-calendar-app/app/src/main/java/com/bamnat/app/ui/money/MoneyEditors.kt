@@ -313,6 +313,9 @@ fun JobDialog(
     // [FLD-03] 가계약·확정·완료·취소; [FLD-09] the day the money is promised.
     var status by rememberSaveable { mutableStateOf(initial?.status ?: com.bamnat.core.money.JobStatus.CONFIRMED) }
     var due by rememberSaveable { mutableStateOf(initial?.due?.toString()) }
+    // 2.0.0 [RVK-42] (검토 T06a-02·U06a-22) The start day can move; the promised payday moves with it by the same days.
+    var on by rememberSaveable { mutableStateOf((initial?.date ?: date).toString()) }
+    val onDay = LocalDate.parse(on)
     var picking by remember { mutableStateOf<String?>(null) }
     val startTime = start?.let(LocalTime::parse)
     val endTime = end?.let(LocalTime::parse)
@@ -323,8 +326,8 @@ fun JobDialog(
         onDismissRequest = onDismiss,
         unsaved = title.trim() != initial?.title.orEmpty() || client.trim() != initial?.client.orEmpty() ||
             place.trim() != initial?.place.orEmpty() || amount.toAmount() != (initial?.amount ?: 0) || note.trim() != initial?.note.orEmpty() ||
-            costs.toAmount() != (initial?.costs ?: 0) || deposit.toAmount() != (initial?.deposit ?: 0),
-        title = { Text(if (initial == null) "${Fmt.dayTitle(date)} 일감" else "일감 고치기") },
+            costs.toAmount() != (initial?.costs ?: 0) || deposit.toAmount() != (initial?.deposit ?: 0) || onDay != (initial?.date ?: date),
+        title = { Text(if (initial == null) "${Fmt.dayTitle(onDay)} 일감" else "일감 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
@@ -339,14 +342,14 @@ fun JobDialog(
                     TimeChip("시작", startTime, Modifier.weight(1f)) { picking = "start" }
                     TimeChip("끝", endTime, Modifier.weight(1f)) { picking = "end" }
                 }
+                JobDateRow(onDay, days) { d ->
+                    val moved = java.time.temporal.ChronoUnit.DAYS.between(onDay, d)
+                    due = due?.let { LocalDate.parse(it).plusDays(moved).toString() }
+                    on = d.toString()
+                }
                 // [WORK-02] Work that runs several days (욕실 3일, 주방 5일) is booked once.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("작업 기간", style = MaterialTheme.typography.bodyLarge)
-                        val start = initial?.date ?: date
-                        Text(if (days == 1) "하루" else "${Fmt.shortDate(start)} ~ ${Fmt.shortDate(start.plusDays(days - 1L))}",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text("작업 기간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     // [UX-08] The app's one stepper.
                     com.bamnat.app.ui.components.CountStepper(days, { days = it }, name = "작업 기간", range = 1..MAX_JOB_DAYS,
                         format = { "${it}일" }, valueWidth = 56.dp)
@@ -362,7 +365,7 @@ fun JobDialog(
                 AmountField("선금 (계약금)", deposit, { deposit = it })
                 if (hasDeposit) SwitchRow("선금 받음", depositPaid) { depositPaid = it }
                 SwitchRow(if (hasDeposit) "잔금 받음" else "돈 받음", balancePaid) { balancePaid = it }
-                DueRow(due?.let(LocalDate::parse), opensOn = (initial?.date ?: date).plusDays(days.toLong())) { due = it?.toString() }
+                DueRow(due?.let(LocalDate::parse), opensOn = onDay.plusDays(days.toLong())) { due = it?.toString() }
                 Text("시작 전 알림", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JobReminders.CHOICES.forEach { m ->
@@ -388,11 +391,11 @@ fun JobDialog(
             val save = {
                 onSave(
                     Job(
-                        id = initial?.id ?: 0, date = initial?.date ?: date, title = title.trim().ifEmpty { "일감" },
+                        id = initial?.id ?: 0, date = onDay, title = title.trim().ifEmpty { "일감" },
                         client = client.trim(), place = place.trim(), start = startTime, end = endTime,
                         amount = amount.toAmount(), deposit = deposit.toAmount(), depositPaid = hasDeposit && depositPaid,
                         balancePaid = balancePaid, remindMinutes = remind.takeIf { startTime != null }, note = note.trim(),
-                        endDate = (initial?.date ?: date).plusDays(days - 1L).takeIf { days > 1 },
+                        endDate = onDay.plusDays(days - 1L).takeIf { days > 1 },
                         costs = costs.toAmount(), withholding = withholding,
                         status = status, units = initial?.units, due = due?.let(LocalDate::parse),
                     ),
@@ -402,7 +405,7 @@ fun JobDialog(
                 if (days >= LONG_JOB_DAYS && days != initial?.days) askLong = true else save()
             }) { Text("저장") }
             if (askLong) {
-                val start = initial?.date ?: date
+                val start = onDay
                 AlertDialog(
                     onDismissRequest = { askLong = false },
                     title = { Text("작업 기간이 ${days}일 맞나요?") },

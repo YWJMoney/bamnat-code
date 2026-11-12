@@ -31,7 +31,7 @@ object InvestFees {
         account?.ownFee(market) ?: settings?.feeRate(side) ?: market.defaultFeeRate
 
     /** [INV-38] "0.05" for 0.050%. */
-    fun rateText(rate: Double): String = "%.4f".format(rate).trimEnd('0').trimEnd('.')
+    fun rateText(rate: Double): String = "%.4f".format(java.util.Locale.ROOT, rate).trimEnd('0').trimEnd('.')
 
     /**
      * [INV-38] The fee and tax the trade sheet shows (사용자 U17: 매도 단가를 넣어도 세금이 안 채워짐). What the user typed in
@@ -210,7 +210,7 @@ object InvestTaxes {
         val taxable = (gain - FOREIGN_DEDUCTION).coerceAtLeast(0)
         if (taxable <= 0) return emptyList()
         val tax = (taxable * CAPITAL_GAINS_RATE).roundToLong()
-        val memo = "${year}년 해외 주식 이익 ${"%,d".format(gain)}원 → 예상 세금 ${"%,d".format(tax)}원(250만 원 공제 뒤 22%). ${due.monthValue}월 ${due.dayOfMonth}일까지 홈택스나 증권사 신고 대행으로 신고해요. 자료는 투자 › 내보내기 › 해외 주식 세금 신고 자료"
+        val memo = "${year}년 해외 주식 이익 ${"%,d".format(java.util.Locale.ROOT, gain)}원 → 예상 세금 ${"%,d".format(java.util.Locale.ROOT, tax)}원(250만 원 공제 뒤 22%). ${due.monthValue}월 ${due.dayOfMonth}일까지 홈택스나 증권사 신고 대행으로 신고해요. 자료는 투자 › 내보내기 › 해외 주식 세금 신고 자료"
         return listOf(LocalDate.of(due.year, 5, 1) to "해외 주식 양도소득세 신고 시작", due.minusDays(7) to "해외 주식 양도소득세 신고 일주일 남음")
             .filter { (d, _) -> !d.isBefore(today) }
             .mapIndexed { i, (d, title) -> InvestEvent(id = REPORT_EVENT_ID - i, date = d, kind = EventKind.OTHER, title = title, memo = memo) }

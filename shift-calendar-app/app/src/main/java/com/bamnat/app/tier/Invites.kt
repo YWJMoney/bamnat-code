@@ -221,7 +221,10 @@ data class InviteState(
     val waiting: Boolean get() = answer?.status == "waiting"
 
     /** The rules to say: the view's, then the last ones read, then the defaults. */
-    val rules: InviteTerms get() = view?.terms ?: terms ?: InviteTerms.DEFAULT
+    val rules: InviteTerms get() = readRules ?: InviteTerms.DEFAULT
+
+    /** 2.0.0 [RVO-13] PC-116: the rules as the server said them, or null when they were never read (도움말 says no numbers then). */
+    val readRules: InviteTerms? get() = view?.terms ?: terms
 }
 
 class InviteStore(context: Context, suffix: String = "") {

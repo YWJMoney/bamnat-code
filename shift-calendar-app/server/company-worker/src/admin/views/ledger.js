@@ -6,7 +6,7 @@
 //   위에는 보기(오늘 할 것 · Claude 차례 · 최고 관리자 확인 · 개발 중 · 출시 대기 · 기한 넘음 · 열린 것 · 닫힘)와 종류·판·찾기·CSV,
 //   그리고 정리함에 있던 'Claude에게 넘기기·개발 결과 붙여 넣기·자동 대응'을 접어 둔 칸.
 export function ledgerViews(A) {
-  const { S, esc, can, href, seg, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, ago, moment, syncUrl, handoffCard, inboxLink } = A;
+  const { S, esc, can, href, seg, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, ago, moment, syncUrl, handoffCard, inboxLink, listHead } = A;
 
   const STAGE_TONE = { intake: "info", sorted: "info", answered: "ok", devwait: "warn", handed: "warn", doing: "warn", built: "warn", notify: "bad", shipped: "ok",
     waiting: "", rejected: "", closed: "" };
@@ -151,25 +151,27 @@ export function ledgerViews(A) {
           <span class="track" aria-hidden="true"></span><span>${esc(label)}</span></label>`).join("")}</div></div></details>`;
   }
 
-  function ledgerView() {
+  function ledgerView(strip = "") {
     const d = S.data.ledger;
     if (!d) return `<div class="tiles core">${'<div class="tile skeleton"></div>'.repeat(5)}</div>${skeleton(3)}`;
     const c = d.counts;
     const view = S.deskView || "today";
-    const tile = (k, v, desc, key, hot) => `<button type="button" class="tile kpi${hot && v ? " hot" : ""}" data-act="ledger-view" data-key="${key}" aria-pressed="${view === key}">
-      <span class="k">${esc(k)}</span><span class="v">${v ?? 0}</span><span class="d">${esc(desc)}</span></button>`;
-    const tiles = `<div class="tiles core lg-tiles">${tile("오늘 할 것", c.today, `오늘 들어옴 ${c.inToday} · 끝냄 ${c.doneToday}`, "today", false)}
-      ${tile("Claude 차례", c.claude, "\"처리해\" 한 마디면 가져가요", "claude", false)}${tile("최고 관리자 확인", c.owner, "환불·법·개인정보처럼 직접 정할 것", "owner", true)}
-      ${tile("기한 넘음", c.late, "맨 위에 있어요", "late", true)}${tile("출시 대기", c.ship, "Play에 올리고 나간 판 저장", "ship", false)}</div>`;
-    const views = `<div class="segmented wrap" role="group" aria-label="보기">${Object.entries(d.names.views).map(([k, label]) => seg("ledger-view", k, view, label, ["all", "closed"].includes(k) ? 0 : c[k])).join("")}</div>`;
+    // 2.0.0 [RVA-24] 검토 HQ-03·ADM-08·U23-05·T24-07(조건 1): 보기 카드 다섯 장과 같은 숫자의 구간 줄이 겹쳐 있었어요. 구간 줄 하나(옆으로 밀림,
+    // 기한 넘음·최고 관리자 확인 숫자는 빨강)와 찾기·CSV·고르기 한 줄만 위에, 종류·판은 '거르기' 안, 보기 설명·단축키·흐름 줄·Claude 도구는 목록 아래.
+    const HOT = { owner: true, late: true };
+    const views = `<div class="segmented" role="group" aria-label="보기">${Object.entries(d.names.views).map(([k, label]) => {
+      const n = ["all", "closed"].includes(k) ? 0 : c[k];
+      return `<button class="seg" data-act="ledger-view" data-key="${k}" aria-pressed="${view === k}">${esc(label)}${n ? `<span class="n${HOT[k] ? " hot" : ""}">${n}</span>` : ""}</button>`;
+    }).join("")}</div>`;
     const gr = S.deskGroup || "";
-    const groups = `<nav class="chips" aria-label="종류">${[["", "모든 종류"], ...Object.entries(d.names.groups)].map(([k, label]) =>
-      `<button type="button" class="chip pick" data-act="ledger-group" data-key="${k}" aria-pressed="${gr === k}">${esc(label)}${k && c.groups[k] ? ` <span class="n">${c.groups[k]}</span>` : ""}</button>`).join("")}</nav>`;
-    const bar = `<form class="searchbar lg-bar" data-form="ledger-search" role="search">
-        <input id="search" name="q" type="search" placeholder="번호(K-0012)·글·개발사항으로 찾기" value="${esc(S.deskQuery || "")}" autocomplete="off" enterkeyhint="search" aria-label="장부에서 찾기">
-        <select name="v" data-change="ledger-v" aria-label="판"><option value="">모든 판</option>${d.versions.map((v) => `<option value="${esc(v)}"${S.deskV === v ? " selected" : ""}>${esc(v)}</option>`).join("")}</select>
-        <button class="btn small" type="button" data-act="ledger-csv"${d.total ? "" : " disabled"}>${icon(P.install)}CSV</button>
-        <button class="btn small" type="button" data-act="ledger-pick-mode" aria-pressed="${Boolean(S.ledgerPick)}">${S.ledgerPick ? "선택 마침" : "여러 개 고르기"}</button></form>`;
+    const groups = `<div class="chips" role="group" aria-label="종류">${[["", "모든 종류"], ...Object.entries(d.names.groups)].map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="ledger-group" data-key="${k}" aria-pressed="${gr === k}">${esc(label)}${k && c.groups[k] ? ` <span class="n">${c.groups[k]}</span>` : ""}</button>`).join("")}</div>
+      <p class="filter-row"><label for="lg-v">판</label><select id="lg-v" name="v" data-change="ledger-v"><option value="">모든 판</option>${d.versions.map((v) => `<option value="${esc(v)}"${S.deskV === v ? " selected" : ""}>${esc(v)}</option>`).join("")}</select></p>`;
+    const toolHtml = `<form class="lg-bar" data-form="ledger-search" role="search"><input id="search" name="q" type="search" placeholder="번호(K-0012)·글·개발사항으로 찾기" value="${esc(S.deskQuery || "")}" autocomplete="off" enterkeyhint="search" aria-label="장부에서 찾기"></form>
+        <button class="btn icon-wide" type="button" data-act="ledger-csv" aria-label="CSV로 받기" title="CSV로 받기"${d.total ? "" : " disabled"}>${icon(P.install)}<span class="lbl">CSV로 받기</span></button>
+        ${S.ledgerPick ? '<button class="btn" type="button" data-act="ledger-pick-mode" aria-pressed="true">선택 마침</button>'
+          : `<button class="btn icon-wide" type="button" data-act="ledger-pick-mode" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.picks)}<span class="lbl">여러 개 고르기</span></button>`}`;
+    const top = listHead(views, toolHtml, { scroll: true, open: Boolean(S.ledgerPick), busy: Boolean(S.deskQuery), filters: groups, active: [gr, S.deskV].filter(Boolean).length });
     const picking = S.ledgerPick;
     const bulk = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 줄"><b>${picking.size}개 골랐어요</b>
         <button class="btn small ghost" data-act="ledger-pick-all">${picking.size && picking.size === d.items.length ? "모두 풀기" : "모두 고르기"}</button>
@@ -177,7 +179,7 @@ export function ledgerViews(A) {
         <button class="btn small" data-act="ledger-wait"${picking.size ? "" : " disabled"}>기다림</button>
         <button class="btn small primary" data-act="ledger-done"${picking.size ? "" : " disabled"}>끝내기</button>
         <button class="btn small" data-act="ledger-sort-many"${sortable(picking).length ? "" : " disabled"} title="정리함이 미리 써 둔(또는 고친) 답을 고른 줄마다 보내요">적힌 답 보내기 ${sortable(picking).length || ""}</button></div>` : "";
-    const hint = `<p class="hint lg-hint">${esc({ today: "기한이 오늘인 것, 넘은 것, 다시 열린 것, 하루 안에 들어온 것, 최고 관리자가 정할 것이에요.", claude: "Claude가 가져갈 줄이에요. 프로젝트 채팅에 \"처리해\"라고 하면 Claude가 운영 열쇠로 이 목록을 읽어 처리해요.",
+    const hint = `<p class="hint lg-hint list-note">${esc({ today: "기한이 오늘인 것, 넘은 것, 다시 열린 것, 하루 안에 들어온 것, 최고 관리자가 정할 것이에요.", claude: "Claude가 가져갈 줄이에요. 프로젝트 채팅에 \"처리해\"라고 하면 Claude가 운영 열쇠로 이 목록을 읽어 처리해요.",
       owner: "Claude가 혼자 보내지 않는 것이에요(환불·결제·보상, 법·안전, 개인정보, 크게 화난 민원, 약관, 회사 방식). 답을 정해 주세요.", dev: "개발사항으로 묶여 만드는 중인 줄이에요.",
       ship: "고쳐 두었고 Play에 나가기를 기다려요. 올린 뒤 흐름에서 나간 판을 저장하면 묶인 문의에 한꺼번에 안내가 가요.", late: "기한(답 목표·검토 기한·기다림 7일)을 넘긴 줄이에요.",
       open: "끝나지 않은 모든 줄이에요.", closed: `끝낸 줄(최근 ${d.days}일)이에요. 끝낸 뒤 새 움직임이 생기거나, 처리되지 않고 7일 남아 있으면 다시 열려요.`, all: `모든 줄(닫힌 것은 최근 ${d.days}일)이에요.` }[view] ?? "")}
@@ -186,7 +188,7 @@ export function ledgerViews(A) {
         ${d.more ? `<p class="meta">${d.total}줄 중 ${d.items.length}줄을 보여요. 찾기나 종류로 좁혀 보세요.</p>` : ""}`
       : empty(view === "closed" ? "끝낸 줄이 없어요" : S.deskQuery ? "찾는 줄이 없어요" : "이 보기에는 할 일이 없어요",
         view === "today" ? "새로 들어오면 여기 와요. 열린 것 모두는 위 '열린 것 모두'에서 봐요." : "");
-    return `<div class="ledger-view">${tiles}${tools(d)}<section class="card lg-card">${views}${groups}${bar}${bulk}${hint}${list}</section></div>`;
+    return `<div class="ledger-view">${top}${bulk}${list}${hint}${strip}${tools(d)}</div>`;
   }
 
   // ---- 바꾸기 ----

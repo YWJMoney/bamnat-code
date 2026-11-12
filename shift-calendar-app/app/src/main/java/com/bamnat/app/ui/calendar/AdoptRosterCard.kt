@@ -39,8 +39,12 @@ import java.time.YearMonth
  * comes by itself (or is asked, as '이 근무표가 바뀌면' says), so the note says that instead. [RVG-21] 검토 HQ-19: 리더 only for a
  * 리더's team link ([com.bamnat.app.share.ReceivedCalendar.fromLeader]); a 가족·동료's link is changed by 보낸 분.
  */
-internal fun onceNote(leader: Boolean) =
-    "넣은 뒤 ${changer(leader)} 근무표를 고치면 6시간 안에 받아서, 아래 '이 근무표가 바뀌면'에 고른 대로 내 달력과 알람에 넣거나 여쭤봐요. 내가 직접 바꾼 날은 그대로 둬요."
+// 2.0.0 [RVG-35] 검토 HQ-64: in the link's word ([com.bamnat.app.share.ReceivedCalendar.word]): 보낸 분이 영업일을 고치면.
+internal fun onceNote(leader: Boolean, word: String = "근무표") =
+    "넣은 뒤 ${changer(leader)} $word${Fmt.obj(word)} 고치면 6시간 안에 받아서, 아래 '${followTitle(word)}'에 고른 대로 내 달력과 알람에 넣거나 여쭤봐요. 내가 직접 바꾼 날은 그대로 둬요."
+
+/** [RVG-35] The follow section's title in the link's word: 이 근무표가 바뀌면, 이 일정이 바뀌면. */
+internal fun followTitle(word: String) = "이 $word${Fmt.iga(word)} 바뀌면"
 
 /** [RVG-21] Who changes the link later, as a sentence's subject. */
 internal fun changer(leader: Boolean) = if (leader) "리더가" else "보낸 분이"
@@ -89,8 +93,8 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     val missing = theirs.filter { pairs[it.id] == null && days.values.any { d -> d == it.id } }
     // 2.0.0 [RVG-33] 검토 HQ-55 (조건 4): what happens after 넣기 is one line with ⓘ (the common [Explain]); the rest of the old
     // paragraph (the pay note, how a later change comes) is behind ⓘ, and '이 근무표가 바뀌면' just below says it in full anyway.
-    val afterNote = onceNote(cal?.fromLeader == true) + " " + if (pay != null) "예상 급여는 야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고)."
-        else "급여 설정을 하면 이 근무표로 이번 달 월급이 얼마인지도 바로 보여요."
+    val afterNote = onceNote(cal?.fromLeader == true, cal?.word ?: "근무표") + " " + if (pay != null) "예상 급여는 야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고)."
+        else (cal?.word ?: "근무표").let { w -> "급여 설정을 하면 이 $w${Fmt.ro(w)} 이번 달 월급이 얼마인지도 바로 보여요." }
     val followLine = @Composable {
         com.bamnat.app.ui.components.Explain("adopt:after", afterNote, summary = "바뀌면 다시 받아요", iconOnly = false)
     }
@@ -180,10 +184,10 @@ internal fun RosterFollowLine(cal: com.bamnat.app.share.ReceivedCalendar, modifi
 internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar, onSay: ((com.bamnat.app.ui.UndoMessage) -> Unit)? = null) {
     val c = LocalContext.current.appContainer
     val mode = com.bamnat.app.share.RosterFollower.mode(cal)
-    SectionCard(title = "이 근무표가 바뀌면") {
+    SectionCard(title = followTitle(cal.word)) {
         // [RVG-21] 검토 HQ-19: a 리더 sends the team's 근무표 again; anyone else's link changes as they change their own.
         Text(if (cal.fromLeader) "리더가 근무표를 고쳐 다시 보내면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요."
-            else "보낸 분이 근무표를 고치면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요.",
+            else "보낸 분이 ${cal.word}${Fmt.obj(cal.word)} 고치면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.bamnat.app.share.RosterFollower.Mode.entries.forEach { m ->
@@ -220,11 +224,12 @@ private fun NotMineButton(cal: com.bamnat.app.share.ReceivedCalendar, onSay: (co
     // "N일 치": a count of days, never read as a date ("8일" alone reads as the 8th).
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { asking = null },
-        title = { Text(if (out > 0) "${cal.roster}가 넣은 ${out}일 치를 뺄까요?" else "${cal.roster}를 받은 달력으로 옮길까요?") },
+        // [RVG-35] 이/가, 을/를 by the link's word (‘민지’ 영업일이).
+        title = { Text(if (out > 0) "${cal.roster}${Fmt.iga(cal.roster)} 넣은 ${out}일 치를 뺄까요?" else "${cal.roster}${Fmt.obj(cal.roster)} 받은 달력으로 옮길까요?") },
         text = {
             Text(listOfNotNull(
                 "직접 바꾼 ${split.kept.size}일 치는 그대로 둬요.".takeIf { split.kept.isNotEmpty() },
-                "이 근무표는 받은 달력에서 보기만 해요.",
+                "이 ${cal.word}${Fmt.eun(cal.word)} 받은 달력에서 보기만 해요.",
             ).joinToString(" "))
         },
         confirmButton = {
@@ -234,7 +239,7 @@ private fun NotMineButton(cal: com.bamnat.app.share.ReceivedCalendar, onSay: (co
                 c.appScope.launch {
                     val undo = com.bamnat.app.share.NotMine.apply(c, cal.id, split)
                     onSay(com.bamnat.app.ui.UndoMessage(
-                        if (out > 0) "${cal.roster}가 넣은 ${out}일 치를 뺐어요" else "${cal.roster}는 받은 달력에서 보기만 해요",
+                        if (out > 0) "${cal.roster}${Fmt.iga(cal.roster)} 넣은 ${out}일 치를 뺐어요" else "${cal.roster}${Fmt.eun(cal.roster)} 받은 달력에서 보기만 해요",
                         undo = undo,
                     ))
                 }

@@ -31,6 +31,7 @@ import com.bamnat.core.setup.SetupStep
 import com.bamnat.core.setup.TodayQuestion
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -695,6 +696,9 @@ class SetupViewModel(
     /** 1.36 PC W10: which reading of the photo is under way (n of m; m 0 while the first one runs), for the reading card. */
     private val _rosterStep = MutableStateFlow(0 to 0)
     val rosterStep: StateFlow<Pair<Int, Int>> = _rosterStep.asStateFlow()
+    /** 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down before the first reading: percent, -1 while unknown, null when not. */
+    private val _rosterPreparing = MutableStateFlow<Int?>(null)
+    val rosterPreparing: StateFlow<Int?> = _rosterPreparing.asStateFlow()
     private var rosterJob: kotlinx.coroutines.Job? = null
     /** Codes of the picked line the setup's kinds do not cover ("M", "교육"), with their days, one asked at a time. */
     private val _rosterAsks = MutableStateFlow<List<Pair<com.bamnat.core.imports.DutyCell.Unknown, List<LocalDate>>>>(emptyList())
@@ -713,10 +717,21 @@ class SetupViewModel(
     var rosterRank = 0
         private set
 
-    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes }
+    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes; if (yes == null) _rosterLooked.value = emptySet() }
+
+    /** 2.0.0 [RVL-36] (검토 U07b-04) The yellow days looked at on the photo (said right, or fixed): no longer yellow on the card. */
+    private val _rosterLooked = MutableStateFlow<Set<Int>>(emptySet())
+    val rosterLooked: StateFlow<Set<Int>> = _rosterLooked.asStateFlow()
+
+    /** 2.0.0 [RVL-36] A yellow day right as read; the last one is the photo looked at. */
+    fun rosterRight(day: Int, yellow: Set<Int>) {
+        _rosterLooked.value = _rosterLooked.value + day
+        if ((yellow - _rosterLooked.value).isEmpty()) _rosterSame.value = true
+    }
 
     /** [READ-17] One day of the roster's month fixed from the photo card: painted, given leave, or left off (휴무). */
     fun fixRosterDay(date: LocalDate, cell: com.bamnat.core.imports.DutyCell?) {
+        _rosterLooked.value = _rosterLooked.value + date.dayOfMonth
         when (cell) {
             is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + (date to cell.shiftTypeId), leaves = it.leaves - date) }
             com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + (date to null), leaves = it.leaves - date) }
@@ -729,7 +744,9 @@ class SetupViewModel(
         rosterJob?.cancel()
         _rosterReading.value = true
         _rosterStep.value = 0 to 0
+        _rosterPreparing.value = null
         _rosterSame.value = null
+        _rosterLooked.value = emptySet()
         rosterRank = 0
         rosterJob = viewModelScope.launch {
             val started = System.nanoTime()
@@ -737,17 +754,37 @@ class SetupViewModel(
             // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
             val r = try {
                 // 2.0.0 [RVL-26] (검토 SCAN-21) Read off the main thread: a long text or a tapped photo never freezes the setup.
-                kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) {
-                    val codes = rosterCodes()
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { how(codes) }
+                // 2.0.0 [RVL-32] (검토 SCAN-04) The limit counts the reading, not the reading model coming down (that has its own wait
+                // and says why when it does not come), and what it stops is stopped (검토 SCAN-03).
+                val codes = rosterCodes()
+                rosterModelMs = 0
+                kotlinx.coroutines.coroutineScope {
+                    val work = async(kotlinx.coroutines.Dispatchers.Default) { how(codes) }
+                    var budget = ROSTER_READ_LIMIT_MS
+                    var result: com.bamnat.app.ui.imports.RosterResult? = null
+                    while (true) {
+                        result = kotlinx.coroutines.withTimeoutOrNull(budget) { work.await() }
+                        if (result != null) break
+                        // Still coming down, or came down meanwhile: that time is given back once.
+                        budget = when {
+                            _rosterPreparing.value != null -> ROSTER_READ_LIMIT_MS
+                            rosterModelMs > 0 -> rosterModelMs.also { rosterModelMs = 0 }
+                            else -> break
+                        }
+                    }
+                    if (result == null) work.cancel()
+                    result
                 }
                     ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.FILE, com.bamnat.app.pay.OcrModel.why(e).text)
+                // 2.0.0 [RVL-32] Said as every other failed reading is, with its one fix.
+                com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.FILE,
+                    com.bamnat.app.pay.OcrModel.said(c.appContext, e), fix = com.bamnat.app.pay.OcrModel.fix(e))
             }
             _rosterReading.value = false
+            _rosterPreparing.value = null
             // The steps of the reading, for 진단 (no words of the photo): how long, how many ways, words and lines found.
             runCatching {
                 val ms = (System.nanoTime() - started) / 1_000_000
@@ -758,13 +795,47 @@ class SetupViewModel(
             // A photo that read nothing keeps its picture, for 사진 위에서 누르기.
             _roster.value = r.copy(rows = rows, scan = r.scan ?: _roster.value?.scan.takeIf { r.from == com.bamnat.core.journal.RosterFrom.PHOTO })
             _rosterAsks.value = emptyList()
-            if (rows.size == 1) useRosterRow(0) else if (r.error != null) _message.value = r.error
+            // 2.0.0 [RVL-33] A reading that gave no line says why on its card (with the fix), not a second time at the bottom.
+            if (rows.size == 1) useRosterRow(0) else if (r.error != null && rows.isNotEmpty()) _message.value = r.error
         }
     }
 
-    fun readRosterPhoto(context: Context, uri: Uri) = readRoster {
-        com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) { n, m -> _rosterStep.value = n to m }
+    fun readRosterPhoto(context: Context, uri: Uri) {
+        rosterAgain = { readRosterPhoto(c.appContext, uri) }
+        readRoster { com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today, preparing = ::rosterPreparing, progress = ::rosterStepped) }
     }
+
+    /** 2.0.0 [RVL-32] (검토 U07b-01) The last photo or file, for '다시 읽기' when the reading model was slow or its fetch stopped. */
+    private var rosterAgain: (() -> Unit)? = null
+
+    fun readRosterAgain() { rosterAgain?.invoke() }
+
+    /** 2.0.0 [RVL-34] A roster photo taken with the camera here is read on the phone and not kept after the setup. */
+    override fun onCleared() {
+        runCatching { com.bamnat.app.ui.imports.rosterShot(c.appContext).delete() }
+        super.onCleared()
+    }
+
+    /** 2.0.0 [RVL-32] How long the reading model took to come down in this reading, given back to its time limit. */
+    @Volatile private var rosterModelMs = 0L
+    @Volatile private var rosterModelFrom = 0L
+
+    private fun rosterPreparing(p: Int?) {
+        if (_rosterPreparing.value == null) rosterModelFrom = android.os.SystemClock.elapsedRealtime()
+        _rosterPreparing.value = p ?: -1
+    }
+
+    private fun rosterStepped(n: Int, m: Int) {
+        _rosterStep.value = n to m
+        if (_rosterPreparing.value != null) rosterModelMs += android.os.SystemClock.elapsedRealtime() - rosterModelFrom
+        _rosterPreparing.value = null
+    }
+
+    /**
+     * 2.0.0 [RVL-33] (검토 U07b-02) The X on a reading that gave nothing: the words put away, the photo kept for
+     * '사진에서 내 줄 알려 주기' and '무엇을 읽었는지 보기' below.
+     */
+    fun heardRosterError() { _roster.value = _roster.value?.copy(error = null, fix = null) }
 
     /**
      * [EASE-16] 1.38 "근무표 사진으로 한 번에" on the company page: without kinds of work yet the roster template's (데이·이브닝·나이트·
@@ -817,10 +888,14 @@ class SetupViewModel(
         rosterJob?.cancel()
         rosterJob = null
         _rosterReading.value = false
+        _rosterPreparing.value = null
         _message.value = "읽기를 멈췄어요. 다른 사진으로 하거나 ‘직접 칠하기’로 넣어 주세요."
     }
 
-    fun readRosterFile(context: Context, uri: Uri) = readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today) }
+    fun readRosterFile(context: Context, uri: Uri) {
+        rosterAgain = { readRosterFile(c.appContext, uri) }
+        readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today, preparing = ::rosterPreparing, progress = ::rosterStepped) }
+    }
 
     fun readRosterText(text: String) = readRoster { com.bamnat.app.ui.imports.RosterReader.text(text, it, today) }
 
@@ -866,6 +941,7 @@ class SetupViewModel(
         update { it.copy(painted = it.painted + days + leaveDays, leaves = it.leaves - days.keys + leaves) }
         _paintMonth.value = month
         if (r.rows.size > 1) rosterRank = i
+        _rosterLooked.value = emptySet()
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
         // [READ-36] The sheet's own letters (주·야·비·휴) the setup's kinds do not use: offered as the kinds, once.

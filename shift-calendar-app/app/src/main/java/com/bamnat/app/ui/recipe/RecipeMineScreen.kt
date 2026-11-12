@@ -143,8 +143,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     "pending" -> com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
                                 }
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
-                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣어 본 분 ${item.users} · 코드 ${item.code}",
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // [RVM-34] HQ-72: within two lines at 200% ('♥ 12 · 34명' there), read aloud in words.
+                                MarketNumbersText(item, long = true, tail = "코드 ${item.code}", keepTail = true)
                                 RemixCount(item.code)
                                 Row {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }

@@ -189,6 +189,9 @@ class YScreenshotTest : ScreenshotBase() {
     @Test fun proCollectionDarkInvest() = shoot("903_y_pro_collection_dark", FOLDED_NIGHT, style(WorkStyle.INVEST) {
         tab(SETTINGS_TAB, wide = false)
         tapText("프로", exact = true)
+        // 2.0.0 [RVO-05] 이 유형의 다섯만 보이고 나머지는 '모두 보기'.
+        reveal("모두 보기 ·")
+        tapText("모두 보기 ·")
         reveal("다른 일에 쓰는 프로 기능")
     })
 

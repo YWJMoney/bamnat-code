@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">밤낮</string>
-    <string name="tile_label">오늘 근무</string>
-    <string name="complication_label">밤낮 오늘 근무</string>
+    <!-- 2.0.0 [RVI-09] (검토 T03-09) Words for every kind of work: a 가게's tile was '오늘 근무'. -->
+    <string name="tile_label">밤낮 오늘</string>
+    <string name="complication_label">밤낮 오늘</string>
     <string name="week_complication_label">밤낮 이번 주 근무시간</string>
-    <string name="next_complication_label">밤낮 다음 근무까지</string>
+    <string name="next_complication_label">밤낮 다음 일정까지</string>
 </resources>

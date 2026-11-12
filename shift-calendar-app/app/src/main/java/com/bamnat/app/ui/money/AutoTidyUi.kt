@@ -60,20 +60,31 @@ internal fun AutoTidyLine(area: String, calendarId: String?, modifier: Modifier 
 
 /**
  * 2.0.0 [RVH-57] What the list says, in each area's words (조건 13): what it is under the title, the button that lets it be and the
- * one that puts it back. The money words (one payment written once) mean nothing for a day a received roster changed.
+ * one that puts it back. The money words (one payment written once) mean nothing for a day a received roster changed, and
+ * [RVM-26] RCP-08 the 내 서랍 one holds themes the 입었던 테마 limit let go, not payments.
  */
 private class TidyWords(val intro: String, val keep: String, val back: String, val done: (String) -> String, val failed: String)
+
+private fun restored(title: String) = "‘$title’${com.bamnat.core.text.Josa.eulreul(title)} 되살렸어요"
 
 private fun tidyWords(area: String) = when (area) {
     com.bamnat.app.share.RosterFollower.TIDY_AREA -> TidyWords(
         intro = "근무표대로 하려면 '근무표대로'를 눌러요.",
-        keep = "그대로 둘게요", back = "근무표대로", done = { "‘$it’을 근무표대로 넣었어요" }, failed = "넣지 못했어요. 다시 해 주세요",
+        keep = "그대로 둘게요", back = "근무표대로",
+        done = { "‘$it’${com.bamnat.core.text.Josa.eulreul(it)} 근무표대로 넣었어요" }, failed = "넣지 못했어요. 다시 해 주세요",
+    )
+    AutoTidy.AREA_RECIPE -> TidyWords(
+        intro = "입었던 테마가 ${com.bamnat.core.recipe.ThemeLease.HISTORY}개를 넘어 서랍에서 뺀 것이에요. 다시 두려면 되살려요.",
+        keep = "맞아요", back = "되살리기", done = ::restored, failed = "되살리지 못했어요. 다시 해 주세요",
     )
     else -> TidyWords(
         intro = "같은 결제로 보고 한 번만 적었거나 하나로 합친 것이에요. 다르면 되살려요.",
-        keep = "맞아요", back = "되살리기", done = { "‘$it’을 되살렸어요" }, failed = "되살리지 못했어요. 다시 해 주세요",
+        keep = "맞아요", back = "되살리기", done = ::restored, failed = "되살리지 못했어요. 다시 해 주세요",
     )
 }
+
+/** What the sheet says it holds, under its title ([RVM-26] the 내 서랍 one: themes, not payments). */
+internal fun tidyAbout(area: String): String = tidyWords(area).intro
 
 /** [RVK-13] What the app left out or joined, newest first, each with why and '되살리기' (or '맞아요' to let it go). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

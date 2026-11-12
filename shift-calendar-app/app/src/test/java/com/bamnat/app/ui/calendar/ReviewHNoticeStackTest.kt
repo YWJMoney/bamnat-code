@@ -48,7 +48,7 @@ class ReviewHNoticeStackTest {
                     BamnatTheme {
                         Column {
                             NoticeStack(
-                                listOf("a", "b", "c").map { k -> Notice(k, "알림 $k") { Box(Modifier.fillMaxWidth().height(100.dp)) } },
+                                listOf("a", "b", "c").map { k -> Notice(k, "알림 $k", urgent = true) { Box(Modifier.fillMaxWidth().height(100.dp)) } },
                                 Modifier.onSizeChanged { heights += it.height },
                             )
                         }
@@ -58,13 +58,14 @@ class ReviewHNoticeStackTest {
             compose.waitForIdle()
         }
         assertTrue("$heights", heights.isNotEmpty())
-        // One card and the '알림 2개 더 보기' line; three cards would be 300dp.
+        // 2.0.0 [RVP-45] One band (56dp and its margin), the rest in the bell; three cards would be 300dp.
         assertTrue("$heights vs $card", heights.all { it < card * 2 })
     }
 
     /**
      * [RVH-21] 통합 합친 뒤 CI '큰 글자 달력' 사진: a notice that drew and then went quiet left the next one folded away, as the count
-     * was kept in each notice's own layout and the quiet one was measured again alone. The next notice comes up in its place.
+     * was kept in each notice's own layout and the quiet one was measured again alone. The next notice comes up in its place (2.0.0
+     * [RVP-45]: the band says the notice's line; a band already up gives its place to the next one even once settled, PC-81).
      */
     @Test fun aNoticeThatGoesQuietGivesItsPlaceToTheNext() {
         app.container.consentStore.markSeen(ConsentItem.entries)
@@ -75,8 +76,8 @@ class ReviewHNoticeStackTest {
                     BamnatTheme {
                         Column {
                             NoticeStack(listOf(
-                                Notice("a", "알림 a") { if (first) Box(Modifier.fillMaxWidth().height(80.dp)) { Text("첫 알림") } },
-                                Notice("b", "알림 b") { Box(Modifier.fillMaxWidth().height(80.dp)) { Text("둘째 알림") } },
+                                Notice("a", "알림 a", line = "첫 알림", urgent = true) { if (first) Box(Modifier.fillMaxWidth().height(80.dp)) { Text("첫 알림 전체") } },
+                                Notice("b", "알림 b", line = "둘째 알림", urgent = true) { Box(Modifier.fillMaxWidth().height(80.dp)) { Text("둘째 알림 전체") } },
                             ))
                         }
                     }

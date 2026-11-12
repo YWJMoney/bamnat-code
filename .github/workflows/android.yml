@@ -42,6 +42,9 @@ jobs:
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
     defaults:
       run:
         working-directory: shift-calendar-app
@@ -61,15 +64,39 @@ jobs:
           python-version: "3.12"
       - run: python3 tools/check_tracker.py
       - run: python3 tools/test_check_checklist.py && python3 tools/test_app_size.py && python3 tools/test_market_works.py
-      - run: python3 tools/test_dev_status.py
+      # [RVR-26] 개발 기록에 적힌 '잡을 시험'이 정말 있는지도: 시험 이름을 바꾸거나 지운 PR에서 바로 알아요.
+      - run: python3 tools/test_dev_status.py && python3 tools/dev_status.py check
+      # [I60b-01][U60-01] 날짜 시험 요약·PR 요약의 '처음 깨짐/기준에서도 깨짐' 도구
+      - run: python3 tools/test_date_watch.py && python3 tools/test_slow_tests.py
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
       # 믿는 열쇠로 서명됐는지(.sig2), 핵심 화면 사진 이름이 시험에 그대로 있는지, 그리고 그 도구들의 시험.
       - run: python3 tools/test_cycles_build.py && python3 tools/cycles_build.py --check
       - run: pip install --quiet cryptography==44.0.2 && python3 tools/test_remote_sign.py && python3 tools/remote_sign.py check --need-sig2
       - run: pip install --quiet pillow==11.1.0 && python3 tools/test_shot_hashes.py && python3 tools/shot_hashes.py names
       - run: sh ./gradlew $GRADLE_FLAGS -p core test
+      # 2.0.0 [U60-01] (검토 2026-11-12) 기준 브랜치(PR이면 합칠 곳, push면 같은 브랜치)의 마지막 실행에서 같은 일의 결과를 받아,
+      # 요약 맨 위 실패를 '이 PR에서 처음 깨짐'과 '기준에서도 깨짐(날짜·바깥 탓)'으로 나눠요. 못 받으면 그렇다고 적고 지나가요.
+      - name: 기준 브랜치 결과 받기
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.base_ref || github.ref_name }}
+          NAME: tests-core
+        run: |
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow android.yml --branch "$BASE" --status completed --limit 8 --json databaseId --jq '.[].databaseId'); do
+            [ "$id" = "$GITHUB_RUN_ID" ] && continue
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n "$NAME" -D build/base 2>/dev/null && break
+          done
+          true
       - if: always()
-        run: python3 tools/slow_tests.py core/build/test-results >> "$GITHUB_STEP_SUMMARY"
+        run: python3 tools/slow_tests.py core/build/test-results --json build/tests/tests-core.json --base build/base/tests-core.json >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-core
+          path: shift-calendar-app/build/tests/tests-core.json
+          retention-days: 14
+          if-no-files-found: ignore
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -83,6 +110,9 @@ jobs:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -144,8 +174,29 @@ jobs:
         run: |
           python3 -m pip install --quiet pillow
           python3 tools/shot_hashes.py check app/build/screenshots --results app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
+      # 2.0.0 [U60-01] (검토 2026-11-12) 기준 브랜치(PR이면 합칠 곳, push면 같은 브랜치)의 마지막 실행에서 같은 일의 결과를 받아,
+      # 요약 맨 위 실패를 '이 PR에서 처음 깨짐'과 '기준에서도 깨짐(날짜·바깥 탓)'으로 나눠요. 못 받으면 그렇다고 적고 지나가요.
+      - name: 기준 브랜치 결과 받기
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.base_ref || github.ref_name }}
+          NAME: tests-app-${{ matrix.set }}
+        run: |
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow android.yml --branch "$BASE" --status completed --limit 8 --json databaseId --jq '.[].databaseId'); do
+            [ "$id" = "$GITHUB_RUN_ID" ] && continue
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n "$NAME" -D build/base 2>/dev/null && break
+          done
+          true
       - if: always()
-        run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
+        run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json --base build/base/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-app-${{ matrix.set }}
+          path: shift-calendar-app/app/build/tests-${{ matrix.set }}.json
+          retention-days: 14
+          if-no-files-found: ignore
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -198,8 +249,10 @@ jobs:
           node-version: 22
       # The classes that start server/company-worker/test/local-server.mjs, and ShareLinkTest (it writes the payloads the share
       # server checks next). tools/server_app_tests.py finds them in the test sources, so a new one joins by itself.
+      # --rerun: the server files are not inputs of the Gradle task, so a server-only change got the app's test results FROM-CACHE
+      # (nothing ran against the changed server and the payload files the share server checks were never written).
       - if: steps.changed.outputs.server == '1'
-        run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest $(python3 tools/server_app_tests.py --gradle) --continue
+        run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest --rerun $(python3 tools/server_app_tests.py --gradle) --continue
       - if: steps.changed.outputs.server == '1'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker

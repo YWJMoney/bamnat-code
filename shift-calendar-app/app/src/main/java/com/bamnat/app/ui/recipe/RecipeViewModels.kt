@@ -251,6 +251,12 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val flagged: Boolean = false,
         /** 2.0.0 [PC-33] '칸에 근무 글자 남기기' in the 넣기 창: a 칸 디자인 that shows shifts by colour alone goes in keeping their letters. */
         val letters: Boolean = false,
+        /**
+         * 2.0.0 [RVM-22] RCP-05: the ways someone else's 알람 묶음 would make my alarm weaker ("진동 끔", "울림 5분 → 1분"), kept out of
+         * 넣기 unless [alarmWeaker] (the 넣기 창's '약하게 하는 설정도 넣기').
+         */
+        val alarmWeak: List<String> = emptyList(),
+        val alarmWeaker: Boolean = false,
     )
     private suspend fun undoableNow(): List<Pair<Long, String>> = (c.recipes.undoable(code).map { e ->
         e.appliedAt to ("넣음" + e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.takeIf { it.isNotEmpty() }?.joinToString("·", prefix = " · ").orEmpty())
@@ -359,6 +365,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun toggle(kind: PieceKind, on: Boolean) = set(kind) { it.copy(on = on) }
     /** [PC-33] Keep the shift letters in the cells (or the work's colour-only mark again). */
     fun letters(keep: Boolean) { _state.value = _state.value.copy(letters = keep) }
+
+    /** 2.0.0 [RVM-22] RCP-05 Put the settings that make the alarm weaker in too (or keep mine). */
+    fun alarmWeaker(on: Boolean) { _state.value = _state.value.copy(alarmWeaker = on); preview() }
     fun mode(kind: PieceKind, m: RecipePieces.Mode) { set(kind) { it.copy(mode = m) }; preview() }
     fun answer(id: String, v: Any?) { _state.value = _state.value.copy(answers = _state.value.answers + (id to v)); preview() }
 
@@ -366,33 +375,60 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         _state.value = _state.value.copy(pieces = _state.value.pieces.map { if (it.kind == kind) f(it) else it })
     }
 
-    /** 내 달력에서 미리 보기: what each chosen piece would change here, worked out again when an answer changes. */
+    /** [RVM-13] The newest [preview]; an older one that ends after it does not write over it. */
+    private var previewTurn = 0
+
+    /**
+     * 내 달력에서 미리 보기: what each chosen piece would change here, worked out again when an answer changes.
+     *
+     * 2.0.0 [RVM-13] (총괄 #489, NtcScreenshotTest가 통합 나무에서 흔들림: 상세를 연 바로 뒤 겹침 1건이 기다린 뒤 0건): a part that could not
+     * be worked out this time keeps what it said before (a failure is not '바뀌는 것이 없어요'), says why in the log, and only the newest
+     * preview writes, so an older or failed one never empties a preview that was right.
+     */
     fun preview(): kotlinx.coroutines.Job? {
         val r = _state.value.recipe ?: return null
+        val turn = ++previewTurn
         return viewModelScope.launch {
             val answers = RecipeResolve.answers(r, _state.value.answers)
             val lines = r.pieces.associate { p ->
-                p.kind to runCatching { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
+                p.kind to tried("lines ${p.kind.key}") { c.recipes.pieces.preview(p.kind, RecipeResolve.piece(r, p, answers), calendar) }
             }
             val look = r.pieces.firstOrNull { it.kind == PieceKind.SHIFT_LOOK }?.let { p ->
-                runCatching { c.recipes.pieces.lookPairs(RecipeResolve.piece(r, p, answers), calendar) }.getOrDefault(emptyList())
-            }.orEmpty()
+                tried("look") { c.recipes.pieces.lookPairs(RecipeResolve.piece(r, p, answers), calendar) }
+            }
             val clashes = r.pieces.firstOrNull { it.kind == PieceKind.MEMO_TEMPLATES }?.let { p ->
-                runCatching { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
-            }.orEmpty()
+                tried("clashes") { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }
+            }
             val overlaps = r.pieces.firstOrNull { it.kind == PieceKind.LOGIC }?.let { p ->
-                runCatching { c.recipes.pieces.overlaps(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
-            }.orEmpty()
+                tried("overlaps") { c.recipes.pieces.overlaps(RecipeResolve.piece(r, p, answers)) }
+            }
             // 1.39 [MKP-05] 지금 ↔ 넣으면, with the 바꾸기 / 둘 다 두기 chosen for each piece.
             val modes = _state.value.pieces.associate { it.kind to it.mode }
             val sides = r.pieces.associate { p ->
                 p.kind to c.recipes.pieces.compare(p.kind, RecipeResolve.piece(r, p, answers), calendar, modes[p.kind] ?: RecipePieces.Mode.REPLACE)
             }
+            // 2.0.0 [RVM-22] RCP-05: someone else's work keeps my alarm as strong as it is unless 약하게 하는 설정도 넣기 is on; the full list
+            // says so on each such line.
+            val guard = _state.value.doc?.mine != true
+            val weak = r.pieces.firstOrNull { it.kind == PieceKind.ALARMS }?.takeIf { guard }?.let { p ->
+                com.bamnat.core.recipe.AlarmStrength.weaker(RecipeResolve.piece(r, p, answers), c.recipes.pieces.alarmNow()).map { it.words }
+            }.orEmpty()
+            val weaker = _state.value.alarmWeaker
+            fun shown(l: RecipePieces.Change) = if (l.weak && guard && !weaker) l.copy(text = l.text + " · 넣지 않아요(지금 것 그대로)", skipped = true) else l
+            if (turn != previewTurn) return@launch
             _state.value = _state.value.copy(pieces = _state.value.pieces.map {
-                it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList(), sides = sides[it.kind].orEmpty(),
-                    overlaps = if (it.kind == PieceKind.LOGIC) overlaps else emptyList())
-            }, looks = look)
+                it.copy(lines = if (it.kind in lines) lines[it.kind]?.map(::shown) ?: it.lines else emptyList(),
+                    clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes ?: it.clashes else emptyList(), sides = sides[it.kind].orEmpty(),
+                    overlaps = if (it.kind == PieceKind.LOGIC) overlaps ?: it.overlaps else emptyList())
+            }, looks = look ?: if (r.pieces.any { it.kind == PieceKind.SHIFT_LOOK }) _state.value.looks else emptyList(), alarmWeak = weak)
         }
+    }
+
+    /** One part of [preview]: its answer, or null (said in the log) when it could not be worked out; a cancel goes on as a cancel. */
+    private inline fun <T> tried(what: String, f: () -> List<T>): List<T>? = try { f() } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        android.util.Log.w("BamnatRecipe", "미리 보기 $what", e); null
     }
 
     /**
@@ -432,6 +468,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             }
             // [CELL-02] 1.39 Someone else's 달력 모양 changes how my cells look, not what they show (mine as the whole read says).
             val r = (if (doc.mine) r0 else r0.keepMyCellContent()).let { if (s.letters) com.bamnat.core.recipe.CellLetters.keep(it) else it }
+                // 2.0.0 [RVM-22] RCP-05 Someone else's 알람 묶음 never makes my alarm weaker unless asked to.
+                .let { if (doc.mine || s.alarmWeaker) it else com.bamnat.core.recipe.AlarmStrength.keepStrong(it, c.recipes.pieces.alarmNow()) }
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()

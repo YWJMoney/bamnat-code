@@ -39,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.WorkToolsStore
-import com.bamnat.app.data.rules
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
@@ -128,12 +127,12 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
             val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
             val parts = remember(settings.manageLayout) { com.bamnat.core.layout.PageLayout.decode(settings.manageLayout).arrange(ManagePart.editable) { it.id } }
             // A hidden card still counts its 할 일: nothing to do may be hidden by a layout.
-            if (parts.none { it.part == ManagePart.TEAMS && it.shown } && leaderOn) liveTeams.forEach { t -> key(t.id) { TeamGlanceCard(t, now, {}, show = false) { teamGlances[t.id] = it } } }
+            if (parts.none { it.part == ManagePart.TEAMS && it.shown } && leaderOn) liveTeams.forEach { t -> key(t.id) { TeamGlanceCard(t, calendarId, now, {}, show = false) { teamGlances[t.id] = it } } }
             if (parts.none { it.part == ManagePart.SHOPS && it.shown } && bossOn) livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, {}, show = false) { shopGlances[p.id] = it } } }
             parts.filter { it.shown }.forEach { placed -> when (placed.part) {
             ManagePart.TEAMS -> if (leaderOn) {
                 Text("팀 근무표", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                liveTeams.forEach { t -> key(t.id) { TeamGlanceCard(t, now, onOpen = { teamOpen = t.id }) { teamGlances[t.id] = it } } }
+                liveTeams.forEach { t -> key(t.id) { TeamGlanceCard(t, calendarId, now, onOpen = { teamOpen = t.id }) { teamGlances[t.id] = it } } }
                 OutlinedButton(onClick = { teamsList = true }, modifier = Modifier.fillMaxWidth()) { Text(if (liveTeams.isEmpty()) "팀 만들기" else "팀 목록·새 팀") }
                 if (liveTeams.isEmpty()) Text("지금 쓰는 근무표가 엑셀·PDF·종이 사진이어도 팀 만들기에서 그대로 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -178,23 +177,27 @@ private fun PlanLine(hold: com.bamnat.core.tier.WorkHold?, kind: WorkPlanKind, f
 }
 
 @Composable
-private fun TeamGlanceCard(team: Team, now: YearMonth, onOpen: () -> Unit, show: Boolean = true, report: (ManageDesk.TeamGlance) -> Unit) {
+private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpen: () -> Unit, show: Boolean = true, report: (ManageDesk.TeamGlance) -> Unit) {
     val c = LocalContext.current.appContainer
     val store = c.phaseThree
-    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val board by store.board(team.id, now).collectAsStateWithLifecycle(null)
     val month by store.month(team.id, now).collectAsStateWithLifecycle(null)
     val nextBoard by store.board(team.id, now.plusMonths(1)).collectAsStateWithLifecycle(null)
     val nextMonth by store.month(team.id, now.plusMonths(1)).collectAsStateWithLifecycle(null)
+    // 2.0.0 [RVJ-30][RVJ-31] The same count the board shows: weeks read over the month's edges, 주 52시간 not for a 5인 미만 사업장.
+    val prevBoard by store.board(team.id, now.minusMonths(1)).collectAsStateWithLifecycle(null)
+    val rules = com.bamnat.app.ui.team.teamRules(team, calendarId)
     val b = board ?: return
-    val signs = remember(b, team, settings.rules) { TeamCheck.check(team, b, settings.rules) }
+    val signs = remember(b, team, rules, prevBoard, nextBoard) {
+        TeamCheck.check(team, b, rules, prevBoard?.takeIf { it.cells.isNotEmpty() }, nextBoard?.takeIf { it.cells.isNotEmpty() })
+    }
     val danger = signs.count { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
     val short = signs.filter { it.kind == TeamCheck.Kind.SHORT }.map { it.date }.distinct().size
     val m = month?.first
     val nm = nextMonth?.first
     val members = b.members.count { it.active }
     val g = ManageDesk.TeamGlance(team.id, team.name, members, m?.state == MonthState.CONFIRMED, m?.version ?: 0, b.empty, danger, short,
-        nm?.state == MonthState.CONFIRMED, nextBoard?.empty ?: 0, painted = b.cells.size)
+        nm?.state == MonthState.CONFIRMED, nextBoard?.empty ?: 0, painted = b.cells.size, weekLimit = rules.weekLimit)
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
     val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }

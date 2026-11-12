@@ -252,7 +252,7 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
     fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
     when (style) {
         null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
-            NavRow("한 달 근무 넣기", "달력 위 키패드로 바로 넣거나, 듀티표 사진·엑셀·PDF를 읽어 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            NavRow("한 달 근무 넣기", "달력 위 키패드로 바로 넣거나, 근무표 사진·엑셀·PDF를 읽어 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
             HorizontalDivider()
             NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
         }
@@ -488,16 +488,10 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     }
     // 2.0.0 [RVH-41] 검토 T30-80·82: 주 52시간·3개월 평균·전공의 연속 근무는 회사 근무의 한도라 알바에게는 보이지 않아요(이번 주 시간은 달력 위 줄).
     if (settings.workStyle != WorkStyle.HOURLY) SectionCard(title = "근무시간 경고") {
-        // 2.0.0 [RVJ-23] 검토 U04-07: the law's limit and the user's own warning are two things, said apart. Only a wage calendar has
-        // the law's (근무·급여 [weekLimitFor]); 현장·가게·투자 read the first sentence alone, and each kind its own tab's name (TypeWords:
-        // 알바 '출근·시급', no '52시간').
-        val style = settings.workStyle
-        val law = when {
-            style?.usesPayEngine == false -> ""
-            style == com.bamnat.core.work.WorkStyle.HOURLY -> " 법 한도(근로기준법 제53조)는 급여 설정에 맞춰 ${style.words().tab} 화면에 따로 보여요."
-            else -> " 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 ${style.words().tab} 화면에 따로 보여요."
-        }
-        Text("건강을 위해 내가 정하는 경고예요.$law", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVJ-23] 검토 U04-07: the law's limit and the user's own warning are two things, said apart (근무·급여 [weekLimitFor]).
+        // Only 교대·일근 reach this card ([RVH-41] above: 현장·가게·투자 return early, 알바 has no card), so one sentence, in the tab's own name.
+        Text("건강을 위해 내가 정하는 경고예요. 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 ${settings.workStyle.words().tab} 화면에 따로 보여요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 빨갛게 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }

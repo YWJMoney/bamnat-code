@@ -384,6 +384,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go. [RVG-19] Kept out here: the
     // summary's '가족·동료 근무표였어요' comes back to the first screen with it.
     var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVG-35] 검토 HQ-64: what the kept link is called (‘민지’ 영업일은 받은 달력에 넣었어요).
+    var theirsWord by rememberSaveable { mutableStateOf("근무표") }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
@@ -416,6 +418,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val waitingRaw = waitingShare?.schedule
                     val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
+                    // 2.0.0 [RVG-35] 검토 HQ-64: the link in its own word, as the web page that opened it said (‘민지’ 영업일).
+                    val waitingWord = waitingSchedule?.let { com.bamnat.core.work.linkWord(it.shows, it.payKind) } ?: "근무표"
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }
@@ -436,14 +440,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
-                        linkWaiting = waitingLink != null && !theirsLater && !linkClosed, linkTitle = waitingTitle,
+                        linkWaiting = waitingLink != null && !theirsLater && !linkClosed, linkTitle = waitingTitle, linkWord = waitingWord,
                         linkLoading = waitingLink != null && waitingRead == null,
                         // [RVG-17] Said in place of the line: no signal, the server, or a link that is gone (ShareLinkException's own words).
                         linkProblem = waitingRead?.exceptionOrNull()?.let(com.bamnat.app.ui.setup.LinkStart::problem),
                         linkLean = com.bamnat.app.ui.setup.LinkStart.lean(waitingRaw),
                         onLinkClose = { container.telemetry.event("setup_link", "closed"); linkClosed = true },
-                        theirsKept = theirsKept, theirsLater = theirsLater,
-                        onTheirsClose = { theirsKept = null; theirsLater = false; linkClosed = true },
+                        theirsKept = theirsKept, theirsWord = theirsWord, theirsLater = theirsLater,
+                        onTheirsClose = { theirsKept = null; theirsWord = "근무표"; theirsLater = false; linkClosed = true },
                         onLinkStart = linkDraft?.let { draft -> {
                             sizeSeen()
                             com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
@@ -466,6 +470,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 container.telemetry.event("setup_link", "theirs")
                                 container.telemetry.event("received_add", "new")
                                 theirsKept = waitingTitle ?: com.bamnat.app.ui.setup.LinkStart.NO_NAME
+                                theirsWord = waitingWord
                             } else {
                                 // Not read (no signal): the link stays waiting, and the calendar offers it as a 받은 달력 after the setup.
                                 container.telemetry.event("setup_link", "theirs_later")
@@ -499,7 +504,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 onBrowseBack = { firstStyleKey = null }.takeIf { firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE },
                 onFirstStyleUsed = { firstStyleKey = "" },
                 // [RVG-19] 검토 HQ-09: '내 근무표예요' by mistake: the link is beside as theirs, the first screen says so and asks again.
-                onNotMine = { title -> theirsKept = title; firstStyleKey = null })
+                onNotMine = { title -> theirsKept = title; theirsWord = "근무표"; firstStyleKey = null })
             return
         }
         false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {
@@ -668,6 +673,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 com.bamnat.app.ui.company.TalkSheets.closeAll()
                 com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.SHARE)
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.RECIPE -> {
+                // Only a work's code (letters and numbers), whatever the intent carried.
+                val code = NoticeLinks.payload.value?.takeIf { Regex("[A-Za-z0-9]{4,16}").matches(it) }
+                if (code != null) nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                NoticeLinks.consume(target)
             }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // 1.39 발굴: '보완 요청이 n개 왔어요' opens that version's talk, over 마을 › 내 글 (back leaves both).
@@ -883,10 +894,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             if (solved != null) {
                 // 2.0.0 [RVP-23] (검토 UIX-44·U13b-10) It stayed until pressed and held every line behind it, and was marked told before
-                // it showed: now 8 s with 보러 가기 in the queue, marked told once it is on screen.
-                if (com.bamnat.app.ui.components.AppSnack.ask("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요", "보러 가기", withDismissAction = true,
-                        onShown = { prefs.edit().putStringSet("told", told + solved.first).apply() }))
-                    nav.navigate(Routes.recipe(solved.second))
+                // it showed. [RVP-43] U13b-10·HQ-49: someone answered the user's ask, so it is a row of the 알림함's 사람들 반응 (the
+                // bell's number says it on every tab's 나 too); a tap opens the work. Told once it is in (or its kind is turned off).
+                com.bamnat.app.inbox.Inbox.post(container.appContext, com.bamnat.app.inbox.InboxRow(
+                    key = "studio.solved:${solved.first}", kind = "studio.solved", section = com.bamnat.app.inbox.InboxSection.PEOPLE,
+                    title = "부탁하신 꾸미기가 풀렸어요", line = "다른 분이 만들어 장터에 올렸어요",
+                    target = NoticeLinks.Target.RECIPE, payload = solved.second,
+                ))
+                prefs.edit().putStringSet("told", told + solved.first).apply()
             }
         }
     }
@@ -1435,8 +1450,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
                         }
                         // PC 확인 Z1 (띠가 스튜디오 같은 안쪽 화면에서 시계·배터리 줄과 겹침): only on the tabs, below the status bar.
-                        if (showNav && topLevel != null) ShiftLookBand()
-                        if (showNav && topLevel == TopLevel.CALENDAR) LookUndoBand()
+                        // 2.0.0 [RVP-45] 검토 PC-81: on the calendar both are notices of its own (the band's place is decided as it opens).
+                        if (showNav && topLevel != null && topLevel != TopLevel.CALENDAR) ShiftLookBand()
                         RingingBanner()
                         // 1.38 PC 9차 (EASE-03 '끼어드는 창 0'): the window asking to allow notifications is gone; the calendar's red alarm
                         // line says it ("알림이 꺼져 있어 알람이 소리만 나요 · 허용") wherever an alarm comes within a week.
@@ -2058,7 +2073,10 @@ private fun AppNavHost(
                     scope.launch {
                         val hasPattern = company.schedule.patterns.first().isNotEmpty()
                         val pay = company.pay.profile.value != null
-                        val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
+                        // 2.0.0 [RVN-17] 검토 I10ab-02 The order alone, on a calendar held by another company: said as what it was.
+                        val done = applied.heldBy?.let { h ->
+                            "‘$name’ 근무 순서를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
+                        } ?: ("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                         // 2.0.0 [RVN-08] COMP-11 Put over the calendar's own order: 되돌리기 on the app's snackbar, whichever screen is next.
                         applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say(done, it) }
                         when {
@@ -2079,7 +2097,7 @@ private fun AppNavHost(
                                 // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
                                 if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
                                 // [PLAZA-32] 1.27 AI (443): the company's 정보 광장 opens at once, with one line on what just happened.
-                                if (container.companyApi.enabled && company.store.member.value != null) {
+                                if (container.companyApi.enabled && company.store.member.value != null && applied.heldBy == null) {
                                     container.pendingPlazaNote = if (applied.undo != null) "이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                         else "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                     nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true }
@@ -2495,7 +2513,14 @@ private fun AppNavHost(
             val date = args?.getString("date")?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             val checklist = args?.getBoolean("checklist") ?: false
             val notebook = args?.getBoolean("notebook") ?: false
-            val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, id, date, checklist, notebook) }
+            // 2.0.0 [RVI-46] (검토 MEMO-26) A new memo's id, once saved, is kept with the screen: after the app was let go in the
+            // background, the same memo opens again instead of an empty one (its words were saved and in the list).
+            val opened = if (id == 0L) entry.savedStateHandle.get<Long>(SAVED_MEMO_ID) ?: 0L else id
+            val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, opened, date, checklist, notebook) }
+            if (id == 0L) {
+                val savedId = vm.memo.collectAsStateWithLifecycle().value.id
+                LaunchedEffect(savedId) { if (savedId != 0L) entry.savedStateHandle[SAVED_MEMO_ID] = savedId }
+            }
             MemoEditorScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO) })
         }
     }
@@ -2622,7 +2647,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.INQUIRY -> Routes.INQUIRY
     SettingsGo.BOARD -> Routes.companyBoard()
     SettingsGo.FEATURES -> Routes.FEATURES
-    SettingsGo.PRO -> Routes.PRO
+    SettingsGo.PRO, SettingsGo.PRO_CODE -> Routes.PRO
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL
@@ -2886,64 +2911,17 @@ private const val CALENDAR_BESIDE_DP = 700
 
 /**
  * [STU-37] PC 확인 S6 (야간 모양이 입혀졌는지 알 수 없음): while a 근무에 따라 look is on, a thin line says so — 🌙 야간 모양 or 🌿 쉬는 날
- * 모양 — and 닫기 hides it until the mode changes.
+ * 모양 — and 닫기 hides it until the mode changes. 2.0.0 [RVP-45] On the calendar it is one of the calendar's notices
+ * ([com.bamnat.app.ui.calendar.ShiftLookLine]); the look the studio just put on is said there only (PC 재검토 N3 1.36).
  */
 @androidx.compose.runtime.Composable
 private fun ShiftLookBand() {
-    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
-    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-    val looks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
-    val mode = com.bamnat.app.ui.theme.rememberShiftLookMode(looks, c)
-    var shut by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    if (mode == com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL || shut == mode.name) return
+    val note = com.bamnat.app.ui.calendar.rememberShiftLookNote() ?: return
     androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer)
         .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text((if (mode == com.bamnat.core.recipe.ShiftLooks.Mode.NIGHT) "🌙 야간 근무 중이라 야간 모양이에요" else "🌿 쉬는 날이라 쉬는 날 모양이에요"),
+        Text((if (note.night) "🌙 " else "🌿 ") + note.line,
             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
-        androidx.compose.material3.TextButton(onClick = { shut = mode.name }) { Text("닫기") }
-    }
-}
-
-
-/**
- * PC 재검토 N3 1.36: after the studio put a look on, a line over the calendar offers the look from before. [RVM-17] PC-57 (띠가 계속 남아
- * 달력이 한 줄 내려가요): it shows for a moment ([com.bamnat.app.data.LookUndo.BAND_MS]) the first time the calendar shows after 입히기 and
- * then folds away for good; 되돌리기 stays in the studio for the day ('입히기 전 모양으로').
- */
-@androidx.compose.runtime.Composable
-private fun LookUndoBand() {
-    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
-    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-    var tick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    // PC 20차: in safe mode the looks rest, so '입힌 모양이에요' would say the opposite of what shows.
-    val safe by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
-    val kept = androidx.compose.runtime.remember(settings, tick) {
-        com.bamnat.app.data.LookUndo.read(c.appContext)?.takeIf { !com.bamnat.app.data.LookUndo.seen(c.appContext) }
-    }
-    // Shown only while the look on is the one put on (the settings were not changed back another way).
-    val show = !safe && kept != null && c.recipes.pieces.lookSnapshot() != kept.first
-    androidx.compose.runtime.LaunchedEffect(show, kept?.second) {
-        if (!show) return@LaunchedEffect
-        kotlinx.coroutines.delay(com.bamnat.app.data.LookUndo.BAND_MS)
-        com.bamnat.app.data.LookUndo.markSeen(c.appContext)
-        tick++
-    }
-    androidx.compose.animation.AnimatedVisibility(show,
-        enter = androidx.compose.animation.expandVertically(com.bamnat.app.ui.theme.BamnatMotion.spec(com.bamnat.app.ui.theme.BamnatMotion.open())),
-        exit = androidx.compose.animation.shrinkVertically(com.bamnat.app.ui.theme.BamnatMotion.spec(com.bamnat.app.ui.theme.BamnatMotion.open()))) {
-        val k = kept ?: return@AnimatedVisibility
-        androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("스튜디오에서 입힌 모양이에요", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
-            androidx.compose.material3.TextButton(onClick = {
-                c.recipes.pieces.restoreLook(k.first)
-                com.bamnat.app.data.LookUndo.clear(c.appContext)
-                scope.launch { runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(c.appContext) } }
-                tick++
-            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입히기 전 모양으로") }
-        }
+        androidx.compose.material3.TextButton(onClick = note.close) { Text("닫기") }
     }
 }
 
@@ -2966,3 +2944,6 @@ private suspend fun sharedPlaces(c: AppContainer): List<com.bamnat.app.imports.S
  */
 @android.annotation.SuppressLint("RestrictedApi")
 private fun wholeStack(nav: androidx.navigation.NavController): List<androidx.navigation.NavBackStackEntry> = nav.currentBackStack.value
+
+/** 2.0.0 [RVI-46] The id a new memo got on its first save, kept with its editor's place in the back stack. */
+private const val SAVED_MEMO_ID = "saved_memo_id"

@@ -113,6 +113,7 @@ import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.HourlyWork
 import com.bamnat.core.work.DayWork
 import androidx.compose.material.icons.automirrored.outlined.NoteAdd
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Work
 import java.time.DayOfWeek
@@ -305,6 +306,8 @@ fun MonthGrid(
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
     /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
     marked: Set<LocalDate> = emptySet(),
+    /** 2.0.0 [RVL-38] (검토 U07b-06) Days something is about to be written over (한 달 근무 넣기: leave already there), outlined in the caution orange (조건 6). */
+    outlined: Set<LocalDate> = emptySet(),
     /** 1.32 [CALX-06] The first day of each 급여 기간 on the grid: a line at its left edge (마감 다음 날). */
     cutDays: Set<LocalDate> = emptySet(),
     /** 1.32 [WTYP-11] 희망 오프 days: a small ♡ at the top right. */
@@ -459,6 +462,8 @@ fun MonthGrid(
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight().then(
                             if (date in marked) Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.small) else Modifier,
+                        ).then(
+                            if (date in outlined) Modifier.border(2.dp, MaterialTheme.bamnat.caution, MaterialTheme.shapes.small) else Modifier,
                         ).then(
                             if (fill == null) Modifier
                             else fillShare(date, today, firstCell.plusDays(GRID_ROWS * 7L - 1)).let { share ->
