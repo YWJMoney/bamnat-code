@@ -70,8 +70,9 @@ internal fun EnvelopesCard(
     perShift: Long?, pro: Boolean, actions: EnvelopeActions,
 ) {
     val rows = remember(envelopes, moves, today) { Envelopes.status(envelopes, moves, today) }
-    var editing by remember { mutableStateOf<Envelope?>(null) }
-    var putting by remember { mutableStateOf<EnvelopeStatus?>(null) }
+    // 2.0.0 [RVK-03] (MONEY-01 같은 구조): an envelope being edited or filled comes back after a rebuilt screen.
+    var editing by rememberOpenLine<Envelope>({ it.id }) { id -> envelopes.firstOrNull { it.id == id } }
+    var putting by rememberOpenLine<EnvelopeStatus>({ it.envelope.id }) { id -> rows.firstOrNull { it.envelope.id == id } }
     val canAdd = Envelopes.canAdd(envelopes, pro)
     val taxSuggest = Envelopes.taxShareFor(style).takeIf { it > 0 && envelopes.none { e -> e.kind == EnvelopeKind.TAX && !e.closed } }
     SectionCard(title = "모으기 봉투", trailing = {
@@ -179,8 +180,12 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
     var due by rememberSaveable { mutableStateOf(e.due?.toString().orEmpty()) }
     var picking by remember { mutableStateOf(false) }
     val isNew = e.id == 0L
-    AlertDialog(
+    // 2.0.0 [RVK-07] (검토 MONEY-09 같은 구조): asks before what was typed goes.
+    val unsaved = name != e.name || target != amountDigits(e.target) || share != e.sharePercent.takeIf { it > 0 }?.toString().orEmpty() ||
+        due != e.due?.toString().orEmpty()
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = unsaved,
         title = { Text(if (isNew) "봉투 만들기" else "봉투 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -200,7 +205,7 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = {
+            com.bamnat.app.ui.components.Button(enabled = name.isNotBlank(), onClick = {
                 onSave(e.copy(name = name.trim(), target = target.toAmount(), due = due.takeIf { it.isNotBlank() }?.let(LocalDate::parse),
                     sharePercent = (share.toIntOrNull() ?: 0).coerceIn(0, 100)))
             }) { Text("저장") }

@@ -80,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -145,7 +146,7 @@ internal fun DeleteLineDialog(e: MoneyEntry, onDismiss: () -> Unit, onConfirm: (
     val what = listOfNotNull(Fmt.shortDate(e.date), e.title.ifBlank { e.category }, signedWon(e)).joinToString(" · ")
     com.bamnat.app.ui.components.ConfirmDialog(
         title = "지울까요?",
-        message = "$what\n\n지운 뒤에도 바로 나오는 ‘되돌리기’로 다시 살릴 수 있어요.",
+        message = "$what\n\n지운 뒤 나오는 ‘되돌리기’나, 30일 동안 가계부 메뉴 › 최근 지운 기록에서 살릴 수 있어요.",
         confirmLabel = "지우기",
         destructive = true,
         onDismiss = onDismiss,
@@ -189,9 +190,13 @@ fun LedgerListPane(
     val totals = remember(shown, filter) { Ledger.totals(shown, filter) }
     val byDate = view.sort == LedgerSort.NEWEST || view.sort == LedgerSort.OLDEST
     val days = remember(shown, byDate) { if (byDate) Ledger.days(shown) else emptyList() }
-    var filtering by remember { mutableStateOf(false) }
-    var exporting by remember { mutableStateOf(false) }
-    var moving by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-03] (MONEY-01): open sheets come back after a rebuilt screen.
+    var filtering by rememberSaveable { mutableStateOf(false) }
+    var exporting by rememberSaveable { mutableStateOf(false) }
+    var moving by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVK-10] (MONEY-04·U06a-11): the 휴지통 of picked lines asks first, saying how many and how much ('모두 고르기' with
+    // 전체 can be the whole 가계부); what goes stays 30 days in 최근 지운 기록.
+    var askingDelete by rememberSaveable { mutableStateOf(false) }
     val selecting = selection.isNotEmpty()
     val picked = remember(shown, selection) { shown.filter { it.id in selection } }
     BackHandler(enabled = selecting) { onSelection(emptySet()) }
@@ -225,7 +230,7 @@ fun LedgerListPane(
                     onClose = { onSelection(emptySet()) },
                     onAll = { onSelection(if (picked.size == shown.size) emptySet() else shown.map { it.id }.toSet()) },
                     onMove = { moving = true },
-                    onDelete = { actions.delete(picked); onSelection(emptySet()) })
+                    onDelete = { askingDelete = true })
             }
             val listState = rememberLazyListState()
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = FabClearance + 8.dp)) {
@@ -332,6 +337,19 @@ fun LedgerListPane(
     }
     if (exporting) {
         ExportDialog(shown, book, view.range(month), actions::message) { exporting = false }
+    }
+    if (askingDelete && picked.isNotEmpty()) {
+        val done = { askingDelete = false }
+        if (picked.size == 1) DeleteLineDialog(picked.single(), onDismiss = done, onConfirm = { done(); actions.delete(picked); onSelection(emptySet()) })
+        else com.bamnat.app.ui.components.ConfirmDialog(
+            title = "기록 ${picked.size}건을 지울까요?",
+            message = "${Fmt.shortDate(picked.minOf { it.date })}~${Fmt.shortDate(picked.maxOf { it.date })} · 모두 ${Fmt.won(picked.sumOf { kotlin.math.abs(it.amount) })}\n\n" +
+                "지운 기록은 30일 동안 가계부 메뉴 › 최근 지운 기록에서 되살릴 수 있어요.",
+            confirmLabel = "${picked.size}건 지우기",
+            destructive = true,
+            onDismiss = done,
+            onConfirm = { done(); actions.delete(picked); onSelection(emptySet()) },
+        )
     }
     if (moving && picked.isNotEmpty()) {
         MoveDialog(book, picked, onPick = { c -> actions.recategorize(picked, c); onSelection(emptySet()); moving = false }, onDismiss = { moving = false })

@@ -217,6 +217,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVK-16] 결제 알림 읽기가 마지막으로 읽은 때·이번 달 건수: 이 휴대폰의 알림 읽기가 잘 도는지라 옮기지 않아요.
+            "capture_health" to "결제 알림을 마지막으로 읽은 때와 이번 달 적은 건수, 이 휴대폰의 알림 읽기 것",
             // 2.0.0 [RVP-08] 설명을 몇 번 봤는지: 새 휴대폰에서는 설명을 처음처럼 한 번 더 다 보여 줘요.
             "explain_seen" to "설명(ⓘ)을 이 휴대폰에서 본 횟수, 새 휴대폰은 처음처럼 다 보여 줘요",
             // 2.0.0 [RVP-24] 뿌리 고침 2: 쓰다 만 글(rememberDraft)은 이 휴대폰에서 이어 쓰는 것, 7일 뒤 저절로 지워요.

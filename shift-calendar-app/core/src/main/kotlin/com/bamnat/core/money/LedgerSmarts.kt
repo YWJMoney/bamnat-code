@@ -22,8 +22,11 @@ object LedgerSmarts {
      * a deposit into one account and a withdrawal (or transfer) of the same amount from another, within [TRANSFER_DAYS].
      * Both must be known accounts and differ. 1.31 counted the deposit as 수입, so moving 100만 원 to the 생활비 통장
      * read as 100만 원 earned.
+     *
+     * 2.0.0 [RVK-12] (검토 MONEY-60): with the user's own names known ([myNames], 결제 알림 › 더 정확하게 적기), two lines that
+     * each name someone, neither of them the user, are two people's money (a friend's 50만 원 in, the rent out) and stay apart.
      */
-    fun ownTransfer(new: MoneyEntry, recent: List<MoneyEntry>): MoneyEntry? {
+    fun ownTransfer(new: MoneyEntry, recent: List<MoneyEntry>, myNames: Collection<String> = emptyList()): MoneyEntry? {
         val from = new.accountId ?: return null
         val wantKind = when (new.kind) {
             MoneyKind.INCOME -> MoneyKind.TRANSFER
@@ -33,8 +36,15 @@ object LedgerSmarts {
         return recent.filter { e ->
             e.id != new.id && e.kind == wantKind && abs(e.amount) == abs(new.amount) && e.accountId != null && e.accountId != from &&
                 abs(ChronoUnit.DAYS.between(e.date, new.date)) <= TRANSFER_DAYS && e.toAccountId == null &&
-                e.shareOf(MoneyCategories.SALARY) == 0L
+                e.shareOf(MoneyCategories.SALARY) == 0L && !othersApart(e, new, myNames)
         }.minByOrNull { abs(ChronoUnit.MINUTES.between(it.date.atTime(it.time ?: java.time.LocalTime.NOON), new.date.atTime(new.time ?: java.time.LocalTime.NOON))) }
+    }
+
+    /** [RVK-12] Both lines name someone, the names differ and neither is the user: money of two other people. */
+    private fun othersApart(a: MoneyEntry, b: MoneyEntry, myNames: Collection<String>): Boolean {
+        if (myNames.isEmpty() || a.merchant.isBlank() || b.merchant.isBlank()) return false
+        if (LedgerChecks.isMine(a.merchant, myNames) || LedgerChecks.isMine(b.merchant, myNames)) return false
+        return !placeSame(a.merchant, b.merchant)
     }
 
     /** [LEDX-01] The one line a pair becomes: the withdrawal, now a transfer to the deposit's account. */

@@ -1015,9 +1015,14 @@ private fun ReceivableDialog(
     val minAmount = initial?.received ?: 0
     val valid = amount.toAmount() > 0 && amount.toAmount() >= minAmount && (who.isNotBlank() || title.isNotBlank()) &&
         (dueDate == null || !dueDate.isBefore(start))
+    // 2.0.0 [RVK-07] (검토 MONEY-09): a tap outside or 뒤로 asks before what was typed goes, as 일감·돈 적기 do.
+    val unsaved = who != initial?.who.orEmpty() || title != initial?.title.orEmpty() || amount != amountDigits(initial?.amount ?: 0) ||
+        kind != (initial?.kind ?: kindDefault) || income != (initial?.countAsIncome ?: kindDefault.incomeByDefault) ||
+        date != (initial?.date ?: today).toString() || due != initial?.due?.toString() || note != initial?.note.orEmpty()
 
-    AlertDialog(
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = unsaved,
         title = { Text(if (initial == null) "받을 돈 적기" else "받을 돈 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1080,7 +1085,7 @@ private fun ReceivableDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = {
+            Button(enabled = valid, onClick = {
                 onSave((initial ?: Receivable(who = "", amount = 0, date = start)).copy(
                     who = who.trim(), title = title.trim(), amount = amount.toAmount(), date = start, due = dueDate,
                     kind = kind, note = note.trim(), countAsIncome = income,

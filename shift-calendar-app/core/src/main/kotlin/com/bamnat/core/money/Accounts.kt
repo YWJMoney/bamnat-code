@@ -76,6 +76,24 @@ object MoneyAccounts {
         return (same.firstOrNull { it.isCard } ?: same.firstOrNull())?.id
     }
 
+    /**
+     * 2.0.0 [RVK-18] (검토 U06a-09): '지금 잔액으로 맞추기' — the one line that brings [account]'s counted balance [counted] to the
+     * [actual] amount in it, as a transfer (so no month's 수입·지출 changes): money that left without a line goes out of it, money
+     * that came without a line comes into it. Null when they already agree or the account does not hold money.
+     */
+    fun adjustment(account: MoneyAccount, counted: Long, actual: Long, on: LocalDate): MoneyEntry? {
+        if (!account.keepsBalance || account.isLoan || actual == counted) return null
+        val diff = actual - counted
+        return MoneyEntry(
+            date = on, kind = MoneyKind.TRANSFER, amount = kotlin.math.abs(diff), category = LedgerSmarts.TRANSFER_CATEGORY,
+            merchant = ADJUST_NAME, note = "실제 잔액에 맞춤", source = MoneySource.MANUAL, reviewed = true,
+            accountId = account.id.takeIf { diff < 0 }, toAccountId = account.id.takeIf { diff > 0 },
+        )
+    }
+
+    /** 2.0.0 [RVK-18] What a balance line is called in the list. */
+    const val ADJUST_NAME = "잔액 맞춤"
+
     /** The account a payment text belongs to when it is saved, or null when no card matches. */
     fun match(cardLast4: String, accounts: List<MoneyAccount>): Long? =
         of(MoneyEntry(date = LocalDate.MIN, kind = MoneyKind.EXPENSE, amount = 0, category = "", cardLast4 = cardLast4), accounts)
