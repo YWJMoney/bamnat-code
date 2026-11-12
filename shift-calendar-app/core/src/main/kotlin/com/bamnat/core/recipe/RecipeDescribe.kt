@@ -233,6 +233,14 @@ object RecipeDescribe {
     /** The receiver's own words for the kinds of work a recipe fits. */
     fun styles(r: Recipe): String = com.bamnat.core.work.WorkStyle.entries.filter { it in r.styles }.joinToString("·") { short(it) }
 
+    /**
+     * 2.0.0 [RVM-42] 총괄 HQ-100 (조건 7·13): "일근용" for a work made for other kinds of work than [mine] (with 다른 유형도 on, a card
+     * and the work say so); null when it is for [mine], for every kind, or either is not known.
+     */
+    fun otherKind(styles: Set<com.bamnat.core.work.WorkStyle>, mine: com.bamnat.core.work.WorkStyle?): String? =
+        if (mine == null || styles.isEmpty() || mine in styles) null
+        else com.bamnat.core.work.WorkStyle.entries.filter { it in styles }.joinToString("·") { short(it) } + "용"
+
     fun short(s: com.bamnat.core.work.WorkStyle): String = when (s) {
         com.bamnat.core.work.WorkStyle.SHIFT -> "교대"
         com.bamnat.core.work.WorkStyle.DAY -> "일근"
