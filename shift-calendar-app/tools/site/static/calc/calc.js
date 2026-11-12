@@ -471,9 +471,30 @@
   // 받는 쪽 페이지(레시피 링크 r/)는 body에 data-source="bamnat_share"를 둬요. 주소로는 바꿀 수 없고 이 두 값만 받아요.
   B.source = function () { return hasDoc && document.body && document.body.dataset.source === 'bamnat_share' ? 'bamnat_share' : 'bamnat_web'; };
   B.playLink = function (campaign, medium, extra) {
-    var from = hasDoc ? B.visit() : '';
-    var ref = 'utm_source=' + B.source() + '&utm_medium=' + (medium || B.medium()) + '&utm_campaign=' + (from ? from + '-' : '') + campaign + (from ? '&utm_term=' + from : '') + (extra || '');
+    var c = B.carry || {}, from = hasDoc ? B.visit() : '';
+    // '명세서 맞추기' 링크만 갈 곳을 실어요(같은 쪽의 다른 받기 단추는 앱 첫 화면 그대로).
+    var carry = B.handoff(campaign === 'slip_check' ? { p: c.p, s: c.s, o: c.o, w: c.w, t: 'slip' } : c);
+    var ref = 'utm_source=' + B.source() + '&utm_medium=' + (medium || B.medium()) + '&utm_campaign=' + (from ? from + '-' : '') + campaign + (from ? '&utm_term=' + from : '') + (extra || '') +
+      (carry && !/utm_content=/.test(extra || '') ? '&utm_content=' + carry : '');
     return 'https://play.google.com/store/apps/details?id=com.bamnat.app&referrer=' + encodeURIComponent(ref);
+  };
+  // [I50c-01·03] 웹 → 앱 이어받기: 이 쪽에서 고른 설정만(순서 글자·첫날·한 번만·시급, 갈 곳 '명세서 맞추기') Play 링크의 utm_content에
+  // 실어요. 앱 첫 실행이 휴대폰 안에서만 읽어 "웹에서 보던 …부터 채울까요?" 한 번으로 묻고, 서버로는 가지 않아요.
+  // 모양은 앱 core WebHandoff와 같아요: p-DNBO_s-20261110_o-1_w-10320_t-slip(모두 고를 때만).
+  B.carry = {};
+  B.handoff = function (c) {
+    if (!c) return '';
+    var out = [], p = /^[DENOXB]{1,62}$/.test(c.p || '') ? c.p : '';
+    if (p) out.push('p-' + p);
+    if (p && /^\d{4}-\d{2}-\d{2}$/.test(c.s || '')) out.push('s-' + c.s.replace(/-/g, ''));
+    if (p && c.o) out.push('o-1');
+    if (c.w >= 1 && c.w < 1000000) out.push('w-' + Math.round(c.w));
+    if (c.t === 'slip') out.push('t-' + c.t);
+    return out.join('_');
+  };
+  // 받기 링크마다 지금 실을 것으로 다시 써요(달력을 그릴 때, 받기를 누를 때).
+  B.relink = function () {
+    if (hasDoc) document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play, a.dataset.medium); });
   };
 
   // ---------- 칸·칩·결과 표 ----------
@@ -644,11 +665,13 @@
     if (B.ios(navigator.userAgent, navigator.maxTouchPoints || 0)) {
       document.documentElement.classList.add('ios');
       document.querySelectorAll('a[data-play]').forEach(function (a) {
-        if (a.closest('.dock') || a.classList.contains('get')) a.hidden = true; else if (!a.closest('.ios-skip')) B.iosNote(a);
+        if (a.closest('.dock') || a.classList.contains('get') || a.classList.contains('app-line')) a.hidden = true; else if (!a.closest('.ios-skip')) B.iosNote(a);
       });
       var dk = document.getElementById('dock'); if (dk) dk.hidden = true;
     }
-    document.querySelectorAll('a[data-play]').forEach(function (a) { a.href = B.playLink(a.dataset.play, a.dataset.medium); });
+    B.relink();
+    // 받기를 누르는 그때의 설정을 실어요(계산하며 바뀐 시급·순서).
+    document.addEventListener('click', function (e) { var a = e.target.closest && e.target.closest('a[data-play]'); if (a) a.href = B.playLink(a.dataset.play, a.dataset.medium); }, true);
     document.querySelectorAll('input[data-money]').forEach(B.money);
     B.ui();
   });

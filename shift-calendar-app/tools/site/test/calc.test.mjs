@@ -118,6 +118,33 @@ test('Play 링크 출처는 늘 bamnat_web, 방문 출처는 utm_term에만', ()
   assert.equal(link, 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=juhyu');
 });
 
+// 2.0.0 [RVR-31] (I50c-01·03, SPREAD-30) 웹 → 앱 이어받기: core WebHandoff가 읽는 모양과 같아요(WebHandoffTest).
+test('이어받기: 순서·첫날·한 번만·시급만 utm_content에, 고른 것만', () => {
+  assert.equal(B.handoff({ p: 'DNBO', s: '2026-11-10', o: 1, w: 10320, t: 'slip' }), 'p-DNBO_s-20261110_o-1_w-10320_t-slip');
+  assert.equal(B.handoff({ p: 'DNBO', s: '2026-11-10', o: 0 }), 'p-DNBO_s-20261110');
+  assert.equal(B.handoff({ w: 10320.4 }), 'w-10320');
+  // 순서 없는 첫날·한 번만, 글자 밖 순서, 0원·백만 원 시급, 모르는 갈 곳은 싣지 않아요.
+  assert.equal(B.handoff({ s: '2026-11-10', o: 1 }), '');
+  assert.equal(B.handoff({ p: 'DNBQ', w: 0 }), '');
+  assert.equal(B.handoff({ w: 1000000, t: 'home' }), '');
+  assert.equal(B.handoff(null), '');
+});
+
+test('이어받기: 받기 링크에 실리고, 명세서 링크만 갈 곳을 실어요', () => {
+  const ref = (campaign) => decodeURIComponent(B.playLink(campaign, 'calc').split('referrer=')[1]);
+  try {
+    B.carry = { w: 10320 };
+    assert.equal(ref('alba'), 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=alba&utm_content=w-10320');
+    assert.equal(ref('slip_check'), 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=slip_check&utm_content=w-10320_t-slip');
+    B.carry = {};
+    assert.equal(ref('salary'), 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=salary');
+    assert.equal(ref('slip_check'), 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=slip_check&utm_content=t-slip');
+    // 따로 utm_content를 준 링크는 그것만(덮어쓰지 않아요).
+    B.carry = { p: 'DN' };
+    assert.match(decodeURIComponent(B.playLink('x', 'shift', '&utm_content=abc')), /utm_content=abc$/);
+  } finally { B.carry = {}; }
+});
+
 // 2.0.0 [I50b-01·T50-09] 사장님 인건비: core LaborCost와 같은 사례(WebCalcParityTest.labor).
 const hm = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 test('사장님 인건비: 그달 요일·일요일 주휴·사업주 4대보험', () => {

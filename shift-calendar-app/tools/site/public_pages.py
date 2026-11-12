@@ -9,12 +9,17 @@ DATA_MONEY = 'inputmode="numeric" autocomplete="off" data-money'
 SHARE = '<div class="share"><button type="button" class="chip" id="share">결과 링크 보내기</button></div>'
 
 
-def result(head='', big_id='out'):
+# [I50c-03] 실수령·통상임금 결과 다음 물음("내 명세서랑 왜 다르지?")에서 앱의 '내 월급 맞나요?'로. 이 링크만 '명세서 맞추기'를 실어요.
+APP_SLIP = (f'<a class="app-line" data-play="slip_check" href="{PLAY}">명세서 사진을 찍으면 어디가 다른지 앱이 찾아 줘요'
+            '<span aria-hidden="true">›</span></a>')
+
+
+def result(head='', big_id='out', app=''):
     return f'''<div class="card result">
   <div class="muted" id="head">{head}</div>
   <div class="big" id="{big_id}" aria-live="polite">-</div>
   <table class="lines" id="lines"></table>
-  {SHARE}
+  {SHARE}{app}
 </div>'''
 
 
@@ -51,7 +56,7 @@ write('calc/juhyu/', page(
     r'''(function(){
 var B=Bamnat,F=B.f,$=B.$,year=new Date().getFullYear(),save=function(){};
 function calc(){
-  var w=B.val('wage'),wm=Math.round(B.val('days')*B.val('hours')*60),wk=wm/60;
+  var w=B.val('wage'),wm=Math.round(B.val('days')*B.val('hours')*60),wk=wm/60;B.carry.w=w;
   if(!w||!wm){$('out').textContent='-';$('lines').innerHTML='';save();return;}
   var j=F.juhyu(w,wm),rows=[['1주 근무 시간',B.fmt(wk)+'시간'+(wk>40?' (40시간까지만 셈)':'')]];
   if(!j.holMin){$('out').textContent='0원';rows.push({note:'1주 15시간보다 적으면 주휴수당이 생기지 않아요. '+B.fmt(15-wk)+'시간 더 일하면 생겨요.'});}
@@ -109,7 +114,7 @@ var B=Bamnat,F=B.f,$=B.$,year=new Date().getFullYear(),save=function(){};
 function mins(t){var p=/^(\d{1,2}):(\d{2})/.exec(t||'');return p?(+p[1])*60+(+p[2]):null;}
 function hm(x){return Math.floor(x/60)+'시간'+(x%60?' '+(x%60)+'분':'');}
 function calc(){
-  var w=B.val('wage'),s=mins($('start').value),e=mins($('end').value);
+  var w=B.val('wage'),s=mins($('start').value),e=mins($('end').value);B.carry.w=w;
   if(!w||s===null||e===null){$('out').textContent='-';$('lines').innerHTML=B.rows([s===null||e===null?{note:'출근·퇴근 시각을 넣어 주세요.'}:null]);save();return;}
   var r=F.allowance({wage:w,start:s,end:e,rest:B.val('rest'),restNight:$('restNight').checked,holiday:$('holiday').checked,small:$('small').checked});
   $('out').textContent=B.won(r.sum);
@@ -272,7 +277,7 @@ $('hols').addEventListener('click',function(e){var b=e.target.closest('.chip');i
 $('preset').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;if(b.dataset.plan)grid.plan(b.dataset.plan);else grid.fill(b.dataset.days,b.dataset.s,b.dataset.e);calc();});
 function hm(x){x=Math.round(x);return Math.floor(x/60)+'시간'+(x%60?' '+(x%60)+'분':'');}
 function calc(){
-  var w=B.val('wage'),restIn=$('rest').value.trim(),rest=restIn===''?null:B.val('rest'),g=grid.read(),hol=$('hol').value;
+  var w=B.val('wage'),restIn=$('rest').value.trim(),rest=restIn===''?null:B.val('rest'),g=grid.read(),hol=$('hol').value;B.carry.w=w;
   var days=g.map(function(d){if(!d.work)return null;var sp=F.span(d.s,d.e);return {s:d.s,e:d.e,rest:rest==null?F.legalBreak(sp):Math.min(rest,sp)};});
   if(!w||!days.some(Boolean)){$('out').textContent='-';$('lines').innerHTML=B.rows([days.some(Boolean)?null:{note:'일한 요일을 하나 이상 골라 주세요.'}]);save();return;}
   var small=$('small').checked,r=F.week({days:days,holidays:[1,2,3,4,5,6,7].map(function(i){return hol.indexOf(String(i))>=0;}),wage:w,small:small}),rows=[];
@@ -334,7 +339,7 @@ write('calc/ordinary/', page(
   </div>
   <label class="check"><input type="checkbox" id="small"> 상시 5명 미만 사업장이에요 (가산수당 없음)</label>
 </div>
-{result('통상시급')}''',
+{result('통상시급', app=APP_SLIP)}''',
     r'''(function(){
 var B=Bamnat,F=B.f,$=B.$,save=function(){},year=new Date().getFullYear();
 var KINDS=[['ext','연장'],['night','야간 가산'],['hol','휴일 8시간까지'],['hol8','휴일 8시간 넘음']];
@@ -420,7 +425,7 @@ write('calc/alba/', page(
   </div>
   <label class="check" id="over3mRow" hidden><input type="checkbox" id="over3m"> 3개월 넘게 계속 일해요 (주 15시간 미만이어도 고용보험은 떼요)</label>
 </div>
-{result('한 달 실수령 (예상)')}''',
+{result('한 달 실수령 (예상)', app=APP_SLIP)}''',
     r'''(function(){
 var B=Bamnat,F=B.f,$=B.$,D=B.d,year=new Date().getFullYear(),save=function(){},W='일월화수목금토';
 $('wd').innerHTML=W.split('').map(function(w,i){return '<button type="button" class="chip" data-d="'+i+'" aria-pressed="'+(i>0&&i<6)+'">'+w+'</button>';}).join('');
@@ -428,7 +433,7 @@ $('wd').addEventListener('click',function(e){var b=e.target.closest('.chip');if(
 var t=D.today();$('ym').value=D.iso(t).slice(0,7);
 var mode=B.chips($('tax'),function(){calc();});
 function calc(){
-  var w=B.val('wage'),h=B.val('hours'),inMonth=$('month').checked,o;$('monthBox').hidden=!inMonth;$('days').disabled=inMonth;
+  var w=B.val('wage'),h=B.val('hours'),inMonth=$('month').checked,o;$('monthBox').hidden=!inMonth;$('days').disabled=inMonth;B.carry.w=w;
   if(inMonth){var pick=[].map.call($('wd').querySelectorAll('[aria-pressed="true"]'),function(b){return +b.dataset.d;}),ym=($('ym').value||D.iso(t).slice(0,7)).split('-'),
       last=new Date(Date.UTC(+ym[0],+ym[1],0)).getUTCDate(),n=0;
     for(var d=1;d<=last;d++)if(pick.indexOf(new Date(Date.UTC(+ym[0],+ym[1]-1,d)).getUTCDay())>=0)n++;
@@ -541,7 +546,7 @@ write('calc/salary/', page(
   <span class="glabel" id="yearsL">요율 연도</span>
   <div class="chips" id="years" role="group" aria-labelledby="yearsL"></div>
 </div>
-{result('한 달 실수령 (예상)')}''',
+{result('한 달 실수령 (예상)', app=APP_SLIP)}''',
     r'''(function(){
 var B=Bamnat,F=B.f,$=B.$,year=new Date().getFullYear(),save=function(){};
 var DIV={month:1,year:12,yearsev:13},LABEL={month:'세전 월급 (원)',year:'세전 연봉 (원, 퇴직금 빼고)',yearsev:'세전 연봉 (원, 퇴직금 포함 ÷ 13)'},prev='month';
@@ -758,7 +763,8 @@ function draw(){
   $('cal').innerHTML=out;
   try{history.replaceState(null,'','?p='+c+'&s='+$('first').value+($('once').checked?'&o=1':''));}catch(e){}
   if(own)store(app||$('keep').checked);ask();
-  var a=document.querySelector('a[data-play="shift_cal"]');if(a)a.href=B.playLink('shift_cal','shift','&utm_content='+c.slice(0,24));
+  // [I50c-01] 앱 받기 링크에 이 순서·첫날을 실어요(앱 첫 설정이 한 번 물어요).
+  B.carry={p:c,s:$('first').value,o:$('once').checked?1:0};B.relink();
 }
 function ask(){var d=D.parse($('ask').value),c=codes(),s=D.parse($('first').value);if(!d||!c||!s){$('askOut').textContent='';return;}var x=at(c,s,d);
   $('askOut').textContent=D.dot(d)+' '+(FULL[x]?B.josa(FULL[x],'이에요/예요').replace(/(이에요|예요)$/,'')+(x==='O'||x==='B'?', 쉬는 날이에요.':' 근무예요.'):'근무가 없어요.');}

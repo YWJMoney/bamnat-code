@@ -349,7 +349,7 @@ ul.links li .muted { font-size: 14px; }
 }
 @media print {
   /* [WEB-13] 아래 받기 띠·앱 카드·보내기 단추는 종이에 찍히지 않아요. */
-  .site-header, .site-footer, .page-hero, .skip, .dock, .cta, .share, .ios-note { display: none !important; }
+  .site-header, .site-footer, .page-hero, .skip, .dock, .cta, .share, .app-line, .ios-note { display: none !important; }
   main.tool { margin-top: 0; }
   body { font-family: var(--font); }
 }
@@ -369,6 +369,9 @@ ul.links li .muted { font-size: 14px; }
 .dock .t span { font-size: 12.5px; color: rgba(242, 236, 225, 0.65); }
 .dock .btn { margin: 0; padding: 11px 16px; font-size: 15px; border-radius: 13px; }
 @media (min-width: 900px) { .dock { display: none; } }
+/* [I50c-03 길에 찾음] 글자 200%로 좁아진 폭(접은 폴드 380dp의 절반)에서는 떠 있는 받기 막대의 글이 낱말마다 세로로 서고 본문을 가려요(조건 9·12).
+   이 폭에서는 쪽 맨 아래 받기 카드(채운 단추 하나)로 받아요. */
+@media (max-width: 300px) { .dock { display: none; } }
 
 /* 웹 달력 다음, 앱에서 이어지는 것 */
 .app-next .t { display: block; font-size: 19px; letter-spacing: -0.02em; margin-bottom: 6px; }
@@ -505,3 +508,9 @@ input[aria-invalid] { border-color: var(--caution); }
 }
 /* 머리 띠: 폭이 280px보다 좁으면(글자 200%) '앱 받기'는 아래 띠·카드에 맡기고 메뉴 단추가 화면 밖으로 밀리지 않게 해요. 메뉴 단추는 44px. */
 @media (max-width: 280px) { .site-header .get { display: none; } }
+/* [I50c-03] 결과 아래 앱으로 이어지는 한 줄: 글자 링크(채운 단추는 아래 받기 하나), 누르는 곳 48px, 긴 글은 줄을 바꿔요. */
+.app-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid var(--line); color: var(--text); font-weight: 600; font-size: 15px; line-height: 1.4; text-decoration: none; }
+.app-line span { flex: none; font-size: 22px; line-height: 1; color: var(--gold); }
+.app-line:hover, .app-line:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.result .app-line { color: var(--ivory); border-top-color: rgba(255, 255, 255, 0.12); }
