@@ -217,7 +217,9 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun market(): Screen.() -> Unit = {
         Market().also { c.recipeApi = it }
         style(WorkStyle.SHIFT)
-        content { RecipeListScreen(RecipeListViewModel(c), onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        // Made outside the composable, as at the top of this file (lint ViewModelConstructorInComposable).
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
         settle()
     }
