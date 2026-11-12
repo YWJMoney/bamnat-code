@@ -154,9 +154,9 @@ class AEScreenshotTest : ScreenshotBase() {
         assertEquals("reading the referrer sends nothing", emptyList<String>(), sent())
     }
 
-    /** The card sits in the calendar's notices; under the alarm warning it waits folded in "알림 n개 더 보기". */
+    /** 2.0.0 [RVP-43] HQ-49: the card is a row of the 알림함's 안내 (not over the month), opened in place there. */
     private fun Screen.reachArrival() {
-        if (!shows("친구 초대로 오셨나요?")) tapText("알림 ", prefix = true, scrolls = 0)
+        openNotice("친구 초대")
         reveal("친구 초대로 오셨나요?")
     }
 

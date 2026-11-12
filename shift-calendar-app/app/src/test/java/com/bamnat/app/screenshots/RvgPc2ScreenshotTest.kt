@@ -101,12 +101,17 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun leftOutFoldLight() = shoot("rvg27_share_left_out_fold_light_100", FOLDED, leftOut())
     @Test fun leftOutFoldDarkHuge() = shoot("rvg27_share_left_out_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, leftOut())
 
-    /** SN-13: the automatic update left the 그림 out; said once above the calendar (안내 카드 한 모양, 조건 3), with its X. */
+    /**
+     * SN-13: the automatic update left the 그림 out; said once (안내 카드 한 모양, 조건 3), with its X. 2.0.0 [RVP-43] HQ-49 (총괄 11-12):
+     * something to know, not to do now, so a row of the 알림함's 안내, '근무표 링크 안내', not over the month.
+     */
     private fun calendarNotice(): Screen.() -> Unit = {
         c.shareLinks.save(ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
             Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
         c.shareLinks.setDropped(com.bamnat.app.share.ShareLinkPayload.withoutRefused(JSONObject("""{"types":[{"icon":"e:☀️"}]}"""), "type_icon")!!.second)
         settle()
+        tapText("알림 ", prefix = true, scrolls = 0)
+        assertTrue(appears("근무표 링크 안내", exact = true))
         assertTrue(appears("빼고 보냈어요", exact = false))
     }
     @Test fun calendarNoticeFoldLight() = shoot("rvg27_calendar_left_out_fold_light_100", FOLDED, calendarNotice())
@@ -114,21 +119,28 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun calendarNoticeOpenDarkHuge() = shoot("rvg27_calendar_left_out_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, calendarNotice())
     @Test fun calendarNoticeCloses() = shoot("rvg27_calendar_left_out_closed_fold_light_100", FOLDED) {
         calendarNotice().invoke(this)
-        tapText("링크 안내 닫기", exact = true)
+        tapText("닫기: 근무표 링크 안내", exact = true, scrolls = 0)
         assertTrue(gone("빼고 보냈어요", exact = false))
         assertEquals(null, c.shareLinks.dropped.value)
     }
 
-    /** 검토 S7-3 (갈래 R 의견 3): the automatic update turned down twice running for something it cannot leave out; one line, its X. */
-    private fun calendarRefused(): Screen.() -> Unit = {
+    /**
+     * 검토 S7-3 (갈래 R 의견 3): the automatic update turned down twice running for something it cannot leave out; one line, its X.
+     * 갈래 P 3/3 ([RVP-43]): the link not updating is to be seen, so it is the band over the month with 공유 (the state is there when
+     * the app opens, as after an update in the background; one that comes later waits in the 알림함, PC-81).
+     */
+    private fun refusedBefore() {
         c.shareLinks.save(ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
             Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
         c.shareLinks.setDropped(com.bamnat.app.share.ShareLinkPayload.REFUSED_AGAIN)
+    }
+    private fun calendarRefused(): Screen.() -> Unit = {
         settle()
         assertTrue(appears("바뀐 근무가 링크에 안 갔어요", exact = false))
+        assertTrue(appears("공유", exact = true))
     }
-    @Test fun calendarRefusedFoldLight() = shoot("rvg27_calendar_refused_again_fold_light_100", FOLDED, calendarRefused())
-    @Test fun calendarRefusedFoldDarkHuge() = shoot("rvg27_calendar_refused_again_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, calendarRefused())
+    @Test fun calendarRefusedFoldLight() { refusedBefore(); shoot("rvg27_calendar_refused_again_fold_light_100", FOLDED, calendarRefused()) }
+    @Test fun calendarRefusedFoldDarkHuge() { refusedBefore(); shoot("rvg27_calendar_refused_again_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, calendarRefused()) }
 
     /** A link sent without a name by an app before 2.0.0 (no breaks): 민지's days, no title, no rest. */
     private fun oldNoName(): JSONObject = JSONObject(minjiShare().schedule.toString()).apply {
@@ -266,29 +278,35 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
 
     /**
      * PC-132 ([RVG-34]): a member who started from the 팀 리더's link sees, at the calendar's head, a face that says 팀 근무표; with
-     * large text on the folded screen there is no room for the words, so the face alone, read out as the link's full name.
+     * large text there is no room for the words, so the face alone ('팀'), read out as the link's full name. Since the head is one row
+     * (갈래 P 3/3, [RVP-45]) a phone has no faces beside the calendar chip, folded or open (the open screen's head is the month's
+     * pane): there the link is the chip's list's line '팀 근무표 · …' ([memberSwitcherFoldDarkHuge]), and no bare face is left to read
+     * as '3'. A tablet's wide head keeps the 팀 face longest (HeadRoomTest.aTeamLinkStaysLongestOnTheOpenScreen).
      */
     private val teamId = "Tm3dEfGh5JkLmNoPqRsTuv"
-    private fun memberHead(words: Boolean): Screen.() -> Unit = {
+    private fun memberHead(face: Boolean, words: Boolean): Screen.() -> Unit = {
         c.shareApi = shares
         val body = JSONObject(minjiShare().schedule.toString()).apply { put("title", "3병동 김간호"); put("team", true) }
         val share = ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
         shares.links[teamId] = share
         LinkStart.keepMine(c.received, teamId, share)
         settle()
-        assertTrue(appears("3병동 김간호의 근무표 보기", exact = true))
+        if (face) assertTrue(appears("3병동 김간호의 근무표 보기", exact = true)) else assertTrue(gone("3병동 김간호의 근무표 보기", exact = true))
         assertEquals("팀", c.received.get(teamId)!!.initial)
         if (words) assertTrue(appears("팀 근무표", exact = true)) else assertTrue(gone("팀 근무표", exact = true))
     }
-    @Test fun memberHeadFoldLight() = shoot("rvg34_member_head_fold_light_100", FOLDED, memberHead(words = true))
-    @Test fun memberHeadFoldBig() = shoot("rvg34_member_head_fold_light_130", FOLDED, fontScale = 1.3f, memberHead(words = true))
-    @Test fun memberHeadFoldDarkHuge() = shoot("rvg34_member_head_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, memberHead(words = false))
-    // The open screen puts the bar beside the month (42% of the width): at 200% the face stands alone there too.
-    @Test fun memberHeadOpenDarkHuge() = shoot("rvg34_member_head_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, memberHead(words = false))
-    @Test fun memberHeadOpenLight() = shoot("rvg34_member_head_open_light_100", UNFOLDED, memberHead(words = true))
+    @Test fun memberHeadFoldLight() = shoot("rvg34_member_head_fold_light_100", FOLDED, memberHead(face = false, words = false))
+    @Test fun memberHeadFoldBig() = shoot("rvg34_member_head_fold_light_130", FOLDED, fontScale = 1.3f, memberHead(face = false, words = false))
+    @Test fun memberHeadFoldDarkHuge() = shoot("rvg34_member_head_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, memberHead(face = false, words = false))
+    @Test fun memberHeadOpenDarkHuge() = shoot("rvg34_member_head_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, memberHead(face = false, words = false))
+    @Test fun memberHeadOpenLight() = shoot("rvg34_member_head_open_light_100", UNFOLDED) {
+        memberHead(face = false, words = false).invoke(this)
+        tapText("달력 바꾸기, 지금 내 달력", exact = true)
+        assertTrue(appears("팀 근무표 · ", exact = false))
+    }
     /** The list the calendar's name ▾ opens says it is the 팀 근무표. */
     @Test fun memberSwitcherFoldDarkHuge() = shoot("rvg34_member_switcher_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {
-        memberHead(words = false).invoke(this)
+        memberHead(face = false, words = false).invoke(this)
         tapText("달력 바꾸기, 지금 내 달력", exact = true)
         assertTrue(appears("어느 달력을 볼까요?", exact = true))
         assertTrue(appears("팀 근무표 · ", exact = false))

@@ -7,6 +7,7 @@
     python3 tools/dev_status.py check            # 줄 검사 + src/dev-built.js가 맞는지
     python3 tools/dev_status.py build            # src/dev-built.js 다시 만들기
     python3 tools/dev_status.py payload --version 1.39.0 --sha <커밋> [--pr N]   # 서버 /api/admin/dev/sync 몸통
+    python3 tools/dev_status.py payload --sha <커밋> --out <폴더>   # 같은 몸통을 50줄씩 나눈 파일들(body-001.json …)
     python3 tools/dev_status.py notes 1.39.0     # 그 판의 '업데이트 소식' 줄(출시 노트 초안)
     python3 tools/dev_status.py pc 1.39.0        # 그 판의 PC 확인 목록(check 칸)
     python3 tools/dev_status.py misses           # PC 확인·문의로 찾은 문제: 잡을 시험과 '왜 못 잡았나'
@@ -390,6 +391,20 @@ def payload(items, version, sha, pr):
     return body
 
 
+# 2.0.0 [HQ-77] 서버는 한 번에 200줄까지만 받아요(loop.js LOOP.syncItems). 2.0.0은 574줄이라 한 덩어리로는 통째로 거절돼요.
+# 새 줄 하나에 DB를 열 번쯤 부르니(Workers 한 번의 일에 1,000번까지) 넉넉히 50줄씩 나눠 보내요.
+SYNC_CHUNK = 50
+
+
+def payloads(items, version, sha, pr, chunk=SYNC_CHUNK):
+    """The sync bodies in order, at most [chunk] lines each; no lines, one empty body."""
+    if not 1 <= chunk <= 200:
+        raise SystemExit(f"한 번에 보내는 줄 수가 이상해요: {chunk} (1~200)")
+    body = payload(items, version, sha, pr)
+    rows = body.pop("items")
+    return [{**body, "items": rows[i:i + chunk]} for i in range(0, max(len(rows), 1), chunk)]
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -399,6 +414,8 @@ def main(argv=None):
     pl.add_argument("--version", default="")
     pl.add_argument("--sha", default="")
     pl.add_argument("--pr", type=int, default=0)
+    pl.add_argument("--out", default="", help="나눈 몸통을 쓸 폴더(body-001.json …). 없으면 한 덩어리를 그대로 찍어요")
+    pl.add_argument("--chunk", type=int, default=SYNC_CHUNK)
     sub.add_parser("misses")
     for name in ("notes", "pc"):
         s = sub.add_parser(name)
@@ -440,7 +457,15 @@ def main(argv=None):
         BUILT_FILE.write_text(built_text(items), encoding="utf-8")
         print(f"{BUILT_FILE.relative_to(ROOT)} 만듦")
     elif a.cmd == "payload":
-        print(json.dumps(payload(items, a.version, a.sha, a.pr), ensure_ascii=False))
+        if a.out:
+            out = Path(a.out)
+            out.mkdir(parents=True, exist_ok=True)
+            parts = payloads(items, a.version, a.sha, a.pr, a.chunk)
+            for n, body in enumerate(parts, 1):
+                (out / f"body-{n:03d}.json").write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+            print(len(parts))
+        else:
+            print(json.dumps(payload(items, a.version, a.sha, a.pr), ensure_ascii=False))
     elif a.cmd in ("notes", "pc"):
         # [RVR-10] (U60-05) Only the lines of the 판 asked for; lines whose 판 is not known (a d 번호 without a tracking number)
         # are counted on stderr, not mixed in.

@@ -78,6 +78,19 @@ class DevStatusTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ds.payload([], "1.39", "", 0)
 
+    def test_payloads_split_under_the_servers_limit(self):
+        # 2.0.0 [HQ-77] 574줄을 한 덩어리로 보내면 서버가 통째로 거절해요(한 번에 200줄까지).
+        rows = list(enumerate([{**GOOD, "track": f"LOOP-{n}"} for n in range(1, 575)], 1))
+        parts = ds.payloads(rows, "", "abcdef1", 0)
+        self.assertEqual(len(parts), 12)
+        self.assertTrue(all(1 <= len(b["items"]) <= ds.SYNC_CHUNK <= 200 for b in parts))
+        self.assertEqual([x["track"] for b in parts for x in b["items"]], [f"LOOP-{n}" for n in range(1, 575)])
+        # 통합 브랜치에서는 판 번호 없이 보내요: 서버가 '고친 판'을 적지도, 문의에 '곧 나와요'를 보내지도 않아요.
+        self.assertTrue(all(b["version"] is None and b["sha"] == "abcdef1" for b in parts))
+        self.assertEqual(len(ds.payloads([], "1.39.0", "", 0)), 1)
+        with self.assertRaises(SystemExit):
+            ds.payloads(rows, "", "", 0, chunk=201)
+
     def test_read_reports_bad_json(self):
         with tempfile.TemporaryDirectory() as d:
             p = pathlib.Path(d) / "s.jsonl"

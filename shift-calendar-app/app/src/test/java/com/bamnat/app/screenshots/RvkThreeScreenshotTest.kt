@@ -86,7 +86,7 @@ class RvkThreeScreenshotTest : ScreenshotBase() {
         then()
     }
 
-    private fun capture(): Screen.() -> Unit = style(WorkStyle.INVEST) {
+    private fun capture(then: Screen.() -> Unit = {}): Screen.() -> Unit = style(WorkStyle.INVEST) {
         book()
         val vm = vm()
         content {
@@ -94,6 +94,7 @@ class RvkThreeScreenshotTest : ScreenshotBase() {
             if (state.fullResult.held.isNotEmpty()) com.bamnat.app.ui.invest.QuoteSheet(vm, state, {}, {}, initialShot = SHOT)
         }
         settle()
+        then()
     }
 
     @Test fun summaryLight() = shoot("rvk3_01_summary_price_age_folded", FOLDED, screen(null) {
@@ -105,7 +106,16 @@ class RvkThreeScreenshotTest : ScreenshotBase() {
         reveal("기록 한 장", exact = true)
     })
     @Test fun captureLight() = shoot("rvk3_03_quote_capture_folded", FOLDED, capture())
-    @Test fun captureDarkBig() = shoot("rvk3_04_quote_capture_folded_dark_200", DARK, 2f, capture())
+    // 2.0.0 [RVK-36] (총괄 HQ-63 ②) Three holdings differ from the book: one line to open, the prices on the first screen at 200%.
+    @Test fun captureDarkBig() = shoot("rvk3_04_quote_capture_folded_dark_200", DARK, 2f, capture {
+        assertTrue("다른 종목은 한 줄로", appears("장부와 다른 종목 3개", exact = true))
+        assertTrue("물음은 접힌 채", !shows("분할·병합 적기", exact = true))
+    })
+    @Test fun captureOpened() = shoot("rvk3_11_quote_capture_opened_folded", FOLDED, capture {
+        tapText("장부와 다른 종목 3개", exact = true)
+        settle()
+        assertTrue(appears("분할·병합 적기", exact = true))
+    })
     @Test fun splitLight() = shoot("rvk3_05_quantity_split_folded", FOLDED, sheet({ acc ->
         InvestSheet.QuantityEdit(TradeDraft("005930", "삼성전자", Market.KR_STOCK, Side.SPLIT, 5.0, accountId = acc))
     }) { assertTrue(appears("평균 70,", exact = false)) })
