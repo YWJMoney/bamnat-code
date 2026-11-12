@@ -43,9 +43,9 @@ class RvlScanScreenshotTest : ScreenshotBase() {
     private val nov = YearMonth.of(2026, 11)
 
     private fun Screen.waitFor(what: String, done: () -> Boolean) {
-        val until = System.currentTimeMillis() + 20_000
+        val until = System.currentTimeMillis() + 20_000  // real clock: a timeout for waiting, not a date
         while (!done()) {
-            check(System.currentTimeMillis() < until) { "Timed out waiting for $what" }
+            check(System.currentTimeMillis() < until) { "Timed out waiting for $what" }  // real clock: a timeout for waiting, not a date
             Thread.sleep(20)
             settle()
         }

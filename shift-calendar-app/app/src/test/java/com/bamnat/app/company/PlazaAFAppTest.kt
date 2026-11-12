@@ -9,6 +9,8 @@ import com.bamnat.app.data.CompanyShare
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.data.db.AppDatabase
+import com.bamnat.app.needs
+import com.bamnat.app.nodeWorks
 import com.bamnat.app.pay.PayStore
 import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.pay.CompanyRules
@@ -29,7 +31,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -231,8 +232,8 @@ class PlazaAFAppTest {
     /** Runs server/company-worker on Node with SQLite for [block], given its address. Skipped where Node is missing. */
     private suspend fun withServer(block: suspend (String) -> Unit) {
         val dir = File("../server/company-worker")
-        assumeTrue(dir.resolve("test/local-server.mjs").exists())
-        assumeTrue(runCatching { ProcessBuilder("node", "--version").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false))
+        needs("server/company-worker/test/local-server.mjs", dir.resolve("test/local-server.mjs").exists())
+        needs("node", nodeWorks())
         val port = ServerSocket(0).use { it.localPort }
         val node = ProcessBuilder("node", "test/local-server.mjs", port.toString()).directory(dir).redirectErrorStream(true).start()
         try {
