@@ -12,7 +12,7 @@ const refuse = (field) => { throw new Error(field); };
 
 async function policyOn(call) {
   const h = await signIn(call);
-  const r = await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
+  const r = await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
   assert.equal(r.status, 200, JSON.stringify(r.data));
 }
 const write = (call, n, place, body, tag, extra = {}) =>

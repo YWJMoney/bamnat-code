@@ -272,9 +272,8 @@ private fun DayFirstCard(
             // 1.39 발굴 (PC 5c4ad849 '40시간 / 64시간, 64가 뭔지 말이 없어요'): the limit says where it comes from.
             val legal = legalWeekHours(profile)
             (weekLimitHours ?: legal)?.let { limit ->
-                HoursBar("이번 주 근무", week.totalMinutes, limit,
-                    note = if (legal != null && limit == legal) "근로기준법 한 주 한도 ${limit}시간" + (if (limit != 52) " (탄력·특례)" else " (40시간 + 연장 12시간)")
-                    else "내가 정한 '한 주 근무 경고' ${limit}시간 · 설정 › 알림과 잠 › 근무시간 경고에서 바꿔요")
+                // 2.0.0 [RVJ-23] 검토 PC-51: '내가 정한' only for a value the user set; the setting's own 64 says it is the 기본값.
+                HoursBar("이번 주 근무", week.totalMinutes, limit, note = weekLimitNote(limit, legal))
             }
         }
         com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
@@ -700,4 +699,14 @@ private fun TenureCard(t: com.bamnat.core.work.WorkTypeChecks.Tenure) {
         Spacer(Modifier.height(4.dp))
         Text(t.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/**
+ * 2.0.0 [RVJ-23] 검토 PC-51 where the 이번 주 근무 bar's limit comes from: the law's ([legal], null when the law sets none for this
+ * workplace), the user's own 한 주 근무 경고, or that setting still at its 기본값 (which nobody chose, so it is not called '내가 정한').
+ */
+internal fun weekLimitNote(limit: Int, legal: Int?): String = when {
+    legal != null && limit == legal -> "근로기준법 한 주 한도 ${limit}시간" + (if (limit != 52) " (탄력·특례)" else " (40시간 + 연장 12시간)")
+    limit == com.bamnat.core.hours.HourLimits().weeklyLimitHours -> "한 주 근무 경고 ${limit}시간(기본값) · 설정 › 알림과 잠 › 근무시간 경고에서 바꿔요"
+    else -> "내가 정한 '한 주 근무 경고' ${limit}시간 · 설정 › 알림과 잠 › 근무시간 경고에서 바꿔요"
 }

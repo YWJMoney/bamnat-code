@@ -226,12 +226,15 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
                 ConfirmFirstControl()
                 // [CALS-04] Which calendar the notifications go to, once there is more than one.
                 CaptureCalendarControls()
+                // 2.0.0 [RVK-22]·HQ-24 (총괄 #457 리뷰, 조건 2): 결제 문자 붙여넣기 above is the one thing to do here; the three ways to tune
+                // it are rows, as in 설정, not four bordered buttons of the same weight one under another.
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
-                if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
-                if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
+                if (onRules != null) com.bamnat.app.ui.settings.NavRow("자동 분류 규칙", "가게를 다른 분류로 옮기면 여기 생겨요", onRules)
+                if (onFilter != null) com.bamnat.app.ui.settings.NavRow("알림 거르기", "읽을 앱과 적지 않을 알림", onFilter)
                 // 1.32 [LEDX-15][LEDX-18] 내 이름, 해외 수수료, 내 환율.
                 var tuning by remember { mutableStateOf(false) }
-                OutlinedButton(onClick = { tuning = true }, modifier = Modifier.fillMaxWidth()) { Text("더 정확하게 적기") }
+                com.bamnat.app.ui.settings.NavRow("더 정확하게 적기", "내 이름 · 해외 수수료 · 내 환율") { tuning = true }
                 if (tuning) CaptureTuneDialog(onDismiss = { tuning = false })
                 Text("가계부 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))

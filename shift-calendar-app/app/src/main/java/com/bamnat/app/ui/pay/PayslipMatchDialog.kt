@@ -98,7 +98,10 @@ private class Premium(val title: String) {
 }
 
 /** An allowance on the payslip with no allowance of the same name in the app. */
-private class OtherLine {
+private class OtherLine(
+    /** [RVJ-26] Read from the payslip; only the ones added by hand count toward [MAX_OTHERS]. */
+    val fromSlip: Boolean = false,
+) {
     var name by mutableStateOf("")
     var amount by mutableStateOf<Long?>(null)
 }
@@ -136,12 +139,11 @@ private class SlipForm {
         }
         items.clear()
         others.clear()
-        fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
-        read.allowances.forEach { (name, amount) ->
-            val item = profile.items.firstOrNull { norm(it.name) == norm(name) }
-            if (item != null) items[item.id] = amount
-            else if (others.size < MAX_OTHERS) others += OtherLine().also { it.name = name.take(20); it.amount = amount }
-        }
+        // [RVJ-26] 검토 PAYU-52: every allowance read goes in. The seventh and on were dropped without a word, and the match then
+        // aimed at a 지급 총액 holding money no line explained ('차이 n원', or a setting changed to make up for it).
+        val places = read.places(profile.items.map { it.id to it.name }, NAME_MAX)
+        places.known.forEach { (id, amount) -> items[id] = amount }
+        places.others.forEach { (name, amount) -> others += OtherLine(fromSlip = true).also { it.name = name; it.amount = amount } }
     }
 
     fun payslip(profile: PayProfile): Payslip = Payslip(
@@ -150,9 +152,10 @@ private class SlipForm {
         overtimePay = overtime.amount, overtimeMinutes = overtime.minutes,
         nightPay = night.amount, nightMinutes = night.minutes,
         holidayPay = holiday.amount, holidayMinutes = holiday.minutes,
+        // [RVJ-26] Two lines of one name add up (a second '소급분' wrote over the first).
         allowances = buildMap {
-            profile.items.forEach { i -> items[i.id]?.let { put(i.name, it) } }
-            others.forEach { o -> o.amount?.let { a -> if (o.name.isNotBlank()) put(o.name.trim(), a) } }
+            profile.items.forEach { i -> items[i.id]?.let { merge(i.name, it, Long::plus) } }
+            others.forEach { o -> o.amount?.let { a -> if (o.name.isNotBlank()) merge(o.name.trim(), a, Long::plus) } }
         },
     )
 }
@@ -226,8 +229,11 @@ fun PayslipMatchDialog(
         more = true
         val moved = read.month?.takeIf { !it.isAfter(latest) && it != chosen }
         moved?.let { chosen = it }
-        filled = "명세서에서 ${read.lines.count { it.isEarning || it.role == SlipRole.GROSS || it.role == SlipRole.TOTAL }}줄을 채웠어요" +
-            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요."
+        // [RVJ-26] 검토 PAYU-52: the lines put in, not the lines read; what has no field of its own is named.
+        val noField = read.unplaced.map { it.name }.distinct()
+        filled = "명세서에서 ${read.placedLines}줄을 채웠어요" +
+            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요." +
+            (if (noField.isEmpty()) "" else " ${noField.take(3).joinToString(", ")}${if (noField.size > 3) " 등 ${noField.size}줄" else " 줄"}은 따로 넣는 칸이 없어 지급 총액으로만 맞춰 봐요.")
         scanning = false
     }
 
@@ -507,7 +513,7 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = line.name,
-                onValueChange = { line.name = it.take(20) },
+                onValueChange = { line.name = it.take(NAME_MAX) },
                 label = { Text("이름") },
                 placeholder = { Text("예: 자격수당") },
                 singleLine = true,
@@ -517,12 +523,14 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
             IconButton(onClick = { form.others.removeAt(i) }, modifier = Modifier.padding(top = 8.dp)) { Icon(Icons.Filled.Close, "이 줄 지우기") }
         }
     }
-    if (form.others.size < MAX_OTHERS) {
+    // [RVJ-26] The six are the ones typed by hand; what the payslip itself listed is all there, however many.
+    if (form.others.count { !it.fromSlip } < MAX_OTHERS) {
         com.bamnat.app.ui.components.AddButton("수당 넣기", onClick = { form.others += OtherLine() })
     }
 }
 
 private const val MAX_OTHERS = 6
+private const val NAME_MAX = 20
 
 /** A gap of this share of the payslip or more points at the roster or an allowance first. */
 private const val FAR_PERCENT = 5.0
