@@ -32,15 +32,18 @@ object ManageDesk {
 
     enum class Where { TEAM, SHOP }
 
-    /** A to-do: [urgent] ones are red and first; [key] stays the same while it is the same job, for 숨기기 later. */
-    data class Todo(val key: String, val where: Where, val id: String, val text: String, val urgent: Boolean)
+    /**
+     * A to-do: [urgent] ones come first; [key] stays the same while it is the same job, for 숨기기 later. 2.0.0 [RVJ-50] 검토 PC-118
+     * (조건 6): an urgent one is a 주의 (a date close, a choice to make); only [danger], a team's 휴식·연속·주 52시간 signs, is a 위험.
+     */
+    data class Todo(val key: String, val where: Where, val id: String, val text: String, val urgent: Boolean, val danger: Boolean = false)
 
     fun todos(today: LocalDate, teams: List<TeamGlance>, shops: List<ShopGlance>): List<Todo> {
         val now = YearMonth.from(today)
         val next = now.plusMonths(1)
         val out = ArrayList<Todo>()
         teams.filter { it.members > 0 }.forEach { t ->
-            if (t.danger > 0) out += Todo("team-danger-${t.id}-$now", Where.TEAM, t.id, "${t.name} ${now.monthValue}월: 위험 ${t.danger}개(휴식·연속${if (t.weekLimit) "·주 52시간" else ""})", urgent = true)
+            if (t.danger > 0) out += Todo("team-danger-${t.id}-$now", Where.TEAM, t.id, "${t.name} ${now.monthValue}월: 위험 ${t.danger}개(휴식·연속${if (t.weekLimit) "·주 52시간" else ""})", urgent = true, danger = true)
             if (!t.confirmed && t.painted > 0) out += Todo("team-confirm-${t.id}-$now", Where.TEAM, t.id,
                 "${t.name} ${now.monthValue}월 근무표가 확정 전이에요" + (if (t.empty > 0) " · 빈칸 ${t.empty}" else ""), urgent = true)
             if (t.short > 0) out += Todo("team-short-${t.id}-$now", Where.TEAM, t.id, "${t.name} ${now.monthValue}월: 인원이 모자란 날 ${t.short}일", urgent = false)

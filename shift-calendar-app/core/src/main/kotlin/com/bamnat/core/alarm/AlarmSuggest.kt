@@ -150,7 +150,8 @@ object AlarmSuggest {
 
     /** The longest sleep that ended in the [SLEEP_WINDOW_HOURS] hours before [due] (or a little after: slept through it). */
     fun sleepBefore(due: LocalDateTime, sleeps: List<SleepEntry>): SleepEntry? = sleeps
-        .filter { s -> s.end != null && (s.minutes ?: 0) in 1..SleepDebt.MAX_SLEEP_MINUTES }
+        // 2.0.0 [RVIB-14] (PC-124) A tap of a few minutes is not the sleep before work.
+        .filter { s -> s.end != null && (s.minutes ?: 0) in com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES..SleepDebt.MAX_SLEEP_MINUTES }
         .filter { s -> s.end!!.isAfter(due.minusHours(SLEEP_WINDOW_HOURS)) && !s.end.isAfter(due.plusHours(2)) }
         .maxByOrNull { it.minutes!! }
 

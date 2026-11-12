@@ -11,7 +11,8 @@ import java.time.ZoneId
  * Android so the timeline can be tested on the JVM.
  */
 data class ComplicationDay(val start: Instant, val end: Instant, val day: WatchDay?, val tomorrow: WatchDay?, val noun: String = "근무") {
-    val shortText: String get() = day?.label ?: "-"
+    // 2.0.0 [RVIB-09] (SN-18) An emoji 근무 그림 has no image here: it goes in front of the short name ("🌙야").
+    val shortText: String get() = day?.let { (it.emoji ?: "") + it.label } ?: "-"
     val shortTitle: String get() = if (day == null) "밤낮" else "오늘"
     val longText: String get() = day?.line ?: WatchText.NO_DATA
     val longTitle: String get() = tomorrow?.let { "내일 ${it.line}" } ?: "오늘 $noun" // 2.0.0 [RVI-09]

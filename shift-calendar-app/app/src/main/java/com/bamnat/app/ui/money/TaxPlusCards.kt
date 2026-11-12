@@ -174,7 +174,9 @@ private fun ShiftMoneyChipsRows(
     val rows by produceState<com.bamnat.core.money.ShiftMoneyChips.Rows?>(null, book, snapshot, today) {
         value = withContext(Dispatchers.Default) {
             runCatching {
-                com.bamnat.core.money.ShiftMoneyChips.of(book.entries, today.minusDays(89), today, TaxPlus.dayLabel(snapshot.resolver::resolve))
+                com.bamnat.core.money.ShiftMoneyChips.of(book.entries, today.minusDays(89), today, TaxPlus.dayLabel(snapshot.resolver::resolve)) { d ->
+                    com.bamnat.core.schedule.DutyCheck.isNight(runCatching { snapshot.resolver.resolve(d).shiftType }.getOrNull())
+                }
             }.getOrNull()
         }
     }

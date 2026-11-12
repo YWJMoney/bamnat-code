@@ -1140,6 +1140,12 @@ class AppContainer(context: Context) {
         }
         // Widgets lay out weeks from the user's first day of the week.
         keep("widgetweek") {
+            // 2.0.0 [RVI-83] (검토 U03-08·T03-03) The same job keeps the phone's widget list to the calendars' kinds of work.
+            launch {
+                combine(calendars.calendars, settingsRepository.settings.map { it.workStyle }.distinctUntilChanged()) { list, main ->
+                    (list.mapNotNull { calendars.styleOf(it.id, main) } + listOfNotNull(main)).toSet()
+                }.distinctUntilChanged().collect { styles -> runCatching { com.bamnat.app.widget.WidgetChoices.sync(appContext, styles) } }
+            }
             settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
@@ -1201,6 +1207,14 @@ class AppContainer(context: Context) {
             }
             // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
             keep("memoschedule") {
+                // 2.0.0 [RVIB-05] (검토 I07ac-02) The 지난 할 일 card's morning follows the calendar on screen (a day off moved) and its
+                // switch. In this job, not one of its own: the start keeps its budget of jobs (StartupBudgetTest).
+                launch {
+                    combine(calendars.active.flatMapLatest { calendars.repository(it).live.map { s -> s.resolver } },
+                        settingsRepository.settings.map { it.memoRestCard }.distinctUntilChanged()) { r, on -> r to on }
+                        .debounce(1_000)
+                        .collect { runCatching { com.bamnat.app.memo.MemoRestCard.plan(appContext) } }
+                }
                 // 1.39 [TASK-44] A repeat changed or a day finished moves the next ring too.
                 // 1.39.1 [R391-06] So does a one-off memo marked 끝냄.
                 // 2.0.0 [RVI-28] (검토 MEMO-05) And so does a change to the schedule a 근무마다·쉬는 날마다 memo goes by, or to the calendar
@@ -1226,7 +1240,11 @@ class AppContainer(context: Context) {
                     .flowOn(Dispatchers.Default)
                 combine(looks, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
                     .drop(1).debounce(800)
-                    .collect { com.bamnat.app.widget.TaskWidget.redraw(appContext) }
+                    .collect {
+                        com.bamnat.app.widget.TaskWidget.redraw(appContext)
+                        // 2.0.0 [RVI-95] (TASK-35) The watch's 오늘 할 일 tile follows the same list.
+                        runCatching { com.bamnat.app.watch.WatchSync.push(appContext) }
+                    }
             }
             // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
             keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }

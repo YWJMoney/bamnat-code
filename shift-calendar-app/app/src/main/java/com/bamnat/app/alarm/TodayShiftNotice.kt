@@ -11,6 +11,7 @@ import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ScheduleResolver
 import com.bamnat.core.work.words
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.time.Today
@@ -35,7 +36,18 @@ object TodayShiftNotice {
             cancel(context)
             return false
         }
-        val (title, text) = lines(snapshot.resolver, today, container.settingsRepository.current.workStyle)
+        val style = container.settingsRepository.current.workStyle
+        val (dayLine, nextLine) = lines(snapshot.resolver, today, style)
+        // 2.0.0 [RVI-97] (검토 I03c-03) During work on Android 16: how far through it, how long to its end (a bar, and a chip in the
+        // status bar), drawn again every 15 minutes while the screen is on. Older phones keep the two lines as they were.
+        val now = Today.dateTime()
+        val work = listOf(today.minusDays(1), today).flatMap { com.bamnat.core.sleep.SleepSchedule.work(snapshot.resolver.resolve(it)) }
+        val going = if (android.os.Build.VERSION.SDK_INT >= 36) com.bamnat.core.schedule.ShiftProgress.of(work, now) else null
+        scheduleTick(context, going?.let { com.bamnat.core.schedule.ShiftProgress.nextDraw(it, now) }
+            ?: work.map { it.from }.filter { it.isAfter(now) }.minOrNull())
+        val untilEnd = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(style).untilEnd
+        val title = going?.let { com.bamnat.core.schedule.ShiftProgress.left(it, untilEnd) } ?: dayLine
+        val text = if (going != null) "$dayLine · $nextLine" else nextLine
         // 1.39 [NTC-02] 겹친 규칙 알림의 나머지 한 줄 (이달 쓴 돈 …): this notice says it, so there is one notice, not two.
         val extra = folded(context, today)
         fun base() = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
@@ -51,9 +63,10 @@ object TodayShiftNotice {
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3314))
             // [TOWN-08] Its own group, so Android does not bundle it with 소식 or other notices (a tap on the bundle opened this).
             .setGroup(Notifications.GROUP_TODAY).setGroupSummary(true)
+            .apply { going?.let { progress(this, it) } }
         val notification = if (extra == null) base().build() else base()
             .setContentText("$text · ${extra.second}")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${extra.second}"))
+            .apply { if (going == null) setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${extra.second}")) }
             // 1.36 [SEC-12] M5: a rule's words may hold the 가계부's numbers, so the lock screen keeps only the shifts.
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(base().build())
@@ -61,6 +74,33 @@ object TodayShiftNotice {
         Notifications.post(context, ID, notification)
         return true
     }
+
+    /** 2.0.0 [RVI-97] The bar from the start of work to its end in the shift's colour, the time left counting down, and the chip. */
+    private fun progress(b: NotificationCompat.Builder, n: com.bamnat.core.schedule.ShiftProgress.Now) {
+        val color = (n.colorArgb ?: 0xFF5E6AD2).toInt()
+        b.setStyle(NotificationCompat.ProgressStyle()
+            .setProgressSegments(listOf(NotificationCompat.ProgressStyle.Segment(n.totalMinutes.toInt().coerceAtLeast(1)).setColor(color)))
+            .setProgress(n.elapsedMinutes.toInt().coerceIn(0, n.totalMinutes.toInt().coerceAtLeast(1)))
+            .setStyledByProgress(true))
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(com.bamnat.core.schedule.ShiftProgress.chip(n))
+            .setWhen(n.to.atZone(Today.zone()).toInstant().toEpochMilli())
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+    }
+
+    /** 2.0.0 [RVI-97] Drawn again at [at] (the next quarter hour on shift, else the next work's start); quiet, never waking the phone. */
+    private fun scheduleTick(context: Context, at: java.time.LocalDateTime?) {
+        val am = context.getSystemService(android.app.AlarmManager::class.java) ?: return
+        val pi = android.app.PendingIntent.getBroadcast(context, REQ_TICK, android.content.Intent(context, TodayShiftTickReceiver::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        if (at == null) { am.cancel(pi); return }
+        val millis = at.atZone(Today.zone()).toInstant().toEpochMilli()
+        runCatching { am.setWindow(android.app.AlarmManager.RTC, millis, 60_000L, pi) }
+    }
+
+    private const val REQ_TICK = 3329
 
     private fun prefs(context: Context) = context.getSharedPreferences("today_notice_fold", Context.MODE_PRIVATE)
 
@@ -86,7 +126,10 @@ object TodayShiftNotice {
         return update(context, today)
     }
 
-    fun cancel(context: Context) = NotificationManagerCompat.from(context).cancel(ID)
+    fun cancel(context: Context) {
+        NotificationManagerCompat.from(context).cancel(ID)
+        scheduleTick(context, null)
+    }
 
     /** "오늘 주간 07:00~19:00" over "내일 야간 19:00~07:00". */
     fun lines(resolver: ScheduleResolver, today: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): Pair<String, String> =
@@ -125,4 +168,14 @@ object TodayShiftNotice {
     }
 
     private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+}
+
+/** 2.0.0 [RVI-97] Draws 잠금 화면 '오늘 근무' again: the bar moves on during work, and starts when work starts. */
+class TodayShiftTickReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: android.content.Intent) {
+        val pending = goAsync()
+        context.appContainer.appScope.launch {
+            try { runCatching { TodayShiftNotice.update(context) } } finally { pending.finish() }
+        }
+    }
 }

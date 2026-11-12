@@ -7,7 +7,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.ScrollScope
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.MaterialTheme
@@ -71,6 +69,7 @@ private const val LOOPS = 200
  * Picks a clock time with two thumb-friendly wheels (hours and minutes), shortcuts for common
  * shift times, and ± buttons. Replaces the clock dial, which needs precise taps.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TimePickerDialog(
     title: String,
@@ -142,9 +141,10 @@ fun TimePickerDialog(
                     }
                 }
                 // PC 267560dd (큰 글자): '08:00' was cut; room under the chips as in 날짜 시간 바꾸기, and the label never wraps.
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // 2.0.0 [RVIB-18] (총괄 HQ-85, 7항) The chips wrap onto the next line, all in sight, instead of a row that slides sideways.
+                androidx.compose.foundation.layout.FlowRow(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                 ) {
                     for (t in presets) {
                         // [RVP-27] In the clock the settings chose.
@@ -177,24 +177,59 @@ internal fun RowScope.WheelHalf(
     cyclic: Boolean = true,
     shown: (Int) -> String = { "%02d".format(it) },
 ) {
-    Box(Modifier.weight(1f).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
         Wheel(count, value, jump, label, onValue, cyclic, Modifier.fillMaxWidth(), shown)
-        // The unit sits right of the centred digits. An invisible copy on the left keeps the digits
-        // centred over the wheel. Plain text takes no touches, so swipes over it still turn the wheel.
-        Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically) {
-            WheelUnitText(label, Modifier.alpha(0f))
-            Text("00", style = WheelDigits, fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.alpha(0f))
-            WheelUnitText(label)
+        // 2.0.0 [RVIB-18] (총괄 HQ-85, 사진 09: 접은 폭 글자 200%에서 '시간'이 '시'/'간' 두 줄로 섬, 조건 12) The unit never wraps. It
+        // sits right of the digits with an invisible copy on the left that keeps them over the wheel's own centred digits; where
+        // that does not fit, the unit takes a smaller size, and then it is a head over the wheel, on the row two above the chosen
+        // one (the faintest), on the window's own ground. The same for every window with these wheels (알람, 근무 시각, 시간 범위).
+        val unitBig = MaterialTheme.typography.titleMedium
+        val unitSmall = MaterialTheme.typography.labelLarge
+        val digits = WheelDigits.merge(TextStyle(fontSize = 28.sp, fontWeight = FontWeight.Bold))
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val density = LocalDensity.current
+        val room = with(density) { maxWidth.roundToPx() }
+        val fit = remember(label, room, density, unitBig, unitSmall) {
+            if (label.isEmpty()) UnitFit.Beside else {
+                fun w(t: String, st: TextStyle) = measurer.measure(t, st, maxLines = 1, softWrap = false).size.width
+                val pad = with(density) { 8.dp.roundToPx() }
+                val d = w("00", digits)
+                when {
+                    2 * (w(label, unitBig) + pad) + d <= room -> UnitFit.Beside
+                    2 * (w(label, unitSmall) + pad) + d <= room -> UnitFit.BesideSmall
+                    else -> UnitFit.Head
+                }
+            }
+        }
+        // Plain text takes no touches, so swipes over it still turn the wheel.
+        if (fit == UnitFit.Head) {
+            Box(
+                Modifier.align(Alignment.TopCenter).fillMaxWidth().height(WHEEL_ROW_HEIGHT).clearAndSetSemantics {}
+                    .background(androidx.compose.material3.AlertDialogDefaults.containerColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, style = unitSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+            }
+        } else Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically) {
+            val st = if (fit == UnitFit.BesideSmall) unitSmall else unitBig
+            WheelUnitText(label, Modifier.alpha(0f), st)
+            Text("00", style = WheelDigits, fontSize = 28.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, modifier = Modifier.alpha(0f))
+            WheelUnitText(label, style = st)
         }
     }
 }
 
+/** [RVIB-18] Where a wheel's unit stands: beside the digits, beside them smaller, or over the wheel. */
+private enum class UnitFit { Beside, BesideSmall, Head }
+
 @Composable
-private fun WheelUnitText(text: String, modifier: Modifier = Modifier) {
+private fun WheelUnitText(text: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.titleMedium) {
     Text(
         text,
-        style = MaterialTheme.typography.titleMedium,
+        style = style,
         color = MaterialTheme.colorScheme.onPrimaryContainer,
+        maxLines = 1,
+        softWrap = false,
         modifier = modifier.padding(horizontal = 4.dp),
     )
 }

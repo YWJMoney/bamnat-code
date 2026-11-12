@@ -191,7 +191,8 @@ internal fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Un
         item {
             if (d == null) Text(WatchText.notSent(p), fontSize = 16.sp)
             else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(d.name, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // 2.0.0 [RVIB-09] (SN-18) "🌙 야간" with an emoji 근무 그림.
+                Text(d.shown, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (d.times.isNotEmpty()) Text(d.times, fontSize = 16.sp)
             }
         }
@@ -256,7 +257,8 @@ internal fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Un
 
 @Composable
 private fun WeekPage(p: WatchPayload) {
-    val today = Today.date()
+    // 2.0.0 [RVI-84] (검토 U03-12) The minute clock 오늘 goes by: left open past midnight, the week moved on with it (it stayed).
+    val today = rememberMinute().toLocalDate()
     val days = (0L until 7L).map { today.plusDays(it) }
     ScalingLazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         item { Text("앞으로 7일", fontSize = 14.sp, fontWeight = FontWeight.Bold) }
@@ -275,10 +277,11 @@ private fun WeekPage(p: WatchPayload) {
 
 @Composable
 private fun MonthPage(p: WatchPayload) {
-    val today = Today.date()
+    // 2.0.0 [RVI-84] (검토 U03-12) The same minute clock: today's ring and the month move on at midnight.
+    val today = rememberMinute().toLocalDate()
     var offset by remember { mutableIntStateOf(0) }
     // [WEAR-01] As far as the phone's days reach, not a fixed month either side (I 리뷰 I24).
-    val range = remember(p) { WatchDays.monthRange(p.days, today) }
+    val range = remember(p, today) { WatchDays.monthRange(p.days, today) }
     val month = YearMonth.from(today).plusMonths(offset.toLong())
     // [WEAR-01] The phone's first day of the week (I 리뷰 I23).
     val grid = WatchDays.monthGrid(month.year, month.monthValue, p.weekStart)
