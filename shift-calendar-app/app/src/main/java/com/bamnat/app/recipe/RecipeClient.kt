@@ -418,7 +418,11 @@ class RecipeClient(
     }
 
     override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc = readCall {
-        val o = call("GET", "/api/recipes/$code" + (version?.let { "?v=$it" } ?: ""), device = device)
+        // 2.0.0 [PC-28] This app's versionCode, as the list sends it: the server serves a work's 스르륵·책장·움직이지 않기 달 넘김 as 밀기 to
+        // the apps before 2.0.0 (and to one that says none), and as made to this one. Without it the card (list, app=) and the work read
+        // whole would differ and 넣기 would say a new 판 came in between.
+        val o = call("GET", "/api/recipes/$code" + listOfNotNull(version?.let { "v=$it" }, "app=${com.bamnat.app.BuildConfig.VERSION_CODE}")
+            .joinToString("&", prefix = "?"), device = device)
         RecipeDoc(
             item(o), o.getString("hash"), o.getString("body"), o.optString("scope", "public"), o.optBoolean("mine"),
             o.optInt("myVote").takeIf { o.has("myVote") }, o.optStringOrNull("state"), o.optStringOrNull("note"),

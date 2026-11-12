@@ -1,4 +1,4 @@
-import { FLAG_KEYS, configFlags, configPolicy, flagDef, flagStore, legacyFlags, recordLaunch, serverEval } from "./flags.js";
+import { FLAG_KEYS, configFlags, configPolicy, flagDef, flagStore, legacyFlags, recordLaunch, rewardCapFrom, rewardCapFromPolicy, serverEval } from "./flags.js";
 import { OWNER, Refuse, all, allow, answer, audit, batch, deviceHash, deviceId, given, iso, item, json, network, one, overLimit, randomId, readJson, refuse, run, salt, sha256, stmt, tooMany } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { integrityGate } from "./integrity.js";
@@ -152,11 +152,26 @@ export function pendingWithin(rows, left) {
   return out;
 }
 
-/** How much of the year's cap [dev] used, as { used, cap, left }. */
+/**
+ * 2.0.0 [RVD-21] The 1년 12달 in force today (REWARD_CAP.months), or null before 처리방침 3.13's 30-day date ([from], flags.js
+ * rewardCapFrom): until then 약관 1.3·처리방침 3.12 promise no cap, so the server must not refuse by it before the words do.
+ */
+export async function rewardCapNow(env, now) {
+  return capOn(await rewardCapFrom(env), now);
+}
+const capOn = (from, now) => ({ cap: from && kstDay(now) >= from ? REWARD_CAP.months : null, from });
+
+/**
+ * How much of the year's cap [dev] used, as { used, cap, left, from }. 2.0.0 [RVD-21] Before the cap is in force, cap and left are
+ * null (no cap) and [from] says from when (null while 3.13 is not in the calendar).
+ */
 export async function rewardYear(env, dev, now) {
-  const r = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status IN ('paid', 'moved') AND paid_at > ?",
-    dev, now - REWARD_CAP.days * DAY);
-  return { used: r.m, cap: REWARD_CAP.months, left: Math.max(0, REWARD_CAP.months - r.m) };
+  const [r, { cap, from }] = await Promise.all([
+    one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status IN ('paid', 'moved') AND paid_at > ?",
+      dev, now - REWARD_CAP.days * DAY),
+    rewardCapNow(env, now),
+  ]);
+  return { used: r.m, cap, left: cap == null ? null : Math.max(0, cap - r.m), from };
 }
 
 /** 2.0.0 [RVD-13][RVD-14] Rewards that wait for an admin, as the phone says them: "확인 뒤 들어와요". */
@@ -277,7 +292,7 @@ export async function passes(env, dev, now) {
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     // 2.0.0 [RVD-13][RVD-14] 친구 초대·만든 작품 보상은 운영팀이 확인한 뒤 들어와요: the phone says them as waiting, not given.
     // [RVD-15] PC 확인 D-442: only as much as the year's cap still leaves, so it never promises months an admin cannot pay.
-    pending: pendingWithin(rows, year.left)
+    pending: pendingWithin(rows, year.left ?? Infinity)
       .map((r) => ({ months: r.months, why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
@@ -579,8 +594,9 @@ export async function inviteMonths(env, dev, since = 0, withOwed = false) {
 
 /** [INVITE-08] The rules as the app says them, before anything is sent. */
 // 2.0.0 [RVD-15] The cap the person meets: the developer's own invite cap when lower, else the 1년 12달 of all rewards together.
-export const inviteRules = (set) => ({ need: set.friends, days: set.days, months: set.months,
-  capMonths: set.capMonths > 0 ? Math.min(set.capMonths, REWARD_CAP.months) : REWARD_CAP.months });
+// [RVD-21] Before that 12 is in force ([cap] null), only the developer's own invite cap (0 = none), as before 2.0.0.
+export const inviteRules = (set, cap = REWARD_CAP.months) => ({ need: set.friends, days: set.days, months: set.months,
+  capMonths: cap == null ? set.capMonths : set.capMonths > 0 ? Math.min(set.capMonths, cap) : cap });
 
 /**
  * [INVITE-05][INVITE-08] What the inviter sees: the code and link, the rules, friends counted toward the next
@@ -604,15 +620,16 @@ export async function inviteView(env, dev, origin, now) {
   return {
     code: mine?.code ?? null,
     link: mine ? `${origin}/i/${mine.code}` : null,
-    ...inviteRules(set),
+    ...inviteRules(set, year.cap),
     progress: n("qualified"),
     waiting: n("waiting"),
     friends: n("credited") + n("capped") + n("qualified"),
     given: months,
     // 2.0.0 [RVD-14] 확인 뒤 들어와요: the app says these apart from the months given. [RVD-15] PC 확인 D-442: no more than the
     // year's cap leaves, so '프로 12개월은 운영팀이 확인한 뒤 들어와요' never stands beside '올해 … 모두 받았어요'.
-    pending: Math.min(pending.m, year.left),
-    capReached: (set.capMonths > 0 && recent + set.months > set.capMonths) || year.used + Math.min(pending.m, year.left) + set.months > year.cap,
+    pending: year.left == null ? pending.m : Math.min(pending.m, year.left),
+    capReached: (set.capMonths > 0 && recent + set.months > set.capMonths)
+      || (year.cap != null && year.used + Math.min(pending.m, year.left) + set.months > year.cap),
     // The invite this phone itself came by, as this phone reported it.
     used: used?.status ?? null,
   };
@@ -662,7 +679,7 @@ export async function invites(request, env, path, url) {
   const now = Date.now();
   // [INVITE-08] The rules the 프로 screen says before the user agrees to anything: no install number goes.
   if (path === "/api/invites/rules" && method === "GET") {
-    return json(inviteRules(await inviteSettings(env)), 200, { "cache-control": "public, max-age=3600" });
+    return json(inviteRules(await inviteSettings(env), (await rewardCapNow(env, Date.now())).cap), 200, { "cache-control": "public, max-age=3600" });
   }
   const dev = await installOf(request);
   if (path === "/api/invites" && method === "GET") return json(await inviteView(env, dev, url.origin, now));
@@ -741,7 +758,9 @@ export async function invites(request, env, path, url) {
 
 /** [INVITE-08] 설정 › 친구 초대 in the developer app: GET the rules, POST changes (a key left out stays as it was). */
 export async function inviteSettingsRoute(request, env, method, now) {
-  if (method === "GET") return json(await inviteSettings(env));
+  // 2.0.0 [RVD-21] with whether the 1년 12개월 counts yet (yearCap 12 or null) and from when, for the rule's words.
+  const year = async () => { const c = await rewardCapNow(env, now); return { yearCap: c.cap, yearCapFrom: c.from }; };
+  if (method === "GET") return json({ ...(await inviteSettings(env)), ...(await year()) });
   if (method !== "POST") return json({ error: "not_found" }, 404);
   const body = await readJson(request, 1024);
   const was = await inviteSettings(env);
@@ -754,7 +773,7 @@ export async function inviteSettingsRoute(request, env, method, now) {
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, String(set[name]))));
   await audit(env, now, "invite_settings", "", `${set.friends}명 · ${set.days}일 · ${set.months}개월 · 상한 ${set.capMonths ? `${set.capMonths}개월` : "없음"}`);
   await settleAllInvites(env, set, now);
-  return json(set);
+  return json({ ...set, ...(await year()) });
 }
 
 /**
@@ -762,7 +781,7 @@ export async function inviteSettingsRoute(request, env, method, now) {
  * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
  */
 export async function rewardCounts(env, withInvites, now) {
-  const [rewardRows, counts, refused, top, codes, setRows, bursts, kinds] = (await batch(env, [
+  const [rewardRows, counts, refused, top, codes, setRows, bursts, kinds, policy] = (await batch(env, [
     stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
     stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
     stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
@@ -775,11 +794,14 @@ export async function rewardCounts(env, withInvites, now) {
     // 2.0.0 [RVD-16] 드릴 보상 by what for: the chips over the list.
     stmt(env, `SELECT CASE rule_id WHEN 'invite' THEN 'invite' WHEN 'maker' THEN 'maker' WHEN 'rate' THEN 'rate' WHEN '' THEN 'ask' WHEN 'first' THEN 'first'
       ELSE 'rule' END AS k, COUNT(*) AS n FROM rewards WHERE status = 'owed' GROUP BY 1`),
+    // 2.0.0 [RVD-21] whether the 1년 12개월 counts yet, in the same trip.
+    stmt(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"),
   ])).map((r) => r.results ?? []);
+  const year = capOn(rewardCapFromPolicy(policy[0]?.value), now);
   const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
   return [rewardRows, withInvites ? {
     codes: codes[0]?.n ?? 0, credited: n("credited"), capped: n("capped"), qualified: n("qualified"), waiting: n("waiting"),
-    expired: n("expired"), rules: readInviteSettings(setRows),
+    expired: n("expired"), rules: { ...readInviteSettings(setRows), yearCap: year.cap, yearCapFrom: year.from },
     refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
     top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),
     bursts: bursts.reduce((a, b) => a + b.n, 0),

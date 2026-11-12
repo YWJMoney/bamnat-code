@@ -38,6 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -201,27 +205,21 @@ private fun LinkWorkAs(vm: SetupViewModel, d: SetupDraft) {
 private val LINK_WORK_WORDS = mapOf(WorkStyle.SHIFT to "교대 근무", WorkStyle.DAY to "평일 근무", WorkStyle.HOURLY to "알바 · 시급")
 
 @Composable
-internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
+internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft, onNotMine: (() -> Unit)? = null) {
     // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
     // 1.39 [FLOW-04] The check is the calendar itself: this month as it will be saved, a day tapped goes back to where it is set, and
     // the answers in words fold into one line under it (opened, each has its '고치기').
     val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff) {
         ScheduleSnapshot(d.typesToSave(), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
     }
-    if (d.linkTitle.isNotBlank()) {
-        // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
-        // 디자인 품질 조건 1·4: one line under the title, so the month starts within the screen's top quarter.
-        StepHeader("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", "근무 이름과 시간, 날짜를 그대로 넣었어요.")
-    } else StepHeader("이대로 저장할까요?",
-        if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
-    if (preview != null) {
-        val thisMonth = remember(vm.today) { java.time.YearMonth.from(vm.today) }
-        // [RVG-18] 검토 PC-22 (도약 14): a link's roster of next month opens on that month, not on an empty this month.
-        var month by androidx.compose.runtime.saveable.rememberSaveable {
-            mutableStateOf((if (d.linkTitle.isNotBlank()) d.openingMonth(vm.today).coerceAtMost(thisMonth.plusMonths(2)) else thisMonth).toString())
-        }
-        SetupMonth(
+    val thisMonth = remember(vm.today) { java.time.YearMonth.from(vm.today) }
+    // [RVG-18] 검토 PC-22 (도약 14): a link's roster of next month opens on that month, not on an empty this month.
+    var month by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf((if (d.linkTitle.isNotBlank()) d.openingMonth(vm.today).coerceAtMost(thisMonth.plusMonths(2)) else thisMonth).toString())
+    }
+    val monthPart: @Composable () -> Unit = {
+        if (preview != null) SetupMonth(
             month = java.time.YearMonth.parse(month),
             snapshot = preview,
             weekStart = vm.weekStart,
@@ -233,6 +231,30 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             // An order is fixed where today's place in it is asked; days of the week and a painted roster where they were set.
             onDayClick = { vm.fix(if (d.usesRotation && SetupStep.TODAY in d.steps) SetupStep.TODAY else SetupStep.ORDER) },
         )
+    }
+    if (d.linkTitle.isNotBlank() && onNotMine != null) {
+        // [RVG-19] 검토 HQ-09 (조건 10): '내 근무표예요' pressed by mistake had no way back (← only went to earlier questions). The other
+        // answer sits right under the question it answers, one press. It takes the place of the line saying the names, times and days
+        // were filled in (the month and '근무 이름' under it show them), and the month comes 4dp under it (the button's own room is
+        // round its words), so the month still starts in the screen's top quarter on a folded phone (조건 1).
+        Column(Modifier.fillMaxWidth()) {
+            Text("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.semantics { heading() })
+            // Its words line up with the title's (a text button's own side room is 12dp).
+            TextButton(onClick = onNotMine, modifier = Modifier.offset(x = (-12).dp)) { Text("가족·동료 근무표였어요") }
+            if (preview != null) {
+                Spacer(Modifier.height(4.dp))
+                monthPart()
+            }
+        }
+    } else {
+        if (d.linkTitle.isNotBlank()) {
+            // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
+            // 디자인 품질 조건 1·4: one line under the title, so the month starts within the screen's top quarter.
+            StepHeader("‘${d.linkTitle}’ 근무표를 내 근무로 시작할까요?", "근무 이름과 시간, 날짜를 그대로 넣었어요.")
+        } else StepHeader("이대로 저장할까요?",
+            if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
+        monthPart()
     }
     // [RVG-16] Under the month (디자인 품질 조건 1: the month first): how the user works, the days staying the link's.
     if (d.linkTitle.isNotBlank()) LinkWorkAs(vm, d)

@@ -86,7 +86,8 @@ data class StaffShift(val start: LocalTime, val end: LocalTime) {
 data class Staff(
     val id: String,
     val name: String,
-    val hourlyWage: Long = 10_320,
+    // 2.0.0 [RVJ-20] 새해 값: the year's 최저임금, not a year's number in code.
+    val hourlyWage: Long = com.bamnat.core.pay.RateTable.minimumWage(),
     val holidayPay: Boolean = true,
     val insured: Boolean = false,
     val shifts: Map<DayOfWeek, StaffShift> = emptyMap(),
@@ -146,6 +147,16 @@ object LaborCost {
 
     /** 고용안정·직업능력개발사업 보험료율, 상시근로자 150명 미만 (사업주만 냄). */
     const val STABILITY = 0.0025
+
+    /**
+     * 2.0.0 [RVJ-20] 검토 BOSS-62 (요율 문구가 2026년 숫자로 박힘): the 사업주 shares [employerInsurance] uses on [on], said as people write
+     * them, e.g. 2026 "국민연금 4.75%, 건강보험 3.595%, 장기요양, 고용보험 1.15%(150명 미만)", 2027 국민연금 5%.
+     */
+    fun employerRatesText(on: java.time.LocalDate): String {
+        val sh = com.bamnat.core.pay.TakeHome.sharesOn(on)
+        fun p(rate: Double) = com.bamnat.core.pay.RateTable.pct(rate)
+        return "국민연금 ${p(sh.pension)}, 건강보험 ${p(sh.health)}, 장기요양, 고용보험 ${p(sh.employment + STABILITY)}(150명 미만)"
+    }
 
     fun line(s: Staff, month: YearMonth, breaks: Boolean): Line {
         val days = (1..month.lengthOfMonth()).map { month.atDay(it) }

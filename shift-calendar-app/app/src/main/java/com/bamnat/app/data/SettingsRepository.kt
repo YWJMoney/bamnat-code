@@ -248,6 +248,8 @@ data class AppSettings(
     val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
     val payDepositNotice: Boolean = true,
+    /** 2.0.0 [RVJ-18] 검토 I05a-02: the day after the 급여일 the month closes by itself instead of asking. Off by default. In the backup. */
+    val payAutoClose: Boolean = false,
     /** 1.39 [PAYX-62] 알바 주 15시간 경계 알림: 이번 주가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄. In the backup. */
     val weekHoursNudge: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
@@ -561,6 +563,7 @@ class SettingsRepository(context: Context) {
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
+            payAutoClose = prefs.getBoolean(K_PAY_AUTO_CLOSE, d.payAutoClose),
             weekHoursNudge = prefs.getBoolean(K_WEEK_HOURS_NUDGE, d.weekHoursNudge),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             viewAsked = prefs.getBoolean(K_VIEW_ASKED, d.viewAsked),
@@ -706,6 +709,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
+            .putBoolean(K_PAY_AUTO_CLOSE, s.payAutoClose)
             .putBoolean(K_WEEK_HOURS_NUDGE, s.weekHoursNudge)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putBoolean(K_VIEW_ASKED, s.viewAsked)
@@ -781,6 +785,7 @@ class SettingsRepository(context: Context) {
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
+        const val K_PAY_AUTO_CLOSE = "pay_auto_close"
         const val K_WEEK_HOURS_NUDGE = "week_hours_nudge"
         const val K_CAL_ONLY = "calendar_only"
         const val K_VIEW_ASKED = "calendar_view_asked"

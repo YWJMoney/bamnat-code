@@ -147,6 +147,39 @@ object RateTable {
      */
     val LAW_PENSION: Map<Int, Double> = mapOf(2028 to 0.105, 2029 to 0.11, 2030 to 0.115, 2031 to 0.12, 2032 to 0.125, 2033 to 0.13)
 
+    /**
+     * 2.0.0 [RVJ-20] 뿌리 고침 11 '새해 전환 점검': the yearly values that on [date] still come from an earlier year's 고시 or a built-in
+     * default, by their rates-file key. Before 1 January the next year's signed `rates.json` should leave none of these but the ones
+     * whose 고시 is not out yet; `NewYearSwitchTest` keeps the list for the coming year. 국민연금 follows [LAW_PENSION] where the law
+     * fixes the year, so it is not carried then.
+     */
+    fun carried(date: LocalDate, table: List<Rates> = current): List<String> {
+        val y = date.year
+        fun <T : Any> from(key: String, pick: (Rates) -> T?): String? =
+            key.takeIf { (latest(date, table, pick)?.second?.effectiveFrom?.year ?: 0) < y }
+        return listOfNotNull(
+            "minimumHourlyWage".takeIf { on(date, table).effectiveFrom.year < y },
+            from("pensionRate") { it.pensionRate }?.takeIf { y !in LAW_PENSION },
+            from("healthRate") { it.healthRate },
+            from("longTermCareRate") { it.longTermCareRate },
+            from("healthCapShare") { it.healthCapShare },
+            from("healthMinShare") { it.healthMinShare },
+            from("mealFreeLimit") { it.mealFreeLimit },
+            from("durunuriUnder") { it.durunuriUnder },
+            from("accidentPermille") { r -> r.accidentPermille.takeIf { it.isNotEmpty() } },
+            from("commutePermille") { it.commutePermille },
+            from("wageClaimPermille") { it.wageClaimPermille },
+            from("asbestosPermille") { it.asbestosPermille },
+        )
+    }
+
+    /** 2.0.0 [RVJ-20] 최저임금 시급 on [date] (today by default), for a first value or a check that must not be a year's number in code. */
+    fun minimumWage(date: LocalDate = com.bamnat.core.time.Today.date()): Long = on(date).minimumHourlyWage
+
+    /** 2.0.0 [RVJ-20] A rate as people write it: 0.0475 → "4.75%", 0.05 → "5%", 0.009994 → "0.9994%"; [places] after the point at most. */
+    fun pct(rate: Double, places: Int = 4): String =
+        java.math.BigDecimal.valueOf(rate * 100).setScale(places, java.math.RoundingMode.HALF_UP).stripTrailingZeros().toPlainString() + "%"
+
     /** [RVJ-05] 국민연금 합계 보험료율 on [date]: the year's row, else the law's schedule for a year not in yet. */
     fun pensionRateOn(date: LocalDate, table: List<Rates> = current): Double? {
         val r = on(date, table)

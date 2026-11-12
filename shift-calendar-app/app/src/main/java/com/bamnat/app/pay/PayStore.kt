@@ -205,6 +205,24 @@ class PayStore(
         }
     }
 
+    /**
+     * 2.0.0 [RVJ-18] 검토 U05-01: months whose "이대로 굳힐까요?" was answered '나중에' (on this phone only; the card does not come back
+     * for them, and the month can still be closed by hand).
+     */
+    private val closeAskFile = File(dir, "close-asked.txt")
+    private val _closeAsked = MutableStateFlow(runCatching {
+        if (!closeAskFile.exists()) emptySet() else closeAskFile.readLines().mapNotNull { runCatching { YearMonth.parse(it.trim()) }.getOrNull() }.toSet()
+    }.getOrDefault(emptySet()))
+    val closeAsked: StateFlow<Set<YearMonth>> = _closeAsked.asStateFlow()
+
+    suspend fun closeAskLater(month: YearMonth) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            val next = (_closeAsked.value + month).sorted().takeLast(36).toSet()
+            runCatching { closeAskFile.parentFile?.mkdirs(); closeAskFile.writeText(next.joinToString("\n")) }
+            _closeAsked.value = next
+        }
+    }
+
     /** All closed months at once, from a restored backup. */
     suspend fun replaceClosed(next: Map<YearMonth, CalcSnapshot>) = withContext(Dispatchers.IO) {
         synchronized(this@PayStore) {
@@ -236,6 +254,17 @@ object SnapshotCodec {
                 .put("estimated", l.estimated)
         }))
         .put("previous", JSONArray(s.previous.map(::encode)))
+        // 2.0.0 [RVJ-18] 굳은 달: the days and the 세후 as they were when closed.
+        .apply {
+            if (s.days.isNotEmpty()) put("days", JSONArray(s.days.map { d ->
+                JSONObject().put("date", d.date.toString()).put("label", d.label).putOpt("holiday", d.holidayName)
+                    .put("extras", JSONArray(d.extras))
+                    .put("parts", JSONArray(d.parts.map { p -> JSONObject().put("kind", p.kind.name).put("label", p.label).put("amount", p.amount).put("formula", p.formula) }))
+            }))
+            s.net?.let { put("net", it) }
+            s.tableNet?.let { put("tableNet", it) }
+            s.netBasis?.let { put("netBasis", it) }
+        }
 
     fun decode(o: JSONObject): CalcSnapshot {
         val lines = o.optJSONArray("lines")
@@ -255,6 +284,24 @@ object SnapshotCodec {
             ratesVersion = o.optString("rates"),
             closedAtMillis = o.optLong("at"),
             previous = (0 until (previous?.length() ?: 0)).map { decode(previous!!.getJSONObject(it)) },
+            days = o.optJSONArray("days")?.let { a ->
+                (0 until a.length()).mapNotNull { i ->
+                    val d = a.getJSONObject(i)
+                    val date = runCatching { java.time.LocalDate.parse(d.getString("date")) }.getOrNull() ?: return@mapNotNull null
+                    val ex = d.optJSONArray("extras")
+                    val ps = d.optJSONArray("parts")
+                    com.bamnat.core.pay.FrozenDay(date, d.optString("label"), d.optString("holiday").ifBlank { null },
+                        (0 until (ex?.length() ?: 0)).map { ex!!.getString(it) },
+                        (0 until (ps?.length() ?: 0)).map { j ->
+                            val p = ps!!.getJSONObject(j)
+                            com.bamnat.core.pay.DayPart(runCatching { LineKind.valueOf(p.getString("kind")) }.getOrDefault(LineKind.ALLOWANCE),
+                                p.optString("label"), p.optLong("amount"), p.optString("formula"))
+                        })
+                }
+            }.orEmpty(),
+            net = if (o.has("net")) o.getLong("net") else null,
+            tableNet = if (o.has("tableNet")) o.getLong("tableNet") else null,
+            netBasis = o.optString("netBasis").ifBlank { null },
         )
     }
 }

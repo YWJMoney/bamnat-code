@@ -69,6 +69,19 @@ import java.time.YearMonth
 import com.bamnat.core.time.Today
 
 /**
+ * 2.0.0 [RVI-09] A line of words in the today list keeps off the round edge: it wraps inside the list's own margin instead of
+ * running to the rim, where a round screen cuts it (작은 워치·큰 글자).
+ */
+private val Round = Modifier.padding(horizontal = 8.dp)
+
+/**
+ * 2.0.0 [RVI-09] The same line, broken only between words: Hangul may otherwise break inside one ('52시' over '간') on a small
+ * watch with big letters. A word joiner (U+2060, not seen nor read aloud) sits between the letters of each word.
+ */
+internal fun whole(s: String): String = s.replace(WITHIN_WORD, "\u2060")
+private val WITHIN_WORD = Regex("(?<=\\S)(?=\\S)")
+
+/**
  * [SHFT-08][REL-09] The watch app: 오늘 (today's shift, tomorrow's and the next alarm), 앞으로 7일 (today and six days on as a
  * list) and 월 보기 (a month at a glance, swiping to the next month). Swipe left and right between them.
  * It shows the watch's last copy of the phone's days with when they came, and asks the phone for fresh ones.
@@ -157,8 +170,9 @@ private fun rememberMinute(): LocalDateTime {
     return now
 }
 
+/** Internal for the watch screen shots (WatchScreenshotTest). */
 @Composable
-private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
+internal fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = rememberMinute()
@@ -182,16 +196,16 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
                 if (d.times.isNotEmpty()) Text(d.times, fontSize = 16.sp)
             }
         }
-        WatchDays.on(p.days, today.plusDays(1))?.let { t -> item { Text("내일 ${t.line}", fontSize = 13.sp, color = WearTone.Body) } }
-        WatchText.alarm(p, now)?.let { a -> item { Text(a, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
+        WatchDays.on(p.days, today.plusDays(1))?.let { t -> item { Text(whole("내일 ${t.line}"), Round, fontSize = 13.sp, color = WearTone.Body, textAlign = TextAlign.Center) } }
+        WatchText.alarm(p, now)?.let { a -> item { Text(whole(a), Round, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
         // 1.38 [SLEEP-14] 2.0.0 [RVI-08] 오늘 잘 시간 while it is still the night or day it was worked out for.
-        WatchDays.sleepLineNow(p, now).takeIf { it.isNotBlank() }?.let { s -> item { Text(s, fontSize = 12.sp, color = WearTone.Body) } }
+        WatchDays.sleepLineNow(p, now).takeIf { it.isNotBlank() }?.let { s -> item { Text(whole(s), Round, fontSize = 12.sp, color = WearTone.Body, textAlign = TextAlign.Center) } }
         // [WEAR-03] This week against 주 52시간. 2.0.0 [RVI-08] Not last week's on a Monday.
-        WatchDays.weekText(p, today)?.let { w -> item { Text(w, fontSize = 12.sp, color = WearTone.Body) } }
+        WatchDays.weekText(p, today)?.let { w -> item { Text(whole(w), Round, fontSize = 12.sp, color = WearTone.Body, textAlign = TextAlign.Center) } }
         // [WEAR-03] 오늘 알람 끄기 without taking the phone out, and an 알바's 출근·퇴근 (I 리뷰 N7 c·d).
         // 2.0.0 [RVI-11] (검토 ALM-10·23) Two taps and what came of it, with 되돌리기; [RVI-08] whether today has one is the watch's own reading.
         said?.let { (line, undo) ->
-            item { Text(line, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) }
+            item { Text(whole(line), Round, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) }
             if (undo) item {
                 CompactButton(onClick = { scope.launch { WatchStore.send(context, WatchDays.ALARM_ON_PATH, today.toString()); said = null } },
                     label = { Text("되돌리기", fontSize = 12.sp) })
@@ -222,7 +236,7 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
             }, colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth(),
                 label = { Text(if (out) "퇴근 적기" else "출근 적기", fontSize = 13.sp) })
         }
-        clockSaid?.let { s -> item { Text(s, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
+        clockSaid?.let { s -> item { Text(whole(s), Round, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
         // 1.38 [LEDH-14] 워치로 돈 적기.
         item {
             Button(onClick = onMoney, colors = ButtonDefaults.filledTonalButtonColors(), modifier = Modifier.fillMaxWidth(),
@@ -235,7 +249,7 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
             if (!asked || !notificationsOn(context)) Button(onClick = { ask.launch(Manifest.permission.POST_NOTIFICATIONS) }, colors = ButtonDefaults.filledTonalButtonColors(),
                 modifier = Modifier.fillMaxWidth(), label = { Text("워치 알람 알림 허용", fontSize = 13.sp) })
         }
-        item { Text(WatchText.synced(p, now), fontSize = 11.sp, color = WearTone.Muted, textAlign = TextAlign.Center) }
+        item { Text(whole(WatchText.synced(p, now)), Round, fontSize = 11.sp, color = WearTone.Muted, textAlign = TextAlign.Center) }
         item { RefreshChip(refreshing, onRefresh) }
         item { Text("옆으로 넘기면 앞으로 7일 · 월 보기", fontSize = 10.sp, color = WearTone.Hint) }
     }

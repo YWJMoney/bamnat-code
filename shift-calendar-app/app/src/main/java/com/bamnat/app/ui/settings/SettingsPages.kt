@@ -657,6 +657,9 @@ private fun NoticesPage(
             settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(payDepositNotice = on) }
         }
+        // 2.0.0 [RVJ-18] 검토 I05a-02: 급여 › 도구 › ○월 마감의 같은 줄.
+        if (settings.workStyle?.usesPayEngine != false) SwitchRow(com.bamnat.app.ui.pay.AUTO_CLOSE_TITLE, com.bamnat.app.ui.pay.AUTO_CLOSE_TEXT,
+            settings.payAutoClose) { on -> vm.update { it.copy(payAutoClose = on) } }
         // 1.39 [PAYX-62] 발굴 G3-M3: 알바만. 급여 화면 알바 카드의 '이 알림 끄기'로 끈 것을 여기서 다시 켜요.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) SwitchRow(com.bamnat.core.pay.WeekHoursNudge.ROW,
             "이번 주 근무가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄로 알려 줘요. 주휴수당은 한 주 15시간부터예요(근로기준법 제18조 제3항)",
@@ -1016,8 +1019,9 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         val cleared by vm.recentlyCleared.collectAsStateWithLifecycle()
         var showCleared by remember { mutableStateOf(false) }
         HorizontalDivider()
-        NavRow("최근 지운 기록", if (cleared.isEmpty()) "근무 형태를 바꾸거나 기록·달력을 지우면 7일 동안 여기서 되돌릴 수 있어요"
-            else "${cleared.size}개 · 7일 안에 되돌릴 수 있어요") { showCleared = true }
+        // 2.0.0 [RVK-10]: 가계부 lines removed stay here 30 days.
+        NavRow("최근 지운 기록", if (cleared.isEmpty()) "지운 기록·달력은 7일, 가계부 기록은 30일 동안 여기서 되돌릴 수 있어요"
+            else "${cleared.size}개 · 남은 날 안에 되돌릴 수 있어요") { showCleared = true }
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
