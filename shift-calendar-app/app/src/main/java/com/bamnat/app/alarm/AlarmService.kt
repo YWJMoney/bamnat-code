@@ -179,6 +179,8 @@ class AlarmService : Service() {
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
                     // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
+                    // 2.0.0 [RVI-96] (검토 I03c-01) And the night that began at the charger, asked about in the morning.
+                    if (ring.label == null && !ring.recheck) runCatching { com.bamnat.app.sleep.SleepNoTap.alarmOff(this) }
                     // 2.0.0 [RVG-05] 검토 ALM-04: the morning alarm off closes a sleep left open by 잠들었어요 at this minute, as a measured
                     // night already did. Left open, 자는 중 kept every later memo·할 일 notice quiet and 방해 금지 on into the day. The
                     // '몇 시간 잤어요' notice that follows has 아직 자요 to undo it in one tap.
@@ -854,6 +856,7 @@ class AlarmService : Service() {
                 ring.recheck -> "끈 뒤 답이 없어 다시 울려요"
                 // PC 267560dd: the test said "14:08 일정"; it says what it is for.
                 ring.label == AlarmScheduler.TEST_NAME -> if (ring.isSnooze) "시험 알람 · 다시 울림" else "소리와 화면이 잘 나오는지 보는 알람이에요"
+                ShiftNap.isNap(ring) -> ShiftNap.describe(ring) // 2.0.0 [RVI-93]
                 ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
                 ring.label != null -> "$start 일정"
                 // 2.0.0 [RVI-17] (검토 ALM-08 PC 재확인) Not '20:00 근무 시작 · 이 날 알람'.

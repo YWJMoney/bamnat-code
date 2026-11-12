@@ -739,7 +739,9 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
     day.coveredShift?.let { DayNoteField(day.date, "${it.name} ${if (style == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"}", vm) }
     if (day.source == DaySource.OVERRIDE) {
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 2.0.0 [RVIB-12] (디자인 품질 12, 갈래 I 2묶음 사진) With the line squeezed by weight beside the button, '근무 주기는 주간 ·
+        // 지금은 휴무' stood one letter a line in the unfolded day pane at 200%: the button goes under it when it has no room.
+        com.bamnat.app.ui.components.SideOrBelow(start = {
             Text(
                 // [RVH-05] 검토 CAL-13·사용성 U01-05: "근무 주기는 주간 · 지금은 야간 · 되돌리기" in one line.
                 if (snapshot.hasPattern) "${snapshot.cycleWord}${Fmt.eun(snapshot.cycleWord)} ${patternType?.name ?: "쉬는 날"} · 지금은 ${day.shiftType?.name ?: "쉬는 날"}"
@@ -747,14 +749,14 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
                 style = MaterialTheme.typography.bodySmall,
                 // 2.0.0 [RVP-13] (검토 UIX-15·U13-06) A neutral explanation is grey; orange stays for 주의.
                 color = com.bamnat.app.ui.components.QuietInk,
-                modifier = Modifier.weight(1f),
             )
+        }, end = {
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(snapshot.backWord)
             }
-        }
+        })
     }
     if (day.isWorkDay) WorkTimeContent(day, snapshot, vm)
     // [SHFT-03] On a shift calendar, who the shift was swapped with.

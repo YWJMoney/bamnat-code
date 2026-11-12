@@ -367,16 +367,20 @@ fun LedgerListPane(
 @Composable
 private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: (() -> Unit)?, onExport: () -> Unit) {
     var sorting by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-43] (검토 MONEY-31) What is typed shows at once; the view model's copy comes a frame later ([EchoText]).
+    val echo = remember { EchoText(view.filter.query, max = 40) }
+    LaunchedEffect(view.filter.query) { echo.outside(view.filter.query) }
+    LaunchedEffect(echo.text) { kotlinx.coroutines.delay(1_000); echo.settle() }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
-            value = view.filter.query,
-            onValueChange = { onView(view.copy(filter = view.filter.copy(query = it.take(40)))) },
+            value = echo.text,
+            onValueChange = { onView(view.copy(filter = view.filter.copy(query = echo.typed(it)))) },
             singleLine = true,
             placeholder = { Text("기록 찾기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingText = null,
             leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
             trailingIcon = {
-                if (view.filter.query.isNotEmpty()) IconButton(onClick = { onView(view.copy(filter = view.filter.copy(query = ""))) }) {
+                if (echo.text.isNotEmpty()) IconButton(onClick = { onView(view.copy(filter = view.filter.copy(query = echo.typed("")))) }) {
                     Icon(Icons.Filled.Close, "찾는 말 지우기")
                 }
             },

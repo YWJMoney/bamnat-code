@@ -112,7 +112,7 @@ internal fun InsuranceOffRow(off: Set<InsuranceLine>, onChange: (Set<InsuranceLi
         }
     }
     Text("국민연금: 만 60세가 되면 의무 가입이 끝나요(국민연금법 제6조). 고용보험: 65세 이후 새로 일한 곳은 떼지 않아요(고용보험법 제10조). " +
-        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 넘게 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
+        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 이상 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

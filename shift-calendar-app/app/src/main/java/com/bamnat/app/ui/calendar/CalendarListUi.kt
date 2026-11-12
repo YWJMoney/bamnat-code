@@ -373,6 +373,26 @@ internal fun CalendarFaceOnly(row: CalendarRow, onPick: (CalendarRow) -> Unit) {
 /** What a 팀 리더's link says beside its face (2.0.0 [RVG-34] 검토 PC-132). */
 internal const val TEAM_FACE_WORDS = "팀 근무표"
 
+/**
+ * 2.0.0 [RVG-34] 검토 PC-132 with 갈래 P 3/3 (총괄 HQ-49 '달력 위는 꼭 봐야 하는 것만'): on a phone the head has no face for the 팀 리더's
+ * link (it is the first line of the list the calendar chip's ▾ opens), so a member who does not know to look there is told once, in
+ * the 알림함, not over the month. Once on this phone: cleared, or turned off with '다시 보지 않기', it does not come back. A tap opens
+ * that list ([com.bamnat.app.NoticeLinks.Target.CALENDARS]).
+ */
+internal object TeamLinkNote {
+    const val KIND = "team.leaderRoster"
+    const val LINE = "맨 위 왼쪽 달력 ▾에서 리더가 보낸 근무표를 봐요"
+
+    fun once(context: android.content.Context, id: String) {
+        val hints = HintStore(context)
+        if (hints.done(HintStore.TEAM_LINK_INBOX)) return
+        com.bamnat.app.inbox.Inbox.post(context, com.bamnat.app.inbox.InboxRow(key = "leaderRoster:$id", kind = KIND,
+            section = com.bamnat.app.inbox.InboxSection.NOTICE, title = TEAM_FACE_WORDS, line = LINE,
+            target = com.bamnat.app.NoticeLinks.Target.CALENDARS))
+        hints.markDone(HintStore.TEAM_LINK_INBOX)
+    }
+}
+
 /** One other calendar by its face and its name's first letters, or 팀 근무표 for a 팀 리더's link ([RVG-34]). */
 @Composable
 internal fun CalendarFace(row: CalendarRow, onPick: (CalendarRow) -> Unit) {

@@ -60,7 +60,8 @@ class ProfileAnswers(private val c: AppContainer, private val today: () -> Local
             FactKey.SLEEP_TARGET -> true.also { c.settingsRepository.update { it.copy(sleepTargetMinutes = value.toInt()) } }
             FactKey.COMMUTE -> true.also { c.settingsRepository.update { it.copy(commuteMinutes = value.toInt()) } }
             FactKey.WAGE_TYPE -> pay { it.copy(wageType = WageType.valueOf(value)) }
-            FactKey.PAY_DAY -> pay { it.copy(period = it.period.copy(payDay = value.toInt().coerceIn(1, 31))) }
+            // 2.0.0 [RVJ-52] 검토 PC-120: 말일 마감에 '10일' is the next month's 10일.
+            FactKey.PAY_DAY -> pay { it.copy(period = it.period.withPayDay(value.toInt().coerceIn(1, 31))) }
             FactKey.MONTHLY_HOURS -> pay { com.bamnat.core.pay.RuleOnlyNeeds.settled(it.copy(monthlyHours = value.toInt())) }
             FactKey.DAILY_HOURS -> pay { it.copy(dailyHours = value.toInt() * 60) }
             FactKey.HOLIDAY_PAY -> pay { it.copy(holidayPayMode = HolidayPayMode.valueOf(value), estimatedFields = it.estimatedFields - Unknowns.HOLIDAY_PAY_MODE) }

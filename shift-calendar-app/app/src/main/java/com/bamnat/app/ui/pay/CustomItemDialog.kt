@@ -1137,7 +1137,10 @@ internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
         Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("‘${made.name}’ 항목을 만들었어요. 합계에 바로 들어갔어요.", style = MaterialTheme.typography.bodyMedium,
+            // 2.0.0 [RVJ-51] 검토 PC-119: an item put in with no amount yet adds nothing; it said '합계에 바로 들어갔어요'.
+            val noAmount = made is MadeItem.Item && made.item.percentOfBase == null && made.item.amount.entries.all { it.value == 0L }
+            Text("‘${made.name}’ 항목을 만들었어요. " + if (noAmount) "금액을 넣으면 합계에 들어가요." else "합계에 바로 들어갔어요.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
             if (onUndo != null) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
         }

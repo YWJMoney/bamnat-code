@@ -243,7 +243,17 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     val store = c.phaseThree
     val scope = rememberCoroutineScope()
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-    var monthText by rememberSaveable { mutableStateOf(YearMonth.from(Today.date()).plusMonths(1).toString()) }
+    // 2.0.0 [RVJ-53] 검토 PC-130: the board always opened on next month, so a team made on 11-12 opened on '2026년 12월 · 빈칸 31'.
+    // It opens on this month, and on next month only once next month's board has been started (the leader planning ahead).
+    var monthText by rememberSaveable { mutableStateOf(YearMonth.from(Today.date()).toString()) }
+    var opened by rememberSaveable(team.id) { mutableStateOf(false) }
+    LaunchedEffect(team.id) {
+        if (opened) return@LaunchedEffect
+        opened = true
+        val now = YearMonth.from(Today.date())
+        if (startImport == null && monthText == now.toString() && store.board(team.id, now.plusMonths(1)).first().cells.isNotEmpty())
+            monthText = now.plusMonths(1).toString()
+    }
     val month = YearMonth.parse(monthText)
     val saved by store.board(team.id, month).collectAsStateWithLifecycle(null)
     val confirmed by store.month(team.id, month).collectAsStateWithLifecycle(null)

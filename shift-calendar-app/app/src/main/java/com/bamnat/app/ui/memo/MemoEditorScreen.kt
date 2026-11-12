@@ -118,6 +118,10 @@ import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.parts.fillColor
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.components.TimePickerDialog
+import com.bamnat.app.ui.components.FilterChip
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Star
 import com.bamnat.app.ui.components.LocalEdgeScroll
 import com.bamnat.app.ui.components.edgeScrollViewport
 import com.bamnat.app.ui.components.rememberSelectionDrag
@@ -145,6 +149,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     val canRedo by vm.canRedo.collectAsStateWithLifecycle()
     val day by vm.day.collectAsStateWithLifecycle()
     val offer by vm.scheduleOffer.collectAsStateWithLifecycle()
+    val moneyOffer by vm.moneyOffer.collectAsStateWithLifecycle()
     val calendars by vm.calendars.collectAsStateWithLifecycle()
     // [MEMO-05][MEMO-06] 1.27 AK: the calendar's shifts ahead, and the last memo of the same shift.
     val shiftDays by vm.shiftDays.collectAsStateWithLifecycle()
@@ -415,9 +420,9 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     // 2.0.0 [RVI-49] (검토 MEMO-11) A repeating one says its rule and next day, not its first day.
                     line = memo.reminder?.let { r ->
                         val names = vm.shiftTypes.value.associate { it.id to it.name }
-                        val next = if (com.bamnat.core.memo.MemoRepeat.followsSchedule(memo.repeat)) null
+                        val next = if (com.bamnat.core.memo.MemoRepeat.followsSchedule(memo)) null
                             else com.bamnat.core.memo.MemoSchedules.nextOf(memo, Today.dateTime().minusMinutes(1))
-                        scheduleLine(memo, r, next) { names[it] }
+                        scheduleLine(memo, r, next, { names[it] }, vm.workStyle)
                     },
                 )
                 // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it. Second in the row
@@ -448,7 +453,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 // after the label it sat past the screen's edge and took a swipe to find).
                 val shiftTypes by vm.shiftTypes.collectAsStateWithLifecycle()
                 val say: (String?) -> Unit = { it?.let { line -> said = line } }
-                MemoRepeatChip(date, memo.repeat, { say(vm.setRepeat(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
+                MemoRepeatChip(date, memo.repeat, { say(vm.setRepeatCode(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
@@ -605,6 +610,10 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     clash = remember(found.at, shiftDays) { com.bamnat.core.memo.ShiftClash.of(found.at, shiftDays)?.text },
                 )
             }
+            // 2.0.0 [RVIB-08] (검토 I07ac-04) One offer at a time: a time's first, then a repeat with an amount.
+            if (offer == null) moneyOffer?.let { found ->
+                MoneyOffer(found, onAccept = { said = vm.acceptMoney(found) }, onDecline = { vm.keepMoneyAsMemo(found) })
+            }
             if (!memo.isChecklist) MemoToolHostSlot(toolHost)
             if (!memo.isChecklist) MemoBodyToolbar(bodyTools)
             // [RUL-05] 1.36 사용자 "메모장 및 모든 곳에서": {근무}·{이번주야간} 같은 수식이 있으면 그날 값으로 어떻게 읽히는지.
@@ -648,32 +657,48 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     }
 
     if (scheduling) {
-        var pickedRepeat by remember { mutableStateOf<com.bamnat.core.memo.MemoRepeat.Kind?>(null) }
+        var pickedRepeat by remember { mutableStateOf<String?>(null) }
+        val scheduleTypes by vm.shiftTypes.collectAsStateWithLifecycle()
         ScheduleDialog(
-            initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime()),
+            initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime(), shiftDays),
             current = memo.reminder,
             onDismiss = { scheduling = false },
             // 2.0.0 [RVI-30] (검토 MEMO-09·28) '알림 빼기' inside the window, not an 18dp X on the chip.
             onClear = { vm.setReminder(null); scheduling = false; said = "알림을 뺐어요 · 위 ↶로 되돌려요" },
             shiftTimes = remember(shiftDays) { com.bamnat.core.memo.ShiftMemoTime.suggestions(shiftDays, Today.dateTime()) },
-            clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays)?.text },
+            clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays) },
+            heldAtWork = vm.holdAtWork,
             // 1.39 [TASK-44] PC 6차: 반복 here too (the chip by the date was not found); 쉬는 날 where the calendar has days off.
             repeat = memo.repeat,
-            onRepeat = { kind -> pickedRepeat = kind },
+            onRepeat = { code -> pickedRepeat = code },
             restRepeat = shiftDays.any { !it.work },
+            shiftTypes = scheduleTypes,
+            // 2.0.0 [RVIB-04] (검토 I07ac-01) 근무에 붙여 매번: the next time each choice falls on, from the calendar's next 60 days.
+            workNext = { a -> com.bamnat.core.memo.ShiftMemoTime.workNext(shiftDays, a, Today.dateTime()) },
+            wakeAfterMinutes = vm.sleepTarget,
+            style = vm.workStyle,
             onSave = { r ->
-                pickedRepeat?.let { vm.setRepeat(it, from = r.at.toLocalDate()) }
+                pickedRepeat?.let { said = vm.setRepeatCode(it, from = r.at.toLocalDate()) ?: said }
                 pickedRepeat = null
                 vm.setReminder(r, answered = answering)
                 scheduling = false
                 val again = com.bamnat.core.memo.MemoRepeat.label(vm.memo.value.repeat).let { if (it.isEmpty()) "" else "$it " }
-                val at = if (again.isEmpty()) scheduleText(r.at) else again + scheduleText(r.at).substringAfter(") ")
+                val at = r.work?.let { workLine(vm.memo.value, it, style = vm.workStyle) }
+                    ?: if (again.isEmpty()) scheduleText(r.at) else again + scheduleText(r.at).substringAfter(") ")
                 Toast.makeText(context, "${at}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
             },
         )
     }
 
-    if (showLast) lastSame?.let { (label, memos) -> LastShiftDialog(label, memos) { showLast = false } }
+    if (showLast) lastSame?.let { (label, memos) ->
+        // 2.0.0 [RVI-85] (검토 T07a-11·I07ac-03) What was left unticked last time comes into this memo with one tap.
+        val carry = remember(memos, memo) { com.bamnat.core.memo.TaskList.carried(memos, memo) }
+        LastShiftDialog(label, memos, carry, onCarry = {
+            vm.carry(carry)
+            said = "지난 ${label.substringBefore('(')}에서 ${carry.size}줄을 가져왔어요 · 위 ↶로 되돌려요"
+            showLast = false
+        }) { showLast = false }
+    }
 
     if (confirmDelete) {
         val deleteTypes by vm.shiftTypes.collectAsStateWithLifecycle()
@@ -947,6 +972,12 @@ private fun ChecklistEditor(memo: Memo, vm: MemoEditorViewModel) {
             ChecklistRow(
                 text = entry.value.text,
                 checked = false,
+                starred = entry.value.starred,
+                time = entry.value.time,
+                note = entry.value.note,
+                onStar = { vm.starItem(index, !entry.value.starred)?.let { focusIndex = it; focusCaret = null } },
+                onTime = { vm.setItemTime(index, it) },
+                onNote = { vm.setItemNote(index, it) },
                 requestFocus = focusIndex == index,
                 caret = focusCaret,
                 onFocusHandled = { focusIndex = null; focusCaret = null },
@@ -999,6 +1030,9 @@ private fun ChecklistEditor(memo: Memo, vm: MemoEditorViewModel) {
                 ChecklistRow(
                     text = item.text,
                     checked = true,
+                    starred = item.starred,
+                    time = item.time,
+                    note = item.note,
                     requestFocus = false,
                     caret = null,
                     onFocusHandled = {},
@@ -1017,6 +1051,14 @@ private fun ChecklistRow(
     text: String,
     checked: Boolean,
     requestFocus: Boolean,
+    // 2.0.0 [RVIB-02] (검토 I07ab-03) The line's star, time and note; an open line ([onStar] set) changes them from the chips that
+    // show under it while it is being written.
+    starred: Boolean = false,
+    time: java.time.LocalTime? = null,
+    note: String = "",
+    onStar: (() -> Unit)? = null,
+    onTime: ((java.time.LocalTime?) -> Unit)? = null,
+    onNote: ((String) -> Unit)? = null,
     caret: Int?,
     onFocusHandled: () -> Unit,
     onTextChange: (String) -> Unit,
@@ -1049,8 +1091,14 @@ private fun ChecklistRow(
     )
     val drag by rememberUpdatedState(onDrag)
     val dragEnd by rememberUpdatedState(onDragEnd)
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    // 2.0.0 [RVIB-02] The chips show while the line or its note is being written; the note's own line once it has words.
+    var lineFocused by remember { mutableStateOf(false) }
+    var noteFocused by remember { mutableStateOf(false) }
+    var noteOpen by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
+    val noteFocus = remember { FocusRequester() }
+    LaunchedEffect(noteOpen) { if (noteOpen) runCatching { noteFocus.requestFocus() } }
+    Column(
         modifier = Modifier
             .onSizeChanged { onHeight(it.height.toFloat()) }
             .graphicsLayer { translationY = dragOffset; shadowElevation = if (dragged) 6f else 0f }
@@ -1058,9 +1106,11 @@ private fun ChecklistRow(
                 customActions = listOfNotNull(
                     onMoveUp?.let { up -> CustomAccessibilityAction("위로 옮기기") { up(); true } },
                     onMoveDown?.let { down -> CustomAccessibilityAction("아래로 옮기기") { down(); true } },
+                    onStar?.let { star -> CustomAccessibilityAction(if (starred) "별표 빼기" else "별표 달고 위로") { star(); true } },
                 )
             },
     ) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
         if (onDrag != null) {
             Icon(
                 Icons.Filled.DragIndicator, null,
@@ -1083,6 +1133,7 @@ private fun ChecklistRow(
             value = shown,
             onValueChange = { v -> field = v; if (v.text != text) onTextChange(v.text) },
             modifier = Modifier.weight(1f).focusRequester(focus).padding(vertical = 8.dp)
+                .onFocusChanged { lineFocused = it.isFocused }
                 .onPreviewKeyEvent { e ->
                     val join = onJoinAbove
                     if (join != null && e.type == KeyEventType.KeyDown && e.key == Key.Backspace &&
@@ -1106,9 +1157,59 @@ private fun ChecklistRow(
                 }
             },
         )
+        // 2.0.0 [RVIB-02] A starred line says so by its words, and its time sits beside them.
+        if (starred) Icon(Icons.Filled.Star, "별표", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 4.dp).size(18.dp))
+        time?.let {
+            Text(Fmt.time(it), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp))
+        }
         IconButton(onClick = onRemove) {
             Icon(Icons.Filled.Close, "항목 지우기", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
         }
+    }
+    // Under the words, where they start: the line's note, then the chips.
+    val under = Modifier.padding(start = 96.dp, end = 48.dp)
+    if (note.isNotEmpty() || noteOpen) {
+        if (onNote == null) {
+            Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = under.padding(bottom = 6.dp))
+        } else {
+            val noteStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+            BasicTextField(
+                value = note,
+                onValueChange = { onNote(it.replace("\n", " ")) },
+                singleLine = true,
+                textStyle = noteStyle,
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                modifier = under.fillMaxWidth().padding(bottom = 6.dp).focusRequester(noteFocus)
+                    .onFocusChanged { f -> noteFocused = f.isFocused; if (!f.isFocused && note.isEmpty()) noteOpen = false },
+                decorationBox = { inner ->
+                    Box {
+                        if (note.isEmpty()) Text("메모", style = noteStyle.copy(color = noteStyle.color.copy(alpha = 0.5f)))
+                        inner()
+                    }
+                },
+            )
+        }
+    }
+    if (onStar != null && (lineFocused || noteFocused)) {
+        FlowRow(under.padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = starred, onClick = onStar, label = { Text(if (starred) "별표 빼기" else "별표 달고 위로") },
+                leadingIcon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(18.dp)) })
+            if (onTime != null) {
+                if (time == null) FilterChip(selected = false, onClick = { picking = true }, label = { Text("시각") })
+                else FilterChip(selected = true, onClick = { onTime(null) }, label = { Text(Fmt.time(time)) },
+                    trailingIcon = { Icon(Icons.Filled.Close, "시각 빼기", modifier = Modifier.size(18.dp)) })
+            }
+            if (onNote != null && note.isEmpty() && !noteOpen) FilterChip(selected = false, onClick = { noteOpen = true }, label = { Text("메모") })
+        }
+    }
+    }
+    if (picking && onTime != null) {
+        TimePickerDialog(
+            title = "이 줄의 시각",
+            initial = time ?: Today.dateTime().toLocalTime().withSecond(0).withNano(0),
+            onDismiss = { picking = false },
+        ) { onTime(it); picking = false }
     }
 }
 
@@ -1178,7 +1279,7 @@ private fun shareText(memo: Memo): String = buildString {
     memo.date?.let { appendLine(Fmt.fullDate(it)) }
     if (memo.title.isNotBlank() || memo.date != null) appendLine()
     if (memo.isChecklist) {
-        memo.checklist.filter { it.text.isNotBlank() }.forEach { appendLine((if (it.checked) "☑ " else "☐ ") + it.text) }
+        memo.checklist.filter { it.text.isNotBlank() }.forEach { appendLine(com.bamnat.core.memo.ChecklistEdit.shared(it)) }
     } else {
         // [MPH-04] 1.38 The words only; the photos go with the share as pictures (MemoPhotoFiles.shareIntent).
         append(memo.text)
@@ -1198,7 +1299,7 @@ private const val JUMP_SHOWN_MILLIS = 2_000L
 
 /** [MEMO-06] 1.27 AK: the memos of the last day with the same shift, to read while writing today's. */
 @Composable
-private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> Unit) {
+private fun LastShiftDialog(label: String, memos: List<Memo>, carry: List<String> = emptyList(), onCarry: () -> Unit = {}, onDismiss: () -> Unit) {
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("지난 $label 메모") },
@@ -1206,12 +1307,17 @@ private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> U
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (m in memos) Column {
                     if (m.title.isNotBlank()) Text(m.title, style = MaterialTheme.typography.titleSmall)
-                    val body = if (m.isChecklist) (listOfNotNull(m.body.ifBlank { null }) + m.checklist.filter { it.text.isNotBlank() }.map { (if (it.checked) "☑ " else "☐ ") + it.text }).joinToString("\n") else m.body
+                    val body = if (m.isChecklist) (listOfNotNull(m.body.ifBlank { null }) + m.checklist.filter { it.text.isNotBlank() }.map { com.bamnat.core.memo.ChecklistEdit.shared(it) }).joinToString("\n") else m.body
                     Text(com.bamnat.core.memo.MemoSearch.excerpt(body, ""), style = MaterialTheme.typography.bodyMedium)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        // [RVI-85] 안 끝낸 줄 가져오기 is the one thing to do here when there are such lines; 닫기 beside it.
+        confirmButton = {
+            if (carry.isNotEmpty()) androidx.compose.material3.Button(onClick = onCarry) { Text("안 끝낸 ${carry.size}줄 가져오기") }
+            else TextButton(onClick = onDismiss) { Text("닫기") }
+        },
+        dismissButton = if (carry.isNotEmpty()) ({ TextButton(onClick = onDismiss) { Text("닫기") } }) else null,
     )
 }
 
