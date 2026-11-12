@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.layout.Arrangement
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
@@ -220,7 +221,7 @@ private fun CashCheck(day: DailySales, rules: ShopMoney, book: MoneyBook, counte
                 else -> "${Fmt.won(-diff)} 모자라요"
             },
             style = MaterialTheme.typography.titleSmall,
-            color = if (diff == 0L) cal.income else cal.warning,
+            color = if (diff == 0L) cal.income else MaterialTheme.bamnat.caution,
         )
     }
 }

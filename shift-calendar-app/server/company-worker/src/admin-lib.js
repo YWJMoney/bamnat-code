@@ -246,7 +246,8 @@ export function adminLib() {
   function slaText(minutes) {
     if (minutes === null || minutes === undefined) return null;
     const span = (m) => (m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.floor(m / 60)}시간` : `${Math.floor(m / 1440)}일`);
-    if (minutes < 0) return { text: `목표 ${span(-minutes)} 넘김`, tone: "bad" };
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 목록 줄마다 빨간 칩이 되풀이되지 않게, 넘긴 줄은 굵은 보통 글자('넘김'은 글로).
+    if (minutes < 0) return { text: `목표 ${span(-minutes)} 넘김`, tone: "late" };
     return { text: `${span(minutes)} 남음`, tone: minutes < 120 ? "warn" : "" };
   }
 
@@ -269,7 +270,7 @@ export function adminLib() {
   /** The filters each screen keeps in the address, with what they are when left out. */
   const FILTERS = {
     inquiries: { status: "open", who: "", topic: "", q: "", sort: "default", kind: "", copied: "", sender: "" /* AT 1.29 [ADMCP-02] */ },
-    dev: { status: "open", who: "", q: "", from: "" },
+    dev: { status: "now", who: "", q: "", from: "", kind: "", track: "" },
     review: { show: "all" },
     community: { show: "flagged", q: "" },
     rewards: { status: "owed", q: "" },
@@ -293,6 +294,8 @@ export function adminLib() {
     errors: { show: "open" },
     health: { days: "14" },
     money: { days: "28" },
+    // 2.0.0 [RVA-56] 장터 보기(#/recipes?tab=health): 운영 장부 '깨진 작품' 줄과 출시 › 장터 작품 공개가 그 보기로 바로 열려요.
+    recipes: { tab: "flagged" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -1359,12 +1362,12 @@ export function adminLib() {
     passkey_add: "패스키 만듦", passkey_remove: "패스키 지움", session_end: "로그인 하나 끊음", // 2.0.0 [RVQ-06][RVQ-07]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
-    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
+    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", market_health: "장터 건강 결과 올림", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
     post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_undo: "마을 경고·쉬기 되돌림(1분 안)", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
-    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
+    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈", ask_miss: "자동 판정이 틀렸다고 적음",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
@@ -1384,7 +1387,7 @@ export function adminLib() {
     launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
     auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
     // 2.0.0 [RVN-15] 검토 SVC-100: 이름이 없어 영어 코드로 보이던 일들(자동으로 한 일, 사고, 열쇠, 보상, 출시).
-    error_state: "오류 묶음 상태 바꿈", shipped_version: "나간 판 저장", ops_key_revoke: "운영 열쇠 끊음", inbox_apply: "운영 장부 한꺼번에 처리",
+    error_state: "오류 묶음 상태 바꿈", error_dev: "오류 묶음을 개발사항으로", shipped_version: "나간 판 저장", ops_key_revoke: "운영 열쇠 끊음", inbox_apply: "운영 장부 한꺼번에 처리",
     inquiry_auto_skip: "문의 자동 정리 건너뜀", inbox_auto: "자동 정리 켬·끔", inbox_auto_reply: "문의에 자동으로 답함", dev_handoff: "Claude에게 넘김",
     dev_result: "개발 결과 붙여 넣기", dev_result_held: "개발 결과 답 보류", incident_open: "사고 시작", incident_close: "사고 끝",
     inquiry_billing_rescan: "결제 문의 다시 가림", inquiry_reply_held: "문의 답 잠시 둠", inquiry_reply_approve: "문의 답 보내기 승인",
@@ -1534,8 +1537,20 @@ export function adminLib() {
     return /^\d{4}-\d{2}-\d{2}$/.test(from ?? "") ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일부터` : "처리방침 3.13 시행일부터";
   }
 
+  /**
+   * 2.0.0 [RVA-60] PC-147: "…이에요" or "…예요" by the last sound, for words put into a sentence ("시행일부터예요", "54예요", "53이에요").
+   * Closing ")"·quotes are skipped; a number ends in its last digit's sound (2·4·5·9 open; 0 is 십·백·영, closed).
+   */
+  function eyo(s) {
+    const t = String(s ?? "").replace(/[)\]'"’”\s]+$/u, "");
+    const c = t.at(-1) ?? "";
+    const code = c.charCodeAt(0);
+    const open = code >= 0xac00 && code <= 0xd7a3 ? (code - 0xac00) % 28 === 0 : "2459".includes(c) && c !== "";
+    return `${s}${open ? "예요" : "이에요"}`;
+  }
+
   return {
-    rewardYearWords, capFromWords,
+    rewardYearWords, capFromWords, eyo,
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, draftEmpty, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,

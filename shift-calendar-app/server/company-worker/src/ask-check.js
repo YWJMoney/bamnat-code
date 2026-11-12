@@ -113,14 +113,18 @@ function acForeign(spaced) {
 // "보상 휴가는 어디에 적나요? 보상을 받았는데…". 그 글에서는 '보상'만 빼고 견줘요(환불·결제 같은 다른 돈 말은 그대로 잡아요).
 const AC_LABOR_COMP = /보상\s*(휴가|휴무|시간|근무|휴일)/;
 
-/** 문의 글이 사람이 먼저 봐야 하는지: { key, name } 또는 null. */
+/** 2.0.0 [RVA-41] 검토 U24-05·I24a-05: 무슨 말 때문에 걸렸는지 한 마디(관리자 화면의 "'해지'라는 말 때문에"). */
+const acWord = (m) => (m ? m[0].trim().replace(/\s+/g, " ").slice(0, 24) || null : null);
+
+/** 문의 글이 사람이 먼저 봐야 하는지: { key, name, word } 또는 null. word는 걸린 말(관리자에게 이유로 보여요). */
 export function askOwnerOf(text) {
   const raw = String(text ?? "");
   const { spaced, tight } = plainAsk(raw);
   const labor = AC_LABOR_COMP.test(spaced);
   for (const [key, name, re] of AC_RULES) {
     const s = key === "money" && labor ? spaced.replace(/보상/g, " ") : spaced;
-    if (re.test(s) || AC_TIGHT[key]?.test(tight)) return { key, name };
+    const m = re.exec(s) ?? AC_TIGHT[key]?.exec(tight);
+    if (m) return { key, name, word: acWord(m) };
   }
   // 낱말 사이에 다른 글자(폭 없는 글자·전각)가 아닌 다른 문자(일본어 등)만 있으면 spaced가 비어요.
   if (acForeign(spaced) || (!spaced && raw.replace(/\s+/g, "").length >= 4)) return { key: "foreign", name: "한국어가 아닌 문의" };
@@ -157,6 +161,13 @@ const AC_BILL_NOT = new RegExp([
   "영수증\\S*\\s*.{0,8}(사진|찍|인식|스캔|읽|넣|등록|첨부|가계부|지출)", "(가계부|지출|장부)\\S*\\s*.{0,10}(영수증|구매|구입|결제)",
   "카드\\s*(값|대금)?\\s*.{0,4}결제", "결제\\s*(일|예정|대금|계좌|수단을\\s*가계부)", "(장보기|마트|쇼핑|물건|식료품)\\S*\\s*.{0,8}(구매|구입)", "(구매|구입)\\s*(목록|품목|리스트)",
 ].join("|"), "g");
+
+/** 2.0.0 [RVA-41] 결제·환불 기록으로 잡은 말(없으면 null). [RVQ-30] isBillingRecord와 같은 잣대예요. */
+export function billingWordOf(text) {
+  const { spaced, tight } = plainAsk(text);
+  return acWord(AC_BILL_SURE.exec(spaced)) ?? acWord(AC_TIGHT.money.exec(tight)) ?? (/gpa\d{4}/.test(tight) ? "주문 번호" : null)
+    ?? acWord(AC_BILL_WORD.exec(spaced.replace(AC_BILL_NOT, " ")));
+}
 
 // 1.39 [LOOP-38] 사람 없이 나갈 답에 들어가면 안 되는 말. [RVD-07] 기능 이름의 'AI 근무표 읽기', 근무 이름 'D1', '앱 잠금 비밀번호' 안내는 괜찮아요.
 const AC_REPLY_AI = new RegExp([

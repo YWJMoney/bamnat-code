@@ -109,7 +109,11 @@ export function alertsFrom({ trend = {}, todo = [], now = Date.now(), versions =
  * number), 개발사항 (title or body) and admins (the owner's), each up to [limit] with how many there are and where the
  * whole list is. Only what this admin may see; [h] is { can, normName } from index.js.
  */
-export async function adminSearch(env, actor, raw, h, limit = 3) {
+/** [RVA-47] ADM-28: 통합 찾기가 문의 글에서 보는 날 수와, 찾으면 멈추는 글 수. */
+export const SEARCH_DAYS = 365;
+export const SEARCH_HITS = 200;
+
+export async function adminSearch(env, actor, raw, h, limit = 3, now = Date.now()) {
   const q = String(raw ?? "").trim().slice(0, 40);
   if ([...q].length < 2) return { q, groups: [] };
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -125,10 +129,13 @@ export async function adminSearch(env, actor, raw, h, limit = 3) {
     (r) => ({ label: r.name, hint: [r.rules ? `규칙 ${r.rules}` : "규칙 없음", r.hidden ? "숨김" : "", r.merged_into ? "합쳐짐" : ""].filter(Boolean).join(" · "), to: `#/companies/${r.id}` })]);
   }
   if (h.can(actor, "inquiries")) {
+    // 2.0.0 [RVA-47] 검토 ADM-28: 문의마다 글 전체를 훑던 것을, 최근 SEARCH_DAYS일 글(at 색인)에서 새것부터 SEARCH_HITS개 찾으면 멈춰요.
+    // 그보다 오래되거나 많은 것은 '문의 N개 모두 보기'(문의 목록 찾기)가 다 봐요. 번호로 찾기는 그대로.
     plan.push(["inquiries", "문의", `#/inquiries?status=all&q=${enc}`, `SELECT i.id, i.kind, i.status, i.updated_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first, COUNT(*) OVER () AS total
-      FROM inquiries i WHERE i.id = ?2 OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.text LIKE ?1 ESCAPE '\\')
-      ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT ${limit}`, [like, q],
+      FROM inquiries i WHERE i.id = ?2 OR i.id IN (SELECT inquiry_id FROM (SELECT inquiry_id FROM inquiry_messages
+        WHERE at >= ?3 AND text LIKE ?1 ESCAPE '\\' ORDER BY at DESC LIMIT ${SEARCH_HITS}))
+      ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT ${limit}`, [like, q, now - SEARCH_DAYS * 864e5],
     (r) => ({ label: [...String(r.first ?? "")].slice(0, 60).join("") || "(내용 없음)", hint: `${{ open: "답 대기", answered: "답함", closed: "닫힘" }[r.status] ?? ""}`, to: `#/inquiries/${r.id}` })]);
   }
   if (h.can(actor, "dev")) {
