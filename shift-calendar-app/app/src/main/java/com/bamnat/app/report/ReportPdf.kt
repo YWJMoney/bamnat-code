@@ -23,6 +23,15 @@ object ReportPdf {
     const val A4_LONG = 842
     private const val MARGIN = 36f
 
+    /**
+     * 2.0.0 [RVJ-47] 검토 PC-111: a sentence breaks at its spaces, not between the letters of a word (the proof's last line put '밤'
+     * and '낮' on two lines). A word joiner (U+2060, drawn as nothing) sits between letters that have no space between them; a word
+     * wider than the whole line is still broken by the layout.
+     */
+    internal fun keepWords(s: String): String = buildString(s.length * 2) {
+        s.forEachIndexed { i, c -> if (i > 0 && !c.isWhitespace() && !s[i - 1].isWhitespace()) append('\u2060'); append(c) }
+    }
+
     /** Where pages go: a PDF file, or bitmaps in the tests. */
     interface Pages {
         fun begin(width: Int, height: Int): Canvas
@@ -118,13 +127,13 @@ object ReportPdf {
         fun block(b: ReportDoc.Block) {
             when (b) {
                 is ReportDoc.Heading -> {
-                    val l = layout(b.text, text(12.5f, bold = true), inner)
+                    val l = layout(keepWords(b.text), text(12.5f, bold = true), inner)
                     room(l.height + 30f)
                     y += 8f
                     draw(l, MARGIN, y); y += l.height + 6f
                 }
                 is ReportDoc.Paragraph -> {
-                    val l = layout(b.text, if (b.small) text(8.5f, color = muted) else text(10f), inner)
+                    val l = layout(keepWords(b.text), if (b.small) text(8.5f, color = muted) else text(10f), inner)
                     room(l.height.toFloat())
                     draw(l, MARGIN, y); y += l.height + 6f
                 }

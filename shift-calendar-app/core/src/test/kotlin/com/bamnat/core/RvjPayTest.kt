@@ -184,4 +184,27 @@ class RvjPayTest {
         assertTrue(second.extraUntimed)
         assertNotNull(days)
     }
+
+    // ── [RVJ-47] PC-111 ──
+    @Test fun workProofSaysADayOffWorkedAsItWasPutIn() {
+        val mon = LocalDate.of(2026, 11, 2)
+        val sat = LocalDate.of(2026, 11, 7)
+        val r = ScheduleResolver(listOf(day, off), WorkPattern.Rotation(mon, List(5) { day.id } + listOf(off.id, off.id)), listOf(
+            // 휴무일 특근 09~15, 휴게 30분.
+            DayEntry(sat, extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, start = t(9), end = t(15), breakMinutes = 30))),
+            // 시각 없이 2시간만 적은 잔업.
+            DayEntry(mon, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))),
+        ))
+        val days = WorkProof.days(mon, sat, r::resolve)
+        val worked = days.single { it.date == sat }
+        assertEquals("휴무일 특근의 시작·끝은 넣은 대로", t(9) to t(15), worked.start to worked.end)
+        assertEquals(30, worked.breakMinutes)
+        assertEquals(330, worked.extraMinutes)
+        // 근무가 있는 날은 근무 시각 그대로.
+        assertEquals(t(9) to t(18), days.single { it.date == mon }.let { it.start to it.end })
+        val text = WorkProof.doc("제조·생산 교대", mon, sat, days, sat).text()
+        assertTrue("직업은 직업 칸에: $text", text.contains("직업") && text.contains("제조·생산 교대"))
+        assertTrue("이름 칸에 직업이 들어가지 않아요", !Regex("이름[^\\n]*제조").containsMatchIn(text))
+        assertTrue("시각이 없는 줄은 말로", text.contains("2시간 (시각 안 적음)") && !text.contains("시각 없음"))
+    }
 }

@@ -744,6 +744,16 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 (if (s.birth?.let { java.time.Period.between(it, Today.date()).years }?.let { it >= 60 } == true) "만 60세 이상이라" else "만 18세 미만이라") +
                 " 뺐어요(본인이 원하면 가입). 실제로 들지 않은 보험은 풀어 주세요.")
         else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) ToneLine("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.")
+        // 2.0.0 [RVJ-45] 검토 PC-108: a short week leaves the chips off by law with nothing said; it says why, as the line above does for
+        // 15시간 이상. 고용보험법 시행령 제3조(2023.6.27): 제1항 월 60시간·주 15시간 미만은 적용 제외, 제2항 3개월 이상 계속 근로와
+        // 일용근로자는 적용. 국민연금법 시행령 제2조 제4호(월 60시간 미만 단시간근로자 제외); 국민건강보험법 시행령 제9조는 원문 확인 필요
+        // ([InsuranceRules.of]가 같은 선으로 셈해요).
+        val shortWeek = s.form != WageForm.MONTH && s.weekly.values.sumOf { it.paidMinutes(breaks) } in 1 until com.bamnat.core.boss.InsuranceRules.WEEK_MINUTES
+        if (shortWeek && !s.insurance.any) when (s.insurance.tax) {
+            com.bamnat.core.boss.StaffTax.BIZ -> Unit
+            com.bamnat.core.boss.StaffTax.DAILY -> Hint("일용직은 한 주 15시간이 안 돼도 고용보험은 첫날부터 들어요. 실제로 든 보험을 골라 주세요.")
+            else -> Hint("한 주 15시간(월 60시간)이 안 돼 국민연금·건강보험은 가입 대상이 아니에요. 고용보험은 3개월 넘게 이어서 일하면 들어요.")
+        }
         // 2.0.0 [RVJ-16] 검토 BOSS-74: 외국인 직원은 국민연금·고용보험이 나라·체류자격에 따라 달라요.
         FilterChip(selected = s.insurance.foreign, onClick = { s = s.copy(insurance = s.insurance.copy(foreign = !s.insurance.foreign)) }, label = { Text("외국인 직원") })
         if (s.insurance.foreign) Hint("건강보험·산재는 같고, 국민연금은 나라에 따라, 고용보험은 체류자격에 따라 달라요. 4대사회보험 정보연계센터에서 확인해 주세요.")

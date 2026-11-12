@@ -29,8 +29,13 @@ object WorkProof {
         generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.map { d ->
             val r = resolve(d)
             val extra = r.extras.sumOf { e -> e.minutes.coerceAtLeast(0) }
-            Day(d, r.shiftType?.name ?: "", r.start, r.end, r.breakMinutes, r.scheduledMinutes, extra, r.hasCustomTimes,
-                extraUntimed = r.extras.any { it.entry.start == null && it.minutes > 0 })
+            // 2.0.0 [RVJ-47] 검토 PC-111: a day off worked (휴무일 특근) has no shift times; its row shows the work's own start, end and
+            // break as they were put in (it read '-' · '-' · 0분).
+            val timed = r.extras.filter { it.from != null && it.to != null && it.minutes > 0 }
+            val own = r.start == null && r.end == null && r.scheduledMinutes == 0 && timed.isNotEmpty()
+            Day(d, r.shiftType?.name ?: "", if (own) timed.minOf { it.from!! }.toLocalTime() else r.start,
+                if (own) timed.maxOf { it.to!! }.toLocalTime() else r.end, if (own) timed.sumOf { it.breakMinutes } else r.breakMinutes,
+                r.scheduledMinutes, extra, r.hasCustomTimes, extraUntimed = r.extras.any { it.entry.start == null && it.minutes > 0 })
         }.filter { it.minutes > 0 || it.extraMinutes > 0 }.toList()
 
     data class Week(val monday: LocalDate, val minutes: Int) {
@@ -49,11 +54,14 @@ object WorkProof {
         val total = days.sumOf { it.minutes + it.extraMinutes }
         val blocks = mutableListOf<ReportDoc.Block>()
         blocks += ReportDoc.Facts(listOf("기간" to "$from ~ $to", "근무한 날" to "${days.size}일", "일한 시간" to hm(total),
-            "52시간 넘은 주" to "${weeks.count { it.over52 }}주") + listOfNotNull(who.takeIf { it.isNotBlank() }?.let { "이름" to it }))
+            "52시간 넘은 주" to "${weeks.count { it.over52 }}주") +
+            // 2.0.0 [RVJ-47] 검토 PC-111: [who] is the 직업 the pay setup holds ('제조·생산 교대'), not a name. The name is left to be
+            // written by hand on the paper (the app keeps no name), the same label the pay report uses for the 직업.
+            listOfNotNull(who.takeIf { it.isNotBlank() }?.let { "직업" to it }, "이름" to ""))
         blocks += ReportDoc.Heading("날짜별 기록")
         blocks += ReportDoc.Table(listOf("날짜", "근무", "시작", "끝", "휴게", "일한 시간", "더 일함", "기록"),
             days.map { listOf(d(it.date), it.shift, t(it.start), t(it.end), "${it.breakMinutes}분", hm(it.minutes),
-                if (it.extraMinutes > 0) hm(it.extraMinutes) + (if (it.extraUntimed) " (시각 없음)" else "") else "",
+                if (it.extraMinutes > 0) hm(it.extraMinutes) + (if (it.extraUntimed) " (시각 안 적음)" else "") else "",
                 if (it.recorded) "실제 기록" else "근무표") },
             listOf(1.4f, 1.2f, 1f, 1f, 0.8f, 1.3f, 1.2f, 1f), right = setOf(5, 6),
             total = listOf("합계", "", "", "", "", hm(days.sumOf { it.minutes }), hm(days.sumOf { it.extraMinutes }), ""))
