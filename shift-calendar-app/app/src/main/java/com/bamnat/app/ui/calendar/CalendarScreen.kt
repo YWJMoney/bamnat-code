@@ -505,6 +505,11 @@ fun CalendarScreen(
     val baseMonth = BASE_MONTH
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
+    // 2.0.0 [RVP-75] (검토 REST-18) 기능 찾기 › 이번 달 전부 넣기 opens the keypad for the month on screen, as the tool's own button does
+    // (before, it opened today's sheet).
+    com.bamnat.app.ui.guide.FocusedTool("typeMonth", "shift.dutyTyping") {
+        if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) fillMonth(visibleMonth)
+    }
     // [CAL-06] The month on screen in the kind of work's own figures; pay is worked out off the main thread.
     // 1.32 [CALX-06] The month's days and hours over the 급여 기간 when 통계 counts by it, so both say the same.
     // [EASE-04] 1.38 월급날 '급여' on the cells, where the pay is counted (not 현장·자영업·투자).

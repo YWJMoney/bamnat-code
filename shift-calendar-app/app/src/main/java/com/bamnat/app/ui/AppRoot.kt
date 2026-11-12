@@ -2488,7 +2488,12 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
     fun screen(r: String) = navigate(r) { launchSingleTop = true }
     when (link.place) {
         // [CUST-01] 화면 꾸미기 opens over the month, not over today.
-        Place.CALENDAR -> if (link.focus == "customize") navigateTopLevel(TopLevel.CALENDAR.route) else {
+        // 2.0.0 [RVP-75] (검토 REST-18) "month": a card over the month (한 달 마감 카드), and "typeMonth" the keypad of 이번 달 전부
+        // 넣기 (the calendar takes it), not today's sheet.
+        Place.CALENDAR -> if (link.focus == "customize" || link.focus == "month" || link.focus == "typeMonth") {
+            if (link.focus == "month") com.bamnat.app.ui.guide.FeatureLinks.take("month")
+            navigateTopLevel(TopLevel.CALENDAR.route)
+        } else {
             navigateTopLevel(TopLevel.CALENDAR.route)
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)
@@ -2527,6 +2532,10 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.INQUIRY -> com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
         Place.FEATURES -> screen(Routes.FEATURES)
         Place.PRO -> screen(Routes.PRO)
+        // [RVP-75] 마을's features opened the pay screen.
+        Place.VILLAGE -> NoticeLinks.open(NoticeLinks.Target.PLAZA)
+        Place.COMPANY_BOARD -> screen(Routes.companyBoard(cal))
+        Place.NOWHERE -> {}
         Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
         Place.LEAVE -> screen(Routes.leave(cal))
         Place.PROFILE -> screen(Routes.PROFILE)

@@ -227,7 +227,7 @@ private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: 
                 if (com.bamnat.core.guide.ProCatalog.isPro(feature.id)) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp))
             }
             Text(feature.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("어디: ${feature.where}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text("어디: ${feature.whereFor(com.bamnat.app.ui.flags.rememberScreenStyle())}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = on, onCheckedChange = null)
