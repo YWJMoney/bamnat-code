@@ -1139,7 +1139,7 @@ function adminApp(L, BUILD, M) {
         </aside>
         <div class="content">
           <header class="top">
-            <a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a>
+            <div class="deploy-wrap"><a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a></div>
             <div class="bar" id="bar"></div>
             <div class="hubrow" id="hubrow" hidden><nav class="hubtabs" id="hubtabs" hidden></nav>
               <button class="chip pick hub-all" id="hub-all" type="button" data-act="hub-all" aria-haspopup="dialog" hidden>${icon(P.down)}<span>모두</span></button></div>
@@ -1464,6 +1464,7 @@ function adminApp(L, BUILD, M) {
     reviews: () => V.opsViews.reviews(),
     requests: () => V.opsViews.requests(),
     backup: () => V.opsViews.backup(),
+    security: () => V.opsViews.security(),
     launch: () => V.opsViews.launch(),
     health: () => V.opsViews.health(),
     money: () => V.opsViews.money(),

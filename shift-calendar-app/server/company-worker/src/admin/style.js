@@ -433,6 +433,7 @@ dialog.wide{width:100vw}}
 .radios{display:grid;gap:.5rem;margin:.4rem 0}
 .radio{display:flex;align-items:center;gap:.6rem;margin:0;padding:.75rem;border:1px solid var(--line-strong);border-radius:var(--r-sm);font-weight:600;cursor:pointer;font-size:.92rem}
 .radio input{flex:none;width:1.25rem;height:1.25rem;accent-color:var(--accent)}
+.radio .radio-sub{display:block;margin-top:.1rem;font-weight:400;font-size:.8rem;color:var(--muted)}
 .radio:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
 /* ---- 개발사항 [ADMIN-10] ---- */
 .row .check{flex:none;width:1.35rem;height:1.35rem;margin:0;accent-color:var(--accent)}
@@ -1273,11 +1274,29 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 /* 1.39 7차 PC 6장 2: Claude 추천이 아직 없을 때 한 줄 */
 .claude-draft-empty{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin:.2rem 0 .6rem}
 /* 1.39 머리띠의 지금 도는 서버 판(사용자 11-08): 한 줄, 좁으면 가로로 밀어 봐요 */
-.deploy-line{display:flex;align-items:center;gap:.6rem;min-height:28px;padding:.15rem 1rem;font-size:.75rem;color:var(--muted);text-decoration:none;white-space:nowrap;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line)}
+/* 2.0.0 [RVQ-14] 총괄 사진 검토(840·200%에서 오른쪽이 잘림): 다 들어가지 않는 폭(글자 크기와 함께 rem으로 잼)에서는 커밋·배포 시각을 접고
+   판만 한 줄로(자세한 것은 눌러 가는 서버 상태 맨 위 줄과 읽어 주는 이름에), 그래도 좁으면 서버 덩이째 줄을 바꿔요. 위에 붙어 있는 띠라 높이를 아껴요. */
+.deploy-wrap{container-type:inline-size;container-name:deploy}
+/* 2.0.0 [RVQ-16] 검토 U21-08: 되살리기 연습의 표마다 줄 수. 표가 아니라 줄바꿈 되는 목록이라 좁은 폭·큰 글자에서도 글자가 서지 않아요. */
+/* 2.0.0 [RVQ-17] 검토 U21-07: 데이터 요청 줄. 단추는 가로로(좁으면 글 아래로), 대신 한 증빙은 줄 안쪽에 들여서. */
+.req-rows .req-side{flex-direction:row;flex-wrap:wrap;justify-content:flex-end;align-items:center;max-width:55%}
+/* 2.0.0 [RVQ-17][RVQ-18] 총괄 사진 검토(380·200%에서 글이 두세 글자씩 세로로 섬): 칸이 좁거나 글자가 크면(rem이라 글자를 키우면 함께 커져요)
+   상태·단추는 글 아래로 내리고, 제목은 자르지 않고 줄을 바꿔요. 폭이 아니라 이 목록의 너비로 봐요. */
+.req-rows,.security-rows{container-type:inline-size}
+.req-rows .row-main b,.security-rows .row-main b{white-space:normal;overflow-wrap:anywhere}
+@container (max-width:34rem){.req-rows .row,.security-rows .row{flex-wrap:wrap;row-gap:.45rem}.req-rows .row-main,.security-rows .row-main{flex:1 1 100%}
+.req-rows .req-side,.security-rows .row-side{max-width:none;width:100%;flex-direction:row;flex-wrap:wrap;justify-content:flex-start;align-items:center}}
+.card-head.wraps{flex-wrap:wrap;row-gap:.25rem}.card-head.wraps h2{flex:0 1 auto;min-width:0}.card-head.wraps .meta{flex:1 1 12rem}
+.req-rows ul.proof{margin:-.25rem 1rem .75rem;padding:.35rem .7rem;border-left:3px solid var(--line-strong);font-size:.8rem;color:var(--muted)}
+.drill-rows{list-style:none;margin:.4rem 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,16rem),1fr));gap:.15rem 1rem;font-variant-numeric:tabular-nums}
+.drill-rows li{display:flex;flex-wrap:wrap;gap:0 .5rem;padding:.25rem 0;border-bottom:1px solid var(--line);min-width:0}
+.drill-rows li b{font-weight:600;overflow-wrap:anywhere}.drill-rows li span{color:var(--muted)}.drill-rows li.bad span{color:var(--bad)}
+@container deploy (max-width:36rem){.deploy-line .dl-part small,.deploy-line .dl-part code{display:none}}
+.deploy-line{display:flex;flex-wrap:wrap;align-items:center;gap:.15rem .6rem;min-height:28px;padding:.2rem 1rem;font-size:.75rem;color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line)}
 .deploy-line[hidden]{display:none}
-.deploy-line::-webkit-scrollbar{display:none}
 .deploy-line .dl-tag{font-weight:700;color:var(--accent)}.deploy-line .dl-tag.local{color:var(--muted)}
-.deploy-line .dl-part{display:inline-flex;align-items:baseline;gap:.3rem}
+.deploy-line .dl-part{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:0 .3rem;min-width:0}
+.deploy-line .dl-part small,.deploy-line .dl-part code,.deploy-line .dl-part b{white-space:nowrap}
 .deploy-line .dl-part b{color:var(--fg);font-weight:700}
 .deploy-line .dl-part.bad b{color:var(--bad)}
 .deploy-line code{font-size:.75rem;padding:0 .25rem;border-radius:4px;background:var(--surface)}

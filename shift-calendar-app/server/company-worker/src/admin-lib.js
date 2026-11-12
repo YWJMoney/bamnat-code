@@ -17,6 +17,8 @@ export function adminLib() {
     code_needed: "인증 앱의 6자리 코드를 넣어 주세요",
     do: "할 수 없는 요청이에요. 새로 고친 뒤 다시 해 주세요",
     code_wrong: "코드가 맞지 않아요. 인증 앱의 지금 코드를 넣어 주세요",
+    // 2.0.0 [RVQ-16] 2단계 키를 잠근 서버 비밀값이 옛 값 없이 바뀌었어요.
+    code_reset: "2단계 확인을 다시 켜야 해요. 최고 관리자는 Cloudflare에서 ADMIN_2FA_RESET을 1로, 다른 관리자는 최고 관리자에게 2단계 풀기를 부탁해 주세요",
     second_on: "두 번째 확인이 이미 켜져 있어요",
     second_off: "두 번째 확인이 이미 꺼져 있어요",
     second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
@@ -340,7 +342,7 @@ export function adminLib() {
     { key: "ask", label: "사람과 글", icon: "inquiries", tabs: ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"] },
     { key: "release", label: "출시", icon: "release", tabs: ["launch", "flags", "materials", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "숫자", icon: "metrics", tabs: ["glance", "metrics", "health", "money", "errors", "effects", "tiers"] },
-    { key: "manage", label: "관리", icon: "admins", tabs: ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["server", "security", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
   ];
 
   /**
@@ -406,6 +408,8 @@ export function adminLib() {
     money: { label: "돈", owner: true, old: "돈 매출 구독 해지 이용권 환불 가격표 money revenue" },
     errors: { label: "오류 묶음", owner: true, badge: (o) => o.errorsNew ?? 0, strip: "새 오류", old: "오류 묶음 서버 오류 500 errors sentry" },
     backup: { label: "백업", owner: true, old: "백업 되돌리기 Time Travel R2 backup" },
+    // 2.0.0 [RVQ-18] 검토 I21b-01: 지금 안전한지 한 장.
+    security: { label: "보안 한 장", owner: true, old: "보안 2단계 패스키 비밀값 바꾼 날 운영 열쇠 로그인 무결성 백업 security" },
     account: { label: "내 계정·이 기기", old: "설정 이 기기 알림 화면 색 테마 글자 크기 아래 탭 소리 저장한 보기 앱 설치 단축키 비밀번호 로그아웃 account settings" },
   };
 
