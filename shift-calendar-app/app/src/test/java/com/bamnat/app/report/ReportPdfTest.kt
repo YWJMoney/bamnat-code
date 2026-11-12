@@ -93,4 +93,36 @@ class ReportPdfTest {
             assertTrue(String(bytes.toByteArray().take(5).toByteArray()).startsWith("%PDF"))
         }
     }
+
+    /** 2.0.0 [RVJ-47] 검토 PC-111: the proof's last line put '밤' and '낮' on two lines; a sentence now breaks only at its spaces. */
+    @Test fun aSentenceBreaksAtItsSpacesNotInsideAWord() {
+        val s = "'실제 기록'은 출퇴근 자동 기록이나 그날 직접 고친 시각이고, '근무표'는 정해 둔 근무 시간이에요. " +
+            "휴게시간은 근로기준법 제54조대로 뺐어요. 만든 날 2026-11-12 · 밤낮"
+        val kept = ReportPdf.keepWords(s)
+        assertEquals("보이는 글자는 그대로", s, kept.replace("\u2060", ""))
+        val p = android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 8.5f }
+        for (w in 140..420 step 9) {
+            val l = android.text.StaticLayout.Builder.obtain(kept, 0, kept.length, p, w).build()
+            for (i in 1 until l.lineCount) {
+                val at = l.getLineStart(i)
+                assertTrue("폭 $w, ${i + 1}째 줄이 낱말 가운데서 시작: ${kept.substring(at).replace("\u2060", "").take(8)}", kept[at - 1].isWhitespace())
+            }
+        }
+    }
+
+    /** [RVJ-47] 검토 PC-111: the proof as put in: 직업 not in the 이름 칸, a worked day off with its own times, words for no times. */
+    @Test fun theWorkProofReadsAsItWasPutIn() {
+        val r = ScheduleResolver(listOf(day, night, off), WorkPattern.Rotation(LocalDate.of(2026, 7, 1), listOf(1L, 1L, 2L, 2L, 3L)), listOf(
+            com.bamnat.core.model.DayEntry(LocalDate.of(2026, 10, 3), extras = listOf(com.bamnat.core.model.ExtraEntry(
+                com.bamnat.core.model.ExtraKind.SPECIAL_ID, start = LocalTime.of(9, 0), end = LocalTime.of(15, 0), breakMinutes = 30))),
+            com.bamnat.core.model.DayEntry(LocalDate.of(2026, 10, 6), extras = listOf(com.bamnat.core.model.ExtraEntry(
+                com.bamnat.core.model.ExtraKind.OVERTIME_ID, minutes = 120))),
+        ))
+        val days = com.bamnat.core.report.WorkProof.days(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), r::resolve)
+        val doc = com.bamnat.core.report.WorkProof.doc("제조·생산 교대", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), days, made)
+        ReportPdf.draw(doc, Shots("rvj_proof", out))
+        val text = doc.text()
+        assertTrue(text, text.contains("10/3(토) | 휴무 | 09:00 | 15:00 | 30분"))
+        assertTrue(text, text.contains("(시각 안 적음)") && text.contains("직업: 제조·생산 교대") && text.contains("이름: "))
+    }
 }

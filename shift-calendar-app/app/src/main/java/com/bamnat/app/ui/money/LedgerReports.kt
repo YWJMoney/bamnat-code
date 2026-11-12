@@ -85,6 +85,8 @@ fun LedgerReportsPane(
     onMessage: (String) -> Unit = {},
     /** 1.39 [FLOW-18] The shown month's category budgets, for the 잘 쓴 곳·많이 쓴 곳 chips. */
     budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
+    /** 2.0.0 [RVK-43] (검토 U06a-27) 예산 정하기 opened on a category. */
+    onBudget: ((String) -> Unit)? = null,
 ) {
     if (analysis == null) {
         // 2.0.0 [RVK-42] (검토 MONEY-20·U06a-16) The first count of a long book takes a moment: grey rows the shape of the cards and one
@@ -103,7 +105,7 @@ fun LedgerReportsPane(
         // [MON-04] Locked, the user's own analysis shows blurred under the lock.
         com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory, budgetLines, today)
+                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory, budgetLines, today, onBudget)
                 PaceCard(r, budget, today)
                 InOutCard(m, style)
             }
@@ -196,7 +198,7 @@ private fun ProNote() {
 /** [LEDG-10] Where the money went, as a ring and a list; a tap shows that category's lines. */
 @Composable
 private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
-    today: LocalDate = com.bamnat.core.time.Today.date()) {
+    today: LocalDate = com.bamnat.core.time.Today.date(), onBudget: ((String) -> Unit)? = null) {
     val cal = LocalCalendarColors.current
     val shown = r.categories.take(7)
     val rest = r.categories.drop(7)
@@ -214,6 +216,13 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetL
             )
             com.bamnat.app.ui.components.ToneChipNote(
                 if (r.holds(today)) "예산이 있으면 예산과, 없으면 ${r.earlier} 같은 때까지와 견줘요." else "예산이 있으면 예산과, 없으면 ${r.earlierWith} 견줘요.")
+            // 2.0.0 [RVK-43] (검토 U06a-27) Seen that 카페 went up, the next step is one tap away.
+            val toBudget = chips.toBudget
+            if (toBudget != null && onBudget != null) {
+                androidx.compose.material3.TextButton(onClick = { onBudget(toBudget) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("‘${Fmt.hideShort(toBudget)}’ 예산 정하기")
+                }
+            }
             Spacer(Modifier.height(12.dp))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {

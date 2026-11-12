@@ -54,4 +54,11 @@ class ManageDeskTest {
         // 닫은 뒤 지급일이 지나도 지급 표시가 없으면 급함.
         assertTrue(ManageDesk.todos(LocalDate.of(2026, 11, 10), emptyList(), listOf(shop(paid = 2))).single().urgent)
     }
+
+    /** 2.0.0 [RVJ-50] 검토 PC-118: an urgent to-do is a 주의; only a team's 휴식·연속·주 52시간 signs are a 위험 (red). */
+    @Test fun onlyTheTeamsSignsAreADanger() {
+        val l = ManageDesk.todos(LocalDate.of(2026, 11, 26), listOf(team(confirmed = false, empty = 12, danger = 2)), listOf(shop(five = false, closed = false)))
+        assertEquals(listOf("team-danger"), l.filter { it.danger }.map { it.key.substringBefore("-t1") })
+        assertTrue("마감·확정·5인 이상은 주의", l.filter { it.urgent && !it.danger }.size >= 3)
+    }
 }

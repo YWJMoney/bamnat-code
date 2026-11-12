@@ -59,6 +59,8 @@ class RvjPolishScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.pay.PayViewModel(app.container)
         content { com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}) }
         settle()
+        // At 200% the 연차 card sits past reveal's ten scrolls once the 마감 묻기 card shows its amount ([RVJ-49]): reach it first.
+        scrolledTo("소멸 예정", scrolls = 16)
         reveal("소멸 예정", exact = false)
     }
 

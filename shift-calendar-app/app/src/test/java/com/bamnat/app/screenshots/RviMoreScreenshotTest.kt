@@ -84,6 +84,8 @@ class RviMoreScreenshotTest : ScreenshotBase() {
             settle()
             assertTrue(appears("늦어도 오전 7:30에 멈춰요") || appears("늦어도 07:30에 멈춰요"))
             assertTrue(appears("측정 끝", exact = true))
+            // 2.0.0 [RVIB-15] (PC-123) The night screen asks for dark system bars while it is up.
+            assertTrue(com.bamnat.app.ui.components.DarkSystemBars.held > 0)
         }
     } finally {
         // After the shots: the recording has to be on screen when each is taken.
@@ -113,23 +115,24 @@ class RviMoreScreenshotTest : ScreenshotBase() {
         assertTrue(inPopup("체크리스트") && inPopup("메모"))
     }
 
-    // [RVI-71] 짧은 잠 뒤 '깼어요': 달력과 수면 화면이 같은 말.
+    // [RVI-71] 짧은 잠 뒤 '깼어요': 달력과 수면 화면이 같은 말. [RVIB-14] 몇 분이면 남기지 않고 되돌리기.
     @Test fun shortSleepCalendar() = eight("short_sleep_calendar") { _ ->
         runBlocking { c.sleepRepository.fellAsleep() }
         settle()
         // 오늘의 흐름 says 자는 중 with 깼어요; over the month it is one line until opened.
         if (!appears("깼어요", exact = true, ms = 500)) runCatching { tapAction("오늘의 흐름 펼치기") }
         tapText("깼어요", exact = true)
-        assertTrue(appears("1분 잤어요", exact = false))
+        assertTrue(appears("1분 만에 깨서 잠으로 남기지 않았어요", exact = false)) // [RVIB-14]
     }
+    // [RVIB-14] Under 20 minutes the sleep is not kept (the calendar's look above); 25 minutes is kept, with no 아침 한 장.
     @Test fun shortSleepSleep() = eight("short_sleep_sleep") { wide ->
-        runBlocking { c.sleepRepository.fellAsleep() }
+        runBlocking { c.sleepRepository.fellAsleep(com.bamnat.core.time.Today.millis() - 25 * 60_000L) }
         val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
         content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = wide, onBack = {}) }
         settle()
         tapText("깼어요", exact = true)
         // [RVI-87] The night look ends with the sleep; the line and its 되돌리기 stay.
-        assertTrue(appears("1분 잤어요", exact = false))
+        assertTrue(appears("25분 잤어요 · 짧아서 아침 한 장 없이", exact = false))
         assertTrue(appears("되돌리기", exact = true))
     }
 

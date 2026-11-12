@@ -31,7 +31,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -69,8 +73,9 @@ internal fun LedgerBoardChips(board: LedgerBoard, onPick: (LedgerBoard) -> Unit)
 
 @Composable
 private fun signedText(e: MoneyEntry): Pair<String, Color> = when (e.kind) {
-    MoneyKind.INCOME -> "+" + Fmt.won(e.amount) to MaterialTheme.colorScheme.primary
-    MoneyKind.EXPENSE -> "-" + Fmt.won(e.amount) to MaterialTheme.colorScheme.error
+    // 2.0.0 [RVK-43] (검토 MONEY-24) The board's money in the same inks as 내역·요약 ([moneyInks]), not the theme's primary and error red.
+    MoneyKind.INCOME -> "+" + Fmt.won(e.amount) to moneyInks().first
+    MoneyKind.EXPENSE -> "-" + Fmt.won(e.amount) to moneyInks().second
     MoneyKind.TRANSFER -> Fmt.won(e.amount) to MaterialTheme.colorScheme.onSurfaceVariant
 }
 
@@ -139,13 +144,13 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
                                 color = if (!inMonth) Color.Transparent else MaterialTheme.colorScheme.onSurface)
                             if (inMonth && day != null) when (step) {
                                 CellAmount.SIGN -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    if (day.expense > 0) Text("−", style = labelStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                                    if (day.income > 0) Text("+", style = labelStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    if (day.expense > 0) Text("−", style = labelStyle, fontWeight = FontWeight.Bold, color = moneyInks().second)
+                                    if (day.income > 0) Text("+", style = labelStyle, fontWeight = FontWeight.Bold, color = moneyInks().first)
                                 }
                                 else -> {
                                     val say: (Long) -> String = if (step == CellAmount.SHORT) Fmt::wonShort else ::cellWon
-                                    if (day.expense > 0) Text(say(day.expense), style = labelStyle, color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false)
-                                    if (day.income > 0) Text(say(day.income), style = labelStyle, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
+                                    if (day.expense > 0) Text(say(day.expense), style = labelStyle, color = moneyInks().second, maxLines = 1, softWrap = false)
+                                    if (day.income > 0) Text(say(day.income), style = labelStyle, color = moneyInks().first, maxLines = 1, softWrap = false)
                                 }
                             }
                         }
@@ -174,6 +179,8 @@ private fun cellWon(amount: Long): String = when {
 @Composable
 internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -> Unit) {
     val columns = remember(shown) { LedgerBoard.columns(shown) }
+    // 2.0.0 [RVK-43] (검토 U06a-13) A column longer than 30 lines opens 30 more at a tap ('외 N건 더 보기'), not '목록에서 거르면'.
+    var more by rememberSaveable(shown.size) { mutableStateOf(HashMap<String, Int>()) }
     // [TAB-07] 부품 money.board · money.board.col.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val colPart = bp.style("money.board.col")
@@ -183,11 +190,12 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
                 modifier = Modifier.width(220.dp).then(com.bamnat.app.ui.parts.PartMods.box(colPart, MaterialTheme.shapes.medium))) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(col.category, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                    if (col.expense > 0) Text("나감 ${Fmt.won(col.expense)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
-                    if (col.income > 0) Text("들어옴 ${Fmt.won(col.income)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    if (col.expense > 0) Text("나감 ${Fmt.won(col.expense)}", style = MaterialTheme.typography.labelLarge, color = moneyInks().second)
+                    if (col.income > 0) Text("들어옴 ${Fmt.won(col.income)}", style = MaterialTheme.typography.labelLarge, color = moneyInks().first)
                     Text("${col.entries.size}건", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    for (e in col.entries.take(MAX_BOARD_LINES)) {
+                    val limit = MAX_BOARD_LINES + (more[col.category] ?: 0)
+                    for (e in col.entries.take(limit)) {
                         val (amount, color) = signedText(e)
                         Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(e) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -197,8 +205,9 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
                             Text(amount, style = MaterialTheme.typography.labelMedium, color = color)
                         }
                     }
-                    if (col.entries.size > MAX_BOARD_LINES) Text("외 ${col.entries.size - MAX_BOARD_LINES}건 · 목록에서 이 분류로 거르면 다 보여요",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    MoreOrFold(left = col.entries.size - limit, opened = limit > MAX_BOARD_LINES, unit = "건",
+                        onMore = { more = HashMap(more).apply { put(col.category, (get(col.category) ?: 0) + MAX_BOARD_LINES) } },
+                        onFold = { more = HashMap(more).apply { remove(col.category) } })
                 }
             }
         }
@@ -207,10 +216,24 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
 
 private const val MAX_BOARD_LINES = 30
 
+/** 2.0.0 [RVK-43] (검토 U06a-13) '외 N건 더 보기' under a cut list, and '접기' once it was opened: 48dp, one line each. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MoreOrFold(left: Int, opened: Boolean, unit: String, onMore: () -> Unit, onFold: () -> Unit) {
+    if (left <= 0 && !opened) return
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (left > 0) androidx.compose.material3.TextButton(onClick = onMore, modifier = Modifier.heightIn(min = 48.dp)) { Text("외 $left$unit 더 보기") }
+        if (opened) androidx.compose.material3.TextButton(onClick = onFold, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
+    }
+}
+
 /** [TAB-06] 표: 날짜 · 분류 · 내용 · 금액, a head tap sorts by it (again: the other way). */
 @Composable
 internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, onSort: (Pair<String, Boolean>) -> Unit, onOpen: (MoneyEntry) -> Unit) {
     val rows = remember(shown, sort) { LedgerBoard.sortTable(shown, sort.first, sort.second) }
+    // 2.0.0 [RVK-43] (검토 U06a-13) Past 300 rows, 300 more at a tap instead of '기간을 좁히면'.
+    var tableMore by rememberSaveable(shown.size, sort) { androidx.compose.runtime.mutableIntStateOf(0) }
+    val tableLimit = MAX_TABLE_ROWS + tableMore
     // [TAB-07] 부품 money.table · money.table.row. PC 확인 b81b643f: the date wrapped to two lines with the right side empty, so the
     // date is short ("11/12", one line) and 내용 takes the room that is left.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
@@ -230,7 +253,7 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
                 }
             }
         }
-        for (e in rows.take(MAX_TABLE_ROWS)) {
+        for (e in rows.take(tableLimit)) {
             val (amount, color) = signedText(e)
             Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }.let { bp.style("money.table.row", tableStates(e), it) }, RoundedCornerShape(0.dp))).clickable(role = Role.Button) { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${e.date.monthValue}/${e.date.dayOfMonth}", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
@@ -242,8 +265,7 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
             }
             HorizontalDivider(Modifier.width(total), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
-        if (rows.size > MAX_TABLE_ROWS) Text("앞의 ${MAX_TABLE_ROWS}줄만 보여요. 기간을 좁히면 다 보여요.", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+        MoreOrFold(left = rows.size - tableLimit, opened = tableMore > 0, unit = "줄", onMore = { tableMore += MAX_TABLE_ROWS }, onFold = { tableMore = 0 })
         Box(Modifier.height(8.dp))
     }
     }

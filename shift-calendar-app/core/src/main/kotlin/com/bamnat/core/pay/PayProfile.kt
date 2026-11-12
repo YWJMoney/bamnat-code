@@ -224,6 +224,16 @@ data class PayPeriod(
         pm.atDay(minOf(d, pm.lengthOfMonth()))
     }
 
+    /**
+     * 2.0.0 [RVJ-52] 검토 PC-120: a pay day picked well before the period ends (말일 마감에 10일) is paid the month after (다음 달
+     * 10일), so it turns [payNextMonth] on; one near the end (말일 마감에 25일) is often paid in the month itself (당월 지급) and is left
+     * as it was. Only when the day moves into that early range, so a 'this month' chosen by hand is not turned back on while stepping.
+     */
+    fun withPayDay(d: Int?): PayPeriod {
+        fun early(x: Int?) = x != null && x <= (endDay ?: 31) - 10
+        return copy(payDay = d, payNextMonth = if (early(d) && !early(payDay)) true else payNextMonth)
+    }
+
     /** 2.0.0 [RVK-38] (검토 MONEY-79) The day [m]'s pay is planned on: [payDate] moved off a weekend or 공휴일 as [payDayOff] says. */
     fun payDateWorkday(m: YearMonth): LocalDate? = payDate(m)?.let(payDayOff::move)
 
