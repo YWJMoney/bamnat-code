@@ -83,6 +83,16 @@ internal fun ContractDialog(place: Workplace, staff: StaffMember, onEditStaff: (
                     Text((if (cur.paper) "종이 계약서로 받았어요 · " else "${cur.signedName ?: staff.name}님이 링크에서 서명했어요 · ") + day(cur.signedAt!!),
                         style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Hint("서명한 계약서는 이 휴대폰과 PDF에만 있어요. 직원에게 PDF를 한 부 보내 주세요(근로기준법 제17조). 시급이나 근무 시간이 바뀌면 새로 써요.")
+                    // 2.0.0 [RVJ-17] 검토 BOSS-55 '직원에게 줬는지도 안 남아요': one switch (not a third 글자 단추, 조건 2); the day stays here
+                    // and on the PDF, and turning it off takes a mistaken press back.
+                    com.bamnat.app.ui.settings.SwitchRow(
+                        "직원에게 한 부 줬어요",
+                        cur.givenAt?.let { "${day(it)}에 줬어요 · 계약서 PDF에 남아요" } ?: "주고 나서 켜 두면 준 날이 계약서 PDF에 남아요",
+                        checked = cur.givenAt != null, enabled = !busy,
+                    ) { on ->
+                        busy = true
+                        scope.launch { BossContractSync.given(app, staff, given = on)?.let { sent = it }; busy = false }
+                    }
                 } else {
                     Text("${day(cur.sentAt)}에 보냈어요 · " + (cur.seenAt?.let { "${day(it)}에 열어 봤어요" } ?: "아직 안 열어 봤어요"),
                         style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)

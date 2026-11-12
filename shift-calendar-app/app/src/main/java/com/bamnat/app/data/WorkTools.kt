@@ -195,7 +195,7 @@ class WorkToolsStore internal constructor(private val dirOf: (String) -> File) {
                     staff = r.optJSONArray("staff").objects().map { s ->
                         val shifts = s.optJSONObject("shifts")
                         Staff(
-                            id = s.optString("id"), name = s.optString("name"), hourlyWage = s.optLong("wage", 10_320),
+                            id = s.optString("id"), name = s.optString("name"), hourlyWage = s.optLong("wage", com.bamnat.core.pay.RateTable.minimumWage()),
                             holidayPay = s.optBoolean("holiday", true), insured = s.optBoolean("insured"),
                             shifts = DayOfWeek.entries.mapNotNull { day ->
                                 val parts = shifts?.optString(day.name).orEmpty().split('-')
