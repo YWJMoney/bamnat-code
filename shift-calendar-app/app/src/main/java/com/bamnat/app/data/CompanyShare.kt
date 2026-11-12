@@ -410,6 +410,11 @@ class CompanyShare(
         val pendingPay: Boolean,
         /** 2.0.0 [RVN-08] COMP-11 Puts the calendar back as it was, when this went over an order it had; says whether it could. */
         val undo: (suspend () -> Boolean)? = null,
+        /**
+         * 2.0.0 [RVN-17] 검토 COMP-12·I10ab-02 The order went in alone while the calendar is held by another company ([heldBy]): the
+         * company, its plaza and the pay stay that company's.
+         */
+        val heldBy: String? = null,
     )
 
     /**

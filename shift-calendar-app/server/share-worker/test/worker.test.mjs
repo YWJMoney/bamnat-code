@@ -506,15 +506,18 @@ test("[STAT-04] links made, pages seen, reports and take-downs are counted per d
   t.mock.timers.tick(5 * 60 * 1000);
   await call(env, "GET", `/s/${made.id}`);
   // [SRV-10] Every KV write is counted as well: two links and their limits, and none for a page seen.
-  const { writes, ...first } = JSON.parse(env.SHARES.map.get("stats:2026-10-22"));
+  const { writes, reads, ...first } = JSON.parse(env.SHARES.map.get("stats:2026-10-22"));
   // 1.39 [IOS-06] the same views by kind of phone (this test sends no user agent: "other").
   assert.deepEqual(first, { created: 2, views: 4, views_other: 4 });
+  // 2.0.0 [RVQ-24] KV reads are counted too (the switch, the limits, the link for each page).
+  assert.ok(reads >= 4, String(reads));
   assert.equal(writes, 5);
   await call(env, "POST", `/api/share/${made.id}/report`, { reason: "spam" });
   await call(env, "DELETE", `/api/admin/share/${made.id}`, undefined, bearer);
   const s = await (await call(env, "GET", "/api/admin/stats?days=7", undefined, bearer)).json();
   assert.equal(s.days.length, 7);
-  const { writes: later, phones: todayPhones, ...today } = s.days.at(-1);
+  const { writes: later, reads: readLater, phones: todayPhones, ...today } = s.days.at(-1);
+  assert.ok(readLater >= reads && s.reads >= readLater, "reads per day and in all");
   assert.deepEqual(today, { day: "2026-10-22", created: 2, views: 4, reports: 1, removed: 1 });
   assert.equal(todayPhones.views_other, 4);
   assert.equal(s.phones.views_other, 4);

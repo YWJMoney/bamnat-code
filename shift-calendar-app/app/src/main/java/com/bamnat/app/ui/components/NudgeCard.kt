@@ -23,6 +23,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -80,9 +82,21 @@ fun NudgeCard(
     val body: @Composable () -> Unit = {
         // 총괄 #445 검토 (조건 12): with big letters or on a narrow screen the button and the X left the words a sliver, and a line
         // like '잠금 화면에 알람 화면이 안 떠요' ended in '…'. The words are never cut now; there, the button goes under them.
+        // 2.0.0 [RVL-33] (갈래 L 3차 화면 사진) A long button beside a long line on a card inside a padded page ('저장 공간 보기' in the
+        // first setup at the folded width) left the words a column of a few letters: the button goes under them when the words
+        // beside it would take more than two lines. A short line in two (the calendar's 56dp band) keeps its button beside it.
+        val plainStyle = MaterialTheme.typography.bodyMedium
         BoxWithConstraints {
-            // 갈래 J (조건 12): a card with no button was held to two lines with big letters too; 'big' is worked out apart from the button.
             val density = LocalDensity.current
+            val actionWidth = if (action == null) 0.dp else with(density) {
+                remember(action, actionStyle, density) { measurer.measure(action, actionStyle, maxLines = 1).size.width }.toDp()
+            } + 24.dp
+            val wordsWidth = maxWidth - 12.dp - LEAD_WIDTH - actionWidth - (if (onClose != null) 48.dp else 8.dp)
+            val wordsPx = with(density) { wordsWidth.roundToPx() }
+            val squeezed = action != null && (wordsPx <= 0 || remember(text, plainStyle, wordsPx, density) {
+                measurer.measure(text, plainStyle, constraints = androidx.compose.ui.unit.Constraints(maxWidth = wordsPx)).lineCount
+            } > 2)
+            // 갈래 J (조건 12): a card with no button was held to two lines with big letters too; 'big' is worked out apart from the button.
             val big = density.fontScale >= STACK_FONT_SCALE || maxWidth < STACK_WIDTH
             // 2.0.0 [RVP-45] (갈래 P 3/3 사진: 편 폭의 달력 칸은 320dp보다 좁아, 버튼 옆 두 줄이면 되는 '잠금 화면에 알람 화면이 안 떠요'의
             // '허용'도 아래로 내려가 띠가 세 줄 높이가 됐어요): the button goes under the words only when, beside it, they would take more
@@ -102,7 +116,8 @@ fun NudgeCard(
             // 총괄 #492 사진 06 (접은 폭 200%: 글 두 줄 + '허용' 한 줄 = 띠 세 줄, 조건 1): with an X, the button can stand under the X
             // instead of under the words; the words keep the row's width but the right column's, and the band stays two lines.
             val besideClose = action != null && big && !fits && onClose != null && twoLines(maxWidth - maxOf(48.dp, button) - leadWidth)
-            val stacked = action != null && big && !fits && !besideClose
+            // [RVL-33] Small letters keep L's rule: the button goes under the words when beside it they would take more than two lines.
+            val stacked = action != null && ((big && !fits && !besideClose) || (!big && squeezed))
             val lead: @Composable () -> Unit = {
                 if (lead != null) lead()
                 else if (showKani) Kani(kani!!, night = isDarkSurface(), size = 36.dp)
@@ -162,6 +177,8 @@ private const val STACK_FONT_SCALE = 1.3f
 private val STACK_WIDTH = 320.dp
 /** Narrower than this beside the button, the words go above it whatever their length. */
 private val MIN_WORDS = 96.dp
+/** The icon (or 칸이) and the space after it. */
+private val LEAD_WIDTH = 32.dp
 
 /** [RVP-13] (검토 UIX-15) The tone that matches the old warning colours, for screens moving to [NudgeCard]. */
 fun toneOf(warning: Boolean, danger: Boolean = false): Tone = when {
