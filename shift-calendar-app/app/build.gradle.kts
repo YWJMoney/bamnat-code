@@ -177,10 +177,17 @@ android {
             // request that changes nothing the tests read (the fingerprints themselves, a tool) came back
             // FROM-CACHE with no screenshots folder and the key-screenshot check crashed (PR #107).
             it.outputs.dir(layout.buildDirectory.dir("screenshots"))
+            // 2.0.0 [RVR-21] MarketWorksShotsTest's fingerprints, for tools/market_shots.py (same reason).
+            it.outputs.dir(layout.buildDirectory.dir("market-shots"))
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             // 1.39 [MKP-06] -Pbamnat.marketChars=all: MarketCharsTest draws every 출시 작품 and writes the letters it saw.
             (findProperty("bamnat.marketChars") as String?)?.let { v -> it.systemProperty("bamnat.marketChars", v) }
+            // 2.0.0 [RVR-21] -Pbamnat.marketShots=all: MarketWorksShotsTest puts on every 장터 작품 and keeps a fingerprint of each calendar.
+            (findProperty("bamnat.marketShots") as String?)?.let { v -> it.systemProperty("bamnat.marketShots", v) }
+            // 2.0.0 [RVR-22] -Pbamnat.outsideBodies=all: OutsideBodiesTest writes the bodies of every 장터 작품 worn (SD-09).
+            (findProperty("bamnat.outsideBodies") as String?)?.let { v -> it.systemProperty("bamnat.outsideBodies", v) }
+            it.outputs.dir(layout.buildDirectory.dir("outside-bodies"))
             // 2.0.0 [RVH-24] TypeWordsScreenTest writes what it found, to make its list anew.
             (findProperty("bamnat.typeWordsDump") as String?)?.let { v -> it.systemProperty("bamnat.typeWordsDump", v) }
             when (testSet) {

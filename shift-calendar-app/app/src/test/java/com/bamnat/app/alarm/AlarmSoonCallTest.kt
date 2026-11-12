@@ -51,6 +51,21 @@ class AlarmSoonCallTest {
     private fun millis(t: LocalDateTime) = t.atZone(zone).toInstant().toEpochMilli()
     private fun at(t: LocalDateTime) = Today.fix(t.atZone(zone))
 
+    /**
+     * 2.0.0 [RVR-18] (검토 TEST-09) The clock moves with the looper: [seconds] pass 1.5초 at a time (the service looks for a
+     * call that often), so a hold that reads Today runs out as it does on a phone. Before, the clock stood still while the
+     * looper ran 30분, and a hold that never ended (ALM-01) passed. [each] runs after every step.
+     */
+    private var now: LocalDateTime = day.atTime(6, 0)
+    private fun advance(seconds: Long, each: () -> Unit = {}) {
+        repeat((seconds * 2 / 3).toInt()) {
+            now = now.plusNanos(1_500_000_000L)
+            at(now)
+            ShadowLooper.idleMainLooper(1_500, TimeUnit.MILLISECONDS)
+            each()
+        }
+    }
+
     @Before fun setUp() {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         Notifications.createChannels(app)
@@ -156,54 +171,61 @@ class AlarmSoonCallTest {
     }
 
     @Test fun aCallHoldsTheRingAndItComesBackAfter() {
-        at(day.atTime(6, 0))
-        val ring = RingRequest("주간", day, LocalTime.of(7, 0), 60, null, millis(day.atTime(6, 0)), shiftTypeId = 3)
+        at(now)
+        val ring = RingRequest("주간", day, LocalTime.of(7, 0), 60, null, millis(now), shiftTypeId = 3)
         running = Robolectric.buildService(AlarmService::class.java,
             ring.putInto(Intent(app, AlarmService::class.java).setAction(AlarmService.ACTION_START))).create().startCommand(0, 1)
         assertFalse(AlarmService.inCall.value)
 
         audio.mode = AudioManager.MODE_RINGTONE
-        ShadowLooper.idleMainLooper(2, TimeUnit.SECONDS)
+        advance(3)
         assertTrue("held for the call", AlarmService.inCall.value)
         val held = nm.getNotification(Notifications.ALARM_NOTIFICATION_ID)
         assertTrue(held.extras.getCharSequence("android.text").toString().contains("통화"))
         assertNull("no screen over the call", held.fullScreenIntent)
-        // A long call does not use up 자동으로 끄기.
-        ShadowLooper.idleMainLooper(30, TimeUnit.MINUTES)
+        // A long call (29분, under the 30분 cap, with the clock moving) does not use up 자동으로 끄기.
+        audio.mode = AudioManager.MODE_IN_CALL
+        advance(29 * 60) { assertTrue("held through the call", AlarmService.inCall.value) }
         assertNotNull("still waiting for the call", AlarmService.ringing.value)
 
         audio.mode = AudioManager.MODE_NORMAL
-        ShadowLooper.idleMainLooper(2, TimeUnit.SECONDS)
+        advance(3)
         assertFalse(AlarmService.inCall.value)
         assertNotNull(AlarmService.ringing.value)
         assertNotNull("rings with its screen again", nm.getNotification(Notifications.ALARM_NOTIFICATION_ID).fullScreenIntent)
     }
 
+    /** 2.0.0 [RVR-18] (검토 TEST-09) A phone call longer than 30분: the alarm rings at 30분 and the same call does not hold it again. */
+    @Test fun aPhoneCallOverThirtyMinutesRingsAndDoesNotHoldAgain() {
+        at(now)
+        val ring = RingRequest("주간", day, LocalTime.of(7, 0), 60, null, millis(now), shiftTypeId = 3)
+        running = Robolectric.buildService(AlarmService::class.java,
+            ring.putInto(Intent(app, AlarmService::class.java).setAction(AlarmService.ACTION_START))).create().startCommand(0, 1)
+        audio.mode = AudioManager.MODE_IN_CALL
+        advance(3)
+        assertTrue("held for the call", AlarmService.inCall.value)
+        advance(AlarmService.CALL_HOLD_MILLIS / 1000 + 60)
+        assertFalse("rings after 30분 even though the call goes on", AlarmService.inCall.value)
+        assertNotNull(AlarmService.ringing.value)
+        advance(2 * 60) { assertFalse("the call that used up its hold does not hold it again", AlarmService.inCall.value) }
+    }
+
     // 1.39.1 [R391-02] 검토 ALM-01: a phone left in 메신저 통화 mode held the ring 3분, rang 1.5초, then held 3분 again.
     @Test fun aCallModeLeftOnHoldsOnceThenKeepsRinging() {
-        var t = day.atTime(6, 0)
-        at(t)
-        val ring = RingRequest("주간", day, LocalTime.of(7, 0), 60, null, millis(t), shiftTypeId = 3)
+        at(now)
+        val ring = RingRequest("주간", day, LocalTime.of(7, 0), 60, null, millis(now), shiftTypeId = 3)
         running = Robolectric.buildService(AlarmService::class.java,
             ring.putInto(Intent(app, AlarmService::class.java).setAction(AlarmService.ACTION_START))).create().startCommand(0, 1)
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        // The clock the hold reads moves with the looper, 1.5초 at a time.
-        fun pass(seconds: Long, each: (Int) -> Unit = {}) {
-            for (i in 0 until (seconds * 2 / 3).toInt()) {
-                t = t.plusNanos(1_500_000_000L)
-                at(t)
-                ShadowLooper.idleMainLooper(1_500, TimeUnit.MILLISECONDS)
-                each(i)
-            }
-        }
-        pass(3)
+        // The clock the hold reads moves with the looper, 1.5초 at a time ([advance]).
+        advance(3)
         assertTrue("held for the app call", AlarmService.inCall.value)
-        pass(AlarmService.APP_CALL_HOLD_MILLIS / 1000)
+        advance(AlarmService.APP_CALL_HOLD_MILLIS / 1000)
         assertFalse("rings after 3분", AlarmService.inCall.value)
-        pass(5 * 60) { assertFalse("keeps ringing, the cap is not taken again", AlarmService.inCall.value) }
+        advance(5 * 60) { assertFalse("keeps ringing, the cap is not taken again", AlarmService.inCall.value) }
         // A real call after it still holds.
         audio.mode = AudioManager.MODE_IN_CALL
-        pass(3)
+        advance(3)
         assertTrue("a phone call holds it", AlarmService.inCall.value)
     }
 }

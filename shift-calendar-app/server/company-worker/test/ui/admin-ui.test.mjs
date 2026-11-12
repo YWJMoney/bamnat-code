@@ -2557,3 +2557,39 @@ test("[RVQ-18] 검토 I21b-01: 보안 한 장 puts what to fix first, each row w
   assert.match(u.text("#main .card-head"), /고칠 것 \d+/);
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVR-20] 공모 다시 고르기: 저장 전 확인 창이 새로 생기는 보상과 빠지는 작품의 지급된 보상을 말하고, 고르기를 눌러야 저장돼요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { env, call } = await world({ plaza: true });
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/village/contests", { style: "SHIFT", theme: "야간 근무용 어두운 테마" }, owner);
+  const look = { kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] };
+  const make = async (n, title) => (await call("POST", "/api/recipes", { device: device(n), scope: "public",
+    recipe: { format: "bamnat-recipe", v: 1, title, summary: "어두운 달력", styles: ["SHIFT"], pieces: [look] } }, from(n))).data.code;
+  const a = await make(1, "야간 다크");
+  const b = await make(2, "밤 하늘");
+  for (const [n, code] of [[1, a], [2, b]]) await call("POST", "/api/village/contest/enter", { device: device(n), style: "SHIFT", code }, from(n));
+  await call("POST", "/api/admin/village/contests/pick", { month: "2026-11", style: "SHIFT", codes: [a] }, owner);
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed&kind=maker", undefined, owner)).data.rewards) {
+    await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, owner);
+  }
+  t.mock.timers.setTime(Date.parse("2026-12-03T03:00:00Z")); // 12월: 11월 작품을 골라요
+  const u = await signedIn(env);
+  await u.go("#/community?show=village");
+  await u.idle();
+  const box = (code) => u.$(`input[data-pick="2026-11|SHIFT"][value="${code}"]`);
+  box(a).checked = false;
+  box(b).checked = true;
+  await u.click('[data-act="contest-pick"][data-id="2026-11|SHIFT"]');
+  await u.settle(30);
+  assert.match(u.text("dialog h2"), /이달의 테마로 고를까요/);
+  assert.match(u.text("dialog .confirm-rows"), /새로 생기는 보상.*밤 하늘/);
+  assert.match(u.text("dialog .confirm-rows"), /빠지는 작품의 지급된 보상.*야간 다크.*거두지 못해요/);
+  const picks = async () => (await call("GET", "/api/admin/village/contests", undefined, owner)).data.items.find((x) => x.month === "2026-11" && x.style === "SHIFT").picks;
+  assert.deepEqual(await picks(), [a], "nothing saved before 고르기");
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.deepEqual(await picks(), [b]);
+  assert.deepEqual(u.errors, []);
+  assert.deepEqual(u.broken, []);
+});

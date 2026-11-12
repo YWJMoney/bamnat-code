@@ -301,13 +301,30 @@ class CalendarI123Test {
     }
 
     /**
-     * [CAL-31] I 리뷰 P7: the checked table has to reach next year. This fails on the first of January of a year
-     * whose next year is missing, which is the reminder to add the coming year from the 월력요항 (release checklist).
+     * [CAL-31] I 리뷰 P7: the checked table has to reach next year.
+     * 2.0.0 [RVR-15] (검토 TEST-07) as the 운영 달력 has it (docs/ops-calendar.md, 9월 holidays-next): this year's table is
+     * a must; next year's is a warning from September (the 월력요항 comes out in the summer) and a failure from 12-15, so
+     * the first of January no longer asks for the year after next (2027-01-01 asked for 2028, which nobody may have yet).
      */
     @Test
     fun `the checked holiday table reaches next year`() {
-        val next = LocalDate.now().year + 1
-        assertTrue("공휴일 표를 ${next}년까지 늘려 주세요 (KoreanHolidays.years)", KoreanHolidays.years.last >= next)
+        assertEquals(null, holidayTableProblem(com.bamnat.core.time.Today.date(), KoreanHolidays.years))
+        // The rule itself, on the days around the edges.
+        val table = 2025..2027
+        assertEquals(null, holidayTableProblem(LocalDate.of(2027, 1, 1), table))
+        assertEquals(null, holidayTableProblem(LocalDate.of(2027, 9, 1), table))
+        assertTrue(holidayTableProblem(LocalDate.of(2027, 12, 15), table)!!.contains("2028"))
+        assertTrue(holidayTableProblem(LocalDate.of(2028, 1, 1), table)!!.contains("2028"))
+    }
+
+    /** [RVR-15] null, or what is missing on [today]; prints next year's reminder from September. */
+    private fun holidayTableProblem(today: LocalDate, years: IntRange): String? {
+        val next = today.year + 1
+        if (today.year !in years) return "올해(${today.year}년) 공휴일 표가 없어요 (KoreanHolidays.years)"
+        if (next in years) return null
+        if (today >= LocalDate.of(today.year, 12, 15)) return "공휴일 표를 ${next}년까지 늘려 주세요 (12-15부터 실패, KoreanHolidays.years)"
+        if (today.monthValue >= 9) System.err.println("경고: ${next}년 공휴일 표를 월력요항으로 넣어 주세요(12-15부터 실패)")
+        return null
     }
 
     /** [CAL-32] A Sunday night shift counted on Sunday, or split at midnight into the next week. */
