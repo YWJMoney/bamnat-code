@@ -24,8 +24,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -65,21 +68,19 @@ internal fun StatsAsk(on: Boolean, onChange: (Boolean) -> Unit) {
                     Text("앱을 고치는 데 도움을 주실래요? (선택)", style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.weight(1f).semantics { heading() })
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "기능 이름과 횟수만 보내요. 근무·금액·메모는 보내지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
+                // [RVG-16] 2.0.0 디자인 품질 조건 12 (요약 화면 사진, 글자 200%·접은 폭): the line beside '보낼 내용 보기' stood in a
+                // column a few letters wide and the answers broke in two. They now go under each other only when they do not fit side
+                // by side, so the open Fold at 200% keeps the short card (the month above stays in view).
+                val line = "기능 이름과 횟수만 보내요. 근무·금액·메모는 보내지 않아요."
+                com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth(), minStart = 160.dp, gap = 0.dp, belowAlign = Alignment.Start, start = {
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }, end = {
                     TextButton(onClick = { show = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("보낼 내용 보기") }
-                }
-                Row(Modifier.fillMaxWidth().padding(end = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onChange(false); answered = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                        Text("보내지 않을래요")
-                    }
-                    OutlinedButton(onClick = { onChange(true); answered = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                        Text("보낼게요")
-                    }
+                })
+                // Two answers of the same weight on purpose: a yes asked for, never nudged (D42).
+                EvenOrStacked(gap = 8.dp, modifier = Modifier.padding(end = 6.dp)) {
+                    OutlinedButton(onClick = { onChange(false); answered = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("보내지 않을래요") }
+                    OutlinedButton(onClick = { onChange(true); answered = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("보낼게요") }
                 }
             }
         }
@@ -93,6 +94,27 @@ internal fun StatsAsk(on: Boolean, onChange: (Boolean) -> Unit) {
         )
     }
 }
+
+/**
+ * [RVG-16] Two answers of the same width side by side when each fits on one line in half the width, else under each other at full
+ * width (the same weight either way, D42). Only the two answers here use it; [com.bamnat.app.ui.components.SideOrBelow] is the shared
+ * one for a text with something at its end.
+ */
+@Composable
+private fun EvenOrStacked(gap: Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) =
+    Layout(content, modifier.fillMaxWidth()) { items, c ->
+        val g = gap.roundToPx()
+        val w = c.maxWidth
+        val half = (w - g) / 2
+        if (items.all { it.maxIntrinsicWidth(Constraints.Infinity) <= half }) {
+            val ps = items.map { it.measure(Constraints(half, half)) }
+            val h = ps.maxOf { it.height }
+            layout(w, h) { ps.forEachIndexed { i, p -> p.placeRelative(i * (half + g), (h - p.height) / 2) } }
+        } else {
+            val ps = items.map { it.measure(Constraints(w, w)) }
+            layout(w, ps.sumOf { it.height } + g * (ps.size - 1)) { var y = 0; ps.forEach { it.placeRelative(0, y); y += it.height + g } }
+        }
+    }
 
 /** 고르기 전에 보여 주는 목록. 처음 깐 휴대폰에는 아직 보낼 꾸러미가 없어서, 설정의 '보낼 내용 보기' 대신 무엇이 가는지를 말로 보여요. */
 internal const val STATS_WHAT = "보내는 것\n" +

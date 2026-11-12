@@ -11,6 +11,7 @@ import com.bamnat.core.schedule.ShiftRole
 import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 
 /** [SETUP-01] The steps of the first setup, in order. Only the ones that apply are shown. */
 enum class SetupStep { STYLE, COMPANY, BUNDLE, TIMES, ORDER, TODAY, ALARM, SUMMARY }
@@ -91,7 +92,27 @@ data class SetupDraft(
      * title; the summary names it and starts with one press. Empty for any other setup.
      */
     val linkTitle: String = "",
+    /**
+     * [RVG-16] 검토 TYPE-21: a setup filled from a 근무표 link ([linkTitle]) was always 교대. Its days stay the link's painted roster
+     * (the setup's steps are 교대's), and the summary asks how the user works: 일근 or 알바 here makes the saved phone that kind of
+     * work ([savedStyle]). Null: the draft's own [style].
+     */
+    val workAs: WorkStyle? = null,
 ) {
+    /** [RVG-16] The kind of work the saved setup gives the phone. */
+    val savedStyle: WorkStyle? get() = workAs ?: style
+
+    /**
+     * [RVG-18] 검토 PC-22 (도약 14): the month a painted roster is first seen on. A 팀 리더 confirms next month's 근무표, so a member
+     * started from it saw an empty this month on the summary and on the calendar after it: this month when it has a working day,
+     * else the first later month that has one.
+     */
+    fun openingMonth(today: LocalDate): YearMonth {
+        val now = YearMonth.from(today)
+        val months = painted.filterValues { !isOff(it) }.keys.map(YearMonth::from).filter { it >= now }
+        return if (months.isEmpty() || now in months) now else months.min()
+    }
+
     val workTypes: List<ShiftType> get() = types.filter { !it.isOff && it.hasTimes }
 
     fun type(id: Long?): ShiftType? = id?.let { i -> types.firstOrNull { it.id == i } }
