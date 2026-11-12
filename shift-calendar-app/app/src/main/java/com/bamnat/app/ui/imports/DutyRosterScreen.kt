@@ -976,10 +976,11 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
     if (over.isNotEmpty()) {
         val days = over.sorted().let { ds -> if (ds.all { YearMonth.from(it) == ui.month }) ds.joinToString("·") { "${it.dayOfMonth}" } + "일" else RosterReader.span(ds.toSet()) }
         // The app's one notice card (조건 3): caution while they would be written over, a plain note once they are kept.
+        // 2.0.0 [RVL-38] (검토 HQ-79) Two short lines at 200% too (it was six and the month showed one week): the days only, outlined below.
         com.bamnat.app.ui.components.NudgeCard(
-            if (ui.keepMine) "이미 넣어 둔 연차·바꾼 근무 ${over.size}일은 그대로 둬요" else "이미 넣어 둔 연차·바꾼 근무 ${over.size}일을 근무표대로 바꿔요",
+            if (ui.keepMine) "넣어 둔 ${over.size}일은 그대로 둬요" else "넣어 둔 ${over.size}일이 바뀌어요",
             tone = if (ui.keepMine) com.bamnat.app.ui.theme.Tone.Plain else com.bamnat.app.ui.theme.Tone.Caution,
-            detail = if (ui.keepMine) "$days 빼고 넣어요" else "$days · 달력에 테두리로 보여요",
+            detail = if (ui.keepMine) "$days 빼고 넣어요" else "$days (연차·바꾼 근무)",
             action = if (ui.keepMine) "근무표대로 바꾸기" else "그 날은 그대로 두기",
             onAction = { onKeepMine(!ui.keepMine) },
         )
@@ -990,7 +991,7 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
     if (ui.row != null && spill.isNotEmpty()) {
         // 2.0.0 [RVL-38] The same notice card as the one above (조건 3, 같은 구조는 함께).
         com.bamnat.app.ui.components.NudgeCard(
-            if (ui.withOutside) "근무표에 있는 ${RosterReader.span(spill)}도 함께 넣어요" else "${RosterReader.span(spill)}은 넣지 않아요",
+            if (ui.withOutside) "${RosterReader.span(spill)}도 넣어요" else "${RosterReader.span(spill)}은 빼요",
             action = if (ui.withOutside) "빼기" else "같이 넣기",
             onAction = { onOutside(!ui.withOutside) },
         )
