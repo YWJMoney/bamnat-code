@@ -128,8 +128,10 @@ fun NewRecordsCard(
         },
     ) {
         if (waiting && unseen.isNotEmpty()) {
-            Text("결제 알림에서 읽었어요. 확인한 것만 합계에 들어가요. 오른쪽으로 밀면 확인, 왼쪽으로 밀면 지워요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVK-29] (검토 HQ-44 '같은 모양의 카드 함께', 조건 4) The same words every day: said in full the first time, then one
+            // line and ⓘ, then ⓘ alone (the app's [Explain]).
+            com.bamnat.app.ui.components.Explain("money.waiting",
+                "결제 알림에서 읽었어요. 확인한 것만 합계에 들어가요. 오른쪽으로 밀면 확인, 왼쪽으로 밀면 지워요.")
             unseen.take(10).forEach { e ->
                 androidx.compose.runtime.key(e.id) {
                     PendingRow(e, onOpen = { onOpen(e) }, onConfirm = { onConfirm(listOf(e)) }, onDelete = { onDelete(listOf(e)) })
@@ -152,8 +154,9 @@ fun NewRecordsCard(
             )
         }
         if (!waiting && unseen.isNotEmpty()) {
-            Text("결제 알림에서 적었어요. 분류가 틀리면 눌러서 고치면 그 가게는 다음부터 그 분류로 적어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [RVK-29] As above.
+            com.bamnat.app.ui.components.Explain("money.newRecords",
+                "결제 알림에서 적었어요. 분류가 틀리면 눌러서 고치면 그 가게는 다음부터 그 분류로 적어요.")
         }
         if (!waiting) unseen.take(10).forEach { e ->
             EntryRow(e, showDate = true) { onOpen(e) }
@@ -183,8 +186,8 @@ fun NewRecordsCard(
                     IconButton(onClick = { onDrop(c) }) { Icon(Icons.Filled.Close, "이 알림 지우기") }
                 }
             }
-            Text("눌러서 금액을 적으면 기록이 되고 알림 글은 지워져요. 30일이 지나면 저절로 지워져요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVK-29] (검토 HQ-44 같은 모양) Said in full once, then one line with ⓘ ([Explain]).
+            com.bamnat.app.ui.components.Explain("money.kept", "눌러서 금액을 적으면 기록이 되고 알림 글은 지워져요. 30일이 지나면 저절로 지워져요.")
         }
         // 2.0.0 [RVK-13] 뿌리 7: what was taken for a copy or joined, a tap away from what was written.
         AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_MONEY, calendarId)

@@ -1357,9 +1357,13 @@ fun CalendarScreen(
                     urgent = true) { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
             }
             shareLeftOut.forEach { (k, words) ->
-                // [RVP-43] HQ-49: something to know, not to do now, so a row of the 알림함's 안내 (총괄 11-12).
+                // [RVP-43] HQ-49: a part left out is something to know, not to do now, so a row of the 알림함's 안내 (총괄 11-12).
+                // [RVG-27] S7-3: but a change turned down twice running has not reached the link at all, and the people reading it see
+                // old days: that is to be seen, so it is the band, with 공유 to send it again.
+                val refused = words == com.bamnat.app.share.ShareLinkPayload.REFUSED_AGAIN
                 if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "근무표 링크 안내", line = words,
-                    tone = com.bamnat.app.ui.theme.Tone.Caution, button = false, onClose = { c31.shareLinksOf(k).setDropped(null) }) {
+                    tone = com.bamnat.app.ui.theme.Tone.Caution, button = refused, action = if (refused) "공유" else null,
+                    onAction = if (refused) shareCalendar else null, urgent = refused, onClose = { c31.shareLinksOf(k).setDropped(null) }) {
                     com.bamnat.app.ui.components.NudgeCard(words, tone = com.bamnat.app.ui.theme.Tone.Caution,
                         onClose = { c31.shareLinksOf(k).setDropped(null) }, closeLabel = "링크 안내 닫기",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -2377,10 +2381,14 @@ internal fun CalendarHeader(
         else -> MaterialTheme.typography.titleLarge
     }
     val workTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, baseTitle) }
-    val others = chip?.rows?.count { it.key != chip.current.key } ?: 0
+    val otherRows = chip?.rows?.filter { it.key != chip.current.key }.orEmpty()
+    val others = otherRows.size
+    // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
+    val teamRow = otherRows.firstOrNull { (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
         maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null && !HeadBell.atMe, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
+        team = teamRow != null,
     ).let { if (chip == null) it.copy(name = false) else it }
     val titleSp = workTitle.fontSize.takeIf { it.isSp }?.value ?: baseTitle.fontSize.value
     // 검토 HQ-22 (큰 달 제목 26~30의 작품을 입으면 접은 폭에서 달 제목이 '2026'으로 아주 작게 줄어요, 조건 12): the month is never shrunk
@@ -2406,7 +2414,11 @@ internal fun CalendarHeader(
         // [RVP-45] Whose calendar: its face (and its name where there is room), the list of calendars a tap away.
         chip?.let { c ->
             CalendarChip(c.current, name = room.name, onOpen = c.onOpenSwitcher)
-            if (room.faces > 0) CalendarFaces(c.rows.filter { it.key != c.current.key }, room.faces, c.onPick)
+            teamRow?.let { t ->
+                if (room.team == HeadRoom.WORDS) CalendarFace(t, c.onPick)
+                else if (room.team == HeadRoom.ICON) CalendarFaceOnly(t, c.onPick)
+            }
+            if (room.faces > 0) CalendarFaces(otherRows.filter { it !== teamRow || room.team == 0 }, room.faces, c.onPick)
             if (room.together && c.onTogether != null) TogetherChip(c.onTogether, shop = c.togetherShop, field = c.togetherField, words = true)
         }
         if (room.arrows && navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }

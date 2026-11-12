@@ -63,6 +63,8 @@ import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
@@ -276,6 +278,9 @@ fun StatTile(
      * carry the colour.
      */
     tone: Tone = if (warning) Tone.Caution else Tone.Plain,
+    // 2.0.0 [RVK-25] (검토 MONEY-69, 조건 6) A caption that asks for care ('9일 전 가격') is written in the caution colour while
+    // the tile and its number keep their own colours.
+    captionTone: Tone = Tone.Plain,
 ) {
     val marked = tone == Tone.Caution || tone == Tone.Danger
     val ink = tone.color()
@@ -316,7 +321,9 @@ fun StatTile(
             if (caption != null) {
                 BasicText(
                     caption,
-                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (captionTone == Tone.Plain) MaterialTheme.colorScheme.onSurfaceVariant else captionTone.color(),
+                    ),
                     // [VIS-05] Three lines at a big font: a half-width tile on a 320dp phone cut a caption's last line.
                     // 2.0.0 [RVP-11] (조건 4·12) The caption no longer shrinks to 9sp to stay on one line ('22~06시에 걸침 · 대근 2번
                     // 포함' on a 393dp phone): from 10sp down it takes a second line.

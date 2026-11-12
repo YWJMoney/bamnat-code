@@ -148,7 +148,7 @@ internal fun HeadQuickRound(q: HeadQuick, onPress: (String) -> Unit, modifier: M
 internal data class HeadRoom(
     /** The calendar chip says the calendar's name; else its face and ▾ only. */
     val name: Boolean,
-    /** Other calendars' faces beside the chip, one tap to switch (a wide screen). */
+    /** Other calendars' faces beside the chip, one tap to switch (a wide screen); a 팀 리더's link is [team], not counted here. */
     val faces: Int,
     /** 같이 보기 in words beside the chip (a wide screen, before another calendar sits there). */
     val together: Boolean,
@@ -163,6 +163,12 @@ internal data class HeadRoom(
     val quick: HeadQuickRoom,
     /** Even with everything folded the row is too narrow for the month at its size: it steps down one size (조건 12). */
     val stepDown: Boolean = false,
+    /**
+     * 2.0.0 [RVG-34] 검토 PC-132 with [RVP-45]: a 팀 리더's link, where a member goes most, beside the chip on a wide screen: [WORDS]
+     * ('팀 근무표'), [ICON] (its 팀 face, read by its name) or 0. It stays after the other faces, 같이 보기, 공유's word and the
+     * calendar's name have folded; on a phone it is the first line of the calendar chip's list.
+     */
+    val team: Int = 0,
 ) {
     companion object {
         const val WORDS = 2
@@ -179,18 +185,22 @@ internal data class HeadRoom(
          */
         fun of(
             widthDp: Float, fontScale: Float, titleSp: Float, quick: Int = 0, bell: Boolean = false, me: Boolean = true,
-            others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3,
+            others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3, team: Boolean = false,
         ): HeadRoom {
             val fs = fontScale.coerceAtMost(2f)
             val wide = widthDp >= 600f
+            val teamNow = wide && team && others > 0
             var r = HeadRoom(
-                name = wide, faces = if (wide) minOf(others, 2) else 0, together = wide && together && others == 0,
+                name = wide, faces = if (wide) minOf(others - (if (teamNow) 1 else 0), if (teamNow) 1 else 2) else 0,
+                together = wide && together && others == 0,
                 share = if (share) WORDS else 0, todayWords = true, toolsWords = true, shortTitle = false, arrows = true, quick = HeadQuickRoom.NONE,
+                team = if (teamNow) WORDS else 0,
             )
             fun need(x: HeadRoom, sp: Float = titleSp): Float {
                 var w = PAD
                 w += 52f + (if (x.name) 6f + 14f * fs * nameChars else 0f) // the chip: face, name, ▾
                 w += x.faces * (42f + 48f * fs)
+                w += when (x.team) { WORDS -> 42f + 56f * fs; ICON -> BUTTON; else -> 0f } // '팀 근무표'
                 if (x.together) w += 44f + 56f * fs
                 if (x.arrows) w += 2 * BUTTON
                 w += sp * fs * (if (x.shortTitle) 2.15f else 4.65f) + 32f // the month and ▾
@@ -203,8 +213,9 @@ internal data class HeadRoom(
             }
             val steps: List<(HeadRoom) -> HeadRoom> = listOf(
                 { it.copy(faces = 0) }, { it.copy(together = false) }, { it.copy(share = minOf(it.share, ICON)) }, { it.copy(name = false) },
+                { it.copy(team = minOf(it.team, ICON)) },
                 { it.copy(shortTitle = true) }, { it.copy(share = 0) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
-                { it.copy(arrows = false) },
+                { it.copy(team = 0) }, { it.copy(arrows = false) },
             )
             // [RVH-42] PC-29: the work's own buttons with their words are worth more than the other calendars' faces, 같이 보기, 공유's
             // word and the calendar's name; when one fits with its words once those are folded, the row stops there.
