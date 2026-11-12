@@ -1194,6 +1194,8 @@ export function forgetCommunity(d, env, dev) {
     d.stmt(env, "DELETE FROM recipe_request_likes WHERE id IN (SELECT id FROM recipe_requests WHERE device = ?)", dev),
     d.stmt(env, "DELETE FROM recipe_requests WHERE device = ?", dev),
     d.stmt(env, "UPDATE recipe_requests SET state = 'waiting', maker = NULL WHERE maker = ? AND state = 'making'", dev),
+    // 2.0.0 [RVQ-16] 검토 SRV-09: 다 만든 요청에 남은 만든 분의 설치 해시도 끊어요(완성 작품 코드는 남아요).
+    d.stmt(env, "UPDATE recipe_requests SET maker = NULL WHERE maker = ?", dev),
     d.stmt(env, "DELETE FROM recipe_follows WHERE device = ?", dev),
     d.stmt(env, "DELETE FROM recipe_follows WHERE maker IN (SELECT maker FROM recipe_makers WHERE device = ?)", dev),
     // [PRF-05][PRF-06] 1.36 이 폰이 한 차단·신고와 모음. Others' blocks of this phone and reports on its profile are theirs and stay

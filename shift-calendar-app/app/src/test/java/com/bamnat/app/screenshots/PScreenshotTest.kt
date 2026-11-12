@@ -63,6 +63,9 @@ class PScreenshotTest : ScreenshotBase() {
 
     private fun pasted(then: Screen.(DutyRosterViewModel) -> Unit = {}): Screen.() -> Unit = monthInput { vm ->
         vm.readText(ROSTER)
+        // 2.0.0 [RVL-26] Read off the main thread now: waited for.
+        val until = System.currentTimeMillis() + 20_000
+        while (vm.ui.value.rows == null && System.currentTimeMillis() < until) { Thread.sleep(20); settle() }
         settle()
         vm.pick(vm.ui.value.rows!!.indexOfFirst { it.label == "김민지" })
         settle()
