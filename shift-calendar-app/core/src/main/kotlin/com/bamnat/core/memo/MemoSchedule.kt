@@ -54,7 +54,7 @@ object MemoTime {
      * 2.0.0 [RVI-25] (검토 MEMO-07) '내일·모레·N일 뒤' are read from the memo's own day, or the day it was written, not from today:
      * "내일 3시 치과" written on 11/11 is 11/12 when opened on 11/12 too.
      */
-    fun find(memo: Memo, now: LocalDateTime, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Found? = find(
+    fun find(memo: Memo, now: LocalDateTime, zone: java.time.ZoneId = com.bamnat.core.time.Today.zone()): Found? = find(
         (sequenceOf(memo.title, memo.text) + memo.checklist.asSequence().map { it.text }).joinToString("\n"),
         now,
         memo.date,

@@ -87,6 +87,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
+        // [RVP-28] A language change sets every locale category again.
+        keepKoreanNumbers()
         val night = newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
         val before = lastNight
         lastNight = night
@@ -148,12 +150,6 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
 
     private fun containerStarted() = (this::class.java.getDeclaredField("container\$delegate")
         .apply { isAccessible = true }.get(this) as Lazy<*>).isInitialized()
-
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        // [RVP-28] A language change sets every locale category again.
-        keepKoreanNumbers()
-    }
 
     private fun keepKoreanNumbers() = java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.KOREA)
 }

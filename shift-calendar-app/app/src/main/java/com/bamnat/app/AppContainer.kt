@@ -935,6 +935,7 @@ class AppContainer(context: Context) {
         // What waited while the user slept is planned again from the log.
         keep("sleeping") {
             var openId: Long? = null
+            var anyOpen: Boolean? = null
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
             // 1.39 [SLEEP-06] While 자는 동안 소리 measures, its notice is the 자는 중 notice (깼어요 and 측정만 끝 side by side
             // on one card), so the shade does not stack two of them (PC 1.38 최종 사용성 6).
@@ -962,6 +963,13 @@ class AppContainer(context: Context) {
                         !show -> SleepingNotice.cancel(appContext)
                     }
                     openId = open?.id
+                    // 2.0.0 [RVI-17] (검토 ALM-08) A 낮잠 ended early, by 깼어요 from anywhere: its wake goes from the day's alarms.
+                    // Followed here, with the sleep log this job already reads, so the start keeps its budget of jobs.
+                    val stillOpen = log.any { it.end == null }
+                    if (stillOpen != anyOpen) {
+                        anyOpen = stillOpen
+                        if (!stillOpen) runCatching { com.bamnat.app.sleep.NapWake.afterWake(this@AppContainer) }
+                    }
                     // 1.38 [SLEEP-12] 자는 동안 방해 금지 follows the open sleep (off by default).
                     com.bamnat.app.sleep.SleepDnd.follow(appContext, open != null, settingsRepository.current.sleepDnd)
                     QuietHold.release(appContext)
@@ -1204,11 +1212,6 @@ class AppContainer(context: Context) {
                         }
                     }
                 }
-            }
-            // 2.0.0 [RVI-17] (검토 ALM-08) A 낮잠 ended early, by 깼어요 from anywhere: its wake goes from the day's alarms.
-            keep("nap") {
-                sleepRepository.recent(days = 2).map { l -> l.any { it.end == null } }.distinctUntilChanged()
-                    .collect { open -> if (!open) runCatching { com.bamnat.app.sleep.NapWake.afterWake(this@AppContainer) } }
             }
             // [SHFT-08][REL-09] The watch follows the main calendar and its next alarm, from app start on.
             // [WEAR-04][WEAR-06] 1.31: or the calendar chosen for the watch, and whether the watch rings too.
