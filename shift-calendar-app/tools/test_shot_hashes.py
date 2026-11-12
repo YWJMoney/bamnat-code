@@ -110,6 +110,52 @@ class ShotHashesTest(unittest.TestCase):
         self.assertIn("changed: 2_two", out)
         self.assertNotIn("changed: 1_one", out)
 
+    def scene(self, folder, name, card=(30, 30), colour=(250, 248, 240), letter=False, fill=(40, 40, 60)):
+        """A light screen with one dark card; letter adds a 2x3 dot (a changed letter)."""
+        from PIL import ImageDraw
+        folder.mkdir(exist_ok=True)
+        im = Image.new("RGB", (320, 480), colour)
+        d = ImageDraw.Draw(im)
+        d.rectangle([card[0], card[1], card[0] + 200, card[1] + 120], fill=fill)
+        if letter:
+            d.rectangle([250, 400, 251, 402], fill=(0, 0, 0))
+        im.save(folder / f"{name}.png")
+
+    def test_yesterday_report_names_every_changed_shot_and_its_kind(self):
+        """[RVR-39] (TEST-12 ①·I60b-03) one changed letter is caught; a moved card is 배치, a new background 색."""
+        old, new = self.dir / "old", self.dir / "new"
+        for f in (old, new):
+            self.scene(f, "same")
+        self.scene(old, "letter"); self.scene(new, "letter", letter=True)
+        self.scene(old, "moved"); self.scene(new, "moved", card=(80, 200))
+        self.scene(old, "colour"); self.scene(new, "colour", fill=(220, 60, 50))
+        self.scene(old, "dark"); self.scene(new, "dark", colour=(20, 22, 30), fill=(230, 230, 240))
+        self.scene(old, "gone"); self.scene(new, "added")
+        a, b = sh.prints(str(old)), sh.prints(str(new))
+        changed, added, gone, same = sh.compare_prints(a, b)
+        kinds = {n: k for n, g, c, k in changed}
+        self.assertEqual(kinds, {"letter": "작은 바뀜", "moved": "배치", "colour": "색", "dark": "색"})
+        self.assertEqual((added, gone, same), (["added"], ["gone"], 1))
+        self.assertEqual(changed[-1][0], "letter", "biggest first")
+        (self.dir / "a.json").write_text(json.dumps(a)); (self.dir / "b.json").write_text(json.dumps(b))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = sh.main(["diff", str(self.dir / "a.json"), str(self.dir / "b.json"), "--shots", str(new), "--sheet", str(self.dir / "sheet.png")])
+        self.assertEqual(0, code)
+        self.assertIn("어제와 다른 화면 사진: 4장 (같음 1, 새로 1, 없어짐 1)", out.getvalue())
+        self.assertIn("| letter | 작은 바뀜 |", out.getvalue())
+        self.assertEqual(Image.open(self.dir / "sheet.png").size[1], 4 * (180 + 24) + 10)
+
+    def test_prints_command_writes_every_shot(self):
+        self.scene(self.shots, "1_one"); self.scene(self.shots, "2_two", letter=True)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(0, sh.main(["prints", str(self.shots), "--out", str(self.dir / "p" / "prints.json")]))
+        p = json.loads((self.dir / "p" / "prints.json").read_text())
+        self.assertEqual(sorted(p), ["1_one", "2_two"])
+        self.assertNotEqual(p["1_one"]["px"], p["2_two"]["px"])
+        self.assertEqual(len(p["1_one"]["g"]), 2 * sh.SIZE[0] * sh.SIZE[1])
+
     def test_the_repository_key_shots_are_each_taken_by_one_test(self):
         sh.GOLDEN, sh.TESTS = self.keep
         self.assertEqual([], sh.source_problems(sh.shot_names(), sh.SHOTS))

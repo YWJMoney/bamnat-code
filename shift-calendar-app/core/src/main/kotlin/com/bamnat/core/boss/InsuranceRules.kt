@@ -30,7 +30,7 @@ object InsuranceRules {
             val threeMonths = s.hiredOn?.let { !it.plusMonths(3).isAfter(month.atDay(1)) } == true
             if (want.pension || want.health) why += "주 15시간(월 60시간) 미만이라 국민연금·건강보험 가입 대상이 아니에요"
             ins = ins.copy(pension = false, health = false)
-            if (want.employment && !threeMonths) { why += "주 15시간 미만은 3개월 넘게 일해야 고용보험 대상이에요"; ins = ins.copy(employment = false) }
+            if (want.employment && !threeMonths) { why += "주 15시간 미만은 3개월 이상 일해야 고용보험 대상이에요"; ins = ins.copy(employment = false) }
         }
         s.birth?.let { b ->
             val age = Period.between(b, day).years

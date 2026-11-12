@@ -170,7 +170,8 @@ internal fun SwitchRow(
         Box(Modifier.alpha(if (dim) 0.45f else 1f)) { avatar() }
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 2.0.0 [RVG-34] 조건 12: at 200% on a folded phone a link's name was cut to '3병동 김간호의 근…'; it takes a second line first.
+            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2) }
         }

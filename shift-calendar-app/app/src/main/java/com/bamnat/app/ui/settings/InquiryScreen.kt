@@ -1085,7 +1085,7 @@ private fun PublicBoard(vm: InquiryViewModel, onNew: () -> Unit, onOpen: (Public
                 }
             }
             // [COMM-11] What this phone's 이 사람 글 안 보기 left out, and where to undo it.
-            if (p.hiddenByYou > 0) Text("가린 사람의 문의 ${p.hiddenByYou}개는 빼고 보여요. 회사 광장 › 내 활동에서 되돌릴 수 있어요.",
+            if (p.hiddenByYou > 0) Text("안 보는 사람의 문의 ${p.hiddenByYou}개는 빼고 보여요. 마을 › 팔로잉 › 차단에서 되돌릴 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             p.items.forEach { i -> PublicCard(i) { onOpen(i) } }
             if (p.next != null) {
@@ -1147,7 +1147,7 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
         }
         if (hiding) ConfirmDialog(
             title = "이 사람의 문의를 가릴까요?",
-            message = "모두의 문의와 회사 광장에서 이 사람의 글이 이 휴대폰에서만 안 보여요. 회사 광장 › 내 활동의 ‘가린 사람’에서 되돌릴 수 있어요.",
+            message = "모두의 문의와 회사 광장에서 이 사람의 글이 이 휴대폰에서만 안 보여요. 마을 › 팔로잉 › 차단에서 되돌릴 수 있어요.",
             confirmLabel = "가리기",
             onDismiss = { hiding = false },
             onConfirm = { hiding = false; t.author?.let(vm::hideWriter); onGone() },

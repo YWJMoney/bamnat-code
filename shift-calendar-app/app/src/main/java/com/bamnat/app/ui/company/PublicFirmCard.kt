@@ -98,7 +98,7 @@ fun PublicRulesCard(set: com.bamnat.core.plaza.PublicRuleSet, source: String, mo
     val profile by company.pay.profile.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var all by androidx.compose.runtime.saveable.rememberSaveable(set.name) { androidx.compose.runtime.mutableStateOf(false) }
-    val taken = androidx.compose.runtime.remember(set.name) { androidx.compose.runtime.mutableStateListOf<String>() }
+    val calendar = LocalCompanyCalendar.current
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
     SoftCard(modifier, highlighted = true) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -132,12 +132,28 @@ fun PublicRulesCard(set: com.bamnat.core.plaza.PublicRuleSet, source: String, mo
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     takes.forEach { (key, label) ->
-                        val done = key in taken
+                        val id = "$calendar|${set.name}|$key"
+                        val done = PublicRulesTaken.keys[id] == true
                         com.bamnat.app.ui.components.FilterChip(selected = done, onClick = {
                             if (done) return@FilterChip
                             scope.launch {
+                                // 2.0.0 [RVN-18] COMP-16 What it changed, with 되돌리기 (before: my pay changed without a word, a failure
+                                // said nothing, and 넣었어요 went when the screen was left, so it could be pressed again).
+                                val pay = company.pay
+                                val before = pay.profile.value
                                 val ok = runCatching { company.share.takeOne(set.setup, key) }.getOrDefault(false)
-                                if (ok) { taken += key; c.telemetry.event("public_rules", "take") }
+                                if (!ok) return@launch com.bamnat.app.ui.components.AppSnack.show("이 값은 내 급여에 넣지 못했어요. 급여 화면에서 설정을 확인해 주세요",
+                                    kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+                                val after = pay.profile.value
+                                PublicRulesTaken.keys[id] = true
+                                c.telemetry.event("public_rules", "take")
+                                com.bamnat.app.ui.PutOnNotice.say("내 급여에 ‘$label’ 값을 넣었어요") {
+                                    // Only what this put in, while nothing else changed my pay since.
+                                    if (pay.profile.value != after || before == null) return@say false
+                                    pay.save(before, why = "공개 규정 값 넣기를 되돌렸어요")
+                                    PublicRulesTaken.keys.remove(id)
+                                    true
+                                }
                             }
                         }, label = { Text(if (done) "$label 넣었어요" else "$label 넣기") })
                     }
@@ -148,3 +164,8 @@ fun PublicRulesCard(set: com.bamnat.core.plaza.PublicRuleSet, source: String, mo
 }
 
 private const val SHOWN_LINES = 6
+
+/** 2.0.0 [RVN-18] COMP-16 What was taken from a 공개 규정 this run (calendar · 규정 · 값), so 넣었어요 stays when the screen is left. */
+private object PublicRulesTaken {
+    val keys = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
+}

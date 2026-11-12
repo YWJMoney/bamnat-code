@@ -210,7 +210,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     private val device get() = c.companyStore.device
     val canVote: Boolean get() = c.flags.on(FlagCatalog.RECIPE_VOTE)
-    val canTalk: Boolean get() = c.flags.on(FlagCatalog.RECIPE_TALK)
+    val canTalk: Boolean get() = talkOpen?.invoke() ?: c.flags.on(FlagCatalog.RECIPE_TALK)
 
     data class Piece(val kind: PieceKind, val on: Boolean, val fits: Boolean,
         val mode: RecipePieces.Mode = if (kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE,
@@ -501,7 +501,13 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
-                message = when {
+                message = c.recipes.lastMissed.takeIf { picks.isNotEmpty() && it.isNotEmpty() }?.let { m ->
+                    // 2.0.0 [RVS-12]: what could not go in is said, never 'nothing changed'.
+                    // 총괄 HQ-57 ③: how many of the pieces went on, in one line.
+                    val names = m.joinToString("·") { it.label }
+                    if (id == null && !laid) "‘$names’ 조각을 넣지 못했어요. 앱을 업데이트한 뒤 다시 넣어 보세요"
+                    else "조각 ${picks.size}개 중 ${picks.size - m.size}개를 넣었어요. ‘$names’${com.bamnat.app.ui.Fmt.eun(names)} 앱을 업데이트하면 넣을 수 있어요. 7일 안에 되돌릴 수 있어요"
+                } ?: when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     sameLook -> "이미 같은 모양이라 바뀐 곳은 없어요. ‘${doc.item.title}’${com.bamnat.app.ui.Fmt.obj(doc.item.title)} 입은 테마로 잡았어요"
                     id == null -> "바뀐 것이 없어요"
@@ -613,6 +619,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
 
     /** The written recipe, for 고쳐 만들기. */
     fun body(): String? = _state.value.recipe?.let(RecipeCodec::write)
+
+    companion object {
+        /** For tests ([RVM-36]): 이야기 open as after the legal day (the `recipe.talk` row waits for 3.9 and its agreement). */
+        @Volatile internal var talkOpen: (() -> Boolean)? = null
+    }
 }
 
 /** [RCP-38] 설정 › 나눔 판: the switch, recipes put on (with 되돌리기), my recipes on the plaza and those being made. */
@@ -702,6 +713,19 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
 
     fun undo(id: Long) {
         viewModelScope.launch { _message.value = if (c.recipes.undo(id)) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요" }
+    }
+
+    /** 2.0.0 [RVS-12] HQ-57 ②: received works whose 부품 꾸미기 did not go on before (by record id), offered here until put on. */
+    private val _missedParts = MutableStateFlow<Set<Long>>(emptySet())
+    val missedParts: StateFlow<Set<Long>> = _missedParts.asStateFlow()
+    fun loadMissedParts() { viewModelScope.launch { _missedParts.value = runCatching { c.recipes.missedParts().map { it.id }.toSet() }.getOrDefault(emptySet()) } }
+    fun putMissedParts(e: AppliedRecipeEntity) {
+        viewModelScope.launch {
+            val id = runCatching { c.recipes.putMissedParts(e) }.getOrNull()
+            _message.value = if (id != null && c.recipes.lastMissed.isEmpty()) "‘${e.title}’의 부품 꾸미기를 넣었어요. 7일 안에 되돌릴 수 있어요"
+                else "부품 꾸미기를 넣지 못했어요. 앱을 업데이트한 뒤 다시 해 보세요"
+            loadMissedParts()
+        }
     }
 
     fun delete(code: String) {

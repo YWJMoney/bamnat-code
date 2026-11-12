@@ -330,7 +330,12 @@ fun EditValueDialog(
                         style = MaterialTheme.typography.titleSmall, color = com.bamnat.app.ui.theme.Tone.Caution.color())
                     val changed = p.changedMonths.filter { it.month >= month }
                     val same = v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1
-                    Text(
+                    // 2.0.0 [RVJ-46] 검토 PC-110: with the amount not changed yet nothing moves, and the window said '합계는 그대로예요 ·
+                    // … 마감한 달이에요' as if something had been tried. It says what this place will show once the amount is changed.
+                    val untouched = v == current && changed.isEmpty() && past.isEmpty()
+                    if (untouched) Text("금액을 바꾸면 달마다 얼마가 달라지는지 여기에 보여 드려요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Text(
                         // PC 3e347ec6: '그대로예요' under a new amount read as if it had not been taken.
                         if (same) "지금 값과 같아요"
                         else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요"
@@ -338,7 +343,7 @@ fun EditValueDialog(
                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                     )
                     // 2.0.0 품질 조건 4: 까닭은 작은 줄로 (200%에서 제목 글이 네 줄이던 것).
-                    if (!same && changed.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
+                    if (!untouched && !same && changed.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
                         (past + changed).forEach { d ->
@@ -346,7 +351,8 @@ fun EditValueDialog(
                                 Text("${d.month.year % 100}.${d.month.monthValue}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.labelWidth(44.dp))
                                 Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 Text(if (d.locked) "마감" else signed(d.delta), style = MaterialTheme.typography.bodySmall,
-                                    color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                                    // [RVJ-46] A lower month is not a danger: the '−' says it, in the plain ink (조건 6, 빨강은 위험만).
+                                    color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }

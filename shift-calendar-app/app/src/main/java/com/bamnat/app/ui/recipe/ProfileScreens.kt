@@ -1054,10 +1054,10 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
 private fun HiddenWriters(vm: PeopleViewModel, onShown: (com.bamnat.core.plaza.HiddenWriter) -> Unit) {
     val list by vm.hidden.collectAsStateWithLifecycle()
     Spacer(Modifier.height(8.dp))
-    Text("광장에서 가린 분 ${list.writers.size}", style = MaterialTheme.typography.titleSmall)
-    Text("토론 글의 ⋮ › 이 사람 글 안 보기로 가린 분이에요. 이 휴대폰에만 남고 상대에게 알리지 않아요", style = MaterialTheme.typography.bodySmall,
+    Text("광장에서 안 보는 사람 ${list.writers.size}", style = MaterialTheme.typography.titleSmall)
+    Text("광장 글의 ⋮ › 이 사람 글 안 보기로 고른 분이에요. 이 휴대폰에만 남고 상대에게 알리지 않아요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (list.writers.isEmpty()) Text("가린 분이 없어요", style = MaterialTheme.typography.bodyMedium)
+    if (list.writers.isEmpty()) Text("안 보는 사람이 없어요", style = MaterialTheme.typography.bodyMedium)
     list.writers.forEach { w ->
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(w.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -15,6 +15,7 @@ import com.bamnat.core.team.TeamCall
 import com.bamnat.core.team.TeamCover
 import com.bamnat.core.team.TeamMember
 import com.bamnat.core.team.TeamShift
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -69,7 +70,7 @@ class ShareForgetTest {
         override suspend fun signDelete(id: String, token: String) = go("sign", id, token)
     }
 
-    private fun link(id: String) = ShareLinkState(id, "https://share.example/s/$id", "tok-$id", Instant.now().plus(Duration.ofDays(20)), "민지")
+    private fun link(id: String) = ShareLinkState(id, "https://share.example/s/$id", "tok-$id", Today.instant().plus(Duration.ofDays(20)), "민지")
 
     @Before fun setUp() {
         c.shareApi = api

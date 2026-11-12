@@ -61,6 +61,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val mine by vm.mine.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.shownAgain() }
+    val missedParts by vm.missedParts.collectAsStateWithLifecycle()
+    LaunchedEffect(applied.size) { vm.loadMissedParts() }
     val newer by vm.newer.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
@@ -115,6 +117,11 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     Text("새 판 알림", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     Switch(sub, { sub = it; vm.subscribe(e.code, it) })
                                 }
+                            }
+                            // 2.0.0 [RVS-12] HQ-57 ②: its 부품 꾸미기 did not go on before (1.36~1.39); put on only when asked, so nothing changes by itself.
+                            if (e.id in missedParts) {
+                                Muted("이 작품의 부품 꾸미기는 아직 안 들어갔어요 · 넣어도 7일 안에 되돌릴 수 있어요")
+                                TextButton(onClick = { vm.putMissedParts(e) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("부품 꾸미기 넣기") }
                             }
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")

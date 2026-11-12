@@ -46,6 +46,8 @@ import androidx.compose.material3.TextButton
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -98,6 +100,12 @@ import androidx.compose.ui.semantics.Role
  * what may still be spent today (the month's budget less what is spent and the repeating costs
  * still to leave, over the days left) and where the month is heading.
  */
+/**
+ * 2.0.0 [RVK-43] (검토 MONEY-25) 가계부의 낱말: 들어온 돈 · 나간 돈 · 남은 돈(= 들어온 돈 − 나간 돈). 요약 맨 위 카드만 '남은 돈'이
+ * 통장으로 본 '오늘 쓸 돈'과 헷갈려(1.37 PC) 셈을 그대로 이름으로 써요.
+ */
+internal const val IN_LESS_OUT = "들어온 돈 − 나간 돈"
+
 @Composable
 fun HeroCard(
     m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: () -> Unit, aheadSaysToday: Boolean = false,
@@ -112,17 +120,18 @@ fun HeroCard(
     val spentFirst = figure == com.bamnat.core.money.HeroFigure.SPENT
     val swap = onHero?.let { go -> { go(com.bamnat.core.money.HeroFigure.swapped(figure).key) } }
     // 1.37 PC 확인 6a4efc92: '11월 남은 돈 0원'이 통장 잔액으로 본 '오늘 쓸 돈'과 나란히 있어 헷갈렸어요. 이 카드는 가계부에 적은
-    // 수입에서 지출을 뺀 것이라 그대로 이름을 붙여요.
+    // 수입에서 지출을 뺀 것이라 그대로 이름을 붙여요. 2.0.0 [RVK-43] (검토 MONEY-25) 그 이름도 가계부 낱말(들어온 돈·나간 돈·남은 돈)로:
+    // '수입 − 지출' 아래에 '들어온 돈'이 서서 같은 것을 두 이름으로 불렀어요.
     SectionCard(
-        title = if (spentFirst) "${m.label} 나간 돈" else "${m.label} 수입 − 지출",
+        title = if (spentFirst) "${m.label} 나간 돈" else "${m.label} $IN_LESS_OUT",
         trailing = swap?.let { go -> {
             IconButton(onClick = go) {
-                Icon(Icons.Outlined.SwapVert, if (spentFirst) "큰 숫자를 수입 − 지출로 바꾸기" else "큰 숫자를 나간 돈으로 바꾸기")
+                Icon(Icons.Outlined.SwapVert, if (spentFirst) "큰 숫자를 ${IN_LESS_OUT}으로 바꾸기" else "큰 숫자를 나간 돈으로 바꾸기")
             }
         } },
     ) {
         val big = Modifier.let { base ->
-            if (swap == null) base else base.clickable(role = Role.Button, onClickLabel = if (spentFirst) "수입 − 지출 보기" else "나간 돈 보기", onClick = swap)
+            if (swap == null) base else base.clickable(role = Role.Button, onClickLabel = if (spentFirst) "$IN_LESS_OUT 보기" else "나간 돈 보기", onClick = swap)
         }
         if (spentFirst) {
             // The month's spending, in the plain colour: it is not a warning.
@@ -154,7 +163,7 @@ fun HeroCard(
             Column(Modifier.weight(1f)) {
                 if (spentFirst) {
                     // [RVK-19] The other figure takes 나간 돈's place, so nothing is said twice.
-                    Text("수입 − 지출", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(IN_LESS_OUT, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FitText(Fmt.won(m.leftNow), MaterialTheme.typography.titleMedium,
                         if (m.leftNow < 0) cal.expense else MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
                 } else {
@@ -360,8 +369,11 @@ fun BudgetEditor(
     payDayHint: Boolean = false,
     /** 1.37 [LEDH-34] 예산 넘김: the categories that carry, and how to change them (saved at once, like 월급날 기준). */
     rolling: Set<String> = emptySet(), onRolling: (Set<String>) -> Unit = {}, canRoll: Boolean = true,
+    /** 2.0.0 [RVK-43] (검토 U06a-27) The category to start on ('카페' from 통계's 많이 쓴 곳): its field takes the focus. */
+    focus: String? = null,
 ) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
+    val focusAt = remember { androidx.compose.ui.focus.FocusRequester() }
     val values = remember {
         mutableStateMapOf<String, String>().apply { book.budgets.forEach { put(it.category, amountDigits(it.amount)) } }
     }
@@ -424,7 +436,9 @@ fun BudgetEditor(
                         }
                         Spacer(Modifier.width(8.dp))
                         AmountField("예산", values[c].orEmpty(), { values[c] = it },
-                            Modifier.widthIn(max = 168.dp).semantics { contentDescription = "$c 예산" })
+                            Modifier.widthIn(max = 168.dp).semantics { contentDescription = "$c 예산" }
+                                .then(if (c == focus) Modifier.focusRequester(focusAt) else Modifier))
+                        if (c == focus) LaunchedEffect(Unit) { runCatching { focusAt.requestFocus() } }
                     }
                 }
                 // 1.37 [LEDH-34] 예산 넘김: what a category's budget left over this month is added to next month's (and what it went
@@ -748,6 +762,13 @@ fun AccountEditor(
                     }
                 }
                 Text(kind.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVK-43] (검토 U06a-10) A card keeps no balance and a loan counts what is owed, so the money an account started
+                // with is dropped on saving, and choosing the old kind again later did not bring it back. Said before 저장.
+                val dropped = initial?.takeIf { !it.isLoan && it.opening != 0L && (card || loan) }?.opening
+                if (dropped != null) {
+                    Text("${kind.label}${Fmt.ro(kind.label)} 바꾸면 처음 들어 있던 돈 ${Fmt.won(dropped)}${Fmt.eun(Fmt.won(dropped))} 지워져요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution)
+                }
                 OutlinedTextField(value = name, onValueChange = { name = it.take(MoneyAccount.MAX_NAME) }, singleLine = true,
                     label = { Text(when (kind) { AccountType.CREDIT, AccountType.CHECK -> "카드 이름 (예: 신한 Deep)"; AccountType.BANK -> "통장 이름 (예: 월급 통장)"
                         AccountType.CASH -> "이름 (예: 지갑)"; AccountType.PAY -> "이름 (예: 카카오페이)"; AccountType.OTHER -> "이름"

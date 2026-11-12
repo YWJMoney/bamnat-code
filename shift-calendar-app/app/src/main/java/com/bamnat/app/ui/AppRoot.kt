@@ -242,7 +242,7 @@ private object Routes {
     const val COMPANY_SENT = "company_sent?calendar={calendar}"
     // [COMM-07] 회사 규칙 광장: every company's rule sets, to vote on, talk over and use.
     const val COMPANY_BOARD = "company_board?calendar={calendar}"
-    const val PLAZA_RATES = "plaza_rates"
+    const val PLAZA_RATES = "plaza_rates?calendar={calendar}"
     /** [RCP-21..38] 1.34 나눔 판: the list of one calendar's kind of work, one recipe, 만들기 and 설정 › 나눔 판. */
     const val RECIPES = "recipes?calendar={calendar}&kind={kind}&code={code}"
     /** [HUB-02] [kind] opens on one kind (RecipeClient.KINDS, "" for all); [code] opens with 코드로 받기 asked. */
@@ -323,6 +323,8 @@ private object Routes {
     fun companyBoard(calendar: String = "") = "company_board?calendar=$calendar"
     fun stylePlaza(calendar: String = "") = "style_plaza?calendar=$calendar"
     fun companyReport(calendar: String = "") = "company_report?calendar=$calendar"
+    /** 2.0.0 [RVN-18] COMP-21 광장 시세 of a calendar ('' = the calendar on screen). */
+    fun plazaRates(calendar: String = "") = "plaza_rates?calendar=$calendar"
     fun companySent(calendar: String = "") = "company_sent?calendar=$calendar"
 }
 
@@ -598,7 +600,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         when (target) {
             // Over an editor the calendar goes on top, so the editor's input is still there after back.
             // [SHR-12] The calendar opens its share sheet itself.
-            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE, NoticeLinks.Target.DAY -> {
+            NoticeLinks.Target.TODAY, NoticeLinks.Target.SHARE, NoticeLinks.Target.RECEIVE, NoticeLinks.Target.DAY, NoticeLinks.Target.CALENDARS -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.CALENDAR.route -> Unit
@@ -624,7 +626,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
             // 1.37 [LEDH-14] The 돈 적기 widget and tile: the money tab opens its add sheet itself.
             NoticeLinks.Target.MONEY_ADD -> nav.navigateTopLevel(TopLevel.MONEY.route)
-            NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MEMOS -> {
+                // 2.0.0 [RVI-80] (검토 U07a-09) The 할 일 위젯's '오래된 할 일' line: the memo tab with them shown.
+                if (NoticeLinks.payload.value == com.bamnat.app.ui.memo.OLD_TASKS) com.bamnat.app.ui.memo.MemoLinks.old.value = true
+                nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target)
+            }
             // [RUL-03] 메모 틀 열기 from a button or rule: a new memo on that day, started from the template.
             NoticeLinks.Target.LOGIC_MEMO -> {
                 val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
@@ -675,9 +681,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
             }
             NoticeLinks.Target.RECIPE -> {
-                // Only a work's code (letters and numbers), whatever the intent carried.
-                val code = NoticeLinks.payload.value?.takeIf { Regex("[A-Za-z0-9]{4,16}").matches(it) }
-                if (code != null) nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                // Only a work's code (letters and numbers), whatever the intent carried. [RVM-36] HQ-52: a row that says a 글 came
+                // opens the work at its 이야기.
+                com.bamnat.app.recipe.MakerReactions.opened(NoticeLinks.payload.value)?.let { (code, talk) ->
+                    com.bamnat.app.recipe.RecipeLinks.talkFocus = if (talk) code else null
+                    nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                }
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -743,6 +752,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     var manageAsk by remember { mutableStateOf<Triple<com.bamnat.app.IncomingRoster.Shared, android.net.Uri, List<com.bamnat.app.imports.SharedToManage.Place>>?>(null) }
     var manageBusy by remember { mutableStateOf<String?>(null) }
     var manageNote by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVL-41] A locked 근무표 PDF shared into a team: its password asked here, for this reading only.
+    var manageLocked by remember { mutableStateOf<Pair<com.bamnat.app.imports.SharedToManage.Place.Team, com.bamnat.app.imports.PdfLock>?>(null) }
     var rosterToMine by remember { mutableStateOf(false) }
     LaunchedEffect(sharedRoster) {
         // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
@@ -780,6 +791,32 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     manageAsk?.let { (shared, uri, places) ->
         val askContext = LocalContext.current
+        fun readTeam(place: com.bamnat.app.imports.SharedToManage.Place.Team, password: CharArray?) = rootScope.launch {
+            manageBusy = "근무표를 읽고 있어요…"
+            manageNote = null
+            val team = container.phaseThree.teamList.first().firstOrNull { it.id == place.id }
+            val today = com.bamnat.core.time.Today.date()
+            val got = if (team == null) com.bamnat.app.imports.ManageImport.Got.Failed("이 팀을 찾지 못했어요.")
+                else com.bamnat.app.imports.ManageImport.roster(askContext, uri, java.time.YearMonth.from(today).plusMonths(1), team.shifts, today, password)
+            password?.fill('\u0000')
+            manageBusy = null
+            when (got) {
+                is com.bamnat.app.imports.ManageImport.Got.Read -> {
+                    manageAsk = null
+                    manageLocked = null
+                    com.bamnat.app.imports.SharedToManage.putTeam(com.bamnat.app.imports.SharedToManage.ForTeam(place.id, got.value, got.fromPhoto))
+                    container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, "shared")
+                    nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true }
+                }
+                // [RVL-41] Locked: asked (again) here, and read once more with what is typed.
+                is com.bamnat.app.imports.ManageImport.Got.Locked -> manageLocked = place to got.lock
+                is com.bamnat.app.imports.ManageImport.Got.Failed -> {
+                    manageLocked = null
+                    manageNote = got.why
+                    container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "shared")
+                }
+            }
+        }
         com.bamnat.app.imports.SharedToManageChoice(places, busy = manageBusy, note = manageNote,
             onMine = {
                 manageAsk = null; manageNote = null
@@ -793,31 +830,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         com.bamnat.app.imports.SharedToManage.putStaff(uri)
                         nav.navigate(Routes.MANAGE) { launchSingleTop = true }
                     }
-                    is com.bamnat.app.imports.SharedToManage.Place.Team -> rootScope.launch {
-                        manageBusy = "근무표를 읽고 있어요…"
-                        manageNote = null
-                        val team = container.phaseThree.teamList.first().firstOrNull { it.id == place.id }
-                        val today = com.bamnat.core.time.Today.date()
-                        val got = if (team == null) com.bamnat.app.imports.ManageImport.Got.Failed("이 팀을 찾지 못했어요.")
-                            else com.bamnat.app.imports.ManageImport.roster(askContext, uri, java.time.YearMonth.from(today).plusMonths(1), team.shifts, today)
-                        manageBusy = null
-                        when (got) {
-                            is com.bamnat.app.imports.ManageImport.Got.Read -> {
-                                manageAsk = null
-                                com.bamnat.app.imports.SharedToManage.putTeam(com.bamnat.app.imports.SharedToManage.ForTeam(place.id, got.value, got.fromPhoto))
-                                container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, "shared")
-                                nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true }
-                            }
-                            is com.bamnat.app.imports.ManageImport.Got.Failed -> {
-                                manageNote = got.why
-                                container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "shared")
-                            }
-                        }
-                    }
+                    is com.bamnat.app.imports.SharedToManage.Place.Team -> readTeam(place, null)
                 }
             },
-            onDismiss = { manageAsk = null; manageNote = null },
+            onDismiss = { manageAsk = null; manageNote = null; manageLocked = null },
         )
+        manageLocked?.let { (place, lock) ->
+            com.bamnat.app.ui.imports.PdfPasswordDialog(lock, working = manageBusy != null, payslip = false,
+                onOpen = { pw -> readTeam(place, pw) }, onDismiss = { manageLocked = null })
+        }
     }
     shotToPlace?.let { (uri, investor) ->
         com.bamnat.app.ui.invest.SharedShotChoice(
@@ -879,6 +900,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val villageNew by com.bamnat.app.company.VillageReplies.count.collectAsStateWithLifecycle()
     // [TOWN-07] PC 확인 699bbbc8 (켠 뒤 22초까지 점이 없어요): the count last worked out is read as the tabs first show, off the main thread.
     LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.company.VillageReplies.restore(container.appContext) } } }
+    // 2.0.0 [RVM-36] 검토 HQ-52: what people did with my works since, into the 알림함 (사람들 반응), whenever the app comes to the
+    // front (asked at most every 10 minutes).
+    val reactionScope = rememberCoroutineScope()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) {
+        reactionScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { container.recipes.reactions() } }
+    }
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
@@ -1289,10 +1316,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val missingTabs = com.bamnat.core.layout.TabSlots.missing(barSlots)
     // [NAV2-07] Folded, the screens of the sixth and seventh places wait here too.
     val offBar = com.bamnat.core.layout.TabSlots.offBar(slots, wide).filter { it !in missingTabs }
+    // 2.0.0 [RVIB-16] (PC-125, 디자인 품질 13) A shop (no 오늘의 흐름, no 몸 tips on the day) found 잠 only in 설정 › 알림과 잠: when no
+    // place of the bar holds it, 나 lists it, for every kind of work (sleep is everyone's).
+    val sleepKey = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.SLEEP.name
+    val sleepAway = listOfNotNull(sleepKey.takeIf { !com.bamnat.core.layout.TabSlots.shows(slots, it) })
     val meState = MeState(
-        show = missingTabs.isNotEmpty() || offBar.isNotEmpty(),
+        show = missingTabs.isNotEmpty() || offBar.isNotEmpty() || sleepAway.isNotEmpty(),
         unread = if (com.bamnat.core.layout.TabOrder.SETTINGS in missingTabs) inquiryUnread else 0,
-        missing = (missingTabs + offBar).mapNotNull(pickOf),
+        missing = (missingTabs + offBar + sleepAway).mapNotNull(pickOf),
         open = openPick,
         editBar = { editingBar = true },
         inRail = wide,
@@ -1953,7 +1984,7 @@ private fun AppNavHost(
                 },
                 // [DAILY-16] 광장 시세 of the user's own job and region next to their pay, compared on the phone.
                 underTotal = {
-                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } }
+                    com.bamnat.app.ui.company.RateHintLine(profile) { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } }
                     // [COMM-12] One line into the plaza from the pay; hidden without the company server.
                     if (calendar != PersonalCalendar.EXAMPLE) com.bamnat.app.ui.company.PlazaEntryLine(container, onOpen = { nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true } })
                 },
@@ -2136,7 +2167,7 @@ private fun AppNavHost(
                 com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = { nav.popFrom(Routes.STYLE_PLAZA) },
                     onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
                     onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
-                    onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                    onRates = { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } },
                     onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
                     // PC 확인 41e73582: the talk comes first; 장터's cards follow it.
                     footer = {
@@ -2157,7 +2188,7 @@ private fun AppNavHost(
                 onBack = { nav.popFrom(Routes.COMPANY_BOARD_ALL) },
                 onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) },
                 onShare = { nav.navigate(Routes.companyReport()) { launchSingleTop = true } },
-                onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+                onRates = { nav.navigate(Routes.plazaRates()) { launchSingleTop = true } },
             )
         }
         composable(Routes.RECIPES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
@@ -2274,9 +2305,14 @@ private fun AppNavHost(
                     nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(code)))
                 })
         }
-        composable(Routes.PLAZA_RATES) {
-            val vm = appViewModel { com.bamnat.app.ui.company.RatesViewModel(it) }
-            com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
+        composable(Routes.PLAZA_RATES, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
+            // 2.0.0 [RVN-18] COMP-21 The calendar whose 광장 or pay opened it (before, always the calendar on screen: a second
+            // calendar's plaza compared and changed the first one's pay).
+            val calendar = remember(entry) { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
+            val vm = appViewModel(key = "plaza-rates-$calendar") { com.bamnat.app.ui.company.RatesViewModel(it, calendar) }
+            CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
+                com.bamnat.app.ui.company.RatesScreen(vm = vm, onBack = { nav.popFrom(Routes.PLAZA_RATES) })
+            }
         }
         composable(Routes.COMPANY_REPORT, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             // [CALI-02] 1.30 BB: the calendar's own setup, under its own company, kept as sent by it.
@@ -2758,7 +2794,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         com.bamnat.app.ui.company.PlazaHomeScreen(home, onBack = onBack,
             onAll = { nav.navigate(Routes.COMPANY_BOARD_ALL) { launchSingleTop = true } },
             onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
-            onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+            onRates = { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } },
             onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
             onFind = if (ownTalk && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
             header = chips, footer = if (headUnder && hubHead != null) ({ hubHead() }) else null)
@@ -2769,7 +2805,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
             onBack = onBack,
             onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
             onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-            onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
+            onRates = { nav.navigate(Routes.plazaRates(calendar)) { launchSingleTop = true } },
             onFind = if (container.companyApi.enabled && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
             header = {
                 Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {

@@ -960,6 +960,13 @@ fun CalendarScreen(
         received.view(null)
         if (received.enabled) adding = ""
     }
+    // 2.0.0 [RVG-34] The 알림함's '팀 근무표' line: 내 달력 with the list the calendar's name ▾ opens, where the 팀 리더's link is.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.CALENDARS) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.CALENDARS)
+        received.view(null)
+        switching = true
+    }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
     val weekNote = remember(calculator, selected, limits, settings.stretchLimitHours, settings.workStyle, snap) {
         val week = calculator.week(selected).takeIf { it.overLimit }?.let {
@@ -1271,6 +1278,10 @@ fun CalendarScreen(
         // 1.39 [FLOW-03] The month just set up fills from today, with its one line over it (2.0.0 [RVP-45]: the band, 칸이 saying it).
         val fillMoment by SetupFill.now.collectAsStateWithLifecycle()
         val fillMine = fillMoment?.takeIf { it.calendar == activeCalendar.id && paint == null }
+        // 2.0.0 [RVIB-17] (PC-129) The band's line is counted again from the calendar as it is now, as the card under it is.
+        val fillLine = rememberFillLine(fillMine, snap)
+        // Its work all taken away (되돌리기, 한꺼번에 지우기, a roster that emptied it), the moment is over, not left saying the old count.
+        LaunchedEffect(fillMine, fillLine) { if (fillMine != null && fillLine == null) SetupFill.close() }
         if (!holding) Column(Modifier.onSizeChanged { aboveHeights[0] = it.height }) {
         if (safeStart) {
             // PC 19·20차 사용성 제안 (감겨서 달력이 밀림): a line short enough not to wrap; 알람 점검 says the rest.
@@ -1296,10 +1307,10 @@ fun CalendarScreen(
         // said once over the month, so the sender knows without opening the share sheet (before, it said nothing and never went).
         val shareLeftOut = com.bamnat.app.share.ShareLinkKey.all(activeCalendar.id).map { k -> k to c31.shareLinksOf(k).dropped.collectAsStateWithLifecycle().value }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
-            fillMine?.let { m ->
-                add(Notice("setupFill", "채워진 달력", line = m.line.head,
+            if (fillLine != null) fillMine?.let { m ->
+                add(Notice("setupFill", "채워진 달력", line = fillLine.head,
                     button = false, onClose = SetupFill::close, kani = com.bamnat.app.ui.components.KaniMood.Done, urgent = true) {
-                    SetupFillCard(m, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    SetupFillCard(m, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), snap = snap)
                 })
             }
             // [SETUP-01] A first setup left for later comes first; it fills the calendar.
@@ -2385,6 +2396,14 @@ internal fun CalendarHeader(
     val navPart = bp.style("cal.head.nav", scope = headScope)
     val todayPart = bp.style("cal.head.today", scope = headScope)
     val titlePart = bp.style("cal.head.title", scope = headScope)
+    // 2.0.0 [RVS-14] A work's 달력 머리 with room at its sides (E9: 6 + 10) leaves the month less of the line: it drops the year and 오늘 is
+    // an icon, as on a narrow phone, so the month itself is never squeezed out.
+    val headTight = (headPart.out ?: 0) + (headPart.padH ?: 0) >= 8
+    // Under 340dp (a small phone, the studio's example) the work's side room gives way first, so ‹ 10월 › keeps its line.
+    val small = maxWidth < 340.dp
+    val headBox = if (small) headPart.copy(out = headPart.out?.coerceAtMost(2), padX = headPart.padH?.coerceAtMost(2), padY = headPart.padV) else headPart
+    // [RVS-14] with [RVH-52]: the sides [HeadRoom] keeps for the box are the ones drawn ([headSides] less what a small phone gives way).
+    val sideRoom = if (small) 2 * ((headBox.out ?: 0) + (headBox.padH ?: 0)) else headSides.toInt()
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
     val baseTitle = when {
@@ -2404,7 +2423,7 @@ internal fun CalendarHeader(
     // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
     val teamRow = otherRows.firstOrNull { (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
-        maxWidth.value, fontScale, sp, reserved = headSides, monthDp = monthDp, quick = quick.size, bell = bell != null, me = me, others = others,
+        maxWidth.value, fontScale, sp, reserved = sideRoom.toFloat(), monthDp = monthDp, quick = quick.size, bell = bell != null, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
         team = teamRow != null,
     ).let { if (chip == null) it.copy(name = false) else it }
@@ -2417,6 +2436,12 @@ internal fun CalendarHeader(
     val titleText = if (stepDown) workTitle.copy(fontSize = baseTitle.fontSize) else workTitle
     val quickRoom = room.quick
     val quickShown = quickRoom.shown
+    // 2.0.0 [RVG-34] 검토 PC-132 with 갈래 P 3/3: where the head has no room for the 팀 리더's link beside the chip (a phone: it is the
+    // first line of the chip's list), the 알림함 says once where it is.
+    (teamRow as? CalendarRow.Got)?.takeIf { room.team == 0 }?.let { t ->
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        LaunchedEffect(t.cal.id) { TeamLinkNote.once(ctx, t.cal.id) }
+    }
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
         // [RVH-42] Where a tap presses the work's buttons (the phone's own calendar), they are the row's buttons below, not drawn over it.
@@ -2426,7 +2451,7 @@ internal fun CalendarHeader(
             else com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp + (headPart.out ?: 0).dp, side = 4.dp + (headPart.out ?: 0).dp,
                 bottom = (headPart.out ?: 0).dp, shape = com.bamnat.app.ui.parts.PartMods.shapeOf(headPart, MaterialTheme.shapes.medium))
         ).partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD, taps = com.bamnat.app.ui.decor.LocalDecorTap.current == null).padding(start = 4.dp, end = 4.dp, top = 8.dp)
-            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
+            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headBox, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // [RVP-45] Whose calendar: its face (and its name where there is room), the list of calendars a tap away.
@@ -2465,7 +2490,7 @@ internal fun CalendarHeader(
                 // buttons around it. [RVP-45] HQ-22: never below 14sp either (it used to shrink to a few pixels).
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
-                com.bamnat.app.ui.FitText(monthTitle(month, short = room.shortTitle, yearInk = yearInk), titleText,
+                com.bamnat.app.ui.FitText(monthTitle(month, short = room.shortTitle || headTight, yearInk = yearInk), titleText,
                     Modifier.weight(1f, fill = false).partSpot("cal.head.title").then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }),
                     minSp = MONTH_TITLE_MIN_SP)
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2477,7 +2502,7 @@ internal fun CalendarHeader(
         else quick.take(quickShown).forEach { HeadQuickButton(it, onQuick) }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
-        else if (!room.todayWords) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        else if (!room.todayWords || headTight) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
         // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
         // keeps most of the ink (still lighter than when it can be pressed).
         else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
@@ -3345,6 +3370,10 @@ private fun com.bamnat.core.work.CalendarFocus.longPressTip(): String = "날짜�
 private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turnOff: Boolean) -> Unit, onDismiss: () -> Unit) {
     val one = ask.days.singleOrNull()
     val times = ask.days.flatMap { d -> d.was.map { Fmt.time(it.triggerAt.toLocalTime()) } }.distinct().take(3).joinToString(", ")
+    // 2.0.0 [RVIB-11] (PC-75, ★ 출근 알람) Whether the day had work before it became a day off, at a glance: 끄기 on a day that
+    // was a 야간 is not the same answer as on a day that was already free.
+    fun was(date: LocalDate) = ask.was[date]?.let { w -> w.name + (w.start?.let { " ${Fmt.time(it)}" } ?: "") }
+    val worked = ask.days.mapNotNull { d -> was(d.date)?.let { "${Fmt.monthDay(d.date)} $it" } }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.AlarmOff, null) },
@@ -3352,9 +3381,13 @@ private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turn
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    if (one != null) "${Fmt.monthDay(one.date)}은 쉬는 날이 됐어요. 이날 $times 알람을 어떻게 할까요?"
+                    if (one != null) "${Fmt.monthDay(one.date)}${was(one.date)?.let { "(원래 $it)" } ?: ""}은 쉬는 날이 됐어요. 이날 $times 알람을 어떻게 할까요?"
                     else "쉬는 날이 된 ${ask.days.size}일에 알람($times)이 있었어요. 어떻게 할까요?",
                     style = MaterialTheme.typography.bodyLarge,
+                )
+                if (one == null && worked.isNotEmpty()) Text(
+                    "원래 " + worked.take(3).joinToString(" · ") + if (worked.size > 3) " 외 ${worked.size - 3}일" else "",
+                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Text("끄면 그 날 알람이 울리지 않아요. 어느 쪽이든 바로 되돌릴 수 있고, 날짜를 눌러 알람에서 다시 바꿀 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
