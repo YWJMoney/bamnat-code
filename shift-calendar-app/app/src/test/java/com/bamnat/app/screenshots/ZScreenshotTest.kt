@@ -135,7 +135,7 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun memoSearchClearsBeforeLeavingTheTab() = open(FOLDED) {
         tab(2, wide = false)
-        typeInto("제목, 내용, #태그 검색", "회식")
+        memoSearch("회식")
         assertTrue(appears("검색어 지우기", exact = true))
         back()
         assertEquals("메모", tabNow())
