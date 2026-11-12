@@ -211,6 +211,8 @@ class ShareExtendReceiver : BroadcastReceiver() {
                     ShareSync.Result.Gone -> ShareExpiryReminder.postResult(context, "${ShareExpiryReminder.wordOf(context, id)} 링크가 이미 닫혔어요", "눌러서 새 링크를 만들어 보내 주세요", id)
                     ShareSync.Result.Offline -> ShareExpiryReminder.postResult(context, "링크를 늘리지 못했어요", "인터넷 연결을 확인하고 눌러서 다시 해 주세요", id)
                     ShareSync.Result.Locked -> ShareExpiryReminder.postResult(context, "이 링크는 프로에서 늘릴 수 있어요", "첫 링크는 그대로 늘릴 수 있어요. 눌러서 공유 화면을 열어요", id)
+                    // 2.0.0 [RVG-27] 검토 SN-13: turned down for what it carries, not for the internet.
+                    ShareSync.Result.Refused -> ShareExpiryReminder.postResult(context, "링크를 늘리지 못했어요", "서버가 지금 근무표를 받지 않았어요. 눌러서 공유 화면에서 확인해 주세요", id)
                 }
             } finally {
                 pending.finish()
