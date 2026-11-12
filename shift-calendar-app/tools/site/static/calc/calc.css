@@ -388,6 +388,16 @@ table.lines.info th { white-space: nowrap; color: var(--text-2); padding-right: 
 table.lines tr.sum th { font-weight: 750; border-bottom: 0; padding-top: 12px; }
 .result table.lines tr.sum th { color: #fff; }
 table.lines tr.noterow td { text-align: left; white-space: normal; padding-left: 0; }
+/* [I50b-02] 좁은 칸(글자 200%·접은 폴드)에서는 이름 줄 아래에 값: 긴 금액이 이름을 세로로 세우지 않게(디자인 조건 12). 모든 계산기 결과 표. */
+.card { container-type: inline-size; }
+@container (max-width: 280px) {
+  table.lines, table.lines tbody, table.lines tr, table.lines th, table.lines td { display: block; width: auto; }
+  table.lines tr { border-bottom: 1px solid var(--line); }
+  .result table.lines tr { border-bottom-color: rgba(255, 255, 255, 0.09); }
+  table.lines tr.sum { border-bottom: 0; }
+  table.lines th, table.lines tr.sum th { padding: 9px 0 0; border-bottom: 0; }
+  table.lines td, table.lines td:last-child { padding: 2px 0 9px; border-bottom: 0; text-align: left; white-space: normal; }
+}
 .note.warn, .result .note.warn { color: var(--caution); }
 .result .note.warn { color: #f3c47d; }
 /* [U50-13] 지난 공휴일은 흐리게, 글자 대비는 지키고 '지남'을 덧붙여요. */
@@ -421,6 +431,19 @@ input[aria-invalid] { border-color: var(--caution); }
 .today-big .muted { font-size: 14px; font-weight: 500; }
 /* [I50c-02] 내일·모레 한 줄, 근무가 없는 날, 내 달력(기억했거나 받은 링크)일 때 맨 위 */
 .s.none { color: var(--text-2); font-weight: 600; }
+/* [I50b-02] 명세서 맞춰 보기: 줄 이름 · 시간 · 금액, 좁으면(글자 200%) 이름이 위 한 줄 */
+.slip { container-type: inline-size; margin-top: 10px; }
+.slip-row { display: grid; grid-template-columns: 7.2em minmax(0, 0.8fr) minmax(0, 1.3fr); gap: 4px 8px; align-items: end; margin-top: 12px; }
+.slip-cell { min-width: 0; }
+.slip-cell .cap { display: block; font-size: 13px; color: var(--text-2); margin: 0 0 4px; }
+.slip-row input { margin: 0; min-width: 0; }
+.slip-name { font-weight: 650; font-size: 15px; align-self: center; padding-top: 18px; }
+@container (max-width: 330px) {
+  .slip-row { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.3fr); }
+  .slip-name { grid-column: 1 / -1; padding-top: 6px; }
+}
+@container (max-width: 220px) { .slip-row { grid-template-columns: minmax(0, 1fr); } }
+.result table.lines tr.warnrow td { color: #f3c47d; font-weight: 650; }
 .soon { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 15px; color: var(--text-2); margin: 0 0 12px; }
 .soon:empty { display: none; }
 .soon > span { white-space: nowrap; }

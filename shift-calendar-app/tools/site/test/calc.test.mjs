@@ -168,3 +168,24 @@ test('한 주: 가산은 5명 미만이면 없고, 52시간을 넘으면 알려�
   assert.equal(B.f.legalBreak(509), 30);
   assert.equal(B.f.legalBreak(510), 60);
 });
+
+// 2.0.0 [I50b-02] 통상시급(시행령 제6조)과 명세서 한 줄(제56조), 회사가 쓴 시수 거꾸로 찾기.
+test('통상임금: 기본급 + 매달 수당 + 정기상여 ÷ 12를 기준시간으로, 원 단위 반올림', () => {
+  for (const c of cases.ordinary) {
+    const o = B.f.ordinary(c.in);
+    assert.deepEqual(pick(o, Object.keys(c.expect)), c.expect, c.name);
+    for (const s of c.slips) {
+      const r = B.f.slip({ kind: s.kind, minutes: s.minutes, paid: s.paid, small: s.small, hourly: o.hourly, month: o.month, base: c.in.base });
+      assert.deepEqual(pick(r, Object.keys(s.expect)), s.expect, `${c.name} · ${s.kind}`);
+    }
+  }
+});
+
+test('명세서: 몇 원 차이(반올림·10원 절사)는 맞아요, 시수가 동떨어지면 짐작하지 않아요', () => {
+  const near = B.f.slip({ kind: 'ext', minutes: 600, paid: 154750, hourly: 10320, month: 2156880, base: 2156880 });
+  assert.equal(near.want, 154800);
+  assert.equal(near.ok, true);
+  const odd = B.f.slip({ kind: 'ext', minutes: 600, paid: 120000, hourly: 10320, month: 2156880, base: 2156880 });
+  assert.equal(odd.ok, false);
+  assert.equal(odd.of, undefined, '8,000원은 흔한 시수로 나눈 값이 아니에요');
+});

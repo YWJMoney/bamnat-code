@@ -340,6 +340,32 @@
   // 일용근로소득: 하루 (일당 − 15만 원) × 6% × (1 − 55%) = 2.7%를 원 미만 버림. 받을 때(지급 한 번)마다 그 날들의 합에서
   // 10원 미만을 버리고(국고금 관리법 제47조), 1,000원 미만이면 떼지 않아요(소액부징수). 지방소득세는 그 소득세의 10%에서 10원 미만 버림.
   // 날마다 받으면 날마다 한 번의 지급이에요. 국세청 '일용근로자 원천징수' 예: 20만 원 5일 한 번에 → 6,750원·670원. 앱 core DailyWorkerTax와 같은 식.
+  // [I50b-02] 통상시급(근로기준법 시행령 제6조): (기본급 + 매달 정해진 통상 수당 + 정기상여 1년 합 ÷ 12) ÷ 월 기준시간, 원 단위 반올림.
+  // 정기상여는 대법원 2024. 12. 19. 선고 2020다247190·2023다302838 전원합의체 판결 뒤의 임금부터 재직 조건이 붙어도 통상임금이에요.
+  // 앱 core PayCalculator(ordinaryWage, 통상시급)와 같은 식이에요(상여 월할도 원 단위 반올림).
+  F.ordinary = function (o) {
+    var bonus = Math.round((o.bonusYear || 0) / 12), month = (o.base || 0) + (o.allow || 0) + bonus, h = Math.max(1, o.hours || 209);
+    return { bonus: bonus, month: month, hours: h, hourly: Math.round(month / h), baseOnly: Math.round((o.base || 0) / h) };
+  };
+  // [I50b-02] 명세서 한 줄: 시간 × 통상시급 × 배율(연장 1.5, 야간 가산 0.5, 휴일 8시간까지 1.5·넘으면 2.0, 근로기준법 제56조).
+  // 5명 미만은 가산 없이 연장 1.0·야간 0·휴일 1.0(제11조). 명세서 금액 ÷ 시간 ÷ 배율로 회사가 쓴 시급을 거꾸로 구해, 통상임금이나
+  // 기본급만을 흔한 시수(180·209·226·243)로 나눈 값과 3% 안에서 맞는지 봐요(앱 core SlipRules의 시수 거꾸로 찾기와 같은 방법).
+  F.SLIP = { ext: [1.5, 1.0], night: [0.5, 0], hol: [1.5, 1.0], hol8: [2.0, 1.0] };
+  F.HOURS = [180, 209, 226, 243];
+  F.slip = function (o) {
+    var mult = F.SLIP[o.kind][o.small ? 1 : 0], want = Math.round(o.minutes / 60 * o.hourly * mult);
+    var r = { mult: mult, want: want, diff: Math.round(o.paid) - want, ok: Math.abs(Math.round(o.paid) - want) <= Math.max(100, want * 0.005) };
+    if (o.paid > 0 && o.minutes > 0 && mult > 0) {
+      var rate = o.paid / (o.minutes / 60) / mult, best = null;
+      r.rate = rate;
+      [['ordinary', o.month], ['base', o.base]].forEach(function (w) {
+        if (!(w[1] > 0)) return;
+        F.HOURS.forEach(function (h) { var err = Math.abs(w[1] / h - rate) / (w[1] / h); if (err <= 0.03 && (!best || err < best.err)) best = { of: w[0], hours: h, err: err }; });
+      });
+      if (best) { r.of = best.of; r.hours = best.hours; }
+    }
+    return r;
+  };
   F.dailyTaxOfDay = function (pay) { return Math.floor(Math.max(0, Math.floor(pay) - 150000) * 27 / 1000); };
   F.daily = function (o) {
     var whole = Math.floor(o.days), part = Math.round((o.days - whole) * 100) / 100, pays = [];
@@ -528,7 +554,9 @@
     var q = new URLSearchParams(location.search);
     ids.forEach(function (id) {
       var el = B.$(id); if (!el || !q.has(id)) return;
-      if (el.type === 'checkbox') el.checked = q.get(id) === '1'; else el.value = q.get(id);
+      if (el.type === 'checkbox') el.checked = q.get(id) === '1';
+      // [I50b-02] 받은 링크의 금액도 쉼표를 넣어 보여 줘요(전에는 '2500000'처럼 붙어 나왔어요).
+      else { var v = q.get(id), n = B.num(v); el.value = el.hasAttribute('data-money') && v !== '' && !isNaN(n) ? Math.floor(n).toLocaleString('ko-KR') : v; }
     });
     Object.keys(chipBoxes || {}).forEach(function (k) { if (q.has(k)) chipBoxes[k].set(q.get(k)); });
     var timer = null;

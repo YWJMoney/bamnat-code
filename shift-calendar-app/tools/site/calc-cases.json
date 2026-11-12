@@ -1,5 +1,5 @@
 {
-  "_": "공개 웹 계산기(calc/calc.js)와 앱(core)이 같은 답을 내는지 함께 보는 사례 [WEB-23]. labor(사장님 인건비, core LaborCost)·week(한 주 연장·야간·휴일 분, core MinuteClassifier)는 2.0.0 [I50b-01·03]. tools/site/test/calc.test.mjs(웹)와 core WebCalcParityTest(앱)가 같은 기대값으로 맞춰 봐요. 요율·세액표는 저장소 remote/v1의 서명 자료 그대로. 값은 원.",
+  "_": "공개 웹 계산기(calc/calc.js)와 앱(core)이 같은 답을 내는지 함께 보는 사례 [WEB-23]. labor(사장님 인건비, core LaborCost)·week(한 주 연장·야간·휴일 분, core MinuteClassifier)는 2.0.0 [I50b-01·03]. tools/site/test/calc.test.mjs(웹)와 core WebCalcParityTest(앱)가 같은 기대값으로 맞춰 봐요. ordinary(통상임금·명세서 맞춰 보기, 시행령 제6조·근로기준법 제56조)는 2.0.0 [I50b-02], 웹 시험만. 요율·세액표는 저장소 remote/v1의 서명 자료 그대로. 값은 원.",
   "takeHome": [
     { "name": "300만·비과세 20만·1명 (2026-11, 검토 영역 50 대조값)", "day": "2026-11-01", "gross": 3000000, "free": 200000, "family": 1, "kids": 0,
       "expect": { "pension": 133000, "health": 100660, "care": 13220, "employment": 25200, "tax": 56800, "local": 5680, "net": 2665440 } },
@@ -90,5 +90,12 @@
     {"name": "2교대 주주야야 (07–19, 19–07, 휴게 1시간)", "days": [["07:00", "19:00", 60], ["07:00", "19:00", 60], ["19:00", "07:00", 60], ["19:00", "07:00", 60], null, null, null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 1920, "overtime": 720, "hWithin": 0, "hOver": 0, "night": 880, "worked": 2640}},
     {"name": "휴일 밤 근무가 평일로 넘어감 (일 19–07, 다음 월은 다음 주)", "days": [null, null, null, null, null, null, ["19:00", "07:00", 60]], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 205, "overtime": 180, "hWithin": 275, "hOver": 0, "night": 440, "worked": 660}},
     {"name": "월~토 9–21 (52시간 넘음)", "days": [["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], ["09:00", "21:00"], null], "holidays": [0, 0, 0, 0, 0, 0, 1], "expect": {"regular": 2400, "overtime": 1560, "hWithin": 0, "hOver": 0, "night": 0, "worked": 3960}}
+  ],
+  "ordinary": [
+    {"name": "최저시급 기본급만(2026, 209시간)", "in": {"base": 2156880, "allow": 0, "bonusYear": 0, "hours": 209}, "expect": {"month": 2156880, "hourly": 10320, "baseOnly": 10320}, "slips": []},
+    {"name": "고정 수당·정기상여가 있는데 회사는 기본급만 ÷ 209로 연장을 셈함", "in": {"base": 2500000, "allow": 300000, "bonusYear": 6000000, "hours": 209}, "expect": {"month": 3300000, "hourly": 15789, "baseOnly": 11962, "bonus": 500000}, "slips": [{"kind": "ext", "minutes": 1200, "paid": 358860, "expect": {"want": 473670, "ok": false, "diff": -114810, "of": "base", "hours": 209}}]},
+    {"name": "226시간 회사의 야간 가산이 맞음", "in": {"base": 3000000, "allow": 0, "bonusYear": 0, "hours": 226}, "expect": {"month": 3000000, "hourly": 13274, "baseOnly": 13274}, "slips": [{"kind": "night", "minutes": 1800, "paid": 199110, "expect": {"want": 199110, "ok": true, "diff": 0, "of": "ordinary", "hours": 226}}]},
+    {"name": "5명 미만: 연장은 100%, 야간 가산 없음", "in": {"base": 2156880, "allow": 0, "bonusYear": 0, "hours": 209}, "expect": {"month": 2156880, "hourly": 10320, "baseOnly": 10320}, "slips": [{"kind": "ext", "minutes": 600, "paid": 103200, "small": true, "expect": {"want": 103200, "ok": true, "diff": 0, "of": "ordinary", "hours": 209}}, {"kind": "night", "minutes": 600, "paid": 0, "small": true, "expect": {"want": 0, "ok": true, "diff": 0}}]},
+    {"name": "회사가 통상임금 ÷ 243으로 휴일을 셈함(기본급 ÷ 226보다 가까움)", "in": {"base": 2400000, "allow": 200000, "bonusYear": 0, "hours": 209}, "expect": {"month": 2600000, "hourly": 12440, "baseOnly": 11483}, "slips": [{"kind": "hol", "minutes": 480, "paid": 128395, "expect": {"want": 149280, "ok": false, "diff": -20885, "of": "ordinary", "hours": 243}}, {"kind": "hol8", "minutes": 120, "paid": 59720, "expect": {"want": 49760, "ok": false, "diff": 9960}}]}
   ]
 }

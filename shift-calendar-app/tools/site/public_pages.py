@@ -307,6 +307,91 @@ B.shareButton($('share'),'한 주 연장·야간·휴일 계산 결과');
      ('주휴수당도 함께 나오나요?', '1주 소정근로시간(휴일 근로를 빼고 연장 전)이 15시간 이상이면 그 주를 다 나왔다고 보고 주휴수당을 함께 보여 줘요. 월급제라면 주휴는 월급에 이미 들어 있어요.')],
     'week', '근무표만 넣으면 매주 저절로', '밤낮에 근무를 넣으면 주마다 하루 8시간·주 40시간을 따져 연장·야간·휴일 시간을 나누고 이번 달 예상 월급에 넣어요. 52시간이 다가오면 미리 알려 줘요.', 2))
 
+# ---------- 통상임금·명세서 맞춰 보기 [I50b-02] ----------
+SLIP_ROWS = [('ext', '연장'), ('night', '야간 가산'), ('hol', '휴일 8시간까지'), ('hol8', '휴일 8시간 넘음')]
+slip_html = ''.join(f'''<div class="slip-row"><span class="slip-name" id="{k}N">{n}</span>
+    <div class="slip-cell"><span class="cap" id="{k}Hc">시간</span><input id="{k}H" inputmode="decimal" autocomplete="off" data-max="400" data-unit="시간" aria-labelledby="{k}N {k}Hc"></div>
+    <div class="slip-cell"><span class="cap" id="{k}Wc">명세서 금액 (원)</span><input id="{k}W" {DATA_MONEY} data-max="100000000" aria-labelledby="{k}N {k}Wc"></div></div>''' for k, n in SLIP_ROWS)
+write('calc/ordinary/', page(
+    'calc/ordinary/', '통상임금·통상시급 계산기, 명세서 수당 맞춰 보기 | 밤낮',
+    '기본급·고정 수당·정기상여로 통상시급을 거꾸로 구하고, 명세서의 연장·야간·휴일수당이 맞는지 맞춰 봐요.',
+    '통상임금·명세서 맞춰 보기', '기본급과 매달 받는 고정 수당, 정기상여로 통상시급을 구하고, 명세서의 연장·야간·휴일수당이 그 시급으로 셈한 금액과 같은지 봐요. 회사가 어떤 시급으로 셈했는지도 거꾸로 찾아요.',
+    f'''<div class="card">
+  <label for="base">월 기본급 (원)</label>
+  <input id="base" {DATA_MONEY} data-max="100000000">
+  <label for="allow">매달 정해진 수당 합계 (원)<span class="hint">직책·자격·근속·교대수당처럼 일한 시간과 상관없이 정해진 금액. 통상임금에 드는 것만 더해요.</span></label>
+  <input id="allow" {DATA_MONEY} value="0" data-max="100000000">
+  <label for="bonusYear">정기상여 1년 합계 (원)<span class="hint">정해진 때 정해진 비율로 받는 상여. 대법원 판결(2024.12.19.) 뒤 임금부터는 재직 조건이 있어도 통상임금이에요.</span></label>
+  <input id="bonusYear" {DATA_MONEY} value="0" data-max="1000000000">
+  <span class="glabel" id="hoursL">월 기준시간<span class="hint">통상임금을 이 시간으로 나눠요. 근로계약서·취업규칙의 '통상임금 산정 기준시간', 모르면 209시간(주 40시간 + 주휴).</span></span>
+  <div class="chips" id="hourChips" role="group" aria-labelledby="hoursL">{''.join(f'<button type="button" class="chip" data-v="{h}" aria-pressed="{"true" if h == 209 else "false"}">{h}시간</button>' for h in (180, 209, 226, 243))}</div>
+  <input id="hours" inputmode="numeric" value="209" data-min="100" data-max="320" data-unit="시간" aria-labelledby="hoursL">
+</div>
+<div class="card">
+  <span class="glabel" id="slipL">명세서와 맞춰 보기<span class="hint">명세서에 적힌 그달 시간과 금액을 넣어요. 없는 줄은 비워 둬요.</span></span>
+  <div class="slip" role="group" aria-labelledby="slipL">
+    {slip_html}
+  </div>
+  <label class="check"><input type="checkbox" id="small"> 상시 5명 미만 사업장이에요 (가산수당 없음)</label>
+</div>
+{result('통상시급')}''',
+    r'''(function(){
+var B=Bamnat,F=B.f,$=B.$,save=function(){},year=new Date().getFullYear();
+var KINDS=[['ext','연장'],['night','야간 가산'],['hol','휴일 8시간까지'],['hol8','휴일 8시간 넘음']];
+var hc=B.chips($('hourChips'),function(v){$('hours').value=v;calc();});
+function hm(m){m=Math.round(m);return Math.floor(m/60)+'시간'+(m%60?' '+(m%60)+'분':'');}
+function calc(){
+  var base=B.val('base'),hours=B.val('hours');hc.set(hours);
+  var o=F.ordinary({base:base,allow:B.val('allow'),bonusYear:B.val('bonusYear'),hours:hours});
+  if(!base){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:'월 기본급을 넣어 주세요.'}]);save();return;}
+  var rows=[['기본급',B.won(base)]];
+  if(B.val('allow'))rows.push(['매달 정해진 수당',B.won(B.val('allow'))]);
+  if(o.bonus)rows.push(['정기상여 월할 (1년 ÷ 12)',B.won(o.bonus)]);
+  rows.push(['통상임금 (한 달)',B.won(o.month),'sum'],['÷ 월 기준시간',o.hours+'시간']);
+  if(o.month!==base)rows.push(['기본급만 나누면',B.won(o.baseOnly)]);
+  var min=B.rateOn(B.dayOf(year)).minimumHourlyWage;
+  if(min&&o.hourly<min)rows.push({note:'통상시급이 '+year+'년 최저시급 '+B.won(min)+'보다 낮아요. 최저임금은 넣는 수당이 달라 따로 따져요(최저임금법 제6조).'});
+  var small=$('small').checked,any=false,under=0,guess=null;
+  KINDS.forEach(function(k){
+    var hIn=$(k[0]+'H').value.trim(),wIn=$(k[0]+'W').value.trim();if(hIn===''&&wIn==='')return;
+    var mins=Math.round(B.val(k[0]+'H')*60),paid=B.val(k[0]+'W');if(!mins)return;
+    var r=F.slip({kind:k[0],minutes:mins,paid:paid,hourly:o.hourly,month:o.month,base:base,small:small});
+    if(!any){rows.push({note:'<b>명세서와 맞춰 보기</b>'});any=true;}
+    var head=k[1]+' '+hm(mins)+' × '+B.fmt(r.mult*100,0)+'%';
+    if(!r.mult){rows.push([head,'5명 미만은 없어요']);return;}
+    rows.push([head+'이면',B.won(r.want)]);
+    if(wIn===''){return;}
+    rows.push(['명세서',B.won(paid)],['차이',r.ok?'맞아요':r.diff<0?B.won(-r.diff)+' 적어요':B.won(r.diff)+' 많아요',r.ok?'':r.diff<0?'warnrow':'']);
+    if(!r.ok&&r.diff<0)under+=-r.diff;
+    if(!r.ok&&r.rate&&!guess)guess=r;
+  });
+  if(guess){
+    var said='회사는 시급 '+B.won(guess.rate)+'으로 셈한 것 같아요';
+    if(guess.of==='base')said+='(기본급만 ÷ '+guess.hours+'시간).'+(o.month>base?' 매달 정해진 수당·정기상여가 통상임금에 들면 시간마다 '+B.won(o.hourly-guess.rate)+'씩 차이가 나요.':'');
+    else if(guess.of)said+='(통상임금 ÷ '+guess.hours+'시간). 회사의 월 기준시간이 '+guess.hours+'시간이면 위에서 골라 다시 봐요.';
+    else said+='.';
+    rows.push({note:said});
+  }
+  if(under)rows.push({note:'이 식보다 '+B.won(under)+' 적게 적혀 있어요. 먼저 근로계약서·취업규칙에서 통상임금에 드는 수당과 기준시간을 확인하고, 다르면 급여 담당자에게 물어봐요. 임금은 3년 안에 청구할 수 있어요(근로기준법 제49조).',warn:1});
+  else if(any&&!guess)rows.push({note:'명세서 금액이 같은 식으로 셈한 것과 맞아요.'});
+  $('out').textContent=B.won(o.hourly);$('lines').innerHTML=B.rows(rows);save();
+}
+var ids=['base','allow','bonusYear','hours','small'];KINDS.forEach(function(k){ids.push(k[0]+'H',k[0]+'W');});
+B.ready.then(function(){
+  year=B.years()[0];var min=B.rateOn(B.dayOf(year)).minimumHourlyWage;
+  if(!$('base').value)$('base').value=(min*209).toLocaleString('ko-KR');
+  save=B.keep(ids);calc();
+});
+ids.forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});
+B.shareButton($('share'),'통상시급 계산 결과');
+})();''',
+    [('통상임금이 뭔가요?', '정기적이고 일률적으로, 정해진 근로에 대해 주기로 한 임금이에요(근로기준법 시행령 제6조). 연장·야간·휴일수당과 연차수당, 해고 예고 수당을 셈하는 기준이 돼요. 기본급과 매달 정해진 직책·자격·근속·교대수당이 대표적이에요.'),
+     ('정기상여도 통상임금인가요?', '대법원 2024. 12. 19. 선고 2020다247190·2023다302838 전원합의체 판결은 통상임금의 \'고정성\' 기준을 없애고, 재직 조건이나 근무일수 조건이 붙은 정기상여도 정해진 근로의 대가면 통상임금이라고 봤어요. 판결 뒤의 임금부터 적용돼요. 이 계산기는 1년 합계를 12로 나눠 한 달 몫으로 더해요.'),
+     ('209시간은 어디서 나오나요?', '주 40시간에 유급 주휴 8시간을 더한 48시간에 한 달 평균 주 수(365 ÷ 7 ÷ 12)를 곱한 약 208.6시간을 209시간으로 써요(근로기준법 시행령 제6조 제2항). 토요일 일부를 유급으로 정한 회사는 226·243시간, 연장 단가를 따로 180시간으로 정한 회사도 있어요.'),
+     ('명세서 수당이 이 계산보다 적어요.', '가장 흔한 까닭은 회사가 기본급만 나눠 시급을 정했거나, 월 기준시간이 달라서예요. 이 계산기가 \'회사는 시급 ○원으로 셈한 것 같아요\'로 거꾸로 찾아 줘요. 근로계약서·취업규칙·단체협약에서 통상임금 범위를 확인하고, 다르면 급여 담당자에게 물어봐요. 임금은 3년 안에 청구할 수 있어요(근로기준법 제49조).'),
+     ('야간수당은 왜 50%만 셈하나요?', '밤 10시~아침 6시 근로는 일한 시간의 임금에 통상임금의 50%를 더 줘요(근로기준법 제56조 제3항). 명세서의 야간수당은 보통 이 더하는 몫만 적혀서 50%로 견줘요. 연장과 겹친 야간은 연장수당과 야간수당이 따로 붙어요.')],
+    'ordinary', '명세서 사진으로 달마다 맞춰 보세요', '밤낮 앱에 명세서 사진을 찍으면 줄마다 읽어 근무표로 셈한 금액과 견주고, 다른 줄은 회사가 어떤 시수로 셈했는지 알려 줘요.', 2))
+
 # ---------- 알바 월급 ----------
 write('calc/alba/', page(
     'calc/alba/', '알바 월급 계산기 (주휴수당·3.3%·4대보험) | 밤낮',
@@ -876,6 +961,7 @@ hub_body = '<ul class="links">' + ''.join(f'<li><a href="{u}"><strong>{t}</stron
     ('alba/', '알바 월급 계산기', '주휴 포함 월급, 3.3%·4대보험 뺀 실수령, 이번 달 날수로'),
     ('allowance/', '야간·연장·휴일수당 계산기', '출퇴근 시각으로 밤 10시~아침 6시, 8시간 초과 시간을 나눠 계산'),
     ('week/', '한 주 연장·야간·휴일 계산기', '요일별 출퇴근으로 하루 8시간·주 40시간 넘은 연장과 주 52시간'),
+    ('ordinary/', '통상임금·명세서 맞춰 보기', '기본급·고정 수당·정기상여로 통상시급, 명세서 연장·야간·휴일수당 확인'),
     ('boss/', '사장님 인건비 계산기', '주휴수당과 사업주 4대보험까지 직원 한 달 인건비'),
     ('salary/', '월급·연봉 실수령액 계산기', '4대보험과 간이세액표 소득세를 뺀 통장 금액'),
     ('leave/', '연차 계산기', '입사일·회계연도 기준으로 지금 연차와 근속별 개수'),
