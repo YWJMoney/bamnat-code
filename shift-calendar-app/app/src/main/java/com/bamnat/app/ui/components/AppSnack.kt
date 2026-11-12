@@ -109,6 +109,17 @@ object AppSnack {
         }
     }
 
+    /**
+     * 2.0.0 [RVK-42] (검토 MONEY-14·U06a-14·U06a-19) A view model's [com.bamnat.app.ui.UndoMessage], straight into the queue: a 되돌리기
+     * takes the place of the line on show at once, so the one seen is always about the last thing done, and [run] does it when pressed.
+     * (가계부·받을 돈 collected them one by one onto a lane: each waited for the one before it to run out, and a fifth was dropped.)
+     * A button that is not 되돌리기 ('바꾸기') waits its turn as any line with a button.
+     */
+    fun post(msg: com.bamnat.app.ui.UndoMessage, run: (com.bamnat.app.ui.UndoMessage) -> Unit) {
+        if (msg.undo == null) show(msg.message, millis = if (msg.long) LONG_MILLIS else null)
+        else show(msg.message, undo = { run(msg) }, kind = if (msg.actionLabel in UNDO_WORDS) Kind.UNDO else Kind.INFO, action = msg.actionLabel)
+    }
+
     /** Says [message] and waits: true when [action] was pressed, false when the line went (timed out, pushed out, or never shown). */
     suspend fun ask(
         message: String,

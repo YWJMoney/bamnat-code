@@ -491,7 +491,7 @@ fun TalkSheet(holder: TalkHolder) {
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // 2.0.0 [RVN-06] COMP-08 디자인 품질 1·12: the how-to lines scroll with the posts instead of standing above them; at 200%
                 // they filled the sheet, the posts were not seen at all and the box to write in was squeezed shut (no hint, no room).
-                TalkHowTo(if (o.room) null else holder.voteLine(), styleRoom)
+                TalkHowTo(if (o.room) null else holder.voteLine(), styleRoom, money = holder.roomMoney(o))
                 val talk = o.talk
                 // [SPD-13] The talk kept on the phone is on screen while it is read again.
                 if (talk != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::reload)
@@ -823,11 +823,13 @@ private fun TalkKindChip(kinds: List<Pair<String, String>>, kind: String, hints:
  * the words rather than beside them, where it squeezed them to a word a line.
  */
 @Composable
-private fun TalkHowTo(vote: String?, styleRoom: Boolean) {
+private fun TalkHowTo(vote: String?, styleRoom: Boolean, money: Boolean = false) {
     val big = com.bamnat.app.ui.components.bigLetters()
     var open by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVN-17] 검토 COMP-14: once a room's post may say an amount (방 글에 금액 받기), the line keeps only what still cannot go.
+    val keep = if (money) "이름·연락처" else "이름·연락처·금액"
     val note = (if (styleRoom) "다른 분께는 마을 이름(없으면 ‘참여자 번호’)으로 보여요. " else "다른 분께는 ‘참여자 번호’로만 보여요. ") +
-        "이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요."
+        (if (money) "이름, 연락처는 적지 마세요. 금액은 적어도 돼요. " else "이름, 연락처, 금액은 적지 마세요. ") + "욕설·비방·광고는 신고로 가려져요."
     // 2.0.0 [RVN-13] HQ-40 ② One line and ⓘ at every 글자 크기 (조건 4): the two paragraphs, the first in the link color though it could
     // not be pressed, are behind it, in the quiet color; only 운영 규칙 보기 looks like what it is, a link. The one thing to keep in mind
     // while writing stays on the line itself.
@@ -836,7 +838,7 @@ private fun TalkHowTo(vote: String?, styleRoom: Boolean) {
             verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Info, null, Modifier.size(if (big) 20.dp else 16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(6.dp))
-            Text((if (vote != null) "투표와 글 쓰는 규칙" else "글 쓰는 규칙") + " · 이름·연락처·금액은 적지 마세요",
+            Text((if (vote != null) "투표와 글 쓰는 규칙" else "글 쓰는 규칙") + " · ${keep}${com.bamnat.core.text.Josa.eunneun(keep)} 적지 마세요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

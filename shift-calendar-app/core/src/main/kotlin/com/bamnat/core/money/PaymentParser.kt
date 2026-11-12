@@ -39,12 +39,19 @@ object PaymentParser {
         val cardKind: AccountType? = null,
         /** 1.32 [LEDX-20] Money put on a pay balance (페이 머니 충전, 포인트 전환, 교통카드 충전): a move, not spending. */
         val charge: Boolean = false,
+        /**
+         * 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 that went to someone else for something: 월세·관리비·통신비·보험료 자동이체, a 계좌 결제
+         * (the receiver's name is a kind of spending the app knows, or the user once said which spending that receiver is). Spending,
+         * not a move between the user's own accounts.
+         */
+        val spentTo: Boolean = false,
     ) {
         val isCard: Boolean get() = type == Type.APPROVAL || type == Type.CANCEL
         val needsWon: Boolean get() = amount == null && foreign != null
         val kind: MoneyKind get() = when {
             charge && type != Type.CANCEL -> MoneyKind.TRANSFER
             type == Type.DEPOSIT -> MoneyKind.INCOME
+            type == Type.WITHDRAW && spentTo -> MoneyKind.EXPENSE
             type == Type.WITHDRAW -> MoneyKind.TRANSFER
             else -> MoneyKind.EXPENSE
         }
@@ -167,6 +174,23 @@ object PaymentParser {
         }.maxByOrNull { it.first.length }?.second
     }
 
+    /** 2.0.0 [RVK-39] The note on a line written from a bank 출금 that is spending ([Parsed.spentTo]). */
+    const val WITHDRAW_NOTE = "계좌 출금"
+
+    /**
+     * 2.0.0 [RVK-39] (검토 MONEY-42) The spending a bank 출금 to [receiver] is, or null when it may be the user's own money moving:
+     * the user's rule for that receiver when it names a spending category (a transfer one such as 저축·내 계좌 keeps it a move), else
+     * the built-in words (통신·보험·관리비·월세 …).
+     */
+    fun withdrawSpending(receiver: String, rules: Map<String, String> = emptyMap(), spending: Map<String, String> = emptyMap()): String? {
+        if (receiver.isBlank()) return null
+        // A rule's 기타 was learned from a spending line (지출 기타); the moves the user tells are 내 계좌·저축 and the like.
+        ruleFor(receiver, rules)?.let { c -> return if (c in MoneyCategories.transfer && c != MoneyCategories.OTHER) null else c }
+        // The user's own 반복 지출 by the receiver's name (관리비 to the 관리사무소, 보험료 to the insurer).
+        ruleFor(receiver, spending)?.let { return it }
+        return CATEGORY_HINTS.firstOrNull { (re, _) -> re.containsMatchIn(receiver) }?.second
+    }
+
     fun guessCategory(merchant: String, rules: Map<String, String> = emptyMap()): String {
         if (merchant.isBlank()) return "기타"
         ruleFor(merchant, rules)?.let { return it }
@@ -252,7 +276,11 @@ object PaymentParser {
     /** A December text read in January belongs to last year. */
     private fun inferYear(month: Int, now: LocalDateTime): Int = if (month > now.monthValue + 1) now.year - 1 else now.year
 
-    fun parse(text: String, now: LocalDateTime = Today.dateTime(), rules: Map<String, String> = emptyMap()): Result {
+    fun parse(
+        text: String, now: LocalDateTime = Today.dateTime(), rules: Map<String, String> = emptyMap(),
+        /** 2.0.0 [RVK-39] (검토 MONEY-42) The user's 반복 지출 names and their categories, for a bank 출금 to one of them. */
+        spending: Map<String, String> = emptyMap(),
+    ): Result {
         val src = text.trim()
         if (src.isEmpty()) return Result.Fail("빈 글")
         val fx = findForeign(src)
@@ -336,15 +364,19 @@ object PaymentParser {
         if (merchant.isNotEmpty()) confidence += 0.15
         if (issuer != null) confidence += 0.1
 
+        // 2.0.0 [RVK-39] (검토 MONEY-42) A 출금 to a receiver whose name is a kind of spending (통신·보험·관리비·월세 …), or one the user
+        // once filed as spending (가맹점 규칙), is that spending; any other 출금 stays a move, for the user to tell.
+        val spentAs = if (type == Type.WITHDRAW && !charge && !CARD_BILL.containsMatchIn(src)) withdrawSpending(merchant, rules, spending) else null
         val category = when {
             charge && type != Type.CANCEL -> CHARGE_CATEGORY
             type == Type.DEPOSIT -> if (src.contains("급여")) MoneyCategories.SALARY else "부수입"
+            spentAs != null -> spentAs
             type == Type.WITHDRAW -> if (CARD_BILL.containsMatchIn(src)) "카드값" else "내 계좌"
             else -> guessCategory(merchant, rules)
         }
         return Result.Ok(
             Parsed(type, amt?.value, fx?.first, issuer, last4, date, time, installments, cum, bal, merchant, category,
-                minOf(1.0, Math.round(confidence * 100) / 100.0), via = via, cardKind = cardKind, charge = charge),
+                minOf(1.0, Math.round(confidence * 100) / 100.0), via = via, cardKind = cardKind, charge = charge, spentTo = spentAs != null),
         )
     }
 
@@ -380,6 +412,8 @@ object PaymentParser {
         val amount = signedAmount(p) ?: return null
         val notes = buildList {
             if (p.type == Type.CANCEL) add("결제 취소")
+            // 2.0.0 [RVK-39] (검토 MONEY-42) A 출금 read as spending says so, and a 체크카드 approval of the same payment finds it.
+            if (p.spentTo) add(WITHDRAW_NOTE)
             if (p.installments > 1) add("${p.installments}개월 할부")
             // 1.32 [LEDX-13] The pay app the money went through, when it is not the one that sent the text.
             p.via?.takeIf { it != p.issuer }?.let { add("$it 결제") }

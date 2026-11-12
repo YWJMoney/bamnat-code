@@ -24,6 +24,8 @@ import java.time.ZoneId
  * 일정을 지움, 자동 백업, 끄기 미션, 구독 주소), only when something does. And the evening before the 끄기 미션's 7 days end while no 프로
  * keeps it, and the morning a shift alarm rang without the mission the user set ('아침 한 줄', [afterRing]). Once per end; inexact (an
  * hour late is fine). Nothing on a phone where 결제 is not open (tests, debug, the local server).
+ *
+ * 2.0.0 총괄 11-13: each is also a row of the 알림함 ([inbox]); turned off there with '다시 보지 않기', neither comes again.
  */
 object ProEndNotice {
     private const val REQUEST = 3340
@@ -101,14 +103,18 @@ object ProEndNotice {
             val end = missionEnd(gate, now) ?: return
             if (!missionSet(c) || prefs.getLong(K_MISSION, 0) == end.toEpochMilli() || now < (ProEnding.noticeAt(end, now, zone) ?: return)) return
             val (title, text) = ProEnding.missionWords(end, now, zone)
-            post(context, Notifications.MISSION_END_ID, title, text, NoticeLinks.Target.SURE_ALARM, backup = false, more = true)
+            if (inbox(context, "missionEnd:${end.toEpochMilli()}", MISSION_KIND, title, text, NoticeLinks.Target.SURE_ALARM, now)) {
+                post(context, Notifications.MISSION_END_ID, title, text, NoticeLinks.Target.SURE_ALARM, backup = false, more = true)
+            }
             prefs.edit().putLong(K_MISSION, end.toEpochMilli()).apply()
         } else {
             val end = gate.ends ?: return
             val stops = ProEnding.stops(use(c, gate, end))
             if (stops.isEmpty() || prefs.getLong(K_TOLD, 0) == end.toEpochMilli() || now < (ProEnding.noticeAt(end, now, zone) ?: return)) return
             val (title, text) = ProEnding.words(stops, end, now, zone)
-            post(context, Notifications.PRO_STOP_ID, title, text, NoticeLinks.Target.PRO, backup = ProEnding.Stop.AUTO_BACKUP in stops)
+            if (inbox(context, "proEnd:${end.toEpochMilli()}", PRO_KIND, title, text, NoticeLinks.Target.PRO, now)) {
+                post(context, Notifications.PRO_STOP_ID, title, text, NoticeLinks.Target.PRO, backup = ProEnding.Stop.AUTO_BACKUP in stops)
+            }
             prefs.edit().putLong(K_TOLD, end.toEpochMilli()).apply()
         }
     }
@@ -124,9 +130,26 @@ object ProEndNotice {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (prefs.getBoolean(K_MORNING, false)) return
         val (title, text) = ProEnding.MORNING
-        post(context, Notifications.MISSION_END_ID, title, text, NoticeLinks.Target.SURE_ALARM, backup = false, more = true)
+        if (inbox(context, "missionMorning", MISSION_KIND, title, text, NoticeLinks.Target.SURE_ALARM, Today.instant())) {
+            post(context, Notifications.MISSION_END_ID, title, text, NoticeLinks.Target.SURE_ALARM, backup = false, more = true)
+        }
         prefs.edit().putBoolean(K_MORNING, true).apply()
     }
+
+    /** The 알림함 kinds '다시 보지 않기' turns off: the 프로 that ends, and the 끄기 미션's 7 days. */
+    const val PRO_KIND = "pro.ending"
+    const val MISSION_KIND = "pro.missionEnd"
+
+    /**
+     * 2.0.0 [RVO-14] 총괄 11-13 (P #492 알림함): the notice is a row of the 알림함 'Inbox' too, under 안내, so it stays where the
+     * other notices are (전체 지움, X, 다시 보지 않기) once the phone's notice is gone. False when the user said '다시 보지 않기' to this
+     * kind: then the phone's notice does not come either, and it is not asked again.
+     */
+    private fun inbox(context: Context, key: String, kind: String, title: String, text: String, open: NoticeLinks.Target, now: Instant): Boolean =
+        com.bamnat.app.inbox.Inbox.get(context).let { box ->
+            box.post(com.bamnat.app.inbox.InboxRow(key = key, kind = kind, section = com.bamnat.app.inbox.InboxSection.NOTICE, title = title,
+                line = text, target = open, at = now.toEpochMilli()))
+        }
 
     private fun post(context: Context, id: Int, title: String, text: String, open: NoticeLinks.Target, backup: Boolean, more: Boolean = false) {
         val notification = NotificationCompat.Builder(context, Notifications.PRO_CHANNEL_ID)

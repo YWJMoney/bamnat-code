@@ -53,6 +53,8 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                      onLater: (() -> Unit)? = null,
                      /** 1.38 PC 11차: the app was opened from a shared 근무표 link on a new phone; say it waits for the calendar. */
                      linkWaiting: Boolean = false, linkTitle: String? = null,
+                     /** 2.0.0 [RVG-35] 검토 HQ-64: what the link is called ([com.bamnat.core.work.linkWord]): 근무표, 일정 or 영업일. */
+                     linkWord: String = "근무표",
                      /** 1.38 PC 12.1: the setup filled from the link (its kinds, times and days); null while it cannot be read. */
                      onLinkStart: (() -> Unit)? = null,
                      /** [RVG-15] '가족·동료 것이에요': the link kept beside as a 받은 달력, the user's own work asked below. */
@@ -67,6 +69,8 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                      onLinkClose: (() -> Unit)? = null,
                      /** [RVG-15] The title of a link just kept as someone else's: said once over the question, where it went. */
                      theirsKept: String? = null,
+                     /** [RVG-35] The kept link's word, as [linkWord]. */
+                     theirsWord: String = "근무표",
                      /** [RVG-15] Someone else's, but the link could not be read: the calendar offers it as a 받은 달력 after the setup. */
                      theirsLater: Boolean = false,
                      /** [RVG-15] The X of the card that says where it went. */
@@ -94,8 +98,10 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                 // [RVG-15] 검토 TYPE-04 (사용자 결정 2026-11-12 '두 단추로 묻기'): whose 근무표 it is, asked before anything is filled,
                 // so a 가족·친구's 근무 never becomes the user's own calendar. One filled button ([linkLean]), one line, details under ⓘ.
                 if (linkWaiting) LinkCard(
-                    title = linkTitle?.let { "‘$it’ 근무표가 도착했어요" } ?: "받은 근무표가 있어요",
-                    line = linkProblem ?: if (linkLoading) "근무표를 불러오는 중…" else "누구 근무표인지 알려 주세요.",
+                    // [RVG-35] 검토 HQ-64: in the link's word, as the web page that opened the app said it (‘민지’ 영업일이 도착했어요).
+                    title = com.bamnat.app.ui.setup.LinkStart.roster(linkTitle, linkWord).let { r ->
+                        if (linkTitle != null) "$r${com.bamnat.app.ui.Fmt.iga(r)} 도착했어요" else "$r${com.bamnat.app.ui.Fmt.iga(r)} 있어요" },
+                    line = linkProblem ?: if (linkLoading) "근무표를 불러오는 중…" else "누구 ${linkWord}인지 알려 주세요.",
                     more = if (onLinkStart != null) "내 근무표예요: 근무 이름과 시간, 근무한 날을 그대로 가져와 한 번에 시작해요. 가족·동료 것이에요: 내 달력 옆 받은 달력에 두고 보기만 해요. 내 달력과 알람은 바뀌지 않아요."
                         else "내 근무표예요: 매달 받는 근무표로 시작하고, 첫 설정을 마치면 달력에서 이 근무표를 다시 열어요. 가족·동료 것이에요: 첫 설정 뒤 받은 달력으로 넣을지 물어요. 내 달력과 알람은 바뀌지 않아요.",
                     mood = com.bamnat.app.ui.components.KaniMood.Point, live = linkLoading || linkProblem != null,
@@ -112,9 +118,10 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                 // question right under it already asks for the user's own work; ⓘ says where to see the kept one after the setup.
                 if (!linkWaiting && (theirsKept != null || theirsLater)) LinkCard(
                     // [RVG-32] 검토 PC-93: '받은 근무표는…' for a link sent without a name (was ‘받은’ 근무표).
-                    title = if (theirsKept != null) "${com.bamnat.app.ui.setup.LinkStart.roster(theirsKept)}는 받은 달력에 넣었어요" else "받은 근무표는 첫 설정 뒤에 넣어요",
+                    // [RVG-35] 검토 HQ-64: 은/는, 로/으로 by the link's word (‘민지’ 일정은, ‘민지’ 일정으로).
+                    title = if (theirsKept != null) com.bamnat.app.ui.setup.LinkStart.roster(theirsKept, theirsWord).let { r -> "$r${com.bamnat.app.ui.Fmt.eun(r)} 받은 달력에 넣었어요" } else "받은 근무표는 첫 설정 뒤에 넣어요",
                     line = null,
-                    more = if (theirsKept != null) "첫 설정을 마치면 달력 이름을 눌러 ${com.bamnat.app.ui.setup.LinkStart.roster(theirsKept)}로 바꿔 봐요. 내 달력과 알람은 그대로이고, 보낸 분이 고치면 받은 달력에만 보여요."
+                    more = if (theirsKept != null) com.bamnat.app.ui.setup.LinkStart.roster(theirsKept, theirsWord).let { r -> "첫 설정을 마치면 달력 이름을 눌러 $r${com.bamnat.app.ui.Fmt.ro(r)} 바꿔 봐요. 내 달력과 알람은 그대로이고, 보낸 분이 고치면 받은 달력에만 보여요." }
                         else "지금은 근무표를 읽지 못했어요. 첫 설정을 마치면 달력에서 받은 달력으로 넣을지 물어요.",
                     mood = com.bamnat.app.ui.components.KaniMood.Done, live = true,
                     onClose = onTheirsClose, closeLabel = "받은 달력 안내 닫기",

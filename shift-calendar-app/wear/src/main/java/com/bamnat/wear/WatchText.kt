@@ -38,4 +38,10 @@ object WatchText {
 
     const val NO_DATA = "휴대폰의 밤낮을 열어 주세요"
     const val NOT_SENT = "근무 정보 없음"
+
+    /** 2.0.0 [RVI-09] '영업 정보 없음' on a 가게 calendar, '일정 정보 없음' on 현장·투자. */
+    fun notSent(p: WatchPayload?) = "${p?.noun ?: "근무"} 정보 없음"
+
+    /** 2.0.0 [RVI-09] On it now: 근무 중, 영업 중, else 진행 중. */
+    fun during(noun: String) = when (noun) { "근무" -> "근무 중"; "영업" -> "영업 중"; else -> "진행 중" }
 }

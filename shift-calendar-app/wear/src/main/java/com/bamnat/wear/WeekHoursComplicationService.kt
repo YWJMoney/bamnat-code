@@ -22,8 +22,10 @@ class WeekHoursComplicationService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         val p: WatchPayload = WatchStore.load(this) ?: return null
-        if (p.weekMinutes < 0) return null
-        return data(request.complicationType, p.weekMinutes, p.weekLimitMinutes)
+        // 2.0.0 [RVI-08] Last week's hours are not this week's: none until the phone sends this week's.
+        val minutes = WatchDays.weekMinutesNow(p, com.bamnat.core.time.Today.date())
+        if (minutes < 0) return null
+        return data(request.complicationType, minutes, p.weekLimitMinutes)
     }
 
     private fun data(type: ComplicationType, minutes: Int, limit: Int): ComplicationData? {

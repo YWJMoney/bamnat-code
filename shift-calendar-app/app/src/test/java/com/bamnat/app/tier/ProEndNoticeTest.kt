@@ -47,6 +47,7 @@ class ProEndNoticeTest {
         scope.cancel()
         context.appContainer.settingsRepository.update { it.copy(phoneCalendars = emptyList(), alarmMission = "none", wakeCheckMinutes = 0, previewTier = null) }
         context.getSharedPreferences("pro_end_notice", Context.MODE_PRIVATE).edit().clear().commit()
+        com.bamnat.app.inbox.Inbox.get(context).run { clearAll(); unmute(ProEndNotice.PRO_KIND); unmute(ProEndNotice.MISSION_KIND) }
     }
 
     private fun gate(config: LaunchConfig, debug: Boolean = false): Gate {
@@ -89,6 +90,11 @@ class ProEndNoticeTest {
         val text = posted.extras.getCharSequence("android.bigText").toString()
         assertTrue(text, text.contains("휴대폰 캘린더의 근무 일정을 지워요(앱 안 근무는 그대로예요)"))
         assertTrue(text, text.contains("다시 프로가 되면 다시 켜져요"))
+        // 총괄 11-13: the same words are a row of the 알림함 under 안내, so they stay after the phone's notice goes.
+        val row = com.bamnat.app.inbox.Inbox.get(context).rows.value.single { it.kind == ProEndNotice.PRO_KIND }
+        assertEquals(com.bamnat.app.inbox.InboxSection.NOTICE, row.section)
+        assertEquals("프로를 내일(12월 11일)까지 써요", row.title)
+        assertEquals(com.bamnat.app.NoticeLinks.Target.PRO, row.target)
         nm.cancel(Notifications.PRO_STOP_ID)
         ProEndNotice.fire(context, mission = false, c = c, gate = thanks, now = evening.plusSeconds(600), zone = zone)
         assertNull("once per end", shadowOf(nm).getNotification(Notifications.PRO_STOP_ID))
@@ -147,4 +153,13 @@ class ProEndNoticeTest {
         assertTrue("nothing ends: nothing set", ours().isEmpty())
     }
 
+    /** 총괄 11-13 (알림함 규칙): '다시 보지 않기' on the 알림함 row turns the phone's notice off too, and it is not asked again. */
+    @Test fun aKindSaidNoToInTheInboxDoesNotComeAsANoticeEither() {
+        val c = context.appContainer
+        c.settingsRepository.update { it.copy(phoneCalendars = listOf("main")) }
+        com.bamnat.app.inbox.Inbox.get(context).mute(ProEndNotice.PRO_KIND, "프로가 끝나기 전 알림")
+        ProEndNotice.fire(context, mission = false, c = c, gate = thanks, now = kst("2026-12-10T20:00"), zone = zone)
+        assertNull(shadowOf(nm).getNotification(Notifications.PRO_STOP_ID))
+        assertTrue(com.bamnat.app.inbox.Inbox.get(context).rows.value.none { it.kind == ProEndNotice.PRO_KIND })
+    }
 }

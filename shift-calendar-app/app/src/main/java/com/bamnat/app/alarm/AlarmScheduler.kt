@@ -108,7 +108,7 @@ class AlarmScheduler(
         val exact = setAlarm(triggerAt, operation)
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
         // 1.38 [SLEEP-08] 깨우는 구간: a separate listening alarm before this one (off by default); the alarm above stays.
-        com.bamnat.app.sleep.SmartWake.arm(context, RingRequest.from(plan, triggerAt))
+        com.bamnat.app.sleep.SmartWake.arm(context, ringOf(plan, triggerAt))
         AlarmSoon.schedule(context, triggerAt, soonText(plan), soonMinutes())
         AlarmGuard.schedule(context, if (guard()) triggerAt else null)
         // [ALRM-29] The first alarm after a break (no alarm in any calendar for two days) is said the evening before.
@@ -236,7 +236,7 @@ class AlarmScheduler(
         var from = after
         while (out.size < maxOf(count, BootAlarms.AHEAD)) {
             val p = nextOf(calendars, from) ?: break
-            out += RingRequest.from(p, p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
+            out += ringOf(p, p.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
             from = p.triggerAt
         }
         return out
@@ -307,8 +307,12 @@ class AlarmScheduler(
     private fun setAlarm(triggerAt: Long, operation: PendingIntent): Boolean = setAlarm(context, alarmManager, triggerAt, operation)
 
     private fun shiftAlarmIntent(plan: PlannedAlarm?): PendingIntent = shiftAlarmIntent(
-        context, plan?.let { RingRequest.from(it, it.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()) },
+        context, plan?.let { ringOf(it, it.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()) },
     )
+
+    /** 2.0.0 [RVI-17] (검토 ALM-08 PC 재확인) A 낮잠's wake rings as 낮잠 알람, not as the night's shift alarm. */
+    private fun ringOf(plan: PlannedAlarm, triggerAt: Long): RingRequest =
+        RingRequest.from(plan, triggerAt, nap = com.bamnat.app.sleep.NapWake.isNap(context, plan.shiftDate, triggerAt, plan.custom))
 
     private fun snoozeIntent(ring: RingRequest?): PendingIntent = snoozeIntent(context, ring)
 

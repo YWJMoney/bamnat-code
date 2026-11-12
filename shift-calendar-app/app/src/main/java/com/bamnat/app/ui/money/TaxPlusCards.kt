@@ -34,7 +34,7 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
-import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.pro.openPro
 import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyKind
@@ -282,19 +282,25 @@ internal fun CardMatchLines(calendarId: String, book: MoneyBook, today: LocalDat
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${Fmt.shortDate(m.date)} 매출 ${Fmt.won(m.card)} → 입금 ${Fmt.won(m.paid)}", style = MaterialTheme.typography.bodyMedium)
-                Muted("수수료 ${Fmt.won(m.fee)}" + (if (feeBp > 0) " (설정 ${"%.2f".format(feeBp / 100.0).trimEnd('0').trimEnd('.')}%면 ${Fmt.won(m.card - m.expected)})" else "") +
+                Muted("수수료 ${Fmt.won(m.fee)}" + (if (feeBp > 0) " (설정 ${"%.2f".format(java.util.Locale.ROOT, feeBp / 100.0).trimEnd('0').trimEnd('.')}%면 ${Fmt.won(m.card - m.expected)})" else "") +
                     " · " + m.deposits.joinToString(", ") { "${Fmt.shortDate(it.date)} ${it.merchant}" })
                 if (m.overFee >= TaxPlus.OVER_FEE_NOTE) Text("설정한 수수료보다 ${Fmt.won(m.overFee)} 더 빠졌어요. 카드사 가맹점 앱에서 수수료율이나 보류를 확인해 보세요.",
-                    style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution)
             }
             TextButton(onClick = {
                 val day = book.sales.firstOrNull { it.date == m.date } ?: return@TextButton
-                c.appScope.launch { c.calendars.money(calendarId).save(day.copy(cardSettled = true)) }
+                c.appScope.launch {
+                    val money = c.calendars.money(calendarId)
+                    money.save(day.copy(cardSettled = true))
+                    // 2.0.0 [RVK-42] (검토 MONEY-16, 같은 구조) 되돌리기, as 카드 입금 예정's 입금 확인.
+                    com.bamnat.app.ui.components.AppSnack.show("${Fmt.shortDate(m.date)} 카드 매출 입금을 확인했어요", undo = { money.save(day) })
+                }
             }, modifier = Modifier.heightIn(min = 48.dp)) { Text("맞아요") }
         }
     }
     if (late.isNotEmpty()) Text("입금을 못 찾은 날 ${late.size}일 · ${Fmt.won(late.sumOf { it.card })}. 카드사 가맹점 앱에서 지급 보류인지 확인해 보세요.",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        // 2.0.0 [RVK-42] (조건 6) A deposit not found yet is 주의 (the orange caution), not 위험: calendar 'warning' is the red one.
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution)
 }
 
 /**

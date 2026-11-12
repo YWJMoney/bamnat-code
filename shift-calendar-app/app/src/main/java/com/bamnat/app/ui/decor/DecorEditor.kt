@@ -85,6 +85,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.settings.ColorPick
 import com.bamnat.core.recipe.Decor
 import com.bamnat.core.recipe.DecorGlyphs
@@ -778,6 +779,11 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
             FilterChip(selected = first.tap == null, onClick = { all(null) { it.copy(tap = null) } }, label = { Text("그림만") })
             buttons.forEach { (id, words) -> FilterChip(selected = first.tap == id, onClick = { all(null) { it.copy(tap = id) } }, label = { Text(words) }) }
         }
+        // 2.0.0 [RVM-23] RCP-17·STU-19: one that cannot take a tap (보이지 않음·너무 큼·화면 가득) says so here, where the button is picked,
+        // not only at 올리기 점검; it stays a picture until it can.
+        com.bamnat.core.recipe.DecorTapRule.why(first)?.let { why ->
+            Text("이대로는 눌리지 않고 그림으로만 보여요. $why", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.bamnat.caution)
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             AssistChip(onClick = { all(null) { it.copy(flip = !first.flip) } }, label = { Text("좌우 뒤집기") })
             AssistChip(onClick = { onOrder(true) }, label = { Text("앞으로") })
@@ -924,11 +930,8 @@ internal fun Color.argbLong(): Long = toArgb().toLong() and 0xFFFFFFFFL
 
 @Suppress("unused") private val keepSpacer: @Composable () -> Unit = { Spacer(Modifier.height(0.dp)) }
 
-/** 을 or 를 after [w], by its last syllable's 받침. */
-internal fun eul(w: String): String {
-    val c = w.lastOrNull { it in '가'..'힣' } ?: return "을(를)"
-    return if ((c - '가') % 28 != 0) "을" else "를"
-}
+/** 을 or 를 after [w], by its last sound's 받침 (2.0.0 [RVJ-33] PC-84: a name with no Hangul read as Korean says it, not '을(를)'). */
+internal fun eul(w: String): String = com.bamnat.app.ui.Fmt.obj(w)
 
 /** An item's name in a sentence: a text box's own words already stand in quotes. */
 private fun quoted(i: DecorItem): String = if (i.kind == DecorKind.TEXT) i.label else "‘${i.label}’"

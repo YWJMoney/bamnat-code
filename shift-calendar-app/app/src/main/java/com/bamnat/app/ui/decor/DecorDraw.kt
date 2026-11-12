@@ -79,20 +79,35 @@ fun Modifier.decor(anchor: String, day: DecorDay? = null, layer: Decor = LocalDe
     // [LAY-11] 꾸밈 단추: a tap on a decoration that names a 규칙 단추 presses it, before the part's own tap (it is caught first and used);
     // TalkBack, which reads no decoration, gets the same as an action of the part.
     val tap = LocalDecorTap.current
-    val taps = items.filter { it.tap != null }
+    // 2.0.0 [RVM-23] RCP-17·STU-19: only a decoration one can see, button-sized and not a whole-screen picture takes a tap (core
+    // DecorTapRule, the same as 올리기 점검 and the server).
+    val taps = com.bamnat.core.recipe.DecorTapRule.taps(items)
     if (tap == null || taps.isEmpty()) return drawn
     return drawn
-        .semantics { customActions = taps.distinctBy { it.tap }.map { i -> CustomAccessibilityAction("${i.label} 꾸밈 단추 누르기") { tap(i.tap!!, date); true } } }
+        .semantics { customActions = taps.distinctBy { it.tap }.map { i -> CustomAccessibilityAction("${i.label} 꾸밈 단추 누르기") { tap(i.tap!!, date) } } }
         .pointerInput(taps, date) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                 val box = Rect(Offset.Zero, Size(size.width.toFloat(), size.height.toFloat()))
-                val hit = taps.lastOrNull { i -> with(this@pointerInput) { tapRect(i, box, density) }.contains(down.position) } ?: return@awaitEachGesture
+                val hit = taps.lastOrNull { i -> with(this@pointerInput) { pressRect(i, box, density) }?.contains(down.position) == true } ?: return@awaitEachGesture
                 val up = waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
-                up.consume()
-                tap(hit.tap!!, date)
+                // 2.0.0 [RVM-23] STU-18 (가리키는 단추가 없거나 쉬면 날짜 누르기가 먹통): the part's own tap goes on unless the button took it.
+                if (tap(hit.tap!!, date)) up.consume()
             }
         }
+}
+
+/**
+ * Where a decoration takes a tap, or null: [tapRect] while it leaves the part at least half of its place; on a small part (a date cell,
+ * where 48 dp would be all of it) only the decoration's own size, and none when even that is more than half the part.
+ */
+internal fun pressRect(item: DecorItem, box: Rect, density: Float): Rect? {
+    val half = box.width * box.height / 2
+    val wide = tapRect(item, box, density)
+    if (wide.width * wide.height <= half) return wide
+    val w = item.w * density
+    val h = item.h * density
+    return Rect(wide.center.x - w / 2, wide.center.y - h / 2, wide.center.x + w / 2, wide.center.y + h / 2).takeIf { w * h <= half }
 }
 
 /** [LAY-11] Where a decoration takes a tap: its place, at least 48 dp each way so a small sticker is easy to hit. */

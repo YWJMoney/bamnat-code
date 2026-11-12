@@ -1255,6 +1255,22 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
 }
 
 /**
+ * 2.0.0 [RVI-65] (디자인 품질 12) A line of the alarm card with its button. Beside each other while the line keeps room to read;
+ * at 200% or in the narrow list pane of an unfolded phone the button goes under it (the line stood a word per row beside it).
+ */
+@Composable
+private fun LineWithButton(text: String, label: String, onClick: () -> Unit, color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified) {
+    // The shared part, as the card's head (갈래 O RVO-02): side by side while the words keep room, else the button goes under them.
+    com.bamnat.app.ui.components.SideOrBelow(
+        modifier = Modifier.fillMaxWidth().padding(start = 36.dp),
+        minStart = 160.dp,
+        belowAlign = Alignment.Start,
+        start = { Text(text, style = MaterialTheme.typography.bodyMedium, color = color) },
+        end = { TextButton(onClick = onClick) { Text(label, maxLines = 1) } },
+    )
+}
+
+/**
  * [SET-01] 알람 준비: when the next alarm rings, and anything that would keep it from ringing on time
  * or from being stopped on the lock screen, each with the one button that fixes it. All fine, it is
  * one line.
@@ -1336,14 +1352,13 @@ private fun AlarmReadyCard(
                 }
             })
             snoozeAt?.let { at ->
-                com.bamnat.app.ui.components.SideOrBelow(Modifier.padding(start = 36.dp), minStart = 120.dp, start = {
-                    Text("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", style = MaterialTheme.typography.bodyMedium)
-                }, end = { TextButton(onClick = vm::cancelSnooze) { Text("지금 끄기") } })
+                LineWithButton("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", "지금 끄기", vm::cancelSnooze)
             }
-            for (fix in fixes) {
-                com.bamnat.app.ui.components.SideOrBelow(Modifier.padding(start = 36.dp), minStart = 120.dp, start = {
-                    Text(fix.text, style = MaterialTheme.typography.bodyMedium)
-                }, end = { TextButton(onClick = fix.onFix) { Text(fix.label) } })
+            // 2.0.0 [RVI-38] (디자인 품질 2: 글자 단추는 2개까지) The most serious one with its button; the rest are counted, all in 알람 점검.
+            fixes.firstOrNull()?.let { fix -> LineWithButton(fix.text, fix.label, fix.onFix) }
+            if (fixes.size > 1) {
+                LineWithButton("고칠 것이 ${fixes.size - 1}가지 더 있어요", "모두 보기", { onOpenDiagnostics(false) },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 2.0.0 [RVO-16] U11a-02 '꼭 고칠 것 0 · 권장 1': ready, and what would make it surer, one line and its place.
             val better = verdict?.better.orEmpty()
@@ -1359,10 +1374,25 @@ private fun AlarmReadyCard(
 
 private class AlarmFix(val text: String, val label: String, val onFix: () -> Unit)
 
+/** 2.0.0 [RVI-38] The checks that fail, as 설정 › 알람 counts them ('고칠 것 N가지'); 알람 사용 is the card's own headline. */
+internal fun alarmReadyProblems(checks: List<com.bamnat.app.ui.diag.AlarmCheck>): List<com.bamnat.app.ui.diag.AlarmCheck> =
+    checks.filter { it.ok == false && it.title != "알람 사용" }
+
+/** The check's first sentence, so the card stays one line a problem; the rest is in 설정 › 알람. */
+internal fun alarmFixLine(check: com.bamnat.app.ui.diag.AlarmCheck): String =
+    check.why.substringBefore(". ").removeSuffix(".").trim()
+
+/** A short button: the check's own when it is short, 고치기 otherwise. */
+internal fun alarmFixButton(check: com.bamnat.app.ui.diag.AlarmCheck): String = when {
+    check.title == "알림 허용" -> "허용"
+    check.fixLabel.length <= 6 -> check.fixLabel
+    else -> "고치기"
+}
+
 /**
  * What keeps the alarm from ringing or showing, most serious first, said in a line each with its one button. Nothing while every
- * alarm is off on purpose. 2.0.0 [RVO-16] 검토 SET-02: from the one verdict ([com.bamnat.app.ui.diag.alarmVerdict]), so the sound at 0,
- * 방해 금지 and a lost alarm are said here too.
+ * alarm is off on purpose. 2.0.0 [RVO-16] 검토 SET-02 · [RVI-38] 검토 PC-16: from the one verdict of the same checks as 설정 › 알람 and
+ * 알람 점검 ([com.bamnat.app.ui.diag.alarmVerdict]), so the places never disagree; what is only 'better' is the card's softer line.
  */
 private fun alarmFixes(
     context: Context,
@@ -1376,9 +1406,8 @@ private fun alarmFixes(
     val c = context.appContainer
     fun fix(check: com.bamnat.app.ui.diag.AlarmCheck): () -> Unit = { com.bamnat.app.ui.diag.applyAlarmFix(c, context, check.fix, "settings top") }
     return buildList {
-        for (check in verdict?.must.orEmpty()) {
+        for (check in alarmReadyProblems(verdict?.must.orEmpty())) {
             when (check.title) {
-                "알람 사용" -> Unit // said by the card's own line
                 "알림 허용" -> add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
                 "알람 알림 켜짐" -> add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
                 "잠금 화면 알람" -> add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용", fix(check)))
@@ -1388,7 +1417,7 @@ private fun alarmFixes(
                 "방해 금지" -> add(AlarmFix("‘완전히 무음’ 방해 금지라 알람도 울리지 않아요", "열기", fix(check)))
                 "백그라운드 제한 없음" -> add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기", fix(check)))
                 "다음 알람 등록" -> add(AlarmFix("휴대폰이 다음 알람을 잃어버렸어요", "다시 걸기", fix(check)))
-                else -> add(AlarmFix(check.why, check.fixLabel, fix(check)))
+                else -> add(AlarmFix(alarmFixLine(check), alarmFixButton(check), fix(check)))
             }
         }
         if (missed > 0) add(AlarmFix("지난 7일에 울리지 않았을 수 있는 알람이 ${missed}번 있어요", "보기") { onOpenDiagnostics(false) })

@@ -24,7 +24,7 @@ import java.time.temporal.ChronoUnit
  * WorkManager: it runs with the app's waiting jobs, as the other notices do.
  */
 object YearEndWeekly {
-    // 2.0.0 [RVO-14] 7209 was 프로 끝 알림's too (Notifications.PRO_END_ID): one hid the other. Its own number now.
+    /** 2.0.0 [RVI-01][RVO-14] 7209 was 프로 끝 알림's number too, and 7210·7211 are 프로가 끝나기 전날·끄기 미션 알림's: its own number. */
     const val ID = 7212
     private const val REQUEST = 2212
 

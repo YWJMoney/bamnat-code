@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, report, device, from, signIn } from "./helpers.mjs";
-import { OLD_PAY } from "../src/old-pay.js";
+import { OLD_PAY, cutFrom } from "../src/old-pay.js";
 
 const ship = (DB, v, at = Date.now()) => DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)")
   .bind(JSON.stringify({ v, at, by: "test" })).run();
@@ -25,8 +25,10 @@ test("[PAYP-19] an old app's member reads the pay part until 1.40 is out, then t
   assert.ok((await page()).setups[0].setup.pay, "an old app's member still gets the pay part before 1.40");
   assert.equal(await notice(), undefined);
 
-  // 1.40 is out (the release loop saved it): the pay part goes to no app.
-  await ship(DB, "1.40.0");
+  // 2.0.0 [RVA-27] 검토 HQ-41: the next version is named 2.0.0 now (no 1.40.0). When it is out (the release loop saved it), the pay
+  // part goes to no app, on that same day.
+  assert.equal(OLD_PAY.from, "2.0.0");
+  await ship(DB, "2.0.0");
   const cut = await page();
   assert.equal(cut.setups[0].setup.pay, undefined);
   assert.equal(cut.setups[0].pay, true, "that a pay way is there still shows");
@@ -63,4 +65,18 @@ test("[PAYP-19] before any version is saved and with 1.39 out, auto leaves old a
   assert.deepEqual([on.data.on, on.data.mode], [true, "on"]);
   assert.equal((await call("GET", `/api/companies/${c}`, undefined, old)).data.setups[0].setup.pay, undefined);
   assert.ok((await call("GET", "/api/config")).data.notices.some((n) => n.id === OLD_PAY.noticeId));
+});
+
+test("[RVA-27] 검토 HQ-41: 옛 앱 급여 끊기는 2.0.0이 나간 날 그대로 끊겨요(1.39.x는 아직, 2.0.0·2.0.1·2.1.0은 끊김)", () => {
+  const at = Date.parse("2026-12-01T03:00:00Z");
+  const shipped = (v) => JSON.stringify({ v, at, by: "loop" });
+  for (const v of ["1.38.0", "1.39.0", "1.39.9"]) assert.equal(cutFrom(null, shipped(v)).on, false, v);
+  for (const v of ["2.0.0", "2.0.1", "2.1.0"]) {
+    const c = cutFrom(null, shipped(v));
+    assert.equal(c.on, true, v);
+    assert.equal(c.at, at, "cut from the day that version was saved as out");
+  }
+  // The admin's own choice still wins either way.
+  assert.equal(cutFrom(JSON.stringify({ mode: "off" }), shipped("2.0.0")).on, false);
+  assert.equal(cutFrom(JSON.stringify({ mode: "on", at }), shipped("1.39.0")).on, true);
 });

@@ -123,7 +123,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun phoneStatsHugeText() = shoot("167_phone_stats_huge_text", PHONE, fontScale = 2f) { tab(3, wide = false) }
     @Test fun phoneMemosHugeText() = shoot("171_phone_memos_huge_text", PHONE, fontScale = 2f) { tab(2, wide = false) }
     @Test fun foldedStatsSameMonth() = shoot("147_folded_stats_same_month", FOLDED) {
-        tapText("이전 달", exact = true, scrolls = 0)
+        stepMonth("이전 달")
         tab(3, wide = false)
     }
     // ---- [SCHED-01] A memo that names a time ----
@@ -131,7 +131,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
         tab(2, wide = false); tapText("건강검진 오전 9시")
     }
     @Test fun foldedMemoScheduleDialog() = shoot("189_folded_memo_schedule_dialog", FOLDED) {
-        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("일정으로 넣기", exact = true)
+        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("알림 넣기, ", prefix = true)
     }
 
     @Test fun smallPhoneStats() = shoot("364_small_phone_stats", SMALL_PHONE) { tab(3, wide = false) }

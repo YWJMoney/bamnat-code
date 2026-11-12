@@ -26,6 +26,8 @@ import java.time.LocalTime
  * shifts moves it on at each start and end, so it stays right away from the phone.
  */
 class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceService() {
+    /** 2.0.0 [RVI-09] What a working day is called on the calendar the phone sent. */
+    private var noun = "근무"
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         val now = Today.dateTime()
         val d = WatchDay(now.toLocalDate().plusDays(1), "주간", "주", 0xFF2F80ED, LocalTime.of(9, 0), LocalTime.of(18, 0))
@@ -33,7 +35,9 @@ class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceSer
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationDataTimeline? {
-        val days = WatchStore.load(this)?.days ?: return null
+        val p = WatchStore.load(this) ?: return null
+        val days = p.days
+        noun = p.noun
         val zone = Today.zone()
         val list = WatchDays.countdowns(days, Today.dateTime())
         val first = list.firstOrNull() ?: return ComplicationDataTimeline(empty(request.complicationType) ?: return null, emptyList())
@@ -49,12 +53,14 @@ class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceSer
         fun t(s: String) = PlainComplicationText.Builder(s).build()
         val at = c.to.atZone(Today.zone()).toInstant()
         val count = TimeDifferenceComplicationText.Builder(TimeDifferenceStyle.SHORT_SINGLE_UNIT, CountDownTimeReference(at)).build()
-        val title = if (c.onShift) "근무 중" else c.name.take(4)
-        val said = t(if (c.onShift) "${c.name} 근무 중, 끝까지 남은 시간" else "다음 근무 ${c.name}까지 남은 시간")
+        // 2.0.0 [RVI-09] 영업 중·다음 영업 on a 가게 calendar, 진행 중·다음 일정 on 현장·투자.
+        val during = WatchText.during(noun)
+        val title = if (c.onShift) during else c.name.take(4)
+        val said = t(if (c.onShift) "${c.name} $during, 끝까지 남은 시간" else "다음 $noun ${c.name}까지 남은 시간")
         return when (type) {
             ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(count, said).setTitle(t(title)).setTapAction(tap).build()
             ComplicationType.LONG_TEXT -> LongTextComplicationData.Builder(count, said)
-                .setTitle(t(if (c.onShift) "${c.name} 끝까지" else "다음 근무 ${c.name}까지")).setTapAction(tap).build()
+                .setTitle(t(if (c.onShift) "${c.name} 끝까지" else "다음 $noun ${c.name}까지")).setTapAction(tap).build()
             else -> null
         }
     }
@@ -63,8 +69,8 @@ class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceSer
     private fun empty(type: ComplicationType): ComplicationData? {
         fun t(s: String) = PlainComplicationText.Builder(s).build()
         return when (type) {
-            ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(t("-"), t(WatchText.NOT_SENT)).setTitle(t("다음 근무")).build()
-            ComplicationType.LONG_TEXT -> LongTextComplicationData.Builder(t(WatchText.NOT_SENT), t(WatchText.NOT_SENT)).build()
+            ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(t("-"), t("$noun 정보 없음")).setTitle(t("다음 $noun")).build()
+            ComplicationType.LONG_TEXT -> LongTextComplicationData.Builder(t("$noun 정보 없음"), t("$noun 정보 없음")).build()
             else -> null
         }
     }

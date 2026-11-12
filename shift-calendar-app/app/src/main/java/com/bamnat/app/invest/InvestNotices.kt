@@ -165,11 +165,7 @@ object InvestNotices {
             shiftName = "", shiftDate = at.toLocalDate(), shiftStart = at.toLocalTime(), offsetMinutes = 0, soundUri = null,
             triggerAtMillis = atMillis, custom = true, label = ringing.joinToString(" · ").take(60),
         )
-        try {
-            AlarmService.start(context, ring)
-        } catch (e: RuntimeException) {
-            Notifications.postFallbackAlarm(context, ring)
-        }
+        AlarmService.startOrFallback(context, ring)
     }
 
     /** What the alarm's notice says under its title: when, and for a plan what it buys. */

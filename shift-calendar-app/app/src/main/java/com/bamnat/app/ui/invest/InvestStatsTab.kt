@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -75,7 +76,7 @@ internal fun InvestStatsTab(
         Text(if (yearly) "${ym.year}년에 적은 매매가 없어요" else "${ym.monthValue}월에 적은 매매가 없어요", style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
-        Figures(stats, hide, if (wide) 4 else 3)
+        Figures(stats, hide)
     }
     MonthlyBars(state, ym.year)
     if (!stats.isEmpty) {
@@ -113,27 +114,41 @@ private fun HarvestCard(state: InvestState) {
     }
 }
 
+/**
+ * 2.0.0 [RVK-34] (검토 U06b-07) The four that answer 'how did it go' first (손익·승률·매매·실현손익), the other eight under
+ * '8개 더 보기'; two to a row below 420dp or with letters over 150% (twelve in three rows of a folded phone were cramped), four
+ * otherwise.
+ */
 @Composable
-private fun Figures(s: PeriodStats, hide: Boolean, columns: Int) {
+private fun Figures(s: PeriodStats, hide: Boolean) {
+    var more by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val tiles = listOf(
         Triple("손익", InvestFmt.signedShort(s.pnl, hide), "실현 + 배당·이자"),
-        Triple("승률", s.winRate?.let { "${"%.0f".format(it * 100)}%" } ?: "–", "매도 ${s.sells}번 중 ${s.wins}번 이익"),
+        Triple("승률", s.winRate?.let { "${"%.0f".format(java.util.Locale.ROOT, it * 100)}%" } ?: "–", "매도 ${s.sells}번 중 ${s.wins}번 이익"),
         Triple("매매", "${s.trades}건", "산 돈 ${InvestFmt.short(s.bought, hide)}"),
         Triple("실현손익", InvestFmt.signedShort(s.realized, hide), "판 돈 ${InvestFmt.short(s.sold, hide)}"),
         Triple("배당·이자", InvestFmt.short(s.income, hide), "세후"),
         Triple("수수료·세금", InvestFmt.short(s.fees + s.taxes, hide), "세금 ${InvestFmt.short(s.taxes, hide)}"),
-        Triple("손익비", s.payoff?.let { "%.2f".format(it) } ?: "–", "평균 이익 ÷ 평균 손실"),
-        Triple("수익 팩터", s.profitFactor?.let { "%.2f".format(it) } ?: "–", "총이익 ÷ 총손실"),
-        Triple("평균 보유", s.averageHoldingDays?.let { "%.0f일".format(it) } ?: "–", "판 종목 기준"),
+        Triple("손익비", s.payoff?.let { "%.2f".format(java.util.Locale.ROOT, it) } ?: "–", "평균 이익 ÷ 평균 손실"),
+        Triple("수익 팩터", s.profitFactor?.let { "%.2f".format(java.util.Locale.ROOT, it) } ?: "–", "총이익 ÷ 총손실"),
+        Triple("평균 보유", s.averageHoldingDays?.let { "%.0f일".format(java.util.Locale.ROOT, it) } ?: "–", "판 종목 기준"),
         Triple("연속 수익일", "${s.longestWinStreak}일", "연속 손실 ${s.longestLossStreak}일"),
         Triple("입금·출금", InvestFmt.short(s.deposits - s.withdrawals, hide), "입금 ${InvestFmt.short(s.deposits, hide)}"),
         Triple("일지 쓴 날", "${s.journalDays}일", "수익 ${s.winDays}일 · 손실 ${s.lossDays}일"),
     )
-    tiles.chunked(columns).forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { (l, v, c) -> StatTile(l, v, Modifier.weight(1f), caption = c) }
-            repeat(columns - row.size) { androidx.compose.foundation.layout.Spacer(Modifier.weight(1f)) }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth < 420.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.5f) 2 else 4
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            (if (more) tiles else tiles.take(CORE_FIGURES)).chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { (l, v, c) -> StatTile(l, v, Modifier.weight(1f), caption = c) }
+                    repeat(columns - row.size) { androidx.compose.foundation.layout.Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
+    }
+    androidx.compose.material3.TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text(if (more) "접기" else "${tiles.size - CORE_FIGURES}개 더 보기")
     }
     s.best?.let { b ->
         Text("가장 잘한 매도 · ${b.name} ${InvestFmt.signed(b.pnlWon.roundToLong(), hide)} (${Fmt.shortDate(b.date)})",
@@ -203,7 +218,7 @@ private fun Behaviour(s: PeriodStats, hide: Boolean) {
 private fun TagRow(t: TagPnl, hide: Boolean) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(t.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(96.dp))
-        Text("${t.sells}번 · 승률 ${t.winRate?.let { "%.0f%%".format(it * 100) } ?: "–"}", style = MaterialTheme.typography.bodySmall,
+        Text("${t.sells}번 · 승률 ${t.winRate?.let { "%.0f%%".format(java.util.Locale.ROOT, it * 100) } ?: "–"}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         Text(InvestFmt.signed(t.pnl, hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = pnlColor(t.pnl))
     }
@@ -214,13 +229,30 @@ private fun TagRow(t: TagPnl, hide: Boolean) {
 private fun Weekdays(s: PeriodStats, hide: Boolean) {
     val days = DayOfWeek.entries.filter { it.value <= 5 || (s.byWeekday[it] ?: 0L) != 0L }
     if (days.all { (s.byWeekday[it] ?: 0L) == 0L }) return
+    val valueStyle = MaterialTheme.typography.bodySmall.merge(NumberStyle)
+    val texts = days.map { d -> (s.byWeekday[d] ?: 0L).let { v -> v to (if (v == 0L) "–" else InvestFmt.signedShort(v, hide)) } }
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
     SectionCard(title = "요일별 손익") {
-        Row(Modifier.fillMaxWidth()) {
-            days.forEach { d ->
-                val v = s.byWeekday[d] ?: 0L
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (v == 0L) "–" else InvestFmt.signedShort(v, hide), style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = pnlColor(v))
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // 2.0.0 [RVK-34] '+18.3만' stood on two lines in a fifth of the folded phone at 글자 200%: when the widest amount does not fit
+            // its column on one line, the days go one under another, the day on the left and its amount on the right.
+            val widest = texts.maxOf { measurer.measure(it.second, valueStyle, maxLines = 1).size.width }
+            if (widest <= constraints.maxWidth / days.size) {
+                Row(Modifier.fillMaxWidth()) {
+                    days.zip(texts).forEach { (d, t) ->
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(t.second, style = valueStyle, color = pnlColor(t.first), maxLines = 1)
+                        }
+                    }
+                }
+            } else Column(Modifier.fillMaxWidth()) {
+                days.zip(texts).forEach { (d, t) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f))
+                        Text(t.second, style = valueStyle, color = pnlColor(t.first))
+                    }
                 }
             }
         }
@@ -274,3 +306,6 @@ private fun TaxCard(state: InvestState, year: Int, onEtfKind: (String, Boolean) 
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/** [RVK-34] How many figures show before '더 보기'. */
+private const val CORE_FIGURES = 4

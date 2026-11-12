@@ -181,4 +181,29 @@ class PhaseThreeBackupTest {
         assertEquals(5L, store.staff("w1").first().single().contract?.givenAt)
     }
 
+    /**
+     * 2.0.0 [RVJ-29] 팀 근무 종류의 휴게: kept in the shifts JSON the team had ("brk"), so no DB 판 is needed. A team's own 휴게 comes
+     * back as saved (0 too: "휴게 없음" is not the law's), one never set stays the law's, and so does every team saved before 2.0.0.
+     */
+    @Test fun teamBreakComesBackAsSaved() = runBlocking {
+        ScheduleRepository(db).ensureDefaults()
+        val shifts = listOf(
+            TeamShift(1, "D", "데이", 0xFF2196F3, false, LocalTime.of(9, 0), LocalTime.of(18, 0), breakMinutes = 90),
+            TeamShift(2, "E", "이브닝", 0xFFE39B3B, false, LocalTime.of(14, 0), LocalTime.of(22, 0)),
+            TeamShift(3, "N", "나이트", 0xFF5E4AA8, false, LocalTime.of(22, 0), LocalTime.of(7, 0), breakMinutes = 0),
+            TeamShift(4, "O", "오프", 0xFF9E9E9E, true))
+        store.saveTeam(Team("t9", "5병동", "책임", shifts))
+        assertEquals(listOf(90, null, 0, null), store.teamNow("t9")!!.shifts.map { it.breakMinutes })
+        val other = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            BackupManager(other, SettingsRepository(context)).restore(BackupManager(db, SettingsRepository(context)).exportSealed())
+            assertEquals(shifts, PhaseThreeStore(other).teamNow("t9")!!.shifts)
+        } finally {
+            other.close()
+        }
+        val old = """[{"id":1,"label":"D","name":"데이","color":4280391411,"off":false,"start":"09:00","end":"18:00"}]"""
+        assertEquals("2.0.0 전에 만든 팀은 법으로 정한 휴게", listOf<Int?>(null), PhaseThreeStore.decodeShifts(old).map { it.breakMinutes })
+        assertEquals("새로 적은 것이 없으면 옛 모양 그대로", false, PhaseThreeStore.encodeShifts(PhaseThreeStore.decodeShifts(old)).contains("brk"))
+    }
+
 }

@@ -124,7 +124,7 @@ object TeamAuto {
     }
 
     fun fill(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), seed: Int = 0, prev: TeamBoard? = null,
-             past: Map<String, TeamLedger.Past> = emptyMap()): Plan {
+             past: Map<String, TeamLedger.Past> = emptyMap(), next: TeamBoard? = null): Plan {
         val types = team.shifts.associateBy { it.id }
         val asTypes = types.mapValues { it.value.asType() }
         val off = team.shifts.firstOrNull { it.isOff }
@@ -148,6 +148,12 @@ object TeamAuto {
             types[id]?.let { val min = TeamCheck.minutesOf(it); minutes.merge(m, min, Int::plus); week.merge(m to weekOf(d), min, Int::plus) }
         }
         b.cells.values.forEach { note(it.memberId, it.date, it.shiftId) }
+        // 2.0.0 [RVJ-30] (검토 PAYU-08) The days of last month and next month in the weeks this month shares with them are hours
+        // of those weeks already; only the week's sum takes them (the month's own fairness stays the month's).
+        val shared = setOf(weekOf(board.days.first()), weekOf(board.days.last()))
+        listOfNotNull(prev, next).forEach { o ->
+            o.cells.values.forEach { c -> if (weekOf(c.date) in shared) types[c.shiftId]?.let { week.merge(c.memberId to weekOf(c.date), TeamCheck.minutesOf(it), Int::plus) } }
+        }
         fun row(trial: TeamBoard, m: String) = board.days.map { it to trial.cell(m, it)?.shiftId?.let(asTypes::get) }
         val carried = board.members.associate { it.id to TeamCheck.carry(prev, it.id, asTypes) }
         // The member's signs now, kept while their row does not change, so each try is checked against what it adds.
@@ -159,7 +165,7 @@ object TeamAuto {
             val t = types.getValue(id)
             if (w?.kind?.rests == true) return true
             if (w?.kind == WishKind.AVOID_NIGHT && DutyCheck.isNight(t.asType())) return true
-            if ((week[m.id to weekOf(d)] ?: 0) + TeamCheck.minutesOf(t) > TeamCheck.WEEK_LIMIT_MINUTES) return true
+            if (rules.weekLimit && (week[m.id to weekOf(d)] ?: 0) + TeamCheck.minutesOf(t) > TeamCheck.WEEK_LIMIT_MINUTES) return true
             val had = before.getOrPut(m.id) { signs(trial, m.id) }
             return (signs(trial.paint(m.id, d, id, CellSource.AUTO), m.id) - had).isNotEmpty()
         }
@@ -192,7 +198,7 @@ object TeamAuto {
             }
             if (off != null) active.forEach { m -> if (b.cell(m.id, d) == null) { b = b.paint(m.id, d, off.id, CellSource.AUTO); before.remove(m.id) } }
         }
-        return measure(team, board, b, startEmpty, wishes, rules, prev)
+        return measure(team, board, b, startEmpty, wishes, rules, prev, next)
     }
 
     /** Whether [w] is kept by the cell [c] (null: nothing painted there). 반차 asks nothing of the board, so it is always kept. */
@@ -206,12 +212,13 @@ object TeamAuto {
     }
 
     /** How a filled board stands: short days, wishes, and the dangers the 안 line shows before the leader picks it. */
-    fun measure(team: Team, start: TeamBoard, b: TeamBoard, startEmpty: Int, wishes: List<TeamWish>, rules: RestRules, prev: TeamBoard? = null): Plan {
+    fun measure(team: Team, start: TeamBoard, b: TeamBoard, startEmpty: Int, wishes: List<TeamWish>, rules: RestRules, prev: TeamBoard? = null,
+                next: TeamBoard? = null): Plan {
         val types = team.shifts.associateBy { it.id }
         val active = b.members.filter { it.active }
         val nights = active.map { m -> b.days.count { d -> b.cell(m.id, d)?.shiftId?.let(types::get)?.let { DutyCheck.isNight(it.asType()) } == true } }
         val kept = wishes.count { w -> kept(team, w, b.cell(w.memberId, w.date)?.shiftId?.let(types::get)) }
-        val signs = TeamCheck.check(team, b, rules, prev)
+        val signs = TeamCheck.check(team, b, rules, prev, next)
         val runs = active.map { m ->
             var best = 0; var cur = 0
             b.days.forEach { d -> if (b.cell(m.id, d)?.shiftId?.let(types::get)?.isOff == false) { cur++; best = maxOf(best, cur) } else cur = 0 }
@@ -228,8 +235,8 @@ object TeamAuto {
      * and nights. A plan only adds what the board's own signs did not have, so a leader's painted danger counts in every 안 alike.
      */
     fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 8, keep: Int = 4, prev: TeamBoard? = null,
-              past: Map<String, TeamLedger.Past> = emptyMap()): List<Plan> =
-        (0 until tries).map { fill(team, board, wishes, rules, it, prev, past) }
+              past: Map<String, TeamLedger.Past> = emptyMap(), next: TeamBoard? = null): List<Plan> =
+        (0 until tries).map { fill(team, board, wishes, rules, it, prev, past, next) }
             .sortedWith(compareBy({ it.danger }, { it.shortPeople }, { -it.wishesKept }, { it.hourSpread + it.spread * 4 }))
             // 1.38 PC 6db1056b: 안 that read the same on their line are one choice, not four.
             .distinctBy { listOf(it.danger, it.shortPeople, it.short.size, it.wishesKept, it.hourSpread, it.spread, it.maxRun) }
@@ -237,7 +244,8 @@ object TeamAuto {
 
     /**
      * The hours the month asks of each person on average: [Team.need] × each kind's hours over the active members, a week.
-     * Above 52 the need cannot be met inside the law with these people; close to it, short days are likely.
+     * Above 52 the need cannot be met inside the law with these people; close to it, short days are likely. [RVJ-29] Hours
+     * worked, the 휴게 taken off, as the 52시간 sign counts them.
      */
     fun weekHoursNeeded(team: Team, board: TeamBoard): Double {
         val people = board.members.count { it.active }

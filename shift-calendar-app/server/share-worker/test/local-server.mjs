@@ -1,6 +1,6 @@
 // [SRV-31] 1.36: the share Worker on a plain Node server with an in-memory KV, so a debug build tested against the PC never puts a
 // link on the real s.bamnat.app:
-//   npm run local -- 8790 [--test-clock]
+//   npm run local -- 8790 [--test-clock] [--policy314]
 // --test-clock: POST /__test/clock?days=N moves this server's clock on N days (negative goes back), like the company local server,
 // so a phone whose clock was moved for a test gets links that end when it expects. Only this local server has it.
 // A debug build whose company server is the PC (-Pbamnat.companyBaseUrl=http://10.0.2.2:…) sends links to http://10.0.2.2:8790.
@@ -43,7 +43,9 @@ function memoryKv() {
   };
 }
 
-const env = { SHARES: memoryKv(), RATE_SALT: "local", SHARE_ADMIN_TOKEN: process.env.SHARE_ADMIN_TOKEN };
+// 2.0.0 [RVQ-19][RVQ-21] 처리방침 3.14 스위치: PC 확인에서 '확인했어요'·피곤해요 휴대폰 수를 보려면 `--policy314`(오늘부터 켜짐).
+const env = { SHARES: memoryKv(), RATE_SALT: "local", SHARE_ADMIN_TOKEN: process.env.SHARE_ADMIN_TOKEN,
+  ...(args.includes("--policy314") ? { POLICY_314_FROM: "2026-01-01" } : {}) };
 const ctx = { waitUntil: (p) => Promise.resolve(p).catch(() => {}) };
 
 http.createServer(async (req, res) => {

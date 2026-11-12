@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import worker, { CF_PLANS, CRONS, SECOND_HALF, SURGE, autoRest, cfPlan, hourlySteps, plazaSurge } from "../src/index.js";
+import worker, { CF_PLANS, CRONS, SECOND_HALF, SURGE, autoRest, budgetState, cfPlan, hourlySteps, plazaSurge } from "../src/index.js";
 import { JOB_NAMES } from "../src/ops-watch.js";
 import { hourlyAgo } from "../src/incident.js";
 import { server, device, from, signIn } from "./helpers.mjs";
@@ -95,6 +95,58 @@ test("[RVQ-12] SVC-07 유료 요금제(기본)는 무료 하루 몫에서 쉬지
   assert.deepEqual((await autoRest(env, NOW)).rested, []);
   meter(Math.ceil(CF_PLANS.paid.d1WritesDay * 0.91));
   assert.deepEqual((await autoRest(env, NOW)).rested, ["USAGE_STATS"]);
+});
+
+test("[RVQ-24] SVC-07·I22b-03 공유 서버 KV 읽기도 하루 몫으로 봐요: 80%면 오늘 할 일, 90%면 새 링크를 쉬고 다음 날 몫 아래면 다시 켜요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  let stats = { writes: 100, reads: 0 };
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (String(url).includes("/api/admin/stats")) return Response.json({ days: [{ day: new Date(Date.now() + 9 * HOUR).toISOString().slice(0, 10), ...stats }] });
+    return new Response(null, { status: 204 });
+  });
+  const { call, env } = server({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "share-admin-token-0123456789" });
+  const owner = await signIn(call);
+  const plan = cfPlan(env);
+  assert.equal(plan.kvReadsDay, CF_PLANS.paid.kvReadsDay);
+  // 아직 잰 적 없음: 요금제 줄에는 하루 몫만.
+  assert.equal((await budgetState(env, NOW)).kv.writes, undefined);
+  stats = { writes: 100, reads: Math.ceil(plan.kvReadsDay * 0.85) };
+  assert.deepEqual((await autoRest(env, NOW)).rested, [], "85%는 알리기만");
+  const kv = (await budgetState(env, NOW)).kv;
+  assert.equal(kv.writes, 100);
+  assert.equal(kv.reads, stats.reads);
+  assert.ok(kv.share >= 0.85 && kv.share < 0.86, "쓰기와 읽기 중 큰 쪽");
+  const warn = (await call("GET", "/api/admin/today", undefined, owner)).data.alerts.find((a) => a.key.startsWith("budget:kv"));
+  assert.match(warn?.title ?? "", /공유 서버 KV 읽기가 하루 몫의 85%/);
+  stats = { writes: 100, reads: Math.ceil(plan.kvReadsDay * 0.91) };
+  assert.deepEqual((await autoRest(env, NOW)).rested, ["SHARE_CREATE"]);
+  // 다음 날(한국 날짜) 몫 아래: 다시 켜요.
+  const next = NOW + 24 * HOUR;
+  t.mock.timers.setTime(next);
+  stats = { writes: 10, reads: 10 };
+  assert.deepEqual((await autoRest(env, next)).rested, []);
+});
+
+test("[RVQ-24] the PC's local share server (http on the loopback address) connects too; any other plain http address does not", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const asked = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    asked.push(String(url));
+    return Response.json({ days: [{ day: new Date(Date.now() + 9 * HOUR).toISOString().slice(0, 10), writes: 3, reads: 40 }] });
+  });
+  const token = "local-share-admin-token-0123";
+  for (const base of ["http://share.example", "http://10.0.2.2:8790", "http://127.0.0.1.example:8790"]) {
+    const { env, call } = server({ SHARE_BASE_URL: base, SHARE_ADMIN_TOKEN: token });
+    await call("GET", "/api/config");
+    await autoRest(env, NOW);
+    assert.equal((await budgetState(env, NOW)).kv.writes, undefined, base);
+  }
+  assert.equal(asked.length, 0, "the token goes to no plain http address");
+  const { env, call } = server({ SHARE_BASE_URL: "http://127.0.0.1:8790", SHARE_ADMIN_TOKEN: token });
+  await call("GET", "/api/config");
+  await autoRest(env, NOW);
+  assert.equal((await budgetState(env, NOW)).kv.reads, 40);
+  assert.ok(asked[0].startsWith("http://127.0.0.1:8790/api/admin/stats"));
 });
 
 test("[RVQ-11] SRV-13 광장 글이 갑자기 몰리면 5분 작업이 광장 글쓰기를 1시간 쉬고, 기한이 지나면 저절로 켜져요", async (t) => {

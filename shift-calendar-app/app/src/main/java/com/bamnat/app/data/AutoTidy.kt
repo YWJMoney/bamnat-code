@@ -119,6 +119,8 @@ class AutoTidy(private val file: File?, private val clock: () -> Long = Today::m
     companion object {
         const val AREA_MONEY = "money"
         const val AREA_INVEST = "invest"
+        /** 2.0.0 [RVM-26] RCP-08 내 서랍 (입었던 테마의 한도). */
+        const val AREA_RECIPE = "recipe"
         const val KEEP_DAYS = 30L
         const val KEEP_MILLIS = KEEP_DAYS * 24 * 60 * 60 * 1000L
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L

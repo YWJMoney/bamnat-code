@@ -102,8 +102,14 @@ class AlarmActivity : ComponentActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    // 2.0.0 [RVI-50] (검토 ALM-18) A turn or a fold mid-mission keeps the mission open (its own progress is saved in it).
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(K_SOLVING, solving.value)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (intent?.getBooleanExtra(EXTRA_MISSION, false) == true) solving.value = true
+        if (intent?.getBooleanExtra(EXTRA_MISSION, false) == true || savedInstanceState?.getBoolean(K_SOLVING) == true) solving.value = true
         if (intent?.getBooleanExtra(EXTRA_ALL_OFF, false) == true) AlarmService.allOffAfterMission(true)
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -211,6 +217,8 @@ class AlarmActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val K_SOLVING = "solving"
+
         /** [PROV-06] Open on the mission rather than the ringing screen. */
         const val EXTRA_MISSION = "com.bamnat.app.alarm.extra.MISSION"
         /** [ALRM-09] 오늘 모두 끄기 from the notice of a mission alarm: it waits for the mission. */
