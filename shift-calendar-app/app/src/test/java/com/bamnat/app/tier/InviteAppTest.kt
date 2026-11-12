@@ -140,9 +140,12 @@ class InviteAppTest {
         saved.disconnect()
     }
 
-    /** The owner's 기능 관리 › 일정 › 처리방침 일정 on the local server: [version] posted and in force on [posted]. */
+    /**
+     * The owner's 기능 관리 › 일정 › 처리방침 일정 on the local server: [version] posted and in force on [posted]. 2.0.0 [RVQ-15]: a date inside
+     * the 30일 알림 기간 is asked once more, so the test answers as the owner does on that second question (confirm).
+     */
     private fun setPolicy(url: String, version: String, posted: String) {
-        val body = """{"version":"$version","posted":"$posted","effective":"$posted","heldUntil":null,"unfavourable":true,"why":"시험: 처리방침 $version 일정"}"""
+        val body = """{"version":"$version","posted":"$posted","effective":"$posted","heldUntil":null,"unfavourable":true,"confirm":true,"why":"시험: 처리방침 $version 일정"}"""
         post("$url/api/admin/policy", body, signIn(url)).disconnect()
     }
 
