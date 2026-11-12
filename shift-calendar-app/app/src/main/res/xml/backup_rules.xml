@@ -14,4 +14,6 @@
     <exclude domain="file" path="memo-photos/" />
     <!-- [MAT-05] 1.36 받은 공개 글꼴은 다시 받으면 돼요(본명조 14MB, 자동 백업 25MB 한도를 아껴요). -->
     <exclude domain="file" path="fonts/open/" />
+    <!-- 2.0.0 [RVP-73] (검토 REST-15) 내 글꼴도 빼요(25MB 한도를 넘으면 근무표 DB까지 못 올라가요). -->
+    <exclude domain="file" path="fonts/" />
 </full-backup-content>

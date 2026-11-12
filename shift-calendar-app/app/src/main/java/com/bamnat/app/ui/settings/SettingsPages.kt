@@ -863,7 +863,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
         // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
         val widgetContext = LocalContext.current
-        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"
+        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요(잠금 화면에서는 안 보여요). 홈 화면을 남이 볼 수 있으면 끄세요"
             else "위젯에는 근무만 보여요", settings.widgetMemo) { on ->
             vm.update { it.copy(widgetMemo = on) }
             widgetContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(widgetContext) }

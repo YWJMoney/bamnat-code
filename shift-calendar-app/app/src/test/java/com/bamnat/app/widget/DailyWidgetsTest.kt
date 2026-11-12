@@ -155,6 +155,21 @@ class DailyWidgetsTest {
         assertTrue(line.contains("받을 돈 있어요"))
     }
 
+    /**
+     * 2.0.0 [RVP-74] (검토 REST-16) The today widget can sit on a lock screen (a tablet, Android 16), read without unlocking: there it
+     * keeps the shifts and drops each day's memo line; on a home screen nothing changes.
+     */
+    @Test fun aLockScreenWidgetShowsNoMemo() {
+        val today = LocalDate.of(2026, 11, 12)
+        val data = WidgetData(today, java.time.DayOfWeek.MONDAY, com.bamnat.core.schedule.ScheduleResolver(emptyList(), null, emptyList()),
+            hasPattern = false, nextAlarm = null, memos = mapOf(today to "병원 예약 3시"), memoDays = setOf(today))
+        assertEquals("병원 예약 3시", data.forPlace(lockScreen = false).memos[today])
+        assertTrue(data.forPlace(lockScreen = true).memos.isEmpty())
+        assertTrue(data.forPlace(lockScreen = true).memoDays.isEmpty())
+        val code = File("src/main/java/com/bamnat/app/widget/Widgets.kt").readText()
+        assertTrue("the today widget asks where it is", code.substringAfter("class TodayWidget").substringBefore("\n}\n").contains(".forPlace(locked)"))
+    }
+
     /** [DAILY-14] 결정 D7-4: one added calendar stays free. */
     @Test fun oneAddedCalendarStaysFree() {
         assertEquals(1, PersonalCalendar.FREE_ADDED)
