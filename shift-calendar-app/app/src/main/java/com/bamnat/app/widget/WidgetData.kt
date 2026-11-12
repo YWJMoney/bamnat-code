@@ -33,6 +33,8 @@ data class WidgetData(
     val resolver: ScheduleResolver,
     val hasPattern: Boolean,
     val nextAlarm: PlannedAlarm?,
+    /** 2.0.0 [RVI-88] [nextAlarm] was put aside with 이번만 끄기: the widget says 끔 and its window offers 다시 켜기. */
+    val nextAlarmOff: Boolean = false,
     /** [SLP-14] 오늘의 흐름, while the user keeps it on: its short line goes on the today widget. */
     val flow: TodayFlow.Card? = null,
     /** 2.0.0 [RVI-18] (검토 T03-08) 가게·현장·투자's sleep line in its place: no 근무표 to plan by, the next alarm and the target. */
@@ -191,6 +193,9 @@ data class WidgetData(
                 resolver = snapshot.resolver,
                 hasPattern = !snapshot.isEmpty,
                 nextAlarm = nextAlarm,
+                nextAlarmOff = nextAlarm?.let { a ->
+                    com.bamnat.app.alarm.AlarmSoon.isSkipped(context, a.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli())
+                } == true,
                 restLine = restLine,
                 flow = flow,
                 focus = focus,

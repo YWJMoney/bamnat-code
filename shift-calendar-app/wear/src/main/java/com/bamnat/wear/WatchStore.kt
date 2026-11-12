@@ -56,6 +56,9 @@ object WatchStore {
     /** Asks the tile and the complication to draw again, and wakes them at the next midnight (the complication also has its timeline). */
     fun changed(context: Context) {
         runCatching { TileService.getUpdater(context).requestUpdate(ShiftTileService::class.java) }
+        // 2.0.0 [RVI-94][RVI-95] 잠 and 오늘 할 일 read the same copy.
+        runCatching { TileService.getUpdater(context).requestUpdate(SleepTileService::class.java) }
+        runCatching { TileService.getUpdater(context).requestUpdate(TaskTileService::class.java) }
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, TodayComplicationService::class.java)).requestUpdateAll()
         }
@@ -66,6 +69,8 @@ object WatchStore {
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, NextShiftComplicationService::class.java)).requestUpdateAll()
         }
+        // 2.0.0 [RVI-90] The watch's own alarm a minute after the phone's next one, planned again with each new copy.
+        runCatching { BackupRing.plan(context, load(context)) }
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = Today.zone()
         val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000

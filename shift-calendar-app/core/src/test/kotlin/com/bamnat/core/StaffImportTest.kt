@@ -113,7 +113,8 @@ class StaffImportTest {
         assertEquals(listOf("급여 칸 ‘협의’"), generic.unreadCells)
         // 최저시급보다 적은 시급은 넣되 말해요.
         val low = StaffImport.lines(sheet("이름,시급", "김직원,9000").rows, emptyList(), on).single()
-        assertTrue(low.check.any { it.startsWith("최저시급") })
+        // [RVJ-48] 검토 PC-117: the warning names the year whose minimum it holds the wage to.
+        assertTrue(low.check.toString(), low.check.any { it.startsWith("${on.year}년 최저시급") })
     }
 
     /** 소득세 칸: 3.3%는 4대보험 없이, 일용은 고용보험부터, 근로는 법대로; every name the column goes by. */

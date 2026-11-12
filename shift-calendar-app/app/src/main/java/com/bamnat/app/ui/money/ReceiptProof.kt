@@ -67,10 +67,19 @@ object ReceiptFiles {
             val bmp = context.contentResolver.openInputStream(uri)?.use {
                 BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
             } ?: return@runCatching null
+            // 2.0.0 [RVK-43] (검토 MONEY-06) A photo the camera kept lying down with an EXIF turn is saved upright, as 메모 사진
+            // and 근무표 사진 are (the JPEG written here has no EXIF left to say so).
+            val orientation = runCatching {
+                context.contentResolver.openInputStream(uri)?.use {
+                    android.media.ExifInterface(it).getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
+                }
+            }.getOrNull() ?: android.media.ExifInterface.ORIENTATION_NORMAL
+            val upright = com.bamnat.app.imports.ImagePrep.upright(orientation)
+                ?.let { m -> Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, m, true).also { if (it !== bmp) bmp.recycle() } } ?: bmp
             val name = UUID.randomUUID().toString() + ".jpg"
             val out = File(dir(context).apply { mkdirs() }, name)
-            out.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) }
-            bmp.recycle()
+            out.outputStream().use { upright.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+            upright.recycle()
             name
         }.getOrNull()
     }
