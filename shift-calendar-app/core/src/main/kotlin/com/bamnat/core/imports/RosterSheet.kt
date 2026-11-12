@@ -36,7 +36,6 @@ object RosterSheet {
     private val NAME_HEADS = listOf("이름", "성명", "직원", "사원", "NAME")
     private val NOT_NAME = setOf("근무", "시간", "근무시간", "구분", "비고", "합계", "출근", "퇴근", "듀티", "DUTY", "TIME")
     private val WEEKDAYS = setOf("월", "화", "수", "목", "금", "토", "일", "MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
-    private val MONTH = Regex("""(\d{4})\s*[년.\-/]\s*(\d{1,2})\s*월?""")
     private val DAY = Regex("""^(\d{1,2})\s*일?(?:\s*\(?[월화수목금토일]\)?)?$""")
 
     /**
@@ -107,18 +106,18 @@ object RosterSheet {
     }
 
     /** The month a file names in its first rows, e.g. "2026년 11월 근무표". */
-    fun monthIn(rows: List<List<String>>): YearMonth? = rows.take(6).flatten().firstNotNullOfOrNull { c ->
-        MONTH.find(c)?.let { m -> runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull() }
-    }
+    fun monthIn(rows: List<List<String>>, near: LocalDate = Today.date()): YearMonth? =
+        // 2.0.0 [RVL-25] (검토 SCAN-11) As a photo's title is read: "11월 근무표" before a 작성일 "2026.10.25", which names no month.
+        DutyRoster.monthIn(rows.take(6).joinToString("\n") { r -> r.joinToString(" ") { it.trim() } }, near)
 
     private fun readWide(rows: List<List<String>>, codes: DutyCodes, month: YearMonth?, near: LocalDate): RosterRead? {
-        val ym = month ?: monthIn(rows) ?: YearMonth.from(near)
+        val ym = month ?: monthIn(rows, near) ?: YearMonth.from(near)
         // A day number ("3", "3일", "3(화)") or a full date in the header ("11/3", "2026-11-03"), not a lone month name.
         fun numberOf(cell: String): Int? = DAY.matchEntire(cell.trim())?.groupValues?.get(1)?.toInt()?.takeIf { it in 1..31 }
         fun fullDate(cell: String): LocalDate? {
             val t = cell.trim()
             if (t.isEmpty() || numberOf(t) != null) return null
-            return if (t.any { it == '/' || it == '-' || it == '.' } || t.length >= 8) AttendanceImport.parseDate(t, ym.year, near) else null
+            return if (t.any { it == '/' || it == '-' || it == '.' } || t.length >= 8) AttendanceImport.parseDate(t, ym.year, near, ahead = true) else null
         }
         // [READ-30] The row of days, each cell its date: day numbers in a row may cross into the next month (spanDates).
         fun datesOf(r: List<String>): Map<Int, LocalDate> {
@@ -131,32 +130,64 @@ object RosterSheet {
             if (full.size >= numbered.size) return full.toMap()
             return numbered.map { it.first }.zip(spanDates(numbered.map { it.second }, ym)).mapNotNull { (c, d) -> d?.let { c to it } }.toMap()
         }
-        val header = rows.withIndex().map { (i, r) -> i to datesOf(r) }
+        val found = rows.withIndex().map { (i, r) -> i to datesOf(r) }
             // A merged title filled across its cells repeats one date: a row of days has different ones.
             .filter { it.second.values.distinct().size >= DutyRoster.MIN_DAYS }
-            .maxByOrNull { it.second.values.distinct().size } ?: return null
-        val columns = header.second
-        val firstDayCol = columns.keys.min()
-        val isCode = codeLike(rows.drop(header.first + 1).map { r -> columns.keys.mapNotNull { r.getOrNull(it) } })
-        val people = rows.drop(header.first + 1).mapNotNull { r ->
-            // [ROST-04] A job title in its own column or after the name (김민지RN) is not part of the name.
-            // [READ-30] "근무"·"시간" in a 구분 column (one person over two rows) is not part of the name.
-            val left = r.take(firstDayCol).map { it.trim() }.filter { it.isNotEmpty() && it.none(Char::isDigit) && DutyCodes.norm(it) !in NOT_NAME }
-            val named = left.filter { !isRole(it) }.map { nameAndRole(it, codes) }
-            val name = named.map { it.first }.filter { it.isNotEmpty() }.distinct().joinToString(" ")
-            val role = (left.filter(::isRole) + named.map { it.second }).filter { it.isNotEmpty() }.distinct().joinToString(" ")
-            val days = columns.mapNotNull { (c, date) ->
-                val raw = r.getOrNull(c)?.trim().orEmpty()
-                // [ROST-03] "D*", "N-O", "11D" as on the photo: the code, and the rest kept as the day's note.
-                val read = codes.read(raw)
-                if (raw.isEmpty()) null else RosterDay(date, raw, read?.first ?: DutyCell.Unknown(raw), read?.second)
-            }.distinctBy { it.date }.sortedBy { it.date }
-            // A row of weekdays, hours or totals is no one's duties; a line of the ward's own codes is.
-            val known = days.count { it.cell !is DutyCell.Unknown || isCode(it.raw) }
-            if (days.size < DutyRoster.MIN_CELLS || known * 2 < days.size) null else RosterPerson(name, days, role)
+        val widest = found.maxOfOrNull { it.second.values.distinct().size } ?: return null
+        // 2.0.0 [RVL-23] (검토 SCAN-09) A sheet in two blocks (1~15일 above, 16~31일 below) has a row of days over each: a line is read
+        // under the row of days above it, never the widest one's, and a name in both blocks is one person ([joinPeople]). A row of
+        // totals has few different numbers, so it is no row of days.
+        val headers = found.filter { it.second.values.distinct().size * 2 >= widest }
+        fun under(i: Int) = rows.subList(headers[i].first + 1, headers.getOrNull(i + 1)?.first ?: rows.size)
+        val isCode = codeLike(headers.indices.flatMap { i -> under(i).map { r -> headers[i].second.keys.mapNotNull { r.getOrNull(it) } } })
+        val read = headers.indices.flatMap { i ->
+            val columns = headers[i].second
+            val firstDayCol = columns.keys.min()
+            under(i).mapNotNull { r ->
+                // [ROST-04] A job title in its own column or after the name (김민지RN) is not part of the name.
+                // [READ-30] "근무"·"시간" in a 구분 column (one person over two rows) is not part of the name.
+                val left = r.take(firstDayCol).map { it.trim() }.filter { it.isNotEmpty() && it.none(Char::isDigit) && DutyCodes.norm(it) !in NOT_NAME }
+                val named = left.filter { !isRole(it) }.map { nameAndRole(it, codes) }
+                val name = named.map { it.first }.filter { it.isNotEmpty() }.distinct().joinToString(" ")
+                val role = (left.filter(::isRole) + named.map { it.second }).filter { it.isNotEmpty() }.distinct().joinToString(" ")
+                val days = columns.mapNotNull { (c, date) ->
+                    val raw = r.getOrNull(c)?.trim().orEmpty()
+                    // [ROST-03] "D*", "N-O", "11D" as on the photo: the code, and the rest kept as the day's note.
+                    val read = codes.read(raw)
+                    if (raw.isEmpty()) null else RosterDay(date, raw, read?.first ?: DutyCell.Unknown(raw), read?.second)
+                }.distinctBy { it.date }.sortedBy { it.date }
+                // A row of weekdays, hours or totals is no one's duties; a line of the ward's own codes is.
+                val known = days.count { it.cell !is DutyCell.Unknown || isCode(it.raw) }
+                if (days.size < DutyRoster.MIN_CELLS || known * 2 < days.size) null else RosterPerson(name, days, role)
+            }
         }
+        val people = joinPeople(read)
         if (people.isEmpty()) return null
-        return RosterRead(RosterLayout.WIDE, people, mostDays(columns.values))
+        return RosterRead(RosterLayout.WIDE, people, mostDays(headers.flatMap { it.second.values }))
+    }
+
+    /**
+     * 2.0.0 [RVL-22][RVL-23] (검토 SCAN-07·SCAN-09) Lines of one name: one person's blocks when their days do not meet (1~15일 and
+     * 16~31일), joined; two people of one name (동명이인, two lines of one 조) when they do, kept apart as "김민지", "김민지 (2)". A line
+     * without a name is its own.
+     */
+    fun joinPeople(people: List<RosterPerson>): List<RosterPerson> {
+        val out = mutableListOf<RosterPerson>()
+        val seen = HashMap<String, Int>()
+        for (p in people) {
+            if (p.name.isBlank()) { out += p; continue }
+            val dates = p.days.mapTo(HashSet()) { it.date }
+            val at = out.indexOfFirst { o -> DutyRoster.sameName(o.name, p.name) && o.days.none { it.date in dates } }
+            if (at >= 0) {
+                val o = out[at]
+                out[at] = o.copy(days = (o.days + p.days).sortedBy { it.date }, role = o.role.ifEmpty { p.role })
+            } else {
+                val n = (seen[p.name] ?: 0) + 1
+                seen[p.name] = n
+                out += if (n == 1) p else p.copy(name = DutyRoster.twin(p.name, n))
+            }
+        }
+        return out
     }
 
     /** The month most of [dates] are in. */
@@ -168,8 +199,8 @@ object RosterSheet {
      */
     private fun readColumns(rows: List<List<String>>, codes: DutyCodes, near: LocalDate): RosterRead? {
         val width = rows.maxOfOrNull { it.size } ?: return null
-        val dateCol = (0 until width).maxByOrNull { c -> rows.count { AttendanceImport.parseDate(it.getOrNull(c).orEmpty(), near.year, near) != null } } ?: return null
-        val dated = rows.withIndex().filter { (_, r) -> AttendanceImport.parseDate(r.getOrNull(dateCol).orEmpty(), near.year, near) != null }
+        val dateCol = (0 until width).maxByOrNull { c -> rows.count { AttendanceImport.parseDate(it.getOrNull(c).orEmpty(), near.year, near, ahead = true) != null } } ?: return null
+        val dated = rows.withIndex().filter { (_, r) -> AttendanceImport.parseDate(r.getOrNull(dateCol).orEmpty(), near.year, near, ahead = true) != null }
         if (dated.size < DutyRoster.MIN_CELLS) return null
         val headAt = dated.first().index - 1
         if (headAt < 0) return null
@@ -180,7 +211,7 @@ object RosterSheet {
             if (label.isEmpty() || label.any(Char::isDigit) || DutyCodes.norm(label) in CODE_HEADS || DutyCodes.norm(label) in DATE_HEADS || label in listOf("요일", "비고", "메모")) return@mapNotNull null
             val days = dated.mapNotNull { (_, r) ->
                 val raw = r.getOrNull(c)?.trim().orEmpty()
-                val date = AttendanceImport.parseDate(r[dateCol], near.year, near) ?: return@mapNotNull null
+                val date = AttendanceImport.parseDate(r[dateCol], near.year, near, ahead = true) ?: return@mapNotNull null
                 if (raw.isEmpty()) null else codes.read(raw).let { read -> RosterDay(date, raw, read?.first ?: DutyCell.Unknown(raw), read?.second) }
             }.distinctBy { it.date }.sortedBy { it.date }
             val known = days.count { it.cell !is DutyCell.Unknown || isCode(it.raw) }
@@ -202,13 +233,13 @@ object RosterSheet {
         } else {
             // No header: the column of dates, and the next one with codes.
             val width = rows.maxOfOrNull { it.size } ?: return null
-            val d = (0 until width).maxByOrNull { c -> rows.count { AttendanceImport.parseDate(it.getOrNull(c).orEmpty(), near.year, near) != null } } ?: return null
+            val d = (0 until width).maxByOrNull { c -> rows.count { AttendanceImport.parseDate(it.getOrNull(c).orEmpty(), near.year, near, ahead = true) != null } } ?: return null
             val c = (0 until width).filter { it != d }.maxByOrNull { c -> rows.count { r -> r.getOrNull(c)?.let { codes.match(it) } != null } } ?: return null
             listOf(d, c, -1, 0)
         }
         if (dateCol < 0 || codeCol < 0) return null
         val read = rows.drop(start).mapNotNull { r ->
-            val date = AttendanceImport.parseDate(r.getOrNull(dateCol).orEmpty(), near.year, near) ?: return@mapNotNull null
+            val date = AttendanceImport.parseDate(r.getOrNull(dateCol).orEmpty(), near.year, near, ahead = true) ?: return@mapNotNull null
             val raw = r.getOrNull(codeCol)?.trim().orEmpty()
             if (raw.isEmpty()) return@mapNotNull null
             val name = if (nameCol >= 0) r.getOrNull(nameCol)?.trim().orEmpty() else ""
