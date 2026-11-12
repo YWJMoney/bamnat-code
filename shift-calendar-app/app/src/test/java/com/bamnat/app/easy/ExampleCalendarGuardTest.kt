@@ -65,7 +65,7 @@ class ExampleCalendarGuardTest {
             if (style.usesPayEngine) assertNotNull("$style 급여", c.calendars.pay(PersonalCalendar.EXAMPLE).profile.value)
         }
         // Nothing of it rings.
-        assertTrue(c.calendars.ringing.first().none { it.first == com.bamnat.core.example.ExamplePlan.NAME })
+        assertTrue(c.calendars.ringing.first().none { it.name == com.bamnat.core.example.ExamplePlan.NAME })
         assertTrue(c.calendars.added().none { it.isExample })
     }
 

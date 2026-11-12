@@ -73,7 +73,7 @@ class SureAlarmTest {
     }
 
     @Test fun withoutProEveryAlarmRingsAsBefore() = runBlocking {
-        val s = AppSettings(alarmMission = "math", shiftMissions = mapOf(3L to "shake"), wakeCheckMinutes = 5)
+        val s = AppSettings(alarmMission = "math", shiftMissions = mapOf("3" to "shake"), wakeCheckMinutes = 5)
         val open = BootAlarms.RingSettings.of(s, sure = true)
         assertEquals(AlarmMission.MATH, open.mission)
         assertEquals(AlarmMission.SHAKE, open.missionFor(ring(type = 3)))
@@ -94,13 +94,13 @@ class SureAlarmTest {
 
     @Test fun theLockedRebootCopyKeepsTheMissions() {
         val settings = BootAlarms.RingSettings(snoozeMinutes = 7, mission = AlarmMission.SHAKE,
-            shiftMissions = mapOf(3L to AlarmMission.MATH, 8L to AlarmMission.NONE), wakeCheckMinutes = 10)
+            shiftMissions = mapOf("3" to AlarmMission.MATH, "8" to AlarmMission.NONE), wakeCheckMinutes = 10)
         // CI 12차: the app's own first planning also writes this copy; it is over before the test writes its own.
         AppSettled.alarms(app)
         BootAlarms.save(app, emptyList(), settings)
         assertEquals(settings, BootAlarms.settings(app))
-        assertEquals(mapOf(3L to "math", 8L to "none"), decodeShiftMissions(encodeShiftMissions(mapOf(8L to "none", 3L to "math"))))
-        assertEquals("junk is left out", mapOf(2L to "shake"), decodeShiftMissions("x=math,2=shake,,=,5"))
+        assertEquals(mapOf("3" to "math", "8" to "none"), decodeShiftMissions(encodeShiftMissions(mapOf("8" to "none", "3" to "math"))))
+        assertEquals("junk is left out", mapOf("2" to "shake"), decodeShiftMissions("x=math,2=shake,,=,5"))
         BootAlarms.save(app, emptyList(), BootAlarms.RingSettings())
     }
 
@@ -134,7 +134,7 @@ class SureAlarmTest {
     }
 
     @Test fun aShiftWithoutAMissionTurnsOffAtOnce() {
-        c.settingsRepository.update { it.copy(alarmMission = "math", shiftMissions = mapOf(3L to "none")) }
+        c.settingsRepository.update { it.copy(alarmMission = "math", shiftMissions = mapOf("3" to "none")) }
         val off = shadowOf(start(ring(type = 3))).lastForegroundNotification.actions[1]
         assertTrue(shadowOf(off.actionIntent).isBroadcastIntent)
     }
@@ -205,13 +205,13 @@ class SureAlarmTest {
     }
 
     @Test fun theSettingsGoWithABackup() = runBlocking {
-        c.settingsRepository.update { it.copy(alarmMission = "shake", shiftMissions = mapOf(3L to "math"), wakeCheckMinutes = 10) }
+        c.settingsRepository.update { it.copy(alarmMission = "shake", shiftMissions = mapOf("3" to "math"), wakeCheckMinutes = 10) }
         val json = c.backupManager.export()
         c.settingsRepository.update { it.copy(alarmMission = "none", shiftMissions = emptyMap(), wakeCheckMinutes = 0) }
         c.backupManager.restore(json)
         val back = c.settingsRepository.current
         assertEquals("shake", back.alarmMission)
-        assertEquals(mapOf(3L to "math"), back.shiftMissions)
+        assertEquals(mapOf("3" to "math"), back.shiftMissions)
         assertEquals(10, back.wakeCheckMinutes)
     }
 }

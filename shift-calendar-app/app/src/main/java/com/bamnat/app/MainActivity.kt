@@ -138,6 +138,9 @@ class MainActivity : ComponentActivity() {
         // Its state is made in onCreate, outside any snapshot (1.38 PC 12차 충돌).
         com.bamnat.app.ui.Fmt.masked = settings.hideAmounts
         val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
+        // [R200-01] 근무 그림 belong to one calendar's kinds of day: the shown calendar's are drawn.
+        val shownCalendar by container.calendars.active.collectAsStateWithLifecycle()
+        val shiftIcons = androidx.compose.runtime.remember(photoLook, shownCalendar) { com.bamnat.core.model.ShiftRef.of(photoLook.icons, shownCalendar) }
         // [STU-37] 1.36 근무에 따라 바뀌는 모양: 야간 근무 중·쉬는 날의 화면 색과 달력 색 over the usual ones.
         val shiftLooks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
         val shiftMode = com.bamnat.app.ui.theme.rememberShiftLookMode(shiftLooks, container)
@@ -163,7 +166,7 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(calNow), darkSurface)
             }
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds,
-                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook,
+                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook, com.bamnat.app.ui.theme.LocalShiftIcons provides shiftIcons,
                 // [CVW-01][CVW-09] 1.35 달력 모양 and 날짜를 길게 누르면.
                 com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
                 com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress,

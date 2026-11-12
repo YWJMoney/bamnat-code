@@ -68,3 +68,7 @@
 {"track": "PAYP-19", "title": "옛 앱(1.38 이하)에 회사 판 급여 계산식 주기 끊기, 1.40 나간 날 저절로", "status": "doing", "size": "fix", "route": "server", "check": "나간 판 1.39.0 → 옛 앱 참여자 급여 부분 받음, 1.40.0 저장 → 근무만·1.38 이하 공지, 관리자 앱 앱 공지 › 옛 앱 급여 끊기"}
 {"track": "SPREAD-37", "title": "연말 근무 결산: 12-20~1-10 한 해 야간·공휴일 근무·가장 길게 쉰 날·평균 잠, 금액 기본 가림, 사진 저장·보내기", "status": "doing", "size": "feature", "route": "app", "check": "12-20·1-2로 시계를 옮겨 유형마다 달력 카드 → 결산 보기 → 금액 켜고 끄기 → 사진에 저장·보내기, 투자·받은 달력엔 안 보임"}
 {"id": "dnK4t99rbpYEXVLZ", "track": "DISC-01", "title": "안 써 본 기능을 가끔 알려 주는 달력 위 카드(재치, 점점 뜸해짐, 그만 보기)", "status": "doing", "size": "feature", "route": "app", "tierAsk": "free", "tierWhy": "기존 기능을 알려 주는 안내·발견이고 새로 닿는 기능이 아니에요. 프로 기능은 4장에 1장 이하로만 알려요.", "events": ["disc_shown", "disc_try", "disc_later", "disc_off"]}
+{"track": "R200-01", "title": "달력을 둘 이상 쓸 때 끄기 미션·근무 그림이 그 달력의 근무에만 걸림", "status": "check", "size": "fix", "route": "app", "check": "알바 달력을 보며 설정 › 알람 › 근무마다 다르게 → 내 달력의 같은 근무 미션·근무 그림이 그대로"}
+{"track": "R200-02", "title": "수면 소리 클립을 지금 모두 지우는 단추", "status": "check", "size": "polish", "route": "app", "check": "수면 › 자는 동안 소리 › 소리 클립 지금 모두 지우기 → files/sleep_clips 비고 들린 시각은 남음"}
+{"track": "R200-03", "title": "구독 갱신을 앱을 열지 않아도 끝 무렵 하루 한 번 다시 읽음", "status": "check", "size": "fix", "route": "app", "check": "시험으로만 확인(라이선스 시험 계정이 있으면 갱신 뒤 앱을 안 연 채 알람 미션)"}
+{"track": "R200-04", "title": "가게: 카드사마다 따로 들어온 입금을 합쳐 그날 카드 매출 입금 확인", "status": "check", "size": "fix", "route": "app", "check": "카드 매출 200,000원 날에 삼성 81,300원·신한 115,700원 입금 문자 → 그날 입금 확인, 이체 두 줄 확인됨"}

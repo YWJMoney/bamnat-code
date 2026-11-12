@@ -67,7 +67,7 @@ class AppContainer(context: Context) {
     val calendars: com.bamnat.app.data.CalendarBook = com.bamnat.app.data.CalendarBook(
         java.io.File(appContext.filesDir, "calendars.json"), scheduleRepository, com.bamnat.app.data.CalendarStorage.Files(appContext),
         repositoryOf = { db ->
-            ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds }, extraName = { settingsRepository.current.extraKinds.name(it) },
+            ScheduleRepository(db, kinds = settingsRepository.settings.map { it.extraKinds.forAddedCalendar() }, extraName = { settingsRepository.current.extraKinds.name(it) },
                 shareScope = appScope)
         },
         mainMoney = { moneyRepository },
@@ -83,7 +83,17 @@ class AppContainer(context: Context) {
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
-        onDelete = { id, kept -> if (!kept) companyGone(id) },
+        onDelete = { id, kept ->
+            if (!kept) {
+                companyGone(id)
+                // [R200-01] Its own 끄기 미션 and 근무 그림 go with it (a new calendar never gets its id again).
+                settingsRepository.update { s ->
+                    val look = com.bamnat.core.recipe.PhotoLook.decode(s.photoLook)
+                    s.copy(shiftMissions = com.bamnat.core.model.ShiftRef.without(s.shiftMissions, id),
+                        photoLook = look.copy(icons = com.bamnat.core.model.ShiftRef.without(look.icons, id)).encode())
+                }
+            }
+        },
     )
     /** [MCAL-06] Calendar [id]'s days, money and pay as a screen sees them. */
     fun scopeOf(id: String) = com.bamnat.app.data.CalendarScope(calendars, settingsRepository, id)
@@ -645,6 +655,8 @@ class AppContainer(context: Context) {
             runCatching { billing.refresh() }
             featureGate.refresh()
         }
+        // [R200-03] And once a day near a subscription's end even when the app is not opened.
+        runCatching { com.bamnat.app.tier.ProRecheckJob.schedule(appContext, this@AppContainer) }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {

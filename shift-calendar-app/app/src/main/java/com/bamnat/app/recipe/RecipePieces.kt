@@ -214,7 +214,7 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(from.photoLook).takeIf { !it.isDefault }?.let { l ->
             val ctx = c.appContext
             val mine = types(cal).associateBy { it.id }
-            val icons = l.icons.mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
+            val icons = com.bamnat.core.model.ShiftRef.of(l.icons, cal).mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
                 .distinctBy { it.first }.take(6).map { (r, id) -> mapOf("role" to r, "image" to id) }
             mapOf("bg" to l.bg?.takeIf { LookImages.has(ctx, it) }, "dim" to l.dim.toLong(), "head" to l.head?.takeIf { LookImages.has(ctx, it) },
                 "widget" to l.widget?.takeIf { LookImages.has(ctx, it) }, "corners" to l.corners, "icons" to icons.ifEmpty { null },
@@ -1058,7 +1058,7 @@ class RecipePieces(private val c: AppContainer) {
                 val l = com.bamnat.core.recipe.PhotoLook.decode(cur.photoLook)
                 fun pic(k: String) = (values[k] as? String)?.takeIf { LookImages.has(ctx, it) }
                 val byRole = items(values, "icons").mapNotNull { i -> (i["image"] as? String)?.takeIf { LookImages.has(ctx, it) }?.let { (i["role"] as? String) to it } }.toMap()
-                val icons = if (byRole.isEmpty()) l.icons else l.icons + types(cal).mapNotNull { t -> byRole[role(t).key]?.let { t.id to it } }
+                val icons = if (byRole.isEmpty()) l.icons else l.icons + types(cal).mapNotNull { t -> byRole[role(t).key]?.let { com.bamnat.core.model.ShiftRef.key(cal, t.id) to it } }
                 val after = l.copy(bg = pic("bg") ?: l.bg, head = pic("head") ?: l.head, widget = pic("widget") ?: l.widget,
                     dim = (values["dim"] as? Number)?.toInt()?.coerceIn(0, 80) ?: l.dim,
                     corners = (values["corners"] as? String)?.takeIf { it in com.bamnat.core.recipe.PhotoLook.CORNERS } ?: l.corners, icons = icons,

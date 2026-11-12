@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.db.AppDatabase
 import com.bamnat.app.data.db.SleepEventEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -73,5 +74,24 @@ class SleepClipSweepTest {
         assertTrue("another night's clip stays", File(dir, "next.wav").exists())
         assertEquals(listOf("next.wav"), dao.allEvents().map { it.file })
         assertEquals(listOf(other), dao.all().map { it.id })
+    }
+
+    /** [R200-02] (검토 ALM-03 넘긴 일) 소리 클립 지금 모두 지우기: kept ones and stray files go too; the times and kinds stay. */
+    @Test fun clearingTakesEveryClipNow() = runBlocking {
+        val now = millis(night.plusHours(9))
+        val sleep = SleepRepository(db, clock = { now }, zone = { zone })
+        val dao = db.sleepDao()
+        val at = millis(night.plusHours(2))
+        dao.insertEvent(SleepEventEntity(startMillis = at, endMillis = at + 3000, kind = "snore", level = 12f, file = "a.wav"))
+        val kept = dao.insertEvent(SleepEventEntity(startMillis = at + 9000, endMillis = at + 12000, kind = "talk", level = 9f, file = "b.wav"))
+        sleep.keepClip(kept, true)
+        clip("a.wav", at); clip("b.wav", at); clip("stray.wav", now)
+        assertEquals(2, sleep.clipCount.first())
+
+        assertEquals(3, sleep.clearClips(dir))
+        assertEquals(0, dir.listFiles()!!.size)
+        assertEquals(0, sleep.clipCount.first())
+        assertEquals("the times and kinds stay", 2, dao.allEvents().size)
+        assertTrue(dao.allEvents().all { it.file == null })
     }
 }

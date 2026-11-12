@@ -145,6 +145,23 @@ class SleepRepository(
         return gone
     }
 
+    /** [R200-02] How many sound clips the phone keeps (kept ones too). */
+    val clipCount: kotlinx.coroutines.flow.Flow<Int> get() = dao.observeClipCount()
+
+    /**
+     * [R200-02] (검토 ALM-03 넘긴 일) 소리 클립 지금 모두 지우기: every clip goes now, kept ones too, and any file in [dir] no
+     * sound points to. The times and kinds stay, as when a clip goes after 7 days. Returns how many files went.
+     */
+    suspend fun clearClips(dir: java.io.File): Int {
+        var gone = 0
+        dao.allEvents().filter { it.file != null }.forEach { e ->
+            if (java.io.File(dir, e.file!!).delete()) gone++
+            dao.dropClip(e.id)
+        }
+        dir.listFiles()?.filter { it.isFile }?.forEach { if (it.delete()) gone++ }
+        return gone
+    }
+
     private fun SleepCheckEntity.toModel() = SleepCheck(id, local(startMillis), local(endMillis), SleepMood.of(mood), SleepTag.decode(tags), note)
 
     private fun SleepLogEntity.toModel() = SleepEntry(id, local(startMillis), endMillis?.let(::local), auto = source == SleepLogEntity.SOURCE_AUTO)

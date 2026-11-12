@@ -206,6 +206,18 @@ class FeatureGate(
                 }
             }
         }
+        // [R200-03] (검토 PRO-08 넘긴 일) A subscription's end (with its leeway) is looked at the same way: the gate closes at
+        // that minute, not only on the next return to the app.
+        scope.launch {
+            pro.state.map { it.sub?.play()?.endsAt() }.distinctUntilChanged().collectLatest { end ->
+                if (end == null) return@collectLatest
+                while (true) {
+                    val now = clock()
+                    if (!now.isBefore(end)) { tick.value++; break }
+                    kotlinx.coroutines.delay(minOf(java.time.Duration.between(now, end).toMillis() + 1_000, END_CHECK_MS))
+                }
+            }
+        }
     }
 
     /**

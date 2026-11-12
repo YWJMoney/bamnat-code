@@ -165,7 +165,7 @@ fun ShiftBadge(
             val density = androidx.compose.ui.platform.LocalDensity.current
             // [RCX-30] 1.35 그림 꾸미기: the kind of day's own picture goes first.
             val pictured = showIcon && (text == null || text == type?.label) &&
-                type?.id?.let { com.bamnat.app.ui.theme.LocalPhotoLook.current.icons[it] } != null
+                type?.id?.let { com.bamnat.app.ui.theme.LocalShiftIcons.current[it] } != null
             if (pictured && com.bamnat.app.ui.theme.ShiftPicture(type?.id, size * 0.62f)) {
                 Spacer(Modifier.width(2.dp))
             } else if (icon != null) {
